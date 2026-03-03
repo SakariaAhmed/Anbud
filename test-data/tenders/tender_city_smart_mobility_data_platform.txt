@@ -1,0 +1,100 @@
+Public Tender: City of Brookhaven Smart Mobility Data Platform
+
+Document Type: Requirement Specification / Tender
+
+1. PROGRAM INTENT
+-----------------
+
+The City of Brookhaven seeks a unified data platform to aggregate public transit, traffic flow, parking occupancy, and EV charging utilization data.
+
+The platform must support real-time dashboards for city operators and public transparency portals for residents.
+
+This procurement is funded by a federal smart city grant with strict audit and reporting obligations.
+
+
+2. FUNCTIONAL REQUIREMENTS
+--------------------------
+
+The solution shall ingest data from at least 27 source systems including GTFS feeds, IoT traffic sensors, and parking meter APIs.
+
+The system must provide role-specific dashboards for transportation command center, planning office, and finance office.
+
+The bidder must include configurable KPI calculations for congestion, route adherence, and parking turnover.
+
+The platform must expose open data APIs for approved public datasets.
+
+The system shall retain at least 7 years of historical data for compliance and trend analysis.
+
+
+3. SECURITY AND COMPLIANCE REQUIREMENTS
+---------------------------------------
+
+All personally identifiable information must be tokenized or anonymized before storage in analytical layers.
+
+The vendor shall document CJIS-aligned controls because some integrations include law-enforcement adjacent feeds.
+
+The solution must maintain audit logs for data access, admin actions, and schema changes.
+
+Multi-factor authentication and least-privilege RBAC are mandatory.
+
+
+4. PROJECT DELIVERABLES
+-----------------------
+
+Deliverable A: Discovery report and source-system integration matrix due July 8, 2026.
+
+Deliverable B: Pilot environment with five critical data feeds due August 21, 2026.
+
+Deliverable C: Production launch and public dashboard rollout due November 13, 2026.
+
+Deliverable D: Training, SOP manual, and handover package due November 30, 2026.
+
+
+5. PROCUREMENT MILESTONES
+-------------------------
+
+Deadline for supplier registration: May 28, 2026.
+
+Deadline for clarification questions: June 3, 2026.
+
+Deadline for proposal submission: June 17, 2026 12:00 ET.
+
+Demonstration shortlist notification due: June 30, 2026.
+
+Contract award decision expected: July 20, 2026.
+
+
+6. COMMERCIAL TERMS
+-------------------
+
+Total not-to-exceed contract value is USD 4.5 million across 3 years.
+
+The proposal must break down one-time implementation cost, annual support cost, and optional enhancement catalog prices.
+
+The city requires transparent unit costs for additional data connectors.
+
+Price escalation above 3 percent annually is not acceptable unless tied to documented federal inflation index changes.
+
+Invoices are paid net 45 after acceptance checkpoints.
+
+
+7. OPEN QUESTIONS
+-----------------
+
+TBD: scope for integration with future autonomous shuttle pilot.
+
+Clarification requested: whether city legal team accepts offshore managed support during non-business hours.
+
+TBD: final data retention period for parking citation records if legal appeal is open.
+
+Clarification requested: required uptime target for public open data portal during planned maintenance windows.
+
+
+8. EVALUATION MODEL
+-------------------
+
+Technical approach is weighted 40 percent, delivery capability 20 percent, commercial value 25 percent, and local stakeholder engagement 15 percent.
+
+Bidders must provide at least three public sector references with comparable scale.
+
+Failure to provide mandatory cybersecurity attestations may lead to disqualification.

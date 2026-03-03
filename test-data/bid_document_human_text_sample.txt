@@ -1,0 +1,48 @@
+Request for Proposal: Managed Cloud Platform and Support Services
+
+Customer: Fjord Retail Group AS
+Project title: Cloud Platform Modernization and Managed Operations
+Issued date: February 20, 2026
+
+Fjord Retail Group is looking for a delivery partner to modernize our cloud platform and provide ongoing managed operations. We currently run a mix of legacy virtual machines and newer containerized workloads across multiple business units. Our goal is to simplify operations, improve reliability, and reduce time spent on incident handling.
+
+The selected partner should take responsibility for platform design, migration planning, implementation, and a managed support model after go-live. We are not looking for a generic consulting report. We need a practical implementation plan with clear ownership, timeline, and measurable outcomes.
+
+Scope and expectations
+
+We expect the partner to propose a target architecture for compute, networking, identity, observability, and backup/recovery. The solution must support production and non-production environments, and it must include a clear approach for environment isolation and access control.
+
+The partner should provide a phased migration plan. Business-critical workloads must be prioritized first, with careful cutover planning to minimize downtime. Our operations team must be included in the process, and all critical runbooks should be documented before handover.
+
+Service requirements
+
+The service should include 24/7 monitoring and incident response for critical systems, with escalation procedures and named roles on both sides. We expect monthly service review meetings and quarterly roadmap recommendations based on platform health and performance trends.
+
+Security requirements
+
+The supplier must be able to demonstrate mature security practices. At minimum, we require MFA enforcement, centralized logging, encryption at rest and in transit, and vulnerability management. ISO 27001 alignment is preferred. SOC 2 Type II is a strong advantage.
+
+Commercial expectations
+
+Estimated contract value is in the range of NOK 8,000,000 to NOK 11,000,000 over three years, depending on final scope and service tiers. Suppliers should provide a transparent pricing model with implementation cost, recurring managed service cost, and optional add-ons.
+
+Submission process and key dates
+
+Final proposal submission deadline: March 28, 2026 at 16:00 CET.
+Questions and clarifications deadline: March 10, 2026.
+Vendor shortlist notification: April 8, 2026.
+Target project start: May 2026.
+
+Evaluation criteria
+
+We will evaluate proposals on technical quality, delivery realism, security maturity, commercial clarity, and reference cases from similar environments. We care more about practical execution quality than polished marketing language.
+
+Questions
+
+Please include any assumptions clearly in your proposal. If something in this request is ambiguous, ask us directly before the clarification deadline.
+
+Primary contact
+
+Procurement contact: Anja Solberg
+Email: procurement@fjordretail.no
+

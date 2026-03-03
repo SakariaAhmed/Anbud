@@ -1,0 +1,174 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 3 /Kids [ 4 0 R 6 0 R 8 0 R ] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 1991 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(Public Tender: City of Brookhaven Smart Mobility Data Platform) Tj
+T* () Tj
+T* (Document Type: Requirement Specification / Tender) Tj
+T* () Tj
+T* (1. PROGRAM INTENT) Tj
+T* (-----------------) Tj
+T* (The City of Brookhaven seeks a unified data platform to aggregate public transit, traffic flow,) Tj
+T* (parking occupancy, and EV charging utilization data.) Tj
+T* () Tj
+T* (The platform must support real-time dashboards for city operators and public transparency portals) Tj
+T* (for residents.) Tj
+T* () Tj
+T* (This procurement is funded by a federal smart city grant with strict audit and reporting) Tj
+T* (obligations.) Tj
+T* () Tj
+T* () Tj
+T* (2. FUNCTIONAL REQUIREMENTS) Tj
+T* (--------------------------) Tj
+T* (The solution shall ingest data from at least 27 source systems including GTFS feeds, IoT traffic) Tj
+T* (sensors, and parking meter APIs.) Tj
+T* () Tj
+T* (The system must provide role-specific dashboards for transportation command center, planning) Tj
+T* (office, and finance office.) Tj
+T* () Tj
+T* (The bidder must include configurable KPI calculations for congestion, route adherence, and parking) Tj
+T* (turnover.) Tj
+T* () Tj
+T* (The platform must expose open data APIs for approved public datasets.) Tj
+T* () Tj
+T* (The system shall retain at least 7 years of historical data for compliance and trend analysis.) Tj
+T* () Tj
+T* () Tj
+T* (3. SECURITY AND COMPLIANCE REQUIREMENTS) Tj
+T* (---------------------------------------) Tj
+T* (All personally identifiable information must be tokenized or anonymized before storage in) Tj
+T* (analytical layers.) Tj
+T* () Tj
+T* (The vendor shall document CJIS-aligned controls because some integrations include law-enforcement) Tj
+T* (adjacent feeds.) Tj
+T* () Tj
+T* (The solution must maintain audit logs for data access, admin actions, and schema changes.) Tj
+T* () Tj
+T* (Multi-factor authentication and least-privilege RBAC are mandatory.) Tj
+T* () Tj
+T* () Tj
+T* (4. PROJECT DELIVERABLES) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 1870 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(-----------------------) Tj
+T* (Deliverable A: Discovery report and source-system integration matrix due July 8, 2026.) Tj
+T* () Tj
+T* (Deliverable B: Pilot environment with five critical data feeds due August 21, 2026.) Tj
+T* () Tj
+T* (Deliverable C: Production launch and public dashboard rollout due November 13, 2026.) Tj
+T* () Tj
+T* (Deliverable D: Training, SOP manual, and handover package due November 30, 2026.) Tj
+T* () Tj
+T* () Tj
+T* (5. PROCUREMENT MILESTONES) Tj
+T* (-------------------------) Tj
+T* (Deadline for supplier registration: May 28, 2026.) Tj
+T* () Tj
+T* (Deadline for clarification questions: June 3, 2026.) Tj
+T* () Tj
+T* (Deadline for proposal submission: June 17, 2026 12:00 ET.) Tj
+T* () Tj
+T* (Demonstration shortlist notification due: June 30, 2026.) Tj
+T* () Tj
+T* (Contract award decision expected: July 20, 2026.) Tj
+T* () Tj
+T* () Tj
+T* (6. COMMERCIAL TERMS) Tj
+T* (-------------------) Tj
+T* (Total not-to-exceed contract value is USD 4.5 million across 3 years.) Tj
+T* () Tj
+T* (The proposal must break down one-time implementation cost, annual support cost, and optional) Tj
+T* (enhancement catalog prices.) Tj
+T* () Tj
+T* (The city requires transparent unit costs for additional data connectors.) Tj
+T* () Tj
+T* (Price escalation above 3 percent annually is not acceptable unless tied to documented federal) Tj
+T* (inflation index changes.) Tj
+T* () Tj
+T* (Invoices are paid net 45 after acceptance checkpoints.) Tj
+T* () Tj
+T* () Tj
+T* (7. OPEN QUESTIONS) Tj
+T* (-----------------) Tj
+T* (TBD: scope for integration with future autonomous shuttle pilot.) Tj
+T* () Tj
+T* (Clarification requested: whether city legal team accepts offshore managed support during) Tj
+T* (non-business hours.) Tj
+T* () Tj
+T* (TBD: final data retention period for parking citation records if legal appeal is open.) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 627 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+() Tj
+T* (Clarification requested: required uptime target for public open data portal during planned) Tj
+T* (maintenance windows.) Tj
+T* () Tj
+T* () Tj
+T* (8. EVALUATION MODEL) Tj
+T* (-------------------) Tj
+T* (Technical approach is weighted 40 percent, delivery capability 20 percent, commercial value 25) Tj
+T* (percent, and local stakeholder engagement 15 percent.) Tj
+T* () Tj
+T* (Bidders must provide at least three public sector references with comparable scale.) Tj
+T* () Tj
+T* (Failure to provide mandatory cybersecurity attestations may lead to disqualification.) Tj
+T* () Tj
+T* () Tj
+ET
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000135 00000 n 
+0000000205 00000 n 
+0000000331 00000 n 
+0000002373 00000 n 
+0000002499 00000 n 
+0000004420 00000 n 
+0000004546 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+5223
+%%EOF
