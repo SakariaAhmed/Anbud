@@ -48,6 +48,58 @@ function normalizeConfidence(value: unknown): ConfidenceLevel {
   return "Medium";
 }
 
+function parseJsonLikeString(value: string): unknown {
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+    return value;
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function toReadableText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    const parsed = parseJsonLikeString(value);
+    if (parsed !== value) {
+      return toReadableText(parsed);
+    }
+    return value.trim();
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => `- ${toReadableText(item)}`).join("\n").trim();
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const lines: string[] = [];
+    for (const [rawKey, rawValue] of entries) {
+      const key = rawKey.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+      if (Array.isArray(rawValue)) {
+        lines.push(`${key}:`);
+        for (const item of rawValue) {
+          lines.push(`- ${toReadableText(item)}`);
+        }
+      } else if (typeof rawValue === "object" && rawValue !== null) {
+        lines.push(`${key}:`);
+        lines.push(toReadableText(rawValue));
+      } else {
+        lines.push(`${key}: ${toReadableText(rawValue)}`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n").trim();
+  }
+  return String(value);
+}
+
 export async function extractIntakeFromDocument(rawText: string): Promise<IntakeSuggestion> {
   const text = rawText.trim();
   if (!text) {
@@ -160,10 +212,13 @@ export async function answerBidQuestion(params: {
     });
 
     const payload = safeJson<Partial<ChatAnswer>>(completion.choices[0]?.message?.content ?? "{}", {});
+    const answerText = toReadableText(payload.answer);
     return {
-      answer: (payload.answer ?? "I could not derive a reliable answer from the provided context.").toString(),
+      answer: answerText || "I could not derive a reliable answer from the provided context.",
       confidence: normalizeConfidence(payload.confidence),
-      citations: Array.isArray(payload.citations) ? payload.citations.map((item) => String(item)) : []
+      citations: Array.isArray(payload.citations)
+        ? payload.citations.map((item) => toReadableText(item)).filter(Boolean)
+        : []
     };
   } catch {
     return fallbackChat(question, contextSections);
