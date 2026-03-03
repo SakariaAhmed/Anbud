@@ -69,7 +69,11 @@ function toReadableText(value: unknown): string {
     if (parsed !== value) {
       return toReadableText(parsed);
     }
-    return value.trim();
+    const trimmed = value.trim();
+    if (trimmed === "[object Object]") {
+      return "";
+    }
+    return trimmed;
   }
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
