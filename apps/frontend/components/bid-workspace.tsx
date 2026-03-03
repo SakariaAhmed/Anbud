@@ -28,6 +28,57 @@ interface ChatMessage {
   citations?: string[];
 }
 
+function parseJsonLikeString(value: string): unknown {
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+    return value;
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function toEventText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    const parsed = parseJsonLikeString(value);
+    if (parsed !== value) {
+      return toEventText(parsed);
+    }
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => `- ${toEventText(item)}`).join("\n");
+  }
+  if (typeof value === "object") {
+    const lines: string[] = [];
+    for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
+      const key = rawKey.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+      if (Array.isArray(rawValue)) {
+        lines.push(`${key}:`);
+        for (const item of rawValue) {
+          lines.push(`- ${toEventText(item)}`);
+        }
+      } else if (typeof rawValue === "object" && rawValue !== null) {
+        lines.push(`${key}:`);
+        lines.push(toEventText(rawValue));
+      } else {
+        lines.push(`${key}: ${toEventText(rawValue)}`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n").trim();
+  }
+  return String(value);
+}
+
 function toCustomRows(fields: Record<string, string>): CustomFieldRow[] {
   return Object.entries(fields).map(([key, value]) => ({
     id: `${key}-${Math.random().toString(16).slice(2)}`,
@@ -40,18 +91,18 @@ function parseChatMessages(events: BidEvent[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   for (const event of events) {
     if (event.type === "chat_question") {
-      const question = String(event.payload.question ?? "").trim();
+      const question = toEventText(event.payload.question ?? "").trim();
       if (question) {
         messages.push({ role: "user", text: question });
       }
     }
 
     if (event.type === "chat_answer") {
-      const answer = String(event.payload.answer ?? "").trim();
+      const answer = toEventText(event.payload.answer ?? "").trim();
       const confidence = String(event.payload.confidence ?? "").trim();
       const citationsPayload = event.payload.citations;
       const citations = Array.isArray(citationsPayload)
-        ? citationsPayload.map((item) => String(item)).filter(Boolean)
+        ? citationsPayload.map((item) => toEventText(item)).filter(Boolean)
         : [];
       if (answer) {
         messages.push({ role: "assistant", text: answer, confidence, citations });
@@ -86,10 +137,10 @@ function payloadValueToText(value: unknown): string {
     return "-";
   }
   if (Array.isArray(value)) {
-    return value.map((item) => String(item)).join(", ");
+    return value.map((item) => toEventText(item)).join(", ");
   }
   if (typeof value === "object") {
-    return JSON.stringify(value, null, 2);
+    return toEventText(value);
   }
   return String(value);
 }
@@ -98,14 +149,14 @@ function renderEventDetails(event: BidEvent): ReactNode {
   const payload = event.payload ?? {};
 
   if (event.type === "chat_question") {
-    return <p className="event-text">{String(payload.question ?? "No question content recorded.")}</p>;
+    return <p className="event-text">{toEventText(payload.question ?? "No question content recorded.")}</p>;
   }
 
   if (event.type === "chat_answer") {
-    const citations = Array.isArray(payload.citations) ? payload.citations.map((value) => String(value)).filter(Boolean) : [];
+    const citations = Array.isArray(payload.citations) ? payload.citations.map((value) => toEventText(value)).filter(Boolean) : [];
     return (
       <div className="event-answer">
-        <p className="event-text">{String(payload.answer ?? "No answer content recorded.")}</p>
+        <p className="event-text">{toEventText(payload.answer ?? "No answer content recorded.")}</p>
         {payload.confidence ? <small>Confidence: {String(payload.confidence)}</small> : null}
         {citations.length ? (
           <ul>
