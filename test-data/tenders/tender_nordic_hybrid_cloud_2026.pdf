@@ -1,0 +1,175 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 3 /Kids [ 4 0 R 6 0 R 8 0 R ] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 2236 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(RFP 2026: Nordic Utilities Hybrid Cloud Modernization Program) Tj
+T* () Tj
+T* (Document Type: Requirement Specification / Tender) Tj
+T* () Tj
+T* (1. BACKGROUND AND OBJECTIVE) Tj
+T* (---------------------------) Tj
+T* (Nordic Utilities intends to modernize its customer billing, outage management, and analytics) Tj
+T* (workloads into a hybrid cloud operating model during 2026-2028.) Tj
+T* () Tj
+T* (The selected vendor must deliver an Azure-centric target architecture while retaining selected) Tj
+T* (on-premise systems for regulatory and latency-sensitive operations.) Tj
+T* () Tj
+T* (The customer expects a phased migration with zero unplanned downtime for customer billing and) Tj
+T* (critical grid operations.) Tj
+T* () Tj
+T* () Tj
+T* (2. SCOPE OF WORK) Tj
+T* (----------------) Tj
+T* (Design, implement, and operate a hybrid landing zone including network segmentation, identity) Tj
+T* (federation, backup strategy, and disaster recovery runbooks.) Tj
+T* () Tj
+T* (Migrate 140 applications in three waves. Wave 1 shall include shared services, Wave 2 shall) Tj
+T* (include customer-facing workloads, and Wave 3 shall include analytics and archive systems.) Tj
+T* () Tj
+T* (The bidder must provide a 24/7 managed services model for platform operations, incident handling,) Tj
+T* (patching, and monthly performance reporting.) Tj
+T* () Tj
+T* () Tj
+T* (3. MANDATORY TECHNICAL REQUIREMENTS) Tj
+T* (-----------------------------------) Tj
+T* (The platform must support multi-region failover with an RTO of 60 minutes and an RPO of 15 minutes) Tj
+T* (for Tier-1 systems.) Tj
+T* () Tj
+T* (All production workloads shall use customer-managed keys for encryption at rest.) Tj
+T* () Tj
+T* (Identity management must integrate with existing Entra ID tenant and enforce conditional access.) Tj
+T* () Tj
+T* (The vendor shall implement Infrastructure as Code using Terraform, with all modules provided to) Tj
+T* (the customer repository.) Tj
+T* () Tj
+T* (Monitoring must include log analytics, distributed tracing, and proactive alerting with escalation) Tj
+T* (paths.) Tj
+T* () Tj
+T* (All environments must pass CIS benchmark hardening profiles and monthly vulnerability remediation) Tj
+T* (SLAs.) Tj
+T* () Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 1943 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+() Tj
+T* (4. DELIVERABLES) Tj
+T* (---------------) Tj
+T* (Deliverable D1: Current-state and target-state architecture pack due April 22, 2026.) Tj
+T* () Tj
+T* (Deliverable D2: Detailed migration plan per application wave due May 20, 2026.) Tj
+T* () Tj
+T* (Deliverable D3: Security and compliance controls matrix due June 5, 2026.) Tj
+T* () Tj
+T* (Deliverable D4: Wave 1 production cutover report due September 30, 2026.) Tj
+T* () Tj
+T* (Deliverable D5: Managed services transition package due December 10, 2026.) Tj
+T* () Tj
+T* () Tj
+T* (5. TIMELINE AND DEADLINES) Tj
+T* (-------------------------) Tj
+T* (Intent to Bid deadline: March 12, 2026 17:00 CET.) Tj
+T* () Tj
+T* (Clarification question deadline: March 19, 2026.) Tj
+T* () Tj
+T* (Customer answers to clarification questions due: March 26, 2026.) Tj
+T* () Tj
+T* (Final proposal submission deadline: April 9, 2026 15:00 CET.) Tj
+T* () Tj
+T* (Commercial negotiation round expected between April 20 and May 8, 2026.) Tj
+T* () Tj
+T* () Tj
+T* (6. COMMERCIAL CONSTRAINTS) Tj
+T* (-------------------------) Tj
+T* (Pricing must be provided as fixed implementation price plus monthly managed service fee.) Tj
+T* () Tj
+T* (The bidder shall include separate optional pricing for accelerated migration timeline \(minus 8) Tj
+T* (weeks\).) Tj
+T* () Tj
+T* (Year-1 budget ceiling is EUR 2.9 million inclusive of transition costs.) Tj
+T* () Tj
+T* (Payment terms are Net 60 and acceptance-linked milestones. Any deviation must be clearly stated.) Tj
+T* () Tj
+T* (Indexation model and currency assumptions must be transparent and bounded.) Tj
+T* () Tj
+T* () Tj
+T* (7. KNOWN UNCLEAR POINTS AND CLARIFICATION NEEDS) Tj
+T* (-----------------------------------------------) Tj
+T* (TBD: Final list of legacy Oracle workloads requiring refactoring instead of rehosting.) Tj
+T* () Tj
+T* (Clarification required: customer-owned SOC responsibilities versus vendor-managed SOC) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 678 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(responsibilities.) Tj
+T* () Tj
+T* (TBD: decision on whether OT-network telemetry may traverse shared cloud logging services.) Tj
+T* () Tj
+T* (Clarification required: acceptable penalty cap for SLA breach in first 12 months.) Tj
+T* () Tj
+T* () Tj
+T* (8. RISK NOTES PROVIDED BY CUSTOMER) Tj
+T* (----------------------------------) Tj
+T* (Potential merger activities in Q4 2026 may change application priority ordering.) Tj
+T* () Tj
+T* (Critical union blackout period from December 15, 2026 to January 5, 2027 prohibits major cutovers.) Tj
+T* () Tj
+T* (Dependency risk on third-party meter data provider API contract renewal.) Tj
+T* () Tj
+T* () Tj
+ET
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000135 00000 n 
+0000000205 00000 n 
+0000000331 00000 n 
+0000002618 00000 n 
+0000002744 00000 n 
+0000004738 00000 n 
+0000004864 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+5592
+%%EOF

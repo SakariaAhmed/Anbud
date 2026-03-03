@@ -1,0 +1,164 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 3 /Kids [ 4 0 R 6 0 R 8 0 R ] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 2017 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(Enterprise Tender: Helio Manufacturing ERP and FinOps Managed Services) Tj
+T* () Tj
+T* (Document Type: Requirement Specification / Tender) Tj
+T* () Tj
+T* (1. BUSINESS CONTEXT) Tj
+T* (-------------------) Tj
+T* (Helio Manufacturing is consolidating ERP operations after three acquisitions and requires a) Tj
+T* (managed services partner for SAP on Azure and adjacent integration services.) Tj
+T* () Tj
+T* (Current operating model has fragmented support contracts, inconsistent incident SLAs, and limited) Tj
+T* (cloud cost visibility.) Tj
+T* () Tj
+T* () Tj
+T* (2. SERVICES IN SCOPE) Tj
+T* (--------------------) Tj
+T* (24x7 monitoring and operations for SAP S/4HANA production and non-production environments.) Tj
+T* () Tj
+T* (Application management services for incident, problem, change, release, and minor enhancement) Tj
+T* (cycles.) Tj
+T* () Tj
+T* (FinOps governance including tagging compliance, anomaly detection, and monthly cost optimization) Tj
+T* (recommendations.) Tj
+T* () Tj
+T* (The bidder shall provide quarterly architecture review boards and optimization roadmaps.) Tj
+T* () Tj
+T* () Tj
+T* (3. SERVICE LEVEL REQUIREMENTS) Tj
+T* (-----------------------------) Tj
+T* (P1 incidents must be acknowledged within 10 minutes and resolved or mitigated within 2 hours.) Tj
+T* () Tj
+T* (P2 incidents shall be acknowledged within 30 minutes and resolved within 8 hours.) Tj
+T* () Tj
+T* (Monthly service availability must be at least 99.95 percent for production ERP workloads.) Tj
+T* () Tj
+T* (The vendor must deliver RCA documents for all P1 and recurring P2 incidents within five business) Tj
+T* (days.) Tj
+T* () Tj
+T* () Tj
+T* (4. TRANSITION REQUIREMENTS) Tj
+T* (--------------------------) Tj
+T* (Transition plan must include knowledge transfer from incumbent providers, access onboarding, and) Tj
+T* (CMDB reconciliation.) Tj
+T* () Tj
+T* (The bidder shall provide a named transition manager and weekly steering committee updates during) Tj
+T* (first 12 weeks.) Tj
+T* () Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 2031 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(Dual-run with incumbent support is required for a minimum of four weeks.) Tj
+T* () Tj
+T* () Tj
+T* (5. DELIVERABLES AND DUE DATES) Tj
+T* (-----------------------------) Tj
+T* (Deliverable T1: Transition and governance blueprint due September 4, 2026.) Tj
+T* () Tj
+T* (Deliverable T2: Signed operational runbook catalog due September 25, 2026.) Tj
+T* () Tj
+T* (Deliverable T3: Service acceptance and KPI baseline report due October 30, 2026.) Tj
+T* () Tj
+T* (Deliverable T4: First FinOps optimization report due November 20, 2026.) Tj
+T* () Tj
+T* () Tj
+T* (6. COMMERCIAL AND CONTRACTUAL CONSTRAINTS) Tj
+T* (-----------------------------------------) Tj
+T* (Pricing must include fixed monthly base fee and variable components tied to ticket volume bands.) Tj
+T* () Tj
+T* (Bidder shall state one-time transition fee separately from steady-state operations fee.) Tj
+T* () Tj
+T* (Contract term is 36 months with two optional one-year extensions.) Tj
+T* () Tj
+T* (Customer target cost envelope is USD 6.8 million across base term.) Tj
+T* () Tj
+T* (Any proposed limitation-of-liability clause must include carve-outs for gross negligence and data) Tj
+T* (breach obligations.) Tj
+T* () Tj
+T* () Tj
+T* (7. CLARIFICATION TOPICS) Tj
+T* (-----------------------) Tj
+T* (Clarification required: expected ownership split for SAP Basis patching versus application-level) Tj
+T* (regression validation.) Tj
+T* () Tj
+T* (TBD: whether Mexico manufacturing site is included in phase 1 transition or phase 2.) Tj
+T* () Tj
+T* (Clarification required: customer preference for onshore versus blended service desk model.) Tj
+T* () Tj
+T* (TBD: final internal policy for weekend transport approvals during peak production months.) Tj
+T* () Tj
+T* () Tj
+T* (8. RISK AND DEPENDENCY REGISTER) Tj
+T* (-------------------------------) Tj
+T* (High dependency on incumbent provider cooperation during credentials and script handover.) Tj
+T* () Tj
+T* (Risk that inconsistent asset tagging may delay first FinOps baseline.) Tj
+T* () Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 222 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(Potential scope expansion from acquisitions expected in early 2027.) Tj
+T* () Tj
+T* (Seasonal blackout period in late November and December limits production changes.) Tj
+T* () Tj
+T* () Tj
+ET
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000135 00000 n 
+0000000205 00000 n 
+0000000331 00000 n 
+0000002399 00000 n 
+0000002525 00000 n 
+0000004607 00000 n 
+0000004733 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+5005
+%%EOF

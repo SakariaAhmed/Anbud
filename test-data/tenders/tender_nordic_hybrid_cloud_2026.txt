@@ -1,0 +1,102 @@
+RFP 2026: Nordic Utilities Hybrid Cloud Modernization Program
+
+Document Type: Requirement Specification / Tender
+
+1. BACKGROUND AND OBJECTIVE
+---------------------------
+
+Nordic Utilities intends to modernize its customer billing, outage management, and analytics workloads into a hybrid cloud operating model during 2026-2028.
+
+The selected vendor must deliver an Azure-centric target architecture while retaining selected on-premise systems for regulatory and latency-sensitive operations.
+
+The customer expects a phased migration with zero unplanned downtime for customer billing and critical grid operations.
+
+
+2. SCOPE OF WORK
+----------------
+
+Design, implement, and operate a hybrid landing zone including network segmentation, identity federation, backup strategy, and disaster recovery runbooks.
+
+Migrate 140 applications in three waves. Wave 1 shall include shared services, Wave 2 shall include customer-facing workloads, and Wave 3 shall include analytics and archive systems.
+
+The bidder must provide a 24/7 managed services model for platform operations, incident handling, patching, and monthly performance reporting.
+
+
+3. MANDATORY TECHNICAL REQUIREMENTS
+-----------------------------------
+
+The platform must support multi-region failover with an RTO of 60 minutes and an RPO of 15 minutes for Tier-1 systems.
+
+All production workloads shall use customer-managed keys for encryption at rest.
+
+Identity management must integrate with existing Entra ID tenant and enforce conditional access.
+
+The vendor shall implement Infrastructure as Code using Terraform, with all modules provided to the customer repository.
+
+Monitoring must include log analytics, distributed tracing, and proactive alerting with escalation paths.
+
+All environments must pass CIS benchmark hardening profiles and monthly vulnerability remediation SLAs.
+
+
+4. DELIVERABLES
+---------------
+
+Deliverable D1: Current-state and target-state architecture pack due April 22, 2026.
+
+Deliverable D2: Detailed migration plan per application wave due May 20, 2026.
+
+Deliverable D3: Security and compliance controls matrix due June 5, 2026.
+
+Deliverable D4: Wave 1 production cutover report due September 30, 2026.
+
+Deliverable D5: Managed services transition package due December 10, 2026.
+
+
+5. TIMELINE AND DEADLINES
+-------------------------
+
+Intent to Bid deadline: March 12, 2026 17:00 CET.
+
+Clarification question deadline: March 19, 2026.
+
+Customer answers to clarification questions due: March 26, 2026.
+
+Final proposal submission deadline: April 9, 2026 15:00 CET.
+
+Commercial negotiation round expected between April 20 and May 8, 2026.
+
+
+6. COMMERCIAL CONSTRAINTS
+-------------------------
+
+Pricing must be provided as fixed implementation price plus monthly managed service fee.
+
+The bidder shall include separate optional pricing for accelerated migration timeline (minus 8 weeks).
+
+Year-1 budget ceiling is EUR 2.9 million inclusive of transition costs.
+
+Payment terms are Net 60 and acceptance-linked milestones. Any deviation must be clearly stated.
+
+Indexation model and currency assumptions must be transparent and bounded.
+
+
+7. KNOWN UNCLEAR POINTS AND CLARIFICATION NEEDS
+-----------------------------------------------
+
+TBD: Final list of legacy Oracle workloads requiring refactoring instead of rehosting.
+
+Clarification required: customer-owned SOC responsibilities versus vendor-managed SOC responsibilities.
+
+TBD: decision on whether OT-network telemetry may traverse shared cloud logging services.
+
+Clarification required: acceptable penalty cap for SLA breach in first 12 months.
+
+
+8. RISK NOTES PROVIDED BY CUSTOMER
+----------------------------------
+
+Potential merger activities in Q4 2026 may change application priority ordering.
+
+Critical union blackout period from December 15, 2026 to January 5, 2027 prohibits major cutovers.
+
+Dependency risk on third-party meter data provider API contract renewal.

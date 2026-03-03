@@ -1,0 +1,94 @@
+Enterprise Tender: Helio Manufacturing ERP and FinOps Managed Services
+
+Document Type: Requirement Specification / Tender
+
+1. BUSINESS CONTEXT
+-------------------
+
+Helio Manufacturing is consolidating ERP operations after three acquisitions and requires a managed services partner for SAP on Azure and adjacent integration services.
+
+Current operating model has fragmented support contracts, inconsistent incident SLAs, and limited cloud cost visibility.
+
+
+2. SERVICES IN SCOPE
+--------------------
+
+24x7 monitoring and operations for SAP S/4HANA production and non-production environments.
+
+Application management services for incident, problem, change, release, and minor enhancement cycles.
+
+FinOps governance including tagging compliance, anomaly detection, and monthly cost optimization recommendations.
+
+The bidder shall provide quarterly architecture review boards and optimization roadmaps.
+
+
+3. SERVICE LEVEL REQUIREMENTS
+-----------------------------
+
+P1 incidents must be acknowledged within 10 minutes and resolved or mitigated within 2 hours.
+
+P2 incidents shall be acknowledged within 30 minutes and resolved within 8 hours.
+
+Monthly service availability must be at least 99.95 percent for production ERP workloads.
+
+The vendor must deliver RCA documents for all P1 and recurring P2 incidents within five business days.
+
+
+4. TRANSITION REQUIREMENTS
+--------------------------
+
+Transition plan must include knowledge transfer from incumbent providers, access onboarding, and CMDB reconciliation.
+
+The bidder shall provide a named transition manager and weekly steering committee updates during first 12 weeks.
+
+Dual-run with incumbent support is required for a minimum of four weeks.
+
+
+5. DELIVERABLES AND DUE DATES
+-----------------------------
+
+Deliverable T1: Transition and governance blueprint due September 4, 2026.
+
+Deliverable T2: Signed operational runbook catalog due September 25, 2026.
+
+Deliverable T3: Service acceptance and KPI baseline report due October 30, 2026.
+
+Deliverable T4: First FinOps optimization report due November 20, 2026.
+
+
+6. COMMERCIAL AND CONTRACTUAL CONSTRAINTS
+-----------------------------------------
+
+Pricing must include fixed monthly base fee and variable components tied to ticket volume bands.
+
+Bidder shall state one-time transition fee separately from steady-state operations fee.
+
+Contract term is 36 months with two optional one-year extensions.
+
+Customer target cost envelope is USD 6.8 million across base term.
+
+Any proposed limitation-of-liability clause must include carve-outs for gross negligence and data breach obligations.
+
+
+7. CLARIFICATION TOPICS
+-----------------------
+
+Clarification required: expected ownership split for SAP Basis patching versus application-level regression validation.
+
+TBD: whether Mexico manufacturing site is included in phase 1 transition or phase 2.
+
+Clarification required: customer preference for onshore versus blended service desk model.
+
+TBD: final internal policy for weekend transport approvals during peak production months.
+
+
+8. RISK AND DEPENDENCY REGISTER
+-------------------------------
+
+High dependency on incumbent provider cooperation during credentials and script handover.
+
+Risk that inconsistent asset tagging may delay first FinOps baseline.
+
+Potential scope expansion from acquisitions expected in early 2027.
+
+Seasonal blackout period in late November and December limits production changes.
