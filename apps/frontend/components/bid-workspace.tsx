@@ -79,6 +79,42 @@ function toEventText(value: unknown): string {
   return String(value);
 }
 
+function normalizePossiblyBrokenText(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed === "[object Object]") {
+    return "";
+  }
+  return trimmed;
+}
+
+function extractChatAnswerText(payload: Record<string, unknown>): string {
+  const directCandidates: unknown[] = [payload.answer, payload.text, payload.message, payload.summary];
+  for (const candidate of directCandidates) {
+    const text = normalizePossiblyBrokenText(toEventText(candidate));
+    if (text) {
+      return text;
+    }
+  }
+
+  const nestedCandidates: unknown[] = [
+    (payload.result as Record<string, unknown> | undefined)?.answer,
+    (payload.response as Record<string, unknown> | undefined)?.answer,
+    payload.result,
+    payload.response
+  ];
+  for (const candidate of nestedCandidates) {
+    const text = normalizePossiblyBrokenText(toEventText(candidate));
+    if (text) {
+      return text;
+    }
+  }
+
+  return "";
+}
+
 function toCustomRows(fields: Record<string, string>): CustomFieldRow[] {
   return Object.entries(fields).map(([key, value]) => ({
     id: `${key}-${Math.random().toString(16).slice(2)}`,
@@ -98,7 +134,7 @@ function parseChatMessages(events: BidEvent[]): ChatMessage[] {
     }
 
     if (event.type === "chat_answer") {
-      const answer = toEventText(event.payload.answer ?? "").trim();
+      const answer = extractChatAnswerText(event.payload ?? {});
       const confidence = String(event.payload.confidence ?? "").trim();
       const citationsPayload = event.payload.citations;
       const citations = Array.isArray(citationsPayload)
@@ -106,6 +142,13 @@ function parseChatMessages(events: BidEvent[]): ChatMessage[] {
         : [];
       if (answer) {
         messages.push({ role: "assistant", text: answer, confidence, citations });
+      } else {
+        messages.push({
+          role: "assistant",
+          text: "This answer was stored in an unreadable format. Ask the question again to regenerate a clean response.",
+          confidence,
+          citations
+        });
       }
     }
   }
@@ -154,9 +197,12 @@ function renderEventDetails(event: BidEvent): ReactNode {
 
   if (event.type === "chat_answer") {
     const citations = Array.isArray(payload.citations) ? payload.citations.map((value) => toEventText(value)).filter(Boolean) : [];
+    const answerText =
+      extractChatAnswerText(payload) ||
+      "This answer was stored in an unreadable format. Ask the question again to regenerate a clean response.";
     return (
       <div className="event-answer">
-        <p className="event-text">{toEventText(payload.answer ?? "No answer content recorded.")}</p>
+        <p className="event-text">{answerText}</p>
         {payload.confidence ? <small>Confidence: {String(payload.confidence)}</small> : null}
         {citations.length ? (
           <ul>
