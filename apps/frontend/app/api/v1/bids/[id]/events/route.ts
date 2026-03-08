@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getBidOrThrow, mapEvent } from "@/lib/server/bids-db";
+import { mapEvent } from "@/lib/server/bids-db";
 import { tenantIdFromHeaders } from "@/lib/server/headers";
 import { createServiceClient } from "@/lib/server/supabase";
 
@@ -11,15 +11,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const { id } = await context.params;
   const supabase = createServiceClient();
 
-  try {
-    await getBidOrThrow(tenantId, id);
-  } catch {
-    return NextResponse.json({ detail: "Bid not found" }, { status: 404 });
-  }
-
   const { data, error } = await supabase
     .from("bid_events")
-    .select("*")
+    .select("id, timestamp, user_name, type, payload")
     .eq("tenant_id", tenantId)
     .eq("bid_id", id)
     .order("timestamp", { ascending: true });

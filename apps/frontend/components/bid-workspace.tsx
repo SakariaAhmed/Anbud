@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, ReactNode, useMemo, useState } from "react";
 
 import { Bid, BidChatResponse, BidDocument, BidEvent, BidNote } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const API_BASE = "";
 
 type SectionKey = "overview" | "chat" | "events" | "documents" | "notes";
 const SECTION_OPTIONS: Array<{ key: SectionKey; label: string }> = [
@@ -88,6 +88,14 @@ function normalizePossiblyBrokenText(value: string): string {
     return "";
   }
   return trimmed;
+}
+
+function sanitizeRenderedText(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "[object Object]") {
+    return "This answer was stored in an unreadable format. Ask the question again to regenerate a clean response.";
+  }
+  return value;
 }
 
 function extractChatAnswerText(payload: Record<string, unknown>): string {
@@ -630,7 +638,7 @@ export function BidWorkspace({
                 <div className={`chat-row ${message.role}`} key={`${message.role}-${index}`}>
                   <div className={`chat-avatar ${message.role}`}>{message.role === "assistant" ? "AI" : "You"}</div>
                   <div className={`chat-bubble chat-${message.role}`}>
-                    <p>{message.text}</p>
+                    <p>{sanitizeRenderedText(message.text)}</p>
                     {message.role === "assistant" && message.confidence ? <small>Confidence: {message.confidence}</small> : null}
                     {message.role === "assistant" && message.citations?.length ? (
                       <ul>

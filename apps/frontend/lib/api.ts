@@ -1,4 +1,4 @@
-import { Bid, BidDocument, BidEvent, BidNote } from "@/lib/types";
+import { Bid, BidDocument, BidEvent, BidNote, BidWorkspaceData } from "@/lib/types";
 
 const API_BASE = process.env.API_SERVER_BASE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? process.env.URL ?? "http://localhost:3000";
 
@@ -35,4 +35,8 @@ export async function getBidEvents(bidId: string): Promise<BidEvent[]> {
 
 export async function getBidNotes(bidId: string): Promise<BidNote[]> {
   return fetchJson<BidNote[]>(`/api/v1/bids/${bidId}/notes`);
+}
+
+export async function getBidWorkspace(bidId: string): Promise<BidWorkspaceData> {
+  return fetchJson<BidWorkspaceData>(`/api/v1/bids/${bidId}/workspace`);
 }

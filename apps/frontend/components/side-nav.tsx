@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { Bid } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const API_BASE = "";
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") {
@@ -24,18 +24,17 @@ export function SideNav() {
 
     async function loadRecentBids() {
       try {
-        const response = await fetch(`${API_BASE}/api/v1/bids`, {
+        const response = await fetch(`${API_BASE}/api/v1/bids?limit=6`, {
           headers: {
             "x-tenant-id": "default"
-          },
-          cache: "no-store"
+          }
         });
         if (!response.ok) {
           return;
         }
         const items = (await response.json()) as Bid[];
         if (!cancelled) {
-          setRecentBids(items.slice(0, 6));
+          setRecentBids(items);
         }
       } catch {
         if (!cancelled) {
@@ -48,7 +47,7 @@ export function SideNav() {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, []);
 
   return (
     <aside className="side-nav" aria-label="Primary">

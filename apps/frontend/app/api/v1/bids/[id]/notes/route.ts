@@ -11,15 +11,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const { id } = await context.params;
   const supabase = createServiceClient();
 
-  try {
-    await getBidOrThrow(tenantId, id);
-  } catch {
-    return NextResponse.json({ detail: "Bid not found" }, { status: 404 });
-  }
-
   const { data, error } = await supabase
     .from("bid_notes")
-    .select("*")
+    .select("id, content, user_name, created_at")
     .eq("tenant_id", tenantId)
     .eq("bid_id", id)
     .order("created_at", { ascending: false });
