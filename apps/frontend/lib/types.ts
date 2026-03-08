@@ -41,6 +41,13 @@ export interface BidChatResponse {
   citations: string[];
 }
 
+export interface BidWorkspaceData {
+  bid: Bid;
+  documents: BidDocument[];
+  events: BidEvent[];
+  notes: BidNote[];
+}
+
 export interface BidIntakeSuggestion {
   customer_name: string;
   title: string;
