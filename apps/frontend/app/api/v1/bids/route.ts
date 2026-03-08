@@ -15,12 +15,19 @@ function defaultDeadlineIso(): string {
 export async function GET(request: NextRequest) {
   const tenantId = tenantIdFromHeaders(request.headers);
   const supabase = createServiceClient();
+  const limitParam = Number(request.nextUrl.searchParams.get("limit"));
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 200) : null;
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("bids")
     .select("*")
     .eq("tenant_id", tenantId)
     .order("updated_at", { ascending: false });
+  if (limit) {
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 500 });
