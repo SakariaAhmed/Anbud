@@ -3,6 +3,7 @@ import { IBM_Plex_Sans, Oswald } from "next/font/google";
 import type { ReactNode } from "react";
 
 import { SideNav } from "@/components/side-nav";
+import { getRecentBidsForPage } from "@/lib/server/bid-reads";
 
 import "./globals.css";
 
@@ -23,12 +24,14 @@ export const metadata: Metadata = {
   description: "Simple bid workspace with document-grounded AI chat"
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const recentBids = await getRecentBidsForPage();
+
   return (
     <html lang="en">
       <body className={`${display.variable} ${body.variable}`}>
         <div className="app-shell">
-          <SideNav />
+          <SideNav recentBids={recentBids} />
           <main className="page-content">{children}</main>
         </div>
       </body>

@@ -18,7 +18,16 @@ export interface IntakeSuggestion {
 export interface ChatAnswer {
   answer: string;
   confidence: ConfidenceLevel;
-  citations: string[];
+  citations: Array<{ document_name: string | null; excerpt: string }>;
+}
+
+export interface RequirementSuggestion {
+  title: string;
+  detail: string;
+  category: string;
+  priority: "Low" | "Medium" | "High";
+  source_excerpt: string;
+  source_document: string | null;
 }
 
 let cachedClient: OpenAI | null | undefined;
@@ -42,6 +51,13 @@ function safeJson<T>(raw: string, fallback: T): T {
 }
 
 function normalizeConfidence(value: unknown): ConfidenceLevel {
+  if (value === "High" || value === "Medium" || value === "Low") {
+    return value;
+  }
+  return "Medium";
+}
+
+function normalizePriority(value: unknown): "Low" | "Medium" | "High" {
   if (value === "High" || value === "Medium" || value === "Low") {
     return value;
   }
@@ -160,7 +176,7 @@ export async function extractIntakeFromDocument(rawText: string): Promise<Intake
 
 export async function answerBidQuestion(params: {
   question: string;
-  documentTexts: string[];
+  documents: Array<{ fileName: string; rawText: string }>;
   bidContext: Record<string, string>;
 }): Promise<ChatAnswer> {
   const question = params.question.trim();
@@ -170,17 +186,17 @@ export async function answerBidQuestion(params: {
 
   const contextSections: string[] = [];
   let totalChars = 0;
-  for (let i = 0; i < params.documentTexts.length; i += 1) {
-    const snippet = params.documentTexts[i].slice(0, 3500);
+  for (let i = 0; i < params.documents.length; i += 1) {
+    const snippet = params.documents[i].rawText.slice(0, 3500);
     if (totalChars + snippet.length > 22000) {
       break;
     }
     totalChars += snippet.length;
-    contextSections.push(`Document ${i + 1}:\n${snippet}`);
+    contextSections.push(`Source file: ${params.documents[i].fileName}\n${snippet}`);
   }
   contextSections.push(`Bid metadata:\n${JSON.stringify(params.bidContext)}`);
 
-  if (!params.documentTexts.length) {
+  if (!params.documents.length) {
     return {
       answer: "No document context is available for this bid yet. Upload a requirement document first.",
       confidence: "Low",
@@ -190,7 +206,7 @@ export async function answerBidQuestion(params: {
 
   const client = getClient();
   if (!client) {
-    return fallbackChat(question, contextSections);
+    return fallbackChat(question, params.documents);
   }
 
   try {
@@ -209,23 +225,110 @@ export async function answerBidQuestion(params: {
           role: "user",
           content:
             "Answer using only context. Use clear sections and actionable bullets when useful. " +
-            "Return strict JSON with keys: answer, confidence, citations. confidence must be Low/Medium/High.\n\n" +
+            "Return strict JSON with keys: answer, confidence, citations. " +
+            "answer must be a plain text string, never an object or array. " +
+            "confidence must be Low/Medium/High. " +
+            "citations must be an array of objects with keys document_name and excerpt. " +
+            "document_name should be the exact source file name when possible. excerpt should be a short supporting quote or passage.\n\n" +
             `Question:\n${question}\n\nContext:\n${contextSections.join("\n\n")}`
         }
       ]
     });
 
-    const payload = safeJson<Partial<ChatAnswer>>(completion.choices[0]?.message?.content ?? "{}", {});
+    const payload = safeJson<
+      Partial<ChatAnswer> & { citations?: Array<{ document_name?: unknown; excerpt?: unknown }> }
+    >(completion.choices[0]?.message?.content ?? "{}", {});
     const answerText = toReadableText(payload.answer);
     return {
       answer: answerText || "I could not derive a reliable answer from the provided context.",
       confidence: normalizeConfidence(payload.confidence),
       citations: Array.isArray(payload.citations)
-        ? payload.citations.map((item) => toReadableText(item)).filter(Boolean)
+        ? payload.citations
+            .map((item) => ({
+              document_name: toReadableText(item.document_name).slice(0, 160) || null,
+              excerpt: toReadableText(item.excerpt).slice(0, 500)
+            }))
+            .filter((item) => item.excerpt)
         : []
     };
   } catch {
-    return fallbackChat(question, contextSections);
+    return fallbackChat(question, params.documents);
+  }
+}
+
+export async function extractBidRequirements(params: {
+  documentTexts: string[];
+  bidContext: Record<string, string>;
+}): Promise<RequirementSuggestion[]> {
+  const contextSections: string[] = [];
+  let totalChars = 0;
+
+  for (let i = 0; i < params.documentTexts.length; i += 1) {
+    const snippet = params.documentTexts[i].slice(0, 5000);
+    if (totalChars + snippet.length > 26000) {
+      break;
+    }
+    totalChars += snippet.length;
+    contextSections.push(`Document ${i + 1}:\n${snippet}`);
+  }
+
+  if (!contextSections.length) {
+    return [];
+  }
+
+  contextSections.push(`Bid metadata:\n${JSON.stringify(params.bidContext)}`);
+
+  const client = getClient();
+  if (!client) {
+    return fallbackRequirements(contextSections);
+  }
+
+  try {
+    const completion = await client.chat.completions.create({
+      model: getOpenAiModel(),
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You extract tender requirements from uploaded bid documents. " +
+            "Return strict JSON only. Keep requirement titles short and concrete. " +
+            "Titles should summarize the requirement, not copy full paragraphs. " +
+            "detail and source_excerpt must always be plain text strings. " +
+            "If a source file name is present in the context, source_document must use that exact file name."
+        },
+        {
+          role: "user",
+          content:
+            "Review all provided document context and extract the concrete requirements the bid team must respond to. " +
+            "Return strict JSON with a single key requirements. requirements must be an array of objects with keys: " +
+            "title, detail, category, priority, source_excerpt, source_document. " +
+            "priority must be Low, Medium, or High. source_document should be the actual source file name when available, otherwise null.\n\n" +
+            `Context:\n${contextSections.join("\n\n")}`
+        }
+      ]
+    });
+
+    const payload = safeJson<{ requirements?: Array<Partial<RequirementSuggestion>> }>(
+      completion.choices[0]?.message?.content ?? "{}",
+      {}
+    );
+
+    const requirements = Array.isArray(payload.requirements) ? payload.requirements : [];
+    return requirements
+      .map((item) => ({
+        title: toReadableText(item.title).slice(0, 160),
+        detail: toReadableText(item.detail).slice(0, 2000),
+        category: toReadableText(item.category).slice(0, 120) || "General",
+        priority: normalizePriority(item.priority),
+        source_excerpt: toReadableText(item.source_excerpt).slice(0, 800),
+        source_document: toReadableText(item.source_document).slice(0, 120) || null
+      }))
+      .filter((item) => item.title && item.detail)
+      .slice(0, 40);
+  } catch {
+    return fallbackRequirements(contextSections);
   }
 }
 
@@ -258,15 +361,18 @@ function fallbackIntake(rawText: string): IntakeSuggestion {
   };
 }
 
-function fallbackChat(question: string, contextSections: string[]): ChatAnswer {
-  const lines = contextSections
-    .flatMap((section) => section.split("\n"))
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("Document") && !line.startsWith("Bid metadata"));
+function fallbackChat(question: string, documents: Array<{ fileName: string; rawText: string }>): ChatAnswer {
+  const lines = documents.flatMap((document) =>
+    document.rawText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => ({ line, fileName: document.fileName }))
+  );
 
   const questionTerms = Array.from(new Set((question.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter(Boolean)));
 
-  const picks = lines.filter((line) => questionTerms.some((term) => line.toLowerCase().includes(term))).slice(0, 6);
+  const picks = lines.filter((item) => questionTerms.some((term) => item.line.toLowerCase().includes(term))).slice(0, 6);
   const highlights = picks.length ? picks : lines.slice(0, 5);
 
   if (!highlights.length) {
@@ -282,7 +388,7 @@ function fallbackChat(question: string, contextSections: string[]): ChatAnswer {
     "The uploaded material points to a practical delivery-focused bid with clear timeline and compliance expectations.",
     "",
     "Relevant points from the document:",
-    ...highlights.slice(0, 5).map((item) => `- ${item}`),
+    ...highlights.slice(0, 5).map((item) => `- ${item.line}`),
     "",
     "Recommended next actions:",
     "1. Build a requirement-to-solution coverage matrix and assign an owner per requirement.",
@@ -293,6 +399,34 @@ function fallbackChat(question: string, contextSections: string[]): ChatAnswer {
   return {
     answer,
     confidence: highlights.length >= 4 ? "High" : "Medium",
-    citations: highlights.slice(0, 5)
+    citations: highlights.slice(0, 5).map((item) => ({
+      document_name: item.fileName,
+      excerpt: item.line
+    }))
   };
+}
+
+function fallbackRequirements(contextSections: string[]): RequirementSuggestion[] {
+  const lines = contextSections
+    .flatMap((section) => section.split("\n"))
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("Document") && !line.startsWith("Bid metadata"));
+
+  return lines
+    .filter((line) => /must|shall|required|requirement|needs to|expected to/i.test(line))
+    .slice(0, 20)
+    .map((line) => ({
+      title: line.slice(0, 100),
+      detail: line,
+      category: /security|identity|encrypt|mfa/i.test(line)
+        ? "Security"
+        : /price|cost|commercial|budget/i.test(line)
+          ? "Commercial"
+          : /support|sla|incident|service/i.test(line)
+            ? "Service"
+            : "General",
+      priority: /must|shall|required/i.test(line) ? "High" : "Medium",
+      source_excerpt: line,
+      source_document: null
+    }));
 }

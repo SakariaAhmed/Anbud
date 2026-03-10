@@ -61,7 +61,7 @@ Environment variables to set in Netlify:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `OPENAI_API_KEY`
-- `OPENAI_MODEL` (optional, default `gpt-4o-mini`)
+- `OPENAI_MODEL` (optional, default `gpt-5-mini`)
 - `NEXT_PUBLIC_API_BASE_URL` (leave empty for same-origin)
 - `NEXT_PUBLIC_SITE_URL` (your site URL)
 

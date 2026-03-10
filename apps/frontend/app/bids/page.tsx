@@ -1,8 +1,8 @@
 import { BidList } from "@/components/bid-list";
-import { getBids } from "@/lib/api";
+import { getBidsForPage } from "@/lib/server/bid-reads";
 
 export default async function BidsPage() {
-  const bids = await getBids();
+  const bids = await getBidsForPage();
 
   return (
     <div className="content-stack">

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 
-import { getBidOrThrow, mapNote, touchBidActivity } from "@/lib/server/bids-db";
-import { actorFromHeaders, tenantIdFromHeaders } from "@/lib/server/headers";
+import { getBidOrThrow, mapDecision, touchBidActivity } from "@/lib/server/bids-db";
+import { tenantIdFromHeaders } from "@/lib/server/headers";
 import { createServiceClient } from "@/lib/server/supabase";
 
 export const runtime = "nodejs";
@@ -15,23 +15,22 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 200) : 50;
 
   const { data, error } = await supabase
-    .from("bid_notes")
-    .select("id, content, user_name, created_at")
+    .from("bid_decisions")
+    .select("*")
     .eq("tenant_id", tenantId)
     .eq("bid_id", id)
-    .order("created_at", { ascending: false })
+    .order("decided_at", { ascending: false })
     .limit(limit);
 
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 500 });
   }
 
-  return NextResponse.json((data ?? []).map((row) => mapNote(row as never)));
+  return NextResponse.json((data ?? []).map((row) => mapDecision(row as never)));
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const tenantId = tenantIdFromHeaders(request.headers);
-  const actor = actorFromHeaders(request.headers);
   const { id } = await context.params;
   const supabase = createServiceClient();
 
@@ -48,18 +47,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     return NextResponse.json({ detail: "Invalid JSON payload" }, { status: 400 });
   }
 
-  const content = String(payload.content ?? "").trim();
-  if (!content) {
-    return NextResponse.json({ detail: "Note content cannot be empty" }, { status: 422 });
+  const title = String(payload.title ?? "").trim();
+  const details = String(payload.details ?? "").trim();
+  if (!title) {
+    return NextResponse.json({ detail: "Decision title is required" }, { status: 422 });
   }
 
+  const decidedAt = String(payload.decided_at ?? "").trim() || new Date().toISOString();
+
   const { data, error } = await supabase
-    .from("bid_notes")
+    .from("bid_decisions")
     .insert({
       tenant_id: tenantId,
       bid_id: id,
-      content,
-      user_name: actor
+      title,
+      details,
+      decided_at: decidedAt
     })
     .select("*")
     .single();
@@ -71,5 +74,5 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   await touchBidActivity(tenantId, id);
   revalidateTag("bids");
   revalidateTag(`bid:${id}`);
-  return NextResponse.json(mapNote(data as never), { status: 201 });
+  return NextResponse.json(mapDecision(data as never), { status: 201 });
 }

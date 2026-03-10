@@ -1,5 +1,4 @@
-import Link from "next/link";
-
+import { PrefetchLink } from "@/components/prefetch-link";
 import { Bid } from "@/lib/types";
 
 export function BidList({ bids }: { bids: Bid[] }) {
@@ -23,9 +22,9 @@ export function BidList({ bids }: { bids: Bid[] }) {
           {bids.map((bid) => (
             <tr key={bid.id}>
               <td>
-                <Link className="table-link" href={`/bids/${bid.id}`}>
+                <PrefetchLink className="table-link" href={`/bids/${bid.id}`} workspaceBidId={bid.id}>
                   {bid.customer_name}
-                </Link>
+                </PrefetchLink>
               </td>
               <td>{bid.title}</td>
               <td>{bid.deadline}</td>

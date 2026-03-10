@@ -21,5 +21,5 @@ export function getOpenAiApiKey(): string {
 }
 
 export function getOpenAiModel(): string {
-  return process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  return process.env.OPENAI_MODEL ?? "gpt-5-mini";
 }
