@@ -2,7 +2,7 @@ export interface Bid {
   id: string;
   customer_name: string;
   title: string;
-  estimated_value: string | null;
+  estimated_value: number | string | null;
   deadline: string;
   owner: string;
   custom_fields: Record<string, string>;
@@ -15,6 +15,7 @@ export interface BidDocument {
   file_name: string;
   content_type: string;
   status: string;
+  preview_text?: string;
   created_at: string;
 }
 
@@ -25,6 +26,22 @@ export interface BidNote {
   created_at: string;
 }
 
+export type RequirementStatus = "Open" | "In Progress" | "Covered";
+
+export interface BidRequirement {
+  id: string;
+  title: string;
+  detail: string;
+  category: string;
+  priority: "Low" | "Medium" | "High";
+  status: RequirementStatus;
+  source_excerpt: string;
+  source_document: string | null;
+  completion_notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type BidEventType = "bid_created" | "document_uploaded" | "chat_question" | "chat_answer";
 
 export interface BidEvent {
@@ -32,20 +49,59 @@ export interface BidEvent {
   timestamp: string;
   user: string;
   type: BidEventType;
-  payload: Record<string, string | number | boolean | string[] | null>;
+  payload: Record<string, unknown>;
+}
+
+export interface ChatCitation {
+  document_name: string | null;
+  excerpt: string;
 }
 
 export interface BidChatResponse {
   answer: string;
   confidence: "Low" | "Medium" | "High";
-  citations: string[];
+  citations: ChatCitation[];
+  question_event?: BidEvent;
+  answer_event?: BidEvent;
 }
 
-export interface BidWorkspaceData {
+export interface BidDecision {
+  id: string;
+  title: string;
+  details: string;
+  decided_at: string;
+  created_at: string;
+}
+
+export type TaskStatus = "To Do" | "In Progress" | "Done";
+
+export interface BidTask {
+  id: string;
+  title: string;
+  details: string;
+  due_date: string | null;
+  status: TaskStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BidBootstrapResponse {
   bid: Bid;
   documents: BidDocument[];
   events: BidEvent[];
   notes: BidNote[];
+  requirements: BidRequirement[];
+  decisions: BidDecision[];
+  tasks: BidTask[];
+}
+
+export interface BidDocumentCreateResponse {
+  document: BidDocument;
+  event?: BidEvent;
+}
+
+export interface GenerateRequirementsResponse {
+  requirements: BidRequirement[];
 }
 
 export interface BidIntakeSuggestion {

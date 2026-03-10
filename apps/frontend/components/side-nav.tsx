@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { PrefetchLink } from "@/components/prefetch-link";
 import { Bid } from "@/lib/types";
-
-const API_BASE = "";
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") {
@@ -15,39 +12,8 @@ function isActive(pathname: string, href: string): boolean {
   return pathname.startsWith(href);
 }
 
-export function SideNav() {
+export function SideNav({ recentBids }: { recentBids: Bid[] }) {
   const pathname = usePathname();
-  const [recentBids, setRecentBids] = useState<Bid[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadRecentBids() {
-      try {
-        const response = await fetch(`${API_BASE}/api/v1/bids?limit=6`, {
-          headers: {
-            "x-tenant-id": "default"
-          }
-        });
-        if (!response.ok) {
-          return;
-        }
-        const items = (await response.json()) as Bid[];
-        if (!cancelled) {
-          setRecentBids(items);
-        }
-      } catch {
-        if (!cancelled) {
-          setRecentBids([]);
-        }
-      }
-    }
-
-    void loadRecentBids();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   return (
     <aside className="side-nav" aria-label="Primary">
@@ -60,14 +26,14 @@ export function SideNav() {
         <nav>
           <ul className="side-nav-list">
             <li>
-              <Link className={`side-link ${isActive(pathname, "/") ? "active" : ""}`} href="/">
+              <PrefetchLink className={`side-link ${isActive(pathname, "/") ? "active" : ""}`} eager href="/">
                 Dashboard
-              </Link>
+              </PrefetchLink>
             </li>
             <li>
-              <Link className={`side-link ${isActive(pathname, "/bids") ? "active" : ""}`} href="/bids">
+              <PrefetchLink className={`side-link ${isActive(pathname, "/bids") ? "active" : ""}`} eager href="/bids">
                 All Bids
-              </Link>
+              </PrefetchLink>
             </li>
           </ul>
         </nav>
@@ -78,10 +44,15 @@ export function SideNav() {
             <ul>
               {recentBids.map((bid) => (
                 <li key={bid.id}>
-                  <Link className={`recent-link ${pathname === `/bids/${bid.id}` ? "active" : ""}`} href={`/bids/${bid.id}`}>
+                  <PrefetchLink
+                    className={`recent-link ${pathname === `/bids/${bid.id}` ? "active" : ""}`}
+                    eager
+                    href={`/bids/${bid.id}`}
+                    workspaceBidId={bid.id}
+                  >
                     <strong>{bid.customer_name}</strong>
                     <span>{bid.title}</span>
-                  </Link>
+                  </PrefetchLink>
                 </li>
               ))}
             </ul>

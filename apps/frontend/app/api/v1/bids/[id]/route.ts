@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 
 import { getBidOrThrow, mapBid } from "@/lib/server/bids-db";
 import { tenantIdFromHeaders } from "@/lib/server/headers";
@@ -75,6 +76,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const status = error.code === "PGRST116" ? 404 : 500;
     return NextResponse.json({ detail: error.message }, { status });
   }
+
+  revalidateTag("bids");
+  revalidateTag(`bid:${id}`);
 
   return NextResponse.json(mapBid(data as never));
 }
