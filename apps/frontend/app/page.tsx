@@ -1,11 +1,9 @@
-import Link from "next/link";
-
 import { NewBidForm } from "@/components/new-bid-form";
-import { getBids } from "@/lib/api";
+import { PrefetchLink } from "@/components/prefetch-link";
+import { getRecentBidsForPage } from "@/lib/server/bid-reads";
 
 export default async function HomePage() {
-  const bids = await getBids();
-  const recent = bids.slice(0, 5);
+  const recent = await getRecentBidsForPage(5);
 
   return (
     <div className="content-stack">
@@ -22,19 +20,19 @@ export default async function HomePage() {
       <section className="panel">
         <div className="panel-head">
           <h2>Recent Bids</h2>
-          <Link className="text-link" href="/bids">
+          <PrefetchLink className="text-link" eager href="/bids">
             View all bids
-          </Link>
+          </PrefetchLink>
         </div>
 
         {recent.length ? (
           <ul className="recent-list">
             {recent.map((bid) => (
               <li key={bid.id}>
-                <Link href={`/bids/${bid.id}`}>
+                <PrefetchLink href={`/bids/${bid.id}`} workspaceBidId={bid.id}>
                   <strong>{bid.customer_name}</strong>
                   <span>{bid.title}</span>
-                </Link>
+                </PrefetchLink>
                 <span>{bid.deadline}</span>
               </li>
             ))}

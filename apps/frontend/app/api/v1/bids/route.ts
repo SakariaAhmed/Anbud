@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 
 import { actorFromHeaders, tenantIdFromHeaders } from "@/lib/server/headers";
 import { createServiceClient } from "@/lib/server/supabase";
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("bids")
-    .select("*")
+    .select("id, customer_name, title, estimated_value, deadline, owner, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .order("updated_at", { ascending: false });
   if (limit) {
@@ -33,7 +34,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ detail: error.message }, { status: 500 });
   }
 
-  return NextResponse.json((data ?? []).map((row) => mapBid(row as never)));
+  return NextResponse.json(
+    (data ?? []).map((row) => {
+      const nextRow = row as Record<string, unknown>;
+      return mapBid({
+        ...nextRow,
+        custom_fields: {}
+      } as never);
+    })
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -78,6 +87,8 @@ export async function POST(request: NextRequest) {
     type: "bid_created",
     payload: { message: "Bid created" }
   });
+  revalidateTag("bids");
+  revalidateTag(`bid:${data.id}`);
 
   return NextResponse.json(mapBid(data as never), { status: 201 });
 }

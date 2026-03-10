@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 
 import { answerBidQuestion } from "@/lib/server/ai";
-import { getBidOrThrow, logBidEvent, touchBidActivity } from "@/lib/server/bids-db";
+import { getBidOrThrow, logBidEvent, mapEvent, touchBidActivity } from "@/lib/server/bids-db";
 import { actorFromHeaders, tenantIdFromHeaders } from "@/lib/server/headers";
 import { createServiceClient } from "@/lib/server/supabase";
 
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
   const { data: documents, error } = await supabase
     .from("bid_documents")
-    .select("raw_text")
+    .select("file_name, raw_text")
     .eq("tenant_id", tenantId)
     .eq("bid_id", id)
     .order("created_at", { ascending: false });
@@ -43,13 +44,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     return NextResponse.json({ detail: error.message }, { status: 500 });
   }
 
-  const documentTexts = (documents ?? [])
-    .map((doc) => String(doc.raw_text ?? "").trim())
-    .filter(Boolean);
+  const chatDocuments = (documents ?? [])
+    .map((doc) => ({
+      fileName: String(doc.file_name ?? "").trim() || "Unnamed document",
+      rawText: String(doc.raw_text ?? "").trim()
+    }))
+    .filter((doc) => doc.rawText);
 
   const answer = await answerBidQuestion({
     question,
-    documentTexts,
+    documents: chatDocuments,
     bidContext: {
       customer_name: bid.customer_name,
       title: bid.title,
@@ -58,14 +62,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     }
   });
 
-  await logBidEvent({
+  const questionEvent = await logBidEvent({
     tenantId,
     bidId: id,
     actor,
     type: "chat_question",
     payload: { question, source: "bid_chat" }
   });
-  await logBidEvent({
+  const answerEvent = await logBidEvent({
     tenantId,
     bidId: id,
     actor: "assistant",
@@ -78,6 +82,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     }
   });
   await touchBidActivity(tenantId, id);
+  revalidateTag("bids");
+  revalidateTag(`bid:${id}`);
 
-  return NextResponse.json(answer);
+  return NextResponse.json({
+    ...answer,
+    question_event: mapEvent(questionEvent),
+    answer_event: mapEvent(answerEvent)
+  });
 }
