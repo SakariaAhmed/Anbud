@@ -335,6 +335,50 @@ button:disabled,
   color: var(--muted);
 }
 
+.loading-stack {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.loading-line {
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ececef 0%, #f6f6f7 50%, #ececef 100%);
+  background-size: 220% 100%;
+  animation: shimmer 1.1s linear infinite;
+}
+
+.loading-line.title {
+  margin-top: 0.35rem;
+  width: min(420px, 70vw);
+  height: 52px;
+}
+
+.loading-line.subtitle {
+  margin-top: 0.45rem;
+  width: min(520px, 80vw);
+  height: 20px;
+}
+
+.loading-line.block {
+  width: 100%;
+  height: 84px;
+  border-radius: 18px;
+}
+
+.loading-line.block.short {
+  width: 68%;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -20% 0;
+  }
+}
+
 .table-shell {
   overflow-x: auto;
 }
@@ -511,6 +555,28 @@ button:disabled,
   padding-left: 1rem;
 }
 
+.citation-list {
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.citation-chip {
+  width: 100%;
+  text-align: left;
+  background: #ffffff;
+  color: var(--ink);
+  border-color: var(--line);
+  font-weight: 500;
+  padding: 0.5rem 0.65rem;
+}
+
+.citation-chip:hover {
+  background: var(--surface-soft);
+}
+
 .chat-form {
   margin-top: 0.7rem;
   display: grid;
@@ -615,11 +681,47 @@ button:disabled,
   gap: 0.15rem;
 }
 
+.document-list li p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  white-space: pre-wrap;
+}
+
+.document-row.active {
+  border-color: var(--line-strong);
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
 .upload-label {
   display: grid;
   gap: 0.35rem;
   font-size: 0.88rem;
   color: #2d2d31;
+}
+
+.citation-focus {
+  margin-top: 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+.citation-focus strong {
+  display: block;
+  font-size: 0.88rem;
+}
+
+.citation-focus p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  white-space: pre-wrap;
 }
 
 .note-form {
@@ -667,6 +769,231 @@ button:disabled,
   color: var(--muted);
 }
 
+.note-list strong {
+  display: block;
+  font-size: 0.98rem;
+}
+
+.task-form {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: 1.3fr 220px;
+  gap: 0.55rem;
+}
+
+.task-form textarea {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.62rem 0.7rem;
+  font: inherit;
+  resize: vertical;
+  min-height: 90px;
+}
+
+.task-form input {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.62rem 0.7rem;
+  font: inherit;
+}
+
+.task-form button {
+  width: fit-content;
+}
+
+.task-list {
+  margin-top: 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.task-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 0.85rem 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.task-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.task-card-head h3 {
+  font-size: 1.02rem;
+}
+
+.task-card-head p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.requirements-toolbar {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: auto auto minmax(220px, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.requirements-summary {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 0.7rem 0.8rem;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.requirements-summary strong,
+.requirements-overall strong {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.requirements-summary span,
+.requirements-overall span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.requirements-overall {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 0.7rem 0.8rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.requirements-overall div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #d9d9df;
+  overflow: hidden;
+}
+
+.progress-track.compact {
+  height: 8px;
+  min-width: 140px;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0f1115;
+}
+
+.requirements-list {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.requirement-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 0.85rem 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.requirement-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.requirement-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.requirement-head p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.requirement-status {
+  min-width: 180px;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.requirement-status span {
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.requirement-detail {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.requirement-source {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border-left: 3px solid var(--ink);
+  background: #ffffff;
+  color: #2a2a30;
+  border-radius: 10px;
+  white-space: pre-wrap;
+}
+
+.requirement-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.requirement-controls label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.86rem;
+}
+
+.requirement-controls select,
+.requirement-controls textarea {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.6rem 0.7rem;
+  font: inherit;
+  background: #ffffff;
+}
+
+.requirement-controls textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.requirement-saving {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 @media (max-width: 1080px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -708,5 +1035,23 @@ button:disabled,
   .recent-list li {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .requirements-toolbar,
+  .requirement-controls,
+  .requirement-head,
+  .task-card-head,
+  .citation-focus {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .requirement-status {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .task-form {
+    grid-template-columns: 1fr;
   }
 }

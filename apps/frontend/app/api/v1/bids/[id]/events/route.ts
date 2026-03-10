@@ -10,17 +10,20 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const tenantId = tenantIdFromHeaders(request.headers);
   const { id } = await context.params;
   const supabase = createServiceClient();
+  const limitParam = Number(request.nextUrl.searchParams.get("limit"));
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 200) : 50;
 
   const { data, error } = await supabase
     .from("bid_events")
     .select("id, timestamp, user_name, type, payload")
     .eq("tenant_id", tenantId)
     .eq("bid_id", id)
-    .order("timestamp", { ascending: true });
+    .order("timestamp", { ascending: false })
+    .limit(limit);
 
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 500 });
   }
 
-  return NextResponse.json((data ?? []).map((row) => mapEvent(row as never)));
+  return NextResponse.json((data ?? []).slice().reverse().map((row) => mapEvent(row as never)));
 }

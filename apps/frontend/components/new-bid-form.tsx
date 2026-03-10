@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, KeyboardEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { BidIntakeSuggestion } from "@/lib/types";
@@ -24,6 +24,20 @@ function toNumberOrNull(value: string): number | null {
   }
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function submitOnEnter(event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+  if (event.key !== "Enter" || event.shiftKey) {
+    return;
+  }
+
+  const form = event.currentTarget.form;
+  if (!form) {
+    return;
+  }
+
+  event.preventDefault();
+  form.requestSubmit();
 }
 
 export function NewBidForm() {
@@ -73,9 +87,13 @@ export function NewBidForm() {
   function onDocumentChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     setDocumentFile(file);
-    if (file) {
-      void autofillFromDocument(file);
+    if (status) {
+      setStatus("");
     }
+    if (!file) {
+      return;
+    }
+    setStatus("Document selected. Run AI autofill if you want prefilled fields.");
   }
 
   async function autofillFromDocument(file: File | null = documentFile) {
@@ -209,7 +227,6 @@ export function NewBidForm() {
       }
 
       router.push(`/bids/${bid.id}`);
-      router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Create bid failed");
       setLoading(false);
@@ -226,12 +243,12 @@ export function NewBidForm() {
       <form className="form-grid" onSubmit={onSubmit}>
         <label>
           Customer Name *
-          <input onChange={(event) => setCustomerName(event.target.value)} required type="text" value={customerName} />
+          <input onChange={(event) => setCustomerName(event.target.value)} onKeyDown={submitOnEnter} required type="text" value={customerName} />
         </label>
 
         <label>
           Bid Title
-          <input onChange={(event) => setTitle(event.target.value)} type="text" value={title} />
+          <input onChange={(event) => setTitle(event.target.value)} onKeyDown={submitOnEnter} type="text" value={title} />
         </label>
 
         <label>
@@ -241,7 +258,7 @@ export function NewBidForm() {
 
         <label>
           Owner
-          <input onChange={(event) => setOwner(event.target.value)} type="text" value={owner} />
+          <input onChange={(event) => setOwner(event.target.value)} onKeyDown={submitOnEnter} type="text" value={owner} />
         </label>
 
         <label>
@@ -262,32 +279,42 @@ export function NewBidForm() {
             {loading ? "Creating..." : "Create Bid"}
           </button>
         </div>
-      </form>
 
-      <section className="custom-fields">
-        <div className="custom-fields-head">
-          <h3>Custom Fields</h3>
-          <button className="ghost-btn" onClick={() => addCustomField()} type="button">
-            Add Field
-          </button>
-        </div>
-
-        {customFields.length ? (
-          <div className="custom-fields-list">
-            {customFields.map((row) => (
-              <div className="custom-field-row" key={row.id}>
-                <input onChange={(event) => updateCustomField(row.id, "key", event.target.value)} placeholder="Field name" value={row.key} />
-                <input onChange={(event) => updateCustomField(row.id, "value", event.target.value)} placeholder="Field value" value={row.value} />
-                <button className="ghost-btn danger" onClick={() => removeCustomField(row.id)} type="button">
-                  Remove
-                </button>
-              </div>
-            ))}
+        <section className="custom-fields">
+          <div className="custom-fields-head">
+            <h3>Custom Fields</h3>
+            <button className="ghost-btn" onClick={() => addCustomField()} type="button">
+              Add Field
+            </button>
           </div>
-        ) : (
-          <p className="muted-copy">No custom fields added yet.</p>
-        )}
-      </section>
+
+          {customFields.length ? (
+            <div className="custom-fields-list">
+              {customFields.map((row) => (
+                <div className="custom-field-row" key={row.id}>
+                  <input
+                    onChange={(event) => updateCustomField(row.id, "key", event.target.value)}
+                    onKeyDown={submitOnEnter}
+                    placeholder="Field name"
+                    value={row.key}
+                  />
+                  <input
+                    onChange={(event) => updateCustomField(row.id, "value", event.target.value)}
+                    onKeyDown={submitOnEnter}
+                    placeholder="Field value"
+                    value={row.value}
+                  />
+                  <button className="ghost-btn danger" onClick={() => removeCustomField(row.id)} type="button">
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted-copy">No custom fields added yet.</p>
+          )}
+        </section>
+      </form>
 
       {status ? <p className="form-status">{status}</p> : null}
     </section>
