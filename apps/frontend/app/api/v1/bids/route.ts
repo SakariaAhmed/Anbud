@@ -1,94 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 
-import { actorFromHeaders, tenantIdFromHeaders } from "@/lib/server/headers";
 import { createServiceClient } from "@/lib/server/supabase";
-import { logBidEvent, mapBid } from "@/lib/server/bids-db";
+import { getBidsForPage } from "@/lib/server/bids-db";
 
 export const runtime = "nodejs";
 
-function defaultDeadlineIso(): string {
-  const value = new Date();
-  value.setDate(value.getDate() + 30);
-  return value.toISOString().slice(0, 10);
-}
-
-export async function GET(request: NextRequest) {
-  const tenantId = tenantIdFromHeaders(request.headers);
-  const supabase = createServiceClient();
-  const limitParam = Number(request.nextUrl.searchParams.get("limit"));
-  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 200) : null;
-
-  let query = supabase
-    .from("bids")
-    .select("id, customer_name, title, estimated_value, deadline, owner, created_at, updated_at")
-    .eq("tenant_id", tenantId)
-    .order("updated_at", { ascending: false });
-  if (limit) {
-    query = query.limit(limit);
+export async function GET() {
+  try {
+    const bids = await getBidsForPage();
+    return NextResponse.json(bids);
+  } catch (error) {
+    return NextResponse.json(
+      { detail: error instanceof Error ? error.message : "Kunne ikke hente saker" },
+      { status: 500 }
+    );
   }
-
-  const { data, error } = await query;
-
-  if (error) {
-    return NextResponse.json({ detail: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json(
-    (data ?? []).map((row) => {
-      const nextRow = row as Record<string, unknown>;
-      return mapBid({
-        ...nextRow,
-        custom_fields: {}
-      } as never);
-    })
-  );
 }
 
 export async function POST(request: NextRequest) {
-  const tenantId = tenantIdFromHeaders(request.headers);
-  const actor = actorFromHeaders(request.headers);
+  const tenantId = request.headers.get("x-tenant-id") ?? "default";
   const supabase = createServiceClient();
 
   let payload: Record<string, unknown>;
   try {
     payload = (await request.json()) as Record<string, unknown>;
   } catch {
-    return NextResponse.json({ detail: "Invalid JSON payload" }, { status: 400 });
+    return NextResponse.json({ detail: "Ugyldig JSON" }, { status: 400 });
   }
 
   const customerName = String(payload.customer_name ?? "").trim();
   if (!customerName) {
-    return NextResponse.json({ detail: "customer_name is required" }, { status: 422 });
+    return NextResponse.json({ detail: "Kundenavn er påkrevd" }, { status: 422 });
   }
 
-  const row = {
-    tenant_id: tenantId,
-    customer_name: customerName,
-    title: String(payload.title ?? "").trim() || "Untitled Bid",
-    estimated_value:
-      payload.estimated_value === null || payload.estimated_value === undefined || payload.estimated_value === ""
-        ? null
-        : Number(payload.estimated_value),
-    deadline: String(payload.deadline ?? "").trim() || defaultDeadlineIso(),
-    owner: String(payload.owner ?? "").trim() || "Unassigned",
-    custom_fields: (payload.custom_fields as Record<string, string> | undefined) ?? {}
-  };
+  const defaultDeadline = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const { data, error } = await supabase.from("bids").insert(row).select("*").single();
+  const { data, error } = await supabase
+    .from("bids")
+    .insert({
+      tenant_id: tenantId,
+      customer_name: customerName,
+      title: String(payload.title ?? "").trim() || "Ny analyse",
+      deadline: defaultDeadline,
+      owner: "Ikke satt",
+      estimated_value: null,
+      custom_fields: {},
+    })
+    .select("*")
+    .single();
+
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 500 });
   }
 
-  await logBidEvent({
-    tenantId,
-    bidId: data.id,
-    actor,
-    type: "bid_created",
-    payload: { message: "Bid created" }
-  });
   revalidateTag("bids");
   revalidateTag(`bid:${data.id}`);
 
-  return NextResponse.json(mapBid(data as never), { status: 201 });
+  return NextResponse.json(data, { status: 201 });
 }

@@ -1,0 +1,176 @@
+Requirements Document: Sweet Crumbs Bakery Cloud Storage Migration
+
+Document Type: Requirement Specification / Migration Requirements
+
+1. DOCUMENT PURPOSE
+-------------------
+
+This document defines the detailed business, technical, security, migration, and testing requirements for Sweet Crumbs Bakery as it moves data from an on-premise server to a managed cloud storage platform.
+
+The document is intended for internal planning, vendor evaluation, migration execution, and user acceptance testing.
+
+
+2. BUSINESS PROFILE AND CURRENT STATE
+-------------------------------------
+
+Sweet Crumbs Bakery operates one production kitchen, one retail storefront, and one small back-office location. The bakery currently stores all digital files on a single Windows-based file server located on site in the office.
+
+The on-premise server holds approximately 1.8 TB of data and grows by an estimated 12 GB per month. There are 18 employees with some level of file access, including 4 staff members who need secure remote access.
+
+Current protection relies on one nightly backup to a local NAS device. There is no active offsite redundancy, cloud replication, or ransomware-isolated backup copy.
+
+
+3. MIGRATION OBJECTIVES
+-----------------------
+
+The bakery requires a cloud storage solution that reduces dependence on a single physical server, supports secure access from bakery, office, and remote locations, and preserves all critical business records without loss or corruption.
+
+The target solution must allow daily operations to continue during bakery business hours from 05:00 to 20:00 local time with minimal disruption to production planning, supplier ordering, payroll processing, and financial reporting.
+
+The migration must provide a controlled cutover with a tested rollback path and measurable validation of data completeness, permissions, and backup recoverability.
+
+
+4. IN-SCOPE DATA SETS
+---------------------
+
+In-scope content includes shared business documents, recipe files, production schedules, inventory spreadsheets, supplier contracts, supplier invoices, employee records, payroll support documents, point-of-sale daily sales exports, financial reports, and backup archives from the last 7 years.
+
+The existing folder hierarchy, naming structure, and ownership model must be preserved unless explicitly corrected during data cleanup.
+
+Archived records older than 7 years may be moved into lower-cost archive storage if the retention and retrieval requirements in this document are met.
+
+
+5. OUT-OF-SCOPE ITEMS
+---------------------
+
+This effort does not include replacement of the bakery point-of-sale application, website hosting migration, email migration, ERP implementation, or redesign of bakery business processes.
+
+Application modernization is out of scope unless directly required for file export, backup, or access continuity during the storage migration.
+
+
+6. BUSINESS REQUIREMENTS
+------------------------
+
+The bakery must be able to access active files from the storefront, kitchen office, and approved remote locations without dependence on the legacy on-premise server after cutover.
+
+Authorized users must access the system through a familiar folder-style interface with minimal end-user training. Staff on the bakery floor must not be required to learn a complex document management workflow.
+
+The migration must not exceed 2 hours of business-impacting downtime during final cutover. A weekend or after-hours cutover window is acceptable if the rollback procedure remains available until the system is signed off.
+
+The solution must support secure external sharing of selected finance or audit documents with the bakery accountant without exposing internal employee or payroll records.
+
+
+7. FUNCTIONAL REQUIREMENTS
+--------------------------
+
+The cloud storage environment must support at least 3 TB of data at go-live and scale to 5 TB without architecture changes or vendor migration.
+
+The system must support the following file types at minimum: PDF, DOCX, XLSX, CSV, JPG, PNG, and ZIP backup files.
+
+Folder structure and file names must be preserved during migration. Metadata that can be preserved, including last modified date and ownership mapping, should be retained where technically feasible.
+
+The system must support role-based access control for the roles Owners, Managers, Bakers, and Finance or Administration.
+
+Version history must be available for shared documents. Deleted file recovery must be available for at least 30 days. File access, deletion events, and permission changes must be logged.
+
+The transition period must support automated nightly synchronization between the on-premise file server and the cloud target until final cutover is completed.
+
+
+8. NON-FUNCTIONAL REQUIREMENTS
+------------------------------
+
+Files smaller than 25 MB must open within 5 seconds on a standard office internet connection. Upload of daily point-of-sale exports must complete within 2 minutes. Filename search across active folders must return results within 10 seconds.
+
+The service must provide at least 99.9 percent availability for active business data. Critical folders must be replicated across at least two availability zones or an equivalent resilience model.
+
+The solution must support at least 30 concurrent users without service degradation and must remain operable through a browser or synced folder client on standard staff workstations.
+
+
+9. SECURITY REQUIREMENTS
+------------------------
+
+All data must be encrypted in transit using TLS 1.2 or higher and encrypted at rest using AES-256 or an equivalent modern standard.
+
+Multi-factor authentication must be mandatory for owners, managers, and finance users. Public access to storage must be disabled by default.
+
+Employee records, payroll documents, and HR-related files must be restricted to approved finance or HR roles only. The bakery accountant may only receive time-limited access to explicitly shared folders or files.
+
+Audit logs must be retained for at least 12 months and must record file access, failed logins, permission changes, and deletion activity. Failed login thresholds must support monitoring and alerting.
+
+
+10. RETENTION AND COMPLIANCE REQUIREMENTS
+-----------------------------------------
+
+Financial records must be retained for 7 years. Supplier traceability, food safety, and sourcing documents must be retained for at least 5 years. Employee records must be retained according to applicable labor and privacy law.
+
+Archived records must remain searchable by filename or folder and retrievable within 24 hours even when stored in a lower-cost archive tier.
+
+Retention rules must be documented by data category so the bakery can demonstrate how active, archived, and deleted records are handled over time.
+
+
+11. MIGRATION REQUIREMENTS
+--------------------------
+
+The initial migration must include all active folders plus archive data from the prior 7 years. Data integrity must be validated using file counts and checksum or hash verification for sampled and critical data sets.
+
+Permission mapping from the existing server must be documented before cutover. A pilot migration must be executed for one department, such as Finance or Inventory, before the full migration is approved.
+
+The legacy server must remain available in read-only mode for 14 days after go-live to support validation, rollback protection, and operational confidence.
+
+A rollback plan must be written and tested before production cutover. The plan must specify cutback triggers, decision owners, and maximum time to restore on-premise access if the cloud cutover fails.
+
+
+12. BACKUP AND DISASTER RECOVERY REQUIREMENTS
+---------------------------------------------
+
+Cloud data must be backed up daily. Backup retention must include daily backups for 30 days, monthly backups for 12 months, and annual backups for 7 years.
+
+At least one backup copy must be logically isolated from ordinary user deletion and ransomware-style tampering. Recovery Point Objective must be no greater than 24 hours and Recovery Time Objective must be no greater than 8 hours.
+
+Restore capability must support single-file restore, folder-level restore, and full recovery of a protected data set without requiring vendor engineering intervention for routine cases.
+
+
+13. NETWORK AND ACCESS REQUIREMENTS
+-----------------------------------
+
+The bakery internet connection should provide at least 100 Mbps download and 20 Mbps upload. The office or accounting location should provide at least 50 Mbps download and 10 Mbps upload.
+
+Remote access must use authenticated secure channels only. Large archive uploads and bulk synchronization jobs should be scheduled outside business hours unless they are proven not to affect day-to-day work.
+
+
+14. TESTING REQUIREMENTS
+------------------------
+
+A test migration must include at least 200 GB of mixed file content representing recipes, contracts, finance records, images, and sales exports.
+
+Permission testing must validate access separately for Owners, Managers, Bakers, and Finance or Administration. Negative tests must confirm that bakery-floor users cannot access payroll or employee files.
+
+Restore testing must validate single-file restore, full-folder restore, deleted-file recovery, and access to archived data. Security testing must verify MFA enforcement, unauthorized access denial, and generation of audit records.
+
+Performance testing must be executed during normal business hours. User acceptance testing must be signed by the bakery manager, finance administrator, and operations owner.
+
+
+15. ACCEPTANCE CRITERIA
+-----------------------
+
+The migration will be accepted only if 100 percent of in-scope data is migrated, the folder structure matches the source environment, no critical corruption is found, and role-based access rules are confirmed to be correct.
+
+Backup and restore tests must pass, security controls must be enabled and verified, and final cutover downtime must not exceed 2 hours.
+
+The bakery must complete 5 business days of stable post-cutover operation before final sign-off is issued.
+
+
+16. KEY RISKS AND ASSUMPTIONS
+-----------------------------
+
+Migration risk includes limited upload bandwidth, inconsistent historical folder permissions, duplicate or obsolete backup content, and the possibility that staff continue saving files to the old server after cutover.
+
+This document assumes the bakery can produce a current user list, an export or record of current file permissions, and a maintenance window for after-hours or weekend cutover.
+
+
+17. REQUIRED PROJECT DELIVERABLES
+---------------------------------
+
+Required deliverables are a target cloud storage architecture, migration runbook, permission matrix, retention policy, backup and recovery procedure, cutover checklist, rollback plan, and final test report.
+
+A short user guide for bakery staff and finance users must be delivered before go-live so operational teams know where to access data and how to report access issues.

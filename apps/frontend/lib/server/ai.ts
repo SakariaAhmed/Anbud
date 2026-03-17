@@ -2,35 +2,142 @@ import "server-only";
 
 import OpenAI from "openai";
 
-import { getOpenAiApiKey, getOpenAiModel } from "@/lib/server/env";
-
-export type ConfidenceLevel = "Low" | "Medium" | "High";
-
-export interface IntakeSuggestion {
-  customer_name: string;
-  title: string;
-  estimated_value: number | null;
-  deadline: string | null;
-  owner: string;
-  custom_fields: Record<string, string>;
-}
-
-export interface ChatAnswer {
-  answer: string;
-  confidence: ConfidenceLevel;
-  citations: Array<{ document_name: string | null; excerpt: string }>;
-}
+import { BidCustomerAnalysis, ComplianceStatus, RequirementType } from "@/lib/types";
 
 export interface RequirementSuggestion {
-  title: string;
-  detail: string;
+  code: string;
   category: string;
-  priority: "Low" | "Medium" | "High";
+  requirement_type: RequirementType;
+  scope_summary: string;
+  source_reference: string;
   source_excerpt: string;
-  source_document: string | null;
+}
+
+export interface ComplianceSuggestion {
+  requirement_code: string;
+  status: ComplianceStatus;
+  found_in: string | null;
+  answer_excerpt: string;
+  notes: string;
 }
 
 let cachedClient: OpenAI | null | undefined;
+
+function getOpenAiApiKey(): string {
+  return process.env.OPENAI_API_KEY ?? "";
+}
+
+function getOpenAiModel(): string {
+  return process.env.OPENAI_MODEL ?? "gpt-5-mini";
+}
+
+function buildPromptTemplate(input: {
+  role: string;
+  task: string[];
+  rules: string[];
+  outputContract: string[];
+  exampleOutput: string;
+}) {
+  return [
+    "### Role",
+    input.role,
+    "",
+    "### Task",
+    ...input.task,
+    "",
+    "### Rules",
+    ...input.rules.map((rule) => `- ${rule}`),
+    "",
+    "### Output contract",
+    ...input.outputContract.map((rule) => `- ${rule}`),
+    "",
+    "### Example output",
+    input.exampleOutput,
+  ].join("\n");
+}
+
+function buildDelimitedContext(label: string, content: string) {
+  return `### ${label}\n"""\n${content.trim()}\n"""`;
+}
+
+function buildRequirementExtractionPrompt() {
+  return buildPromptTemplate({
+    role: "Du er en nøktern dokumentanalytiker for anbuds- og compliance-arbeid.",
+    task: [
+      "Les Bilag 1 og identifiser konkrete krav som leverandøren må eller bør besvare.",
+      "Trekk ut én rad per selvstendig krav.",
+      "Bruk kildehenvisningen som finnes i dokumentet, for eksempel side- eller seksjonsmarkører.",
+    ],
+    rules: [
+      "Instruksjoner kommer først og dokumentkontekst kommer separat i brukerinnholdet.",
+      "Trekk bare ut eksplisitte krav. Ikke lag krav av overskrifter eller generell bakgrunnstekst.",
+      "Ikke trekk ut metadatafelt eller etiketter som egne krav, for eksempel linjer som bare sier Type, Kategori, Status, Referanse, Ref., Kilde eller Bilag.",
+      "Ikke trekk ut rene tabellceller, korte etiketter eller formatlinjer som ikke inneholder et selvstendig krav.",
+      "Sett requirement_type til Må for obligatoriske krav og Bør for anbefalte eller ønskede krav.",
+      "Hvis kilde ikke kan bestemmes sikkert, bruk tom streng i source_reference.",
+      "Returner tom liste hvis ingen krav kan identifiseres, i stedet for å gjette.",
+      "Svar kun i gyldig JSON som matcher output-kontrakten.",
+    ],
+    outputContract: [
+      "Returner ett JSON-objekt med nøkkelen requirements.",
+      "Hver requirement skal ha feltene category, requirement_type, scope_summary, source_reference og source_excerpt.",
+      'category skal være en kort kategori som "Sikkerhet", "Drift", "Server", "Nettverk", "Tjeneste" eller "Generelt".',
+      'requirement_type skal være enten "Må" eller "Bør".',
+    ],
+    exampleOutput:
+      '{"requirements":[{"category":"Sikkerhet","requirement_type":"Må","scope_summary":"Leverandør skal dokumentere ISO 27001-sertifisering","source_reference":"Bilag 1 – side 14","source_excerpt":"Leverandør skal dokumentere ISO 27001-sertifisering."}]}',
+  });
+}
+
+function buildCustomerAnalysisPrompt() {
+  return buildPromptTemplate({
+    role: "Du er en nøktern dokumentanalytiker for anbuds- og compliance-arbeid.",
+    task: [
+      "Les Bilag 1 og lag en kort kundeanalyse for en skyarkitekt som skal forstå hva som betyr mest.",
+      "Analyser kun det som er støttet av dokumentet.",
+      "Prioriter innsikt som hjelper brukeren å svare presist og avdekke uklarheter.",
+    ],
+    rules: [
+      "Returner konkrete punkter, ikke lange avsnitt.",
+      "Hvis konteksten er svak, returner færre punkter i stedet for å spekulere.",
+      "Bruk positive instrukser ved usikkerhet: velg tom liste fremfor antagelser.",
+      "Svar kun i gyldig JSON som matcher output-kontrakten.",
+    ],
+    outputContract: [
+      "Returner ett JSON-objekt med nøklene customer_priorities, clarifications og value_angles.",
+      "Alle tre feltene skal være lister med korte tekstpunkter.",
+      "Hver liste skal ha 0 til 6 punkter.",
+    ],
+    exampleOutput:
+      '{"customer_priorities":["Høy driftssikkerhet for kritiske tjenester"],"clarifications":["Avklar om kunden krever dedikert driftsmodell eller standardisert AMS-tjeneste"],"value_angles":["Vektlegg standardisering, sikkerhet og lavere driftskostnad"]}',
+  });
+}
+
+function buildCompliancePrompt() {
+  return buildPromptTemplate({
+    role: "Du er en nøktern dokumentanalytiker for anbuds- og compliance-arbeid.",
+    task: [
+      "Sammenlign kravene fra Bilag 1 med innholdet i Bilag 2.",
+      "Klassifiser hvert krav som Besvart, Delvis besvart eller Ikke besvart.",
+      "Oppgi hvor i Bilag 2 svaret finnes når dokumentet gir en tydelig seksjons- eller kapittelreferanse.",
+    ],
+    rules: [
+      "Bruk bare kravene og Bilag 2-konteksten som er gitt.",
+      "Hvis svarmatching er svak eller indirekte, bruk Delvis besvart eller Ikke besvart. Ikke gjett.",
+      "Hvis found_in ikke kan bestemmes, bruk null.",
+      "Hvis answer_excerpt ikke kan trekkes ut pålitelig, bruk tom streng.",
+      "Returner én rad per kravkode som ble gitt i inputen.",
+      "Svar kun i gyldig JSON som matcher output-kontrakten.",
+    ],
+    outputContract: [
+      "Returner ett JSON-objekt med nøkkelen compliance_matrix.",
+      "Hver rad skal ha requirement_code, status, found_in, answer_excerpt og notes.",
+      'status skal være enten "Besvart", "Delvis besvart" eller "Ikke besvart".',
+    ],
+    exampleOutput:
+      '{"compliance_matrix":[{"requirement_code":"Krav 17","status":"Besvart","found_in":"Bilag 2 – kapittel 3.2","answer_excerpt":"Atea AMS leverer standardisert driftsovervåking og hendelseshåndtering.","notes":"Svaret dekker hovedkravet direkte."}]}',
+  });
+}
 
 function getClient(): OpenAI | null {
   if (cachedClient !== undefined) {
@@ -50,383 +157,339 @@ function safeJson<T>(raw: string, fallback: T): T {
   }
 }
 
-function normalizeConfidence(value: unknown): ConfidenceLevel {
-  if (value === "High" || value === "Medium" || value === "Low") {
-    return value;
-  }
-  return "Medium";
-}
-
-function normalizePriority(value: unknown): "Low" | "Medium" | "High" {
-  if (value === "High" || value === "Medium" || value === "Low") {
-    return value;
-  }
-  return "Medium";
-}
-
-function parseJsonLikeString(value: string): unknown {
-  const trimmed = value.trim();
-  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
-    return value;
-  }
-  try {
-    return JSON.parse(trimmed) as unknown;
-  } catch {
-    return value;
-  }
-}
-
-function toReadableText(value: unknown): string {
-  if (value === null || value === undefined) {
+function normalizeText(value: unknown): string {
+  if (typeof value !== "string") {
     return "";
   }
-  if (typeof value === "string") {
-    const parsed = parseJsonLikeString(value);
-    if (parsed !== value) {
-      return toReadableText(parsed);
-    }
-    const trimmed = value.trim();
-    if (trimmed === "[object Object]") {
-      return "";
-    }
-    return trimmed;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => `- ${toReadableText(item)}`).join("\n").trim();
-  }
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    const lines: string[] = [];
-    for (const [rawKey, rawValue] of entries) {
-      const key = rawKey.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-      if (Array.isArray(rawValue)) {
-        lines.push(`${key}:`);
-        for (const item of rawValue) {
-          lines.push(`- ${toReadableText(item)}`);
-        }
-      } else if (typeof rawValue === "object" && rawValue !== null) {
-        lines.push(`${key}:`);
-        lines.push(toReadableText(rawValue));
-      } else {
-        lines.push(`${key}: ${toReadableText(rawValue)}`);
-      }
-      lines.push("");
-    }
-    return lines.join("\n").trim();
-  }
-  return String(value);
+
+  return value.replace(/\s+/g, " ").trim();
 }
 
-export async function extractIntakeFromDocument(rawText: string): Promise<IntakeSuggestion> {
-  const text = rawText.trim();
-  if (!text) {
-    return {
-      customer_name: "",
-      title: "",
-      estimated_value: null,
-      deadline: null,
-      owner: "",
-      custom_fields: {}
-    };
-  }
-
-  const client = getClient();
-  if (!client) {
-    return fallbackIntake(text);
-  }
-
-  try {
-    const completion = await client.chat.completions.create({
-      model: getOpenAiModel(),
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: "Extract bid intake fields. Return strict JSON only." },
-        {
-          role: "user",
-          content:
-            "Extract and return JSON with keys: customer_name, title, estimated_value, deadline, owner, custom_fields. " +
-            "deadline must be YYYY-MM-DD or null. estimated_value must be number or null. custom_fields must be object of short strings.\n\n" +
-            `Document:\n${text.slice(0, 16000)}`
-        }
-      ]
-    });
-
-    const payload = safeJson<Partial<IntakeSuggestion>>(completion.choices[0]?.message?.content ?? "{}", {});
-    return {
-      customer_name: (payload.customer_name ?? "").toString(),
-      title: (payload.title ?? "").toString(),
-      estimated_value:
-        payload.estimated_value === null || payload.estimated_value === undefined
-          ? null
-          : Number.isFinite(Number(payload.estimated_value))
-            ? Number(payload.estimated_value)
-            : null,
-      deadline: typeof payload.deadline === "string" && payload.deadline ? payload.deadline : null,
-      owner: (payload.owner ?? "").toString(),
-      custom_fields: payload.custom_fields ?? {}
-    };
-  } catch {
-    return fallbackIntake(text);
-  }
+function normalizeRequirementType(value: unknown): RequirementType {
+  return value === "Bør" ? "Bør" : "Må";
 }
 
-export async function answerBidQuestion(params: {
-  question: string;
-  documents: Array<{ fileName: string; rawText: string }>;
-  bidContext: Record<string, string>;
-}): Promise<ChatAnswer> {
-  const question = params.question.trim();
-  if (!question) {
-    return { answer: "Please enter a question.", confidence: "Low", citations: [] };
+function normalizeComplianceStatus(value: unknown): ComplianceStatus {
+  if (value === "Besvart" || value === "Delvis besvart" || value === "Ikke besvart") {
+    return value;
   }
 
-  const contextSections: string[] = [];
-  let totalChars = 0;
-  for (let i = 0; i < params.documents.length; i += 1) {
-    const snippet = params.documents[i].rawText.slice(0, 3500);
-    if (totalChars + snippet.length > 22000) {
-      break;
-    }
-    totalChars += snippet.length;
-    contextSections.push(`Source file: ${params.documents[i].fileName}\n${snippet}`);
-  }
-  contextSections.push(`Bid metadata:\n${JSON.stringify(params.bidContext)}`);
-
-  if (!params.documents.length) {
-    return {
-      answer: "No document context is available for this bid yet. Upload a requirement document first.",
-      confidence: "Low",
-      citations: []
-    };
-  }
-
-  const client = getClient();
-  if (!client) {
-    return fallbackChat(question, params.documents);
-  }
-
-  try {
-    const completion = await client.chat.completions.create({
-      model: getOpenAiModel(),
-      temperature: 0.15,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a senior bid advisor. Be practical, nuanced, and decision-oriented. " +
-            "Write like a consultant and ground all claims in provided context. Return JSON only."
-        },
-        {
-          role: "user",
-          content:
-            "Answer using only context. Use clear sections and actionable bullets when useful. " +
-            "Return strict JSON with keys: answer, confidence, citations. " +
-            "answer must be a plain text string, never an object or array. " +
-            "confidence must be Low/Medium/High. " +
-            "citations must be an array of objects with keys document_name and excerpt. " +
-            "document_name should be the exact source file name when possible. excerpt should be a short supporting quote or passage.\n\n" +
-            `Question:\n${question}\n\nContext:\n${contextSections.join("\n\n")}`
-        }
-      ]
-    });
-
-    const payload = safeJson<
-      Partial<ChatAnswer> & { citations?: Array<{ document_name?: unknown; excerpt?: unknown }> }
-    >(completion.choices[0]?.message?.content ?? "{}", {});
-    const answerText = toReadableText(payload.answer);
-    return {
-      answer: answerText || "I could not derive a reliable answer from the provided context.",
-      confidence: normalizeConfidence(payload.confidence),
-      citations: Array.isArray(payload.citations)
-        ? payload.citations
-            .map((item) => ({
-              document_name: toReadableText(item.document_name).slice(0, 160) || null,
-              excerpt: toReadableText(item.excerpt).slice(0, 500)
-            }))
-            .filter((item) => item.excerpt)
-        : []
-    };
-  } catch {
-    return fallbackChat(question, params.documents);
-  }
+  return "Ikke besvart";
 }
 
-export async function extractBidRequirements(params: {
-  documentTexts: string[];
-  bidContext: Record<string, string>;
-}): Promise<RequirementSuggestion[]> {
-  const contextSections: string[] = [];
-  let totalChars = 0;
-
-  for (let i = 0; i < params.documentTexts.length; i += 1) {
-    const snippet = params.documentTexts[i].slice(0, 5000);
-    if (totalChars + snippet.length > 26000) {
-      break;
-    }
-    totalChars += snippet.length;
-    contextSections.push(`Document ${i + 1}:\n${snippet}`);
-  }
-
-  if (!contextSections.length) {
+function normalizeList(values: unknown): string[] {
+  if (!Array.isArray(values)) {
     return [];
   }
 
-  contextSections.push(`Bid metadata:\n${JSON.stringify(params.bidContext)}`);
-
-  const client = getClient();
-  if (!client) {
-    return fallbackRequirements(contextSections);
-  }
-
-  try {
-    const completion = await client.chat.completions.create({
-      model: getOpenAiModel(),
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You extract tender requirements from uploaded bid documents. " +
-            "Return strict JSON only. Keep requirement titles short and concrete. " +
-            "Titles should summarize the requirement, not copy full paragraphs. " +
-            "detail and source_excerpt must always be plain text strings. " +
-            "If a source file name is present in the context, source_document must use that exact file name."
-        },
-        {
-          role: "user",
-          content:
-            "Review all provided document context and extract the concrete requirements the bid team must respond to. " +
-            "Return strict JSON with a single key requirements. requirements must be an array of objects with keys: " +
-            "title, detail, category, priority, source_excerpt, source_document. " +
-            "priority must be Low, Medium, or High. source_document should be the actual source file name when available, otherwise null.\n\n" +
-            `Context:\n${contextSections.join("\n\n")}`
-        }
-      ]
-    });
-
-    const payload = safeJson<{ requirements?: Array<Partial<RequirementSuggestion>> }>(
-      completion.choices[0]?.message?.content ?? "{}",
-      {}
-    );
-
-    const requirements = Array.isArray(payload.requirements) ? payload.requirements : [];
-    return requirements
-      .map((item) => ({
-        title: toReadableText(item.title).slice(0, 160),
-        detail: toReadableText(item.detail).slice(0, 2000),
-        category: toReadableText(item.category).slice(0, 120) || "General",
-        priority: normalizePriority(item.priority),
-        source_excerpt: toReadableText(item.source_excerpt).slice(0, 800),
-        source_document: toReadableText(item.source_document).slice(0, 120) || null
-      }))
-      .filter((item) => item.title && item.detail)
-      .slice(0, 40);
-  } catch {
-    return fallbackRequirements(contextSections);
-  }
+  return values
+    .map((value) => normalizeText(value))
+    .filter(Boolean)
+    .slice(0, 6);
 }
 
-function fallbackIntake(rawText: string): IntakeSuggestion {
-  const lines = rawText
+function isMetadataOnlyLine(text: string) {
+  const value = normalizeText(text).toLowerCase();
+  if (!value) {
+    return true;
+  }
+
+  return /^(type|kravtype|kategori|status|ref\.?|referanse|kilde|kildegrunnlag|funnet i dokument|bilag)\s*:\s*\S+/.test(
+    value
+  );
+}
+
+function isValidRequirementCandidate(text: string) {
+  const value = normalizeText(text);
+  if (!value) {
+    return false;
+  }
+
+  if (value.length < 20) {
+    return false;
+  }
+
+  if (isMetadataOnlyLine(value)) {
+    return false;
+  }
+
+  return /(skal|må|bør|must|shall|required|should)/i.test(value);
+}
+
+function inferCategory(text: string) {
+  const value = text.toLowerCase();
+  if (/(iso|security|sikkerhet|iam|identitet|mfa|zero trust|krypter)/.test(value)) return "Sikkerhet";
+  if (/(server|compute|vm|lagring|storage|backup)/.test(value)) return "Server";
+  if (/(drift|support|incident|overvåk|managed|ams|sla)/.test(value)) return "Drift";
+  if (/(nettverk|network|firewall|vpn|wan|lan)/.test(value)) return "Nettverk";
+  if (/(tidslinje|deadline|frist|milepæl|kapittel)/.test(value)) return "Tidsplan";
+  if (/(pris|commercial|kommersiell|kostnad)/.test(value)) return "Kommersielt";
+  return "Generelt";
+}
+
+function tokenizeRequirement(text: string) {
+  return Array.from(new Set(text.toLowerCase().match(/[a-zæøå0-9]{4,}/gi) ?? [])).slice(0, 8);
+}
+
+function buildFallbackRequirements(text: string): RequirementSuggestion[] {
+  const lines = text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  const lowered = lines.map((line) => line.toLowerCase());
 
-  const customerLine = lines.find((line) => line.toLowerCase().startsWith("customer:"));
-  const customerName = customerLine ? customerLine.split(":", 2)[1]?.trim() ?? "Unknown Customer" : "Unknown Customer";
+  const results: RequirementSuggestion[] = [];
+  let currentReference = "";
 
-  const dateMatch = rawText.match(/(20\d{2})-(\d{2})-(\d{2})/);
-  const valueMatch = rawText.match(/(?:USD|EUR|NOK|SEK|\$|€)\s?([0-9][0-9,.]{4,})/i);
+  for (const line of lines) {
+    if (line.startsWith("[[SIDE:")) {
+      const page = line.match(/\[\[SIDE:(\d+)\]\]/)?.[1];
+      currentReference = page ? `Bilag 1 – side ${page}` : "";
+      continue;
+    }
 
-  const custom_fields: Record<string, string> = {};
-  const questionDeadline = lines.find((line) => line.toLowerCase().includes("clarification") && line.toLowerCase().includes("deadline"));
-  if (questionDeadline) {
-    custom_fields.question_deadline = questionDeadline;
+    if (/^(kapittel|section|del|vedlegg)\b/i.test(line) || /^\d+(\.\d+)*\s+\S+/.test(line)) {
+      currentReference = line;
+      continue;
+    }
+
+    if (!isValidRequirementCandidate(line)) {
+      continue;
+    }
+
+    const requirementType: RequirementType = /(bør|should)/i.test(line) && !/(skal|must|shall|required)/i.test(line) ? "Bør" : "Må";
+    results.push({
+      code: `Krav ${results.length + 1}`,
+      category: inferCategory(line),
+      requirement_type: requirementType,
+      scope_summary: line.slice(0, 240),
+      source_reference: currentReference,
+      source_excerpt: line.slice(0, 500),
+    });
+
+    if (results.length >= 40) {
+      break;
+    }
+  }
+
+  return results;
+}
+
+function buildFallbackCustomerAnalysis(text: string): BidCustomerAnalysis {
+  const lowered = text.toLowerCase();
+  const priorities: string[] = [];
+  const clarifications: string[] = [];
+  const valueAngles: string[] = [];
+
+  if (/(sikkerhet|iso|compliance|mfa|krypter)/.test(lowered)) {
+    priorities.push("Kunden legger tydelig vekt på sikkerhet og etterlevelse.");
+    valueAngles.push("Vektlegg sikkerhetskontroller, standardisering og dokumentert etterlevelse.");
+  }
+  if (/(drift|ams|support|overvåk|incident|sla)/.test(lowered)) {
+    priorities.push("Kunden forventer stabil drift og tydelig operasjonell leveranse.");
+    valueAngles.push("Vis hvordan standardisert drift kan redusere risiko og øke forutsigbarhet.");
+  }
+  if (/(kostnad|pris|effektiv|optimalisering)/.test(lowered)) {
+    priorities.push("Kunden er opptatt av kostnadskontroll og effektiv leveranse.");
+    valueAngles.push("Knytt svaret til produktivitet, standardisering og kostnadsbesparelse.");
+  }
+
+  clarifications.push("Avklar hvilke deler av leveransen som er absolutte minstekrav versus ønskede tillegg.");
+  if (/(kapittel|vedlegg|bilag)/.test(lowered)) {
+    clarifications.push("Bekreft om det finnes vedlegg eller referansedokumenter som påvirker kravtolkningen.");
   }
 
   return {
-    customer_name: customerName,
-    title: lines[0] ?? "Untitled Bid",
-    estimated_value: valueMatch ? Number(valueMatch[1].replace(/,/g, "")) : null,
-    deadline: dateMatch ? dateMatch[0] : null,
-    owner: lowered.some((line) => line.includes("procurement")) ? "Procurement Team" : "Bid Team",
-    custom_fields
+    customer_priorities: priorities.slice(0, 6),
+    clarifications: clarifications.slice(0, 6),
+    value_angles: valueAngles.slice(0, 6),
+    generated_at: new Date().toISOString(),
   };
 }
 
-function fallbackChat(question: string, documents: Array<{ fileName: string; rawText: string }>): ChatAnswer {
-  const lines = documents.flatMap((document) =>
-    document.rawText
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => ({ line, fileName: document.fileName }))
-  );
+function buildFallbackCompliance(requirements: RequirementSuggestion[], bilag2Text: string): ComplianceSuggestion[] {
+  const lowered = bilag2Text.toLowerCase();
+  const lines = bilag2Text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-  const questionTerms = Array.from(new Set((question.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter(Boolean)));
+  return requirements.map((requirement) => {
+    const tokens = tokenizeRequirement(requirement.scope_summary);
+    const matches = lines.filter((line) =>
+      tokens.some((token) => line.toLowerCase().includes(token.toLowerCase()))
+    );
+    const coverage = tokens.filter((token) => lowered.includes(token.toLowerCase())).length;
 
-  const picks = lines.filter((item) => questionTerms.some((term) => item.line.toLowerCase().includes(term))).slice(0, 6);
-  const highlights = picks.length ? picks : lines.slice(0, 5);
+    let status: ComplianceStatus = "Ikke besvart";
+    if (coverage >= Math.max(2, Math.ceil(tokens.length * 0.6)) && matches.length) {
+      status = "Besvart";
+    } else if (coverage >= 1 && matches.length) {
+      status = "Delvis besvart";
+    }
 
-  if (!highlights.length) {
+    const foundIn = matches.find((line) => /^(kapittel|section|del)\b/i.test(line)) ?? null;
     return {
-      answer: "I could not find a direct answer in the uploaded document context.",
-      confidence: "Low",
-      citations: []
+      requirement_code: requirement.code,
+      status,
+      found_in: foundIn,
+      answer_excerpt: matches[0]?.slice(0, 500) ?? "",
+      notes:
+        status === "Besvart"
+          ? "Fallback-vurdering basert på tydelig teksttreff i Bilag 2."
+          : status === "Delvis besvart"
+            ? "Fallback-vurdering basert på svake eller indirekte teksttreff i Bilag 2."
+            : "Ingen tydelige teksttreff funnet i Bilag 2.",
+    };
+  });
+}
+
+async function createJsonCompletion(systemPrompt: string, userContext: string) {
+  const client = getClient();
+  if (!client) {
+    return null;
+  }
+
+  const completion = await client.chat.completions.create({
+    model: getOpenAiModel(),
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      {
+        role: "user",
+        content: userContext,
+      },
+    ],
+  });
+
+  return completion.choices[0]?.message?.content ?? "{}";
+}
+
+export async function extractRequirementsFromBilag1(rawText: string): Promise<RequirementSuggestion[]> {
+  const text = rawText.trim();
+  if (!text) {
+    return [];
+  }
+
+  const userContext = [
+    "Trekk ut krav fra følgende Bilag 1.",
+    buildDelimitedContext("Context", text.slice(0, 48000)),
+  ].join("\n\n");
+
+  try {
+    const raw = await createJsonCompletion(buildRequirementExtractionPrompt(), userContext);
+    if (!raw) {
+      return buildFallbackRequirements(text);
+    }
+
+    const payload = safeJson<{ requirements?: Array<Record<string, unknown>> }>(raw, {});
+    const items = Array.isArray(payload.requirements) ? payload.requirements : [];
+
+    return items
+      .map((item, index) => ({
+        code: `Krav ${index + 1}`,
+        category: normalizeText(item.category) || "Generelt",
+        requirement_type: normalizeRequirementType(item.requirement_type),
+        scope_summary: normalizeText(item.scope_summary).slice(0, 240),
+        source_reference: normalizeText(item.source_reference).slice(0, 120),
+        source_excerpt: normalizeText(item.source_excerpt).slice(0, 500),
+      }))
+      .filter((item) => isValidRequirementCandidate(item.scope_summary))
+      .slice(0, 50);
+  } catch {
+    return buildFallbackRequirements(text);
+  }
+}
+
+export async function createCustomerAnalysis(rawText: string): Promise<BidCustomerAnalysis> {
+  const text = rawText.trim();
+  if (!text) {
+    return {
+      customer_priorities: [],
+      clarifications: [],
+      value_angles: [],
+      generated_at: new Date().toISOString(),
     };
   }
 
-  const answer = [
-    "Executive summary:",
-    "The uploaded material points to a practical delivery-focused bid with clear timeline and compliance expectations.",
-    "",
-    "Relevant points from the document:",
-    ...highlights.slice(0, 5).map((item) => `- ${item.line}`),
-    "",
-    "Recommended next actions:",
-    "1. Build a requirement-to-solution coverage matrix and assign an owner per requirement.",
-    "2. Validate timeline assumptions and identify missing clarifications before proposal lock.",
-    "3. Align commercial structure with the expectations explicitly stated in the document."
-  ].join("\n");
+  const userContext = [
+    "Lag en kundeanalyse basert på følgende Bilag 1.",
+    buildDelimitedContext("Context", text.slice(0, 48000)),
+  ].join("\n\n");
 
-  return {
-    answer,
-    confidence: highlights.length >= 4 ? "High" : "Medium",
-    citations: highlights.slice(0, 5).map((item) => ({
-      document_name: item.fileName,
-      excerpt: item.line
-    }))
-  };
+  try {
+    const raw = await createJsonCompletion(buildCustomerAnalysisPrompt(), userContext);
+    if (!raw) {
+      return buildFallbackCustomerAnalysis(text);
+    }
+
+    const payload = safeJson<Record<string, unknown>>(raw, {});
+    return {
+      customer_priorities: normalizeList(payload.customer_priorities),
+      clarifications: normalizeList(payload.clarifications),
+      value_angles: normalizeList(payload.value_angles),
+      generated_at: new Date().toISOString(),
+    };
+  } catch {
+    return buildFallbackCustomerAnalysis(text);
+  }
 }
 
-function fallbackRequirements(contextSections: string[]): RequirementSuggestion[] {
-  const lines = contextSections
-    .flatMap((section) => section.split("\n"))
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("Document") && !line.startsWith("Bid metadata"));
+export async function matchBilag2AgainstRequirements(
+  requirements: RequirementSuggestion[],
+  bilag2Text: string
+): Promise<ComplianceSuggestion[]> {
+  const text = bilag2Text.trim();
+  if (!requirements.length) {
+    return [];
+  }
 
-  return lines
-    .filter((line) => /must|shall|required|requirement|needs to|expected to/i.test(line))
-    .slice(0, 20)
-    .map((line) => ({
-      title: line.slice(0, 100),
-      detail: line,
-      category: /security|identity|encrypt|mfa/i.test(line)
-        ? "Security"
-        : /price|cost|commercial|budget/i.test(line)
-          ? "Commercial"
-          : /support|sla|incident|service/i.test(line)
-            ? "Service"
-            : "General",
-      priority: /must|shall|required/i.test(line) ? "High" : "Medium",
-      source_excerpt: line,
-      source_document: null
+  if (!text) {
+    return requirements.map((requirement) => ({
+      requirement_code: requirement.code,
+      status: "Ikke besvart",
+      found_in: null,
+      answer_excerpt: "",
+      notes: "Bilag 2 er ikke lastet opp.",
     }));
+  }
+
+  const requirementsJson = JSON.stringify(
+    requirements.map((requirement) => ({
+      requirement_code: requirement.code,
+      category: requirement.category,
+      requirement_type: requirement.requirement_type,
+      scope_summary: requirement.scope_summary,
+      source_reference: requirement.source_reference,
+    }))
+  );
+
+  const userContext = [
+    "Vurder kravene opp mot følgende Bilag 2.",
+    buildDelimitedContext("Requirements", requirementsJson),
+    buildDelimitedContext("Context", text.slice(0, 48000)),
+  ].join("\n\n");
+
+  try {
+    const raw = await createJsonCompletion(buildCompliancePrompt(), userContext);
+    if (!raw) {
+      return buildFallbackCompliance(requirements, text);
+    }
+
+    const payload = safeJson<{ compliance_matrix?: Array<Record<string, unknown>> }>(raw, {});
+    const items = Array.isArray(payload.compliance_matrix) ? payload.compliance_matrix : [];
+
+    return items.map((item) => ({
+      requirement_code: normalizeText(item.requirement_code),
+      status: normalizeComplianceStatus(item.status),
+      found_in: normalizeText(item.found_in) || null,
+      answer_excerpt: normalizeText(item.answer_excerpt).slice(0, 500),
+      notes: normalizeText(item.notes).slice(0, 280),
+    }));
+  } catch {
+    return buildFallbackCompliance(requirements, text);
+  }
 }

@@ -1,0 +1,203 @@
+Bilag 1 – Kravspesifikasjon
+
+Konkurranse: Drift og videreutvikling av kommunal skyplattform
+Oppdragsgiver: Fjordvik kommune
+Dokumentdato: 11. mars 2026
+Referanse: FK-AMS-2026-04
+
+1. Formål
+
+Fjordvik kommune ønsker å inngå avtale med én leverandør for drift, overvåking, sikkerhetsforvaltning og videreutvikling av kommunens skyplattform i Microsoft Azure. Leveransen skal støtte kommunens administrative systemer, fagsystemer og integrasjoner mot eksterne tjenesteleverandører. Oppdragsgiver legger særlig vekt på sikker drift, forutsigbare tjenester, dokumentert etterlevelse og kostnadskontroll.
+
+2. Omfang
+
+Leverandøren skal levere standardiserte driftstjenester for følgende områder:
+- Azure landing zone
+- Virtuelle servere
+- Backup og restore
+- Overvåking og hendelseshåndtering
+- Sikkerhetskontroller
+- Endringshåndtering
+- Kapasitets- og kostnadsstyring
+
+Leverandøren skal også bistå med rådgivning knyttet til forbedring av plattformens sikkerhet, driftseffektivitet og skykostnader.
+
+3. Generelle krav
+
+Krav 1
+Kategori: Drift
+Type: Må
+Kravtekst: Leverandøren skal levere en standardisert driftstjeneste for Microsoft Azure basert på dokumenterte operasjonelle prosesser.
+
+Krav 2
+Kategori: Drift
+Type: Må
+Kravtekst: Leverandøren skal tilby tjenesten som en del av en etablert forvaltnings- og driftsmodell med definerte roller, ansvar og eskaleringsveier.
+
+Krav 3
+Kategori: Dokumentasjon
+Type: Må
+Kravtekst: Leverandøren skal levere tjenestebeskrivelse, ansvarsfordeling og operasjonell kontaktmodell ved kontraktsoppstart.
+
+Krav 4
+Kategori: Drift
+Type: Bør
+Kravtekst: Leverandøren bør kunne tilby en navngitt tjenesteansvarlig som følger opp kommunen gjennom hele avtaleperioden.
+
+4. Sikkerhetskrav
+
+Krav 5
+Kategori: Sikkerhet
+Type: Må
+Kravtekst: Leverandøren skal dokumentere at tjenesteleveransen er forankret i et styringssystem for informasjonssikkerhet med gyldig ISO 27001-sertifisering eller tilsvarende dokumentert praksis.
+
+Krav 6
+Kategori: Sikkerhet
+Type: Må
+Kravtekst: Leverandøren skal sørge for at alle administrative tilganger til kundens Azure-miljø er beskyttet med multifaktorautentisering.
+
+Krav 7
+Kategori: Sikkerhet
+Type: Må
+Kravtekst: Leverandøren skal kunne håndtere privilegerte tilganger etter prinsippet om minste privilegium og tidsbegrenset tilgang der dette er teknisk mulig.
+
+Krav 8
+Kategori: Sikkerhet
+Type: Må
+Kravtekst: Leverandøren skal etablere og vedlikeholde sikker logging av administrative handlinger i plattformen.
+
+Krav 9
+Kategori: Sikkerhet
+Type: Bør
+Kravtekst: Leverandøren bør kunne tilby løpende sikkerhetsrådgivning med anbefalinger for herding, identitetsstyring og forbedret beskyttelse av kritiske tjenester.
+
+5. Overvåking og hendelseshåndtering
+
+Krav 10
+Kategori: Overvåking
+Type: Må
+Kravtekst: Leverandøren skal overvåke plattformen 24/7 og håndtere hendelser i henhold til definerte responstider.
+
+Krav 11
+Kategori: Overvåking
+Type: Må
+Kravtekst: Kritiske hendelser med høy alvorlighetsgrad skal påbegynnes innen 15 minutter etter registrering.
+
+Krav 12
+Kategori: Overvåking
+Type: Må
+Kravtekst: Leverandøren skal varsle kundens kontaktperson ved kritiske hendelser uten ugrunnet opphold.
+
+Krav 13
+Kategori: Overvåking
+Type: Bør
+Kravtekst: Leverandøren bør tilby månedlig trendanalyse for hendelser, kapasitetsutfordringer og anbefalte forbedringstiltak.
+
+6. Backup og gjenoppretting
+
+Krav 14
+Kategori: Backup
+Type: Må
+Kravtekst: Leverandøren skal sikre at alle avtalte produksjonssystemer inngår i en dokumentert backup-løsning.
+
+Krav 15
+Kategori: Backup
+Type: Må
+Kravtekst: Leverandøren skal kunne dokumentere gjenopprettingsprosedyrer for både enkeltfiler, hele virtuelle servere og utvalgte datatjenester.
+
+Krav 16
+Kategori: Backup
+Type: Må
+Kravtekst: Leverandøren skal gjennomføre restore-test minst to ganger per år og dele resultatene med kunden.
+
+Krav 17
+Kategori: Backup
+Type: Bør
+Kravtekst: Leverandøren bør kunne tilby immutable backup eller tilsvarende beskyttelse mot uønsket sletting og løsepengeangrep.
+
+7. Endringshåndtering og videreutvikling
+
+Krav 18
+Kategori: Endring
+Type: Må
+Kravtekst: Leverandøren skal benytte en dokumentert endringsprosess for alle planlagte endringer i produksjonsmiljøet.
+
+Krav 19
+Kategori: Endring
+Type: Må
+Kravtekst: Endringer som påvirker tilgjengelighet eller sikkerhet skal forhåndsgodkjennes av kunden.
+
+Krav 20
+Kategori: Endring
+Type: Bør
+Kravtekst: Leverandøren bør kunne foreslå konkrete forbedringstiltak som øker standardisering, reduserer kompleksitet og forbedrer plattformens modenhet.
+
+8. Kostnadsstyring og rapportering
+
+Krav 21
+Kategori: Kostnad
+Type: Må
+Kravtekst: Leverandøren skal levere månedlig rapportering som viser forbruk, avvik, større kostnadsdrivere og anbefalte tiltak for optimalisering.
+
+Krav 22
+Kategori: Kostnad
+Type: Må
+Kravtekst: Leverandøren skal kunne identifisere uvanlig ressursforbruk og varsle kunden ved vesentlige kostnadsavvik.
+
+Krav 23
+Kategori: Rapportering
+Type: Må
+Kravtekst: Leverandøren skal levere en månedlig tjenesterapport med status for hendelser, endringer, sikkerhetsforhold, backup og anbefalte tiltak.
+
+Krav 24
+Kategori: Rapportering
+Type: Bør
+Kravtekst: Leverandøren bør kunne presentere rapportene i et format som er egnet for både teknisk ledelse og virksomhetsledelse.
+
+9. Kompetanse og bemanning
+
+Krav 25
+Kategori: Kompetanse
+Type: Må
+Kravtekst: Leverandøren skal dokumentere erfaring med drift av Microsoft Azure i komplekse virksomhetsmiljøer.
+
+Krav 26
+Kategori: Kompetanse
+Type: Må
+Kravtekst: Leverandøren skal tilby kompetanse innen Azure infrastruktur, identitet, sikkerhet, backup og hendelseshåndtering.
+
+Krav 27
+Kategori: Kompetanse
+Type: Bør
+Kravtekst: Leverandøren bør dokumentere erfaring fra offentlig sektor eller andre virksomheter med tilsvarende krav til etterlevelse og sikkerhet.
+
+10. Avklaringer oppdragsgiver ønsker belyst i tilbudet
+
+Krav 28
+Kategori: Avklaring
+Type: Må
+Kravtekst: Leverandøren skal beskrive hvilke deler av tjenesten som inngår i standardleveransen, og hvilke deler som krever tilleggstjenester eller særskilt bestilling.
+
+Krav 29
+Kategori: Avklaring
+Type: Må
+Kravtekst: Leverandøren skal tydelig beskrive eventuelle forutsetninger knyttet til kundens egen ressursbruk, tilgjengelige lisenser og nødvendige tredjepartstjenester.
+
+Krav 30
+Kategori: Avklaring
+Type: Bør
+Kravtekst: Leverandøren bør beskrive hvilke deler av tjenesten som ikke inngår i leveransen, slik at kommunen får en tydelig avgrensning av ansvar og omfang.
+
+11. Hva som er viktig for oppdragsgiver
+
+Oppdragsgiver vil vurdere tilbudet ut fra følgende forhold:
+- høy grad av standardisering
+- dokumentert sikkerhet og kontroll
+- rask og forutsigbar hendelseshåndtering
+- tydelig ansvarsdeling
+- aktiv rådgivning om forbedringer
+- kostnadskontroll og optimalisering
+
+12. Oppsummering
+
+Leverandøren forventes å levere en moden, sikker og standardisert driftstjeneste for Azure-plattformen. Tilbudet skal være tydelig på hva som inngår, hvordan tjenesten leveres, hvilke sikkerhets- og driftskontroller som benyttes, og hvordan kommunen får verdi i form av produktivitet, sikkerhet og kostnadsbesparelse.
