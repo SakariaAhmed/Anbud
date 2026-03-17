@@ -1,40 +1,30 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Oswald } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import type { ReactNode } from "react";
-
-import { SideNav } from "@/components/side-nav";
-import { getRecentBidsForPage } from "@/lib/server/bid-reads";
 
 import "./globals.css";
 
-const display = Oswald({
+const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-display"
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
 });
 
-const body = IBM_Plex_Sans({
+const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-body"
+  weight: ["400", "500"],
+  variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
   title: "ANBUD",
-  description: "Simple bid workspace with document-grounded AI chat"
+  description: "Bilag 1 og Bilag 2 analysert til kravmatrise og compliance-kontroll",
 };
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
-  const recentBids = await getRecentBidsForPage();
-
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${display.variable} ${body.variable}`}>
-        <div className="app-shell">
-          <SideNav recentBids={recentBids} />
-          <main className="page-content">{children}</main>
-        </div>
-      </body>
+    <html className={`${plexSans.variable} ${plexMono.variable}`} lang="no">
+      <body>{children}</body>
     </html>
   );
 }

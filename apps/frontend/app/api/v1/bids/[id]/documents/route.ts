@@ -2,57 +2,71 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 
 import { extractTextFromUpload } from "@/lib/server/documents";
-import { getBidOrThrow, logBidEvent, mapDocument, mapEvent, touchBidActivity } from "@/lib/server/bids-db";
-import { actorFromHeaders, tenantIdFromHeaders } from "@/lib/server/headers";
+import { getBidDocuments, getBidOrThrow, mapDocument, touchBidActivity } from "@/lib/server/bids-db";
 import { createServiceClient } from "@/lib/server/supabase";
 
 export const runtime = "nodejs";
 
+function normalizeRole(value: FormDataEntryValue | null) {
+  const role = String(value ?? "").trim().toLowerCase();
+  return role === "bilag1" || role === "bilag2" ? role : null;
+}
+
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const tenantId = tenantIdFromHeaders(request.headers);
+  const tenantId = request.headers.get("x-tenant-id") ?? "default";
   const { id } = await context.params;
-  const supabase = createServiceClient();
-  const limitParam = Number(request.nextUrl.searchParams.get("limit"));
-  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 200) : 50;
 
-  const { data, error } = await supabase
-    .from("bid_documents")
-    .select("id, file_name, content_type, status, created_at, raw_text")
-    .eq("tenant_id", tenantId)
-    .eq("bid_id", id)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    return NextResponse.json({ detail: error.message }, { status: 500 });
+  try {
+    const documents = await getBidDocuments(tenantId, id);
+    return NextResponse.json(
+      documents.map((document) => ({
+        id: document.id,
+        document_role: document.document_role,
+        file_name: document.file_name,
+        content_type: document.content_type,
+        file_format: document.file_format,
+        created_at: document.created_at,
+      }))
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { detail: error instanceof Error ? error.message : "Kunne ikke hente dokumenter" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json((data ?? []).map((row) => mapDocument(row as never)));
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const tenantId = tenantIdFromHeaders(request.headers);
-  const actor = actorFromHeaders(request.headers);
+  const tenantId = request.headers.get("x-tenant-id") ?? "default";
   const { id } = await context.params;
   const supabase = createServiceClient();
 
   try {
     await getBidOrThrow(tenantId, id);
   } catch {
-    return NextResponse.json({ detail: "Bid not found" }, { status: 404 });
+    return NextResponse.json({ detail: "Sak ikke funnet" }, { status: 404 });
   }
 
   const formData = await request.formData();
   const file = formData.get("file");
+  const documentRole = normalizeRole(formData.get("document_role"));
+
   if (!(file instanceof File)) {
-    return NextResponse.json({ detail: "File is required" }, { status: 400 });
+    return NextResponse.json({ detail: "Fil er påkrevd" }, { status: 400 });
   }
 
-  let parsed: { rawText: string; contentType: string; fileName: string };
+  if (!documentRole) {
+    return NextResponse.json({ detail: "document_role må være bilag1 eller bilag2" }, { status: 422 });
+  }
+
+  let parsed;
   try {
-    parsed = await extractTextFromUpload(file);
+    parsed = await extractTextFromUpload(file, documentRole);
   } catch (error) {
-    return NextResponse.json({ detail: error instanceof Error ? error.message : "Failed to parse file" }, { status: 400 });
+    return NextResponse.json(
+      { detail: error instanceof Error ? error.message : "Kunne ikke lese filen" },
+      { status: 400 }
+    );
   }
 
   const { data, error } = await supabase
@@ -60,38 +74,24 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     .insert({
       tenant_id: tenantId,
       bid_id: id,
+      document_role: documentRole,
       file_name: parsed.fileName,
       content_type: parsed.contentType,
+      file_format: parsed.fileFormat,
+      file_base64: parsed.fileBase64,
       raw_text: parsed.rawText,
-      status: "uploaded"
+      source_map: parsed.sourceMap,
     })
-    .select("*")
+    .select("id, document_role, file_name, content_type, file_format, created_at")
     .single();
 
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 500 });
   }
 
-  const eventRow = await logBidEvent({
-    tenantId,
-    bidId: id,
-    actor,
-    type: "document_uploaded",
-    payload: {
-      document_id: data.id,
-      file_name: data.file_name,
-      content_type: data.content_type
-    }
-  });
   await touchBidActivity(tenantId, id);
   revalidateTag("bids");
   revalidateTag(`bid:${id}`);
 
-  return NextResponse.json(
-    {
-      document: mapDocument(data as never),
-      event: mapEvent(eventRow)
-    },
-    { status: 201 }
-  );
+  return NextResponse.json({ document: mapDocument(data as never) }, { status: 201 });
 }

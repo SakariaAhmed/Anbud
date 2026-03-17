@@ -1,0 +1,118 @@
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/api/v1/bids/[id]",
+      "regex": "^/api/v1/bids/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/v1/bids/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/v1/bids/[id]/analysis",
+      "regex": "^/api/v1/bids/([^/]+?)/analysis(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/v1/bids/(?<nxtPid>[^/]+?)/analysis(?:/)?$"
+    },
+    {
+      "page": "/api/v1/bids/[id]/documents",
+      "regex": "^/api/v1/bids/([^/]+?)/documents(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/v1/bids/(?<nxtPid>[^/]+?)/documents(?:/)?$"
+    },
+    {
+      "page": "/api/v1/bids/[id]/documents/[documentId]",
+      "regex": "^/api/v1/bids/([^/]+?)/documents/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPdocumentId": "nxtPdocumentId"
+      },
+      "namedRegex": "^/api/v1/bids/(?<nxtPid>[^/]+?)/documents/(?<nxtPdocumentId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/v1/bids/[id]/requirements",
+      "regex": "^/api/v1/bids/([^/]+?)/requirements(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/v1/bids/(?<nxtPid>[^/]+?)/requirements(?:/)?$"
+    },
+    {
+      "page": "/api/v1/bids/[id]/requirements/[requirementId]",
+      "regex": "^/api/v1/bids/([^/]+?)/requirements/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPrequirementId": "nxtPrequirementId"
+      },
+      "namedRegex": "^/api/v1/bids/(?<nxtPid>[^/]+?)/requirements/(?<nxtPrequirementId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/bids/[id]",
+      "regex": "^/bids/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/bids/(?<nxtPid>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

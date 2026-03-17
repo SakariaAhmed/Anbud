@@ -1,0 +1,350 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 6 /Kids [ 4 0 R 6 0 R 8 0 R 10 0 R 12 0 R 14 0 R ] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 2507 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(Requirements Document: Sweet Crumbs Bakery Cloud Storage Migration) Tj
+T* () Tj
+T* (Document Type: Requirement Specification / Migration Requirements) Tj
+T* () Tj
+T* (1. DOCUMENT PURPOSE) Tj
+T* (-------------------) Tj
+T* (This document defines the detailed business, technical, security, migration, and testing) Tj
+T* (requirements for Sweet Crumbs Bakery as it moves data from an on-premise server to a managed cloud) Tj
+T* (storage platform.) Tj
+T* () Tj
+T* (The document is intended for internal planning, vendor evaluation, migration execution, and user) Tj
+T* (acceptance testing.) Tj
+T* () Tj
+T* () Tj
+T* (2. BUSINESS PROFILE AND CURRENT STATE) Tj
+T* (-------------------------------------) Tj
+T* (Sweet Crumbs Bakery operates one production kitchen, one retail storefront, and one small) Tj
+T* (back-office location. The bakery currently stores all digital files on a single Windows-based file) Tj
+T* (server located on site in the office.) Tj
+T* () Tj
+T* (The on-premise server holds approximately 1.8 TB of data and grows by an estimated 12 GB per) Tj
+T* (month. There are 18 employees with some level of file access, including 4 staff members who need) Tj
+T* (secure remote access.) Tj
+T* () Tj
+T* (Current protection relies on one nightly backup to a local NAS device. There is no active offsite) Tj
+T* (redundancy, cloud replication, or ransomware-isolated backup copy.) Tj
+T* () Tj
+T* () Tj
+T* (3. MIGRATION OBJECTIVES) Tj
+T* (-----------------------) Tj
+T* (The bakery requires a cloud storage solution that reduces dependence on a single physical server,) Tj
+T* (supports secure access from bakery, office, and remote locations, and preserves all critical) Tj
+T* (business records without loss or corruption.) Tj
+T* () Tj
+T* (The target solution must allow daily operations to continue during bakery business hours from) Tj
+T* (05:00 to 20:00 local time with minimal disruption to production planning, supplier ordering,) Tj
+T* (payroll processing, and financial reporting.) Tj
+T* () Tj
+T* (The migration must provide a controlled cutover with a tested rollback path and measurable) Tj
+T* (validation of data completeness, permissions, and backup recoverability.) Tj
+T* () Tj
+T* () Tj
+T* (4. IN-SCOPE DATA SETS) Tj
+T* (---------------------) Tj
+T* (In-scope content includes shared business documents, recipe files, production schedules, inventory) Tj
+T* (spreadsheets, supplier contracts, supplier invoices, employee records, payroll support documents,) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 2514 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(point-of-sale daily sales exports, financial reports, and backup archives from the last 7 years.) Tj
+T* () Tj
+T* (The existing folder hierarchy, naming structure, and ownership model must be preserved unless) Tj
+T* (explicitly corrected during data cleanup.) Tj
+T* () Tj
+T* (Archived records older than 7 years may be moved into lower-cost archive storage if the retention) Tj
+T* (and retrieval requirements in this document are met.) Tj
+T* () Tj
+T* () Tj
+T* (5. OUT-OF-SCOPE ITEMS) Tj
+T* (---------------------) Tj
+T* (This effort does not include replacement of the bakery point-of-sale application, website hosting) Tj
+T* (migration, email migration, ERP implementation, or redesign of bakery business processes.) Tj
+T* () Tj
+T* (Application modernization is out of scope unless directly required for file export, backup, or) Tj
+T* (access continuity during the storage migration.) Tj
+T* () Tj
+T* () Tj
+T* (6. BUSINESS REQUIREMENTS) Tj
+T* (------------------------) Tj
+T* (The bakery must be able to access active files from the storefront, kitchen office, and approved) Tj
+T* (remote locations without dependence on the legacy on-premise server after cutover.) Tj
+T* () Tj
+T* (Authorized users must access the system through a familiar folder-style interface with minimal) Tj
+T* (end-user training. Staff on the bakery floor must not be required to learn a complex document) Tj
+T* (management workflow.) Tj
+T* () Tj
+T* (The migration must not exceed 2 hours of business-impacting downtime during final cutover. A) Tj
+T* (weekend or after-hours cutover window is acceptable if the rollback procedure remains available) Tj
+T* (until the system is signed off.) Tj
+T* () Tj
+T* (The solution must support secure external sharing of selected finance or audit documents with the) Tj
+T* (bakery accountant without exposing internal employee or payroll records.) Tj
+T* () Tj
+T* () Tj
+T* (7. FUNCTIONAL REQUIREMENTS) Tj
+T* (--------------------------) Tj
+T* (The cloud storage environment must support at least 3 TB of data at go-live and scale to 5 TB) Tj
+T* (without architecture changes or vendor migration.) Tj
+T* () Tj
+T* (The system must support the following file types at minimum: PDF, DOCX, XLSX, CSV, JPG, PNG, and) Tj
+T* (ZIP backup files.) Tj
+T* () Tj
+T* (Folder structure and file names must be preserved during migration. Metadata that can be) Tj
+T* (preserved, including last modified date and ownership mapping, should be retained where) Tj
+T* (technically feasible.) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 2572 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+() Tj
+T* (The system must support role-based access control for the roles Owners, Managers, Bakers, and) Tj
+T* (Finance or Administration.) Tj
+T* () Tj
+T* (Version history must be available for shared documents. Deleted file recovery must be available) Tj
+T* (for at least 30 days. File access, deletion events, and permission changes must be logged.) Tj
+T* () Tj
+T* (The transition period must support automated nightly synchronization between the on-premise file) Tj
+T* (server and the cloud target until final cutover is completed.) Tj
+T* () Tj
+T* () Tj
+T* (8. NON-FUNCTIONAL REQUIREMENTS) Tj
+T* (------------------------------) Tj
+T* (Files smaller than 25 MB must open within 5 seconds on a standard office internet connection.) Tj
+T* (Upload of daily point-of-sale exports must complete within 2 minutes. Filename search across) Tj
+T* (active folders must return results within 10 seconds.) Tj
+T* () Tj
+T* (The service must provide at least 99.9 percent availability for active business data. Critical) Tj
+T* (folders must be replicated across at least two availability zones or an equivalent resilience) Tj
+T* (model.) Tj
+T* () Tj
+T* (The solution must support at least 30 concurrent users without service degradation and must remain) Tj
+T* (operable through a browser or synced folder client on standard staff workstations.) Tj
+T* () Tj
+T* () Tj
+T* (9. SECURITY REQUIREMENTS) Tj
+T* (------------------------) Tj
+T* (All data must be encrypted in transit using TLS 1.2 or higher and encrypted at rest using AES-256) Tj
+T* (or an equivalent modern standard.) Tj
+T* () Tj
+T* (Multi-factor authentication must be mandatory for owners, managers, and finance users. Public) Tj
+T* (access to storage must be disabled by default.) Tj
+T* () Tj
+T* (Employee records, payroll documents, and HR-related files must be restricted to approved finance) Tj
+T* (or HR roles only. The bakery accountant may only receive time-limited access to explicitly shared) Tj
+T* (folders or files.) Tj
+T* () Tj
+T* (Audit logs must be retained for at least 12 months and must record file access, failed logins,) Tj
+T* (permission changes, and deletion activity. Failed login thresholds must support monitoring and) Tj
+T* (alerting.) Tj
+T* () Tj
+T* () Tj
+T* (10. RETENTION AND COMPLIANCE REQUIREMENTS) Tj
+T* (-----------------------------------------) Tj
+T* (Financial records must be retained for 7 years. Supplier traceability, food safety, and sourcing) Tj
+T* (documents must be retained for at least 5 years. Employee records must be retained according to) Tj
+ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 11 0 R >>
+endobj
+11 0 obj
+<< /Length 2579 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(applicable labor and privacy law.) Tj
+T* () Tj
+T* (Archived records must remain searchable by filename or folder and retrievable within 24 hours even) Tj
+T* (when stored in a lower-cost archive tier.) Tj
+T* () Tj
+T* (Retention rules must be documented by data category so the bakery can demonstrate how active,) Tj
+T* (archived, and deleted records are handled over time.) Tj
+T* () Tj
+T* () Tj
+T* (11. MIGRATION REQUIREMENTS) Tj
+T* (--------------------------) Tj
+T* (The initial migration must include all active folders plus archive data from the prior 7 years.) Tj
+T* (Data integrity must be validated using file counts and checksum or hash verification for sampled) Tj
+T* (and critical data sets.) Tj
+T* () Tj
+T* (Permission mapping from the existing server must be documented before cutover. A pilot migration) Tj
+T* (must be executed for one department, such as Finance or Inventory, before the full migration is) Tj
+T* (approved.) Tj
+T* () Tj
+T* (The legacy server must remain available in read-only mode for 14 days after go-live to support) Tj
+T* (validation, rollback protection, and operational confidence.) Tj
+T* () Tj
+T* (A rollback plan must be written and tested before production cutover. The plan must specify) Tj
+T* (cutback triggers, decision owners, and maximum time to restore on-premise access if the cloud) Tj
+T* (cutover fails.) Tj
+T* () Tj
+T* () Tj
+T* (12. BACKUP AND DISASTER RECOVERY REQUIREMENTS) Tj
+T* (---------------------------------------------) Tj
+T* (Cloud data must be backed up daily. Backup retention must include daily backups for 30 days,) Tj
+T* (monthly backups for 12 months, and annual backups for 7 years.) Tj
+T* () Tj
+T* (At least one backup copy must be logically isolated from ordinary user deletion and) Tj
+T* (ransomware-style tampering. Recovery Point Objective must be no greater than 24 hours and Recovery) Tj
+T* (Time Objective must be no greater than 8 hours.) Tj
+T* () Tj
+T* (Restore capability must support single-file restore, folder-level restore, and full recovery of a) Tj
+T* (protected data set without requiring vendor engineering intervention for routine cases.) Tj
+T* () Tj
+T* () Tj
+T* (13. NETWORK AND ACCESS REQUIREMENTS) Tj
+T* (-----------------------------------) Tj
+T* (The bakery internet connection should provide at least 100 Mbps download and 20 Mbps upload. The) Tj
+T* (office or accounting location should provide at least 50 Mbps download and 10 Mbps upload.) Tj
+T* () Tj
+T* (Remote access must use authenticated secure channels only. Large archive uploads and bulk) Tj
+ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 13 0 R >>
+endobj
+13 0 obj
+<< /Length 2371 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(synchronization jobs should be scheduled outside business hours unless they are proven not to) Tj
+T* (affect day-to-day work.) Tj
+T* () Tj
+T* () Tj
+T* (14. TESTING REQUIREMENTS) Tj
+T* (------------------------) Tj
+T* (A test migration must include at least 200 GB of mixed file content representing recipes,) Tj
+T* (contracts, finance records, images, and sales exports.) Tj
+T* () Tj
+T* (Permission testing must validate access separately for Owners, Managers, Bakers, and Finance or) Tj
+T* (Administration. Negative tests must confirm that bakery-floor users cannot access payroll or) Tj
+T* (employee files.) Tj
+T* () Tj
+T* (Restore testing must validate single-file restore, full-folder restore, deleted-file recovery, and) Tj
+T* (access to archived data. Security testing must verify MFA enforcement, unauthorized access denial,) Tj
+T* (and generation of audit records.) Tj
+T* () Tj
+T* (Performance testing must be executed during normal business hours. User acceptance testing must be) Tj
+T* (signed by the bakery manager, finance administrator, and operations owner.) Tj
+T* () Tj
+T* () Tj
+T* (15. ACCEPTANCE CRITERIA) Tj
+T* (-----------------------) Tj
+T* (The migration will be accepted only if 100 percent of in-scope data is migrated, the folder) Tj
+T* (structure matches the source environment, no critical corruption is found, and role-based access) Tj
+T* (rules are confirmed to be correct.) Tj
+T* () Tj
+T* (Backup and restore tests must pass, security controls must be enabled and verified, and final) Tj
+T* (cutover downtime must not exceed 2 hours.) Tj
+T* () Tj
+T* (The bakery must complete 5 business days of stable post-cutover operation before final sign-off is) Tj
+T* (issued.) Tj
+T* () Tj
+T* () Tj
+T* (16. KEY RISKS AND ASSUMPTIONS) Tj
+T* (-----------------------------) Tj
+T* (Migration risk includes limited upload bandwidth, inconsistent historical folder permissions,) Tj
+T* (duplicate or obsolete backup content, and the possibility that staff continue saving files to the) Tj
+T* (old server after cutover.) Tj
+T* () Tj
+T* (This document assumes the bakery can produce a current user list, an export or record of current) Tj
+T* (file permissions, and a maintenance window for after-hours or weekend cutover.) Tj
+T* () Tj
+T* () Tj
+T* (17. REQUIRED PROJECT DELIVERABLES) Tj
+T* (---------------------------------) Tj
+ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 15 0 R >>
+endobj
+15 0 obj
+<< /Length 470 >>
+stream
+BT
+/F1 10 Tf
+48 760 Td
+14 TL
+(Required deliverables are a target cloud storage architecture, migration runbook, permission) Tj
+T* (matrix, retention policy, backup and recovery procedure, cutover checklist, rollback plan, and) Tj
+T* (final test report.) Tj
+T* () Tj
+T* (A short user guide for bakery staff and finance users must be delivered before go-live so) Tj
+T* (operational teams know where to access data and how to report access issues.) Tj
+T* () Tj
+T* () Tj
+ET
+endstream
+endobj
+xref
+0 16
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000156 00000 n 
+0000000226 00000 n 
+0000000352 00000 n 
+0000002910 00000 n 
+0000003036 00000 n 
+0000005601 00000 n 
+0000005727 00000 n 
+0000008350 00000 n 
+0000008478 00000 n 
+0000011109 00000 n 
+0000011237 00000 n 
+0000013660 00000 n 
+0000013788 00000 n 
+trailer
+<< /Size 16 /Root 1 0 R >>
+startxref
+14309
+%%EOF

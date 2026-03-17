@@ -1,4 +1,7 @@
 import { BidWorkspacePage } from "@/components/bid-workspace-page";
+import { getBidForPage } from "@/lib/server/bids-db";
+
+export const dynamic = "force-dynamic";
 
 interface BidPageProps {
   params: Promise<{ id: string }>;
@@ -6,5 +9,7 @@ interface BidPageProps {
 
 export default async function BidPage({ params }: BidPageProps) {
   const { id } = await params;
-  return <BidWorkspacePage bidId={id} />;
+  const data = await getBidForPage(id);
+
+  return <BidWorkspacePage initialData={data} />;
 }

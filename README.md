@@ -1,71 +1,57 @@
-# ANBUD (Re-Architected)
+# ANBUD
 
-ANBUD is now re-architected for simpler hosting:
+ANBUD er nå en smal Next.js-app for analyse av `Bilag 1` og `Bilag 2`.
 
-- Frontend + API: **Next.js** (single app)
-- Database: **Supabase Postgres**
-- AI: **OpenAI API** (server-side via Next route handlers)
-- Hosting target: **Netlify + Supabase** (no Docker required for production)
+## Hva appen gjør
 
-## What changed
+- oppretter en sak
+- laster opp `Bilag 1` og `Bilag 2` som `PDF`, `DOCX` eller `TXT`
+- trekker ut krav fra Bilag 1
+- bygger en kravmatrise
+- lager en enkel kundeanalyse
+- matcher krav mot leverandørens svar i Bilag 2
+- viser et compliance-dashboard med `Besvart`, `Delvis besvart` og `Ikke besvart`
 
-The previous FastAPI + worker runtime is replaced for active product flows by Next.js route handlers under:
+## Aktiv stack
 
-- `apps/frontend/app/api/v1/bids/*`
+- frontend + API: Next.js App Router
+- database: Supabase Postgres
+- AI: OpenAI API fra server-side route handlers
 
-Implemented bid features in the new server layer:
+## Kom i gang
 
-- Create/list/get/update bids
-- Document upload (PDF/TXT) + raw text storage
-- AI intake autofill from document
-- Bid chat grounded in uploaded documents
-- Event log (`bid_created`, `document_uploaded`, `chat_question`, `chat_answer`)
-- Notes create/list
-
-## Setup (local without Docker)
-
-1. Copy env file:
+1. Kopier miljøfil:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Fill required values in `.env`:
+2. Sett nødvendige variabler:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY` (optional, fallback mode works without it)
+- `OPENAI_API_KEY` valgfri, fallback-logikk finnes
+- `OPENAI_MODEL` valgfri
 
-3. Create DB schema in Supabase SQL editor:
+3. Kjør ny database-schema i Supabase:
 
-- Run [`supabase/schema.sql`](./supabase/schema.sql)
+- [supabase/schema.sql](/Users/sakariaahmed/Code/anbud/supabase/schema.sql)
 
-4. Start frontend app:
+4. Start appen:
 
 ```bash
 cd apps/frontend
-npm install
+npm install --legacy-peer-deps
 npm run dev
 ```
 
-5. Open:
+5. Åpne:
 
-- Frontend + API: [http://localhost:3000](http://localhost:3000)
+- [http://localhost:3000](http://localhost:3000)
 
-## Netlify deployment
+## Viktige filer
 
-`netlify.toml` is provided at repo root for Next.js deployment.
-
-Environment variables to set in Netlify:
-
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL` (optional, default `gpt-5-mini`)
-- `NEXT_PUBLIC_API_BASE_URL` (leave empty for same-origin)
-- `NEXT_PUBLIC_SITE_URL` (your site URL)
-
-## Notes
-
-- Legacy FastAPI/Docker files are still in the repo for compatibility during migration, but the active bid UI now uses Next.js API routes.
-- OpenAI calls are server-side only.
+- [apps/frontend/app/page.tsx](/Users/sakariaahmed/Code/anbud/apps/frontend/app/page.tsx)
+- [apps/frontend/app/bids/[id]/page.tsx](/Users/sakariaahmed/Code/anbud/apps/frontend/app/bids/[id]/page.tsx)
+- [apps/frontend/app/api/v1/bids/[id]/analysis/route.ts](/Users/sakariaahmed/Code/anbud/apps/frontend/app/api/v1/bids/[id]/analysis/route.ts)
+- [apps/frontend/lib/server/ai.ts](/Users/sakariaahmed/Code/anbud/apps/frontend/lib/server/ai.ts)
