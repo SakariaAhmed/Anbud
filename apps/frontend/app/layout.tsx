@@ -1,30 +1,32 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import "./globals.css";
 
-const plexSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-sans",
-});
-
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-mono",
-});
-
 export const metadata: Metadata = {
   title: "ANBUD",
-  description: "Bilag 1 og Bilag 2 analysert til kravmatrise og compliance-kontroll",
+  description: "Kundeanalyse, løsningsvurdering, generator og sparring for tilbudsteam i komplekse kundeprosjekter.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html className={`${plexSans.variable} ${plexMono.variable}`} lang="no">
-      <body>{children}</body>
+    <html lang="no">
+      <body className="min-h-screen bg-background text-foreground">
+        <div className="min-h-screen">
+          <header className="border-b border-border/60 bg-background/95">
+            <div className="mx-auto flex h-14 w-full max-w-[1600px] items-center px-4 md:px-6">
+              <Link
+                href="/"
+                className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-700 transition hover:text-slate-950"
+              >
+                Anbud
+              </Link>
+            </div>
+          </header>
+          <main>{children}</main>
+        </div>
+      </body>
     </html>
   );
 }

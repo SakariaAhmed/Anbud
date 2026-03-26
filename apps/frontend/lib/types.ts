@@ -1,96 +1,252 @@
-export type DocumentRole = "bilag1" | "bilag2";
+export type ProjectDocumentRole =
+  | "primary_customer_document"
+  | "primary_solution_document"
+  | "supporting_document";
 
-export type RequirementType = "Må" | "Bør";
+export type SupportingDocumentSubtype =
+  | "rfp"
+  | "kravdokument"
+  | "prosjektbeskrivelse"
+  | "notat"
+  | "motenotat"
+  | "workshop"
+  | "vedlegg"
+  | "strategi"
+  | "utkast"
+  | "annet";
 
-export type ComplianceStatus = "Besvart" | "Delvis besvart" | "Ikke besvart";
+export type DocumentFileFormat = "pdf" | "docx" | "txt" | "md";
 
-export interface BidSummary {
+export type ValueCategory =
+  | "Høyere produktivitet"
+  | "Lavere kostnader"
+  | "Redusert risiko"
+  | "Bedre brukeropplevelse"
+  | "Fokus på kjernevirksomheten";
+
+export type RequirementImportance = "Kritisk" | "Viktig" | "Mindre viktig";
+export type RequirementKind = "Eksplisitt" | "Implisitt";
+
+export type GeneratedArtifactType =
+  | "losningsutkast"
+  | "forbedret_kravsvar"
+  | "tilbudsstrategi"
+  | "verdiargumentasjon"
+  | "anbefalt_arkitektur"
+  | "gjennomforing_og_risiko";
+
+export type ProjectStatus =
+  | "Venter på dokument"
+  | "Kundedokument lastet opp"
+  | "Kundeanalyse klar"
+  | "Løsningsdokument lastet opp"
+  | "Klar for sparring";
+
+export interface ProjectSummary {
   id: string;
-  customer_name: string;
-  title: string;
+  name: string;
+  customer_name: string | null;
+  description: string | null;
+  industry: string | null;
+  status: ProjectStatus;
+  customer_document_uploaded: boolean;
+  customer_analysis_generated: boolean;
+  solution_document_uploaded: boolean;
+  solution_evaluation_generated: boolean;
+  last_activity_at: string;
   created_at: string;
   updated_at: string;
-  bilag1_uploaded: boolean;
-  bilag2_uploaded: boolean;
-  analysis_generated: boolean;
-  missing_requirements: number;
-  total_requirements: number;
+  document_count: number;
+  supporting_document_count: number;
+  artifact_count: number;
+  has_chat: boolean;
 }
 
-export interface BidDocument {
+export interface ProjectSnapshotResult {
+  name: string;
+  customer_name: string | null;
+  description: string | null;
+  industry: string | null;
+  status: ProjectStatus;
+  customer_document_uploaded: boolean;
+  customer_analysis_generated: boolean;
+  solution_document_uploaded: boolean;
+  solution_evaluation_generated: boolean;
+  last_activity_at: string;
+}
+
+export interface ProjectDocument {
   id: string;
-  document_role: DocumentRole;
+  project_id: string;
+  role: ProjectDocumentRole;
+  supporting_subtype: SupportingDocumentSubtype | null;
+  title: string;
   file_name: string;
+  file_format: DocumentFileFormat;
   content_type: string;
-  file_format: string;
-  created_at: string;
-}
-
-export interface BidRequirement {
-  id: string;
-  code: string;
-  category: string;
-  requirement_type: RequirementType;
-  scope_summary: string;
-  source_reference: string;
-  source_excerpt: string;
+  file_size_bytes: number;
   created_at: string;
   updated_at: string;
 }
 
-export interface BidCustomerAnalysis {
-  customer_priorities: string[];
-  clarifications: string[];
-  value_angles: string[];
-  generated_at: string;
+export interface ProjectDocumentStructureEntry {
+  reference: string;
+  text: string;
 }
 
-export interface BidComplianceRow {
-  requirement_id: string;
-  requirement_code: string;
-  requirement_summary: string;
-  category: string;
-  requirement_type: RequirementType;
-  status: ComplianceStatus;
-  found_in: string | null;
-  source_reference: string;
-  source_excerpt: string;
-  answer_excerpt: string;
-  notes: string;
+export interface ProjectDocumentDetail extends ProjectDocument {
+  raw_text: string;
+  file_base64: string;
+  structure_map: ProjectDocumentStructureEntry[];
 }
 
-export interface BidSummaryCounts {
-  total_requirements: number;
-  besvart: number;
-  delvis_besvart: number;
-  ikke_besvart: number;
-}
-
-export interface BidDetail {
-  id: string;
-  customer_name: string;
+export interface AnalysisRequirement {
   title: string;
+  description: string;
+  category: string;
+  importance: RequirementImportance;
+  kind: RequirementKind;
+  source_reference: string;
+  source_excerpt: string;
+}
+
+export interface ValueOpportunity {
+  title: string;
+  description: string;
+  value_categories: ValueCategory[];
+}
+
+export interface CustomerAnalysisResult {
+  customer_profile: string[];
+  customer_goals: string[];
+  explicit_requirements: AnalysisRequirement[];
+  implicit_requirements: AnalysisRequirement[];
+  prioritized_requirements: Array<{
+    requirement: string;
+    priority: RequirementImportance;
+    reason: string;
+  }>;
+  ambiguities: string[];
+  risks: string[];
+  likely_evaluation_criteria: string[];
+  signal_words: string[];
+  expected_solution_direction: string[];
+  value_opportunities: ValueOpportunity[];
+  positioning_recommendations: string[];
+  executive_summary: string;
+}
+
+export interface SolutionEvaluationResult {
+  fit_to_customer_needs: string;
+  strengths: string[];
+  weaknesses: string[];
+  generic_sections: string[];
+  missing_elements: string[];
+  risks_to_customer: string[];
+  trust_signals: string[];
+  likely_score_assessment: {
+    quality: string;
+    delivery_confidence: string;
+    risk: string;
+    competitiveness: string;
+  };
+  improvement_recommendations: string[];
+  value_assessment: ValueOpportunity[];
+  rewrite_suggestions: Array<{
+    target: string;
+    suggestion: string;
+  }>;
+  executive_summary: string;
+}
+
+export interface GeneratedArtifact {
+  id: string;
+  project_id: string;
+  artifact_type: GeneratedArtifactType;
+  title: string;
+  content_markdown: string;
+  input_snapshot: unknown;
+  created_at: string;
+}
+
+export type ChatMessageRole = "user" | "assistant";
+
+export interface ChatMessage {
+  id: string;
+  project_id: string;
+  role: ChatMessageRole;
+  content: string;
+  context_snapshot: unknown;
+  created_at: string;
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  documents: ProjectDocument[];
+  customer_analysis: CustomerAnalysisResult | null;
+  solution_evaluation: SolutionEvaluationResult | null;
+  generated_artifacts: GeneratedArtifact[];
+  chat_messages: ChatMessage[];
+}
+
+export interface ProjectCreateInput {
+  name?: string | null;
+  customer_name?: string | null;
+  description?: string | null;
+  industry?: string | null;
+}
+
+export interface ProjectMetadataInference {
+  name: string | null;
+  customer_name: string | null;
+  industry: string | null;
+  description: string | null;
+}
+
+export interface ProjectDocumentCreateResponse {
+  document: ProjectDocument;
+}
+
+export interface CustomerAnalysisResponse {
+  analysis: CustomerAnalysisResult;
+}
+
+export interface SolutionEvaluationResponse {
+  evaluation: SolutionEvaluationResult;
+}
+
+export interface GeneratedArtifactResponse {
+  artifact: GeneratedArtifact;
+}
+
+export interface ChatRequestInput {
+  message: string;
+}
+
+export type ProjectJobKind = "solution_evaluation" | "artifact_generation";
+export type ProjectJobStatus = "queued" | "running" | "completed" | "failed";
+
+export interface ArtifactGenerationJobResult {
+  artifact: GeneratedArtifact;
+  project: ProjectSnapshotResult;
+}
+
+export interface SolutionEvaluationJobResult {
+  evaluation: SolutionEvaluationResult;
+  project: ProjectSnapshotResult;
+  artifact: GeneratedArtifact | null;
+  used_generated_solution: boolean;
+}
+
+export type ProjectJobResult = ArtifactGenerationJobResult | SolutionEvaluationJobResult;
+
+export interface ProjectJobRecord {
+  id: string;
+  project_id: string;
+  kind: ProjectJobKind;
+  status: ProjectJobStatus;
+  message: string;
   created_at: string;
   updated_at: string;
-  documents: BidDocument[];
-  requirements: BidRequirement[];
-  customer_analysis: BidCustomerAnalysis | null;
-  compliance_matrix: BidComplianceRow[];
-  summary: BidSummaryCounts;
-}
-
-export interface BidCreateInput {
-  customer_name: string;
-  title?: string | null;
-}
-
-export interface BidDocumentCreateResponse {
-  document: BidDocument;
-}
-
-export interface BidAnalysisResponse {
-  requirements: BidRequirement[];
-  customer_analysis: BidCustomerAnalysis;
-  compliance_matrix: BidComplianceRow[];
-  summary: BidSummaryCounts;
+  error: string | null;
+  result: ProjectJobResult | null;
 }
