@@ -1,27 +1,35 @@
-import { ArrowRight, FileStack, MessagesSquare, Plus } from "lucide-react";
+"use client";
 
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Link,
-} from "@/components/projects/primitives";
+import Link from "next/link";
+import { ArrowRight, FileText, MessageSquare, Plus, Search } from "lucide-react";
+
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { ProjectSummary } from "@/lib/types";
 
-function statusTone(status: ProjectSummary["status"]) {
+function statusColor(status: ProjectSummary["status"]) {
   switch (status) {
     case "Klar for sparring":
-      return "default";
+      return "text-emerald-700";
     case "Løsningsdokument lastet opp":
-      return "secondary";
+      return "text-blue-700";
     case "Kundeanalyse klar":
-      return "outline";
+      return "text-amber-700";
     default:
-      return "outline";
+      return "text-muted-foreground";
+  }
+}
+
+function statusDot(status: ProjectSummary["status"]) {
+  switch (status) {
+    case "Klar for sparring":
+      return "bg-emerald-500";
+    case "Løsningsdokument lastet opp":
+      return "bg-blue-500";
+    case "Kundeanalyse klar":
+      return "bg-amber-500";
+    default:
+      return "bg-muted-foreground/50";
   }
 }
 
@@ -35,133 +43,176 @@ function formatDate(value: string) {
 export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   const totals = {
     total: projects.length,
-    analyses: projects.filter((project) => project.customer_analysis_generated).length,
-    evaluations: projects.filter((project) => project.solution_evaluation_generated).length,
-    chatReady: projects.filter((project) => project.has_chat).length,
+    analyses: projects.filter((p) => p.customer_analysis_generated).length,
+    evaluations: projects.filter((p) => p.solution_evaluation_generated).length,
+    chatReady: projects.filter((p) => p.has_chat).length,
   };
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.14),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(34,197,94,0.10),_transparent_24%),linear-gradient(180deg,_#f8fbff_0%,_#f4f7fb_100%)]">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 py-8 md:px-6 md:py-10">
-        <section className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-          <Card className="border border-slate-200/80 bg-white/90 shadow-none backdrop-blur">
-            <CardHeader className="gap-4 border-b border-slate-200/80 pb-6">
-              <Badge variant="outline" className="w-fit border-sky-200 bg-sky-50 text-sky-700">
-                Anbud
-              </Badge>
-              <div className="space-y-4">
-                <CardTitle className="max-w-4xl text-4xl font-semibold tracking-tight text-slate-950 md:text-6xl">
-                  Kundeanalyse, løsningsvurdering og sparring for tilbudsteam.
-                </CardTitle>
-                <CardDescription className="max-w-3xl text-base leading-8 text-slate-600 md:text-lg">
-                  Last opp kundedokumenter, løsningsutkast og støttekontekst. Appen hjelper teamet å forstå kunden,
-                  vurdere konkurransekraft og bygge bedre svar raskere.
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-wrap items-center gap-3 pt-6">
-              <Button size="lg" render={<Link href="/projects/new" />}>
-                <Plus />
-                Ny analyse
-              </Button>
-              <Button variant="outline" size="lg" render={<Link href={projects[0] ? `/projects/${projects[0].id}` : "/projects/new"} />}>
-                Åpne siste prosjekt
-                <ArrowRight />
-              </Button>
-            </CardContent>
-          </Card>
+    <div className="mx-auto w-full max-w-5xl px-4 py-10 lg:px-0">
+      {/* Hero */}
+      <section className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          Tilbudsarbeidsflate
+        </h1>
+        <p className="mt-2 max-w-2xl text-base text-foreground/70">
+          Last opp kundedokumenter, løsningsutkast og støttekontekst. Appen
+          hjelper teamet å forstå kunden, vurdere konkurransekraft og bygge
+          bedre svar raskere.
+        </p>
+        <div className="mt-5 flex items-center gap-3">
+          <Link
+            href="/projects/new"
+            className={cn(buttonVariants({ size: "lg" }), "gap-1.5")}
+          >
+            <Plus className="size-4" />
+            Ny analyse
+          </Link>
+          {projects[0] ? (
+            <Link
+              href={`/projects/${projects[0].id}`}
+              className={cn(buttonVariants({ variant: "outline", size: "lg" }), "gap-1.5")}
+            >
+              Åpne siste prosjekt
+              <ArrowRight className="size-4" />
+            </Link>
+          ) : null}
+        </div>
+      </section>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            {[
-              { label: "Prosjekter", value: totals.total, note: "Aktive analyser i arbeidsflaten" },
-              { label: "Kundeanalyser", value: totals.analyses, note: "Prosjekter med strukturert analyse" },
-              { label: "Løsningsvurderinger", value: totals.evaluations, note: "Prosjekter med evaluert svarutkast" },
-              { label: "Chat brukt", value: totals.chatReady, note: "Prosjekter med sparringshistorikk" },
-            ].map((item) => (
-              <Card key={item.label} className="border border-slate-200/80 bg-white/88 shadow-none backdrop-blur">
-                <CardContent className="flex items-center justify-between py-6">
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-                    <p className="mt-3 text-4xl font-semibold text-slate-950">{item.value}</p>
+      {/* Stats row */}
+      <section className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border shadow-sm sm:grid-cols-4">
+        {[
+          { label: "Prosjekter", value: totals.total },
+          { label: "Kundeanalyser", value: totals.analyses },
+          { label: "Løsningsvurderinger", value: totals.evaluations },
+          { label: "Chat brukt", value: totals.chatReady },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className="bg-background px-5 py-4"
+          >
+            <p className="text-2xl font-bold text-foreground tabular-nums">
+              {item.value}
+            </p>
+            <p className="mt-0.5 text-sm font-medium text-muted-foreground">{item.label}</p>
+          </div>
+        ))}
+      </section>
+
+      {/* Projects list */}
+      <section className="overflow-hidden rounded-lg border bg-border shadow-sm">
+        <div className="flex items-center justify-between bg-muted px-5 py-3">
+          <h2 className="text-sm font-bold text-foreground">Prosjekter</h2>
+          <p className="text-sm text-muted-foreground">
+            {projects.length} {projects.length === 1 ? "prosjekt" : "prosjekter"}
+          </p>
+        </div>
+
+        {projects.length === 0 ? (
+          <div className="bg-background py-14 text-center">
+            <Search className="mx-auto size-7 text-muted-foreground/40" />
+            <p className="mt-3 text-base font-semibold text-foreground">
+              Ingen prosjekter ennå
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Opprett en analyse og last opp et primært kundedokument for å
+              komme i gang.
+            </p>
+            <Link
+              href="/projects/new"
+              className={cn(buttonVariants({ size: "lg" }), "mt-5 gap-1.5")}
+            >
+              <Plus className="size-4" />
+              Opprett første prosjekt
+            </Link>
+          </div>
+        ) : (
+          <div>
+            {projects.map((project) => (
+              <Link
+                key={project.id}
+                href={`/projects/${project.id}`}
+                className="group flex flex-col gap-1.5 border-t border-border bg-background px-5 py-4 transition-colors hover:bg-muted/60 sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="truncate text-base font-semibold text-foreground group-hover:text-primary">
+                      {project.name}
+                    </h3>
+                    <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
+                      <span
+                        className={`inline-block size-2 rounded-full ${statusDot(project.status)}`}
+                      />
+                      <span className={statusColor(project.status)}>
+                        {project.status}
+                      </span>
+                    </span>
                   </div>
-                  <p className="max-w-[180px] text-right text-sm leading-6 text-slate-500">{item.note}</p>
-                </CardContent>
-              </Card>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {project.customer_name || "Kunde ikke satt"}
+                    {project.industry ? ` · ${project.industry}` : ""}
+                  </p>
+                  {project.description ? (
+                    <p className="mt-0.5 line-clamp-1 text-sm text-foreground/60">
+                      {project.description}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-4 text-sm text-muted-foreground sm:flex-col sm:items-end sm:gap-1">
+                  <span>{formatDate(project.last_activity_at)}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="flex items-center gap-1">
+                      <FileText className="size-3.5" />
+                      {project.document_count}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <MessageSquare className="size-3.5" />
+                      {project.has_chat ? "Aktiv" : "--"}
+                    </span>
+                  </span>
+                </div>
+              </Link>
             ))}
           </div>
-        </section>
+        )}
+      </section>
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className="border border-slate-200/80 bg-white/90 shadow-none">
-            <CardHeader className="border-b border-slate-200/80 pb-4">
-              <CardTitle className="text-2xl font-semibold text-slate-950">Prosjekter</CardTitle>
-              <CardDescription className="text-base text-slate-600">
-                Hvert prosjekt samler kundedokument, støttedokumenter, kundeanalyse, løsningsvurdering, generator og
-                chat i én arbeidsflate.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-5">
-              {projects.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-slate-600">
-                  Ingen prosjekter ennå. Opprett en analyse og last opp et primært kundedokument for å komme i gang.
-                </div>
-              ) : (
-                projects.map((project) => (
-                  <Link key={project.id} href={`/projects/${project.id}`} className="block">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5 transition hover:border-slate-300 hover:bg-white">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-xl font-semibold text-slate-950">{project.name}</h3>
-                            <Badge variant={statusTone(project.status)}>{project.status}</Badge>
-                          </div>
-                          <p className="text-sm text-slate-500">
-                            {project.customer_name || "Kunde ikke satt"}{project.industry ? ` · ${project.industry}` : ""}
-                          </p>
-                          {project.description ? (
-                            <p className="max-w-3xl text-base leading-7 text-slate-700">{project.description}</p>
-                          ) : null}
-                        </div>
-                        <div className="text-right text-sm text-slate-500">Oppdatert {formatDate(project.last_activity_at)}</div>
-                      </div>
-                      <div className="mt-5 flex flex-wrap gap-2">
-                        <Badge variant="outline">{project.document_count} dokumenter</Badge>
-                        <Badge variant="outline">{project.supporting_document_count} støttedokumenter</Badge>
-                        <Badge variant="outline">{project.artifact_count} generatorutkast</Badge>
-                        <Badge variant="outline">{project.has_chat ? "Chat aktiv" : "Ingen chat ennå"}</Badge>
-                      </div>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border border-slate-200/80 bg-[#0c172b] text-white shadow-none">
-            <CardHeader className="border-b border-white/10 pb-4">
-              <CardTitle className="text-2xl font-semibold">Arbeidsflyt</CardTitle>
-              <CardDescription className="text-sm leading-7 text-slate-300">
-                Én arbeidsflate for å gå fra kundedokument til tilbudsstrategi.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5 pt-5">
-              {[
-                { icon: FileStack, title: "1. Last opp grunnlag", text: "Primært kundedokument, løsningsdokument og støttekontekst." },
-                { icon: ArrowRight, title: "2. Analyser og vurder", text: "Generer kundeanalyse og evaluer hvor godt løsningen faktisk svarer." },
-                { icon: MessagesSquare, title: "3. Sparr og generer", text: "Bruk chat og generator til å styrke strategi, verdi og svar." },
-              ].map((item) => (
-                <div key={item.title} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="mb-3 flex items-center gap-3">
-                    <item.icon className="size-4 text-sky-300" />
-                    <p className="text-sm font-medium tracking-[0.14em] text-sky-100 uppercase">{item.title}</p>
-                  </div>
-                  <p className="text-sm leading-7 text-slate-300">{item.text}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </section>
-      </div>
+      {/* Workflow guide */}
+      <section className="mt-8 overflow-hidden rounded-lg border bg-muted shadow-sm">
+        <div className="px-5 py-3">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-foreground/60">
+            Arbeidsflyt
+          </h2>
+        </div>
+        <div className="grid gap-px bg-border sm:grid-cols-3">
+          <div className="bg-background px-5 py-4">
+            <p className="text-sm font-bold text-foreground">
+              1. Last opp grunnlag
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Primært kundedokument, løsningsdokument og støttekontekst.
+            </p>
+          </div>
+          <div className="bg-background px-5 py-4">
+            <p className="text-sm font-bold text-foreground">
+              2. Analyser og vurder
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Generer kundeanalyse og evaluer hvor godt løsningen faktisk
+              svarer.
+            </p>
+          </div>
+          <div className="bg-background px-5 py-4">
+            <p className="text-sm font-bold text-foreground">
+              3. Sparr og generer
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bruk chat og generator til å styrke strategi, verdi og svar.
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
