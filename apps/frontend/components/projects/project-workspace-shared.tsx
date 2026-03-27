@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 
 import type {
-  CustomerAnalysisResult,
   GeneratedArtifactType,
   ProjectDetail,
   ProjectDocumentRole,
@@ -9,13 +8,6 @@ import type {
   SupportingDocumentSubtype,
   ValueCategory,
 } from "@/lib/types";
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/projects/primitives";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 
 export const VALUE_LABELS: ValueCategory[] = [
@@ -26,21 +18,27 @@ export const VALUE_LABELS: ValueCategory[] = [
   "Fokus på kjernevirksomheten",
 ];
 
-export const ARTIFACT_TYPES: Array<{ value: GeneratedArtifactType; label: string }> = [
-  { value: "losningsutkast", label: "Løsningsutkast" },
+export const ARTIFACT_TYPES: Array<{
+  value: GeneratedArtifactType;
+  label: string;
+}> = [
+  { value: "losningsutkast", label: "Losningsutkast" },
   { value: "forbedret_kravsvar", label: "Forbedret kravsvar" },
   { value: "tilbudsstrategi", label: "Tilbudsstrategi" },
   { value: "verdiargumentasjon", label: "Verdiargumentasjon" },
   { value: "anbefalt_arkitektur", label: "Anbefalt arkitektur" },
-  { value: "gjennomforing_og_risiko", label: "Gjennomføring og risiko" },
+  { value: "gjennomforing_og_risiko", label: "Gjennomforing og risiko" },
 ];
 
-export const SUPPORTING_SUBTYPES: Array<{ value: SupportingDocumentSubtype; label: string }> = [
+export const SUPPORTING_SUBTYPES: Array<{
+  value: SupportingDocumentSubtype;
+  label: string;
+}> = [
   { value: "rfp", label: "RFP" },
   { value: "kravdokument", label: "Kravdokument" },
   { value: "prosjektbeskrivelse", label: "Prosjektbeskrivelse" },
   { value: "notat", label: "Notat" },
-  { value: "motenotat", label: "Møtenotat" },
+  { value: "motenotat", label: "Motenotat" },
   { value: "workshop", label: "Workshop" },
   { value: "vedlegg", label: "Vedlegg" },
   { value: "strategi", label: "Strategi" },
@@ -51,17 +49,19 @@ export const SUPPORTING_SUBTYPES: Array<{ value: SupportingDocumentSubtype; labe
 export function roleLabel(role: ProjectDocumentRole) {
   switch (role) {
     case "primary_customer_document":
-      return "Primært kundedokument";
+      return "Primert kundedokument";
     case "primary_solution_document":
-      return "Primært løsningsdokument";
+      return "Primert losningsdokument";
     default:
-      return "Støttedokument";
+      return "Stottedokument";
   }
 }
 
-export function supportingSubtypeLabel(subtype: SupportingDocumentSubtype | null) {
+export function supportingSubtypeLabel(
+  subtype: SupportingDocumentSubtype | null,
+) {
   const match = SUPPORTING_SUBTYPES.find((item) => item.value === subtype);
-  return match?.label ?? "Støttedokument";
+  return match?.label ?? "Stottedokument";
 }
 
 export function formatDate(value: string) {
@@ -71,7 +71,15 @@ export function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export function deriveProjectStatus(project: Pick<ProjectDetail, "customer_document_uploaded" | "customer_analysis_generated" | "solution_document_uploaded" | "solution_evaluation_generated">): ProjectStatus {
+export function deriveProjectStatus(
+  project: Pick<
+    ProjectDetail,
+    | "customer_document_uploaded"
+    | "customer_analysis_generated"
+    | "solution_document_uploaded"
+    | "solution_evaluation_generated"
+  >,
+): ProjectStatus {
   if (project.solution_evaluation_generated) {
     return "Klar for sparring";
   }
@@ -87,43 +95,53 @@ export function deriveProjectStatus(project: Pick<ProjectDetail, "customer_docum
   return "Venter på dokument";
 }
 
-export function ValueBadges({ values }: { values: ValueCategory[] }) {
+export function ValueTags({ values }: { values: ValueCategory[] }) {
+  if (!values.length) return null;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {values.map((value) => (
-        <Badge key={value} variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+        <span
+          key={value}
+          className="text-xs text-emerald-700 dark:text-emerald-400"
+        >
           {value}
-        </Badge>
+        </span>
       ))}
     </div>
   );
 }
 
-export function SectionList({ title, items }: { title: string; items: string[] }) {
-  if (!items.length) {
-    return null;
-  }
+export function SectionList({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}) {
+  if (!items.length) return null;
 
   return (
-    <Card className="border border-slate-200/80 bg-white shadow-none">
-      <CardHeader className="border-b border-slate-200/80 pb-4">
-        <CardTitle className="text-xl font-semibold text-slate-950">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 pt-5">
+    <div>
+      <h3 className="mb-3 text-sm font-medium text-foreground">{title}</h3>
+      <ul className="space-y-2">
         {items.map((item, index) => (
-          <div key={`${title}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-            <MarkdownViewer content={item} className="text-base text-slate-700" />
-          </div>
+          <li key={`${title}-${index}`} className="border-l-2 border-border pl-3">
+            <MarkdownViewer content={item} className="text-sm text-muted-foreground" />
+          </li>
         ))}
-      </CardContent>
-    </Card>
+      </ul>
+    </div>
   );
 }
 
-export function AnalysisTabEmptyState({ children }: { children: ReactNode }) {
+export function AnalysisTabEmptyState({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
-    <Card className="border border-dashed border-slate-300 bg-slate-50/70 shadow-none">
-      <CardContent className="p-8 text-base leading-8 text-slate-600">{children}</CardContent>
-    </Card>
+    <div className="py-12 text-center text-sm text-muted-foreground">
+      {children}
+    </div>
   );
 }

@@ -1,37 +1,115 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: rgb(255, 255, 255);
-  --foreground: rgb(0, 0, 0);
+  --background: rgb(248, 250, 252);
+  --foreground: rgb(30, 41, 59);
   --card: rgb(255, 255, 255);
-  --card-foreground: rgb(0, 0, 0);
+  --card-foreground: rgb(30, 41, 59);
   --popover: rgb(255, 255, 255);
-  --popover-foreground: rgb(0, 0, 0);
-  --primary: rgb(255, 51, 51);
+  --popover-foreground: rgb(30, 41, 59);
+  --primary: rgb(99, 102, 241);
   --primary-foreground: rgb(255, 255, 255);
-  --secondary: rgb(255, 255, 0);
-  --secondary-foreground: rgb(0, 0, 0);
-  --muted: rgb(240, 240, 240);
-  --muted-foreground: rgb(51, 51, 51);
-  --accent: rgb(0, 102, 255);
-  --accent-foreground: rgb(255, 255, 255);
-  --destructive: rgb(0, 0, 0);
+  --secondary: rgb(229, 231, 235);
+  --secondary-foreground: rgb(55, 65, 81);
+  --muted: rgb(243, 244, 246);
+  --muted-foreground: rgb(107, 114, 128);
+  --accent: rgb(224, 231, 255);
+  --accent-foreground: rgb(55, 65, 81);
+  --destructive: rgb(239, 68, 68);
   --destructive-foreground: rgb(255, 255, 255);
-  --border: rgb(0, 0, 0);
-  --input: rgb(0, 0, 0);
-  --ring: rgb(255, 51, 51);
-  --font-sans: DM Sans, sans-serif;
-  --radius: 0px;
-  --shadow-2xs: 4px 4px 0px 0px hsl(0 0% 0% / 0.50);
-  --shadow-xs: 4px 4px 0px 0px hsl(0 0% 0% / 0.50);
-  --shadow-sm: 4px 4px 0px 0px hsl(0 0% 0% / 1.00), 4px 1px 2px -1px hsl(0 0% 0% / 1.00);
-  --shadow: 4px 4px 0px 0px hsl(0 0% 0% / 1.00), 4px 1px 2px -1px hsl(0 0% 0% / 1.00);
-  --shadow-md: 4px 4px 0px 0px hsl(0 0% 0% / 1.00), 4px 2px 4px -1px hsl(0 0% 0% / 1.00);
-  --shadow-lg: 4px 4px 0px 0px hsl(0 0% 0% / 1.00), 4px 4px 6px -1px hsl(0 0% 0% / 1.00);
-  --shadow-xl: 4px 4px 0px 0px hsl(0 0% 0% / 1.00), 4px 8px 10px -1px hsl(0 0% 0% / 1.00);
-  --shadow-2xl: 4px 4px 0px 0px hsl(0 0% 0% / 2.50);
+  --border: rgb(209, 213, 219);
+  --input: rgb(209, 213, 219);
+  --ring: rgb(99, 102, 241);
+  --chart-1: rgb(99, 102, 241);
+  --chart-2: rgb(79, 70, 229);
+  --chart-3: rgb(67, 56, 202);
+  --chart-4: rgb(55, 48, 163);
+  --chart-5: rgb(49, 46, 129);
+  --sidebar: rgb(243, 244, 246);
+  --sidebar-foreground: rgb(30, 41, 59);
+  --sidebar-primary: rgb(99, 102, 241);
+  --sidebar-primary-foreground: rgb(255, 255, 255);
+  --sidebar-accent: rgb(224, 231, 255);
+  --sidebar-accent-foreground: rgb(55, 65, 81);
+  --sidebar-border: rgb(209, 213, 219);
+  --sidebar-ring: rgb(99, 102, 241);
+  --font-sans: Inter, sans-serif;
+  --font-serif: Merriweather, serif;
+  --font-mono: JetBrains Mono, monospace;
+  --radius: 0.5rem;
+  --shadow-x: 0px;
+  --shadow-y: 4px;
+  --shadow-blur: 8px;
+  --shadow-spread: -1px;
+  --shadow-opacity: 0.1;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-2xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);
+  --shadow-xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);
+  --shadow-sm: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 1px 2px -2px hsl(0 0% 0% / 0.10);
+  --shadow: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 1px 2px -2px hsl(0 0% 0% / 0.10);
+  --shadow-md: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 2px 4px -2px hsl(0 0% 0% / 0.10);
+  --shadow-lg: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 4px 6px -2px hsl(0 0% 0% / 0.10);
+  --shadow-xl: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 8px 10px -2px hsl(0 0% 0% / 0.10);
+  --shadow-2xl: 0px 4px 8px -1px hsl(0 0% 0% / 0.25);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+}
+
+.dark {
+  --background: rgb(15, 23, 42);
+  --foreground: rgb(226, 232, 240);
+  --card: rgb(30, 41, 59);
+  --card-foreground: rgb(226, 232, 240);
+  --popover: rgb(30, 41, 59);
+  --popover-foreground: rgb(226, 232, 240);
+  --primary: rgb(129, 140, 248);
+  --primary-foreground: rgb(15, 23, 42);
+  --secondary: rgb(45, 55, 72);
+  --secondary-foreground: rgb(209, 213, 219);
+  --muted: rgb(21, 32, 50);
+  --muted-foreground: rgb(156, 163, 175);
+  --accent: rgb(55, 65, 81);
+  --accent-foreground: rgb(209, 213, 219);
+  --destructive: rgb(239, 68, 68);
+  --destructive-foreground: rgb(15, 23, 42);
+  --border: rgb(75, 85, 99);
+  --input: rgb(75, 85, 99);
+  --ring: rgb(129, 140, 248);
+  --chart-1: rgb(129, 140, 248);
+  --chart-2: rgb(99, 102, 241);
+  --chart-3: rgb(79, 70, 229);
+  --chart-4: rgb(67, 56, 202);
+  --chart-5: rgb(55, 48, 163);
+  --sidebar: rgb(30, 41, 59);
+  --sidebar-foreground: rgb(226, 232, 240);
+  --sidebar-primary: rgb(129, 140, 248);
+  --sidebar-primary-foreground: rgb(15, 23, 42);
+  --sidebar-accent: rgb(55, 65, 81);
+  --sidebar-accent-foreground: rgb(209, 213, 219);
+  --sidebar-border: rgb(75, 85, 99);
+  --sidebar-ring: rgb(129, 140, 248);
+  --font-sans: Inter, sans-serif;
+  --font-serif: Merriweather, serif;
+  --font-mono: JetBrains Mono, monospace;
+  --radius: 0.5rem;
+  --shadow-x: 0px;
+  --shadow-y: 4px;
+  --shadow-blur: 8px;
+  --shadow-spread: -1px;
+  --shadow-opacity: 0.1;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-2xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);
+  --shadow-xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);
+  --shadow-sm: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 1px 2px -2px hsl(0 0% 0% / 0.10);
+  --shadow: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 1px 2px -2px hsl(0 0% 0% / 0.10);
+  --shadow-md: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 2px 4px -2px hsl(0 0% 0% / 0.10);
+  --shadow-lg: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 4px 6px -2px hsl(0 0% 0% / 0.10);
+  --shadow-xl: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 8px 10px -2px hsl(0 0% 0% / 0.10);
+  --shadow-2xl: 0px 4px 8px -1px hsl(0 0% 0% / 0.25);
 }
 
 @theme inline {
@@ -54,8 +132,23 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
   --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -76,17 +169,18 @@
   * {
     @apply border-border outline-ring/50;
   }
-
+  html {
+    font-size: 18px;
+  }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-sans), sans-serif;
   }
 }
 
 @layer components {
   .markdown-viewer {
     color: inherit;
-    line-height: 1.85;
+    line-height: 1.75;
   }
 
   .markdown-viewer > :first-child {
@@ -104,63 +198,64 @@
   .markdown-viewer pre,
   .markdown-viewer table,
   .markdown-viewer hr {
-    margin: 0.7rem 0;
+    margin: 0.625rem 0;
   }
 
   .markdown-viewer h1,
   .markdown-viewer h2,
   .markdown-viewer h3,
   .markdown-viewer h4 {
-    margin: 1.2rem 0 0.6rem;
+    margin: 1.25rem 0 0.5rem;
     color: inherit;
-    font-weight: 700;
-    line-height: 1.25;
-    letter-spacing: -0.02em;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
   }
 
   .markdown-viewer h1 {
-    font-size: 1.8rem;
+    font-size: 1.5rem;
   }
 
   .markdown-viewer h2 {
-    font-size: 1.45rem;
+    font-size: 1.25rem;
   }
 
   .markdown-viewer h3 {
-    font-size: 1.15rem;
+    font-size: 1.1rem;
   }
 
   .markdown-viewer ul,
   .markdown-viewer ol {
-    padding-left: 1.35rem;
+    padding-left: 1.25rem;
   }
 
   .markdown-viewer li {
-    margin: 0.25rem 0;
+    margin: 0.2rem 0;
   }
 
   .markdown-viewer strong {
-    font-weight: 700;
+    font-weight: 600;
   }
 
   .markdown-viewer a {
-    color: rgb(3 105 161);
+    color: var(--primary);
     text-decoration: underline;
-    text-underline-offset: 0.18em;
+    text-underline-offset: 0.15em;
   }
 
   .markdown-viewer code {
-    border-radius: 0.55rem;
-    background: rgb(241 245 249);
-    padding: 0.12rem 0.42rem;
-    font-size: 0.92em;
+    border-radius: var(--radius);
+    background: var(--muted);
+    padding: 0.1rem 0.35rem;
+    font-size: 0.875em;
+    font-family: var(--font-mono);
   }
 
   .markdown-viewer pre {
     overflow-x: auto;
-    border-radius: 1rem;
+    border-radius: var(--radius);
     background: rgb(15 23 42);
-    padding: 1rem 1.1rem;
+    padding: 0.875rem 1rem;
     color: rgb(226 232 240);
   }
 
@@ -171,58 +266,59 @@
   }
 
   .markdown-viewer blockquote {
-    border-left: 3px solid rgb(148 163 184);
+    border-left: 2px solid var(--border);
     padding-left: 1rem;
-    color: rgb(71 85 105);
+    color: var(--muted-foreground);
   }
 
   .markdown-viewer table {
     width: 100%;
     border-collapse: collapse;
     overflow: hidden;
-    border-radius: 1rem;
-    border: 1px solid rgb(226 232 240);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
   }
 
   .markdown-viewer th,
   .markdown-viewer td {
-    border-bottom: 1px solid rgb(226 232 240);
-    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
     text-align: left;
     vertical-align: top;
+    font-size: 0.875rem;
   }
 
   .markdown-viewer th {
-    background: rgb(248 250 252);
+    background: var(--muted);
     font-weight: 600;
   }
 
   .markdown-viewer-inverse a {
-    color: rgb(191 219 254);
+    color: rgb(147 197 253);
   }
 
   .markdown-viewer-inverse code {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .markdown-viewer-inverse blockquote {
-    border-left-color: rgba(255, 255, 255, 0.3);
-    color: rgba(255, 255, 255, 0.82);
+    border-left-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.7);
   }
 
   .markdown-viewer-inverse pre {
-    background: rgba(2, 6, 23, 0.9);
+    background: rgba(0, 0, 0, 0.4);
     color: rgb(226 232 240);
   }
 
   .markdown-viewer-inverse table,
   .markdown-viewer-inverse th,
   .markdown-viewer-inverse td {
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   .markdown-viewer-inverse th {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
   }
 }
 
@@ -239,7 +335,7 @@
 
   body {
     background: white !important;
-    color: #0f172a;
+    color: #1a1a1a;
   }
 
   * {

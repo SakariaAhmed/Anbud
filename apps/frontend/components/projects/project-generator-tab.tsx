@@ -1,21 +1,29 @@
 "use client";
 
 import { FormEvent } from "react";
-import { LoaderCircle, Sparkles } from "lucide-react";
+import { ChevronDown, Sparkles } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Label,
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/projects/primitives";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
-import { ARTIFACT_TYPES, formatDate } from "@/components/projects/project-workspace-shared";
+import {
+  ARTIFACT_TYPES,
+  formatDate,
+} from "@/components/projects/project-workspace-shared";
 import type { GeneratedArtifact, GeneratedArtifactType } from "@/lib/types";
 
 export function ProjectGeneratorTab({
@@ -38,79 +46,111 @@ export function ProjectGeneratorTab({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-      <Card className="border border-slate-200/80 bg-white shadow-none">
-        <CardHeader className="border-b border-slate-200/80 pb-4">
-          <CardTitle className="text-2xl font-semibold text-slate-950">Generator</CardTitle>
-          <CardDescription className="text-base leading-7 text-slate-600">
-            Generer tilbudsstrategi, løsningsutkast, verdiargumentasjon og andre tekster direkte fra prosjektkonteksten.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pt-5">
-          <form onSubmit={onSubmit} className="grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="artifactType">Artefakttype</Label>
-              <NativeSelect id="artifactType" value={artifactType} onChange={(event) => onArtifactTypeChange(event.target.value as GeneratedArtifactType)}>
-                {ARTIFACT_TYPES.map((item) => (
-                  <NativeSelectOption key={item.value} value={item.value}>
-                    {item.label}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="artifactInstructions">Ekstra føringer</Label>
-              <textarea
-                id="artifactInstructions"
-                value={artifactInstructions}
-                onChange={(event) => onArtifactInstructionsChange(event.target.value)}
-                placeholder="Hva vil du at generatoren skal fokusere på?"
-                className="min-h-40 rounded-2xl border border-input bg-transparent px-3 py-3 text-base leading-7 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              />
-            </div>
-            <Button type="submit" size="lg" disabled={busy}>
-              {busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
-              Generer utkast
-            </Button>
-          </form>
-          {busy && busyMessage ? (
-            <div className="mt-4 flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-              <LoaderCircle className="size-4 animate-spin text-sky-700" />
-              <span>{busyMessage}</span>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+    <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+      {/* Form */}
+      <div className="overflow-hidden rounded-lg border shadow-sm">
+        <div className="bg-muted px-4 py-3">
+          <h2 className="text-sm font-bold text-foreground">Generator</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Generer tilbudsstrategi, løsningsutkast og andre tekster fra
+            prosjektkonteksten.
+          </p>
+        </div>
 
-      <Card className="border border-slate-200/80 bg-white shadow-none">
-        <CardHeader className="border-b border-slate-200/80 pb-4">
-          <CardTitle className="text-2xl font-semibold text-slate-950">Lagrede artefakter</CardTitle>
-          <CardDescription className="text-base leading-7 text-slate-600">
-            Generatoren lagrer hvert utkast, slik at dere kan sammenligne versjoner og jobbe videre i teamet.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-5">
-          {artifacts.map((artifact) => (
-            <div key={artifact.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
-                  {ARTIFACT_TYPES.find((item) => item.value === artifact.artifact_type)?.label || artifact.artifact_type}
-                </span>
-                <p className="text-sm text-slate-500">{formatDate(artifact.created_at)}</p>
-              </div>
-              <h3 className="mt-3 text-xl font-semibold text-slate-950">{artifact.title}</h3>
-              <div className="mt-4 overflow-x-auto rounded-2xl bg-white p-4">
-                <MarkdownViewer content={artifact.content_markdown} className="text-sm text-slate-700" />
-              </div>
-            </div>
-          ))}
-          {artifacts.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-slate-600">
-              Ingen generatorutkast ennå.
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+        <form onSubmit={onSubmit} className="space-y-3 p-4">
+          <div className="space-y-1">
+            <Label htmlFor="artifactType">Artefakttype</Label>
+            <Select
+              value={artifactType}
+              onValueChange={(v) =>
+                onArtifactTypeChange(v as GeneratedArtifactType)
+              }
+            >
+              <SelectTrigger id="artifactType">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ARTIFACT_TYPES.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="artifactInstructions">Ekstra føringer</Label>
+            <Textarea
+              id="artifactInstructions"
+              value={artifactInstructions}
+              onChange={(e) => onArtifactInstructionsChange(e.target.value)}
+              placeholder="Hva vil du at generatoren skal fokusere på?"
+              className="min-h-28 resize-y"
+            />
+          </div>
+          <Button type="submit" className="w-full" disabled={busy}>
+            {busy ? (
+              <Spinner className="size-4" />
+            ) : (
+              <Sparkles data-icon="inline-start" />
+            )}
+            Generer utkast
+          </Button>
+        </form>
+
+        {busy && busyMessage ? (
+          <div className="mt-3 flex items-center gap-2 px-4 pb-3 text-sm text-primary">
+            <Spinner className="size-3.5" />
+            <span>{busyMessage}</span>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Artifacts list */}
+      <div>
+        <h3 className="mb-3 text-sm font-bold text-foreground">
+          Lagrede artefakter
+        </h3>
+        {artifacts.length === 0 ? (
+          <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground shadow-sm">
+            Ingen generatorutkast ennå.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {artifacts.map((artifact) => (
+              <Collapsible key={artifact.id}>
+                <CollapsibleTrigger
+                  className="group flex w-full items-start justify-between gap-3 rounded-md border px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>
+                        {ARTIFACT_TYPES.find(
+                          (t) => t.value === artifact.artifact_type,
+                        )?.label || artifact.artifact_type}
+                      </span>
+                      <span>·</span>
+                      <span>{formatDate(artifact.created_at)}</span>
+                    </div>
+                    <h4 className="mt-0.5 text-sm font-medium text-foreground">
+                      {artifact.title}
+                    </h4>
+                  </div>
+                  <ChevronDown className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-data-[open]:rotate-180" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="border-x border-b px-3 py-3">
+                    <MarkdownViewer
+                      content={artifact.content_markdown}
+                      className="text-sm text-foreground"
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

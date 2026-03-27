@@ -1,22 +1,22 @@
 "use client";
 
-import { LoaderCircle, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/projects/primitives";
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import {
   AnalysisTabEmptyState,
   SectionList,
   VALUE_LABELS,
-  ValueBadges,
+  ValueTags,
 } from "@/components/projects/project-workspace-shared";
 import type { CustomerAnalysisResult } from "@/lib/types";
 
@@ -30,116 +30,207 @@ export function ProjectAnalysisTab({
   onGenerate: () => void;
 }) {
   return (
-    <div className="grid gap-5">
-      <Card className="border border-slate-200/80 bg-white shadow-none">
-        <CardHeader className="border-b border-slate-200/80 pb-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="space-y-2">
-              <CardTitle className="text-2xl font-semibold text-slate-950">Kundeanalyse</CardTitle>
-              <CardDescription className="text-base leading-7 text-slate-600">
-                Analyse av hvem kunden er, hva kunden prøver å oppnå, hvilke krav som er eksplisitte eller implisitte,
-                og hvordan dere bør posisjonere dere.
-              </CardDescription>
-            </div>
-            <Button size="lg" onClick={onGenerate} disabled={busy}>
-              {busy ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
-              Generer kundeanalyse
-            </Button>
-          </div>
-        </CardHeader>
-      </Card>
+    <div>
+      {/* Header */}
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-foreground">
+            Kundeanalyse
+          </h2>
+          <p className="mt-1 max-w-xl text-sm text-foreground/60">
+            Analyse av hvem kunden er, hva kunden prøver å oppnå, hvilke krav
+            som er eksplisitte eller implisitte, og hvordan dere bør posisjonere
+            dere.
+          </p>
+        </div>
+        <Button onClick={onGenerate} disabled={busy} size="lg">
+          {busy ? (
+            <Spinner className="size-4" />
+          ) : (
+            <RefreshCw data-icon="inline-start" />
+          )}
+          Generer kundeanalyse
+        </Button>
+      </div>
 
       {customerAnalysis ? (
-        <div className="grid gap-5 xl:grid-cols-2">
-          <SectionList title="Kundeprofil" items={customerAnalysis.customer_profile} />
-          <SectionList title="Kundens mål" items={customerAnalysis.customer_goals} />
-          <SectionList title="Risiko og usikkerhet" items={customerAnalysis.risks} />
-          <SectionList title="Mulige evalueringskriterier" items={customerAnalysis.likely_evaluation_criteria} />
-          <SectionList title="Signalord og preferanser" items={customerAnalysis.signal_words} />
-          <SectionList title="Anbefalt posisjonering" items={customerAnalysis.positioning_recommendations} />
+        <div className="space-y-5">
+          {/* Summary first */}
+          <section className="rounded-lg border p-5 shadow-sm">
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-foreground/50">
+              Oppsummering
+            </h3>
+            <MarkdownViewer
+              content={customerAnalysis.executive_summary}
+              className="text-sm text-foreground"
+            />
+          </section>
 
-          <Card className="border border-slate-200/80 bg-white shadow-none xl:col-span-2">
-            <CardHeader className="border-b border-slate-200/80 pb-4">
-              <CardTitle className="text-xl font-semibold text-slate-950">Eksplisitte krav</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-5">
-              {customerAnalysis.explicit_requirements.map((requirement, index) => (
-                <div key={`${requirement.title}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{requirement.category}</Badge>
-                    <Badge variant="outline">{requirement.importance}</Badge>
-                    <Badge variant="outline">{requirement.kind}</Badge>
-                  </div>
-                  <h3 className="mt-3 text-lg font-semibold text-slate-950">{requirement.title}</h3>
-                  <div className="mt-2">
-                    <MarkdownViewer content={requirement.description} className="text-base text-slate-700" />
-                  </div>
-                  <p className="mt-3 text-sm text-slate-500">
-                    {requirement.source_reference || "Ingen presis referanse"} ·{" "}
-                    {requirement.source_excerpt || "Ingen kildeutdrag tilgjengelig"}
-                  </p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          {/* Key sections in two columns */}
+          <div className="grid gap-5 border-t pt-5 lg:grid-cols-2">
+            <SectionList
+              title="Kundeprofil"
+              items={customerAnalysis.customer_profile}
+            />
+            <SectionList
+              title="Kundens mål"
+              items={customerAnalysis.customer_goals}
+            />
+            <SectionList
+              title="Risiko og usikkerhet"
+              items={customerAnalysis.risks}
+            />
+            <SectionList
+              title="Anbefalt posisjonering"
+              items={customerAnalysis.positioning_recommendations}
+            />
+          </div>
 
-          <Card className="border border-slate-200/80 bg-white shadow-none xl:col-span-2">
-            <CardHeader className="border-b border-slate-200/80 pb-4">
-              <CardTitle className="text-xl font-semibold text-slate-950">Implisitte krav</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-5">
-              {customerAnalysis.implicit_requirements.map((requirement, index) => (
-                <div key={`${requirement.title}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{requirement.category}</Badge>
-                    <Badge variant="outline">{requirement.importance}</Badge>
-                    <Badge variant="outline">{requirement.kind}</Badge>
+          {/* Collapsible detailed sections */}
+          <div className="rounded-lg border shadow-sm">
+            <Accordion>
+              <AccordionItem value="explicit-requirements">
+                <AccordionTrigger className="px-4">
+                  Eksplisitte krav ({customerAnalysis.explicit_requirements.length})
+                </AccordionTrigger>
+                <AccordionContent className="px-4">
+                  <div className="space-y-3">
+                    {customerAnalysis.explicit_requirements.map((req, index) => (
+                      <div
+                        key={`${req.title}-${index}`}
+                        className="border-l-2 border-border pl-3"
+                      >
+                        <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+                          <span>{req.category}</span>
+                          <span>·</span>
+                          <span>{req.importance}</span>
+                          <span>·</span>
+                          <span>{req.kind}</span>
+                        </div>
+                        <h4 className="text-sm font-medium text-foreground">
+                          {req.title}
+                        </h4>
+                        <MarkdownViewer
+                          content={req.description}
+                          className="text-sm text-muted-foreground"
+                        />
+                        {req.source_reference || req.source_excerpt ? (
+                          <p className="text-xs text-muted-foreground/70">
+                            {req.source_reference || "Ingen referanse"} ·{" "}
+                            {req.source_excerpt || ""}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
-                  <h3 className="mt-3 text-lg font-semibold text-slate-950">{requirement.title}</h3>
-                  <div className="mt-2">
-                    <MarkdownViewer content={requirement.description} className="text-base text-slate-700" />
-                  </div>
-                  <p className="mt-3 text-sm text-slate-500">
-                    {requirement.source_reference || "Ingen presis referanse"} ·{" "}
-                    {requirement.source_excerpt || "Ingen kildeutdrag tilgjengelig"}
-                  </p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                </AccordionContent>
+              </AccordionItem>
 
-          <Card className="border border-slate-200/80 bg-white shadow-none xl:col-span-2">
-            <CardHeader className="border-b border-slate-200/80 pb-4">
-              <CardTitle className="text-xl font-semibold text-slate-950">Verdimuligheter</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-5">
-              {customerAnalysis.value_opportunities.map((item, index) => (
-                <div key={`${item.title}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                  <h3 className="text-lg font-semibold text-slate-950">{item.title}</h3>
-                  <div className="mt-2">
-                    <MarkdownViewer content={item.description} className="text-base text-slate-700" />
+              <AccordionItem value="implicit-requirements">
+                <AccordionTrigger className="px-4">
+                  Implisitte krav ({customerAnalysis.implicit_requirements.length})
+                </AccordionTrigger>
+                <AccordionContent className="px-4">
+                  <div className="space-y-3">
+                    {customerAnalysis.implicit_requirements.map((req, index) => (
+                      <div
+                        key={`${req.title}-${index}`}
+                        className="border-l-2 border-border pl-3"
+                      >
+                        <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+                          <span>{req.category}</span>
+                          <span>·</span>
+                          <span>{req.importance}</span>
+                          <span>·</span>
+                          <span>{req.kind}</span>
+                        </div>
+                        <h4 className="text-sm font-medium text-foreground">
+                          {req.title}
+                        </h4>
+                        <MarkdownViewer
+                          content={req.description}
+                          className="text-sm text-muted-foreground"
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <div className="mt-3">
-                    <ValueBadges values={item.value_categories.filter((value) => VALUE_LABELS.includes(value))} />
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                </AccordionContent>
+              </AccordionItem>
 
-          <Card className="border border-slate-200/80 bg-white shadow-none xl:col-span-2">
-            <CardHeader className="border-b border-slate-200/80 pb-4">
-              <CardTitle className="text-xl font-semibold text-slate-950">Oppsummering for tilbudsteamet</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-5">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
-                <MarkdownViewer content={customerAnalysis.executive_summary} className="text-base text-slate-700" />
-              </div>
-            </CardContent>
-          </Card>
+              <AccordionItem value="evaluation-criteria">
+                <AccordionTrigger className="px-4">
+                  Evalueringskriterier ({customerAnalysis.likely_evaluation_criteria.length})
+                </AccordionTrigger>
+                <AccordionContent className="px-4">
+                  <ul className="space-y-1">
+                    {customerAnalysis.likely_evaluation_criteria.map((item, index) => (
+                      <li
+                        key={index}
+                        className="border-l-2 border-border pl-3 text-sm text-foreground"
+                      >
+                        <MarkdownViewer content={item} />
+                      </li>
+                    ))}
+                  </ul>
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="signal-words">
+                <AccordionTrigger className="px-4">
+                  Signalord og preferanser ({customerAnalysis.signal_words.length})
+                </AccordionTrigger>
+                <AccordionContent className="px-4">
+                  <ul className="space-y-1">
+                    {customerAnalysis.signal_words.map((item, index) => (
+                      <li
+                        key={index}
+                        className="border-l-2 border-border pl-3 text-sm text-foreground"
+                      >
+                        <MarkdownViewer content={item} />
+                      </li>
+                    ))}
+                  </ul>
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="value-opportunities">
+                <AccordionTrigger className="px-4">
+                  Verdimuligheter ({customerAnalysis.value_opportunities.length})
+                </AccordionTrigger>
+                <AccordionContent className="px-4">
+                  <div className="space-y-3">
+                    {customerAnalysis.value_opportunities.map((item, index) => (
+                      <div
+                        key={`${item.title}-${index}`}
+                        className="border-l-2 border-border pl-3"
+                      >
+                        <h4 className="text-sm font-medium text-foreground">
+                          {item.title}
+                        </h4>
+                        <MarkdownViewer
+                          content={item.description}
+                          className="text-sm text-muted-foreground"
+                        />
+                        <div className="mt-1">
+                          <ValueTags
+                            values={item.value_categories.filter((v) =>
+                              VALUE_LABELS.includes(v),
+                            )}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
         </div>
       ) : (
-        <AnalysisTabEmptyState>Ingen analyse ennå. Last opp et primært kundedokument og generer analysen.</AnalysisTabEmptyState>
+        <AnalysisTabEmptyState>
+          Ingen analyse ennå. Last opp et primært kundedokument og generer
+          analysen.
+        </AnalysisTabEmptyState>
       )}
     </div>
   );
