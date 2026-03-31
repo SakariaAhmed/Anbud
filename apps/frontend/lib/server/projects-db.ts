@@ -128,6 +128,8 @@ const DOCUMENT_SUMMARY_SELECT_SAFE =
   "id, project_id, role, file_name, file_format, content_type, file_size_bytes, created_at, updated_at";
 
 const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
+  customer_profile_summary: "",
+  customer_goals_summary: "",
   customer_profile: [],
   customer_goals: [],
   explicit_requirements: [],

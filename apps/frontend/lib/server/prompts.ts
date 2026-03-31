@@ -43,20 +43,29 @@ export function buildCustomerAnalysisPrompt() {
       "Vær konkret, profesjonell og tekstnær. Ikke skriv generisk AI-tekst.",
       "Returner kun gyldig JSON.",
       "Skille tydelig mellom det som står eksplisitt og det som må tolkes.",
+      "Ikke gjenta samme observasjon i flere seksjoner med bare små omskrivninger. Hver seksjon skal tilføre ny informasjon.",
+      "customer_profile_summary skal være en dekkende, presis og profesjonell oppsummering av hvem kunden er, kundens situasjon, modenhet, rammer og kontekst.",
+      "customer_goals_summary skal være en dekkende, presis og profesjonell oppsummering av hva kunden prøver å oppnå, ønsket effekt og ønsket retning.",
+      "customer_profile skal kun beskrive kunden og konteksten, ikke mål, strategi eller leverandørens respons.",
+      "customer_goals skal kun beskrive mål, ønskede utfall og effekt, ikke kundebakgrunn eller posisjonering.",
       "Explicit requirements skal bare inneholde faktiske krav eller tydelige leverandørforventninger.",
       "Implicit requirements skal bare inneholde rimelige tolkninger som er relevante for tilbudsarbeid.",
+      "risks skal bare handle om usikkerhet, risiko og konsekvens, ikke gjenta krav eller mål.",
+      "likely_evaluation_criteria skal bare handle om hva kunden sannsynligvis vil vurdere leverandører på.",
+      "positioning_recommendations skal bare handle om hvordan leverandøren bør svare og posisjonere seg.",
+      "executive_summary skal være tilbudsteamets operative konklusjon og ikke bare parafrasere customer_profile_summary eller customer_goals_summary.",
       "Hver value_opportunity må ha minst én gyldig value_category fra den faste listen.",
       "Bruk korte, handlingsbare formuleringer som et tilbudsteam faktisk kan bruke.",
     ],
     outputContract: [
-      "Returner ett JSON-objekt med nøklene customer_profile, customer_goals, explicit_requirements, implicit_requirements, prioritized_requirements, ambiguities, risks, likely_evaluation_criteria, signal_words, expected_solution_direction, value_opportunities, positioning_recommendations og executive_summary.",
+      "Returner ett JSON-objekt med nøklene customer_profile_summary, customer_goals_summary, customer_profile, customer_goals, explicit_requirements, implicit_requirements, prioritized_requirements, ambiguities, risks, likely_evaluation_criteria, signal_words, expected_solution_direction, value_opportunities, positioning_recommendations og executive_summary.",
       "explicit_requirements og implicit_requirements skal være lister av objekter med title, description, category, importance, kind, source_reference og source_excerpt.",
       "importance skal være Kritisk, Viktig eller Mindre viktig.",
       "kind skal være Eksplisitt eller Implisitt.",
       "value_opportunities skal være objekter med title, description og value_categories.",
       "value_categories skal være en eller flere av: Høyere produktivitet, Lavere kostnader, Redusert risiko, Bedre brukeropplevelse, Fokus på kjernevirksomheten.",
     ],
-    exampleOutput: `{"customer_profile":["Stor virksomhet med krav til sikkerhet og styring"],"customer_goals":["Modernisere plattform og redusere operasjonell risiko"],"explicit_requirements":[{"title":"Dokumentert sikkerhetsstyring","description":"Leverandøren skal kunne dokumentere et styringssystem for informasjonssikkerhet.","category":"Sikkerhet og governance","importance":"Kritisk","kind":"Eksplisitt","source_reference":"Kundedokument – kapittel 4","source_excerpt":"Leverandøren skal dokumentere styringssystem for informasjonssikkerhet."}],"implicit_requirements":[{"title":"Sterk overgangskontroll","description":"Kunden forventer en kontrollert overgang med tydelig ansvar og risikohåndtering.","category":"Gjennomføring","importance":"Viktig","kind":"Implisitt","source_reference":"Kundedokument – kapittel 2","source_excerpt":"Kunden beskriver høy kompleksitet og liten toleranse for driftsavbrudd."}],"prioritized_requirements":[{"requirement":"Dokumentert sikkerhetsstyring","priority":"Kritisk","reason":"Kravet virker kvalifiserende og tungt vektlagt."}],"ambiguities":["Uklart om kunden forventer dedikert eller standardisert leveransemodell."],"risks":["Manglende overgangsplan kan gi lav tillit hos kunden."],"likely_evaluation_criteria":["Sikkerhet","Gjennomføringsevne","Troverdighet"],"signal_words":["sky","sikkerhet","modernisering"],"expected_solution_direction":["Standardisert, sikker og styrt skyplattform med tydelig forvaltningsmodell"],"value_opportunities":[{"title":"Redusere operasjonell risiko","description":"Vis hvordan leverandøren reduserer overgangs- og driftsrisiko gjennom standardiserte kontroller.","value_categories":["Redusert risiko","Fokus på kjernevirksomheten"]}],"positioning_recommendations":["Vektlegg sikkerhet, styring og realistisk gjennomføring sterkere enn brede produktbudskap."],"executive_summary":"Kunden søker en trygg leverandør som kan modernisere og styre plattformen uten å øke risiko."}`,
+    exampleOutput: `{"customer_profile_summary":"Kunden er en stor og styringsorientert virksomhet med lav toleranse for driftsavbrudd, høye krav til sikkerhet og behov for tydelig kontroll i leveransen.","customer_goals_summary":"Kunden prøver å modernisere plattformen og redusere operasjonell risiko gjennom en trygg, standardisert og styrbar leveransemodell.","customer_profile":["Stor virksomhet med krav til sikkerhet og styring"],"customer_goals":["Modernisere plattform og redusere operasjonell risiko"],"explicit_requirements":[{"title":"Dokumentert sikkerhetsstyring","description":"Leverandøren skal kunne dokumentere et styringssystem for informasjonssikkerhet.","category":"Sikkerhet og governance","importance":"Kritisk","kind":"Eksplisitt","source_reference":"Kundedokument – kapittel 4","source_excerpt":"Leverandøren skal dokumentere styringssystem for informasjonssikkerhet."}],"implicit_requirements":[{"title":"Sterk overgangskontroll","description":"Kunden forventer en kontrollert overgang med tydelig ansvar og risikohåndtering.","category":"Gjennomføring","importance":"Viktig","kind":"Implisitt","source_reference":"Kundedokument – kapittel 2","source_excerpt":"Kunden beskriver høy kompleksitet og liten toleranse for driftsavbrudd."}],"prioritized_requirements":[{"requirement":"Dokumentert sikkerhetsstyring","priority":"Kritisk","reason":"Kravet virker kvalifiserende og tungt vektlagt."}],"ambiguities":["Uklart om kunden forventer dedikert eller standardisert leveransemodell."],"risks":["Manglende overgangsplan kan gi lav tillit hos kunden."],"likely_evaluation_criteria":["Sikkerhet","Gjennomføringsevne","Troverdighet"],"signal_words":["sky","sikkerhet","modernisering"],"expected_solution_direction":["Standardisert, sikker og styrt skyplattform med tydelig forvaltningsmodell"],"value_opportunities":[{"title":"Redusere operasjonell risiko","description":"Vis hvordan leverandøren reduserer overgangs- og driftsrisiko gjennom standardiserte kontroller.","value_categories":["Redusert risiko","Fokus på kjernevirksomheten"]}],"positioning_recommendations":["Vektlegg sikkerhet, styring og realistisk gjennomføring sterkere enn brede produktbudskap."],"executive_summary":"Tilbudsteamet bør posisjonere seg som den trygge leverandøren som kombinerer kontrollert modernisering, tydelig styringsmodell og lav implementeringsrisiko."}`,
   });
 }
 
@@ -71,6 +80,8 @@ export function buildSolutionEvaluationPrompt() {
     ],
     rules: [
       "Returner kun gyldig JSON.",
+      "Ikke gjenta samme hovedpoeng i strengths, weaknesses, missing_elements, improvement_recommendations og executive_summary.",
+      "Hver seksjon skal tilføre ny informasjon med tydelig eget fokus.",
       "Skill tydelig mellom faktiske svakheter, forbedringer og strategiske grep.",
       "Ikke gi ros uten konkret begrunnelse.",
       "generic_sections skal peke på steder der teksten fremstår som standardtekst eller for lite kundetilpasset.",
@@ -133,6 +144,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
     ],
     rules: [
       "Returner kun gyldig JSON.",
+      "Ikke gjenta samme hovedpoeng i title og content_markdown eller i flere avsnitt av teksten uten ny verdi.",
       "Ikke skriv generisk konsulentspråk.",
       "Koble verdi til de fem faste verdikategoriene når det er relevant.",
       "Vær konkret om løsning, gjennomføring, risiko og differensiering.",
@@ -156,6 +168,7 @@ export function buildChatPrompt() {
     ],
     rules: [
       "Skriv konsist, konkret og profesjonelt.",
+      "Unngå å gjenta samme observasjon flere ganger i svaret. Hver del av svaret skal tilføre ny innsikt.",
       "Ikke vær generisk eller overforklarende.",
       "Hvis kildene ikke støtter en påstand tydelig, si det.",
       "Bruk prosjektkontekst aktivt i svaret.",

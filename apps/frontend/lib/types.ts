@@ -117,6 +117,8 @@ export interface ValueOpportunity {
 }
 
 export interface CustomerAnalysisResult {
+  customer_profile_summary: string;
+  customer_goals_summary: string;
   customer_profile: string[];
   customer_goals: string[];
   explicit_requirements: AnalysisRequirement[];
