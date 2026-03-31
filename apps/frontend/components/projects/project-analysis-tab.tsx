@@ -3,7 +3,6 @@
 import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Accordion,
@@ -55,18 +54,32 @@ export function ProjectAnalysisTab({
 
       {customerAnalysis ? (
         <div className="space-y-5">
-          {/* Summary first */}
           <section className="rounded-lg border p-5 shadow-sm">
-            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-foreground/50">
-              Oppsummering
+            <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-foreground/50">
+              Oppsummering av kunden
             </h3>
-            <MarkdownViewer
-              content={customerAnalysis.executive_summary}
-              className="text-sm text-foreground"
-            />
+            <div className="grid gap-5 lg:grid-cols-2">
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-foreground/80">
+                  Kundens profil
+                </h4>
+                <MarkdownViewer
+                  content={customerAnalysis.customer_profile_summary}
+                  className="text-sm text-foreground"
+                />
+              </div>
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-foreground/80">
+                  Kundens mål
+                </h4>
+                <MarkdownViewer
+                  content={customerAnalysis.customer_goals_summary}
+                  className="text-sm text-foreground"
+                />
+              </div>
+            </div>
           </section>
 
-          {/* Key sections in two columns */}
           <div className="grid gap-5 border-t pt-5 lg:grid-cols-2">
             <SectionList
               title="Kundeprofil"
@@ -86,7 +99,16 @@ export function ProjectAnalysisTab({
             />
           </div>
 
-          {/* Collapsible detailed sections */}
+          <section className="rounded-lg border p-5 shadow-sm">
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-foreground/50">
+              Oppsummering for tilbudsteamet
+            </h3>
+            <MarkdownViewer
+              content={customerAnalysis.executive_summary}
+              className="text-sm text-foreground"
+            />
+          </section>
+
           <div className="rounded-lg border shadow-sm">
             <Accordion>
               <AccordionItem value="explicit-requirements">

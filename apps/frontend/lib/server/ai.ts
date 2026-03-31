@@ -90,6 +90,9 @@ function documentContext(
 function summarizeCustomerAnalysis(analysis: CustomerAnalysisResult) {
   return JSON.stringify(
     {
+      customer_profile_summary: compactText(analysis.customer_profile_summary, 500),
+      customer_goals_summary: compactText(analysis.customer_goals_summary, 500),
+      customer_profile: analysis.customer_profile.slice(0, 5),
       customer_goals: analysis.customer_goals.slice(0, 6),
       explicit_requirements: analysis.explicit_requirements.slice(0, 8).map((item) => ({
         title: item.title,
@@ -136,6 +139,219 @@ function parseJson<T>(content: string): T {
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]+?)```/i);
   const candidate = codeBlockMatch?.[1] ?? trimmed;
   return JSON.parse(candidate) as T;
+}
+
+function normalizeComparableText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[`*#>_[\](){},.:;!?'"“”‘’/\\|-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeComparableText(value: string) {
+  return normalizeComparableText(value)
+    .split(" ")
+    .filter((token) => token.length > 2);
+}
+
+function similarityScore(a: string, b: string) {
+  const aTokens = new Set(tokenizeComparableText(a));
+  const bTokens = new Set(tokenizeComparableText(b));
+
+  if (!aTokens.size || !bTokens.size) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / Math.min(aTokens.size, bTokens.size);
+}
+
+function isNearDuplicate(a: string, b: string, threshold = 0.72) {
+  const normalizedA = normalizeComparableText(a);
+  const normalizedB = normalizeComparableText(b);
+
+  if (!normalizedA || !normalizedB) {
+    return false;
+  }
+
+  if (normalizedA === normalizedB) {
+    return true;
+  }
+
+  return similarityScore(normalizedA, normalizedB) >= threshold;
+}
+
+function normalizeUniqueList(items: string[]) {
+  const result: string[] = [];
+
+  for (const rawItem of items) {
+    const item = rawItem.replace(/\s+/g, " ").trim();
+    if (!item) {
+      continue;
+    }
+
+    if (result.some((existing) => isNearDuplicate(existing, item))) {
+      continue;
+    }
+
+    result.push(item);
+  }
+
+  return result;
+}
+
+function splitIntoSentences(value: string) {
+  return value
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function dedupeSummary(value: string, references: string[]) {
+  const sentences = splitIntoSentences(value);
+  if (!sentences.length) {
+    return value.replace(/\s+/g, " ").trim();
+  }
+
+  const kept = sentences.filter((sentence) => {
+    return !references.some((reference) => isNearDuplicate(sentence, reference, 0.76));
+  });
+
+  const normalized = (kept.length ? kept : sentences).join(" ").replace(/\s+/g, " ").trim();
+  return normalized;
+}
+
+function normalizeRequirementList(requirements: CustomerAnalysisResult["explicit_requirements"]) {
+  const result: CustomerAnalysisResult["explicit_requirements"] = [];
+
+  for (const requirement of requirements) {
+    const title = requirement.title.replace(/\s+/g, " ").trim();
+    const description = requirement.description.replace(/\s+/g, " ").trim();
+
+    if (!title || !description) {
+      continue;
+    }
+
+    if (
+      result.some(
+        (existing) =>
+          isNearDuplicate(existing.title, title, 0.8) &&
+          isNearDuplicate(existing.description, description, 0.72),
+      )
+    ) {
+      continue;
+    }
+
+    result.push({
+      ...requirement,
+      title,
+      description,
+      source_reference: requirement.source_reference.replace(/\s+/g, " ").trim(),
+      source_excerpt: requirement.source_excerpt.replace(/\s+/g, " ").trim(),
+    });
+  }
+
+  return result;
+}
+
+function normalizeCustomerAnalysisResult(result: CustomerAnalysisResult): CustomerAnalysisResult {
+  const customerProfile = normalizeUniqueList(Array.isArray(result.customer_profile) ? result.customer_profile : []);
+  const customerGoals = normalizeUniqueList(Array.isArray(result.customer_goals) ? result.customer_goals : []);
+  const risks = normalizeUniqueList(Array.isArray(result.risks) ? result.risks : []);
+  const likelyEvaluationCriteria = normalizeUniqueList(
+    Array.isArray(result.likely_evaluation_criteria) ? result.likely_evaluation_criteria : [],
+  );
+  const signalWords = normalizeUniqueList(Array.isArray(result.signal_words) ? result.signal_words : []);
+  const expectedSolutionDirection = normalizeUniqueList(
+    Array.isArray(result.expected_solution_direction) ? result.expected_solution_direction : [],
+  );
+  const positioningRecommendations = normalizeUniqueList(
+    Array.isArray(result.positioning_recommendations) ? result.positioning_recommendations : [],
+  );
+  const ambiguities = normalizeUniqueList(Array.isArray(result.ambiguities) ? result.ambiguities : []);
+
+  const customerProfileSummary = dedupeSummary(
+    result.customer_profile_summary || customerProfile.slice(0, 2).join(" "),
+    [...customerGoals, result.customer_goals_summary || "", ...positioningRecommendations],
+  );
+
+  const customerGoalsSummary = dedupeSummary(
+    result.customer_goals_summary || customerGoals.slice(0, 2).join(" "),
+    [customerProfileSummary, ...customerProfile, ...positioningRecommendations],
+  );
+
+  const executiveSummary = dedupeSummary(
+    result.executive_summary || "",
+    [
+      customerProfileSummary,
+      customerGoalsSummary,
+      ...customerProfile,
+      ...customerGoals,
+      ...risks,
+      ...positioningRecommendations,
+    ],
+  );
+
+  return {
+    ...result,
+    customer_profile_summary: customerProfileSummary,
+    customer_goals_summary: customerGoalsSummary,
+    customer_profile: customerProfile,
+    customer_goals: customerGoals,
+    explicit_requirements: normalizeRequirementList(
+      Array.isArray(result.explicit_requirements) ? result.explicit_requirements : [],
+    ),
+    implicit_requirements: normalizeRequirementList(
+      Array.isArray(result.implicit_requirements) ? result.implicit_requirements : [],
+    ),
+    ambiguities,
+    risks,
+    likely_evaluation_criteria: likelyEvaluationCriteria,
+    signal_words: signalWords,
+    expected_solution_direction: expectedSolutionDirection,
+    positioning_recommendations: positioningRecommendations,
+    executive_summary: executiveSummary,
+  };
+}
+
+function normalizeSolutionEvaluationResult(result: SolutionEvaluationResult): SolutionEvaluationResult {
+  const strengths = normalizeUniqueList(Array.isArray(result.strengths) ? result.strengths : []);
+  const weaknesses = normalizeUniqueList(Array.isArray(result.weaknesses) ? result.weaknesses : []);
+  const genericSections = normalizeUniqueList(Array.isArray(result.generic_sections) ? result.generic_sections : []);
+  const missingElements = normalizeUniqueList(Array.isArray(result.missing_elements) ? result.missing_elements : []);
+  const risksToCustomer = normalizeUniqueList(Array.isArray(result.risks_to_customer) ? result.risks_to_customer : []);
+  const trustSignals = normalizeUniqueList(Array.isArray(result.trust_signals) ? result.trust_signals : []);
+  const improvementRecommendations = normalizeUniqueList(
+    Array.isArray(result.improvement_recommendations) ? result.improvement_recommendations : [],
+  );
+
+  return {
+    ...result,
+    fit_to_customer_needs: (result.fit_to_customer_needs || "").replace(/\s+/g, " ").trim(),
+    strengths,
+    weaknesses,
+    generic_sections: genericSections,
+    missing_elements: missingElements,
+    risks_to_customer: risksToCustomer,
+    trust_signals: trustSignals,
+    improvement_recommendations: improvementRecommendations,
+    executive_summary: dedupeSummary(result.executive_summary || "", [
+      result.fit_to_customer_needs,
+      ...strengths,
+      ...weaknesses,
+      ...genericSections,
+      ...missingElements,
+      ...risksToCustomer,
+      ...improvementRecommendations,
+    ]),
+  };
 }
 
 async function createJsonCompletion<T>(input: {
@@ -218,12 +434,14 @@ export async function analyzeCustomerDocuments(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  return createJsonCompletion<CustomerAnalysisResult>({
+  const result = await createJsonCompletion<CustomerAnalysisResult>({
     system: buildCustomerAnalysisPrompt(),
     user: userPrompt,
     temperature: 0.1,
     model: ANALYSIS_MODEL,
   });
+
+  return normalizeCustomerAnalysisResult(result);
 }
 
 export async function evaluateSolutionDocument(input: {
@@ -265,12 +483,14 @@ export async function evaluateSolutionDocument(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  return createJsonCompletion<SolutionEvaluationResult>({
+  const result = await createJsonCompletion<SolutionEvaluationResult>({
     system: buildSolutionEvaluationPrompt(),
     user: userPrompt,
     temperature: 0.1,
     model: FAST_MODEL,
   });
+
+  return normalizeSolutionEvaluationResult(result);
 }
 
 export async function generateProjectArtifact(input: {
@@ -341,7 +561,7 @@ export async function synthesizeAndEvaluateSolution(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  return createJsonCompletion<{
+  const result = await createJsonCompletion<{
     synthetic_solution: { title: string; content_markdown: string };
     evaluation: SolutionEvaluationResult;
   }>({
@@ -350,6 +570,11 @@ export async function synthesizeAndEvaluateSolution(input: {
     temperature: 0.15,
     model: FAST_MODEL,
   });
+
+  return {
+    ...result,
+    evaluation: normalizeSolutionEvaluationResult(result.evaluation),
+  };
 }
 
 export async function answerProjectChat(input: {
