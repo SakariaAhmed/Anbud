@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -13,24 +12,10 @@ import {
 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Tabs, TabsList, TabsTrigger } from "@/components/projects/project-tabs";
+import { Input, Label, NativeSelect, NativeSelectOption } from "@/components/projects/primitives";
 import {
   SUPPORTING_SUBTYPES,
   deriveProjectStatus,
@@ -38,17 +23,16 @@ import {
   roleLabel,
   supportingSubtypeLabel,
 } from "@/components/projects/project-workspace-shared";
+import { ProjectAnalysisTab } from "@/components/projects/project-analysis-tab";
+import { ProjectGeneratorTab } from "@/components/projects/project-generator-tab";
 import type {
-  ChatMessage,
   CustomerAnalysisResult,
   GeneratedArtifact,
-  GeneratedArtifactType,
   ProjectDetail,
   ProjectDocument,
   ProjectDocumentRole,
   ProjectJobRecord,
   ProjectStatus,
-  SolutionEvaluationResult,
   SupportingDocumentSubtype,
 } from "@/lib/types";
 
@@ -65,47 +49,6 @@ interface ProjectSnapshotPayload {
   last_activity_at: string;
 }
 
-const ProjectAnalysisTab = dynamic(
-  () =>
-    import("@/components/projects/project-analysis-tab").then(
-      (module) => module.ProjectAnalysisTab,
-    ),
-  { loading: () => <TabLoadingState label="Laster kundeanalyse" /> },
-);
-
-const ProjectEvaluationTab = dynamic(
-  () =>
-    import("@/components/projects/project-evaluation-tab").then(
-      (module) => module.ProjectEvaluationTab,
-    ),
-  { loading: () => <TabLoadingState label="Laster losningsvurdering" /> },
-);
-
-const ProjectGeneratorTab = dynamic(
-  () =>
-    import("@/components/projects/project-generator-tab").then(
-      (module) => module.ProjectGeneratorTab,
-    ),
-  { loading: () => <TabLoadingState label="Laster generator" /> },
-);
-
-const ProjectChatTab = dynamic(
-  () =>
-    import("@/components/projects/project-chat-tab").then(
-      (module) => module.ProjectChatTab,
-    ),
-  { loading: () => <TabLoadingState label="Laster chat" /> },
-);
-
-function TabLoadingState({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-      <Spinner className="size-4" />
-      <span>{label} ...</span>
-    </div>
-  );
-}
-
 function patchProjectWithSnapshot(
   project: ProjectDetail,
   snapshot: ProjectSnapshotPayload,
@@ -117,7 +60,6 @@ function normalizeProjectState(
   project: ProjectDetail,
   options?: {
     preserveArtifactCount?: boolean;
-    preserveHasChat?: boolean;
   },
 ): ProjectDetail {
   return {
@@ -130,9 +72,6 @@ function normalizeProjectState(
     artifact_count: options?.preserveArtifactCount
       ? project.artifact_count
       : project.generated_artifacts.length,
-    has_chat: options?.preserveHasChat
-      ? project.has_chat
-      : project.chat_messages.length > 0,
   };
 }
 
@@ -147,23 +86,6 @@ function dedupeDocuments(documents: ProjectDocument[]) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-async function readErrorResponse(response: Response, fallback: string) {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    try {
-      const payload = (await response.json()) as { error?: string };
-      return payload.error || fallback;
-    } catch {
-      return fallback;
-    }
-  }
-  const text = (await response.text()).trim();
-  if (!text || text.startsWith("<!DOCTYPE") || text.startsWith("<html")) {
-    return fallback;
-  }
-  return text;
 }
 
 export function ProjectWorkspacePage({
@@ -182,46 +104,31 @@ export function ProjectWorkspacePage({
   const [supportingSubtype, setSupportingSubtype] =
     useState<SupportingDocumentSubtype>("rfp");
   const [file, setFile] = useState<File | null>(null);
-  const [artifactType, setArtifactType] =
-    useState<GeneratedArtifactType>("tilbudsstrategi");
   const [artifactInstructions, setArtifactInstructions] = useState("");
-  const [chatInput, setChatInput] = useState("");
-  const [streamingMessage, setStreamingMessage] = useState("");
   const [activeTab, setActiveTab] = useState("documents");
   const [artifactsLoaded, setArtifactsLoaded] = useState(
     initialData.generated_artifacts.length > 0 ||
       initialData.artifact_count === 0,
   );
-  const [chatLoaded, setChatLoaded] = useState(
-    initialData.chat_messages.length > 0 || !initialData.has_chat,
-  );
   const [uploadOpen, setUploadOpen] = useState(false);
-  const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const progressIntervalRef = useRef<number | null>(null);
 
   const summary = useMemo(
     () => [
       {
         label: "Kundedokument",
-        value: project.customer_document_uploaded ? "Pa plass" : "Mangler",
+        value: project.customer_document_uploaded ? "På plass" : "Mangler",
         done: project.customer_document_uploaded,
       },
       {
         label: "Kundeanalyse",
-        value: project.customer_analysis_generated ? "Generert" : "Ikke kjort",
+        value: project.customer_analysis_generated ? "Generert" : "Ikke kjørt",
         done: project.customer_analysis_generated,
       },
       {
-        label: "Losningsdokument",
-        value: project.solution_document_uploaded ? "Pa plass" : "Mangler",
+        label: "Løsningsdokument",
+        value: project.solution_document_uploaded ? "På plass" : "Mangler",
         done: project.solution_document_uploaded,
-      },
-      {
-        label: "Losningsvurdering",
-        value: project.solution_evaluation_generated
-          ? "Generert"
-          : "Ikke kjort",
-        done: project.solution_evaluation_generated,
       },
     ],
     [project],
@@ -311,46 +218,10 @@ export function ProjectWorkspacePage({
     };
   }, [activeTab, artifactsLoaded, project.artifact_count, project.id]);
 
-  useEffect(() => {
-    if (activeTab !== "chat" || chatLoaded || !project.has_chat) return;
-    let cancelled = false;
-    fetch(`/api/projects/${project.id}/chat`, { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          error?: string;
-          messages?: ChatMessage[];
-        };
-        if (!response.ok || !payload.messages) {
-          throw new Error(payload.error || "Kunne ikke hente chatten.");
-        }
-        if (!cancelled) {
-          setProject((current) =>
-            normalizeProjectState({
-              ...current,
-              chat_messages: payload.messages ?? [],
-            }),
-          );
-          setChatLoaded(true);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Kunne ikke hente chatten.",
-          );
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, chatLoaded, project.has_chat, project.id]);
-
   async function onUploadDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file) {
-      setError("Velg en fil forst.");
+      setError("Velg en fil først.");
       return;
     }
     await runAction("upload", async () => {
@@ -389,7 +260,6 @@ export function ProjectWorkspacePage({
           ),
           {
             preserveArtifactCount: !artifactsLoaded,
-            preserveHasChat: !chatLoaded,
           },
         ),
       );
@@ -430,7 +300,6 @@ export function ProjectWorkspacePage({
         );
         return normalizeProjectState(next, {
           preserveArtifactCount: !artifactsLoaded,
-          preserveHasChat: !chatLoaded,
         });
       });
     });
@@ -460,29 +329,21 @@ export function ProjectWorkspacePage({
           ),
           {
             preserveArtifactCount: !artifactsLoaded,
-            preserveHasChat: !chatLoaded,
           },
         ),
       );
     });
   }
 
-  async function onGenerateSolutionEvaluation() {
-    if (!project.solution_document_uploaded) {
-      const confirmed = window.confirm(
-        "Primert losningsdokument mangler. Vil du at systemet skal generere et internt losningsutkast og bruke det som grunnlag for losningsvurderingen?",
-      );
-      if (!confirmed) return;
-    }
+  async function onGenerateHighLevelDesign() {
     await runAction(
-      "evaluation",
+      "high-level-design",
       async () => {
         const response = await fetch(`/api/projects/${project.id}/jobs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            kind: "solution_evaluation",
-            allow_generated_solution: !project.solution_document_uploaded,
+            kind: "high_level_design",
           }),
         });
         const payload = (await response.json()) as {
@@ -491,7 +352,7 @@ export function ProjectWorkspacePage({
         };
         if (!response.ok || !payload.job) {
           throw new Error(
-            payload.error || "Kunne ikke starte losningsvurderingen.",
+            payload.error || "Kunne ikke starte jobben for overordnet løsningsdesign.",
           );
         }
         setBusyMessage(payload.job.message);
@@ -513,60 +374,72 @@ export function ProjectWorkspacePage({
           setBusyMessage(statusPayload.job.message);
           if (statusPayload.job.status === "failed") {
             throw new Error(
-              statusPayload.job.error || "Losningsvurderingen feilet.",
+              statusPayload.job.error || "Jobben for overordnet løsningsdesign feilet.",
             );
           }
           if (
             statusPayload.job.status !== "completed" ||
             !statusPayload.job.result
-          )
+          ) {
             continue;
+          }
 
           const result = statusPayload.job.result as {
-            evaluation: SolutionEvaluationResult;
+            analysis: CustomerAnalysisResult;
             project: ProjectSnapshotPayload;
-            artifact?: GeneratedArtifact | null;
-            used_generated_solution?: boolean;
           };
           setProject((current) =>
             normalizeProjectState(
               patchProjectWithSnapshot(
-                {
-                  ...current,
-                  solution_evaluation: result.evaluation,
-                  generated_artifacts: result.artifact
-                    ? [
-                        result.artifact,
-                        ...current.generated_artifacts.filter(
-                          (a) => a.id !== result.artifact?.id,
-                        ),
-                      ]
-                    : current.generated_artifacts,
-                  artifact_count: result.artifact
-                    ? current.artifact_count + 1
-                    : current.artifact_count,
-                },
+                { ...current, customer_analysis: result.analysis },
                 result.project,
               ),
               {
                 preserveArtifactCount: !artifactsLoaded,
-                preserveHasChat: !chatLoaded,
               },
             ),
           );
-          if (result.artifact) setArtifactsLoaded(true);
-          if (result.used_generated_solution) {
-            setNotice(
-              "Systemet genererte et internt losningsutkast og brukte det som grunnlag for losningsvurderingen.",
-            );
-          }
+          setNotice(
+            "Overordnet løsningsdesign og arkitekturdiagram er oppdatert uten å regenerere hele kundeanalysen.",
+          );
           break;
         }
       },
-      project.solution_document_uploaded
-        ? ["Starter losningsvurdering ..."]
-        : ["Starter systemgenerert losningsvurdering ..."],
+      ["Starter generering av overordnet løsningsdesign ..."],
     );
+  }
+
+  async function onSaveAnalysis(value: string) {
+    await runAction("save-analysis", async () => {
+      const response = await fetch(
+        `/api/projects/${project.id}/customer-analysis`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ analysis_text: value }),
+        },
+      );
+      const payload = (await response.json()) as {
+        error?: string;
+        analysis?: CustomerAnalysisResult;
+        project?: ProjectSnapshotPayload;
+      };
+      if (!response.ok || !payload.analysis || !payload.project) {
+        throw new Error(payload.error || "Kunne ikke lagre analysen.");
+      }
+      setProject((current) =>
+        normalizeProjectState(
+          patchProjectWithSnapshot(
+            { ...current, customer_analysis: payload.analysis! },
+            payload.project!,
+          ),
+          {
+            preserveArtifactCount: !artifactsLoaded,
+          },
+        ),
+      );
+      setNotice("Analysen er oppdatert og lagret i prosjektet.");
+    });
   }
 
   async function onGenerateArtifact(event: FormEvent<HTMLFormElement>) {
@@ -579,7 +452,7 @@ export function ProjectWorkspacePage({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             kind: "artifact_generation",
-            artifact_type: artifactType,
+            artifact_type: "losningsutkast",
             instructions: artifactInstructions,
           }),
         });
@@ -637,7 +510,6 @@ export function ProjectWorkspacePage({
                 },
                 result.project,
               ),
-              { preserveHasChat: !chatLoaded },
             ),
           );
           break;
@@ -647,81 +519,8 @@ export function ProjectWorkspacePage({
     );
   }
 
-  async function onSendChat(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const message = chatInput.trim();
-    if (!message) {
-      setError("Skriv en melding forst.");
-      return;
-    }
-    await runAction("chat", async () => {
-      const response = await fetch(`/api/projects/${project.id}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
-      });
-      if (!response.ok) {
-        throw new Error(
-          await readErrorResponse(response, "Kunne ikke sende chatmelding."),
-        );
-      }
-      setChatInput("");
-      setStreamingMessage("");
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let aggregate = "";
-      if (reader) {
-        let done = false;
-        while (!done) {
-          const chunk = await reader.read();
-          done = chunk.done;
-          if (chunk.value) {
-            aggregate += decoder.decode(chunk.value, { stream: !done });
-            setStreamingMessage(aggregate);
-            chatContainerRef.current?.scrollTo({
-              top: chatContainerRef.current.scrollHeight,
-              behavior: "smooth",
-            });
-          }
-        }
-      }
-      const createdAt = new Date().toISOString();
-      setProject((current) =>
-        normalizeProjectState(
-          {
-            ...current,
-            last_activity_at: createdAt,
-            chat_messages: current.chat_messages.concat([
-              {
-                id: `temp-user-${createdAt}`,
-                project_id: current.id,
-                role: "user",
-                content: message,
-                context_snapshot: {},
-                created_at: createdAt,
-              },
-              {
-                id: `temp-assistant-${createdAt}`,
-                project_id: current.id,
-                role: "assistant",
-                content: aggregate,
-                context_snapshot: {},
-                created_at: createdAt,
-              },
-            ]),
-          },
-          { preserveArtifactCount: !artifactsLoaded },
-        ),
-      );
-      setChatLoaded(true);
-      setStreamingMessage("");
-    });
-  }
-
   const customerAnalysis =
     project.customer_analysis as CustomerAnalysisResult | null;
-  const solutionEvaluation =
-    project.solution_evaluation as SolutionEvaluationResult | null;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8 lg:px-0">
@@ -760,7 +559,7 @@ export function ProjectWorkspacePage({
       </section>
 
       {/* Status indicators */}
-      <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border shadow-sm sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-px overflow-hidden rounded-lg border bg-border shadow-sm sm:grid-cols-3">
         {summary.map((item) => (
           <div
             key={item.label}
@@ -793,7 +592,7 @@ export function ProjectWorkspacePage({
           {notice}
         </div>
       ) : null}
-      {busyMessage && (busy === "evaluation" || busy === "artifact") ? (
+      {busyMessage && busy === "artifact" ? (
         <div className="mb-3 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
           <Spinner className="size-3.5" />
           <span>{busyMessage}</span>
@@ -802,21 +601,27 @@ export function ProjectWorkspacePage({
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="documents">
-        <TabsList variant="line" className="mb-4 w-full gap-4 border-b">
-          <TabsTrigger value="documents">Dokumenter</TabsTrigger>
-          <TabsTrigger value="analysis">Kundeanalyse</TabsTrigger>
-          <TabsTrigger value="evaluation">Løsningsvurdering</TabsTrigger>
-          <TabsTrigger value="generator">Generator</TabsTrigger>
-          <TabsTrigger value="chat">Chat</TabsTrigger>
+        <TabsList className="mb-4 flex w-full gap-6 border-b border-border">
+          <TabsTrigger value="documents" className="pb-2 text-sm">
+            Dokumenter
+          </TabsTrigger>
+          <TabsTrigger value="analysis" className="pb-2 text-sm">
+            Kundeanalyse
+          </TabsTrigger>
+          <TabsTrigger value="generator" className="pb-2 text-sm">
+            Løsningsutkast
+          </TabsTrigger>
         </TabsList>
 
         {/* Documents tab */}
-        <TabsContent value="documents">
+        {activeTab === "documents" ? (
           <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
             {/* Upload form */}
             <div className="overflow-hidden rounded-lg border shadow-sm">
-              <Collapsible open={uploadOpen} onOpenChange={setUploadOpen}>
-                <CollapsibleTrigger
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setUploadOpen((open) => !open)}
                   className="flex w-full items-center justify-between bg-muted px-4 py-3 text-sm font-semibold text-foreground hover:text-primary"
                 >
                   <span className="flex items-center gap-2">
@@ -826,8 +631,8 @@ export function ProjectWorkspacePage({
                   <ChevronDown
                     className={`size-4 text-muted-foreground transition-transform ${uploadOpen ? "rotate-180" : ""}`}
                   />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
+                </button>
+                {uploadOpen ? (
                   <form
                     onSubmit={onUploadDocument}
                     className="space-y-3 p-4"
@@ -843,50 +648,42 @@ export function ProjectWorkspacePage({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="docRole" className="font-medium">Dokumentrolle</Label>
-                      <Select
+                      <NativeSelect
+                        id="docRole"
                         value={docRole}
-                        onValueChange={(v) =>
-                          setDocRole(v as ProjectDocumentRole)
+                        onChange={(event) =>
+                          setDocRole(event.target.value as ProjectDocumentRole)
                         }
                       >
-                        <SelectTrigger id="docRole">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="primary_customer_document">
-                            Primert kundedokument
-                          </SelectItem>
-                          <SelectItem value="primary_solution_document">
-                            Primert losningsdokument
-                          </SelectItem>
-                          <SelectItem value="supporting_document">
-                            Stottedokument
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <NativeSelectOption value="primary_customer_document">
+                          Primært kundedokument
+                        </NativeSelectOption>
+                        <NativeSelectOption value="primary_solution_document">
+                          Primært løsningsdokument
+                        </NativeSelectOption>
+                        <NativeSelectOption value="supporting_document">
+                          Støttedokument
+                        </NativeSelectOption>
+                      </NativeSelect>
                     </div>
                     {docRole === "supporting_document" ? (
                       <div className="space-y-1.5">
                         <Label htmlFor="supportingSubtype" className="font-medium">Undertype</Label>
-                        <Select
+                        <NativeSelect
+                          id="supportingSubtype"
                           value={supportingSubtype}
-                          onValueChange={(v) =>
+                          onChange={(event) =>
                             setSupportingSubtype(
-                              v as SupportingDocumentSubtype,
+                              event.target.value as SupportingDocumentSubtype,
                             )
                           }
                         >
-                          <SelectTrigger id="supportingSubtype">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {SUPPORTING_SUBTYPES.map((item) => (
-                              <SelectItem key={item.value} value={item.value}>
-                                {item.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          {SUPPORTING_SUBTYPES.map((item) => (
+                            <NativeSelectOption key={item.value} value={item.value}>
+                              {item.label}
+                            </NativeSelectOption>
+                          ))}
+                        </NativeSelect>
                       </div>
                     ) : null}
                     <div className="space-y-1.5">
@@ -911,8 +708,8 @@ export function ProjectWorkspacePage({
                       Last opp
                     </Button>
                   </form>
-                </CollapsibleContent>
-              </Collapsible>
+                ) : null}
+              </div>
             </div>
 
             {/* Document list */}
@@ -977,50 +774,31 @@ export function ProjectWorkspacePage({
               )}
             </div>
           </div>
-        </TabsContent>
+        ) : null}
 
-        <TabsContent value="analysis">
+        {activeTab === "analysis" ? (
           <ProjectAnalysisTab
             customerAnalysis={customerAnalysis}
             busy={busy === "analysis"}
+            saveBusy={busy === "save-analysis"}
+            highLevelBusy={busy === "high-level-design"}
+            busyMessage={busy === "high-level-design" ? busyMessage : ""}
             onGenerate={onGenerateCustomerAnalysis}
+            onGenerateHighLevel={onGenerateHighLevelDesign}
+            onSaveAnalysis={onSaveAnalysis}
           />
-        </TabsContent>
+        ) : null}
 
-        <TabsContent value="evaluation">
-          <ProjectEvaluationTab
-            solutionEvaluation={solutionEvaluation}
-            hasSolutionDocument={project.solution_document_uploaded}
-            busy={busy === "evaluation"}
-            busyMessage={busy === "evaluation" ? busyMessage : ""}
-            onGenerate={onGenerateSolutionEvaluation}
-          />
-        </TabsContent>
-
-        <TabsContent value="generator">
+        {activeTab === "generator" ? (
           <ProjectGeneratorTab
             artifacts={project.generated_artifacts}
-            artifactType={artifactType}
             artifactInstructions={artifactInstructions}
             busy={busy === "artifact"}
             busyMessage={busy === "artifact" ? busyMessage : ""}
-            onArtifactTypeChange={setArtifactType}
             onArtifactInstructionsChange={setArtifactInstructions}
             onSubmit={onGenerateArtifact}
           />
-        </TabsContent>
-
-        <TabsContent value="chat">
-          <ProjectChatTab
-            chatMessages={project.chat_messages as ChatMessage[]}
-            chatInput={chatInput}
-            streamingMessage={streamingMessage}
-            busy={busy === "chat"}
-            chatContainerRef={chatContainerRef}
-            onChatInputChange={setChatInput}
-            onSubmit={onSendChat}
-          />
-        </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );

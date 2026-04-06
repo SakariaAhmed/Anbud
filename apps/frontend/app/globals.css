@@ -224,6 +224,177 @@
     font-size: 1.1rem;
   }
 
+  .artifact-markdown {
+    line-height: 1.8;
+  }
+
+  .artifact-markdown h2 {
+    margin: 1.9rem 0 0.8rem;
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: color-mix(in srgb, var(--foreground) 95%, var(--primary) 5%);
+  }
+
+  .artifact-markdown p {
+    margin: 0.85rem 0;
+    font-size: 1.04rem;
+    line-height: 1.82;
+    color: color-mix(in srgb, var(--foreground) 92%, var(--muted-foreground) 8%);
+    text-wrap: pretty;
+  }
+
+  .artifact-markdown ul {
+    margin: 0.95rem 0 1.2rem;
+    padding-left: 1.65rem;
+  }
+
+  .artifact-markdown li {
+    margin: 0.45rem 0;
+    padding-left: 0.15rem;
+  }
+
+  .artifact-markdown strong {
+    font-weight: 700;
+    color: var(--foreground);
+  }
+
+  .analysis-card .artifact-markdown {
+    max-width: 74ch;
+  }
+
+  .analysis-card .artifact-markdown h2:first-child,
+  .analysis-card .artifact-markdown h3:first-child,
+  .analysis-card .artifact-markdown p:first-child {
+    margin-top: 0;
+  }
+
+  .analysis-prose {
+    max-width: 78ch;
+    color: color-mix(in srgb, var(--foreground) 95%, var(--muted-foreground) 5%);
+    font-size: 1.06rem;
+    line-height: 1.95;
+    letter-spacing: -0.012em;
+    text-wrap: pretty;
+  }
+
+  .analysis-prose p {
+    margin: 0.95rem 0;
+  }
+
+  .analysis-prose p:first-child {
+    margin-top: 0;
+  }
+
+  .analysis-prose p:last-child {
+    margin-bottom: 0;
+  }
+
+  .analysis-prose strong {
+    font-weight: 700;
+    color: color-mix(in srgb, var(--foreground) 96%, var(--primary) 4%);
+  }
+
+  .analysis-prose em {
+    font-style: normal;
+    color: color-mix(in srgb, var(--foreground) 84%, var(--primary) 16%);
+  }
+
+  .analysis-prose ul,
+  .analysis-prose ol {
+    margin: 1rem 0 1.1rem;
+    padding-left: 1.35rem;
+  }
+
+  .analysis-prose li {
+    margin: 0.35rem 0;
+    padding-left: 0.15rem;
+  }
+
+  .analysis-prose h1,
+  .analysis-prose h2,
+  .analysis-prose h3 {
+    margin: 1.5rem 0 0.65rem;
+    letter-spacing: -0.025em;
+    line-height: 1.18;
+    color: color-mix(in srgb, var(--foreground) 96%, var(--primary) 4%);
+  }
+
+  .analysis-prose h1 {
+    font-size: 2rem;
+    font-weight: 760;
+  }
+
+  .analysis-prose h2 {
+    font-size: 1.5rem;
+    font-weight: 720;
+  }
+
+  .analysis-prose h3 {
+    font-size: 1.18rem;
+    font-weight: 680;
+  }
+
+  .analysis-prose blockquote {
+    margin: 1.15rem 0;
+    border-left: 3px solid color-mix(in srgb, var(--primary) 35%, var(--border) 65%);
+    padding-left: 1rem;
+    color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground) 22%);
+  }
+
+  .analysis-card {
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--border) 82%, white 18%);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.96)),
+      radial-gradient(circle at top left, rgba(99, 102, 241, 0.04), transparent 38%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.75) inset,
+      0 10px 30px rgba(15, 23, 42, 0.05);
+  }
+
+  .analysis-card-eyebrow {
+    letter-spacing: 0.13em;
+    color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground) 18%);
+  }
+
+  .chat-markdown {
+    line-height: 1.65;
+  }
+
+  .chat-markdown p {
+    margin: 0.45rem 0;
+  }
+
+  .chat-markdown ul,
+  .chat-markdown ol {
+    margin: 0.55rem 0;
+    padding-left: 1.2rem;
+  }
+
+  .mermaid-diagram {
+    overflow-x: auto;
+  }
+
+  .mermaid-diagram svg {
+    height: auto;
+    max-width: 100%;
+  }
+
+  .mermaid-diagram .node rect,
+  .mermaid-diagram .node polygon,
+  .mermaid-diagram .node circle,
+  .mermaid-diagram .node ellipse,
+  .mermaid-diagram .node path {
+    filter: drop-shadow(0 8px 18px rgba(15, 23, 42, 0.06));
+  }
+
+  .mermaid-diagram .label text,
+  .mermaid-diagram .node text {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
   .markdown-viewer ul,
   .markdown-viewer ol {
     padding-left: 1.25rem;

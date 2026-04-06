@@ -1,16 +1,11 @@
-"use client";
-
 import Link from "next/link";
-import { ArrowRight, FileText, MessageSquare, Plus, Search } from "lucide-react";
+import { ArrowRight, FileText, Plus, Search, Sparkles } from "lucide-react";
 
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import type { ProjectSummary } from "@/lib/types";
 
 function statusColor(status: ProjectSummary["status"]) {
   switch (status) {
     case "Klar for sparring":
-      return "text-emerald-700";
     case "Løsningsdokument lastet opp":
       return "text-blue-700";
     case "Kundeanalyse klar":
@@ -23,7 +18,6 @@ function statusColor(status: ProjectSummary["status"]) {
 function statusDot(status: ProjectSummary["status"]) {
   switch (status) {
     case "Klar for sparring":
-      return "bg-emerald-500";
     case "Løsningsdokument lastet opp":
       return "bg-blue-500";
     case "Kundeanalyse klar":
@@ -44,8 +38,8 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   const totals = {
     total: projects.length,
     analyses: projects.filter((p) => p.customer_analysis_generated).length,
-    evaluations: projects.filter((p) => p.solution_evaluation_generated).length,
-    chatReady: projects.filter((p) => p.has_chat).length,
+    solutionDocs: projects.filter((p) => p.solution_document_uploaded).length,
+    artifacts: projects.reduce((sum, p) => sum + p.artifact_count, 0),
   };
 
   return (
@@ -56,14 +50,14 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
           Tilbudsarbeidsflate
         </h1>
         <p className="mt-2 max-w-2xl text-base text-foreground/70">
-          Last opp kundedokumenter, løsningsutkast og støttekontekst. Appen
-          hjelper teamet å forstå kunden, vurdere konkurransekraft og bygge
-          bedre svar raskere.
+          Last opp kundedokumenter, løsningsdokumenter og støttekontekst.
+          Appen hjelper teamet å forstå kunden og bygge bedre
+          løsningsutkast raskere.
         </p>
         <div className="mt-5 flex items-center gap-3">
           <Link
             href="/projects/new"
-            className={cn(buttonVariants({ size: "lg" }), "gap-1.5")}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             <Plus className="size-4" />
             Ny analyse
@@ -71,7 +65,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
           {projects[0] ? (
             <Link
               href={`/projects/${projects[0].id}`}
-              className={cn(buttonVariants({ variant: "outline", size: "lg" }), "gap-1.5")}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
               Åpne siste prosjekt
               <ArrowRight className="size-4" />
@@ -85,8 +79,8 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
         {[
           { label: "Prosjekter", value: totals.total },
           { label: "Kundeanalyser", value: totals.analyses },
-          { label: "Løsningsvurderinger", value: totals.evaluations },
-          { label: "Chat brukt", value: totals.chatReady },
+          { label: "Løsningsdokumenter", value: totals.solutionDocs },
+          { label: "Løsningsutkast", value: totals.artifacts },
         ].map((item) => (
           <div
             key={item.label}
@@ -121,7 +115,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
             </p>
             <Link
               href="/projects/new"
-              className={cn(buttonVariants({ size: "lg" }), "mt-5 gap-1.5")}
+              className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <Plus className="size-4" />
               Opprett første prosjekt
@@ -167,8 +161,8 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                       {project.document_count}
                     </span>
                     <span className="flex items-center gap-1">
-                      <MessageSquare className="size-3.5" />
-                      {project.has_chat ? "Aktiv" : "--"}
+                      <Sparkles className="size-3.5" />
+                      {project.artifact_count}
                     </span>
                   </span>
                 </div>
@@ -196,19 +190,20 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
           </div>
           <div className="bg-background px-5 py-4">
             <p className="text-sm font-bold text-foreground">
-              2. Analyser og vurder
+              2. Analyser kunden
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Generer kundeanalyse og evaluer hvor godt løsningen faktisk
-              svarer.
+              Generer kundeanalyse med implisitte krav, risiko, posisjonering
+              og overordnet løsningsdesign.
             </p>
           </div>
           <div className="bg-background px-5 py-4">
             <p className="text-sm font-bold text-foreground">
-              3. Sparr og generer
+              3. Generer utkast
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Bruk chat og generator til å styrke strategi, verdi og svar.
+              Generer et løsningsutkast som bygger på prosjektkonteksten og
+              kundeanalysen.
             </p>
           </div>
         </div>

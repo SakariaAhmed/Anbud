@@ -2,19 +2,13 @@ import { NextResponse } from "next/server";
 
 import {
   queueArtifactGenerationJob,
+  queueHighLevelDesignJob,
   queueSolutionEvaluationJob,
 } from "@/lib/server/project-jobs";
 import type { GeneratedArtifactType } from "@/lib/types";
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
-  return [
-    "losningsutkast",
-    "forbedret_kravsvar",
-    "tilbudsstrategi",
-    "verdiargumentasjon",
-    "anbefalt_arkitektur",
-    "gjennomforing_og_risiko",
-  ].includes(value);
+  return value === "losningsutkast";
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -26,6 +20,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           allow_generated_solution?: boolean;
         }
       | {
+          kind?: "high_level_design";
+        }
+      | {
           kind?: "artifact_generation";
           artifact_type?: string;
           instructions?: string;
@@ -35,6 +32,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const job = queueSolutionEvaluationJob({
         projectId: id,
         allowGeneratedSolution: Boolean(body.allow_generated_solution),
+      });
+
+      return NextResponse.json({ job }, { status: 202 });
+    }
+
+    if (body.kind === "high_level_design") {
+      const job = queueHighLevelDesignJob({
+        projectId: id,
       });
 
       return NextResponse.json({ job }, { status: 202 });

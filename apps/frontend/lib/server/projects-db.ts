@@ -130,9 +130,10 @@ const DOCUMENT_SUMMARY_SELECT_SAFE =
 const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   customer_profile_summary: "",
   customer_goals_summary: "",
+  high_level_solution_design: "",
+  high_level_architecture_mermaid: "",
   customer_profile: [],
   customer_goals: [],
-  explicit_requirements: [],
   implicit_requirements: [],
   prioritized_requirements: [],
   ambiguities: [],
@@ -179,9 +180,6 @@ function revalidateProjectCaches(projectId: string) {
 }
 
 function mapProjectStatus(row: ProjectRow): ProjectStatus {
-  if (row.solution_evaluation_generated) {
-    return "Klar for sparring";
-  }
   if (row.solution_document_uploaded) {
     return "Løsningsdokument lastet opp";
   }
@@ -280,12 +278,39 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
 }
 
 function mapArtifact(row: ArtifactRow): GeneratedArtifact {
+  const artifactType = [
+    "losningsutkast",
+    "forbedret_kravsvar",
+    "tilbudsstrategi",
+    "verdiargumentasjon",
+    "anbefalt_arkitektur",
+    "gjennomforing_og_risiko",
+  ].includes(String(row.artifact_type))
+    ? row.artifact_type
+    : "losningsutkast";
+  const title =
+    typeof row.title === "string" && row.title.trim()
+      ? row.title.trim()
+      : "Generatorutkast uten tittel";
+  const legacyContent =
+    typeof (row as unknown as Record<string, unknown>).content === "string"
+      ? ((row as unknown as Record<string, unknown>).content as string)
+      : typeof (row as unknown as Record<string, unknown>).markdown === "string"
+        ? ((row as unknown as Record<string, unknown>).markdown as string)
+        : "";
+  const contentMarkdown =
+    typeof row.content_markdown === "string" && row.content_markdown.trim()
+      ? row.content_markdown
+      : legacyContent.trim()
+        ? legacyContent
+        : "Dette generatorutkastet mangler lagret innhold. Generer det på nytt for å få et komplett resultat.";
+
   return {
     id: row.id,
     project_id: row.project_id,
-    artifact_type: row.artifact_type,
-    title: row.title,
-    content_markdown: row.content_markdown,
+    artifact_type: artifactType,
+    title,
+    content_markdown: contentMarkdown,
     input_snapshot: decryptJson(row.input_snapshot, {}),
     created_at: row.created_at,
   };
@@ -477,12 +502,11 @@ export async function listProjects(): Promise<ProjectSummary[]> {
   return unstable_cache(
     async () => {
   const supabase = createServiceClient();
-  const [{ data: projects, error: projectsError }, documentRows, { data: artifacts }, { data: messages }] =
+  const [{ data: projects, error: projectsError }, documentRows, { data: artifacts }] =
     await Promise.all([
       supabase.from("projects").select("*").order("last_activity_at", { ascending: false }),
       fetchDocumentSummaryRows((select) => supabase.from("documents").select(select)),
       supabase.from("generated_artifacts").select("id, project_id"),
-      supabase.from("chat_messages").select("id, project_id"),
     ]);
 
   if (projectsError) {
@@ -501,17 +525,12 @@ export async function listProjects(): Promise<ProjectSummary[]> {
     artifactCount.set(row.project_id, (artifactCount.get(row.project_id) ?? 0) + 1);
   }
 
-  const chatCount = new Map<string, number>();
-  for (const row of messages ?? []) {
-    chatCount.set(row.project_id, (chatCount.get(row.project_id) ?? 0) + 1);
-  }
-
   return ((projects ?? []) as Record<string, unknown>[]).map((row) => {
     const project = fromUnknownProjectRow(row);
     return {
       ...mapProjectSummary(project, documentsByProject.get(project.id) ?? []),
       artifact_count: artifactCount.get(project.id) ?? 0,
-      has_chat: (chatCount.get(project.id) ?? 0) > 0,
+      has_chat: false,
     };
   });
     },
@@ -635,9 +654,7 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
         projectRow,
         documentRows,
         { data: analyses, error: analysesError },
-        { data: evaluations, error: evaluationsError },
         { data: artifactRows, error: artifactsError },
-        { data: messageRows, error: messagesError },
       ] = await Promise.all([
         queryProjectRow(projectId),
         fetchDocumentSummaryRows((select) =>
@@ -649,28 +666,18 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
           .eq("project_id", projectId)
           .order("created_at", { ascending: false })
           .limit(1),
-        supabase
-          .from("solution_evaluations")
-          .select("*")
-          .eq("project_id", projectId)
-          .order("created_at", { ascending: false })
-          .limit(1),
         supabase.from("generated_artifacts").select("id").eq("project_id", projectId),
-        supabase.from("chat_messages").select("id").eq("project_id", projectId).limit(1),
       ]);
 
-      if (analysesError || evaluationsError || artifactsError || messagesError) {
+      if (analysesError || artifactsError) {
         throw new Error(
           analysesError?.message ||
-            evaluationsError?.message ||
             artifactsError?.message ||
-            messagesError?.message ||
             "Kunne ikke laste prosjektet.",
         );
       }
 
       const analysisRow = ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
-      const evaluationRow = ((evaluations ?? [])[0] as SolutionEvaluationRow | undefined) ?? null;
 
       return {
         id: projectRow.id,
@@ -689,10 +696,10 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
         document_count: documentRows.length,
         supporting_document_count: documentRows.filter((document) => document.role === "supporting_document").length,
         artifact_count: (artifactRows ?? []).length,
-        has_chat: (messageRows ?? []).length > 0,
+        has_chat: false,
         documents: documentRows.map(mapDocumentSummary),
         customer_analysis: analysisRow ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY) : null,
-        solution_evaluation: evaluationRow ? decryptJson(evaluationRow.result_json, SOLUTION_EVALUATION_EMPTY) : null,
+        solution_evaluation: null,
         generated_artifacts: [],
         chat_messages: [],
       };
