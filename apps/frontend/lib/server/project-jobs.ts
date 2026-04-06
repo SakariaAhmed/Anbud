@@ -2,13 +2,20 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { generateProjectArtifact, evaluateSolutionDocument, synthesizeAndEvaluateSolution } from "@/lib/server/ai";
+import {
+  evaluateSolutionDocument,
+  generateHighLevelDesign,
+  generateProjectArtifact,
+  synthesizeAndEvaluateSolution,
+} from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
   getPrimaryDocument,
   getProjectDetail,
   getProjectSnapshot,
+  listGeneratedArtifacts,
   listSupportingDocuments,
+  saveCustomerAnalysis,
   saveGeneratedArtifact,
   saveSolutionEvaluation,
 } from "@/lib/server/projects-db";
@@ -109,11 +116,20 @@ export function queueArtifactGenerationJob(input: {
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster prosjektkontekst og relevante dokumenter ...");
-    const [project, customerAnalysis, customerDocument, solutionDocument] = await Promise.all([
+    const [
+      project,
+      customerAnalysis,
+      customerDocument,
+      solutionDocument,
+      supportingDocuments,
+      generatedArtifacts,
+    ] = await Promise.all([
       getProjectDetail(input.projectId),
       getCustomerAnalysis(input.projectId),
       getPrimaryDocument(input.projectId, "primary_customer_document"),
       getPrimaryDocument(input.projectId, "primary_solution_document"),
+      listSupportingDocuments(input.projectId),
+      listGeneratedArtifacts(input.projectId),
     ]);
 
     setProgress("Genererer nytt utkast med AI ...");
@@ -124,6 +140,8 @@ export function queueArtifactGenerationJob(input: {
       solutionEvaluation: project.solution_evaluation,
       customerDocument,
       solutionDocument,
+      supportingDocuments,
+      knowledgeArtifacts: generatedArtifacts,
       instructions: input.instructions?.trim(),
     });
 
@@ -250,6 +268,72 @@ export function queueSolutionEvaluationJob(input: {
       project: projectSnapshot,
       artifact: null,
       used_generated_solution: false,
+    };
+  });
+
+  return record;
+}
+
+export function queueHighLevelDesignJob(input: { projectId: string }) {
+  const jobId = randomUUID();
+  const now = new Date().toISOString();
+  const record: ProjectJobRecord = {
+    id: jobId,
+    project_id: input.projectId,
+    kind: "high_level_design",
+    status: "queued",
+    message: "Køer high-level design ...",
+    created_at: now,
+    updated_at: now,
+    error: null,
+    result: null,
+  };
+
+  getStore().set(jobId, record);
+
+  startRunner(jobId, async ({ setProgress }) => {
+    setProgress("Laster kundedokument, analyse og støttedokumenter ...");
+    const [customerDocument, supportingDocuments, customerAnalysis] =
+      await Promise.all([
+        getPrimaryDocument(input.projectId, "primary_customer_document"),
+        listSupportingDocuments(input.projectId),
+        getCustomerAnalysis(input.projectId),
+      ]);
+
+    if (!customerDocument) {
+      throw new Error("Last opp et primært kundedokument først.");
+    }
+
+    if (!customerAnalysis) {
+      throw new Error(
+        "Generer kundeanalyse først. High-level design bygger på eksisterende kundeanalyse.",
+      );
+    }
+
+    setProgress("Genererer oppdatert high-level design og arkitekturdiagram ...");
+    const highLevelDesign = await generateHighLevelDesign({
+      projectName: customerDocument.title,
+      customerDocument,
+      supportingDocuments,
+      customerAnalysis,
+    });
+
+    setProgress("Lagrer oppdatert high-level design i kundeanalysen ...");
+    const analysis = await saveCustomerAnalysis(
+      input.projectId,
+      [customerDocument.id, ...supportingDocuments.map((document) => document.id)],
+      {
+        ...customerAnalysis,
+        high_level_solution_design: highLevelDesign.high_level_solution_design,
+        high_level_architecture_mermaid:
+          highLevelDesign.high_level_architecture_mermaid,
+      },
+    );
+
+    const projectSnapshot = await getProjectSnapshot(input.projectId);
+    return {
+      analysis,
+      project: projectSnapshot,
     };
   });
 

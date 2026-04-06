@@ -8,7 +8,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "ANBUD",
   description:
-    "Kundeanalyse, losningsvurdering, generator og sparring for tilbudsteam i komplekse kundeprosjekter.",
+    "Kundeanalyse og generator for tilbudsteam i komplekse kundeprosjekter.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

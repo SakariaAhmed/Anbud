@@ -26,8 +26,8 @@ export function ProjectChatTab({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <div>
-      <div className="mb-4">
+    <div className="space-y-4">
+      <div className="mb-1">
         <h2 className="text-lg font-bold text-foreground">
           Sparring med prosjektkontekst
         </h2>
@@ -38,10 +38,10 @@ export function ProjectChatTab({
       </div>
 
       {/* Chat container */}
-      <div className="overflow-hidden rounded-lg border shadow-sm">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div
           ref={chatContainerRef}
-          className="flex max-h-[520px] flex-col gap-3 overflow-y-auto p-4"
+          className="flex h-[72vh] min-h-[42rem] flex-col gap-2.5 overflow-y-auto px-5 py-5"
         >
           {chatMessages.map((message) => (
             <div
@@ -51,25 +51,25 @@ export function ProjectChatTab({
               }`}
             >
               {message.role === "assistant" ? (
-                <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+                <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-sm">
                   <Bot className="size-3" />
                 </div>
               ) : null}
               <div
-                className={`max-w-[min(100%,38rem)] rounded-md border px-3 py-2 ${
+                className={`max-w-[min(100%,54rem)] rounded-2xl border px-4 py-3 ${
                   message.role === "user"
-                    ? "border-foreground/20 bg-foreground text-background"
-                    : "bg-muted"
+                    ? "border-foreground/15 bg-foreground text-background shadow-sm"
+                    : "bg-muted/60 shadow-sm"
                 }`}
               >
                 <MarkdownViewer
                   content={message.content}
                   tone={message.role === "user" ? "inverse" : "default"}
-                  className="text-sm"
+                  className="chat-markdown text-[0.98rem]"
                 />
               </div>
               {message.role === "user" ? (
-                <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-muted-foreground">
+                <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm">
                   <User2 className="size-3" />
                 </div>
               ) : null}
@@ -78,15 +78,15 @@ export function ProjectChatTab({
 
           {streamingMessage ? (
             <div className="flex w-full items-start gap-2.5">
-              <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+              <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-sm">
                 <Bot className="size-3" />
               </div>
-              <div className="max-w-[min(100%,38rem)] rounded-md border bg-muted px-3 py-2">
+              <div className="max-w-[min(100%,54rem)] rounded-2xl border bg-muted/60 px-4 py-3 shadow-sm">
                 <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Spinner className="size-3" />
                   Tenker ...
                 </div>
-                <MarkdownViewer content={streamingMessage} className="text-sm" />
+                <MarkdownViewer content={streamingMessage} className="chat-markdown text-[0.98rem]" />
               </div>
             </div>
           ) : null}
@@ -105,19 +105,19 @@ export function ProjectChatTab({
         </div>
 
         {/* Input */}
-        <div className="border-t p-3">
+        <div className="border-t bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <form onSubmit={onSubmit}>
             <textarea
               value={chatInput}
               onChange={(e) => onChatInputChange(e.target.value)}
               placeholder="Skriv en melding..."
-              className="mb-2 min-h-16 w-full resize-none rounded-md border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
+              className="mb-3 min-h-14 w-full resize-none rounded-xl border bg-transparent px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
             />
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
                 Svar bygger på hele prosjektkonteksten.
               </p>
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy} className="h-10 px-4">
                 {busy ? (
                   <Spinner className="size-4" />
                 ) : (

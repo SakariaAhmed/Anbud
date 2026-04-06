@@ -22,12 +22,7 @@ export const ARTIFACT_TYPES: Array<{
   value: GeneratedArtifactType;
   label: string;
 }> = [
-  { value: "losningsutkast", label: "Losningsutkast" },
-  { value: "forbedret_kravsvar", label: "Forbedret kravsvar" },
-  { value: "tilbudsstrategi", label: "Tilbudsstrategi" },
-  { value: "verdiargumentasjon", label: "Verdiargumentasjon" },
-  { value: "anbefalt_arkitektur", label: "Anbefalt arkitektur" },
-  { value: "gjennomforing_og_risiko", label: "Gjennomforing og risiko" },
+  { value: "losningsutkast", label: "Løsningsutkast" },
 ];
 
 export const SUPPORTING_SUBTYPES: Array<{
@@ -38,7 +33,7 @@ export const SUPPORTING_SUBTYPES: Array<{
   { value: "kravdokument", label: "Kravdokument" },
   { value: "prosjektbeskrivelse", label: "Prosjektbeskrivelse" },
   { value: "notat", label: "Notat" },
-  { value: "motenotat", label: "Motenotat" },
+  { value: "motenotat", label: "Møtenotat" },
   { value: "workshop", label: "Workshop" },
   { value: "vedlegg", label: "Vedlegg" },
   { value: "strategi", label: "Strategi" },
@@ -49,11 +44,11 @@ export const SUPPORTING_SUBTYPES: Array<{
 export function roleLabel(role: ProjectDocumentRole) {
   switch (role) {
     case "primary_customer_document":
-      return "Primert kundedokument";
+      return "Primært kundedokument";
     case "primary_solution_document":
-      return "Primert losningsdokument";
+      return "Primært løsningsdokument";
     default:
-      return "Stottedokument";
+      return "Støttedokument";
   }
 }
 
@@ -61,7 +56,7 @@ export function supportingSubtypeLabel(
   subtype: SupportingDocumentSubtype | null,
 ) {
   const match = SUPPORTING_SUBTYPES.find((item) => item.value === subtype);
-  return match?.label ?? "Stottedokument";
+  return match?.label ?? "Støttedokument";
 }
 
 export function formatDate(value: string) {
@@ -80,9 +75,6 @@ export function deriveProjectStatus(
     | "solution_evaluation_generated"
   >,
 ): ProjectStatus {
-  if (project.solution_evaluation_generated) {
-    return "Klar for sparring";
-  }
   if (project.solution_document_uploaded) {
     return "Løsningsdokument lastet opp";
   }

@@ -114,14 +114,16 @@ export interface ValueOpportunity {
   title: string;
   description: string;
   value_categories: ValueCategory[];
+  profit_share_percent: number;
 }
 
 export interface CustomerAnalysisResult {
   customer_profile_summary: string;
   customer_goals_summary: string;
+  high_level_solution_design: string;
+  high_level_architecture_mermaid: string;
   customer_profile: string[];
   customer_goals: string[];
-  explicit_requirements: AnalysisRequirement[];
   implicit_requirements: AnalysisRequirement[];
   prioritized_requirements: Array<{
     requirement: string;
@@ -224,7 +226,10 @@ export interface ChatRequestInput {
   message: string;
 }
 
-export type ProjectJobKind = "solution_evaluation" | "artifact_generation";
+export type ProjectJobKind =
+  | "solution_evaluation"
+  | "artifact_generation"
+  | "high_level_design";
 export type ProjectJobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface ArtifactGenerationJobResult {
@@ -239,7 +244,15 @@ export interface SolutionEvaluationJobResult {
   used_generated_solution: boolean;
 }
 
-export type ProjectJobResult = ArtifactGenerationJobResult | SolutionEvaluationJobResult;
+export interface HighLevelDesignJobResult {
+  analysis: CustomerAnalysisResult;
+  project: ProjectSnapshotResult;
+}
+
+export type ProjectJobResult =
+  | ArtifactGenerationJobResult
+  | SolutionEvaluationJobResult
+  | HighLevelDesignJobResult;
 
 export interface ProjectJobRecord {
   id: string;

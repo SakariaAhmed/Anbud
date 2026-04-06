@@ -7,19 +7,13 @@ import {
   getProjectDetail,
   getProjectSnapshot,
   listGeneratedArtifacts,
+  listSupportingDocuments,
   saveGeneratedArtifact,
 } from "@/lib/server/projects-db";
 import type { GeneratedArtifactType } from "@/lib/types";
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
-  return [
-    "losningsutkast",
-    "forbedret_kravsvar",
-    "tilbudsstrategi",
-    "verdiargumentasjon",
-    "anbefalt_arkitektur",
-    "gjennomforing_og_risiko",
-  ].includes(value);
+  return value === "losningsutkast";
 }
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
@@ -44,11 +38,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: "Ugyldig artefakttype." }, { status: 400 });
     }
 
-    const [project, customerAnalysis, customerDocument, solutionDocument] = await Promise.all([
+    const [
+      project,
+      customerAnalysis,
+      customerDocument,
+      solutionDocument,
+      supportingDocuments,
+      generatedArtifacts,
+    ] = await Promise.all([
       getProjectDetail(id),
       getCustomerAnalysis(id),
       getPrimaryDocument(id, "primary_customer_document"),
       getPrimaryDocument(id, "primary_solution_document"),
+      listSupportingDocuments(id),
+      listGeneratedArtifacts(id),
     ]);
 
     const generated = await generateProjectArtifact({
@@ -58,6 +61,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       solutionEvaluation: project.solution_evaluation,
       customerDocument,
       solutionDocument,
+      supportingDocuments,
+      knowledgeArtifacts: generatedArtifacts,
       instructions: body.instructions?.trim(),
     });
 
