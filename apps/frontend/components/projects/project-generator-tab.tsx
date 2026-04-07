@@ -50,26 +50,6 @@ export function ProjectGeneratorTab({
 
         <form onSubmit={onSubmit} className="space-y-5 p-6">
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
-              Format
-            </Label>
-            <div className="rounded-xl border bg-muted/30 px-4 py-3 text-sm font-semibold text-foreground">
-              Løsningsutkast
-            </div>
-          </div>
-          <div className="rounded-xl border bg-muted/20 px-4 py-4">
-            <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
-              Kunnskapsbase
-            </p>
-            <ul className="mt-3 space-y-2 text-sm leading-6 text-foreground/80">
-              <li>Primært kundedokument</li>
-              <li>Primært løsningsdokument</li>
-              <li>Støttedokumenter, strategi og notater</li>
-              <li>Lagret analyse og manuelle tekstendringer</li>
-              <li>Tidligere versjoner av løsningsutkastet</li>
-            </ul>
-          </div>
-          <div className="space-y-2">
             <Label
               htmlFor="artifactInstructions"
               className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground"

@@ -13,6 +13,7 @@ import {
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/projects/project-tabs";
 import { Input, Label, NativeSelect, NativeSelectOption } from "@/components/projects/primitives";
@@ -601,17 +602,36 @@ export function ProjectWorkspacePage({
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="documents">
-        <TabsList className="mb-4 flex w-full gap-6 border-b border-border">
-          <TabsTrigger value="documents" className="pb-2 text-sm">
-            Dokumenter
-          </TabsTrigger>
-          <TabsTrigger value="analysis" className="pb-2 text-sm">
-            Kundeanalyse
-          </TabsTrigger>
-          <TabsTrigger value="generator" className="pb-2 text-sm">
-            Løsningsutkast
-          </TabsTrigger>
-        </TabsList>
+        <div className="mb-8 border-b border-border/80">
+          <TabsList className="grid w-full grid-cols-[1fr_auto_1fr_auto_1fr] items-end">
+            <TabsTrigger
+              value="documents"
+              className="-mb-px flex w-full justify-center pb-5 text-base"
+            >
+              Dokumenter
+            </TabsTrigger>
+            <Separator
+              orientation="vertical"
+              className="mb-5 mx-auto h-10 bg-border/80"
+            />
+            <TabsTrigger
+              value="analysis"
+              className="-mb-px flex w-full justify-center pb-5 text-base"
+            >
+              Kundeanalyse
+            </TabsTrigger>
+            <Separator
+              orientation="vertical"
+              className="mb-5 mx-auto h-10 bg-border/80"
+            />
+            <TabsTrigger
+              value="generator"
+              className="-mb-px flex w-full justify-center pb-5 text-base"
+            >
+              Løsningsutkast
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Documents tab */}
         {activeTab === "documents" ? (

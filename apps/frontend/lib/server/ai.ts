@@ -474,7 +474,6 @@ function normalizeValueOpportunities(
               "Lavere kostnader",
               "Redusert risiko",
               "Bedre brukeropplevelse",
-              "Fokus på kjernevirksomheten",
             ].includes(value),
           )
         : [],

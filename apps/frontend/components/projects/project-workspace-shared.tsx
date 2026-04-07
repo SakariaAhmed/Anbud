@@ -15,7 +15,6 @@ export const VALUE_LABELS: ValueCategory[] = [
   "Lavere kostnader",
   "Redusert risiko",
   "Bedre brukeropplevelse",
-  "Fokus på kjernevirksomheten",
 ];
 
 export const ARTIFACT_TYPES: Array<{
