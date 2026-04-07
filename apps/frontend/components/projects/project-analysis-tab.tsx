@@ -207,19 +207,6 @@ export function ProjectAnalysisTab({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            onClick={onGenerateHighLevel}
-            disabled={highLevelBusy || !customerAnalysis}
-            variant="outline"
-            size="lg"
-          >
-            {highLevelBusy ? (
-              <Spinner className="size-4" />
-            ) : (
-              <RefreshCw data-icon="inline-start" />
-            )}
-            Generer løsningsdesign
-          </Button>
           <Button onClick={onGenerate} disabled={busy} size="lg">
             {busy ? (
               <Spinner className="size-4" />
@@ -386,12 +373,13 @@ export function ProjectAnalysisTab({
             </div>
           </DisclosureSection>
 
-            <DisclosureSection
+          <DisclosureSection
               title="Risiko og usikkerhet"
               description="De viktigste usikkerhetene, konsekvensene og hvor tilbudet må bygge ekstra trygghet."
               count={customerAnalysis.risks.length}
               icon={AlertTriangle}
             >
+                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
                   <ul className="space-y-2">
                     {customerAnalysis.risks.map((item, index) => (
                       <li
@@ -405,6 +393,7 @@ export function ProjectAnalysisTab({
                       </li>
                     ))}
                   </ul>
+                </div>
             </DisclosureSection>
 
             <DisclosureSection
@@ -413,6 +402,7 @@ export function ProjectAnalysisTab({
               count={customerAnalysis.positioning_recommendations.length}
               icon={Target}
             >
+                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
                   <ul className="space-y-2">
                     {customerAnalysis.positioning_recommendations.map((item, index) => (
                       <li
@@ -426,6 +416,7 @@ export function ProjectAnalysisTab({
                       </li>
                     ))}
                   </ul>
+                </div>
             </DisclosureSection>
 
             <DisclosureSection
@@ -434,6 +425,7 @@ export function ProjectAnalysisTab({
               count={customerAnalysis.implicit_requirements.length}
               icon={ListChecks}
             >
+                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
                   <div className="space-y-3">
                     {customerAnalysis.implicit_requirements.map((req, index) => (
                       <div
@@ -463,6 +455,7 @@ export function ProjectAnalysisTab({
                       </div>
                     ))}
                   </div>
+                </div>
             </DisclosureSection>
 
             <DisclosureSection
@@ -471,6 +464,7 @@ export function ProjectAnalysisTab({
               count={customerAnalysis.signal_words.length}
               icon={Cpu}
             >
+                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
                   <ul className="space-y-1">
                     {customerAnalysis.signal_words.map((item, index) => (
                       <li
@@ -484,6 +478,7 @@ export function ProjectAnalysisTab({
                       </li>
                     ))}
                   </ul>
+                </div>
             </DisclosureSection>
 
             <DisclosureSection
@@ -492,6 +487,7 @@ export function ProjectAnalysisTab({
               count={customerAnalysis.value_opportunities.length}
               icon={TrendingUp}
             >
+                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
                   <div className="space-y-3">
                     {customerAnalysis.value_opportunities.map((item, index) => (
                       <div
@@ -518,6 +514,7 @@ export function ProjectAnalysisTab({
                       </div>
                     ))}
                   </div>
+                </div>
             </DisclosureSection>
         </ItemGroup>
       ) : (
