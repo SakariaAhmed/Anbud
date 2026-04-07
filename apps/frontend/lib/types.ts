@@ -21,8 +21,7 @@ export type ValueCategory =
   | "Høyere produktivitet"
   | "Lavere kostnader"
   | "Redusert risiko"
-  | "Bedre brukeropplevelse"
-  | "Fokus på kjernevirksomheten";
+  | "Bedre brukeropplevelse";
 
 export type RequirementImportance = "Kritisk" | "Viktig" | "Mindre viktig";
 export type RequirementKind = "Eksplisitt" | "Implisitt";

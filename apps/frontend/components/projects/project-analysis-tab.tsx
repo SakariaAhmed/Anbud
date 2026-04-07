@@ -1,9 +1,29 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  Building2,
+  ChevronDown,
+  Compass,
+  Cpu,
+  FilePenLine,
+  ListChecks,
+  RefreshCw,
+  Target,
+  TrendingUp,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { MermaidDiagram } from "@/components/projects/mermaid-diagram";
@@ -17,23 +37,51 @@ import type { CustomerAnalysisResult } from "@/lib/types";
 
 function DisclosureSection({
   title,
+  description,
   count,
+  icon: Icon,
+  badge,
+  defaultOpen = false,
   children,
 }: {
   title: string;
+  description: string;
   count?: number;
+  icon: ComponentType<{ className?: string }>;
+  badge?: string;
+  defaultOpen?: boolean;
   children: ReactNode;
 }) {
   return (
-    <details className="group border-b border-border last:border-b-0">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-foreground">
-        <span>
-          {title}
-          {typeof count === "number" ? ` (${count})` : ""}
-        </span>
-        <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+    <details className="group" open={defaultOpen}>
+      <summary className="list-none">
+        <Item
+          variant="outline"
+          className="cursor-pointer rounded-[28px] border-border/80 bg-white/80 px-6 py-5 shadow-sm transition-all hover:bg-white"
+        >
+          <ItemMedia className="flex size-12 items-center justify-center rounded-2xl border border-primary/10 bg-primary/6 text-primary">
+            <Icon className="size-5" />
+          </ItemMedia>
+          <ItemContent className="min-w-0">
+            <ItemTitle className="w-full text-[1.05rem] font-semibold text-foreground">
+              {title}
+              {typeof count === "number" ? ` (${count})` : ""}
+            </ItemTitle>
+            <ItemDescription className="mt-1 line-clamp-none text-sm leading-6 text-muted-foreground">
+              {description}
+            </ItemDescription>
+          </ItemContent>
+          <ItemActions className="ml-auto self-center">
+            {badge ? (
+              <div className="rounded-full border border-primary/15 bg-primary/6 px-3 py-1 text-xs font-semibold text-primary">
+                {badge}
+              </div>
+            ) : null}
+            <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+          </ItemActions>
+        </Item>
       </summary>
-      <div className="px-4 pb-4">{children}</div>
+      <div className="px-4 pb-2 pt-3 md:px-6">{children}</div>
     </details>
   );
 }
@@ -107,6 +155,26 @@ export function ProjectAnalysisTab({
         .filter(Boolean)
         .join("\n\n")
     : "";
+  const summaryPanels = customerAnalysis
+    ? [
+        {
+          key: "profile",
+          title: "Kundesituasjon",
+          description:
+            "Hva slags virksomhet dette er, hva som preger dagens plattform og hvorfor kompleksiteten betyr noe.",
+          icon: Building2,
+          content: customerAnalysis.customer_profile_summary || "",
+        },
+        {
+          key: "goals",
+          title: "Mål og retning",
+          description:
+            "Hva kunden prøver å oppnå, og hvilken moderniseringsretning tilbudet bør svare på.",
+          icon: Compass,
+          content: customerAnalysis.customer_goals_summary || "",
+        },
+      ].filter((item) => item.content.trim().length > 0)
+    : [];
   const profitShares = customerAnalysis
     ? getDisplayProfitShares(customerAnalysis.value_opportunities)
     : [];
@@ -171,107 +239,158 @@ export function ProjectAnalysisTab({
       ) : null}
 
       {customerAnalysis ? (
-        <div className="space-y-5">
-          <section className="analysis-card p-6 md:p-7">
-            <div className="mb-4">
-              <h3 className="analysis-card-eyebrow text-xs font-bold uppercase">
-                Oppsummering av kunden
-              </h3>
-              <p className="mt-2 max-w-2xl text-sm text-foreground/60">
-                En kondensert leseflate som samler kundens situasjon, mål og
-                retning i ett sammenhengende sammendrag.
-              </p>
+        <ItemGroup className="gap-5">
+          <DisclosureSection
+            title="Oppsummering av kunden"
+            description="En rask lederlesning som deler kundens nåsituasjon og ønsket retning i to tydelige spor."
+            icon={Building2}
+            badge="Executive summary"
+            defaultOpen
+          >
+            <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
+              {summaryPanels.length > 0 ? (
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {summaryPanels.map((panel) => {
+                    const Icon = panel.icon;
+                    return (
+                      <div
+                        key={panel.key}
+                        className="rounded-2xl border border-border/80 bg-white/80 px-6 py-5 shadow-sm"
+                      >
+                        <div className="mb-4 flex items-start gap-3">
+                          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/8 text-primary">
+                            <Icon className="size-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-base font-semibold text-foreground">
+                              {panel.title}
+                            </h4>
+                            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                              {panel.description}
+                            </p>
+                          </div>
+                        </div>
+                        <MarkdownViewer
+                          content={panel.content}
+                          className="analysis-prose max-w-none text-[1rem] text-foreground"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-border/80 bg-white/80 px-6 py-6 shadow-sm md:px-8 md:py-7">
+                  <MarkdownViewer
+                    content={customerSummary}
+                    className="artifact-markdown text-foreground"
+                  />
+                </div>
+              )}
             </div>
-            <div className="rounded-2xl border border-border/80 bg-white/80 px-6 py-6 shadow-sm md:px-8 md:py-7">
-              <MarkdownViewer
-                content={customerSummary}
-                className="artifact-markdown text-foreground"
-              />
-            </div>
-          </section>
+          </DisclosureSection>
 
-          <section className="analysis-card p-6 md:p-7">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="analysis-card-eyebrow text-xs font-bold uppercase">
-                  Analyse
-                </h3>
-                <p className="mt-2 max-w-2xl text-sm text-foreground/60">
-                  Dette er den operative arbeidsteksten for prosjektet. Den kan
-                  justeres manuelt og brukes videre som kunnskapsgrunnlag i
-                  løsningsutkastet.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
+          <DisclosureSection
+            title="Analyse"
+            description="Den operative arbeidsteksten for prosjektet, klar for manuell finpuss og videre bruk i løsningsutkastet."
+            icon={FilePenLine}
+            badge="Arbeidsgrunnlag"
+            defaultOpen
+          >
+            <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
+              <div className="rounded-2xl border border-border/80 bg-white/80 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 px-5 py-4 md:px-6">
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/8 text-primary">
+                      <FilePenLine className="size-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-semibold text-foreground">
+                        Analyseutkast
+                      </h4>
+                      <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                        Juster teksten direkte her når du vil spisse budskap,
+                        risiko og posisjonering før neste steg.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isEditingAnalysis ? (
+                      <Button
+                        onClick={onCancelAnalysisEdit}
+                        disabled={saveBusy}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        Avbryt
+                      </Button>
+                    ) : null}
+                    <Button
+                      onClick={onAnalysisAction}
+                      disabled={saveBusy || (isEditingAnalysis && !analysisDraft.trim())}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {saveBusy ? <Spinner className="size-4" /> : null}
+                      {isEditingAnalysis ? "Lagre" : "Endre"}
+                    </Button>
+                  </div>
+                </div>
+
                 {isEditingAnalysis ? (
-                  <Button
-                    onClick={onCancelAnalysisEdit}
-                    disabled={saveBusy}
-                    variant="ghost"
-                    size="sm"
-                  >
-                    Avbryt
-                  </Button>
-                ) : null}
+                  <div className="px-4 py-4 md:px-6 md:py-5">
+                    <Textarea
+                      value={analysisDraft}
+                      onChange={(event) => setAnalysisDraft(event.target.value)}
+                      className="min-h-60 resize-y border-0 bg-transparent px-0 text-[1.04rem] leading-8 text-foreground shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                ) : (
+                  <div className="px-6 py-6 md:px-8 md:py-7">
+                    <MarkdownViewer
+                      content={analysisDraft}
+                      className="artifact-markdown text-foreground"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </DisclosureSection>
+
+          <DisclosureSection
+            title="High-level design av løsningen"
+            description="Åpne seksjonen for å se eller regenerere anbefalt overordnet arkitektur."
+            icon={Compass}
+            defaultOpen
+          >
+            <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
+              <div className="mb-4 flex justify-end">
                 <Button
-                  onClick={onAnalysisAction}
-                  disabled={saveBusy || (isEditingAnalysis && !analysisDraft.trim())}
+                  onClick={onGenerateHighLevel}
+                  disabled={highLevelBusy}
                   variant="outline"
                   size="sm"
                 >
-                  {saveBusy ? <Spinner className="size-4" /> : null}
-                  {isEditingAnalysis ? "Lagre" : "Endre"}
+                  {highLevelBusy ? (
+                    <Spinner className="size-4" />
+                  ) : (
+                    <RefreshCw data-icon="inline-start" />
+                  )}
+                  Generer løsningsdesign
                 </Button>
               </div>
+              <MermaidDiagram
+                chart={customerAnalysis.high_level_architecture_mermaid}
+                title="Diagrammet viser anbefalt overordnet arkitektur basert på kundeanalysen."
+                downloadName="high-level-architecture"
+              />
             </div>
-            {isEditingAnalysis ? (
-              <div className="rounded-2xl border border-border/80 bg-white/80 px-4 py-4 shadow-sm md:px-6 md:py-5">
-                <Textarea
-                  value={analysisDraft}
-                  onChange={(event) => setAnalysisDraft(event.target.value)}
-                  className="min-h-60 resize-y border-0 bg-transparent px-0 text-[1.04rem] leading-8 text-foreground shadow-none focus-visible:ring-0"
-                />
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-border/80 bg-white/80 px-6 py-6 shadow-sm md:px-8 md:py-7">
-                <MarkdownViewer
-                  content={analysisDraft}
-                  className="artifact-markdown text-foreground"
-                />
-              </div>
-            )}
-          </section>
+          </DisclosureSection>
 
-          <section className="analysis-card p-6 md:p-7">
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-              <h3 className="analysis-card-eyebrow text-xs font-bold uppercase">
-                High-level design av løsningen
-              </h3>
-              <Button
-                onClick={onGenerateHighLevel}
-                disabled={highLevelBusy}
-                variant="outline"
-                size="sm"
-              >
-                {highLevelBusy ? (
-                  <Spinner className="size-4" />
-                ) : (
-                  <RefreshCw data-icon="inline-start" />
-                )}
-                Generer løsningsdesign
-              </Button>
-            </div>
-            <MermaidDiagram
-              chart={customerAnalysis.high_level_architecture_mermaid}
-              title="Diagrammet viser anbefalt overordnet arkitektur basert på kundeanalysen."
-              downloadName="high-level-architecture"
-            />
-          </section>
-
-          <div className="rounded-lg border shadow-sm">
             <DisclosureSection
               title="Risiko og usikkerhet"
+              description="De viktigste usikkerhetene, konsekvensene og hvor tilbudet må bygge ekstra trygghet."
               count={customerAnalysis.risks.length}
+              icon={AlertTriangle}
             >
                   <ul className="space-y-2">
                     {customerAnalysis.risks.map((item, index) => (
@@ -290,7 +409,9 @@ export function ProjectAnalysisTab({
 
             <DisclosureSection
               title="Anbefalt posisjonering"
+              description="Konkret retning for hvordan tilbudet bør spisses for å være mer relevant og vinnende."
               count={customerAnalysis.positioning_recommendations.length}
+              icon={Target}
             >
                   <ul className="space-y-2">
                     {customerAnalysis.positioning_recommendations.map((item, index) => (
@@ -309,7 +430,9 @@ export function ProjectAnalysisTab({
 
             <DisclosureSection
               title="Implisitte krav"
+              description="Skjulte forventninger og krav som ikke alltid er sagt direkte, men som tilbudet må svare på."
               count={customerAnalysis.implicit_requirements.length}
+              icon={ListChecks}
             >
                   <div className="space-y-3">
                     {customerAnalysis.implicit_requirements.map((req, index) => (
@@ -344,7 +467,9 @@ export function ProjectAnalysisTab({
 
             <DisclosureSection
               title="Teknologier, standarder og nøkkelord"
+              description="Signalord og tekniske føringer som bør gjenspeiles i språk, løsning og arkitektur."
               count={customerAnalysis.signal_words.length}
+              icon={Cpu}
             >
                   <ul className="space-y-1">
                     {customerAnalysis.signal_words.map((item, index) => (
@@ -363,7 +488,9 @@ export function ProjectAnalysisTab({
 
             <DisclosureSection
               title="Verdimuligheter"
+              description="Hvor løsningen kan skape tydelig effekt for kunden i form av gevinst, risiko eller opplevelse."
               count={customerAnalysis.value_opportunities.length}
+              icon={TrendingUp}
             >
                   <div className="space-y-3">
                     {customerAnalysis.value_opportunities.map((item, index) => (
@@ -392,8 +519,7 @@ export function ProjectAnalysisTab({
                     ))}
                   </div>
             </DisclosureSection>
-          </div>
-        </div>
+        </ItemGroup>
       ) : (
         <AnalysisTabEmptyState>
           Ingen analyse ennå. Last opp et primært kundedokument og generer
