@@ -111,7 +111,7 @@ function summarizeCustomerAnalysis(analysis: CustomerAnalysisResult) {
       risks: analysis.risks.slice(0, 5),
       likely_evaluation_criteria: analysis.likely_evaluation_criteria.slice(0, 5),
       expected_solution_direction: analysis.expected_solution_direction.slice(0, 5),
-      value_opportunities: analysis.value_opportunities.slice(0, 5),
+      value_opportunities: analysis.value_opportunities.slice(0, 4),
       executive_summary: compactText(analysis.executive_summary, 500),
     },
     null,
@@ -463,7 +463,7 @@ function normalizeValueOpportunities(
           isNearDuplicate(existing.description, item.description, 0.72),
       );
     })
-    .slice(0, 10)
+    .slice(0, 4)
     .map((item) => ({
       title: item.title.replace(/\s+/g, " ").trim(),
       description: item.description.replace(/\s+/g, " ").trim(),
@@ -720,7 +720,7 @@ export async function analyzeCustomerDocuments(input: {
   const userPrompt = [
     "Analyser prosjektet og returner kun gyldig JSON.",
     "Skill tydelig mellom eksplisitte krav og implisitte krav.",
-    "Alle verdiutsagn må knyttes til minst én av de fem faste verdikategoriene.",
+    "Alle verdiutsagn må knyttes til minst én av de fire faste verdikategoriene.",
     "",
     buildDelimitedContext(
       "Prosjekt",

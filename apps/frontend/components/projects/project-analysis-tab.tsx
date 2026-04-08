@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { MermaidDiagram } from "@/components/projects/mermaid-diagram";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import {
   AnalysisTabEmptyState,
@@ -167,9 +166,9 @@ export function ProjectAnalysisTab({
         },
         {
           key: "goals",
-          title: "Mål og retning",
+          title: "Kundens mål og retning",
           description:
-            "Hva kunden prøver å oppnå, og hvilken moderniseringsretning tilbudet bør svare på.",
+            "Hva kunden prøver å oppnå, hvilken utviklingsretning virksomheten peker mot, og hvordan dette kan brukes til å forme en mer rettet løsning.",
           icon: Compass,
           content: customerAnalysis.customer_goals_summary || "",
         },
@@ -195,12 +194,9 @@ export function ProjectAnalysisTab({
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-foreground">
-            Kundeanalyse
-          </h2>
+          <h2 className="text-lg font-bold text-foreground">Kundeanalyse</h2>
           <p className="mt-1 max-w-xl text-sm text-foreground/60">
             Analyse av kunden, implisitte krav, risiko, posisjonering og
             anbefalt overordnet løsningsdesign.
@@ -232,11 +228,10 @@ export function ProjectAnalysisTab({
             description="En rask lederlesning som deler kundens nåsituasjon og ønsket retning i to tydelige spor."
             icon={Building2}
             badge="Executive summary"
-            defaultOpen
           >
             <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
               {summaryPanels.length > 0 ? (
-                <div className="grid gap-4 xl:grid-cols-2">
+                <div className="grid gap-4">
                   {summaryPanels.map((panel) => {
                     const Icon = panel.icon;
                     return (
@@ -277,11 +272,10 @@ export function ProjectAnalysisTab({
           </DisclosureSection>
 
           <DisclosureSection
-            title="Analyse"
+            title="Anbefalt strategi"
             description="Den operative arbeidsteksten for prosjektet, klar for manuell finpuss og videre bruk i løsningsutkastet."
             icon={FilePenLine}
             badge="Arbeidsgrunnlag"
-            defaultOpen
           >
             <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
               <div className="rounded-2xl border border-border/80 bg-white/80 shadow-sm">
@@ -292,7 +286,7 @@ export function ProjectAnalysisTab({
                     </div>
                     <div>
                       <h4 className="text-base font-semibold text-foreground">
-                        Analyseutkast
+                        Strategi
                       </h4>
                       <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
                         Juster teksten direkte her når du vil spisse budskap,
@@ -313,7 +307,9 @@ export function ProjectAnalysisTab({
                     ) : null}
                     <Button
                       onClick={onAnalysisAction}
-                      disabled={saveBusy || (isEditingAnalysis && !analysisDraft.trim())}
+                      disabled={
+                        saveBusy || (isEditingAnalysis && !analysisDraft.trim())
+                      }
                       variant="outline"
                       size="sm"
                     >
@@ -347,7 +343,6 @@ export function ProjectAnalysisTab({
             title="High-level design av løsningen"
             description="Åpne seksjonen for å se eller regenerere anbefalt overordnet arkitektur."
             icon={Compass}
-            defaultOpen
           >
             <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
               <div className="mb-4 flex justify-end">
@@ -365,157 +360,162 @@ export function ProjectAnalysisTab({
                   Generer løsningsdesign
                 </Button>
               </div>
-              <MermaidDiagram
-                chart={customerAnalysis.high_level_architecture_mermaid}
-                title="Diagrammet viser anbefalt overordnet arkitektur basert på kundeanalysen."
-                downloadName="high-level-architecture"
-              />
+              <div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 px-6 py-12 text-center">
+                <p className="text-lg font-semibold text-foreground">
+                  Coming soon
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  High-level design-visningen kommer i en senere iterasjon.
+                </p>
+              </div>
             </div>
           </DisclosureSection>
 
           <DisclosureSection
-              title="Risiko og usikkerhet"
-              description="De viktigste usikkerhetene, konsekvensene og hvor tilbudet må bygge ekstra trygghet."
-              count={customerAnalysis.risks.length}
-              icon={AlertTriangle}
-            >
-                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
-                  <ul className="space-y-2">
-                    {customerAnalysis.risks.map((item, index) => (
-                      <li
-                        key={`risk-${index}`}
-                        className="border-l-2 border-border pl-3 text-foreground"
-                      >
-                        <MarkdownViewer
-                          content={item}
-                          className="analysis-prose text-[0.98rem]"
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-            </DisclosureSection>
+            title="Risiko og usikkerhet"
+            description="De viktigste usikkerhetene, konsekvensene og hvor tilbudet må bygge ekstra trygghet."
+            count={customerAnalysis.risks.length}
+            icon={AlertTriangle}
+          >
+            <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
+              <ul className="space-y-2">
+                {customerAnalysis.risks.map((item, index) => (
+                  <li
+                    key={`risk-${index}`}
+                    className="border-l-2 border-border pl-3 text-foreground"
+                  >
+                    <MarkdownViewer
+                      content={item}
+                      className="analysis-prose text-[0.98rem]"
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </DisclosureSection>
 
-            <DisclosureSection
-              title="Anbefalt posisjonering"
-              description="Konkret retning for hvordan tilbudet bør spisses for å være mer relevant og vinnende."
-              count={customerAnalysis.positioning_recommendations.length}
-              icon={Target}
-            >
-                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
-                  <ul className="space-y-2">
-                    {customerAnalysis.positioning_recommendations.map((item, index) => (
-                      <li
-                        key={`positioning-${index}`}
-                        className="border-l-2 border-border pl-3 text-foreground"
-                      >
-                        <MarkdownViewer
-                          content={item}
-                          className="analysis-prose text-[0.98rem]"
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-            </DisclosureSection>
+          <DisclosureSection
+            title="Anbefalt posisjonering"
+            description="Konkret retning for hvordan tilbudet bør spisses for å være mer relevant og vinnende."
+            count={customerAnalysis.positioning_recommendations.length}
+            icon={Target}
+          >
+            <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
+              <ul className="space-y-2">
+                {customerAnalysis.positioning_recommendations.map(
+                  (item, index) => (
+                    <li
+                      key={`positioning-${index}`}
+                      className="border-l-2 border-border pl-3 text-foreground"
+                    >
+                      <MarkdownViewer
+                        content={item}
+                        className="analysis-prose text-[0.98rem]"
+                      />
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
+          </DisclosureSection>
 
-            <DisclosureSection
-              title="Implisitte krav"
-              description="Skjulte forventninger og krav som ikke alltid er sagt direkte, men som tilbudet må svare på."
-              count={customerAnalysis.implicit_requirements.length}
-              icon={ListChecks}
-            >
-                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
-                  <div className="space-y-3">
-                    {customerAnalysis.implicit_requirements.map((req, index) => (
-                      <div
-                        key={`implicit-${req.title}-${index}`}
-                        className="border-l-2 border-border pl-3"
-                      >
-                        <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-                          <span>{req.category}</span>
-                          <span>·</span>
-                          <span>{req.importance}</span>
-                          <span>·</span>
-                          <span>{req.kind}</span>
-                        </div>
-                        <h4 className="text-sm font-medium text-foreground">
-                          {req.title}
-                        </h4>
-                        <MarkdownViewer
-                          content={req.description}
-                          className="analysis-prose text-[0.98rem] text-muted-foreground"
-                        />
-                        {req.source_reference || req.source_excerpt ? (
-                          <p className="text-xs text-muted-foreground/70">
-                            {req.source_reference || "Ingen referanse"} ·{" "}
-                            {req.source_excerpt || ""}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))}
+          <DisclosureSection
+            title="Underliggende behov"
+            description="Skjulte forventninger og krav som ikke alltid er sagt direkte, men som tilbudet må svare på."
+            count={customerAnalysis.implicit_requirements.length}
+            icon={ListChecks}
+          >
+            <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
+              <div className="space-y-3">
+                {customerAnalysis.implicit_requirements.map((req, index) => (
+                  <div
+                    key={`implicit-${req.title}-${index}`}
+                    className="border-l-2 border-border pl-3"
+                  >
+                    <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+                      <span>{req.category}</span>
+                      <span>·</span>
+                      <span>{req.importance}</span>
+                      <span>·</span>
+                      <span>{req.kind}</span>
+                    </div>
+                    <h4 className="text-sm font-medium text-foreground">
+                      {req.title}
+                    </h4>
+                    <MarkdownViewer
+                      content={req.description}
+                      className="analysis-prose text-[0.98rem] text-muted-foreground"
+                    />
+                    {req.source_reference || req.source_excerpt ? (
+                      <p className="text-xs text-muted-foreground/70">
+                        {req.source_reference || "Ingen referanse"} ·{" "}
+                        {req.source_excerpt || ""}
+                      </p>
+                    ) : null}
                   </div>
-                </div>
-            </DisclosureSection>
+                ))}
+              </div>
+            </div>
+          </DisclosureSection>
 
-            <DisclosureSection
-              title="Teknologier, standarder og nøkkelord"
-              description="Signalord og tekniske føringer som bør gjenspeiles i språk, løsning og arkitektur."
-              count={customerAnalysis.signal_words.length}
-              icon={Cpu}
-            >
-                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
-                  <ul className="space-y-1">
-                    {customerAnalysis.signal_words.map((item, index) => (
-                      <li
-                        key={index}
-                        className="border-l-2 border-border pl-3 text-sm text-foreground"
-                      >
-                        <MarkdownViewer
-                          content={item}
-                          className="analysis-prose text-[0.98rem]"
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-            </DisclosureSection>
+          <DisclosureSection
+            title="Gjenbrukte nøkkelord"
+            description="Signalord og tekniske føringer som bør gjenspeiles i språk, løsning og arkitektur."
+            count={customerAnalysis.signal_words.length}
+            icon={Cpu}
+          >
+            <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
+              <ul className="space-y-1">
+                {customerAnalysis.signal_words.map((item, index) => (
+                  <li
+                    key={index}
+                    className="border-l-2 border-border pl-3 text-sm text-foreground"
+                  >
+                    <MarkdownViewer
+                      content={item}
+                      className="analysis-prose text-[0.98rem]"
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </DisclosureSection>
 
-            <DisclosureSection
-              title="Verdimuligheter"
-              description="Hvor løsningen kan skape tydelig effekt for kunden i form av gevinst, risiko eller opplevelse."
-              count={customerAnalysis.value_opportunities.length}
-              icon={TrendingUp}
-            >
-                <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
-                  <div className="space-y-3">
-                    {customerAnalysis.value_opportunities.map((item, index) => (
-                      <div
-                        key={`${item.title}-${index}`}
-                        className="border-l-2 border-border pl-3"
-                      >
-                        <h4 className="flex flex-wrap items-center gap-y-1 text-sm font-medium text-foreground">
-                          <span>{item.title}</span>
-                          <span className="ml-2 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                            {profitShares[index] ?? 0}% av profitteffekt
-                          </span>
-                        </h4>
-                        <MarkdownViewer
-                          content={item.description}
-                          className="analysis-prose text-[0.98rem] text-muted-foreground"
-                        />
-                        <div className="mt-1">
-                          <ValueTags
-                            values={item.value_categories.filter((v) =>
-                              VALUE_LABELS.includes(v),
-                            )}
-                          />
-                        </div>
-                      </div>
-                    ))}
+          <DisclosureSection
+            title="Verdimuligheter"
+            description="Hvor løsningen kan skape tydelig effekt for kunden i form av gevinst, risiko eller opplevelse."
+            count={customerAnalysis.value_opportunities.length}
+            icon={TrendingUp}
+          >
+            <div className="rounded-[28px] border border-border/80 bg-white/80 p-5 shadow-sm md:p-6">
+              <div className="space-y-3">
+                {customerAnalysis.value_opportunities.map((item, index) => (
+                  <div
+                    key={`${item.title}-${index}`}
+                    className="border-l-2 border-border pl-3"
+                  >
+                    <h4 className="flex flex-wrap items-center gap-y-1 text-sm font-medium text-foreground">
+                      <span>{item.title}</span>
+                      <span className="ml-2 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                        {profitShares[index] ?? 0}% av profitteffekt
+                      </span>
+                    </h4>
+                    <MarkdownViewer
+                      content={item.description}
+                      className="analysis-prose text-[0.98rem] text-muted-foreground"
+                    />
+                    <div className="mt-1">
+                      <ValueTags
+                        values={item.value_categories.filter((v) =>
+                          VALUE_LABELS.includes(v),
+                        )}
+                      />
+                    </div>
                   </div>
-                </div>
-            </DisclosureSection>
+                ))}
+              </div>
+            </div>
+          </DisclosureSection>
         </ItemGroup>
       ) : (
         <AnalysisTabEmptyState>
