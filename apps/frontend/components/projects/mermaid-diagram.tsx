@@ -628,9 +628,26 @@ export function MermaidDiagram({
           },
         });
 
+        mermaid.setParseErrorHandler(() => {});
+
+        const parsed = await mermaid.parse(normalizedChart, {
+          suppressErrors: true,
+        });
+        if (!parsed) {
+          if (!cancelled) {
+            setSvg("");
+            setTechnologies([]);
+            setError("Kunne ikke rendre arkitekturdiagrammet.");
+          }
+          return;
+        }
+
+        const renderContainer = document.createElement("div");
+
         const { svg: rendered } = await mermaid.render(
           `mermaid-${renderId}`,
           normalizedChart,
+          renderContainer,
         );
         const enhanced = enhanceRenderedSvg(rendered);
         if (!cancelled) {

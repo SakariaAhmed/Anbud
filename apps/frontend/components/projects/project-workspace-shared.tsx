@@ -15,15 +15,12 @@ export const VALUE_LABELS: ValueCategory[] = [
   "Lavere kostnader",
   "Redusert risiko",
   "Bedre brukeropplevelse",
-  "Fokus på kjernevirksomheten",
 ];
 
 export const ARTIFACT_TYPES: Array<{
   value: GeneratedArtifactType;
   label: string;
-}> = [
-  { value: "losningsutkast", label: "Løsningsutkast" },
-];
+}> = [{ value: "losningsutkast", label: "Løsningsutkast" }];
 
 export const SUPPORTING_SUBTYPES: Array<{
   value: SupportingDocumentSubtype;
@@ -88,17 +85,14 @@ export function deriveProjectStatus(
 }
 
 export function ValueTags({ values }: { values: ValueCategory[] }) {
-  if (!values.length) return null;
+  const value = values.find((item) => VALUE_LABELS.includes(item));
+  if (!value) return null;
+
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {values.map((value) => (
-        <span
-          key={value}
-          className="text-xs text-emerald-700 dark:text-emerald-400"
-        >
-          {value}
-        </span>
-      ))}
+    <div>
+      <span className="text-lg font-semibold text-emerald-700 dark:text-emerald-400">
+        {value}
+      </span>
     </div>
   );
 }
@@ -117,8 +111,14 @@ export function SectionList({
       <h3 className="mb-3 text-sm font-medium text-foreground">{title}</h3>
       <ul className="space-y-2">
         {items.map((item, index) => (
-          <li key={`${title}-${index}`} className="border-l-2 border-border pl-3">
-            <MarkdownViewer content={item} className="text-sm text-muted-foreground" />
+          <li
+            key={`${title}-${index}`}
+            className="border-l-2 border-border pl-3"
+          >
+            <MarkdownViewer
+              content={item}
+              className="text-sm text-muted-foreground"
+            />
           </li>
         ))}
       </ul>
@@ -126,11 +126,7 @@ export function SectionList({
   );
 }
 
-export function AnalysisTabEmptyState({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export function AnalysisTabEmptyState({ children }: { children: ReactNode }) {
   return (
     <div className="py-12 text-center text-sm text-muted-foreground">
       {children}

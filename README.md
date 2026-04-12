@@ -1,6 +1,6 @@
-# Anbud
+# BIDSITE
 
-Anbud er en moderne Next.js-app for kundedokumentanalyse, løsningsvurdering, generator og prosjektbasert sparring i tilbudsarbeid.
+BIDSITE er en moderne Next.js-app for kundedokumentanalyse, løsningsvurdering, generator og prosjektbasert sparring i tilbudsarbeid.
 
 Appen er laget for prosjekter der et tilbudsteam må forstå kunden raskt, avdekke eksplisitte og implisitte krav, vurdere hvor godt et løsningsutkast faktisk svarer, og generere sterkere strategier, verdiargumenter og utkast.
 
