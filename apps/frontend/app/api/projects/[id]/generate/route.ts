@@ -13,29 +13,46 @@ import {
 import type { GeneratedArtifactType } from "@/lib/types";
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
-  return value === "losningsutkast";
+  return value === "losningsutkast" || value === "gjennomforing_og_risiko";
 }
 
-export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(
+  _: Request,
+  context: { params: Promise<{ id: string }> },
+) {
   try {
     const { id } = await context.params;
     const artifacts = await listGeneratedArtifacts(id);
     return NextResponse.json({ artifacts });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke hente generatorresultatene." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Kunne ikke hente generatorresultatene.",
+      },
       { status: 500 },
     );
   }
 }
 
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
   try {
     const { id } = await context.params;
-    const body = (await request.json()) as { artifact_type?: string; instructions?: string };
+    const body = (await request.json()) as {
+      artifact_type?: string;
+      instructions?: string;
+    };
 
     if (!body.artifact_type || !isArtifactType(body.artifact_type)) {
-      return NextResponse.json({ error: "Ugyldig artefakttype." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Ugyldig artefakttype." },
+        { status: 400 },
+      );
     }
 
     const [
@@ -82,7 +99,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ artifact, project: snapshot });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke generere artefakt." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Kunne ikke generere artefakt.",
+      },
       { status: 500 },
     );
   }
