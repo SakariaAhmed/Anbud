@@ -40,6 +40,8 @@
   --font-sans: Inter, sans-serif;
   --font-serif: Merriweather, serif;
   --font-mono: JetBrains Mono, monospace;
+  --app-header-height: 3.5rem;
+  --app-header-sidebar-offset: 0px;
   --radius: 0.5rem;
   --shadow-x: 0px;
   --shadow-y: 4px;
@@ -49,11 +51,16 @@
   --shadow-color: hsl(0 0% 0%);
   --shadow-2xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);
   --shadow-xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 1px 2px -2px hsl(0 0% 0% / 0.10);
-  --shadow: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 1px 2px -2px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 2px 4px -2px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 4px 6px -2px hsl(0 0% 0% / 0.10);
-  --shadow-xl: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 8px 10px -2px hsl(0 0% 0% / 0.10);
+  --shadow-sm:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 1px 2px -2px hsl(0 0% 0% / 0.1);
+  --shadow:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 1px 2px -2px hsl(0 0% 0% / 0.1);
+  --shadow-md:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 2px 4px -2px hsl(0 0% 0% / 0.1);
+  --shadow-lg:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 4px 6px -2px hsl(0 0% 0% / 0.1);
+  --shadow-xl:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 8px 10px -2px hsl(0 0% 0% / 0.1);
   --shadow-2xl: 0px 4px 8px -1px hsl(0 0% 0% / 0.25);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
@@ -104,11 +111,16 @@
   --shadow-color: hsl(0 0% 0%);
   --shadow-2xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);
   --shadow-xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 1px 2px -2px hsl(0 0% 0% / 0.10);
-  --shadow: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 1px 2px -2px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 2px 4px -2px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 4px 6px -2px hsl(0 0% 0% / 0.10);
-  --shadow-xl: 0px 4px 8px -1px hsl(0 0% 0% / 0.10), 0px 8px 10px -2px hsl(0 0% 0% / 0.10);
+  --shadow-sm:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 1px 2px -2px hsl(0 0% 0% / 0.1);
+  --shadow:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 1px 2px -2px hsl(0 0% 0% / 0.1);
+  --shadow-md:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 2px 4px -2px hsl(0 0% 0% / 0.1);
+  --shadow-lg:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 4px 6px -2px hsl(0 0% 0% / 0.1);
+  --shadow-xl:
+    0px 4px 8px -1px hsl(0 0% 0% / 0.1), 0px 8px 10px -2px hsl(0 0% 0% / 0.1);
   --shadow-2xl: 0px 4px 8px -1px hsl(0 0% 0% / 0.25);
 }
 
@@ -240,7 +252,11 @@
     margin: 0.85rem 0;
     font-size: 1.04rem;
     line-height: 1.82;
-    color: color-mix(in srgb, var(--foreground) 92%, var(--muted-foreground) 8%);
+    color: color-mix(
+      in srgb,
+      var(--foreground) 92%,
+      var(--muted-foreground) 8%
+    );
     text-wrap: pretty;
   }
 
@@ -271,7 +287,11 @@
 
   .analysis-prose {
     max-width: 78ch;
-    color: color-mix(in srgb, var(--foreground) 95%, var(--muted-foreground) 5%);
+    color: color-mix(
+      in srgb,
+      var(--foreground) 95%,
+      var(--muted-foreground) 5%
+    );
     font-size: 1.06rem;
     line-height: 1.95;
     letter-spacing: -0.012em;
@@ -337,17 +357,30 @@
 
   .analysis-prose blockquote {
     margin: 1.15rem 0;
-    border-left: 3px solid color-mix(in srgb, var(--primary) 35%, var(--border) 65%);
+    border-left: 3px solid
+      color-mix(in srgb, var(--primary) 35%, var(--border) 65%);
     padding-left: 1rem;
-    color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground) 22%);
+    color: color-mix(
+      in srgb,
+      var(--foreground) 78%,
+      var(--muted-foreground) 22%
+    );
   }
 
   .analysis-card {
     border-radius: 1rem;
     border: 1px solid color-mix(in srgb, var(--border) 82%, white 18%);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.96)),
-      radial-gradient(circle at top left, rgba(99, 102, 241, 0.04), transparent 38%);
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.92),
+        rgba(248, 250, 252, 0.96)
+      ),
+      radial-gradient(
+        circle at top left,
+        rgba(99, 102, 241, 0.04),
+        transparent 38%
+      );
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.75) inset,
       0 10px 30px rgba(15, 23, 42, 0.05);
@@ -355,7 +388,11 @@
 
   .analysis-card-eyebrow {
     letter-spacing: 0.13em;
-    color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground) 18%);
+    color: color-mix(
+      in srgb,
+      var(--muted-foreground) 82%,
+      var(--foreground) 18%
+    );
   }
 
   .chat-markdown {

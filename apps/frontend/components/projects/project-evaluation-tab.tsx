@@ -89,15 +89,27 @@ export function ProjectEvaluationTab({
           {/* Score grid */}
           <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border shadow-sm lg:grid-cols-4">
             {[
-              { label: "Kvalitet", value: solutionEvaluation.likely_score_assessment.quality },
-              { label: "Gjennomføringsevne", value: solutionEvaluation.likely_score_assessment.delivery_confidence },
-              { label: "Risiko", value: solutionEvaluation.likely_score_assessment.risk },
-              { label: "Konkurransekraft", value: solutionEvaluation.likely_score_assessment.competitiveness },
+              {
+                label: "Kvalitet",
+                value: solutionEvaluation.likely_score_assessment.quality,
+              },
+              {
+                label: "Gjennomføringsevne",
+                value:
+                  solutionEvaluation.likely_score_assessment
+                    .delivery_confidence,
+              },
+              {
+                label: "Risiko",
+                value: solutionEvaluation.likely_score_assessment.risk,
+              },
+              {
+                label: "Konkurransekraft",
+                value:
+                  solutionEvaluation.likely_score_assessment.competitiveness,
+              },
             ].map((item, i) => (
-              <div
-                key={item.label}
-                className="bg-background px-4 py-3"
-              >
+              <div key={item.label} className="bg-background px-4 py-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-foreground/50">
                   {item.label}
                 </p>
@@ -112,7 +124,10 @@ export function ProjectEvaluationTab({
           {/* Strengths & weaknesses */}
           <div className="grid gap-5 border-t pt-5 lg:grid-cols-2">
             <SectionList title="Styrker" items={solutionEvaluation.strengths} />
-            <SectionList title="Svakheter" items={solutionEvaluation.weaknesses} />
+            <SectionList
+              title="Svakheter"
+              items={solutionEvaluation.weaknesses}
+            />
           </div>
 
           {/* Collapsible detailed sections */}
@@ -120,12 +135,16 @@ export function ProjectEvaluationTab({
             <Accordion>
               <AccordionItem value="generic-sections">
                 <AccordionTrigger className="px-4">
-                  Generiske partier ({solutionEvaluation.generic_sections.length})
+                  Generiske partier (
+                  {solutionEvaluation.generic_sections.length})
                 </AccordionTrigger>
                 <AccordionContent className="px-4">
                   <ul className="space-y-1.5">
                     {solutionEvaluation.generic_sections.map((item, index) => (
-                      <li key={index} className="border-l-2 border-border pl-3 text-sm text-foreground">
+                      <li
+                        key={index}
+                        className="border-l-2 border-border pl-3 text-sm text-foreground"
+                      >
                         <MarkdownViewer content={item} />
                       </li>
                     ))}
@@ -135,12 +154,16 @@ export function ProjectEvaluationTab({
 
               <AccordionItem value="missing-elements">
                 <AccordionTrigger className="px-4">
-                  Manglende elementer ({solutionEvaluation.missing_elements.length})
+                  Manglende elementer (
+                  {solutionEvaluation.missing_elements.length})
                 </AccordionTrigger>
                 <AccordionContent className="px-4">
                   <ul className="space-y-1.5">
                     {solutionEvaluation.missing_elements.map((item, index) => (
-                      <li key={index} className="border-l-2 border-border pl-3 text-sm text-foreground">
+                      <li
+                        key={index}
+                        className="border-l-2 border-border pl-3 text-sm text-foreground"
+                      >
                         <MarkdownViewer content={item} />
                       </li>
                     ))}
@@ -150,12 +173,16 @@ export function ProjectEvaluationTab({
 
               <AccordionItem value="risks">
                 <AccordionTrigger className="px-4">
-                  Risiko for kunden ({solutionEvaluation.risks_to_customer.length})
+                  Risiko for kunden (
+                  {solutionEvaluation.risks_to_customer.length})
                 </AccordionTrigger>
                 <AccordionContent className="px-4">
                   <ul className="space-y-1.5">
                     {solutionEvaluation.risks_to_customer.map((item, index) => (
-                      <li key={index} className="border-l-2 border-border pl-3 text-sm text-foreground">
+                      <li
+                        key={index}
+                        className="border-l-2 border-border pl-3 text-sm text-foreground"
+                      >
                         <MarkdownViewer content={item} />
                       </li>
                     ))}
@@ -170,7 +197,10 @@ export function ProjectEvaluationTab({
                 <AccordionContent className="px-4">
                   <ul className="space-y-1.5">
                     {solutionEvaluation.trust_signals.map((item, index) => (
-                      <li key={index} className="border-l-2 border-border pl-3 text-sm text-foreground">
+                      <li
+                        key={index}
+                        className="border-l-2 border-border pl-3 text-sm text-foreground"
+                      >
                         <MarkdownViewer content={item} />
                       </li>
                     ))}
@@ -180,15 +210,21 @@ export function ProjectEvaluationTab({
 
               <AccordionItem value="improvements">
                 <AccordionTrigger className="px-4">
-                  Forbedringsforslag ({solutionEvaluation.improvement_recommendations.length})
+                  Forbedringsforslag (
+                  {solutionEvaluation.improvement_recommendations.length})
                 </AccordionTrigger>
                 <AccordionContent className="px-4">
                   <ul className="space-y-1.5">
-                    {solutionEvaluation.improvement_recommendations.map((item, index) => (
-                      <li key={index} className="border-l-2 border-border pl-3 text-sm text-foreground">
-                        <MarkdownViewer content={item} />
-                      </li>
-                    ))}
+                    {solutionEvaluation.improvement_recommendations.map(
+                      (item, index) => (
+                        <li
+                          key={index}
+                          className="border-l-2 border-border pl-3 text-sm text-foreground"
+                        >
+                          <MarkdownViewer content={item} />
+                        </li>
+                      ),
+                    )}
                   </ul>
                 </AccordionContent>
               </AccordionItem>
@@ -200,11 +236,23 @@ export function ProjectEvaluationTab({
                 <AccordionContent className="px-4">
                   <div className="space-y-3">
                     {solutionEvaluation.value_assessment.map((item, index) => (
-                      <div key={`${item.title}-${index}`} className="border-l-2 border-border pl-3">
-                        <h4 className="text-sm font-medium text-foreground">{item.title}</h4>
-                        <MarkdownViewer content={item.description} className="text-sm text-muted-foreground" />
+                      <div
+                        key={`${item.title}-${index}`}
+                        className="border-l-2 border-border pl-3"
+                      >
+                        <h4 className="text-sm font-medium text-foreground">
+                          {item.title}
+                        </h4>
+                        <MarkdownViewer
+                          content={item.description}
+                          className="text-sm text-muted-foreground"
+                        />
                         <div className="mt-1">
-                          <ValueTags values={item.value_categories.filter((v) => VALUE_LABELS.includes(v))} />
+                          <ValueTags
+                            values={item.value_categories
+                              .filter((v) => VALUE_LABELS.includes(v))
+                              .slice(0, 1)}
+                          />
                         </div>
                       </div>
                     ))}
@@ -214,16 +262,27 @@ export function ProjectEvaluationTab({
 
               <AccordionItem value="rewrite-suggestions">
                 <AccordionTrigger className="px-4">
-                  Omskrivingsforslag ({solutionEvaluation.rewrite_suggestions.length})
+                  Omskrivingsforslag (
+                  {solutionEvaluation.rewrite_suggestions.length})
                 </AccordionTrigger>
                 <AccordionContent className="px-4">
                   <div className="space-y-3">
-                    {solutionEvaluation.rewrite_suggestions.map((suggestion, index) => (
-                      <div key={`${suggestion.target}-${index}`} className="border-l-2 border-border pl-3">
-                        <p className="text-xs font-medium text-muted-foreground">{suggestion.target}</p>
-                        <MarkdownViewer content={suggestion.suggestion} className="text-sm text-foreground" />
-                      </div>
-                    ))}
+                    {solutionEvaluation.rewrite_suggestions.map(
+                      (suggestion, index) => (
+                        <div
+                          key={`${suggestion.target}-${index}`}
+                          className="border-l-2 border-border pl-3"
+                        >
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {suggestion.target}
+                          </p>
+                          <MarkdownViewer
+                            content={suggestion.suggestion}
+                            className="text-sm text-foreground"
+                          />
+                        </div>
+                      ),
+                    )}
                   </div>
                 </AccordionContent>
               </AccordionItem>

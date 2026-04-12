@@ -131,13 +131,25 @@ export interface CustomerAnalysisResult {
   }>;
   ambiguities: string[];
   risks: string[];
+  risks_for_us?: string[];
+  risks_for_customer?: string[];
   likely_evaluation_criteria: string[];
   signal_words: string[];
+  signal_word_counts?: Record<string, number>;
   expected_solution_direction: string[];
   value_opportunities: ValueOpportunity[];
   positioning_recommendations: string[];
   executive_summary: string;
 }
+
+export type CustomerAnalysisSection =
+  | "summary"
+  | "strategy"
+  | "design"
+  | "risks"
+  | "needs"
+  | "keywords"
+  | "value";
 
 export interface SolutionEvaluationResult {
   fit_to_customer_needs: string;
