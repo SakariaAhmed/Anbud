@@ -3,7 +3,12 @@ import "server-only";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 
 import { createServiceClient } from "@/lib/server/supabase";
-import { decryptJson, decryptString, encryptJson, encryptString } from "@/lib/server/crypto";
+import {
+  decryptJson,
+  decryptString,
+  encryptJson,
+  encryptString,
+} from "@/lib/server/crypto";
 import type {
   ChatMessage,
   ChatMessageRole,
@@ -22,7 +27,13 @@ import type {
   SupportingDocumentSubtype,
 } from "@/lib/types";
 
-type Json = Record<string, unknown> | Array<unknown> | string | number | boolean | null;
+type Json =
+  | Record<string, unknown>
+  | Array<unknown>
+  | string
+  | number
+  | boolean
+  | null;
 
 interface ProjectRow {
   id: string;
@@ -138,8 +149,11 @@ const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   prioritized_requirements: [],
   ambiguities: [],
   risks: [],
+  risks_for_us: [],
+  risks_for_customer: [],
   likely_evaluation_criteria: [],
   signal_words: [],
+  signal_word_counts: {},
   expected_solution_direction: [],
   value_opportunities: [],
   positioning_recommendations: [],
@@ -204,7 +218,10 @@ function isMissingLegacyProjectColumn(error: { message?: string } | null) {
   );
 }
 
-function isMissingRelationColumn(error: { message?: string } | null, relation: string) {
+function isMissingRelationColumn(
+  error: { message?: string } | null,
+  relation: string,
+) {
   const message = (error?.message ?? "").toLowerCase();
   if (!message) {
     return false;
@@ -232,10 +249,18 @@ function fromUnknownProjectRow(row: Record<string, unknown>): ProjectRow {
         : String(row.customer_name ?? row.client_name ?? ""),
     description: row.description == null ? null : String(row.description),
     industry: row.industry == null ? null : String(row.industry),
-    customer_document_uploaded: Boolean(row.customer_document_uploaded ?? false),
-    customer_analysis_generated: Boolean(row.customer_analysis_generated ?? false),
-    solution_document_uploaded: Boolean(row.solution_document_uploaded ?? false),
-    solution_evaluation_generated: Boolean(row.solution_evaluation_generated ?? false),
+    customer_document_uploaded: Boolean(
+      row.customer_document_uploaded ?? false,
+    ),
+    customer_analysis_generated: Boolean(
+      row.customer_analysis_generated ?? false,
+    ),
+    solution_document_uploaded: Boolean(
+      row.solution_document_uploaded ?? false,
+    ),
+    solution_evaluation_generated: Boolean(
+      row.solution_evaluation_generated ?? false,
+    ),
     last_activity_at: lastActivityAt,
     created_at: createdAt,
     updated_at: updatedAt,
@@ -327,7 +352,10 @@ function mapChatMessage(row: ChatRow): ChatMessage {
   };
 }
 
-function mapProjectSummary(row: ProjectRow, documents: DocumentSummaryRow[]): ProjectSummary {
+function mapProjectSummary(
+  row: ProjectRow,
+  documents: DocumentSummaryRow[],
+): ProjectSummary {
   return {
     id: row.id,
     name: row.name,
@@ -343,7 +371,9 @@ function mapProjectSummary(row: ProjectRow, documents: DocumentSummaryRow[]): Pr
     created_at: row.created_at,
     updated_at: row.updated_at,
     document_count: documents.length,
-    supporting_document_count: documents.filter((document) => document.role === "supporting_document").length,
+    supporting_document_count: documents.filter(
+      (document) => document.role === "supporting_document",
+    ).length,
     artifact_count: 0,
     has_chat: false,
   };
@@ -369,7 +399,11 @@ function isProjectNamePlaceholder(value: string | null) {
     return true;
   }
   const normalized = value.trim().toLowerCase();
-  return normalized === "" || normalized === "ny analyse" || normalized === "nytt prosjekt";
+  return (
+    normalized === "" ||
+    normalized === "ny analyse" ||
+    normalized === "nytt prosjekt"
+  );
 }
 
 function isCustomerPlaceholder(value: string | null) {
@@ -380,14 +414,18 @@ function isCustomerPlaceholder(value: string | null) {
   return normalized === "" || normalized === "kunde ikke satt";
 }
 
-function shouldUseInferredValue(current: string | null, inferred: string | null, isPlaceholder: (value: string | null) => boolean) {
+function shouldUseInferredValue(
+  current: string | null,
+  inferred: string | null,
+  isPlaceholder: (value: string | null) => boolean,
+) {
   return Boolean(inferred?.trim()) && isPlaceholder(current);
 }
 
 function isMissingLegacyDocumentColumn(error: { message?: string } | null) {
   const message = error?.message ?? "";
   return (
-    message.includes('column documents.') ||
+    message.includes("column documents.") ||
     message.includes("supporting_subtype") ||
     message.includes("title") ||
     message.includes("display_name") ||
@@ -398,22 +436,31 @@ function isMissingLegacyDocumentColumn(error: { message?: string } | null) {
   );
 }
 
-function fromUnknownDocumentSummaryRow(row: Record<string, unknown>): DocumentSummaryRow {
+function fromUnknownDocumentSummaryRow(
+  row: Record<string, unknown>,
+): DocumentSummaryRow {
   return {
     id: String(row.id ?? ""),
     project_id: String(row.project_id ?? ""),
     role: (row.role as ProjectDocumentRole) ?? "supporting_document",
     supporting_subtype:
-      (row.supporting_subtype as SupportingDocumentSubtype | null | undefined) ??
+      (row.supporting_subtype as
+        | SupportingDocumentSubtype
+        | null
+        | undefined) ??
       (row.subtype as SupportingDocumentSubtype | null | undefined) ??
       null,
     title: String(row.title ?? row.display_name ?? row.file_name ?? "Dokument"),
-    file_name: String(row.file_name ?? row.display_name ?? row.title ?? "document.txt"),
+    file_name: String(
+      row.file_name ?? row.display_name ?? row.title ?? "document.txt",
+    ),
     file_format: String(row.file_format ?? "txt"),
     content_type: String(row.content_type ?? "application/octet-stream"),
     file_size_bytes: Number(row.file_size_bytes ?? 0),
     created_at: String(row.created_at ?? new Date().toISOString()),
-    updated_at: String(row.updated_at ?? row.created_at ?? new Date().toISOString()),
+    updated_at: String(
+      row.updated_at ?? row.created_at ?? new Date().toISOString(),
+    ),
   };
 }
 
@@ -427,11 +474,16 @@ function fromUnknownDocumentRow(row: Record<string, unknown>): DocumentRow {
 }
 
 async function fetchDocumentRows(
-  build: (select: string) => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>,
+  build: (select: string) => PromiseLike<{
+    data: unknown[] | null;
+    error: { message?: string } | null;
+  }>,
 ): Promise<DocumentRow[]> {
   const first = await build(DOCUMENT_SELECT_SAFE);
   if (!first.error) {
-    return ((first.data ?? []) as Record<string, unknown>[]).map(fromUnknownDocumentRow);
+    return ((first.data ?? []) as Record<string, unknown>[]).map(
+      fromUnknownDocumentRow,
+    );
   }
 
   if (isMissingLegacyDocumentColumn(first.error)) {
@@ -439,18 +491,25 @@ async function fetchDocumentRows(
     if (retry.error) {
       throw new Error(retry.error.message || "Kunne ikke hente dokumentene.");
     }
-    return ((retry.data ?? []) as Record<string, unknown>[]).map(fromUnknownDocumentRow);
+    return ((retry.data ?? []) as Record<string, unknown>[]).map(
+      fromUnknownDocumentRow,
+    );
   }
 
   throw new Error(first.error.message || "Kunne ikke hente dokumentene.");
 }
 
 async function fetchDocumentSummaryRows(
-  build: (select: string) => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>,
+  build: (select: string) => PromiseLike<{
+    data: unknown[] | null;
+    error: { message?: string } | null;
+  }>,
 ): Promise<DocumentSummaryRow[]> {
   const first = await build(DOCUMENT_SUMMARY_SELECT_SAFE);
   if (!first.error) {
-    return ((first.data ?? []) as Record<string, unknown>[]).map(fromUnknownDocumentSummaryRow);
+    return ((first.data ?? []) as Record<string, unknown>[]).map(
+      fromUnknownDocumentSummaryRow,
+    );
   }
 
   if (isMissingLegacyDocumentColumn(first.error)) {
@@ -458,18 +517,25 @@ async function fetchDocumentSummaryRows(
     if (retry.error) {
       throw new Error(retry.error.message || "Kunne ikke hente dokumentene.");
     }
-    return ((retry.data ?? []) as Record<string, unknown>[]).map(fromUnknownDocumentSummaryRow);
+    return ((retry.data ?? []) as Record<string, unknown>[]).map(
+      fromUnknownDocumentSummaryRow,
+    );
   }
 
   throw new Error(first.error.message || "Kunne ikke hente dokumentene.");
 }
 
 async function fetchSingleDocumentRow(
-  build: (select: string) => PromiseLike<{ data: unknown | null; error: { message?: string } | null }>,
+  build: (select: string) => PromiseLike<{
+    data: unknown | null;
+    error: { message?: string } | null;
+  }>,
 ): Promise<DocumentRow | null> {
   const first = await build(DOCUMENT_SELECT_SAFE);
   if (!first.error) {
-    return first.data ? fromUnknownDocumentRow(first.data as Record<string, unknown>) : null;
+    return first.data
+      ? fromUnknownDocumentRow(first.data as Record<string, unknown>)
+      : null;
   }
 
   if (isMissingLegacyDocumentColumn(first.error)) {
@@ -477,7 +543,9 @@ async function fetchSingleDocumentRow(
     if (retry.error) {
       throw new Error(retry.error.message || "Kunne ikke hente dokumentet.");
     }
-    return retry.data ? fromUnknownDocumentRow(retry.data as Record<string, unknown>) : null;
+    return retry.data
+      ? fromUnknownDocumentRow(retry.data as Record<string, unknown>)
+      : null;
   }
 
   throw new Error(first.error.message || "Kunne ikke hente dokumentet.");
@@ -501,38 +569,52 @@ async function queryProjectRow(projectId: string) {
 export async function listProjects(): Promise<ProjectSummary[]> {
   return unstable_cache(
     async () => {
-  const supabase = createServiceClient();
-  const [{ data: projects, error: projectsError }, documentRows, { data: artifacts }] =
-    await Promise.all([
-      supabase.from("projects").select("*").order("last_activity_at", { ascending: false }),
-      fetchDocumentSummaryRows((select) => supabase.from("documents").select(select)),
-      supabase.from("generated_artifacts").select("id, project_id"),
-    ]);
+      const supabase = createServiceClient();
+      const [
+        { data: projects, error: projectsError },
+        documentRows,
+        { data: artifacts },
+      ] = await Promise.all([
+        supabase
+          .from("projects")
+          .select("*")
+          .order("last_activity_at", { ascending: false }),
+        fetchDocumentSummaryRows((select) =>
+          supabase.from("documents").select(select),
+        ),
+        supabase.from("generated_artifacts").select("id, project_id"),
+      ]);
 
-  if (projectsError) {
-    throw new Error(projectsError.message);
-  }
+      if (projectsError) {
+        throw new Error(projectsError.message);
+      }
 
-  const documentsByProject = new Map<string, DocumentSummaryRow[]>();
-  for (const row of documentRows) {
-    const list = documentsByProject.get(row.project_id) ?? [];
-    list.push(row);
-    documentsByProject.set(row.project_id, list);
-  }
+      const documentsByProject = new Map<string, DocumentSummaryRow[]>();
+      for (const row of documentRows) {
+        const list = documentsByProject.get(row.project_id) ?? [];
+        list.push(row);
+        documentsByProject.set(row.project_id, list);
+      }
 
-  const artifactCount = new Map<string, number>();
-  for (const row of artifacts ?? []) {
-    artifactCount.set(row.project_id, (artifactCount.get(row.project_id) ?? 0) + 1);
-  }
+      const artifactCount = new Map<string, number>();
+      for (const row of artifacts ?? []) {
+        artifactCount.set(
+          row.project_id,
+          (artifactCount.get(row.project_id) ?? 0) + 1,
+        );
+      }
 
-  return ((projects ?? []) as Record<string, unknown>[]).map((row) => {
-    const project = fromUnknownProjectRow(row);
-    return {
-      ...mapProjectSummary(project, documentsByProject.get(project.id) ?? []),
-      artifact_count: artifactCount.get(project.id) ?? 0,
-      has_chat: false,
-    };
-  });
+      return ((projects ?? []) as Record<string, unknown>[]).map((row) => {
+        const project = fromUnknownProjectRow(row);
+        return {
+          ...mapProjectSummary(
+            project,
+            documentsByProject.get(project.id) ?? [],
+          ),
+          artifact_count: artifactCount.get(project.id) ?? 0,
+          has_chat: false,
+        };
+      });
     },
     ["projects-list"],
     {
@@ -542,7 +624,9 @@ export async function listProjects(): Promise<ProjectSummary[]> {
   )();
 }
 
-export async function createProject(input: ProjectCreateInput): Promise<ProjectSummary> {
+export async function createProject(
+  input: ProjectCreateInput,
+): Promise<ProjectSummary> {
   const supabase = createServiceClient();
   const normalizedName = input.name?.trim() || "Ny analyse";
   const payload = {
@@ -551,7 +635,11 @@ export async function createProject(input: ProjectCreateInput): Promise<ProjectS
     description: input.description?.trim() || null,
     industry: input.industry?.trim() || null,
   };
-  let insertResult = await supabase.from("projects").insert(payload).select("*").single<Record<string, unknown>>();
+  let insertResult = await supabase
+    .from("projects")
+    .insert(payload)
+    .select("*")
+    .single<Record<string, unknown>>();
 
   if (insertResult.error && isMissingLegacyProjectColumn(insertResult.error)) {
     insertResult = await supabase
@@ -566,7 +654,9 @@ export async function createProject(input: ProjectCreateInput): Promise<ProjectS
   }
 
   if (insertResult.error || !insertResult.data) {
-    throw new Error(insertResult.error?.message || "Kunne ikke opprette prosjekt.");
+    throw new Error(
+      insertResult.error?.message || "Kunne ikke opprette prosjekt.",
+    );
   }
 
   revalidateTag(PROJECTS_LIST_TAG);
@@ -576,20 +666,35 @@ export async function createProject(input: ProjectCreateInput): Promise<ProjectS
   return mapProjectSummary(fromUnknownProjectRow(insertResult.data), []);
 }
 
-export async function updateProjectMetadataFromInference(projectId: string, inferred: ProjectMetadataInference) {
+export async function updateProjectMetadataFromInference(
+  projectId: string,
+  inferred: ProjectMetadataInference,
+) {
   const supabase = createServiceClient();
   const project = await queryProjectRow(projectId);
 
-  const nextName = shouldUseInferredValue(project.name, inferred.name, isProjectNamePlaceholder)
-    ? inferred.name?.trim() ?? null
+  const nextName = shouldUseInferredValue(
+    project.name,
+    inferred.name,
+    isProjectNamePlaceholder,
+  )
+    ? (inferred.name?.trim() ?? null)
     : null;
-  const nextCustomerName = shouldUseInferredValue(project.customer_name, inferred.customer_name, isCustomerPlaceholder)
-    ? inferred.customer_name?.trim() ?? null
+  const nextCustomerName = shouldUseInferredValue(
+    project.customer_name,
+    inferred.customer_name,
+    isCustomerPlaceholder,
+  )
+    ? (inferred.customer_name?.trim() ?? null)
     : null;
   const nextIndustry =
-    !project.industry?.trim() && inferred.industry?.trim() ? inferred.industry.trim() : null;
+    !project.industry?.trim() && inferred.industry?.trim()
+      ? inferred.industry.trim()
+      : null;
   const nextDescription =
-    !project.description?.trim() && inferred.description?.trim() ? inferred.description.trim() : null;
+    !project.description?.trim() && inferred.description?.trim()
+      ? inferred.description.trim()
+      : null;
 
   if (!nextName && !nextCustomerName && !nextIndustry && !nextDescription) {
     return project;
@@ -612,7 +717,12 @@ export async function updateProjectMetadataFromInference(projectId: string, infe
     standardPatch.description = nextDescription;
   }
 
-  let updateResult = await supabase.from("projects").update(standardPatch).eq("id", projectId).select("*").single<Record<string, unknown>>();
+  let updateResult = await supabase
+    .from("projects")
+    .update(standardPatch)
+    .eq("id", projectId)
+    .select("*")
+    .single<Record<string, unknown>>();
 
   if (updateResult.error && isMissingLegacyProjectColumn(updateResult.error)) {
     const legacyPatch: Record<string, unknown> = {
@@ -637,7 +747,9 @@ export async function updateProjectMetadataFromInference(projectId: string, infe
   }
 
   if (updateResult.error || !updateResult.data) {
-    throw new Error(updateResult.error?.message || "Kunne ikke oppdatere prosjektmetadata.");
+    throw new Error(
+      updateResult.error?.message || "Kunne ikke oppdatere prosjektmetadata.",
+    );
   }
 
   revalidateProjectCaches(projectId);
@@ -645,7 +757,9 @@ export async function updateProjectMetadataFromInference(projectId: string, infe
   return fromUnknownProjectRow(updateResult.data);
 }
 
-export async function getProjectDetail(projectId: string): Promise<ProjectDetail> {
+export async function getProjectDetail(
+  projectId: string,
+): Promise<ProjectDetail> {
   return unstable_cache(
     async () => {
       const supabase = createServiceClient();
@@ -658,7 +772,11 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
       ] = await Promise.all([
         queryProjectRow(projectId),
         fetchDocumentSummaryRows((select) =>
-          supabase.from("documents").select(select).eq("project_id", projectId).order("created_at", { ascending: false }),
+          supabase
+            .from("documents")
+            .select(select)
+            .eq("project_id", projectId)
+            .order("created_at", { ascending: false }),
         ),
         supabase
           .from("customer_analyses")
@@ -666,7 +784,10 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
           .eq("project_id", projectId)
           .order("created_at", { ascending: false })
           .limit(1),
-        supabase.from("generated_artifacts").select("id").eq("project_id", projectId),
+        supabase
+          .from("generated_artifacts")
+          .select("id")
+          .eq("project_id", projectId),
       ]);
 
       if (analysesError || artifactsError) {
@@ -677,7 +798,8 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
         );
       }
 
-      const analysisRow = ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
+      const analysisRow =
+        ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
 
       return {
         id: projectRow.id,
@@ -694,11 +816,15 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
         created_at: projectRow.created_at,
         updated_at: projectRow.updated_at,
         document_count: documentRows.length,
-        supporting_document_count: documentRows.filter((document) => document.role === "supporting_document").length,
+        supporting_document_count: documentRows.filter(
+          (document) => document.role === "supporting_document",
+        ).length,
         artifact_count: (artifactRows ?? []).length,
         has_chat: false,
         documents: documentRows.map(mapDocumentSummary),
-        customer_analysis: analysisRow ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY) : null,
+        customer_analysis: analysisRow
+          ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
+          : null,
         solution_evaluation: null,
         generated_artifacts: [],
         chat_messages: [],
@@ -729,7 +855,10 @@ export async function saveDocument(input: {
   const payloadWithSubtype = {
     project_id: input.projectId,
     role: input.role,
-    supporting_subtype: input.role === "supporting_document" ? input.supportingSubtype ?? null : null,
+    supporting_subtype:
+      input.role === "supporting_document"
+        ? (input.supportingSubtype ?? null)
+        : null,
     title: input.title,
     file_name: input.fileName,
     file_format: input.fileFormat,
@@ -741,25 +870,40 @@ export async function saveDocument(input: {
   };
 
   let inserted: DocumentRow | null = null;
-  let insertResult = await supabase.from("documents").insert(payloadWithSubtype).select("*").single<DocumentRow>();
+  let insertResult = await supabase
+    .from("documents")
+    .insert(payloadWithSubtype)
+    .select("*")
+    .single<DocumentRow>();
 
   if (insertResult.error && isMissingLegacyDocumentColumn(insertResult.error)) {
     const payloadLegacy: Record<string, unknown> = {
       ...payloadWithSubtype,
       display_name: input.title,
-      subtype: input.role === "supporting_document" ? input.supportingSubtype ?? null : null,
+      subtype:
+        input.role === "supporting_document"
+          ? (input.supportingSubtype ?? null)
+          : null,
     };
     delete payloadLegacy.supporting_subtype;
     delete payloadLegacy.title;
     delete payloadLegacy.file_name;
     delete payloadLegacy.file_size_bytes;
-    insertResult = await supabase.from("documents").insert(payloadLegacy).select("*").single<DocumentRow>();
+    insertResult = await supabase
+      .from("documents")
+      .insert(payloadLegacy)
+      .select("*")
+      .single<DocumentRow>();
   }
 
   if (insertResult.error || !insertResult.data) {
-    throw new Error(insertResult.error?.message || "Kunne ikke lagre dokumentet.");
+    throw new Error(
+      insertResult.error?.message || "Kunne ikke lagre dokumentet.",
+    );
   }
-  inserted = fromUnknownDocumentRow(insertResult.data as unknown as Record<string, unknown>);
+  inserted = fromUnknownDocumentRow(
+    insertResult.data as unknown as Record<string, unknown>,
+  );
 
   const projectPatch: Partial<ProjectRow> = {
     last_activity_at: new Date().toISOString(),
@@ -771,17 +915,28 @@ export async function saveDocument(input: {
     projectPatch.solution_document_uploaded = true;
   }
 
-  await supabase.from("projects").update(projectPatch).eq("id", input.projectId);
+  await supabase
+    .from("projects")
+    .update(projectPatch)
+    .eq("id", input.projectId);
 
   revalidateProjectCaches(input.projectId);
 
   return mapDocumentSummary(inserted);
 }
 
-export async function getDocumentDetail(projectId: string, documentId: string): Promise<ProjectDocumentDetail> {
+export async function getDocumentDetail(
+  projectId: string,
+  documentId: string,
+): Promise<ProjectDocumentDetail> {
   const supabase = createServiceClient();
   const data = await fetchSingleDocumentRow((select) =>
-    supabase.from("documents").select(select).eq("project_id", projectId).eq("id", documentId).single(),
+    supabase
+      .from("documents")
+      .select(select)
+      .eq("project_id", projectId)
+      .eq("id", documentId)
+      .single(),
   );
 
   if (!data) {
@@ -800,25 +955,39 @@ export async function deleteDocument(projectId: string, documentId: string) {
     .eq("id", documentId)
     .single<{ id: string; role: ProjectDocumentRole }>();
 
-  const { error } = await supabase.from("documents").delete().eq("project_id", projectId).eq("id", documentId);
+  const { error } = await supabase
+    .from("documents")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("id", documentId);
   if (error) {
     throw new Error(error.message);
   }
 
-  const { data: remaining } = await supabase.from("documents").select("role").eq("project_id", projectId);
+  const { data: remaining } = await supabase
+    .from("documents")
+    .select("role")
+    .eq("project_id", projectId);
   const rows = remaining ?? [];
 
   await supabase
     .from("projects")
     .update({
-      customer_document_uploaded: rows.some((row) => row.role === "primary_customer_document"),
-      solution_document_uploaded: rows.some((row) => row.role === "primary_solution_document"),
+      customer_document_uploaded: rows.some(
+        (row) => row.role === "primary_customer_document",
+      ),
+      solution_document_uploaded: rows.some(
+        (row) => row.role === "primary_solution_document",
+      ),
       last_activity_at: new Date().toISOString(),
     })
     .eq("id", projectId);
 
   if (beforeDelete?.role === "primary_customer_document") {
-    await supabase.from("customer_analyses").delete().eq("project_id", projectId);
+    await supabase
+      .from("customer_analyses")
+      .delete()
+      .eq("project_id", projectId);
     await supabase
       .from("projects")
       .update({ customer_analysis_generated: false })
@@ -826,7 +995,10 @@ export async function deleteDocument(projectId: string, documentId: string) {
   }
 
   if (beforeDelete?.role === "primary_solution_document") {
-    await supabase.from("solution_evaluations").delete().eq("project_id", projectId);
+    await supabase
+      .from("solution_evaluations")
+      .delete()
+      .eq("project_id", projectId);
     await supabase
       .from("projects")
       .update({ solution_evaluation_generated: false })
@@ -836,10 +1008,22 @@ export async function deleteDocument(projectId: string, documentId: string) {
   revalidateProjectCaches(projectId);
 }
 
-export async function getPrimaryDocument(projectId: string, role: Extract<ProjectDocumentRole, "primary_customer_document" | "primary_solution_document">) {
+export async function getPrimaryDocument(
+  projectId: string,
+  role: Extract<
+    ProjectDocumentRole,
+    "primary_customer_document" | "primary_solution_document"
+  >,
+) {
   const supabase = createServiceClient();
   const rows = await fetchDocumentRows((select) =>
-    supabase.from("documents").select(select).eq("project_id", projectId).eq("role", role).order("created_at", { ascending: false }).limit(1),
+    supabase
+      .from("documents")
+      .select(select)
+      .eq("project_id", projectId)
+      .eq("role", role)
+      .order("created_at", { ascending: false })
+      .limit(1),
   );
   const row = rows[0] ?? null;
   return row ? decryptDocumentRow(row) : null;
@@ -848,13 +1032,22 @@ export async function getPrimaryDocument(projectId: string, role: Extract<Projec
 export async function listSupportingDocuments(projectId: string) {
   const supabase = createServiceClient();
   const rows = await fetchDocumentRows((select) =>
-    supabase.from("documents").select(select).eq("project_id", projectId).eq("role", "supporting_document").order("created_at", { ascending: false }),
+    supabase
+      .from("documents")
+      .select(select)
+      .eq("project_id", projectId)
+      .eq("role", "supporting_document")
+      .order("created_at", { ascending: false }),
   );
 
   return rows.map(decryptDocumentRow);
 }
 
-export async function saveCustomerAnalysis(projectId: string, sourceDocumentIds: string[], result: CustomerAnalysisResult) {
+export async function saveCustomerAnalysis(
+  projectId: string,
+  sourceDocumentIds: string[],
+  result: CustomerAnalysisResult,
+) {
   const supabase = createServiceClient();
   await supabase.from("customer_analyses").delete().eq("project_id", projectId);
 
@@ -912,7 +1105,10 @@ export async function saveSolutionEvaluation(
   },
 ) {
   const supabase = createServiceClient();
-  await supabase.from("solution_evaluations").delete().eq("project_id", projectId);
+  await supabase
+    .from("solution_evaluations")
+    .delete()
+    .eq("project_id", projectId);
   let insertResult = await supabase
     .from("solution_evaluations")
     .insert({
@@ -930,7 +1126,10 @@ export async function saveSolutionEvaluation(
       .from("solution_evaluations")
       .insert({
         project_id: projectId,
-        source_document_ids: [input.customerDocumentId, input.solutionDocumentId].filter(Boolean),
+        source_document_ids: [
+          input.customerDocumentId,
+          input.solutionDocumentId,
+        ].filter(Boolean),
         result_json: encryptJson(input.result),
       })
       .select("*")
@@ -938,7 +1137,9 @@ export async function saveSolutionEvaluation(
   }
 
   if (insertResult.error || !insertResult.data) {
-    throw new Error(insertResult.error?.message || "Kunne ikke lagre løsningsvurderingen.");
+    throw new Error(
+      insertResult.error?.message || "Kunne ikke lagre løsningsvurderingen.",
+    );
   }
 
   await supabase
@@ -954,7 +1155,13 @@ export async function saveSolutionEvaluation(
   return decryptJson(insertResult.data.result_json, SOLUTION_EVALUATION_EMPTY);
 }
 
-export async function saveGeneratedArtifact(projectId: string, artifactType: GeneratedArtifactType, title: string, contentMarkdown: string, inputSnapshot: unknown) {
+export async function saveGeneratedArtifact(
+  projectId: string,
+  artifactType: GeneratedArtifactType,
+  title: string,
+  contentMarkdown: string,
+  inputSnapshot: unknown,
+) {
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("generated_artifacts")
@@ -972,7 +1179,10 @@ export async function saveGeneratedArtifact(projectId: string, artifactType: Gen
     throw new Error(error?.message || "Kunne ikke lagre generatorresultatet.");
   }
 
-  await supabase.from("projects").update({ last_activity_at: new Date().toISOString() }).eq("id", projectId);
+  await supabase
+    .from("projects")
+    .update({ last_activity_at: new Date().toISOString() })
+    .eq("id", projectId);
   revalidateProjectCaches(projectId);
   return mapArtifact(data);
 }
@@ -992,7 +1202,12 @@ export async function listGeneratedArtifacts(projectId: string) {
   return ((data ?? []) as ArtifactRow[]).map(mapArtifact);
 }
 
-export async function appendChatMessage(projectId: string, role: ChatMessageRole, content: string, contextSnapshot: unknown) {
+export async function appendChatMessage(
+  projectId: string,
+  role: ChatMessageRole,
+  content: string,
+  contextSnapshot: unknown,
+) {
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("chat_messages")
@@ -1009,7 +1224,10 @@ export async function appendChatMessage(projectId: string, role: ChatMessageRole
     throw new Error(error?.message || "Kunne ikke lagre chatmeldingen.");
   }
 
-  await supabase.from("projects").update({ last_activity_at: new Date().toISOString() }).eq("id", projectId);
+  await supabase
+    .from("projects")
+    .update({ last_activity_at: new Date().toISOString() })
+    .eq("id", projectId);
   revalidateProjectCaches(projectId);
   return mapChatMessage(data);
 }
@@ -1029,7 +1247,9 @@ export async function listChatMessages(projectId: string) {
   return ((data ?? []) as ChatRow[]).map(mapChatMessage);
 }
 
-export async function getProjectSnapshot(projectId: string): Promise<ProjectCacheSnapshot> {
+export async function getProjectSnapshot(
+  projectId: string,
+): Promise<ProjectCacheSnapshot> {
   const project = await queryProjectRow(projectId);
   return mapProjectSnapshot(project);
 }

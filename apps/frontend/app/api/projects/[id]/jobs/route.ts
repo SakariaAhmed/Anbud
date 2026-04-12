@@ -8,10 +8,13 @@ import {
 import type { GeneratedArtifactType } from "@/lib/types";
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
-  return value === "losningsutkast";
+  return value === "losningsutkast" || value === "gjennomforing_og_risiko";
 }
 
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
   try {
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as
@@ -47,13 +50,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     if (body.kind === "artifact_generation") {
       if (!body.artifact_type || !isArtifactType(body.artifact_type)) {
-        return NextResponse.json({ error: "Ugyldig artefakttype." }, { status: 400 });
+        return NextResponse.json(
+          { error: "Ugyldig artefakttype." },
+          { status: 400 },
+        );
       }
 
       const job = queueArtifactGenerationJob({
         projectId: id,
         artifactType: body.artifact_type,
-        instructions: typeof body.instructions === "string" ? body.instructions : "",
+        instructions:
+          typeof body.instructions === "string" ? body.instructions : "",
       });
 
       return NextResponse.json({ job }, { status: 202 });
@@ -62,7 +69,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "Ugyldig jobbtype." }, { status: 400 });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke starte jobben." },
+      {
+        error:
+          error instanceof Error ? error.message : "Kunne ikke starte jobben.",
+      },
       { status: 500 },
     );
   }

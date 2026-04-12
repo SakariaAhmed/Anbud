@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AppHeaderSidebarOffset } from "@/components/layout/app-header-sidebar-offset";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ANBUD",
+  title: "BIDSITE",
   description:
     "Kundeanalyse og generator for tilbudsteam i komplekse kundeprosjekter.",
 };
@@ -16,14 +17,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="no">
       <body className="min-h-screen bg-background text-foreground antialiased">
         <TooltipProvider>
+          <AppHeaderSidebarOffset />
           <div className="min-h-screen">
             <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur-sm">
-              <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 lg:px-0">
+              <div className="flex h-[var(--app-header-height)] w-full items-center justify-between pr-4 pl-[calc(var(--app-header-sidebar-offset)+1rem)] transition-[padding] duration-300 ease-out lg:pr-8">
                 <Link
                   href="/"
                   className="text-sm font-bold uppercase tracking-[0.15em] text-foreground transition-colors hover:text-primary"
                 >
-                  Anbud
+                  BIDSITE
                 </Link>
                 <nav className="flex items-center gap-6">
                   <Link

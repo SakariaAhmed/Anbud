@@ -6,6 +6,7 @@ import {
   buildDelimitedContext,
   buildGeneratorPrompt,
   buildHighLevelDesignPrompt,
+  buildPromptTemplate,
   buildProjectMetadataPrompt,
   buildSyntheticSolutionEvaluationPrompt,
   buildSolutionEvaluationPrompt,
@@ -13,15 +14,23 @@ import {
 import type {
   ChatMessage,
   CustomerAnalysisResult,
+  CustomerAnalysisSection,
   GeneratedArtifactType,
   ProjectMetadataInference,
   ProjectDocumentDetail,
   SolutionEvaluationResult,
+  ValueCategory,
   ValueOpportunity,
 } from "@/lib/types";
 
 const ANALYSIS_MODEL = "gpt-5.4";
 const FAST_MODEL = "gpt-5.4-mini";
+const VALUE_CATEGORIES: ValueCategory[] = [
+  "Høyere produktivitet",
+  "Lavere kostnader",
+  "Redusert risiko",
+  "Bedre brukeropplevelse",
+];
 
 type OpenAIClient = {
   chat: {
@@ -43,7 +52,8 @@ async function getClient() {
 
   if (!cachedClientPromise) {
     cachedClientPromise = import("openai").then(
-      ({ default: OpenAI }) => new OpenAI({ apiKey }) as unknown as OpenAIClient,
+      ({ default: OpenAI }) =>
+        new OpenAI({ apiKey }) as unknown as OpenAIClient,
     );
   }
 
@@ -72,7 +82,10 @@ function documentContext(
   const structureTextLimit = options?.structureTextLimit ?? 220;
   const structurePreview = document.structure_map
     .slice(0, structureLimit)
-    .map((section) => `- ${section.reference}: ${compactText(section.text, structureTextLimit)}`)
+    .map(
+      (section) =>
+        `- ${section.reference}: ${compactText(section.text, structureTextLimit)}`,
+    )
     .join("\n");
 
   return [
@@ -85,33 +98,55 @@ function documentContext(
         `Rolle: ${document.role}`,
       ].join("\n"),
     ),
-    buildDelimitedContext(`${label} struktur`, structurePreview || "Ingen struktur tilgjengelig."),
-    buildDelimitedContext(`${label} tekst`, compactText(document.raw_text, options?.textLimit ?? 22000)),
+    buildDelimitedContext(
+      `${label} struktur`,
+      structurePreview || "Ingen struktur tilgjengelig.",
+    ),
+    buildDelimitedContext(
+      `${label} tekst`,
+      compactText(document.raw_text, options?.textLimit ?? 22000),
+    ),
   ].join("\n\n");
 }
 
 function summarizeCustomerAnalysis(analysis: CustomerAnalysisResult) {
   return JSON.stringify(
     {
-      customer_profile_summary: compactText(analysis.customer_profile_summary, 500),
+      customer_profile_summary: compactText(
+        analysis.customer_profile_summary,
+        500,
+      ),
       customer_goals_summary: compactText(analysis.customer_goals_summary, 500),
-      high_level_solution_design: compactText(analysis.high_level_solution_design, 700),
+      high_level_solution_design: compactText(
+        analysis.high_level_solution_design,
+        700,
+      ),
       high_level_architecture_mermaid: compactText(
         analysis.high_level_architecture_mermaid,
         1000,
       ),
       customer_profile: analysis.customer_profile.slice(0, 5),
       customer_goals: analysis.customer_goals.slice(0, 5),
-      implicit_requirements: analysis.implicit_requirements.slice(0, 6).map((item) => ({
-        title: item.title,
-        category: item.category,
-        importance: item.importance,
-        description: compactText(item.description, 220),
-      })),
+      implicit_requirements: analysis.implicit_requirements
+        .slice(0, 6)
+        .map((item) => ({
+          title: item.title,
+          category: item.category,
+          importance: item.importance,
+          description: compactText(item.description, 220),
+        })),
+      risks_for_us: (analysis.risks_for_us ?? []).slice(0, 5),
+      risks_for_customer: (analysis.risks_for_customer ?? []).slice(0, 5),
       risks: analysis.risks.slice(0, 5),
-      likely_evaluation_criteria: analysis.likely_evaluation_criteria.slice(0, 5),
-      expected_solution_direction: analysis.expected_solution_direction.slice(0, 5),
-      value_opportunities: analysis.value_opportunities.slice(0, 5),
+      likely_evaluation_criteria: analysis.likely_evaluation_criteria.slice(
+        0,
+        5,
+      ),
+      expected_solution_direction: analysis.expected_solution_direction.slice(
+        0,
+        5,
+      ),
+      value_opportunities: analysis.value_opportunities.slice(0, 4),
       executive_summary: compactText(analysis.executive_summary, 500),
     },
     null,
@@ -127,7 +162,10 @@ function summarizeSolutionEvaluation(evaluation: SolutionEvaluationResult) {
       weaknesses: evaluation.weaknesses.slice(0, 5),
       missing_elements: evaluation.missing_elements.slice(0, 5),
       risks_to_customer: evaluation.risks_to_customer.slice(0, 5),
-      improvement_recommendations: evaluation.improvement_recommendations.slice(0, 5),
+      improvement_recommendations: evaluation.improvement_recommendations.slice(
+        0,
+        5,
+      ),
       likely_score_assessment: evaluation.likely_score_assessment,
       executive_summary: compactText(evaluation.executive_summary, 500),
     },
@@ -228,10 +266,15 @@ function dedupeSummary(value: string, references: string[]) {
   }
 
   const kept = sentences.filter((sentence) => {
-    return !references.some((reference) => isNearDuplicate(sentence, reference, 0.76));
+    return !references.some((reference) =>
+      isNearDuplicate(sentence, reference, 0.76),
+    );
   });
 
-  const normalized = (kept.length ? kept : sentences).join(" ").replace(/\s+/g, " ").trim();
+  const normalized = (kept.length ? kept : sentences)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
   return normalized;
 }
 
@@ -275,23 +318,83 @@ const SIGNAL_WORD_PATTERNS = [
 ];
 
 function normalizeSignalWords(items: string[]) {
-  return capNormalizedList(items.filter((item) => {
-    const trimmed = item.replace(/\s+/g, " ").trim();
-    if (!trimmed) {
-      return false;
+  return capNormalizedList(
+    items.filter((item) => {
+      const trimmed = item.replace(/\s+/g, " ").trim();
+      if (!trimmed) {
+        return false;
+      }
+
+      const normalized = normalizeComparableText(trimmed);
+      if (!normalized || VAGUE_SIGNAL_WORDS.has(normalized)) {
+        return false;
+      }
+
+      if (SIGNAL_WORD_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+        return true;
+      }
+
+      return /[A-Z]{2,}|\d/.test(trimmed);
+    }),
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function countSignalWordMentions(keyword: string, sourceText: string) {
+  const trimmedKeyword = keyword.replace(/\s+/g, " ").trim();
+  const normalizedSource = sourceText.replace(/\s+/g, " ").trim();
+
+  if (!trimmedKeyword || !normalizedSource) {
+    return 1;
+  }
+
+  const flexibleKeyword = escapeRegExp(trimmedKeyword)
+    .replace(/\\ /g, "\\s+")
+    .replace(/\\-/g, "[-\\s]?");
+
+  try {
+    const matcher = new RegExp(
+      `(^|[^\\p{L}\\p{N}])(${flexibleKeyword})(?=$|[^\\p{L}\\p{N}])`,
+      "giu",
+    );
+    return Math.max(1, Array.from(normalizedSource.matchAll(matcher)).length);
+  } catch {
+    const lowerSource = normalizedSource.toLowerCase();
+    const lowerKeyword = trimmedKeyword.toLowerCase();
+    let count = 0;
+    let cursor = 0;
+
+    while (cursor < lowerSource.length) {
+      const nextIndex = lowerSource.indexOf(lowerKeyword, cursor);
+      if (nextIndex === -1) {
+        break;
+      }
+      count += 1;
+      cursor = nextIndex + lowerKeyword.length;
     }
 
-    const normalized = normalizeComparableText(trimmed);
-    if (!normalized || VAGUE_SIGNAL_WORDS.has(normalized)) {
-      return false;
-    }
+    return Math.max(1, count);
+  }
+}
 
-    if (SIGNAL_WORD_PATTERNS.some((pattern) => pattern.test(trimmed))) {
-      return true;
-    }
-
-    return /[A-Z]{2,}|\d/.test(trimmed);
-  }));
+function normalizeSignalWordCounts(
+  signalWords: string[],
+  input?: {
+    sourceText?: string;
+    existingCounts?: Record<string, unknown>;
+  },
+) {
+  return signalWords.reduce<Record<string, number>>((counts, keyword) => {
+    const existingCount = input?.existingCounts?.[keyword];
+    counts[keyword] =
+      typeof existingCount === "number" && Number.isFinite(existingCount)
+        ? Math.max(1, Math.round(existingCount))
+        : countSignalWordMentions(keyword, input?.sourceText ?? "");
+    return counts;
+  }, {});
 }
 
 function normalizeMermaidDiagram(value: string) {
@@ -319,7 +422,9 @@ function countMermaidComplexity(diagram: string) {
     .map((line) => line.trim())
     .filter(Boolean);
   const edgeCount = lines.filter((line) => /-->|---|-.->/.test(line)).length;
-  const subgraphCount = lines.filter((line) => /^subgraph\b/i.test(line)).length;
+  const subgraphCount = lines.filter((line) =>
+    /^subgraph\b/i.test(line),
+  ).length;
   const nodeIds = new Set<string>();
   for (const line of lines) {
     const matches = line.matchAll(/\b([A-Za-z][A-Za-z0-9_]*)\s*[\[\(\{]/g);
@@ -347,15 +452,21 @@ function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
     /\bentra\b|active directory|microsoft 365/i,
   );
   const hasAzure = includesSignal(signals, /\bazure\b/i);
-  const hasNamedIntegration = includesSignal(signals, /\bid-?porten\b|noark|api/i);
+  const hasNamedIntegration = includesSignal(
+    signals,
+    /\bid-?porten\b|noark|api/i,
+  );
   const hasNamedData = includesSignal(signals, /\bpower bi\b|data|database/i);
-  const hasNamedOps = includesSignal(signals, /\bci\/?cd\b|monitor|logging|backup/i);
+  const hasNamedOps = includesSignal(
+    signals,
+    /\bci\/?cd\b|monitor|logging|backup/i,
+  );
 
   return [
     "flowchart LR",
     '  subgraph Business["Brukere og forretning"]',
-    '    Users[Forretningsbrukere og fagmiljø]',
-    '    Apps[Applikasjoner og arbeidsflater]',
+    "    Users[Forretningsbrukere og fagmiljø]",
+    "    Apps[Applikasjoner og arbeidsflater]",
     "  end",
     '  subgraph Identity["Identitet"]',
     hasMicrosoftIdentity
@@ -363,7 +474,9 @@ function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
       : "    Identity[Identitet og tilgang]",
     "  end",
     '  subgraph PlatformLayer["Plattform"]',
-    hasAzure ? "    Platform[Azure Landing Zone]" : "    Platform[Skyplattform]",
+    hasAzure
+      ? "    Platform[Azure Landing Zone]"
+      : "    Platform[Skyplattform]",
     "  end",
     '  subgraph IntegrationLayer["Integrasjon og data"]',
     hasNamedIntegration
@@ -410,7 +523,9 @@ function preferSimpleArchitectureDiagram(
   return normalized;
 }
 
-function normalizeRequirementList(requirements: CustomerAnalysisResult["implicit_requirements"]) {
+function normalizeRequirementList(
+  requirements: CustomerAnalysisResult["implicit_requirements"],
+) {
   const result: CustomerAnalysisResult["implicit_requirements"] = [];
 
   for (const requirement of requirements) {
@@ -435,7 +550,9 @@ function normalizeRequirementList(requirements: CustomerAnalysisResult["implicit
       ...requirement,
       title,
       description,
-      source_reference: requirement.source_reference.replace(/\s+/g, " ").trim(),
+      source_reference: requirement.source_reference
+        .replace(/\s+/g, " ")
+        .trim(),
       source_excerpt: requirement.source_excerpt.replace(/\s+/g, " ").trim(),
     });
   }
@@ -448,6 +565,61 @@ function normalizePercentShare(raw: unknown) {
     return null;
   }
   return Math.min(100, Math.max(1, Math.round(raw)));
+}
+
+function isValueCategory(value: unknown): value is ValueCategory {
+  return (
+    typeof value === "string" &&
+    VALUE_CATEGORIES.includes(value as ValueCategory)
+  );
+}
+
+function inferValueCategory(
+  item: Pick<ValueOpportunity, "title" | "description">,
+): ValueCategory {
+  const text = `${item.title} ${item.description}`.toLowerCase();
+
+  if (
+    /risiko|sikkerhet|avbrudd|nedetid|kontroll|compliance|etterlevelse|robust|sårbar/.test(
+      text,
+    )
+  ) {
+    return "Redusert risiko";
+  }
+
+  if (
+    /kost|kostnad|besparelse|økonomi|lisens|driftskost|finops|forbruk|reduser|reducer/.test(
+      text,
+    )
+  ) {
+    return "Lavere kostnader";
+  }
+
+  if (
+    /bruker|opplevelse|selvbetjening|tilgjengelighet|adopsjon|respons|kundeopplevelse/.test(
+      text,
+    )
+  ) {
+    return "Bedre brukeropplevelse";
+  }
+
+  if (
+    /produktiv|effektiv|automatis|arbeidsflyt|prosess|kapasitet|tidsbruk|standardiser/.test(
+      text,
+    )
+  ) {
+    return "Høyere produktivitet";
+  }
+
+  return "Redusert risiko";
+}
+
+function normalizeSingleValueCategory(item: ValueOpportunity): ValueCategory {
+  const firstValidCategory = Array.isArray(item.value_categories)
+    ? item.value_categories.find(isValueCategory)
+    : null;
+
+  return firstValidCategory ?? inferValueCategory(item);
 }
 
 function normalizeValueOpportunities(
@@ -463,25 +635,16 @@ function normalizeValueOpportunities(
           isNearDuplicate(existing.description, item.description, 0.72),
       );
     })
-    .slice(0, 10)
+    .slice(0, 4)
     .map((item) => ({
       title: item.title.replace(/\s+/g, " ").trim(),
       description: item.description.replace(/\s+/g, " ").trim(),
-      value_categories: Array.isArray(item.value_categories)
-        ? item.value_categories.filter((value) =>
-            [
-              "Høyere produktivitet",
-              "Lavere kostnader",
-              "Redusert risiko",
-              "Bedre brukeropplevelse",
-              "Fokus på kjernevirksomheten",
-            ].includes(value),
-          )
-        : [],
-      profit_share_percent: normalizePercentShare(
-        (item as ValueOpportunity & { profit_share_percent?: unknown })
-          .profit_share_percent,
-      ) ?? 0,
+      value_categories: [normalizeSingleValueCategory(item)],
+      profit_share_percent:
+        normalizePercentShare(
+          (item as ValueOpportunity & { profit_share_percent?: unknown })
+            .profit_share_percent,
+        ) ?? 0,
     }));
 
   if (!filtered.length) {
@@ -496,7 +659,10 @@ function normalizeValueOpportunities(
   const normalizedPercents =
     providedTotal > 0
       ? filtered.map((item) =>
-          Math.max(1, Math.round((item.profit_share_percent / providedTotal) * 100)),
+          Math.max(
+            1,
+            Math.round((item.profit_share_percent / providedTotal) * 100),
+          ),
         )
       : filtered.map(() => Math.floor(100 / filtered.length));
 
@@ -518,26 +684,98 @@ function normalizeValueOpportunities(
   }));
 }
 
-function normalizeCustomerAnalysisResult(result: CustomerAnalysisResult): CustomerAnalysisResult {
+function inferRiskAudience(item: string): "us" | "customer" {
+  const text = item.toLowerCase();
+
+  if (
+    /tilbud|leverandør|leveranse|team|ressurs|kompetanse|kapasitet|scope|omfang|pris|margin|kontrakt|avklaring|posisjonering|forplikt|ansvar/.test(
+      text,
+    )
+  ) {
+    return "us";
+  }
+
+  return "customer";
+}
+
+function normalizeRiskGroups(result: CustomerAnalysisResult) {
+  const explicitForUs = capNormalizedList(
+    Array.isArray(result.risks_for_us) ? result.risks_for_us : [],
+  );
+  const explicitForCustomer = capNormalizedList(
+    Array.isArray(result.risks_for_customer) ? result.risks_for_customer : [],
+  );
+  const legacyRisks = capNormalizedList(
+    Array.isArray(result.risks) ? result.risks : [],
+  );
+
+  if (explicitForUs.length || explicitForCustomer.length) {
+    const risks = capNormalizedList([...explicitForCustomer, ...explicitForUs]);
+    return {
+      risks,
+      risksForUs: explicitForUs,
+      risksForCustomer: explicitForCustomer,
+    };
+  }
+
+  const risksForUs: string[] = [];
+  const risksForCustomer: string[] = [];
+
+  for (const risk of legacyRisks) {
+    if (inferRiskAudience(risk) === "us") {
+      risksForUs.push(risk);
+    } else {
+      risksForCustomer.push(risk);
+    }
+  }
+
+  return {
+    risks: legacyRisks,
+    risksForUs: capNormalizedList(risksForUs),
+    risksForCustomer: capNormalizedList(risksForCustomer),
+  };
+}
+
+function normalizeCustomerAnalysisResult(
+  result: CustomerAnalysisResult,
+  options?: { signalSourceText?: string },
+): CustomerAnalysisResult {
   const customerProfile = capNormalizedList(
     Array.isArray(result.customer_profile) ? result.customer_profile : [],
   );
-  const customerGoals = capNormalizedList(Array.isArray(result.customer_goals) ? result.customer_goals : []);
-  const risks = capNormalizedList(Array.isArray(result.risks) ? result.risks : []);
-  const likelyEvaluationCriteria = capNormalizedList(
-    Array.isArray(result.likely_evaluation_criteria) ? result.likely_evaluation_criteria : [],
+  const customerGoals = capNormalizedList(
+    Array.isArray(result.customer_goals) ? result.customer_goals : [],
   );
-  const signalWords = normalizeSignalWords(Array.isArray(result.signal_words) ? result.signal_words : []);
+  const { risks, risksForUs, risksForCustomer } = normalizeRiskGroups(result);
+  const likelyEvaluationCriteria = capNormalizedList(
+    Array.isArray(result.likely_evaluation_criteria)
+      ? result.likely_evaluation_criteria
+      : [],
+  );
+  const signalWords = normalizeSignalWords(
+    Array.isArray(result.signal_words) ? result.signal_words : [],
+  );
+  const signalWordCounts = normalizeSignalWordCounts(signalWords, {
+    sourceText: options?.signalSourceText,
+    existingCounts: result.signal_word_counts,
+  });
   const expectedSolutionDirection = capNormalizedList(
-    Array.isArray(result.expected_solution_direction) ? result.expected_solution_direction : [],
+    Array.isArray(result.expected_solution_direction)
+      ? result.expected_solution_direction
+      : [],
   );
   const positioningRecommendations = capNormalizedList(
-    Array.isArray(result.positioning_recommendations) ? result.positioning_recommendations : [],
+    Array.isArray(result.positioning_recommendations)
+      ? result.positioning_recommendations
+      : [],
   );
-  const ambiguities = capNormalizedList(Array.isArray(result.ambiguities) ? result.ambiguities : []);
-  const prioritizedRequirements = (Array.isArray(result.prioritized_requirements)
-    ? result.prioritized_requirements
-    : []
+  const ambiguities = capNormalizedList(
+    Array.isArray(result.ambiguities) ? result.ambiguities : [],
+  );
+  const prioritizedRequirements = (
+    Array.isArray(result.prioritized_requirements)
+      ? result.prioritized_requirements
+      : []
   )
     .filter((item) => item && item.requirement && item.priority && item.reason)
     .filter((item, index, array) => {
@@ -555,7 +793,11 @@ function normalizeCustomerAnalysisResult(result: CustomerAnalysisResult): Custom
 
   const customerProfileSummary = dedupeSummary(
     result.customer_profile_summary || customerProfile.slice(0, 2).join(" "),
-    [...customerGoals, result.customer_goals_summary || "", ...positioningRecommendations],
+    [
+      ...customerGoals,
+      result.customer_goals_summary || "",
+      ...positioningRecommendations,
+    ],
   );
 
   const customerGoalsSummary = dedupeSummary(
@@ -564,7 +806,8 @@ function normalizeCustomerAnalysisResult(result: CustomerAnalysisResult): Custom
   );
 
   const highLevelSolutionDesign = dedupeSummary(
-    result.high_level_solution_design || expectedSolutionDirection.slice(0, 2).join(" "),
+    result.high_level_solution_design ||
+      expectedSolutionDirection.slice(0, 2).join(" "),
     [
       customerProfileSummary,
       customerGoalsSummary,
@@ -579,18 +822,15 @@ function normalizeCustomerAnalysisResult(result: CustomerAnalysisResult): Custom
     result,
   );
 
-  const executiveSummary = dedupeSummary(
-    result.executive_summary || "",
-    [
-      customerProfileSummary,
-      customerGoalsSummary,
-      highLevelSolutionDesign,
-      ...customerProfile,
-      ...customerGoals,
-      ...risks,
-      ...positioningRecommendations,
-    ],
-  );
+  const executiveSummary = dedupeSummary(result.executive_summary || "", [
+    customerProfileSummary,
+    customerGoalsSummary,
+    highLevelSolutionDesign,
+    ...customerProfile,
+    ...customerGoals,
+    ...risks,
+    ...positioningRecommendations,
+  ]);
 
   return {
     ...result,
@@ -601,13 +841,18 @@ function normalizeCustomerAnalysisResult(result: CustomerAnalysisResult): Custom
     customer_profile: customerProfile,
     customer_goals: customerGoals,
     implicit_requirements: normalizeRequirementList(
-      Array.isArray(result.implicit_requirements) ? result.implicit_requirements : [],
+      Array.isArray(result.implicit_requirements)
+        ? result.implicit_requirements
+        : [],
     ),
     prioritized_requirements: prioritizedRequirements,
     ambiguities,
     risks,
+    risks_for_us: risksForUs,
+    risks_for_customer: risksForCustomer,
     likely_evaluation_criteria: likelyEvaluationCriteria,
     signal_words: signalWords,
+    signal_word_counts: signalWordCounts,
     expected_solution_direction: expectedSolutionDirection,
     value_opportunities: valueOpportunities,
     positioning_recommendations: positioningRecommendations,
@@ -615,9 +860,148 @@ function normalizeCustomerAnalysisResult(result: CustomerAnalysisResult): Custom
   };
 }
 
-function normalizeSolutionEvaluationResult(result: SolutionEvaluationResult): SolutionEvaluationResult {
-  const strengths = capNormalizedList(Array.isArray(result.strengths) ? result.strengths : []);
-  const weaknesses = capNormalizedList(Array.isArray(result.weaknesses) ? result.weaknesses : []);
+type CustomerAnalysisSectionPatch = Partial<
+  Pick<
+    CustomerAnalysisResult,
+    | "customer_profile_summary"
+    | "customer_goals_summary"
+    | "high_level_solution_design"
+    | "high_level_architecture_mermaid"
+    | "implicit_requirements"
+    | "risks"
+    | "risks_for_us"
+    | "risks_for_customer"
+    | "signal_words"
+    | "value_opportunities"
+    | "positioning_recommendations"
+    | "executive_summary"
+  >
+>;
+
+const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
+  CustomerAnalysisSection,
+  {
+    label: string;
+    fields: string;
+    guidance: string[];
+    outputContract: string[];
+  }
+> = {
+  summary: {
+    label: "Oppsummering",
+    fields: "customer_profile_summary og customer_goals_summary",
+    guidance: [
+      "Regenerer kun lederoppsummeringen av kunden.",
+      "customer_profile_summary skal forklare kundesituasjonen, modenhet, rammer og relevant kontekst.",
+      "customer_goals_summary skal forklare kundens mål, ønsket effekt, utviklingsretning og hvilken løsningsretning dette peker mot.",
+    ],
+    outputContract: [
+      "Returner kun JSON med customer_profile_summary og customer_goals_summary.",
+      "Begge verdier skal være presise, konkrete tekststrenger.",
+    ],
+  },
+  strategy: {
+    label: "Strategi",
+    fields: "executive_summary og positioning_recommendations",
+    guidance: [
+      "Regenerer kun tilbudsteamets operative strategi og anbefalte posisjonering.",
+      "executive_summary skal være arbeidsteksten som brukes videre i tilbudet.",
+      "positioning_recommendations skal være konkrete anbefalinger til hvordan tilbudet bør spisses.",
+    ],
+    outputContract: [
+      "Returner kun JSON med executive_summary og positioning_recommendations.",
+      "positioning_recommendations skal være en liste med 3 til 5 konkrete tekstpunkter.",
+    ],
+  },
+  design: {
+    label: "Design",
+    fields: "high_level_solution_design og high_level_architecture_mermaid",
+    guidance: [
+      "Regenerer kun anbefalt high-level design og arkitekturdiagram.",
+      "high_level_solution_design skal være en konkret, erfaren skyarkitekt-anbefaling.",
+      "high_level_architecture_mermaid skal være et enkelt high-level diagram med få hovednoder.",
+    ],
+    outputContract: [
+      "Returner kun JSON med high_level_solution_design og high_level_architecture_mermaid.",
+      "high_level_architecture_mermaid skal være ren Mermaid-kode som starter med flowchart eller graph.",
+    ],
+  },
+  risks: {
+    label: "Risiko",
+    fields: "risks_for_us, risks_for_customer og risks",
+    guidance: [
+      "Regenerer kun risiko og usikkerhet.",
+      "risks_for_us skal beskrive leverandørens/tilbudsteamets risiko: leveranserisiko, tilbudsrisiko, kommersiell risiko, ressurs-/kompetanserisiko, avklaringsbehov og risiko for feil posisjonering.",
+      "risks_for_customer skal beskrive kundens risiko: driftsavbrudd, sikkerhet, overgang, kostnadskontroll, brukeradopsjon, forvaltning, etterlevelse og forretningsmessig konsekvens.",
+      "risks skal være en kort samlet kompatibilitetsliste basert på de to delte feltene.",
+      "Ikke gjenta krav, mål eller posisjonering som risiko hvis det ikke faktisk er en usikkerhet.",
+    ],
+    outputContract: [
+      "Returner kun JSON med risks_for_us, risks_for_customer og risks.",
+      "risks_for_us og risks_for_customer skal være lister med 0 til 5 konkrete tekstpunkter hver. Ikke finn opp risiko uten støtte i dokument eller eksisterende analyse.",
+      "risks skal være en samlet liste med korte tekstpunkter fra begge kategorier.",
+    ],
+  },
+  needs: {
+    label: "Behov",
+    fields: "implicit_requirements",
+    guidance: [
+      "Regenerer kun underliggende behov og implisitte krav.",
+      "Returner nøyaktig de 3 viktigste punktene som gir mest forståelse av hva kunden egentlig vil.",
+      "Hvert punkt skal være en rimelig tolkning som er relevant for tilbudsarbeid.",
+      "Hver description skal sidestille hva kunden i praksis ber om med hva kunden ikke vil kjøpe eller ikke bør posisjoneres som.",
+      "Bruk konkrete, tilbudsrettede kontraster, for eksempel: selg dette som trygg modernisering av logistikkritisk plattform, ikke som en generell skyreise.",
+      "Ikke inkluder eksplisitte krav som bare hører hjemme i kravlisten.",
+    ],
+    outputContract: [
+      "Returner kun JSON med implicit_requirements.",
+      "implicit_requirements skal være en liste av objekter med title, description, category, importance, kind, source_reference og source_excerpt.",
+      "implicit_requirements skal inneholde nøyaktig 3 objekter.",
+      "importance skal være Kritisk, Viktig eller Mindre viktig. kind skal være Implisitt.",
+    ],
+  },
+  keywords: {
+    label: "Nøkkelord",
+    fields: "signal_words",
+    guidance: [
+      "Regenerer kun gjenbrukte nøkkelord.",
+      "signal_words skal bare inneholde konkrete teknologier, standarder, rammeverk, integrasjonspunkter, regulatoriske referanser eller navngitte signalord.",
+      "Ikke inkluder generiske ord som moderne, effektivitet, brukeropplevelse, robust eller skalerbar.",
+    ],
+    outputContract: [
+      "Returner kun JSON med signal_words.",
+      "signal_words skal være en liste med maksimalt 10 konkrete tekststrenger.",
+    ],
+  },
+  value: {
+    label: "Verdi",
+    fields: "value_opportunities",
+    guidance: [
+      "Regenerer kun verdimuligheter.",
+      "value_opportunities skal ha maksimalt 4 punkter.",
+      "Hvert punkt skal ha nøyaktig én value_category: Høyere produktivitet, Lavere kostnader, Redusert risiko eller Bedre brukeropplevelse.",
+      "Ikke kombiner flere verdikategorier i samme punkt. Forklar hvordan verdien skapes og hvorfor den er viktig.",
+      "profit_share_percent skal være dokument- og signalbasert: vekt etter eksplisitthet, forretningskritikalitet, driftskonsekvens, repetisjon og tydelig kobling til anskaffelsens mål.",
+      "Ikke bruk jevn eller pen prosentfordeling uten dokumentgrunnlag. Bruk presise, konservative heltall.",
+    ],
+    outputContract: [
+      "Returner kun JSON med value_opportunities.",
+      "value_opportunities skal være objekter med title, description, value_categories og profit_share_percent.",
+      "value_categories skal alltid være en array med nøyaktig ett element.",
+      "profit_share_percent skal være heltall mellom 1 og 100, samlet fordelt til 100 prosent.",
+    ],
+  },
+};
+
+function normalizeSolutionEvaluationResult(
+  result: SolutionEvaluationResult,
+): SolutionEvaluationResult {
+  const strengths = capNormalizedList(
+    Array.isArray(result.strengths) ? result.strengths : [],
+  );
+  const weaknesses = capNormalizedList(
+    Array.isArray(result.weaknesses) ? result.weaknesses : [],
+  );
   const genericSections = capNormalizedList(
     Array.isArray(result.generic_sections) ? result.generic_sections : [],
   );
@@ -627,9 +1011,13 @@ function normalizeSolutionEvaluationResult(result: SolutionEvaluationResult): So
   const risksToCustomer = capNormalizedList(
     Array.isArray(result.risks_to_customer) ? result.risks_to_customer : [],
   );
-  const trustSignals = capNormalizedList(Array.isArray(result.trust_signals) ? result.trust_signals : []);
+  const trustSignals = capNormalizedList(
+    Array.isArray(result.trust_signals) ? result.trust_signals : [],
+  );
   const improvementRecommendations = capNormalizedList(
-    Array.isArray(result.improvement_recommendations) ? result.improvement_recommendations : [],
+    Array.isArray(result.improvement_recommendations)
+      ? result.improvement_recommendations
+      : [],
   );
   const valueAssessment = normalizeValueOpportunities(
     Array.isArray(result.value_assessment) ? result.value_assessment : [],
@@ -637,7 +1025,9 @@ function normalizeSolutionEvaluationResult(result: SolutionEvaluationResult): So
 
   return {
     ...result,
-    fit_to_customer_needs: (result.fit_to_customer_needs || "").replace(/\s+/g, " ").trim(),
+    fit_to_customer_needs: (result.fit_to_customer_needs || "")
+      .replace(/\s+/g, " ")
+      .trim(),
     strengths,
     weaknesses,
     generic_sections: genericSections,
@@ -721,7 +1111,7 @@ export async function analyzeCustomerDocuments(input: {
   const userPrompt = [
     "Analyser prosjektet og returner kun gyldig JSON.",
     "Skill tydelig mellom eksplisitte krav og implisitte krav.",
-    "Alle verdiutsagn må knyttes til minst én av de fem faste verdikategoriene.",
+    "Alle verdiutsagn må knyttes til nøyaktig én av de fire faste verdikategoriene.",
     "",
     buildDelimitedContext(
       "Prosjekt",
@@ -732,7 +1122,12 @@ export async function analyzeCustomerDocuments(input: {
       structureLimit: 10,
       structureTextLimit: 180,
     }),
-    supportingContexts ? buildDelimitedContext("Tilleggsregel", "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.") : "",
+    supportingContexts
+      ? buildDelimitedContext(
+          "Tilleggsregel",
+          "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.",
+        )
+      : "",
     supportingContexts,
   ]
     .filter(Boolean)
@@ -745,7 +1140,95 @@ export async function analyzeCustomerDocuments(input: {
     model: ANALYSIS_MODEL,
   });
 
-  return normalizeCustomerAnalysisResult(result);
+  const signalSourceText = [
+    input.customerDocument.raw_text,
+    ...input.supportingDocuments.map((document) => document.raw_text),
+  ].join("\n\n");
+
+  return normalizeCustomerAnalysisResult(result, { signalSourceText });
+}
+
+export async function regenerateCustomerAnalysisSection(input: {
+  section: CustomerAnalysisSection;
+  projectName: string;
+  customerDocument: ProjectDocumentDetail;
+  supportingDocuments: ProjectDocumentDetail[];
+  customerAnalysis: CustomerAnalysisResult;
+}) {
+  const config = CUSTOMER_ANALYSIS_SECTION_CONFIG[input.section];
+  const supportingContexts = input.supportingDocuments
+    .slice(0, 6)
+    .map((document, index) =>
+      documentContext(`Støttedokument ${index + 1}`, document, {
+        textLimit: 6000,
+        structureLimit: 6,
+        structureTextLimit: 160,
+      }),
+    )
+    .join("\n\n");
+
+  const systemPrompt = buildPromptTemplate({
+    role: "Du er en senior løsningsarkitekt og tilbudsansvarlig som regenererer én avgrenset del av en eksisterende kundeanalyse uten å endre resten.",
+    task: [
+      `Regenerer seksjonen ${config.label}.`,
+      `Du skal bare returnere feltene: ${config.fields}.`,
+      "Bruk kundedokumentet, støttedokumenter og eksisterende analyse som kontekst.",
+      "Skriv konkret, tekstnært og nyttig for et tilbudsteam.",
+    ],
+    rules: [
+      "Returner kun gyldig JSON.",
+      "Ikke returner felter som ikke er bedt om.",
+      "Ikke skriv generisk konsulentspråk.",
+      "Ikke gjenta samme observasjon med små omskrivninger.",
+      ...config.guidance,
+    ],
+    outputContract: config.outputContract,
+    exampleOutput: "{}",
+  });
+
+  const userPrompt = [
+    `Regenerer bare ${config.label} for prosjektet.`,
+    "",
+    buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
+    documentContext("Primært kundedokument", input.customerDocument, {
+      textLimit: 14000,
+      structureLimit: 10,
+      structureTextLimit: 180,
+    }),
+    supportingContexts
+      ? buildDelimitedContext(
+          "Tilleggsregel",
+          "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.",
+        )
+      : "",
+    supportingContexts,
+    buildDelimitedContext(
+      "Eksisterende kundeanalyse",
+      JSON.stringify(input.customerAnalysis, null, 2),
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const patch = await createJsonCompletion<CustomerAnalysisSectionPatch>({
+    system: systemPrompt,
+    user: userPrompt,
+    temperature: 0.1,
+    model: ANALYSIS_MODEL,
+  });
+
+  const signalSourceText = [
+    input.customerDocument.raw_text,
+    ...input.supportingDocuments.map((document) => document.raw_text),
+  ].join("\n\n");
+
+  return normalizeCustomerAnalysisResult(
+    {
+      ...input.customerAnalysis,
+      ...patch,
+    },
+    { signalSourceText },
+  );
 }
 
 export async function generateHighLevelDesign(input: {
@@ -844,7 +1327,10 @@ export async function evaluateSolutionDocument(input: {
       structureLimit: 8,
       structureTextLimit: 160,
     }),
-    buildDelimitedContext("Lagret kundeanalyse", summarizeCustomerAnalysis(input.customerAnalysis)),
+    buildDelimitedContext(
+      "Lagret kundeanalyse",
+      summarizeCustomerAnalysis(input.customerAnalysis),
+    ),
     documentContext("Primært løsningsdokument", input.solutionDocument, {
       textLimit: 7000,
       structureLimit: 8,
@@ -907,20 +1393,38 @@ export async function generateProjectArtifact(input: {
 
   const userPrompt = [
     "Generer artefakten som gyldig JSON med feltene title og content_markdown.",
-    input.instructions ? buildDelimitedContext("Brukerbestilling", input.instructions) : "",
+    input.instructions
+      ? buildDelimitedContext("Brukerbestilling", input.instructions)
+      : "",
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
     buildDelimitedContext(
       "Kunnskapsregel",
       "Bruk hele prosjektgrunnlaget som kunnskapsbase: kundedokument, løsningsdokument, støttedokumenter, strategi- og notatdokumenter, lagret analyse og tidligere arbeidstekster. Prioriter det mest oppdaterte og mest konkrete innholdet hvis kilder overlapper.",
     ),
     input.customerAnalysis
-      ? buildDelimitedContext("Kundeanalyse", summarizeCustomerAnalysis(input.customerAnalysis))
+      ? buildDelimitedContext(
+          "Kundeanalyse",
+          summarizeCustomerAnalysis(input.customerAnalysis),
+        )
       : "",
     input.solutionEvaluation
-      ? buildDelimitedContext("Løsningsvurdering", summarizeSolutionEvaluation(input.solutionEvaluation))
+      ? buildDelimitedContext(
+          "Løsningsvurdering",
+          summarizeSolutionEvaluation(input.solutionEvaluation),
+        )
       : "",
-    input.customerDocument ? buildDelimitedContext("Primært kundedokument sammendrag", compactText(input.customerDocument.raw_text, 5000)) : "",
-    input.solutionDocument ? buildDelimitedContext("Primært løsningsdokument sammendrag", compactText(input.solutionDocument.raw_text, 5000)) : "",
+    input.customerDocument
+      ? buildDelimitedContext(
+          "Primært kundedokument sammendrag",
+          compactText(input.customerDocument.raw_text, 5000),
+        )
+      : "",
+    input.solutionDocument
+      ? buildDelimitedContext(
+          "Primært løsningsdokument sammendrag",
+          compactText(input.solutionDocument.raw_text, 5000),
+        )
+      : "",
     supportingContexts,
     artifactKnowledge,
   ]
@@ -964,7 +1468,10 @@ export async function synthesizeAndEvaluateSolution(input: {
       structureLimit: 8,
       structureTextLimit: 160,
     }),
-    buildDelimitedContext("Lagret kundeanalyse", summarizeCustomerAnalysis(input.customerAnalysis)),
+    buildDelimitedContext(
+      "Lagret kundeanalyse",
+      summarizeCustomerAnalysis(input.customerAnalysis),
+    ),
     supportingContexts,
   ]
     .filter(Boolean)
@@ -997,19 +1504,38 @@ export async function answerProjectChat(input: {
 }) {
   const history = input.recentMessages
     .slice(-8)
-    .map((message) => `${message.role === "user" ? "Bruker" : "Assistent"}: ${message.content}`)
+    .map(
+      (message) =>
+        `${message.role === "user" ? "Bruker" : "Assistent"}: ${message.content}`,
+    )
     .join("\n");
 
   const userPrompt = [
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
     input.customerAnalysis
-      ? buildDelimitedContext("Kundeanalyse", JSON.stringify(input.customerAnalysis, null, 2))
+      ? buildDelimitedContext(
+          "Kundeanalyse",
+          JSON.stringify(input.customerAnalysis, null, 2),
+        )
       : "",
     input.solutionEvaluation
-      ? buildDelimitedContext("Løsningsvurdering", JSON.stringify(input.solutionEvaluation, null, 2))
+      ? buildDelimitedContext(
+          "Løsningsvurdering",
+          JSON.stringify(input.solutionEvaluation, null, 2),
+        )
       : "",
-    input.customerDocument ? buildDelimitedContext("Kundedokument", compactText(input.customerDocument.raw_text, 9000)) : "",
-    input.solutionDocument ? buildDelimitedContext("Løsningsdokument", compactText(input.solutionDocument.raw_text, 9000)) : "",
+    input.customerDocument
+      ? buildDelimitedContext(
+          "Kundedokument",
+          compactText(input.customerDocument.raw_text, 9000),
+        )
+      : "",
+    input.solutionDocument
+      ? buildDelimitedContext(
+          "Løsningsdokument",
+          compactText(input.solutionDocument.raw_text, 9000),
+        )
+      : "",
     history ? buildDelimitedContext("Samtalehistorikk", history) : "",
     buildDelimitedContext("Nytt spørsmål", input.question),
   ]
@@ -1046,12 +1572,18 @@ export async function inferProjectMetadataFromCustomerDocument(input: {
   });
 
   return {
-    name: typeof result.name === "string" && result.name.trim() ? result.name.trim() : null,
+    name:
+      typeof result.name === "string" && result.name.trim()
+        ? result.name.trim()
+        : null,
     customer_name:
       typeof result.customer_name === "string" && result.customer_name.trim()
         ? result.customer_name.trim()
         : null,
-    industry: typeof result.industry === "string" && result.industry.trim() ? result.industry.trim() : null,
+    industry:
+      typeof result.industry === "string" && result.industry.trim()
+        ? result.industry.trim()
+        : null,
     description:
       typeof result.description === "string" && result.description.trim()
         ? result.description.trim()
