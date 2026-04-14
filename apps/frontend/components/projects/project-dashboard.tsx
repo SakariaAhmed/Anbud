@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, FileText, Plus, Search, Sparkles } from "lucide-react";
+import { ArrowRight, BarChart3, FileText, FolderOpen, Plus, Search, Sparkles } from "lucide-react";
 
 import type { ProjectSummary } from "@/lib/types";
 
@@ -7,11 +7,11 @@ function statusColor(status: ProjectSummary["status"]) {
   switch (status) {
     case "Klar for sparring":
     case "Løsningsdokument lastet opp":
-      return "text-blue-700";
+      return "text-blue-800 bg-blue-50 border-blue-200";
     case "Kundeanalyse klar":
-      return "text-amber-700";
+      return "text-amber-800 bg-amber-50 border-amber-200";
     default:
-      return "text-muted-foreground";
+      return "text-slate-600 bg-slate-50 border-slate-200";
   }
 }
 
@@ -23,7 +23,7 @@ function statusDot(status: ProjectSummary["status"]) {
     case "Kundeanalyse klar":
       return "bg-amber-500";
     default:
-      return "bg-muted-foreground/50";
+      return "bg-slate-400";
   }
 }
 
@@ -42,170 +42,184 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
     artifacts: projects.reduce((sum, p) => sum + p.artifact_count, 0),
   };
 
+  const stats = [
+    { label: "Totalt prosjekter", value: totals.total, icon: FolderOpen, accent: "border-t-blue-900" },
+    { label: "Kundeanalyser", value: totals.analyses, icon: BarChart3, accent: "border-t-emerald-600" },
+    { label: "Løsningsdokumenter", value: totals.solutionDocs, icon: FileText, accent: "border-t-amber-500" },
+    { label: "Løsningsutkast", value: totals.artifacts, icon: Sparkles, accent: "border-t-violet-600" },
+  ];
+
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-10 lg:px-0">
-      {/* Hero */}
+    <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-8">
+      {/* Page Header */}
       <section className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">
-          Tilbudsarbeidsflate
-        </h1>
-        <p className="mt-2 max-w-2xl text-base text-foreground/70">
-          Last opp kundedokumenter, løsningsdokumenter og støttekontekst.
-          Appen hjelper teamet å forstå kunden og bygge bedre
-          løsningsutkast raskere.
-        </p>
-        <div className="mt-5 flex items-center gap-3">
-          <Link
-            href="/projects/new"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            <Plus className="size-4" />
-            Ny analyse
-          </Link>
-          {projects[0] ? (
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+              Oversikt
+            </p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground">
+              Prosjektoversikt
+            </h1>
+            <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
+              Administrer tilbudsprosjekter, kundeanalyser og løsningsutkast for teamet.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
             <Link
-              href={`/projects/${projects[0].id}`}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              href="/projects/new"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-[13px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-blue-800"
             >
-              Åpne siste prosjekt
-              <ArrowRight className="size-4" />
+              <Plus className="size-3.5" />
+              Nytt prosjekt
             </Link>
-          ) : null}
+          </div>
         </div>
       </section>
 
-      {/* Stats row */}
-      <section className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border shadow-sm sm:grid-cols-4">
-        {[
-          { label: "Prosjekter", value: totals.total },
-          { label: "Kundeanalyser", value: totals.analyses },
-          { label: "Løsningsdokumenter", value: totals.solutionDocs },
-          { label: "Løsningsutkast", value: totals.artifacts },
-        ].map((item) => (
+      {/* Stat Cards */}
+      <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {stats.map((item) => (
           <div
             key={item.label}
-            className="bg-background px-5 py-4"
+            className={`rounded-md border border-border bg-card px-4 py-4 shadow-sm border-t-2 ${item.accent}`}
           >
-            <p className="text-2xl font-bold text-foreground tabular-nums">
+            <div className="flex items-center justify-between">
+              <item.icon className="size-4 text-muted-foreground" />
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">
               {item.value}
             </p>
-            <p className="mt-0.5 text-sm font-medium text-muted-foreground">{item.label}</p>
+            <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {item.label}
+            </p>
           </div>
         ))}
       </section>
 
-      {/* Projects list */}
-      <section className="overflow-hidden rounded-lg border bg-border shadow-sm">
-        <div className="flex items-center justify-between bg-muted px-5 py-3">
-          <h2 className="text-sm font-bold text-foreground">Prosjekter</h2>
-          <p className="text-sm text-muted-foreground">
-            {projects.length} {projects.length === 1 ? "prosjekt" : "prosjekter"}
-          </p>
+      {/* Project Table */}
+      <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between border-b border-border bg-muted/50 px-5 py-3">
+          <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-foreground">
+            Prosjekter
+          </h2>
+          <span className="text-xs text-muted-foreground">
+            {projects.length} {projects.length === 1 ? "prosjekt" : "totalt"}
+          </span>
         </div>
 
         {projects.length === 0 ? (
-          <div className="bg-background py-14 text-center">
-            <Search className="mx-auto size-7 text-muted-foreground/40" />
-            <p className="mt-3 text-base font-semibold text-foreground">
+          <div className="py-16 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-md bg-muted">
+              <Search className="size-5 text-muted-foreground" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-foreground">
               Ingen prosjekter ennå
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Opprett en analyse og last opp et primært kundedokument for å
-              komme i gang.
+              Opprett et prosjekt og last opp kundedokumenter for å komme i gang.
             </p>
             <Link
               href="/projects/new"
-              className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-[13px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-blue-800"
             >
-              <Plus className="size-4" />
-              Opprett første prosjekt
+              <Plus className="size-3.5" />
+              Opprett prosjekt
             </Link>
           </div>
         ) : (
-          <div>
-            {projects.map((project) => (
-              <Link
-                key={project.id}
-                href={`/projects/${project.id}`}
-                className="group flex flex-col gap-1.5 border-t border-border bg-background px-5 py-4 transition-colors hover:bg-muted/60 sm:flex-row sm:items-start sm:justify-between"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2.5">
-                    <h3 className="truncate text-base font-semibold text-foreground group-hover:text-primary">
-                      {project.name}
-                    </h3>
-                    <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
-                      <span
-                        className={`inline-block size-2 rounded-full ${statusDot(project.status)}`}
-                      />
-                      <span className={statusColor(project.status)}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b-2 border-border bg-muted/30">
+                  <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Prosjekt
+                  </th>
+                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Status
+                  </th>
+                  <th className="hidden px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sm:table-cell">
+                    Dok.
+                  </th>
+                  <th className="hidden px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sm:table-cell">
+                    Utkast
+                  </th>
+                  <th className="hidden px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground md:table-cell">
+                    Sist endret
+                  </th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((project) => (
+                  <tr
+                    key={project.id}
+                    className="group border-b border-border last:border-b-0 transition-colors hover:bg-slate-50"
+                  >
+                    <td className="px-5 py-3">
+                      <Link href={`/projects/${project.id}`} className="block">
+                        <p className="text-sm font-semibold text-foreground group-hover:text-primary">
+                          {project.name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {project.customer_name || "Kunde ikke satt"}
+                          {project.industry ? ` · ${project.industry}` : ""}
+                        </p>
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 text-[11px] font-medium ${statusColor(project.status)}`}>
+                        <span className={`inline-block size-1.5 rounded-full ${statusDot(project.status)}`} />
                         {project.status}
                       </span>
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {project.customer_name || "Kunde ikke satt"}
-                    {project.industry ? ` · ${project.industry}` : ""}
-                  </p>
-                  {project.description ? (
-                    <p className="mt-0.5 line-clamp-1 text-sm text-foreground/60">
-                      {project.description}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-4 text-sm text-muted-foreground sm:flex-col sm:items-end sm:gap-1">
-                  <span>{formatDate(project.last_activity_at)}</span>
-                  <span className="flex items-center gap-3">
-                    <span className="flex items-center gap-1">
-                      <FileText className="size-3.5" />
+                    </td>
+                    <td className="hidden px-4 py-3 text-sm tabular-nums text-muted-foreground sm:table-cell">
                       {project.document_count}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Sparkles className="size-3.5" />
+                    </td>
+                    <td className="hidden px-4 py-3 text-sm tabular-nums text-muted-foreground sm:table-cell">
                       {project.artifact_count}
-                    </span>
-                  </span>
-                </div>
-              </Link>
-            ))}
+                    </td>
+                    <td className="hidden px-4 py-3 text-right text-xs text-muted-foreground md:table-cell">
+                      {formatDate(project.last_activity_at)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/projects/${project.id}`}
+                        className="text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100"
+                      >
+                        Åpne <ArrowRight className="ml-1 inline size-3" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
 
-      {/* Workflow guide */}
-      <section className="mt-8 overflow-hidden rounded-lg border bg-muted shadow-sm">
-        <div className="px-5 py-3">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-foreground/60">
-            Arbeidsflyt
-          </h2>
-        </div>
-        <div className="grid gap-px bg-border sm:grid-cols-3">
-          <div className="bg-background px-5 py-4">
-            <p className="text-sm font-bold text-foreground">
-              1. Last opp grunnlag
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Primært kundedokument, løsningsdokument og støttekontekst.
-            </p>
-          </div>
-          <div className="bg-background px-5 py-4">
-            <p className="text-sm font-bold text-foreground">
-              2. Analyser kunden
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Generer kundeanalyse med implisitte krav, risiko, posisjonering
-              og overordnet løsningsdesign.
-            </p>
-          </div>
-          <div className="bg-background px-5 py-4">
-            <p className="text-sm font-bold text-foreground">
-              3. Generer utkast
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Generer et løsningsutkast som bygger på prosjektkonteksten og
-              kundeanalysen.
-            </p>
-          </div>
+      {/* Workflow Steps */}
+      <section className="mt-8 rounded-md border border-border bg-card p-6 shadow-sm">
+        <h2 className="mb-4 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          Arbeidsflyt
+        </h2>
+        <div className="flex items-start gap-4">
+          {[
+            { step: "1", title: "Last opp grunnlag", desc: "Primært kundedokument, løsningsdokument og støttekontekst." },
+            { step: "2", title: "Analyser kunden", desc: "Generer kundeanalyse med krav, risiko og posisjonering." },
+            { step: "3", title: "Generer utkast", desc: "Generer løsningsutkast basert på prosjektkonteksten." },
+          ].map((item, i) => (
+            <div key={item.step} className="flex flex-1 items-start gap-3">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                {item.step}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{item.desc}</p>
+              </div>
+              {i < 2 ? <div className="mt-3.5 hidden h-px flex-1 bg-border lg:block" /> : null}
+            </div>
+          ))}
         </div>
       </section>
     </div>
