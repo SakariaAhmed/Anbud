@@ -77,6 +77,44 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
         </div>
       </section>
 
+      {/* Creative Workbench Spotlight */}
+      <section className="relative mb-8 overflow-hidden rounded-xl border border-slate-900/10 bg-[linear-gradient(135deg,#111827_0%,#0f172a_46%,#29113b_100%)] px-7 py-8 shadow-lg shadow-slate-900/10">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_8%,rgba(124,58,237,0.28),transparent_36%),radial-gradient(circle_at_90%_88%,rgba(217,70,239,0.18),transparent_38%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/60 to-transparent" />
+        <div className="relative max-w-3xl">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-200/80">
+            Arbeidsflate
+          </p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            <span className="bg-gradient-to-r from-violet-200 via-fuchsia-200 to-white bg-clip-text text-transparent">
+              Tilbudsarbeidsflate
+            </span>
+          </h2>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200/[0.82]">
+            Last opp kundedokumenter, analyser med AI, og generer profesjonelle
+            løsningsutkast for teamet.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            <Link
+              href="/projects/new"
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+            >
+              <Plus className="size-4" />
+              Nytt prosjekt
+            </Link>
+            {projects[0] ? (
+              <Link
+                href={`/projects/${projects[0].id}`}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-white/15 bg-white/[0.08] px-4 text-sm font-semibold text-white backdrop-blur transition-colors hover:border-white/30 hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+              >
+                Siste prosjekt
+                <ArrowRight className="size-4" />
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
       {/* Stat Cards */}
       <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {stats.map((item) => (

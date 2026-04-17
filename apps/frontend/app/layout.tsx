@@ -22,10 +22,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <header className="sticky top-0 z-40 border-b border-slate-700/50 bg-slate-900 shadow-md">
               <div className="flex h-[var(--app-header-height)] w-full items-center justify-between pr-6 pl-[calc(var(--app-header-sidebar-offset)+1.25rem)] transition-[padding] duration-300 ease-out lg:pr-10">
                 <div className="flex items-center gap-8">
-                  <Link
-                    href="/"
-                    className="text-sm font-bold uppercase tracking-[0.2em] text-white transition-colors hover:text-blue-300"
-                  >
+                  <Link href="/" className="brand-logo text-white">
                     BIDSITE
                   </Link>
                   <div className="hidden h-5 w-px bg-slate-600 sm:block" />
@@ -52,7 +49,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 </div>
               </div>
             </header>
-            <main>{children}</main>
+            <main className="site-reload-enter">{children}</main>
           </div>
         </TooltipProvider>
       </body>
