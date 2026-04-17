@@ -105,6 +105,376 @@ function getDisplayProfitShares(
   return normalized;
 }
 
+const PIE_NEUTRAL = "rgb(203, 213, 225)";
+const VALUE_CATEGORY_COLORS = {
+  "Høyere produktivitet": "rgb(37, 99, 235)",
+  "Lavere kostnader": "rgb(5, 150, 105)",
+  "Redusert risiko": "rgb(217, 119, 6)",
+  "Bedre brukeropplevelse": "rgb(124, 58, 237)",
+} satisfies Record<(typeof VALUE_LABELS)[number], string>;
+
+const KEYWORD_COLORS = [
+  "rgb(30, 58, 138)",
+  "rgb(14, 116, 144)",
+  "rgb(5, 150, 105)",
+  "rgb(217, 119, 6)",
+  "rgb(124, 58, 237)",
+] as const;
+
+type PieDatum = {
+  id: string;
+  label: string;
+  value: number;
+  color: string;
+};
+
+function getPrimaryValueCategory(
+  item: CustomerAnalysisResult["value_opportunities"][number],
+) {
+  return (
+    item.value_categories.find((value) => VALUE_LABELS.includes(value)) ?? null
+  );
+}
+
+function normalizePieData(data: PieDatum[]) {
+  const sanitized = data.map((item) => ({
+    ...item,
+    value:
+      typeof item.value === "number" && Number.isFinite(item.value)
+        ? Math.max(0, item.value)
+        : 0,
+  }));
+  const total = sanitized.reduce((sum, item) => sum + item.value, 0);
+
+  if (total > 0) {
+    return { data: sanitized, total };
+  }
+
+  const fallback = sanitized.map((item) => ({ ...item, value: 1 }));
+  return {
+    data: fallback,
+    total: fallback.reduce((sum, item) => sum + item.value, 0),
+  };
+}
+
+function DonutChart({
+  data,
+  selectedIndex,
+  onSelect,
+  valueSuffix,
+}: {
+  data: PieDatum[];
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+  valueSuffix: string;
+}) {
+  const { data: normalizedData, total } = normalizePieData(data);
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  let accumulated = 0;
+  const selected = normalizedData[selectedIndex] ?? normalizedData[0];
+
+  return (
+    <div className="relative mx-auto size-64 max-w-full">
+      <svg
+        viewBox="0 0 120 120"
+        className="size-full -rotate-90 overflow-visible"
+        aria-label="Kakediagram"
+      >
+        <circle
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
+          stroke="rgb(226, 232, 240)"
+          strokeWidth="17"
+        />
+        {normalizedData.map((item, index) => {
+          const share = item.value / total;
+          const dashLength = share * circumference;
+          const dashOffset = -accumulated * circumference;
+          accumulated += share;
+
+          return (
+            <circle
+              key={item.id}
+              cx="60"
+              cy="60"
+              r={radius}
+              fill="none"
+              stroke={item.color}
+              strokeWidth={selectedIndex === index ? 20 : 16}
+              strokeDasharray={`${dashLength} ${circumference - dashLength}`}
+              strokeDashoffset={dashOffset}
+              strokeLinecap="butt"
+              className="cursor-pointer transition-all duration-200 outline-none hover:opacity-90 focus-visible:opacity-90"
+              role="button"
+              tabIndex={0}
+              aria-label={`${item.label}: ${item.value}${valueSuffix}`}
+              onClick={() => onSelect(index)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(index);
+                }
+              }}
+            />
+          );
+        })}
+      </svg>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Valgt
+        </span>
+        <span className="mt-1 max-w-32 text-sm font-semibold leading-5 text-foreground">
+          {selected?.label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PieLegend({
+  data,
+  selectedIndex,
+  onSelect,
+  valueSuffix,
+}: {
+  data: PieDatum[];
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+  valueSuffix: string;
+}) {
+  return (
+    <div className="space-y-2">
+      {data.map((item, index) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onSelect(index)}
+          className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+            selectedIndex === index
+              ? "border-primary/45 bg-primary/5"
+              : "border-border/70 bg-background/60 hover:bg-muted/50"
+          }`}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: item.color }}
+            />
+            <span className="truncate text-sm font-medium text-foreground">
+              {item.label}
+            </span>
+          </span>
+          <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+            {item.value}
+            {valueSuffix}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ValuePieModule({
+  opportunities,
+  profitShares,
+  selectedIndex,
+  onSelect,
+}: {
+  opportunities: CustomerAnalysisResult["value_opportunities"];
+  profitShares: number[];
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+}) {
+  const chartData = opportunities.map((item, index) => {
+    const category = getPrimaryValueCategory(item);
+    return {
+      id: `${item.title}-${index}`,
+      label: category ?? item.title,
+      value: profitShares[index] ?? 0,
+      color: category ? VALUE_CATEGORY_COLORS[category] : PIE_NEUTRAL,
+    };
+  });
+  const selected = opportunities[selectedIndex] ?? opportunities[0];
+  const selectedCategory = selected ? getPrimaryValueCategory(selected) : null;
+  const selectedShare = profitShares[selectedIndex] ?? 0;
+
+  if (!opportunities.length || !selected) {
+    return null;
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border border-border/70 bg-background/75 p-5">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Kakefordeling
+          </p>
+          <h4 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-foreground">
+            Profitteffekt per verdi
+          </h4>
+        </div>
+        <span className="rounded-md border border-border/70 bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+          Klikk på en verdi for detaljer
+        </span>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <DonutChart
+          data={chartData}
+          selectedIndex={selectedIndex}
+          onSelect={onSelect}
+          valueSuffix="%"
+        />
+        <div className="space-y-4">
+          <PieLegend
+            data={chartData}
+            selectedIndex={selectedIndex}
+            onSelect={onSelect}
+            valueSuffix="%"
+          />
+          <div className="rounded-lg border border-border/70 bg-card px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Valgt verdi
+                </p>
+                <p
+                  className="mt-1 text-xl font-semibold tracking-[-0.02em]"
+                  style={{
+                    color: selectedCategory
+                      ? VALUE_CATEGORY_COLORS[selectedCategory]
+                      : undefined,
+                  }}
+                >
+                  {selectedCategory ?? selected.title}
+                </p>
+              </div>
+              <span className="rounded-md bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary">
+                {selectedShare}% av profitteffekt
+              </span>
+            </div>
+            <details className="mt-4 group">
+              <summary className="cursor-pointer list-none text-sm font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                Les mer
+              </summary>
+              <div className="mt-3">
+                <MarkdownViewer
+                  content={selected.description}
+                  className="analysis-prose text-[0.98rem] text-muted-foreground"
+                />
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KeywordPieModule({
+  analysis,
+  keywords,
+  selectedIndex,
+  onSelect,
+}: {
+  analysis: CustomerAnalysisResult;
+  keywords: string[];
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+}) {
+  const chartData = keywords.map((keyword, index) => ({
+    id: `${keyword}-${index}`,
+    label: keyword,
+    value: getKeywordMentionCount(analysis, keyword),
+    color: KEYWORD_COLORS[index % KEYWORD_COLORS.length] ?? PIE_NEUTRAL,
+  }));
+  const selectedKeyword = keywords[selectedIndex] ?? keywords[0];
+  const selectedCount = selectedKeyword
+    ? getKeywordMentionCount(analysis, selectedKeyword)
+    : 0;
+  const totalMentions = chartData.reduce((sum, item) => sum + item.value, 0);
+  const selectedShare =
+    totalMentions > 0 ? Math.round((selectedCount / totalMentions) * 100) : 0;
+
+  if (!keywords.length || !selectedKeyword) {
+    return null;
+  }
+
+  const KeywordIcon = getKeywordIcon(selectedKeyword);
+
+  return (
+    <div className="mb-6 rounded-xl border border-border/70 bg-background/75 p-5">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Kakefordeling
+          </p>
+          <h4 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-foreground">
+            Nøkkelord etter antall nevnt
+          </h4>
+        </div>
+        <span className="rounded-md border border-border/70 bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+          Topp 5 signalord
+        </span>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <DonutChart
+          data={chartData}
+          selectedIndex={selectedIndex}
+          onSelect={onSelect}
+          valueSuffix="x"
+        />
+        <div className="space-y-4">
+          <PieLegend
+            data={chartData}
+            selectedIndex={selectedIndex}
+            onSelect={onSelect}
+            valueSuffix="x"
+          />
+          <div className="rounded-lg border border-border/70 bg-card px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className="flex size-10 shrink-0 items-center justify-center rounded-lg text-white"
+                  style={{ backgroundColor: chartData[selectedIndex]?.color }}
+                >
+                  <KeywordIcon className="size-5" />
+                </div>
+                <div>
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    Valgt nøkkelord
+                  </p>
+                  <p className="mt-1 text-xl font-semibold tracking-[-0.02em] text-foreground">
+                    {selectedKeyword}
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-md bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary">
+                {selectedCount}x · {selectedShare}% av topp 5
+              </span>
+            </div>
+            <details className="mt-4 group">
+              <summary className="cursor-pointer list-none text-sm font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                Les mer
+              </summary>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                Nøkkelordet er brukt {selectedCount} ganger i analysert
+                grunnlag. Bruk dette som språk- og arkitektursignal i
+                løsningsbeskrivelsen, spesielt der kunden forventer gjenkjennelig
+                terminologi og tydelig kobling til dokumentgrunnlaget.
+              </p>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function splitLeadSentence(content: string) {
   const trimmed = content.trim();
   if (!trimmed) {
@@ -376,10 +746,30 @@ export function ProjectAnalysisTab({
   const [isEditingAnalysis, setIsEditingAnalysis] = useState(false);
   const [activeSection, setActiveSection] =
     useState<(typeof SECTION_TABS)[number]["value"]>("summary");
+  const [selectedValueIndex, setSelectedValueIndex] = useState(0);
+  const [selectedKeywordIndex, setSelectedKeywordIndex] = useState(0);
 
   useEffect(() => {
     setAnalysisDraft(customerAnalysis?.executive_summary ?? "");
   }, [customerAnalysis?.executive_summary]);
+
+  useEffect(() => {
+    if (
+      customerAnalysis &&
+      selectedValueIndex >= customerAnalysis.value_opportunities.length
+    ) {
+      setSelectedValueIndex(0);
+    }
+  }, [customerAnalysis, selectedValueIndex]);
+
+  useEffect(() => {
+    if (customerAnalysis) {
+      const keywordCount = getTopSignalWords(customerAnalysis).length;
+      if (selectedKeywordIndex >= keywordCount) {
+        setSelectedKeywordIndex(0);
+      }
+    }
+  }, [customerAnalysis, selectedKeywordIndex]);
 
   const customerSummary = customerAnalysis
     ? [
@@ -789,30 +1179,38 @@ export function ProjectAnalysisTab({
               action={renderRegenerateButton("keywords")}
             >
               {topSignalWords.length ? (
-                <div className="space-y-3">
-                  {topSignalWords.map((item, index) => (
-                    <div
-                      key={`${item}-${index}`}
-                      className="flex items-center gap-3 border-b border-border/60 pb-3 text-sm text-foreground last:border-b-0 last:pb-0"
-                    >
-                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
-                        {(() => {
-                          const Icon = getKeywordIcon(item);
-                          return <Icon className="size-4.5" />;
-                        })()}
+                <>
+                  <KeywordPieModule
+                    analysis={customerAnalysis}
+                    keywords={topSignalWords}
+                    selectedIndex={selectedKeywordIndex}
+                    onSelect={setSelectedKeywordIndex}
+                  />
+                  <div className="space-y-3">
+                    {topSignalWords.map((item, index) => (
+                      <div
+                        key={`${item}-${index}`}
+                        className="flex items-center gap-3 border-b border-border/60 pb-3 text-sm text-foreground last:border-b-0 last:pb-0"
+                      >
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
+                          {(() => {
+                            const Icon = getKeywordIcon(item);
+                            return <Icon className="size-4.5" />;
+                          })()}
+                        </div>
+                        <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                          <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium text-foreground">
+                            {item}
+                          </span>
+                          <span className="shrink-0 rounded-full border border-primary/15 bg-primary/6 px-2.5 py-1 text-xs font-semibold text-primary">
+                            {getKeywordMentionCount(customerAnalysis, item)}x
+                            nevnt
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                        <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium text-foreground">
-                          {item}
-                        </span>
-                        <span className="shrink-0 rounded-full border border-primary/15 bg-primary/6 px-2.5 py-1 text-xs font-semibold text-primary">
-                          {getKeywordMentionCount(customerAnalysis, item)}x
-                          nevnt
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <AnalysisTabEmptyState>
                   Ingen gjenbrukte nøkkelord er identifisert ennå.
@@ -828,39 +1226,53 @@ export function ProjectAnalysisTab({
               icon={TrendingUp}
               action={renderRegenerateButton("value")}
             >
-              <div className="space-y-4">
-                {customerAnalysis.value_opportunities.map((item, index) => (
-                  <div
-                    key={`${item.title}-${index}`}
-                    className="border-b border-border/60 pb-4 last:border-b-0 last:pb-0"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <ValueTags
-                          values={item.value_categories
-                            .filter((v) => VALUE_LABELS.includes(v))
-                            .slice(0, 1)}
-                        />
+              {customerAnalysis.value_opportunities.length ? (
+                <>
+                  <ValuePieModule
+                    opportunities={customerAnalysis.value_opportunities}
+                    profitShares={profitShares}
+                    selectedIndex={selectedValueIndex}
+                    onSelect={setSelectedValueIndex}
+                  />
+                  <div className="space-y-4">
+                    {customerAnalysis.value_opportunities.map((item, index) => (
+                      <div
+                        key={`${item.title}-${index}`}
+                        className="border-b border-border/60 pb-4 last:border-b-0 last:pb-0"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <ValueTags
+                              values={item.value_categories
+                                .filter((v) => VALUE_LABELS.includes(v))
+                                .slice(0, 1)}
+                            />
+                          </div>
+                          <span className="inline-flex rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
+                            {profitShares[index] ?? 0}% av profitteffekt
+                          </span>
+                        </div>
+                        <details className="mt-3 group">
+                          <summary className="cursor-pointer list-none text-sm font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                            Les mer
+                          </summary>
+                          <div className="mt-3">
+                            <MarkdownViewer
+                              content={item.description}
+                              className="analysis-prose text-[0.98rem] text-muted-foreground"
+                            />
+                          </div>
+                        </details>
+                        <div className="sr-only">{item.title}</div>
                       </div>
-                      <span className="inline-flex rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
-                        {profitShares[index] ?? 0}% av profitteffekt
-                      </span>
-                    </div>
-                    <details className="mt-3 group">
-                      <summary className="cursor-pointer list-none text-sm font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-                        Les mer
-                      </summary>
-                      <div className="mt-3">
-                        <MarkdownViewer
-                          content={item.description}
-                          className="analysis-prose text-[0.98rem] text-muted-foreground"
-                        />
-                      </div>
-                    </details>
-                    <div className="sr-only">{item.title}</div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : (
+                <AnalysisTabEmptyState>
+                  Ingen verdimuligheter er identifisert ennå.
+                </AnalysisTabEmptyState>
+              )}
             </SectionSurface>
           </TabsContent>
         </Tabs>
