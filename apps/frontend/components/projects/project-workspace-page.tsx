@@ -776,7 +776,7 @@ export function ProjectWorkspacePage({
           {
             "--sidebar-width": `${sidebarWidth}px`,
             "--sidebar-width-icon": "3.5rem",
-            "--sidebar-offset-top": "0px",
+            "--sidebar-offset-top": "var(--app-header-height)",
             "--sidebar-offset-bottom": "0px",
           } as CSSProperties
         }
@@ -898,7 +898,12 @@ export function ProjectWorkspacePage({
         </Sidebar>
 
         <SidebarInset className="min-w-0 bg-transparent">
-          <div className="px-5 py-5 md:px-8 md:py-7">
+          <div
+            className={cn(
+              "relative w-full px-5 py-5 md:px-8 md:py-7",
+              !sidebarOpen && "mx-auto",
+            )}
+          >
             <section className="mb-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="flex min-w-0 items-start gap-3">
@@ -959,7 +964,7 @@ export function ProjectWorkspacePage({
             {activeTab === "documents" ? (
               <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
                 {/* Upload form */}
-                <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+                <div className="relative overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
                   <div>
                     <button
                       type="button"
@@ -1074,7 +1079,7 @@ export function ProjectWorkspacePage({
                 </div>
 
                 {/* Document list */}
-                <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+                <div className="relative overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
                   <div className="bg-muted px-4 py-3">
                     <h3 className="text-sm font-bold text-foreground">
                       Dokumenter i prosjektet

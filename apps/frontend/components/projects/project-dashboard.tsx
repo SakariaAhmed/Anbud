@@ -1,7 +1,63 @@
-import Link from "next/link";
-import { ArrowRight, BarChart3, FileText, FolderOpen, Plus, Search, Sparkles } from "lucide-react";
+"use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  ArrowRight,
+  BarChart3,
+  FileText,
+  FolderOpen,
+  Plus,
+  Search,
+  Sparkles,
+  UploadCloud,
+} from "lucide-react";
+import {
+  useRef,
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+} from "react";
+
+import {
+  DECORATIVE_LOTTIES,
+  DecorativeLottie,
+} from "@/components/projects/decorative-lottie";
 import type { ProjectSummary } from "@/lib/types";
+
+type SpotlightUploadMode = "new_project" | "supporting_document";
+
+function fileTitle(file: File) {
+  return file.name.replace(/\.[^.]+$/, "");
+}
+
+async function uploadProjectDocument({
+  projectId,
+  file,
+  role,
+}: {
+  projectId: string;
+  file: File;
+  role: "primary_customer_document" | "supporting_document";
+}) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("title", fileTitle(file));
+  formData.append("role", role);
+  if (role === "supporting_document") {
+    formData.append("supporting_subtype", "vedlegg");
+  }
+
+  const response = await fetch(`/api/projects/${projectId}/documents`, {
+    method: "POST",
+    body: formData,
+  });
+  const payload = (await response.json()) as { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error || "Kunne ikke laste opp dokumentet.");
+  }
+}
 
 function statusColor(status: ProjectSummary["status"]) {
   switch (status) {
@@ -34,7 +90,50 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function HomepageRefreshAnimation() {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const timeout = window.setTimeout(
+      () => setVisible(false),
+      prefersReducedMotion ? 550 : 1900,
+    );
+
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <div className="bidsite-refresh-loader" aria-hidden="true">
+      <div className="bidsite-refresh-loader__grid" />
+      <div className="bidsite-refresh-loader__mark">
+        <span>b</span>
+        <span>i</span>
+        <span>d</span>
+        <span>s</span>
+        <span>i</span>
+        <span>t</span>
+        <span>e</span>
+      </div>
+      <div className="bidsite-refresh-loader__rule" />
+    </div>
+  );
+}
+
 export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadMode, setUploadMode] =
+    useState<SpotlightUploadMode>("new_project");
+  const [dragActive, setDragActive] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const latestProject = projects[0] ?? null;
+
   const totals = {
     total: projects.length,
     analyses: projects.filter((p) => p.customer_analysis_generated).length,
@@ -49,8 +148,71 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
     { label: "Løsningsutkast", value: totals.artifacts, icon: Sparkles, accent: "border-t-violet-600" },
   ];
 
+  async function handleSpotlightUpload(file: File | null) {
+    if (!file || uploading) return;
+
+    setUploadError("");
+    setUploading(true);
+    try {
+      let projectId = latestProject?.id ?? "";
+
+      if (uploadMode === "new_project" || !projectId) {
+        const response = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: fileTitle(file),
+            customer_name: "",
+            industry: "",
+            description: "",
+          }),
+        });
+        const payload = (await response.json()) as {
+          id?: string;
+          error?: string;
+        };
+        if (!response.ok || !payload.id) {
+          throw new Error(payload.error || "Kunne ikke opprette prosjekt.");
+        }
+        projectId = payload.id;
+        await uploadProjectDocument({
+          projectId,
+          file,
+          role: "primary_customer_document",
+        });
+      } else {
+        await uploadProjectDocument({
+          projectId,
+          file,
+          role: "supporting_document",
+        });
+      }
+
+      router.push(`/projects/${projectId}`);
+    } catch (error) {
+      setUploadError(
+        error instanceof Error ? error.message : "Kunne ikke laste opp dokumentet.",
+      );
+      setUploading(false);
+    }
+  }
+
+  function onDrop(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setDragActive(false);
+    void handleSpotlightUpload(event.dataTransfer.files?.[0] ?? null);
+  }
+
+  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFile = event.target.files?.[0] ?? null;
+    void handleSpotlightUpload(selectedFile);
+    event.target.value = "";
+  }
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-8">
+    <>
+      <HomepageRefreshAnimation />
+      <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-8">
       {/* Page Header */}
       <section className="mb-8">
         <div className="flex items-end justify-between">
@@ -65,62 +227,140 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               Administrer tilbudsprosjekter, kundeanalyser og løsningsutkast for teamet.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/projects/new"
-              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-[13px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-blue-800"
-            >
-              <Plus className="size-3.5" />
-              Nytt prosjekt
-            </Link>
-          </div>
         </div>
       </section>
 
       {/* Creative Workbench Spotlight */}
-      <section className="relative mb-8 overflow-hidden rounded-xl border border-slate-900/10 bg-[linear-gradient(135deg,#111827_0%,#0f172a_46%,#29113b_100%)] px-7 py-8 shadow-lg shadow-slate-900/10">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_8%,rgba(124,58,237,0.28),transparent_36%),radial-gradient(circle_at_90%_88%,rgba(217,70,239,0.18),transparent_38%)]" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/60 to-transparent" />
-        <div className="relative max-w-3xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-200/80">
-            Arbeidsflate
-          </p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            <span className="bg-gradient-to-r from-violet-200 via-fuchsia-200 to-white bg-clip-text text-transparent">
-              Tilbudsarbeidsflate
-            </span>
-          </h2>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200/[0.82]">
-            Last opp kundedokumenter, analyser med AI, og generer profesjonelle
-            løsningsutkast for teamet.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Link
-              href="/projects/new"
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
-            >
-              <Plus className="size-4" />
-              Nytt prosjekt
-            </Link>
-            {projects[0] ? (
+      <section className="relative mb-8 overflow-hidden rounded-xl border border-blue-100/25 bg-slate-950/82 px-7 py-8 shadow-[0_24px_70px_rgba(15,23,42,0.22)] backdrop-blur-2xl">
+        <div className="pointer-events-none absolute -left-16 -top-24 h-64 w-64 rounded-full bg-blue-500/18 blur-3xl" />
+        <div className="pointer-events-none absolute left-[38%] top-[-6.5rem] h-56 w-56 rounded-full bg-slate-100/8 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-[-7rem] right-[-4rem] h-72 w-72 rounded-full bg-blue-950/42 blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(15,23,42,0.94)_0%,rgba(30,64,175,0.66)_54%,rgba(15,23,42,0.88)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-white/[0.04] backdrop-blur-2xl" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.18),rgba(255,255,255,0.06)_30%,rgba(255,255,255,0.015)_62%,rgba(255,255,255,0.08))]" />
+        <DecorativeLottie
+          src={DECORATIVE_LOTTIES.dataOrbit}
+          className="pointer-events-none absolute -bottom-8 left-[44%] hidden size-52 opacity-30 mix-blend-screen blur-[0.2px] lg:block"
+        />
+        <div className="pointer-events-none absolute inset-x-4 top-4 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-4 bottom-4 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+        <div className="relative grid gap-7 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
+          <div className="max-w-3xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-100/80">
+              Arbeidsflate
+            </p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
+              <span className="text-slate-50">
+                Tilbudsarbeidsflate
+              </span>
+            </h2>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-100/90">
+              Last opp kundedokumenter, analyser med AI, og generer profesjonelle
+              løsningsutkast for teamet.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
               <Link
-                href={`/projects/${projects[0].id}`}
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-white/15 bg-white/[0.08] px-4 text-sm font-semibold text-white backdrop-blur transition-colors hover:border-white/30 hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+                href="/projects/new"
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
               >
-                Siste prosjekt
-                <ArrowRight className="size-4" />
+                <Plus className="size-4" />
+                Nytt prosjekt
               </Link>
+              {latestProject ? (
+                <Link
+                  href={`/projects/${latestProject.id}`}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-white/20 bg-white/[0.08] px-4 text-sm font-semibold text-white backdrop-blur transition-colors hover:border-white/35 hover:bg-white/[0.13] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  Siste prosjekt
+                  <ArrowRight className="size-4" />
+                </Link>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden rounded-lg border border-white/20 bg-white/[0.08] p-3 shadow-sm backdrop-blur-md">
+            <DecorativeLottie
+              src={DECORATIVE_LOTTIES.documentFlight}
+              className="pointer-events-none absolute -right-12 top-14 size-44 opacity-20 mix-blend-screen"
+              speed={0.42}
+            />
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setUploadMode("new_project")}
+                className={`h-8 rounded-md px-2 text-xs font-semibold transition-colors ${
+                  uploadMode === "new_project"
+                    ? "bg-white text-slate-950"
+                    : "bg-white/[0.07] text-slate-100 hover:bg-white/[0.12]"
+                }`}
+              >
+                Nytt prosjekt
+              </button>
+              <button
+                type="button"
+                disabled={!latestProject}
+                onClick={() => setUploadMode("supporting_document")}
+                className={`h-8 rounded-md px-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                  uploadMode === "supporting_document"
+                    ? "bg-white text-slate-950"
+                    : "bg-white/[0.07] text-slate-100 hover:bg-white/[0.12]"
+                }`}
+              >
+                Støttedokument
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.txt,.md"
+              className="sr-only"
+              onChange={onFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setDragActive(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={onDrop}
+              disabled={uploading}
+              className={`relative z-10 flex min-h-36 w-full flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition-colors disabled:cursor-wait ${
+                dragActive
+                  ? "border-white bg-white/[0.16]"
+                  : "border-white/30 bg-slate-950/10 hover:bg-white/[0.10]"
+              }`}
+            >
+              <UploadCloud className="size-7 text-blue-100" />
+              <span className="mt-3 text-sm font-semibold text-white">
+                {uploading ? "Laster opp ..." : "Slipp kundedokument her"}
+              </span>
+              <span className="mt-1 text-xs leading-5 text-slate-100/75">
+                {uploadMode === "new_project"
+                  ? "Oppretter prosjekt og lagrer som primært kundedokument."
+                  : `Legges som støtte i ${latestProject?.name ?? "siste prosjekt"}.`}
+              </span>
+            </button>
+            {uploadError ? (
+              <p className="mt-3 rounded-md border border-red-200/40 bg-red-950/30 px-3 py-2 text-xs text-red-100">
+                {uploadError}
+              </p>
             ) : null}
           </div>
         </div>
       </section>
 
       {/* Stat Cards */}
-      <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <section className="relative mb-8 grid grid-cols-2 gap-4 overflow-hidden sm:grid-cols-4">
         {stats.map((item) => (
           <div
             key={item.label}
-            className={`rounded-md border border-border bg-card px-4 py-4 shadow-sm border-t-2 ${item.accent}`}
+            className={`relative rounded-md border border-border bg-card px-4 py-4 shadow-sm border-t-2 ${item.accent}`}
           >
             <div className="flex items-center justify-between">
               <item.icon className="size-4 text-muted-foreground" />
@@ -260,6 +500,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
           ))}
         </div>
       </section>
-    </div>
+      </div>
+    </>
   );
 }
