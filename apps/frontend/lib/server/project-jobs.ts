@@ -328,6 +328,11 @@ export function queueHighLevelDesignJob(input: { projectId: string }) {
         high_level_architecture_mermaid:
           highLevelDesign.high_level_architecture_mermaid,
       },
+      {
+        previousAnalysis: customerAnalysis,
+        updatedSections: ["design"],
+        historySource: "high_level_design_update",
+      },
     );
 
     const projectSnapshot = await getProjectSnapshot(input.projectId);

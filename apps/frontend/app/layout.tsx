@@ -17,10 +17,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-screen bg-background text-foreground antialiased">
         <TooltipProvider>
           <div className="min-h-screen">
-            <header className="sticky top-0 z-[60] border-b border-slate-700/50 bg-slate-900 shadow-md">
+            <header
+              className="sticky top-0 z-[60] border-b border-slate-700/50 bg-slate-900 shadow-md"
+              data-app-header="true"
+            >
               <div className="flex h-[var(--app-header-height)] w-full items-center justify-between px-6 lg:px-10">
                 <div className="flex items-center gap-8">
-                  <Link href="/" className="brand-logo text-white">
+                  <Link
+                    href="/"
+                    className="brand-logo text-white"
+                    data-brand-anchor="true"
+                  >
                     bidsite
                   </Link>
                   <div className="hidden h-5 w-px bg-slate-600 sm:block" />

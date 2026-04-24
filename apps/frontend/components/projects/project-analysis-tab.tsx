@@ -9,6 +9,7 @@ import {
   Cpu,
   Database,
   FilePenLine,
+  History,
   KeyRound,
   ListChecks,
   RefreshCw,
@@ -20,18 +21,29 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
+import { MermaidDiagram } from "@/components/projects/mermaid-diagram";
 import {
   AnalysisTabEmptyState,
   VALUE_LABELS,
   ValueTags,
 } from "@/components/projects/project-workspace-shared";
 import type {
+  CustomerAnalysisHistorySource,
   CustomerAnalysisResult,
   CustomerAnalysisSection,
+  CustomerAnalysisSectionHistoryEntry,
+  CustomerAnalysisSectionSnapshotMap,
 } from "@/lib/types";
 
 function SectionSurface({
@@ -67,6 +79,365 @@ function SectionSurface({
       </div>
       <div className="px-5 py-5 md:px-6 md:py-6">{children}</div>
     </section>
+  );
+}
+
+function formatHistoryTimestamp(value: string) {
+  return new Intl.DateTimeFormat("nb-NO", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function historySourceLabel(source: CustomerAnalysisHistorySource) {
+  switch (source) {
+    case "full_regeneration":
+      return "Full regenerering";
+    case "section_regeneration":
+      return "Seksjon regenerert";
+    case "manual_edit":
+      return "Manuell lagring";
+    case "high_level_design_update":
+      return "Designoppdatering";
+  }
+}
+
+function HistoryCopyCard({
+  title,
+  content,
+}: {
+  title: string;
+  content: string;
+}) {
+  if (!content.trim()) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/80 px-4 py-4">
+      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {title}
+      </p>
+      <MarkdownViewer
+        content={content}
+        className="analysis-prose mt-3 max-w-none text-[0.98rem] text-foreground"
+      />
+    </div>
+  );
+}
+
+function HistoryBulletList({
+  title,
+  items,
+  emptyText,
+}: {
+  title: string;
+  items: string[];
+  emptyText: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/80 px-4 py-4">
+      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {title}
+      </p>
+      {items.length ? (
+        <div className="mt-3 space-y-2.5">
+          {items.map((item, index) => (
+            <div
+              key={`${title}-${index}`}
+              className="rounded-md border border-border/60 bg-card px-3 py-3"
+            >
+              <MarkdownViewer
+                content={item}
+                className="analysis-prose max-w-none text-[0.97rem] text-foreground"
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          {emptyText}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SectionHistoryContent({
+  section,
+  snapshot,
+}: {
+  section: CustomerAnalysisSection;
+  snapshot: CustomerAnalysisSectionHistoryEntry["snapshot"];
+}) {
+  switch (section) {
+    case "summary": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["summary"];
+      return (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <HistoryCopyCard
+            title="Kundesituasjon"
+            content={value.customer_profile_summary}
+          />
+          <HistoryCopyCard
+            title="Kundens mål"
+            content={value.customer_goals_summary}
+          />
+        </div>
+      );
+    }
+    case "strategy": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["strategy"];
+      return (
+        <div className="space-y-4">
+          <HistoryCopyCard
+            title="Arbeidstekst"
+            content={value.executive_summary}
+          />
+          <HistoryBulletList
+            title="Posisjoneringsspor"
+            items={value.positioning_recommendations}
+            emptyText="Ingen posisjoneringsspor var lagret i denne versjonen."
+          />
+        </div>
+      );
+    }
+    case "design": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["design"];
+      return (
+        <div className="space-y-4">
+          <HistoryCopyCard
+            title="High-level design"
+            content={value.high_level_solution_design}
+          />
+          {value.high_level_architecture_mermaid.trim() ? (
+            <div className="rounded-lg border border-border/70 bg-background/80 px-4 py-4">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Arkitekturdiagram
+              </p>
+              <div className="mt-4 rounded-lg border border-border/60 bg-white p-3">
+                <MermaidDiagram
+                  chart={value.high_level_architecture_mermaid}
+                  title="Tidligere arkitekturdiagram"
+                  downloadName="tidligere-arkitekturdiagram"
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+    case "risks": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["risks"];
+      return (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <HistoryBulletList
+            title="Risiko for oss"
+            items={value.risks_for_us ?? []}
+            emptyText="Ingen leverandør-/tilbudsrisiko i denne versjonen."
+          />
+          <HistoryBulletList
+            title="Risiko for kunden"
+            items={value.risks_for_customer ?? value.risks}
+            emptyText="Ingen kunderisiko i denne versjonen."
+          />
+        </div>
+      );
+    }
+    case "needs": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["needs"];
+      return (
+        <div className="space-y-4">
+          {value.implicit_requirements.length ? (
+            <div className="space-y-3">
+              {value.implicit_requirements.map((item, index) => (
+                <article
+                  key={`${item.title}-${index}`}
+                  className="rounded-lg border border-border/70 bg-background/80 px-4 py-4"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
+                      {item.importance}
+                    </span>
+                    <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">
+                      {item.category}
+                    </span>
+                  </div>
+                  <h4 className="mt-3 text-base font-semibold text-foreground">
+                    {item.title}
+                  </h4>
+                  <MarkdownViewer
+                    content={item.description}
+                    className="analysis-prose mt-2 max-w-none text-[0.97rem] text-muted-foreground"
+                  />
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm leading-6 text-muted-foreground">
+              Ingen underliggende behov var lagret i denne versjonen.
+            </p>
+          )}
+        </div>
+      );
+    }
+    case "keywords": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["keywords"];
+      return (
+        <div className="flex flex-wrap gap-2">
+          {value.signal_words.length ? (
+            value.signal_words.map((item, index) => (
+              <span
+                key={`${item}-${index}`}
+                className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-2 text-sm font-medium text-foreground"
+              >
+                <span>{item}</span>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                  {value.signal_word_counts?.[item] ?? 1}x
+                </span>
+              </span>
+            ))
+          ) : (
+            <p className="text-sm leading-6 text-muted-foreground">
+              Ingen nøkkelord var lagret i denne versjonen.
+            </p>
+          )}
+        </div>
+      );
+    }
+    case "value": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["value"];
+      return (
+        <div className="space-y-4">
+          {value.value_opportunities.length ? (
+            value.value_opportunities.map((item, index) => (
+              <article
+                key={`${item.title}-${index}`}
+                className="rounded-lg border border-border/70 bg-background/80 px-4 py-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <h4 className="text-base font-semibold text-foreground">
+                    {item.title}
+                  </h4>
+                  <ValueTags values={item.value_categories} />
+                </div>
+                <MarkdownViewer
+                  content={item.description}
+                  className="analysis-prose mt-3 max-w-none text-[0.98rem] text-muted-foreground"
+                />
+              </article>
+            ))
+          ) : (
+            <p className="text-sm leading-6 text-muted-foreground">
+              Ingen verdimuligheter var lagret i denne versjonen.
+            </p>
+          )}
+        </div>
+      );
+    }
+  }
+}
+
+function SectionHistoryPanel({
+  analysis,
+  section,
+}: {
+  analysis: CustomerAnalysisResult;
+  section: CustomerAnalysisSection;
+}) {
+  const entries = analysis.section_histories?.[section] ?? [];
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (
+      selectedHistoryId &&
+      !entries.some((entry) => entry.id === selectedHistoryId)
+    ) {
+      setSelectedHistoryId(null);
+    }
+  }, [entries, selectedHistoryId]);
+
+  if (!entries.length) {
+    return null;
+  }
+
+  const selectedEntry =
+    entries.find((entry) => entry.id === selectedHistoryId) ?? null;
+
+  return (
+    <details className="group mt-6 overflow-hidden rounded-xl border border-border/70 bg-slate-50/80">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:text-slate-950 [&::-webkit-details-marker]:hidden">
+        <span className="inline-flex items-center gap-2">
+          <History className="size-4" />
+          Tidligere seksjoner
+        </span>
+        <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-500 shadow-sm">
+          {entries.length}
+        </span>
+      </summary>
+      <div className="border-t border-border/70 px-4 py-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Velg lagret versjon
+            </p>
+            <Select
+              value={selectedHistoryId ?? undefined}
+              onValueChange={setSelectedHistoryId}
+            >
+              <SelectTrigger className="mt-2 h-10 w-full max-w-full bg-white">
+                <SelectValue placeholder="Velg en tidligere seksjon" />
+              </SelectTrigger>
+              <SelectContent align="start" className="max-h-80">
+                {entries.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    {`${formatHistoryTimestamp(entry.created_at)} · ${historySourceLabel(entry.source)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            type="button"
+            variant={selectedEntry ? "outline" : "secondary"}
+            size="sm"
+            onClick={() => setSelectedHistoryId(null)}
+            disabled={!selectedEntry}
+          >
+            Nyeste seksjon
+          </Button>
+        </div>
+
+        {selectedEntry ? (
+          <div className="mt-4 rounded-xl border border-border/70 bg-white/90 p-4 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {formatHistoryTimestamp(selectedEntry.created_at)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {historySourceLabel(selectedEntry.source)}
+                </p>
+              </div>
+            </div>
+            <SectionHistoryContent
+              section={section}
+              snapshot={selectedEntry.snapshot}
+            />
+          </div>
+        ) : (
+          <p className="mt-4 text-sm leading-6 text-muted-foreground">
+            Nyeste seksjon vises allerede over. Velg en tidligere versjon i
+            listen for å se innholdet.
+          </p>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -1308,6 +1679,7 @@ export function ProjectAnalysisTab({
                   className="artifact-markdown text-foreground"
                 />
               )}
+              <SectionHistoryPanel analysis={customerAnalysis} section="summary" />
             </SectionSurface>
           </TabsContent>
 
@@ -1416,6 +1788,7 @@ export function ProjectAnalysisTab({
                   ) : null}
                 </div>
               </div>
+              <SectionHistoryPanel analysis={customerAnalysis} section="strategy" />
             </SectionSurface>
           </TabsContent>
 
@@ -1426,14 +1799,42 @@ export function ProjectAnalysisTab({
               icon={Compass}
               action={renderRegenerateButton("design", "Regenerer design")}
             >
-              <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-12 text-center">
-                <p className="text-lg font-semibold text-foreground">
-                  Coming soon
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  High-level design-visningen kommer i en senere iterasjon.
-                </p>
-              </div>
+              {customerAnalysis.high_level_solution_design.trim() ||
+              customerAnalysis.high_level_architecture_mermaid.trim() ? (
+                <div className="space-y-5">
+                  {customerAnalysis.high_level_solution_design.trim() ? (
+                    <div className="rounded-xl border border-border/70 bg-background/80 px-5 py-5">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        Arkitekturretning
+                      </p>
+                      <MarkdownViewer
+                        content={customerAnalysis.high_level_solution_design}
+                        className="analysis-prose mt-3 max-w-none text-[1rem] text-foreground"
+                      />
+                    </div>
+                  ) : null}
+                  {customerAnalysis.high_level_architecture_mermaid.trim() ? (
+                    <div className="rounded-xl border border-border/70 bg-white p-4 shadow-sm">
+                      <MermaidDiagram
+                        chart={customerAnalysis.high_level_architecture_mermaid}
+                        title="Overordnet arkitekturdiagram"
+                        downloadName="high-level-arkitektur"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-12 text-center">
+                  <p className="text-lg font-semibold text-foreground">
+                    Ingen design lagret ennå
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Regenerer design-delen når du vil få en oppdatert
+                    anbefaling og et nytt diagram.
+                  </p>
+                </div>
+              )}
+              <SectionHistoryPanel analysis={customerAnalysis} section="design" />
             </SectionSurface>
           </TabsContent>
 
@@ -1460,6 +1861,7 @@ export function ProjectAnalysisTab({
                   tone={1}
                 />
               </div>
+              <SectionHistoryPanel analysis={customerAnalysis} section="risks" />
             </SectionSurface>
           </TabsContent>
 
@@ -1485,6 +1887,7 @@ export function ProjectAnalysisTab({
                   Ingen underliggende behov er identifisert ennå.
                 </AnalysisTabEmptyState>
               )}
+              <SectionHistoryPanel analysis={customerAnalysis} section="needs" />
             </SectionSurface>
           </TabsContent>
 
@@ -1542,6 +1945,7 @@ export function ProjectAnalysisTab({
                   Ingen gjenbrukte nøkkelord er identifisert ennå.
                 </AnalysisTabEmptyState>
               )}
+              <SectionHistoryPanel analysis={customerAnalysis} section="keywords" />
             </SectionSurface>
           </TabsContent>
 
@@ -1608,6 +2012,7 @@ export function ProjectAnalysisTab({
                   Ingen verdimuligheter er identifisert ennå.
                 </AnalysisTabEmptyState>
               )}
+              <SectionHistoryPanel analysis={customerAnalysis} section="value" />
             </SectionSurface>
           </TabsContent>
         </Tabs>

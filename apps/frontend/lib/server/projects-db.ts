@@ -9,10 +9,16 @@ import {
   encryptJson,
   encryptString,
 } from "@/lib/server/crypto";
+import {
+  appendCustomerAnalysisSectionHistory,
+  CUSTOMER_ANALYSIS_SECTIONS,
+} from "@/lib/customer-analysis-history";
 import type {
   ChatMessage,
   ChatMessageRole,
+  CustomerAnalysisHistorySource,
   CustomerAnalysisResult,
+  CustomerAnalysisSection,
   GeneratedArtifact,
   GeneratedArtifactType,
   ProjectMetadataInference,
@@ -158,6 +164,7 @@ const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   value_opportunities: [],
   positioning_recommendations: [],
   executive_summary: "",
+  section_histories: {},
 };
 
 const SOLUTION_EVALUATION_EMPTY: SolutionEvaluationResult = {
@@ -1047,8 +1054,24 @@ export async function saveCustomerAnalysis(
   projectId: string,
   sourceDocumentIds: string[],
   result: CustomerAnalysisResult,
+  options?: {
+    previousAnalysis?: CustomerAnalysisResult | null;
+    updatedSections?: CustomerAnalysisSection[];
+    historySource?: CustomerAnalysisHistorySource;
+  },
 ) {
   const supabase = createServiceClient();
+  const previousAnalysis =
+    options && "previousAnalysis" in options
+      ? (options.previousAnalysis ?? null)
+      : await getCustomerAnalysis(projectId);
+  const resultWithHistory = appendCustomerAnalysisSectionHistory({
+    previousAnalysis,
+    nextAnalysis: result,
+    sections: options?.updatedSections ?? [...CUSTOMER_ANALYSIS_SECTIONS],
+    source: options?.historySource ?? "full_regeneration",
+  });
+
   await supabase.from("customer_analyses").delete().eq("project_id", projectId);
 
   const { data, error } = await supabase
@@ -1056,7 +1079,7 @@ export async function saveCustomerAnalysis(
     .insert({
       project_id: projectId,
       source_document_ids: sourceDocumentIds,
-      result_json: encryptJson(result),
+      result_json: encryptJson(resultWithHistory),
     })
     .select("*")
     .single<CustomerAnalysisRow>();
