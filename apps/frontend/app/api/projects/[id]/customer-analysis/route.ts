@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
 import {
   analyzeCustomerDocuments,
   regenerateCustomerAnalysisSection,
@@ -16,15 +17,7 @@ import type { CustomerAnalysisSection } from "@/lib/types";
 function isCustomerAnalysisSection(
   value: unknown,
 ): value is CustomerAnalysisSection {
-  return (
-    value === "summary" ||
-    value === "strategy" ||
-    value === "design" ||
-    value === "risks" ||
-    value === "needs" ||
-    value === "keywords" ||
-    value === "value"
-  );
+  return CUSTOMER_ANALYSIS_SECTIONS.includes(value as CustomerAnalysisSection);
 }
 
 export async function POST(
@@ -93,6 +86,13 @@ export async function POST(
         ...supportingDocuments.map((document) => document.id),
       ],
       result,
+      {
+        previousAnalysis: existingAnalysis,
+        updatedSections: section ? [section] : [...CUSTOMER_ANALYSIS_SECTIONS],
+        historySource: section
+          ? "section_regeneration"
+          : "full_regeneration",
+      },
     );
 
     const project = await getProjectSnapshot(id);
@@ -160,6 +160,11 @@ export async function PUT(
       {
         ...existingAnalysis,
         executive_summary: analysisText,
+      },
+      {
+        previousAnalysis: existingAnalysis,
+        updatedSections: ["strategy"],
+        historySource: "manual_edit",
       },
     );
 

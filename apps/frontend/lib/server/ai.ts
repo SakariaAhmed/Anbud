@@ -1,5 +1,6 @@
 import "server-only";
 
+import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import {
   buildChatPrompt,
   buildCustomerAnalysisPrompt,
@@ -1156,6 +1157,7 @@ export async function regenerateCustomerAnalysisSection(input: {
   customerAnalysis: CustomerAnalysisResult;
 }) {
   const config = CUSTOMER_ANALYSIS_SECTION_CONFIG[input.section];
+  const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
   const supportingContexts = input.supportingDocuments
     .slice(0, 6)
     .map((document, index) =>
@@ -1204,7 +1206,7 @@ export async function regenerateCustomerAnalysisSection(input: {
     supportingContexts,
     buildDelimitedContext(
       "Eksisterende kundeanalyse",
-      JSON.stringify(input.customerAnalysis, null, 2),
+      JSON.stringify(customerAnalysis, null, 2),
     ),
   ]
     .filter(Boolean)
@@ -1224,7 +1226,7 @@ export async function regenerateCustomerAnalysisSection(input: {
 
   return normalizeCustomerAnalysisResult(
     {
-      ...input.customerAnalysis,
+      ...customerAnalysis,
       ...patch,
     },
     { signalSourceText },
@@ -1237,6 +1239,7 @@ export async function generateHighLevelDesign(input: {
   supportingDocuments: ProjectDocumentDetail[];
   customerAnalysis: CustomerAnalysisResult;
 }) {
+  const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
   const supportingContexts = input.supportingDocuments
     .slice(0, 4)
     .map((document, index) =>
@@ -1258,7 +1261,7 @@ export async function generateHighLevelDesign(input: {
     }),
     buildDelimitedContext(
       "Eksisterende kundeanalyse",
-      summarizeCustomerAnalysis(input.customerAnalysis),
+      summarizeCustomerAnalysis(customerAnalysis),
     ),
     supportingContexts
       ? buildDelimitedContext(
@@ -1284,10 +1287,10 @@ export async function generateHighLevelDesign(input: {
   const highLevelSolutionDesign = dedupeSummary(
     result.high_level_solution_design || "",
     [
-      input.customerAnalysis.customer_profile_summary,
-      input.customerAnalysis.customer_goals_summary,
-      ...input.customerAnalysis.positioning_recommendations,
-      input.customerAnalysis.executive_summary,
+      customerAnalysis.customer_profile_summary,
+      customerAnalysis.customer_goals_summary,
+      ...customerAnalysis.positioning_recommendations,
+      customerAnalysis.executive_summary,
     ],
   );
 
@@ -1515,7 +1518,11 @@ export async function answerProjectChat(input: {
     input.customerAnalysis
       ? buildDelimitedContext(
           "Kundeanalyse",
-          JSON.stringify(input.customerAnalysis, null, 2),
+          JSON.stringify(
+            stripCustomerAnalysisHistory(input.customerAnalysis),
+            null,
+            2,
+          ),
         )
       : "",
     input.solutionEvaluation

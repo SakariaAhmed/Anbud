@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,6 +16,7 @@ import {
 import {
   useRef,
   useEffect,
+  useLayoutEffect,
   useState,
   type ChangeEvent,
   type DragEvent,
@@ -90,37 +92,368 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+const refreshEase = [0.76, 0, 0.24, 1] as const;
+
 function HomepageRefreshAnimation() {
+  const reduceMotion = useReducedMotion();
+  const markRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(true);
+  const [phase, setPhase] = useState<"intro" | "move" | "settled">("intro");
+  const [metricsReady, setMetricsReady] = useState(false);
+  const [markMetrics, setMarkMetrics] = useState({
+    startX: 0,
+    startY: 0,
+    targetX: 0,
+    targetY: 0,
+    startWidth: 0,
+    targetWidth: 0,
+    startFontSize: 88,
+    targetFontSize: 21,
+    startLineHeight: 82,
+    targetLineHeight: 20,
+    startLetterSpacing: -5.2,
+    targetLetterSpacing: -1.2,
+  });
+
+  useLayoutEffect(() => {
+    const phaseValue = visible ? (metricsReady ? phase : "boot") : "done";
+
+    document.body.dataset.homeLoader = phaseValue;
+
+    return () => {
+      delete document.body.dataset.homeLoader;
+    };
+  }, [metricsReady, phase, visible]);
+
+  useLayoutEffect(() => {
+    if (!visible) return;
+
+    const updateHandoffTransform = () => {
+      const anchor = document.querySelector<HTMLElement>("[data-brand-anchor='true']");
+      if (!anchor) return;
+
+      const anchorRect = anchor.getBoundingClientRect();
+      const anchorStyle = window.getComputedStyle(anchor);
+      const targetFontSize = Number.parseFloat(anchorStyle.fontSize) || 21;
+      const targetLetterSpacing =
+        Number.parseFloat(anchorStyle.letterSpacing) || targetFontSize * -0.06;
+      const targetLineHeightRaw = Number.parseFloat(anchorStyle.lineHeight);
+      const targetLineHeight = Number.isFinite(targetLineHeightRaw)
+        ? targetLineHeightRaw
+        : targetFontSize * 0.92;
+
+      const startFontSize = reduceMotion
+        ? targetFontSize
+        : Math.max(targetFontSize * 3.8, Math.min(window.innerWidth * 0.108, 112));
+      const scaleRatio = startFontSize / targetFontSize;
+      const startLineHeight = targetLineHeight * scaleRatio;
+      const startLetterSpacing = targetLetterSpacing * scaleRatio;
+      const startWidth = anchorRect.width * scaleRatio;
+      const startX = window.innerWidth / 2 - startWidth / 2;
+      const startY = window.innerHeight / 2 - startLineHeight / 2;
+      const targetX = anchorRect.left;
+      const targetY = anchorRect.top + (anchorRect.height - targetLineHeight) / 2;
+
+      setMarkMetrics({
+        startX,
+        startY,
+        targetX,
+        targetY,
+        startWidth,
+        targetWidth: anchorRect.width,
+        startFontSize,
+        targetFontSize,
+        startLineHeight,
+        targetLineHeight,
+        startLetterSpacing,
+        targetLetterSpacing,
+      });
+      setMetricsReady(true);
+    };
+
+    updateHandoffTransform();
+    window.addEventListener("resize", updateHandoffTransform);
+
+    return () => {
+      window.removeEventListener("resize", updateHandoffTransform);
+    };
+  }, [reduceMotion, visible]);
 
   useEffect(() => {
-    const prefersReducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    const timeout = window.setTimeout(
+    if (!visible) return;
+
+    const moveTimeout = window.setTimeout(
+      () => setPhase("move"),
+      reduceMotion ? 90 : 900,
+    );
+    const settledTimeout = window.setTimeout(
+      () => setPhase("settled"),
+      reduceMotion ? 250 : 1680,
+    );
+    const hideTimeout = window.setTimeout(
       () => setVisible(false),
-      prefersReducedMotion ? 550 : 1900,
+      reduceMotion ? 420 : 1980,
     );
 
-    return () => window.clearTimeout(timeout);
-  }, []);
-
-  if (!visible) return null;
+    return () => {
+      window.clearTimeout(moveTimeout);
+      window.clearTimeout(settledTimeout);
+      window.clearTimeout(hideTimeout);
+    };
+  }, [reduceMotion, visible]);
 
   return (
-    <div className="bidsite-refresh-loader" aria-hidden="true">
-      <div className="bidsite-refresh-loader__grid" />
-      <div className="bidsite-refresh-loader__mark">
-        <span>b</span>
-        <span>i</span>
-        <span>d</span>
-        <span>s</span>
-        <span>i</span>
-        <span>t</span>
-        <span>e</span>
-      </div>
-      <div className="bidsite-refresh-loader__rule" />
-    </div>
+    <AnimatePresence>
+      {visible && metricsReady ? (
+        <motion.div
+          aria-hidden="true"
+          className="bidsite-refresh-loader"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{
+            opacity: 0,
+            transition: {
+              delay: reduceMotion ? 0.08 : 0.12,
+              duration: reduceMotion ? 0.16 : 0.24,
+              ease: "easeOut",
+            },
+          }}
+        >
+          <motion.div
+            className="bidsite-refresh-loader__halo"
+            initial={{ opacity: 0, scale: reduceMotion ? 1 : 0.82 }}
+            animate={
+              phase === "intro"
+                ? {
+                    opacity: 1,
+                    scale: 1,
+                    transition: {
+                      duration: reduceMotion ? 0.2 : 0.78,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  }
+                : {
+                    opacity: 0,
+                    scale: reduceMotion ? 1 : 1.18,
+                    transition: {
+                      duration: reduceMotion ? 0.14 : 0.52,
+                      ease: [0.7, 0, 0.84, 0],
+                    },
+                  }
+            }
+          />
+          <motion.div
+            className="bidsite-refresh-loader__sheet bidsite-refresh-loader__sheet--base"
+            initial={{ scale: reduceMotion ? 1 : 1.06 }}
+            animate={
+              phase === "intro"
+                ? {
+                    scale: 1,
+                    clipPath: "inset(0 0 0% 0)",
+                    transition: {
+                      duration: reduceMotion ? 0.2 : 1.1,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  }
+                : phase === "move"
+                  ? {
+                      scale: 1,
+                      clipPath: "inset(0 0 0% 0)",
+                      transition: {
+                        duration: reduceMotion ? 0.12 : 0.2,
+                        ease: refreshEase,
+                      },
+                    }
+                : {
+                    scale: 1,
+                    clipPath: "inset(0 0 100% 0)",
+                    transition: {
+                      duration: reduceMotion ? 0.24 : 1.08,
+                      delay: reduceMotion ? 0.02 : 0.12,
+                      ease: refreshEase,
+                    },
+                  }
+            }
+          />
+          <motion.div
+            className="bidsite-refresh-loader__sheet bidsite-refresh-loader__sheet--wash"
+            initial={{ opacity: 0.88 }}
+            animate={
+              phase === "intro"
+                ? {
+                    opacity: 1,
+                    clipPath: "inset(0 0 0% 0)",
+                    transition: { duration: reduceMotion ? 0.16 : 0.58 },
+                  }
+                : phase === "move"
+                  ? {
+                      opacity: 1,
+                      clipPath: "inset(0 0 0% 0)",
+                      transition: {
+                        duration: reduceMotion ? 0.12 : 0.2,
+                        ease: refreshEase,
+                      },
+                    }
+                : {
+                    opacity: 1,
+                    clipPath: "inset(0 0 100% 0)",
+                    transition: {
+                      duration: reduceMotion ? 0.22 : 0.96,
+                      delay: reduceMotion ? 0.03 : 0.18,
+                      ease: refreshEase,
+                    },
+                  }
+            }
+          />
+          <motion.div
+            className="bidsite-refresh-loader__grid"
+            initial={{ opacity: 0, scale: 0.96 }}
+              animate={
+                phase === "intro"
+                  ? {
+                      opacity: reduceMotion ? 0.16 : 0.3,
+                      scale: 1,
+                    transition: {
+                      duration: reduceMotion ? 0.2 : 0.9,
+                      delay: 0.06,
+                    },
+                  }
+                : phase === "move"
+                  ? {
+                      opacity: reduceMotion ? 0.08 : 0.16,
+                      scale: 1.03,
+                      transition: { duration: reduceMotion ? 0.14 : 0.34 },
+                    }
+                : {
+                    opacity: 0,
+                    scale: reduceMotion ? 1 : 1.08,
+                    transition: { duration: reduceMotion ? 0.12 : 0.36 },
+                  }
+            }
+          />
+          <motion.div
+            className="bidsite-refresh-loader__beam"
+            initial={{ opacity: 0, scaleY: 0.6 }}
+              animate={
+                phase === "intro"
+                  ? {
+                      opacity: reduceMotion ? 0.22 : 0.72,
+                      scaleY: 1,
+                    transition: {
+                      duration: reduceMotion ? 0.18 : 0.72,
+                      delay: 0.1,
+                    },
+                  }
+                : phase === "move"
+                  ? {
+                      opacity: reduceMotion ? 0.1 : 0.28,
+                      scaleY: 0.74,
+                      transition: { duration: reduceMotion ? 0.14 : 0.32 },
+                    }
+                : {
+                    opacity: 0,
+                    scaleY: reduceMotion ? 1 : 1.35,
+                    transition: { duration: reduceMotion ? 0.12 : 0.28 },
+                  }
+            }
+          />
+          <div className="bidsite-refresh-loader__center">
+            <motion.div
+              ref={markRef}
+              className="bidsite-refresh-loader__mark"
+              initial={{
+                opacity: 0,
+                left: markMetrics.startX,
+                top: markMetrics.startY + (reduceMotion ? 0 : 26),
+                width: markMetrics.startWidth,
+                fontSize: `${markMetrics.startFontSize}px`,
+                lineHeight: `${markMetrics.startLineHeight}px`,
+                letterSpacing: `${markMetrics.startLetterSpacing}px`,
+                filter: reduceMotion ? "none" : "blur(12px)",
+              }}
+              animate={
+                phase === "intro"
+                  ? {
+                      opacity: 1,
+                      left: markMetrics.startX,
+                      top: markMetrics.startY,
+                      width: markMetrics.startWidth,
+                      fontSize: `${markMetrics.startFontSize}px`,
+                      lineHeight: `${markMetrics.startLineHeight}px`,
+                      letterSpacing: `${markMetrics.startLetterSpacing}px`,
+                      filter: "blur(0px)",
+                      transition: {
+                        duration: reduceMotion ? 0.22 : 0.82,
+                        delay: 0.08,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                    }
+                  : phase === "move"
+                    ? {
+                        opacity: 1,
+                        left: markMetrics.targetX,
+                        top: markMetrics.targetY,
+                        width: markMetrics.targetWidth,
+                        fontSize: `${markMetrics.targetFontSize}px`,
+                        lineHeight: `${markMetrics.targetLineHeight}px`,
+                        letterSpacing: `${markMetrics.targetLetterSpacing}px`,
+                        filter: "blur(0px)",
+                        transition: {
+                          duration: reduceMotion ? 0.2 : 0.9,
+                          delay: reduceMotion ? 0.02 : 0.08,
+                          ease: refreshEase,
+                        },
+                      }
+                    : {
+                      opacity: 0,
+                      left: markMetrics.targetX,
+                      top: markMetrics.targetY,
+                      width: markMetrics.targetWidth,
+                      fontSize: `${markMetrics.targetFontSize}px`,
+                      lineHeight: `${markMetrics.targetLineHeight}px`,
+                      letterSpacing: `${markMetrics.targetLetterSpacing}px`,
+                      filter: "blur(0px)",
+                      transition: {
+                        duration: reduceMotion ? 0.12 : 0.24,
+                        ease: "linear",
+                      },
+                    }
+              }
+              exit={{
+                opacity: 0,
+                transition: {
+                  duration: reduceMotion ? 0.04 : 0.08,
+                  ease: "easeOut",
+                },
+              }}
+            >
+              <span className="bidsite-refresh-loader__wordmark">bidsite</span>
+            </motion.div>
+            <motion.div
+              className="bidsite-refresh-loader__rule"
+              initial={{ opacity: 0, scaleX: 0.2 }}
+              animate={
+                phase === "intro"
+                  ? {
+                      opacity: 1,
+                      scaleX: 1,
+                      transition: {
+                        duration: reduceMotion ? 0.18 : 0.72,
+                        delay: reduceMotion ? 0.06 : 0.22,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                    }
+                  : {
+                      opacity: 0,
+                      scaleX: 0.4,
+                      transition: { duration: reduceMotion ? 0.08 : 0.24 },
+                    }
+              }
+            />
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }
 

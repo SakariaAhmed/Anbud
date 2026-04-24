@@ -116,6 +116,67 @@ export interface ValueOpportunity {
   profit_share_percent: number;
 }
 
+export type CustomerAnalysisHistorySource =
+  | "full_regeneration"
+  | "section_regeneration"
+  | "manual_edit"
+  | "high_level_design_update";
+
+export type CustomerAnalysisSection =
+  | "summary"
+  | "strategy"
+  | "design"
+  | "risks"
+  | "needs"
+  | "keywords"
+  | "value";
+
+export interface CustomerAnalysisSectionSnapshotMap {
+  summary: {
+    customer_profile_summary: string;
+    customer_goals_summary: string;
+  };
+  strategy: {
+    executive_summary: string;
+    positioning_recommendations: string[];
+  };
+  design: {
+    high_level_solution_design: string;
+    high_level_architecture_mermaid: string;
+  };
+  risks: {
+    risks: string[];
+    risks_for_us?: string[];
+    risks_for_customer?: string[];
+  };
+  needs: {
+    implicit_requirements: AnalysisRequirement[];
+    prioritized_requirements: Array<{
+      requirement: string;
+      priority: RequirementImportance;
+      reason: string;
+    }>;
+  };
+  keywords: {
+    signal_words: string[];
+    signal_word_counts?: Record<string, number>;
+  };
+  value: {
+    value_opportunities: ValueOpportunity[];
+  };
+}
+
+export interface CustomerAnalysisSectionHistoryEntry {
+  id: string;
+  created_at: string;
+  source: CustomerAnalysisHistorySource;
+  snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
+}
+
+export type CustomerAnalysisSectionHistories = Partial<
+  Record<CustomerAnalysisSection, CustomerAnalysisSectionHistoryEntry[]>
+>;
+
 export interface CustomerAnalysisResult {
   customer_profile_summary: string;
   customer_goals_summary: string;
@@ -140,16 +201,8 @@ export interface CustomerAnalysisResult {
   value_opportunities: ValueOpportunity[];
   positioning_recommendations: string[];
   executive_summary: string;
+  section_histories?: CustomerAnalysisSectionHistories;
 }
-
-export type CustomerAnalysisSection =
-  | "summary"
-  | "strategy"
-  | "design"
-  | "risks"
-  | "needs"
-  | "keywords"
-  | "value";
 
 export interface SolutionEvaluationResult {
   fit_to_customer_needs: string;

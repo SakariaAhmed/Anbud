@@ -150,13 +150,17 @@
 
 @layer components {
   .brand-logo {
-    font-family: "Editorial New", "Canela", "Libre Bodoni", "Bodoni 72", Didot, Georgia, serif;
-    font-size: 1.05rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    line-height: 1;
-    font-variation-settings: "opsz" 72;
-    transition: color 180ms ease, transform 180ms ease;
+    display: inline-flex;
+    align-items: center;
+    font-family: "Suisse Intl", "Suisse International", "Neue Haas Grotesk Text Pro", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+    font-size: 1.32rem;
+    font-weight: 600;
+    letter-spacing: -0.06em;
+    line-height: 0.92;
+    text-transform: lowercase;
+    transform-origin: left center;
+    will-change: opacity, transform;
+    transition: color 180ms ease, transform 180ms ease, opacity 240ms linear;
   }
 
   .brand-logo:hover {
@@ -164,8 +168,75 @@
     transform: translateY(-1px);
   }
 
+  [data-app-header="true"] {
+    transition: opacity 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  body[data-home-loader="intro"] [data-app-header="true"] {
+    opacity: 0;
+  }
+
+  body[data-home-loader="boot"] [data-app-header="true"],
+  body[data-home-loader="move"] [data-app-header="true"] {
+    opacity: 0;
+  }
+
+  body[data-home-loader="settled"] [data-app-header="true"],
+  body[data-home-loader="done"] [data-app-header="true"] {
+    opacity: 1;
+  }
+
+  body[data-home-loader="intro"] [data-brand-anchor="true"] {
+    opacity: 0;
+  }
+
+  body[data-home-loader="boot"] [data-brand-anchor="true"],
+  body[data-home-loader="move"] [data-brand-anchor="true"] {
+    opacity: 0;
+  }
+
+  body[data-home-loader="settled"] [data-brand-anchor="true"],
+  body[data-home-loader="done"] [data-brand-anchor="true"] {
+    opacity: 1;
+  }
+
+  @media (max-width: 640px) {
+    .brand-logo {
+      font-size: 1.18rem;
+    }
+  }
+
   .site-reload-enter {
     animation: site-reload-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .bidsite-boot-cover {
+    position: fixed;
+    inset: 0;
+    z-index: 950;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 16% 22%, rgba(255, 255, 255, 0.08), transparent 22rem),
+      radial-gradient(circle at 82% 18%, rgba(119, 151, 255, 0.24), transparent 26rem),
+      linear-gradient(180deg, rgb(2, 6, 23) 0%, rgb(4, 10, 31) 54%, rgb(7, 24, 62) 100%);
+    opacity: 1;
+    transition: opacity 220ms linear;
+  }
+
+  body[data-home-loader]:not([data-home-loader="boot"]) .bidsite-boot-cover {
+    opacity: 0;
+  }
+
+  body[data-home-loader="boot"] .site-reload-enter,
+  body[data-home-loader="intro"] .site-reload-enter,
+  body[data-home-loader="move"] .site-reload-enter {
+    opacity: 0;
+  }
+
+  body[data-home-loader="settled"] .site-reload-enter,
+  body[data-home-loader="done"] .site-reload-enter {
+    opacity: 1;
+    transition: opacity 280ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   @keyframes site-reload-enter {
@@ -181,159 +252,119 @@
     position: fixed;
     inset: 0;
     z-index: 1000;
-    display: grid;
-    place-items: center;
     overflow: hidden;
-    background:
-      radial-gradient(circle at 50% 38%, rgba(96, 165, 250, 0.34), transparent 32rem),
-      linear-gradient(135deg, rgb(2, 6, 23) 0%, rgb(15, 23, 42) 40%, rgb(30, 58, 138) 100%);
-    animation: bidsite-loader-exit 1850ms cubic-bezier(0.76, 0, 0.24, 1) forwards;
+    isolation: isolate;
+    pointer-events: none;
   }
 
-  .bidsite-refresh-loader::before,
-  .bidsite-refresh-loader::after {
-    content: "";
+  .bidsite-refresh-loader__sheet,
+  .bidsite-refresh-loader__grid,
+  .bidsite-refresh-loader__beam,
+  .bidsite-refresh-loader__halo {
     position: absolute;
     inset: 0;
-    background: rgb(219, 234, 254);
-    transform: translateY(100%);
   }
 
-  .bidsite-refresh-loader::before {
-    animation: bidsite-loader-wipe 1200ms 460ms cubic-bezier(0.76, 0, 0.24, 1) forwards;
+  .bidsite-refresh-loader__halo {
+    inset: 50%;
+    width: min(56rem, 92vw);
+    height: min(56rem, 92vw);
+    translate: -50% -50%;
+    border-radius: 9999px;
+    background:
+      radial-gradient(circle, rgba(135, 161, 255, 0.22) 0%, rgba(74, 112, 255, 0.14) 24%, rgba(12, 24, 61, 0) 68%);
+    filter: blur(10px);
   }
 
-  .bidsite-refresh-loader::after {
-    background: rgb(30, 58, 138);
-    animation: bidsite-loader-wipe 1180ms 560ms cubic-bezier(0.76, 0, 0.24, 1) forwards;
+  .bidsite-refresh-loader__sheet--base {
+    background:
+      radial-gradient(circle at 16% 22%, rgba(255, 255, 255, 0.08), transparent 22rem),
+      radial-gradient(circle at 82% 18%, rgba(119, 151, 255, 0.24), transparent 26rem),
+      linear-gradient(180deg, rgb(2, 6, 23) 0%, rgb(4, 10, 31) 54%, rgb(7, 24, 62) 100%);
+  }
+
+  .bidsite-refresh-loader__sheet--wash {
+    background:
+      linear-gradient(90deg, transparent 0%, rgba(93, 114, 255, 0.1) 37%, rgba(93, 114, 255, 0.28) 50%, rgba(93, 114, 255, 0.1) 63%, transparent 100%),
+      linear-gradient(180deg, rgba(46, 99, 255, 0.18) 0%, rgba(46, 99, 255, 0.05) 100%);
+    mix-blend-mode: screen;
+    overflow: hidden;
   }
 
   .bidsite-refresh-loader__grid {
-    position: absolute;
-    inset: 0;
-    opacity: 0.32;
     background-image:
-      linear-gradient(rgba(191, 219, 254, 0.12) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(191, 219, 254, 0.1) 1px, transparent 1px);
-    background-size: 5rem 5rem;
-    mask-image: radial-gradient(circle at center, black, transparent 72%);
-    animation: bidsite-loader-grid 1500ms ease-out forwards;
+      linear-gradient(rgba(191, 219, 254, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(191, 219, 254, 0.06) 1px, transparent 1px);
+    background-size: 6rem 6rem;
+    mask-image: radial-gradient(circle at center, black 22%, transparent 78%);
+  }
+
+  .bidsite-refresh-loader__beam {
+    left: 50%;
+    width: 1px;
+    background: linear-gradient(180deg, transparent, rgba(186, 198, 255, 0.95), transparent);
+    box-shadow:
+      0 0 32px rgba(124, 141, 255, 0.22),
+      0 0 80px rgba(93, 114, 255, 0.12);
+    transform-origin: center;
+  }
+
+  .bidsite-refresh-loader__center {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    height: 100%;
+    place-items: center;
+    padding: 2rem;
   }
 
   .bidsite-refresh-loader__mark {
-    position: relative;
-    z-index: 1;
-    display: flex;
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 2;
+    display: inline-flex;
     align-items: center;
-    gap: 0.08em;
-    color: white;
-    font-family: "Editorial New", "Canela", "Libre Bodoni", "Bodoni 72", Didot, Georgia, serif;
-    font-size: 5rem;
-    font-weight: 760;
-    letter-spacing: 0;
-    line-height: 0.9;
-    text-shadow: 0 1.5rem 4rem rgba(15, 23, 42, 0.36);
+    justify-content: flex-start;
+    text-align: left;
+    font-family: "Suisse Intl", "Suisse International", "Neue Haas Grotesk Text Pro", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+    font-weight: 600;
+    text-transform: lowercase;
+    white-space: nowrap;
+    overflow: hidden;
+    will-change: left, top, width, font-size, letter-spacing, opacity, filter;
   }
 
-  .bidsite-refresh-loader__mark span {
-    display: inline-block;
-    opacity: 0;
-    transform: translateY(2rem);
-    animation: bidsite-letter-in 760ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  .bidsite-refresh-loader__wordmark {
+    color: rgb(248 250 252);
+    font: inherit;
+    letter-spacing: inherit;
+    line-height: inherit;
+    text-transform: inherit;
+    text-shadow: 0 1.8rem 4rem rgba(2, 6, 23, 0.46);
   }
-
-  .bidsite-refresh-loader__mark span:nth-child(1) { animation-delay: 80ms; }
-  .bidsite-refresh-loader__mark span:nth-child(2) { animation-delay: 130ms; }
-  .bidsite-refresh-loader__mark span:nth-child(3) { animation-delay: 180ms; }
-  .bidsite-refresh-loader__mark span:nth-child(4) { animation-delay: 230ms; }
-  .bidsite-refresh-loader__mark span:nth-child(5) { animation-delay: 280ms; }
-  .bidsite-refresh-loader__mark span:nth-child(6) { animation-delay: 330ms; }
-  .bidsite-refresh-loader__mark span:nth-child(7) { animation-delay: 380ms; }
 
   .bidsite-refresh-loader__rule {
     position: absolute;
-    z-index: 1;
     left: 50%;
-    top: calc(50% + 4.25rem);
-    width: min(22rem, calc(100vw - 3rem));
+    top: calc(50% + clamp(3.1rem, 7vw, 4.6rem));
+    width: min(28rem, calc(100vw - 4rem));
     height: 2px;
-    background: linear-gradient(90deg, transparent, rgb(191, 219, 254), transparent);
-    transform: translateX(-50%) scaleX(0);
+    background: linear-gradient(90deg, transparent, rgba(241, 245, 249, 0.08), rgba(241, 245, 249, 0.9), rgba(241, 245, 249, 0.08), transparent);
+    transform: translateX(-50%);
     transform-origin: center;
-    animation: bidsite-rule-in 900ms 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
   @media (max-width: 640px) {
-    .bidsite-refresh-loader__mark {
-      font-size: 3.25rem;
-    }
-
     .bidsite-refresh-loader__rule {
-      top: calc(50% + 3rem);
+      top: calc(50% + 2.9rem);
+      width: min(18rem, calc(100vw - 3rem));
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .bidsite-refresh-loader {
-      animation-duration: 500ms;
-    }
-
-    .bidsite-refresh-loader::before,
-    .bidsite-refresh-loader::after,
-    .bidsite-refresh-loader__grid,
-    .bidsite-refresh-loader__mark span,
-    .bidsite-refresh-loader__rule {
+    .site-reload-enter {
       animation: none;
-    }
-
-    .bidsite-refresh-loader__mark span {
-      opacity: 1;
-      transform: none;
-    }
-  }
-
-  @keyframes bidsite-letter-in {
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes bidsite-rule-in {
-    to {
-      transform: translateX(-50%) scaleX(1);
-    }
-  }
-
-  @keyframes bidsite-loader-grid {
-    to {
-      transform: scale(1.08);
-      opacity: 0.18;
-    }
-  }
-
-  @keyframes bidsite-loader-wipe {
-    0% {
-      transform: translateY(100%);
-    }
-    48% {
-      transform: translateY(0%);
-    }
-    100% {
-      transform: translateY(-100%);
-    }
-  }
-
-  @keyframes bidsite-loader-exit {
-    0%,
-    76% {
-      opacity: 1;
-      visibility: visible;
-    }
-    100% {
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
     }
   }
 
