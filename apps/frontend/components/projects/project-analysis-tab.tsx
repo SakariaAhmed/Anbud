@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { motion, useReducedMotion, useSpring } from "framer-motion";
+import { useEffect, useId, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -37,6 +38,8 @@ import {
   AnalysisTabEmptyState,
   VALUE_LABELS,
   ValueTags,
+  roleLabel,
+  supportingSubtypeLabel,
 } from "@/components/projects/project-workspace-shared";
 import type {
   CustomerAnalysisHistorySource,
@@ -44,6 +47,7 @@ import type {
   CustomerAnalysisSection,
   CustomerAnalysisSectionHistoryEntry,
   CustomerAnalysisSectionSnapshotMap,
+  ProjectDocument,
 } from "@/lib/types";
 
 function SectionSurface({
@@ -613,42 +617,200 @@ function normalizePieData(data: PieDatum[]) {
   };
 }
 
-function polarPoint(
+function polarEllipsePoint(
   centerX: number,
   centerY: number,
-  radius: number,
+  radiusX: number,
+  radiusY: number,
   angleInDegrees: number,
 ) {
   const angleInRadians = (angleInDegrees * Math.PI) / 180;
 
   return {
-    x: centerX + radius * Math.cos(angleInRadians),
-    y: centerY + radius * Math.sin(angleInRadians),
+    x: centerX + radiusX * Math.cos(angleInRadians),
+    y: centerY + radiusY * Math.sin(angleInRadians),
   };
 }
 
-function describeDonutSegment(
+function describeEllipticalDonutSegment(
   centerX: number,
   centerY: number,
-  outerRadius: number,
-  innerRadius: number,
+  outerRadiusX: number,
+  outerRadiusY: number,
+  innerRadiusX: number,
+  innerRadiusY: number,
   startAngle: number,
   endAngle: number,
 ) {
   const safeEndAngle = Math.min(endAngle, startAngle + 359.99);
-  const outerStart = polarPoint(centerX, centerY, outerRadius, startAngle);
-  const outerEnd = polarPoint(centerX, centerY, outerRadius, safeEndAngle);
-  const innerStart = polarPoint(centerX, centerY, innerRadius, startAngle);
-  const innerEnd = polarPoint(centerX, centerY, innerRadius, safeEndAngle);
+  const outerStart = polarEllipsePoint(
+    centerX,
+    centerY,
+    outerRadiusX,
+    outerRadiusY,
+    startAngle,
+  );
+  const outerEnd = polarEllipsePoint(
+    centerX,
+    centerY,
+    outerRadiusX,
+    outerRadiusY,
+    safeEndAngle,
+  );
+  const innerStart = polarEllipsePoint(
+    centerX,
+    centerY,
+    innerRadiusX,
+    innerRadiusY,
+    startAngle,
+  );
+  const innerEnd = polarEllipsePoint(
+    centerX,
+    centerY,
+    innerRadiusX,
+    innerRadiusY,
+    safeEndAngle,
+  );
   const largeArcFlag = safeEndAngle - startAngle > 180 ? 1 : 0;
 
   return [
     `M ${outerStart.x} ${outerStart.y}`,
-    `A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 1 ${outerEnd.x} ${outerEnd.y}`,
+    `A ${outerRadiusX} ${outerRadiusY} 0 ${largeArcFlag} 1 ${outerEnd.x} ${outerEnd.y}`,
     `L ${innerEnd.x} ${innerEnd.y}`,
-    `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${innerStart.x} ${innerStart.y}`,
+    `A ${innerRadiusX} ${innerRadiusY} 0 ${largeArcFlag} 0 ${innerStart.x} ${innerStart.y}`,
     "Z",
   ].join(" ");
+}
+
+function normalizeAngle(angle: number) {
+  return ((angle % 360) + 360) % 360;
+}
+
+function getAngleSpans(startAngle: number, endAngle: number) {
+  const span = Math.min(endAngle - startAngle, 359.99);
+  const normalizedStart = normalizeAngle(startAngle);
+  const normalizedEnd = normalizedStart + span;
+
+  if (normalizedEnd <= 360) {
+    return [[normalizedStart, normalizedEnd]] as const;
+  }
+
+  return [
+    [normalizedStart, 360],
+    [0, normalizedEnd - 360],
+  ] as const;
+}
+
+function getFrontVisibleSpans(startAngle: number, endAngle: number) {
+  return getAngleSpans(startAngle, endAngle)
+    .map(([spanStart, spanEnd]) => [
+      Math.max(spanStart, 0),
+      Math.min(spanEnd, 180),
+    ])
+    .filter(([spanStart, spanEnd]) => spanEnd - spanStart > 0.25);
+}
+
+function describeOuterWallSegment(
+  centerX: number,
+  centerY: number,
+  outerRadiusX: number,
+  outerRadiusY: number,
+  startAngle: number,
+  endAngle: number,
+  depth: number,
+) {
+  const topStart = polarEllipsePoint(
+    centerX,
+    centerY,
+    outerRadiusX,
+    outerRadiusY,
+    startAngle,
+  );
+  const topEnd = polarEllipsePoint(
+    centerX,
+    centerY,
+    outerRadiusX,
+    outerRadiusY,
+    endAngle,
+  );
+  const bottomStart = polarEllipsePoint(
+    centerX,
+    centerY + depth,
+    outerRadiusX,
+    outerRadiusY,
+    startAngle,
+  );
+  const bottomEnd = polarEllipsePoint(
+    centerX,
+    centerY + depth,
+    outerRadiusX,
+    outerRadiusY,
+    endAngle,
+  );
+  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0;
+
+  return [
+    `M ${topStart.x} ${topStart.y}`,
+    `A ${outerRadiusX} ${outerRadiusY} 0 ${largeArcFlag} 1 ${topEnd.x} ${topEnd.y}`,
+    `L ${bottomEnd.x} ${bottomEnd.y}`,
+    `A ${outerRadiusX} ${outerRadiusY} 0 ${largeArcFlag} 0 ${bottomStart.x} ${bottomStart.y}`,
+    "Z",
+  ].join(" ");
+}
+
+function parseColorChannels(color: string) {
+  const rgbMatch = color.match(
+    /rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})/i,
+  );
+
+  if (rgbMatch) {
+    return rgbMatch.slice(1, 4).map((value) => Number(value)) as [
+      number,
+      number,
+      number,
+    ];
+  }
+
+  const hex = color.trim().replace("#", "");
+  if (hex.length === 3) {
+    return hex
+      .split("")
+      .map((value) => Number.parseInt(`${value}${value}`, 16)) as [
+      number,
+      number,
+      number,
+    ];
+  }
+
+  if (hex.length === 6) {
+    return [
+      Number.parseInt(hex.slice(0, 2), 16),
+      Number.parseInt(hex.slice(2, 4), 16),
+      Number.parseInt(hex.slice(4, 6), 16),
+    ];
+  }
+
+  return [148, 163, 184];
+}
+
+function mixColor(
+  color: string,
+  target: [number, number, number],
+  amount: number,
+) {
+  const [red, green, blue] = parseColorChannels(color);
+  const mix = Math.min(1, Math.max(0, amount));
+
+  const blended = [red, green, blue].map((channel, index) =>
+    Math.round(channel + (target[index] - channel) * mix),
+  );
+
+  return `rgb(${blended[0]}, ${blended[1]}, ${blended[2]})`;
+}
+
+function withAlpha(color: string, alpha: number) {
+  const [red, green, blue] = parseColorChannels(color);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function DonutChart({
@@ -664,78 +826,316 @@ function DonutChart({
   valueSuffix: string;
   emptyLabel: string;
 }) {
+  const chartId = useId().replace(/:/g, "");
+  const reduceMotion = useReducedMotion();
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const rotateY = useSpring(0, {
+    stiffness: 170,
+    damping: 18,
+    mass: 0.6,
+  });
   const { data: normalizedData, total } = normalizePieData(data);
-  const center = 60;
-  const outerRadius = 50;
-  const innerRadius = 34;
+  const centerX = 120;
+  const centerY = 76;
+  const outerRadiusX = 86;
+  const outerRadiusY = 60;
+  const innerRadiusX = 48;
+  const innerRadiusY = 34;
+  const depth = 18;
   let accumulated = 0;
   const selected =
     selectedIndex === null ? null : normalizedData[selectedIndex] ?? null;
+  const activeIndex = hoveredIndex ?? selectedIndex;
+  const hovered =
+    hoveredIndex === null ? null : normalizedData[hoveredIndex] ?? null;
+  const activeItem =
+    activeIndex === null ? null : normalizedData[activeIndex] ?? null;
+  const segments = normalizedData.map((item) => {
+    const share = item.value / total;
+    const startAngle = accumulated * 360 - 90;
+    const endAngle = (accumulated + share) * 360 - 90;
+    accumulated += share;
+
+    return {
+      ...item,
+      startAngle,
+      endAngle,
+      midAngle: startAngle + (endAngle - startAngle) / 2,
+    };
+  });
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (reduceMotion) {
+      return;
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const pointerRatio = (event.clientX - bounds.left) / bounds.width - 0.5;
+    rotateY.set(pointerRatio * 14);
+  }
+
+  function handlePointerLeave() {
+    setHoveredIndex(null);
+    rotateY.set(0);
+  }
 
   return (
-    <div className="relative mx-auto size-64 max-w-full">
-      <svg
-        viewBox="0 0 120 120"
-        className="size-full overflow-visible"
-        aria-label="Kakediagram"
+    <div
+      className="mx-auto flex w-full max-w-[21rem] flex-col items-center"
+      onPointerLeave={handlePointerLeave}
+    >
+      <div
+        className="relative w-full"
+        style={{ perspective: "1200px" }}
+        onPointerMove={handlePointerMove}
       >
-        <circle
-          cx={center}
-          cy={center}
-          r={(outerRadius + innerRadius) / 2}
-          fill="none"
-          stroke="rgb(226, 232, 240)"
-          strokeWidth={outerRadius - innerRadius}
-        />
-        {normalizedData.map((item, index) => {
-          const share = item.value / total;
-          const startAngle = accumulated * 360 - 90;
-          const endAngle = (accumulated + share) * 360 - 90;
-          const isSelected = selectedIndex === index;
-          const hasSelection = selectedIndex !== null;
-          accumulated += share;
+        <motion.div
+          className="relative"
+          style={{
+            rotateY,
+            transformStyle: "preserve-3d",
+            willChange: "transform",
+          }}
+        >
+          <svg
+            viewBox="0 0 240 206"
+            className="w-full overflow-visible"
+            aria-label="Kakediagram"
+          >
+            <defs>
+              <filter
+                id={`${chartId}-shadow`}
+                x="-30%"
+                y="-30%"
+                width="160%"
+                height="200%"
+              >
+                <feDropShadow
+                  dx="0"
+                  dy="16"
+                  stdDeviation="10"
+                  floodColor="rgba(15, 23, 42, 0.18)"
+                />
+              </filter>
+              <linearGradient
+                id={`${chartId}-well`}
+                x1="0%"
+                y1="0%"
+                x2="100%"
+                y2="100%"
+              >
+                <stop offset="0%" stopColor="rgba(255, 255, 255, 0.95)" />
+                <stop offset="100%" stopColor="rgba(191, 219, 254, 0.18)" />
+              </linearGradient>
+              {segments.map((item, index) => (
+                <linearGradient
+                  key={`${item.id}-gradient`}
+                  id={`${chartId}-top-${index}`}
+                  x1="15%"
+                  y1="0%"
+                  x2="85%"
+                  y2="100%"
+                >
+                  <stop
+                    offset="0%"
+                    stopColor={mixColor(item.color, [255, 255, 255], 0.34)}
+                  />
+                  <stop offset="48%" stopColor={item.color} />
+                  <stop
+                    offset="100%"
+                    stopColor={mixColor(item.color, [15, 23, 42], 0.2)}
+                  />
+                </linearGradient>
+              ))}
+              {segments.map((item, index) => (
+                <linearGradient
+                  key={`${item.id}-wall`}
+                  id={`${chartId}-wall-${index}`}
+                  x1="0%"
+                  y1="0%"
+                  x2="0%"
+                  y2="100%"
+                >
+                  <stop
+                    offset="0%"
+                    stopColor={mixColor(item.color, [30, 41, 59], 0.2)}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor={mixColor(item.color, [15, 23, 42], 0.44)}
+                  />
+                </linearGradient>
+              ))}
+            </defs>
 
-          return (
-            <path
-              key={item.id}
-              d={describeDonutSegment(
-                center,
-                center,
-                outerRadius,
-                innerRadius,
-                startAngle,
-                endAngle,
-              )}
-              fill={item.color}
-              className="cursor-pointer transition-all duration-200 outline-none hover:opacity-90 focus-visible:opacity-90"
-              opacity={!hasSelection || isSelected ? 1 : 0.72}
-              style={{
-                filter: isSelected
-                  ? "drop-shadow(0 4px 8px rgba(15, 23, 42, 0.16))"
-                  : undefined,
-              }}
-              role="button"
-              tabIndex={0}
-              focusable="true"
-              aria-label={`${item.label}: ${item.value}${valueSuffix}`}
-              onClick={() => onSelect(index)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelect(index);
-                }
-              }}
+            <ellipse
+              cx={centerX}
+              cy={centerY + depth + 34}
+              rx={outerRadiusX + 6}
+              ry={18}
+              fill="rgba(15, 23, 42, 0.14)"
             />
-          );
-        })}
-      </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          {selected ? "Valgt" : "Velg"}
-        </span>
-        <span className="mt-1 max-w-32 text-sm font-semibold leading-5 text-foreground">
-          {selected?.label ?? emptyLabel}
-        </span>
+
+            <g filter={`url(#${chartId}-shadow)`}>
+              {segments.map((item, index) => (
+                <path
+                  key={`${item.id}-base`}
+                  d={describeEllipticalDonutSegment(
+                    centerX,
+                    centerY + depth,
+                    outerRadiusX,
+                    outerRadiusY,
+                    innerRadiusX,
+                    innerRadiusY,
+                    item.startAngle,
+                    item.endAngle,
+                  )}
+                  fill={`url(#${chartId}-wall-${index})`}
+                  opacity={activeIndex === null || activeIndex === index ? 0.96 : 0.38}
+                />
+              ))}
+
+              {segments.map((item, index) =>
+                getFrontVisibleSpans(item.startAngle, item.endAngle).map(
+                  ([spanStart, spanEnd], wallIndex) => (
+                    <path
+                      key={`${item.id}-wall-${wallIndex}`}
+                      d={describeOuterWallSegment(
+                        centerX,
+                        centerY,
+                        outerRadiusX,
+                        outerRadiusY,
+                        spanStart,
+                        spanEnd,
+                        depth,
+                      )}
+                      fill={`url(#${chartId}-wall-${index})`}
+                      opacity={activeIndex === null || activeIndex === index ? 1 : 0.42}
+                    />
+                  ),
+                ),
+              )}
+
+              {segments.map((item, index) => {
+                const isSelected = selectedIndex === index;
+                const isHovered = hoveredIndex === index;
+                const hasActive = activeIndex !== null;
+                const emphasis = isSelected ? 14 : isHovered ? 9 : 0;
+                const angleInRadians = (item.midAngle * Math.PI) / 180;
+                const translateX = Math.cos(angleInRadians) * emphasis;
+                const translateY = Math.sin(angleInRadians) * emphasis * 0.72;
+
+                return (
+                  <motion.g
+                    key={item.id}
+                    animate={{
+                      x: reduceMotion ? 0 : translateX,
+                      y: reduceMotion ? 0 : translateY - (isSelected ? 2 : 0),
+                      scale: reduceMotion ? 1 : isSelected ? 1.03 : isHovered ? 1.015 : 1,
+                      opacity: !hasActive || isSelected || isHovered ? 1 : 0.58,
+                    }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 260,
+                      damping: 24,
+                      mass: 0.85,
+                    }}
+                  >
+                    <motion.path
+                      d={describeEllipticalDonutSegment(
+                        centerX,
+                        centerY,
+                        outerRadiusX,
+                        outerRadiusY,
+                        innerRadiusX,
+                        innerRadiusY,
+                        item.startAngle,
+                        item.endAngle,
+                      )}
+                      fill={`url(#${chartId}-top-${index})`}
+                      stroke={mixColor(item.color, [255, 255, 255], 0.45)}
+                      strokeWidth={1.15}
+                      className="cursor-pointer outline-none"
+                      style={{
+                        filter:
+                          isSelected || isHovered
+                            ? `drop-shadow(0 10px 16px ${withAlpha(item.color, 0.28)})`
+                            : undefined,
+                      }}
+                      whileHover={
+                        reduceMotion
+                          ? undefined
+                          : { filter: `drop-shadow(0 12px 18px ${withAlpha(item.color, 0.3)})` }
+                      }
+                      role="button"
+                      tabIndex={0}
+                      focusable="true"
+                      aria-label={`${item.label}: ${item.value}${valueSuffix}`}
+                      onFocus={() => setHoveredIndex(index)}
+                      onBlur={() => setHoveredIndex(null)}
+                      onHoverStart={() => setHoveredIndex(index)}
+                      onHoverEnd={() => setHoveredIndex(null)}
+                      onClick={() => onSelect(index)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelect(index);
+                        }
+                      }}
+                    />
+                  </motion.g>
+                );
+              })}
+
+              <ellipse
+                cx={centerX}
+                cy={centerY + 3}
+                rx={innerRadiusX + 4}
+                ry={innerRadiusY + 4}
+                fill="rgba(15, 23, 42, 0.08)"
+              />
+              <ellipse
+                cx={centerX}
+                cy={centerY - 1}
+                rx={innerRadiusX}
+                ry={innerRadiusY}
+                fill={`url(#${chartId}-well)`}
+                stroke="rgba(255, 255, 255, 0.9)"
+                strokeWidth={1}
+              />
+            </g>
+          </svg>
+        </motion.div>
+
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground shadow-sm backdrop-blur-sm">
+            {selected ? "Valgt" : "Velg"}
+          </span>
+          <span className="mt-3 max-w-36 text-balance text-sm font-semibold leading-5 text-foreground">
+            {selected?.label ?? emptyLabel}
+          </span>
+          <span className="mt-2 text-xs font-medium text-muted-foreground">
+            {selected ? `${selected.value}${valueSuffix}` : "Trykk for detaljer"}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 min-h-14 w-full">
+        {hovered ? (
+          <div className="rounded-2xl border border-white/80 bg-white/90 px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm">
+            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Hover
+            </p>
+            <p className="mt-1 text-sm font-semibold text-foreground">
+              {hovered.label} · {hovered.value}
+              {valueSuffix}
+            </p>
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-center text-xs font-medium text-muted-foreground">
+            Hold over en del av diagrammet for å se hva du peker på.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -830,7 +1230,7 @@ function ValuePieModule({
         </span>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="space-y-6">
         <DonutChart
           data={chartData}
           selectedIndex={selectedIndex}
@@ -938,7 +1338,7 @@ function KeywordPieModule({
         </span>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="space-y-6">
         <DonutChart
           data={chartData}
           selectedIndex={selectedIndex}
@@ -1004,19 +1404,94 @@ function KeywordPieModule({
   );
 }
 
-function PositioningKanban({ items }: { items: string[] }) {
+function summarizePhaseContext(analysis: CustomerAnalysisResult) {
+  const topRequirement = analysis.prioritized_requirements[0]?.requirement;
+  const primaryDirection = analysis.expected_solution_direction[0];
+  const topSignals = analysis.signal_words.slice(0, 3).join(", ");
+
+  return (
+    primaryDirection ||
+    topRequirement ||
+    (topSignals
+      ? `Løsningen må ta høyde for ${topSignals} i riktig rekkefølge.`
+      : "Løsningen må gjennomføres i en kontrollert, faseinndelt leveranse.")
+  );
+}
+
+function buildDeliveryPhases(analysis: CustomerAnalysisResult) {
+  const topRequirement =
+    analysis.prioritized_requirements[0]?.requirement ||
+    analysis.implicit_requirements[0]?.title ||
+    "kritiske avhengigheter og gjennomføringsbehov";
+  const topSignals = analysis.signal_words.slice(0, 3);
+
+  return [
+    {
+      title: "Fase 1",
+      label: "Avklaring og målbildet",
+      bullets: [
+        `Avklar hva kunden faktisk må få kontroll på først, spesielt rundt ${topRequirement.toLowerCase()}.`,
+        "Kartlegg avhengigheter, driftsvinduer, beslutningseiere og hva som ikke kan flyttes uten forberedelser.",
+        "Lås målbildet, migreringsrekkefølgen og hva som må være på plass før oppstart av plattformarbeid.",
+      ],
+    },
+    {
+      title: "Fase 2",
+      label: "Plattform og sikkerhetsgrunnmur",
+      bullets: [
+        "Etabler landing zone, identitet, nettverk, logging, backup og styringskontroller før første arbeidslast flyttes.",
+        "Standardiser miljøer, maler og driftsrutiner slik at teamet leverer likt i dev, test og produksjon.",
+        topSignals.length
+          ? `Sikre at føringer rundt ${topSignals.join(", ")} er bygget inn i plattformen, ikke utsatt til senere.`
+          : "Bekreft at plattformen er driftsklar og forvaltbar før neste fase.",
+      ],
+    },
+    {
+      title: "Fase 3",
+      label: "Prioriterte migreringer",
+      bullets: [
+        "Flytt først tjenester med lavere kompleksitet for å bevise metode, ansvarslinje og tilbakeføringsplan.",
+        "Bruk pilot og første migreringsbølge til å teste cutover, overvåkning og feilretting i kontrollerte vinduer.",
+        "Juster migreringsrekkefølgen med faktiske erfaringer før mer komplekse integrasjoner tas inn.",
+      ],
+    },
+    {
+      title: "Fase 4",
+      label: "Stabilisering og videre modernisering",
+      bullets: [
+        "Stabiliser drift, fjern midlertidige løsninger og etabler tydelige runbooks, eierskap og rapportering.",
+        "Ta de mest komplekse arbeidslastene først når plattform, metode og styring er bevist i praksis.",
+        "Avslutt med en konkret plan for videre modernisering, kostnadsstyring og overgang til ordinær forvaltning.",
+      ],
+    },
+  ];
+}
+
+function PositioningKanban({
+  items,
+  analysis,
+}: {
+  items: string[];
+  analysis: CustomerAnalysisResult;
+}) {
+  const deliveryPhases = buildDeliveryPhases(analysis);
   const lanes = POSITIONING_LANES.map((lane, laneIndex) => ({
     ...lane,
     items: items
       .map((content, index) => ({ content, index }))
       .filter(({ index }) => index % POSITIONING_LANES.length === laneIndex),
-  })).filter((lane) => lane.items.length > 0);
+  })).filter(
+    (lane) => lane.items.length > 0 || lane.title === "Leveranse",
+  );
 
   return (
     <div className="overflow-x-auto pb-1">
       <div className="grid min-w-[46rem] gap-4 lg:min-w-0 lg:grid-cols-2 xl:grid-cols-4">
         {lanes.map((lane) => {
           const Icon = lane.icon;
+          const hasDeliveryBlueprint = lane.title === "Leveranse";
+          const itemCount = lane.items.length + (hasDeliveryBlueprint ? 1 : 0);
+
           return (
             <section
               key={lane.title}
@@ -1041,11 +1516,63 @@ function PositioningKanban({ items }: { items: string[] }) {
                 <span
                   className={`rounded-md px-2 py-1 text-xs font-semibold ${lane.badgeClassName}`}
                 >
-                  {lane.items.length}
+                  {itemCount}
                 </span>
               </div>
 
               <div className="flex flex-1 flex-col gap-3">
+                {hasDeliveryBlueprint ? (
+                  <article className="overflow-hidden rounded-[1.35rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(236,254,255,0.82))] shadow-[0_16px_38px_rgba(8,145,178,0.14)]">
+                    <div className="border-b border-cyan-100/90 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-cyan-700/75">
+                            Løsningsfaser for gjennomføring
+                          </p>
+                          <h6 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-cyan-950">
+                            Strukturert og pragmatisk leveranseplan
+                          </h6>
+                        </div>
+                        <span className="rounded-full bg-cyan-700 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white">
+                          Alltid med
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-slate-700">
+                        {summarizePhaseContext(analysis)}
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 px-4 py-4">
+                      {deliveryPhases.map((phase) => (
+                        <div
+                          key={phase.title}
+                          className="rounded-2xl border border-cyan-100 bg-white/90 px-4 py-4 shadow-[0_10px_24px_rgba(14,116,144,0.08)]"
+                        >
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <span className="rounded-full bg-cyan-700/10 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-cyan-800">
+                              {phase.title}
+                            </span>
+                            <span className="text-right text-sm font-semibold text-slate-900">
+                              {phase.label}
+                            </span>
+                          </div>
+                          <ul className="space-y-2.5 text-[0.96rem] leading-6 text-slate-700">
+                            {phase.bullets.map((bullet, bulletIndex) => (
+                              <li
+                                key={`${phase.title}-${bulletIndex}`}
+                                className="flex items-start gap-2.5"
+                              >
+                                <span className="mt-2 size-1.5 shrink-0 rounded-full bg-cyan-600" />
+                                <span>{bullet}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ) : null}
+
                 {lane.items.map(({ content, index }) => (
                   <article
                     key={`positioning-kanban-${index}`}
@@ -1083,6 +1610,27 @@ function splitLeadSentence(content: string) {
     lead: (match[1] ?? "").trim(),
     body: (match[3] ?? "").trim(),
   };
+}
+
+function extractSummaryHighlights(content: string) {
+  const normalized = content
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const sentences = normalized
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  if (!sentences.length) {
+    return [normalized];
+  }
+
+  return sentences.slice(0, 3);
 }
 
 const SECTION_TABS = [
@@ -1337,14 +1885,113 @@ function getNeedAsk(
   return lead || requirement.description || requirement.title;
 }
 
+function normalizeReferenceText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function tokenizeReferenceText(value: string) {
+  return normalizeReferenceText(value)
+    .split(" ")
+    .filter((token) => token.length >= 3);
+}
+
+function findDocumentForReference(
+  documents: ProjectDocument[],
+  sourceReference: string,
+) {
+  const normalizedReference = normalizeReferenceText(sourceReference);
+  if (!normalizedReference) {
+    return null;
+  }
+
+  if (
+    normalizedReference.includes("kundedokument") ||
+    normalizedReference.includes("customer document")
+  ) {
+    return (
+      documents.find((document) => document.role === "primary_customer_document") ??
+      null
+    );
+  }
+
+  if (
+    normalizedReference.includes("losningsdokument") ||
+    normalizedReference.includes("solution document")
+  ) {
+    return (
+      documents.find((document) => document.role === "primary_solution_document") ??
+      null
+    );
+  }
+
+  const referenceTokens = tokenizeReferenceText(sourceReference);
+  let bestMatch: { document: ProjectDocument; score: number } | null = null;
+
+  for (const document of documents) {
+    const candidates = [
+      document.title,
+      document.file_name,
+      roleLabel(document.role),
+      document.role === "supporting_document"
+        ? supportingSubtypeLabel(document.supporting_subtype)
+        : "",
+    ];
+    const normalizedCandidates = candidates
+      .map((candidate) => normalizeReferenceText(candidate))
+      .filter(Boolean);
+
+    let score = 0;
+
+    for (const candidate of normalizedCandidates) {
+      if (candidate === normalizedReference) {
+        score = Math.max(score, 100);
+      } else if (
+        candidate.includes(normalizedReference) ||
+        normalizedReference.includes(candidate)
+      ) {
+        score = Math.max(score, 70);
+      }
+
+      for (const token of referenceTokens) {
+        if (candidate.includes(token)) {
+          score += 12;
+        }
+      }
+    }
+
+    if (!bestMatch || score > bestMatch.score) {
+      bestMatch = { document, score };
+    }
+  }
+
+  return bestMatch && bestMatch.score >= 24 ? bestMatch.document : null;
+}
+
 function NeedSignalCard({
   requirement,
   index,
+  projectId,
+  documents,
 }: {
   requirement: CustomerAnalysisResult["implicit_requirements"][number];
   index: number;
+  projectId: string;
+  documents: ProjectDocument[];
 }) {
   const style = NEED_CARD_STYLES[index % NEED_CARD_STYLES.length];
+  const referencedDocument = findDocumentForReference(
+    documents,
+    requirement.source_reference,
+  );
+  const documentHref = referencedDocument
+    ? `/api/projects/${projectId}/documents/${referencedDocument.id}?disposition=inline`
+    : null;
 
   return (
     <article className="relative overflow-hidden rounded-xl border border-slate-200/80 bg-white/88 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
@@ -1426,7 +2073,19 @@ function NeedSignalCard({
             />
             {requirement.source_reference || requirement.source_excerpt ? (
               <p className="text-sm leading-6 text-slate-500">
-                {requirement.source_reference || "Ingen referanse"} ·{" "}
+                {documentHref ? (
+                  <a
+                    href={documentHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+                  >
+                    {requirement.source_reference || referencedDocument?.title}
+                  </a>
+                ) : (
+                  requirement.source_reference || "Ingen referanse"
+                )}{" "}
+                ·{" "}
                 {requirement.source_excerpt || ""}
               </p>
             ) : null}
@@ -1438,6 +2097,8 @@ function NeedSignalCard({
 }
 
 export function ProjectAnalysisTab({
+  projectId,
+  documents,
   customerAnalysis,
   busy,
   saveBusy,
@@ -1447,6 +2108,8 @@ export function ProjectAnalysisTab({
   onRegenerateSection,
   onSaveAnalysis,
 }: {
+  projectId: string;
+  documents: ProjectDocument[];
   customerAnalysis: CustomerAnalysisResult | null;
   busy: boolean;
   saveBusy: boolean;
@@ -1505,18 +2168,34 @@ export function ProjectAnalysisTab({
         {
           key: "profile",
           title: "Kundesituasjon",
+          eyebrow: "Nåsituasjon",
           description:
             "Hva slags virksomhet dette er, hva som preger dagens plattform og hvorfor kompleksiteten betyr noe.",
           icon: Building2,
           content: customerAnalysis.customer_profile_summary || "",
+          bullets: extractSummaryHighlights(
+            customerAnalysis.customer_profile_summary || "",
+          ),
+          accentClassName:
+            "border-blue-200/80 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.92))]",
+          iconClassName: "bg-blue-600 text-white",
+          chipClassName: "bg-blue-600/10 text-blue-800",
         },
         {
           key: "goals",
           title: "Kundens mål og retning",
+          eyebrow: "Ønsket retning",
           description:
             "Hva kunden prøver å oppnå, hvilken utviklingsretning virksomheten peker mot, og hvordan dette kan brukes til å forme en mer rettet løsning.",
           icon: Compass,
           content: customerAnalysis.customer_goals_summary || "",
+          bullets: extractSummaryHighlights(
+            customerAnalysis.customer_goals_summary || "",
+          ),
+          accentClassName:
+            "border-emerald-200/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.94),rgba(255,255,255,0.92))]",
+          iconClassName: "bg-emerald-600 text-white",
+          chipClassName: "bg-emerald-600/10 text-emerald-800",
         },
       ].filter((item) => item.content.trim().length > 0)
     : [];
@@ -1639,39 +2318,130 @@ export function ProjectAnalysisTab({
           <TabsContent value="summary" className="mt-0">
             <SectionSurface
               title="Oppsummering av kunden"
-              description="En rask lederlesning som deler kundens nåsituasjon og ønsket retning i to tydelige spor."
+              description="En lettere lederlesning som deler kundens nåsituasjon og ønsket retning i korte, tydelige spor."
               icon={Building2}
               action={renderRegenerateButton("summary")}
             >
               {summaryPanels.length > 0 ? (
-                <div className="space-y-4">
-                  {summaryPanels.map((panel) => {
-                    const Icon = panel.icon;
-                    return (
-                      <div
-                        key={panel.key}
-                        className="rounded-lg border border-border/70 bg-background/75 px-5 py-5"
-                      >
-                        <div className="mb-4 flex items-start gap-3">
-                          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
-                            <Icon className="size-5" />
+                <div className="space-y-5">
+                  <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(239,246,255,0.92)_46%,rgba(236,253,245,0.82))] shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-5 md:px-6">
+                      <div className="max-w-3xl">
+                        <p className="text-[0.7rem] font-bold uppercase tracking-[0.18em] text-slate-500">
+                          Kort fortalt
+                        </p>
+                        <h4 className="mt-2 text-[1.35rem] font-semibold tracking-[-0.04em] text-slate-950">
+                          Hva slags kunde dette er, og hvor tilbudet må treffe
+                          raskt
+                        </h4>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                          Oppsummeringen er strammet inn for rask skanning:
+                          først hovedpoenget, deretter bare de viktigste
+                          signalene teamet bør bruke videre i løsning og
+                          tilbudstekst.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                          Mindre tekstvegg
+                        </span>
+                        <span className="rounded-full bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                          Raskere lesing
+                        </span>
+                        <span className="rounded-full bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                          Mer handlingsnært
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {summaryPanels.map((panel) => {
+                      const Icon = panel.icon;
+                      const summaryText = splitLeadSentence(panel.content);
+
+                      return (
+                        <div
+                          key={panel.key}
+                          className={`overflow-hidden rounded-2xl border px-5 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.06)] ${panel.accentClassName}`}
+                        >
+                          <div className="mb-5 flex items-start gap-3">
+                            <div
+                              className={`flex size-11 shrink-0 items-center justify-center rounded-xl shadow-sm ${panel.iconClassName}`}
+                            >
+                              <Icon className="size-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[0.7rem] font-bold uppercase tracking-[0.18em] text-slate-500">
+                                {panel.eyebrow}
+                              </p>
+                              <h4 className="text-base font-semibold text-foreground">
+                                {panel.title}
+                              </h4>
+                              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                                {panel.description}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <h4 className="text-base font-semibold text-foreground">
-                              {panel.title}
-                            </h4>
-                            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                              {panel.description}
-                            </p>
+
+                          <div className="space-y-4">
+                            {panel.bullets.length ? (
+                              <div className="rounded-2xl border border-white/80 bg-white/72 px-4 py-4">
+                                <p className="mb-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                                  Punktoppsummering
+                                </p>
+                                <div className="grid gap-2">
+                                  {panel.bullets.map((bullet, index) => (
+                                    <div
+                                      key={`${panel.key}-bullet-${index}`}
+                                      className="flex items-start gap-3 rounded-xl bg-slate-50/90 px-3 py-3"
+                                    >
+                                      <span
+                                        className={`mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[0.72rem] font-bold ${panel.chipClassName}`}
+                                      >
+                                        {index + 1}
+                                      </span>
+                                      <p className="text-sm leading-6 text-slate-700">
+                                        {bullet}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <details className="group rounded-2xl border border-white/80 bg-white/88 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+                              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-left [&::-webkit-details-marker]:hidden">
+                                <div>
+                                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                                    Full oppsummering
+                                  </p>
+                                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                                    Vis hovedteksten bak punktene
+                                  </p>
+                                </div>
+                                <span className="text-sm font-semibold text-slate-500 transition-transform group-open:rotate-180">
+                                  ↓
+                                </span>
+                              </summary>
+
+                              <div className="mt-4 border-t border-slate-200/80 pt-4">
+                                <p className="text-[1.08rem] font-semibold leading-7 tracking-[-0.03em] text-slate-950">
+                                  {summaryText.lead || panel.content}
+                                </p>
+                                {summaryText.body ? (
+                                  <MarkdownViewer
+                                    content={summaryText.body}
+                                    className="analysis-prose mt-3 max-w-none text-[0.98rem] leading-7 text-slate-600"
+                                  />
+                                ) : null}
+                              </div>
+                            </details>
                           </div>
                         </div>
-                        <MarkdownViewer
-                          content={panel.content}
-                          className="analysis-prose max-w-none text-[1rem] text-foreground"
-                        />
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <MarkdownViewer
@@ -1771,21 +2541,20 @@ export function ProjectAnalysisTab({
                     )}
                   </div>
 
-                  {customerAnalysis.positioning_recommendations.length ? (
-                    <div className="rounded-lg border border-slate-200/80 bg-white/45 p-4">
-                      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                        <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary">
-                          Posisjoneringsspor
-                        </span>
-                        <span className="text-sm text-slate-500">
-                          Konkretiser retningen som kort teamet kan arbeide fra.
-                        </span>
-                      </div>
-                      <PositioningKanban
-                        items={customerAnalysis.positioning_recommendations}
-                      />
+                  <div className="rounded-lg border border-slate-200/80 bg-white/45 p-4">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+                        Posisjoneringsspor
+                      </span>
+                      <span className="text-sm text-slate-500">
+                        Konkretiser retningen som kort teamet kan arbeide fra.
+                      </span>
                     </div>
-                  ) : null}
+                    <PositioningKanban
+                      items={customerAnalysis.positioning_recommendations}
+                      analysis={customerAnalysis}
+                    />
+                  </div>
                 </div>
               </div>
               <SectionHistoryPanel analysis={customerAnalysis} section="strategy" />
@@ -1879,6 +2648,8 @@ export function ProjectAnalysisTab({
                       key={`implicit-${req.title}-${index}`}
                       requirement={req}
                       index={index}
+                      projectId={projectId}
+                      documents={documents}
                     />
                   ))}
                 </div>

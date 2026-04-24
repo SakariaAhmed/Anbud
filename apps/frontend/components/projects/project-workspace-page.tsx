@@ -1149,6 +1149,8 @@ export function ProjectWorkspacePage({
 
             {activeTab === "analysis" ? (
               <ProjectAnalysisTab
+                projectId={project.id}
+                documents={project.documents}
                 customerAnalysis={customerAnalysis}
                 busy={busy === "analysis"}
                 saveBusy={busy === "save-analysis"}

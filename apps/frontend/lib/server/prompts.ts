@@ -69,6 +69,7 @@ export function buildCustomerAnalysisPrompt() {
       "positioning_recommendations skal ligne en senior anbefaling til tilbudsteamet, ikke generiske råd.",
       "positioning_recommendations skal være konkrete og bruke språk som faktisk kan brukes i tilbudsarbeid, for eksempel anbefalt hovedvinkling, hva kunden bør selges inn på, hva man ikke bør overfokusere på, og en sterk formulering eller one-liner når det er relevant.",
       "positioning_recommendations skal prioritere trygghet, differensiering og handlingsvalg fremfor abstrakte beskrivelser.",
+      "positioning_recommendations skal alltid inneholde minst ett tydelig leveransepunkt som beskriver en strukturert faseplan for gjennomføring av løsningen i pragmatisk rekkefølge.",
       "executive_summary skal være tilbudsteamets operative konklusjon og ikke bare parafrasere customer_profile_summary eller customer_goals_summary.",
       "Hver value_opportunity må ha nøyaktig én gyldig value_category fra den faste listen.",
       "value_opportunities skal være maksimalt 4 punkter totalt.",
