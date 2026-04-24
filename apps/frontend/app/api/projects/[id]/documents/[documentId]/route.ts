@@ -2,16 +2,25 @@ import { NextResponse } from "next/server";
 
 import { deleteDocument, getDocumentDetail, getProjectSnapshot } from "@/lib/server/projects-db";
 
-export async function GET(_: Request, context: { params: Promise<{ id: string; documentId: string }> }) {
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ id: string; documentId: string }> },
+) {
   try {
     const { id, documentId } = await context.params;
     const document = await getDocumentDetail(id, documentId);
     const buffer = Buffer.from(document.file_base64, "base64");
+    const requestUrl = new URL(request.url);
+    const disposition = requestUrl.searchParams.get("disposition");
+    const contentDisposition =
+      disposition === "inline"
+        ? `inline; filename="${encodeURIComponent(document.file_name)}"`
+        : `attachment; filename="${encodeURIComponent(document.file_name)}"`;
 
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": document.content_type,
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(document.file_name)}"`,
+        "Content-Disposition": contentDisposition,
       },
     });
   } catch (error) {
