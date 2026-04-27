@@ -185,7 +185,7 @@
 
   .value-donut-frame {
     container-type: inline-size;
-    overflow: hidden;
+    overflow: visible;
   }
 
   @container (max-width: 34rem) {
