@@ -834,14 +834,14 @@ function DonutChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
   const { data: normalizedData, total } = normalizePieData(data);
-  const centerX = 228;
+  const centerX = 260;
   const centerY = 150;
   const outerRadius = 96;
   const innerRadius = 56;
   const labelOrbitRadius = outerRadius + 22;
   const calloutRadius = outerRadius + 40;
-  const labelLeftX = 32;
-  const labelRightX = 424;
+  const labelLeftX = 96;
+  const labelRightX = 500;
   let accumulated = 0;
   const activeIndex = hoveredIndex ?? selectedIndex;
   const segments = normalizedData.map((item) => {
@@ -933,8 +933,8 @@ function DonutChart({
         <div className="pointer-events-none absolute inset-x-16 top-4 h-12 rounded-full bg-slate-200/35 blur-3xl" />
         <motion.div className="relative">
           <svg
-            viewBox="0 0 456 300"
-            className="w-full overflow-hidden"
+            viewBox="0 0 596 300"
+            className="w-full overflow-visible"
             aria-label="Kakediagram"
           >
             <defs>
