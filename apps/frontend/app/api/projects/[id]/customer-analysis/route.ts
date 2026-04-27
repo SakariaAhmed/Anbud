@@ -12,12 +12,215 @@ import {
   listSupportingDocuments,
   saveCustomerAnalysis,
 } from "@/lib/server/projects-db";
-import type { CustomerAnalysisSection } from "@/lib/types";
+import type {
+  AnalysisRequirement,
+  CustomerAnalysisResult,
+  CustomerAnalysisSection,
+  RequirementImportance,
+  ValueOpportunity,
+} from "@/lib/types";
 
 function isCustomerAnalysisSection(
   value: unknown,
 ): value is CustomerAnalysisSection {
   return CUSTOMER_ANALYSIS_SECTIONS.includes(value as CustomerAnalysisSection);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isRequirementImportance(
+  value: unknown,
+): value is RequirementImportance {
+  return value === "Kritisk" || value === "Viktig" || value === "Mindre viktig";
+}
+
+function isAnalysisRequirement(value: unknown): value is AnalysisRequirement {
+  return (
+    isRecord(value) &&
+    typeof value.title === "string" &&
+    typeof value.description === "string" &&
+    typeof value.category === "string" &&
+    isRequirementImportance(value.importance) &&
+    (value.kind === "Eksplisitt" || value.kind === "Implisitt") &&
+    typeof value.source_reference === "string" &&
+    typeof value.source_excerpt === "string"
+  );
+}
+
+function isValueOpportunity(value: unknown): value is ValueOpportunity {
+  return (
+    isRecord(value) &&
+    typeof value.title === "string" &&
+    typeof value.description === "string" &&
+    Array.isArray(value.value_categories) &&
+    value.value_categories.every((item) => typeof item === "string") &&
+    typeof value.profit_share_percent === "number"
+  );
+}
+
+function applySectionSnapshot(
+  analysis: CustomerAnalysisResult,
+  section: CustomerAnalysisSection,
+  snapshot: unknown,
+): CustomerAnalysisResult {
+  if (!isRecord(snapshot)) {
+    throw new Error("Seksjonsdata må være et JSON-objekt.");
+  }
+
+  switch (section) {
+    case "summary": {
+      if (
+        typeof snapshot.customer_profile_summary !== "string" ||
+        typeof snapshot.customer_goals_summary !== "string"
+      ) {
+        throw new Error(
+          "Oppsummering må inneholde tekstfeltene customer_profile_summary og customer_goals_summary.",
+        );
+      }
+
+      return {
+        ...analysis,
+        customer_profile_summary: snapshot.customer_profile_summary,
+        customer_goals_summary: snapshot.customer_goals_summary,
+      };
+    }
+    case "strategy": {
+      if (
+        typeof snapshot.executive_summary !== "string" ||
+        !isStringArray(snapshot.positioning_recommendations)
+      ) {
+        throw new Error(
+          "Strategi må inneholde executive_summary og positioning_recommendations.",
+        );
+      }
+
+      return {
+        ...analysis,
+        executive_summary: snapshot.executive_summary,
+        positioning_recommendations: snapshot.positioning_recommendations,
+      };
+    }
+    case "design": {
+      if (
+        typeof snapshot.high_level_solution_design !== "string" ||
+        typeof snapshot.high_level_architecture_mermaid !== "string"
+      ) {
+        throw new Error(
+          "Design må inneholde high_level_solution_design og high_level_architecture_mermaid.",
+        );
+      }
+
+      return {
+        ...analysis,
+        high_level_solution_design: snapshot.high_level_solution_design,
+        high_level_architecture_mermaid:
+          snapshot.high_level_architecture_mermaid,
+      };
+    }
+    case "risks": {
+      const risksForUs = snapshot.risks_for_us;
+      const risksForCustomer = snapshot.risks_for_customer;
+
+      if (
+        !isStringArray(snapshot.risks) ||
+        (typeof risksForUs !== "undefined" && !isStringArray(risksForUs)) ||
+        ("risks_for_customer" in snapshot &&
+          !isStringArray(risksForCustomer))
+      ) {
+        throw new Error(
+          "Risiko må inneholde tekstlister for risks, risks_for_us og risks_for_customer.",
+        );
+      }
+
+      const nextRisksForUs = isStringArray(risksForUs) ? risksForUs : [];
+      const nextRisksForCustomer = isStringArray(risksForCustomer)
+        ? risksForCustomer
+        : [];
+
+      return {
+        ...analysis,
+        risks: snapshot.risks,
+        risks_for_us: nextRisksForUs,
+        risks_for_customer: nextRisksForCustomer,
+      };
+    }
+    case "needs": {
+      if (
+        !Array.isArray(snapshot.implicit_requirements) ||
+        !snapshot.implicit_requirements.every(isAnalysisRequirement) ||
+        !Array.isArray(snapshot.prioritized_requirements) ||
+        !snapshot.prioritized_requirements.every(
+          (item) =>
+            isRecord(item) &&
+            typeof item.requirement === "string" &&
+            isRequirementImportance(item.priority) &&
+            typeof item.reason === "string",
+        )
+      ) {
+        throw new Error(
+          "Behov må inneholde gyldige implicit_requirements og prioritized_requirements.",
+        );
+      }
+
+      return {
+        ...analysis,
+        implicit_requirements: snapshot.implicit_requirements,
+        prioritized_requirements: snapshot.prioritized_requirements,
+      };
+    }
+    case "keywords": {
+      if (
+        !isStringArray(snapshot.signal_words) ||
+        ("signal_word_counts" in snapshot &&
+          !isRecord(snapshot.signal_word_counts))
+      ) {
+        throw new Error(
+          "Nøkkelord må inneholde signal_words og eventuelt signal_word_counts.",
+        );
+      }
+
+      const signalWordCounts = isRecord(snapshot.signal_word_counts)
+        ? snapshot.signal_word_counts
+        : undefined;
+      if (
+        typeof signalWordCounts !== "undefined" &&
+        !Object.values(signalWordCounts).every(
+          (value) => typeof value === "number",
+        )
+      ) {
+        throw new Error("signal_word_counts må ha tallverdier.");
+      }
+
+      return {
+        ...analysis,
+        signal_words: snapshot.signal_words,
+        signal_word_counts: signalWordCounts as
+          | Record<string, number>
+          | undefined,
+      };
+    }
+    case "value": {
+      if (
+        !Array.isArray(snapshot.value_opportunities) ||
+        !snapshot.value_opportunities.every(isValueOpportunity)
+      ) {
+        throw new Error(
+          "Verdi må inneholde en gyldig value_opportunities-liste.",
+        );
+      }
+
+      return {
+        ...analysis,
+        value_opportunities: snapshot.value_opportunities,
+      };
+    }
+  }
 }
 
 export async function POST(
@@ -110,6 +313,28 @@ export async function POST(
   }
 }
 
+export async function GET(
+  _: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await context.params;
+    const analysis = await getCustomerAnalysis(id);
+
+    return NextResponse.json({ analysis });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Kunne ikke hente kundeanalysen.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
 export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -118,12 +343,26 @@ export async function PUT(
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as {
       analysis_text?: string;
+      section?: unknown;
+      section_snapshot?: unknown;
     };
 
+    const section = isCustomerAnalysisSection(body.section)
+      ? body.section
+      : null;
     const analysisText =
-      typeof body.analysis_text === "string" ? body.analysis_text.trim() : "";
+      !section && typeof body.analysis_text === "string"
+        ? body.analysis_text.trim()
+        : "";
 
-    if (!analysisText) {
+    if (typeof body.section !== "undefined" && !section) {
+      return NextResponse.json(
+        { error: "Ugyldig analyseseksjon." },
+        { status: 400 },
+      );
+    }
+
+    if (!section && !analysisText) {
       return NextResponse.json(
         { error: "Analysefeltet kan ikke være tomt." },
         { status: 400 },
@@ -151,19 +390,23 @@ export async function PUT(
       );
     }
 
+    const nextAnalysis = section
+      ? applySectionSnapshot(existingAnalysis, section, body.section_snapshot)
+      : {
+          ...existingAnalysis,
+          executive_summary: analysisText,
+        };
+
     const saved = await saveCustomerAnalysis(
       id,
       [
         customerDocument.id,
         ...supportingDocuments.map((document) => document.id),
       ],
-      {
-        ...existingAnalysis,
-        executive_summary: analysisText,
-      },
+      nextAnalysis,
       {
         previousAnalysis: existingAnalysis,
-        updatedSections: ["strategy"],
+        updatedSections: [section ?? "strategy"],
         historySource: "manual_edit",
       },
     );

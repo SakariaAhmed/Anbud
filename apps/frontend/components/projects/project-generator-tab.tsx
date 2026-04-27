@@ -31,9 +31,9 @@ export function ProjectGeneratorTab({
   );
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+    <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(18rem,22.5rem)_minmax(0,1fr)]">
       {/* Form */}
-      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <div className="min-w-0 overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="border-b bg-muted/50 px-6 py-5">
           <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-muted-foreground">
             Løsningsutkast
@@ -75,15 +75,15 @@ export function ProjectGeneratorTab({
         </form>
 
         {busy && busyMessage ? (
-          <div className="mt-1 flex items-center gap-2 px-5 pb-4 text-sm text-primary">
+          <div className="mt-1 flex min-w-0 items-center gap-2 px-5 pb-4 text-sm text-primary">
             <Spinner className="size-3.5" />
-            <span>{busyMessage}</span>
+            <span className="min-w-0">{busyMessage}</span>
           </div>
         ) : null}
       </div>
 
       {/* Artifacts list */}
-      <div>
+      <div className="min-w-0">
         <h3 className="mb-3 text-sm font-bold uppercase tracking-[0.12em] text-muted-foreground">
           Lagrede løsningsutkast
         </h3>
@@ -94,10 +94,10 @@ export function ProjectGeneratorTab({
         ) : (
           <div className="space-y-3">
             {losningsutkast.map((artifact) => (
-              <details key={artifact.id} className="group rounded-2xl border bg-card">
+              <details key={artifact.id} className="group min-w-0 rounded-2xl border bg-card">
                 <summary className="flex cursor-pointer list-none items-start justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/30">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                       <span>Løsningsutkast</span>
                       <span>·</span>
                       <span>{formatDate(artifact.created_at)}</span>

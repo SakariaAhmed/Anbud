@@ -184,6 +184,15 @@ const SOLUTION_EVALUATION_EMPTY: SolutionEvaluationResult = {
   improvement_recommendations: [],
   value_assessment: [],
   rewrite_suggestions: [],
+  architecture_comparison: {
+    winner: "Uavgjort",
+    architect_solution_score: 0,
+    system_solution_score: 0,
+    verdict: "",
+    strong_critique: [],
+    pragmatic_reflections: [],
+    strategy_improvement_advice: [],
+  },
   executive_summary: "",
 };
 
@@ -775,6 +784,7 @@ export async function getProjectDetail(
         projectRow,
         documentRows,
         { data: analyses, error: analysesError },
+        { data: evaluations, error: evaluationsError },
         { data: artifactRows, error: artifactsError },
       ] = await Promise.all([
         queryProjectRow(projectId),
@@ -792,14 +802,21 @@ export async function getProjectDetail(
           .order("created_at", { ascending: false })
           .limit(1),
         supabase
+          .from("solution_evaluations")
+          .select("*")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
           .from("generated_artifacts")
           .select("id")
           .eq("project_id", projectId),
       ]);
 
-      if (analysesError || artifactsError) {
+      if (analysesError || evaluationsError || artifactsError) {
         throw new Error(
           analysesError?.message ||
+            evaluationsError?.message ||
             artifactsError?.message ||
             "Kunne ikke laste prosjektet.",
         );
@@ -807,6 +824,8 @@ export async function getProjectDetail(
 
       const analysisRow =
         ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
+      const evaluationRow =
+        ((evaluations ?? [])[0] as SolutionEvaluationRow | undefined) ?? null;
 
       return {
         id: projectRow.id,
@@ -832,12 +851,76 @@ export async function getProjectDetail(
         customer_analysis: analysisRow
           ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
           : null,
-        solution_evaluation: null,
+        solution_evaluation: evaluationRow
+          ? decryptJson(evaluationRow.result_json, SOLUTION_EVALUATION_EMPTY)
+          : null,
         generated_artifacts: [],
         chat_messages: [],
       };
     },
     ["project-detail", projectId],
+    {
+      tags: [projectTag(projectId)],
+      revalidate: 60,
+    },
+  )();
+}
+
+export async function getProjectShell(
+  projectId: string,
+): Promise<ProjectDetail> {
+  return unstable_cache(
+    async () => {
+      const supabase = createServiceClient();
+
+      const [projectRow, documentRows, { data: artifactRows, error: artifactsError }] =
+        await Promise.all([
+          queryProjectRow(projectId),
+          fetchDocumentSummaryRows((select) =>
+            supabase
+              .from("documents")
+              .select(select)
+              .eq("project_id", projectId)
+              .order("created_at", { ascending: false }),
+          ),
+          supabase
+            .from("generated_artifacts")
+            .select("id")
+            .eq("project_id", projectId),
+        ]);
+
+      if (artifactsError) {
+        throw new Error(artifactsError.message);
+      }
+
+      return {
+        id: projectRow.id,
+        name: projectRow.name,
+        customer_name: projectRow.customer_name,
+        description: projectRow.description,
+        industry: projectRow.industry,
+        status: mapProjectStatus(projectRow),
+        customer_document_uploaded: projectRow.customer_document_uploaded,
+        customer_analysis_generated: projectRow.customer_analysis_generated,
+        solution_document_uploaded: projectRow.solution_document_uploaded,
+        solution_evaluation_generated: projectRow.solution_evaluation_generated,
+        last_activity_at: projectRow.last_activity_at,
+        created_at: projectRow.created_at,
+        updated_at: projectRow.updated_at,
+        document_count: documentRows.length,
+        supporting_document_count: documentRows.filter(
+          (document) => document.role === "supporting_document",
+        ).length,
+        artifact_count: (artifactRows ?? []).length,
+        has_chat: false,
+        documents: documentRows.map(mapDocumentSummary),
+        customer_analysis: null,
+        solution_evaluation: null,
+        generated_artifacts: [],
+        chat_messages: [],
+      };
+    },
+    ["project-shell", projectId],
     {
       tags: [projectTag(projectId)],
       revalidate: 60,
@@ -919,7 +1002,38 @@ export async function saveDocument(input: {
     projectPatch.customer_document_uploaded = true;
   }
   if (input.role === "primary_solution_document") {
+    let demoteResult = await supabase
+      .from("documents")
+      .update({
+        role: "supporting_document",
+        supporting_subtype: "utkast",
+      })
+      .eq("project_id", input.projectId)
+      .eq("role", "primary_solution_document")
+      .neq("id", inserted.id);
+
+    if (demoteResult.error && isMissingLegacyDocumentColumn(demoteResult.error)) {
+      demoteResult = await supabase
+        .from("documents")
+        .update({
+          role: "supporting_document",
+          subtype: "utkast",
+        })
+        .eq("project_id", input.projectId)
+        .eq("role", "primary_solution_document")
+        .neq("id", inserted.id);
+    }
+
+    if (demoteResult.error) {
+      throw new Error(demoteResult.error.message);
+    }
+
     projectPatch.solution_document_uploaded = true;
+    projectPatch.solution_evaluation_generated = false;
+    await supabase
+      .from("solution_evaluations")
+      .delete()
+      .eq("project_id", input.projectId);
   }
 
   await supabase
@@ -1013,6 +1127,110 @@ export async function deleteDocument(projectId: string, documentId: string) {
   }
 
   revalidateProjectCaches(projectId);
+}
+
+export async function markDocumentAsPrimarySolution(
+  projectId: string,
+  documentId: string,
+) {
+  const supabase = createServiceClient();
+
+  const selected = await fetchSingleDocumentRow((select) =>
+    supabase
+      .from("documents")
+      .select(select)
+      .eq("project_id", projectId)
+      .eq("id", documentId)
+      .single(),
+  );
+
+  if (!selected) {
+    throw new Error("Fant ikke dokumentet som skal brukes som arkitektløsning.");
+  }
+
+  if (selected.role === "primary_customer_document") {
+    throw new Error("Kundedokumentet kan ikke brukes som arkitektløsning.");
+  }
+
+  let demoteResult = await supabase
+    .from("documents")
+    .update({
+      role: "supporting_document",
+      supporting_subtype: "utkast",
+    })
+    .eq("project_id", projectId)
+    .eq("role", "primary_solution_document")
+    .neq("id", documentId);
+
+  if (demoteResult.error && isMissingLegacyDocumentColumn(demoteResult.error)) {
+    demoteResult = await supabase
+      .from("documents")
+      .update({
+        role: "supporting_document",
+        subtype: "utkast",
+      })
+      .eq("project_id", projectId)
+      .eq("role", "primary_solution_document")
+      .neq("id", documentId);
+  }
+
+  if (demoteResult.error) {
+    throw new Error(demoteResult.error.message);
+  }
+
+  let promoteResult = await supabase
+    .from("documents")
+    .update({
+      role: "primary_solution_document",
+      supporting_subtype: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("project_id", projectId)
+    .eq("id", documentId)
+    .select("*")
+    .single<DocumentRow>();
+
+  if (promoteResult.error && isMissingLegacyDocumentColumn(promoteResult.error)) {
+    promoteResult = await supabase
+      .from("documents")
+      .update({
+        role: "primary_solution_document",
+        subtype: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("project_id", projectId)
+      .eq("id", documentId)
+      .select("*")
+      .single<DocumentRow>();
+  }
+
+  if (promoteResult.error || !promoteResult.data) {
+    throw new Error(
+      promoteResult.error?.message || "Kunne ikke velge arkitektløsningen.",
+    );
+  }
+
+  await supabase
+    .from("solution_evaluations")
+    .delete()
+    .eq("project_id", projectId);
+
+  await supabase
+    .from("projects")
+    .update({
+      solution_document_uploaded: true,
+      solution_evaluation_generated: false,
+      last_activity_at: new Date().toISOString(),
+    })
+    .eq("id", projectId);
+
+  revalidateProjectCaches(projectId);
+
+  return mapDocumentSummary(
+    fromUnknownDocumentSummaryRow(
+      promoteResult.data as unknown as Record<string, unknown>,
+    ),
+  );
 }
 
 export async function getPrimaryDocument(
@@ -1176,6 +1394,23 @@ export async function saveSolutionEvaluation(
   revalidateProjectCaches(projectId);
 
   return decryptJson(insertResult.data.result_json, SOLUTION_EVALUATION_EMPTY);
+}
+
+export async function getSolutionEvaluation(projectId: string) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("solution_evaluations")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = (data?.[0] as SolutionEvaluationRow | undefined) ?? null;
+  return row ? decryptJson(row.result_json, SOLUTION_EVALUATION_EMPTY) : null;
 }
 
 export async function saveGeneratedArtifact(

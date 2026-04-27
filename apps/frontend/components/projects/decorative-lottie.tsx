@@ -1,6 +1,6 @@
 "use client";
 
-import lottie, { type AnimationItem } from "lottie-web";
+import type { AnimationItem } from "lottie-web";
 import { useEffect, useRef } from "react";
 
 export const DECORATIVE_LOTTIES = {
@@ -24,30 +24,39 @@ export function DecorativeLottie({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    let animation: AnimationItem | null = null;
+    let cancelled = false;
 
     const prefersReducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    const animation: AnimationItem = lottie.loadAnimation({
-      container,
-      renderer: "svg",
-      loop: !prefersReducedMotion,
-      autoplay: !prefersReducedMotion,
-      ...(src ? { path: src } : { animationData }),
-      rendererSettings: {
-        preserveAspectRatio: "xMidYMid meet",
-      },
+    void import("lottie-web").then(({ default: lottie }) => {
+      if (cancelled) {
+        return;
+      }
+
+      animation = lottie.loadAnimation({
+        container,
+        renderer: "svg",
+        loop: !prefersReducedMotion,
+        autoplay: !prefersReducedMotion,
+        ...(src ? { path: src } : { animationData }),
+        rendererSettings: {
+          preserveAspectRatio: "xMidYMid meet",
+        },
+      });
+
+      animation.setSpeed(speed);
+      if (prefersReducedMotion) {
+        animation.addEventListener("DOMLoaded", () => {
+          animation?.goToAndStop(48, true);
+        });
+      }
     });
 
-    animation.setSpeed(speed);
-    if (prefersReducedMotion) {
-      animation.addEventListener("DOMLoaded", () => {
-        animation.goToAndStop(48, true);
-      });
-    }
-
     return () => {
-      animation.destroy();
+      cancelled = true;
+      animation?.destroy();
     };
   }, [animationData, speed, src]);
 

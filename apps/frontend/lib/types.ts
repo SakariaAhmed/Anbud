@@ -224,6 +224,15 @@ export interface SolutionEvaluationResult {
     target: string;
     suggestion: string;
   }>;
+  architecture_comparison?: {
+    winner: "Systemløsning" | "Arkitektløsning" | "Uavgjort";
+    architect_solution_score: number;
+    system_solution_score: number;
+    verdict: string;
+    strong_critique: string[];
+    pragmatic_reflections: string[];
+    strategy_improvement_advice: string[];
+  };
   executive_summary: string;
 }
 
@@ -293,7 +302,8 @@ export interface ChatRequestInput {
 export type ProjectJobKind =
   | "solution_evaluation"
   | "artifact_generation"
-  | "high_level_design";
+  | "high_level_design"
+  | "perfect_system_solution";
 export type ProjectJobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface ArtifactGenerationJobResult {

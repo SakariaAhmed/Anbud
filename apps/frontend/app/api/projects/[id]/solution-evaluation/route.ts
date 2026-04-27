@@ -5,10 +5,25 @@ import {
   getCustomerAnalysis,
   getPrimaryDocument,
   getProjectSnapshot,
+  getSolutionEvaluation,
   listSupportingDocuments,
   saveGeneratedArtifact,
   saveSolutionEvaluation,
 } from "@/lib/server/projects-db";
+
+export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params;
+    const evaluation = await getSolutionEvaluation(id);
+
+    return NextResponse.json({ evaluation });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Kunne ikke hente løsningsvurderingen." },
+      { status: 500 },
+    );
+  }
+}
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {

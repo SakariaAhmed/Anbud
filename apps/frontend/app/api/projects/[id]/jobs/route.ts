@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   queueArtifactGenerationJob,
   queueHighLevelDesignJob,
+  queuePerfectSystemSolutionJob,
   queueSolutionEvaluationJob,
 } from "@/lib/server/project-jobs";
 import type { GeneratedArtifactType } from "@/lib/types";
@@ -26,6 +27,9 @@ export async function POST(
           kind?: "high_level_design";
         }
       | {
+          kind?: "perfect_system_solution";
+        }
+      | {
           kind?: "artifact_generation";
           artifact_type?: string;
           instructions?: string;
@@ -42,6 +46,14 @@ export async function POST(
 
     if (body.kind === "high_level_design") {
       const job = queueHighLevelDesignJob({
+        projectId: id,
+      });
+
+      return NextResponse.json({ job }, { status: 202 });
+    }
+
+    if (body.kind === "perfect_system_solution") {
+      const job = queuePerfectSystemSolutionJob({
         projectId: id,
       });
 
