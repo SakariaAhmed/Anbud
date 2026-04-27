@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import {
   ArrowRight,
   BarChart3,
@@ -98,13 +99,18 @@ function HomepageRefreshAnimation() {
   const reduceMotion = useReducedMotion();
   const markRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(true);
-  const [phase, setPhase] = useState<"intro" | "move" | "settled">("intro");
+  const [completed, setCompleted] = useState(false);
+  const [phase, setPhase] = useState<"intro" | "reveal" | "move" | "settled">(
+    "intro",
+  );
   const [metricsReady, setMetricsReady] = useState(false);
   const [markMetrics, setMarkMetrics] = useState({
+    startCollapsedX: 0,
     startX: 0,
     startY: 0,
     targetX: 0,
     targetY: 0,
+    startCollapsedWidth: 0,
     startWidth: 0,
     targetWidth: 0,
     startFontSize: 88,
@@ -113,17 +119,27 @@ function HomepageRefreshAnimation() {
     targetLineHeight: 20,
     startLetterSpacing: -5.2,
     targetLetterSpacing: -1.2,
+    startGap: 33,
+    targetGap: 8.8,
+    startIconWidth: 70,
+    targetIconWidth: 16.32,
   });
 
   useLayoutEffect(() => {
-    const phaseValue = visible ? (metricsReady ? phase : "boot") : "done";
+    const phaseValue = completed
+      ? "done"
+      : visible
+        ? metricsReady
+          ? phase
+          : "boot"
+        : "settled";
 
     document.body.dataset.homeLoader = phaseValue;
 
     return () => {
       delete document.body.dataset.homeLoader;
     };
-  }, [metricsReady, phase, visible]);
+  }, [completed, metricsReady, phase, visible]);
 
   useLayoutEffect(() => {
     if (!visible) return;
@@ -131,16 +147,31 @@ function HomepageRefreshAnimation() {
     const updateHandoffTransform = () => {
       const anchor = document.querySelector<HTMLElement>("[data-brand-anchor='true']");
       if (!anchor) return;
+      const anchorIcon = anchor.querySelector<HTMLElement>(".brand-logo__mark");
+      const anchorWord = anchor.querySelector<HTMLElement>(".brand-logo__wordmark");
 
       const anchorRect = anchor.getBoundingClientRect();
       const anchorStyle = window.getComputedStyle(anchor);
+      const widthBuffer = 6;
+      const targetWidth = Math.max(anchorRect.width, anchor.scrollWidth) + widthBuffer;
       const targetFontSize = Number.parseFloat(anchorStyle.fontSize) || 21;
+      const targetGapRaw = Number.parseFloat(anchorStyle.gap);
+      const iconRect = anchorIcon?.getBoundingClientRect();
+      const wordRect = anchorWord?.getBoundingClientRect();
+      const measuredGap =
+        iconRect && wordRect ? Math.max(0, wordRect.left - iconRect.right) : Number.NaN;
+      const targetGap = Number.isFinite(measuredGap)
+        ? measuredGap
+        : Number.isFinite(targetGapRaw)
+          ? targetGapRaw
+          : 8.8;
       const targetLetterSpacing =
         Number.parseFloat(anchorStyle.letterSpacing) || targetFontSize * -0.06;
       const targetLineHeightRaw = Number.parseFloat(anchorStyle.lineHeight);
       const targetLineHeight = Number.isFinite(targetLineHeightRaw)
         ? targetLineHeightRaw
         : targetFontSize * 0.92;
+      const targetIconWidth = anchorIcon?.getBoundingClientRect().width || 16.32;
 
       const startFontSize = reduceMotion
         ? targetFontSize
@@ -148,25 +179,35 @@ function HomepageRefreshAnimation() {
       const scaleRatio = startFontSize / targetFontSize;
       const startLineHeight = targetLineHeight * scaleRatio;
       const startLetterSpacing = targetLetterSpacing * scaleRatio;
-      const startWidth = anchorRect.width * scaleRatio;
+      const startGap = targetGap * scaleRatio;
+      const startIconWidth = targetIconWidth * scaleRatio;
+      const startWidth = targetWidth * scaleRatio;
+      const startCollapsedWidth = Math.max(startFontSize * 0.84, 58);
+      const startCollapsedX = window.innerWidth / 2 - startCollapsedWidth / 2;
       const startX = window.innerWidth / 2 - startWidth / 2;
       const startY = window.innerHeight / 2 - startLineHeight / 2;
       const targetX = anchorRect.left;
       const targetY = anchorRect.top + (anchorRect.height - targetLineHeight) / 2;
 
       setMarkMetrics({
+        startCollapsedX,
         startX,
         startY,
         targetX,
         targetY,
+        startCollapsedWidth,
         startWidth,
-        targetWidth: anchorRect.width,
+        targetWidth,
         startFontSize,
         targetFontSize,
         startLineHeight,
         targetLineHeight,
         startLetterSpacing,
         targetLetterSpacing,
+        startGap,
+        targetGap,
+        startIconWidth,
+        targetIconWidth,
       });
       setMetricsReady(true);
     };
@@ -182,28 +223,39 @@ function HomepageRefreshAnimation() {
   useEffect(() => {
     if (!visible) return;
 
+    setCompleted(false);
+
+    const revealTimeout = window.setTimeout(
+      () => setPhase("reveal"),
+      reduceMotion ? 120 : 620,
+    );
     const moveTimeout = window.setTimeout(
       () => setPhase("move"),
-      reduceMotion ? 90 : 900,
+      reduceMotion ? 240 : 1260,
     );
     const settledTimeout = window.setTimeout(
       () => setPhase("settled"),
-      reduceMotion ? 250 : 1680,
+      reduceMotion ? 500 : 2280,
     );
     const hideTimeout = window.setTimeout(
       () => setVisible(false),
-      reduceMotion ? 420 : 1980,
+      reduceMotion ? 620 : 2390,
     );
 
     return () => {
+      window.clearTimeout(revealTimeout);
       window.clearTimeout(moveTimeout);
       window.clearTimeout(settledTimeout);
       window.clearTimeout(hideTimeout);
     };
   }, [reduceMotion, visible]);
 
-  return (
-    <AnimatePresence>
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <AnimatePresence onExitComplete={() => setCompleted(true)}>
       {visible && metricsReady ? (
         <motion.div
           aria-hidden="true"
@@ -213,8 +265,8 @@ function HomepageRefreshAnimation() {
           exit={{
             opacity: 0,
             transition: {
-              delay: reduceMotion ? 0.08 : 0.12,
-              duration: reduceMotion ? 0.16 : 0.24,
+              delay: 0,
+              duration: reduceMotion ? 0.1 : 0.16,
               ease: "easeOut",
             },
           }}
@@ -245,116 +297,534 @@ function HomepageRefreshAnimation() {
           <motion.div
             className="bidsite-refresh-loader__sheet bidsite-refresh-loader__sheet--base"
             initial={{ scale: reduceMotion ? 1 : 1.06 }}
+            animate={{
+              scale: 1,
+              transition: {
+                duration: reduceMotion ? 0.18 : 0.86,
+                ease: [0.16, 1, 0.3, 1],
+              },
+            }}
+          />
+          <motion.div
+            className="bidsite-refresh-loader__sheet bidsite-refresh-loader__sheet--wash"
+            initial={{ opacity: 0.88 }}
+            animate={{
+              opacity: phase === "intro" ? 1 : phase === "move" ? 0.96 : 0.92,
+              transition: {
+                duration: reduceMotion ? 0.14 : 0.42,
+                ease: [0.16, 1, 0.3, 1],
+              },
+            }}
+          />
+          {/* Glowing orbs — matching hero section ambient light */}
+          <motion.div
+            className="bidsite-refresh-loader__orb"
+            style={{
+              left: "30%",
+              top: "25%",
+              width: "min(26rem, 58vw)",
+              height: "min(26rem, 58vw)",
+              background:
+                "radial-gradient(circle, rgba(59,130,246,0.22) 0%, transparent 70%)",
+            }}
+            initial={{ opacity: 0, scale: reduceMotion ? 1 : 2.2 }}
             animate={
               phase === "intro"
                 ? {
-                    scale: 1,
-                    clipPath: "inset(0 0 0% 0)",
+                    opacity: reduceMotion ? 0.4 : 0.85,
+                    scale: reduceMotion ? 1 : 1.4,
                     transition: {
-                      duration: reduceMotion ? 0.2 : 1.1,
+                      duration: reduceMotion ? 0.2 : 0.9,
+                      delay: 0.05,
                       ease: [0.16, 1, 0.3, 1],
                     },
                   }
                 : phase === "move"
                   ? {
+                      opacity: reduceMotion ? 0.2 : 0.5,
                       scale: 1,
-                      clipPath: "inset(0 0 0% 0)",
+                      x: reduceMotion ? 0 : -90,
+                      y: reduceMotion ? 0 : -50,
                       transition: {
-                        duration: reduceMotion ? 0.12 : 0.2,
+                        duration: reduceMotion ? 0.16 : 0.85,
                         ease: refreshEase,
                       },
                     }
-                : {
-                    scale: 1,
-                    clipPath: "inset(0 0 100% 0)",
-                    transition: {
-                      duration: reduceMotion ? 0.24 : 1.08,
-                      delay: reduceMotion ? 0.02 : 0.12,
-                      ease: refreshEase,
-                    },
-                  }
+                  : {
+                      opacity: reduceMotion ? 0.08 : 0.18,
+                      scale: 0.9,
+                      transition: {
+                        duration: reduceMotion ? 0.12 : 0.4,
+                      },
+                    }
             }
           />
           <motion.div
-            className="bidsite-refresh-loader__sheet bidsite-refresh-loader__sheet--wash"
-            initial={{ opacity: 0.88 }}
+            className="bidsite-refresh-loader__orb"
+            style={{
+              left: "52%",
+              top: "18%",
+              width: "min(20rem, 44vw)",
+              height: "min(20rem, 44vw)",
+              background:
+                "radial-gradient(circle, rgba(241,245,249,0.09) 0%, transparent 70%)",
+            }}
+            initial={{ opacity: 0, scale: reduceMotion ? 1 : 1.8 }}
             animate={
               phase === "intro"
                 ? {
-                    opacity: 1,
-                    clipPath: "inset(0 0 0% 0)",
-                    transition: { duration: reduceMotion ? 0.16 : 0.58 },
+                    opacity: reduceMotion ? 0.3 : 0.65,
+                    scale: reduceMotion ? 1 : 1.2,
+                    transition: {
+                      duration: reduceMotion ? 0.18 : 0.85,
+                      delay: 0.1,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
                   }
                 : phase === "move"
                   ? {
-                      opacity: 1,
-                      clipPath: "inset(0 0 0% 0)",
+                      opacity: reduceMotion ? 0.15 : 0.35,
+                      scale: 1,
+                      x: reduceMotion ? 0 : 30,
+                      y: reduceMotion ? 0 : -40,
                       transition: {
-                        duration: reduceMotion ? 0.12 : 0.2,
+                        duration: reduceMotion ? 0.14 : 0.8,
                         ease: refreshEase,
                       },
                     }
-                : {
-                    opacity: 1,
-                    clipPath: "inset(0 0 100% 0)",
-                    transition: {
-                      duration: reduceMotion ? 0.22 : 0.96,
-                      delay: reduceMotion ? 0.03 : 0.18,
-                      ease: refreshEase,
-                    },
-                  }
+                  : {
+                      opacity: reduceMotion ? 0.04 : 0.08,
+                      transition: {
+                        duration: reduceMotion ? 0.1 : 0.4,
+                      },
+                    }
             }
           />
           <motion.div
-            className="bidsite-refresh-loader__grid"
-            initial={{ opacity: 0, scale: 0.96 }}
-              animate={
-                phase === "intro"
+            className="bidsite-refresh-loader__orb"
+            style={{
+              right: "8%",
+              bottom: "12%",
+              width: "min(22rem, 50vw)",
+              height: "min(22rem, 50vw)",
+              background:
+                "radial-gradient(circle, rgba(30,58,138,0.38) 0%, transparent 70%)",
+            }}
+            initial={{ opacity: 0, scale: reduceMotion ? 1 : 1.6 }}
+            animate={
+              phase === "intro"
+                ? {
+                    opacity: reduceMotion ? 0.3 : 0.7,
+                    scale: reduceMotion ? 1 : 1.3,
+                    transition: {
+                      duration: reduceMotion ? 0.2 : 0.92,
+                      delay: 0.08,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  }
+                : phase === "move"
                   ? {
-                      opacity: reduceMotion ? 0.16 : 0.3,
+                      opacity: reduceMotion ? 0.15 : 0.4,
                       scale: 1,
+                      x: reduceMotion ? 0 : 50,
+                      y: reduceMotion ? 0 : 30,
+                      transition: {
+                        duration: reduceMotion ? 0.14 : 0.85,
+                        ease: refreshEase,
+                      },
+                    }
+                  : {
+                      opacity: reduceMotion ? 0.1 : 0.25,
+                      transition: {
+                        duration: reduceMotion ? 0.1 : 0.4,
+                      },
+                    }
+            }
+          />
+
+          {/* Vector — Document stack (filled, matching hero) */}
+          <motion.div
+            className="bidsite-refresh-loader__vector"
+            style={{ right: "14%", top: "18%" }}
+            initial={{
+              opacity: 0,
+              scale: reduceMotion ? 1 : 0.6,
+              rotate: reduceMotion ? 0 : -12,
+            }}
+            animate={
+              phase === "intro"
+                ? {
+                    opacity: reduceMotion ? 0.3 : 0.72,
+                    scale: 1,
+                    rotate: -3,
                     transition: {
-                      duration: reduceMotion ? 0.2 : 0.9,
-                      delay: 0.06,
+                      duration: reduceMotion ? 0.2 : 0.95,
+                      delay: 0.14,
+                      ease: [0.16, 1, 0.3, 1],
                     },
                   }
                 : phase === "move"
                   ? {
-                      opacity: reduceMotion ? 0.08 : 0.16,
-                      scale: 1.03,
-                      transition: { duration: reduceMotion ? 0.14 : 0.34 },
+                      opacity: reduceMotion ? 0.18 : 0.4,
+                      scale: reduceMotion ? 1 : 0.8,
+                      rotate: -1,
+                      y: reduceMotion ? 0 : -40,
+                      x: reduceMotion ? 0 : 25,
+                      transition: {
+                        duration: reduceMotion ? 0.14 : 0.85,
+                        ease: refreshEase,
+                      },
                     }
-                : {
-                    opacity: 0,
-                    scale: reduceMotion ? 1 : 1.08,
-                    transition: { duration: reduceMotion ? 0.12 : 0.36 },
-                  }
+                  : {
+                      opacity: reduceMotion ? 0.12 : 0.2,
+                      scale: reduceMotion ? 1 : 0.78,
+                      rotate: 0,
+                      transition: {
+                        duration: reduceMotion ? 0.1 : 0.4,
+                      },
+                    }
             }
-          />
+          >
+            <svg
+              width="110"
+              height="120"
+              viewBox="0 0 110 120"
+              fill="none"
+            >
+              {/* Back page — rotated */}
+              <rect
+                x="32"
+                y="8"
+                width="56"
+                height="72"
+                rx="4"
+                fill="rgba(59,130,246,0.12)"
+                stroke="rgba(147,197,253,0.45)"
+                strokeWidth="1.2"
+                transform="rotate(6 60 44)"
+              />
+              {/* Front page */}
+              <rect
+                x="18"
+                y="16"
+                width="56"
+                height="72"
+                rx="4"
+                fill="rgba(59,130,246,0.22)"
+                stroke="rgba(147,197,253,0.7)"
+                strokeWidth="1.4"
+              />
+              {/* Folded corner */}
+              <path
+                d="M58 16v14a2 2 0 002 2h14"
+                stroke="rgba(147,197,253,0.55)"
+                strokeWidth="1.2"
+              />
+              <path
+                d="M58 16l16 16"
+                stroke="rgba(147,197,253,0.15)"
+                strokeWidth="1"
+              />
+              {/* Text lines */}
+              <line
+                x1="28"
+                y1="44"
+                x2="62"
+                y2="44"
+                stroke="rgba(147,197,253,0.5)"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+              <line
+                x1="28"
+                y1="54"
+                x2="56"
+                y2="54"
+                stroke="rgba(147,197,253,0.4)"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+              <line
+                x1="28"
+                y1="64"
+                x2="58"
+                y2="64"
+                stroke="rgba(147,197,253,0.35)"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+              <line
+                x1="28"
+                y1="74"
+                x2="44"
+                y2="74"
+                stroke="rgba(147,197,253,0.25)"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </motion.div>
+
+          {/* Vector — Data orbit (bolder rings + nodes) */}
           <motion.div
-            className="bidsite-refresh-loader__beam"
-            initial={{ opacity: 0, scaleY: 0.6 }}
+            className="bidsite-refresh-loader__vector"
+            style={{ left: "8%", bottom: "14%" }}
+            initial={{
+              opacity: 0,
+              scale: reduceMotion ? 1 : 0.5,
+              rotate: reduceMotion ? 0 : 15,
+            }}
+            animate={
+              phase === "intro"
+                ? {
+                    opacity: reduceMotion ? 0.2 : 0.55,
+                    scale: 1,
+                    rotate: 0,
+                    transition: {
+                      duration: reduceMotion ? 0.2 : 1,
+                      delay: 0.18,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  }
+                : phase === "move"
+                  ? {
+                      opacity: reduceMotion ? 0.12 : 0.3,
+                      scale: reduceMotion ? 1 : 0.85,
+                      y: reduceMotion ? 0 : -30,
+                      x: reduceMotion ? 0 : -10,
+                      transition: {
+                        duration: reduceMotion ? 0.14 : 0.85,
+                        ease: refreshEase,
+                      },
+                    }
+                  : {
+                      opacity: reduceMotion ? 0.08 : 0.18,
+                      transition: {
+                        duration: reduceMotion ? 0.1 : 0.4,
+                      },
+                    }
+            }
+          >
+            <svg
+              width="180"
+              height="180"
+              viewBox="0 0 200 200"
+              fill="none"
+            >
+              {/* Inner ring */}
+              <circle
+                cx="100"
+                cy="100"
+                r="42"
+                stroke="rgba(147,197,253,0.4)"
+                strokeWidth="1.2"
+              />
+              {/* Middle ring — dashed */}
+              <circle
+                cx="100"
+                cy="100"
+                r="70"
+                stroke="rgba(147,197,253,0.3)"
+                strokeWidth="1"
+                strokeDasharray="4 4"
+              />
+              {/* Outer ring — dotted */}
+              <circle
+                cx="100"
+                cy="100"
+                r="92"
+                stroke="rgba(147,197,253,0.18)"
+                strokeWidth="0.8"
+                strokeDasharray="2 6"
+              />
+              {/* Orbital nodes */}
+              <circle
+                cx="142"
+                cy="100"
+                r="5"
+                fill="rgba(96,165,250,0.55)"
+                stroke="rgba(147,197,253,0.6)"
+                strokeWidth="1"
+              />
+              <circle
+                cx="100"
+                cy="58"
+                r="3.5"
+                fill="rgba(96,165,250,0.45)"
+                stroke="rgba(147,197,253,0.5)"
+                strokeWidth="0.8"
+              />
+              <circle
+                cx="38"
+                cy="128"
+                r="3"
+                fill="rgba(96,165,250,0.35)"
+                stroke="rgba(147,197,253,0.4)"
+                strokeWidth="0.8"
+              />
+              {/* Center dot */}
+              <circle
+                cx="100"
+                cy="100"
+                r="3"
+                fill="rgba(147,197,253,0.5)"
+              />
+              {/* Outer ring node */}
+              <circle
+                cx="172"
+                cy="118"
+                r="2.5"
+                fill="rgba(96,165,250,0.3)"
+                stroke="rgba(147,197,253,0.35)"
+                strokeWidth="0.7"
+              />
+            </svg>
+          </motion.div>
+
+          {/* Vector — Cloud upload (filled, matching hero card) */}
+          <motion.div
+            className="bidsite-refresh-loader__vector"
+            style={{ right: "12%", bottom: "22%" }}
+            initial={{
+              opacity: 0,
+              scale: reduceMotion ? 1 : 0.65,
+              y: reduceMotion ? 0 : 24,
+            }}
+            animate={
+              phase === "intro"
+                ? {
+                    opacity: reduceMotion ? 0.2 : 0.55,
+                    scale: 1,
+                    y: 0,
+                    transition: {
+                      duration: reduceMotion ? 0.18 : 0.92,
+                      delay: 0.22,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  }
+                : phase === "move"
+                  ? {
+                      opacity: reduceMotion ? 0.1 : 0.3,
+                      scale: reduceMotion ? 1 : 0.88,
+                      y: reduceMotion ? 0 : -25,
+                      x: reduceMotion ? 0 : 18,
+                      transition: {
+                        duration: reduceMotion ? 0.14 : 0.8,
+                        ease: refreshEase,
+                      },
+                    }
+                  : {
+                      opacity: reduceMotion ? 0.06 : 0.15,
+                      transition: {
+                        duration: reduceMotion ? 0.1 : 0.35,
+                      },
+                    }
+            }
+          >
+            <svg
+              width="96"
+              height="82"
+              viewBox="0 0 96 82"
+              fill="none"
+            >
+              {/* Cloud body */}
+              <path
+                d="M24 58c-8.3 0-15-6.7-15-15 0-6.8 4.6-12.6 10.9-14.3C22 19.5 30.6 12 41 12c12.5 0 22.7 9.4 23.8 21.5h1.2C74.3 33.5 81 40.2 81 48.5S74.3 63.5 66 63.5H24z"
+                fill="rgba(59,130,246,0.16)"
+                stroke="rgba(147,197,253,0.65)"
+                strokeWidth="1.4"
+              />
+              {/* Upload arrow */}
+              <path
+                d="M48 36v18M40 44l8-8 8 8"
+                stroke="rgba(191,219,254,0.8)"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </motion.div>
+
+          {/* Floating particles */}
+          {[
+            { left: "22%", top: "40%", s: 3.5, d: 0.2 },
+            { left: "72%", top: "30%", s: 3, d: 0.26 },
+            { left: "44%", top: "72%", s: 2.5, d: 0.3 },
+            { left: "82%", top: "52%", s: 3, d: 0.24 },
+            { left: "12%", top: "58%", s: 2, d: 0.32 },
+            { left: "56%", top: "62%", s: 2, d: 0.28 },
+          ].map((p, i) => (
+            <motion.div
+              key={i}
+              className="bidsite-refresh-loader__particle"
+              style={{
+                left: p.left,
+                top: p.top,
+                width: p.s,
+                height: p.s,
+              }}
+              initial={{ opacity: 0, scale: 0 }}
               animate={
                 phase === "intro"
                   ? {
-                      opacity: reduceMotion ? 0.22 : 0.72,
-                      scaleY: 1,
+                      opacity: reduceMotion ? 0.25 : 0.6,
+                      scale: 1,
+                      transition: {
+                        duration: reduceMotion ? 0.14 : 0.5,
+                        delay: p.d,
+                      },
+                    }
+                  : phase === "move"
+                    ? {
+                        opacity: reduceMotion ? 0.12 : 0.32,
+                        scale: 0.7,
+                        transition: {
+                          duration: reduceMotion ? 0.12 : 0.6,
+                          ease: refreshEase,
+                        },
+                      }
+                    : {
+                        opacity: reduceMotion ? 0.05 : 0.12,
+                        scale: 0.5,
+                        transition: {
+                          duration: reduceMotion ? 0.08 : 0.3,
+                        },
+                      }
+              }
+            />
+          ))}
+
+          {/* Top edge highlight */}
+          <motion.div
+            className="bidsite-refresh-loader__edge-line"
+            initial={{ opacity: 0, scaleX: 0.2 }}
+            animate={
+              phase === "intro"
+                ? {
+                    opacity: reduceMotion ? 0.35 : 0.75,
+                    scaleX: 1,
                     transition: {
-                      duration: reduceMotion ? 0.18 : 0.72,
-                      delay: 0.1,
+                      duration: reduceMotion ? 0.18 : 0.82,
+                      delay: 0.12,
+                      ease: [0.16, 1, 0.3, 1],
                     },
                   }
                 : phase === "move"
                   ? {
-                      opacity: reduceMotion ? 0.1 : 0.28,
-                      scaleY: 0.74,
-                      transition: { duration: reduceMotion ? 0.14 : 0.32 },
+                      opacity: reduceMotion ? 0.2 : 0.45,
+                      scaleX: 0.5,
+                      transition: {
+                        duration: reduceMotion ? 0.14 : 0.65,
+                        ease: refreshEase,
+                      },
                     }
-                : {
-                    opacity: 0,
-                    scaleY: reduceMotion ? 1 : 1.35,
-                    transition: { duration: reduceMotion ? 0.12 : 0.28 },
-                  }
+                  : {
+                      opacity: reduceMotion ? 0.08 : 0.18,
+                      scaleX: 0.35,
+                      transition: {
+                        duration: reduceMotion ? 0.1 : 0.35,
+                      },
+                    }
             }
           />
           <div className="bidsite-refresh-loader__center">
@@ -363,9 +833,9 @@ function HomepageRefreshAnimation() {
               className="bidsite-refresh-loader__mark"
               initial={{
                 opacity: 0,
-                left: markMetrics.startX,
+                left: markMetrics.startCollapsedX,
                 top: markMetrics.startY + (reduceMotion ? 0 : 26),
-                width: markMetrics.startWidth,
+                width: markMetrics.startCollapsedWidth,
                 fontSize: `${markMetrics.startFontSize}px`,
                 lineHeight: `${markMetrics.startLineHeight}px`,
                 letterSpacing: `${markMetrics.startLetterSpacing}px`,
@@ -375,9 +845,9 @@ function HomepageRefreshAnimation() {
                 phase === "intro"
                   ? {
                       opacity: 1,
-                      left: markMetrics.startX,
+                      left: markMetrics.startCollapsedX,
                       top: markMetrics.startY,
-                      width: markMetrics.startWidth,
+                      width: markMetrics.startCollapsedWidth,
                       fontSize: `${markMetrics.startFontSize}px`,
                       lineHeight: `${markMetrics.startLineHeight}px`,
                       letterSpacing: `${markMetrics.startLetterSpacing}px`,
@@ -388,6 +858,21 @@ function HomepageRefreshAnimation() {
                         ease: [0.16, 1, 0.3, 1],
                       },
                     }
+                  : phase === "reveal"
+                    ? {
+                        opacity: 1,
+                        left: markMetrics.startX,
+                        top: markMetrics.startY,
+                        width: markMetrics.startWidth,
+                        fontSize: `${markMetrics.startFontSize}px`,
+                        lineHeight: `${markMetrics.startLineHeight}px`,
+                        letterSpacing: `${markMetrics.startLetterSpacing}px`,
+                        filter: "blur(0px)",
+                        transition: {
+                          duration: reduceMotion ? 0.18 : 0.56,
+                          ease: [0.16, 1, 0.3, 1],
+                        },
+                      }
                   : phase === "move"
                     ? {
                         opacity: 1,
@@ -405,7 +890,7 @@ function HomepageRefreshAnimation() {
                         },
                       }
                     : {
-                      opacity: 0,
+                      opacity: 1,
                       left: markMetrics.targetX,
                       top: markMetrics.targetY,
                       width: markMetrics.targetWidth,
@@ -414,20 +899,161 @@ function HomepageRefreshAnimation() {
                       letterSpacing: `${markMetrics.targetLetterSpacing}px`,
                       filter: "blur(0px)",
                       transition: {
-                        duration: reduceMotion ? 0.12 : 0.24,
-                        ease: "linear",
+                        left: {
+                          duration: 0,
+                        },
+                        top: {
+                          duration: 0,
+                        },
+                        width: {
+                          duration: 0,
+                        },
+                        fontSize: {
+                          duration: 0,
+                        },
+                        lineHeight: {
+                          duration: 0,
+                        },
+                        letterSpacing: {
+                          duration: 0,
+                        },
+                        filter: {
+                          duration: 0,
+                        },
                       },
                     }
               }
               exit={{
                 opacity: 0,
                 transition: {
-                  duration: reduceMotion ? 0.04 : 0.08,
-                  ease: "easeOut",
-                },
+                  duration: 0,
+                  },
               }}
             >
-              <span className="bidsite-refresh-loader__wordmark">bidsite</span>
+              <motion.span
+                className="bidsite-refresh-loader__mark-shell"
+                initial={false}
+              >
+                <motion.img
+                  src="/bidsite-logo.png"
+                  alt=""
+                  aria-hidden="true"
+                  className="bidsite-refresh-loader__mark-icon"
+                  initial={{
+                    opacity: 0,
+                    scale: reduceMotion ? 1 : 0.74,
+                    rotate: reduceMotion ? 0 : -10,
+                  }}
+                  animate={
+                    phase === "intro"
+                      ? {
+                          opacity: 1,
+                          scale: 1,
+                          rotate: 0,
+                          width: markMetrics.startIconWidth,
+                          transition: {
+                            duration: reduceMotion ? 0.18 : 0.52,
+                            delay: reduceMotion ? 0 : 0.04,
+                            ease: [0.16, 1, 0.3, 1],
+                          },
+                        }
+                      : phase === "reveal"
+                        ? {
+                            opacity: 1,
+                            scale: 1,
+                            rotate: 0,
+                            width: markMetrics.startIconWidth,
+                            transition: {
+                              duration: reduceMotion ? 0.14 : 0.32,
+                              ease: [0.16, 1, 0.3, 1],
+                            },
+                          }
+                        : {
+                            opacity: 1,
+                            scale: 1,
+                            rotate: 0,
+                            width: markMetrics.targetIconWidth,
+                            transition: {
+                              duration:
+                                phase === "move"
+                                  ? reduceMotion
+                                    ? 0.2
+                                    : 0.9
+                                  : reduceMotion
+                                    ? 0.12
+                                    : 0.24,
+                              delay: phase === "move" ? (reduceMotion ? 0.02 : 0.08) : 0,
+                              ease: refreshEase,
+                            },
+                          }
+                  }
+                />
+                <motion.span
+                  className="bidsite-refresh-loader__word-reveal"
+                  initial={false}
+                  animate={{
+                    marginLeft:
+                      phase === "intro" || phase === "reveal"
+                        ? markMetrics.startGap
+                        : markMetrics.targetGap,
+                  }}
+                  transition={
+                    phase === "move"
+                      ? {
+                          duration: reduceMotion ? 0.2 : 0.9,
+                          delay: reduceMotion ? 0.02 : 0.08,
+                          ease: refreshEase,
+                        }
+                      : phase === "settled"
+                        ? {
+                            duration: reduceMotion ? 0.12 : 0.2,
+                            ease: [0.16, 1, 0.3, 1],
+                          }
+                        : {
+                            duration: reduceMotion ? 0.18 : 0.56,
+                            ease: [0.16, 1, 0.3, 1],
+                          }
+                  }
+                >
+                  <motion.span
+                    className="bidsite-refresh-loader__wordmark"
+                    initial={{
+                      x: "-106%",
+                      opacity: 0,
+                    }}
+                    animate={
+                      phase === "intro"
+                        ? {
+                            x: "-106%",
+                            opacity: 0,
+                            transition: {
+                              duration: 0.12,
+                            },
+                          }
+                        : phase === "reveal"
+                          ? {
+                              x: "0%",
+                              opacity: 1,
+                              transition: {
+                                duration: reduceMotion ? 0.2 : 0.62,
+                                delay: reduceMotion ? 0 : 0.04,
+                                ease: [0.16, 1, 0.3, 1],
+                              },
+                            }
+                          : {
+                              x: "0%",
+                              opacity: 1,
+                              transition: {
+                                duration: reduceMotion ? 0.14 : 0.24,
+                                ease: refreshEase,
+                              },
+                            }
+                    }
+                  >
+                    bidsite
+                  </motion.span>
+                </motion.span>
+              </motion.span>
             </motion.div>
             <motion.div
               className="bidsite-refresh-loader__rule"
@@ -453,7 +1079,8 @@ function HomepageRefreshAnimation() {
           </div>
         </motion.div>
       ) : null}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -475,10 +1102,42 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   };
 
   const stats = [
-    { label: "Totalt prosjekter", value: totals.total, icon: FolderOpen, accent: "border-t-blue-900" },
-    { label: "Kundeanalyser", value: totals.analyses, icon: BarChart3, accent: "border-t-emerald-600" },
-    { label: "Løsningsdokumenter", value: totals.solutionDocs, icon: FileText, accent: "border-t-amber-500" },
-    { label: "Løsningsutkast", value: totals.artifacts, icon: Sparkles, accent: "border-t-violet-600" },
+    {
+      label: "Totalt prosjekter",
+      value: totals.total,
+      icon: FolderOpen,
+      accent: "from-blue-600/14 via-blue-500/7 to-transparent",
+      badge: "text-blue-700 bg-blue-50 ring-blue-100",
+      rule: "bg-blue-600",
+      note: "Alle registrerte tilbudsløp",
+    },
+    {
+      label: "Kundeanalyser",
+      value: totals.analyses,
+      icon: BarChart3,
+      accent: "from-emerald-500/14 via-emerald-400/7 to-transparent",
+      badge: "text-emerald-700 bg-emerald-50 ring-emerald-100",
+      rule: "bg-emerald-500",
+      note: "Analyser klare for videre arbeid",
+    },
+    {
+      label: "Løsningsdokumenter",
+      value: totals.solutionDocs,
+      icon: FileText,
+      accent: "from-amber-500/16 via-amber-400/7 to-transparent",
+      badge: "text-amber-700 bg-amber-50 ring-amber-100",
+      rule: "bg-amber-500",
+      note: "Dokumenter lastet opp i arbeidsflaten",
+    },
+    {
+      label: "Løsningsutkast",
+      value: totals.artifacts,
+      icon: Sparkles,
+      accent: "from-violet-500/16 via-violet-400/7 to-transparent",
+      badge: "text-violet-700 bg-violet-50 ring-violet-100",
+      rule: "bg-violet-500",
+      note: "Genererte utkast på tvers av prosjekter",
+    },
   ];
 
   async function handleSpotlightUpload(file: File | null) {
@@ -550,13 +1209,13 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
       <section className="mb-8">
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
               Oversikt
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground">
+            <h1 className="mt-1.5 text-[1.7rem] font-bold tracking-[-0.03em] text-foreground">
               Prosjektoversikt
             </h1>
-            <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
+            <p className="mt-1.5 max-w-xl text-[13.5px] leading-relaxed text-muted-foreground">
               Administrer tilbudsprosjekter, kundeanalyser og løsningsutkast for teamet.
             </p>
           </div>
@@ -579,15 +1238,13 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
         <div className="pointer-events-none absolute inset-x-4 bottom-4 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
         <div className="relative grid gap-7 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
           <div className="max-w-3xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-100/80">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.2em] text-blue-200/70">
               Arbeidsflate
             </p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
-              <span className="text-slate-50">
-                Tilbudsarbeidsflate
-              </span>
+            <h2 className="mt-3 text-[1.9rem] font-bold tracking-[-0.035em] text-white sm:text-[2.4rem]">
+              Tilbudsarbeidsflate
             </h2>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-100/90">
+            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-slate-200/85">
               Last opp kundedokumenter, analyser med AI, og generer profesjonelle
               løsningsutkast for teamet.
             </p>
@@ -689,21 +1346,31 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
       </section>
 
       {/* Stat Cards */}
-      <section className="relative mb-8 grid grid-cols-2 gap-4 overflow-hidden sm:grid-cols-4">
+      <section className="relative mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((item) => (
           <div
             key={item.label}
-            className={`relative rounded-md border border-border bg-card px-4 py-4 shadow-sm border-t-2 ${item.accent}`}
+            className="relative overflow-hidden rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition-shadow duration-200 hover:shadow-md"
           >
-            <div className="flex items-center justify-between">
-              <item.icon className="size-4 text-muted-foreground" />
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-slate-200/80">
+              <div className={`h-full w-20 rounded-full ${item.rule}`} />
             </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">
-              {item.value}
-            </p>
-            <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {item.label}
-            </p>
+            <div className="relative flex items-center justify-between gap-3">
+              <div className={`inline-flex size-9 items-center justify-center rounded-xl ring-1 ${item.badge}`}>
+                <item.icon className="size-4" />
+              </div>
+            </div>
+            <div className="relative mt-4">
+              <p className="text-[1.9rem] font-bold tracking-[-0.04em] tabular-nums text-slate-950">
+                {item.value}
+              </p>
+              <p className="mt-1.5 text-[12.5px] font-semibold tracking-[-0.01em] text-slate-800">
+                {item.label}
+              </p>
+              <p className="mt-1 max-w-[24ch] text-[11.5px] leading-relaxed text-slate-500">
+                {item.note}
+              </p>
+            </div>
           </div>
         ))}
       </section>
@@ -711,7 +1378,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
       {/* Project Table */}
       <section className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
         <div className="flex items-center justify-between border-b border-border bg-muted/50 px-5 py-3">
-          <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-foreground">
+          <h2 className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-foreground/90">
             Prosjekter
           </h2>
           <span className="text-xs text-muted-foreground">
@@ -743,19 +1410,19 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b-2 border-border bg-muted/30">
-                  <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <th className="px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
                     Prosjekt
                   </th>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <th className="px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
                     Status
                   </th>
-                  <th className="hidden px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sm:table-cell">
+                  <th className="hidden px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75 sm:table-cell">
                     Dok.
                   </th>
-                  <th className="hidden px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sm:table-cell">
+                  <th className="hidden px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75 sm:table-cell">
                     Utkast
                   </th>
-                  <th className="hidden px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground md:table-cell">
+                  <th className="hidden px-4 py-2.5 text-right text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75 md:table-cell">
                     Sist endret
                   </th>
                   <th className="px-4 py-2.5" />
@@ -811,7 +1478,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
 
       {/* Workflow Steps */}
       <section className="mt-8 rounded-md border border-border bg-card p-6 shadow-sm">
-        <h2 className="mb-4 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+        <h2 className="mb-5 text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/75">
           Arbeidsflyt
         </h2>
         <div className="flex items-start gap-4">
@@ -825,8 +1492,8 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                 {item.step}
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">{item.title}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{item.desc}</p>
+                <p className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">{item.title}</p>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{item.desc}</p>
               </div>
               {i < 2 ? <div className="mt-3.5 hidden h-px flex-1 bg-border lg:block" /> : null}
             </div>

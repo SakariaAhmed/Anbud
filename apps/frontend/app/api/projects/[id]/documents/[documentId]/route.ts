@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { deleteDocument, getDocumentDetail, getProjectSnapshot } from "@/lib/server/projects-db";
+import {
+  deleteDocument,
+  getDocumentDetail,
+  getProjectSnapshot,
+  markDocumentAsPrimarySolution,
+} from "@/lib/server/projects-db";
 
 export async function GET(
   request: Request,
@@ -40,6 +45,32 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Kunne ikke slette dokumentet." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string; documentId: string }> },
+) {
+  try {
+    const { id, documentId } = await context.params;
+    const body = (await request.json().catch(() => ({}))) as {
+      action?: string;
+    };
+
+    if (body.action !== "use_as_architecture_solution") {
+      return NextResponse.json({ error: "Ugyldig dokumenthandling." }, { status: 400 });
+    }
+
+    const document = await markDocumentAsPrimarySolution(id, documentId);
+    const project = await getProjectSnapshot(id);
+
+    return NextResponse.json({ document, project });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Kunne ikke oppdatere dokumentet." },
       { status: 500 },
     );
   }

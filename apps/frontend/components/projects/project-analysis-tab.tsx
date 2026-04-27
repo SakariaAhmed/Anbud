@@ -1,23 +1,32 @@
 "use client";
 
-import { motion, useReducedMotion, useSpring } from "framer-motion";
-import { useEffect, useId, useState } from "react";
+import dynamic from "next/dynamic";
+import { motion, useReducedMotion } from "framer-motion";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
+  ArrowDownToLine,
   Building2,
+  ChevronDown,
   Cloud,
   Compass,
   Cpu,
   Database,
+  FileText,
   FilePenLine,
   History,
   KeyRound,
   ListChecks,
+  PencilLine,
   RefreshCw,
+  Save,
   Shield,
   Target,
+  Trash2,
   TrendingUp,
+  Upload,
   Workflow,
+  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,14 +42,21 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
-import { MermaidDiagram } from "@/components/projects/mermaid-diagram";
+import {
+  Input,
+  Label,
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/projects/primitives";
 import {
   AnalysisTabEmptyState,
+  SUPPORTING_SUBTYPES,
   VALUE_LABELS,
   ValueTags,
   roleLabel,
   supportingSubtypeLabel,
 } from "@/components/projects/project-workspace-shared";
+import { getCustomerAnalysisSectionSnapshot } from "@/lib/customer-analysis-history";
 import type {
   CustomerAnalysisHistorySource,
   CustomerAnalysisResult,
@@ -48,7 +64,24 @@ import type {
   CustomerAnalysisSectionHistoryEntry,
   CustomerAnalysisSectionSnapshotMap,
   ProjectDocument,
+  ProjectDocumentRole,
+  SupportingDocumentSubtype,
 } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+const MermaidDiagram = dynamic(
+  () =>
+    import("@/components/projects/mermaid-diagram").then(
+      (module) => module.MermaidDiagram,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 text-sm text-muted-foreground">
+        Laster arkitekturdiagram ...
+      </div>
+    ),
+  },
+);
 
 function SectionSurface({
   title,
@@ -64,13 +97,13 @@ function SectionSurface({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border/70 bg-white/85 shadow-sm">
+    <section className="max-w-full overflow-hidden rounded-xl border border-border/70 bg-white/85 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/70 px-5 py-4 md:px-6">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
             <Icon className="size-5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-base font-semibold text-foreground">{title}</h3>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
               {description}
@@ -78,7 +111,9 @@ function SectionSurface({
           </div>
         </div>
         {action ? (
-          <div className="flex items-center gap-2">{action}</div>
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+            {action}
+          </div>
         ) : null}
       </div>
       <div className="px-5 py-5 md:px-6 md:py-6">{children}</div>
@@ -617,6 +652,48 @@ function normalizePieData(data: PieDatum[]) {
   };
 }
 
+type PieLabelDatum = {
+  index: number;
+  y: number;
+};
+
+function distributePieLabelYPositions(
+  labels: PieLabelDatum[],
+  minY: number,
+  maxY: number,
+  gap: number,
+) {
+  if (!labels.length) {
+    return new Map<number, number>();
+  }
+
+  const placed = [...labels]
+    .sort((left, right) => left.y - right.y)
+    .map((label) => ({ ...label }));
+  let cursor = minY;
+
+  for (const label of placed) {
+    label.y = Math.max(label.y, cursor);
+    cursor = label.y + gap;
+  }
+
+  const overflow = cursor - gap - maxY;
+
+  if (overflow > 0) {
+    for (let index = placed.length - 1; index >= 0; index -= 1) {
+      const nextY = index === placed.length - 1 ? maxY : placed[index + 1].y - gap;
+      placed[index].y = Math.min(placed[index].y - overflow, nextY);
+    }
+
+    for (let index = 0; index < placed.length; index += 1) {
+      const previousY = index === 0 ? minY : placed[index - 1].y + gap;
+      placed[index].y = Math.max(placed[index].y, previousY);
+    }
+  }
+
+  return new Map(placed.map((label) => [label.index, label.y]));
+}
+
 function polarEllipsePoint(
   centerX: number,
   centerY: number,
@@ -686,78 +763,6 @@ function normalizeAngle(angle: number) {
   return ((angle % 360) + 360) % 360;
 }
 
-function getAngleSpans(startAngle: number, endAngle: number) {
-  const span = Math.min(endAngle - startAngle, 359.99);
-  const normalizedStart = normalizeAngle(startAngle);
-  const normalizedEnd = normalizedStart + span;
-
-  if (normalizedEnd <= 360) {
-    return [[normalizedStart, normalizedEnd]] as const;
-  }
-
-  return [
-    [normalizedStart, 360],
-    [0, normalizedEnd - 360],
-  ] as const;
-}
-
-function getFrontVisibleSpans(startAngle: number, endAngle: number) {
-  return getAngleSpans(startAngle, endAngle)
-    .map(([spanStart, spanEnd]) => [
-      Math.max(spanStart, 0),
-      Math.min(spanEnd, 180),
-    ])
-    .filter(([spanStart, spanEnd]) => spanEnd - spanStart > 0.25);
-}
-
-function describeOuterWallSegment(
-  centerX: number,
-  centerY: number,
-  outerRadiusX: number,
-  outerRadiusY: number,
-  startAngle: number,
-  endAngle: number,
-  depth: number,
-) {
-  const topStart = polarEllipsePoint(
-    centerX,
-    centerY,
-    outerRadiusX,
-    outerRadiusY,
-    startAngle,
-  );
-  const topEnd = polarEllipsePoint(
-    centerX,
-    centerY,
-    outerRadiusX,
-    outerRadiusY,
-    endAngle,
-  );
-  const bottomStart = polarEllipsePoint(
-    centerX,
-    centerY + depth,
-    outerRadiusX,
-    outerRadiusY,
-    startAngle,
-  );
-  const bottomEnd = polarEllipsePoint(
-    centerX,
-    centerY + depth,
-    outerRadiusX,
-    outerRadiusY,
-    endAngle,
-  );
-  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0;
-
-  return [
-    `M ${topStart.x} ${topStart.y}`,
-    `A ${outerRadiusX} ${outerRadiusY} 0 ${largeArcFlag} 1 ${topEnd.x} ${topEnd.y}`,
-    `L ${bottomEnd.x} ${bottomEnd.y}`,
-    `A ${outerRadiusX} ${outerRadiusY} 0 ${largeArcFlag} 0 ${bottomStart.x} ${bottomStart.y}`,
-    "Z",
-  ].join(" ");
-}
-
 function parseColorChannels(color: string) {
   const rgbMatch = color.match(
     /rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})/i,
@@ -818,38 +823,27 @@ function DonutChart({
   selectedIndex,
   onSelect,
   valueSuffix,
-  emptyLabel,
 }: {
   data: PieDatum[];
   selectedIndex: number | null;
-  onSelect: (index: number) => void;
+  onSelect: (index: number | null) => void;
   valueSuffix: string;
-  emptyLabel: string;
 }) {
   const chartId = useId().replace(/:/g, "");
   const reduceMotion = useReducedMotion();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const rotateY = useSpring(0, {
-    stiffness: 170,
-    damping: 18,
-    mass: 0.6,
-  });
+  const clickTimeoutRef = useRef<number | null>(null);
   const { data: normalizedData, total } = normalizePieData(data);
-  const centerX = 120;
-  const centerY = 76;
-  const outerRadiusX = 86;
-  const outerRadiusY = 60;
-  const innerRadiusX = 48;
-  const innerRadiusY = 34;
-  const depth = 18;
+  const centerX = 228;
+  const centerY = 150;
+  const outerRadius = 96;
+  const innerRadius = 56;
+  const labelOrbitRadius = outerRadius + 22;
+  const calloutRadius = outerRadius + 40;
+  const labelLeftX = 32;
+  const labelRightX = 424;
   let accumulated = 0;
-  const selected =
-    selectedIndex === null ? null : normalizedData[selectedIndex] ?? null;
   const activeIndex = hoveredIndex ?? selectedIndex;
-  const hovered =
-    hoveredIndex === null ? null : normalizedData[hoveredIndex] ?? null;
-  const activeItem =
-    activeIndex === null ? null : normalizedData[activeIndex] ?? null;
   const segments = normalizedData.map((item) => {
     const share = item.value / total;
     const startAngle = accumulated * 360 - 90;
@@ -863,209 +857,208 @@ function DonutChart({
       midAngle: startAngle + (endAngle - startAngle) / 2,
     };
   });
+  const labelPositions = segments.map((item, index) => {
+    const labelPoint = polarEllipsePoint(
+      centerX,
+      centerY,
+      labelOrbitRadius,
+      labelOrbitRadius,
+      item.midAngle,
+    );
+    const side = Math.cos((normalizeAngle(item.midAngle) * Math.PI) / 180) >= 0
+      ? "right"
+      : "left";
 
-  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    if (reduceMotion) {
-      return;
-    }
-
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const pointerRatio = (event.clientX - bounds.left) / bounds.width - 0.5;
-    rotateY.set(pointerRatio * 14);
-  }
-
+    return {
+      index,
+      item,
+      side,
+      labelPoint,
+    };
+  });
+  const leftLabelMap = distributePieLabelYPositions(
+    labelPositions
+      .filter((label) => label.side === "left")
+      .map((label) => ({ index: label.index, y: label.labelPoint.y })),
+    40,
+    258,
+    28,
+  );
+  const rightLabelMap = distributePieLabelYPositions(
+    labelPositions
+      .filter((label) => label.side === "right")
+      .map((label) => ({ index: label.index, y: label.labelPoint.y })),
+    40,
+    258,
+    28,
+  );
   function handlePointerLeave() {
     setHoveredIndex(null);
-    rotateY.set(0);
   }
+
+  function handleSliceClick(index: number) {
+    if (clickTimeoutRef.current) {
+      window.clearTimeout(clickTimeoutRef.current);
+    }
+
+    clickTimeoutRef.current = window.setTimeout(() => {
+      onSelect(index);
+      clickTimeoutRef.current = null;
+    }, 180);
+  }
+
+  function handleSliceDoubleClick() {
+    if (clickTimeoutRef.current) {
+      window.clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
+    onSelect(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        window.clearTimeout(clickTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div
-      className="mx-auto flex w-full max-w-[21rem] flex-col items-center"
+      className="value-donut-frame mx-auto flex w-full max-w-[36rem] flex-col items-center"
       onPointerLeave={handlePointerLeave}
     >
-      <div
-        className="relative w-full"
-        style={{ perspective: "1200px" }}
-        onPointerMove={handlePointerMove}
-      >
-        <motion.div
-          className="relative"
-          style={{
-            rotateY,
-            transformStyle: "preserve-3d",
-            willChange: "transform",
-          }}
-        >
+      <div className="relative w-full">
+        <div className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.98),rgba(239,246,255,0.56)_45%,rgba(255,255,255,0)_74%)]" />
+        <div className="pointer-events-none absolute inset-x-16 top-4 h-12 rounded-full bg-slate-200/35 blur-3xl" />
+        <motion.div className="relative">
           <svg
-            viewBox="0 0 240 206"
-            className="w-full overflow-visible"
+            viewBox="0 0 456 300"
+            className="w-full overflow-hidden"
             aria-label="Kakediagram"
           >
             <defs>
               <filter
-                id={`${chartId}-shadow`}
+                id={`${chartId}-slice-shadow`}
                 x="-30%"
                 y="-30%"
-                width="160%"
-                height="200%"
+                width="180%"
+                height="180%"
               >
                 <feDropShadow
                   dx="0"
-                  dy="16"
+                  dy="10"
                   stdDeviation="10"
-                  floodColor="rgba(15, 23, 42, 0.18)"
+                  floodColor="rgba(15, 23, 42, 0.16)"
                 />
               </filter>
+              <radialGradient id={`${chartId}-backdrop`} cx="50%" cy="50%" r="65%">
+                <stop offset="0%" stopColor="rgba(255, 255, 255, 0.98)" />
+                <stop offset="68%" stopColor="rgba(241, 245, 249, 0.78)" />
+                <stop offset="100%" stopColor="rgba(226, 232, 240, 0.12)" />
+              </radialGradient>
               <linearGradient
-                id={`${chartId}-well`}
+                id={`${chartId}-track`}
                 x1="0%"
                 y1="0%"
                 x2="100%"
                 y2="100%"
               >
                 <stop offset="0%" stopColor="rgba(255, 255, 255, 0.95)" />
-                <stop offset="100%" stopColor="rgba(191, 219, 254, 0.18)" />
+                <stop offset="100%" stopColor="rgba(226, 232, 240, 0.94)" />
               </linearGradient>
               {segments.map((item, index) => (
                 <linearGradient
                   key={`${item.id}-gradient`}
                   id={`${chartId}-top-${index}`}
-                  x1="15%"
+                  x1="10%"
                   y1="0%"
-                  x2="85%"
+                  x2="90%"
                   y2="100%"
                 >
                   <stop
                     offset="0%"
-                    stopColor={mixColor(item.color, [255, 255, 255], 0.34)}
+                    stopColor={mixColor(item.color, [255, 255, 255], 0.22)}
                   />
-                  <stop offset="48%" stopColor={item.color} />
+                  <stop offset="56%" stopColor={item.color} />
                   <stop
                     offset="100%"
-                    stopColor={mixColor(item.color, [15, 23, 42], 0.2)}
-                  />
-                </linearGradient>
-              ))}
-              {segments.map((item, index) => (
-                <linearGradient
-                  key={`${item.id}-wall`}
-                  id={`${chartId}-wall-${index}`}
-                  x1="0%"
-                  y1="0%"
-                  x2="0%"
-                  y2="100%"
-                >
-                  <stop
-                    offset="0%"
-                    stopColor={mixColor(item.color, [30, 41, 59], 0.2)}
-                  />
-                  <stop
-                    offset="100%"
-                    stopColor={mixColor(item.color, [15, 23, 42], 0.44)}
+                    stopColor={mixColor(item.color, [15, 23, 42], 0.16)}
                   />
                 </linearGradient>
               ))}
             </defs>
 
-            <ellipse
+            <circle
               cx={centerX}
-              cy={centerY + depth + 34}
-              rx={outerRadiusX + 6}
-              ry={18}
-              fill="rgba(15, 23, 42, 0.14)"
+              cy={centerY}
+              r={outerRadius + 40}
+              fill={`url(#${chartId}-backdrop)`}
+            />
+            <circle
+              cx={centerX}
+              cy={centerY}
+              r={(outerRadius + innerRadius) / 2}
+              fill="none"
+              stroke={`url(#${chartId}-track)`}
+              strokeWidth={outerRadius - innerRadius}
             />
 
-            <g filter={`url(#${chartId}-shadow)`}>
-              {segments.map((item, index) => (
-                <path
-                  key={`${item.id}-base`}
-                  d={describeEllipticalDonutSegment(
-                    centerX,
-                    centerY + depth,
-                    outerRadiusX,
-                    outerRadiusY,
-                    innerRadiusX,
-                    innerRadiusY,
-                    item.startAngle,
-                    item.endAngle,
-                  )}
-                  fill={`url(#${chartId}-wall-${index})`}
-                  opacity={activeIndex === null || activeIndex === index ? 0.96 : 0.38}
-                />
-              ))}
-
-              {segments.map((item, index) =>
-                getFrontVisibleSpans(item.startAngle, item.endAngle).map(
-                  ([spanStart, spanEnd], wallIndex) => (
-                    <path
-                      key={`${item.id}-wall-${wallIndex}`}
-                      d={describeOuterWallSegment(
-                        centerX,
-                        centerY,
-                        outerRadiusX,
-                        outerRadiusY,
-                        spanStart,
-                        spanEnd,
-                        depth,
-                      )}
-                      fill={`url(#${chartId}-wall-${index})`}
-                      opacity={activeIndex === null || activeIndex === index ? 1 : 0.42}
-                    />
-                  ),
-                ),
-              )}
-
+            <g filter={`url(#${chartId}-slice-shadow)`}>
               {segments.map((item, index) => {
                 const isSelected = selectedIndex === index;
                 const isHovered = hoveredIndex === index;
                 const hasActive = activeIndex !== null;
-                const emphasis = isSelected ? 14 : isHovered ? 9 : 0;
+                const emphasis = isSelected ? 9 : isHovered ? 5 : 0;
                 const angleInRadians = (item.midAngle * Math.PI) / 180;
                 const translateX = Math.cos(angleInRadians) * emphasis;
-                const translateY = Math.sin(angleInRadians) * emphasis * 0.72;
+                const translateY = Math.sin(angleInRadians) * emphasis;
 
                 return (
                   <motion.g
                     key={item.id}
                     animate={{
                       x: reduceMotion ? 0 : translateX,
-                      y: reduceMotion ? 0 : translateY - (isSelected ? 2 : 0),
-                      scale: reduceMotion ? 1 : isSelected ? 1.03 : isHovered ? 1.015 : 1,
-                      opacity: !hasActive || isSelected || isHovered ? 1 : 0.58,
+                      y: reduceMotion ? 0 : translateY,
+                      scale: reduceMotion ? 1 : isSelected ? 1.015 : isHovered ? 1.008 : 1,
+                      opacity: !hasActive || isSelected || isHovered ? 1 : 0.48,
                     }}
                     transition={{
                       type: "spring",
-                      stiffness: 260,
-                      damping: 24,
-                      mass: 0.85,
+                      stiffness: 220,
+                      damping: 26,
+                      mass: 0.72,
                     }}
                   >
                     <motion.path
                       d={describeEllipticalDonutSegment(
                         centerX,
                         centerY,
-                        outerRadiusX,
-                        outerRadiusY,
-                        innerRadiusX,
-                        innerRadiusY,
+                        outerRadius,
+                        outerRadius,
+                        innerRadius,
+                        innerRadius,
                         item.startAngle,
                         item.endAngle,
                       )}
                       fill={`url(#${chartId}-top-${index})`}
-                      stroke={mixColor(item.color, [255, 255, 255], 0.45)}
-                      strokeWidth={1.15}
+                      stroke={mixColor(item.color, [255, 255, 255], 0.68)}
+                      strokeWidth={2}
+                      strokeLinejoin="round"
                       className="cursor-pointer outline-none"
                       style={{
                         filter:
                           isSelected || isHovered
-                            ? `drop-shadow(0 10px 16px ${withAlpha(item.color, 0.28)})`
+                            ? `drop-shadow(0 10px 18px ${withAlpha(item.color, 0.2)})`
                             : undefined,
                       }}
                       whileHover={
                         reduceMotion
                           ? undefined
-                          : { filter: `drop-shadow(0 12px 18px ${withAlpha(item.color, 0.3)})` }
+                          : {
+                              scale: 1.01,
+                              filter: `drop-shadow(0 12px 22px ${withAlpha(item.color, 0.22)})`,
+                            }
                       }
                       role="button"
                       tabIndex={0}
@@ -1075,7 +1068,8 @@ function DonutChart({
                       onBlur={() => setHoveredIndex(null)}
                       onHoverStart={() => setHoveredIndex(index)}
                       onHoverEnd={() => setHoveredIndex(null)}
-                      onClick={() => onSelect(index)}
+                      onClick={() => handleSliceClick(index)}
+                      onDoubleClick={handleSliceDoubleClick}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
@@ -1086,56 +1080,92 @@ function DonutChart({
                   </motion.g>
                 );
               })}
-
-              <ellipse
-                cx={centerX}
-                cy={centerY + 3}
-                rx={innerRadiusX + 4}
-                ry={innerRadiusY + 4}
-                fill="rgba(15, 23, 42, 0.08)"
-              />
-              <ellipse
-                cx={centerX}
-                cy={centerY - 1}
-                rx={innerRadiusX}
-                ry={innerRadiusY}
-                fill={`url(#${chartId}-well)`}
-                stroke="rgba(255, 255, 255, 0.9)"
-                strokeWidth={1}
-              />
             </g>
+            <circle
+              cx={centerX}
+              cy={centerY}
+              r={innerRadius - 8}
+              fill="rgba(255, 255, 255, 0.88)"
+              stroke="rgba(255, 255, 255, 0.96)"
+              strokeWidth={2}
+            />
+            <circle
+              cx={centerX}
+              cy={centerY}
+              r={innerRadius - 14}
+              fill="rgba(248, 250, 252, 0.88)"
+            />
+            {labelPositions.map((label) => {
+              const outerPoint = polarEllipsePoint(
+                centerX,
+                centerY,
+                outerRadius + 4,
+                outerRadius + 4,
+                label.item.midAngle,
+              );
+              const elbowPoint = polarEllipsePoint(
+                centerX,
+                centerY,
+                calloutRadius,
+                calloutRadius,
+                label.item.midAngle,
+              );
+              const y =
+                label.side === "right"
+                  ? rightLabelMap.get(label.index) ?? label.labelPoint.y
+                  : leftLabelMap.get(label.index) ?? label.labelPoint.y;
+              const labelX = label.side === "right" ? labelRightX : labelLeftX;
+              const lineEndX = label.side === "right" ? labelX - 10 : labelX + 10;
+              const textAnchor = label.side === "right" ? "start" : "end";
+              const isActive = activeIndex === null || activeIndex === label.index;
+
+              return (
+                <g
+                  key={`${label.item.id}-label`}
+                  className="value-donut-callout"
+                  opacity={isActive ? 1 : 0.45}
+                  aria-hidden="true"
+                >
+                  <path
+                    d={`M ${outerPoint.x} ${outerPoint.y} L ${elbowPoint.x} ${y} L ${lineEndX} ${y}`}
+                    fill="none"
+                    stroke={withAlpha(label.item.color, isActive ? 0.88 : 0.5)}
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                  />
+                  <circle
+                    cx={outerPoint.x}
+                    cy={outerPoint.y}
+                    r={3.5}
+                    fill={label.item.color}
+                    stroke="rgba(255,255,255,0.92)"
+                    strokeWidth={1.25}
+                  />
+                  <text
+                    x={labelX}
+                    y={y - 3}
+                    textAnchor={textAnchor}
+                    fill="rgb(15 23 42)"
+                    fontSize="12"
+                    fontWeight="600"
+                  >
+                    {label.item.label}
+                  </text>
+                  <text
+                    x={labelX}
+                    y={y + 12}
+                    textAnchor={textAnchor}
+                    fill="rgb(100 116 139)"
+                    fontSize="10.5"
+                    fontWeight="500"
+                  >
+                    {`${label.item.value}${valueSuffix}`}
+                  </text>
+                </g>
+              );
+            })}
           </svg>
         </motion.div>
-
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground shadow-sm backdrop-blur-sm">
-            {selected ? "Valgt" : "Velg"}
-          </span>
-          <span className="mt-3 max-w-36 text-balance text-sm font-semibold leading-5 text-foreground">
-            {selected?.label ?? emptyLabel}
-          </span>
-          <span className="mt-2 text-xs font-medium text-muted-foreground">
-            {selected ? `${selected.value}${valueSuffix}` : "Trykk for detaljer"}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-4 min-h-14 w-full">
-        {hovered ? (
-          <div className="rounded-2xl border border-white/80 bg-white/90 px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm">
-            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Hover
-            </p>
-            <p className="mt-1 text-sm font-semibold text-foreground">
-              {hovered.label} · {hovered.value}
-              {valueSuffix}
-            </p>
-          </div>
-        ) : (
-          <div className="flex h-full items-center justify-center text-center text-xs font-medium text-muted-foreground">
-            Hold over en del av diagrammet for å se hva du peker på.
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1149,7 +1179,7 @@ function PieLegend({
 }: {
   data: PieDatum[];
   selectedIndex: number | null;
-  onSelect: (index: number) => void;
+  onSelect: (index: number | null) => void;
   valueSuffix: string;
 }) {
   return (
@@ -1159,22 +1189,22 @@ function PieLegend({
           key={item.id}
           type="button"
           onClick={() => onSelect(index)}
-          className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+          className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left shadow-[0_10px_24px_rgba(15,23,42,0.03)] transition-all ${
             selectedIndex === index
-              ? "border-primary/45 bg-primary/5"
-              : "border-border/70 bg-background/60 hover:bg-muted/50"
+              ? "border-primary/35 bg-[linear-gradient(135deg,rgba(239,246,255,0.9),rgba(255,255,255,0.98))] shadow-[0_12px_28px_rgba(37,99,235,0.08)]"
+              : "border-white/80 bg-white/80 hover:-translate-y-0.5 hover:bg-white"
           }`}
         >
-          <span className="flex min-w-0 items-center gap-2">
+          <span className="flex min-w-0 flex-1 items-center gap-2">
             <span
-              className="size-2.5 shrink-0 rounded-full"
+              className="size-2.5 shrink-0 rounded-full shadow-sm"
               style={{ backgroundColor: item.color }}
             />
-            <span className="truncate text-sm font-medium text-foreground">
+            <span className="min-w-0 truncate text-[0.92rem] font-medium text-foreground">
               {item.label}
             </span>
           </span>
-          <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+          <span className="shrink-0 text-[0.92rem] font-semibold tabular-nums text-foreground">
             {item.value}
             {valueSuffix}
           </span>
@@ -1193,7 +1223,7 @@ function ValuePieModule({
   opportunities: CustomerAnalysisResult["value_opportunities"];
   profitShares: number[];
   selectedIndex: number | null;
-  onSelect: (index: number) => void;
+  onSelect: (index: number | null) => void;
 }) {
   const chartData = opportunities.map((item, index) => {
     const category = getPrimaryValueCategory(item);
@@ -1209,36 +1239,39 @@ function ValuePieModule({
   const selectedCategory = selected ? getPrimaryValueCategory(selected) : null;
   const selectedShare =
     selectedIndex === null ? 0 : profitShares[selectedIndex] ?? 0;
+  const selectedColor =
+    selectedIndex === null ? undefined : chartData[selectedIndex]?.color;
 
   if (!opportunities.length) {
     return null;
   }
 
   return (
-    <div className="mb-6 rounded-xl border border-border/70 bg-background/75 p-5">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div className="mb-5 rounded-xl border border-border/70 bg-background/75 p-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Kakefordeling
           </p>
-          <h4 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-foreground">
+          <h4 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-foreground">
             Profitteffekt per verdi
           </h4>
         </div>
-        <span className="rounded-md border border-border/70 bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+        <span className="rounded-md border border-border/70 bg-card px-2.5 py-1 text-[0.72rem] font-semibold text-muted-foreground">
           Klikk på en verdi for detaljer
         </span>
       </div>
 
-      <div className="space-y-6">
-        <DonutChart
-          data={chartData}
-          selectedIndex={selectedIndex}
-          onSelect={onSelect}
-          valueSuffix="%"
-          emptyLabel="Klikk en verdi"
-        />
-        <div className="space-y-4">
+      <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.18fr)_minmax(13.5rem,0.56fr)] 2xl:items-start">
+        <div className="min-w-0 rounded-[1.4rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,246,255,0.62)_60%,rgba(248,250,252,0.82))] px-3 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.045)] md:px-4">
+          <DonutChart
+            data={chartData}
+            selectedIndex={selectedIndex}
+            onSelect={onSelect}
+            valueSuffix="%"
+          />
+        </div>
+        <div className="min-w-0 space-y-3">
           <PieLegend
             data={chartData}
             selectedIndex={selectedIndex}
@@ -1246,41 +1279,39 @@ function ValuePieModule({
             valueSuffix="%"
           />
           {selected ? (
-            <div className="rounded-lg border border-border/70 bg-card px-4 py-4">
+            <div className="rounded-lg border border-border/70 bg-card px-3.5 py-3.5">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <div className="min-w-0">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Valgt verdi
                   </p>
                   <p
-                    className="mt-1 text-xl font-semibold tracking-[-0.02em]"
+                    className="mt-1 text-lg font-semibold"
                     style={{
-                      color: selectedCategory
-                        ? VALUE_CATEGORY_COLORS[selectedCategory]
-                        : undefined,
+                      color: selectedColor,
                     }}
                   >
                     {selectedCategory ?? selected.title}
                   </p>
                 </div>
-                <span className="rounded-md bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary">
+                <span className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-[0.82rem] font-semibold text-primary">
                   {selectedShare}% av profitteffekt
                 </span>
               </div>
-              <details className="mt-4 group">
-                <summary className="cursor-pointer list-none text-sm font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <details className="group mt-3">
+                <summary className="cursor-pointer list-none text-[0.82rem] font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
                   Les mer
                 </summary>
                 <div className="mt-3">
                   <MarkdownViewer
                     content={selected.description}
-                    className="analysis-prose text-[0.98rem] text-muted-foreground"
+                    className="analysis-prose text-[0.92rem] text-muted-foreground"
                   />
                 </div>
               </details>
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border/80 bg-card/60 px-4 py-4 text-sm leading-6 text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-border/80 bg-card/60 px-3.5 py-3.5 text-[0.9rem] leading-6 text-muted-foreground">
               Velg en verdi i kaken eller listen for å se detaljer.
             </div>
           )}
@@ -1299,7 +1330,7 @@ function KeywordPieModule({
   analysis: CustomerAnalysisResult;
   keywords: string[];
   selectedIndex: number | null;
-  onSelect: (index: number) => void;
+  onSelect: (index: number | null) => void;
 }) {
   const chartData = keywords.map((keyword, index) => ({
     id: `${keyword}-${index}`,
@@ -1323,30 +1354,31 @@ function KeywordPieModule({
   const KeywordIcon = selectedKeyword ? getKeywordIcon(selectedKeyword) : null;
 
   return (
-    <div className="mb-6 rounded-xl border border-border/70 bg-background/75 p-5">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div className="mb-5 rounded-xl border border-border/70 bg-background/75 p-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Kakefordeling
           </p>
-          <h4 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-foreground">
+          <h4 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-foreground">
             Nøkkelord etter antall nevnt
           </h4>
         </div>
-        <span className="rounded-md border border-border/70 bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+        <span className="rounded-md border border-border/70 bg-card px-2.5 py-1 text-[0.72rem] font-semibold text-muted-foreground">
           Topp 5 signalord
         </span>
       </div>
 
-      <div className="space-y-6">
-        <DonutChart
-          data={chartData}
-          selectedIndex={selectedIndex}
-          onSelect={onSelect}
-          valueSuffix="x"
-          emptyLabel="Klikk et ord"
-        />
-        <div className="space-y-4">
+      <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.18fr)_minmax(13.5rem,0.56fr)] 2xl:items-start">
+        <div className="min-w-0 rounded-[1.4rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(240,253,250,0.68)_58%,rgba(248,250,252,0.82))] px-3 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.045)] md:px-4">
+          <DonutChart
+            data={chartData}
+            selectedIndex={selectedIndex}
+            onSelect={onSelect}
+            valueSuffix="x"
+          />
+        </div>
+        <div className="min-w-0 space-y-3">
           <PieLegend
             data={chartData}
             selectedIndex={selectedIndex}
@@ -1354,9 +1386,9 @@ function KeywordPieModule({
             valueSuffix="x"
           />
           {selectedKeyword && KeywordIcon ? (
-            <div className="rounded-lg border border-border/70 bg-card px-4 py-4">
+            <div className="rounded-lg border border-border/70 bg-card px-3.5 py-3.5">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
+                <div className="flex min-w-0 items-start gap-3">
                   <div
                     className="flex size-10 shrink-0 items-center justify-center rounded-lg text-white"
                     style={{
@@ -1368,24 +1400,24 @@ function KeywordPieModule({
                   >
                     <KeywordIcon className="size-5" />
                   </div>
-                  <div>
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  <div className="min-w-0">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                       Valgt nøkkelord
                     </p>
-                    <p className="mt-1 text-xl font-semibold tracking-[-0.02em] text-foreground">
+                    <p className="mt-1 text-lg font-semibold text-foreground">
                       {selectedKeyword}
                     </p>
                   </div>
                 </div>
-                <span className="rounded-md bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary">
+                <span className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-[0.82rem] font-semibold text-primary">
                   {selectedCount}x · {selectedShare}% av topp 5
                 </span>
               </div>
-              <details className="mt-4 group">
-                <summary className="cursor-pointer list-none text-sm font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <details className="group mt-3">
+                <summary className="cursor-pointer list-none text-[0.82rem] font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
                   Les mer
                 </summary>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                <p className="mt-3 text-[0.9rem] leading-6 text-muted-foreground">
                   Nøkkelordet er brukt {selectedCount} ganger i analysert
                   grunnlag. Bruk dette som språk- og arkitektursignal i
                   løsningsbeskrivelsen, spesielt der kunden forventer gjenkjennelig
@@ -1394,7 +1426,7 @@ function KeywordPieModule({
               </details>
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border/80 bg-card/60 px-4 py-4 text-sm leading-6 text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-border/80 bg-card/60 px-3.5 py-3.5 text-[0.9rem] leading-6 text-muted-foreground">
               Velg et nøkkelord i kaken eller listen for å se detaljer.
             </div>
           )}
@@ -1483,112 +1515,178 @@ function PositioningKanban({
   })).filter(
     (lane) => lane.items.length > 0 || lane.title === "Leveranse",
   );
+  const [activeLaneTitle, setActiveLaneTitle] = useState<string>(
+    () => lanes[0]?.title ?? "Leveranse",
+  );
+
+  useEffect(() => {
+    if (!lanes.some((lane) => lane.title === activeLaneTitle)) {
+      setActiveLaneTitle(lanes[0]?.title ?? "Leveranse");
+    }
+  }, [activeLaneTitle, lanes]);
+
+  const activeLane =
+    lanes.find((lane) => lane.title === activeLaneTitle) ?? lanes[0] ?? null;
+
+  if (!activeLane) {
+    return null;
+  }
+
+  const ActiveLaneIcon = activeLane.icon;
 
   return (
-    <div className="overflow-x-auto pb-1">
-      <div className="grid min-w-[46rem] gap-4 lg:min-w-0 lg:grid-cols-2 xl:grid-cols-4">
-        {lanes.map((lane) => {
-          const Icon = lane.icon;
-          const hasDeliveryBlueprint = lane.title === "Leveranse";
-          const itemCount = lane.items.length + (hasDeliveryBlueprint ? 1 : 0);
+    <div className="min-w-0 space-y-4">
+      <div className="-mx-1 overflow-x-auto pb-1">
+        <div className="flex min-w-max gap-2 px-1">
+          {lanes.map((lane) => {
+            const Icon = lane.icon;
+            const isActive = lane.title === activeLane.title;
+            const hasDeliveryBlueprint = lane.title === "Leveranse";
+            const itemCount = lane.items.length + (hasDeliveryBlueprint ? 1 : 0);
 
-          return (
-            <section
-              key={lane.title}
-              className={`flex min-h-64 flex-col rounded-xl border p-3 shadow-sm ${lane.className}`}
-            >
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div className="flex items-start gap-2.5">
+            return (
+              <button
+                key={lane.title}
+                type="button"
+                onClick={() => setActiveLaneTitle(lane.title)}
+                className={cn(
+                  "group flex min-w-[12.5rem] items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60",
+                  lane.className,
+                  isActive
+                    ? "ring-2 ring-current/20 shadow-[0_14px_34px_rgba(15,23,42,0.10)]"
+                    : "opacity-80 hover:opacity-100",
+                )}
+                aria-pressed={isActive}
+              >
+                <div className="flex min-w-0 items-start gap-3">
                   <div
-                    className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${lane.iconClassName}`}
+                    className={cn(
+                      "flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm",
+                      lane.iconClassName,
+                    )}
                   >
                     <Icon className="size-4.5" />
                   </div>
-                  <div>
-                    <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] opacity-65">
+                  <div className="min-w-0">
+                    <p className="text-[0.66rem] font-bold uppercase tracking-[0.16em] opacity-65">
                       {lane.eyebrow}
                     </p>
-                    <h5 className="mt-0.5 text-base font-semibold tracking-[-0.02em]">
+                    <h5 className="mt-1 text-sm font-semibold tracking-[-0.02em] sm:text-[0.98rem]">
                       {lane.title}
                     </h5>
                   </div>
                 </div>
                 <span
-                  className={`rounded-md px-2 py-1 text-xs font-semibold ${lane.badgeClassName}`}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-xs font-semibold",
+                    lane.badgeClassName,
+                  )}
                 >
                   {itemCount}
                 </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <section
+        className={cn(
+          "flex min-h-64 flex-col rounded-2xl border p-4 shadow-sm sm:p-5",
+          activeLane.className,
+        )}
+      >
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div
+              className={cn(
+                "flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm",
+                activeLane.iconClassName,
+              )}
+            >
+              <ActiveLaneIcon className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] opacity-65">
+                {activeLane.eyebrow}
+              </p>
+              <h5 className="mt-1 text-lg font-semibold tracking-[-0.025em]">
+                {activeLane.title}
+              </h5>
+            </div>
+          </div>
+          <span className="min-w-0 max-w-xl text-sm leading-6 text-slate-600">
+            Ett spor om gangen, slik at teamet kan lese og jobbe med innholdet
+            uten å miste oversikten.
+          </span>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-4">
+          {activeLane.title === "Leveranse" ? (
+            <article className="overflow-hidden rounded-[1.45rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(236,254,255,0.82))] shadow-[0_16px_38px_rgba(8,145,178,0.14)]">
+              <div className="border-b border-cyan-100/90 px-5 py-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-cyan-700/75">
+                      Løsningsfaser for gjennomføring
+                    </p>
+                    <h6 className="mt-1 text-[1.06rem] font-semibold tracking-[-0.02em] text-cyan-950">
+                      Strukturert og pragmatisk leveranseplan
+                    </h6>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-cyan-700 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white">
+                    Alltid med
+                  </span>
+                </div>
+                <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-700">
+                  {summarizePhaseContext(analysis)}
+                </p>
               </div>
 
-              <div className="flex flex-1 flex-col gap-3">
-                {hasDeliveryBlueprint ? (
-                  <article className="overflow-hidden rounded-[1.35rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(236,254,255,0.82))] shadow-[0_16px_38px_rgba(8,145,178,0.14)]">
-                    <div className="border-b border-cyan-100/90 px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-cyan-700/75">
-                            Løsningsfaser for gjennomføring
-                          </p>
-                          <h6 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-cyan-950">
-                            Strukturert og pragmatisk leveranseplan
-                          </h6>
-                        </div>
-                        <span className="rounded-full bg-cyan-700 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white">
-                          Alltid med
-                        </span>
-                      </div>
-                      <p className="mt-3 text-sm leading-6 text-slate-700">
-                        {summarizePhaseContext(analysis)}
-                      </p>
-                    </div>
-
-                    <div className="space-y-3 px-4 py-4">
-                      {deliveryPhases.map((phase) => (
-                        <div
-                          key={phase.title}
-                          className="rounded-2xl border border-cyan-100 bg-white/90 px-4 py-4 shadow-[0_10px_24px_rgba(14,116,144,0.08)]"
-                        >
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <span className="rounded-full bg-cyan-700/10 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-cyan-800">
-                              {phase.title}
-                            </span>
-                            <span className="text-right text-sm font-semibold text-slate-900">
-                              {phase.label}
-                            </span>
-                          </div>
-                          <ul className="space-y-2.5 text-[0.96rem] leading-6 text-slate-700">
-                            {phase.bullets.map((bullet, bulletIndex) => (
-                              <li
-                                key={`${phase.title}-${bulletIndex}`}
-                                className="flex items-start gap-2.5"
-                              >
-                                <span className="mt-2 size-1.5 shrink-0 rounded-full bg-cyan-600" />
-                                <span>{bullet}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                ) : null}
-
-                {lane.items.map(({ content, index }) => (
-                  <article
-                    key={`positioning-kanban-${index}`}
-                    className="rounded-lg border border-white/70 bg-white/82 px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-sm transition-transform hover:-translate-y-0.5"
+              <div className="grid min-w-0 gap-3 px-5 py-5 2xl:grid-cols-2">
+                {deliveryPhases.map((phase) => (
+                  <div
+                    key={phase.title}
+                    className="rounded-2xl border border-cyan-100 bg-white/90 px-4 py-4 shadow-[0_10px_24px_rgba(14,116,144,0.08)]"
                   >
-                    <MarkdownViewer
-                      content={content}
-                      className="analysis-prose max-w-none text-[0.98rem] leading-7 text-slate-800"
-                    />
-                  </article>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <span className="rounded-full bg-cyan-700/10 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-cyan-800">
+                        {phase.title}
+                      </span>
+                      <span className="text-right text-sm font-semibold text-slate-900">
+                        {phase.label}
+                      </span>
+                    </div>
+                    <ul className="space-y-2.5 text-[0.96rem] leading-6 text-slate-700">
+                      {phase.bullets.map((bullet, bulletIndex) => (
+                        <li
+                          key={`${phase.title}-${bulletIndex}`}
+                          className="flex items-start gap-2.5"
+                        >
+                          <span className="mt-2 size-1.5 shrink-0 rounded-full bg-cyan-600" />
+                          <span>{bullet}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
               </div>
-            </section>
-          );
-        })}
-      </div>
+            </article>
+          ) : null}
+
+          {activeLane.items.map(({ content, index }) => (
+            <article
+              key={`positioning-kanban-${index}`}
+              className="rounded-xl border border-white/70 bg-white/88 px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-sm"
+            >
+              <MarkdownViewer
+                content={content}
+                className="analysis-prose max-w-none text-[1rem] leading-7 text-slate-800"
+              />
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -1634,6 +1732,7 @@ function extractSummaryHighlights(content: string) {
 }
 
 const SECTION_TABS = [
+  { value: "documents", label: "Dokumenter" },
   { value: "summary", label: "Oppsummering" },
   { value: "strategy", label: "Strategi" },
   { value: "design", label: "Design" },
@@ -1757,7 +1856,7 @@ function RiskAudienceGroup({
 
   return (
     <div
-      className={`overflow-hidden rounded-xl border shadow-[0_14px_36px_rgba(15,23,42,0.06)] ${style.shellClassName}`}
+      className={`min-w-0 overflow-hidden rounded-xl border shadow-[0_14px_36px_rgba(15,23,42,0.06)] ${style.shellClassName}`}
     >
       <div className="flex items-start gap-3 border-b border-white/80 px-5 py-5 md:px-6">
         <div
@@ -1790,7 +1889,7 @@ function RiskAudienceGroup({
                 <span
                   className={`absolute inset-y-0 left-0 w-1 ${style.accentClassName}`}
                 />
-                <div className="mb-3 flex items-center gap-2 pl-2">
+                <div className="mb-3 flex min-w-0 items-center gap-2 pl-2">
                   <span
                     className={`rounded-md px-2.5 py-1 text-[0.74rem] font-bold ${style.numberClassName}`}
                   >
@@ -2027,9 +2126,9 @@ function NeedSignalCard({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="mt-5 grid min-w-0 gap-4 2xl:grid-cols-2">
           <div className={`rounded-lg border px-4 py-4 ${style.askClassName}`}>
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-3 flex min-w-0 items-center gap-2">
               <div className="flex size-8 items-center justify-center rounded-md bg-white/82">
                 <Target className="size-4" />
               </div>
@@ -2044,7 +2143,7 @@ function NeedSignalCard({
           </div>
 
           <div className={`rounded-lg border px-4 py-4 ${style.avoidClassName}`}>
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-3 flex min-w-0 items-center gap-2">
               <div className="flex size-8 items-center justify-center rounded-md bg-slate-100 text-slate-700">
                 <Shield className="size-4" />
               </div>
@@ -2107,6 +2206,20 @@ export function ProjectAnalysisTab({
   onGenerate,
   onRegenerateSection,
   onSaveAnalysis,
+  uploadOpen,
+  onToggleUploadOpen,
+  docTitle,
+  onDocTitleChange,
+  docRole,
+  onDocRoleChange,
+  supportingSubtype,
+  onSupportingSubtypeChange,
+  onFileChange,
+  documentFileInputKey,
+  onUploadDocument,
+  uploadBusy,
+  deletingDocumentId,
+  onDeleteDocument,
 }: {
   projectId: string;
   documents: ProjectDocument[];
@@ -2117,12 +2230,33 @@ export function ProjectAnalysisTab({
   busyMessage: string;
   onGenerate: () => void;
   onRegenerateSection: (section: CustomerAnalysisSection) => void;
-  onSaveAnalysis: (value: string) => Promise<void>;
+  onSaveAnalysis: (
+    section: CustomerAnalysisSection,
+    snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
+  ) => Promise<void>;
+  uploadOpen: boolean;
+  onToggleUploadOpen: () => void;
+  docTitle: string;
+  onDocTitleChange: (value: string) => void;
+  docRole: ProjectDocumentRole;
+  onDocRoleChange: (value: ProjectDocumentRole) => void;
+  supportingSubtype: SupportingDocumentSubtype;
+  onSupportingSubtypeChange: (value: SupportingDocumentSubtype) => void;
+  onFileChange: (file: File | null) => void;
+  documentFileInputKey: number;
+  onUploadDocument: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  uploadBusy: boolean;
+  deletingDocumentId: string | null;
+  onDeleteDocument: (document: ProjectDocument) => Promise<void>;
 }) {
-  const [analysisDraft, setAnalysisDraft] = useState("");
-  const [isEditingAnalysis, setIsEditingAnalysis] = useState(false);
+  const [editingSection, setEditingSection] =
+    useState<CustomerAnalysisSection | null>(null);
+  const [sectionDraft, setSectionDraft] = useState("");
+  const [sectionDraftError, setSectionDraftError] = useState("");
   const [activeSection, setActiveSection] =
-    useState<(typeof SECTION_TABS)[number]["value"]>("summary");
+    useState<(typeof SECTION_TABS)[number]["value"]>(
+      customerAnalysis ? "summary" : "documents",
+    );
   const [selectedValueIndex, setSelectedValueIndex] = useState<number | null>(
     null,
   );
@@ -2133,8 +2267,13 @@ export function ProjectAnalysisTab({
   const [showValueList, setShowValueList] = useState(false);
 
   useEffect(() => {
-    setAnalysisDraft(customerAnalysis?.executive_summary ?? "");
-  }, [customerAnalysis?.executive_summary]);
+    if (!customerAnalysis) {
+      setActiveSection("documents");
+      setEditingSection(null);
+      setSectionDraft("");
+      setSectionDraftError("");
+    }
+  }, [customerAnalysis]);
 
   useEffect(() => {
     if (
@@ -2180,6 +2319,7 @@ export function ProjectAnalysisTab({
             "border-blue-200/80 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.92))]",
           iconClassName: "bg-blue-600 text-white",
           chipClassName: "bg-blue-600/10 text-blue-800",
+          expandedLeadClassName: "font-semibold",
         },
         {
           key: "goals",
@@ -2196,6 +2336,7 @@ export function ProjectAnalysisTab({
             "border-emerald-200/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.94),rgba(255,255,255,0.92))]",
           iconClassName: "bg-emerald-600 text-white",
           chipClassName: "bg-emerald-600/10 text-emerald-800",
+          expandedLeadClassName: "font-normal",
         },
       ].filter((item) => item.content.trim().length > 0)
     : [];
@@ -2209,19 +2350,60 @@ export function ProjectAnalysisTab({
   const topSignalWords = customerAnalysis
     ? getTopSignalWords(customerAnalysis)
     : [];
+  const hasPrimaryCustomerDocument = documents.some(
+    (document) => document.role === "primary_customer_document",
+  );
 
-  async function onAnalysisAction() {
-    if (!isEditingAnalysis) {
-      setIsEditingAnalysis(true);
-      return;
-    }
-    await onSaveAnalysis(analysisDraft);
-    setIsEditingAnalysis(false);
+  function getSectionLabel(section: CustomerAnalysisSection) {
+    return SECTION_TABS.find((tab) => tab.value === section)?.label ?? section;
   }
 
-  function onCancelAnalysisEdit() {
-    setAnalysisDraft(customerAnalysis?.executive_summary ?? "");
-    setIsEditingAnalysis(false);
+  function serializeSectionDraft(section: CustomerAnalysisSection) {
+    if (!customerAnalysis) {
+      return "";
+    }
+
+    return JSON.stringify(
+      getCustomerAnalysisSectionSnapshot(customerAnalysis, section),
+      null,
+      2,
+    );
+  }
+
+  function onStartSectionEdit(section: CustomerAnalysisSection) {
+    setEditingSection(section);
+    setSectionDraft(serializeSectionDraft(section));
+    setSectionDraftError("");
+  }
+
+  function onCancelSectionEdit() {
+    setEditingSection(null);
+    setSectionDraft("");
+    setSectionDraftError("");
+  }
+
+  async function onSaveSectionEdit(section: CustomerAnalysisSection) {
+    let snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
+
+    try {
+      snapshot = JSON.parse(
+        sectionDraft,
+      ) as CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
+    } catch {
+      setSectionDraftError(
+        "Ugyldig JSON. Kontroller komma, anførselstegn og klammer.",
+      );
+      return;
+    }
+
+    try {
+      await onSaveAnalysis(section, snapshot);
+      setEditingSection(null);
+      setSectionDraft("");
+      setSectionDraftError("");
+    } catch {
+      // runAction owns the user-facing error message in the parent.
+    }
   }
 
   function renderRegenerateButton(
@@ -2247,6 +2429,97 @@ export function ProjectAnalysisTab({
     );
   }
 
+  function renderEditButton(section: CustomerAnalysisSection) {
+    const isEditing = editingSection === section;
+
+    if (isEditing) {
+      return (
+        <>
+          <Button
+            onClick={onCancelSectionEdit}
+            disabled={saveBusy}
+            variant="ghost"
+            size="sm"
+          >
+            <X data-icon="inline-start" />
+            Avbryt
+          </Button>
+          <Button
+            onClick={() => void onSaveSectionEdit(section)}
+            disabled={saveBusy || !sectionDraft.trim()}
+            variant="outline"
+            size="sm"
+          >
+            {saveBusy ? (
+              <Spinner className="size-4" />
+            ) : (
+              <Save data-icon="inline-start" />
+            )}
+            Lagre
+          </Button>
+        </>
+      );
+    }
+
+    return (
+      <Button
+        onClick={() => onStartSectionEdit(section)}
+        disabled={
+          busy || saveBusy || Boolean(sectionBusy) || Boolean(editingSection)
+        }
+        variant="outline"
+        size="sm"
+      >
+        <PencilLine data-icon="inline-start" />
+        Rediger
+      </Button>
+    );
+  }
+
+  function renderSectionActions(
+    section: CustomerAnalysisSection,
+    regenerateLabel?: string,
+  ) {
+    return (
+      <>
+        {renderRegenerateButton(section, regenerateLabel)}
+        {renderEditButton(section)}
+      </>
+    );
+  }
+
+  function renderSectionEditor(section: CustomerAnalysisSection) {
+    if (editingSection !== section) {
+      return null;
+    }
+
+    return (
+      <div className="mb-5 rounded-lg border border-primary/25 bg-primary/5 px-4 py-4">
+        <div className="mb-3 min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            Rediger {getSectionLabel(section).toLowerCase()}
+          </p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Oppdater feltene i seksjonens JSON og lagre. Endringen lagres i
+            historikken som manuell lagring.
+          </p>
+        </div>
+        <Textarea
+          value={sectionDraft}
+          onChange={(event) => {
+            setSectionDraft(event.target.value);
+            setSectionDraftError("");
+          }}
+          spellCheck={false}
+          className="min-h-72 resize-y rounded-lg border-primary/20 bg-white font-mono text-xs leading-5 text-slate-900 shadow-none"
+        />
+        {sectionDraftError ? (
+          <p className="mt-2 text-sm text-destructive">{sectionDraftError}</p>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderListToggleButton(isVisible: boolean, onToggle: () => void) {
     return (
       <Button
@@ -2263,99 +2536,254 @@ export function ProjectAnalysisTab({
   }
 
   return (
-    <div>
+    <div className="min-w-0 max-w-full overflow-x-hidden">
       {sectionBusy && busyMessage ? (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
           <Spinner className="size-3.5" />
-          <span>{busyMessage}</span>
+          <span className="min-w-0">{busyMessage}</span>
         </div>
       ) : null}
 
-      {customerAnalysis ? (
-        <Tabs
-          value={activeSection}
-          onValueChange={(value) =>
-            setActiveSection(value as (typeof SECTION_TABS)[number]["value"])
-          }
-          defaultValue="summary"
-          className="gap-4"
-        >
-          <div className="sticky top-14 z-20 -mx-5 overflow-y-hidden border-b border-border/70 bg-background/95 px-5 pt-0 pb-0.5 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:-mx-8 md:px-8">
-            <div className="flex items-end justify-between gap-4">
-              <div className="min-w-0 flex-1 overflow-hidden">
-                <div className="no-scrollbar overflow-x-auto overflow-y-hidden touch-pan-x">
-                  <TabsList
-                    variant="line"
-                    className="h-auto min-w-max rounded-none p-0"
-                  >
-                    {SECTION_TABS.map((tab) => (
-                      <TabsTrigger
-                        key={tab.value}
-                        value={tab.value}
-                        className="h-11 flex-none rounded-none px-5 text-base font-medium tracking-[-0.01em] text-foreground/55 after:bottom-[-1px] after:h-[3px] after:rounded-full after:bg-primary data-active:bg-transparent data-active:text-primary"
+      <Tabs
+        value={activeSection}
+        onValueChange={(value) =>
+          setActiveSection(value as (typeof SECTION_TABS)[number]["value"])
+        }
+        defaultValue="documents"
+        className="min-w-0 gap-4"
+      >
+        <div className="-mx-5 mb-4 overflow-y-hidden border-b border-border/70 bg-background px-5 pt-0 pb-0.5 md:-mx-8 md:px-8">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="no-scrollbar overflow-x-auto overflow-y-hidden touch-pan-x">
+                <TabsList
+                  variant="line"
+                  className="h-auto min-w-max rounded-none p-0"
+                >
+                  {SECTION_TABS.map((tab) => (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className="h-11 flex-none rounded-none px-5 text-base font-medium tracking-[-0.01em] text-foreground/55 after:bottom-[-1px] after:h-[3px] after:rounded-full after:bg-primary data-active:bg-transparent data-active:text-primary"
+                    >
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+            </div>
+            <Button
+              onClick={onGenerate}
+              disabled={busy || Boolean(sectionBusy) || !hasPrimaryCustomerDocument}
+              className="mb-2 max-w-full shrink-0"
+            >
+              {busy ? (
+                <Spinner className="size-4" />
+              ) : (
+                <RefreshCw data-icon="inline-start" />
+              )}
+              Generer kundeanalyse
+            </Button>
+          </div>
+        </div>
+
+        <TabsContent value="documents" className="mt-0">
+          <SectionSurface
+            title={`Dokumentgrunnlag (${documents.length})`}
+            description="Last opp, organiser og administrer prosjektets dokumenter direkte fra kundeanalysen."
+            icon={FileText}
+          >
+            <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]">
+              <div className="relative overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+                <div>
+                  <button
+                    type="button"
+                    onClick={onToggleUploadOpen}
+                  className="flex w-full items-center justify-between gap-3 bg-muted px-4 py-3 text-left text-sm font-semibold text-foreground hover:text-primary"
+                >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Upload className="size-4" />
+                      <span>Last opp dokument</span>
+                    </span>
+                    <ChevronDown
+                      className={`size-4 text-muted-foreground transition-transform ${uploadOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {uploadOpen ? (
+                    <form onSubmit={onUploadDocument} className="space-y-3 p-4">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="docTitle" className="font-medium">
+                          Tittel
+                        </Label>
+                        <Input
+                          id="docTitle"
+                          value={docTitle}
+                          onChange={(e) => onDocTitleChange(e.target.value)}
+                          placeholder="Visningsnavn i prosjektet"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="docRole" className="font-medium">
+                          Dokumentrolle
+                        </Label>
+                        <NativeSelect
+                          id="docRole"
+                          value={docRole}
+                          onChange={(event) =>
+                            onDocRoleChange(
+                              event.target.value as ProjectDocumentRole,
+                            )
+                          }
+                        >
+                          <NativeSelectOption value="primary_customer_document">
+                            Primært kundedokument
+                          </NativeSelectOption>
+                          <NativeSelectOption value="primary_solution_document">
+                            Primært løsningsdokument
+                          </NativeSelectOption>
+                          <NativeSelectOption value="supporting_document">
+                            Støttedokument
+                          </NativeSelectOption>
+                        </NativeSelect>
+                      </div>
+                      {docRole === "supporting_document" ? (
+                        <div className="space-y-1.5">
+                          <Label
+                            htmlFor="supportingSubtype"
+                            className="font-medium"
+                          >
+                            Undertype
+                          </Label>
+                          <NativeSelect
+                            id="supportingSubtype"
+                            value={supportingSubtype}
+                            onChange={(event) =>
+                              onSupportingSubtypeChange(
+                                event.target.value as SupportingDocumentSubtype,
+                              )
+                            }
+                          >
+                            {SUPPORTING_SUBTYPES.map((item) => (
+                              <NativeSelectOption
+                                key={item.value}
+                                value={item.value}
+                              >
+                                {item.label}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                        </div>
+                      ) : null}
+                      <div className="space-y-1.5">
+                        <Label htmlFor="file" className="font-medium">
+                          Fil
+                        </Label>
+                        <Input
+                          key={documentFileInputKey}
+                          id="file"
+                          type="file"
+                          accept=".pdf,.docx,.txt,.md"
+                          onChange={(e) =>
+                            onFileChange(e.target.files?.[0] ?? null)
+                          }
+                        />
+                      </div>
+                      <Button
+                        type="submit"
+                        className="w-full"
+                        disabled={uploadBusy}
                       >
-                        {tab.label}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
+                        {uploadBusy ? (
+                          <Spinner className="size-4" />
+                        ) : (
+                          <Upload data-icon="inline-start" />
+                        )}
+                        Last opp
+                      </Button>
+                    </form>
+                  ) : null}
                 </div>
               </div>
-              <Button
-                onClick={onGenerate}
-                disabled={busy || Boolean(sectionBusy)}
-                className="mb-2 shrink-0"
-              >
-                {busy ? (
-                  <Spinner className="size-4" />
-                ) : (
-                  <RefreshCw data-icon="inline-start" />
-                )}
-                Generer kundeanalyse
-              </Button>
-            </div>
-          </div>
 
+              <div className="relative overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+                <div className="bg-muted px-4 py-3">
+                  <h3 className="text-sm font-bold text-foreground">
+                    Dokumenter i prosjektet
+                  </h3>
+                </div>
+                {documents.length === 0 ? (
+                  <p className="bg-background py-8 text-center text-sm text-muted-foreground">
+                    Ingen dokumenter lastet opp ennå.
+                  </p>
+                ) : (
+                  <div>
+                    {documents.map((document) => (
+                      <div
+                        key={document.id}
+                        className="flex min-w-0 items-start justify-between gap-3 border-t bg-background px-4 py-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <FileText className="size-4 shrink-0 text-primary" />
+                            <span className="truncate text-sm font-semibold text-foreground">
+                              {document.title}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
+                            {roleLabel(document.role)}
+                            {document.role === "supporting_document"
+                              ? ` · ${supportingSubtypeLabel(document.supporting_subtype)}`
+                              : ""}
+                            {" · "}
+                            {document.file_format.toUpperCase()}{" "}
+                            {Math.round(document.file_size_bytes / 1024)} KB
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <a
+                            href={`/api/projects/${projectId}/documents/${document.id}`}
+                            className={cn(
+                              "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                            )}
+                          >
+                            <ArrowDownToLine className="size-3.5" />
+                          </a>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => void onDeleteDocument(document)}
+                            disabled={deletingDocumentId === document.id}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            {deletingDocumentId === document.id ? (
+                              <Spinner className="size-3.5" />
+                            ) : (
+                              <Trash2 className="size-3.5" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </SectionSurface>
+        </TabsContent>
+
+        {customerAnalysis ? (
+          <>
           <TabsContent value="summary" className="mt-0">
             <SectionSurface
               title="Oppsummering av kunden"
               description="En lettere lederlesning som deler kundens nåsituasjon og ønsket retning i korte, tydelige spor."
               icon={Building2}
-              action={renderRegenerateButton("summary")}
+              action={renderSectionActions("summary")}
             >
+              {renderSectionEditor("summary")}
               {summaryPanels.length > 0 ? (
                 <div className="space-y-5">
-                  <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(239,246,255,0.92)_46%,rgba(236,253,245,0.82))] shadow-sm">
-                    <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-5 md:px-6">
-                      <div className="max-w-3xl">
-                        <p className="text-[0.7rem] font-bold uppercase tracking-[0.18em] text-slate-500">
-                          Kort fortalt
-                        </p>
-                        <h4 className="mt-2 text-[1.35rem] font-semibold tracking-[-0.04em] text-slate-950">
-                          Hva slags kunde dette er, og hvor tilbudet må treffe
-                          raskt
-                        </h4>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">
-                          Oppsummeringen er strammet inn for rask skanning:
-                          først hovedpoenget, deretter bare de viktigste
-                          signalene teamet bør bruke videre i løsning og
-                          tilbudstekst.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                          Mindre tekstvegg
-                        </span>
-                        <span className="rounded-full bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                          Raskere lesing
-                        </span>
-                        <span className="rounded-full bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                          Mer handlingsnært
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
                     {summaryPanels.map((panel) => {
                       const Icon = panel.icon;
                       const summaryText = splitLeadSentence(panel.content);
@@ -2363,7 +2791,7 @@ export function ProjectAnalysisTab({
                       return (
                         <div
                           key={panel.key}
-                          className={`overflow-hidden rounded-2xl border px-5 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.06)] ${panel.accentClassName}`}
+                          className={`min-w-0 overflow-hidden rounded-2xl border px-5 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.06)] ${panel.accentClassName}`}
                         >
                           <div className="mb-5 flex items-start gap-3">
                             <div
@@ -2426,7 +2854,9 @@ export function ProjectAnalysisTab({
                               </summary>
 
                               <div className="mt-4 border-t border-slate-200/80 pt-4">
-                                <p className="text-[1.08rem] font-semibold leading-7 tracking-[-0.03em] text-slate-950">
+                                <p
+                                  className={`text-[1.08rem] leading-7 tracking-[-0.03em] text-slate-950 ${panel.expandedLeadClassName}`}
+                                >
                                   {summaryText.lead || panel.content}
                                 </p>
                                 {summaryText.body ? (
@@ -2456,52 +2886,18 @@ export function ProjectAnalysisTab({
           <TabsContent value="strategy" className="mt-0">
             <SectionSurface
               title="Strategi og posisjonering"
-              description="Én samlet arbeidsflate for tilbudsfortellingen, fra strategisk innledning til konkrete posisjoneringsspor."
+              description="Fra innsikt til vinnende tilbudsfortelling. Én samlet arbeidsflate for tilbudsfortellingen, fra strategisk innledning til konkrete posisjoneringsspor."
               icon={FilePenLine}
-              action={
-                <>
-                  {renderRegenerateButton("strategy")}
-                  {isEditingAnalysis ? (
-                    <Button
-                      onClick={onCancelAnalysisEdit}
-                      disabled={saveBusy}
-                      variant="ghost"
-                      size="sm"
-                    >
-                      Avbryt
-                    </Button>
-                  ) : null}
-                  <Button
-                    onClick={onAnalysisAction}
-                    disabled={
-                      saveBusy || (isEditingAnalysis && !analysisDraft.trim())
-                    }
-                    variant="outline"
-                    size="sm"
-                  >
-                    {saveBusy ? <Spinner className="size-4" /> : null}
-                    {isEditingAnalysis ? "Lagre" : "Endre"}
-                  </Button>
-                </>
-              }
+              action={renderSectionActions("strategy")}
             >
+              {renderSectionEditor("strategy")}
               <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(239,246,255,0.88)_54%,rgba(236,254,255,0.72))] shadow-sm">
-                <div className="border-b border-slate-200/80 px-5 py-5">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
-                        <FilePenLine className="size-5" />
-                      </div>
-                      <div>
-                        <p className="text-[0.7rem] font-bold uppercase tracking-[0.18em] text-primary/70">
-                          Strategisk retning
-                        </p>
-                        <h4 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">
-                          Fra innsikt til vinnende tilbudsfortelling
-                        </h4>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                <div className="space-y-5 px-5 py-5">
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-white/75 bg-white/62 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-slate-950 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white">
+                        Arbeidstekst og posisjoneringsspor
+                      </span>
                       <span className="rounded-md bg-blue-600/10 px-2.5 py-1 text-xs font-semibold text-blue-800">
                         Kundestyrt
                       </span>
@@ -2512,44 +2908,20 @@ export function ProjectAnalysisTab({
                         Handlingsnær
                       </span>
                     </div>
+                    <span className="min-w-0 text-sm text-slate-500">
+                      Bruk teksten som grunnrytme, og konkretiser retningen i
+                      sporene under.
+                    </span>
                   </div>
-                </div>
 
-                <div className="space-y-5 px-5 py-5">
                   <div className="rounded-lg border border-white/80 bg-white/72 px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                      <span className="rounded-md bg-slate-950 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white">
-                        Arbeidstekst
-                      </span>
-                      <span className="text-sm text-slate-500">
-                        Brukes som grunnrytme for løsningsutkastet.
-                      </span>
-                    </div>
-                    {isEditingAnalysis ? (
-                      <Textarea
-                        value={analysisDraft}
-                        onChange={(event) => setAnalysisDraft(event.target.value)}
-                        className="min-h-72 resize-y rounded-lg border-slate-200 bg-white/90 px-4 py-4 text-[1.02rem] leading-8 text-slate-900 shadow-none"
-                      />
-                    ) : (
-                      <div>
-                        <MarkdownViewer
-                          content={analysisDraft}
-                          className="artifact-markdown max-w-none text-slate-900"
-                        />
-                      </div>
-                    )}
+                    <MarkdownViewer
+                      content={customerAnalysis.executive_summary}
+                      className="artifact-markdown max-w-none text-slate-900"
+                    />
                   </div>
 
                   <div className="rounded-lg border border-slate-200/80 bg-white/45 p-4">
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                      <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary">
-                        Posisjoneringsspor
-                      </span>
-                      <span className="text-sm text-slate-500">
-                        Konkretiser retningen som kort teamet kan arbeide fra.
-                      </span>
-                    </div>
                     <PositioningKanban
                       items={customerAnalysis.positioning_recommendations}
                       analysis={customerAnalysis}
@@ -2566,8 +2938,9 @@ export function ProjectAnalysisTab({
               title="High-level design av løsningen"
               description="Vis eller regenerer anbefalt overordnet arkitektur når denne delen er klar."
               icon={Compass}
-              action={renderRegenerateButton("design", "Regenerer design")}
+              action={renderSectionActions("design", "Regenerer design")}
             >
+              {renderSectionEditor("design")}
               {customerAnalysis.high_level_solution_design.trim() ||
               customerAnalysis.high_level_architecture_mermaid.trim() ? (
                 <div className="space-y-5">
@@ -2612,9 +2985,10 @@ export function ProjectAnalysisTab({
               title={`Risiko og usikkerhet (${riskGroups ? riskGroups.risksForUs.length + riskGroups.risksForCustomer.length : customerAnalysis.risks.length})`}
               description="Risikobildet er delt mellom hva som kan treffe tilbudsteamet og hva som kan treffe kunden."
               icon={AlertTriangle}
-              action={renderRegenerateButton("risks")}
+              action={renderSectionActions("risks")}
             >
-              <div className="grid gap-4 xl:grid-cols-2">
+              {renderSectionEditor("risks")}
+              <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
                 <RiskAudienceGroup
                   title="Risiko for oss"
                   description="Hva som kan påvirke leveranse, tilbud, kommersiell presisjon eller teamets evne til å vinne og gjennomføre."
@@ -2639,8 +3013,9 @@ export function ProjectAnalysisTab({
               title={`Underliggende behov (${topImplicitRequirements.length} viktigste)`}
               description="De skjulte beslutningsdriverne bak kundens krav, oversatt til tydelige signaler for tilbudsarbeidet."
               icon={ListChecks}
-              action={renderRegenerateButton("needs")}
+              action={renderSectionActions("needs")}
             >
+              {renderSectionEditor("needs")}
               {topImplicitRequirements.length ? (
                 <div className="space-y-4">
                   {topImplicitRequirements.map((req, index) => (
@@ -2672,10 +3047,11 @@ export function ProjectAnalysisTab({
                   {renderListToggleButton(showKeywordList, () =>
                     setShowKeywordList((isVisible) => !isVisible),
                   )}
-                  {renderRegenerateButton("keywords")}
+                  {renderSectionActions("keywords")}
                 </>
               }
             >
+              {renderSectionEditor("keywords")}
               {topSignalWords.length ? (
                 <>
                   <KeywordPieModule
@@ -2689,7 +3065,7 @@ export function ProjectAnalysisTab({
                       {topSignalWords.map((item, index) => (
                         <div
                           key={`${item}-${index}`}
-                          className="flex items-center gap-3 border-b border-border/60 pb-3 text-sm text-foreground last:border-b-0 last:pb-0"
+                          className="flex min-w-0 items-center gap-3 border-b border-border/60 pb-3 text-sm text-foreground last:border-b-0 last:pb-0"
                         >
                           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
                             {(() => {
@@ -2697,7 +3073,7 @@ export function ProjectAnalysisTab({
                               return <Icon className="size-4.5" />;
                             })()}
                           </div>
-                          <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
                             <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium text-foreground">
                               {item}
                             </span>
@@ -2730,10 +3106,11 @@ export function ProjectAnalysisTab({
                   {renderListToggleButton(showValueList, () =>
                     setShowValueList((isVisible) => !isVisible),
                   )}
-                  {renderRegenerateButton("value")}
+                  {renderSectionActions("value")}
                 </>
               }
             >
+              {renderSectionEditor("value")}
               {customerAnalysis.value_opportunities.length ? (
                 <>
                   <ValuePieModule
@@ -2786,13 +3163,20 @@ export function ProjectAnalysisTab({
               <SectionHistoryPanel analysis={customerAnalysis} section="value" />
             </SectionSurface>
           </TabsContent>
-        </Tabs>
-      ) : (
-        <AnalysisTabEmptyState>
-          Ingen analyse ennå. Last opp et primært kundedokument og generer
-          analysen.
-        </AnalysisTabEmptyState>
-      )}
+          </>
+        ) : (
+          <>
+            {SECTION_TABS.filter((tab) => tab.value !== "documents").map((tab) => (
+              <TabsContent key={tab.value} value={tab.value} className="mt-0">
+                <AnalysisTabEmptyState>
+                  Ingen analyse ennå. Last opp et primært kundedokument og generer
+                  analysen.
+                </AnalysisTabEmptyState>
+              </TabsContent>
+            ))}
+          </>
+        )}
+      </Tabs>
     </div>
   );
 }

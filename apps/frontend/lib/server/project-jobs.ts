@@ -20,6 +20,7 @@ import {
   saveSolutionEvaluation,
 } from "@/lib/server/projects-db";
 import type {
+  GeneratedArtifact,
   GeneratedArtifactType,
   ProjectJobRecord,
   ProjectJobResult,
@@ -91,6 +92,15 @@ function startRunner(jobId: string, runner: JobRunner) {
       });
     }
   }, 0);
+}
+
+function getLatestSolutionDraft(
+  artifacts: GeneratedArtifact[],
+): GeneratedArtifact | null {
+  return (
+    artifacts.find((artifact) => artifact.artifact_type === "losningsutkast") ??
+    null
+  );
 }
 
 export function queueArtifactGenerationJob(input: {
@@ -168,6 +178,121 @@ export function queueArtifactGenerationJob(input: {
   return record;
 }
 
+export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
+  const jobId = randomUUID();
+  const now = new Date().toISOString();
+  const record: ProjectJobRecord = {
+    id: jobId,
+    project_id: input.projectId,
+    kind: "perfect_system_solution",
+    status: "queued",
+    message: "Køer forbedring av systemløsningen ...",
+    created_at: now,
+    updated_at: now,
+    error: null,
+    result: null,
+  };
+
+  getStore().set(jobId, record);
+
+  startRunner(jobId, async ({ setProgress }) => {
+    setProgress("Laster vurdering, dokumenter og siste løsningsutkast ...");
+    const [
+      project,
+      customerAnalysis,
+      customerDocument,
+      solutionDocument,
+      supportingDocuments,
+      generatedArtifacts,
+    ] = await Promise.all([
+      getProjectDetail(input.projectId),
+      getCustomerAnalysis(input.projectId),
+      getPrimaryDocument(input.projectId, "primary_customer_document"),
+      getPrimaryDocument(input.projectId, "primary_solution_document"),
+      listSupportingDocuments(input.projectId),
+      listGeneratedArtifacts(input.projectId),
+    ]);
+
+    if (!project.solution_evaluation) {
+      throw new Error("Generer vurdering før du forbedrer systemløsningen.");
+    }
+
+    const systemScore =
+      project.solution_evaluation.architecture_comparison
+        ?.system_solution_score ?? 0;
+
+    if (systemScore >= 100) {
+      throw new Error("Systemløsningen har allerede 100/100 i vurderingen.");
+    }
+
+    setProgress("Skriver forbedret systemløsning mot 100/100 ...");
+    const generated = await generateProjectArtifact({
+      artifactType: "losningsutkast",
+      projectName: project.name,
+      customerAnalysis,
+      solutionEvaluation: project.solution_evaluation,
+      customerDocument,
+      solutionDocument,
+      supportingDocuments,
+      knowledgeArtifacts: generatedArtifacts,
+      instructions: [
+        `Systemløsningen scoret ${Math.round(systemScore)}/100 i siste vurdering.`,
+        "Lag en ny, forbedret systemløsning som eksplisitt lukker alle gap som hindrer 100/100.",
+        "Bruk improvement_recommendations, weaknesses, missing_elements, risks_to_customer, rewrite_suggestions og architecture_comparison.strategy_improvement_advice som endringsliste.",
+        "Ikke bare kommenter hva som bør gjøres. Skriv inn endringene direkte i løsningsutkastet.",
+        "Målet er et løsningsutkast som kan vurderes til 100/100 fordi det er kundespesifikt, komplett, gjennomførbart, risikoreduserende og tydelig differensiert.",
+        "Hvis vurderingen peker på manglende overgangsmodell, beslutningspunkter, ansvar, risiko, bevis eller kundeverdi, skal dette konkret innarbeides i riktig seksjon.",
+      ].join("\n"),
+    });
+
+    setProgress("Lagrer forbedret 100%-utkast ...");
+    const artifact = await saveGeneratedArtifact(
+      input.projectId,
+      "losningsutkast",
+      generated.title || "Forbedret systemløsning mot 100/100",
+      generated.content_markdown,
+      {
+        generated_for: "perfect_system_solution",
+        previous_system_solution_score: systemScore,
+        source: "solution_evaluation_improvement",
+      },
+    );
+
+    if (!customerDocument || !customerAnalysis || !solutionDocument) {
+      const projectSnapshot = await getProjectSnapshot(input.projectId);
+      return {
+        artifact,
+        project: projectSnapshot,
+      };
+    }
+
+    setProgress("Kjører ny vurdering av forbedret systemløsning ...");
+    const improvedEvaluation = await evaluateSolutionDocument({
+      projectName: project.name,
+      customerDocument,
+      solutionDocument,
+      supportingDocuments,
+      customerAnalysis,
+      systemSolutionArtifact: artifact,
+    });
+
+    await saveSolutionEvaluation(input.projectId, {
+      customerDocumentId: customerDocument.id,
+      solutionDocumentId: solutionDocument.id,
+      result: improvedEvaluation,
+    });
+
+    const projectSnapshot = await getProjectSnapshot(input.projectId);
+    return {
+      artifact,
+      project: projectSnapshot,
+      evaluation: improvedEvaluation,
+    };
+  });
+
+  return record;
+}
+
 export function queueSolutionEvaluationJob(input: {
   projectId: string;
   allowGeneratedSolution: boolean;
@@ -190,11 +315,18 @@ export function queueSolutionEvaluationJob(input: {
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster kundedokument, analyse og støttedokumenter ...");
-    const [customerDocument, solutionDocument, supportingDocuments, customerAnalysis] = await Promise.all([
+    const [
+      customerDocument,
+      solutionDocument,
+      supportingDocuments,
+      customerAnalysis,
+      generatedArtifacts,
+    ] = await Promise.all([
       getPrimaryDocument(input.projectId, "primary_customer_document"),
       getPrimaryDocument(input.projectId, "primary_solution_document"),
       listSupportingDocuments(input.projectId),
       getCustomerAnalysis(input.projectId),
+      listGeneratedArtifacts(input.projectId),
     ]);
 
     if (!customerDocument) {
@@ -246,16 +378,17 @@ export function queueSolutionEvaluationJob(input: {
       };
     }
 
-    setProgress("Vurderer løsningsdokumentet mot kundebehovene ...");
+    setProgress("Sammenligner systemløsning og importert arkitektløsning ...");
     const result = await evaluateSolutionDocument({
       projectName: customerDocument.title,
       customerDocument,
       solutionDocument,
       supportingDocuments,
       customerAnalysis,
+      systemSolutionArtifact: getLatestSolutionDraft(generatedArtifacts),
     });
 
-    setProgress("Lagrer løsningsvurderingen ...");
+    setProgress("Lagrer sammenligning og vurdering ...");
     const evaluation = await saveSolutionEvaluation(input.projectId, {
       customerDocumentId: customerDocument.id,
       solutionDocumentId: solutionDocument.id,

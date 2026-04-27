@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,18 +13,14 @@ import {
   type CSSProperties,
 } from "react";
 import {
-  ArrowDownToLine,
   Brain,
-  ChevronDown,
-  FileText,
   LayoutGrid,
   ListChecks,
+  Scale,
   Sparkles,
-  Trash2,
-  Upload,
 } from "lucide-react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -41,32 +38,65 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import {
-  Input,
-  Label,
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/projects/primitives";
-import {
-  SUPPORTING_SUBTYPES,
   deriveProjectStatus,
   formatDate,
-  roleLabel,
-  supportingSubtypeLabel,
 } from "@/components/projects/project-workspace-shared";
 import { ProjectAnalysisTab } from "@/components/projects/project-analysis-tab";
-import { ProjectDeliveryTab } from "@/components/projects/project-delivery-tab";
-import { ProjectGeneratorTab } from "@/components/projects/project-generator-tab";
 import type {
   CustomerAnalysisResult,
   CustomerAnalysisSection,
+  CustomerAnalysisSectionSnapshotMap,
   GeneratedArtifact,
   ProjectDetail,
   ProjectDocument,
   ProjectDocumentRole,
   ProjectJobRecord,
   ProjectStatus,
+  SolutionEvaluationResult,
   SupportingDocumentSubtype,
 } from "@/lib/types";
+
+const ProjectEvaluationTab = dynamic(
+  () =>
+    import("@/components/projects/project-evaluation-tab").then(
+      (module) => module.ProjectEvaluationTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster vurdering ...
+      </div>
+    ),
+  },
+);
+
+const ProjectDeliveryTab = dynamic(
+  () =>
+    import("@/components/projects/project-delivery-tab").then(
+      (module) => module.ProjectDeliveryTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster gjennomføring ...
+      </div>
+    ),
+  },
+);
+
+const ProjectGeneratorTab = dynamic(
+  () =>
+    import("@/components/projects/project-generator-tab").then(
+      (module) => module.ProjectGeneratorTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster løsningsutkast ...
+      </div>
+    ),
+  },
+);
 
 interface ProjectSnapshotPayload {
   name: string;
@@ -120,6 +150,15 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function DeferredSectionLoader({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground shadow-sm">
+      <Spinner className="size-4 text-primary" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
   "summary",
   "strategy",
@@ -168,14 +207,25 @@ export function ProjectWorkspacePage({
   const [artifactInstructions, setArtifactInstructions] = useState("");
   const [deliveryArtifactInstructions, setDeliveryArtifactInstructions] =
     useState("");
-  const [activeTab, setActiveTab] = useState("documents");
+  const [activeTab, setActiveTab] = useState("analysis");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [artifactsLoaded, setArtifactsLoaded] = useState(
     initialData.generated_artifacts.length > 0 ||
       initialData.artifact_count === 0,
   );
+  const [analysisLoaded, setAnalysisLoaded] = useState(
+    Boolean(initialData.customer_analysis) ||
+      !initialData.customer_analysis_generated,
+  );
+  const [evaluationLoaded, setEvaluationLoaded] = useState(
+    Boolean(initialData.solution_evaluation) ||
+      !initialData.solution_evaluation_generated,
+  );
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
   const progressIntervalRef = useRef<number | null>(null);
   const sidebarResizeRef = useRef(false);
 
@@ -267,6 +317,120 @@ export function ProjectWorkspacePage({
     window.dispatchEvent(new Event("project-sidebar-layout-change"));
   }, [sidebarOpen, stopSidebarResize]);
 
+  useEffect(() => {
+    if (
+      activeTab !== "analysis" ||
+      analysisLoaded ||
+      !project.customer_analysis_generated
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setAnalysisLoading(true);
+    fetch(`/api/projects/${project.id}/customer-analysis`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          error?: string;
+          analysis?: CustomerAnalysisResult | null;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error || "Kunne ikke hente kundeanalysen.");
+        }
+        if (!cancelled) {
+          setProject((current) => ({
+            ...current,
+            customer_analysis: payload.analysis ?? null,
+          }));
+          setAnalysisLoaded(true);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Kunne ikke hente kundeanalysen.",
+          );
+          setAnalysisLoaded(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAnalysisLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    analysisLoaded,
+    project.customer_analysis_generated,
+    project.id,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeTab !== "evaluation" ||
+      evaluationLoaded ||
+      !project.solution_evaluation_generated
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setEvaluationLoading(true);
+    fetch(`/api/projects/${project.id}/solution-evaluation`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          error?: string;
+          evaluation?: SolutionEvaluationResult | null;
+        };
+        if (!response.ok) {
+          throw new Error(
+            payload.error || "Kunne ikke hente løsningsvurderingen.",
+          );
+        }
+        if (!cancelled) {
+          setProject((current) => ({
+            ...current,
+            solution_evaluation: payload.evaluation ?? null,
+          }));
+          setEvaluationLoaded(true);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Kunne ikke hente løsningsvurderingen.",
+          );
+          setEvaluationLoaded(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setEvaluationLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    evaluationLoaded,
+    project.id,
+    project.solution_evaluation_generated,
+  ]);
+
   async function runAction(
     label: string,
     action: () => Promise<void>,
@@ -357,6 +521,7 @@ export function ProjectWorkspacePage({
       }
       setDocTitle("");
       setFile(null);
+      setDocumentFileInputKey((current) => current + 1);
       setProject((current) =>
         normalizeProjectState(
           patchProjectWithSnapshot(
@@ -375,6 +540,110 @@ export function ProjectWorkspacePage({
         ),
       );
       setArtifactsLoaded(true);
+    });
+  }
+
+  async function onUploadArchitectureDocument(file: File, title: string) {
+    await runAction("upload-architecture", async () => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", title);
+      formData.append("role", "primary_solution_document");
+
+      const response = await fetch(`/api/projects/${project.id}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        document?: ProjectDocument;
+        project?: ProjectSnapshotPayload;
+      };
+      if (!response.ok || !payload.document || !payload.project) {
+        throw new Error(
+          payload.error || "Kunne ikke laste opp arkitektløsningen.",
+        );
+      }
+
+      setProject((current) =>
+        normalizeProjectState(
+          patchProjectWithSnapshot(
+            {
+              ...current,
+              solution_evaluation: null,
+              documents: dedupeDocuments([
+                payload.document!,
+                ...current.documents.map((document) =>
+                  document.role === "primary_solution_document"
+                    ? {
+                        ...document,
+                        role: "supporting_document" as const,
+                        supporting_subtype: "utkast" as const,
+                      }
+                    : document,
+                ),
+              ]),
+            },
+            payload.project!,
+          ),
+          {
+            preserveArtifactCount: !artifactsLoaded,
+          },
+        ),
+      );
+      setEvaluationLoaded(true);
+    });
+  }
+
+  async function onSelectArchitectureDocument(documentId: string) {
+    await runAction("select-architecture", async () => {
+      const response = await fetch(
+        `/api/projects/${project.id}/documents/${documentId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "use_as_architecture_solution" }),
+        },
+      );
+      const payload = (await response.json()) as {
+        error?: string;
+        document?: ProjectDocument;
+        project?: ProjectSnapshotPayload;
+      };
+      if (!response.ok || !payload.document || !payload.project) {
+        throw new Error(
+          payload.error || "Kunne ikke velge arkitektløsningen.",
+        );
+      }
+
+      setProject((current) =>
+        normalizeProjectState(
+          patchProjectWithSnapshot(
+            {
+              ...current,
+              solution_evaluation: null,
+              documents: current.documents.map((document) => {
+                if (document.id === payload.document!.id) {
+                  return payload.document!;
+                }
+                if (document.role === "primary_solution_document") {
+                  return {
+                    ...document,
+                    role: "supporting_document" as const,
+                    supporting_subtype: "utkast" as const,
+                  };
+                }
+                return document;
+              }),
+            },
+            payload.project!,
+          ),
+          {
+            preserveArtifactCount: !artifactsLoaded,
+          },
+        ),
+      );
+      setEvaluationLoaded(true);
     });
   }
 
@@ -415,6 +684,12 @@ export function ProjectWorkspacePage({
           preserveArtifactCount: !artifactsLoaded,
         });
       });
+      if (!payload.project.customer_analysis_generated) {
+        setAnalysisLoaded(true);
+      }
+      if (!payload.project.solution_evaluation_generated) {
+        setEvaluationLoaded(true);
+      }
     });
   }
 
@@ -443,6 +718,7 @@ export function ProjectWorkspacePage({
           },
         ),
       );
+      setAnalysisLoaded(true);
     });
   }
 
@@ -479,6 +755,7 @@ export function ProjectWorkspacePage({
             },
           ),
         );
+        setAnalysisLoaded(true);
         setNotice("Seksjonen er regenerert og lagret i kundeanalysen.");
       },
       ["Regenererer valgt seksjon ..."],
@@ -551,6 +828,7 @@ export function ProjectWorkspacePage({
               },
             ),
           );
+          setAnalysisLoaded(true);
           setNotice(
             "Overordnet løsningsdesign og arkitekturdiagram er oppdatert uten å regenerere hele kundeanalysen.",
           );
@@ -561,14 +839,20 @@ export function ProjectWorkspacePage({
     );
   }
 
-  async function onSaveAnalysis(value: string) {
+  async function onSaveAnalysis(
+    section: CustomerAnalysisSection,
+    snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
+  ) {
     await runAction("save-analysis", async () => {
       const response = await fetch(
         `/api/projects/${project.id}/customer-analysis`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ analysis_text: value }),
+          body: JSON.stringify({
+            section,
+            section_snapshot: snapshot,
+          }),
         },
       );
       const payload = (await response.json()) as {
@@ -590,6 +874,7 @@ export function ProjectWorkspacePage({
           },
         ),
       );
+      setAnalysisLoaded(true);
       setNotice("Analysen er oppdatert og lagret i prosjektet.");
     });
   }
@@ -648,12 +933,15 @@ export function ProjectWorkspacePage({
           const result = statusPayload.job.result as {
             artifact: GeneratedArtifact;
             project: ProjectSnapshotPayload;
+            evaluation?: SolutionEvaluationResult;
           };
           setProject((current) =>
             normalizeProjectState(
               patchProjectWithSnapshot(
                 {
                   ...current,
+                  solution_evaluation:
+                    result.evaluation ?? current.solution_evaluation,
                   generated_artifacts: [
                     result.artifact,
                     ...current.generated_artifacts,
@@ -749,11 +1037,169 @@ export function ProjectWorkspacePage({
     );
   }
 
+  async function onGenerateSolutionEvaluation() {
+    await runAction(
+      "solution-evaluation",
+      async () => {
+        const response = await fetch(`/api/projects/${project.id}/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: "solution_evaluation",
+            allow_generated_solution: false,
+          }),
+        });
+        const payload = (await response.json()) as {
+          error?: string;
+          job?: ProjectJobRecord;
+        };
+        if (!response.ok || !payload.job) {
+          throw new Error(
+            payload.error || "Kunne ikke starte løsningsvurderingen.",
+          );
+        }
+        setBusyMessage(payload.job.message);
+        while (true) {
+          await sleep(1500);
+          const statusResponse = await fetch(
+            `/api/projects/${project.id}/jobs/${payload.job.id}`,
+            { cache: "no-store" },
+          );
+          const statusPayload = (await statusResponse.json()) as {
+            error?: string;
+            job?: ProjectJobRecord;
+          };
+          if (!statusResponse.ok || !statusPayload.job) {
+            throw new Error(
+              statusPayload.error || "Kunne ikke hente jobbstatus.",
+            );
+          }
+          setBusyMessage(statusPayload.job.message);
+          if (statusPayload.job.status === "failed") {
+            throw new Error(
+              statusPayload.job.error || "Løsningsvurderingen feilet.",
+            );
+          }
+          if (
+            statusPayload.job.status !== "completed" ||
+            !statusPayload.job.result
+          ) {
+            continue;
+          }
+
+          const result = statusPayload.job.result as {
+            evaluation: SolutionEvaluationResult;
+            project: ProjectSnapshotPayload;
+          };
+          setProject((current) =>
+            normalizeProjectState(
+              patchProjectWithSnapshot(
+                { ...current, solution_evaluation: result.evaluation },
+                result.project,
+              ),
+              {
+                preserveArtifactCount: !artifactsLoaded,
+              },
+            ),
+          );
+          setEvaluationLoaded(true);
+          setNotice("Sammenligningen er generert og lagret i prosjektet.");
+          break;
+        }
+      },
+      ["Starter sammenligning av systemløsning og arkitektløsning ..."],
+    );
+  }
+
+  async function onImproveSystemSolutionToPerfectScore() {
+    await runAction(
+      "perfect-system-solution",
+      async () => {
+        const response = await fetch(`/api/projects/${project.id}/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: "perfect_system_solution",
+          }),
+        });
+        const payload = (await response.json()) as {
+          error?: string;
+          job?: ProjectJobRecord;
+        };
+        if (!response.ok || !payload.job) {
+          throw new Error(
+            payload.error || "Kunne ikke starte forbedring av systemløsningen.",
+          );
+        }
+        setBusyMessage(payload.job.message);
+        while (true) {
+          await sleep(1500);
+          const statusResponse = await fetch(
+            `/api/projects/${project.id}/jobs/${payload.job.id}`,
+            { cache: "no-store" },
+          );
+          const statusPayload = (await statusResponse.json()) as {
+            error?: string;
+            job?: ProjectJobRecord;
+          };
+          if (!statusResponse.ok || !statusPayload.job) {
+            throw new Error(
+              statusPayload.error || "Kunne ikke hente jobbstatus.",
+            );
+          }
+          setBusyMessage(statusPayload.job.message);
+          if (statusPayload.job.status === "failed") {
+            throw new Error(
+              statusPayload.job.error ||
+                "Forbedringen av systemløsningen feilet.",
+            );
+          }
+          if (
+            statusPayload.job.status !== "completed" ||
+            !statusPayload.job.result
+          ) {
+            continue;
+          }
+
+          const result = statusPayload.job.result as {
+            artifact: GeneratedArtifact;
+            project: ProjectSnapshotPayload;
+          };
+          setProject((current) =>
+            normalizeProjectState(
+              patchProjectWithSnapshot(
+                {
+                  ...current,
+                  generated_artifacts: [
+                    result.artifact,
+                    ...current.generated_artifacts,
+                  ],
+                  artifact_count: current.artifact_count + 1,
+                },
+                result.project,
+              ),
+              {
+                preserveArtifactCount: !artifactsLoaded,
+              },
+            ),
+          );
+          setNotice(
+            "Forbedret systemløsning er lagret som nytt løsningsutkast.",
+          );
+          break;
+        }
+      },
+      ["Starter forbedring av systemløsningen mot 100/100 ..."],
+    );
+  }
+
   const customerAnalysis =
     project.customer_analysis as CustomerAnalysisResult | null;
+  const solutionEvaluation =
+    project.solution_evaluation as SolutionEvaluationResult | null;
   const workspaceNavItems = [
-    { value: "documents", label: "Dokumenter", icon: FileText },
     { value: "analysis", label: "Kundeanalyse", icon: Brain },
+    { value: "evaluation", label: "Vurdering", icon: Scale },
     { value: "delivery", label: "Gjennomføring", icon: ListChecks },
     { value: "generator", label: "Løsningsutkast", icon: Sparkles },
   ] as const;
@@ -768,7 +1214,7 @@ export function ProjectWorkspacePage({
   }
 
   return (
-    <div className="min-h-[calc(100dvh-var(--app-header-height))] w-full">
+    <div className="min-h-[calc(100dvh-var(--app-header-height))] w-full overflow-x-hidden">
       <SidebarProvider
         open={sidebarOpen}
         onOpenChange={setSidebarOpen}
@@ -897,10 +1343,10 @@ export function ProjectWorkspacePage({
           ) : null}
         </Sidebar>
 
-        <SidebarInset className="min-w-0 bg-transparent">
+        <SidebarInset className="min-w-0 overflow-x-hidden bg-transparent">
           <div
             className={cn(
-              "relative w-full px-5 py-5 md:px-8 md:py-7",
+              "relative w-full max-w-full overflow-x-hidden px-5 py-5 md:px-8 md:py-7",
               !sidebarOpen && "mx-auto",
             )}
           >
@@ -908,7 +1354,7 @@ export function ProjectWorkspacePage({
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="flex min-w-0 items-start gap-3">
                   <SidebarTrigger className="mt-0.5 shrink-0 md:hidden" />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                       {workspaceNavItems.find(
                         (item) => item.value === activeTab,
@@ -957,211 +1403,75 @@ export function ProjectWorkspacePage({
             {busyMessage && busy === "artifact" ? (
               <div className="mb-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
                 <Spinner className="size-3.5" />
-                <span>{busyMessage}</span>
-              </div>
-            ) : null}
-
-            {activeTab === "documents" ? (
-              <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-                {/* Upload form */}
-                <div className="relative overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setUploadOpen((open) => !open)}
-                      className="flex w-full items-center justify-between bg-muted px-4 py-3 text-sm font-semibold text-foreground hover:text-primary"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Upload className="size-4" />
-                        Last opp dokument
-                      </span>
-                      <ChevronDown
-                        className={`size-4 text-muted-foreground transition-transform ${uploadOpen ? "rotate-180" : ""}`}
-                      />
-                    </button>
-                    {uploadOpen ? (
-                      <form
-                        onSubmit={onUploadDocument}
-                        className="space-y-3 p-4"
-                      >
-                        <div className="space-y-1.5">
-                          <Label htmlFor="docTitle" className="font-medium">
-                            Tittel
-                          </Label>
-                          <Input
-                            id="docTitle"
-                            value={docTitle}
-                            onChange={(e) => setDocTitle(e.target.value)}
-                            placeholder="Visningsnavn i prosjektet"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="docRole" className="font-medium">
-                            Dokumentrolle
-                          </Label>
-                          <NativeSelect
-                            id="docRole"
-                            value={docRole}
-                            onChange={(event) =>
-                              setDocRole(
-                                event.target.value as ProjectDocumentRole,
-                              )
-                            }
-                          >
-                            <NativeSelectOption value="primary_customer_document">
-                              Primært kundedokument
-                            </NativeSelectOption>
-                            <NativeSelectOption value="primary_solution_document">
-                              Primært løsningsdokument
-                            </NativeSelectOption>
-                            <NativeSelectOption value="supporting_document">
-                              Støttedokument
-                            </NativeSelectOption>
-                          </NativeSelect>
-                        </div>
-                        {docRole === "supporting_document" ? (
-                          <div className="space-y-1.5">
-                            <Label
-                              htmlFor="supportingSubtype"
-                              className="font-medium"
-                            >
-                              Undertype
-                            </Label>
-                            <NativeSelect
-                              id="supportingSubtype"
-                              value={supportingSubtype}
-                              onChange={(event) =>
-                                setSupportingSubtype(
-                                  event.target
-                                    .value as SupportingDocumentSubtype,
-                                )
-                              }
-                            >
-                              {SUPPORTING_SUBTYPES.map((item) => (
-                                <NativeSelectOption
-                                  key={item.value}
-                                  value={item.value}
-                                >
-                                  {item.label}
-                                </NativeSelectOption>
-                              ))}
-                            </NativeSelect>
-                          </div>
-                        ) : null}
-                        <div className="space-y-1.5">
-                          <Label htmlFor="file" className="font-medium">
-                            Fil
-                          </Label>
-                          <Input
-                            id="file"
-                            type="file"
-                            accept=".pdf,.docx,.txt,.md"
-                            onChange={(e) =>
-                              setFile(e.target.files?.[0] ?? null)
-                            }
-                          />
-                        </div>
-                        <Button
-                          type="submit"
-                          className="w-full"
-                          disabled={busy === "upload"}
-                        >
-                          {busy === "upload" ? (
-                            <Spinner className="size-4" />
-                          ) : (
-                            <Upload data-icon="inline-start" />
-                          )}
-                          Last opp
-                        </Button>
-                      </form>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Document list */}
-                <div className="relative overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
-                  <div className="bg-muted px-4 py-3">
-                    <h3 className="text-sm font-bold text-foreground">
-                      Dokumenter i prosjektet
-                    </h3>
-                  </div>
-                  {project.documents.length === 0 ? (
-                    <p className="bg-background py-8 text-center text-sm text-muted-foreground">
-                      Ingen dokumenter lastet opp ennå.
-                    </p>
-                  ) : (
-                    <div>
-                      {project.documents.map((document) => (
-                        <div
-                          key={document.id}
-                          className="flex items-start justify-between gap-3 border-t bg-background px-4 py-3"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <FileText className="size-4 shrink-0 text-primary" />
-                              <span className="truncate text-sm font-semibold text-foreground">
-                                {document.title}
-                              </span>
-                            </div>
-                            <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
-                              {roleLabel(document.role)}
-                              {document.role === "supporting_document"
-                                ? ` · ${supportingSubtypeLabel(document.supporting_subtype)}`
-                                : ""}
-                              {" · "}
-                              {document.file_format.toUpperCase()}{" "}
-                              {Math.round(document.file_size_bytes / 1024)} KB
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <a
-                              href={`/api/projects/${project.id}/documents/${document.id}`}
-                              className={cn(
-                                buttonVariants({
-                                  variant: "ghost",
-                                  size: "icon-xs",
-                                }),
-                              )}
-                            >
-                              <ArrowDownToLine className="size-3.5" />
-                            </a>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => onDeleteDocument(document)}
-                              disabled={busy === `delete-${document.id}`}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              {busy === `delete-${document.id}` ? (
-                                <Spinner className="size-3.5" />
-                              ) : (
-                                <Trash2 className="size-3.5" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <span className="min-w-0">{busyMessage}</span>
               </div>
             ) : null}
 
             {activeTab === "analysis" ? (
-              <ProjectAnalysisTab
-                projectId={project.id}
-                documents={project.documents}
-                customerAnalysis={customerAnalysis}
-                busy={busy === "analysis"}
-                saveBusy={busy === "save-analysis"}
-                sectionBusy={parseCustomerAnalysisSectionBusy(busy)}
-                busyMessage={
-                  parseCustomerAnalysisSectionBusy(busy) ? busyMessage : ""
-                }
-                onGenerate={onGenerateCustomerAnalysis}
-                onRegenerateSection={onRegenerateCustomerAnalysisSection}
-                onSaveAnalysis={onSaveAnalysis}
-              />
+              !analysisLoaded || analysisLoading ? (
+                <DeferredSectionLoader label="Laster kundeanalyse ..." />
+              ) : (
+                <ProjectAnalysisTab
+                  projectId={project.id}
+                  documents={project.documents}
+                  customerAnalysis={customerAnalysis}
+                  busy={busy === "analysis"}
+                  saveBusy={busy === "save-analysis"}
+                  sectionBusy={parseCustomerAnalysisSectionBusy(busy)}
+                  busyMessage={
+                    parseCustomerAnalysisSectionBusy(busy) ? busyMessage : ""
+                  }
+                  onGenerate={onGenerateCustomerAnalysis}
+                  onRegenerateSection={onRegenerateCustomerAnalysisSection}
+                  onSaveAnalysis={onSaveAnalysis}
+                  uploadOpen={uploadOpen}
+                  onToggleUploadOpen={() => setUploadOpen((open) => !open)}
+                  docTitle={docTitle}
+                  onDocTitleChange={setDocTitle}
+                  docRole={docRole}
+                  onDocRoleChange={setDocRole}
+                  supportingSubtype={supportingSubtype}
+                  onSupportingSubtypeChange={setSupportingSubtype}
+                  onFileChange={setFile}
+                  documentFileInputKey={documentFileInputKey}
+                  onUploadDocument={onUploadDocument}
+                  uploadBusy={busy === "upload"}
+                  deletingDocumentId={
+                    busy?.startsWith("delete-")
+                      ? busy.slice("delete-".length)
+                      : null
+                  }
+                  onDeleteDocument={onDeleteDocument}
+                />
+              )
+            ) : null}
+
+            {activeTab === "evaluation" ? (
+              !evaluationLoaded || evaluationLoading ? (
+                <DeferredSectionLoader label="Laster vurdering ..." />
+              ) : (
+                <ProjectEvaluationTab
+                  documents={project.documents}
+                  solutionEvaluation={solutionEvaluation}
+                  hasSolutionDocument={project.solution_document_uploaded}
+                  busy={busy === "solution-evaluation"}
+                  uploadBusy={busy === "upload-architecture"}
+                  selectBusy={busy === "select-architecture"}
+                  improveBusy={busy === "perfect-system-solution"}
+                  busyMessage={
+                    busy === "solution-evaluation" ||
+                    busy === "perfect-system-solution"
+                      ? busyMessage
+                      : ""
+                  }
+                  onUploadArchitectureDocument={onUploadArchitectureDocument}
+                  onSelectArchitectureDocument={onSelectArchitectureDocument}
+                  onGenerate={onGenerateSolutionEvaluation}
+                  onImproveSystemSolution={
+                    onImproveSystemSolutionToPerfectScore
+                  }
+                />
+              )
             ) : null}
 
             {activeTab === "delivery" ? (

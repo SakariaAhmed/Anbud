@@ -43,7 +43,63 @@ type OpenAIClient = {
   };
 };
 
+type DocumentInsightDigest = {
+  document_summary: string;
+  important_requirements: string[];
+  implicit_needs: string[];
+  risks: string[];
+  evaluation_criteria: string[];
+  architecture_and_solution_signals: string[];
+  technologies_and_standards: string[];
+  value_signals: string[];
+  visual_or_table_notes: string[];
+  source_references: string[];
+};
+
+type DocumentTextChunk = {
+  label: string;
+  text: string;
+  references: string[];
+};
+
+type DocumentInsightCache = Map<string, Promise<string | null>>;
+
 let cachedClientPromise: Promise<OpenAIClient> | null = null;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __anbudDocumentInsightCache: DocumentInsightCache | undefined;
+}
+
+const LARGE_DOCUMENT_ANALYSIS_THRESHOLD = 18000;
+const CHUNK_TEXT_LIMIT = 6500;
+const MAX_DOCUMENT_CHUNKS = 8;
+const CHUNK_CONCURRENCY = 3;
+
+function getDocumentInsightCache() {
+  if (!globalThis.__anbudDocumentInsightCache) {
+    globalThis.__anbudDocumentInsightCache = new Map();
+  }
+
+  return globalThis.__anbudDocumentInsightCache;
+}
+
+function rememberDocumentInsight(
+  key: string,
+  value: Promise<string | null>,
+) {
+  const cache = getDocumentInsightCache();
+  cache.set(key, value);
+
+  if (cache.size > 50) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey) {
+      cache.delete(oldestKey);
+    }
+  }
+
+  return value;
+}
 
 async function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -108,6 +164,280 @@ function documentContext(
       compactText(document.raw_text, options?.textLimit ?? 22000),
     ),
   ].join("\n\n");
+}
+
+function emptyDocumentInsightDigest(): DocumentInsightDigest {
+  return {
+    document_summary: "",
+    important_requirements: [],
+    implicit_needs: [],
+    risks: [],
+    evaluation_criteria: [],
+    architecture_and_solution_signals: [],
+    technologies_and_standards: [],
+    value_signals: [],
+    visual_or_table_notes: [],
+    source_references: [],
+  };
+}
+
+function normalizeDocumentInsightDigest(
+  value: Partial<DocumentInsightDigest> | null | undefined,
+): DocumentInsightDigest {
+  const source = value ?? {};
+  return {
+    document_summary: compactText(source.document_summary ?? "", 900),
+    important_requirements: capNormalizedList(source.important_requirements ?? [], {
+      max: 10,
+    }),
+    implicit_needs: capNormalizedList(source.implicit_needs ?? [], { max: 8 }),
+    risks: capNormalizedList(source.risks ?? [], { max: 8 }),
+    evaluation_criteria: capNormalizedList(source.evaluation_criteria ?? [], {
+      max: 8,
+    }),
+    architecture_and_solution_signals: capNormalizedList(
+      source.architecture_and_solution_signals ?? [],
+      { max: 10 },
+    ),
+    technologies_and_standards: capNormalizedList(
+      source.technologies_and_standards ?? [],
+      { max: 12 },
+    ),
+    value_signals: capNormalizedList(source.value_signals ?? [], { max: 8 }),
+    visual_or_table_notes: capNormalizedList(source.visual_or_table_notes ?? [], {
+      max: 8,
+    }),
+    source_references: capNormalizedList(source.source_references ?? [], {
+      max: 12,
+    }),
+  };
+}
+
+function shouldBuildDocumentInsightDigest(document: ProjectDocumentDetail) {
+  return (
+    document.raw_text.length > LARGE_DOCUMENT_ANALYSIS_THRESHOLD ||
+    document.structure_map.length > 12
+  );
+}
+
+function buildDocumentTextChunks(
+  document: ProjectDocumentDetail,
+  options?: { maxChunks?: number; chunkLimit?: number },
+): DocumentTextChunk[] {
+  const chunkLimit = options?.chunkLimit ?? CHUNK_TEXT_LIMIT;
+  const maxChunks = options?.maxChunks ?? MAX_DOCUMENT_CHUNKS;
+  const entries = document.structure_map.length
+    ? document.structure_map
+    : [{ reference: document.title, text: document.raw_text }];
+  const chunks: DocumentTextChunk[] = [];
+  let currentText = "";
+  let currentReferences: string[] = [];
+
+  function flush() {
+    if (!currentText.trim()) {
+      return;
+    }
+    chunks.push({
+      label: `${document.title} – del ${chunks.length + 1}`,
+      text: compactText(currentText, chunkLimit),
+      references: currentReferences,
+    });
+    currentText = "";
+    currentReferences = [];
+  }
+
+  for (const entry of entries) {
+    const entryText = compactText(entry.text, chunkLimit);
+    if (!entryText) {
+      continue;
+    }
+
+    const nextText = [currentText, `${entry.reference}\n${entryText}`]
+      .filter(Boolean)
+      .join("\n\n");
+
+    if (nextText.length > chunkLimit && currentText) {
+      flush();
+    }
+
+    currentText = [currentText, `${entry.reference}\n${entryText}`]
+      .filter(Boolean)
+      .join("\n\n");
+    currentReferences.push(entry.reference);
+
+    if (currentText.length >= chunkLimit) {
+      flush();
+    }
+
+    if (chunks.length >= maxChunks) {
+      break;
+    }
+  }
+
+  flush();
+  return chunks.slice(0, maxChunks);
+}
+
+function buildDocumentCoverageNotes(document: ProjectDocumentDetail) {
+  const notes: string[] = [];
+  const sparseEntries = document.structure_map.filter(
+    (entry) => entry.text.trim().length > 0 && entry.text.trim().length < 180,
+  );
+  const emptyLikeCount = document.structure_map.filter(
+    (entry) => !entry.text.trim(),
+  ).length;
+
+  if (sparseEntries.length || emptyLikeCount) {
+    notes.push(
+      "Noen sider/blokker har lite maskinlesbar tekst. Dersom disse inneholder grafer, bilder, skannede tabeller eller arkitekturfigurer, må funn verifiseres mot originaldokumentet eller OCR/vision legges til.",
+    );
+  }
+
+  if (/\b(figur|figure|diagram|graf|graph|tabell|table|illustrasjon|arkitekturdiagram)\b/i.test(document.raw_text)) {
+    notes.push(
+      "Dokumentet refererer til figurer, grafer, diagrammer eller tabeller. Tekstanalysen bruker maskinlesbar tekst rundt disse elementene, ikke visuell tolking av selve bildet.",
+    );
+  }
+
+  return notes;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    },
+  );
+
+  await Promise.all(workers);
+  return results;
+}
+
+async function buildDocumentInsightDigestUncached(
+  label: string,
+  document: ProjectDocumentDetail,
+  options?: { force?: boolean; maxChunks?: number },
+) {
+  if (!options?.force && !shouldBuildDocumentInsightDigest(document)) {
+    return null;
+  }
+
+  const chunks = buildDocumentTextChunks(document, {
+    maxChunks: options?.maxChunks ?? MAX_DOCUMENT_CHUNKS,
+  });
+
+  if (!chunks.length) {
+    return null;
+  }
+
+  const chunkPrompt = buildPromptTemplate({
+    role: "Du er en nøyaktig dokumentanalytiker for tilbudsarbeid. Du leser én del av et større dokument og trekker ut bare konkrete, kildebaserte funn.",
+    task: [
+      "Analyser dokumentdelen og hent ut krav, implisitte behov, risiko, evalueringskriterier, løsningssignaler, teknologier og verdidrivere.",
+      "Marker om teksten tyder på tabeller, grafer, figurer, bilder eller diagrammer som kan kreve manuell verifikasjon.",
+      "Vær konservativ: ikke finn opp detaljer som ikke står i teksten.",
+    ],
+    rules: [
+      "Returner kun gyldig JSON.",
+      "Hold punktene korte, konkrete og kildetette.",
+      "Ikke gjenta samme funn med små omskrivinger.",
+      "Bruk source_references når funn kan knyttes til side, kapittel eller tekstblokk.",
+    ],
+    outputContract: [
+      "Returner ett JSON-objekt med nøklene document_summary, important_requirements, implicit_needs, risks, evaluation_criteria, architecture_and_solution_signals, technologies_and_standards, value_signals, visual_or_table_notes og source_references.",
+      "Alle felt utenom document_summary skal være lister av strenger.",
+    ],
+    exampleOutput:
+      '{"document_summary":"Delen beskriver krav til sikker migrering og lav toleranse for driftsavbrudd.","important_requirements":["Kunden krever kontrollert overgang uten vesentlig driftsavbrudd."],"implicit_needs":["Leverandøren må fremstå som trygg gjennomføringspartner, ikke bare teknisk rådgiver."],"risks":["Utydelig cutover-plan kan svekke tillit."],"evaluation_criteria":["Gjennomføringsevne","Sikkerhet"],"architecture_and_solution_signals":["Hybrid overgang mellom lokal drift og skyplattform."],"technologies_and_standards":["Azure","MFA"],"value_signals":["Redusert risiko gjennom stegvis migrering."],"visual_or_table_notes":["Teksten viser til en migreringstabell som bør verifiseres."],"source_references":["Kundedokument – side 12"]}',
+  });
+
+  const chunkDigests = await mapWithConcurrency(
+    chunks,
+    CHUNK_CONCURRENCY,
+    async (chunk) =>
+      normalizeDocumentInsightDigest(
+        await createJsonCompletion<Partial<DocumentInsightDigest>>({
+          system: chunkPrompt,
+          user: [
+            buildDelimitedContext("Dokument", label),
+            buildDelimitedContext("Kildereferanser", chunk.references.join("\n")),
+            buildDelimitedContext("Dokumentdel", chunk.text),
+          ].join("\n\n"),
+          temperature: 0,
+          model: FAST_MODEL,
+        }),
+      ),
+  );
+
+  const merged = normalizeDocumentInsightDigest({
+    document_summary: chunkDigests
+      .map((digest, index) => `Del ${index + 1}: ${digest.document_summary}`)
+      .join("\n"),
+    important_requirements: chunkDigests.flatMap(
+      (digest) => digest.important_requirements,
+    ),
+    implicit_needs: chunkDigests.flatMap((digest) => digest.implicit_needs),
+    risks: chunkDigests.flatMap((digest) => digest.risks),
+    evaluation_criteria: chunkDigests.flatMap(
+      (digest) => digest.evaluation_criteria,
+    ),
+    architecture_and_solution_signals: chunkDigests.flatMap(
+      (digest) => digest.architecture_and_solution_signals,
+    ),
+    technologies_and_standards: chunkDigests.flatMap(
+      (digest) => digest.technologies_and_standards,
+    ),
+    value_signals: chunkDigests.flatMap((digest) => digest.value_signals),
+    visual_or_table_notes: [
+      ...chunkDigests.flatMap((digest) => digest.visual_or_table_notes),
+      ...buildDocumentCoverageNotes(document),
+    ],
+    source_references: chunkDigests.flatMap((digest) => digest.source_references),
+  });
+
+  return buildDelimitedContext(
+    `${label} – bred dokumentdekning`,
+    JSON.stringify(merged, null, 2),
+  );
+}
+
+async function buildDocumentInsightDigest(
+  label: string,
+  document: ProjectDocumentDetail,
+  options?: { force?: boolean; maxChunks?: number },
+) {
+  if (!options?.force && !shouldBuildDocumentInsightDigest(document)) {
+    return null;
+  }
+
+  const cacheKey = [
+    label,
+    document.id,
+    document.updated_at,
+    document.raw_text.length,
+    options?.maxChunks ?? MAX_DOCUMENT_CHUNKS,
+  ].join(":");
+  const cached = getDocumentInsightCache().get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  return rememberDocumentInsight(
+    cacheKey,
+    buildDocumentInsightDigestUncached(label, document, options),
+  );
 }
 
 function summarizeCustomerAnalysis(analysis: CustomerAnalysisResult) {
@@ -623,10 +953,38 @@ function normalizeSingleValueCategory(item: ValueOpportunity): ValueCategory {
   return firstValidCategory ?? inferValueCategory(item);
 }
 
+function mergeValueOpportunityDescriptions(descriptions: string[]) {
+  const mergedSentences: string[] = [];
+
+  for (const description of descriptions) {
+    const normalizedDescription = description.replace(/\s+/g, " ").trim();
+    const sentences = splitIntoSentences(normalizedDescription);
+    const candidates = sentences.length ? sentences : [normalizedDescription];
+
+    for (const candidate of candidates) {
+      if (!candidate) {
+        continue;
+      }
+
+      if (
+        mergedSentences.some((existing) =>
+          isNearDuplicate(existing, candidate, 0.76),
+        )
+      ) {
+        continue;
+      }
+
+      mergedSentences.push(candidate);
+    }
+  }
+
+  return mergedSentences.join(" ").replace(/\s+/g, " ").trim();
+}
+
 function normalizeValueOpportunities(
   items: ValueOpportunity[],
 ): ValueOpportunity[] {
-  const filtered = (Array.isArray(items) ? items : [])
+  const normalizedItems = (Array.isArray(items) ? items : [])
     .filter((item) => item && item.title && item.description)
     .filter((item, index, array) => {
       return !array.some(
@@ -636,7 +994,6 @@ function normalizeValueOpportunities(
           isNearDuplicate(existing.description, item.description, 0.72),
       );
     })
-    .slice(0, 4)
     .map((item) => ({
       title: item.title.replace(/\s+/g, " ").trim(),
       description: item.description.replace(/\s+/g, " ").trim(),
@@ -648,9 +1005,38 @@ function normalizeValueOpportunities(
         ) ?? 0,
     }));
 
-  if (!filtered.length) {
+  if (!normalizedItems.length) {
     return [];
   }
+
+  const mergedByCategory = new Map<ValueCategory, ValueOpportunity>();
+
+  for (const item of normalizedItems) {
+    const category = item.value_categories[0];
+    const existing = mergedByCategory.get(category);
+
+    if (!existing) {
+      mergedByCategory.set(category, item);
+      continue;
+    }
+
+    mergedByCategory.set(category, {
+      ...existing,
+      description: mergeValueOpportunityDescriptions([
+        existing.description,
+        item.description,
+      ]),
+      value_categories: [category],
+      profit_share_percent:
+        existing.profit_share_percent + item.profit_share_percent,
+    });
+  }
+
+  const filtered = VALUE_CATEGORIES.map((category) =>
+    mergedByCategory.get(category),
+  )
+    .filter((item): item is ValueOpportunity => Boolean(item))
+    .slice(0, 4);
 
   const providedTotal = filtered.reduce(
     (sum, item) => sum + (item.profit_share_percent || 0),
@@ -981,6 +1367,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
       "Regenerer kun verdimuligheter.",
       "value_opportunities skal ha maksimalt 4 punkter.",
       "Hvert punkt skal ha nøyaktig én value_category: Høyere produktivitet, Lavere kostnader, Redusert risiko eller Bedre brukeropplevelse.",
+      "Bruk hver value_category maksimalt én gang i hele listen. Ikke returner duplikater av samme kategori.",
       "Ikke kombiner flere verdikategorier i samme punkt. Forklar hvordan verdien skapes og hvorfor den er viktig.",
       "profit_share_percent skal være dokument- og signalbasert: vekt etter eksplisitthet, forretningskritikalitet, driftskonsekvens, repetisjon og tydelig kobling til anskaffelsens mål.",
       "Ikke bruk jevn eller pen prosentfordeling uten dokumentgrunnlag. Bruk presise, konservative heltall.",
@@ -989,6 +1376,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
       "Returner kun JSON med value_opportunities.",
       "value_opportunities skal være objekter med title, description, value_categories og profit_share_percent.",
       "value_categories skal alltid være en array med nøyaktig ett element.",
+      "Ingen value_category kan gjentas i value_opportunities.",
       "profit_share_percent skal være heltall mellom 1 og 100, samlet fordelt til 100 prosent.",
     ],
   },
@@ -1023,6 +1411,41 @@ function normalizeSolutionEvaluationResult(
   const valueAssessment = normalizeValueOpportunities(
     Array.isArray(result.value_assessment) ? result.value_assessment : [],
   );
+  const rawComparison = result.architecture_comparison;
+  const comparisonWinner = rawComparison?.winner;
+  const architectureComparison = {
+    winner:
+      comparisonWinner === "Systemløsning" ||
+      comparisonWinner === "Arkitektløsning" ||
+      comparisonWinner === "Uavgjort"
+        ? comparisonWinner
+        : ("Uavgjort" as const),
+    architect_solution_score: normalizeComparisonScore(
+      rawComparison?.architect_solution_score,
+    ),
+    system_solution_score: normalizeComparisonScore(
+      rawComparison?.system_solution_score,
+    ),
+    verdict: (rawComparison?.verdict || "").replace(/\s+/g, " ").trim(),
+    strong_critique: capNormalizedList(
+      Array.isArray(rawComparison?.strong_critique)
+        ? rawComparison.strong_critique
+        : [],
+      { max: 6 },
+    ),
+    pragmatic_reflections: capNormalizedList(
+      Array.isArray(rawComparison?.pragmatic_reflections)
+        ? rawComparison.pragmatic_reflections
+        : [],
+      { max: 6 },
+    ),
+    strategy_improvement_advice: capNormalizedList(
+      Array.isArray(rawComparison?.strategy_improvement_advice)
+        ? rawComparison.strategy_improvement_advice
+        : [],
+      { max: 6 },
+    ),
+  };
 
   return {
     ...result,
@@ -1037,6 +1460,7 @@ function normalizeSolutionEvaluationResult(
     trust_signals: trustSignals,
     improvement_recommendations: improvementRecommendations,
     value_assessment: valueAssessment,
+    architecture_comparison: architectureComparison,
     executive_summary: dedupeSummary(result.executive_summary || "", [
       result.fit_to_customer_needs,
       ...strengths,
@@ -1047,6 +1471,14 @@ function normalizeSolutionEvaluationResult(
       ...improvementRecommendations,
     ]),
   };
+}
+
+function normalizeComparisonScore(raw: unknown) {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(raw)));
 }
 
 async function createJsonCompletion<T>(input: {
@@ -1098,6 +1530,16 @@ export async function analyzeCustomerDocuments(input: {
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
 }) {
+  const [customerDocumentDigest, supportingDocumentDigests] = await Promise.all([
+    buildDocumentInsightDigest("Primært kundedokument", input.customerDocument),
+    Promise.all(
+      input.supportingDocuments.slice(0, 3).map((document, index) =>
+        buildDocumentInsightDigest(`Støttedokument ${index + 1}`, document, {
+          maxChunks: 4,
+        }),
+      ),
+    ),
+  ]);
   const supportingContexts = input.supportingDocuments
     .slice(0, 6)
     .map((document, index) =>
@@ -1123,12 +1565,20 @@ export async function analyzeCustomerDocuments(input: {
       structureLimit: 10,
       structureTextLimit: 180,
     }),
+    customerDocumentDigest
+      ? buildDelimitedContext(
+          "Analyseinstruks for store dokumenter",
+          "Bruk bred dokumentdekning aktivt. Den dekker flere sider/blokker enn hovedutdraget og skal hindre at krav, risiko, evalueringskriterier eller verdidrivere sent i dokumentet overses. Hvis dekningen varsler figurer, tabeller eller grafer, vær tydelig på hva som kan utledes fra teksten og hva som bør verifiseres.",
+        )
+      : "",
+    customerDocumentDigest ?? "",
     supportingContexts
       ? buildDelimitedContext(
           "Tilleggsregel",
           "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.",
         )
       : "",
+    ...supportingDocumentDigests.filter(Boolean),
     supportingContexts,
   ]
     .filter(Boolean)
@@ -1158,6 +1608,11 @@ export async function regenerateCustomerAnalysisSection(input: {
 }) {
   const config = CUSTOMER_ANALYSIS_SECTION_CONFIG[input.section];
   const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
+  const customerDocumentDigest = await buildDocumentInsightDigest(
+    "Primært kundedokument",
+    input.customerDocument,
+    { maxChunks: 6 },
+  );
   const supportingContexts = input.supportingDocuments
     .slice(0, 6)
     .map((document, index) =>
@@ -1197,6 +1652,7 @@ export async function regenerateCustomerAnalysisSection(input: {
       structureLimit: 10,
       structureTextLimit: 180,
     }),
+    customerDocumentDigest ?? "",
     supportingContexts
       ? buildDelimitedContext(
           "Tilleggsregel",
@@ -1240,6 +1696,11 @@ export async function generateHighLevelDesign(input: {
   customerAnalysis: CustomerAnalysisResult;
 }) {
   const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
+  const customerDocumentDigest = await buildDocumentInsightDigest(
+    "Primært kundedokument",
+    input.customerDocument,
+    { maxChunks: 5 },
+  );
   const supportingContexts = input.supportingDocuments
     .slice(0, 4)
     .map((document, index) =>
@@ -1259,6 +1720,7 @@ export async function generateHighLevelDesign(input: {
       structureLimit: 8,
       structureTextLimit: 160,
     }),
+    customerDocumentDigest ?? "",
     buildDelimitedContext(
       "Eksisterende kundeanalyse",
       summarizeCustomerAnalysis(customerAnalysis),
@@ -1308,7 +1770,21 @@ export async function evaluateSolutionDocument(input: {
   solutionDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
   customerAnalysis: CustomerAnalysisResult;
+  systemSolutionArtifact?: {
+    title: string;
+    content_markdown: string;
+  } | null;
 }) {
+  const [customerDocumentDigest, solutionDocumentDigest] = await Promise.all([
+    buildDocumentInsightDigest("Primært kundedokument", input.customerDocument, {
+      maxChunks: 5,
+    }),
+    buildDocumentInsightDigest(
+      "Importert arkitekt-/løsningsdokument",
+      input.solutionDocument,
+      { maxChunks: 6 },
+    ),
+  ]);
   const supportingContexts = input.supportingDocuments
     .slice(0, 2)
     .map((document, index) =>
@@ -1321,7 +1797,8 @@ export async function evaluateSolutionDocument(input: {
     .join("\n\n");
 
   const userPrompt = [
-    "Vurder løsningsdokumentet opp mot kundedokumentet og den eksisterende kundeanalysen.",
+    "Sammenlign systemets lagrede strategi/løsning med det importerte løsnings-/arkitektdokumentet.",
+    "Vurder hvilken løsning som er best, gi sterk kritikk, pragmatiske refleksjoner, strategiråd og score.",
     "Returner kun gyldig JSON.",
     "",
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
@@ -1330,15 +1807,38 @@ export async function evaluateSolutionDocument(input: {
       structureLimit: 8,
       structureTextLimit: 160,
     }),
+    customerDocumentDigest ?? "",
     buildDelimitedContext(
       "Lagret kundeanalyse",
       summarizeCustomerAnalysis(input.customerAnalysis),
     ),
+    input.systemSolutionArtifact
+      ? buildDelimitedContext(
+          "Systemløsning som skal scores",
+          [
+            `Tittel: ${input.systemSolutionArtifact.title}`,
+            compactText(input.systemSolutionArtifact.content_markdown, 9000),
+          ].join("\n\n"),
+        )
+      : "",
+    input.systemSolutionArtifact
+      ? buildDelimitedContext(
+          "Viktig scoringsregel for systemløsningen",
+          "Når en systemløsning er oppgitt i eget felt, skal denne teksten være primærgrunnlaget for architecture_comparison.system_solution_score. Kundeanalysen er da støtte og kontekst, ikke erstatning for systemløsningen.",
+        )
+      : "",
     documentContext("Primært løsningsdokument", input.solutionDocument, {
       textLimit: 7000,
       structureLimit: 8,
       structureTextLimit: 160,
     }),
+    solutionDocumentDigest
+      ? buildDelimitedContext(
+          "Analyseinstruks for arkitektdokument",
+          "Bruk bred dokumentdekning for arkitektdokumentet aktivt. Den dekker flere sider/blokker enn hovedutdraget, og skal brukes når du scorer, kritiserer og sammenligner arkitektløsningen mot systemløsningen. Visuelle elementer, grafer og tabeller uten maskinlesbar tekst skal behandles som verifikasjonsbehov, ikke som sikre funn.",
+        )
+      : "",
+    solutionDocumentDigest ?? "",
     supportingContexts,
   ]
     .filter(Boolean)
@@ -1369,6 +1869,20 @@ export async function generateProjectArtifact(input: {
   }>;
   instructions?: string;
 }) {
+  const [customerDocumentDigest, solutionDocumentDigest] = await Promise.all([
+    input.customerDocument
+      ? buildDocumentInsightDigest("Primært kundedokument", input.customerDocument, {
+          maxChunks: 4,
+        })
+      : Promise.resolve(null),
+    input.solutionDocument
+      ? buildDocumentInsightDigest(
+          "Primært løsningsdokument",
+          input.solutionDocument,
+          { maxChunks: 4 },
+        )
+      : Promise.resolve(null),
+  ]);
   const supportingContexts = input.supportingDocuments
     .slice(0, 6)
     .map((document, index) =>
@@ -1422,12 +1936,14 @@ export async function generateProjectArtifact(input: {
           compactText(input.customerDocument.raw_text, 5000),
         )
       : "",
+    customerDocumentDigest ?? "",
     input.solutionDocument
       ? buildDelimitedContext(
           "Primært løsningsdokument sammendrag",
           compactText(input.solutionDocument.raw_text, 5000),
         )
       : "",
+    solutionDocumentDigest ?? "",
     supportingContexts,
     artifactKnowledge,
   ]
