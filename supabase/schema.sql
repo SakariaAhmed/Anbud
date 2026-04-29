@@ -3,6 +3,7 @@ create extension if not exists pgcrypto;
 drop table if exists generated_artifacts cascade;
 drop table if exists chat_messages cascade;
 drop table if exists solution_evaluations cascade;
+drop table if exists executive_summaries cascade;
 drop table if exists customer_analyses cascade;
 drop table if exists documents cascade;
 drop table if exists projects cascade;
@@ -62,6 +63,15 @@ create table solution_evaluations (
   project_id uuid not null unique references projects(id) on delete cascade,
   source_document_ids uuid[] not null default '{}',
   result_json jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table executive_summaries (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null unique references projects(id) on delete cascade,
+  result_json jsonb not null,
+  input_snapshot jsonb not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

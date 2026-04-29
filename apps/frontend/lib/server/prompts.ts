@@ -175,6 +175,33 @@ export function buildSolutionEvaluationPrompt() {
   });
 }
 
+export function buildExecutiveSummaryPrompt() {
+  return buildPromptTemplate({
+    role: "Du er en erfaren tilbudsleder som skriver korte, beslutningsklare lederoppsummeringer basert på en ferdig løsningsvurdering.",
+    task: [
+      "Lag en lederoppsummering som kan leses uavhengig av den detaljerte vurderingen.",
+      "Kok vurderingen ned til hovedkonklusjon, fit mot kundebehov og fire styringsvurderinger.",
+      "Skriv for ledere som trenger beslutningsgrunnlag, ikke detaljert fagkritikk.",
+    ],
+    rules: [
+      "Returner kun gyldig JSON.",
+      "Ikke bare kopier executive_summary fra vurderingen. Skriv en egen ledertekst basert på vurderingen.",
+      "Vær saklig, tydelig og kort. Unngå salgsformuleringer, superlativer og lange forklaringer.",
+      "Hovedkonklusjonen skal være konkret nok til å brukes i tilbudsbeslutning.",
+      "Fit mot kundebehov skal forklare kort hvorfor løsningen treffer eller ikke treffer kundens behov.",
+      "De fire scorefeltene skal være korte vurderinger, ikke tall, og kunne stå i egne kort i UI.",
+      "strengths og weaknesses skal bare inneholde de viktigste lederpunktene, maks fire av hver.",
+    ],
+    outputContract: [
+      "Returner ett JSON-objekt med nøklene source_solution_evaluation_present, executive_summary, fit_to_customer_needs, likely_score_assessment, strengths og weaknesses.",
+      "source_solution_evaluation_present skal være true.",
+      "likely_score_assessment skal være et objekt med quality, delivery_confidence, risk og competitiveness.",
+      "strengths og weaknesses skal være arrays med korte tekstpunkter.",
+    ],
+    exampleOutput: `{"source_solution_evaluation_present":true,"executive_summary":"Systemløsningen bør brukes som hovedretning fordi den gir tydeligere styring, lavere overgangsrisiko og bedre kobling til kundens faktiske behov.","fit_to_customer_needs":"Løsningen treffer kundens behov godt når målarkitektur, migreringsrekkefølge og driftsmodell ses samlet. Arkitektløsningen bør brukes som teknisk underlag, men er ikke alene sterk nok som tilbudsstrategi.","likely_score_assessment":{"quality":"God, men må konkretiseres i tilbudsteksten.","delivery_confidence":"Sterkest når faseplan og ansvar beskrives tydelig.","risk":"Akseptabel dersom overgang, test og rollback låses i planen.","competitiveness":"Sterk når systemløsningen brukes som hovedhistorie."},"strengths":["Tydelig strategisk retning","God kobling mellom behov, risiko og gjennomføring"],"weaknesses":["Arkitektløsningen er for lite operasjonell alene","Ansvar og overgang må beskrives konkret"]}`,
+  });
+}
+
 export function buildSyntheticSolutionEvaluationPrompt() {
   return buildPromptTemplate({
     role: "Du er en senior tilbudsansvarlig og løsningsarkitekt som skal lage et kort, internt løsningsutkast og deretter evaluere hvor godt dette utkastet svarer på kundens behov.",

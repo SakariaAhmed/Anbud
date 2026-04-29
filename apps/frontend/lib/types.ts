@@ -237,6 +237,20 @@ export interface SolutionEvaluationResult {
   executive_summary: string;
 }
 
+export interface ExecutiveSummaryResult {
+  source_solution_evaluation_present: boolean;
+  executive_summary: string;
+  fit_to_customer_needs: string;
+  likely_score_assessment: {
+    quality: string;
+    delivery_confidence: string;
+    risk: string;
+    competitiveness: string;
+  };
+  strengths: string[];
+  weaknesses: string[];
+}
+
 export interface GeneratedArtifact {
   id: string;
   project_id: string;
@@ -262,6 +276,7 @@ export interface ProjectDetail extends ProjectSummary {
   documents: ProjectDocument[];
   customer_analysis: CustomerAnalysisResult | null;
   solution_evaluation: SolutionEvaluationResult | null;
+  executive_summary: ExecutiveSummaryResult | null;
   generated_artifacts: GeneratedArtifact[];
   chat_messages: ChatMessage[];
 }

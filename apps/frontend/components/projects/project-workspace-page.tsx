@@ -49,6 +49,7 @@ import type {
   CustomerAnalysisResult,
   CustomerAnalysisSection,
   CustomerAnalysisSectionSnapshotMap,
+  ExecutiveSummaryResult,
   GeneratedArtifact,
   ProjectDetail,
   ProjectDocument,
@@ -257,8 +258,13 @@ export function ProjectWorkspacePage({
     Boolean(initialData.solution_evaluation) ||
       !initialData.solution_evaluation_generated,
   );
+  const [executiveSummaryLoaded, setExecutiveSummaryLoaded] = useState(
+    Boolean(initialData.executive_summary) ||
+      !initialData.solution_evaluation_generated,
+  );
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
   const progressIntervalRef = useRef<number | null>(null);
@@ -462,6 +468,64 @@ export function ProjectWorkspacePage({
   }, [
     activeTab,
     evaluationLoaded,
+    project.id,
+    project.solution_evaluation_generated,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeTab !== "executive-summary" ||
+      executiveSummaryLoaded ||
+      !project.solution_evaluation_generated
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setExecutiveSummaryLoading(true);
+    fetch(`/api/projects/${project.id}/executive-summary`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          error?: string;
+          executive_summary?: ExecutiveSummaryResult | null;
+        };
+        if (!response.ok) {
+          throw new Error(
+            payload.error || "Kunne ikke hente lederoppsummeringen.",
+          );
+        }
+        if (!cancelled) {
+          setProject((current) => ({
+            ...current,
+            executive_summary: payload.executive_summary ?? null,
+          }));
+          setExecutiveSummaryLoaded(true);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Kunne ikke hente lederoppsummeringen.",
+          );
+          setExecutiveSummaryLoaded(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setExecutiveSummaryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    executiveSummaryLoaded,
     project.id,
     project.solution_evaluation_generated,
   ]);
@@ -685,6 +749,10 @@ export function ProjectWorkspacePage({
               !payload.project?.solution_evaluation_generated
                 ? null
                 : current.solution_evaluation,
+            executive_summary:
+              !payload.project?.solution_evaluation_generated
+                ? null
+                : current.executive_summary,
           },
           payload.project!,
         );
@@ -697,6 +765,7 @@ export function ProjectWorkspacePage({
       }
       if (!payload.project.solution_evaluation_generated) {
         setEvaluationLoaded(true);
+        setExecutiveSummaryLoaded(true);
       }
     });
   }
@@ -1139,7 +1208,11 @@ export function ProjectWorkspacePage({
           setProject((current) =>
             normalizeProjectState(
               patchProjectWithSnapshot(
-                { ...current, solution_evaluation: result.evaluation },
+                {
+                  ...current,
+                  solution_evaluation: result.evaluation,
+                  executive_summary: null,
+                },
                 result.project,
               ),
               {
@@ -1148,6 +1221,7 @@ export function ProjectWorkspacePage({
             ),
           );
           setEvaluationLoaded(true);
+          setExecutiveSummaryLoaded(true);
           setNotice("Sammenligningen er generert og lagret i prosjektet.");
           break;
         }
@@ -1156,10 +1230,51 @@ export function ProjectWorkspacePage({
     );
   }
 
+  async function onGenerateExecutiveSummary() {
+    await runAction(
+      "executive-summary",
+      async () => {
+        const response = await fetch(
+          `/api/projects/${project.id}/executive-summary`,
+          { method: "POST" },
+        );
+        const payload = (await response.json()) as {
+          error?: string;
+          executive_summary?: ExecutiveSummaryResult;
+          project?: ProjectSnapshotPayload;
+        };
+        if (!response.ok || !payload.executive_summary || !payload.project) {
+          throw new Error(
+            payload.error || "Kunne ikke generere lederoppsummering.",
+          );
+        }
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
+              {
+                ...current,
+                executive_summary: payload.executive_summary!,
+              },
+              payload.project!,
+            ),
+            {
+              preserveArtifactCount: !artifactsLoaded,
+            },
+          ),
+        );
+        setExecutiveSummaryLoaded(true);
+        setNotice("Lederoppsummeringen er generert og lagret separat.");
+      },
+      ["Genererer lederoppsummering ..."],
+    );
+  }
+
   const customerAnalysis =
     project.customer_analysis as CustomerAnalysisResult | null;
   const solutionEvaluation =
     project.solution_evaluation as SolutionEvaluationResult | null;
+  const executiveSummary =
+    project.executive_summary as ExecutiveSummaryResult | null;
   const workspaceNavItems = [
     { value: "analysis", label: "Kundeanalyse", icon: Brain },
     { value: "evaluation", label: "Vurdering", icon: Scale },
@@ -1471,10 +1586,19 @@ export function ProjectWorkspacePage({
             ) : null}
 
             {activeTab === "executive-summary" ? (
-              <ProjectExecutiveSummaryTab
-                solutionEvaluation={solutionEvaluation}
-                hasSolutionDocument={project.documents.length > 0}
-              />
+              !executiveSummaryLoaded || executiveSummaryLoading ? (
+                <DeferredSectionLoader label="Laster lederoppsummering ..." />
+              ) : (
+                <ProjectExecutiveSummaryTab
+                  executiveSummary={executiveSummary}
+                  hasSolutionEvaluation={Boolean(solutionEvaluation)}
+                  busy={busy === "executive-summary"}
+                  busyMessage={
+                    busy === "executive-summary" ? busyMessage : ""
+                  }
+                  onGenerate={onGenerateExecutiveSummary}
+                />
+              )
             ) : null}
 
             {activeTab === "generator" ? (
