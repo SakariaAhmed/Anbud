@@ -19,6 +19,7 @@ import type {
   CustomerAnalysisHistorySource,
   CustomerAnalysisResult,
   CustomerAnalysisSection,
+  ExecutiveSummaryResult,
   GeneratedArtifact,
   GeneratedArtifactType,
   ProjectMetadataInference,
@@ -103,6 +104,15 @@ interface SolutionEvaluationRow {
   solution_document_id: string | null;
   analysis_id: string | null;
   result_json: Json;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ExecutiveSummaryRow {
+  id: string;
+  project_id: string;
+  result_json: Json;
+  input_snapshot: Json;
   created_at: string;
   updated_at: string;
 }
@@ -194,6 +204,20 @@ const SOLUTION_EVALUATION_EMPTY: SolutionEvaluationResult = {
     strategy_improvement_advice: [],
   },
   executive_summary: "",
+};
+
+const EXECUTIVE_SUMMARY_EMPTY: ExecutiveSummaryResult = {
+  source_solution_evaluation_present: false,
+  executive_summary: "",
+  fit_to_customer_needs: "",
+  likely_score_assessment: {
+    quality: "",
+    delivery_confidence: "",
+    risk: "",
+    competitiveness: "",
+  },
+  strengths: [],
+  weaknesses: [],
 };
 
 const PROJECTS_LIST_TAG = "projects:list";
@@ -321,6 +345,10 @@ function mapSolutionEvaluationRow(row: SolutionEvaluationRow) {
     customer_document_id: row.customer_document_id,
     solution_document_id: row.solution_document_id,
   };
+}
+
+function mapExecutiveSummaryRow(row: ExecutiveSummaryRow) {
+  return decryptJson(row.result_json, EXECUTIVE_SUMMARY_EMPTY);
 }
 
 function mapArtifact(row: ArtifactRow): GeneratedArtifact {
@@ -790,6 +818,7 @@ export async function getProjectDetail(
         documentRows,
         { data: analyses, error: analysesError },
         { data: evaluations, error: evaluationsError },
+        { data: executiveSummaries, error: executiveSummariesError },
         { data: artifactRows, error: artifactsError },
       ] = await Promise.all([
         queryProjectRow(projectId),
@@ -813,15 +842,31 @@ export async function getProjectDetail(
           .order("created_at", { ascending: false })
           .limit(1),
         supabase
+          .from("executive_summaries")
+          .select("*")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
           .from("generated_artifacts")
           .select("id")
           .eq("project_id", projectId),
       ]);
 
-      if (analysesError || evaluationsError || artifactsError) {
+      if (
+        analysesError ||
+        evaluationsError ||
+        artifactsError ||
+        (executiveSummariesError &&
+          !isMissingRelationColumn(
+            executiveSummariesError,
+            "executive_summaries",
+          ))
+      ) {
         throw new Error(
           analysesError?.message ||
             evaluationsError?.message ||
+            executiveSummariesError?.message ||
             artifactsError?.message ||
             "Kunne ikke laste prosjektet.",
         );
@@ -831,6 +876,9 @@ export async function getProjectDetail(
         ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
       const evaluationRow =
         ((evaluations ?? [])[0] as SolutionEvaluationRow | undefined) ?? null;
+      const executiveSummaryRow =
+        ((executiveSummaries ?? [])[0] as ExecutiveSummaryRow | undefined) ??
+        null;
 
       return {
         id: projectRow.id,
@@ -858,6 +906,9 @@ export async function getProjectDetail(
           : null,
         solution_evaluation: evaluationRow
           ? mapSolutionEvaluationRow(evaluationRow)
+          : null,
+        executive_summary: executiveSummaryRow
+          ? mapExecutiveSummaryRow(executiveSummaryRow)
           : null,
         generated_artifacts: [],
         chat_messages: [],
@@ -921,6 +972,7 @@ export async function getProjectShell(
         documents: documentRows.map(mapDocumentSummary),
         customer_analysis: null,
         solution_evaluation: null,
+        executive_summary: null,
         generated_artifacts: [],
         chat_messages: [],
       };
@@ -1038,6 +1090,11 @@ export async function saveDocument(input: {
       .delete()
       .eq("project_id", input.projectId);
   }
+
+  await supabase
+    .from("executive_summaries")
+    .delete()
+    .eq("project_id", input.projectId);
 
   await supabase
     .from("projects")
@@ -1394,6 +1451,8 @@ export async function saveSolutionEvaluation(
     );
   }
 
+  await supabase.from("executive_summaries").delete().eq("project_id", projectId);
+
   await supabase
     .from("projects")
     .update({
@@ -1405,6 +1464,63 @@ export async function saveSolutionEvaluation(
   revalidateProjectCaches(projectId);
 
   return mapSolutionEvaluationRow(insertResult.data);
+}
+
+export async function saveExecutiveSummary(
+  projectId: string,
+  result: ExecutiveSummaryResult,
+  inputSnapshot: unknown,
+) {
+  const supabase = createServiceClient();
+  await supabase.from("executive_summaries").delete().eq("project_id", projectId);
+  const { data, error } = await supabase
+    .from("executive_summaries")
+    .insert({
+      project_id: projectId,
+      result_json: encryptJson(result),
+      input_snapshot: encryptJson(inputSnapshot),
+    })
+    .select("*")
+    .single<ExecutiveSummaryRow>();
+
+  if (isMissingRelationColumn(error, "executive_summaries")) {
+    throw new Error(
+      "Tabellen executive_summaries mangler. Oppdater Supabase schema før lederoppsummering kan lagres separat.",
+    );
+  }
+
+  if (error || !data) {
+    throw new Error(error?.message || "Kunne ikke lagre lederoppsummeringen.");
+  }
+
+  await supabase
+    .from("projects")
+    .update({ last_activity_at: new Date().toISOString() })
+    .eq("id", projectId);
+
+  revalidateProjectCaches(projectId);
+  return mapExecutiveSummaryRow(data);
+}
+
+export async function getExecutiveSummary(projectId: string) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("executive_summaries")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (isMissingRelationColumn(error, "executive_summaries")) {
+    return null;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = (data?.[0] as ExecutiveSummaryRow | undefined) ?? null;
+  return row ? mapExecutiveSummaryRow(row) : null;
 }
 
 export async function getSolutionEvaluation(projectId: string) {

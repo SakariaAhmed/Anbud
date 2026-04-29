@@ -11,9 +11,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { AnalysisTabEmptyState } from "@/components/projects/project-workspace-shared";
-import type { SolutionEvaluationResult } from "@/lib/types";
+import { Spinner } from "@/components/ui/spinner";
+import type { ExecutiveSummaryResult } from "@/lib/types";
 
 function splitExecutiveLead(content: string) {
   const trimmed = content.trim();
@@ -118,26 +120,52 @@ function ExecutiveList({
 }
 
 export function ProjectExecutiveSummaryTab({
-  solutionEvaluation,
-  hasSolutionDocument,
+  executiveSummary: summary,
+  hasSolutionEvaluation,
+  busy,
+  busyMessage,
+  onGenerate,
 }: {
-  solutionEvaluation: SolutionEvaluationResult | null;
-  hasSolutionDocument: boolean;
+  executiveSummary: ExecutiveSummaryResult | null;
+  hasSolutionEvaluation: boolean;
+  busy: boolean;
+  busyMessage: string;
+  onGenerate: () => void;
 }) {
-  if (!solutionEvaluation) {
+  if (!summary) {
     return (
-      <AnalysisTabEmptyState>
-        {hasSolutionDocument
-          ? "Ingen lederoppsummering ennå. Generer vurderingen først."
-          : "Last opp et dokument og generer vurdering før lederoppsummeringen vises."}
-      </AnalysisTabEmptyState>
+      <div className="space-y-4">
+        <div className="flex justify-end">
+          <Button
+            onClick={onGenerate}
+            disabled={busy || !hasSolutionEvaluation}
+            size="lg"
+          >
+            {busy ? (
+              <Spinner className="size-4" />
+            ) : (
+              <ClipboardCheck data-icon="inline-start" />
+            )}
+            Generer lederoppsummering
+          </Button>
+        </div>
+        {busy && busyMessage ? (
+          <div className="flex items-center gap-2 text-sm text-primary">
+            <Spinner className="size-3.5" />
+            <span>{busyMessage}</span>
+          </div>
+        ) : null}
+        <AnalysisTabEmptyState>
+          {hasSolutionEvaluation
+            ? "Ingen lederoppsummering ennå. Generer den separat fra vurderingen."
+            : "Generer vurdering før lederoppsummeringen kan lages."}
+        </AnalysisTabEmptyState>
+      </div>
     );
   }
 
-  const score = solutionEvaluation.likely_score_assessment;
-  const executiveSummary = splitExecutiveLead(
-    solutionEvaluation.executive_summary,
-  );
+  const score = summary.likely_score_assessment;
+  const executiveSummaryText = splitExecutiveLead(summary.executive_summary);
 
   return (
     <div className="min-w-0 space-y-5">
@@ -152,12 +180,29 @@ export function ProjectExecutiveSummaryTab({
                 Beslutningsbildet på ett blikk
               </h2>
             </div>
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm">
-              <ArrowUpRight className="size-4 text-blue-600" />
-              Klar for lederlesning
-            </div>
+            <Button
+              variant="outline"
+              onClick={onGenerate}
+              disabled={busy || !hasSolutionEvaluation}
+            >
+              {busy ? (
+                <Spinner className="size-4" />
+              ) : (
+                <ArrowUpRight data-icon="inline-start" />
+              )}
+              Regenerer
+            </Button>
           </div>
         </div>
+
+        {busy && busyMessage ? (
+          <div className="border-b border-slate-200 px-5 py-3 text-sm text-primary md:px-7">
+            <span className="inline-flex items-center gap-2">
+              <Spinner className="size-3.5" />
+              {busyMessage}
+            </span>
+          </div>
+        ) : null}
 
         <div className="min-w-0 space-y-5 px-5 py-6 md:px-7">
           <div className="overflow-hidden rounded-xl border border-cyan-200 bg-cyan-950 text-white shadow-[0_18px_42px_rgba(8,47,73,0.16)]">
@@ -168,14 +213,13 @@ export function ProjectExecutiveSummaryTab({
                 </p>
                 <MarkdownViewer
                   content={
-                    executiveSummary.lead ||
-                    solutionEvaluation.executive_summary
+                    executiveSummaryText.lead || summary.executive_summary
                   }
                   className="analysis-prose mt-3 max-w-none text-[1.25rem] font-semibold leading-8 text-white"
                 />
-                {executiveSummary.rest ? (
+                {executiveSummaryText.rest ? (
                   <MarkdownViewer
-                    content={executiveSummary.rest}
+                    content={executiveSummaryText.rest}
                     className="analysis-prose mt-4 max-w-none border-t border-cyan-200/20 pt-4 text-[1rem] leading-7 text-cyan-50/90"
                   />
                 ) : null}
@@ -189,7 +233,7 @@ export function ProjectExecutiveSummaryTab({
                   </p>
                 </div>
                 <MarkdownViewer
-                  content={solutionEvaluation.fit_to_customer_needs}
+                  content={summary.fit_to_customer_needs}
                   className="analysis-prose text-[1rem] leading-7 text-lime-950/90"
                 />
               </div>
@@ -228,12 +272,12 @@ export function ProjectExecutiveSummaryTab({
       <div className="grid gap-5 lg:grid-cols-2">
         <ExecutiveList
           title="Hva taler for"
-          items={solutionEvaluation.strengths}
+          items={summary.strengths}
           tone="trust"
         />
         <ExecutiveList
           title="Hva må håndteres"
-          items={solutionEvaluation.weaknesses}
+          items={summary.weaknesses}
           tone="risk"
         />
       </div>
