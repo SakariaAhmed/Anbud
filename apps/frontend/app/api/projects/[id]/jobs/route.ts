@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   queueArtifactGenerationJob,
+  queueCustomerAnalysisJob,
   queueHighLevelDesignJob,
   queuePerfectSystemSolutionJob,
   queueSolutionEvaluationJob,
@@ -24,6 +25,9 @@ export async function POST(
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as
       | {
+          kind?: "customer_analysis";
+        }
+      | {
           kind?: "solution_evaluation";
           allow_generated_solution?: boolean;
           solution_document_id?: string;
@@ -39,6 +43,14 @@ export async function POST(
           artifact_type?: string;
           instructions?: string;
         };
+
+    if (body.kind === "customer_analysis") {
+      const job = queueCustomerAnalysisJob({
+        projectId: id,
+      });
+
+      return NextResponse.json({ job }, { status: 202 });
+    }
 
     if (body.kind === "solution_evaluation") {
       const job = queueSolutionEvaluationJob({

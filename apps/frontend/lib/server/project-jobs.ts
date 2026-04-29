@@ -2,7 +2,9 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
+import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
 import {
+  analyzeCustomerDocuments,
   evaluateSolutionDocument,
   generateHighLevelDesign,
   generateProjectArtifact,
@@ -178,6 +180,72 @@ export function queueArtifactGenerationJob(input: {
     const projectSnapshot = await getProjectSnapshot(input.projectId);
     return {
       artifact,
+      project: projectSnapshot,
+    };
+  });
+
+  return record;
+}
+
+export function queueCustomerAnalysisJob(input: { projectId: string }) {
+  const jobId = randomUUID();
+  const now = new Date().toISOString();
+  const record: ProjectJobRecord = {
+    id: jobId,
+    project_id: input.projectId,
+    kind: "customer_analysis",
+    status: "queued",
+    message: "Køer kundeanalysen ...",
+    created_at: now,
+    updated_at: now,
+    error: null,
+    result: null,
+  };
+
+  getStore().set(jobId, record);
+
+  startRunner(jobId, async ({ setProgress }) => {
+    setProgress("Laster dokumentgrunnlag ...");
+    const projectDocuments = await listProjectDocuments(input.projectId);
+    const { projectDocuments: analysisDocuments } =
+      splitServiceDescriptionDetails(projectDocuments);
+    const [customerDocument, ...supportingDocuments] = analysisDocuments;
+
+    if (!customerDocument) {
+      throw new Error("Last opp minst ett dokument først.");
+    }
+
+    if (!customerDocument.raw_text.trim()) {
+      throw new Error(
+        "Dokumentgrunnlaget har ingen lesbar tekst. Last opp dokumentet på nytt som tekstbasert PDF/DOCX, eller bruk OCR først.",
+      );
+    }
+
+    setProgress("Analyserer kundedokumentet med AI ...");
+    const result = await analyzeCustomerDocuments({
+      projectName: customerDocument.title,
+      customerDocument,
+      supportingDocuments,
+    });
+
+    setProgress("Lagrer kundeanalysen ...");
+    const analysis = await saveCustomerAnalysis(
+      input.projectId,
+      [
+        customerDocument.id,
+        ...supportingDocuments.map((document) => document.id),
+      ],
+      result,
+      {
+        previousAnalysis: null,
+        updatedSections: [...CUSTOMER_ANALYSIS_SECTIONS],
+        historySource: "full_regeneration",
+      },
+    );
+
+    const projectSnapshot = await getProjectSnapshot(input.projectId);
+    return {
+      analysis,
       project: projectSnapshot,
     };
   });

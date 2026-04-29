@@ -316,6 +316,7 @@ export interface ChatRequestInput {
 }
 
 export type ProjectJobKind =
+  | "customer_analysis"
   | "solution_evaluation"
   | "artifact_generation"
   | "high_level_design"
@@ -339,10 +340,16 @@ export interface HighLevelDesignJobResult {
   project: ProjectSnapshotResult;
 }
 
+export interface CustomerAnalysisJobResult {
+  analysis: CustomerAnalysisResult;
+  project: ProjectSnapshotResult;
+}
+
 export type ProjectJobResult =
   | ArtifactGenerationJobResult
   | SolutionEvaluationJobResult
-  | HighLevelDesignJobResult;
+  | HighLevelDesignJobResult
+  | CustomerAnalysisJobResult;
 
 export interface ProjectJobRecord {
   id: string;
