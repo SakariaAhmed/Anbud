@@ -192,6 +192,24 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+async function readJsonPayload<T>(
+  response: Response,
+  fallbackMessage: string,
+): Promise<T & { error?: string }> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    return (await response.json()) as T & { error?: string };
+  }
+
+  const text = await response.text().catch(() => "");
+  const looksLikeHtml = /^\s*</.test(text);
+  return {
+    error: looksLikeHtml
+      ? `${fallbackMessage} Serveren returnerte en HTML-feilside i stedet for JSON. Sjekk serverloggen for detaljer.`
+      : text.trim() || fallbackMessage,
+  } as T & { error?: string };
+}
+
 function DeferredSectionLoader({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground shadow-sm">
@@ -373,10 +391,10 @@ export function ProjectWorkspacePage({
       cache: "no-store",
     })
       .then(async (response) => {
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           error?: string;
           analysis?: CustomerAnalysisResult | null;
-        };
+        }>(response, "Kunne ikke hente kundeanalysen.");
         if (!response.ok) {
           throw new Error(payload.error || "Kunne ikke hente kundeanalysen.");
         }
@@ -608,11 +626,11 @@ export function ProjectWorkspacePage({
         method: "POST",
         body: formData,
       });
-      const payload = (await response.json()) as {
+      const payload = await readJsonPayload<{
         error?: string;
         document?: ProjectDocument;
         project?: ProjectSnapshotPayload;
-      };
+      }>(response, "Kunne ikke laste opp dokumentet.");
       if (!response.ok || !payload.document || !payload.project) {
         throw new Error(payload.error || "Kunne ikke laste opp dokumentet.");
       }
@@ -771,32 +789,73 @@ export function ProjectWorkspacePage({
   }
 
   async function onGenerateCustomerAnalysis() {
-    await runAction("analysis", async () => {
-      const response = await fetch(
-        `/api/projects/${project.id}/customer-analysis`,
-        { method: "POST" },
-      );
-      const payload = (await response.json()) as {
-        error?: string;
-        analysis?: CustomerAnalysisResult;
-        project?: ProjectSnapshotPayload;
-      };
-      if (!response.ok || !payload.analysis || !payload.project) {
-        throw new Error(payload.error || "Kunne ikke generere kundeanalyse.");
-      }
-      setProject((current) =>
-        normalizeProjectState(
-          patchProjectWithSnapshot(
-            { ...current, customer_analysis: payload.analysis! },
-            payload.project!,
-          ),
-          {
-            preserveArtifactCount: !artifactsLoaded,
-          },
-        ),
-      );
-      setAnalysisLoaded(true);
-    });
+    await runAction(
+      "analysis",
+      async () => {
+        const response = await fetch(`/api/projects/${project.id}/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: "customer_analysis",
+          }),
+        });
+        const payload = await readJsonPayload<{
+          error?: string;
+          job?: ProjectJobRecord;
+        }>(response, "Kunne ikke starte kundeanalysen.");
+        if (!response.ok || !payload.job) {
+          throw new Error(payload.error || "Kunne ikke starte kundeanalysen.");
+        }
+        setBusyMessage(payload.job.message);
+        while (true) {
+          await sleep(1500);
+          const statusResponse = await fetch(
+            `/api/projects/${project.id}/jobs/${payload.job.id}`,
+            { cache: "no-store" },
+          );
+          const statusPayload = await readJsonPayload<{
+            error?: string;
+            job?: ProjectJobRecord;
+          }>(statusResponse, "Kunne ikke hente jobbstatus.");
+          if (!statusResponse.ok || !statusPayload.job) {
+            throw new Error(
+              statusPayload.error || "Kunne ikke hente jobbstatus.",
+            );
+          }
+          setBusyMessage(statusPayload.job.message);
+          if (statusPayload.job.status === "failed") {
+            throw new Error(
+              statusPayload.job.error || "Kundeanalysen feilet.",
+            );
+          }
+          if (
+            statusPayload.job.status !== "completed" ||
+            !statusPayload.job.result
+          ) {
+            continue;
+          }
+
+          const result = statusPayload.job.result as {
+            analysis: CustomerAnalysisResult;
+            project: ProjectSnapshotPayload;
+          };
+          setProject((current) =>
+            normalizeProjectState(
+              patchProjectWithSnapshot(
+                { ...current, customer_analysis: result.analysis },
+                result.project,
+              ),
+              {
+                preserveArtifactCount: !artifactsLoaded,
+              },
+            ),
+          );
+          setAnalysisLoaded(true);
+          break;
+        }
+      },
+      ["Starter kundeanalysen ..."],
+    );
   }
 
   async function onGenerateHighLevelDesign() {

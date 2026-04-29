@@ -262,6 +262,16 @@ export async function POST(
       );
     }
 
+    if (!customerDocument.raw_text.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "Dokumentgrunnlaget har ingen lesbar tekst. Last opp dokumentet på nytt som tekstbasert PDF/DOCX, eller bruk OCR først.",
+        },
+        { status: 400 },
+      );
+    }
+
     if (section && !existingAnalysis) {
       return NextResponse.json(
         { error: "Generer kundeanalyse før du regenererer en seksjon." },

@@ -15,7 +15,25 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: "Du må velge en fil." }, { status: 400 });
     }
 
+    if (file.size <= 0) {
+      return NextResponse.json(
+        { error: "Filen er tom. Last opp et dokument med innhold." },
+        { status: 400 },
+      );
+    }
+
     const parsed = await extractTextFromUpload(file);
+
+    if (!parsed.rawText.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "Dokumentet har ingen lesbar tekst. Last opp en tekstbasert PDF/DOCX, eller bruk OCR før opplasting.",
+        },
+        { status: 400 },
+      );
+    }
+
     const document = await saveDocument({
       projectId: id,
       title: title || file.name.replace(/\.[^.]+$/, ""),

@@ -488,6 +488,17 @@ function isMissingLegacyDocumentColumn(error: { message?: string } | null) {
 function fromUnknownDocumentSummaryRow(
   row: Record<string, unknown>,
 ): DocumentSummaryRow {
+  const rawFileSize = Number(row.file_size_bytes ?? 0);
+  let fileSizeBytes = Number.isFinite(rawFileSize) ? rawFileSize : 0;
+  if (fileSizeBytes <= 0 && typeof row.file_base64 === "string") {
+    try {
+      const fileBase64 = decryptString(row.file_base64);
+      fileSizeBytes = Buffer.from(fileBase64, "base64").length;
+    } catch {
+      fileSizeBytes = 0;
+    }
+  }
+
   return {
     id: String(row.id ?? ""),
     project_id: String(row.project_id ?? ""),
@@ -505,7 +516,7 @@ function fromUnknownDocumentSummaryRow(
     ),
     file_format: String(row.file_format ?? "txt"),
     content_type: String(row.content_type ?? "application/octet-stream"),
-    file_size_bytes: Number(row.file_size_bytes ?? 0),
+    file_size_bytes: fileSizeBytes,
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(
       row.updated_at ?? row.created_at ?? new Date().toISOString(),
