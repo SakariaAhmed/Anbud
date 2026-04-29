@@ -1569,23 +1569,13 @@ export async function analyzeCustomerDocuments(input: {
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
 }) {
-  const [customerDocumentDigest, supportingDocumentDigests] = await Promise.all([
-    buildDocumentInsightDigest("Primært kundedokument", input.customerDocument),
-    Promise.all(
-      input.supportingDocuments.slice(0, 3).map((document, index) =>
-        buildDocumentInsightDigest(`Støttedokument ${index + 1}`, document, {
-          maxChunks: 4,
-        }),
-      ),
-    ),
-  ]);
   const supportingContexts = input.supportingDocuments
-    .slice(0, 6)
+    .slice(0, 2)
     .map((document, index) =>
       documentContext(`Støttedokument ${index + 1}`, document, {
-        textLimit: 8000,
-        structureLimit: 8,
-        structureTextLimit: 180,
+        textLimit: 4000,
+        structureLimit: 6,
+        structureTextLimit: 160,
       }),
     )
     .join("\n\n");
@@ -1600,24 +1590,20 @@ export async function analyzeCustomerDocuments(input: {
       `Prosjektnavn: ${input.projectName}\nArbeid som et tilbudsteam som skal forstå kunden dypt og bruke funnene i posisjonering, løsningsarbeid og tilbudsbesvarelse.`,
     ),
     documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: 16000,
+      textLimit: 12000,
       structureLimit: 10,
       structureTextLimit: 180,
     }),
-    customerDocumentDigest
-      ? buildDelimitedContext(
-          "Analyseinstruks for store dokumenter",
-          "Bruk bred dokumentdekning aktivt. Den dekker flere sider/blokker enn hovedutdraget og skal hindre at krav, risiko, evalueringskriterier eller verdidrivere sent i dokumentet overses. Hvis dekningen varsler figurer, tabeller eller grafer, vær tydelig på hva som kan utledes fra teksten og hva som bør verifiseres.",
-        )
-      : "",
-    customerDocumentDigest ?? "",
+    buildDelimitedContext(
+      "Dokumentdekningsregel",
+      "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
+    ),
     supportingContexts
       ? buildDelimitedContext(
           "Tilleggsregel",
           "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.",
         )
       : "",
-    ...supportingDocumentDigests.filter(Boolean),
     supportingContexts,
   ]
     .filter(Boolean)
@@ -1627,7 +1613,7 @@ export async function analyzeCustomerDocuments(input: {
     system: buildCustomerAnalysisPrompt(),
     user: userPrompt,
     temperature: 0.1,
-    model: ANALYSIS_MODEL,
+    model: FAST_MODEL,
   });
 
   const signalSourceText = [
