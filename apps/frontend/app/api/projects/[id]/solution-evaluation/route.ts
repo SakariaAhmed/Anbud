@@ -3,13 +3,14 @@ import { NextResponse } from "next/server";
 import { evaluateSolutionDocument, synthesizeAndEvaluateSolution } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
-  getPrimaryDocument,
+  getDocumentDetail,
   getProjectSnapshot,
   getSolutionEvaluation,
-  listSupportingDocuments,
+  listProjectDocuments,
   saveGeneratedArtifact,
   saveSolutionEvaluation,
 } from "@/lib/server/projects-db";
+import { splitServiceDescriptionDetails } from "@/lib/service-description";
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -28,17 +29,32 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as { allow_generated_solution?: boolean };
+    const body = (await request.json().catch(() => ({}))) as {
+      allow_generated_solution?: boolean;
+      solution_document_id?: string;
+    };
 
-    const [customerDocument, solutionDocument, supportingDocuments, customerAnalysis] = await Promise.all([
-      getPrimaryDocument(id, "primary_customer_document"),
-      getPrimaryDocument(id, "primary_solution_document"),
-      listSupportingDocuments(id),
+    const [documents, selectedSolutionDocument, customerAnalysis] = await Promise.all([
+      listProjectDocuments(id),
+      body.solution_document_id
+        ? getDocumentDetail(id, body.solution_document_id)
+        : Promise.resolve(null),
       getCustomerAnalysis(id),
     ]);
+    const { projectDocuments } = splitServiceDescriptionDetails(documents);
+    const customerDocument =
+      projectDocuments.find((document) => document.id !== body.solution_document_id) ??
+      projectDocuments[0] ??
+      null;
+    const solutionDocument = selectedSolutionDocument;
+    const supportingDocuments = projectDocuments.filter(
+      (document) =>
+        document.id !== customerDocument?.id &&
+        document.id !== solutionDocument?.id,
+    );
 
     if (!customerDocument) {
-      return NextResponse.json({ error: "Last opp et primært kundedokument først." }, { status: 400 });
+      return NextResponse.json({ error: "Last opp minst ett dokument først." }, { status: 400 });
     }
 
     if (!customerAnalysis) {
@@ -51,7 +67,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!evaluationDocument) {
       if (!body.allow_generated_solution) {
         return NextResponse.json(
-          { error: "Last opp et primært løsningsdokument først, eller godkjenn at systemet genererer et internt utkast." },
+          { error: "Velg dokumentet som skal vurderes som arkitektløsning." },
           { status: 400 },
         );
       }
@@ -99,7 +115,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     const saved = await saveSolutionEvaluation(id, {
       customerDocumentId: customerDocument.id,
-      solutionDocumentId: solutionDocument?.id ?? null,
+      solutionDocumentId: evaluationDocument.id,
       result,
     });
 

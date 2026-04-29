@@ -4,9 +4,9 @@ import { answerProjectChat } from "@/lib/server/ai";
 import {
   appendChatMessage,
   getCustomerAnalysis,
-  getPrimaryDocument,
   getProjectDetail,
   listChatMessages,
+  listProjectDocuments,
 } from "@/lib/server/projects-db";
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
@@ -32,12 +32,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: "Meldingen kan ikke være tom." }, { status: 400 });
     }
 
-    const [project, customerAnalysis, customerDocument, solutionDocument] = await Promise.all([
+    const [project, customerAnalysis, documents] = await Promise.all([
       getProjectDetail(id),
       getCustomerAnalysis(id),
-      getPrimaryDocument(id, "primary_customer_document"),
-      getPrimaryDocument(id, "primary_solution_document"),
+      listProjectDocuments(id),
     ]);
+    const customerDocument = documents[0] ?? null;
+    const solutionDocument = documents[1] ?? null;
 
     await appendChatMessage(id, "user", message, {
       customer_analysis_present: Boolean(customerAnalysis),

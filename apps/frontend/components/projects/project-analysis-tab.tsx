@@ -42,19 +42,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
-import {
-  Input,
-  Label,
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/projects/primitives";
+import { Input, Label } from "@/components/projects/primitives";
 import {
   AnalysisTabEmptyState,
-  SUPPORTING_SUBTYPES,
   VALUE_LABELS,
   ValueTags,
-  roleLabel,
-  supportingSubtypeLabel,
 } from "@/components/projects/project-workspace-shared";
 import { getCustomerAnalysisSectionSnapshot } from "@/lib/customer-analysis-history";
 import type {
@@ -64,8 +56,6 @@ import type {
   CustomerAnalysisSectionHistoryEntry,
   CustomerAnalysisSectionSnapshotMap,
   ProjectDocument,
-  ProjectDocumentRole,
-  SupportingDocumentSubtype,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -577,23 +567,17 @@ const NEED_CARD_STYLES = [
   {
     railClassName: "from-blue-600 via-blue-500 to-cyan-500",
     iconClassName: "bg-blue-600 text-white",
-    askClassName: "border-blue-200 bg-blue-50/78 text-blue-950",
-    avoidClassName: "border-slate-200 bg-white/86 text-slate-800",
-    badgeClassName: "bg-blue-600/10 text-blue-800",
+    shellClassName: "border-blue-200 bg-blue-50/70 text-blue-950",
   },
   {
     railClassName: "from-emerald-600 via-emerald-500 to-teal-500",
     iconClassName: "bg-emerald-600 text-white",
-    askClassName: "border-emerald-200 bg-emerald-50/78 text-emerald-950",
-    avoidClassName: "border-slate-200 bg-white/86 text-slate-800",
-    badgeClassName: "bg-emerald-600/10 text-emerald-800",
+    shellClassName: "border-emerald-200 bg-emerald-50/70 text-emerald-950",
   },
   {
     railClassName: "from-amber-500 via-orange-400 to-rose-400",
     iconClassName: "bg-amber-500 text-white",
-    askClassName: "border-amber-200 bg-amber-50/80 text-amber-950",
-    avoidClassName: "border-slate-200 bg-white/86 text-slate-800",
-    badgeClassName: "bg-amber-500/12 text-amber-800",
+    shellClassName: "border-amber-200 bg-amber-50/72 text-amber-950",
   },
 ] as const;
 
@@ -834,14 +818,14 @@ function DonutChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
   const { data: normalizedData, total } = normalizePieData(data);
-  const centerX = 260;
-  const centerY = 150;
-  const outerRadius = 96;
-  const innerRadius = 56;
+  const centerX = 330;
+  const centerY = 190;
+  const outerRadius = 130;
+  const innerRadius = 76;
   const labelOrbitRadius = outerRadius + 22;
   const calloutRadius = outerRadius + 40;
-  const labelLeftX = 96;
-  const labelRightX = 500;
+  const labelLeftX = 112;
+  const labelRightX = 668;
   let accumulated = 0;
   const activeIndex = hoveredIndex ?? selectedIndex;
   const segments = normalizedData.map((item) => {
@@ -880,17 +864,17 @@ function DonutChart({
     labelPositions
       .filter((label) => label.side === "left")
       .map((label) => ({ index: label.index, y: label.labelPoint.y })),
-    40,
-    258,
-    28,
+    48,
+    332,
+    34,
   );
   const rightLabelMap = distributePieLabelYPositions(
     labelPositions
       .filter((label) => label.side === "right")
       .map((label) => ({ index: label.index, y: label.labelPoint.y })),
-    40,
-    258,
-    28,
+    48,
+    332,
+    34,
   );
   function handlePointerLeave() {
     setHoveredIndex(null);
@@ -925,7 +909,7 @@ function DonutChart({
 
   return (
     <div
-      className="value-donut-frame mx-auto flex w-full max-w-[36rem] flex-col items-center"
+      className="value-donut-frame mx-auto flex w-full max-w-[50rem] flex-col items-center"
       onPointerLeave={handlePointerLeave}
     >
       <div className="relative w-full">
@@ -933,7 +917,7 @@ function DonutChart({
         <div className="pointer-events-none absolute inset-x-16 top-4 h-12 rounded-full bg-slate-200/35 blur-3xl" />
         <motion.div className="relative">
           <svg
-            viewBox="0 0 596 300"
+            viewBox="0 0 780 380"
             className="w-full overflow-visible"
             aria-label="Kakediagram"
           >
@@ -1262,8 +1246,8 @@ function ValuePieModule({
         </span>
       </div>
 
-      <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.18fr)_minmax(13.5rem,0.56fr)] 2xl:items-start">
-        <div className="min-w-0 rounded-[1.4rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,246,255,0.62)_60%,rgba(248,250,252,0.82))] px-3 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.045)] md:px-4">
+      <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(13.5rem,0.45fr)] 2xl:items-start">
+        <div className="min-w-0 rounded-[1.4rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,246,255,0.62)_60%,rgba(248,250,252,0.82))] px-3 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.045)] md:px-5">
           <DonutChart
             data={chartData}
             selectedIndex={selectedIndex}
@@ -1369,8 +1353,8 @@ function KeywordPieModule({
         </span>
       </div>
 
-      <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.18fr)_minmax(13.5rem,0.56fr)] 2xl:items-start">
-        <div className="min-w-0 rounded-[1.4rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(240,253,250,0.68)_58%,rgba(248,250,252,0.82))] px-3 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.045)] md:px-4">
+      <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(13.5rem,0.45fr)] 2xl:items-start">
+        <div className="min-w-0 rounded-[1.4rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(240,253,250,0.68)_58%,rgba(248,250,252,0.82))] px-3 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.045)] md:px-5">
           <DonutChart
             data={chartData}
             selectedIndex={selectedIndex}
@@ -1711,24 +1695,18 @@ function splitLeadSentence(content: string) {
 }
 
 function extractSummaryHighlights(content: string) {
-  const normalized = content
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!normalized) {
+  const trimmed = content.trim();
+  if (!trimmed) {
     return [];
   }
 
-  const sentences = normalized
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
+  const explicitItems = trimmed
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .map((line) => line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/)?.[1]?.trim() ?? "")
     .filter(Boolean);
 
-  if (!sentences.length) {
-    return [normalized];
-  }
-
-  return sentences.slice(0, 3);
+  return explicitItems.length >= 2 ? explicitItems.slice(0, 5) : [];
 }
 
 const SECTION_TABS = [
@@ -1944,44 +1922,12 @@ function getTopImplicitRequirements(
     .map((item) => item.requirement);
 }
 
-function inferNeedAntiPositioning(
-  requirement: CustomerAnalysisResult["implicit_requirements"][number],
-) {
-  const text =
-    `${requirement.title} ${requirement.category} ${requirement.description}`.toLowerCase();
-
-  if (/logistikk|drift|avbrudd|nedetid|kritisk|stabil/.test(text)) {
-    return "Ikke posisjonér dette som en generell skyreise. Kunden kjøper kontroll, stabilitet og risikoreduksjon like mye som teknologi.";
-  }
-
-  if (/sikker|tilgang|identitet|compliance|etterlevelse|styring/.test(text)) {
-    return "Ikke posisjonér dette som funksjonalitet alene. Kunden trenger sporbar styring, tydelige kontroller og lav etterlevelsesrisiko.";
-  }
-
-  if (/migrer|overgang|fase|implement|gjennomføring/.test(text)) {
-    return "Ikke posisjonér dette som rask flytting. Kunden trenger en kontrollert overgang med beslutningspunkter, ansvar og trygg drift underveis.";
-  }
-
-  if (/integrasjon|api|data|database|system|erp|wms|crm/.test(text)) {
-    return "Ikke posisjonér dette som isolerte systemendringer. Kunden trenger eierskap til avhengigheter, integrasjoner og operasjonell helhet.";
-  }
-
-  if (/kost|økonomi|budsjett|finans|lisens|forbruk/.test(text)) {
-    return "Ikke posisjonér dette som maksimal modernisering. Kunden trenger styrbar kostnad, tydelige prioriteringer og dokumentert effekt.";
-  }
-
-  if (/bruker|adopsjon|opplevelse|arbeidsflyt|prosess/.test(text)) {
-    return "Ikke posisjonér dette som plattform for plattformens skyld. Kunden trenger merkbar operasjonell nytte for brukere og prosesser.";
-  }
-
-  return "Ikke posisjonér dette som en generisk standardleveranse. Vis konkret hvordan behovet styrer løsning, gjennomføring og tilbudsbudskap.";
-}
-
 function getNeedAsk(
   requirement: CustomerAnalysisResult["implicit_requirements"][number],
 ) {
   const lead = splitLeadSentence(requirement.description).lead;
-  return lead || requirement.description || requirement.title;
+  const text = lead || requirement.description || requirement.title;
+  return text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
 }
 
 function normalizeReferenceText(value: string) {
@@ -2013,20 +1959,14 @@ function findDocumentForReference(
     normalizedReference.includes("kundedokument") ||
     normalizedReference.includes("customer document")
   ) {
-    return (
-      documents.find((document) => document.role === "primary_customer_document") ??
-      null
-    );
+    return documents[0] ?? null;
   }
 
   if (
     normalizedReference.includes("losningsdokument") ||
     normalizedReference.includes("solution document")
   ) {
-    return (
-      documents.find((document) => document.role === "primary_solution_document") ??
-      null
-    );
+    return documents[0] ?? null;
   }
 
   const referenceTokens = tokenizeReferenceText(sourceReference);
@@ -2036,10 +1976,6 @@ function findDocumentForReference(
     const candidates = [
       document.title,
       document.file_name,
-      roleLabel(document.role),
-      document.role === "supporting_document"
-        ? supportingSubtypeLabel(document.supporting_subtype)
-        : "",
     ];
     const normalizedCandidates = candidates
       .map((candidate) => normalizeReferenceText(candidate))
@@ -2093,85 +2029,36 @@ function NeedSignalCard({
     : null;
 
   return (
-    <article className="relative overflow-hidden rounded-xl border border-slate-200/80 bg-white/88 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+    <article className="relative flex h-full min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white/88 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
       <div
         className={`absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b ${style.railClassName}`}
       />
-      <div className="px-5 py-5 md:px-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <div
-              className={`flex size-11 shrink-0 items-center justify-center rounded-lg shadow-sm ${style.iconClassName}`}
-            >
-              <ListChecks className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-md px-2.5 py-1 text-xs font-semibold ${style.badgeClassName}`}
-                >
-                  Behov {index + 1}
-                </span>
-                <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                  {requirement.category}
-                </span>
-                <span className="rounded-md bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white">
-                  {requirement.importance}
-                </span>
-              </div>
-              <h4 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">
-                {requirement.title}
-              </h4>
-            </div>
+      <div className="flex min-w-0 flex-1 px-5 py-5 md:px-6">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-4">
+          <div
+            className={`flex size-12 shrink-0 items-center justify-center rounded-lg shadow-sm ${style.iconClassName}`}
+          >
+            <span className="text-base font-black">{index + 1}</span>
           </div>
-        </div>
-
-        <div className="mt-5 grid min-w-0 gap-4 2xl:grid-cols-2">
-          <div className={`rounded-lg border px-4 py-4 ${style.askClassName}`}>
-            <div className="mb-3 flex min-w-0 items-center gap-2">
-              <div className="flex size-8 items-center justify-center rounded-md bg-white/82">
-                <Target className="size-4" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <h4 className="text-lg font-semibold leading-7 tracking-[-0.025em] text-slate-950">
+              {requirement.title}
+            </h4>
+            <div className={`mt-4 flex-1 rounded-lg border px-4 py-4 ${style.shellClassName}`}>
+              <div className="mb-2 flex min-w-0 items-center gap-2">
+                <Target className="size-4 shrink-0" />
+                <p className="text-[0.72rem] font-bold uppercase tracking-[0.16em] opacity-70">
+                  Behovet
+                </p>
               </div>
-              <p className="text-[0.72rem] font-bold uppercase tracking-[0.16em] opacity-70">
-                Kunden spør egentlig om
-              </p>
+              <MarkdownViewer
+                content={getNeedAsk(requirement)}
+                className="analysis-prose max-w-none text-[0.96rem] font-medium leading-7"
+              />
             </div>
-            <MarkdownViewer
-              content={getNeedAsk(requirement)}
-              className="analysis-prose max-w-none text-[1.04rem] font-medium leading-8"
-            />
-          </div>
-
-          <div className={`rounded-lg border px-4 py-4 ${style.avoidClassName}`}>
-            <div className="mb-3 flex min-w-0 items-center gap-2">
-              <div className="flex size-8 items-center justify-center rounded-md bg-slate-100 text-slate-700">
-                <Shield className="size-4" />
-              </div>
-              <p className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-500">
-                Ikke posisjonér som
-              </p>
-            </div>
-            <MarkdownViewer
-              content={inferNeedAntiPositioning(requirement)}
-              className="analysis-prose max-w-none text-[1.02rem] leading-8 text-slate-700"
-            />
-          </div>
-        </div>
-
-        <details className="group mt-4 rounded-lg border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-600 transition-colors hover:text-slate-950 [&::-webkit-details-marker]:hidden">
-            <span>Grunnlag og kilde</span>
-            <span className="text-xs text-slate-400 transition-transform group-open:rotate-180">
-              ↓
-            </span>
-          </summary>
-          <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
-            <MarkdownViewer
-              content={requirement.description}
-              className="analysis-prose max-w-none text-[1rem] leading-7 text-slate-600"
-            />
-            {requirement.source_reference || requirement.source_excerpt ? (
-              <p className="text-sm leading-6 text-slate-500">
+            {requirement.source_reference ? (
+              <p className="mt-3 text-sm leading-6 text-slate-500">
+                Kilde:{" "}
                 {documentHref ? (
                   <a
                     href={documentHref}
@@ -2182,14 +2069,12 @@ function NeedSignalCard({
                     {requirement.source_reference || referencedDocument?.title}
                   </a>
                 ) : (
-                  requirement.source_reference || "Ingen referanse"
-                )}{" "}
-                ·{" "}
-                {requirement.source_excerpt || ""}
+                  requirement.source_reference
+                )}
               </p>
             ) : null}
           </div>
-        </details>
+        </div>
       </div>
     </article>
   );
@@ -2204,16 +2089,12 @@ export function ProjectAnalysisTab({
   sectionBusy,
   busyMessage,
   onGenerate,
-  onRegenerateSection,
   onSaveAnalysis,
   uploadOpen,
   onToggleUploadOpen,
   docTitle,
   onDocTitleChange,
-  docRole,
-  onDocRoleChange,
-  supportingSubtype,
-  onSupportingSubtypeChange,
+  selectedDocumentName,
   onFileChange,
   documentFileInputKey,
   onUploadDocument,
@@ -2229,7 +2110,6 @@ export function ProjectAnalysisTab({
   sectionBusy: CustomerAnalysisSection | null;
   busyMessage: string;
   onGenerate: () => void;
-  onRegenerateSection: (section: CustomerAnalysisSection) => void;
   onSaveAnalysis: (
     section: CustomerAnalysisSection,
     snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
@@ -2238,10 +2118,7 @@ export function ProjectAnalysisTab({
   onToggleUploadOpen: () => void;
   docTitle: string;
   onDocTitleChange: (value: string) => void;
-  docRole: ProjectDocumentRole;
-  onDocRoleChange: (value: ProjectDocumentRole) => void;
-  supportingSubtype: SupportingDocumentSubtype;
-  onSupportingSubtypeChange: (value: SupportingDocumentSubtype) => void;
+  selectedDocumentName: string;
   onFileChange: (file: File | null) => void;
   documentFileInputKey: number;
   onUploadDocument: (event: FormEvent<HTMLFormElement>) => Promise<void>;
@@ -2350,9 +2227,7 @@ export function ProjectAnalysisTab({
   const topSignalWords = customerAnalysis
     ? getTopSignalWords(customerAnalysis)
     : [];
-  const hasPrimaryCustomerDocument = documents.some(
-    (document) => document.role === "primary_customer_document",
-  );
+  const hasDocuments = documents.length > 0;
 
   function getSectionLabel(section: CustomerAnalysisSection) {
     return SECTION_TABS.find((tab) => tab.value === section)?.label ?? section;
@@ -2406,29 +2281,6 @@ export function ProjectAnalysisTab({
     }
   }
 
-  function renderRegenerateButton(
-    section: CustomerAnalysisSection,
-    label = "Regenerer seksjon",
-  ) {
-    const isSectionBusy = sectionBusy === section;
-
-    return (
-      <Button
-        onClick={() => onRegenerateSection(section)}
-        disabled={busy || saveBusy || Boolean(sectionBusy)}
-        variant="outline"
-        size="sm"
-      >
-        {isSectionBusy ? (
-          <Spinner className="size-4" />
-        ) : (
-          <RefreshCw data-icon="inline-start" />
-        )}
-        {label}
-      </Button>
-    );
-  }
-
   function renderEditButton(section: CustomerAnalysisSection) {
     const isEditing = editingSection === section;
 
@@ -2476,16 +2328,8 @@ export function ProjectAnalysisTab({
     );
   }
 
-  function renderSectionActions(
-    section: CustomerAnalysisSection,
-    regenerateLabel?: string,
-  ) {
-    return (
-      <>
-        {renderRegenerateButton(section, regenerateLabel)}
-        {renderEditButton(section)}
-      </>
-    );
+  function renderSectionActions(section: CustomerAnalysisSection) {
+    return renderEditButton(section);
   }
 
   function renderSectionEditor(section: CustomerAnalysisSection) {
@@ -2572,25 +2416,27 @@ export function ProjectAnalysisTab({
                 </TabsList>
               </div>
             </div>
-            <Button
-              onClick={onGenerate}
-              disabled={busy || Boolean(sectionBusy) || !hasPrimaryCustomerDocument}
-              className="mb-2 max-w-full shrink-0"
-            >
-              {busy ? (
-                <Spinner className="size-4" />
-              ) : (
-                <RefreshCw data-icon="inline-start" />
-              )}
-              Generer kundeanalyse
-            </Button>
+            {!customerAnalysis ? (
+              <Button
+                onClick={onGenerate}
+                disabled={busy || Boolean(sectionBusy) || !hasDocuments}
+                className="mb-2 max-w-full shrink-0"
+              >
+                {busy ? (
+                  <Spinner className="size-4" />
+                ) : (
+                  <RefreshCw data-icon="inline-start" />
+                )}
+                Generer kundeanalyse
+              </Button>
+            ) : null}
           </div>
         </div>
 
         <TabsContent value="documents" className="mt-0">
           <SectionSurface
             title={`Dokumentgrunnlag (${documents.length})`}
-            description="Last opp, organiser og administrer prosjektets dokumenter direkte fra kundeanalysen."
+            description="Alle opplastede filer lagres i samme dokumentbank og kan velges der dokumentgrunnlag trengs."
             icon={FileText}
           >
             <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]">
@@ -2610,7 +2456,7 @@ export function ProjectAnalysisTab({
                     />
                   </button>
                   {uploadOpen ? (
-                    <form onSubmit={onUploadDocument} className="space-y-3 p-4">
+                    <form onSubmit={onUploadDocument} className="space-y-4 p-4">
                       <div className="space-y-1.5">
                         <Label htmlFor="docTitle" className="font-medium">
                           Tittel
@@ -2622,67 +2468,43 @@ export function ProjectAnalysisTab({
                           placeholder="Visningsnavn i prosjektet"
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="docRole" className="font-medium">
-                          Dokumentrolle
-                        </Label>
-                        <NativeSelect
-                          id="docRole"
-                          value={docRole}
-                          onChange={(event) =>
-                            onDocRoleChange(
-                              event.target.value as ProjectDocumentRole,
-                            )
-                          }
-                        >
-                          <NativeSelectOption value="primary_customer_document">
-                            Primært kundedokument
-                          </NativeSelectOption>
-                          <NativeSelectOption value="primary_solution_document">
-                            Primært løsningsdokument
-                          </NativeSelectOption>
-                          <NativeSelectOption value="supporting_document">
-                            Støttedokument
-                          </NativeSelectOption>
-                        </NativeSelect>
-                      </div>
-                      {docRole === "supporting_document" ? (
-                        <div className="space-y-1.5">
-                          <Label
-                            htmlFor="supportingSubtype"
-                            className="font-medium"
-                          >
-                            Undertype
-                          </Label>
-                          <NativeSelect
-                            id="supportingSubtype"
-                            value={supportingSubtype}
-                            onChange={(event) =>
-                              onSupportingSubtypeChange(
-                                event.target.value as SupportingDocumentSubtype,
-                              )
-                            }
-                          >
-                            {SUPPORTING_SUBTYPES.map((item) => (
-                              <NativeSelectOption
-                                key={item.value}
-                                value={item.value}
-                              >
-                                {item.label}
-                              </NativeSelectOption>
-                            ))}
-                          </NativeSelect>
-                        </div>
-                      ) : null}
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         <Label htmlFor="file" className="font-medium">
-                          Fil
+                          Dokument
                         </Label>
+                        <label
+                          htmlFor="file"
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = "copy";
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            onFileChange(event.dataTransfer.files?.[0] ?? null);
+                          }}
+                          className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-7 text-center transition-colors hover:border-primary/60 hover:bg-primary/5"
+                        >
+                          <span className="mb-3 flex size-11 items-center justify-center rounded-lg bg-white text-primary shadow-sm">
+                            <Upload className="size-5" />
+                          </span>
+                          <span className="text-sm font-semibold text-foreground">
+                            Dra og slipp dokumentet her
+                          </span>
+                          <span className="mt-1 text-xs leading-5 text-muted-foreground">
+                            eller klikk for å velge PDF, DOCX, TXT eller MD.
+                          </span>
+                          {selectedDocumentName ? (
+                            <span className="mt-3 max-w-full truncate rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                              {selectedDocumentName}
+                            </span>
+                          ) : null}
+                        </label>
                         <Input
                           key={documentFileInputKey}
                           id="file"
                           type="file"
                           accept=".pdf,.docx,.txt,.md"
+                          className="sr-only"
                           onChange={(e) =>
                             onFileChange(e.target.files?.[0] ?? null)
                           }
@@ -2730,11 +2552,6 @@ export function ProjectAnalysisTab({
                             </span>
                           </div>
                           <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
-                            {roleLabel(document.role)}
-                            {document.role === "supporting_document"
-                              ? ` · ${supportingSubtypeLabel(document.supporting_subtype)}`
-                              : ""}
-                            {" · "}
                             {document.file_format.toUpperCase()}{" "}
                             {Math.round(document.file_size_bytes / 1024)} KB
                           </p>
@@ -2836,26 +2653,10 @@ export function ProjectAnalysisTab({
                                   ))}
                                 </div>
                               </div>
-                            ) : null}
-
-                            <details className="group rounded-2xl border border-white/80 bg-white/88 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
-                              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-left [&::-webkit-details-marker]:hidden">
-                                <div>
-                                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
-                                    Full oppsummering
-                                  </p>
-                                  <p className="mt-1 text-sm font-semibold text-slate-900">
-                                    Vis hovedteksten bak punktene
-                                  </p>
-                                </div>
-                                <span className="text-sm font-semibold text-slate-500 transition-transform group-open:rotate-180">
-                                  ↓
-                                </span>
-                              </summary>
-
-                              <div className="mt-4 border-t border-slate-200/80 pt-4">
+                            ) : (
+                              <div className="rounded-2xl border border-white/80 bg-white/88 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
                                 <p
-                                  className={`text-[1.08rem] leading-7 tracking-[-0.03em] text-slate-950 ${panel.expandedLeadClassName}`}
+                                  className={`text-[1.08rem] leading-7 text-slate-950 ${panel.expandedLeadClassName}`}
                                 >
                                   {summaryText.lead || panel.content}
                                 </p>
@@ -2866,7 +2667,39 @@ export function ProjectAnalysisTab({
                                   />
                                 ) : null}
                               </div>
-                            </details>
+                            )}
+
+                            {panel.bullets.length ? (
+                              <details className="group rounded-2xl border border-white/80 bg-white/88 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+                                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-left [&::-webkit-details-marker]:hidden">
+                                  <div>
+                                    <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                                      Full oppsummering
+                                    </p>
+                                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                                      Vis hovedteksten bak punktene
+                                    </p>
+                                  </div>
+                                  <span className="text-sm font-semibold text-slate-500 transition-transform group-open:rotate-180">
+                                    ↓
+                                  </span>
+                                </summary>
+
+                                <div className="mt-4 border-t border-slate-200/80 pt-4">
+                                  <p
+                                    className={`text-[1.08rem] leading-7 text-slate-950 ${panel.expandedLeadClassName}`}
+                                  >
+                                    {summaryText.lead || panel.content}
+                                  </p>
+                                  {summaryText.body ? (
+                                    <MarkdownViewer
+                                      content={summaryText.body}
+                                      className="analysis-prose mt-3 max-w-none text-[0.98rem] leading-7 text-slate-600"
+                                    />
+                                  ) : null}
+                                </div>
+                              </details>
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -2936,9 +2769,9 @@ export function ProjectAnalysisTab({
           <TabsContent value="design" className="mt-0">
             <SectionSurface
               title="High-level design av løsningen"
-              description="Vis eller regenerer anbefalt overordnet arkitektur når denne delen er klar."
+              description="Vis og rediger anbefalt overordnet arkitektur når denne delen er klar."
               icon={Compass}
-              action={renderSectionActions("design", "Regenerer design")}
+              action={renderSectionActions("design")}
             >
               {renderSectionEditor("design")}
               {customerAnalysis.high_level_solution_design.trim() ||
@@ -2971,8 +2804,8 @@ export function ProjectAnalysisTab({
                     Ingen design lagret ennå
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Regenerer design-delen når du vil få en oppdatert
-                    anbefaling og et nytt diagram.
+                    Rediger design-delen når du vil legge inn anbefaling og
+                    diagram.
                   </p>
                 </div>
               )}
@@ -3017,7 +2850,7 @@ export function ProjectAnalysisTab({
             >
               {renderSectionEditor("needs")}
               {topImplicitRequirements.length ? (
-                <div className="space-y-4">
+                <div className="grid min-w-0 gap-4 xl:grid-cols-3">
                   {topImplicitRequirements.map((req, index) => (
                     <NeedSignalCard
                       key={`implicit-${req.title}-${index}`}
@@ -3169,8 +3002,7 @@ export function ProjectAnalysisTab({
             {SECTION_TABS.filter((tab) => tab.value !== "documents").map((tab) => (
               <TabsContent key={tab.value} value={tab.value} className="mt-0">
                 <AnalysisTabEmptyState>
-                  Ingen analyse ennå. Last opp et primært kundedokument og generer
-                  analysen.
+                  Ingen analyse ennå. Last opp et dokument og generer analysen.
                 </AnalysisTabEmptyState>
               </TabsContent>
             ))}

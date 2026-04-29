@@ -32,8 +32,8 @@ export function ProjectChatTab({
           Sparring med prosjektkontekst
         </h2>
         <p className="mt-1 max-w-xl text-sm text-foreground/60">
-          Chatten bruker kundedokument, analyse, løsningsvurdering og
-          tidligere meldinger som kontekst.
+          Chatten bruker dokumenter, analyse, løsningsvurdering og tidligere
+          meldinger som kontekst.
         </p>
       </div>
 

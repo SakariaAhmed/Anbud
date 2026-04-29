@@ -29,8 +29,6 @@ import {
 } from "@/components/projects/decorative-lottie";
 import type { ProjectSummary } from "@/lib/types";
 
-type SpotlightUploadMode = "new_project" | "supporting_document";
-
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
 }
@@ -38,19 +36,13 @@ function fileTitle(file: File) {
 async function uploadProjectDocument({
   projectId,
   file,
-  role,
 }: {
   projectId: string;
   file: File;
-  role: "primary_customer_document" | "supporting_document";
 }) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("title", fileTitle(file));
-  formData.append("role", role);
-  if (role === "supporting_document") {
-    formData.append("supporting_subtype", "vedlegg");
-  }
 
   const response = await fetch(`/api/projects/${projectId}/documents`, {
     method: "POST",
@@ -65,7 +57,7 @@ async function uploadProjectDocument({
 function statusColor(status: ProjectSummary["status"]) {
   switch (status) {
     case "Klar for sparring":
-    case "Løsningsdokument lastet opp":
+    case "Dokument lastet opp":
       return "text-blue-800 bg-blue-50 border-blue-200";
     case "Kundeanalyse klar":
       return "text-amber-800 bg-amber-50 border-amber-200";
@@ -77,7 +69,7 @@ function statusColor(status: ProjectSummary["status"]) {
 function statusDot(status: ProjectSummary["status"]) {
   switch (status) {
     case "Klar for sparring":
-    case "Løsningsdokument lastet opp":
+    case "Dokument lastet opp":
       return "bg-blue-500";
     case "Kundeanalyse klar":
       return "bg-amber-500";
@@ -1087,8 +1079,6 @@ function HomepageRefreshAnimation() {
 export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadMode, setUploadMode] =
-    useState<SpotlightUploadMode>("new_project");
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -1097,7 +1087,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   const totals = {
     total: projects.length,
     analyses: projects.filter((p) => p.customer_analysis_generated).length,
-    solutionDocs: projects.filter((p) => p.solution_document_uploaded).length,
+    documents: projects.reduce((sum, p) => sum + p.document_count, 0),
     artifacts: projects.reduce((sum, p) => sum + p.artifact_count, 0),
   };
 
@@ -1121,8 +1111,8 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
       note: "Analyser klare for videre arbeid",
     },
     {
-      label: "Løsningsdokumenter",
-      value: totals.solutionDocs,
+      label: "Dokumenter",
+      value: totals.documents,
       icon: FileText,
       accent: "from-amber-500/16 via-amber-400/7 to-transparent",
       badge: "text-amber-700 bg-amber-50 ring-amber-100",
@@ -1146,39 +1136,25 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
     setUploadError("");
     setUploading(true);
     try {
-      let projectId = latestProject?.id ?? "";
-
-      if (uploadMode === "new_project" || !projectId) {
-        const response = await fetch("/api/projects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: fileTitle(file),
-            customer_name: "",
-            industry: "",
-            description: "",
-          }),
-        });
-        const payload = (await response.json()) as {
-          id?: string;
-          error?: string;
-        };
-        if (!response.ok || !payload.id) {
-          throw new Error(payload.error || "Kunne ikke opprette prosjekt.");
-        }
-        projectId = payload.id;
-        await uploadProjectDocument({
-          projectId,
-          file,
-          role: "primary_customer_document",
-        });
-      } else {
-        await uploadProjectDocument({
-          projectId,
-          file,
-          role: "supporting_document",
-        });
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: fileTitle(file),
+          customer_name: "",
+          industry: "",
+          description: "",
+        }),
+      });
+      const payload = (await response.json()) as {
+        id?: string;
+        error?: string;
+      };
+      if (!response.ok || !payload.id) {
+        throw new Error(payload.error || "Kunne ikke opprette prosjekt.");
       }
+      const projectId = payload.id;
+      await uploadProjectDocument({ projectId, file });
 
       router.push(`/projects/${projectId}`);
     } catch (error) {
@@ -1245,7 +1221,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               Tilbudsarbeidsflate
             </h2>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-slate-200/85">
-              Last opp kundedokumenter, analyser med AI, og generer profesjonelle
+              Last opp dokumenter, analyser med AI, og generer profesjonelle
               løsningsutkast for teamet.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -1274,31 +1250,6 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               className="pointer-events-none absolute -right-12 top-14 size-44 opacity-20 mix-blend-screen"
               speed={0.42}
             />
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setUploadMode("new_project")}
-                className={`h-8 rounded-md px-2 text-xs font-semibold transition-colors ${
-                  uploadMode === "new_project"
-                    ? "bg-white text-slate-950"
-                    : "bg-white/[0.07] text-slate-100 hover:bg-white/[0.12]"
-                }`}
-              >
-                Nytt prosjekt
-              </button>
-              <button
-                type="button"
-                disabled={!latestProject}
-                onClick={() => setUploadMode("supporting_document")}
-                className={`h-8 rounded-md px-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-                  uploadMode === "supporting_document"
-                    ? "bg-white text-slate-950"
-                    : "bg-white/[0.07] text-slate-100 hover:bg-white/[0.12]"
-                }`}
-              >
-                Støttedokument
-              </button>
-            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -1328,12 +1279,10 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
             >
               <UploadCloud className="size-7 text-blue-100" />
               <span className="mt-3 text-sm font-semibold text-white">
-                {uploading ? "Laster opp ..." : "Slipp kundedokument her"}
+                {uploading ? "Laster opp ..." : "Slipp dokument her"}
               </span>
               <span className="mt-1 text-xs leading-5 text-slate-100/75">
-                {uploadMode === "new_project"
-                  ? "Oppretter prosjekt og lagrer som primært kundedokument."
-                  : `Legges som støtte i ${latestProject?.name ?? "siste prosjekt"}.`}
+                Oppretter prosjekt og lagrer filen i dokumenter.
               </span>
             </button>
             {uploadError ? (
@@ -1395,7 +1344,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               Ingen prosjekter ennå
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Opprett et prosjekt og last opp kundedokumenter for å komme i gang.
+              Opprett et prosjekt og last opp dokumenter for å komme i gang.
             </p>
             <Link
               href="/projects/new"
@@ -1457,7 +1406,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                     <td className="hidden px-4 py-3 text-sm tabular-nums text-muted-foreground sm:table-cell">
                       {project.artifact_count}
                     </td>
-                    <td className="hidden px-4 py-3 text-right text-xs text-muted-foreground md:table-cell">
+                    <td className="hidden px-4 py-3 text-left text-xs text-muted-foreground md:table-cell">
                       {formatDate(project.last_activity_at)}
                     </td>
                     <td className="px-4 py-3">
@@ -1483,7 +1432,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
         </h2>
         <div className="flex items-start gap-4">
           {[
-            { step: "1", title: "Last opp grunnlag", desc: "Primært kundedokument, løsningsdokument og støttekontekst." },
+            { step: "1", title: "Last opp grunnlag", desc: "Samle alle dokumenter i samme dokumentbank." },
             { step: "2", title: "Analyser kunden", desc: "Generer kundeanalyse med krav, risiko og posisjonering." },
             { step: "3", title: "Generer utkast", desc: "Generer løsningsutkast basert på prosjektkonteksten." },
           ].map((item, i) => (

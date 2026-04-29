@@ -13,11 +13,14 @@ import {
   type CSSProperties,
 } from "react";
 import {
+  ArrowRight,
   Brain,
+  ClipboardCheck,
+  FileCheck2,
   LayoutGrid,
-  ListChecks,
   Scale,
   Sparkles,
+  Wrench,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -49,11 +52,9 @@ import type {
   GeneratedArtifact,
   ProjectDetail,
   ProjectDocument,
-  ProjectDocumentRole,
   ProjectJobRecord,
   ProjectStatus,
   SolutionEvaluationResult,
-  SupportingDocumentSubtype,
 } from "@/lib/types";
 
 const ProjectEvaluationTab = dynamic(
@@ -78,7 +79,49 @@ const ProjectDeliveryTab = dynamic(
   {
     loading: () => (
       <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster gjennomføring ...
+        Laster fremdriftsplan ...
+      </div>
+    ),
+  },
+);
+
+const ProjectExecutiveSummaryTab = dynamic(
+  () =>
+    import("@/components/projects/project-executive-summary-tab").then(
+      (module) => module.ProjectExecutiveSummaryTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster leder oppsummering ...
+      </div>
+    ),
+  },
+);
+
+const ProjectServiceDescriptionTab = dynamic(
+  () =>
+    import("@/components/projects/project-service-description-tab").then(
+      (module) => module.ProjectServiceDescriptionTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster tjenestebeskrivelse ...
+      </div>
+    ),
+  },
+);
+
+const ProjectRequirementResponseTab = dynamic(
+  () =>
+    import("@/components/projects/project-requirement-response-tab").then(
+      (module) => module.ProjectRequirementResponseTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster kravbesvarelse ...
       </div>
     ),
   },
@@ -128,9 +171,7 @@ function normalizeProjectState(
     ...project,
     status: deriveProjectStatus(project),
     document_count: project.documents.length,
-    supporting_document_count: project.documents.filter(
-      (d) => d.role === "supporting_document",
-    ).length,
+    supporting_document_count: project.documents.length,
     artifact_count: options?.preserveArtifactCount
       ? project.artifact_count
       : project.generated_artifacts.length,
@@ -198,15 +239,9 @@ export function ProjectWorkspacePage({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [docTitle, setDocTitle] = useState("");
-  const [docRole, setDocRole] = useState<ProjectDocumentRole>(
-    "primary_customer_document",
-  );
-  const [supportingSubtype, setSupportingSubtype] =
-    useState<SupportingDocumentSubtype>("rfp");
   const [file, setFile] = useState<File | null>(null);
   const [artifactInstructions, setArtifactInstructions] = useState("");
-  const [deliveryArtifactInstructions, setDeliveryArtifactInstructions] =
-    useState("");
+  const [requirementInstructions, setRequirementInstructions] = useState("");
   const [activeTab, setActiveTab] = useState("analysis");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
@@ -452,7 +487,9 @@ export function ProjectWorkspacePage({
 
   useEffect(() => {
     if (
-      (activeTab !== "generator" && activeTab !== "delivery") ||
+      (activeTab !== "generator" &&
+        activeTab !== "delivery" &&
+        activeTab !== "requirements") ||
       artifactsLoaded ||
       project.artifact_count === 0
     )
@@ -503,10 +540,6 @@ export function ProjectWorkspacePage({
       const formData = new FormData();
       formData.append("file", file);
       formData.append("title", docTitle);
-      formData.append("role", docRole);
-      if (docRole === "supporting_document") {
-        formData.append("supporting_subtype", supportingSubtype);
-      }
       const response = await fetch(`/api/projects/${project.id}/documents`, {
         method: "POST",
         body: formData,
@@ -543,13 +576,11 @@ export function ProjectWorkspacePage({
     });
   }
 
-  async function onUploadArchitectureDocument(file: File, title: string) {
-    await runAction("upload-architecture", async () => {
+  async function onUploadServiceDescriptionDocument(file: File) {
+    await runAction("upload-service-description", async () => {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("title", title);
-      formData.append("role", "primary_solution_document");
-
+      formData.append("title", file.name.replace(/\.[^.]+$/, ""));
       const response = await fetch(`/api/projects/${project.id}/documents`, {
         method: "POST",
         body: formData,
@@ -561,27 +592,17 @@ export function ProjectWorkspacePage({
       };
       if (!response.ok || !payload.document || !payload.project) {
         throw new Error(
-          payload.error || "Kunne ikke laste opp arkitektløsningen.",
+          payload.error || "Kunne ikke laste opp tjenestebeskrivelsen.",
         );
       }
-
       setProject((current) =>
         normalizeProjectState(
           patchProjectWithSnapshot(
             {
               ...current,
-              solution_evaluation: null,
               documents: dedupeDocuments([
                 payload.document!,
-                ...current.documents.map((document) =>
-                  document.role === "primary_solution_document"
-                    ? {
-                        ...document,
-                        role: "supporting_document" as const,
-                        supporting_subtype: "utkast" as const,
-                      }
-                    : document,
-                ),
+                ...current.documents,
               ]),
             },
             payload.project!,
@@ -591,50 +612,39 @@ export function ProjectWorkspacePage({
           },
         ),
       );
-      setEvaluationLoaded(true);
+      setArtifactsLoaded(true);
     });
   }
 
-  async function onSelectArchitectureDocument(documentId: string) {
-    await runAction("select-architecture", async () => {
-      const response = await fetch(
-        `/api/projects/${project.id}/documents/${documentId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "use_as_architecture_solution" }),
-        },
+  async function onUploadRequirementDocument(file: File) {
+    await runAction("upload-requirement-document", async () => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append(
+        "title",
+        `Kravdokument - ${file.name.replace(/\.[^.]+$/, "")}`,
       );
+      const response = await fetch(`/api/projects/${project.id}/documents`, {
+        method: "POST",
+        body: formData,
+      });
       const payload = (await response.json()) as {
         error?: string;
         document?: ProjectDocument;
         project?: ProjectSnapshotPayload;
       };
       if (!response.ok || !payload.document || !payload.project) {
-        throw new Error(
-          payload.error || "Kunne ikke velge arkitektløsningen.",
-        );
+        throw new Error(payload.error || "Kunne ikke laste opp kravdokumentet.");
       }
-
       setProject((current) =>
         normalizeProjectState(
           patchProjectWithSnapshot(
             {
               ...current,
-              solution_evaluation: null,
-              documents: current.documents.map((document) => {
-                if (document.id === payload.document!.id) {
-                  return payload.document!;
-                }
-                if (document.role === "primary_solution_document") {
-                  return {
-                    ...document,
-                    role: "supporting_document" as const,
-                    supporting_subtype: "utkast" as const,
-                  };
-                }
-                return document;
-              }),
+              documents: dedupeDocuments([
+                payload.document!,
+                ...current.documents,
+              ]),
             },
             payload.project!,
           ),
@@ -643,7 +653,7 @@ export function ProjectWorkspacePage({
           },
         ),
       );
-      setEvaluationLoaded(true);
+      setArtifactsLoaded(true);
     });
   }
 
@@ -668,12 +678,10 @@ export function ProjectWorkspacePage({
               (item) => item.id !== document.id,
             ),
             customer_analysis:
-              document.role === "primary_customer_document" &&
               !payload.project?.customer_analysis_generated
                 ? null
                 : current.customer_analysis,
             solution_evaluation:
-              document.role === "primary_solution_document" &&
               !payload.project?.solution_evaluation_generated
                 ? null
                 : current.solution_evaluation,
@@ -720,46 +728,6 @@ export function ProjectWorkspacePage({
       );
       setAnalysisLoaded(true);
     });
-  }
-
-  async function onRegenerateCustomerAnalysisSection(
-    section: CustomerAnalysisSection,
-  ) {
-    await runAction(
-      `analysis-section-${section}`,
-      async () => {
-        const response = await fetch(
-          `/api/projects/${project.id}/customer-analysis`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ section }),
-          },
-        );
-        const payload = (await response.json()) as {
-          error?: string;
-          analysis?: CustomerAnalysisResult;
-          project?: ProjectSnapshotPayload;
-        };
-        if (!response.ok || !payload.analysis || !payload.project) {
-          throw new Error(payload.error || "Kunne ikke regenerere seksjonen.");
-        }
-        setProject((current) =>
-          normalizeProjectState(
-            patchProjectWithSnapshot(
-              { ...current, customer_analysis: payload.analysis! },
-              payload.project!,
-            ),
-            {
-              preserveArtifactCount: !artifactsLoaded,
-            },
-          ),
-        );
-        setAnalysisLoaded(true);
-        setNotice("Seksjonen er regenerert og lagret i kundeanalysen.");
-      },
-      ["Regenererer valgt seksjon ..."],
-    );
   }
 
   async function onGenerateHighLevelDesign() {
@@ -970,7 +938,6 @@ export function ProjectWorkspacePage({
           body: JSON.stringify({
             kind: "artifact_generation",
             artifact_type: "gjennomforing_og_risiko",
-            instructions: deliveryArtifactInstructions,
           }),
         });
         const payload = (await response.json()) as {
@@ -979,7 +946,7 @@ export function ProjectWorkspacePage({
         };
         if (!response.ok || !payload.job) {
           throw new Error(
-            payload.error || "Kunne ikke starte jobben for gjennomføring.",
+            payload.error || "Kunne ikke starte jobben for fremdriftsplan.",
           );
         }
         setBusyMessage(payload.job.message);
@@ -1002,7 +969,7 @@ export function ProjectWorkspacePage({
           if (statusPayload.job.status === "failed") {
             throw new Error(
               statusPayload.job.error ||
-                "Jobben for gjennomføringsplanen feilet.",
+                "Jobben for fremdriftsplanen feilet.",
             );
           }
           if (
@@ -1033,11 +1000,88 @@ export function ProjectWorkspacePage({
           break;
         }
       },
-      ["Starter jobben for gjennomføringsplanen ..."],
+      ["Starter jobben for fremdriftsplanen ..."],
     );
   }
 
-  async function onGenerateSolutionEvaluation() {
+  async function onGenerateRequirementResponse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runAction(
+      "requirement-response",
+      async () => {
+        const response = await fetch(`/api/projects/${project.id}/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: "artifact_generation",
+            artifact_type: "forbedret_kravsvar",
+            instructions: requirementInstructions,
+          }),
+        });
+        const payload = (await response.json()) as {
+          error?: string;
+          job?: ProjectJobRecord;
+        };
+        if (!response.ok || !payload.job) {
+          throw new Error(
+            payload.error || "Kunne ikke starte jobben for kravbesvarelse.",
+          );
+        }
+        setBusyMessage(payload.job.message);
+        while (true) {
+          await sleep(1500);
+          const statusResponse = await fetch(
+            `/api/projects/${project.id}/jobs/${payload.job.id}`,
+            { cache: "no-store" },
+          );
+          const statusPayload = (await statusResponse.json()) as {
+            error?: string;
+            job?: ProjectJobRecord;
+          };
+          if (!statusResponse.ok || !statusPayload.job) {
+            throw new Error(
+              statusPayload.error || "Kunne ikke hente jobbstatus.",
+            );
+          }
+          setBusyMessage(statusPayload.job.message);
+          if (statusPayload.job.status === "failed") {
+            throw new Error(
+              statusPayload.job.error || "Jobben for kravbesvarelse feilet.",
+            );
+          }
+          if (
+            statusPayload.job.status !== "completed" ||
+            !statusPayload.job.result
+          )
+            continue;
+
+          const result = statusPayload.job.result as {
+            artifact: GeneratedArtifact;
+            project: ProjectSnapshotPayload;
+          };
+          setProject((current) =>
+            normalizeProjectState(
+              patchProjectWithSnapshot(
+                {
+                  ...current,
+                  generated_artifacts: [
+                    result.artifact,
+                    ...current.generated_artifacts,
+                  ],
+                  artifact_count: current.artifact_count + 1,
+                },
+                result.project,
+              ),
+            ),
+          );
+          break;
+        }
+      },
+      ["Starter jobben for kravbesvarelse ..."],
+    );
+  }
+
+  async function onGenerateSolutionEvaluation(solutionDocumentId?: string) {
     await runAction(
       "solution-evaluation",
       async () => {
@@ -1047,6 +1091,7 @@ export function ProjectWorkspacePage({
           body: JSON.stringify({
             kind: "solution_evaluation",
             allow_generated_solution: false,
+            solution_document_id: solutionDocumentId,
           }),
         });
         const payload = (await response.json()) as {
@@ -1111,88 +1156,6 @@ export function ProjectWorkspacePage({
     );
   }
 
-  async function onImproveSystemSolutionToPerfectScore() {
-    await runAction(
-      "perfect-system-solution",
-      async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            kind: "perfect_system_solution",
-          }),
-        });
-        const payload = (await response.json()) as {
-          error?: string;
-          job?: ProjectJobRecord;
-        };
-        if (!response.ok || !payload.job) {
-          throw new Error(
-            payload.error || "Kunne ikke starte forbedring av systemløsningen.",
-          );
-        }
-        setBusyMessage(payload.job.message);
-        while (true) {
-          await sleep(1500);
-          const statusResponse = await fetch(
-            `/api/projects/${project.id}/jobs/${payload.job.id}`,
-            { cache: "no-store" },
-          );
-          const statusPayload = (await statusResponse.json()) as {
-            error?: string;
-            job?: ProjectJobRecord;
-          };
-          if (!statusResponse.ok || !statusPayload.job) {
-            throw new Error(
-              statusPayload.error || "Kunne ikke hente jobbstatus.",
-            );
-          }
-          setBusyMessage(statusPayload.job.message);
-          if (statusPayload.job.status === "failed") {
-            throw new Error(
-              statusPayload.job.error ||
-                "Forbedringen av systemløsningen feilet.",
-            );
-          }
-          if (
-            statusPayload.job.status !== "completed" ||
-            !statusPayload.job.result
-          ) {
-            continue;
-          }
-
-          const result = statusPayload.job.result as {
-            artifact: GeneratedArtifact;
-            project: ProjectSnapshotPayload;
-          };
-          setProject((current) =>
-            normalizeProjectState(
-              patchProjectWithSnapshot(
-                {
-                  ...current,
-                  generated_artifacts: [
-                    result.artifact,
-                    ...current.generated_artifacts,
-                  ],
-                  artifact_count: current.artifact_count + 1,
-                },
-                result.project,
-              ),
-              {
-                preserveArtifactCount: !artifactsLoaded,
-              },
-            ),
-          );
-          setNotice(
-            "Forbedret systemløsning er lagret som nytt løsningsutkast.",
-          );
-          break;
-        }
-      },
-      ["Starter forbedring av systemløsningen mot 100/100 ..."],
-    );
-  }
-
   const customerAnalysis =
     project.customer_analysis as CustomerAnalysisResult | null;
   const solutionEvaluation =
@@ -1200,8 +1163,11 @@ export function ProjectWorkspacePage({
   const workspaceNavItems = [
     { value: "analysis", label: "Kundeanalyse", icon: Brain },
     { value: "evaluation", label: "Vurdering", icon: Scale },
-    { value: "delivery", label: "Gjennomføring", icon: ListChecks },
+    { value: "service-description", label: "Tjenestebeskrivelse", icon: Wrench },
+    { value: "requirements", label: "Kravbesvarelse", icon: FileCheck2 },
     { value: "generator", label: "Løsningsutkast", icon: Sparkles },
+    { value: "executive-summary", label: "Leder oppsummering", icon: ClipboardCheck },
+    { value: "delivery", label: "Fremdriftsplan", icon: ArrowRight },
   ] as const;
   const projectMonogram = project.name.trim().charAt(0).toUpperCase() || "A";
 
@@ -1363,31 +1329,25 @@ export function ProjectWorkspacePage({
                     <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
                       {project.name}
                     </h2>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-sm text-muted-foreground">
-                      {project.customer_name ? (
-                        <span className="font-medium">
-                          {project.customer_name}
-                        </span>
-                      ) : null}
-                      {project.industry ? (
-                        <>
+                    <p className="mt-1.5 text-left text-sm text-muted-foreground">
+                      Oppdatert {formatDate(project.last_activity_at)}
+                    </p>
+                    {project.customer_name || project.industry ? (
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-sm text-muted-foreground">
+                        {project.customer_name ? (
+                          <span className="font-medium">
+                            {project.customer_name}
+                          </span>
+                        ) : null}
+                        {project.customer_name && project.industry ? (
                           <span className="text-border">·</span>
-                          <span>{project.industry}</span>
-                        </>
-                      ) : null}
-                      <span className="text-border">·</span>
-                      <span>
-                        Oppdatert {formatDate(project.last_activity_at)}
-                      </span>
-                    </div>
+                        ) : null}
+                        {project.industry ? <span>{project.industry}</span> : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
-              {project.description ? (
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-foreground/70">
-                  {project.description}
-                </p>
-              ) : null}
             </section>
 
             {error ? (
@@ -1422,16 +1382,12 @@ export function ProjectWorkspacePage({
                     parseCustomerAnalysisSectionBusy(busy) ? busyMessage : ""
                   }
                   onGenerate={onGenerateCustomerAnalysis}
-                  onRegenerateSection={onRegenerateCustomerAnalysisSection}
                   onSaveAnalysis={onSaveAnalysis}
                   uploadOpen={uploadOpen}
                   onToggleUploadOpen={() => setUploadOpen((open) => !open)}
                   docTitle={docTitle}
                   onDocTitleChange={setDocTitle}
-                  docRole={docRole}
-                  onDocRoleChange={setDocRole}
-                  supportingSubtype={supportingSubtype}
-                  onSupportingSubtypeChange={setSupportingSubtype}
+                  selectedDocumentName={file?.name ?? ""}
                   onFileChange={setFile}
                   documentFileInputKey={documentFileInputKey}
                   onUploadDocument={onUploadDocument}
@@ -1453,23 +1409,10 @@ export function ProjectWorkspacePage({
                 <ProjectEvaluationTab
                   documents={project.documents}
                   solutionEvaluation={solutionEvaluation}
-                  hasSolutionDocument={project.solution_document_uploaded}
+                  hasSolutionDocument={project.documents.length > 0}
                   busy={busy === "solution-evaluation"}
-                  uploadBusy={busy === "upload-architecture"}
-                  selectBusy={busy === "select-architecture"}
-                  improveBusy={busy === "perfect-system-solution"}
-                  busyMessage={
-                    busy === "solution-evaluation" ||
-                    busy === "perfect-system-solution"
-                      ? busyMessage
-                      : ""
-                  }
-                  onUploadArchitectureDocument={onUploadArchitectureDocument}
-                  onSelectArchitectureDocument={onSelectArchitectureDocument}
+                  busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
                   onGenerate={onGenerateSolutionEvaluation}
-                  onImproveSystemSolution={
-                    onImproveSystemSolutionToPerfectScore
-                  }
                 />
               )
             ) : null}
@@ -1480,11 +1423,57 @@ export function ProjectWorkspacePage({
                   (artifact) =>
                     artifact.artifact_type === "gjennomforing_og_risiko",
                 )}
-                artifactInstructions={deliveryArtifactInstructions}
                 busy={busy === "delivery-artifact"}
                 busyMessage={busy === "delivery-artifact" ? busyMessage : ""}
-                onArtifactInstructionsChange={setDeliveryArtifactInstructions}
+                hasCustomerAnalysis={Boolean(customerAnalysis)}
                 onSubmit={onGenerateDeliveryArtifact}
+              />
+            ) : null}
+
+            {activeTab === "service-description" ? (
+              <ProjectServiceDescriptionTab
+                projectId={project.id}
+                documents={project.documents}
+                uploadBusy={busy === "upload-service-description"}
+                deletingDocumentId={
+                  busy?.startsWith("delete-")
+                    ? busy.slice("delete-".length)
+                    : null
+                }
+                onUpload={onUploadServiceDescriptionDocument}
+                onDeleteDocument={onDeleteDocument}
+              />
+            ) : null}
+
+            {activeTab === "requirements" ? (
+              <ProjectRequirementResponseTab
+                projectId={project.id}
+                documents={project.documents}
+                artifacts={project.generated_artifacts.filter(
+                  (artifact) => artifact.artifact_type === "forbedret_kravsvar",
+                )}
+                instructions={requirementInstructions}
+                uploadBusy={busy === "upload-requirement-document"}
+                generateBusy={busy === "requirement-response"}
+                busyMessage={
+                  busy === "requirement-response" ? busyMessage : ""
+                }
+                deletingDocumentId={
+                  busy?.startsWith("delete-")
+                    ? busy.slice("delete-".length)
+                    : null
+                }
+                onUpload={onUploadRequirementDocument}
+                onDeleteDocument={onDeleteDocument}
+                onInstructionsChange={setRequirementInstructions}
+                onSubmit={onGenerateRequirementResponse}
+              />
+            ) : null}
+
+            {activeTab === "executive-summary" ? (
+              <ProjectExecutiveSummaryTab
+                solutionEvaluation={solutionEvaluation}
+                hasSolutionDocument={project.documents.length > 0}
               />
             ) : null}
 

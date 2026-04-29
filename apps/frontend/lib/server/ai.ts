@@ -166,6 +166,15 @@ function documentContext(
   ].join("\n\n");
 }
 
+function isRequirementDocument(document: ProjectDocumentDetail) {
+  const text = `${document.title} ${document.file_name}`.toLowerCase();
+  return (
+    text.includes("krav") ||
+    text.includes("requirement") ||
+    text.includes("requirements")
+  );
+}
+
 function emptyDocumentInsightDigest(): DocumentInsightDigest {
   return {
     document_summary: "",
@@ -1861,6 +1870,7 @@ export async function generateProjectArtifact(input: {
   solutionEvaluation: SolutionEvaluationResult | null;
   customerDocument: ProjectDocumentDetail | null;
   solutionDocument: ProjectDocumentDetail | null;
+  serviceDescriptionDocument?: ProjectDocumentDetail | null;
   supportingDocuments: ProjectDocumentDetail[];
   knowledgeArtifacts: Array<{
     title: string;
@@ -1893,6 +1903,38 @@ export async function generateProjectArtifact(input: {
       }),
     )
     .join("\n\n");
+  const serviceDescriptionContext = input.serviceDescriptionDocument
+    ? documentContext(
+        "Tjenestebeskrivelse - firmaets relevante tjenester og verktøy",
+        input.serviceDescriptionDocument,
+        {
+          textLimit: 12000,
+          structureLimit: 10,
+          structureTextLimit: 180,
+        },
+      )
+    : "";
+  const requirementDocumentContext =
+    input.artifactType === "forbedret_kravsvar"
+      ? [
+          input.customerDocument,
+          input.solutionDocument,
+          ...input.supportingDocuments,
+        ]
+          .filter(
+            (document): document is ProjectDocumentDetail =>
+              document !== null && isRequirementDocument(document),
+          )
+          .slice(0, 3)
+          .map((document, index) =>
+            documentContext(`Kravdokument ${index + 1}`, document, {
+              textLimit: 18000,
+              structureLimit: 14,
+              structureTextLimit: 220,
+            }),
+          )
+          .join("\n\n")
+      : "";
 
   const artifactKnowledge = input.knowledgeArtifacts
     .slice(0, 4)
@@ -1916,8 +1958,16 @@ export async function generateProjectArtifact(input: {
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
     buildDelimitedContext(
       "Kunnskapsregel",
-      "Bruk hele prosjektgrunnlaget som kunnskapsbase: kundedokument, løsningsdokument, støttedokumenter, strategi- og notatdokumenter, lagret analyse og tidligere arbeidstekster. Prioriter det mest oppdaterte og mest konkrete innholdet hvis kilder overlapper.",
+      "Bruk hele prosjektgrunnlaget som kunnskapsbase: kundedokument, løsningsdokument, støttedokumenter, strategi- og notatdokumenter, tjenestebeskrivelse, lagret analyse og tidligere arbeidstekster. Prioriter det mest oppdaterte og mest konkrete innholdet hvis kilder overlapper.",
     ),
+    serviceDescriptionContext
+      ? buildDelimitedContext(
+          "Regel for tjenestebeskrivelse",
+          "Tjenestebeskrivelsen er firmaets tjeneste- og verktøykatalog. Når du lager systemløsning eller løsningsutkast, skal du aktivt vurdere hvilke tjenester, leveranseområder, metoder og kapabiliteter derfra som er relevante for kundens behov. Bruk bare relevante deler, og knytt dem konkret til kundens situasjon. Ikke list alt firmaet tilbyr ukritisk.",
+        )
+      : "",
+    serviceDescriptionContext,
+    requirementDocumentContext,
     input.customerAnalysis
       ? buildDelimitedContext(
           "Kundeanalyse",

@@ -1,40 +1,20 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import {
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle2,
-  ClipboardCheck,
   FileText,
-  FileWarning,
-  Gauge,
-  Lightbulb,
   RefreshCw,
   Scale,
   ShieldCheck,
-  Target,
-  TrendingUp,
-  Upload,
+  Sparkles,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
-import { Input, Label } from "@/components/projects/primitives";
-import {
-  AnalysisTabEmptyState,
-  VALUE_LABELS,
-  ValueTags,
-} from "@/components/projects/project-workspace-shared";
+import { AnalysisTabEmptyState } from "@/components/projects/project-workspace-shared";
 import type { ProjectDocument, SolutionEvaluationResult } from "@/lib/types";
 
 function getArchitectureComparison(evaluation: SolutionEvaluationResult) {
@@ -51,34 +31,56 @@ function getArchitectureComparison(evaluation: SolutionEvaluationResult) {
   );
 }
 
-function ScoreBar({
-  label,
-  score,
-  tone,
-}: {
-  label: string;
-  score: number;
-  tone: "system" | "architect";
-}) {
+function ArchitectScoreCard({ score }: { score: number }) {
   const safeScore = Math.min(100, Math.max(0, Math.round(score || 0)));
-  const toneClassName =
-    tone === "architect"
-      ? "from-emerald-500 via-teal-500 to-cyan-500"
-      : "from-blue-600 via-indigo-500 to-sky-500";
+  const scoreColor =
+    safeScore >= 80
+      ? "text-emerald-700"
+      : safeScore >= 60
+        ? "text-teal-700"
+        : "text-amber-700";
 
   return (
-    <div className="rounded-lg border border-white/70 bg-white/86 px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.07)]">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-bold text-slate-900">{label}</p>
-        <span className="text-xl font-black tabular-nums text-slate-950">
-          {safeScore}/100
-        </span>
-      </div>
-      <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200/85 shadow-inner">
-        <div
-          className={`h-full rounded-full bg-gradient-to-r ${toneClassName}`}
-          style={{ width: `${safeScore}%` }}
-        />
+    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-500 via-yellow-400 to-emerald-500" />
+      <div className="px-5 py-5 md:px-6 md:py-6">
+        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+          <div className="min-w-0">
+            <p className="text-[0.74rem] font-bold uppercase tracking-[0.14em] text-slate-500">
+              Arkitektløsning
+            </p>
+            <h4 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950">
+              Score mot systemløsning
+            </h4>
+            <p className="mt-3 max-w-[38rem] text-[1rem] leading-7 text-slate-600">
+              Viser hvor godt arkitektløsningen dekker kundebehov, risiko og
+              konkurransekraft.
+            </p>
+          </div>
+          <div className="shrink-0 text-left md:text-right">
+            <div className={`text-5xl font-black leading-[0.9] tracking-[-0.04em] tabular-nums md:text-6xl ${scoreColor}`}>
+              {safeScore}%
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-7">
+          <div className="relative h-4 overflow-hidden rounded-full bg-slate-100 shadow-inner">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-red-500 via-yellow-400 to-emerald-500"
+              style={{ width: `${safeScore}%` }}
+            />
+            <div
+              className="absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-slate-950 shadow-[0_8px_18px_rgba(15,23,42,0.25)]"
+              style={{ left: `${safeScore}%` }}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-3 text-xs font-semibold text-slate-400">
+            <span>0%</span>
+            <span className="text-center">50%</span>
+            <span className="text-right">100%</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -117,35 +119,6 @@ function ComparisonList({
           />
         </div>
       ))}
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  icon: Icon,
-  className,
-}: {
-  label: string;
-  value: string;
-  icon: LucideIcon;
-  className: string;
-}) {
-  return (
-    <div className={`min-w-0 px-4 py-4 ${className}`}>
-      <div className="mb-3 flex items-center gap-2">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/80 text-slate-950 shadow-sm">
-          <Icon className="size-4" />
-        </span>
-        <p className="text-[0.7rem] font-black uppercase tracking-[0.16em] text-slate-700/70">
-          {label}
-        </p>
-      </div>
-      <MarkdownViewer
-        content={value}
-        className="analysis-prose text-[0.95rem] leading-6 text-slate-900"
-      />
     </div>
   );
 }
@@ -208,29 +181,102 @@ function FindingPanel({
   );
 }
 
-function DetailList({ items }: { items: string[] }) {
-  if (!items.length) {
-    return (
-      <p className="text-sm leading-6 text-muted-foreground">
-        Ingen punkter registrert.
-      </p>
-    );
+function buildArchitectureActions(evaluation: SolutionEvaluationResult) {
+  const sourceItems = evaluation.rewrite_suggestions.length
+    ? evaluation.rewrite_suggestions.map((suggestion, index) => ({
+        location: suggestion.target || "Arkitektløsningen generelt",
+        action: suggestion.suggestion,
+        reason:
+          evaluation.weaknesses[index] ??
+          evaluation.missing_elements[index] ??
+          evaluation.improvement_recommendations[index] ??
+          "",
+      }))
+    : evaluation.weaknesses.slice(0, 4).map((weakness, index) => ({
+        location:
+          evaluation.generic_sections[index] ||
+          evaluation.missing_elements[index] ||
+          "Arkitektløsningen generelt",
+        action:
+          evaluation.improvement_recommendations[index] ||
+          "Skriv delen mer konkret med ansvar, rekkefølge, beslutningspunkt og kundespesifikk konsekvens.",
+        reason: weakness,
+      }));
+
+  return sourceItems.slice(0, 4);
+}
+
+function ArchitectureCallToAction({
+  evaluation,
+}: {
+  evaluation: SolutionEvaluationResult;
+}) {
+  const actions = buildArchitectureActions(evaluation);
+
+  if (!actions.length) {
+    return null;
   }
 
   return (
-    <ul className="grid gap-2.5">
-      {items.map((item, index) => (
-        <li
-          key={`${item}-${index}`}
-          className="rounded-lg border border-slate-200/80 bg-white px-3 py-3 text-sm text-foreground shadow-sm"
-        >
-          <MarkdownViewer
-            content={item}
-            className="analysis-prose text-sm leading-6 text-slate-700"
-          />
-        </li>
-      ))}
-    </ul>
+    <section className="overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm">
+      <div className="border-b border-blue-100 bg-blue-50/80 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+            <Sparkles className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-blue-700">
+              Call To Action
+            </p>
+            <h3 className="mt-1 text-lg font-black text-slate-950">
+              Adresser svakhetene i arkitektløsningen
+            </h3>
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 px-5 py-5 lg:grid-cols-2">
+        {actions.map((item, index) => (
+          <article
+            key={`${item.location}-${index}`}
+            className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-4"
+          >
+            <div className="mb-3 flex items-start gap-3">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white">
+                {index + 1}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-slate-500">
+                  Hvor i arkitektløsningen
+                </p>
+                <p className="mt-1 text-sm font-bold leading-6 text-slate-950">
+                  {item.location}
+                </p>
+              </div>
+            </div>
+            {item.reason ? (
+              <div className="mb-3 rounded-md border border-rose-100 bg-white px-3 py-3">
+                <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-rose-600">
+                  Svakhet
+                </p>
+                <MarkdownViewer
+                  content={item.reason}
+                  className="analysis-prose text-sm leading-6 text-slate-700"
+                />
+              </div>
+            ) : null}
+            <div className="rounded-md border border-blue-100 bg-white px-3 py-3">
+              <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-blue-700">
+                Gjør dette
+              </p>
+              <MarkdownViewer
+                content={item.action}
+                className="analysis-prose text-sm leading-6 text-slate-800"
+              />
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -239,85 +285,55 @@ export function ProjectEvaluationTab({
   solutionEvaluation,
   hasSolutionDocument,
   busy,
-  uploadBusy,
-  selectBusy,
-  improveBusy,
   busyMessage,
-  onUploadArchitectureDocument,
-  onSelectArchitectureDocument,
   onGenerate,
-  onImproveSystemSolution,
 }: {
   documents: ProjectDocument[];
   solutionEvaluation: SolutionEvaluationResult | null;
   hasSolutionDocument: boolean;
   busy: boolean;
-  uploadBusy: boolean;
-  selectBusy: boolean;
-  improveBusy: boolean;
   busyMessage: string;
-  onUploadArchitectureDocument: (file: File, title: string) => Promise<void>;
-  onSelectArchitectureDocument: (documentId: string) => Promise<void>;
-  onGenerate: () => void;
-  onImproveSystemSolution: () => void;
+  onGenerate: (documentId: string) => void;
 }) {
-  const [architectureTitle, setArchitectureTitle] = useState("");
-  const [architectureFile, setArchitectureFile] = useState<File | null>(null);
-  const [architectureFileInputKey, setArchitectureFileInputKey] = useState(0);
   const [selectedDocumentId, setSelectedDocumentId] = useState(
-    documents.find((document) => document.role === "primary_solution_document")
-      ?.id ?? "",
+    documents[0]?.id ?? "",
   );
-  const architectureDocuments = documents.filter(
-    (document) => document.role !== "primary_customer_document",
-  );
-  const currentArchitectureDocument =
-    documents.find((document) => document.role === "primary_solution_document") ??
-    null;
-  const systemSolutionScore =
-    solutionEvaluation?.architecture_comparison?.system_solution_score ?? null;
-  const canImproveSystemSolution =
-    systemSolutionScore !== null && Math.round(systemSolutionScore) < 100;
-  const actionBusy = busy || uploadBusy || selectBusy || improveBusy;
+  const evaluatedDocument = solutionEvaluation?.solution_document_id
+    ? (documents.find(
+        (document) => document.id === solutionEvaluation.solution_document_id,
+      ) ?? documents[0] ?? null)
+    : (documents.find((document) => document.id === selectedDocumentId) ??
+      documents[0] ??
+      null);
+  const actionBusy = busy;
 
   useEffect(() => {
-    if (currentArchitectureDocument) {
-      setSelectedDocumentId(currentArchitectureDocument.id);
-    }
-  }, [currentArchitectureDocument?.id]);
-
-  async function handleUploadArchitecture(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!architectureFile) {
+    if (
+      solutionEvaluation?.solution_document_id &&
+      documents.some(
+        (document) => document.id === solutionEvaluation.solution_document_id,
+      )
+    ) {
+      setSelectedDocumentId(solutionEvaluation.solution_document_id);
       return;
     }
-    await onUploadArchitectureDocument(architectureFile, architectureTitle.trim());
-    setArchitectureTitle("");
-    setArchitectureFile(null);
-    setArchitectureFileInputKey((current) => current + 1);
-  }
+
+    const selectedDocumentExists = documents.some(
+      (document) => document.id === selectedDocumentId,
+    );
+    if (!selectedDocumentExists && documents[0]) {
+      setSelectedDocumentId(documents[0].id);
+    } else if (!documents.length && selectedDocumentId) {
+      setSelectedDocumentId("");
+    }
+  }, [documents, selectedDocumentId, solutionEvaluation?.solution_document_id]);
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <div className="mb-6 flex flex-wrap justify-end gap-2">
-        {canImproveSystemSolution ? (
-          <Button
-            onClick={onImproveSystemSolution}
-            disabled={actionBusy}
-            size="lg"
-            variant="outline"
-          >
-            {improveBusy ? (
-              <Spinner className="size-4" />
-            ) : (
-              <Target data-icon="inline-start" />
-            )}
-            Forbedre systemløsning til 100%
-          </Button>
-        ) : null}
         <Button
-          onClick={onGenerate}
-          disabled={actionBusy || !hasSolutionDocument}
+          onClick={() => onGenerate(selectedDocumentId)}
+          disabled={actionBusy || !selectedDocumentId}
           size="lg"
         >
           {busy ? (
@@ -329,64 +345,36 @@ export function ProjectEvaluationTab({
         </Button>
       </div>
 
-      <section className="mb-6 overflow-hidden rounded-xl border border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(240,253,250,0.74)_42%,rgba(239,246,255,0.72))] shadow-sm">
-        <div className="grid min-w-0 gap-5 px-5 py-5 xl:grid-cols-[minmax(20rem,0.85fr)_minmax(0,1.15fr)]">
-          <form
-            onSubmit={handleUploadArchitecture}
-            className="rounded-xl border border-teal-200/80 bg-white/78 px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]"
-          >
-            <div className="mb-4 flex items-start gap-3">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-white shadow-sm">
-                <Upload className="size-5" />
-              </div>
+      <section className="mb-6 overflow-hidden rounded-xl border border-slate-200/80 bg-white px-5 py-5 shadow-sm">
+        {solutionEvaluation ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+              Vurdering gjort fra
+            </p>
+            <div className="mt-3 flex min-w-0 items-start gap-3">
+              <FileText className="mt-0.5 size-4 shrink-0 text-teal-700" />
               <div className="min-w-0">
-                <h4 className="text-sm font-bold text-foreground">
-                  Last opp ny arkitektløsning
-                </h4>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  PDF, DOCX, TXT eller MD lagres som primært løsningsdokument.
+                <p className="truncate text-sm font-semibold text-slate-950">
+                  {evaluatedDocument?.title ?? "Ukjent dokumentgrunnlag"}
                 </p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="architectureTitle">Tittel</Label>
-                <Input
-                  id="architectureTitle"
-                  value={architectureTitle}
-                  onChange={(event) =>
-                    setArchitectureTitle(event.target.value)
-                  }
-                  placeholder="F.eks. Arkitektens løsningsforslag"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="architectureFile">Fil</Label>
-                <Input
-                  key={architectureFileInputKey}
-                  id="architectureFile"
-                  type="file"
-                  accept=".pdf,.docx,.txt,.md"
-                  onChange={(event) =>
-                    setArchitectureFile(event.target.files?.[0] ?? null)
-                  }
-                />
-              </div>
-              <Button
-                type="submit"
-                disabled={busy || selectBusy || uploadBusy || !architectureFile}
-                className="w-full"
-              >
-                {uploadBusy ? (
-                  <Spinner className="size-4" />
+                {evaluatedDocument ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {evaluatedDocument.file_format.toUpperCase()} ·{" "}
+                    {Math.max(
+                      1,
+                      Math.round(evaluatedDocument.file_size_bytes / 1024),
+                    )}{" "}
+                    KB
+                  </p>
                 ) : (
-                  <Upload data-icon="inline-start" />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Dokumentet finnes ikke lenger i dokumentbanken.
+                  </p>
                 )}
-                Last opp og bruk
-              </Button>
+              </div>
             </div>
-          </form>
-
+          </div>
+        ) : (
           <div className="rounded-xl border border-slate-200/80 bg-white/78 px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -394,35 +382,15 @@ export function ProjectEvaluationTab({
                   Velg fra opplastede dokumenter
                 </h4>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Scroll i listen og marker dokumentet som arkitektløsning.
+                  Velg hvilket dokument som skal vurderes som arkitektløsning.
                 </p>
               </div>
-              <Button
-                variant="outline"
-                disabled={
-                  busy ||
-                  uploadBusy ||
-                  selectBusy ||
-                  !selectedDocumentId ||
-                  selectedDocumentId === currentArchitectureDocument?.id
-                }
-                onClick={() => onSelectArchitectureDocument(selectedDocumentId)}
-              >
-                {selectBusy ? (
-                  <Spinner className="size-4" />
-                ) : (
-                  <CheckCircle2 data-icon="inline-start" />
-                )}
-                Bruk valgt
-              </Button>
             </div>
 
-            {architectureDocuments.length ? (
+            {documents.length ? (
               <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                {architectureDocuments.map((document) => {
+                {documents.map((document) => {
                   const isSelected = selectedDocumentId === document.id;
-                  const isActive =
-                    document.role === "primary_solution_document";
 
                   return (
                     <button
@@ -441,11 +409,6 @@ export function ProjectEvaluationTab({
                           <span className="truncate text-sm font-semibold text-foreground">
                             {document.title}
                           </span>
-                          {isActive ? (
-                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[0.7rem] font-bold uppercase tracking-[0.08em] text-emerald-800">
-                              Aktiv
-                            </span>
-                          ) : null}
                         </span>
                         <span className="mt-1 block text-xs text-muted-foreground">
                           {document.file_format.toUpperCase()} ·{" "}
@@ -466,10 +429,10 @@ export function ProjectEvaluationTab({
               </div>
             )}
           </div>
-        </div>
+        )}
       </section>
 
-      {(busy || improveBusy) && busyMessage ? (
+      {busy && busyMessage ? (
         <div className="mb-4 flex items-center gap-2 text-sm text-primary">
           <Spinner className="size-3.5" />
           <span>{busyMessage}</span>
@@ -480,130 +443,40 @@ export function ProjectEvaluationTab({
         <div className="space-y-6">
           {(() => {
             const comparison = getArchitectureComparison(solutionEvaluation);
-            const scoreDelta =
-              Math.round(comparison.system_solution_score || 0) -
-              Math.round(comparison.architect_solution_score || 0);
 
             return (
-              <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
-                <div className="grid min-w-0 lg:grid-cols-[minmax(0,0.95fr)_minmax(18rem,0.55fr)]">
-                  <div className="min-w-0 bg-[linear-gradient(135deg,rgba(15,23,42,0.98),rgba(17,94,89,0.92))] px-5 py-6 text-white md:px-6">
-                    <div className="mb-4 flex items-center gap-3">
-                      <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-white text-slate-950">
+              <section className="space-y-4">
+                <ArchitectScoreCard score={comparison.architect_solution_score} />
+
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white px-5 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.07)] md:px-7 md:py-7">
+                  <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
                         <Scale className="size-5" />
                       </span>
                       <div className="min-w-0">
-                        <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-cyan-100">
+                        <p className="text-xs font-bold uppercase text-slate-500">
                           Konklusjon
                         </p>
-                        <h3 className="mt-1 text-2xl font-black tracking-tight text-white">
+                        <h3 className="mt-1 text-3xl font-black text-slate-950">
                           {comparison.winner}
                         </h3>
                       </div>
                     </div>
-                    <div className="mb-4 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-200">
-                      <span>Arkitektløsning</span>
-                      <ArrowRight className="size-4 text-cyan-200" />
-                      <span>Systemstrategi</span>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-cyan-100">
-                        Delta {scoreDelta > 0 ? "+" : ""}
-                        {scoreDelta}
-                      </span>
-                    </div>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                      Arkitektløsning vurdert
+                    </span>
+                  </div>
+                  <div className="rounded-lg border-l-4 border-teal-500 bg-slate-50 px-4 py-4">
                     <MarkdownViewer
                       content={comparison.verdict}
-                      className="analysis-prose max-w-none text-[1rem] leading-7 text-slate-100"
+                      className="analysis-prose max-w-none text-[1rem] leading-7 text-slate-700"
                     />
                   </div>
-                  <div className="grid content-center gap-4 bg-slate-50 px-5 py-5">
-                    <ScoreBar
-                      label="Arkitektløsning"
-                      score={comparison.architect_solution_score}
-                      tone="architect"
-                    />
-                    <ScoreBar
-                      label="Systemløsning"
-                      score={comparison.system_solution_score}
-                      tone="system"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid min-w-0 gap-4 bg-slate-50/70 px-5 py-5 2xl:grid-cols-3">
-                  <FindingPanel
-                    title="Sterk kritikk"
-                    count={comparison.strong_critique.length}
-                    icon={AlertTriangle}
-                    items={comparison.strong_critique}
-                    tone="risk"
-                  />
-                  <FindingPanel
-                    title="Pragmatisk refleksjon"
-                    count={comparison.pragmatic_reflections.length}
-                    icon={Gauge}
-                    items={comparison.pragmatic_reflections}
-                    tone="gap"
-                  />
-                  <FindingPanel
-                    title="Strategiråd"
-                    count={comparison.strategy_improvement_advice.length}
-                    icon={Lightbulb}
-                    items={comparison.strategy_improvement_advice}
-                    tone="improve"
-                  />
                 </div>
               </section>
             );
           })()}
-
-          <section className="grid min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.62fr)]">
-            <div className="min-w-0 px-5 py-5 md:px-6">
-              <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-slate-500">
-                Ledelsesoppsummering
-              </p>
-              <MarkdownViewer
-                content={solutionEvaluation.executive_summary}
-                className="analysis-prose mt-3 text-[1rem] leading-7 text-slate-900"
-              />
-              <div className="mt-5 rounded-lg border-l-4 border-teal-600 bg-teal-50 px-4 py-4">
-                <p className="mb-2 text-sm font-black text-teal-950">
-                  Fit mot kundebehov
-                </p>
-                <MarkdownViewer
-                  content={solutionEvaluation.fit_to_customer_needs}
-                  className="analysis-prose text-sm leading-6 text-teal-950/80"
-                />
-              </div>
-            </div>
-            <div className="grid min-w-0 sm:grid-cols-2 xl:grid-cols-1">
-              <StatTile
-                label="Kvalitet"
-                value={solutionEvaluation.likely_score_assessment.quality}
-                icon={ClipboardCheck}
-                className="bg-sky-50"
-              />
-              <StatTile
-                label="Gjennomføring"
-                value={
-                  solutionEvaluation.likely_score_assessment.delivery_confidence
-                }
-                icon={Target}
-                className="bg-emerald-50"
-              />
-              <StatTile
-                label="Risiko"
-                value={solutionEvaluation.likely_score_assessment.risk}
-                icon={FileWarning}
-                className="bg-rose-50"
-              />
-              <StatTile
-                label="Konkurransekraft"
-                value={solutionEvaluation.likely_score_assessment.competitiveness}
-                icon={TrendingUp}
-                className="bg-amber-50"
-              />
-            </div>
-          </section>
 
           <div className="grid gap-5 lg:grid-cols-2">
             <FindingPanel
@@ -622,132 +495,13 @@ export function ProjectEvaluationTab({
             />
           </div>
 
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
-            <div className="border-b border-slate-200 bg-white px-5 py-4">
-              <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-slate-500">
-                Detaljfunn
-              </p>
-              <h3 className="mt-1 text-base font-black text-slate-950">
-                Punktene som bør sjekkes før neste versjon
-              </h3>
-            </div>
-            <Accordion>
-              <AccordionItem value="generic-sections" className="border-slate-200">
-                <AccordionTrigger className="px-5 py-4 text-sm font-black text-slate-900 hover:bg-amber-50/80">
-                  Arkitektløsning: generiske partier (
-                  {solutionEvaluation.generic_sections.length})
-                </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5">
-                  <DetailList items={solutionEvaluation.generic_sections} />
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="missing-elements" className="border-slate-200">
-                <AccordionTrigger className="px-5 py-4 text-sm font-black text-slate-900 hover:bg-amber-50/80">
-                  Arkitektløsning: manglende elementer (
-                  {solutionEvaluation.missing_elements.length})
-                </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5">
-                  <DetailList items={solutionEvaluation.missing_elements} />
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="risks" className="border-slate-200">
-                <AccordionTrigger className="px-5 py-4 text-sm font-black text-slate-900 hover:bg-rose-50/80">
-                  Arkitektløsning: risiko for kunden (
-                  {solutionEvaluation.risks_to_customer.length})
-                </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5">
-                  <DetailList items={solutionEvaluation.risks_to_customer} />
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="trust-signals" className="border-slate-200">
-                <AccordionTrigger className="px-5 py-4 text-sm font-black text-slate-900 hover:bg-emerald-50/80">
-                  Arkitektløsning: tillitssignaler ({solutionEvaluation.trust_signals.length})
-                </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5">
-                  <DetailList items={solutionEvaluation.trust_signals} />
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="improvements" className="border-slate-200">
-                <AccordionTrigger className="px-5 py-4 text-sm font-black text-slate-900 hover:bg-blue-50/80">
-                  Arkitektløsning: forbedringsforslag (
-                  {solutionEvaluation.improvement_recommendations.length})
-                </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5">
-                  <DetailList
-                    items={solutionEvaluation.improvement_recommendations}
-                  />
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="value-assessment" className="border-slate-200">
-                <AccordionTrigger className="px-5 py-4 text-sm font-black text-slate-900 hover:bg-teal-50/80">
-                  Arkitektløsning: verdivurdering ({solutionEvaluation.value_assessment.length})
-                </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5">
-                  <div className="space-y-3">
-                    {solutionEvaluation.value_assessment.map((item, index) => (
-                      <div
-                        key={`${item.title}-${index}`}
-                        className="rounded-lg border border-slate-200/80 bg-white px-3 py-3 shadow-sm"
-                      >
-                        <h4 className="text-sm font-black text-foreground">
-                          {item.title}
-                        </h4>
-                        <MarkdownViewer
-                          content={item.description}
-                          className="text-sm text-muted-foreground"
-                        />
-                        <div className="mt-1">
-                          <ValueTags
-                            values={item.value_categories
-                              .filter((v) => VALUE_LABELS.includes(v))
-                              .slice(0, 1)}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              <AccordionItem value="rewrite-suggestions" className="border-slate-200">
-                <AccordionTrigger className="px-5 py-4 text-sm font-black text-slate-900 hover:bg-indigo-50/80">
-                  Arkitektløsning: omskrivingsforslag (
-                  {solutionEvaluation.rewrite_suggestions.length})
-                </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5">
-                  <div className="space-y-3">
-                    {solutionEvaluation.rewrite_suggestions.map(
-                      (suggestion, index) => (
-                        <div
-                          key={`${suggestion.target}-${index}`}
-                          className="rounded-lg border border-slate-200/80 bg-white px-3 py-3 shadow-sm"
-                        >
-                          <p className="text-xs font-black uppercase tracking-[0.12em] text-muted-foreground">
-                            {suggestion.target}
-                          </p>
-                          <MarkdownViewer
-                            content={suggestion.suggestion}
-                            className="text-sm text-foreground"
-                          />
-                        </div>
-                      ),
-                    )}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </section>
+          <ArchitectureCallToAction evaluation={solutionEvaluation} />
         </div>
       ) : (
         <AnalysisTabEmptyState>
           {hasSolutionDocument
             ? "Ingen sammenligning ennå. Generer vurderingen for å sammenligne systemstrategien med arkitektløsningen."
-            : "Last opp et primært løsningsdokument som arkitektløsning før du kjører sammenligningen."}
+            : "Last opp et dokument og velg det som arkitektløsning før du kjører sammenligningen."}
         </AnalysisTabEmptyState>
       )}
     </div>

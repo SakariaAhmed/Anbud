@@ -7,11 +7,11 @@ import {
 } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
-  getPrimaryDocument,
   getProjectSnapshot,
-  listSupportingDocuments,
+  listProjectDocuments,
   saveCustomerAnalysis,
 } from "@/lib/server/projects-db";
+import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
   AnalysisRequirement,
   CustomerAnalysisResult,
@@ -246,16 +246,18 @@ export async function POST(
     const section = isCustomerAnalysisSection(body.section)
       ? body.section
       : null;
-    const [customerDocument, supportingDocuments, existingAnalysis] =
+    const [projectDocuments, existingAnalysis] =
       await Promise.all([
-        getPrimaryDocument(id, "primary_customer_document"),
-        listSupportingDocuments(id),
+        listProjectDocuments(id),
         section ? getCustomerAnalysis(id) : Promise.resolve(null),
       ]);
+    const { projectDocuments: analysisDocuments } =
+      splitServiceDescriptionDetails(projectDocuments);
+    const [customerDocument, ...supportingDocuments] = analysisDocuments;
 
     if (!customerDocument) {
       return NextResponse.json(
-        { error: "Last opp et primært kundedokument først." },
+        { error: "Last opp minst ett dokument først." },
         { status: 400 },
       );
     }
@@ -369,12 +371,14 @@ export async function PUT(
       );
     }
 
-    const [existingAnalysis, customerDocument, supportingDocuments] =
+    const [existingAnalysis, projectDocuments] =
       await Promise.all([
         getCustomerAnalysis(id),
-        getPrimaryDocument(id, "primary_customer_document"),
-        listSupportingDocuments(id),
+        listProjectDocuments(id),
       ]);
+    const { projectDocuments: analysisDocuments } =
+      splitServiceDescriptionDetails(projectDocuments);
+    const [customerDocument, ...supportingDocuments] = analysisDocuments;
 
     if (!existingAnalysis) {
       return NextResponse.json(
@@ -385,7 +389,7 @@ export async function PUT(
 
     if (!customerDocument) {
       return NextResponse.json(
-        { error: "Primært kundedokument mangler." },
+        { error: "Dokumentgrunnlaget mangler." },
         { status: 400 },
       );
     }
