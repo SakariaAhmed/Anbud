@@ -792,67 +792,30 @@ export function ProjectWorkspacePage({
     await runAction(
       "analysis",
       async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            kind: "customer_analysis",
-          }),
-        });
+        const response = await fetch(
+          `/api/projects/${project.id}/customer-analysis`,
+          { method: "POST" },
+        );
         const payload = await readJsonPayload<{
           error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte kundeanalysen.");
-        if (!response.ok || !payload.job) {
-          throw new Error(payload.error || "Kunne ikke starte kundeanalysen.");
+          analysis?: CustomerAnalysisResult;
+          project?: ProjectSnapshotPayload;
+        }>(response, "Kunne ikke generere kundeanalyse.");
+        if (!response.ok || !payload.analysis || !payload.project) {
+          throw new Error(payload.error || "Kunne ikke generere kundeanalyse.");
         }
-        setBusyMessage(payload.job.message);
-        while (true) {
-          await sleep(1500);
-          const statusResponse = await fetch(
-            `/api/projects/${project.id}/jobs/${payload.job.id}`,
-            { cache: "no-store" },
-          );
-          const statusPayload = await readJsonPayload<{
-            error?: string;
-            job?: ProjectJobRecord;
-          }>(statusResponse, "Kunne ikke hente jobbstatus.");
-          if (!statusResponse.ok || !statusPayload.job) {
-            throw new Error(
-              statusPayload.error || "Kunne ikke hente jobbstatus.",
-            );
-          }
-          setBusyMessage(statusPayload.job.message);
-          if (statusPayload.job.status === "failed") {
-            throw new Error(
-              statusPayload.job.error || "Kundeanalysen feilet.",
-            );
-          }
-          if (
-            statusPayload.job.status !== "completed" ||
-            !statusPayload.job.result
-          ) {
-            continue;
-          }
-
-          const result = statusPayload.job.result as {
-            analysis: CustomerAnalysisResult;
-            project: ProjectSnapshotPayload;
-          };
-          setProject((current) =>
-            normalizeProjectState(
-              patchProjectWithSnapshot(
-                { ...current, customer_analysis: result.analysis },
-                result.project,
-              ),
-              {
-                preserveArtifactCount: !artifactsLoaded,
-              },
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
+              { ...current, customer_analysis: payload.analysis! },
+              payload.project!,
             ),
-          );
-          setAnalysisLoaded(true);
-          break;
-        }
+            {
+              preserveArtifactCount: !artifactsLoaded,
+            },
+          ),
+        );
+        setAnalysisLoaded(true);
       },
       ["Starter kundeanalysen ..."],
     );
