@@ -3,9 +3,7 @@ import type { ReactNode } from "react";
 import type {
   GeneratedArtifactType,
   ProjectDetail,
-  ProjectDocumentRole,
   ProjectStatus,
-  SupportingDocumentSubtype,
   ValueCategory,
 } from "@/lib/types";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
@@ -21,40 +19,6 @@ export const ARTIFACT_TYPES: Array<{
   value: GeneratedArtifactType;
   label: string;
 }> = [{ value: "losningsutkast", label: "Løsningsutkast" }];
-
-export const SUPPORTING_SUBTYPES: Array<{
-  value: SupportingDocumentSubtype;
-  label: string;
-}> = [
-  { value: "rfp", label: "RFP" },
-  { value: "kravdokument", label: "Kravdokument" },
-  { value: "prosjektbeskrivelse", label: "Prosjektbeskrivelse" },
-  { value: "notat", label: "Notat" },
-  { value: "motenotat", label: "Møtenotat" },
-  { value: "workshop", label: "Workshop" },
-  { value: "vedlegg", label: "Vedlegg" },
-  { value: "strategi", label: "Strategi" },
-  { value: "utkast", label: "Utkast" },
-  { value: "annet", label: "Annet" },
-];
-
-export function roleLabel(role: ProjectDocumentRole) {
-  switch (role) {
-    case "primary_customer_document":
-      return "Primært kundedokument";
-    case "primary_solution_document":
-      return "Primært løsningsdokument";
-    default:
-      return "Støttedokument";
-  }
-}
-
-export function supportingSubtypeLabel(
-  subtype: SupportingDocumentSubtype | null,
-) {
-  const match = SUPPORTING_SUBTYPES.find((item) => item.value === subtype);
-  return match?.label ?? "Støttedokument";
-}
 
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("nb-NO", {
@@ -72,14 +36,11 @@ export function deriveProjectStatus(
     | "solution_evaluation_generated"
   >,
 ): ProjectStatus {
-  if (project.solution_document_uploaded) {
-    return "Løsningsdokument lastet opp";
-  }
   if (project.customer_analysis_generated) {
     return "Kundeanalyse klar";
   }
-  if (project.customer_document_uploaded) {
-    return "Kundedokument lastet opp";
+  if (project.customer_document_uploaded || project.solution_document_uploaded) {
+    return "Dokument lastet opp";
   }
   return "Venter på dokument";
 }

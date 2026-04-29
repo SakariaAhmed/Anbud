@@ -10,15 +10,16 @@ import {
 } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
-  getPrimaryDocument,
+  getDocumentDetail,
   getProjectDetail,
   getProjectSnapshot,
   listGeneratedArtifacts,
-  listSupportingDocuments,
+  listProjectDocuments,
   saveCustomerAnalysis,
   saveGeneratedArtifact,
   saveSolutionEvaluation,
 } from "@/lib/server/projects-db";
+import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
   GeneratedArtifact,
   GeneratedArtifactType,
@@ -129,18 +130,23 @@ export function queueArtifactGenerationJob(input: {
     const [
       project,
       customerAnalysis,
-      customerDocument,
-      solutionDocument,
-      supportingDocuments,
+      documents,
       generatedArtifacts,
     ] = await Promise.all([
       getProjectDetail(input.projectId),
       getCustomerAnalysis(input.projectId),
-      getPrimaryDocument(input.projectId, "primary_customer_document"),
-      getPrimaryDocument(input.projectId, "primary_solution_document"),
-      listSupportingDocuments(input.projectId),
+      listProjectDocuments(input.projectId),
       listGeneratedArtifacts(input.projectId),
     ]);
+    const { projectDocuments, serviceDescriptionDocument } =
+      splitServiceDescriptionDetails(documents);
+    const customerDocument = projectDocuments[0] ?? null;
+    const solutionDocument = projectDocuments[1] ?? null;
+    const supportingDocuments = projectDocuments.filter(
+      (document) =>
+        document.id !== customerDocument?.id &&
+        document.id !== solutionDocument?.id,
+    );
 
     setProgress("Genererer nytt utkast med AI ...");
     const generated = await generateProjectArtifact({
@@ -150,6 +156,7 @@ export function queueArtifactGenerationJob(input: {
       solutionEvaluation: project.solution_evaluation,
       customerDocument,
       solutionDocument,
+      serviceDescriptionDocument,
       supportingDocuments,
       knowledgeArtifacts: generatedArtifacts,
       instructions: input.instructions?.trim(),
@@ -200,18 +207,23 @@ export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
     const [
       project,
       customerAnalysis,
-      customerDocument,
-      solutionDocument,
-      supportingDocuments,
+      documents,
       generatedArtifacts,
     ] = await Promise.all([
       getProjectDetail(input.projectId),
       getCustomerAnalysis(input.projectId),
-      getPrimaryDocument(input.projectId, "primary_customer_document"),
-      getPrimaryDocument(input.projectId, "primary_solution_document"),
-      listSupportingDocuments(input.projectId),
+      listProjectDocuments(input.projectId),
       listGeneratedArtifacts(input.projectId),
     ]);
+    const { projectDocuments, serviceDescriptionDocument } =
+      splitServiceDescriptionDetails(documents);
+    const customerDocument = projectDocuments[0] ?? null;
+    const solutionDocument = projectDocuments[1] ?? null;
+    const supportingDocuments = projectDocuments.filter(
+      (document) =>
+        document.id !== customerDocument?.id &&
+        document.id !== solutionDocument?.id,
+    );
 
     if (!project.solution_evaluation) {
       throw new Error("Generer vurdering før du forbedrer systemløsningen.");
@@ -233,6 +245,7 @@ export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
       solutionEvaluation: project.solution_evaluation,
       customerDocument,
       solutionDocument,
+      serviceDescriptionDocument,
       supportingDocuments,
       knowledgeArtifacts: generatedArtifacts,
       instructions: [
@@ -296,6 +309,7 @@ export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
 export function queueSolutionEvaluationJob(input: {
   projectId: string;
   allowGeneratedSolution: boolean;
+  solutionDocumentId?: string;
 }) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
@@ -315,22 +329,30 @@ export function queueSolutionEvaluationJob(input: {
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster kundedokument, analyse og støttedokumenter ...");
-    const [
-      customerDocument,
-      solutionDocument,
-      supportingDocuments,
-      customerAnalysis,
-      generatedArtifacts,
-    ] = await Promise.all([
-      getPrimaryDocument(input.projectId, "primary_customer_document"),
-      getPrimaryDocument(input.projectId, "primary_solution_document"),
-      listSupportingDocuments(input.projectId),
-      getCustomerAnalysis(input.projectId),
-      listGeneratedArtifacts(input.projectId),
-    ]);
+    const [projectDocuments, selectedSolutionDocument, customerAnalysis, generatedArtifacts] =
+      await Promise.all([
+        listProjectDocuments(input.projectId),
+        input.solutionDocumentId
+          ? getDocumentDetail(input.projectId, input.solutionDocumentId)
+          : Promise.resolve(null),
+        getCustomerAnalysis(input.projectId),
+        listGeneratedArtifacts(input.projectId),
+      ]);
+    const { projectDocuments: evaluationDocuments } =
+      splitServiceDescriptionDetails(projectDocuments);
+    const customerDocument =
+      evaluationDocuments.find((document) => document.id !== input.solutionDocumentId) ??
+      evaluationDocuments[0] ??
+      null;
+    const solutionDocument =
+      selectedSolutionDocument ?? null;
+    const supportingDocuments = evaluationDocuments.filter(
+      (document) =>
+        document.id !== customerDocument?.id && document.id !== solutionDocument?.id,
+    );
 
     if (!customerDocument) {
-      throw new Error("Last opp et primært kundedokument først.");
+      throw new Error("Last opp minst ett dokument først.");
     }
 
     if (!customerAnalysis) {
@@ -339,7 +361,7 @@ export function queueSolutionEvaluationJob(input: {
 
     if (!solutionDocument) {
       if (!input.allowGeneratedSolution) {
-        throw new Error("Last opp et primært løsningsdokument først, eller godkjenn at systemet genererer et internt utkast.");
+        throw new Error("Velg dokumentet som skal vurderes som arkitektløsning.");
       }
 
       setProgress("Genererer et kort internt løsningsutkast ...");
@@ -426,15 +448,17 @@ export function queueHighLevelDesignJob(input: { projectId: string }) {
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster kundedokument, analyse og støttedokumenter ...");
-    const [customerDocument, supportingDocuments, customerAnalysis] =
+    const [documents, customerAnalysis] =
       await Promise.all([
-        getPrimaryDocument(input.projectId, "primary_customer_document"),
-        listSupportingDocuments(input.projectId),
+        listProjectDocuments(input.projectId),
         getCustomerAnalysis(input.projectId),
       ]);
+    const { projectDocuments } = splitServiceDescriptionDetails(documents);
+    const customerDocument = projectDocuments[0] ?? null;
+    const supportingDocuments = projectDocuments.slice(1);
 
     if (!customerDocument) {
-      throw new Error("Last opp et primært kundedokument først.");
+      throw new Error("Last opp minst ett dokument først.");
     }
 
     if (!customerAnalysis) {

@@ -210,14 +210,11 @@ function revalidateProjectCaches(projectId: string) {
 }
 
 function mapProjectStatus(row: ProjectRow): ProjectStatus {
-  if (row.solution_document_uploaded) {
-    return "Løsningsdokument lastet opp";
-  }
   if (row.customer_analysis_generated) {
     return "Kundeanalyse klar";
   }
-  if (row.customer_document_uploaded) {
-    return "Kundedokument lastet opp";
+  if (row.customer_document_uploaded || row.solution_document_uploaded) {
+    return "Dokument lastet opp";
   }
   return "Venter på dokument";
 }
@@ -315,6 +312,14 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
     file_size_bytes: row.file_size_bytes,
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+}
+
+function mapSolutionEvaluationRow(row: SolutionEvaluationRow) {
+  return {
+    ...decryptJson(row.result_json, SOLUTION_EVALUATION_EMPTY),
+    customer_document_id: row.customer_document_id,
+    solution_document_id: row.solution_document_id,
   };
 }
 
@@ -852,7 +857,7 @@ export async function getProjectDetail(
           ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
           : null,
         solution_evaluation: evaluationRow
-          ? decryptJson(evaluationRow.result_json, SOLUTION_EVALUATION_EMPTY)
+          ? mapSolutionEvaluationRow(evaluationRow)
           : null,
         generated_artifacts: [],
         chat_messages: [],
@@ -996,11 +1001,9 @@ export async function saveDocument(input: {
   );
 
   const projectPatch: Partial<ProjectRow> = {
+    customer_document_uploaded: true,
     last_activity_at: new Date().toISOString(),
   };
-  if (input.role === "primary_customer_document") {
-    projectPatch.customer_document_uploaded = true;
-  }
   if (input.role === "primary_solution_document") {
     let demoteResult = await supabase
       .from("documents")
@@ -1090,13 +1093,12 @@ export async function deleteDocument(projectId: string, documentId: string) {
     .select("role")
     .eq("project_id", projectId);
   const rows = remaining ?? [];
+  const hasDocuments = rows.length > 0;
 
   await supabase
     .from("projects")
     .update({
-      customer_document_uploaded: rows.some(
-        (row) => row.role === "primary_customer_document",
-      ),
+      customer_document_uploaded: hasDocuments,
       solution_document_uploaded: rows.some(
         (row) => row.role === "primary_solution_document",
       ),
@@ -1104,7 +1106,7 @@ export async function deleteDocument(projectId: string, documentId: string) {
     })
     .eq("id", projectId);
 
-  if (beforeDelete?.role === "primary_customer_document") {
+  if (!hasDocuments || beforeDelete?.role === "primary_customer_document") {
     await supabase
       .from("customer_analyses")
       .delete()
@@ -1115,7 +1117,7 @@ export async function deleteDocument(projectId: string, documentId: string) {
       .eq("id", projectId);
   }
 
-  if (beforeDelete?.role === "primary_solution_document") {
+  if (!hasDocuments || beforeDelete?.role === "primary_solution_document") {
     await supabase
       .from("solution_evaluations")
       .delete()
@@ -1146,10 +1148,6 @@ export async function markDocumentAsPrimarySolution(
 
   if (!selected) {
     throw new Error("Fant ikke dokumentet som skal brukes som arkitektløsning.");
-  }
-
-  if (selected.role === "primary_customer_document") {
-    throw new Error("Kundedokumentet kan ikke brukes som arkitektløsning.");
   }
 
   let demoteResult = await supabase
@@ -1262,6 +1260,19 @@ export async function listSupportingDocuments(projectId: string) {
       .select(select)
       .eq("project_id", projectId)
       .eq("role", "supporting_document")
+      .order("created_at", { ascending: false }),
+  );
+
+  return rows.map(decryptDocumentRow);
+}
+
+export async function listProjectDocuments(projectId: string) {
+  const supabase = createServiceClient();
+  const rows = await fetchDocumentRows((select) =>
+    supabase
+      .from("documents")
+      .select(select)
+      .eq("project_id", projectId)
       .order("created_at", { ascending: false }),
   );
 
@@ -1393,7 +1404,7 @@ export async function saveSolutionEvaluation(
 
   revalidateProjectCaches(projectId);
 
-  return decryptJson(insertResult.data.result_json, SOLUTION_EVALUATION_EMPTY);
+  return mapSolutionEvaluationRow(insertResult.data);
 }
 
 export async function getSolutionEvaluation(projectId: string) {
@@ -1410,7 +1421,7 @@ export async function getSolutionEvaluation(projectId: string) {
   }
 
   const row = (data?.[0] as SolutionEvaluationRow | undefined) ?? null;
-  return row ? decryptJson(row.result_json, SOLUTION_EVALUATION_EMPTY) : null;
+  return row ? mapSolutionEvaluationRow(row) : null;
 }
 
 export async function saveGeneratedArtifact(

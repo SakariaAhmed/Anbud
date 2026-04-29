@@ -36,9 +36,8 @@ export type GeneratedArtifactType =
 
 export type ProjectStatus =
   | "Venter på dokument"
-  | "Kundedokument lastet opp"
+  | "Dokument lastet opp"
   | "Kundeanalyse klar"
-  | "Løsningsdokument lastet opp"
   | "Klar for sparring";
 
 export interface ProjectSummary {
@@ -205,6 +204,8 @@ export interface CustomerAnalysisResult {
 }
 
 export interface SolutionEvaluationResult {
+  customer_document_id?: string | null;
+  solution_document_id?: string | null;
   fit_to_customer_needs: string;
   strengths: string[];
   weaknesses: string[];

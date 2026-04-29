@@ -3,17 +3,21 @@ import { NextResponse } from "next/server";
 import { generateProjectArtifact } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
-  getPrimaryDocument,
   getProjectDetail,
   getProjectSnapshot,
   listGeneratedArtifacts,
-  listSupportingDocuments,
+  listProjectDocuments,
   saveGeneratedArtifact,
 } from "@/lib/server/projects-db";
+import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type { GeneratedArtifactType } from "@/lib/types";
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
-  return value === "losningsutkast" || value === "gjennomforing_og_risiko";
+  return (
+    value === "losningsutkast" ||
+    value === "forbedret_kravsvar" ||
+    value === "gjennomforing_og_risiko"
+  );
 }
 
 export async function GET(
@@ -58,18 +62,23 @@ export async function POST(
     const [
       project,
       customerAnalysis,
-      customerDocument,
-      solutionDocument,
-      supportingDocuments,
+      documents,
       generatedArtifacts,
     ] = await Promise.all([
       getProjectDetail(id),
       getCustomerAnalysis(id),
-      getPrimaryDocument(id, "primary_customer_document"),
-      getPrimaryDocument(id, "primary_solution_document"),
-      listSupportingDocuments(id),
+      listProjectDocuments(id),
       listGeneratedArtifacts(id),
     ]);
+    const { projectDocuments, serviceDescriptionDocument } =
+      splitServiceDescriptionDetails(documents);
+    const customerDocument = projectDocuments[0] ?? null;
+    const solutionDocument = projectDocuments[1] ?? null;
+    const supportingDocuments = projectDocuments.filter(
+      (document) =>
+        document.id !== customerDocument?.id &&
+        document.id !== solutionDocument?.id,
+    );
 
     const generated = await generateProjectArtifact({
       artifactType: body.artifact_type,
@@ -78,6 +87,7 @@ export async function POST(
       solutionEvaluation: project.solution_evaluation,
       customerDocument,
       solutionDocument,
+      serviceDescriptionDocument,
       supportingDocuments,
       knowledgeArtifacts: generatedArtifacts,
       instructions: body.instructions?.trim(),

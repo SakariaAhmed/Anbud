@@ -9,7 +9,11 @@ import {
 import type { GeneratedArtifactType } from "@/lib/types";
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
-  return value === "losningsutkast" || value === "gjennomforing_og_risiko";
+  return (
+    value === "losningsutkast" ||
+    value === "forbedret_kravsvar" ||
+    value === "gjennomforing_og_risiko"
+  );
 }
 
 export async function POST(
@@ -22,6 +26,7 @@ export async function POST(
       | {
           kind?: "solution_evaluation";
           allow_generated_solution?: boolean;
+          solution_document_id?: string;
         }
       | {
           kind?: "high_level_design";
@@ -39,6 +44,10 @@ export async function POST(
       const job = queueSolutionEvaluationJob({
         projectId: id,
         allowGeneratedSolution: Boolean(body.allow_generated_solution),
+        solutionDocumentId:
+          typeof body.solution_document_id === "string"
+            ? body.solution_document_id
+            : undefined,
       });
 
       return NextResponse.json({ job }, { status: 202 });

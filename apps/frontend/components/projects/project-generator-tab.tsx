@@ -42,9 +42,8 @@ export function ProjectGeneratorTab({
             Bygg neste versjon av utkastet
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Generatoren bruker kundedokument, løsningsdokument, støttedokumenter,
-            strategi, notater, lagret analyse og tidligere løsningsutkast som
-            kunnskapsbase.
+            Generatoren bruker dokumentbanken, tjenestebeskrivelsen, lagret
+            analyse og tidligere løsningsutkast som kunnskapsbase.
           </p>
         </div>
 

@@ -215,6 +215,35 @@ const artifactLabels: Record<GeneratedArtifactType, string> = {
 };
 
 export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
+  if (artifactType === "forbedret_kravsvar") {
+    return buildPromptTemplate({
+      role: "Du er en senior tilbudsansvarlig og løsningsarkitekt som fyller ut kravbesvarelser i tilbudsdokumenter.",
+      task: [
+        "Lag en komplett kravbesvarelse der hvert identifiserte krav får et konkret svar på hvordan kravet tilfredsstilles.",
+        "Bruk kravdokumentet som svarmal: behold kravreferanser, kravtekst og rekkefølge så langt det er mulig.",
+        "Svarene skal bygge på to hovedgrunnlag: kundens analysegrunnlag med Bilag 1, kundeanalyse og løsningsutkast, og tjenestebeskrivelsen som beskriver driftstjenestene arkitekten tilbyr.",
+      ],
+      rules: [
+        "Returner kun gyldig JSON.",
+        "Ikke skriv generiske ja/nei-svar. Hvert svar skal forklare konkret hvordan kravet oppfylles, med leveranse, ansvar, metode, drift, kontroll eller dokumentasjon der det er relevant.",
+        "Bruk samme språk, begreper, formalitetsnivå og tone som kunden eller mottakeren bruker i kravdokumentet. Hvis kunden skriver kort og skjematisk, svar kort og presist. Hvis kunden skriver formelt og kontraktsnært, svar formelt og kontraktsnært.",
+        "Vær svært saklig, nøktern og etterprøvbar. Unngå salgsformuleringer, superlativer, emosjonelt språk og påstander som ikke støttes av grunnlaget.",
+        "Gjenbruk kundens egne navn på systemer, prosesser, roller, kravkategorier og leveranseområder når de finnes i grunnlaget.",
+        "Dersom kravdokumentet har en tom svardel, fyll den ut. Dersom det bare finnes kravliste, lag en ryddig tabell med kravreferanse, krav, foreslått svar og kildegrunnlag.",
+        "Bruk tjenestebeskrivelsen aktivt når kravet gjelder drift, forvaltning, overvåking, sikkerhet, prosess, SLA, support, forbedring eller operativ leveranse.",
+        "Bruk kundeanalyse, Bilag 1 og løsningsutkast aktivt når kravet gjelder kundens mål, behov, arkitektur, migrering, integrasjoner, risiko, gjennomføring eller verdi.",
+        "Hvis et krav ikke kan besvares sikkert fra grunnlaget, marker svaret tydelig som forbehold eller avklaringspunkt i stedet for å dikte opp detaljer.",
+        "Svar på norsk, i en profesjonell tilbudstone, og skriv slik at teksten kan limes inn i kundens kravskjema med lite etterarbeid.",
+        "content_markdown skal starte med en kort statusoppsummering og deretter kravbesvarelsen. Bruk tabell når kravene er korte; bruk egne underseksjoner når kravene er lange.",
+      ],
+      outputContract: [
+        "Returner ett JSON-objekt med nøklene title og content_markdown.",
+        "content_markdown skal være ferdig tekst i markdown-format.",
+      ],
+      exampleOutput: `{"title":"Kravbesvarelse","content_markdown":"## Status\\n\\nKravene er besvart med utgangspunkt i Bilag 1, kundeanalyse, siste løsningsutkast og tjenestebeskrivelsen.\\n\\n## Kravbesvarelse\\n\\n| Kravref. | Krav | Svar | Kildegrunnlag |\\n|---|---|---|---|\\n| K-01 | Leverandøren skal etablere overvåking. | Kravet oppfylles ved å etablere overvåking som del av driftstjenesten, med definerte terskler, varslingsløp og hendelseshåndtering. Overvåkingen kobles til kundens prioriterte tjenester og rapporteres i avtalt driftsforum. | Tjenestebeskrivelse, kundeanalyse |"}`,
+    });
+  }
+
   if (artifactType === "losningsutkast") {
     return buildPromptTemplate({
       role: "Du er en senior løsningsarkitekt og tilbudsansvarlig som skriver profesjonelle Bilag 2 / løsningsbeskrivelser for offentlige og private tilbud.",
@@ -246,27 +275,28 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
 
   if (artifactType === "gjennomforing_og_risiko") {
     return buildPromptTemplate({
-      role: "Du er en senior skyarkitekt og leveranseleder som skriver en konkret gjennomføringsplan for et arkitekt- og migreringsteam.",
+      role: "Du er en senior skyarkitekt og leveranseleder som skriver en konkret fremdriftsplan for hva teamet bør gjøre etter kundeanalysen.",
       task: [
-        "Generer en pragmatisk plan for hvordan løsningen faktisk bør gjennomføres i praksis.",
+        "Generer en pragmatisk fremdriftsplan for hva neste steg bør være etter kundeanalysen.",
         "Skriv for et team som skal etablere landing zone, styre migreringer, håndtere avhengigheter og ta kontroll på risiko i overgangsfasen.",
-        "Gi et tilbudsteam og et skyarkitekt-team noe de faktisk kan styre leveransen etter.",
+        "Gi et tilbudsteam og et skyarkitekt-team en faseplan de kan bruke til å gå fra innsikt til neste praktiske arbeid.",
       ],
       rules: [
         "Returner kun gyldig JSON.",
         "Ikke skriv generisk konsulentspråk eller diffuse ambisjoner.",
         "Vær realistisk om kundens begrensede kapasitet, avhengigheter, driftsvinduer, styringsbehov og overgangsrisiko.",
-        "Vær konkret om rekkefølge, beslutningspunkter, leveranser, ansvar og hva som må være på plass før neste fase.",
-        "content_markdown skal bruke nøyaktig disse undertitlene, i denne rekkefølgen, og ingen andre undertitler: ## Gjennomføringslogikk, ## Fase 1: Kartlegging og målbildet, ## Fase 2: Etablering av grunnplattform, ## Fase 3: Pilot og første migreringsbølge, ## Fase 4: Trinnvis modernisering og overgang til forvaltning, ## Kritiske beslutningspunkter, ## Risiko vi må styre aktivt.",
+        "Vær konkret om rekkefølge, leveranser, ansvar og hva som må være på plass før neste fase.",
+        "content_markdown skal kun inneholde fase-undertitler. Ikke legg inn innledning, gjennomføringslogikk, egne risikoseksjoner, beslutningspunktseksjoner eller oppsummering.",
+        "content_markdown skal bruke nøyaktig disse undertitlene, i denne rekkefølgen, og ingen andre undertitler: ## Fase 1: Avklar neste beslutning, ## Fase 2: Konkretiser løsningsretning, ## Fase 3: Planlegg første leveransebølge, ## Fase 4: Klargjør tilbuds- og leveransegrunnlag.",
         "Hver fase skal starte med et kort avsnitt og deretter ha 3 til 5 presise punkter som beskriver hva teamet faktisk gjør.",
-        "Planen skal være håndholdende for et skyarkitekt-team og gjøre det lett å se hva som skjer først, hva som avhenger av hva, og hva som krever kundebeslutninger.",
+        "Planen skal være håndholdende for et skyarkitekt-team og gjøre det lett å se hva som skjer først, hva som avhenger av hva, og hva som bør tas videre etter kundeanalysen.",
         "Bruk profesjonell markdown med ryddige avsnitt og punktlister som passer som intern arbeidstekst.",
       ],
       outputContract: [
         "Returner ett JSON-objekt med nøklene title og content_markdown.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"Gjennomføring i praksis for skyplattform og migrering","content_markdown":"## Gjennomføringslogikk\\n\\nGjennomføringen bør deles i fire faser med tydelige beslutningspunkter. Det gir kontroll på risiko, gjør det mulig å levere tidlig nytte og passer kundens begrensede interne kapasitet.\\n\\n## Fase 1: Kartlegging og målbildet\\n\\nFørste fase skal gi en beslutningsklar forståelse av nåsituasjonen og hva som faktisk kan flyttes i hvilken rekkefølge.\\n\\n- kartlegge nåsituasjon, avhengigheter, driftsvinduer og kritiske prosesser i ERP, WMS, CRM og integrasjonsbildet\\n- identifisere hvilke tjenester som kan migreres tidlig, hvilke som må beholdes lokalt midlertidig, og hvilke som krever modernisering før flytting\\n- etablere målarkitektur, prinsipper for sikkerhet, drift og governance, samt en prioritert migreringsrekkefølge\\n- beslutte hvilke arbeidslaster som skal rehostes, replatformes, refaktoriseres eller fases ut\\n\\n## Fase 2: Etablering av grunnplattform\\n\\nPlattformgrunnlaget må være driftsklart før første migrering, ikke bare teknisk satt opp.\\n\\n- etablere landing zone med identitet, nettverk, segmentering, logging, overvåkning, backup og policyer\\n- sette opp miljøstruktur for utvikling, test og produksjon med standardiserte maler og automatisert provisjonering\\n- innføre grunnleggende sikkerhetskontroller, inkludert MFA, tilgangsstyring og sporbarhet for administrative handlinger\\n- verifisere at plattformen kan driftes og forvaltes med tydelige ansvarsforhold før første migrering\\n\\n## Fase 3: Pilot og første migreringsbølge\\n\\nDenne fasen skal bevise metode, driftsmodell og tilbakeføringsplaner før mer komplekse arbeidslaster tas inn.\\n\\n- flytte utvalgte tjenester med lav til moderat kompleksitet for å validere metode, verktøy og driftsmodell\\n- teste backup, gjenoppretting, overvåkning og tilbakeføringsplaner i kontrollerte vinduer\\n- etablere standard for migreringsgjennomføring, cutover og akseptanse som kan gjenbrukes i videre bølger\\n- bruke erfaringene til å justere integrasjonsmønstre, sikkerhetsoppsett og prioriteringsrekkefølge\\n\\n## Fase 4: Trinnvis modernisering og overgang til forvaltning\\n\\nNår grunnplattform og metode er bevist, kan mer komplekse arbeidslaster og gammel teknisk gjeld håndteres kontrollert.\\n\\n- håndtere mer komplekse arbeidslaster, eldre databaser og integrasjoner i riktig rekkefølge\\n- fase ned filbaserte og punkt-til-punkt-integrasjoner der standardisert integrasjonslag kan overta\\n- overføre løsningen til stabil forvaltning med dokumentasjon, runbooks og tydelige driftsrutiner\\n- etablere løpende kostnadsoppfølging, sikkerhetsforbedringer og videre moderniseringsplan\\n\\n## Kritiske beslutningspunkter\\n\\n- godkjenne målarkitektur og migreringsrekkefølge etter kartleggingsfasen\\n- bekrefte at landing zone, identitet, logging og backup er driftsklare før første migrering\\n- beslutte om pilotens metode og driftsmodell er god nok til å skaleres videre\\n- avklare når komplekse integrasjoner skal moderniseres kontra beholdes midlertidig\\n\\n## Risiko vi må styre aktivt\\n\\n- skjulte avhengigheter mellom lokale systemer og integrasjoner som gjør rekkefølgen mer krevende enn antatt\\n- for lav kundekapasitet til raske avklaringer i cutover- og overgangsfasen\\n- utilstrekkelig test av backup, gjenoppretting og driftsrutiner før kritiske arbeidslaster flyttes\\n- uklar ansvarsdeling mellom kunde, leverandør og eventuelle tredjepartsaktører i hybridperioden"}`,
+      exampleOutput: `{"title":"Fremdriftsplan etter kundeanalyse","content_markdown":"## Fase 1: Avklar neste beslutning\\n\\nFørste steg er å gjøre kundeanalysen beslutningsklar og avklare hva tilbudsteamet må låse før løsningsarbeidet går videre.\\n\\n- bekrefte kundens viktigste beslutningsdriver og hvor risiko må reduseres først\\n- avklare hvilke krav som må besvares med konkret faseplan, ansvar og bevis\\n- identifisere åpne spørsmål som må avklares med kunden eller internt før løsningsteksten ferdigstilles\\n\\n## Fase 2: Konkretiser løsningsretning\\n\\nNeste fase oversetter innsikten til en tydelig løsningsretning som kan brukes i tilbud og arkitekturarbeid.\\n\\n- formulere anbefalt målarkitektur og de viktigste plattformgrepene\\n- koble løsningens hovedvalg til kundens mål, risiko og evalueringskriterier\\n- definere hvilke deler som må beskrives mer konkret for å styrke tillit og gjennomføringsevne\\n\\n## Fase 3: Planlegg første leveransebølge\\n\\nDenne fasen gjør planen operativ ved å beskrive hva som bør leveres først og hvorfor.\\n\\n- velge første leveransebølge basert på risiko, avhengigheter og kundeverdi\\n- beskrive hva teamet må etablere før første leveranse kan starte\\n- tydeliggjøre ansvar, kundebidrag og akseptansekriterier for første bølge\\n\\n## Fase 4: Klargjør tilbuds- og leveransegrunnlag\\n\\nSiste fase gjør materialet klart for videre tilbudsarbeid og praktisk oppfølging.\\n\\n- oppdatere løsningsutkast med faseplanen og kundespesifikke bevis\\n- sikre at fremdriftsplanen henger sammen med risiko, verdi og evalueringskriterier\\n- avklare hvilke beslutninger som skal følges opp før endelig tilbud eller oppstart"}`,
     });
   }
 
