@@ -56,10 +56,10 @@ Hvert prosjekt kan ha:
 
 ## Miljøvariabler
 
-Kopier miljøfil:
+Kopier miljøfil til frontend-appen:
 
 ```bash
-cp .env.example .env.local
+cp .env.example apps/frontend/.env.local
 ```
 
 Sett disse variablene:
@@ -67,6 +67,8 @@ Sett disse variablene:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `APP_ENCRYPTION_KEY`
+- `APP_ACCESS_PASSWORD`
+- `APP_SESSION_SECRET` valgfri, men anbefalt for stabile innloggingssesjoner
 - `OPENAI_API_KEY`
 
 ## Viktig: database-reset
