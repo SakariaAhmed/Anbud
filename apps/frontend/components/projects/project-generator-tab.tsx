@@ -36,14 +36,14 @@ export function ProjectGeneratorTab({
       <div className="min-w-0 overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="border-b bg-muted/50 px-6 py-5">
           <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            Løsningsutkast
+            Løsningsbeskrivelse
           </p>
           <h2 className="mt-2 text-xl font-bold text-foreground">
             Bygg neste versjon av utkastet
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Generatoren bruker dokumentbanken, tjenestebeskrivelsen, lagret
-            analyse og tidligere løsningsutkast som kunnskapsbase.
+            analyse og tidligere løsningsbeskrivelser som kunnskapsbase.
           </p>
         </div>
 
@@ -59,7 +59,7 @@ export function ProjectGeneratorTab({
               id="artifactInstructions"
               value={artifactInstructions}
               onChange={(e) => onArtifactInstructionsChange(e.target.value)}
-              placeholder="Hva skal neste versjon av løsningsutkastet fokusere på?"
+              placeholder="Hva skal neste versjon av løsningsbeskrivelsen fokusere på?"
               className="min-h-36 resize-y rounded-xl"
             />
           </div>
@@ -69,7 +69,7 @@ export function ProjectGeneratorTab({
             ) : (
               <Sparkles data-icon="inline-start" />
             )}
-            Generer nytt løsningsutkast
+            Generer ny løsningsbeskrivelse
           </Button>
         </form>
 
@@ -84,11 +84,11 @@ export function ProjectGeneratorTab({
       {/* Artifacts list */}
       <div className="min-w-0">
         <h3 className="mb-3 text-sm font-bold uppercase tracking-[0.12em] text-muted-foreground">
-          Lagrede løsningsutkast
+          Lagrede løsningsbeskrivelser
         </h3>
         {losningsutkast.length === 0 ? (
           <p className="rounded-xl border py-10 text-center text-sm text-muted-foreground shadow-sm">
-            Ingen løsningsutkast ennå.
+            Ingen løsningsbeskrivelser ennå.
           </p>
         ) : (
           <div className="space-y-3">
@@ -97,7 +97,7 @@ export function ProjectGeneratorTab({
                 <summary className="flex cursor-pointer list-none items-start justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/30">
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                      <span>Løsningsutkast</span>
+                      <span>Løsningsbeskrivelse</span>
                       <span>·</span>
                       <span>{formatDate(artifact.created_at)}</span>
                     </div>

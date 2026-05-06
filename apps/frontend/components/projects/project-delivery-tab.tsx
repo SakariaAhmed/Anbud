@@ -17,7 +17,7 @@ interface ProgressPhase {
 const DEFAULT_PHASES: ProgressPhase[] = [
   {
     title: "Fase 1: Avklar neste beslutning",
-    body: "Gjør kundeanalysen beslutningsklar før teamet går videre.\n\n- bekreft kundens viktigste driver og hvor risiko må reduseres først\n- avklar hvilke åpne spørsmål som må lukkes internt eller med kunden\n- bestem hva som må være klart før løsningsutkastet oppdateres",
+    body: "Gjør kundeanalysen beslutningsklar før teamet går videre.\n\n- bekreft kundens viktigste driver og hvor risiko må reduseres først\n- avklar hvilke åpne spørsmål som må lukkes internt eller med kunden\n- bestem hva som må være klart før løsningsbeskrivelsen oppdateres",
   },
   {
     title: "Fase 2: Konkretiser løsningsretning",
@@ -29,7 +29,7 @@ const DEFAULT_PHASES: ProgressPhase[] = [
   },
   {
     title: "Fase 4: Klargjør tilbuds- og leveransegrunnlag",
-    body: "Gjør materialet klart for videre tilbudsarbeid og praktisk oppfølging.\n\n- oppdater løsningsutkast med faseplanen og kundespesifikke bevis\n- kontroller at fremdriftsplanen henger sammen med risiko, verdi og evaluering\n- avklar hvilke beslutninger som skal følges opp før endelig tilbud eller oppstart",
+    body: "Gjør materialet klart for videre tilbudsarbeid og praktisk oppfølging.\n\n- oppdater løsningsbeskrivelsen med faseplanen og kundespesifikke bevis\n- kontroller at fremdriftsplanen henger sammen med risiko, verdi og evaluering\n- avklar hvilke beslutninger som skal følges opp før endelig tilbud eller oppstart",
   },
 ];
 

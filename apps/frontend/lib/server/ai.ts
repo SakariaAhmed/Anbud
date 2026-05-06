@@ -21,6 +21,7 @@ import type {
   GeneratedArtifactType,
   ProjectMetadataInference,
   ProjectDocumentDetail,
+  ServiceDocumentDetail,
   SolutionEvaluationResult,
   ValueCategory,
   ValueOpportunity,
@@ -42,6 +43,11 @@ type OpenAIClient = {
         choices: Array<{ message?: { content?: string | null } | null }>;
       }>;
     };
+  };
+  responses: {
+    create: (input: Record<string, unknown>) => Promise<{
+      output_text?: string;
+    }>;
   };
 };
 
@@ -65,6 +71,19 @@ type DocumentTextChunk = {
 };
 
 type DocumentInsightCache = Map<string, Promise<string | null>>;
+type RequirementLedgerEntry = {
+  id: string;
+  text: string;
+  pages: number[];
+  heading: string;
+  tableId?: string;
+  service?: string;
+};
+type PageHeadingEntry = {
+  page: number;
+  headingPath: string;
+  text: string;
+};
 
 let cachedClientPromise: Promise<OpenAIClient> | null = null;
 
@@ -166,6 +185,1414 @@ function documentContext(
       compactText(document.raw_text, options?.textLimit ?? 22000),
     ),
   ].join("\n\n");
+}
+
+function serviceDocumentAsProjectDocument(
+  document: ServiceDocumentDetail,
+): ProjectDocumentDetail {
+  return {
+    id: document.id,
+    project_id: "global-service-description",
+    role: "supporting_document",
+    supporting_subtype: null,
+    title: document.title,
+    file_name: document.file_name,
+    file_format: document.file_format,
+    content_type: document.content_type,
+    file_size_bytes: document.file_size_bytes,
+    file_base64: document.file_base64,
+    raw_text: document.raw_text,
+    structure_map: document.structure_map,
+    created_at: document.created_at,
+    updated_at: document.updated_at,
+  };
+}
+
+function splitPdfPages(rawText: string) {
+  const parts = rawText.split(/\[\[SIDE:(\d+)\]\]/g);
+  const pages: Array<{ page: number; text: string }> = [];
+
+  for (let index = 1; index < parts.length; index += 2) {
+    const page = Number(parts[index]);
+    const text = normalizePageText(parts[index + 1] ?? "");
+
+    if (Number.isFinite(page) && text) {
+      pages.push({ page, text });
+    }
+  }
+
+  return pages;
+}
+
+function splitPdfPagesPreservingLines(rawText: string) {
+  const parts = rawText.split(/\[\[SIDE:(\d+)\]\]/g);
+  const pages: Array<{ page: number; text: string }> = [];
+
+  for (let index = 1; index < parts.length; index += 2) {
+    const page = Number(parts[index]);
+    const text = (parts[index + 1] ?? "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\bSide\s+\d+\s+av\s+\d+\b/gi, " ")
+      .replace(/\bKonfidensiell\b/gi, " ")
+      .replace(/\bRA-\d+\s+BILAG\s+[\d,]+\s+TIL\s+SSA-D\s+\d{4}\b/gi, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    if (Number.isFinite(page) && text) {
+      pages.push({ page, text });
+    }
+  }
+
+  return pages;
+}
+
+function normalizePageText(value: string) {
+  return value
+    .replace(/\bSide\s+\d+\s+av\s+\d+\b/gi, " ")
+    .replace(/\bKonfidensiell\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeRequirementId(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s*-\s*/g, "-")
+    .trim()
+    .toUpperCase();
+}
+
+function detectRequirementIds(text: string) {
+  const normalized = normalizePageText(text);
+  const matches = normalized.matchAll(
+    /\b(?:ID\s*)?(?:[A-ZÆØÅ]{0,4}\s*)?\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?\b|\bKrav\s+\d{1,3}[A-Z]?\b/gi,
+  );
+  const ids: string[] = [];
+
+  for (const match of matches) {
+    const id = normalizeRequirementId(match[0]);
+    if (!ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+
+  return ids;
+}
+
+function pageExcerpt(text: string, position: "start" | "end") {
+  const normalized = normalizePageText(text);
+  if (normalized.length <= 260) {
+    return normalized;
+  }
+
+  return position === "start"
+    ? `${normalized.slice(0, 260)}...`
+    : `...${normalized.slice(-260)}`;
+}
+
+function buildRequirementContinuityContext(document: ProjectDocumentDetail) {
+  if (document.file_format !== "pdf") {
+    return "";
+  }
+
+  const pages = splitPdfPages(document.raw_text);
+  if (!pages.length) {
+    return "";
+  }
+
+  const lines: string[] = [
+    `Dokument: ${document.title}`,
+    "Denne kontrollen styrer kravdeling over sideskift:",
+    "- Opprett ny kravrad bare når en ny krav-ID er synlig i kravdokumentet, eller når teksten åpenbart starter et nytt selvstendig krav med egen markør.",
+    "- Ikke finn opp neste løpenummer. Tekst på ny side uten synlig krav-ID er fortsettelse av forrige krav.",
+    "- Hvis en side starter med kravtekst, men uten ny ID, skal teksten slås sammen med forrige krav og samme krav-ID beholdes.",
+    "",
+  ];
+  let lastExplicitId: string | null = null;
+
+  for (const page of pages.slice(0, 60)) {
+    const ids = detectRequirementIds(page.text);
+
+    if (ids.length) {
+      lastExplicitId = ids[ids.length - 1] ?? lastExplicitId;
+      lines.push(
+        `Side ${page.page}: synlige krav-ID-er: ${ids.join(", ")}. Start: ${pageExcerpt(page.text, "start")}`,
+      );
+      continue;
+    }
+
+    if (lastExplicitId) {
+      lines.push(
+        `Side ${page.page}: ingen ny synlig krav-ID. Behandle teksten som fortsettelse av ${lastExplicitId}, ikke som nytt krav. Start: ${pageExcerpt(page.text, "start")}`,
+      );
+    } else {
+      lines.push(
+        `Side ${page.page}: ingen synlig krav-ID. Ikke opprett krav-ID basert på antatt løpenummer. Start: ${pageExcerpt(page.text, "start")}`,
+      );
+    }
+  }
+
+  return buildDelimitedContext(
+    `Sideskift- og krav-ID-kontroll for ${document.title}`,
+    lines.join("\n"),
+  );
+}
+
+function stripRequirementChrome(text: string) {
+  return normalizePageText(text)
+    .replace(/\bLeverandørens\s+besvarelse\b/gi, " ")
+    .replace(/\bRA-\d+\s+BILAG\s+[\d,]+\s+TIL\s+SSA-D\s+\d{4}\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanHeadingCandidate(value: string) {
+  return stripRequirementChrome(value)
+    .replace(/\bLeverandørens\s+besvarelse\s+ID\s*\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?\b/gi, " ")
+    .replace(/\bID\s*\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?\b/gi, " ")
+    .replace(/^[•\-–—:;.,\s]+|[•\-–—:;.,\s]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLikelyHeadingLine(line: string) {
+  if (/^\s*[•\-–—]/.test(line)) {
+    return false;
+  }
+
+  const cleaned = cleanHeadingCandidate(line);
+  if (!cleaned || cleaned.length < 4 || cleaned.length > 90) {
+    return false;
+  }
+
+  if (/^ID\b/i.test(cleaned) || /^[\d\s.-]+$/.test(cleaned)) {
+    return false;
+  }
+
+  if (/[.!?]$/.test(cleaned)) {
+    return false;
+  }
+
+  const wordCount = cleaned.split(/\s+/).length;
+  if (wordCount > 9) {
+    return false;
+  }
+
+  if (/^(og|eller|som|for|til|i|av|på|med)\b/i.test(cleaned)) {
+    return false;
+  }
+
+  if (/\b(skal|må|kan|bes|forbeholder|innebærer|ansvarlig|tilgjengelig)\b/i.test(cleaned)) {
+    return false;
+  }
+
+  return (
+    /^[A-ZÆØÅ0-9]/.test(cleaned) &&
+    (wordCount <= 5 ||
+      /^[A-ZÆØÅ][A-ZÆØÅ0-9\s/().,-]{4,}$/.test(cleaned) ||
+      /^\d+(\.\d+)*\s+\S+/.test(cleaned))
+  );
+}
+
+function headingLevel(heading: string) {
+  const cleaned = cleanHeadingCandidate(heading);
+
+  if (/^\d+\.\d+/.test(cleaned)) {
+    return 2;
+  }
+  if (/^\d+/.test(cleaned) || /krav\b/i.test(cleaned)) {
+    return 1;
+  }
+  return 2;
+}
+
+function buildHeadingPath(stack: string[]) {
+  return stack.filter(Boolean).slice(-3).join(" > ");
+}
+
+function normalizeTableId(value: string) {
+  const match = value.match(/(?:tabell\s*)?ID\s*(\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)/i);
+  return match ? `Tabell ID ${match[1]}-${match[2]}` : "";
+}
+
+function normalizePdfSpacing(value: string) {
+  return value
+    .replace(/\bPetor\s*os\b/gi, "Petoros")
+    .replace(/\bI\s*D\b/gi, "ID")
+    .replace(/\bkr\s*a\s*v\b/gi, "krav")
+    .replace(/\bTa\s*b\s*e\s*ll\b/gi, "Tabell")
+    .replace(/\bD\s*el\b/gi, "Del")
+    .replace(/\bL\s*ever\s*a\s*ndør\s*ens\s*sva\s*r\b/gi, "Leverandørens svar")
+    .replace(/\bT\s*j\s*eneste\b/gi, "Tjeneste")
+    .replace(/\bSpesi\s*f\s*i\s*ser\s*te\s*kr\s*a\s*v\b/gi, "Spesifiserte krav")
+    .replace(/\bD\s*eta\s*l\s*j\s*er\s*i\s*ng\s*er\b/gi, "Detaljeringer")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectTableId(line: string) {
+  const normalized = normalizePdfSpacing(line);
+  const match = normalized.match(
+    /\bTabell\s*ID\s*\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?/i,
+  );
+  return match ? normalizeTableId(match[0]) : "";
+}
+
+function isTableHeaderOrAnswerLine(line: string) {
+  return /^(Tjeneste|Spesifiserte krav|Ja|Nei|Del\b|-vis|Detaljeringer\b|Leverandørens svar)/i.test(
+    normalizePdfSpacing(line),
+  );
+}
+
+function tableRequirementStartIndex(line: string) {
+  const normalized = normalizePdfSpacing(line);
+  const patterns = [
+    /\b(?:Leverandøren|Tilbyder|Oppdragstaker|Avtalepart|Leverandør)\s+(?:skal|må|bes|bør|har|kan)\b/i,
+    /\b(?:Løsningen|Løsningene|Tjenesten|Tjenestene|Systemet|Plattformen)\s+(?:skal|må|bør|kan)\b/i,
+    /\bKunden\s+(?:skal|kan|må)\b/i,
+    /\bAll\s+drifts-/i,
+    /\bOversikt\s+over\b/i,
+    /\bI\s+samråd\s+med\s+Kunden\b/i,
+    /\bFølgende\s+oppgaver\b/i,
+    /\bDet\s+(?:skal|er)\b/i,
+    /\bKrav(?:et|ene)?\s+(?:skal|må|bør)\b/i,
+  ];
+
+  const indexes = patterns
+    .map((pattern) => normalized.search(pattern))
+    .filter((index) => index >= 0);
+
+  return indexes.length ? Math.min(...indexes) : -1;
+}
+
+function cleanTableService(value: string) {
+  return normalizePdfSpacing(value)
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanTableRequirement(value: string) {
+  return normalizePdfSpacing(value)
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeRequirementLedgerText(value: string) {
+  return normalizePdfSpacing(value)
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .trim();
+}
+
+function isTableContainerRequirement(entry: RequirementLedgerEntry) {
+  if (entry.tableId) {
+    return false;
+  }
+
+  const text = normalizeRequirementLedgerText(entry.text);
+  const tableMarkerCount = (
+    text.match(/\btabell\s+id\s+\d{1,3}-\d{1,3}[a-z]?\b/g) ?? []
+  ).length;
+
+  const hasTableIntroLanguage =
+    /\b(følgende|nedenfor|under|tabell|tabellene|oversikt|oppgaver|aktiviteter|krav)\b/i.test(
+      text,
+    );
+  const hasManyRequirementSignals =
+    (text.match(/\b(?:skal|må|bes|bør)\b/g) ?? []).length >= 4;
+
+  return (
+    tableMarkerCount >= 2 ||
+    (tableMarkerCount >= 1 &&
+      text.length >= 700 &&
+      hasTableIntroLanguage &&
+      hasManyRequirementSignals)
+  );
+}
+
+function isLikelyTableServiceLine(line: string) {
+  const cleaned = cleanTableService(line);
+  if (!cleaned || cleaned.length > 70 || /[.!?]$/.test(cleaned)) {
+    return false;
+  }
+
+  const wordCount = cleaned.split(/\s+/).length;
+  return wordCount <= 5 && !/\b(skal|må|kan|bes|følge|sikre|utføre)\b/i.test(cleaned);
+}
+
+function buildPageHeadingMap(document: ProjectDocumentDetail) {
+  const map = new Map<number, string>();
+  const stack: string[] = [];
+
+  for (const page of splitPdfPagesPreservingLines(document.raw_text).slice(0, 120)) {
+    const lines = page.text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (const line of lines.slice(0, 30)) {
+      if (!isLikelyHeadingLine(line)) {
+        continue;
+      }
+
+      const level = headingLevel(line);
+      stack[level - 1] = line;
+      stack.length = level;
+    }
+
+    const path = buildHeadingPath(stack);
+    if (path) {
+      map.set(page.page, path);
+    }
+  }
+
+  return map;
+}
+
+function findHeadingBeforeOffset(
+  pageText: string,
+  offset: number,
+  fallback: string,
+) {
+  const before = pageText.slice(0, Math.max(0, offset));
+  const lines = before
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const headings = lines.filter(isLikelyHeadingLine);
+
+  if (!headings.length) {
+    return fallback;
+  }
+
+  return buildHeadingPath(headings.slice(-3)) || fallback;
+}
+
+function buildTableRequirementLedger(document: ProjectDocumentDetail) {
+  if (document.file_format !== "pdf") {
+    return [];
+  }
+
+  const pageHeadingMap = buildPageHeadingMap(document);
+  const requirements: RequirementLedgerEntry[] = [];
+  let activeTableId = "";
+  let current:
+    | {
+        tableId: string;
+        service: string;
+        text: string;
+        pages: number[];
+        heading: string;
+      }
+    | null = null;
+  let serviceBuffer: string[] = [];
+  let pendingServiceBuffer: string[] = [];
+
+  function flushCurrent() {
+    if (!current) {
+      return;
+    }
+
+    const text = cleanTableRequirement(current.text);
+    if (text.length >= 20) {
+      requirements.push({
+        id: `${current.tableId}${current.service ? ` - ${current.service}` : ""}`,
+        text,
+        pages: current.pages,
+        heading: current.heading,
+        tableId: current.tableId,
+        service: current.service,
+      });
+    }
+    current = null;
+  }
+
+  function flushPendingServiceIntoCurrent() {
+    if (current && pendingServiceBuffer.length) {
+      current.text = [current.text, pendingServiceBuffer.join(" ")]
+        .filter(Boolean)
+        .join(" ");
+    }
+    pendingServiceBuffer = [];
+  }
+
+  function startRow(input: {
+    tableId: string;
+    service: string;
+    text: string;
+    page: number;
+    heading: string;
+  }) {
+    flushCurrent();
+    current = {
+      tableId: input.tableId,
+      service: cleanTableService(input.service),
+      text: cleanTableRequirement(input.text),
+      pages: [input.page],
+      heading: input.heading,
+    };
+    serviceBuffer = [];
+    pendingServiceBuffer = [];
+  }
+
+  function appendToCurrent(line: string, page: number, heading: string) {
+    if (!current) {
+      serviceBuffer.push(line);
+      return;
+    }
+
+    flushPendingServiceIntoCurrent();
+    current.text = [current.text, line].filter(Boolean).join(" ");
+    if (!current.pages.includes(page)) {
+      current.pages.push(page);
+    }
+    if (heading) {
+      current.heading = heading;
+    }
+  }
+
+  for (const page of splitPdfPagesPreservingLines(document.raw_text).slice(0, 120)) {
+    const pageHeading = pageHeadingMap.get(page.page) ?? "";
+    const lines = page.text
+      .split("\n")
+      .map((line) => normalizePdfSpacing(line))
+      .filter(Boolean);
+
+    for (const line of lines) {
+      const tableId = detectTableId(line);
+      if (tableId) {
+        if (current && tableId === activeTableId) {
+          serviceBuffer = [];
+          pendingServiceBuffer = [];
+          continue;
+        }
+
+        flushPendingServiceIntoCurrent();
+        flushCurrent();
+        activeTableId = tableId;
+        serviceBuffer = [];
+        pendingServiceBuffer = [];
+        continue;
+      }
+
+      if (!activeTableId || isTableHeaderOrAnswerLine(line)) {
+        continue;
+      }
+
+      if (/^Leverandørens\s+besvarelse\b/i.test(line)) {
+        flushPendingServiceIntoCurrent();
+        flushCurrent();
+        activeTableId = "";
+        serviceBuffer = [];
+        pendingServiceBuffer = [];
+        continue;
+      }
+
+      const requirementIndex = tableRequirementStartIndex(line);
+      if (requirementIndex >= 0) {
+        const beforeRequirement = cleanTableService(line.slice(0, requirementIndex));
+        const requirementText = cleanTableRequirement(line.slice(requirementIndex));
+        const rowService =
+          /^[A-ZÆØÅ]/.test(beforeRequirement) &&
+          isLikelyTableServiceLine(beforeRequirement)
+            ? beforeRequirement
+            : "";
+        const service = [
+          serviceBuffer.join(" "),
+          pendingServiceBuffer.join(" "),
+          rowService,
+        ]
+          .map(cleanTableService)
+          .filter(Boolean)
+          .join(" ");
+
+        if (current && (service || pendingServiceBuffer.length) && requirementIndex >= 0) {
+          startRow({
+            tableId: activeTableId,
+            service,
+            text: requirementText,
+            page: page.page,
+            heading: pageHeading,
+          });
+          continue;
+        }
+
+        if (!current) {
+          startRow({
+            tableId: activeTableId,
+            service,
+            text: requirementText,
+            page: page.page,
+            heading: pageHeading,
+          });
+          continue;
+        }
+      }
+
+      if (
+        current &&
+        isLikelyTableServiceLine(line) &&
+        (/^[A-ZÆØÅ]/.test(line) || pendingServiceBuffer.length > 0)
+      ) {
+        pendingServiceBuffer.push(line);
+        continue;
+      }
+
+      appendToCurrent(line, page.page, pageHeading);
+    }
+  }
+
+  flushCurrent();
+  return requirements;
+}
+
+function buildRequirementSourceLedger(document: ProjectDocumentDetail) {
+  if (document.file_format !== "pdf") {
+    return [];
+  }
+
+  const pages = splitPdfPages(document.raw_text);
+  if (!pages.length) {
+    return [];
+  }
+
+  const markerPattern =
+    /(?:Leverandørens\s+besvarelse\s+)?(ID\s*\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?)/gi;
+  const requirements: RequirementLedgerEntry[] = [];
+  const pageHeadingMap = buildPageHeadingMap(document);
+  let current: RequirementLedgerEntry | null = null;
+  let currentHeading = "";
+
+  function appendToCurrent(text: string, page: number) {
+    const cleaned = stripRequirementChrome(text);
+    if (!current || !cleaned) {
+      return;
+    }
+
+    current.text = [current.text, cleaned].filter(Boolean).join(" ");
+    if (!current.pages.includes(page)) {
+      current.pages.push(page);
+    }
+  }
+
+  function flushCurrent() {
+    if (!current) {
+      return;
+    }
+
+    const text = stripRequirementChrome(current.text).split(
+      /\b(?:[\p{L}\s/-]{0,80}[–-]\s*)?Ta\s*b\s*e\s*ll\s*ID\s*\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?/iu,
+    )[0]?.trim() ?? "";
+    if (text) {
+      requirements.push({
+        ...current,
+        text,
+      });
+    }
+    current = null;
+  }
+
+  for (const page of pages.slice(0, 100)) {
+    const pageHeading = pageHeadingMap.get(page.page);
+    if (pageHeading) {
+      currentHeading = pageHeading;
+    }
+
+    const matches = [...page.text.matchAll(markerPattern)];
+    if (!matches.length) {
+      if (current && pageHeading) {
+        current.heading = pageHeading;
+      }
+      appendToCurrent(page.text, page.page);
+      continue;
+    }
+
+    let cursor = 0;
+    for (const match of matches) {
+      const markerStart = match.index ?? 0;
+      const markerPrefix = page.text.slice(Math.max(0, markerStart - 24), markerStart);
+      if (/\bTabell\s*$/i.test(markerPrefix)) {
+        continue;
+      }
+
+      const beforeMarker = page.text.slice(cursor, markerStart);
+      if (current && pageHeading) {
+        current.heading = pageHeading;
+      }
+      appendToCurrent(beforeMarker, page.page);
+      flushCurrent();
+
+      current = {
+        id: normalizeRequirementId(match[1] ?? match[0]),
+        text: "",
+        pages: [page.page],
+        heading: findHeadingBeforeOffset(
+          page.text,
+          markerStart,
+          pageHeading ?? currentHeading,
+        ),
+      };
+      cursor = markerStart + match[0].length;
+    }
+
+    appendToCurrent(page.text.slice(cursor), page.page);
+  }
+
+  flushCurrent();
+
+  const tableRequirements = buildTableRequirementLedger(document);
+  const regularRequirements = requirements.filter(
+    (item) => item.text.length >= 20 && !isTableContainerRequirement(item),
+  );
+
+  return [...regularRequirements, ...tableRequirements];
+}
+
+function requirementLedgerSource(entry: RequirementLedgerEntry) {
+  const pages = entry.pages.sort((a, b) => a - b);
+  const pageLabel =
+    pages.length === 1
+      ? `Side ${pages[0]}`
+      : `Side ${pages[0]}-${pages[pages.length - 1]}`;
+
+  return [
+    pageLabel,
+    entry.heading,
+    entry.tableId,
+    entry.service,
+    entry.tableId ? "" : entry.id,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function buildRequirementSourceLedgerContext(document: ProjectDocumentDetail) {
+  const rows = buildRequirementSourceLedger(document)
+    .slice(0, 80)
+    .map((item) => {
+      return `- ${item.id} | ${requirementLedgerSource(item)} | ${compactText(item.text, 500)}`;
+    });
+
+  if (!rows.length) {
+    return "";
+  }
+
+  return buildDelimitedContext(
+    `Kravfasit fra skjemamarkører for ${document.title}`,
+    [
+      "Bruk denne listen som primær fasit for krav-ID, kravrekkefølge og kravtekst når kravdokumentet har Leverandørens besvarelse-markører.",
+      "Tekst som ligger før neste ID-markør på ny side er behandlet som fortsettelse av forrige krav, ikke som nytt krav.",
+      "Hvis denne fasiten finnes, skal kravbesvarelsen følge den fremfor å dele krav på sidebrudd i råteksten.",
+      "",
+      ...rows,
+    ].join("\n"),
+  );
+}
+
+function buildContinuationPageMap(documents: ProjectDocumentDetail[]) {
+  const map = new Map<number, string>();
+
+  for (const document of documents) {
+    if (document.file_format !== "pdf") {
+      continue;
+    }
+
+    let lastExplicitId: string | null = null;
+    for (const page of splitPdfPages(document.raw_text).slice(0, 80)) {
+      const ids = detectRequirementIds(page.text);
+
+      if (ids.length) {
+        lastExplicitId = ids[ids.length - 1] ?? lastExplicitId;
+        continue;
+      }
+
+      if (lastExplicitId) {
+        map.set(page.page, lastExplicitId);
+      }
+    }
+  }
+
+  return map;
+}
+
+function normalizeEvidenceText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[‐‑‒–—]/g, "-")
+    .trim();
+}
+
+function buildRequirementPageEvidence(documents: ProjectDocumentDetail[]) {
+  const map = new Map<number, string>();
+
+  for (const document of documents) {
+    if (document.file_format !== "pdf") {
+      continue;
+    }
+
+    for (const page of splitPdfPages(document.raw_text).slice(0, 100)) {
+      const existing = map.get(page.page);
+      const text = normalizeEvidenceText(page.text);
+      map.set(page.page, existing ? `${existing} ${text}` : text);
+    }
+  }
+
+  return map;
+}
+
+function requirementIdVariants(requirementId: string) {
+  const id = normalizeRequirementId(requirementId);
+  const compact = id.replace(/\s+/g, "");
+  const withoutPrefix = compact.replace(/^ID/, "");
+  const variants = [id, compact, withoutPrefix, `ID ${withoutPrefix}`]
+    .map((value) => normalizeEvidenceText(value))
+    .filter(Boolean);
+
+  return [...new Set(variants)];
+}
+
+function requirementLeadVariants(requirementText: string) {
+  const words = normalizeEvidenceText(requirementText)
+    .split(" ")
+    .filter(Boolean);
+  const variants: string[] = [];
+
+  for (const length of [10, 8, 6, 4]) {
+    if (words.length >= length) {
+      variants.push(words.slice(0, length).join(" "));
+    }
+  }
+
+  return variants;
+}
+
+function findFirstIndexOfAny(haystack: string, needles: string[]) {
+  let first = -1;
+
+  for (const needle of needles) {
+    const index = haystack.indexOf(needle);
+    if (index >= 0 && (first < 0 || index < first)) {
+      first = index;
+    }
+  }
+
+  return first;
+}
+
+function pageHasRequirementIdBeforeRequirementText(input: {
+  pageText: string;
+  requirementId: string;
+  requirementText: string;
+}) {
+  const pageText = normalizeEvidenceText(input.pageText);
+  const idIndex = findFirstIndexOfAny(
+    pageText,
+    requirementIdVariants(input.requirementId),
+  );
+
+  if (idIndex < 0) {
+    return false;
+  }
+
+  const leadIndex = findFirstIndexOfAny(
+    pageText,
+    requirementLeadVariants(input.requirementText),
+  );
+
+  if (leadIndex < 0) {
+    return true;
+  }
+
+  return idIndex <= leadIndex;
+}
+
+function splitMarkdownTableRow(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function toMarkdownTableRow(cells: string[]) {
+  return `| ${cells.map((cell) => cell.replace(/\s+/g, " ").trim()).join(" | ")} |`;
+}
+
+function tableRequirementAnswer(entry: RequirementLedgerEntry) {
+  const service = normalizeRequirementLedgerText(entry.service ?? entry.id);
+  const text = normalizeRequirementLedgerText(entry.text);
+
+  if (service.includes("tilgang") || text.includes("hjemmekontor")) {
+    return "Atea etablerer og drifter sikre tilgangsløsninger som gir kunden tilgang fra kontor, hjemmekontor og ekstern oppkobling, med identitetskontroll, kryptert kommunikasjon og overvåket infrastruktur.";
+  }
+  if (service.includes("lisens")) {
+    return "Atea administrerer, rapporterer og optimaliserer aktuelle lisenser i leveransen, inkludert Microsoft 365, basert på faktisk bruk, lisensnivå og kostnadsbilde.";
+  }
+  if (service.includes("overvåk")) {
+    return "Atea overvåker relevante infrastrukturtjenester, servere, programvare, databaser og styringssystemer med varsling, oppfølging og eskalering for å sikre tilgjengelighet.";
+  }
+  if (service.includes("dokumentasjon")) {
+    return "Atea holder drifts- og systemdokumentasjon løpende oppdatert og sikrer kontrollert tilgang for relevant personell.";
+  }
+  if (service.includes("bruker")) {
+    return "Atea utfører brukeradministrasjon etter godkjenning fra kunden og håndterer opprettelse, endring, sletting og deaktivering av brukere i henhold til avtalt arbeidsflyt.";
+  }
+  if (service.includes("inventar")) {
+    return "Atea opprettholder inventaroversikt over utstyr, programvareversjoner, installasjonssted, brukertilknytning og relevante reservedeler i leveransen.";
+  }
+  if (service.includes("feil")) {
+    return "Atea håndterer feil gjennom etablert hendelsesprosess, koordinerer mot tredjeparter ved behov og følger opp tilbakelegging fra sikkerhetskopi når dette er nødvendig.";
+  }
+  if (service.includes("vedlikehold") || service.includes("patch")) {
+    return "Atea planlegger og gjennomfører vedlikehold, sikkerhetsoppdateringer og servicepatcher etter risiko, kritikalitet og avtalt endringsprosess.";
+  }
+  if (service.includes("tredjepart")) {
+    return "Atea koordinerer support og driftsoppfølging mot aktuelle tredjepartsleverandører for programvare og løsninger som inngår i Ateas driftsansvar.";
+  }
+  if (service.includes("revisjon")) {
+    return "Atea bistår kunden ved revisjoner, internrevisjoner og kvalitetskontroller med relevant dokumentasjon, fagressurser og oppfølging av avtalte tiltak.";
+  }
+  if (service.includes("logger")) {
+    return "Atea følger opp logger og alarmer for relevante tjenester og iverksetter korrektive tiltak etter alvorlighet og avtalt prosess.";
+  }
+  if (service.includes("applikasjon")) {
+    return "Atea leverer applikasjonsforvaltning for programvare som inngår i leveransen, med oppfølging, vedlikehold, feilretting og oppdateringer innenfor avtalt ansvarsområde.";
+  }
+  if (service.includes("helpdesk") || service.includes("tam")) {
+    return "Atea tilbyr stedlige Helpdesk- og TAM-ressurser med SPOC-ansvar, koordinering, prosjektstøtte, test og implementering, utstyrshåndtering og relevant Microsoft 365-kompetanse.";
+  }
+  if (service.includes("rapportering")) {
+    return "Atea rapporterer aktiviteter, status, avvik og tiltak i avtalte statusmøter og styringsfora.";
+  }
+  if (service.includes("sikkerhet") || service.includes("risiko")) {
+    return "Atea ivaretar kravet gjennom etablerte sikkerhetsroller, risikostyring, dokumenterte prosesser, operativ oppfølging og rapportering til kunden.";
+  }
+  if (service.includes("sertifisering")) {
+    return "Atea oppgir relevante sikkerhetssertifiseringer for virksomheten og aktuelle ressurser i tilbudet og tilhørende vedlegg.";
+  }
+  if (service.includes("kryptering")) {
+    return "Atea redegjør for kryptering av data i transitt, ved lagring og i backup, inkludert protokoller, algoritmer, nøkkelhåndtering og sikring av administrative tilganger.";
+  }
+  if (service.includes("backup") || service.includes("sikkerhetskopi")) {
+    return "Atea beskriver rutiner for sikkerhetskopiering, verifikasjon, tilbakelegging, fjernlagring og skjermet backup i henhold til kravene i leveransen.";
+  }
+  if (service.includes("plattform")) {
+    return "Atea overvåker relevante infrastruktur- og PaaS-tjenester uavhengig av om de kjøres lokalt, i skyplattformer eller i Ateas datasenter.";
+  }
+  if (service.includes("varsling")) {
+    return "Atea beskriver varslingsrutiner for kritiske funn og hendelser, inkludert eskaleringsvei, varslingsfrist, kontaktpunkter og oppfølging til hendelsen er lukket.";
+  }
+
+  return "Atea oppfyller kravet gjennom avtalt leveransemodell, dokumenterte prosesser, relevant fagkompetanse og løpende oppfølging med kunden.";
+}
+
+function synthesizeRequirementLedgerRow(
+  entry: RequirementLedgerEntry,
+  indexes: {
+    refIndex: number;
+    requirementIndex: number;
+    answerIndex: number;
+    sourceIndex: number;
+  },
+  width: number,
+) {
+  const row = Array.from({ length: width }, () => "");
+  row[indexes.refIndex] = entry.id;
+  row[indexes.requirementIndex] = entry.text;
+  row[indexes.answerIndex] = tableRequirementAnswer(entry);
+  row[indexes.sourceIndex] = requirementLedgerSource(entry);
+  return row;
+}
+
+function isMarkdownSeparatorRow(line: string) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function firstSourcePage(source: string) {
+  const match = source.match(/\bSide\s+(\d+)\b/i);
+  return match ? Number(match[1]) : null;
+}
+
+function sourcePages(source: string) {
+  return [...source.matchAll(/\bSide\s+(\d+)\b/gi)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value));
+}
+
+function maxSourcePage(source: string) {
+  const pages = sourcePages(source);
+  return pages.length ? Math.max(...pages) : null;
+}
+
+function splitRequirementIdParts(requirementId: string) {
+  const normalized = normalizeRequirementId(requirementId).replace(/^ID\s*/, "");
+  const match = normalized.match(/^([A-ZÆØÅ]*\s*)?(\d{1,3})[-.](\d{1,3})([A-Z]?)$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    prefix: `${match[1] ?? ""}${match[2]}`.replace(/\s+/g, "").toUpperCase(),
+    number: Number(match[3]),
+    suffix: (match[4] ?? "").toUpperCase(),
+  };
+}
+
+function isImmediateNextRequirementId(previousId: string, currentId: string) {
+  const previous = splitRequirementIdParts(previousId);
+  const current = splitRequirementIdParts(currentId);
+
+  if (!previous || !current) {
+    return false;
+  }
+
+  return (
+    previous.prefix === current.prefix &&
+    previous.suffix === current.suffix &&
+    current.number === previous.number + 1
+  );
+}
+
+function pageStartsWithRequirementText(input: {
+  pageText: string;
+  requirementText: string;
+}) {
+  const pageText = normalizeEvidenceText(input.pageText);
+  const leadIndex = findFirstIndexOfAny(
+    pageText,
+    requirementLeadVariants(input.requirementText),
+  );
+
+  return leadIndex >= 0 && leadIndex <= 700;
+}
+
+function pageEndsWithRequirementText(input: {
+  pageText: string;
+  requirementText: string;
+}) {
+  const pageText = normalizeEvidenceText(input.pageText);
+  const leadIndex = findFirstIndexOfAny(
+    pageText,
+    requirementLeadVariants(input.requirementText),
+  );
+
+  return leadIndex >= 0 && leadIndex >= Math.max(0, pageText.length - 1200);
+}
+
+function appendSentence(left: string, right: string) {
+  const cleanLeft = left.trim();
+  const cleanRight = right.trim();
+
+  if (!cleanLeft) return cleanRight;
+  if (!cleanRight || cleanLeft.includes(cleanRight)) return cleanLeft;
+
+  return `${cleanLeft}${/[.!?]$/.test(cleanLeft) ? " " : ". "}${cleanRight}`;
+}
+
+function textCoverageScore(source: string, candidate: string) {
+  const sourceWords = normalizeEvidenceText(source)
+    .split(" ")
+    .filter((word) => word.length > 2);
+  const candidateWords = normalizeEvidenceText(candidate)
+    .split(" ")
+    .filter((word) => word.length > 2);
+
+  if (!sourceWords.length || !candidateWords.length) {
+    return 0;
+  }
+
+  const sourceSet = new Set(sourceWords);
+  const matched = candidateWords.filter((word) => sourceSet.has(word)).length;
+  return matched / sourceWords.length;
+}
+
+function mergeRequirementSource(
+  left: string,
+  right: string,
+  requirementId: string,
+) {
+  const pages = [...sourcePages(left), ...sourcePages(right)];
+  const uniquePages = [...new Set(pages)].sort((a, b) => a - b);
+
+  if (!uniquePages.length) {
+    return left || right;
+  }
+
+  const pageLabel =
+    uniquePages.length === 1
+      ? `Side ${uniquePages[0]}`
+      : `Side ${uniquePages[0]}-${uniquePages[uniquePages.length - 1]}`;
+  const tail = left
+    .replace(/\bSide\s+\d+(?:\s*-\s*\d+)?\s*,?\s*/i, "")
+    .trim();
+  const normalizedId = normalizeRequirementId(requirementId);
+  const tailWithId = tail || normalizedId;
+
+  return `${pageLabel}, ${tailWithId}`;
+}
+
+function sourceTail(source: string) {
+  return source
+    .replace(/\bSide\s+\d+(?:\s*-\s*\d+)?\s*,?\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sourceTailHasRequirementId(source: string, requirementId: string) {
+  const sourceText = normalizeEvidenceText(source);
+  return requirementIdVariants(requirementId).some((variant) =>
+    sourceText.includes(variant),
+  );
+}
+
+function formatRequirementSource(
+  pages: number[],
+  tail: string,
+  requirementId: string,
+) {
+  const uniquePages = [...new Set(pages)]
+    .filter((page) => Number.isFinite(page))
+    .sort((a, b) => a - b);
+
+  if (!uniquePages.length) {
+    return tail || normalizeRequirementId(requirementId);
+  }
+
+  const pageLabel =
+    uniquePages.length === 1
+      ? `Side ${uniquePages[0]}`
+      : `Side ${uniquePages[0]}-${uniquePages[uniquePages.length - 1]}`;
+  const idTail = sourceTailHasRequirementId(tail, requirementId)
+    ? tail
+    : [tail, normalizeRequirementId(requirementId)].filter(Boolean).join(", ");
+
+  return [pageLabel, idTail].filter(Boolean).join(", ");
+}
+
+function includeSourcePage(
+  source: string,
+  page: number,
+  requirementId: string,
+) {
+  return formatRequirementSource(
+    [...sourcePages(source), page],
+    sourceTail(source),
+    requirementId,
+  );
+}
+
+function repairContinuationSource(input: {
+  source: string;
+  requirementId: string;
+  requirementText: string;
+  continuationPages: Map<number, string>;
+  pageEvidence: Map<number, string>;
+}) {
+  const firstPage = firstSourcePage(input.source);
+
+  if (!firstPage || firstPage <= 1 || !input.requirementId) {
+    return input.source;
+  }
+
+  const expectedId = input.continuationPages.get(firstPage);
+  if (
+    !expectedId ||
+    normalizeRequirementId(expectedId) !== normalizeRequirementId(input.requirementId)
+  ) {
+    return input.source;
+  }
+
+  const previousPageText = input.pageEvidence.get(firstPage - 1) ?? "";
+  const idStartedOnPreviousPage = pageHasRequirementIdBeforeRequirementText({
+    pageText: previousPageText,
+    requirementId: input.requirementId,
+    requirementText: input.requirementText,
+  });
+  const textStartedOnPreviousPage = pageEndsWithRequirementText({
+    pageText: previousPageText,
+    requirementText: input.requirementText,
+  });
+
+  if (!idStartedOnPreviousPage && !textStartedOnPreviousPage) {
+    return input.source;
+  }
+
+  return includeSourcePage(input.source, firstPage - 1, input.requirementId);
+}
+
+function mergeContinuationRowsInRequirementTable(
+  contentMarkdown: string,
+  continuationPages: Map<number, string>,
+  pageEvidence: Map<number, string>,
+) {
+  if (!continuationPages.size && !pageEvidence.size) {
+    return contentMarkdown;
+  }
+
+  const lines = contentMarkdown.split("\n");
+  const nextLines: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+
+    if (!line.trim().startsWith("|")) {
+      nextLines.push(line);
+      index += 1;
+      continue;
+    }
+
+    const headerCells = splitMarkdownTableRow(line);
+    const sourceIndex = headerCells.findIndex((cell) =>
+      /kildegrunnlag/i.test(cell),
+    );
+    const refIndex = headerCells.findIndex((cell) => /kravref/i.test(cell));
+    const requirementIndex = headerCells.findIndex((cell) =>
+      /^krav$/i.test(cell),
+    );
+    const answerIndex = headerCells.findIndex((cell) => /^svar$/i.test(cell));
+
+    if (
+      sourceIndex < 0 ||
+      refIndex < 0 ||
+      requirementIndex < 0 ||
+      answerIndex < 0 ||
+      !isMarkdownSeparatorRow(lines[index + 1] ?? "")
+    ) {
+      nextLines.push(line);
+      index += 1;
+      continue;
+    }
+
+    const tableLines = [line, lines[index + 1] ?? ""];
+    index += 2;
+    while (index < lines.length && (lines[index] ?? "").trim().startsWith("|")) {
+      tableLines.push(lines[index] ?? "");
+      index += 1;
+    }
+
+    const rows = tableLines.slice(2).map(splitMarkdownTableRow);
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const row = rows[rowIndex];
+      const currentId = normalizeRequirementId(row[refIndex] ?? "");
+      if (currentId) {
+        row[sourceIndex] = repairContinuationSource({
+          source: row[sourceIndex] ?? "",
+          requirementId: currentId,
+          requirementText: row[requirementIndex] ?? "",
+          continuationPages,
+          pageEvidence,
+        });
+      }
+
+      const page = firstSourcePage(row[sourceIndex] ?? "");
+      const expectedId = page ? continuationPages.get(page) : null;
+      const previousRow = rows[rowIndex - 1];
+      const previousId = normalizeRequirementId(previousRow?.[refIndex] ?? "");
+      const previousMaxPage = maxSourcePage(previousRow?.[sourceIndex] ?? "");
+      const isAdjacentPageContinuation =
+        Boolean(page && previousMaxPage && page === previousMaxPage + 1);
+      const isExpectedPreviousId = Boolean(
+        expectedId && previousId && normalizeRequirementId(expectedId) === previousId,
+      );
+      const isLikelyInventedNextId = Boolean(
+        previousId && currentId && isImmediateNextRequirementId(previousId, currentId),
+      );
+      const isDuplicateContinuationId = Boolean(
+        previousId && currentId && previousId === currentId,
+      );
+      const currentIdHasPageEvidence =
+        page && currentId
+          ? pageHasRequirementIdBeforeRequirementText({
+              pageText: pageEvidence.get(page) ?? "",
+              requirementId: currentId,
+              requirementText: row[requirementIndex] ?? "",
+            })
+          : true;
+      const startsAtTopOfContinuationPage =
+        page && row[requirementIndex]
+          ? pageStartsWithRequirementText({
+              pageText: pageEvidence.get(page) ?? "",
+              requirementText: row[requirementIndex] ?? "",
+            })
+          : false;
+
+      const shouldMerge =
+        isAdjacentPageContinuation &&
+        isExpectedPreviousId &&
+        (isLikelyInventedNextId || isDuplicateContinuationId) &&
+        !currentIdHasPageEvidence &&
+        startsAtTopOfContinuationPage;
+
+      if (!shouldMerge) {
+        continue;
+      }
+
+      const mergeIntoId = isDuplicateContinuationId ? currentId : previousId;
+      if (!mergeIntoId) {
+        continue;
+      }
+
+      const targetIndex = rows.findIndex(
+        (candidate, candidateIndex) =>
+          candidateIndex < rowIndex &&
+          normalizeRequirementId(candidate[refIndex] ?? "") === mergeIntoId,
+      );
+
+      if (targetIndex < 0) {
+        row[refIndex] = mergeIntoId;
+        continue;
+      }
+
+      const target = rows[targetIndex];
+      target[requirementIndex] = appendSentence(
+        target[requirementIndex] ?? "",
+        row[requirementIndex] ?? "",
+      );
+      target[answerIndex] = appendSentence(
+        target[answerIndex] ?? "",
+        row[answerIndex] ?? "",
+      );
+      target[sourceIndex] = mergeRequirementSource(
+        target[sourceIndex] ?? "",
+        row[sourceIndex] ?? "",
+        mergeIntoId,
+      );
+      rows.splice(rowIndex, 1);
+      rowIndex -= 1;
+    }
+
+    nextLines.push(tableLines[0] ?? "");
+    nextLines.push(tableLines[1] ?? "");
+    nextLines.push(...rows.map(toMarkdownTableRow));
+  }
+
+  return nextLines.join("\n");
+}
+
+function alignRequirementRowsWithLedger(
+  contentMarkdown: string,
+  ledger: RequirementLedgerEntry[],
+) {
+  if (!ledger.length) {
+    return contentMarkdown;
+  }
+
+  const lines = contentMarkdown.split("\n");
+  const nextLines: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+
+    if (!line.trim().startsWith("|")) {
+      nextLines.push(line);
+      index += 1;
+      continue;
+    }
+
+    const headerCells = splitMarkdownTableRow(line);
+    const sourceIndex = headerCells.findIndex((cell) =>
+      /kildegrunnlag/i.test(cell),
+    );
+    const refIndex = headerCells.findIndex((cell) => /kravref/i.test(cell));
+    const requirementIndex = headerCells.findIndex((cell) =>
+      /^krav$/i.test(cell),
+    );
+    const answerIndex = headerCells.findIndex((cell) => /^svar$/i.test(cell));
+
+    if (
+      sourceIndex < 0 ||
+      refIndex < 0 ||
+      requirementIndex < 0 ||
+      answerIndex < 0 ||
+      !isMarkdownSeparatorRow(lines[index + 1] ?? "")
+    ) {
+      nextLines.push(line);
+      index += 1;
+      continue;
+    }
+
+    const tableLines = [line, lines[index + 1] ?? ""];
+    index += 2;
+    while (index < lines.length && (lines[index] ?? "").trim().startsWith("|")) {
+      tableLines.push(lines[index] ?? "");
+      index += 1;
+    }
+
+    const rows = tableLines.slice(2).map(splitMarkdownTableRow);
+    const alignedRows: string[][] = [];
+    let rowCursor = 0;
+
+    for (const entry of ledger) {
+      const matchedRows: string[][] = [];
+      let combinedRequirementText = "";
+      let scan = rowCursor;
+      let bestCoverage = 0;
+
+      while (scan < rows.length && matchedRows.length < 4) {
+        const candidate = rows[scan];
+        const candidateId = normalizeRequirementId(candidate?.[refIndex] ?? "");
+        const candidateText = candidate?.[requirementIndex] ?? "";
+        const nextCombined = appendSentence(combinedRequirementText, candidateText);
+        const coverage = textCoverageScore(entry.text, nextCombined);
+        const isExpectedId = candidateId === entry.id;
+        const improvesCurrentMatch = matchedRows.length > 0 && coverage > bestCoverage;
+
+        if (isExpectedId || coverage >= 0.55 || improvesCurrentMatch) {
+          matchedRows.push(candidate);
+          combinedRequirementText = nextCombined;
+          bestCoverage = Math.max(bestCoverage, coverage);
+          scan += 1;
+          if (coverage >= 0.88) {
+            break;
+          }
+          continue;
+        }
+
+        if (!matchedRows.length) {
+          scan += 1;
+          continue;
+        }
+        break;
+      }
+
+      if (!matchedRows.length) {
+        if (entry.tableId) {
+          alignedRows.push(
+            synthesizeRequirementLedgerRow(
+              entry,
+              { refIndex, requirementIndex, answerIndex, sourceIndex },
+              headerCells.length,
+            ),
+          );
+        }
+        continue;
+      }
+
+      rowCursor = scan;
+      const base = [...matchedRows[0]];
+      base[refIndex] = entry.id;
+      base[requirementIndex] = entry.text;
+      base[answerIndex] = matchedRows
+        .map((row) => row[answerIndex] ?? "")
+        .filter(Boolean)
+        .reduce((left, right) => appendSentence(left, right), "");
+      base[sourceIndex] = requirementLedgerSource(entry);
+      alignedRows.push(base);
+    }
+
+    nextLines.push(tableLines[0] ?? "");
+    nextLines.push(tableLines[1] ?? "");
+    nextLines.push(...(alignedRows.length ? alignedRows : rows).map(toMarkdownTableRow));
+  }
+
+  return nextLines.join("\n");
 }
 
 function isRequirementDocument(document: ProjectDocumentDetail) {
@@ -1289,7 +2716,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     label: "Oppsummering",
     fields: "customer_profile_summary og customer_goals_summary",
     guidance: [
-      "Regenerer kun lederoppsummeringen av kunden.",
+      "Rediger kun lederoppsummeringen av kunden.",
       "customer_profile_summary skal forklare kundesituasjonen, modenhet, rammer og relevant kontekst.",
       "customer_goals_summary skal forklare kundens mål, ønsket effekt, utviklingsretning og hvilken løsningsretning dette peker mot.",
     ],
@@ -1302,7 +2729,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     label: "Strategi",
     fields: "executive_summary og positioning_recommendations",
     guidance: [
-      "Regenerer kun tilbudsteamets operative strategi og anbefalte posisjonering.",
+      "Rediger kun tilbudsteamets operative strategi og anbefalte posisjonering.",
       "executive_summary skal være arbeidsteksten som brukes videre i tilbudet.",
       "positioning_recommendations skal være konkrete anbefalinger til hvordan tilbudet bør spisses.",
     ],
@@ -1315,7 +2742,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     label: "Design",
     fields: "high_level_solution_design og high_level_architecture_mermaid",
     guidance: [
-      "Regenerer kun anbefalt high-level design og arkitekturdiagram.",
+      "Rediger kun anbefalt high-level design og arkitekturdiagram.",
       "high_level_solution_design skal være en konkret, erfaren skyarkitekt-anbefaling.",
       "high_level_architecture_mermaid skal være et enkelt high-level diagram med få hovednoder.",
     ],
@@ -1328,7 +2755,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     label: "Risiko",
     fields: "risks_for_us, risks_for_customer og risks",
     guidance: [
-      "Regenerer kun risiko og usikkerhet.",
+      "Rediger kun risiko og usikkerhet.",
       "risks_for_us skal beskrive leverandørens/tilbudsteamets risiko: leveranserisiko, tilbudsrisiko, kommersiell risiko, ressurs-/kompetanserisiko, avklaringsbehov og risiko for feil posisjonering.",
       "risks_for_customer skal beskrive kundens risiko: driftsavbrudd, sikkerhet, overgang, kostnadskontroll, brukeradopsjon, forvaltning, etterlevelse og forretningsmessig konsekvens.",
       "risks skal være en kort samlet kompatibilitetsliste basert på de to delte feltene.",
@@ -1344,7 +2771,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     label: "Behov",
     fields: "implicit_requirements",
     guidance: [
-      "Regenerer kun underliggende behov og implisitte krav.",
+      "Rediger kun underliggende behov og implisitte krav.",
       "Returner nøyaktig de 3 viktigste punktene som gir mest forståelse av hva kunden egentlig vil.",
       "Hvert punkt skal være en rimelig tolkning som er relevant for tilbudsarbeid.",
       "Hver description skal sidestille hva kunden i praksis ber om med hva kunden ikke vil kjøpe eller ikke bør posisjoneres som.",
@@ -1362,7 +2789,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     label: "Nøkkelord",
     fields: "signal_words",
     guidance: [
-      "Regenerer kun gjenbrukte nøkkelord.",
+      "Rediger kun gjenbrukte nøkkelord.",
       "signal_words skal bare inneholde konkrete teknologier, standarder, rammeverk, integrasjonspunkter, regulatoriske referanser eller navngitte signalord.",
       "Ikke inkluder generiske ord som moderne, effektivitet, brukeropplevelse, robust eller skalerbar.",
     ],
@@ -1375,7 +2802,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     label: "Verdi",
     fields: "value_opportunities",
     guidance: [
-      "Regenerer kun verdimuligheter.",
+      "Rediger kun verdimuligheter.",
       "value_opportunities skal ha maksimalt 4 punkter.",
       "Hvert punkt skal ha nøyaktig én value_category: Høyere produktivitet, Lavere kostnader, Redusert risiko eller Bedre brukeropplevelse.",
       "Bruk hver value_category maksimalt én gang i hele listen. Ikke returner duplikater av samme kategori.",
@@ -1545,6 +2972,40 @@ async function createJsonCompletion<T>(input: {
   return parseJson<T>(content);
 }
 
+async function createJsonCompletionWithFileInputs<T>(input: {
+  system: string;
+  user: string;
+  fileDocuments: ProjectDocumentDetail[];
+  temperature?: number;
+  model?: string;
+}): Promise<T> {
+  const client = await getClient();
+  const content = [
+    ...input.fileDocuments.map((document) => ({
+      type: "input_file",
+      filename: document.file_name,
+      file_data: `data:${document.content_type};base64,${document.file_base64}`,
+    })),
+    {
+      type: "input_text",
+      text: input.user,
+    },
+  ];
+  const response = await client.responses.create({
+    model: input.model ?? ANALYSIS_MODEL,
+    instructions: input.system,
+    temperature: input.temperature ?? 0.1,
+    input: [{ role: "user", content }],
+  });
+
+  const outputText = response.output_text?.trim();
+  if (!outputText) {
+    throw new Error("AI returnerte tomt svar.");
+  }
+
+  return parseJson<T>(outputText);
+}
+
 async function createTextCompletion(input: {
   system: string;
   user: string;
@@ -1650,9 +3111,9 @@ export async function regenerateCustomerAnalysisSection(input: {
     .join("\n\n");
 
   const systemPrompt = buildPromptTemplate({
-    role: "Du er en senior løsningsarkitekt og tilbudsansvarlig som regenererer én avgrenset del av en eksisterende kundeanalyse uten å endre resten.",
+    role: "Du er en senior løsningsarkitekt og tilbudsansvarlig som redigerer én avgrenset del av en eksisterende kundeanalyse uten å endre resten.",
     task: [
-      `Regenerer seksjonen ${config.label}.`,
+      `Rediger seksjonen ${config.label}.`,
       `Du skal bare returnere feltene: ${config.fields}.`,
       "Bruk kundedokumentet, støttedokumenter og eksisterende analyse som kontekst.",
       "Skriv konkret, tekstnært og nyttig for et tilbudsteam.",
@@ -1669,7 +3130,7 @@ export async function regenerateCustomerAnalysisSection(input: {
   });
 
   const userPrompt = [
-    `Regenerer bare ${config.label} for prosjektet.`,
+    `Rediger bare ${config.label} for prosjektet.`,
     "",
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
     documentContext("Primært kundedokument", input.customerDocument, {
@@ -1928,7 +3389,9 @@ export async function generateProjectArtifact(input: {
   customerDocument: ProjectDocumentDetail | null;
   solutionDocument: ProjectDocumentDetail | null;
   serviceDescriptionDocument?: ProjectDocumentDetail | null;
+  serviceDescriptionDocuments?: ServiceDocumentDetail[];
   supportingDocuments: ProjectDocumentDetail[];
+  requirementDocuments?: ProjectDocumentDetail[];
   knowledgeArtifacts: Array<{
     title: string;
     content_markdown: string;
@@ -1960,38 +3423,135 @@ export async function generateProjectArtifact(input: {
       }),
     )
     .join("\n\n");
-  const serviceDescriptionContext = input.serviceDescriptionDocument
-    ? documentContext(
-        "Tjenestebeskrivelse - firmaets relevante tjenester og verktøy",
-        input.serviceDescriptionDocument,
+  const serviceDocuments = [
+    ...(input.serviceDescriptionDocuments ?? []).map(
+      serviceDocumentAsProjectDocument,
+    ),
+    ...(input.serviceDescriptionDocument ? [input.serviceDescriptionDocument] : []),
+  ];
+  const serviceDescriptionContext = serviceDocuments
+    .slice(0, 10)
+    .map((document, index) =>
+      documentContext(
+        `Tjenestebeskrivelse ${index + 1} - firmaets relevante tjenester og verktøy`,
+        document,
         {
-          textLimit: 12000,
-          structureLimit: 10,
-          structureTextLimit: 180,
+          textLimit: Math.max(
+            2200,
+            Math.floor(14000 / Math.max(1, serviceDocuments.length)),
+          ),
+          structureLimit: 6,
+          structureTextLimit: 160,
         },
-      )
-    : "";
+      ),
+    )
+    .join("\n\n");
   const requirementDocumentContext =
     input.artifactType === "forbedret_kravsvar"
-      ? [
-          input.customerDocument,
-          input.solutionDocument,
-          ...input.supportingDocuments,
-        ]
+      ? (input.requirementDocuments?.length
+          ? input.requirementDocuments
+          : [
+              input.customerDocument,
+              input.solutionDocument,
+              ...input.supportingDocuments,
+            ])
           .filter(
             (document): document is ProjectDocumentDetail =>
-              document !== null && isRequirementDocument(document),
+              document !== null &&
+              (Boolean(input.requirementDocuments?.length) ||
+                isRequirementDocument(document)),
           )
           .slice(0, 3)
           .map((document, index) =>
             documentContext(`Kravdokument ${index + 1}`, document, {
-              textLimit: 18000,
-              structureLimit: 14,
-              structureTextLimit: 220,
+              textLimit: 60000,
+              structureLimit: 80,
+              structureTextLimit: 320,
             }),
           )
           .join("\n\n")
       : "";
+  const requirementContinuityContext =
+    input.artifactType === "forbedret_kravsvar"
+      ? (input.requirementDocuments?.length
+          ? input.requirementDocuments
+          : [
+              input.customerDocument,
+              input.solutionDocument,
+              ...input.supportingDocuments,
+            ])
+          .filter(
+            (document): document is ProjectDocumentDetail =>
+              document !== null &&
+              (Boolean(input.requirementDocuments?.length) ||
+                isRequirementDocument(document)),
+          )
+          .slice(0, 3)
+          .map((document) => buildRequirementContinuityContext(document))
+          .filter(Boolean)
+          .join("\n\n")
+      : "";
+  const requirementSourceLedgerContext =
+    input.artifactType === "forbedret_kravsvar"
+      ? (input.requirementDocuments?.length
+          ? input.requirementDocuments
+          : [
+              input.customerDocument,
+              input.solutionDocument,
+              ...input.supportingDocuments,
+            ])
+          .filter(
+            (document): document is ProjectDocumentDetail =>
+              document !== null &&
+              (Boolean(input.requirementDocuments?.length) ||
+                isRequirementDocument(document)),
+          )
+          .slice(0, 3)
+          .map((document) => buildRequirementSourceLedgerContext(document))
+          .filter(Boolean)
+          .join("\n\n")
+      : "";
+  const requirementFileDocuments =
+    input.artifactType === "forbedret_kravsvar"
+      ? (input.requirementDocuments?.length
+          ? input.requirementDocuments
+          : [
+              input.customerDocument,
+              input.solutionDocument,
+              ...input.supportingDocuments,
+            ])
+          .filter(
+            (document): document is ProjectDocumentDetail =>
+              document !== null &&
+              (Boolean(input.requirementDocuments?.length) ||
+                isRequirementDocument(document)) &&
+              ["pdf", "xlsx", "xls"].includes(document.file_format) &&
+              Boolean(document.file_base64),
+          )
+          .slice(0, 3)
+      : [];
+  const requirementDocuments =
+    input.artifactType === "forbedret_kravsvar"
+      ? (input.requirementDocuments?.length
+          ? input.requirementDocuments
+          : [
+              input.customerDocument,
+              input.solutionDocument,
+              ...input.supportingDocuments,
+            ])
+          .filter(
+            (document): document is ProjectDocumentDetail =>
+              document !== null &&
+              (Boolean(input.requirementDocuments?.length) ||
+                isRequirementDocument(document)),
+          )
+          .slice(0, 3)
+      : [];
+  const continuationPages = buildContinuationPageMap(requirementDocuments);
+  const pageEvidence = buildRequirementPageEvidence(requirementDocuments);
+  const requirementLedger = requirementDocuments.flatMap((document) =>
+    buildRequirementSourceLedger(document),
+  );
 
   const artifactKnowledge = input.knowledgeArtifacts
     .slice(0, 4)
@@ -2020,10 +3580,12 @@ export async function generateProjectArtifact(input: {
     serviceDescriptionContext
       ? buildDelimitedContext(
           "Regel for tjenestebeskrivelse",
-          "Tjenestebeskrivelsen er firmaets tjeneste- og verktøykatalog. Når du lager systemløsning eller løsningsutkast, skal du aktivt vurdere hvilke tjenester, leveranseområder, metoder og kapabiliteter derfra som er relevante for kundens behov. Bruk bare relevante deler, og knytt dem konkret til kundens situasjon. Ikke list alt firmaet tilbyr ukritisk.",
+          "Tjenestebeskrivelsen er firmaets tjeneste- og verktøykatalog. Tjenestedokumentene i denne konteksten er enten faste for alle prosjekter eller eksplisitt valgt på dette prosjektet. Når du lager systemløsning eller løsningsbeskrivelse, skal du aktivt vurdere hvilke tjenester, leveranseområder, metoder og kapabiliteter derfra som er relevante for kundens behov. Bruk bare relevante deler, og knytt dem konkret til kundens situasjon. Ikke list alt firmaet tilbyr ukritisk.",
         )
       : "",
     serviceDescriptionContext,
+    requirementSourceLedgerContext,
+    requirementContinuityContext,
     requirementDocumentContext,
     input.customerAnalysis
       ? buildDelimitedContext(
@@ -2057,12 +3619,65 @@ export async function generateProjectArtifact(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  return createJsonCompletion<{ title: string; content_markdown: string }>({
+  const completionInput = {
     system: buildGeneratorPrompt(input.artifactType),
     user: userPrompt,
-    temperature: 0.25,
-    model: FAST_MODEL,
-  });
+    temperature: input.artifactType === "forbedret_kravsvar" ? 0.12 : 0.25,
+    model:
+      input.artifactType === "forbedret_kravsvar" ? ANALYSIS_MODEL : FAST_MODEL,
+  };
+
+  if (
+    input.artifactType === "forbedret_kravsvar" &&
+    requirementFileDocuments.length
+  ) {
+    const generated = await createJsonCompletionWithFileInputs<{
+      title: string;
+      content_markdown: string;
+    }>({
+      ...completionInput,
+      user: [
+        "Kravdokument-originalene er lagt ved som filinput. Bruk både maskinlesbar tekst og filstrukturen for krav i tabeller, regneark, bilder, figurer og diagrammer.",
+        userPrompt,
+      ].join("\n\n"),
+      fileDocuments: requirementFileDocuments,
+    });
+
+    return {
+      ...generated,
+      content_markdown: alignRequirementRowsWithLedger(
+        mergeContinuationRowsInRequirementTable(
+          generated.content_markdown,
+          continuationPages,
+          pageEvidence,
+        ),
+        requirementLedger,
+      ),
+    };
+  }
+
+  const generated = await createJsonCompletion<{
+    title: string;
+    content_markdown: string;
+  }>(
+    completionInput,
+  );
+
+  if (input.artifactType !== "forbedret_kravsvar") {
+    return generated;
+  }
+
+  return {
+    ...generated,
+    content_markdown: alignRequirementRowsWithLedger(
+      mergeContinuationRowsInRequirementTable(
+        generated.content_markdown,
+        continuationPages,
+        pageEvidence,
+      ),
+      requirementLedger,
+    ),
+  };
 }
 
 export async function synthesizeAndEvaluateSolution(input: {
@@ -2084,7 +3699,7 @@ export async function synthesizeAndEvaluateSolution(input: {
 
   const userPrompt = [
     "Det finnes ikke noe opplastet primært løsningsdokument.",
-    "Lag derfor først et kort, internt og kundespesifikt løsningsutkast som et tilbudsteam kan bruke som arbeidsgrunnlag.",
+    "Lag derfor først en kort, intern og kundespesifikk løsningsbeskrivelse som et tilbudsteam kan bruke som arbeidsgrunnlag.",
     "Evaluer deretter dette utkastet kritisk mot kundebehovene.",
     "Returner kun gyldig JSON.",
     "",

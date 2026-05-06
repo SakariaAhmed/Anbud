@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { ArrowLeft, CheckCircle2, LockKeyhole } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import type { ServiceDescription } from "@/lib/types";
 
 export function ProjectNewPage() {
   const router = useRouter();
@@ -17,8 +18,31 @@ export function ProjectNewPage() {
   const [customerName, setCustomerName] = useState("");
   const [industry, setIndustry] = useState("");
   const [description, setDescription] = useState("");
+  const [services, setServices] = useState<ServiceDescription[]>([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/service-descriptions", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          services?: ServiceDescription[];
+        };
+        if (!cancelled && response.ok) {
+          setServices(payload.services ?? []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setServices([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,6 +57,7 @@ export function ProjectNewPage() {
           customer_name: customerName,
           industry,
           description,
+          selected_service_ids: selectedServiceIds,
         }),
       });
       const payload = await response.json();
@@ -50,13 +75,6 @@ export function ProjectNewPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-8 lg:px-0">
-      {/* Breadcrumb */}
-      <nav className="mb-6 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Link href="/" className="hover:text-foreground transition-colors">Prosjekter</Link>
-        <ChevronRight className="size-3" />
-        <span className="text-foreground font-medium">Nytt prosjekt</span>
-      </nav>
-
       <div className="rounded-md border border-border bg-card shadow-sm">
         <div className="border-b border-border px-6 py-4">
           <h1 className="text-lg font-bold tracking-tight text-foreground">
@@ -119,6 +137,60 @@ export function ProjectNewPage() {
               </div>
             </div>
           </div>
+
+          {services.length ? (
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Tjenestebeskrivelser
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Faste tjenester blir alltid med. Velg relevante prosjektspesifikke tjenester nå, eller gjør det senere i prosjektet.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2">
+                {services.map((service) => {
+                  const fixed = service.inclusion_mode === "fixed";
+                  const selected = fixed || selectedServiceIds.includes(service.id);
+                  return (
+                    <button
+                      key={service.id}
+                      type="button"
+                      disabled={fixed}
+                      onClick={() =>
+                        setSelectedServiceIds((current) =>
+                          current.includes(service.id)
+                            ? current.filter((id) => id !== service.id)
+                            : [...current, service.id],
+                        )
+                      }
+                      className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left ${
+                        selected
+                          ? "border-slate-950 bg-white text-slate-950"
+                          : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">
+                          {service.name}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          {service.documents.length} dokument
+                        </span>
+                      </span>
+                      {fixed ? (
+                        <LockKeyhole className="size-4 shrink-0 text-slate-500" />
+                      ) : selected ? (
+                        <CheckCircle2 className="size-4 shrink-0 text-slate-950" />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {error ? (
             <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>

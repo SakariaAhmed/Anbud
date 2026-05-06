@@ -18,7 +18,7 @@ export const VALUE_LABELS: ValueCategory[] = [
 export const ARTIFACT_TYPES: Array<{
   value: GeneratedArtifactType;
   label: string;
-}> = [{ value: "losningsutkast", label: "Løsningsutkast" }];
+}> = [{ value: "losningsutkast", label: "Løsningsbeskrivelse" }];
 
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("nb-NO", {

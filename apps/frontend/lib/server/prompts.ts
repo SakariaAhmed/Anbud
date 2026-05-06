@@ -113,7 +113,7 @@ export function buildHighLevelDesignPrompt() {
     ],
     rules: [
       "Returner kun gyldig JSON.",
-      "Ikke regenerer hele kundeanalysen. Fokuser kun på high_level_solution_design og high_level_architecture_mermaid.",
+      "Ikke rediger hele kundeanalysen. Fokuser kun på high_level_solution_design og high_level_architecture_mermaid.",
       "high_level_solution_design skal være skrevet som en erfaren skyarkitekt som anbefaler en konkret retning, ikke som en vag oppsummering.",
       "Teksten skal være tett koblet til kundens faktiske behov, teknologi, driftsbilde, regulatoriske krav og migreringssituasjon.",
       "High-level design skal være handlingsrettet og nyttig for et tilbudsteam som skal forklare løsning, arkitektur og gjennomførbarhet.",
@@ -204,16 +204,16 @@ export function buildExecutiveSummaryPrompt() {
 
 export function buildSyntheticSolutionEvaluationPrompt() {
   return buildPromptTemplate({
-    role: "Du er en senior tilbudsansvarlig og løsningsarkitekt som skal lage et kort, internt løsningsutkast og deretter evaluere hvor godt dette utkastet svarer på kundens behov.",
+    role: "Du er en senior tilbudsansvarlig og løsningsarkitekt som skal lage en kort, intern løsningsbeskrivelse og deretter evaluere hvor godt denne beskrivelsen svarer på kundens behov.",
     task: [
-      "Bruk kundedokumentet og kundeanalysen til å lage et kort, troverdig og kundespesifikt løsningsutkast.",
+      "Bruk kundedokumentet og kundeanalysen til å lage en kort, troverdig og kundespesifikk løsningsbeskrivelse.",
       "Evaluer deretter det genererte utkastet kritisk opp mot kundens behov, som om du kvalitetssikrer et førsteutkast i et tilbudsteam.",
       "Vær direkte på svakheter, mangler, risiko og hva som må forbedres.",
     ],
     rules: [
       "Returner kun gyldig JSON.",
-      "Det genererte løsningsutkastet skal være kort, konkret og tydelig mer egnet som internt arbeidsgrunnlag enn som ferdig tilbudstekst.",
-      "Løsningsutkastet må være tro mot kundedokumentet og kundeanalysen, uten å dikte opp detaljer som ikke kan forsvares.",
+      "Den genererte løsningsbeskrivelsen skal være kort, konkret og tydelig mer egnet som internt arbeidsgrunnlag enn som ferdig tilbudstekst.",
+      "Løsningsbeskrivelsen må være tro mot kundedokumentet og kundeanalysen, uten å dikte opp detaljer som ikke kan forsvares.",
       "Evalueringen skal være kritisk og bruke samme standard som for et opplastet løsningsdokument.",
       "Alle oppsummeringer og vurderinger skal være konkrete, relevante og handlingsrettede for et tilbudsteam.",
       "Punktlister skal normalt holdes på 3 til 5 punkter og aldri overstige 10 punkter.",
@@ -227,12 +227,12 @@ export function buildSyntheticSolutionEvaluationPrompt() {
       "likely_score_assessment skal være et objekt med quality, delivery_confidence, risk og competitiveness.",
       "Alle value_assessment.value_categories skal alltid være en array med nøyaktig ett element fra: Høyere produktivitet, Lavere kostnader, Redusert risiko, Bedre brukeropplevelse.",
     ],
-    exampleOutput: `{"synthetic_solution":{"title":"Internt løsningsutkast","content_markdown":"## Foreslått løsning\\n\\nVi anbefaler ..."},"evaluation":{"fit_to_customer_needs":"Utkastet dekker hovedbehovene, men er fortsatt svakt på overgang og styringsmodell.","strengths":["Tydelig retning for målarkitektur"],"weaknesses":["For lite konkret om gjennomføring"],"generic_sections":["Avsnittet om leveranseevne er fortsatt for generisk"],"missing_elements":["Konkret overgangsmodell"],"risks_to_customer":["Kunden kan oppleve usikkerhet rundt ansvar og styring"],"trust_signals":["Teknisk retning er troverdig"],"likely_score_assessment":{"quality":"Middels","delivery_confidence":"Middels","risk":"Middels","competitiveness":"Middels"},"improvement_recommendations":["Beskriv styringsmodell og overgang tydeligere."],"value_assessment":[{"title":"Lavere risiko i overgang","description":"Løsningen kan skape verdi hvis overgangsmodellen konkretiseres bedre.","value_categories":["Redusert risiko"]}],"rewrite_suggestions":[{"target":"Gjennomføringskapittel","suggestion":"Legg inn faseinndeling, ansvar og kontrollpunkter."}],"executive_summary":"Dette er et brukbart førsteutkast, men det må konkretiseres betydelig før det er konkurransedyktig."}}`,
+    exampleOutput: `{"synthetic_solution":{"title":"Intern løsningsbeskrivelse","content_markdown":"## Foreslått løsning\\n\\nVi anbefaler ..."},"evaluation":{"fit_to_customer_needs":"Beskrivelsen dekker hovedbehovene, men er fortsatt svak på overgang og styringsmodell.","strengths":["Tydelig retning for målarkitektur"],"weaknesses":["For lite konkret om gjennomføring"],"generic_sections":["Avsnittet om leveranseevne er fortsatt for generisk"],"missing_elements":["Konkret overgangsmodell"],"risks_to_customer":["Kunden kan oppleve usikkerhet rundt ansvar og styring"],"trust_signals":["Teknisk retning er troverdig"],"likely_score_assessment":{"quality":"Middels","delivery_confidence":"Middels","risk":"Middels","competitiveness":"Middels"},"improvement_recommendations":["Beskriv styringsmodell og overgang tydeligere."],"value_assessment":[{"title":"Lavere risiko i overgang","description":"Løsningen kan skape verdi hvis overgangsmodellen konkretiseres bedre.","value_categories":["Redusert risiko"]}],"rewrite_suggestions":[{"target":"Gjennomføringskapittel","suggestion":"Legg inn faseinndeling, ansvar og kontrollpunkter."}],"executive_summary":"Dette er en brukbar førsteversjon, men den må konkretiseres betydelig før den er konkurransedyktig."}}`,
   });
 }
 
 const artifactLabels: Record<GeneratedArtifactType, string> = {
-  losningsutkast: "løsningsutkast",
+  losningsutkast: "løsningsbeskrivelse",
   forbedret_kravsvar: "forbedret svar på et konkret krav",
   tilbudsstrategi: "tilbudsstrategi",
   verdiargumentasjon: "verdiargumentasjon",
@@ -246,57 +246,87 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
     return buildPromptTemplate({
       role: "Du er en senior tilbudsansvarlig og løsningsarkitekt som fyller ut kravbesvarelser i tilbudsdokumenter.",
       task: [
-        "Lag en komplett kravbesvarelse der hvert identifiserte krav får et konkret svar på hvordan kravet tilfredsstilles.",
-        "Bruk kravdokumentet som svarmal: behold kravreferanser, kravtekst og rekkefølge så langt det er mulig.",
-        "Svarene skal bygge på to hovedgrunnlag: kundens analysegrunnlag med Bilag 1, kundeanalyse og løsningsutkast, og tjenestebeskrivelsen som beskriver driftstjenestene arkitekten tilbyr.",
+        "Lag en komplett kravbesvarelse der alle identifiserte krav får et konkret svar på hvordan kravet tilfredsstilles.",
+        "Les kravdokumentet som et menneske ville gjort: følg dokumentets struktur, underoverskrifter, sidemarkører, tabeller og tekstblokker før du skriver svar.",
+        "Bruk kravdokumentet som svarmal: behold kravreferanser, kravtekst, underoverskrifter og rekkefølge så langt det er mulig.",
+        "Svarene skal bygge på to hovedgrunnlag: kundens analysegrunnlag med Bilag 1, kundeanalyse og løsningsbeskrivelse, og tjenestebeskrivelsen som beskriver driftstjenestene arkitekten tilbyr.",
       ],
       rules: [
         "Returner kun gyldig JSON.",
-        "Ikke skriv generiske ja/nei-svar. Hvert svar skal forklare konkret hvordan kravet oppfylles, med leveranse, ansvar, metode, drift, kontroll eller dokumentasjon der det er relevant.",
+        "Kravlisten skal være uttømmende for kravdokumentet. Ikke stopp etter de første eller tydeligste kravene hvis dokumentet har flere sider eller flere kravseksjoner.",
+        "Krav kan stå som nummererte krav, tabellrader, kulepunkter, skal/bør-formuleringer, leveransekrav, akseptansekriterier, SLA-krav eller underoverskrifter. Fang dem opp når de fungerer som krav leverandøren må svare på.",
+        "Hvert krav skal være fullstendig. Ikke kutt kravtekst midt i setninger, ikke slå sammen selvstendige krav, og ikke utelat viktige delkrav, terskler, frister, roller eller akseptansekriterier.",
+        "Hvis et krav går over flere linjer, sider eller tabellceller, rekonstruer hele kravet før svaret skrives.",
+        "Hvis et krav starter nederst på en side og fortsetter øverst på neste side, skal dette behandles som ett krav. Sideskift, [[SIDE:x]]-markører, gjentatte tabelloverskrifter eller topp-/bunntekst skal aldri alene opprette et nytt krav.",
+        "Når et mulig kravfragment mangler krav-ID, verb, full setning eller tydelig start, vurder først om det er fortsettelsen av forrige krav før det legges inn som eget krav.",
+        "Følg alltid seksjonen 'Sideskift- og krav-ID-kontroll' når den finnes. Hvis den sier at en side ikke har ny synlig krav-ID, skal teksten på den siden slås sammen med forrige krav. Ikke opprett for eksempel ID 2-03 bare fordi forrige krav var ID 2-02.",
+        "Ny krav-ID skal komme fra dokumentet, ikke fra antatt sekvens.",
+        "Kildegrunnlag-kolonnen skal bare vise hvor kravet ligger i kravdokumentet: sidetall og eksakt nærmeste overskrift/underoverskrift. Ta med krav-ID/kravnummer bare hvis det står ved selve kravet.",
+        "Hvis kravet mangler ID eller kravnummer, er Kildegrunnlag ekstra viktig: oppgi alltid sidetall og mest presise overskrift/underoverskrift, seksjon, punkt eller tabellnavn som kan lokaliseres i dokumentet.",
+        "Krav kan ligge i ulike strukturer i samme dokument: punkter, brødtekst, tabeller, skjema, underpunkter eller tabellrader med flere delkrav. Bevar selvstendige underkrav når de må besvares separat, og bruk presist Kildegrunnlag for hvert underkrav.",
+        "Hvis et krav i en tabell inneholder flere underkrav eller delpunkter, del dem bare når de har egne kravhandlinger som krever eget svar. Hvis de hører naturlig sammen, behold dem som ett fullstendig krav og vis tabell-/seksjonsplasseringen i Kildegrunnlag.",
+        "For krav i tabellformat skal kravbesvarelsen følge tabellens struktur så langt markdown-formatet tillater det: bruk tabell-ID og tjeneste/radnavn som kravreferanse eller i Kildegrunnlag, behold kravet fra kolonnen 'Spesifiserte krav', og skriv svaret som det som hører hjemme i leverandørens svar-/detaljeringskolonne.",
+        "Hvis en ID-rad, overskrift eller tekstblokk bare introduserer en tabellseksjon eller kravgruppe, skal den ikke besvares som ett samlet fritekstkrav. Besvar i stedet hver selvstendige tabellrad, punktliste eller delkrav separat og utelat container-raden.",
+        "Ikke overtilpass tolkningen til ett bestemt kravdokument. Bruk generelle signaler som krav-ID, skal/må/bør-formuleringer, tabelloverskrifter, radnavn, delkrav, sidetall og nærmeste overskrift for å finne krav i både enkle og komplekse dokumenter.",
+        "Ikke bruk kildegrunnlag til å liste analysegrunnlag, løsningsbeskrivelse eller tjenestebeskrivelse. Kildegrunnlag skal peke på kravets plassering, ikke på hva svaret bygger på.",
+        "Svar skal skrives på vegne av Atea. Ikke bruk 'jeg', 'vi', 'vår' eller 'våre' i svarteksten; bruk 'Atea', 'Ateas' eller nøytral formulering.",
+        "Svarene skal være relevante, ensartede i stil og ha samme detaljnivå på tvers av krav med tilsvarende kompleksitet.",
+        "Svar kortere og mer konkret enn vanlig tilbudstekst. Unngå overflødige innledninger, gjentakelser og brede beskrivelser hvis kravet kan besvares presist.",
+        "Bruk standardlengde på 1-2 setninger per krav. Bruk 3 setninger bare når kravet har flere tydelige delkrav, avhengigheter eller forbehold som må presiseres.",
+        "For enkle krav, skriv direkte handlingssvar: hva Atea gjør, hvordan det kontrolleres eller dokumenteres, og eventuelt når det skjer. Ikke legg til bakgrunn, motivasjon eller generelle kvalitetsutsagn.",
+        "For tabellkrav skal svaret være ekstra kompakt og egnet for leverandørens svarfelt: normalt én presis setning, eventuelt to korte setninger ved behov.",
+        "Ikke gjenta hele kravteksten i svaret. Svar på kravet, ikke parafraser det.",
+        "Match tonen og lengden i kravdokumentet. Er kravskjemaet kort og tabellarisk, skal svarene være korte, konkrete og tabellvennlige.",
+        "Tenk gjennom konsekvensen av hvert krav før du svarer: leveranse, metode, ansvar, kontroll, dokumentasjon, avhengigheter og forbehold skal vurderes, men bare skrives når det faktisk tilfører presisjon.",
+        "Ikke skriv generiske ja/nei-svar. Hvert svar skal forklare konkret hvordan kravet oppfylles, men uten unødvendig fylltekst.",
         "Bruk samme språk, begreper, formalitetsnivå og tone som kunden eller mottakeren bruker i kravdokumentet. Hvis kunden skriver kort og skjematisk, svar kort og presist. Hvis kunden skriver formelt og kontraktsnært, svar formelt og kontraktsnært.",
         "Vær svært saklig, nøktern og etterprøvbar. Unngå salgsformuleringer, superlativer, emosjonelt språk og påstander som ikke støttes av grunnlaget.",
         "Gjenbruk kundens egne navn på systemer, prosesser, roller, kravkategorier og leveranseområder når de finnes i grunnlaget.",
         "Dersom kravdokumentet har en tom svardel, fyll den ut. Dersom det bare finnes kravliste, lag en ryddig tabell med kravreferanse, krav, foreslått svar og kildegrunnlag.",
         "Bruk tjenestebeskrivelsen aktivt når kravet gjelder drift, forvaltning, overvåking, sikkerhet, prosess, SLA, support, forbedring eller operativ leveranse.",
-        "Bruk kundeanalyse, Bilag 1 og løsningsutkast aktivt når kravet gjelder kundens mål, behov, arkitektur, migrering, integrasjoner, risiko, gjennomføring eller verdi.",
+        "Bruk kundeanalyse, Bilag 1 og løsningsbeskrivelse aktivt når kravet gjelder kundens mål, behov, arkitektur, migrering, integrasjoner, risiko, gjennomføring eller verdi.",
         "Hvis et krav ikke kan besvares sikkert fra grunnlaget, marker svaret tydelig som forbehold eller avklaringspunkt i stedet for å dikte opp detaljer.",
         "Svar på norsk, i en profesjonell tilbudstone, og skriv slik at teksten kan limes inn i kundens kravskjema med lite etterarbeid.",
-        "content_markdown skal starte med en kort statusoppsummering og deretter kravbesvarelsen. Bruk tabell når kravene er korte; bruk egne underseksjoner når kravene er lange.",
+        "content_markdown skal starte med en kort statusoppsummering som sier hvor mange krav som er identifisert og besvart, og deretter kravbesvarelsen. Bruk tabell når kravene er korte; bruk egne underseksjoner når kravene er lange.",
       ],
       outputContract: [
         "Returner ett JSON-objekt med nøklene title og content_markdown.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"Kravbesvarelse","content_markdown":"## Status\\n\\nKravene er besvart med utgangspunkt i Bilag 1, kundeanalyse, siste løsningsutkast og tjenestebeskrivelsen.\\n\\n## Kravbesvarelse\\n\\n| Kravref. | Krav | Svar | Kildegrunnlag |\\n|---|---|---|---|\\n| K-01 | Leverandøren skal etablere overvåking. | Kravet oppfylles ved å etablere overvåking som del av driftstjenesten, med definerte terskler, varslingsløp og hendelseshåndtering. Overvåkingen kobles til kundens prioriterte tjenester og rapporteres i avtalt driftsforum. | Tjenestebeskrivelse, kundeanalyse |"}`,
+      exampleOutput: `{"title":"Kravbesvarelse","content_markdown":"## Status\\n\\n12 krav er identifisert og besvart i samme rekkefølge som kravdokumentet.\\n\\n## Kravbesvarelse\\n\\n| Kravref. | Krav | Svar | Kildegrunnlag |\\n|---|---|---|---|\\n| K-01 | Leverandøren skal etablere overvåking. | Atea etablerer overvåking med avtalte terskler, varsling og hendelseshåndtering for prioriterte tjenester. Status rapporteres i avtalt driftsforum. | Side 4, Driftstjenester, krav K-01 |"}`,
     });
   }
 
   if (artifactType === "losningsutkast") {
     return buildPromptTemplate({
-      role: "Du er en senior løsningsarkitekt og tilbudsansvarlig som skriver profesjonelle Bilag 2 / løsningsbeskrivelser for offentlige og private tilbud.",
+      role: "Du er en senior løsningsarkitekt og tilbudsansvarlig som skriver korte, presise leveransebeskrivelser for tilbud.",
       task: [
-        "Generer et profesjonelt Bilag 2 / løsningstilbud basert på kundedokumenter, analyse og eventuell løsningsvurdering.",
-        "Skriv som en erfaren løsningsarkitekt som tar kundens situasjon, språk, begreper og tone på alvor.",
-        "Teksten skal kunne brukes direkte som tilbudsgrunnlag, ikke bare som intern idétekst.",
+        "Generer en kort løsningsbeskrivelse på maks én side som konkret beskriver hva som skal leveres til kunden.",
+        "Bruk kundeanalysen, kundedokumenter, støttedokumenter, eventuell løsningsvurdering og tjenestebeskrivelser som er i prosjektkontekst.",
+        "Skriv som en erfaren løsningsarkitekt som gjør leveransen tydelig nok til at tilbudsteamet ser omfang, innhold og kundeverdi.",
       ],
       rules: [
         "Returner kun gyldig JSON.",
         "Ikke skriv generisk konsulentspråk.",
+        "Teksten skal være maks cirka 550 ord og skal oppleves som én side. Prioriter presisjon fremfor fyldig tilbudstekst.",
+        "Hovedformålet er å beskrive spesifikt hva kunden får levert. Ikke skriv en lang metode-, strategi- eller salgstekst.",
+        "Bruk alle relevante kilder samlet: kundeanalyse, kundedokument, løsningsdokument, støttedokumenter, tidligere arbeidstekster og tjenestebeskrivelser.",
+        "Tjenestebeskrivelser skal bare brukes når de er relevante for kundens behov. Ikke list opp tjenester bare fordi de finnes i kontekst.",
         "Bruk samme språk, begreper og tone som kunden bruker i kundedokumentet. Hvis kunden skriver formelt og kravorientert, skriv formelt og kravorientert. Hvis kunden bruker bestemte systemnavn, prosesser eller målformuleringer, bruk dem presist.",
-        "Vær alltid konkret, tydelig og pragmatisk om løsning, gjennomføring, ansvar, risiko, avhengigheter, gevinster og beslutningspunkter.",
-        "Ikke vær redd for å utvide planen når det gjør tilbudet mer troverdig. Beskriv hvordan løsningen faktisk etableres, styres, testes, overleveres og forvaltes.",
+        "Vær konkret om leveranseinnhold, avgrensning, viktigste aktiviteter, kundens bidrag, overlevering og hva kunden sitter igjen med.",
         "Hvis løsningsvurderingen peker på svakheter, mangler, risiko eller forbedringsforslag, skal disse lukkes direkte i teksten.",
-        "content_markdown skal bruke nøyaktig disse undertitlene, i denne rekkefølgen, og ingen andre H2-undertitler: ## 1. Forståelse av kundens behov, ## 2. Foreslått løsning, ## 3. Gjennomføringsplan, ## 4. Organisering, roller og ansvar, ## 5. Kvalitet, sikkerhet og risikohåndtering, ## 6. Gevinst og verdi for kunden, ## 7. Forutsetninger og beslutningspunkter.",
-        "Hver seksjon skal ha konkrete avsnitt og punktlister der det gjør teksten mer anvendelig.",
-        "Gjennomføringsplanen skal normalt deles i faser med formål, aktiviteter, leveranser, beslutningspunkter og ansvar.",
+        "content_markdown skal bruke nøyaktig disse undertitlene, i denne rekkefølgen, og ingen andre H2-undertitler: ## Leveranse til kunden, ## Hva som inngår, ## Gjennomføring og overlevering, ## Forutsetninger.",
+        "Seksjonen 'Hva som inngår' skal være en punktliste med 4 til 7 konkrete leveranser. Hvert punkt skal beskrive hva som leveres og hvorfor det er relevant for denne kunden.",
+        "Seksjonen 'Gjennomføring og overlevering' skal være kort og praktisk, ikke en full prosjektplan.",
+        "Seksjonen 'Forutsetninger' skal bare ta med reelle avhengigheter eller kundebidrag som følger av kildene.",
         "Unngå vage formuleringer som 'robust løsning', 'tett samarbeid' og 'beste praksis' uten å forklare konkret hva det betyr hos denne kunden.",
-        "Bruk profesjonell markdown med ryddige avsnitt og lister som passer lesning i et tilbudsteam.",
+        "Bruk profesjonell markdown med korte avsnitt og punktlister som passer direkte inn i et tilbudsutkast.",
       ],
       outputContract: [
         "Returner ett JSON-objekt med nøklene title og content_markdown.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"Bilag 2 - Løsningsbeskrivelse","content_markdown":"## 1. Forståelse av kundens behov\\n\\nKunden trenger en løsning som reduserer overgangsrisiko, gir tydelig ansvar og kan gjennomføres uten å svekke drift i kritiske prosesser.\\n\\n## 2. Foreslått løsning\\n\\nVi etablerer en målarkitektur med tydelig skille mellom identitet, nettverk, applikasjoner, data, integrasjoner og drift.\\n\\n## 3. Gjennomføringsplan\\n\\n### Fase 1: Avklaring og målbildet\\n- bekrefte omfang, avhengigheter og beslutningspunkter\\n- prioritere arbeidslaster etter risiko og forretningsverdi\\n\\n### Fase 2: Etablering og pilot\\n- etablere grunnplattform, sikkerhet, overvåking og backup\\n- gjennomføre pilot med test av cutover og tilbakeføring\\n\\n## 4. Organisering, roller og ansvar\\n\\nLeverandøren tar ansvar for plan, arkitektur, gjennomføring og kvalitetssikring. Kunden tar beslutninger på prioritering, akseptanse og forretningsmessige avklaringer.\\n\\n## 5. Kvalitet, sikkerhet og risikohåndtering\\n\\nRisiko håndteres gjennom faseporter, test, sporbarhet, dokumenterte tilbakeføringsplaner og tydelige akseptansekriterier.\\n\\n## 6. Gevinst og verdi for kunden\\n\\nLøsningen gir lavere overgangsrisiko, bedre styring og et mer forutsigbart grunnlag for videre modernisering.\\n\\n## 7. Forutsetninger og beslutningspunkter\\n\\nKunden må godkjenne målarkitektur, migreringsrekkefølge, testkriterier og produksjonssetting før hver hovedfase."}`,
+      exampleOutput: `{"title":"Løsningsutkast - konkret leveranse","content_markdown":"## Leveranse til kunden\\n\\nAtea leverer en kundetilpasset sky- og driftsløsning som etablerer et styrt grunnlag for sikker drift, kontrollert overgang og videre modernisering av kundens prioriterte tjenester. Leveransen er avgrenset til de delene som direkte støtter kundens dokumenterte behov for redusert risiko, tydelig ansvar og forutsigbar forvaltning.\\n\\n## Hva som inngår\\n\\n- Etablert målarkitektur for identitet, nettverk, applikasjoner, data, integrasjoner og drift, tilpasset kundens eksisterende systemlandskap og krav til styring.\\n- Plan for overgang og første leveransebølge, med prioritering av tjenester etter risiko, avhengigheter og kundeverdi.\\n- Konfigurerte sikkerhets- og tilgangsprinsipper, inkludert roller, kontrollpunkter og dokumenterte beslutninger for produksjonssetting.\\n- Overvåking, hendelseshåndtering og operativ oppfølging for de tjenesteområdene som er relevante for kundens driftsbehov.\\n- Dokumentert test, akseptanse og overlevering slik at kunden kan godkjenne leveransen før videre utrulling.\\n\\n## Gjennomføring og overlevering\\n\\nLeveransen gjennomføres stegvis med avklaring, etablering, pilot og kontrollert innføring. Hver fase avsluttes med en tydelig beslutning om videreføring, og kunden får overlevert dokumentasjon, akseptansekriterier og anbefalt videre plan.\\n\\n## Forutsetninger\\n\\nKunden må bidra med tilgang til relevant dokumentasjon, beslutningstakere, tekniske avklaringer og godkjenning av prioritering, testkriterier og produksjonssetting."}`,
     });
   }
 
@@ -323,7 +353,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Returner ett JSON-objekt med nøklene title og content_markdown.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"Fremdriftsplan etter kundeanalyse","content_markdown":"## Fase 1: Avklar neste beslutning\\n\\nFørste steg er å gjøre kundeanalysen beslutningsklar og avklare hva tilbudsteamet må låse før løsningsarbeidet går videre.\\n\\n- bekrefte kundens viktigste beslutningsdriver og hvor risiko må reduseres først\\n- avklare hvilke krav som må besvares med konkret faseplan, ansvar og bevis\\n- identifisere åpne spørsmål som må avklares med kunden eller internt før løsningsteksten ferdigstilles\\n\\n## Fase 2: Konkretiser løsningsretning\\n\\nNeste fase oversetter innsikten til en tydelig løsningsretning som kan brukes i tilbud og arkitekturarbeid.\\n\\n- formulere anbefalt målarkitektur og de viktigste plattformgrepene\\n- koble løsningens hovedvalg til kundens mål, risiko og evalueringskriterier\\n- definere hvilke deler som må beskrives mer konkret for å styrke tillit og gjennomføringsevne\\n\\n## Fase 3: Planlegg første leveransebølge\\n\\nDenne fasen gjør planen operativ ved å beskrive hva som bør leveres først og hvorfor.\\n\\n- velge første leveransebølge basert på risiko, avhengigheter og kundeverdi\\n- beskrive hva teamet må etablere før første leveranse kan starte\\n- tydeliggjøre ansvar, kundebidrag og akseptansekriterier for første bølge\\n\\n## Fase 4: Klargjør tilbuds- og leveransegrunnlag\\n\\nSiste fase gjør materialet klart for videre tilbudsarbeid og praktisk oppfølging.\\n\\n- oppdatere løsningsutkast med faseplanen og kundespesifikke bevis\\n- sikre at fremdriftsplanen henger sammen med risiko, verdi og evalueringskriterier\\n- avklare hvilke beslutninger som skal følges opp før endelig tilbud eller oppstart"}`,
+      exampleOutput: `{"title":"Fremdriftsplan etter kundeanalyse","content_markdown":"## Fase 1: Avklar neste beslutning\\n\\nFørste steg er å gjøre kundeanalysen beslutningsklar og avklare hva tilbudsteamet må låse før løsningsarbeidet går videre.\\n\\n- bekrefte kundens viktigste beslutningsdriver og hvor risiko må reduseres først\\n- avklare hvilke krav som må besvares med konkret faseplan, ansvar og bevis\\n- identifisere åpne spørsmål som må avklares med kunden eller internt før løsningsteksten ferdigstilles\\n\\n## Fase 2: Konkretiser løsningsretning\\n\\nNeste fase oversetter innsikten til en tydelig løsningsretning som kan brukes i tilbud og arkitekturarbeid.\\n\\n- formulere anbefalt målarkitektur og de viktigste plattformgrepene\\n- koble løsningens hovedvalg til kundens mål, risiko og evalueringskriterier\\n- definere hvilke deler som må beskrives mer konkret for å styrke tillit og gjennomføringsevne\\n\\n## Fase 3: Planlegg første leveransebølge\\n\\nDenne fasen gjør planen operativ ved å beskrive hva som bør leveres først og hvorfor.\\n\\n- velge første leveransebølge basert på risiko, avhengigheter og kundeverdi\\n- beskrive hva teamet må etablere før første leveranse kan starte\\n- tydeliggjøre ansvar, kundebidrag og akseptansekriterier for første bølge\\n\\n## Fase 4: Klargjør tilbuds- og leveransegrunnlag\\n\\nSiste fase gjør materialet klart for videre tilbudsarbeid og praktisk oppfølging.\\n\\n- oppdatere løsningsbeskrivelsen med faseplanen og kundespesifikke bevis\\n- sikre at fremdriftsplanen henger sammen med risiko, verdi og evalueringskriterier\\n- avklare hvilke beslutninger som skal følges opp før endelig tilbud eller oppstart"}`,
     });
   }
 
