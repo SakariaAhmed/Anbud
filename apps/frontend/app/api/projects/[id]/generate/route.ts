@@ -7,10 +7,16 @@ import {
   getProjectSnapshot,
   listGeneratedArtifacts,
   listProjectDocuments,
+  listServiceDocumentDetailsForProject,
   saveGeneratedArtifact,
+  updateGeneratedArtifact,
 } from "@/lib/server/projects-db";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type { GeneratedArtifactType } from "@/lib/types";
+
+const READ_CACHE_HEADERS = {
+  "Cache-Control": "no-store",
+};
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
   return (
@@ -27,7 +33,7 @@ export async function GET(
   try {
     const { id } = await context.params;
     const artifacts = await listGeneratedArtifacts(id);
-    return NextResponse.json({ artifacts });
+    return NextResponse.json({ artifacts }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     return NextResponse.json(
       {
@@ -64,11 +70,13 @@ export async function POST(
       customerAnalysis,
       documents,
       generatedArtifacts,
+      serviceDescriptionDocuments,
     ] = await Promise.all([
       getProjectDetail(id),
       getCustomerAnalysis(id),
       listProjectDocuments(id),
       listGeneratedArtifacts(id),
+      listServiceDocumentDetailsForProject(id),
     ]);
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
@@ -88,6 +96,7 @@ export async function POST(
       customerDocument,
       solutionDocument,
       serviceDescriptionDocument,
+      serviceDescriptionDocuments,
       supportingDocuments,
       knowledgeArtifacts: generatedArtifacts,
       instructions: body.instructions?.trim(),
@@ -114,6 +123,48 @@ export async function POST(
           error instanceof Error
             ? error.message
             : "Kunne ikke generere artefakt.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await context.params;
+    const body = (await request.json().catch(() => ({}))) as {
+      artifact_id?: string;
+      title?: string;
+      content_markdown?: string;
+    };
+
+    if (!body.artifact_id) {
+      return NextResponse.json(
+        { error: "Mangler kravbesvarelse som skal oppdateres." },
+        { status: 400 },
+      );
+    }
+
+    const artifact = await updateGeneratedArtifact({
+      projectId: id,
+      artifactId: body.artifact_id,
+      title: typeof body.title === "string" ? body.title : "",
+      contentMarkdown:
+        typeof body.content_markdown === "string" ? body.content_markdown : "",
+    });
+    const snapshot = await getProjectSnapshot(id);
+
+    return NextResponse.json({ artifact, project: snapshot });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Kunne ikke oppdatere kravbesvarelsen.",
       },
       { status: 500 },
     );

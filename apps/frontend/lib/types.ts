@@ -15,7 +15,8 @@ export type SupportingDocumentSubtype =
   | "utkast"
   | "annet";
 
-export type DocumentFileFormat = "pdf" | "docx" | "txt" | "md";
+export type DocumentFileFormat = "pdf" | "docx" | "txt" | "md" | "xlsx" | "xls";
+export type ServiceInclusionMode = "fixed" | "selected";
 
 export type ValueCategory =
   | "Høyere produktivitet"
@@ -96,6 +97,42 @@ export interface ProjectDocumentDetail extends ProjectDocument {
   raw_text: string;
   file_base64: string;
   structure_map: ProjectDocumentStructureEntry[];
+}
+
+export interface ServiceDocument {
+  id: string;
+  service_id: string;
+  title: string;
+  file_name: string;
+  file_format: DocumentFileFormat;
+  content_type: string;
+  file_size_bytes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceDocumentDetail extends ServiceDocument {
+  raw_text: string;
+  file_base64: string;
+  structure_map: ProjectDocumentStructureEntry[];
+}
+
+export interface ServiceDescription {
+  id: string;
+  name: string;
+  description: string;
+  keywords: string[];
+  inclusion_mode: ServiceInclusionMode;
+  created_at: string;
+  updated_at: string;
+  documents: ServiceDocument[];
+}
+
+export interface ProjectServiceDescription extends ServiceDescription {
+  selected: boolean;
+  recommended: boolean;
+  recommendation_score: number;
+  recommendation_reason: string;
 }
 
 export interface AnalysisRequirement {
@@ -286,6 +323,7 @@ export interface ProjectCreateInput {
   customer_name?: string | null;
   description?: string | null;
   industry?: string | null;
+  selected_service_ids?: string[];
 }
 
 export interface ProjectMetadataInference {

@@ -28,8 +28,13 @@ import type {
   ProjectDocument,
   ProjectDocumentDetail,
   ProjectDocumentRole,
+  ProjectServiceDescription,
   ProjectStatus,
   ProjectSummary,
+  ServiceDescription,
+  ServiceDocument,
+  ServiceDocumentDetail,
+  ServiceInclusionMode,
   SolutionEvaluationResult,
   SupportingDocumentSubtype,
 } from "@/lib/types";
@@ -48,6 +53,7 @@ interface ProjectRow {
   customer_name: string | null;
   description: string | null;
   industry: string | null;
+  context_keywords: string[];
   customer_document_uploaded: boolean;
   customer_analysis_generated: boolean;
   solution_document_uploaded: boolean;
@@ -125,6 +131,7 @@ interface ArtifactRow {
   content_markdown: string;
   input_snapshot: Json;
   created_at: string;
+  updated_at?: string;
 }
 
 interface ChatRow {
@@ -134,6 +141,43 @@ interface ChatRow {
   content: string;
   context_snapshot: Json;
   created_at: string;
+}
+
+interface ServiceDescriptionRow {
+  id: string;
+  name: string;
+  description: string;
+  keywords: string[];
+  inclusion_mode: ServiceInclusionMode;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ServiceDocumentRow {
+  id: string;
+  service_id: string;
+  title: string;
+  file_name: string;
+  file_format: string;
+  content_type: string;
+  file_size_bytes: number;
+  file_base64: string;
+  raw_text: string;
+  structure_map: Json;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ServiceDocumentSummaryRow {
+  id: string;
+  service_id: string;
+  title: string;
+  file_name: string;
+  file_format: string;
+  content_type: string;
+  file_size_bytes: number;
+  created_at: string;
+  updated_at: string;
 }
 
 interface ProjectCacheSnapshot {
@@ -221,6 +265,7 @@ const EXECUTIVE_SUMMARY_EMPTY: ExecutiveSummaryResult = {
 };
 
 const PROJECTS_LIST_TAG = "projects:list";
+const SERVICE_DESCRIPTIONS_TAG = "service-descriptions:list";
 
 function projectTag(projectId: string) {
   return `project:${projectId}`;
@@ -231,6 +276,15 @@ function revalidateProjectCaches(projectId: string) {
   revalidateTag(projectTag(projectId));
   revalidatePath("/");
   revalidatePath(`/projects/${projectId}`);
+}
+
+function revalidateServiceCaches(projectId?: string) {
+  revalidateTag(SERVICE_DESCRIPTIONS_TAG);
+  revalidatePath("/");
+  revalidatePath("/projects/new");
+  if (projectId) {
+    revalidateProjectCaches(projectId);
+  }
 }
 
 function mapProjectStatus(row: ProjectRow): ProjectStatus {
@@ -286,6 +340,9 @@ function fromUnknownProjectRow(row: Record<string, unknown>): ProjectRow {
         : String(row.customer_name ?? row.client_name ?? ""),
     description: row.description == null ? null : String(row.description),
     industry: row.industry == null ? null : String(row.industry),
+    context_keywords: Array.isArray(row.context_keywords)
+      ? row.context_keywords.map(String)
+      : [],
     customer_document_uploaded: Boolean(
       row.customer_document_uploaded ?? false,
     ),
@@ -401,6 +458,55 @@ function mapChatMessage(row: ChatRow): ChatMessage {
   };
 }
 
+function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
+  return {
+    id: row.id,
+    service_id: row.service_id,
+    title: row.title,
+    file_name: row.file_name,
+    file_format: row.file_format as ServiceDocument["file_format"],
+    content_type: row.content_type,
+    file_size_bytes: row.file_size_bytes,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function mapServiceDescription(
+  row: ServiceDescriptionRow,
+  documents: ServiceDocumentSummaryRow[],
+): ServiceDescription {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    keywords: Array.isArray(row.keywords) ? row.keywords.map(String) : [],
+    inclusion_mode: row.inclusion_mode,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    documents: documents.map(mapServiceDocument),
+  };
+}
+
+function decryptServiceDocumentRow(
+  row: ServiceDocumentRow,
+): ServiceDocumentDetail {
+  return {
+    id: row.id,
+    service_id: row.service_id,
+    title: row.title,
+    file_name: row.file_name,
+    file_format: row.file_format as ServiceDocumentDetail["file_format"],
+    content_type: row.content_type,
+    file_size_bytes: row.file_size_bytes,
+    file_base64: decryptString(row.file_base64),
+    raw_text: decryptString(row.raw_text),
+    structure_map: decryptJson(row.structure_map, []),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 function mapProjectSummary(
   row: ProjectRow,
   documents: DocumentSummaryRow[],
@@ -483,6 +589,55 @@ function isMissingLegacyDocumentColumn(error: { message?: string } | null) {
     message.includes("structure_map") ||
     message.includes("source_map")
   );
+}
+
+function keywordsFromText(value: string, limit = 64) {
+  const stopWords = new Set([
+    "eller",
+    "ikke",
+    "skal",
+    "med",
+    "som",
+    "for",
+    "til",
+    "det",
+    "den",
+    "dette",
+    "har",
+    "kan",
+    "ved",
+    "fra",
+    "over",
+    "under",
+    "innen",
+    "kunden",
+    "tjeneste",
+    "tjenester",
+    "beskrivelse",
+  ]);
+  const counts = new Map<string, number>();
+  for (const word of value
+    .toLowerCase()
+    .replace(/[^a-zæøå0-9\s-]/gi, " ")
+    .split(/\s+/)) {
+    if (word.length < 4 || stopWords.has(word)) continue;
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "nb"))
+    .slice(0, limit)
+    .map(([word]) => word);
+}
+
+function mergeKeywords(...lists: Array<Array<string | null | undefined>>) {
+  return Array.from(
+    new Set(
+      lists
+        .flat()
+        .filter((word): word is string => Boolean(word?.trim()))
+        .map((word) => word.toLowerCase().trim()),
+    ),
+  ).slice(0, 96);
 }
 
 function fromUnknownDocumentSummaryRow(
@@ -723,7 +878,413 @@ export async function createProject(
   revalidatePath("/");
   revalidatePath("/projects/new");
 
-  return mapProjectSummary(fromUnknownProjectRow(insertResult.data), []);
+  const project = fromUnknownProjectRow(insertResult.data);
+  const selectedServiceIds = Array.isArray(input.selected_service_ids)
+    ? input.selected_service_ids.filter(Boolean)
+    : [];
+  if (selectedServiceIds.length) {
+    await setProjectServiceSelections(project.id, selectedServiceIds);
+  }
+
+  return mapProjectSummary(project, []);
+}
+
+export async function listServiceDescriptions(): Promise<ServiceDescription[]> {
+  return unstable_cache(
+    async () => {
+      const supabase = createServiceClient();
+      const [{ data: services, error: servicesError }, { data: documents, error: documentsError }] =
+        await Promise.all([
+          supabase
+            .from("service_descriptions")
+            .select("*")
+            .order("inclusion_mode", { ascending: true })
+            .order("name", { ascending: true }),
+          supabase
+            .from("service_documents")
+            .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, created_at, updated_at")
+            .order("created_at", { ascending: false }),
+        ]);
+
+      if (servicesError || documentsError) {
+        if (
+          isMissingRelationColumn(servicesError, "service_descriptions") ||
+          isMissingRelationColumn(documentsError, "service_documents")
+        ) {
+          return [];
+        }
+        throw new Error(
+          servicesError?.message ||
+            documentsError?.message ||
+            "Kunne ikke hente tjenestebeskrivelser.",
+        );
+      }
+
+      const documentsByService = new Map<string, ServiceDocumentSummaryRow[]>();
+      for (const document of (documents ?? []) as ServiceDocumentSummaryRow[]) {
+        const list = documentsByService.get(document.service_id) ?? [];
+        list.push(document);
+        documentsByService.set(document.service_id, list);
+      }
+
+      return ((services ?? []) as ServiceDescriptionRow[]).map((service) =>
+        mapServiceDescription(service, documentsByService.get(service.id) ?? []),
+      );
+    },
+    ["service-descriptions"],
+    {
+      tags: [SERVICE_DESCRIPTIONS_TAG],
+      revalidate: 3600,
+    },
+  )();
+}
+
+export async function getServiceDescription(
+  serviceId: string,
+): Promise<ServiceDescription> {
+  const services = await listServiceDescriptions();
+  const service = services.find((item) => item.id === serviceId);
+  if (!service) {
+    throw new Error("Fant ikke tjenesten.");
+  }
+  return service;
+}
+
+export async function upsertServiceDescription(input: {
+  serviceId?: string | null;
+  name: string;
+  description?: string | null;
+  inclusionMode: ServiceInclusionMode;
+}) {
+  const supabase = createServiceClient();
+  const payload = {
+    name: input.name.trim(),
+    description: input.description?.trim() || "",
+    keywords: keywordsFromText(
+      `${input.name} ${input.description?.trim() || ""}`,
+    ),
+    inclusion_mode: input.inclusionMode,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!payload.name) {
+    throw new Error("Tjenesten må ha et navn.");
+  }
+
+  let query = input.serviceId
+    ? supabase
+        .from("service_descriptions")
+        .update(payload)
+        .eq("id", input.serviceId)
+        .select("*")
+        .single<ServiceDescriptionRow>()
+    : supabase
+        .from("service_descriptions")
+        .insert(payload)
+        .select("*")
+        .single<ServiceDescriptionRow>();
+  let { data, error } = await query;
+
+  if (error && isMissingRelationColumn(error, "service_descriptions")) {
+    const legacyPayload = {
+      name: payload.name,
+      description: payload.description,
+      inclusion_mode: payload.inclusion_mode,
+      updated_at: payload.updated_at,
+    };
+    query = input.serviceId
+      ? supabase
+          .from("service_descriptions")
+          .update(legacyPayload)
+          .eq("id", input.serviceId)
+          .select("*")
+          .single<ServiceDescriptionRow>()
+      : supabase
+          .from("service_descriptions")
+          .insert(legacyPayload)
+          .select("*")
+          .single<ServiceDescriptionRow>();
+    const retry = await query;
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error || !data) {
+    throw new Error(error?.message || "Kunne ikke lagre tjenesten.");
+  }
+
+  revalidateServiceCaches();
+  return mapServiceDescription(data, []);
+}
+
+export async function saveServiceDocument(input: {
+  serviceId: string;
+  title: string;
+  fileName: string;
+  fileFormat: ServiceDocument["file_format"];
+  contentType: string;
+  fileSizeBytes: number;
+  fileBase64: string;
+  rawText: string;
+  structureMap: unknown;
+}) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("service_documents")
+    .insert({
+      service_id: input.serviceId,
+      title: input.title,
+      file_name: input.fileName,
+      file_format: input.fileFormat,
+      content_type: input.contentType,
+      file_size_bytes: input.fileSizeBytes,
+      file_base64: encryptString(input.fileBase64),
+      raw_text: encryptString(input.rawText),
+      structure_map: encryptJson(input.structureMap),
+    })
+    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, created_at, updated_at")
+    .single<ServiceDocumentSummaryRow>();
+
+  if (error || !data) {
+    throw new Error(error?.message || "Kunne ikke lagre tjenestedokumentet.");
+  }
+
+  const nextKeywords = keywordsFromText(
+    `${input.title} ${input.fileName} ${input.rawText}`,
+  );
+  const currentService = await getServiceDescription(input.serviceId).catch(
+    () => null,
+  );
+  const serviceKeywords = mergeKeywords(
+    currentService?.keywords ?? [],
+    nextKeywords,
+  );
+  const updateResult = await supabase
+    .from("service_descriptions")
+    .update({ updated_at: new Date().toISOString(), keywords: serviceKeywords })
+    .eq("id", input.serviceId);
+  if (
+    updateResult.error &&
+    !isMissingRelationColumn(updateResult.error, "service_descriptions")
+  ) {
+    throw new Error(updateResult.error.message);
+  }
+  if (
+    updateResult.error &&
+    isMissingRelationColumn(updateResult.error, "service_descriptions")
+  ) {
+    await supabase
+      .from("service_descriptions")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", input.serviceId);
+  }
+
+  revalidateServiceCaches();
+  return mapServiceDocument(data);
+}
+
+export async function deleteServiceDocument(
+  serviceId: string,
+  documentId: string,
+) {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("service_documents")
+    .delete()
+    .eq("service_id", serviceId)
+    .eq("id", documentId);
+  if (error) {
+    throw new Error(error.message);
+  }
+  revalidateServiceCaches();
+}
+
+export async function deleteServiceDescription(serviceId: string) {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("service_descriptions")
+    .delete()
+    .eq("id", serviceId);
+  if (error) {
+    throw new Error(error.message);
+  }
+  revalidateServiceCaches();
+}
+
+export async function listServiceDocumentDetailsForProject(
+  projectId: string,
+): Promise<ServiceDocumentDetail[]> {
+  const supabase = createServiceClient();
+  const [{ data: fixedServices, error: fixedError }, { data: selections, error: selectionsError }] =
+    await Promise.all([
+      supabase
+        .from("service_descriptions")
+        .select("id")
+        .eq("inclusion_mode", "fixed"),
+      supabase
+        .from("project_service_selections")
+        .select("service_id")
+        .eq("project_id", projectId)
+        .eq("selected", true),
+    ]);
+
+  if (
+    isMissingRelationColumn(fixedError, "service_descriptions") ||
+    isMissingRelationColumn(selectionsError, "project_service_selections")
+  ) {
+    return [];
+  }
+  if (fixedError || selectionsError) {
+    throw new Error(
+      fixedError?.message ||
+        selectionsError?.message ||
+        "Kunne ikke hente valgte tjenester.",
+    );
+  }
+
+  const serviceIds = Array.from(
+    new Set([
+      ...((fixedServices ?? []) as Array<{ id: string }>).map((item) => item.id),
+      ...((selections ?? []) as Array<{ service_id: string }>).map(
+        (item) => item.service_id,
+      ),
+    ]),
+  );
+
+  if (!serviceIds.length) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("service_documents")
+    .select("*")
+    .in("service_id", serviceIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as ServiceDocumentRow[]).map(decryptServiceDocumentRow);
+}
+
+export async function listProjectServiceDescriptions(
+  projectId: string,
+): Promise<ProjectServiceDescription[]> {
+  const supabase = createServiceClient();
+  const [services, project, documentRows, analysis, { data: selections, error: selectionsError }] =
+    await Promise.all([
+      listServiceDescriptions(),
+      queryProjectRow(projectId),
+      fetchDocumentSummaryRows((select) =>
+        supabase
+          .from("documents")
+          .select(select)
+          .eq("project_id", projectId),
+      ).catch(() => []),
+      getCustomerAnalysis(projectId).catch(() => null),
+      supabase
+        .from("project_service_selections")
+        .select("service_id, selected")
+        .eq("project_id", projectId),
+    ]);
+
+  if (
+    selectionsError &&
+    !isMissingRelationColumn(selectionsError, "project_service_selections")
+  ) {
+    throw new Error(selectionsError.message);
+  }
+
+  const selected = new Map(
+    ((selections ?? []) as Array<{ service_id: string; selected: boolean }>).map(
+      (item) => [item.service_id, item.selected],
+    ),
+  );
+  const projectKeywords = new Set(
+    mergeKeywords(
+      project.context_keywords,
+      keywordsFromText(
+        [
+          project.name,
+          project.customer_name ?? "",
+          project.description ?? "",
+          project.industry ?? "",
+          ...documentRows.map(
+            (document) => `${document.title} ${document.file_name}`,
+          ),
+        ].join(" "),
+      ),
+      analysis?.signal_words ?? [],
+    ),
+  );
+
+  return services.map((service) => {
+    const serviceKeywords = mergeKeywords(
+      service.keywords,
+      keywordsFromText(
+        [
+          service.name,
+          service.description,
+          ...service.documents.map(
+            (document) => `${document.title} ${document.file_name}`,
+          ),
+        ].join(" "),
+      ),
+    );
+    const overlap = serviceKeywords.filter((word) =>
+      projectKeywords.has(word),
+    );
+    const score = Math.min(
+      100,
+      Math.round((overlap.length / Math.max(4, serviceKeywords.length)) * 100),
+    );
+    return {
+      ...service,
+      selected:
+        service.inclusion_mode === "fixed"
+          ? true
+          : selected.get(service.id) ?? false,
+      recommended: service.inclusion_mode === "selected" && score >= 18,
+      recommendation_score: score,
+      recommendation_reason: overlap.length
+        ? `Matcher prosjektet på ${overlap.slice(0, 4).join(", ")}.`
+        : "Ingen tydelig match mot prosjektkonteksten ennå.",
+    };
+  });
+}
+
+export async function setProjectServiceSelections(
+  projectId: string,
+  serviceIds: string[],
+) {
+  const supabase = createServiceClient();
+  const uniqueIds = Array.from(new Set(serviceIds.filter(Boolean)));
+  const services = await listServiceDescriptions();
+  const selectableIds = services
+    .filter((service) => service.inclusion_mode === "selected")
+    .map((service) => service.id);
+
+  await supabase.from("project_service_selections").delete().eq("project_id", projectId);
+
+  const rows = uniqueIds
+    .filter((serviceId) => selectableIds.includes(serviceId))
+    .map((serviceId) => ({
+      project_id: projectId,
+      service_id: serviceId,
+      selected: true,
+    }));
+
+  if (rows.length) {
+    const { error } = await supabase
+      .from("project_service_selections")
+      .insert(rows);
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  revalidateProjectCaches(projectId);
 }
 
 export async function updateProjectMetadataFromInference(
@@ -776,6 +1337,14 @@ export async function updateProjectMetadataFromInference(
   if (nextDescription) {
     standardPatch.description = nextDescription;
   }
+  standardPatch.context_keywords = mergeKeywords(
+    project.context_keywords,
+    keywordsFromText(
+      [nextName, nextCustomerName, nextIndustry, nextDescription]
+        .filter(Boolean)
+        .join(" "),
+    ),
+  );
 
   let updateResult = await supabase
     .from("projects")
@@ -815,6 +1384,47 @@ export async function updateProjectMetadataFromInference(
   revalidateProjectCaches(projectId);
 
   return fromUnknownProjectRow(updateResult.data);
+}
+
+async function updateProjectContextKeywords(projectId: string) {
+  const supabase = createServiceClient();
+  try {
+    const [project, documents, analysis] = await Promise.all([
+      queryProjectRow(projectId),
+      fetchDocumentSummaryRows((select) =>
+        supabase
+          .from("documents")
+          .select(select)
+          .eq("project_id", projectId),
+      ).catch(() => []),
+      getCustomerAnalysis(projectId).catch(() => null),
+    ]);
+    const keywords = mergeKeywords(
+      project.context_keywords,
+      keywordsFromText(
+        [
+          project.name,
+          project.customer_name ?? "",
+          project.description ?? "",
+          project.industry ?? "",
+          ...documents.map((document) => `${document.title} ${document.file_name}`),
+          analysis?.customer_profile_summary ?? "",
+          analysis?.customer_goals_summary ?? "",
+          analysis?.high_level_solution_design ?? "",
+        ].join(" "),
+      ),
+      analysis?.signal_words ?? [],
+    );
+    const { error } = await supabase
+      .from("projects")
+      .update({ context_keywords: keywords })
+      .eq("id", projectId);
+    if (error && !isMissingLegacyProjectColumn(error)) {
+      throw new Error(error.message);
+    }
+  } catch {
+    // Keyword cache is an optimization; never block the main workflow.
+  }
 }
 
 export async function getProjectDetail(
@@ -1112,6 +1722,7 @@ export async function saveDocument(input: {
     .update(projectPatch)
     .eq("id", input.projectId);
 
+  await updateProjectContextKeywords(input.projectId);
   revalidateProjectCaches(input.projectId);
 
   return mapDocumentSummary(inserted);
@@ -1385,13 +1996,41 @@ export async function saveCustomerAnalysis(
     throw new Error(error?.message || "Kunne ikke lagre kundeanalysen.");
   }
 
-  await supabase
+  const projectKeywords = mergeKeywords(
+    keywordsFromText(
+      [
+        result.customer_profile_summary,
+        result.customer_goals_summary,
+        result.high_level_solution_design,
+        result.executive_summary,
+      ].join(" "),
+    ),
+    result.signal_words ?? [],
+  );
+
+  const projectUpdate = await supabase
     .from("projects")
     .update({
       customer_analysis_generated: true,
       last_activity_at: new Date().toISOString(),
+      context_keywords: projectKeywords,
     })
     .eq("id", projectId);
+  if (
+    projectUpdate.error &&
+    !isMissingLegacyProjectColumn(projectUpdate.error)
+  ) {
+    throw new Error(projectUpdate.error.message);
+  }
+  if (projectUpdate.error && isMissingLegacyProjectColumn(projectUpdate.error)) {
+    await supabase
+      .from("projects")
+      .update({
+        customer_analysis_generated: true,
+        last_activity_at: new Date().toISOString(),
+      })
+      .eq("id", projectId);
+  }
 
   revalidateProjectCaches(projectId);
 
@@ -1399,20 +2038,29 @@ export async function saveCustomerAnalysis(
 }
 
 export async function getCustomerAnalysis(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("customer_analyses")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false })
-    .limit(1);
+  return unstable_cache(
+    async () => {
+      const supabase = createServiceClient();
+      const { data, error } = await supabase
+        .from("customer_analyses")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-  if (error) {
-    throw new Error(error.message);
-  }
+      if (error) {
+        throw new Error(error.message);
+      }
 
-  const row = (data?.[0] as CustomerAnalysisRow | undefined) ?? null;
-  return row ? decryptJson(row.result_json, CUSTOMER_ANALYSIS_EMPTY) : null;
+      const row = (data?.[0] as CustomerAnalysisRow | undefined) ?? null;
+      return row ? decryptJson(row.result_json, CUSTOMER_ANALYSIS_EMPTY) : null;
+    },
+    ["project-customer-analysis", projectId],
+    {
+      tags: [projectTag(projectId)],
+      revalidate: 60,
+    },
+  )();
 }
 
 export async function saveSolutionEvaluation(
@@ -1514,41 +2162,59 @@ export async function saveExecutiveSummary(
 }
 
 export async function getExecutiveSummary(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("executive_summaries")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false })
-    .limit(1);
+  return unstable_cache(
+    async () => {
+      const supabase = createServiceClient();
+      const { data, error } = await supabase
+        .from("executive_summaries")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-  if (isMissingRelationColumn(error, "executive_summaries")) {
-    return null;
-  }
+      if (isMissingRelationColumn(error, "executive_summaries")) {
+        return null;
+      }
 
-  if (error) {
-    throw new Error(error.message);
-  }
+      if (error) {
+        throw new Error(error.message);
+      }
 
-  const row = (data?.[0] as ExecutiveSummaryRow | undefined) ?? null;
-  return row ? mapExecutiveSummaryRow(row) : null;
+      const row = (data?.[0] as ExecutiveSummaryRow | undefined) ?? null;
+      return row ? mapExecutiveSummaryRow(row) : null;
+    },
+    ["project-executive-summary", projectId],
+    {
+      tags: [projectTag(projectId)],
+      revalidate: 60,
+    },
+  )();
 }
 
 export async function getSolutionEvaluation(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("solution_evaluations")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false })
-    .limit(1);
+  return unstable_cache(
+    async () => {
+      const supabase = createServiceClient();
+      const { data, error } = await supabase
+        .from("solution_evaluations")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-  if (error) {
-    throw new Error(error.message);
-  }
+      if (error) {
+        throw new Error(error.message);
+      }
 
-  const row = (data?.[0] as SolutionEvaluationRow | undefined) ?? null;
-  return row ? mapSolutionEvaluationRow(row) : null;
+      const row = (data?.[0] as SolutionEvaluationRow | undefined) ?? null;
+      return row ? mapSolutionEvaluationRow(row) : null;
+    },
+    ["project-solution-evaluation", projectId],
+    {
+      tags: [projectTag(projectId)],
+      revalidate: 60,
+    },
+  )();
 }
 
 export async function saveGeneratedArtifact(
@@ -1583,19 +2249,73 @@ export async function saveGeneratedArtifact(
   return mapArtifact(data);
 }
 
-export async function listGeneratedArtifacts(projectId: string) {
+export async function updateGeneratedArtifact(input: {
+  projectId: string;
+  artifactId: string;
+  title: string;
+  contentMarkdown: string;
+}) {
+  const title = input.title.trim();
+  const contentMarkdown = input.contentMarkdown.trim();
+
+  if (!title) {
+    throw new Error("Kravbesvarelsen må ha en tittel.");
+  }
+
+  if (!contentMarkdown) {
+    throw new Error("Kravbesvarelsen kan ikke være tom.");
+  }
+
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("generated_artifacts")
+    .update({
+      title,
+      content_markdown: contentMarkdown,
+      input_snapshot: encryptJson({
+        edited_manually: true,
+        edited_at: new Date().toISOString(),
+      }),
+    })
+    .eq("id", input.artifactId)
+    .eq("project_id", input.projectId)
     .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false });
+    .single<ArtifactRow>();
 
-  if (error) {
-    throw new Error(error.message || "Kunne ikke hente generatorartefakter.");
+  if (error || !data) {
+    throw new Error(error?.message || "Kunne ikke lagre kravbesvarelsen.");
   }
 
-  return ((data ?? []) as ArtifactRow[]).map(mapArtifact);
+  await supabase
+    .from("projects")
+    .update({ last_activity_at: new Date().toISOString() })
+    .eq("id", input.projectId);
+  revalidateProjectCaches(input.projectId);
+  return mapArtifact(data);
+}
+
+export async function listGeneratedArtifacts(projectId: string) {
+  return unstable_cache(
+    async () => {
+      const supabase = createServiceClient();
+      const { data, error } = await supabase
+        .from("generated_artifacts")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw new Error(error.message || "Kunne ikke hente generatorartefakter.");
+      }
+
+      return ((data ?? []) as ArtifactRow[]).map(mapArtifact);
+    },
+    ["project-generated-artifacts", projectId],
+    {
+      tags: [projectTag(projectId)],
+      revalidate: 60,
+    },
+  )();
 }
 
 export async function appendChatMessage(

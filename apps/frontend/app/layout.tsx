@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import Image from "next/image";
-import Link from "next/link";
 import { cookies } from "next/headers";
+import Link from "next/link";
 import type { ReactNode } from "react";
+import { Layers3 } from "lucide-react";
+import { AppHeaderLogo } from "@/components/layout/app-header-logo";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/password-auth";
 
@@ -12,6 +13,11 @@ export const metadata: Metadata = {
   title: "bidsite",
   description:
     "Kundeanalyse og generator for tilbudsteam i komplekse kundeprosjekter.",
+  icons: {
+    icon: "/bidsite-logo.png",
+    shortcut: "/bidsite-logo.png",
+    apple: "/bidsite-logo.png",
+  },
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
@@ -30,38 +36,15 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               >
                 <div className="flex h-[var(--app-header-height)] w-full items-center justify-between px-6 lg:px-10">
                   <div className="flex items-center gap-8">
-                    <Link
-                      href="/"
-                      className="brand-logo text-white"
-                      data-brand-anchor="true"
-                    >
-                      <Image
-                        src="/bidsite-logo.png"
-                        alt=""
-                        width={184}
-                        height={249}
-                        aria-hidden="true"
-                        className="brand-logo__mark"
-                        priority
-                      />
-                      <span className="brand-logo__wordmark">bidsite</span>
-                    </Link>
-                    <div className="hidden h-5 w-px bg-slate-600 sm:block" />
-                    <nav className="hidden items-center gap-6 sm:flex">
-                      <Link
-                        href="/"
-                        className="text-[13px] font-medium text-slate-300 transition-colors hover:text-white"
-                      >
-                        Prosjekter
-                      </Link>
-                      <Link
-                        href="/projects/new"
-                        className="text-[13px] font-medium text-slate-300 transition-colors hover:text-white"
-                      >
-                        Ny analyse
-                      </Link>
-                    </nav>
+                    <AppHeaderLogo />
                   </div>
+                  <Link
+                    href="/service-descriptions"
+                    className="inline-flex h-8 items-center gap-2 rounded-md border border-white/15 bg-white/[0.06] px-3 text-sm font-semibold text-slate-100 transition-colors hover:border-white/30 hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  >
+                    <Layers3 className="size-4" />
+                    <span className="hidden sm:inline">Tjenestebeskrivelser</span>
+                  </Link>
                 </div>
               </header>
               <main className="site-reload-enter pt-[var(--app-header-height)]">
