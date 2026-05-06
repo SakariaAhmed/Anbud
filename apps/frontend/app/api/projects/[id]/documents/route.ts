@@ -28,7 +28,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json(
         {
           error:
-            "Dokumentet har ingen lesbar tekst. Last opp en tekstbasert PDF/DOCX, eller bruk OCR før opplasting.",
+            "Dokumentet har ingen lesbar tekst. Last opp en tekstbasert PDF/DOCX/Excel-fil, eller bruk OCR før opplasting.",
         },
         { status: 400 },
       );

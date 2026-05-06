@@ -44,7 +44,6 @@ import {
   deriveProjectStatus,
   formatDate,
 } from "@/components/projects/project-workspace-shared";
-import { ProjectAnalysisTab } from "@/components/projects/project-analysis-tab";
 import type {
   CustomerAnalysisResult,
   CustomerAnalysisSection,
@@ -67,6 +66,20 @@ const ProjectEvaluationTab = dynamic(
     loading: () => (
       <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
         Laster vurdering ...
+      </div>
+    ),
+  },
+);
+
+const ProjectAnalysisTab = dynamic(
+  () =>
+    import("@/components/projects/project-analysis-tab").then(
+      (module) => module.ProjectAnalysisTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster kundeanalyse ...
       </div>
     ),
   },
@@ -136,7 +149,7 @@ const ProjectGeneratorTab = dynamic(
   {
     loading: () => (
       <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster løsningsutkast ...
+        Laster løsningsbeskrivelse ...
       </div>
     ),
   },
@@ -188,8 +201,23 @@ function dedupeDocuments(documents: ProjectDocument[]) {
   });
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+
+    const timeout = window.setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        window.clearTimeout(timeout);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
 }
 
 async function readJsonPayload<T>(
@@ -217,6 +245,51 @@ function DeferredSectionLoader({ label }: { label: string }) {
       <span>{label}</span>
     </div>
   );
+}
+
+async function pollProjectJob({
+  projectId,
+  jobId,
+  onMessage,
+  signal,
+}: {
+  projectId: string;
+  jobId: string;
+  onMessage: (message: string) => void;
+  signal?: AbortSignal;
+}) {
+  const delays = [800, 1500, 2500];
+  let attempt = 0;
+
+  while (true) {
+    await sleep(delays[Math.min(attempt, delays.length - 1)] ?? 2500, signal);
+    attempt += 1;
+
+    const statusResponse = await fetch(
+      `/api/projects/${projectId}/jobs/${jobId}`,
+      { cache: "no-store", signal },
+    );
+    const statusPayload = (await statusResponse.json()) as {
+      error?: string;
+      job?: ProjectJobRecord;
+    };
+    if (!statusResponse.ok || !statusPayload.job) {
+      throw new Error(statusPayload.error || "Kunne ikke hente jobbstatus.");
+    }
+
+    onMessage(statusPayload.job.message);
+
+    if (statusPayload.job.status === "failed") {
+      throw new Error(statusPayload.job.error || "Jobben feilet.");
+    }
+
+    if (
+      statusPayload.job.status === "completed" &&
+      statusPayload.job.result
+    ) {
+      return statusPayload.job;
+    }
+  }
 }
 
 const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
@@ -260,7 +333,8 @@ export function ProjectWorkspacePage({
   const [docTitle, setDocTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [artifactInstructions, setArtifactInstructions] = useState("");
-  const [requirementInstructions, setRequirementInstructions] = useState("");
+  const [selectedRequirementDocumentId, setSelectedRequirementDocumentId] =
+    useState("");
   const [activeTab, setActiveTab] = useState("analysis");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
@@ -287,6 +361,7 @@ export function ProjectWorkspacePage({
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
   const progressIntervalRef = useRef<number | null>(null);
   const sidebarResizeRef = useRef(false);
+  const activeJobAbortRef = useRef<AbortController | null>(null);
 
   const stopSidebarResize = useCallback(() => {
     if (!sidebarResizeRef.current) return;
@@ -316,6 +391,45 @@ export function ProjectWorkspacePage({
   }
 
   useEffect(() => stopProgressTicker, []);
+
+  useEffect(() => {
+    return () => {
+      activeJobAbortRef.current?.abort();
+    };
+  }, []);
+
+  async function waitForProjectJob(
+    jobId: string,
+    failedFallbackMessage: string,
+  ) {
+    activeJobAbortRef.current?.abort();
+    const controller = new AbortController();
+    activeJobAbortRef.current = controller;
+
+    try {
+      const job = await pollProjectJob({
+        projectId: project.id,
+        jobId,
+        onMessage: setBusyMessage,
+        signal: controller.signal,
+      });
+
+      if (job.status === "failed") {
+        throw new Error(job.error || failedFallbackMessage);
+      }
+
+      return job;
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error("Jobben ble avbrutt.");
+      }
+      throw error;
+    } finally {
+      if (activeJobAbortRef.current === controller) {
+        activeJobAbortRef.current = null;
+      }
+    }
+  }
 
   useEffect(() => {
     try {
@@ -387,9 +501,7 @@ export function ProjectWorkspacePage({
 
     let cancelled = false;
     setAnalysisLoading(true);
-    fetch(`/api/projects/${project.id}/customer-analysis`, {
-      cache: "no-store",
-    })
+    fetch(`/api/projects/${project.id}/customer-analysis`)
       .then(async (response) => {
         const payload = await readJsonPayload<{
           error?: string;
@@ -443,9 +555,7 @@ export function ProjectWorkspacePage({
 
     let cancelled = false;
     setEvaluationLoading(true);
-    fetch(`/api/projects/${project.id}/solution-evaluation`, {
-      cache: "no-store",
-    })
+    fetch(`/api/projects/${project.id}/solution-evaluation`)
       .then(async (response) => {
         const payload = (await response.json()) as {
           error?: string;
@@ -501,9 +611,7 @@ export function ProjectWorkspacePage({
 
     let cancelled = false;
     setExecutiveSummaryLoading(true);
-    fetch(`/api/projects/${project.id}/executive-summary`, {
-      cache: "no-store",
-    })
+    fetch(`/api/projects/${project.id}/executive-summary`)
       .then(async (response) => {
         const payload = (await response.json()) as {
           error?: string;
@@ -572,7 +680,6 @@ export function ProjectWorkspacePage({
       (activeTab !== "generator" &&
         activeTab !== "delivery" &&
         activeTab !== "requirements") ||
-      artifactsLoaded ||
       project.artifact_count === 0
     )
       return;
@@ -610,7 +717,7 @@ export function ProjectWorkspacePage({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, artifactsLoaded, project.artifact_count, project.id]);
+  }, [activeTab, project.artifact_count, project.id]);
 
   async function onUploadDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -699,6 +806,9 @@ export function ProjectWorkspacePage({
   }
 
   async function onUploadRequirementDocument(file: File) {
+    let uploadedDocument: ProjectDocument | null = null;
+    let uploadedDocumentId = "";
+
     await runAction("upload-requirement-document", async () => {
       const formData = new FormData();
       formData.append("file", file);
@@ -718,6 +828,8 @@ export function ProjectWorkspacePage({
       if (!response.ok || !payload.document || !payload.project) {
         throw new Error(payload.error || "Kunne ikke laste opp kravdokumentet.");
       }
+      uploadedDocument = payload.document;
+      uploadedDocumentId = payload.document.id;
       setProject((current) =>
         normalizeProjectState(
           patchProjectWithSnapshot(
@@ -737,6 +849,59 @@ export function ProjectWorkspacePage({
       );
       setArtifactsLoaded(true);
     });
+
+    if (uploadedDocumentId) {
+      setSelectedRequirementDocumentId(uploadedDocumentId);
+    }
+
+    return uploadedDocument as ProjectDocument | null;
+  }
+
+  async function onUpdateRequirementArtifact(
+    artifact: GeneratedArtifact,
+    value: { title: string; content_markdown: string },
+  ) {
+    setError("");
+    setNotice("");
+    setBusy(`update-artifact-${artifact.id}`);
+    try {
+      const response = await fetch(`/api/projects/${project.id}/generate`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artifact_id: artifact.id,
+          title: value.title,
+          content_markdown: value.content_markdown,
+        }),
+      });
+      const payload = await readJsonPayload<{
+        error?: string;
+        artifact?: GeneratedArtifact;
+        project?: ProjectSnapshotPayload;
+      }>(response, "Kunne ikke lagre kravbesvarelsen.");
+      if (!response.ok || !payload.artifact || !payload.project) {
+        throw new Error(payload.error || "Kunne ikke lagre kravbesvarelsen.");
+      }
+      setProject((current) =>
+        normalizeProjectState(
+          patchProjectWithSnapshot(
+            {
+              ...current,
+              generated_artifacts: current.generated_artifacts.map((item) =>
+                item.id === payload.artifact!.id ? payload.artifact! : item,
+              ),
+            },
+            payload.project!,
+          ),
+        ),
+      );
+      setNotice("Kravbesvarelsen er oppdatert.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Noe gikk galt.");
+      throw err;
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function onDeleteDocument(document: ProjectDocument) {
@@ -843,56 +1008,29 @@ export function ProjectWorkspacePage({
           );
         }
         setBusyMessage(payload.job.message);
-        while (true) {
-          await sleep(1500);
-          const statusResponse = await fetch(
-            `/api/projects/${project.id}/jobs/${payload.job.id}`,
-            { cache: "no-store" },
-          );
-          const statusPayload = (await statusResponse.json()) as {
-            error?: string;
-            job?: ProjectJobRecord;
-          };
-          if (!statusResponse.ok || !statusPayload.job) {
-            throw new Error(
-              statusPayload.error || "Kunne ikke hente jobbstatus.",
-            );
-          }
-          setBusyMessage(statusPayload.job.message);
-          if (statusPayload.job.status === "failed") {
-            throw new Error(
-              statusPayload.job.error ||
-                "Jobben for overordnet løsningsdesign feilet.",
-            );
-          }
-          if (
-            statusPayload.job.status !== "completed" ||
-            !statusPayload.job.result
-          ) {
-            continue;
-          }
-
-          const result = statusPayload.job.result as {
-            analysis: CustomerAnalysisResult;
-            project: ProjectSnapshotPayload;
-          };
-          setProject((current) =>
-            normalizeProjectState(
-              patchProjectWithSnapshot(
-                { ...current, customer_analysis: result.analysis },
-                result.project,
-              ),
-              {
-                preserveArtifactCount: !artifactsLoaded,
-              },
+        const completedJob = await waitForProjectJob(
+          payload.job.id,
+          "Jobben for overordnet løsningsdesign feilet.",
+        );
+        const result = completedJob.result as {
+          analysis: CustomerAnalysisResult;
+          project: ProjectSnapshotPayload;
+        };
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
+              { ...current, customer_analysis: result.analysis },
+              result.project,
             ),
-          );
-          setAnalysisLoaded(true);
-          setNotice(
-            "Overordnet løsningsdesign og arkitekturdiagram er oppdatert uten å regenerere hele kundeanalysen.",
-          );
-          break;
-        }
+            {
+              preserveArtifactCount: !artifactsLoaded,
+            },
+          ),
+        );
+        setAnalysisLoaded(true);
+        setNotice(
+          "Overordnet løsningsdesign og arkitekturdiagram er oppdatert uten å redigere hele kundeanalysen.",
+        );
       },
       ["Starter generering av overordnet løsningsdesign ..."],
     );
@@ -962,57 +1100,32 @@ export function ProjectWorkspacePage({
           );
         }
         setBusyMessage(payload.job.message);
-        while (true) {
-          await sleep(1500);
-          const statusResponse = await fetch(
-            `/api/projects/${project.id}/jobs/${payload.job.id}`,
-            { cache: "no-store" },
-          );
-          const statusPayload = (await statusResponse.json()) as {
-            error?: string;
-            job?: ProjectJobRecord;
-          };
-          if (!statusResponse.ok || !statusPayload.job) {
-            throw new Error(
-              statusPayload.error || "Kunne ikke hente jobbstatus.",
-            );
-          }
-          setBusyMessage(statusPayload.job.message);
-          if (statusPayload.job.status === "failed") {
-            throw new Error(
-              statusPayload.job.error || "Generatorjobben feilet.",
-            );
-          }
-          if (
-            statusPayload.job.status !== "completed" ||
-            !statusPayload.job.result
-          )
-            continue;
-
-          const result = statusPayload.job.result as {
-            artifact: GeneratedArtifact;
-            project: ProjectSnapshotPayload;
-            evaluation?: SolutionEvaluationResult;
-          };
-          setProject((current) =>
-            normalizeProjectState(
-              patchProjectWithSnapshot(
-                {
-                  ...current,
-                  solution_evaluation:
-                    result.evaluation ?? current.solution_evaluation,
-                  generated_artifacts: [
-                    result.artifact,
-                    ...current.generated_artifacts,
-                  ],
-                  artifact_count: current.artifact_count + 1,
-                },
-                result.project,
-              ),
+        const completedJob = await waitForProjectJob(
+          payload.job.id,
+          "Generatorjobben feilet.",
+        );
+        const result = completedJob.result as {
+          artifact: GeneratedArtifact;
+          project: ProjectSnapshotPayload;
+          evaluation?: SolutionEvaluationResult;
+        };
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
+              {
+                ...current,
+                solution_evaluation:
+                  result.evaluation ?? current.solution_evaluation,
+                generated_artifacts: [
+                  result.artifact,
+                  ...current.generated_artifacts,
+                ],
+                artifact_count: current.artifact_count + 1,
+              },
+              result.project,
             ),
-          );
-          break;
-        }
+          ),
+        );
       },
       ["Starter generatorjobben ..."],
     );
@@ -1041,55 +1154,29 @@ export function ProjectWorkspacePage({
           );
         }
         setBusyMessage(payload.job.message);
-        while (true) {
-          await sleep(1500);
-          const statusResponse = await fetch(
-            `/api/projects/${project.id}/jobs/${payload.job.id}`,
-            { cache: "no-store" },
-          );
-          const statusPayload = (await statusResponse.json()) as {
-            error?: string;
-            job?: ProjectJobRecord;
-          };
-          if (!statusResponse.ok || !statusPayload.job) {
-            throw new Error(
-              statusPayload.error || "Kunne ikke hente jobbstatus.",
-            );
-          }
-          setBusyMessage(statusPayload.job.message);
-          if (statusPayload.job.status === "failed") {
-            throw new Error(
-              statusPayload.job.error ||
-                "Jobben for fremdriftsplanen feilet.",
-            );
-          }
-          if (
-            statusPayload.job.status !== "completed" ||
-            !statusPayload.job.result
-          )
-            continue;
-
-          const result = statusPayload.job.result as {
-            artifact: GeneratedArtifact;
-            project: ProjectSnapshotPayload;
-          };
-          setProject((current) =>
-            normalizeProjectState(
-              patchProjectWithSnapshot(
-                {
-                  ...current,
-                  generated_artifacts: [
-                    result.artifact,
-                    ...current.generated_artifacts,
-                  ],
-                  artifact_count: current.artifact_count + 1,
-                },
-                result.project,
-              ),
+        const completedJob = await waitForProjectJob(
+          payload.job.id,
+          "Jobben for fremdriftsplanen feilet.",
+        );
+        const result = completedJob.result as {
+          artifact: GeneratedArtifact;
+          project: ProjectSnapshotPayload;
+        };
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
+              {
+                ...current,
+                generated_artifacts: [
+                  result.artifact,
+                  ...current.generated_artifacts,
+                ],
+                artifact_count: current.artifact_count + 1,
+              },
+              result.project,
             ),
-          );
-          break;
-        }
+          ),
+        );
       },
       ["Starter jobben for fremdriftsplanen ..."],
     );
@@ -1106,7 +1193,9 @@ export function ProjectWorkspacePage({
           body: JSON.stringify({
             kind: "artifact_generation",
             artifact_type: "forbedret_kravsvar",
-            instructions: requirementInstructions,
+            source_document_ids: selectedRequirementDocumentId
+              ? [selectedRequirementDocumentId]
+              : [],
           }),
         });
         const payload = (await response.json()) as {
@@ -1119,54 +1208,29 @@ export function ProjectWorkspacePage({
           );
         }
         setBusyMessage(payload.job.message);
-        while (true) {
-          await sleep(1500);
-          const statusResponse = await fetch(
-            `/api/projects/${project.id}/jobs/${payload.job.id}`,
-            { cache: "no-store" },
-          );
-          const statusPayload = (await statusResponse.json()) as {
-            error?: string;
-            job?: ProjectJobRecord;
-          };
-          if (!statusResponse.ok || !statusPayload.job) {
-            throw new Error(
-              statusPayload.error || "Kunne ikke hente jobbstatus.",
-            );
-          }
-          setBusyMessage(statusPayload.job.message);
-          if (statusPayload.job.status === "failed") {
-            throw new Error(
-              statusPayload.job.error || "Jobben for kravbesvarelse feilet.",
-            );
-          }
-          if (
-            statusPayload.job.status !== "completed" ||
-            !statusPayload.job.result
-          )
-            continue;
-
-          const result = statusPayload.job.result as {
-            artifact: GeneratedArtifact;
-            project: ProjectSnapshotPayload;
-          };
-          setProject((current) =>
-            normalizeProjectState(
-              patchProjectWithSnapshot(
-                {
-                  ...current,
-                  generated_artifacts: [
-                    result.artifact,
-                    ...current.generated_artifacts,
-                  ],
-                  artifact_count: current.artifact_count + 1,
-                },
-                result.project,
-              ),
+        const completedJob = await waitForProjectJob(
+          payload.job.id,
+          "Jobben for kravbesvarelse feilet.",
+        );
+        const result = completedJob.result as {
+          artifact: GeneratedArtifact;
+          project: ProjectSnapshotPayload;
+        };
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
+              {
+                ...current,
+                generated_artifacts: [
+                  result.artifact,
+                  ...current.generated_artifacts,
+                ],
+                artifact_count: current.artifact_count + 1,
+              },
+              result.project,
             ),
-          );
-          break;
-        }
+          ),
+        );
       },
       ["Starter jobben for kravbesvarelse ..."],
     );
@@ -1195,58 +1259,32 @@ export function ProjectWorkspacePage({
           );
         }
         setBusyMessage(payload.job.message);
-        while (true) {
-          await sleep(1500);
-          const statusResponse = await fetch(
-            `/api/projects/${project.id}/jobs/${payload.job.id}`,
-            { cache: "no-store" },
-          );
-          const statusPayload = (await statusResponse.json()) as {
-            error?: string;
-            job?: ProjectJobRecord;
-          };
-          if (!statusResponse.ok || !statusPayload.job) {
-            throw new Error(
-              statusPayload.error || "Kunne ikke hente jobbstatus.",
-            );
-          }
-          setBusyMessage(statusPayload.job.message);
-          if (statusPayload.job.status === "failed") {
-            throw new Error(
-              statusPayload.job.error || "Løsningsvurderingen feilet.",
-            );
-          }
-          if (
-            statusPayload.job.status !== "completed" ||
-            !statusPayload.job.result
-          ) {
-            continue;
-          }
-
-          const result = statusPayload.job.result as {
-            evaluation: SolutionEvaluationResult;
-            project: ProjectSnapshotPayload;
-          };
-          setProject((current) =>
-            normalizeProjectState(
-              patchProjectWithSnapshot(
-                {
-                  ...current,
-                  solution_evaluation: result.evaluation,
-                  executive_summary: null,
-                },
-                result.project,
-              ),
+        const completedJob = await waitForProjectJob(
+          payload.job.id,
+          "Løsningsvurderingen feilet.",
+        );
+        const result = completedJob.result as {
+          evaluation: SolutionEvaluationResult;
+          project: ProjectSnapshotPayload;
+        };
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
               {
-                preserveArtifactCount: !artifactsLoaded,
+                ...current,
+                solution_evaluation: result.evaluation,
+                executive_summary: null,
               },
+              result.project,
             ),
-          );
-          setEvaluationLoaded(true);
-          setExecutiveSummaryLoaded(true);
-          setNotice("Sammenligningen er generert og lagret i prosjektet.");
-          break;
-        }
+            {
+              preserveArtifactCount: !artifactsLoaded,
+            },
+          ),
+        );
+        setEvaluationLoaded(true);
+        setExecutiveSummaryLoaded(true);
+        setNotice("Sammenligningen er generert og lagret i prosjektet.");
       },
       ["Starter sammenligning av systemløsning og arkitektløsning ..."],
     );
@@ -1299,12 +1337,16 @@ export function ProjectWorkspacePage({
     project.executive_summary as ExecutiveSummaryResult | null;
   const workspaceNavItems = [
     { value: "analysis", label: "Kundeanalyse", icon: Brain },
-    { value: "evaluation", label: "Vurdering", icon: Scale },
     { value: "service-description", label: "Tjenestebeskrivelse", icon: Wrench },
     { value: "requirements", label: "Kravbesvarelse", icon: FileCheck2 },
-    { value: "generator", label: "Løsningsutkast", icon: Sparkles },
-    { value: "executive-summary", label: "Leder oppsummering", icon: ClipboardCheck },
+    {
+      value: "generator",
+      label: "Løsningsbeskrivelse",
+      icon: Sparkles,
+    },
+    { value: "evaluation", label: "Vurdering", icon: Scale },
     { value: "delivery", label: "Fremdriftsplan", icon: ArrowRight },
+    { value: "executive-summary", label: "Leder oppsummering", icon: ClipboardCheck },
   ] as const;
   const projectMonogram = project.name.trim().charAt(0).toUpperCase() || "A";
 
@@ -1337,7 +1379,7 @@ export function ProjectWorkspacePage({
         >
           <SidebarHeader
             className={cn(
-              "border-b border-sidebar-border/70 bg-sidebar/95 p-3 backdrop-blur transition-[padding] duration-300 ease-out",
+              "border-b border-sidebar-border/70 bg-sidebar/95 p-3 backdrop-blur transition-[padding] duration-150 ease-out",
               !sidebarOpen && "px-2 py-2",
             )}
           >
@@ -1371,7 +1413,7 @@ export function ProjectWorkspacePage({
 
           <SidebarContent
             className={cn(
-              "min-h-0 flex-1 p-2 transition-[padding] duration-300 ease-out",
+              "min-h-0 flex-1 p-2 transition-[padding] duration-150 ease-out",
               !sidebarOpen && "px-1.5",
             )}
           >
@@ -1392,7 +1434,7 @@ export function ProjectWorkspacePage({
                         size="lg"
                         tooltip={item.label}
                         className={cn(
-                          "h-11 rounded-lg px-3 text-[0.95rem] transition-all duration-300 ease-out",
+                          "h-11 rounded-lg px-3 text-[0.95rem] transition-colors duration-150 ease-out",
                           !sidebarOpen &&
                             "mx-auto size-10 justify-center rounded-md px-0",
                         )}
@@ -1410,7 +1452,7 @@ export function ProjectWorkspacePage({
 
           <SidebarFooter
             className={cn(
-              "border-t border-sidebar-border/70 bg-sidebar/95 p-3 backdrop-blur transition-[padding] duration-300 ease-out",
+              "border-t border-sidebar-border/70 bg-sidebar/95 p-3 backdrop-blur transition-[padding] duration-150 ease-out",
               !sidebarOpen && "px-1.5 py-2",
             )}
           >
@@ -1422,7 +1464,7 @@ export function ProjectWorkspacePage({
                   size="lg"
                   tooltip="Alle prosjekter"
                   className={cn(
-                    "h-11 rounded-lg px-3 text-[0.95rem] transition-all duration-300 ease-out",
+                    "h-11 rounded-lg px-3 text-[0.95rem] transition-colors duration-150 ease-out",
                     !sidebarOpen &&
                       "mx-auto size-10 justify-center rounded-md px-0",
                   )}
@@ -1570,15 +1612,6 @@ export function ProjectWorkspacePage({
             {activeTab === "service-description" ? (
               <ProjectServiceDescriptionTab
                 projectId={project.id}
-                documents={project.documents}
-                uploadBusy={busy === "upload-service-description"}
-                deletingDocumentId={
-                  busy?.startsWith("delete-")
-                    ? busy.slice("delete-".length)
-                    : null
-                }
-                onUpload={onUploadServiceDescriptionDocument}
-                onDeleteDocument={onDeleteDocument}
               />
             ) : null}
 
@@ -1589,7 +1622,6 @@ export function ProjectWorkspacePage({
                 artifacts={project.generated_artifacts.filter(
                   (artifact) => artifact.artifact_type === "forbedret_kravsvar",
                 )}
-                instructions={requirementInstructions}
                 uploadBusy={busy === "upload-requirement-document"}
                 generateBusy={busy === "requirement-response"}
                 busyMessage={
@@ -1601,8 +1633,10 @@ export function ProjectWorkspacePage({
                     : null
                 }
                 onUpload={onUploadRequirementDocument}
+                selectedDocumentId={selectedRequirementDocumentId}
+                onSelectedDocumentChange={setSelectedRequirementDocumentId}
                 onDeleteDocument={onDeleteDocument}
-                onInstructionsChange={setRequirementInstructions}
+                onUpdateArtifact={onUpdateRequirementArtifact}
                 onSubmit={onGenerateRequirementResponse}
               />
             ) : null}

@@ -50,7 +50,7 @@ function ArchitectScoreCard({ score }: { score: number }) {
               Arkitektløsning
             </p>
             <h4 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950">
-              Score mot systemløsning
+              Løsningsscore
             </h4>
             <p className="mt-3 max-w-[38rem] text-[1rem] leading-7 text-slate-600">
               Viser hvor godt arkitektløsningen dekker kundebehov, risiko og
@@ -388,40 +388,38 @@ export function ProjectEvaluationTab({
             </div>
 
             {documents.length ? (
-              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                {documents.map((document) => {
-                  const isSelected = selectedDocumentId === document.id;
-
-                  return (
-                    <button
-                      key={document.id}
-                      type="button"
-                      onClick={() => setSelectedDocumentId(document.id)}
-                      className={`flex w-full min-w-0 items-start gap-3 rounded-lg border px-3 py-3 text-left transition-colors ${
-                        isSelected
-                          ? "border-slate-950 bg-white shadow-sm"
-                          : "border-slate-200 bg-white/65 hover:border-slate-400 hover:bg-white"
-                      }`}
-                    >
-                      <FileText className="mt-0.5 size-4 shrink-0 text-teal-700" />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex min-w-0 flex-wrap items-center gap-2">
-                          <span className="truncate text-sm font-semibold text-foreground">
-                            {document.title}
-                          </span>
-                        </span>
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          {document.file_format.toUpperCase()} ·{" "}
-                          {Math.max(
-                            1,
-                            Math.round(document.file_size_bytes / 1024),
-                          )}{" "}
-                          KB
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="space-y-2">
+                <select
+                  value={selectedDocumentId}
+                  onChange={(event) => setSelectedDocumentId(event.target.value)}
+                  disabled={actionBusy}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition-colors focus:border-slate-950 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                >
+                  {documents.map((document) => (
+                    <option key={document.id} value={document.id}>
+                      {document.title}
+                    </option>
+                  ))}
+                </select>
+                {documents.find((document) => document.id === selectedDocumentId) ? (
+                  <p className="text-xs text-muted-foreground">
+                    {
+                      documents.find(
+                        (document) => document.id === selectedDocumentId,
+                      )?.file_format.toUpperCase()
+                    }{" "}
+                    ·{" "}
+                    {Math.max(
+                      1,
+                      Math.round(
+                        (documents.find(
+                          (document) => document.id === selectedDocumentId,
+                        )?.file_size_bytes ?? 0) / 1024,
+                      ),
+                    )}{" "}
+                    KB
+                  </p>
+                ) : null}
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-border bg-white px-4 py-8 text-center text-sm text-muted-foreground">

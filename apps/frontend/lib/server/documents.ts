@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ProjectDocumentRole } from "@/lib/types";
+import type { WorkBook, WorkSheet } from "xlsx";
 
 export interface SourceMapEntry {
   reference: string;
@@ -11,7 +12,7 @@ export interface ParsedUpload {
   rawText: string;
   contentType: string;
   fileName: string;
-  fileFormat: "pdf" | "docx" | "txt" | "md";
+  fileFormat: "pdf" | "docx" | "txt" | "md" | "xlsx" | "xls";
   fileBase64: string;
   sourceMap: SourceMapEntry[];
 }
@@ -27,6 +28,7 @@ let pdfParsePromise: Promise<PdfParseFn> | null = null;
 let mammothPromise: Promise<{
   extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 }> | null = null;
+let xlsxPromise: Promise<typeof import("xlsx")> | null = null;
 
 async function getPdfParse() {
   if (!pdfParsePromise) {
@@ -42,6 +44,13 @@ async function getMammoth() {
     mammothPromise = import("mammoth");
   }
   return mammothPromise;
+}
+
+async function getXlsx() {
+  if (!xlsxPromise) {
+    xlsxPromise = import("xlsx");
+  }
+  return xlsxPromise;
 }
 
 function normalizeText(value: string) {
@@ -188,6 +197,114 @@ async function extractTxtLike(buffer: Buffer, fileName: string, fileFormat: "txt
   };
 }
 
+function cellToText(value: unknown) {
+  if (value == null) {
+    return "";
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  return String(value).replace(/\s+/g, " ").trim();
+}
+
+function getSheetRange(xlsx: typeof import("xlsx"), sheet: WorkSheet) {
+  const ref = sheet["!ref"];
+  if (!ref) {
+    return null;
+  }
+
+  return xlsx.utils.decode_range(ref);
+}
+
+function extractSheetRows(
+  xlsx: typeof import("xlsx"),
+  workbook: WorkBook,
+  role?: ProjectDocumentRole,
+) {
+  const sourceMap: SourceMapEntry[] = [];
+  const sheetTexts: string[] = [];
+  const label = documentLabel(role);
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) {
+      continue;
+    }
+
+    const range = getSheetRange(xlsx, sheet);
+    if (!range) {
+      continue;
+    }
+
+    const rows: string[] = [];
+    let lastNonEmptyRow = 0;
+
+    for (let rowIndex = range.s.r; rowIndex <= range.e.r; rowIndex += 1) {
+      const cells: string[] = [];
+
+      for (let colIndex = range.s.c; colIndex <= range.e.c; colIndex += 1) {
+        const address = xlsx.utils.encode_cell({ r: rowIndex, c: colIndex });
+        const cell = sheet[address];
+        const text = cellToText(cell?.w ?? cell?.v);
+
+        if (text) {
+          cells.push(`${address}: ${text}`);
+        }
+      }
+
+      if (cells.length) {
+        lastNonEmptyRow = rowIndex + 1;
+        rows.push(`Rad ${rowIndex + 1}: ${cells.join(" | ")}`);
+      }
+    }
+
+    if (!rows.length) {
+      continue;
+    }
+
+    const sheetText = [`Ark: ${sheetName}`, ...rows].join("\n");
+    sheetTexts.push(sheetText);
+    sourceMap.push({
+      reference: `${label} – ark "${sheetName}", rad 1-${lastNonEmptyRow}`,
+      text: sheetText,
+    });
+  }
+
+  return {
+    rawText: normalizeText(sheetTexts.join("\n\n")),
+    sourceMap,
+  };
+}
+
+async function extractSpreadsheet(
+  buffer: Buffer,
+  fileName: string,
+  fileFormat: "xlsx" | "xls",
+  role?: ProjectDocumentRole,
+): Promise<ParsedUpload> {
+  const xlsx = await getXlsx();
+  const workbook = xlsx.read(buffer, {
+    type: "buffer",
+    cellDates: true,
+    cellText: true,
+  });
+  const extracted = extractSheetRows(xlsx, workbook, role);
+
+  return {
+    rawText: extracted.rawText,
+    contentType:
+      fileFormat === "xlsx"
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : "application/vnd.ms-excel",
+    fileName,
+    fileFormat,
+    fileBase64: buffer.toString("base64"),
+    sourceMap: extracted.sourceMap,
+  };
+}
+
 export async function extractTextFromUpload(file: File, role?: ProjectDocumentRole): Promise<ParsedUpload> {
   const fileName = file.name || "document.txt";
   const suffix = fileName.toLowerCase();
@@ -217,5 +334,20 @@ export async function extractTextFromUpload(file: File, role?: ProjectDocumentRo
     return extractTxtLike(buffer, fileName, "md", role);
   }
 
-  throw new Error("Kun PDF, DOCX, TXT og Markdown støttes.");
+  if (
+    contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    suffix.endsWith(".xlsx")
+  ) {
+    return extractSpreadsheet(buffer, fileName, "xlsx", role);
+  }
+
+  if (
+    contentType === "application/vnd.ms-excel" ||
+    contentType === "application/xls" ||
+    suffix.endsWith(".xls")
+  ) {
+    return extractSpreadsheet(buffer, fileName, "xls", role);
+  }
+
+  throw new Error("Kun PDF, DOCX, Excel, TXT og Markdown støttes.");
 }

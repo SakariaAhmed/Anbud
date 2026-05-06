@@ -22,6 +22,10 @@ import type {
 
 export const maxDuration = 60;
 
+const READ_CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+};
+
 function isCustomerAnalysisSection(
   value: unknown,
 ): value is CustomerAnalysisSection {
@@ -268,7 +272,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Dokumentgrunnlaget har ingen lesbar tekst. Last opp dokumentet på nytt som tekstbasert PDF/DOCX, eller bruk OCR først.",
+            "Dokumentgrunnlaget har ingen lesbar tekst. Last opp dokumentet på nytt som tekstbasert PDF/DOCX/Excel-fil, eller bruk OCR først.",
         },
         { status: 400 },
       );
@@ -276,7 +280,7 @@ export async function POST(
 
     if (section && !existingAnalysis) {
       return NextResponse.json(
-        { error: "Generer kundeanalyse før du regenererer en seksjon." },
+        { error: "Generer kundeanalyse før du redigerer en seksjon." },
         { status: 400 },
       );
     }
@@ -335,7 +339,7 @@ export async function GET(
     const { id } = await context.params;
     const analysis = await getCustomerAnalysis(id);
 
-    return NextResponse.json({ analysis });
+    return NextResponse.json({ analysis }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     return NextResponse.json(
       {
