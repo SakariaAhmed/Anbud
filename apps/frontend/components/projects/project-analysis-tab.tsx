@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -124,9 +124,9 @@ function formatHistoryTimestamp(value: string) {
 function historySourceLabel(source: CustomerAnalysisHistorySource) {
   switch (source) {
     case "full_regeneration":
-      return "Full regenerering";
+      return "Full redigering";
     case "section_regeneration":
-      return "Seksjon regenerert";
+      return "Seksjon redigert";
     case "manual_edit":
       return "Manuell lagring";
     case "high_level_design_update":
@@ -816,7 +816,6 @@ function DonutChart({
   const chartId = useId().replace(/:/g, "");
   const reduceMotion = useReducedMotion();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const clickTimeoutRef = useRef<number | null>(null);
   const { data: normalizedData, total } = normalizePieData(data);
   const centerX = 330;
   const centerY = 190;
@@ -881,31 +880,8 @@ function DonutChart({
   }
 
   function handleSliceClick(index: number) {
-    if (clickTimeoutRef.current) {
-      window.clearTimeout(clickTimeoutRef.current);
-    }
-
-    clickTimeoutRef.current = window.setTimeout(() => {
-      onSelect(index);
-      clickTimeoutRef.current = null;
-    }, 180);
+    onSelect(selectedIndex === index ? null : index);
   }
-
-  function handleSliceDoubleClick() {
-    if (clickTimeoutRef.current) {
-      window.clearTimeout(clickTimeoutRef.current);
-      clickTimeoutRef.current = null;
-    }
-    onSelect(null);
-  }
-
-  useEffect(() => {
-    return () => {
-      if (clickTimeoutRef.current) {
-        window.clearTimeout(clickTimeoutRef.current);
-      }
-    };
-  }, []);
 
   return (
     <div
@@ -1053,11 +1029,10 @@ function DonutChart({
                       onHoverStart={() => setHoveredIndex(index)}
                       onHoverEnd={() => setHoveredIndex(null)}
                       onClick={() => handleSliceClick(index)}
-                      onDoubleClick={handleSliceDoubleClick}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          onSelect(index);
+                          handleSliceClick(index);
                         }
                       }}
                     />
@@ -1172,7 +1147,7 @@ function PieLegend({
         <button
           key={item.id}
           type="button"
-          onClick={() => onSelect(index)}
+          onClick={() => onSelect(selectedIndex === index ? null : index)}
           className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left shadow-[0_10px_24px_rgba(15,23,42,0.03)] transition-all ${
             selectedIndex === index
               ? "border-primary/35 bg-[linear-gradient(135deg,rgba(239,246,255,0.9),rgba(255,255,255,0.98))] shadow-[0_12px_28px_rgba(37,99,235,0.08)]"
@@ -2220,6 +2195,19 @@ export function ProjectAnalysisTab({
   const profitShares = customerAnalysis
     ? getDisplayProfitShares(customerAnalysis.value_opportunities)
     : [];
+  const valueDisplayItems = customerAnalysis
+    ? customerAnalysis.value_opportunities
+        .map((opportunity, index) => ({
+          opportunity,
+          profitShare: profitShares[index] ?? 0,
+          originalIndex: index,
+        }))
+        .sort(
+          (left, right) =>
+            right.profitShare - left.profitShare ||
+            left.originalIndex - right.originalIndex,
+        )
+    : [];
   const riskGroups = customerAnalysis ? getRiskGroups(customerAnalysis) : null;
   const topImplicitRequirements = customerAnalysis
     ? getTopImplicitRequirements(customerAnalysis.implicit_requirements)
@@ -2491,7 +2479,7 @@ export function ProjectAnalysisTab({
                             Dra og slipp dokumentet her
                           </span>
                           <span className="mt-1 text-xs leading-5 text-muted-foreground">
-                            eller klikk for å velge PDF, DOCX, TXT eller MD.
+                            eller klikk for å velge PDF, DOCX, Excel, TXT eller MD.
                           </span>
                           {selectedDocumentName ? (
                             <span className="mt-3 max-w-full truncate rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
@@ -2503,7 +2491,7 @@ export function ProjectAnalysisTab({
                           key={documentFileInputKey}
                           id="file"
                           type="file"
-                          accept=".pdf,.docx,.txt,.md"
+                          accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
                           className="sr-only"
                           onChange={(e) =>
                             onFileChange(e.target.files?.[0] ?? null)
@@ -2947,44 +2935,50 @@ export function ProjectAnalysisTab({
               {customerAnalysis.value_opportunities.length ? (
                 <>
                   <ValuePieModule
-                    opportunities={customerAnalysis.value_opportunities}
-                    profitShares={profitShares}
+                    opportunities={valueDisplayItems.map(
+                      (item) => item.opportunity,
+                    )}
+                    profitShares={valueDisplayItems.map(
+                      (item) => item.profitShare,
+                    )}
                     selectedIndex={selectedValueIndex}
                     onSelect={setSelectedValueIndex}
                   />
                   {showValueList ? (
                     <div className="space-y-4">
-                      {customerAnalysis.value_opportunities.map((item, index) => (
-                        <div
-                          key={`${item.title}-${index}`}
-                          className="border-b border-border/60 pb-4 last:border-b-0 last:pb-0"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <ValueTags
-                                values={item.value_categories
-                                  .filter((v) => VALUE_LABELS.includes(v))
-                                  .slice(0, 1)}
-                              />
+                      {valueDisplayItems.map(
+                        ({ opportunity: item, profitShare, originalIndex }) => (
+                          <div
+                            key={`${item.title}-${originalIndex}`}
+                            className="border-b border-border/60 pb-4 last:border-b-0 last:pb-0"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <ValueTags
+                                  values={item.value_categories
+                                    .filter((v) => VALUE_LABELS.includes(v))
+                                    .slice(0, 1)}
+                                />
+                              </div>
+                              <span className="inline-flex rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
+                                {profitShare}% av profitteffekt
+                              </span>
                             </div>
-                            <span className="inline-flex rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
-                              {profitShares[index] ?? 0}% av profitteffekt
-                            </span>
+                            <details className="mt-3 group">
+                              <summary className="cursor-pointer list-none text-sm font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                                Les mer
+                              </summary>
+                              <div className="mt-3">
+                                <MarkdownViewer
+                                  content={item.description}
+                                  className="analysis-prose text-[0.98rem] text-muted-foreground"
+                                />
+                              </div>
+                            </details>
+                            <div className="sr-only">{item.title}</div>
                           </div>
-                          <details className="mt-3 group">
-                            <summary className="cursor-pointer list-none text-sm font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-                              Les mer
-                            </summary>
-                            <div className="mt-3">
-                              <MarkdownViewer
-                                content={item.description}
-                                className="analysis-prose text-[0.98rem] text-muted-foreground"
-                              />
-                            </div>
-                          </details>
-                          <div className="sr-only">{item.title}</div>
-                        </div>
-                      ))}
+                        ),
+                      )}
                     </div>
                   ) : null}
                 </>

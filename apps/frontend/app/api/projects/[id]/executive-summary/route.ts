@@ -10,6 +10,10 @@ import {
   saveExecutiveSummary,
 } from "@/lib/server/projects-db";
 
+const READ_CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+};
+
 export async function GET(
   _: Request,
   context: { params: Promise<{ id: string }> },
@@ -17,7 +21,10 @@ export async function GET(
   try {
     const { id } = await context.params;
     const executiveSummary = await getExecutiveSummary(id);
-    return NextResponse.json({ executive_summary: executiveSummary });
+    return NextResponse.json(
+      { executive_summary: executiveSummary },
+      { headers: READ_CACHE_HEADERS },
+    );
   } catch (error) {
     return NextResponse.json(
       {

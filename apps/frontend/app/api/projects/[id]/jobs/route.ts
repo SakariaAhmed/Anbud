@@ -42,6 +42,7 @@ export async function POST(
           kind?: "artifact_generation";
           artifact_type?: string;
           instructions?: string;
+          source_document_ids?: string[];
         };
 
     if (body.kind === "customer_analysis") {
@@ -94,6 +95,12 @@ export async function POST(
         artifactType: body.artifact_type,
         instructions:
           typeof body.instructions === "string" ? body.instructions : "",
+        sourceDocumentIds: Array.isArray(body.source_document_ids)
+          ? body.source_document_ids.filter(
+              (value): value is string =>
+                typeof value === "string" && value.length > 0,
+            )
+          : [],
       });
 
       return NextResponse.json({ job }, { status: 202 });

@@ -24,6 +24,9 @@ export async function POST(request: Request) {
       customer_name: body.customer_name?.trim() || null,
       description: body.description?.trim() || null,
       industry: body.industry?.trim() || null,
+      selected_service_ids: Array.isArray(body.selected_service_ids)
+        ? body.selected_service_ids
+        : [],
     });
 
     return NextResponse.json(project, { status: 201 });

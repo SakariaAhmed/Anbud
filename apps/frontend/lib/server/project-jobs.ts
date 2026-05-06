@@ -17,6 +17,7 @@ import {
   getProjectSnapshot,
   listGeneratedArtifacts,
   listProjectDocuments,
+  listServiceDocumentDetailsForProject,
   saveCustomerAnalysis,
   saveGeneratedArtifact,
   saveSolutionEvaluation,
@@ -110,6 +111,7 @@ export function queueArtifactGenerationJob(input: {
   projectId: string;
   artifactType: GeneratedArtifactType;
   instructions?: string;
+  sourceDocumentIds?: string[];
 }) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
@@ -134,17 +136,23 @@ export function queueArtifactGenerationJob(input: {
       customerAnalysis,
       documents,
       generatedArtifacts,
+      serviceDescriptionDocuments,
     ] = await Promise.all([
       getProjectDetail(input.projectId),
       getCustomerAnalysis(input.projectId),
       listProjectDocuments(input.projectId),
       listGeneratedArtifacts(input.projectId),
+      listServiceDocumentDetailsForProject(input.projectId),
     ]);
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
-    const customerDocument = projectDocuments[0] ?? null;
-    const solutionDocument = projectDocuments[1] ?? null;
-    const supportingDocuments = projectDocuments.filter(
+    const selectedDocumentIds = new Set(input.sourceDocumentIds ?? []);
+    const scopedProjectDocuments = selectedDocumentIds.size
+      ? projectDocuments.filter((document) => selectedDocumentIds.has(document.id))
+      : projectDocuments;
+    const customerDocument = scopedProjectDocuments[0] ?? null;
+    const solutionDocument = scopedProjectDocuments[1] ?? null;
+    const supportingDocuments = scopedProjectDocuments.filter(
       (document) =>
         document.id !== customerDocument?.id &&
         document.id !== solutionDocument?.id,
@@ -159,7 +167,12 @@ export function queueArtifactGenerationJob(input: {
       customerDocument,
       solutionDocument,
       serviceDescriptionDocument,
+      serviceDescriptionDocuments,
       supportingDocuments,
+      requirementDocuments:
+        input.artifactType === "forbedret_kravsvar" && selectedDocumentIds.size
+          ? scopedProjectDocuments
+          : undefined,
       knowledgeArtifacts: generatedArtifacts,
       instructions: input.instructions?.trim(),
     });
@@ -174,6 +187,7 @@ export function queueArtifactGenerationJob(input: {
         instructions: input.instructions?.trim() || "",
         customer_analysis_present: Boolean(customerAnalysis),
         solution_evaluation_present: Boolean(project.solution_evaluation),
+        source_document_ids: input.sourceDocumentIds ?? [],
       },
     );
 
@@ -217,7 +231,7 @@ export function queueCustomerAnalysisJob(input: { projectId: string }) {
 
     if (!customerDocument.raw_text.trim()) {
       throw new Error(
-        "Dokumentgrunnlaget har ingen lesbar tekst. Last opp dokumentet på nytt som tekstbasert PDF/DOCX, eller bruk OCR først.",
+        "Dokumentgrunnlaget har ingen lesbar tekst. Last opp dokumentet på nytt som tekstbasert PDF/DOCX/Excel-fil, eller bruk OCR først.",
       );
     }
 
@@ -271,17 +285,19 @@ export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
   getStore().set(jobId, record);
 
   startRunner(jobId, async ({ setProgress }) => {
-    setProgress("Laster vurdering, dokumenter og siste løsningsutkast ...");
+    setProgress("Laster vurdering, dokumenter og siste løsningsbeskrivelse ...");
     const [
       project,
       customerAnalysis,
       documents,
       generatedArtifacts,
+      serviceDescriptionDocuments,
     ] = await Promise.all([
       getProjectDetail(input.projectId),
       getCustomerAnalysis(input.projectId),
       listProjectDocuments(input.projectId),
       listGeneratedArtifacts(input.projectId),
+      listServiceDocumentDetailsForProject(input.projectId),
     ]);
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
@@ -314,14 +330,15 @@ export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
       customerDocument,
       solutionDocument,
       serviceDescriptionDocument,
+      serviceDescriptionDocuments,
       supportingDocuments,
       knowledgeArtifacts: generatedArtifacts,
       instructions: [
         `Systemløsningen scoret ${Math.round(systemScore)}/100 i siste vurdering.`,
         "Lag en ny, forbedret systemløsning som eksplisitt lukker alle gap som hindrer 100/100.",
         "Bruk improvement_recommendations, weaknesses, missing_elements, risks_to_customer, rewrite_suggestions og architecture_comparison.strategy_improvement_advice som endringsliste.",
-        "Ikke bare kommenter hva som bør gjøres. Skriv inn endringene direkte i løsningsutkastet.",
-        "Målet er et løsningsutkast som kan vurderes til 100/100 fordi det er kundespesifikt, komplett, gjennomførbart, risikoreduserende og tydelig differensiert.",
+        "Ikke bare kommenter hva som bør gjøres. Skriv inn endringene direkte i løsningsbeskrivelsen.",
+        "Målet er en løsningsbeskrivelse som kan vurderes til 100/100 fordi den er kundespesifikk, komplett, gjennomførbar, risikoreduserende og tydelig differensiert.",
         "Hvis vurderingen peker på manglende overgangsmodell, beslutningspunkter, ansvar, risiko, bevis eller kundeverdi, skal dette konkret innarbeides i riktig seksjon.",
       ].join("\n"),
     });
@@ -432,7 +449,7 @@ export function queueSolutionEvaluationJob(input: {
         throw new Error("Velg dokumentet som skal vurderes som arkitektløsning.");
       }
 
-      setProgress("Genererer et kort internt løsningsutkast ...");
+      setProgress("Genererer en kort intern løsningsbeskrivelse ...");
       const generated = await synthesizeAndEvaluateSolution({
         projectName: customerDocument.title,
         customerAnalysis,

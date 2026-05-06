@@ -190,7 +190,7 @@ export function ProjectExecutiveSummaryTab({
               ) : (
                 <ArrowUpRight data-icon="inline-start" />
               )}
-              Regenerer
+              Rediger
             </Button>
           </div>
         </div>

@@ -5,6 +5,9 @@ drop table if exists chat_messages cascade;
 drop table if exists solution_evaluations cascade;
 drop table if exists executive_summaries cascade;
 drop table if exists customer_analyses cascade;
+drop table if exists project_service_selections cascade;
+drop table if exists service_documents cascade;
+drop table if exists service_descriptions cascade;
 drop table if exists documents cascade;
 drop table if exists projects cascade;
 
@@ -23,6 +26,7 @@ create table projects (
   client_name text not null,
   title text not null,
   description text not null default '',
+  context_keywords text[] not null default '{}',
   customer_document_uploaded boolean not null default false,
   customer_analysis_generated boolean not null default false,
   solution_document_uploaded boolean not null default false,
@@ -39,7 +43,7 @@ create table documents (
   subtype text check (subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'annet')),
   display_name text not null,
   content_type text not null,
-  file_format text not null check (file_format in ('pdf', 'docx', 'txt', 'md')),
+  file_format text not null check (file_format in ('pdf', 'docx', 'txt', 'md', 'xlsx', 'xls')),
   file_base64 text not null,
   raw_text text not null default '',
   structure_map jsonb not null default '[]'::jsonb,
@@ -48,6 +52,47 @@ create table documents (
 
 create index documents_project_id_idx on documents(project_id);
 create index documents_project_role_idx on documents(project_id, role, created_at desc);
+
+create table service_descriptions (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text not null default '',
+  keywords text[] not null default '{}',
+  inclusion_mode text not null default 'selected' check (inclusion_mode in ('fixed', 'selected')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index service_descriptions_mode_idx on service_descriptions(inclusion_mode, name);
+create index service_descriptions_keywords_idx on service_descriptions using gin(keywords);
+
+create table service_documents (
+  id uuid primary key default gen_random_uuid(),
+  service_id uuid not null references service_descriptions(id) on delete cascade,
+  title text not null,
+  file_name text not null,
+  file_format text not null check (file_format in ('pdf', 'docx', 'txt', 'md', 'xlsx', 'xls')),
+  content_type text not null,
+  file_size_bytes integer not null default 0,
+  file_base64 text not null,
+  raw_text text not null default '',
+  structure_map jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index service_documents_service_id_idx on service_documents(service_id, created_at desc);
+
+create table project_service_selections (
+  project_id uuid not null references projects(id) on delete cascade,
+  service_id uuid not null references service_descriptions(id) on delete cascade,
+  selected boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (project_id, service_id)
+);
+
+create index project_service_selections_project_idx on project_service_selections(project_id);
 
 create table customer_analyses (
   id uuid primary key default gen_random_uuid(),

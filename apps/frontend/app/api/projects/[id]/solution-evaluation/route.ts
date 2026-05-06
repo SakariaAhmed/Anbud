@@ -12,12 +12,16 @@ import {
 } from "@/lib/server/projects-db";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 
+const READ_CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+};
+
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
     const evaluation = await getSolutionEvaluation(id);
 
-    return NextResponse.json({ evaluation });
+    return NextResponse.json({ evaluation }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Kunne ikke hente løsningsvurderingen." },
