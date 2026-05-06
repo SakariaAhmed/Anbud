@@ -197,6 +197,8 @@ const DOCUMENT_SELECT_SAFE =
   "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, raw_text, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_SAFE =
   "id, project_id, role, file_name, file_format, content_type, file_size_bytes, created_at, updated_at";
+const DOCUMENT_SUMMARY_SELECT_LEGACY =
+  "id, project_id, role, subtype, display_name, file_format, content_type, created_at";
 
 const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   customer_profile_summary: "",
@@ -728,7 +730,7 @@ async function fetchDocumentSummaryRows(
   }
 
   if (isMissingLegacyDocumentColumn(first.error)) {
-    const retry = await build("*");
+    const retry = await build(DOCUMENT_SUMMARY_SELECT_LEGACY);
     if (retry.error) {
       throw new Error(retry.error.message || "Kunne ikke hente dokumentene.");
     }
