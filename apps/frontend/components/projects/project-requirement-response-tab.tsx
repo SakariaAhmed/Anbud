@@ -5,6 +5,7 @@ import {
   ArrowDownToLine,
   CheckSquare,
   ChevronDown,
+  FileDown,
   FileCheck2,
   FileText,
   Pencil,
@@ -76,6 +77,210 @@ function tableIdFromRef(ref: string) {
 
 function serviceFromRef(ref: string, tableId: string) {
   return ref.replace(tableId, "").replace(/^\s*[-:,]\s*/, "").trim();
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderInlineMarkdown(value: string) {
+  return escapeHtml(value)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function renderMarkdownTable(lines: string[]) {
+  const rows = lines
+    .filter((line) => !isMarkdownDivider(line))
+    .map((line) => splitMarkdownTableRow(line));
+
+  if (!rows.length) return "";
+
+  const [header, ...body] = rows;
+  return [
+    "<table>",
+    "<thead><tr>",
+    header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join(""),
+    "</tr></thead>",
+    "<tbody>",
+    body
+      .map(
+        (row) =>
+          `<tr>${row
+            .map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`)
+            .join("")}</tr>`,
+      )
+      .join(""),
+    "</tbody>",
+    "</table>",
+  ].join("");
+}
+
+function markdownToPrintableHtml(markdown: string) {
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const html: string[] = [];
+  let paragraph: string[] = [];
+  let listItems: string[] = [];
+  let tableLines: string[] = [];
+
+  function flushParagraph() {
+    if (!paragraph.length) return;
+    html.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  }
+
+  function flushList() {
+    if (!listItems.length) return;
+    html.push(`<ul>${listItems.map((item) => `<li>${item}</li>`).join("")}</ul>`);
+    listItems = [];
+  }
+
+  function flushTable() {
+    if (!tableLines.length) return;
+    html.push(renderMarkdownTable(tableLines));
+    tableLines = [];
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^\|/.test(trimmed)) {
+      flushParagraph();
+      flushList();
+      tableLines.push(trimmed);
+      continue;
+    }
+
+    flushTable();
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(heading[1].length + 1, 4);
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const listItem = trimmed.match(/^[-*]\s+(.+)$/);
+    if (listItem) {
+      flushParagraph();
+      listItems.push(renderInlineMarkdown(listItem[1]));
+      continue;
+    }
+
+    paragraph.push(trimmed);
+  }
+
+  flushParagraph();
+  flushList();
+  flushTable();
+
+  return html.join("\n");
+}
+
+function sanitizeDownloadName(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/æ/g, "ae")
+      .replace(/ø/g, "o")
+      .replace(/å/g, "a")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "kravbesvarelse"
+  );
+}
+
+function downloadRequirementResponsePdf(artifact: GeneratedArtifact) {
+  const title = artifact.title || "Kravbesvarelse";
+  const fileName = `${sanitizeDownloadName(title)}.pdf`;
+  const printableHtml = markdownToPrintableHtml(
+    artifact.content_markdown ||
+      "Denne kravbesvarelsen mangler lagret innhold.",
+  );
+  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=1024,height=768");
+
+  if (!printWindow) return;
+
+  printWindow.document.write(`<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body {
+      color: #0f172a;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11pt;
+      line-height: 1.55;
+    }
+    h1 { font-size: 20pt; margin: 0 0 5mm; }
+    h2 { font-size: 15pt; margin: 9mm 0 3mm; }
+    h3, h4 { font-size: 12.5pt; margin: 7mm 0 2mm; }
+    p { margin: 0 0 4mm; }
+    ul { margin: 0 0 4mm 6mm; padding-left: 5mm; }
+    li { margin: 0 0 1.8mm; }
+    table {
+      border-collapse: collapse;
+      margin: 5mm 0;
+      table-layout: fixed;
+      width: 100%;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 2.8mm;
+      text-align: left;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    th { background: #f1f5f9; font-weight: 700; }
+    code {
+      background: #f1f5f9;
+      border-radius: 3px;
+      padding: 0.3mm 1mm;
+      font-family: Consolas, monospace;
+      font-size: 10pt;
+    }
+    .meta {
+      border-bottom: 1px solid #cbd5e1;
+      color: #475569;
+      font-size: 9.5pt;
+      margin-bottom: 7mm;
+      padding-bottom: 4mm;
+    }
+    @media print {
+      body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <div class="meta">Filnavn ved lagring: ${escapeHtml(fileName)}</div>
+  ${printableHtml}
+  <script>
+    window.addEventListener("load", () => {
+      window.document.title = ${JSON.stringify(fileName)};
+      window.focus();
+      window.print();
+    });
+  </script>
+</body>
+</html>`);
+  printWindow.document.close();
 }
 
 function parseRequirementContent(content: string): RequirementContentSegment[] {
@@ -425,7 +630,16 @@ export function ProjectRequirementResponseTab({
                   </div>
                 ) : (
                   <>
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 rounded-lg"
+                        onClick={() => downloadRequirementResponsePdf(artifact)}
+                      >
+                        <FileDown data-icon="inline-start" />
+                        Last ned PDF
+                      </Button>
                       <Button
                         type="button"
                         variant="outline"
