@@ -1172,7 +1172,7 @@ export async function listProjectServiceDescriptions(
   projectId: string,
 ): Promise<ProjectServiceDescription[]> {
   const supabase = createServiceClient();
-  const [services, project, documentRows, analysis, { data: selections, error: selectionsError }] =
+  const [services, project, documentRows, { data: selections, error: selectionsError }] =
     await Promise.all([
       listServiceDescriptions(),
       queryProjectRow(projectId),
@@ -1182,7 +1182,6 @@ export async function listProjectServiceDescriptions(
           .select(select)
           .eq("project_id", projectId),
       ).catch(() => []),
-      getCustomerAnalysis(projectId).catch(() => null),
       supabase
         .from("project_service_selections")
         .select("service_id, selected")
@@ -1215,7 +1214,6 @@ export async function listProjectServiceDescriptions(
           ),
         ].join(" "),
       ),
-      analysis?.signal_words ?? [],
     ),
   );
 
