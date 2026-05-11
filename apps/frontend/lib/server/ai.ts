@@ -3552,6 +3552,27 @@ export async function generateProjectArtifact(input: {
   const requirementLedger = requirementDocuments.flatMap((document) =>
     buildRequirementSourceLedger(document),
   );
+  const bilag1SourceContext =
+    input.artifactType === "bilag1_rekonstruksjon"
+      ? [
+          input.customerDocument,
+          input.solutionDocument,
+          ...input.supportingDocuments,
+        ]
+          .filter(
+            (document): document is ProjectDocumentDetail =>
+              document !== null && Boolean(document.raw_text.trim()),
+          )
+          .slice(0, 8)
+          .map((document, index) =>
+            documentContext(`Bilag 1-kilde ${index + 1}`, document, {
+              textLimit: 9000,
+              structureLimit: 18,
+              structureTextLimit: 260,
+            }),
+          )
+          .join("\n\n")
+      : "";
 
   const artifactKnowledge = input.knowledgeArtifacts
     .slice(0, 4)
@@ -3577,6 +3598,12 @@ export async function generateProjectArtifact(input: {
       "Kunnskapsregel",
       "Bruk hele prosjektgrunnlaget som kunnskapsbase: kundedokument, løsningsdokument, støttedokumenter, strategi- og notatdokumenter, tjenestebeskrivelse, lagret analyse og tidligere arbeidstekster. Prioriter det mest oppdaterte og mest konkrete innholdet hvis kilder overlapper.",
     ),
+    input.artifactType === "bilag1_rekonstruksjon"
+      ? buildDelimitedContext(
+          "Bilag 1-regel",
+          "Rekonstruer kundens behovsgrunnlag fra kundens egne kilder. Ikke bland inn leverandørens tilbud som fakta om kunden. Bruk kildeindikasjoner fra dokumenttitler, strukturkart, sidemarkører og ark/rad-referanser når de finnes.",
+        )
+      : "",
     serviceDescriptionContext
       ? buildDelimitedContext(
           "Regel for tjenestebeskrivelse",
@@ -3587,6 +3614,7 @@ export async function generateProjectArtifact(input: {
     requirementSourceLedgerContext,
     requirementContinuityContext,
     requirementDocumentContext,
+    bilag1SourceContext,
     input.customerAnalysis
       ? buildDelimitedContext(
           "Kundeanalyse",
@@ -3624,7 +3652,10 @@ export async function generateProjectArtifact(input: {
     user: userPrompt,
     temperature: input.artifactType === "forbedret_kravsvar" ? 0.12 : 0.25,
     model:
-      input.artifactType === "forbedret_kravsvar" ? ANALYSIS_MODEL : FAST_MODEL,
+      input.artifactType === "forbedret_kravsvar" ||
+      input.artifactType === "bilag1_rekonstruksjon"
+        ? ANALYSIS_MODEL
+        : FAST_MODEL,
   };
 
   if (

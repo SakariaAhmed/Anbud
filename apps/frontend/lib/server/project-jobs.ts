@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
+import { createServiceClient } from "@/lib/server/supabase";
 import {
   analyzeCustomerDocuments,
   evaluateSolutionDocument,
@@ -26,6 +27,7 @@ import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
   GeneratedArtifact,
   GeneratedArtifactType,
+  ProjectDocumentDetail,
   ProjectJobRecord,
   ProjectJobResult,
 } from "@/lib/types";
@@ -33,6 +35,18 @@ import type {
 type JobRunner = (helpers: { setProgress: (message: string) => void }) => Promise<ProjectJobResult>;
 
 type JobStore = Map<string, ProjectJobRecord>;
+
+type JobRow = {
+  id: string;
+  project_id: string;
+  kind: ProjectJobRecord["kind"];
+  status: ProjectJobRecord["status"];
+  message: string;
+  error: string | null;
+  result_json: ProjectJobResult | null;
+  created_at: string;
+  updated_at: string;
+};
 
 declare global {
   // eslint-disable-next-line no-var
@@ -47,6 +61,57 @@ function getStore() {
   return globalThis.__anbudProjectJobs;
 }
 
+function mapJobRow(row: JobRow): ProjectJobRecord {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    kind: row.kind,
+    status: row.status,
+    message: row.message,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    error: row.error,
+    result: row.result_json,
+  };
+}
+
+async function persistJob(record: ProjectJobRecord) {
+  try {
+    const supabase = createServiceClient();
+    await supabase.from("project_jobs").insert({
+      id: record.id,
+      project_id: record.project_id,
+      kind: record.kind,
+      status: record.status,
+      message: record.message,
+      error: record.error,
+      result_json: record.result,
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+    });
+  } catch {
+    // Older databases may not have project_jobs yet. Keep in-memory jobs working.
+  }
+}
+
+async function patchPersistedJob(jobId: string, patch: Partial<ProjectJobRecord>) {
+  try {
+    const supabase = createServiceClient();
+    await supabase
+      .from("project_jobs")
+      .update({
+        status: patch.status,
+        message: patch.message,
+        error: patch.error,
+        result_json: patch.result,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", jobId);
+  } catch {
+    // See persistJob fallback note.
+  }
+}
+
 function updateJob(jobId: string, patch: Partial<ProjectJobRecord>) {
   const store = getStore();
   const current = store.get(jobId);
@@ -59,12 +124,25 @@ function updateJob(jobId: string, patch: Partial<ProjectJobRecord>) {
     ...patch,
     updated_at: new Date().toISOString(),
   });
+  void patchPersistedJob(jobId, patch);
 }
 
-export function getProjectJob(projectId: string, jobId: string) {
+export async function getProjectJob(projectId: string, jobId: string) {
   const record = getStore().get(jobId) ?? null;
   if (!record || record.project_id !== projectId) {
-    return null;
+    try {
+      const supabase = createServiceClient();
+      const { data } = await supabase
+        .from("project_jobs")
+        .select("*")
+        .eq("id", jobId)
+        .eq("project_id", projectId)
+        .maybeSingle<JobRow>();
+
+      return data ? mapJobRow(data) : null;
+    } catch {
+      return null;
+    }
   }
 
   return record;
@@ -107,7 +185,36 @@ function getLatestSolutionDraft(
   );
 }
 
-export function queueArtifactGenerationJob(input: {
+function selectProjectDocuments(documents: ProjectDocumentDetail[]) {
+  const customerDocument =
+    documents.find((document) => document.role === "primary_customer_document") ??
+    documents[0] ??
+    null;
+  const solutionDocument =
+    documents.find((document) => document.role === "primary_solution_document") ??
+    documents.find(
+      (document) =>
+        document.id !== customerDocument?.id &&
+        /løsn|losn|solution|arkitektur|architecture/i.test(
+          `${document.title} ${document.file_name}`,
+        ),
+    ) ??
+    null;
+  const supportingDocuments = documents.filter(
+    (document) =>
+      document.id !== customerDocument?.id &&
+      document.id !== solutionDocument?.id,
+  );
+
+  return { customerDocument, solutionDocument, supportingDocuments };
+}
+
+async function enqueueJob(record: ProjectJobRecord) {
+  getStore().set(record.id, record);
+  await persistJob(record);
+}
+
+export async function queueArtifactGenerationJob(input: {
   projectId: string;
   artifactType: GeneratedArtifactType;
   instructions?: string;
@@ -127,7 +234,7 @@ export function queueArtifactGenerationJob(input: {
     result: null,
   };
 
-  getStore().set(jobId, record);
+  await enqueueJob(record);
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster prosjektkontekst og relevante dokumenter ...");
@@ -150,13 +257,17 @@ export function queueArtifactGenerationJob(input: {
     const scopedProjectDocuments = selectedDocumentIds.size
       ? projectDocuments.filter((document) => selectedDocumentIds.has(document.id))
       : projectDocuments;
-    const customerDocument = scopedProjectDocuments[0] ?? null;
-    const solutionDocument = scopedProjectDocuments[1] ?? null;
-    const supportingDocuments = scopedProjectDocuments.filter(
-      (document) =>
-        document.id !== customerDocument?.id &&
-        document.id !== solutionDocument?.id,
-    );
+    const { customerDocument, solutionDocument, supportingDocuments } =
+      selectProjectDocuments(scopedProjectDocuments);
+
+    if (
+      input.artifactType === "bilag1_rekonstruksjon" &&
+      !scopedProjectDocuments.some((document) => document.raw_text.trim())
+    ) {
+      throw new Error(
+        "Bilag 1 kan ikke genereres fordi dokumentgrunnlaget mangler lesbar tekst.",
+      );
+    }
 
     setProgress("Genererer nytt utkast med AI ...");
     const generated = await generateProjectArtifact({
@@ -187,7 +298,13 @@ export function queueArtifactGenerationJob(input: {
         instructions: input.instructions?.trim() || "",
         customer_analysis_present: Boolean(customerAnalysis),
         solution_evaluation_present: Boolean(project.solution_evaluation),
-        source_document_ids: input.sourceDocumentIds ?? [],
+        source_document_ids: scopedProjectDocuments.map((document) => document.id),
+        source_document_roles: scopedProjectDocuments.map((document) => ({
+          id: document.id,
+          title: document.title,
+          role: document.role,
+          subtype: document.supporting_subtype,
+        })),
       },
     );
 
@@ -201,7 +318,7 @@ export function queueArtifactGenerationJob(input: {
   return record;
 }
 
-export function queueCustomerAnalysisJob(input: { projectId: string }) {
+export async function queueCustomerAnalysisJob(input: { projectId: string }) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
   const record: ProjectJobRecord = {
@@ -216,14 +333,15 @@ export function queueCustomerAnalysisJob(input: { projectId: string }) {
     result: null,
   };
 
-  getStore().set(jobId, record);
+  await enqueueJob(record);
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster dokumentgrunnlag ...");
     const projectDocuments = await listProjectDocuments(input.projectId);
     const { projectDocuments: analysisDocuments } =
       splitServiceDescriptionDetails(projectDocuments);
-    const [customerDocument, ...supportingDocuments] = analysisDocuments;
+    const { customerDocument, supportingDocuments } =
+      selectProjectDocuments(analysisDocuments);
 
     if (!customerDocument) {
       throw new Error("Last opp minst ett dokument først.");
@@ -267,7 +385,7 @@ export function queueCustomerAnalysisJob(input: { projectId: string }) {
   return record;
 }
 
-export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
+export async function queuePerfectSystemSolutionJob(input: { projectId: string }) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
   const record: ProjectJobRecord = {
@@ -282,7 +400,7 @@ export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
     result: null,
   };
 
-  getStore().set(jobId, record);
+  await enqueueJob(record);
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster vurdering, dokumenter og siste løsningsbeskrivelse ...");
@@ -301,13 +419,8 @@ export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
     ]);
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
-    const customerDocument = projectDocuments[0] ?? null;
-    const solutionDocument = projectDocuments[1] ?? null;
-    const supportingDocuments = projectDocuments.filter(
-      (document) =>
-        document.id !== customerDocument?.id &&
-        document.id !== solutionDocument?.id,
-    );
+    const { customerDocument, solutionDocument, supportingDocuments } =
+      selectProjectDocuments(projectDocuments);
 
     if (!project.solution_evaluation) {
       throw new Error("Generer vurdering før du forbedrer systemløsningen.");
@@ -391,7 +504,7 @@ export function queuePerfectSystemSolutionJob(input: { projectId: string }) {
   return record;
 }
 
-export function queueSolutionEvaluationJob(input: {
+export async function queueSolutionEvaluationJob(input: {
   projectId: string;
   allowGeneratedSolution: boolean;
   solutionDocumentId?: string;
@@ -410,7 +523,7 @@ export function queueSolutionEvaluationJob(input: {
     result: null,
   };
 
-  getStore().set(jobId, record);
+  await enqueueJob(record);
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster kundedokument, analyse og støttedokumenter ...");
@@ -425,12 +538,15 @@ export function queueSolutionEvaluationJob(input: {
       ]);
     const { projectDocuments: evaluationDocuments } =
       splitServiceDescriptionDetails(projectDocuments);
+    const selectedDocuments = selectProjectDocuments(evaluationDocuments);
     const customerDocument =
-      evaluationDocuments.find((document) => document.id !== input.solutionDocumentId) ??
-      evaluationDocuments[0] ??
-      null;
+      selectedDocuments.customerDocument?.id === input.solutionDocumentId
+        ? evaluationDocuments.find(
+            (document) => document.id !== input.solutionDocumentId,
+          ) ?? null
+        : selectedDocuments.customerDocument;
     const solutionDocument =
-      selectedSolutionDocument ?? null;
+      selectedSolutionDocument ?? selectedDocuments.solutionDocument ?? null;
     const supportingDocuments = evaluationDocuments.filter(
       (document) =>
         document.id !== customerDocument?.id && document.id !== solutionDocument?.id,
@@ -514,7 +630,7 @@ export function queueSolutionEvaluationJob(input: {
   return record;
 }
 
-export function queueHighLevelDesignJob(input: { projectId: string }) {
+export async function queueHighLevelDesignJob(input: { projectId: string }) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
   const record: ProjectJobRecord = {
@@ -529,7 +645,7 @@ export function queueHighLevelDesignJob(input: { projectId: string }) {
     result: null,
   };
 
-  getStore().set(jobId, record);
+  await enqueueJob(record);
 
   startRunner(jobId, async ({ setProgress }) => {
     setProgress("Laster kundedokument, analyse og støttedokumenter ...");
@@ -539,8 +655,8 @@ export function queueHighLevelDesignJob(input: { projectId: string }) {
         getCustomerAnalysis(input.projectId),
       ]);
     const { projectDocuments } = splitServiceDescriptionDetails(documents);
-    const customerDocument = projectDocuments[0] ?? null;
-    const supportingDocuments = projectDocuments.slice(1);
+    const { customerDocument, supportingDocuments } =
+      selectProjectDocuments(projectDocuments);
 
     if (!customerDocument) {
       throw new Error("Last opp minst ett dokument først.");

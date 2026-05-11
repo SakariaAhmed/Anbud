@@ -17,6 +17,7 @@ import {
   Brain,
   ClipboardCheck,
   FileCheck2,
+  FileText,
   LayoutGrid,
   Scale,
   Sparkles,
@@ -52,6 +53,7 @@ import type {
   GeneratedArtifact,
   ProjectDetail,
   ProjectDocument,
+  ProjectDocumentRole,
   ProjectJobRecord,
   ProjectStatus,
   SolutionEvaluationResult,
@@ -122,6 +124,20 @@ const ProjectServiceDescriptionTab = dynamic(
     loading: () => (
       <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
         Laster tjenestebeskrivelse ...
+      </div>
+    ),
+  },
+);
+
+const ProjectBilag1Tab = dynamic(
+  () =>
+    import("@/components/projects/project-bilag1-tab").then(
+      (module) => module.ProjectBilag1Tab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster Bilag 1 ...
       </div>
     ),
   },
@@ -332,6 +348,8 @@ export function ProjectWorkspacePage({
   const [notice, setNotice] = useState("");
   const [docTitle, setDocTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [uploadRole, setUploadRole] =
+    useState<ProjectDocumentRole>("supporting_document");
   const [artifactInstructions, setArtifactInstructions] = useState("");
   const [selectedRequirementDocumentId, setSelectedRequirementDocumentId] =
     useState("");
@@ -729,6 +747,7 @@ export function ProjectWorkspacePage({
       const formData = new FormData();
       formData.append("file", file);
       formData.append("title", docTitle);
+      formData.append("role", uploadRole);
       const response = await fetch(`/api/projects/${project.id}/documents`, {
         method: "POST",
         body: formData,
@@ -743,6 +762,7 @@ export function ProjectWorkspacePage({
       }
       setDocTitle("");
       setFile(null);
+      setUploadRole("supporting_document");
       setDocumentFileInputKey((current) => current + 1);
       setProject((current) =>
         normalizeProjectState(
@@ -1182,6 +1202,60 @@ export function ProjectWorkspacePage({
     );
   }
 
+  async function onGenerateBilag1Artifact(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const instructions = `${formData.get("instructions") || ""}`.trim();
+    await runAction(
+      "bilag1-artifact",
+      async () => {
+        const response = await fetch(`/api/projects/${project.id}/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: "artifact_generation",
+            artifact_type: "bilag1_rekonstruksjon",
+            instructions,
+          }),
+        });
+        const payload = (await response.json()) as {
+          error?: string;
+          job?: ProjectJobRecord;
+        };
+        if (!response.ok || !payload.job) {
+          throw new Error(
+            payload.error || "Kunne ikke starte jobben for Bilag 1.",
+          );
+        }
+        setBusyMessage(payload.job.message);
+        const completedJob = await waitForProjectJob(
+          payload.job.id,
+          "Jobben for Bilag 1 feilet.",
+        );
+        const result = completedJob.result as {
+          artifact: GeneratedArtifact;
+          project: ProjectSnapshotPayload;
+        };
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
+              {
+                ...current,
+                generated_artifacts: [
+                  result.artifact,
+                  ...current.generated_artifacts,
+                ],
+                artifact_count: current.artifact_count + 1,
+              },
+              result.project,
+            ),
+          ),
+        );
+      },
+      ["Starter jobben for Bilag 1 ..."],
+    );
+  }
+
   async function onGenerateRequirementResponse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await runAction(
@@ -1337,6 +1411,7 @@ export function ProjectWorkspacePage({
     project.executive_summary as ExecutiveSummaryResult | null;
   const workspaceNavItems = [
     { value: "analysis", label: "Kundeanalyse", icon: Brain },
+    { value: "bilag1", label: "Bilag 1", icon: FileText },
     { value: "service-description", label: "Tjenestebeskrivelse", icon: Wrench },
     { value: "requirements", label: "Kravbesvarelse", icon: FileCheck2 },
     {
@@ -1566,6 +1641,8 @@ export function ProjectWorkspacePage({
                   onToggleUploadOpen={() => setUploadOpen((open) => !open)}
                   docTitle={docTitle}
                   onDocTitleChange={setDocTitle}
+                  uploadRole={uploadRole}
+                  onUploadRoleChange={setUploadRole}
                   selectedDocumentName={file?.name ?? ""}
                   onFileChange={setFile}
                   documentFileInputKey={documentFileInputKey}
@@ -1594,6 +1671,19 @@ export function ProjectWorkspacePage({
                   onGenerate={onGenerateSolutionEvaluation}
                 />
               )
+            ) : null}
+
+            {activeTab === "bilag1" ? (
+              <ProjectBilag1Tab
+                documents={project.documents}
+                artifacts={project.generated_artifacts.filter(
+                  (artifact) =>
+                    artifact.artifact_type === "bilag1_rekonstruksjon",
+                )}
+                busy={busy === "bilag1-artifact"}
+                busyMessage={busy === "bilag1-artifact" ? busyMessage : ""}
+                onSubmit={onGenerateBilag1Artifact}
+              />
             ) : null}
 
             {activeTab === "delivery" ? (

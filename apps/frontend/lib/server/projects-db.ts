@@ -413,6 +413,7 @@ function mapExecutiveSummaryRow(row: ExecutiveSummaryRow) {
 function mapArtifact(row: ArtifactRow): GeneratedArtifact {
   const artifactType = [
     "losningsutkast",
+    "bilag1_rekonstruksjon",
     "forbedret_kravsvar",
     "tilbudsstrategi",
     "verdiargumentasjon",
