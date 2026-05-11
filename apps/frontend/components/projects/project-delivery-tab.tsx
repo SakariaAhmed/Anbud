@@ -4,6 +4,7 @@ import { FormEvent } from "react";
 import { CalendarClock, ChevronDown, Flag, Milestone, Sparkles } from "lucide-react";
 
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
+import { ArtifactActions } from "@/components/projects/artifact-actions";
 import { formatDate } from "@/components/projects/project-workspace-shared";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -125,6 +126,11 @@ export function ProjectDeliveryTab({
         ) : null}
 
         <div className="px-5 py-5 md:px-6">
+          {latestArtifact ? (
+            <div className="mb-5">
+              <ArtifactActions artifact={latestArtifact} />
+            </div>
+          ) : null}
           <PhaseList phases={visiblePhases} muted={!latestArtifact} />
         </div>
       </div>

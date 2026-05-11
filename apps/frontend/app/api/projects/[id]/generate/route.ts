@@ -21,6 +21,7 @@ const READ_CACHE_HEADERS = {
 function isArtifactType(value: string): value is GeneratedArtifactType {
   return (
     value === "losningsutkast" ||
+    value === "bilag1_rekonstruksjon" ||
     value === "forbedret_kravsvar" ||
     value === "gjennomforing_og_risiko"
   );

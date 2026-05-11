@@ -29,6 +29,7 @@ export type RequirementKind = "Eksplisitt" | "Implisitt";
 
 export type GeneratedArtifactType =
   | "losningsutkast"
+  | "bilag1_rekonstruksjon"
   | "forbedret_kravsvar"
   | "tilbudsstrategi"
   | "verdiargumentasjon"
