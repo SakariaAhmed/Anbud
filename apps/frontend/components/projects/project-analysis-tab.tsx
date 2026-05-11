@@ -56,6 +56,7 @@ import type {
   CustomerAnalysisSectionHistoryEntry,
   CustomerAnalysisSectionSnapshotMap,
   ProjectDocument,
+  ProjectDocumentRole,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -2069,6 +2070,8 @@ export function ProjectAnalysisTab({
   onToggleUploadOpen,
   docTitle,
   onDocTitleChange,
+  uploadRole,
+  onUploadRoleChange,
   selectedDocumentName,
   onFileChange,
   documentFileInputKey,
@@ -2093,6 +2096,8 @@ export function ProjectAnalysisTab({
   onToggleUploadOpen: () => void;
   docTitle: string;
   onDocTitleChange: (value: string) => void;
+  uploadRole: ProjectDocumentRole;
+  onUploadRoleChange: (value: ProjectDocumentRole) => void;
   selectedDocumentName: string;
   onFileChange: (file: File | null) => void;
   documentFileInputKey: number;
@@ -2455,6 +2460,31 @@ export function ProjectAnalysisTab({
                           onChange={(e) => onDocTitleChange(e.target.value)}
                           placeholder="Visningsnavn i prosjektet"
                         />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="documentRole" className="font-medium">
+                          Dokumentrolle
+                        </Label>
+                        <select
+                          id="documentRole"
+                          value={uploadRole}
+                          onChange={(event) =>
+                            onUploadRoleChange(
+                              event.target.value as ProjectDocumentRole,
+                            )
+                          }
+                          className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
+                        >
+                          <option value="primary_customer_document">
+                            Kundedokument
+                          </option>
+                          <option value="primary_solution_document">
+                            Løsningsdokument
+                          </option>
+                          <option value="supporting_document">
+                            Støttedokument
+                          </option>
+                        </select>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="file" className="font-medium">

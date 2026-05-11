@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
+import { ArtifactActions } from "@/components/projects/artifact-actions";
 import { formatDate } from "@/components/projects/project-workspace-shared";
 import type { GeneratedArtifact } from "@/lib/types";
 
@@ -108,6 +109,9 @@ export function ProjectGeneratorTab({
                   <ChevronDown className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="rounded-b-2xl border-t bg-card px-7 py-7">
+                    <div className="mb-5">
+                      <ArtifactActions artifact={artifact} />
+                    </div>
                     <MarkdownViewer
                       content={
                         artifact.content_markdown ||

@@ -2,7 +2,117 @@ import { NextResponse } from "next/server";
 
 import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai";
 import { extractTextFromUpload } from "@/lib/server/documents";
-import { getProjectSnapshot, saveDocument, updateProjectMetadataFromInference } from "@/lib/server/projects-db";
+import {
+  getProjectSnapshot,
+  listProjectDocuments,
+  saveDocument,
+  updateProjectMetadataFromInference,
+} from "@/lib/server/projects-db";
+import type { ProjectDocumentRole, SupportingDocumentSubtype } from "@/lib/types";
+
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const uploadAttempts = new Map<string, number[]>();
+
+const documentRoles: ProjectDocumentRole[] = [
+  "primary_customer_document",
+  "primary_solution_document",
+  "supporting_document",
+];
+
+const supportingSubtypes: SupportingDocumentSubtype[] = [
+  "rfp",
+  "kravdokument",
+  "prosjektbeskrivelse",
+  "notat",
+  "motenotat",
+  "workshop",
+  "vedlegg",
+  "strategi",
+  "utkast",
+  "annet",
+];
+
+function normalizeRole(value: FormDataEntryValue | null): ProjectDocumentRole | null {
+  return typeof value === "string" && documentRoles.includes(value as ProjectDocumentRole)
+    ? (value as ProjectDocumentRole)
+    : null;
+}
+
+function normalizeSubtype(
+  value: FormDataEntryValue | null,
+): SupportingDocumentSubtype | null {
+  return typeof value === "string" &&
+    supportingSubtypes.includes(value as SupportingDocumentSubtype)
+    ? (value as SupportingDocumentSubtype)
+    : null;
+}
+
+async function inferUploadRole(
+  projectId: string,
+  fileName: string,
+  title: string,
+  explicitRole: ProjectDocumentRole | null,
+) {
+  if (explicitRole) {
+    return explicitRole;
+  }
+
+  const existingDocuments = await listProjectDocuments(projectId);
+  const text = `${title} ${fileName}`.toLowerCase();
+
+  if (
+    !existingDocuments.some(
+      (document) => document.role === "primary_customer_document",
+    )
+  ) {
+    return "primary_customer_document";
+  }
+
+  if (
+    /\b(solution|løsn|losn|arkitektur|architecture)\b/.test(text) &&
+    !existingDocuments.some(
+      (document) => document.role === "primary_solution_document",
+    )
+  ) {
+    return "primary_solution_document";
+  }
+
+  return "supporting_document";
+}
+
+function inferSupportingSubtype(
+  fileName: string,
+  title: string,
+  explicitSubtype: SupportingDocumentSubtype | null,
+) {
+  if (explicitSubtype) {
+    return explicitSubtype;
+  }
+
+  const text = `${title} ${fileName}`.toLowerCase();
+  if (/(krav|requirement|requirements)/.test(text)) return "kravdokument";
+  if (/(rfp|konkurransegrunnlag|forespørsel|foresporsel)/.test(text)) return "rfp";
+  if (/(vedlegg|appendix|bilag)/.test(text)) return "vedlegg";
+  if (/(strategi|strategy)/.test(text)) return "strategi";
+  if (/(utkast|draft)/.test(text)) return "utkast";
+  if (/(møte|mote|meeting|workshop)/.test(text)) return "motenotat";
+  return null;
+}
+
+function enforceUploadRateLimit(projectId: string) {
+  const now = Date.now();
+  const windowStart = now - 60_000;
+  const recentAttempts = (uploadAttempts.get(projectId) ?? []).filter(
+    (timestamp) => timestamp > windowStart,
+  );
+
+  if (recentAttempts.length >= 8) {
+    return false;
+  }
+
+  uploadAttempts.set(projectId, [...recentAttempts, now]);
+  return true;
+}
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -10,6 +120,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const formData = await request.formData();
     const file = formData.get("file");
     const title = `${formData.get("title") || ""}`.trim();
+
+    if (!enforceUploadRateLimit(id)) {
+      return NextResponse.json(
+        {
+          error:
+            "For mange opplastinger på kort tid. Vent litt før du prøver igjen.",
+        },
+        { status: 429 },
+      );
+    }
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "Du må velge en fil." }, { status: 400 });
@@ -22,7 +142,32 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     }
 
-    const parsed = await extractTextFromUpload(file);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json(
+        {
+          error:
+            "Filen er for stor. Maksimal størrelse er 25 MB per dokument.",
+        },
+        { status: 413 },
+      );
+    }
+
+    const role = await inferUploadRole(
+      id,
+      file.name,
+      title,
+      normalizeRole(formData.get("role")),
+    );
+    const supportingSubtype =
+      role === "supporting_document"
+        ? inferSupportingSubtype(
+            file.name,
+            title,
+            normalizeSubtype(formData.get("supporting_subtype")),
+          )
+        : null;
+
+    const parsed = await extractTextFromUpload(file, role);
 
     if (!parsed.rawText.trim()) {
       return NextResponse.json(
@@ -37,8 +182,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const document = await saveDocument({
       projectId: id,
       title: title || file.name.replace(/\.[^.]+$/, ""),
-      role: "supporting_document",
-      supportingSubtype: null,
+      role,
+      supportingSubtype,
       fileName: parsed.fileName,
       fileFormat: parsed.fileFormat,
       contentType: parsed.contentType,
@@ -51,6 +196,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     let snapshot = await getProjectSnapshot(id);
 
     try {
+      if (role !== "primary_customer_document") {
+        return NextResponse.json({ document, project: snapshot }, { status: 201 });
+      }
+
       const inferredMetadata = await inferProjectMetadataFromCustomerDocument({
         fileName: parsed.fileName,
         title: title || file.name.replace(/\.[^.]+$/, ""),

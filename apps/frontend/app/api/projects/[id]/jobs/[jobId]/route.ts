@@ -5,7 +5,7 @@ import { getProjectJob } from "@/lib/server/project-jobs";
 export async function GET(_: Request, context: { params: Promise<{ id: string; jobId: string }> }) {
   try {
     const { id, jobId } = await context.params;
-    const job = getProjectJob(id, jobId);
+    const job = await getProjectJob(id, jobId);
 
     if (!job) {
       return NextResponse.json({ error: "Jobben finnes ikke." }, { status: 404 });

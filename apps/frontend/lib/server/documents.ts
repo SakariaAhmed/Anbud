@@ -57,6 +57,16 @@ function normalizeText(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\u0000/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function ensureReadableText(rawText: string, fileName: string) {
+  if (normalizeText(rawText)) {
+    return;
+  }
+
+  throw new Error(
+    `${fileName} har ingen lesbar tekst. Last opp en tekstbasert fil, eller bruk OCR/eksport til DOCX, Excel, TXT eller Markdown før opplasting.`,
+  );
+}
+
 function documentLabel(role?: ProjectDocumentRole) {
   switch (role) {
     case "primary_solution_document":
@@ -159,8 +169,11 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
       },
     });
 
+  const rawText = normalizeText(parsed.text);
+  ensureReadableText(rawText, fileName);
+
   return {
-    rawText: normalizeText(parsed.text),
+    rawText,
     contentType: "application/pdf",
     fileName,
     fileFormat: "pdf",
@@ -173,6 +186,7 @@ async function extractDocx(buffer: Buffer, fileName: string, role?: ProjectDocum
   const mammoth = await getMammoth();
   const result = await mammoth.extractRawText({ buffer });
   const rawText = normalizeText(result.value);
+  ensureReadableText(rawText, fileName);
 
   return {
     rawText,
@@ -186,6 +200,7 @@ async function extractDocx(buffer: Buffer, fileName: string, role?: ProjectDocum
 
 async function extractTxtLike(buffer: Buffer, fileName: string, fileFormat: "txt" | "md", role?: ProjectDocumentRole): Promise<ParsedUpload> {
   const rawText = normalizeText(buffer.toString("utf-8"));
+  ensureReadableText(rawText, fileName);
 
   return {
     rawText,
@@ -266,10 +281,15 @@ function extractSheetRows(
 
     const sheetText = [`Ark: ${sheetName}`, ...rows].join("\n");
     sheetTexts.push(sheetText);
-    sourceMap.push({
-      reference: `${label} – ark "${sheetName}", rad 1-${lastNonEmptyRow}`,
-      text: sheetText,
-    });
+    for (let rowOffset = 0; rowOffset < rows.length; rowOffset += 25) {
+      const chunkRows = rows.slice(rowOffset, rowOffset + 25);
+      const firstRow = rowOffset + 1;
+      const lastRow = Math.min(rowOffset + chunkRows.length, lastNonEmptyRow);
+      sourceMap.push({
+        reference: `${label} – ark "${sheetName}", rad ${firstRow}-${lastRow}`,
+        text: [`Ark: ${sheetName}`, ...chunkRows].join("\n"),
+      });
+    }
   }
 
   return {
@@ -291,6 +311,7 @@ async function extractSpreadsheet(
     cellText: true,
   });
   const extracted = extractSheetRows(xlsx, workbook, role);
+  ensureReadableText(extracted.rawText, fileName);
 
   return {
     rawText: extracted.rawText,

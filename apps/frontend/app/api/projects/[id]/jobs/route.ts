@@ -12,6 +12,7 @@ import type { GeneratedArtifactType } from "@/lib/types";
 function isArtifactType(value: string): value is GeneratedArtifactType {
   return (
     value === "losningsutkast" ||
+    value === "bilag1_rekonstruksjon" ||
     value === "forbedret_kravsvar" ||
     value === "gjennomforing_og_risiko"
   );
@@ -46,7 +47,7 @@ export async function POST(
         };
 
     if (body.kind === "customer_analysis") {
-      const job = queueCustomerAnalysisJob({
+      const job = await queueCustomerAnalysisJob({
         projectId: id,
       });
 
@@ -54,7 +55,7 @@ export async function POST(
     }
 
     if (body.kind === "solution_evaluation") {
-      const job = queueSolutionEvaluationJob({
+      const job = await queueSolutionEvaluationJob({
         projectId: id,
         allowGeneratedSolution: Boolean(body.allow_generated_solution),
         solutionDocumentId:
@@ -67,7 +68,7 @@ export async function POST(
     }
 
     if (body.kind === "high_level_design") {
-      const job = queueHighLevelDesignJob({
+      const job = await queueHighLevelDesignJob({
         projectId: id,
       });
 
@@ -75,7 +76,7 @@ export async function POST(
     }
 
     if (body.kind === "perfect_system_solution") {
-      const job = queuePerfectSystemSolutionJob({
+      const job = await queuePerfectSystemSolutionJob({
         projectId: id,
       });
 
@@ -90,7 +91,7 @@ export async function POST(
         );
       }
 
-      const job = queueArtifactGenerationJob({
+      const job = await queueArtifactGenerationJob({
         projectId: id,
         artifactType: body.artifact_type,
         instructions:

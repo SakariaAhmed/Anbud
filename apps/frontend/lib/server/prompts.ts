@@ -233,6 +233,7 @@ export function buildSyntheticSolutionEvaluationPrompt() {
 
 const artifactLabels: Record<GeneratedArtifactType, string> = {
   losningsutkast: "løsningsbeskrivelse",
+  bilag1_rekonstruksjon: "rekonstruert Bilag 1",
   forbedret_kravsvar: "forbedret svar på et konkret krav",
   tilbudsstrategi: "tilbudsstrategi",
   verdiargumentasjon: "verdiargumentasjon",
@@ -242,6 +243,42 @@ const artifactLabels: Record<GeneratedArtifactType, string> = {
 };
 
 export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
+  if (artifactType === "bilag1_rekonstruksjon") {
+    return buildPromptTemplate({
+      role: "Du er en senior tilbudsansvarlig som rekonstruerer profesjonelle Bilag 1-dokumenter fra ujevnt kundemateriale.",
+      task: [
+        "Generer et komplett, profesjonelt Bilag 1-utkast basert på dokumentene som er lastet opp på prosjektet.",
+        "Bruk Bilag 2, kravdokumenter, konkurransegrunnlag, støttedokumenter og eventuell kundeanalyse som kildegrunnlag for kundens situasjon, behov, smertepunkter og mål.",
+        "Skriv teksten slik at tilbudsteamet kan bruke den som et strukturert kundebehovsgrunnlag, ikke som en leverandørløsning.",
+      ],
+      rules: [
+        "Returner kun gyldig JSON.",
+        "Ikke finn opp kundebehov, krav, smertepunkter, frister, budsjetter, systemnavn eller kontraktsforpliktelser som ikke støttes av kildene.",
+        "Skill tydelig mellom bekreftet informasjon, rimelige tolkninger og åpne avklaringer.",
+        "Prioriter kundens egne dokumenter høyest. Bruk tjenestebeskrivelser og tidligere arbeidstekster bare som støtte for forståelse, ikke som kilder til kundens behov.",
+        "Ikke bruk tjenestebeskrivelsen til å legge inn leverandørens løsninger eller salgsargumenter i Bilag 1. Bilag 1 skal beskrive kundens behov og problem, ikke Ateas tilbud.",
+        "Hvis Bilag 1 allerede finnes i grunnlaget, forbedre og strukturér det med støtte fra øvrige dokumenter. Hvis Bilag 1 mangler eller er svakt, rekonstruer det fra de andre kundedokumentene.",
+        "Hvis flere dokumenter motsier hverandre, bruk den nyeste eller mest kontraktsnære kilden og legg motstriden inn som åpen avklaring.",
+        "Bruk kundens egne begreper, organisasjonsnavn, systemnavn, kravområder og målformuleringer når de finnes.",
+        "Skriv på profesjonell norsk, uansett kildespråk. Behold egennavn, standarder, produktnavn, krav-ID-er og juridiske referanser uendret.",
+        "Vær nøktern, etterprøvbar og kontraktsnær. Unngå reklamespråk, superlativer og leverandørløfter.",
+        "Hver sentrale påstand skal ha en enkel kildeindikasjon i teksten, for eksempel '(Kilde: Bilag 2, drift og forvaltning)' eller '(Kilde: konkurransegrunnlag, side 4)' når kilden kan utledes.",
+        "Når kildegrunnlaget er uklart, skriv det som et avklaringspunkt i stedet for å formulere det som fakta.",
+        "Ikke fyll seksjoner med generiske standardtekster. Hvis kildene ikke gir nok grunnlag for en seksjon, skriv kort hva som er kjent og flytt usikkerheten til åpne avklaringer.",
+        "content_markdown skal bruke nøyaktig disse H2-seksjonene i denne rekkefølgen: ## 1. Kundesituasjon, ## 2. Smertepunkter og drivere, ## 3. Ønsket effekt, ## 4. Etterspurt leveranse, ## 5. Viktige krav og rammer, ## 6. Forutsetninger og avgrensninger, ## 7. Åpne avklaringer, ## 8. Sporbarhet og konfidens.",
+        "I seksjonen 'Viktige krav og rammer' skal krav-ID-er, evalueringskriterier, frister, roller, avhengigheter og kontraktsrammer bevares når de finnes i kildene.",
+        "Seksjonen 'Sporbarhet og konfidens' skal oppsummere 5 til 10 sentrale utsagn i en markdown-tabell med kolonnene Utsagn, Kildegrunnlag og Konfidens. Konfidens skal være Høy, Middels eller Lav.",
+        "Seksjonen 'Åpne avklaringer' skal være en punktliste med konkrete spørsmål til kunden eller tilbudsteamet.",
+      ],
+      outputContract: [
+        "Returner ett JSON-objekt med nøklene title og content_markdown.",
+        "title skal være en kort tittel for det rekonstruerte Bilag 1.",
+        "content_markdown skal være ferdig tekst i markdown-format.",
+      ],
+      exampleOutput: `{"title":"Rekonstruert Bilag 1 - kundebehov","content_markdown":"## 1. Kundesituasjon\\n\\nKunden har ... (Kilde: Bilag 2, kapittel 2)\\n\\n## 2. Smertepunkter og drivere\\n\\n- ...\\n\\n## 3. Ønsket effekt\\n\\n...\\n\\n## 4. Etterspurt leveranse\\n\\n...\\n\\n## 5. Viktige krav og rammer\\n\\n...\\n\\n## 6. Forutsetninger og avgrensninger\\n\\n...\\n\\n## 7. Åpne avklaringer\\n\\n- Kunden bør bekrefte ...\\n\\n## 8. Sporbarhet og konfidens\\n\\n| Utsagn | Kildegrunnlag | Konfidens |\\n|---|---|---|\\n| Kunden trenger kontrollert overgang. | Bilag 2, overgang og drift | Høy |"}`,
+    });
+  }
+
   if (artifactType === "forbedret_kravsvar") {
     return buildPromptTemplate({
       role: "Du er en senior tilbudsansvarlig og løsningsarkitekt som fyller ut kravbesvarelser i tilbudsdokumenter.",
