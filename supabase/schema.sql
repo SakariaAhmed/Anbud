@@ -1,6 +1,7 @@
 create extension if not exists pgcrypto;
 
 drop table if exists generated_artifacts cascade;
+drop table if exists project_jobs cascade;
 drop table if exists chat_messages cascade;
 drop table if exists solution_evaluations cascade;
 drop table if exists executive_summaries cascade;
@@ -127,6 +128,7 @@ create table generated_artifacts (
   artifact_type text not null check (
     artifact_type in (
       'losningsutkast',
+      'bilag1_rekonstruksjon',
       'forbedret_kravsvar',
       'tilbudsstrategi',
       'verdiargumentasjon',
@@ -142,6 +144,29 @@ create table generated_artifacts (
 );
 
 create index generated_artifacts_project_id_idx on generated_artifacts(project_id, created_at desc);
+
+create table project_jobs (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  kind text not null check (
+    kind in (
+      'customer_analysis',
+      'solution_evaluation',
+      'artifact_generation',
+      'high_level_design',
+      'perfect_system_solution'
+    )
+  ),
+  status text not null default 'queued' check (status in ('queued', 'running', 'completed', 'failed')),
+  message text not null default '',
+  error text,
+  result_json jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index project_jobs_project_id_idx on project_jobs(project_id, created_at desc);
+create index project_jobs_status_idx on project_jobs(status, updated_at desc);
 
 create table chat_messages (
   id uuid primary key default gen_random_uuid(),
