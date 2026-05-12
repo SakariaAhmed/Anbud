@@ -78,6 +78,8 @@ create table service_documents (
   file_base64 text not null,
   raw_text text not null default '',
   structure_map jsonb not null default '[]'::jsonb,
+  ai_summary text not null default '',
+  ai_summary_updated_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

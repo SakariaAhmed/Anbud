@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { summarizeServiceDocumentForAi } from "@/lib/server/ai";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
   getServiceDescription,
   listServiceDescriptions,
   saveServiceDocument,
+  updateServiceDocumentAiSummary,
   upsertServiceDescription,
 } from "@/lib/server/projects-db";
 import type { ServiceInclusionMode } from "@/lib/types";
@@ -89,6 +91,20 @@ export async function POST(request: Request) {
         rawText: parsed.rawText,
         structureMap: parsed.sourceMap,
       });
+      void summarizeServiceDocumentForAi({
+        title: document.title,
+        fileName: document.file_name,
+        rawText: parsed.rawText,
+      })
+        .then((summary) =>
+          updateServiceDocumentAiSummary({
+            documentId: document!.id,
+            aiSummary: summary,
+          }),
+        )
+        .catch(() => {
+          // Best-effort summary generation should not block upload.
+        });
     }
 
     const services = await listServiceDescriptions();

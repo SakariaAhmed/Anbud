@@ -1396,77 +1396,13 @@ function KeywordPieModule({
   );
 }
 
-function summarizePhaseContext(analysis: CustomerAnalysisResult) {
-  const topRequirement = analysis.prioritized_requirements[0]?.requirement;
-  const primaryDirection = analysis.expected_solution_direction[0];
-  const topSignals = analysis.signal_words.slice(0, 3).join(", ");
-
-  return (
-    primaryDirection ||
-    topRequirement ||
-    (topSignals
-      ? `Løsningen må ta høyde for ${topSignals} i riktig rekkefølge.`
-      : "Løsningen må gjennomføres i en kontrollert, faseinndelt leveranse.")
-  );
-}
-
-function buildDeliveryPhases(analysis: CustomerAnalysisResult) {
-  const topRequirement =
-    analysis.prioritized_requirements[0]?.requirement ||
-    analysis.implicit_requirements[0]?.title ||
-    "kritiske avhengigheter og gjennomføringsbehov";
-  const topSignals = analysis.signal_words.slice(0, 3);
-
-  return [
-    {
-      title: "Fase 1",
-      label: "Avklaring og målbildet",
-      bullets: [
-        `Avklar hva kunden faktisk må få kontroll på først, spesielt rundt ${topRequirement.toLowerCase()}.`,
-        "Kartlegg avhengigheter, driftsvinduer, beslutningseiere og hva som ikke kan flyttes uten forberedelser.",
-        "Lås målbildet, migreringsrekkefølgen og hva som må være på plass før oppstart av plattformarbeid.",
-      ],
-    },
-    {
-      title: "Fase 2",
-      label: "Plattform og sikkerhetsgrunnmur",
-      bullets: [
-        "Etabler landing zone, identitet, nettverk, logging, backup og styringskontroller før første arbeidslast flyttes.",
-        "Standardiser miljøer, maler og driftsrutiner slik at teamet leverer likt i dev, test og produksjon.",
-        topSignals.length
-          ? `Sikre at føringer rundt ${topSignals.join(", ")} er bygget inn i plattformen, ikke utsatt til senere.`
-          : "Bekreft at plattformen er driftsklar og forvaltbar før neste fase.",
-      ],
-    },
-    {
-      title: "Fase 3",
-      label: "Prioriterte migreringer",
-      bullets: [
-        "Flytt først tjenester med lavere kompleksitet for å bevise metode, ansvarslinje og tilbakeføringsplan.",
-        "Bruk pilot og første migreringsbølge til å teste cutover, overvåkning og feilretting i kontrollerte vinduer.",
-        "Juster migreringsrekkefølgen med faktiske erfaringer før mer komplekse integrasjoner tas inn.",
-      ],
-    },
-    {
-      title: "Fase 4",
-      label: "Stabilisering og videre modernisering",
-      bullets: [
-        "Stabiliser drift, fjern midlertidige løsninger og etabler tydelige runbooks, eierskap og rapportering.",
-        "Ta de mest komplekse arbeidslastene først når plattform, metode og styring er bevist i praksis.",
-        "Avslutt med en konkret plan for videre modernisering, kostnadsstyring og overgang til ordinær forvaltning.",
-      ],
-    },
-  ];
-}
-
 function PositioningKanban({
   items,
-  analysis,
+  analysis: _analysis,
 }: {
   items: string[];
   analysis: CustomerAnalysisResult;
 }) {
-  const deliveryPhases = buildDeliveryPhases(analysis);
   const lanes = POSITIONING_LANES.map((lane, laneIndex) => ({
     ...lane,
     items: items
@@ -1501,8 +1437,7 @@ function PositioningKanban({
           {lanes.map((lane) => {
             const Icon = lane.icon;
             const isActive = lane.title === activeLane.title;
-            const hasDeliveryBlueprint = lane.title === "Leveranse";
-            const itemCount = lane.items.length + (hasDeliveryBlueprint ? 1 : 0);
+            const itemCount = lane.items.length;
 
             return (
               <button
@@ -1582,58 +1517,6 @@ function PositioningKanban({
         </div>
 
         <div className="flex flex-1 flex-col gap-4">
-          {activeLane.title === "Leveranse" ? (
-            <article className="overflow-hidden rounded-[1.45rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(236,254,255,0.82))] shadow-[0_16px_38px_rgba(8,145,178,0.14)]">
-              <div className="border-b border-cyan-100/90 px-5 py-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-cyan-700/75">
-                      Løsningsfaser for gjennomføring
-                    </p>
-                    <h6 className="mt-1 text-[1.06rem] font-semibold tracking-[-0.02em] text-cyan-950">
-                      Strukturert og pragmatisk leveranseplan
-                    </h6>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-cyan-700 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white">
-                    Alltid med
-                  </span>
-                </div>
-                <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-700">
-                  {summarizePhaseContext(analysis)}
-                </p>
-              </div>
-
-              <div className="grid min-w-0 gap-3 px-5 py-5 2xl:grid-cols-2">
-                {deliveryPhases.map((phase) => (
-                  <div
-                    key={phase.title}
-                    className="rounded-2xl border border-cyan-100 bg-white/90 px-4 py-4 shadow-[0_10px_24px_rgba(14,116,144,0.08)]"
-                  >
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                      <span className="rounded-full bg-cyan-700/10 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-cyan-800">
-                        {phase.title}
-                      </span>
-                      <span className="text-right text-sm font-semibold text-slate-900">
-                        {phase.label}
-                      </span>
-                    </div>
-                    <ul className="space-y-2.5 text-[0.96rem] leading-6 text-slate-700">
-                      {phase.bullets.map((bullet, bulletIndex) => (
-                        <li
-                          key={`${phase.title}-${bulletIndex}`}
-                          className="flex items-start gap-2.5"
-                        >
-                          <span className="mt-2 size-1.5 shrink-0 rounded-full bg-cyan-600" />
-                          <span>{bullet}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </article>
-          ) : null}
-
           {activeLane.items.map(({ content, index }) => (
             <article
               key={`positioning-kanban-${index}`}
@@ -1645,6 +1528,14 @@ function PositioningKanban({
               />
             </article>
           ))}
+
+          {activeLane.items.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-white/80 bg-white/70 px-5 py-5 text-sm leading-6 text-slate-600">
+              Ingen prosjektspesifikke anbefalinger er generert for dette sporet
+              ennå. Lag fremdriftsplan i egen fane for en konkret
+              gjennomføringsplan basert på prosjektgrunnlaget.
+            </div>
+          ) : null}
         </div>
       </section>
     </div>
