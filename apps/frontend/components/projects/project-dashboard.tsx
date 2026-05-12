@@ -33,6 +33,11 @@ import {
 import { consumeNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  clearClientCache,
+  getClientCache,
+  setClientCache,
+} from "@/lib/client-cache";
 import type {
   ProjectSummary,
   ServiceDescription,
@@ -42,6 +47,9 @@ import type {
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
 }
+
+const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
+const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 async function uploadProjectDocument({
   projectId,
@@ -113,12 +121,20 @@ export function GlobalServiceDescriptionsPanel() {
   const [dragActive, setDragActive] = useState(false);
 
   async function loadServices() {
+    const cached = getClientCache<ServiceDescription[]>(
+      SERVICE_DESCRIPTIONS_CACHE_KEY,
+    );
+    if (cached) {
+      setServices(cached);
+      setLoading(false);
+      setError("");
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/service-descriptions", {
-        cache: "no-store",
-      });
+      const response = await fetch("/api/service-descriptions");
       const payload = (await response.json()) as {
         services?: ServiceDescription[];
         error?: string;
@@ -127,6 +143,11 @@ export function GlobalServiceDescriptionsPanel() {
         throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
       }
       setServices(payload.services);
+      setClientCache(
+        SERVICE_DESCRIPTIONS_CACHE_KEY,
+        payload.services,
+        SERVICE_DESCRIPTIONS_CACHE_TTL_MS,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke hente tjenestebeskrivelser.");
     } finally {
@@ -151,6 +172,7 @@ export function GlobalServiceDescriptionsPanel() {
       if (!response.ok) {
         throw new Error(payload.error || "Kunne ikke oppdatere tjenesten.");
       }
+      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
       await loadServices();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke oppdatere tjenesten.");
@@ -171,6 +193,7 @@ export function GlobalServiceDescriptionsPanel() {
       if (!response.ok) {
         throw new Error(payload.error || "Kunne ikke slette dokumentet.");
       }
+      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
       await loadServices();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke slette dokumentet.");
@@ -209,6 +232,7 @@ export function GlobalServiceDescriptionsPanel() {
       if (!response.ok) {
         throw new Error(payload.error || "Kunne ikke lagre tjenestebeskrivelsen.");
       }
+      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
       setTargetServiceId("");
       setServiceName("");
       setDescription("");

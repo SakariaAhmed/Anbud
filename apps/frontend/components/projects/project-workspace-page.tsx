@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   FormEvent,
   useCallback,
@@ -184,6 +184,23 @@ interface ProjectSnapshotPayload {
   last_activity_at: string;
 }
 
+const PROJECT_WORKSPACE_TABS = [
+  "analysis",
+  "bilag1",
+  "service-description",
+  "requirements",
+  "generator",
+  "evaluation",
+  "delivery",
+  "executive-summary",
+] as const;
+
+export type ProjectWorkspaceTab = (typeof PROJECT_WORKSPACE_TABS)[number];
+
+function isProjectWorkspaceTab(value: string | null | undefined): value is ProjectWorkspaceTab {
+  return PROJECT_WORKSPACE_TABS.includes(value as ProjectWorkspaceTab);
+}
+
 function patchProjectWithSnapshot(
   project: ProjectDetail,
   snapshot: ProjectSnapshotPayload,
@@ -215,6 +232,13 @@ function dedupeDocuments(documents: ProjectDocument[]) {
     seen.add(d.id);
     return true;
   });
+}
+
+function prependGeneratedArtifact(
+  artifacts: GeneratedArtifact[],
+  artifact: GeneratedArtifact,
+) {
+  return [artifact, ...artifacts.filter((item) => item.id !== artifact.id)];
 }
 
 function sleep(ms: number, signal?: AbortSignal) {
@@ -334,13 +358,17 @@ function parseCustomerAnalysisSectionBusy(
 
 export function ProjectWorkspacePage({
   initialData,
+  initialTab = "analysis",
 }: {
   initialData: ProjectDetail;
+  initialTab?: ProjectWorkspaceTab;
 }) {
   const DEFAULT_SIDEBAR_WIDTH = 240;
   const MIN_SIDEBAR_WIDTH = 236;
   const MAX_SIDEBAR_WIDTH = 360;
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [project, setProject] = useState(initialData);
   const [busy, setBusy] = useState<string | null>(null);
   const [busyMessage, setBusyMessage] = useState("");
@@ -353,7 +381,7 @@ export function ProjectWorkspacePage({
   const [artifactInstructions, setArtifactInstructions] = useState("");
   const [selectedRequirementDocumentId, setSelectedRequirementDocumentId] =
     useState("");
-  const [activeTab, setActiveTab] = useState("analysis");
+  const [activeTab, setActiveTab] = useState<ProjectWorkspaceTab>(initialTab);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [artifactsLoaded, setArtifactsLoaded] = useState(
@@ -379,6 +407,28 @@ export function ProjectWorkspacePage({
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
   const progressIntervalRef = useRef<number | null>(null);
   const sidebarResizeRef = useRef(false);
+
+  useEffect(() => {
+    const tabFromUrl = searchParams.get("tab");
+    if (isProjectWorkspaceTab(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [activeTab, searchParams]);
+
+  const setWorkspaceTab = useCallback(
+    (tab: ProjectWorkspaceTab) => {
+      setActiveTab(tab);
+      const nextParams = new URLSearchParams(searchParams.toString());
+      if (tab === "analysis") {
+        nextParams.delete("tab");
+      } else {
+        nextParams.set("tab", tab);
+      }
+      const query = nextParams.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
   const activeJobAbortRef = useRef<AbortController | null>(null);
 
   const stopSidebarResize = useCallback(() => {
@@ -695,11 +745,12 @@ export function ProjectWorkspacePage({
 
   useEffect(() => {
     if (
-      (activeTab !== "generator" &&
-        activeTab !== "delivery" &&
-        activeTab !== "requirements") ||
-      project.artifact_count === 0
-    )
+	      (activeTab !== "generator" &&
+	        activeTab !== "delivery" &&
+	        activeTab !== "requirements") ||
+	      artifactsLoaded ||
+	      project.artifact_count === 0
+	    )
       return;
     let cancelled = false;
     fetch(`/api/projects/${project.id}/generate`, { cache: "no-store" })
@@ -735,7 +786,7 @@ export function ProjectWorkspacePage({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, project.artifact_count, project.id]);
+	  }, [activeTab, artifactsLoaded, project.artifact_count, project.id]);
 
   async function onUploadDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -764,8 +815,8 @@ export function ProjectWorkspacePage({
       setFile(null);
       setUploadRole("supporting_document");
       setDocumentFileInputKey((current) => current + 1);
-      setProject((current) =>
-        normalizeProjectState(
+	        setProject((current) =>
+	          normalizeProjectState(
           patchProjectWithSnapshot(
             {
               ...current,
@@ -1136,17 +1187,18 @@ export function ProjectWorkspacePage({
                 ...current,
                 solution_evaluation:
                   result.evaluation ?? current.solution_evaluation,
-                generated_artifacts: [
+                generated_artifacts: prependGeneratedArtifact(
+                  current.generated_artifacts,
                   result.artifact,
-                  ...current.generated_artifacts,
-                ],
+                ),
                 artifact_count: current.artifact_count + 1,
               },
               result.project,
             ),
-          ),
-        );
-      },
+	          ),
+	        );
+	        setArtifactsLoaded(true);
+	      },
       ["Starter generatorjobben ..."],
     );
   }
@@ -1182,22 +1234,23 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-        setProject((current) =>
-          normalizeProjectState(
+	        setProject((current) =>
+	          normalizeProjectState(
             patchProjectWithSnapshot(
               {
                 ...current,
-                generated_artifacts: [
+                generated_artifacts: prependGeneratedArtifact(
+                  current.generated_artifacts,
                   result.artifact,
-                  ...current.generated_artifacts,
-                ],
+                ),
                 artifact_count: current.artifact_count + 1,
               },
               result.project,
             ),
-          ),
-        );
-      },
+	          ),
+	        );
+	        setArtifactsLoaded(true);
+	      },
       ["Starter jobben for fremdriftsplanen ..."],
     );
   }
@@ -1236,22 +1289,23 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-        setProject((current) =>
-          normalizeProjectState(
+	        setProject((current) =>
+	          normalizeProjectState(
             patchProjectWithSnapshot(
               {
                 ...current,
-                generated_artifacts: [
+                generated_artifacts: prependGeneratedArtifact(
+                  current.generated_artifacts,
                   result.artifact,
-                  ...current.generated_artifacts,
-                ],
+                ),
                 artifact_count: current.artifact_count + 1,
               },
               result.project,
             ),
-          ),
-        );
-      },
+	          ),
+	        );
+	        setArtifactsLoaded(true);
+	      },
       ["Starter jobben for Bilag 1 ..."],
     );
   }
@@ -1290,22 +1344,23 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-        setProject((current) =>
-          normalizeProjectState(
+	        setProject((current) =>
+	          normalizeProjectState(
             patchProjectWithSnapshot(
               {
                 ...current,
-                generated_artifacts: [
+                generated_artifacts: prependGeneratedArtifact(
+                  current.generated_artifacts,
                   result.artifact,
-                  ...current.generated_artifacts,
-                ],
+                ),
                 artifact_count: current.artifact_count + 1,
               },
               result.project,
             ),
-          ),
-        );
-      },
+	          ),
+	        );
+	        setArtifactsLoaded(true);
+	      },
       ["Starter jobben for kravbesvarelse ..."],
     );
   }
@@ -1513,7 +1568,7 @@ export function ProjectWorkspacePage({
                           !sidebarOpen &&
                             "mx-auto size-10 justify-center rounded-md px-0",
                         )}
-                        onClick={() => setActiveTab(item.value)}
+                        onClick={() => setWorkspaceTab(item.value)}
                       >
                         <item.icon className="size-4.5" />
                         {sidebarOpen ? <span>{item.label}</span> : null}

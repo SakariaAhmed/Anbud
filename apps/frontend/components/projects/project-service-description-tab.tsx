@@ -15,7 +15,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/projects/primitives";
+import {
+  clearClientCache,
+  getClientCache,
+  setClientCache,
+} from "@/lib/client-cache";
 import type { ProjectServiceDescription, ServiceInclusionMode } from "@/lib/types";
+
+const projectServicesCacheKey = (projectId: string) =>
+  `project-service-descriptions:${projectId}`;
+const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
+const PROJECT_SERVICES_CACHE_TTL_MS = 2 * 60 * 1000;
 
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
@@ -52,12 +62,19 @@ export function ProjectServiceDescriptionTab({
   const recommendedServices = services.filter((service) => service.recommended);
 
   async function loadServices() {
+    const cacheKey = projectServicesCacheKey(projectId);
+    const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
+    if (cached) {
+      setServices(cached);
+      setLoading(false);
+      setError("");
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/service-descriptions`, {
-        cache: "no-store",
-      });
+      const response = await fetch(`/api/projects/${projectId}/service-descriptions`);
       const payload = (await response.json()) as {
         services?: ProjectServiceDescription[];
         error?: string;
@@ -66,6 +83,7 @@ export function ProjectServiceDescriptionTab({
         throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
       }
       setServices(payload.services);
+      setClientCache(cacheKey, payload.services, PROJECT_SERVICES_CACHE_TTL_MS);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke hente tjenestebeskrivelser.");
     } finally {
@@ -94,6 +112,11 @@ export function ProjectServiceDescriptionTab({
         throw new Error(payload.error || "Kunne ikke lagre tjenestevalg.");
       }
       setServices(payload.services);
+      setClientCache(
+        projectServicesCacheKey(projectId),
+        payload.services,
+        PROJECT_SERVICES_CACHE_TTL_MS,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke lagre tjenestevalg.");
     } finally {
@@ -122,6 +145,8 @@ export function ProjectServiceDescriptionTab({
       if (!response.ok) {
         throw new Error(payload.error || "Kunne ikke oppdatere tjenesten.");
       }
+      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
+      clearClientCache(projectServicesCacheKey(projectId));
       await loadServices();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke oppdatere tjenesten.");
@@ -142,6 +167,8 @@ export function ProjectServiceDescriptionTab({
       if (!response.ok) {
         throw new Error(payload.error || "Kunne ikke slette dokumentet.");
       }
+      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
+      clearClientCache(projectServicesCacheKey(projectId));
       await loadServices();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke slette dokumentet.");
@@ -180,6 +207,8 @@ export function ProjectServiceDescriptionTab({
       if (!response.ok) {
         throw new Error(payload.error || "Kunne ikke lagre tjenestebeskrivelsen.");
       }
+      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
+      clearClientCache(projectServicesCacheKey(projectId));
       setServiceName("");
       setDescription("");
       setTargetServiceId("");

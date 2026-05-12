@@ -15,25 +15,6 @@ interface ProgressPhase {
   body: string;
 }
 
-const DEFAULT_PHASES: ProgressPhase[] = [
-  {
-    title: "Fase 1: Avklar neste beslutning",
-    body: "Gjør kundeanalysen beslutningsklar før teamet går videre.\n\n- bekreft kundens viktigste driver og hvor risiko må reduseres først\n- avklar hvilke åpne spørsmål som må lukkes internt eller med kunden\n- bestem hva som må være klart før løsningsbeskrivelsen oppdateres",
-  },
-  {
-    title: "Fase 2: Konkretiser løsningsretning",
-    body: "Oversett innsikten til en tydelig retning for løsning og tilbudstekst.\n\n- formuler anbefalt målarkitektur og viktigste plattformgrep\n- koble løsningsvalg til kundens mål, risiko og evalueringskriterier\n- pek ut hvilke deler som trenger mer bevis eller presisjon",
-  },
-  {
-    title: "Fase 3: Planlegg første leveransebølge",
-    body: "Gjør planen operativ ved å definere hva som bør skje først.\n\n- velg første leveransebølge basert på risiko, avhengigheter og kundeverdi\n- beskriv hva teamet må etablere før første leveranse kan starte\n- tydeliggjør ansvar, kundebidrag og akseptansekriterier",
-  },
-  {
-    title: "Fase 4: Klargjør tilbuds- og leveransegrunnlag",
-    body: "Gjør materialet klart for videre tilbudsarbeid og praktisk oppfølging.\n\n- oppdater løsningsbeskrivelsen med faseplanen og kundespesifikke bevis\n- kontroller at fremdriftsplanen henger sammen med risiko, verdi og evaluering\n- avklar hvilke beslutninger som skal følges opp før endelig tilbud eller oppstart",
-  },
-];
-
 function extractProgressPhases(markdown: string): ProgressPhase[] {
   const sections = markdown.split(/\n(?=##\s+)/g);
 
@@ -76,7 +57,6 @@ export function ProjectDeliveryTab({
   const latestPhases = latestArtifact
     ? extractProgressPhases(latestArtifact.content_markdown)
     : [];
-  const visiblePhases = latestPhases.length ? latestPhases : DEFAULT_PHASES;
 
   return (
     <div className="min-w-0 space-y-5">
@@ -131,7 +111,15 @@ export function ProjectDeliveryTab({
               <ArtifactActions artifact={latestArtifact} />
             </div>
           ) : null}
-          <PhaseList phases={visiblePhases} muted={!latestArtifact} />
+          {latestArtifact && latestPhases.length ? (
+            <PhaseList phases={latestPhases} muted={false} />
+          ) : (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
+              Ingen prosjektspesifikk fremdriftsplan er generert ennå. Bruk
+              knappen over for å lage en plan basert på kundedokumenter,
+              analyse, risiko, avhengigheter og relevante tjenestebeskrivelser.
+            </div>
+          )}
         </div>
       </div>
 

@@ -8,11 +8,12 @@ import {
   listGeneratedArtifacts,
   listProjectDocuments,
   listServiceDocumentDetailsForProject,
+  listServiceDocumentSummariesForProject,
   saveGeneratedArtifact,
   updateGeneratedArtifact,
 } from "@/lib/server/projects-db";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
-import type { GeneratedArtifactType } from "@/lib/types";
+import type { GeneratedArtifactType, ServiceDocument } from "@/lib/types";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "no-store",
@@ -25,6 +26,68 @@ function isArtifactType(value: string): value is GeneratedArtifactType {
     value === "forbedret_kravsvar" ||
     value === "gjennomforing_og_risiko"
   );
+}
+
+function serviceDocumentLimitForArtifact(artifactType: GeneratedArtifactType) {
+  if (artifactType === "bilag1_rekonstruksjon") {
+    return 0;
+  }
+
+  if (artifactType === "forbedret_kravsvar") {
+    return 5;
+  }
+
+  return 3;
+}
+
+function tokenizeForRelevance(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .toLowerCase()
+        .replace(/[^a-z0-9æøå]+/gi, " ")
+        .split(/\s+/)
+        .filter((word) => word.length >= 4)
+        .slice(0, 80),
+    ),
+  );
+}
+
+function selectRelevantServiceDocumentIds(input: {
+  artifactType: GeneratedArtifactType;
+  projectName: string;
+  customerAnalysis: unknown;
+  instructions?: string;
+  serviceDocumentSummaries: ServiceDocument[];
+}) {
+  const limit = serviceDocumentLimitForArtifact(input.artifactType);
+  if (!limit) {
+    return [];
+  }
+
+  const queryTokens = tokenizeForRelevance(
+    [
+      input.artifactType,
+      input.projectName,
+      input.instructions ?? "",
+      JSON.stringify(input.customerAnalysis ?? {}),
+    ].join(" "),
+  );
+
+  return [...input.serviceDocumentSummaries]
+    .map((document, index) => {
+      const haystack = `${document.title} ${document.file_name} ${
+        document.ai_summary ?? ""
+      }`.toLowerCase();
+      const score = queryTokens.reduce(
+        (sum, token) => sum + (haystack.includes(token) ? 1 : 0),
+        0,
+      );
+      return { document, index, score };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, limit)
+    .map(({ document }) => document.id);
 }
 
 export async function GET(
@@ -71,13 +134,13 @@ export async function POST(
       customerAnalysis,
       documents,
       generatedArtifacts,
-      serviceDescriptionDocuments,
+      serviceDocumentSummaries,
     ] = await Promise.all([
       getProjectDetail(id),
       getCustomerAnalysis(id),
       listProjectDocuments(id),
       listGeneratedArtifacts(id),
-      listServiceDocumentDetailsForProject(id),
+      listServiceDocumentSummariesForProject(id),
     ]);
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
@@ -89,6 +152,21 @@ export async function POST(
         document.id !== solutionDocument?.id,
     );
 
+    const serviceDescriptionDocuments =
+      body.artifact_type === "bilag1_rekonstruksjon"
+        ? []
+        : serviceDocumentSummaries.length
+          ? await listServiceDocumentDetailsForProject(id, {
+              documentIds: selectRelevantServiceDocumentIds({
+                artifactType: body.artifact_type,
+                projectName: project.name,
+                customerAnalysis,
+                instructions: body.instructions,
+                serviceDocumentSummaries,
+              }),
+            })
+          : await listServiceDocumentDetailsForProject(id);
+
     const generated = await generateProjectArtifact({
       artifactType: body.artifact_type,
       projectName: project.name,
@@ -98,6 +176,7 @@ export async function POST(
       solutionDocument,
       serviceDescriptionDocument,
       serviceDescriptionDocuments,
+      serviceDocumentSummaries,
       supportingDocuments,
       knowledgeArtifacts: generatedArtifacts,
       instructions: body.instructions?.trim(),
