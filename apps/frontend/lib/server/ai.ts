@@ -21,6 +21,7 @@ import type {
   GeneratedArtifactType,
   ProjectMetadataInference,
   ProjectDocumentDetail,
+  ServiceDocument,
   ServiceDocumentDetail,
   SolutionEvaluationResult,
   ValueCategory,
@@ -29,6 +30,10 @@ import type {
 
 const ANALYSIS_MODEL = "gpt-5.4";
 const FAST_MODEL = "gpt-5.4-mini";
+type ReasoningEffort = "low" | "medium" | "high";
+const ANALYSIS_REASONING_EFFORT: ReasoningEffort = "medium";
+const FAST_REASONING_EFFORT: ReasoningEffort = "low";
+const GPT_MODELS_USE_DEFAULT_TEMPERATURE = /^gpt-5/i;
 const VALUE_CATEGORIES: ValueCategory[] = [
   "Høyere produktivitet",
   "Lavere kostnader",
@@ -206,6 +211,56 @@ function serviceDocumentAsProjectDocument(
     created_at: document.created_at,
     updated_at: document.updated_at,
   };
+}
+
+function fallbackServiceDocumentSummary(document: ServiceDocumentDetail) {
+  const structure = document.structure_map
+    .slice(0, 4)
+    .map((entry) => `${entry.reference}: ${compactText(entry.text, 220)}`)
+    .join(" | ");
+
+  return compactText(
+    [
+      document.title,
+      structure,
+      compactText(document.raw_text, 900),
+    ].filter(Boolean).join("\n"),
+    1200,
+  );
+}
+
+export async function summarizeServiceDocumentForAi(input: {
+  title: string;
+  fileName: string;
+  rawText: string;
+}) {
+  return createTextCompletion({
+    system: buildPromptTemplate({
+      role: "Du lager korte, presise AI-sammendrag av tjenestebeskrivelser for tilbudsarbeid.",
+      task: [
+        "Oppsummer tjenestedokumentet slik at en senere AI raskt kan vurdere om tjenesten er relevant for et kundeprosjekt.",
+      ],
+      rules: [
+        "Skriv på norsk.",
+        "Maks 140 ord.",
+        "Fokuser på leveranseområde, ansvar, driftsmodell, sikkerhet, SLA, avgrensninger, kundebidrag, verktøy og typiske krav tjenesten besvarer.",
+        "Ikke skriv markedsføring eller generiske kvalitetsutsagn.",
+      ],
+      outputContract: ["Returner ren tekst, ikke JSON."],
+      exampleOutput:
+        "Tjenesten dekker <leveranseområde>, med ansvar for <ansvar>, typiske krav om <kravtyper> og avgrensninger rundt <avgrensning>.",
+    }),
+    user: [
+      buildDelimitedContext(
+        "Dokumentmetadata",
+        [`Tittel: ${input.title}`, `Filnavn: ${input.fileName}`].join("\n"),
+      ),
+      buildDelimitedContext("Dokumenttekst", compactText(input.rawText, 10000)),
+    ].join("\n\n"),
+    temperature: 0.1,
+    model: FAST_MODEL,
+    reasoningEffort: FAST_REASONING_EFFORT,
+  });
 }
 
 function splitPdfPages(rawText: string) {
@@ -1025,69 +1080,42 @@ function toMarkdownTableRow(cells: string[]) {
 function tableRequirementAnswer(entry: RequirementLedgerEntry) {
   const service = normalizeRequirementLedgerText(entry.service ?? entry.id);
   const text = normalizeRequirementLedgerText(entry.text);
+  const sourceSignal = service || text || "kravet";
+  const responseFocus = [
+    service.includes("tilgang") || text.includes("hjemmekontor")
+      ? "tilgangsstyring, sikker autentisering og dokumentert tilgangsprosess"
+      : "",
+    service.includes("lisens")
+      ? "lisensforvaltning, rapportering og kontroll mot faktisk bruk"
+      : "",
+    service.includes("overvåk") || service.includes("logger")
+      ? "overvåking, varsling, hendelsesoppfølging og rapportering"
+      : "",
+    service.includes("dokumentasjon")
+      ? "oppdatert dokumentasjon, eierskap og kontrollert tilgjengelighet"
+      : "",
+    service.includes("bruker")
+      ? "brukeradministrasjon etter godkjent prosess og tydelige roller"
+      : "",
+    service.includes("vedlikehold") || service.includes("patch")
+      ? "vedlikehold, endringskontroll og risikobasert oppdatering"
+      : "",
+    service.includes("sikkerhet") || service.includes("risiko")
+      ? "sikkerhetskontroller, risikostyring og etterprøvbar oppfølging"
+      : "",
+    service.includes("backup") || service.includes("sikkerhetskopi")
+      ? "sikkerhetskopiering, verifikasjon og tilbakelegging"
+      : "",
+    service.includes("rapportering")
+      ? "statusrapportering, avvikshåndtering og styringsdialog"
+      : "",
+  ].find(Boolean);
 
-  if (service.includes("tilgang") || text.includes("hjemmekontor")) {
-    return "Atea etablerer og drifter sikre tilgangsløsninger som gir kunden tilgang fra kontor, hjemmekontor og ekstern oppkobling, med identitetskontroll, kryptert kommunikasjon og overvåket infrastruktur.";
-  }
-  if (service.includes("lisens")) {
-    return "Atea administrerer, rapporterer og optimaliserer aktuelle lisenser i leveransen, inkludert Microsoft 365, basert på faktisk bruk, lisensnivå og kostnadsbilde.";
-  }
-  if (service.includes("overvåk")) {
-    return "Atea overvåker relevante infrastrukturtjenester, servere, programvare, databaser og styringssystemer med varsling, oppfølging og eskalering for å sikre tilgjengelighet.";
-  }
-  if (service.includes("dokumentasjon")) {
-    return "Atea holder drifts- og systemdokumentasjon løpende oppdatert og sikrer kontrollert tilgang for relevant personell.";
-  }
-  if (service.includes("bruker")) {
-    return "Atea utfører brukeradministrasjon etter godkjenning fra kunden og håndterer opprettelse, endring, sletting og deaktivering av brukere i henhold til avtalt arbeidsflyt.";
-  }
-  if (service.includes("inventar")) {
-    return "Atea opprettholder inventaroversikt over utstyr, programvareversjoner, installasjonssted, brukertilknytning og relevante reservedeler i leveransen.";
-  }
-  if (service.includes("feil")) {
-    return "Atea håndterer feil gjennom etablert hendelsesprosess, koordinerer mot tredjeparter ved behov og følger opp tilbakelegging fra sikkerhetskopi når dette er nødvendig.";
-  }
-  if (service.includes("vedlikehold") || service.includes("patch")) {
-    return "Atea planlegger og gjennomfører vedlikehold, sikkerhetsoppdateringer og servicepatcher etter risiko, kritikalitet og avtalt endringsprosess.";
-  }
-  if (service.includes("tredjepart")) {
-    return "Atea koordinerer support og driftsoppfølging mot aktuelle tredjepartsleverandører for programvare og løsninger som inngår i Ateas driftsansvar.";
-  }
-  if (service.includes("revisjon")) {
-    return "Atea bistår kunden ved revisjoner, internrevisjoner og kvalitetskontroller med relevant dokumentasjon, fagressurser og oppfølging av avtalte tiltak.";
-  }
-  if (service.includes("logger")) {
-    return "Atea følger opp logger og alarmer for relevante tjenester og iverksetter korrektive tiltak etter alvorlighet og avtalt prosess.";
-  }
-  if (service.includes("applikasjon")) {
-    return "Atea leverer applikasjonsforvaltning for programvare som inngår i leveransen, med oppfølging, vedlikehold, feilretting og oppdateringer innenfor avtalt ansvarsområde.";
-  }
-  if (service.includes("helpdesk") || service.includes("tam")) {
-    return "Atea tilbyr stedlige Helpdesk- og TAM-ressurser med SPOC-ansvar, koordinering, prosjektstøtte, test og implementering, utstyrshåndtering og relevant Microsoft 365-kompetanse.";
-  }
-  if (service.includes("rapportering")) {
-    return "Atea rapporterer aktiviteter, status, avvik og tiltak i avtalte statusmøter og styringsfora.";
-  }
-  if (service.includes("sikkerhet") || service.includes("risiko")) {
-    return "Atea ivaretar kravet gjennom etablerte sikkerhetsroller, risikostyring, dokumenterte prosesser, operativ oppfølging og rapportering til kunden.";
-  }
-  if (service.includes("sertifisering")) {
-    return "Atea oppgir relevante sikkerhetssertifiseringer for virksomheten og aktuelle ressurser i tilbudet og tilhørende vedlegg.";
-  }
-  if (service.includes("kryptering")) {
-    return "Atea redegjør for kryptering av data i transitt, ved lagring og i backup, inkludert protokoller, algoritmer, nøkkelhåndtering og sikring av administrative tilganger.";
-  }
-  if (service.includes("backup") || service.includes("sikkerhetskopi")) {
-    return "Atea beskriver rutiner for sikkerhetskopiering, verifikasjon, tilbakelegging, fjernlagring og skjermet backup i henhold til kravene i leveransen.";
-  }
-  if (service.includes("plattform")) {
-    return "Atea overvåker relevante infrastruktur- og PaaS-tjenester uavhengig av om de kjøres lokalt, i skyplattformer eller i Ateas datasenter.";
-  }
-  if (service.includes("varsling")) {
-    return "Atea beskriver varslingsrutiner for kritiske funn og hendelser, inkludert eskaleringsvei, varslingsfrist, kontaktpunkter og oppfølging til hendelsen er lukket.";
+  if (responseFocus) {
+    return `Leverandøren bør besvare kravet med en konkret beskrivelse av ${responseFocus}, tilpasset kundens kravtekst og relevante tjenestebeskrivelser.`;
   }
 
-  return "Atea oppfyller kravet gjennom avtalt leveransemodell, dokumenterte prosesser, relevant fagkompetanse og løpende oppfølging med kunden.";
+  return `Leverandøren må beskrive hvordan "${sourceSignal}" oppfylles med ansvar, metode, dokumentasjon og eventuelle forbehold som støttes av prosjektgrunnlaget.`;
 }
 
 function synthesizeRequirementLedgerRow(
@@ -1797,7 +1825,7 @@ async function buildDocumentInsightDigestUncached(
       "Alle felt utenom document_summary skal være lister av strenger.",
     ],
     exampleOutput:
-      '{"document_summary":"Delen beskriver krav til sikker migrering og lav toleranse for driftsavbrudd.","important_requirements":["Kunden krever kontrollert overgang uten vesentlig driftsavbrudd."],"implicit_needs":["Leverandøren må fremstå som trygg gjennomføringspartner, ikke bare teknisk rådgiver."],"risks":["Utydelig cutover-plan kan svekke tillit."],"evaluation_criteria":["Gjennomføringsevne","Sikkerhet"],"architecture_and_solution_signals":["Hybrid overgang mellom lokal drift og skyplattform."],"technologies_and_standards":["Azure","MFA"],"value_signals":["Redusert risiko gjennom stegvis migrering."],"visual_or_table_notes":["Teksten viser til en migreringstabell som bør verifiseres."],"source_references":["Kundedokument – side 12"]}',
+      '{"document_summary":"<tekstnært sammendrag av dokumentdelen>","important_requirements":["<krav eller føring>"],"implicit_needs":["<rimelig tolket behov>"],"risks":["<risiko>"],"evaluation_criteria":["<mulig evalueringskriterium>"],"architecture_and_solution_signals":["<løsningssignal>"],"technologies_and_standards":["<navngitt teknologi eller standard>"],"value_signals":["<verdisignal>"],"visual_or_table_notes":["<observasjon om tabell/figur>"],"source_references":["<kildehenvisning>"]}',
   });
 
   const chunkDigests = await mapWithConcurrency(
@@ -1814,6 +1842,7 @@ async function buildDocumentInsightDigestUncached(
           ].join("\n\n"),
           temperature: 0,
           model: FAST_MODEL,
+          reasoningEffort: FAST_REASONING_EFFORT,
         }),
       ),
   );
@@ -2243,9 +2272,7 @@ function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
       : "    Identity[Identitet og tilgang]",
     "  end",
     '  subgraph PlatformLayer["Plattform"]',
-    hasAzure
-      ? "    Platform[Azure Landing Zone]"
-      : "    Platform[Skyplattform]",
+    hasAzure ? "    Platform[Azure-plattform]" : "    Platform[Plattform]",
     "  end",
     '  subgraph IntegrationLayer["Integrasjon og data"]',
     hasNamedIntegration
@@ -2947,16 +2974,25 @@ function normalizeComparisonScore(raw: unknown) {
   return Math.min(100, Math.max(0, Math.round(raw)));
 }
 
+function supportsCustomTemperature(model: string) {
+  return !GPT_MODELS_USE_DEFAULT_TEMPERATURE.test(model);
+}
+
 async function createJsonCompletion<T>(input: {
   system: string;
   user: string;
   temperature?: number;
   model?: string;
+  reasoningEffort?: ReasoningEffort;
 }): Promise<T> {
   const client = await getClient();
+  const model = input.model ?? ANALYSIS_MODEL;
   const response = await client.chat.completions.create({
-    model: input.model ?? ANALYSIS_MODEL,
-    temperature: input.temperature ?? 0.1,
+    model,
+    reasoning_effort: input.reasoningEffort ?? ANALYSIS_REASONING_EFFORT,
+    ...(supportsCustomTemperature(model)
+      ? { temperature: input.temperature ?? 0.1 }
+      : {}),
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: input.system },
@@ -2978,8 +3014,10 @@ async function createJsonCompletionWithFileInputs<T>(input: {
   fileDocuments: ProjectDocumentDetail[];
   temperature?: number;
   model?: string;
+  reasoningEffort?: ReasoningEffort;
 }): Promise<T> {
   const client = await getClient();
+  const model = input.model ?? ANALYSIS_MODEL;
   const content = [
     ...input.fileDocuments.map((document) => ({
       type: "input_file",
@@ -2992,9 +3030,12 @@ async function createJsonCompletionWithFileInputs<T>(input: {
     },
   ];
   const response = await client.responses.create({
-    model: input.model ?? ANALYSIS_MODEL,
+    model,
     instructions: input.system,
-    temperature: input.temperature ?? 0.1,
+    reasoning: { effort: input.reasoningEffort ?? ANALYSIS_REASONING_EFFORT },
+    ...(supportsCustomTemperature(model)
+      ? { temperature: input.temperature ?? 0.1 }
+      : {}),
     input: [{ role: "user", content }],
   });
 
@@ -3011,11 +3052,16 @@ async function createTextCompletion(input: {
   user: string;
   temperature?: number;
   model?: string;
+  reasoningEffort?: ReasoningEffort;
 }) {
   const client = await getClient();
+  const model = input.model ?? ANALYSIS_MODEL;
   const response = await client.chat.completions.create({
-    model: input.model ?? ANALYSIS_MODEL,
-    temperature: input.temperature ?? 0.3,
+    model,
+    reasoning_effort: input.reasoningEffort ?? ANALYSIS_REASONING_EFFORT,
+    ...(supportsCustomTemperature(model)
+      ? { temperature: input.temperature ?? 0.3 }
+      : {}),
     messages: [
       { role: "system", content: input.system },
       { role: "user", content: input.user },
@@ -3074,7 +3120,8 @@ export async function analyzeCustomerDocuments(input: {
     system: buildCustomerAnalysisPrompt(),
     user: userPrompt,
     temperature: 0.1,
-    model: FAST_MODEL,
+    model: ANALYSIS_MODEL,
+    reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
   const signalSourceText = [
@@ -3159,6 +3206,7 @@ export async function regenerateCustomerAnalysisSection(input: {
     user: userPrompt,
     temperature: 0.1,
     model: ANALYSIS_MODEL,
+    reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
   const signalSourceText = [
@@ -3229,7 +3277,8 @@ export async function generateHighLevelDesign(input: {
     system: buildHighLevelDesignPrompt(),
     user: userPrompt,
     temperature: 0.12,
-    model: FAST_MODEL,
+    model: ANALYSIS_MODEL,
+    reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
   const highLevelSolutionDesign = dedupeSummary(
@@ -3334,7 +3383,8 @@ export async function evaluateSolutionDocument(input: {
     system: buildSolutionEvaluationPrompt(),
     user: userPrompt,
     temperature: 0.1,
-    model: FAST_MODEL,
+    model: ANALYSIS_MODEL,
+    reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
   return normalizeSolutionEvaluationResult(result);
@@ -3376,6 +3426,7 @@ export async function generateExecutiveSummary(input: {
     user: userPrompt,
     temperature: 0.12,
     model: FAST_MODEL,
+    reasoningEffort: FAST_REASONING_EFFORT,
   });
 
   return normalizeExecutiveSummaryResult(result);
@@ -3390,6 +3441,7 @@ export async function generateProjectArtifact(input: {
   solutionDocument: ProjectDocumentDetail | null;
   serviceDescriptionDocument?: ProjectDocumentDetail | null;
   serviceDescriptionDocuments?: ServiceDocumentDetail[];
+  serviceDocumentSummaries?: ServiceDocument[];
   supportingDocuments: ProjectDocumentDetail[];
   requirementDocuments?: ProjectDocumentDetail[];
   knowledgeArtifacts: Array<{
@@ -3423,26 +3475,54 @@ export async function generateProjectArtifact(input: {
       }),
     )
     .join("\n\n");
-  const serviceDocuments = [
-    ...(input.serviceDescriptionDocuments ?? []).map(
-      serviceDocumentAsProjectDocument,
-    ),
-    ...(input.serviceDescriptionDocument ? [input.serviceDescriptionDocument] : []),
-  ];
+  const serviceDocuments =
+    input.artifactType === "bilag1_rekonstruksjon"
+      ? []
+      : [
+          ...(input.serviceDescriptionDocuments ?? []).map(
+            serviceDocumentAsProjectDocument,
+          ),
+          ...(input.serviceDescriptionDocument
+            ? [input.serviceDescriptionDocument]
+            : []),
+        ];
+  const serviceDocumentLimit =
+    input.artifactType === "forbedret_kravsvar" ? 5 : 3;
+  const serviceContextBudget =
+    input.artifactType === "forbedret_kravsvar" ? 7000 : 4000;
   const serviceDescriptionContext = serviceDocuments
-    .slice(0, 10)
+    .slice(0, serviceDocumentLimit)
     .map((document, index) =>
       documentContext(
         `Tjenestebeskrivelse ${index + 1} - firmaets relevante tjenester og verktøy`,
         document,
         {
           textLimit: Math.max(
-            2200,
-            Math.floor(14000 / Math.max(1, serviceDocuments.length)),
+            900,
+            Math.floor(
+              serviceContextBudget / Math.max(1, serviceDocumentLimit),
+            ),
           ),
-          structureLimit: 6,
-          structureTextLimit: 160,
+          structureLimit:
+            input.artifactType === "forbedret_kravsvar" ? 6 : 3,
+          structureTextLimit:
+            input.artifactType === "forbedret_kravsvar" ? 160 : 120,
         },
+      ),
+    )
+    .join("\n\n");
+  const serviceSummaryContext = (input.serviceDocumentSummaries ?? [])
+    .map((document, index) =>
+      buildDelimitedContext(
+        `Tjenestesammendrag ${index + 1}`,
+        [
+          `Tittel: ${document.title}`,
+          `Filnavn: ${document.file_name}`,
+          `Sammendrag: ${
+            document.ai_summary?.trim() ||
+            "Mangler forhåndssammendrag. Bruk råtekst bare hvis dokumentet er hentet som detaljkontekst."
+          }`,
+        ].join("\n"),
       ),
     )
     .join("\n\n");
@@ -3574,16 +3654,27 @@ export async function generateProjectArtifact(input: {
           .join("\n\n")
       : "";
 
-  const artifactKnowledge = input.knowledgeArtifacts
-    .slice(0, 4)
+  const artifactKnowledgeSource =
+    input.artifactType === "gjennomforing_og_risiko"
+      ? input.knowledgeArtifacts.filter(
+          (artifact) => artifact.artifact_type !== "gjennomforing_og_risiko",
+        )
+      : input.knowledgeArtifacts;
+  const artifactKnowledge = artifactKnowledgeSource
+    .slice(0, input.artifactType === "gjennomforing_og_risiko" ? 2 : 4)
     .map((artifact, index) =>
       buildDelimitedContext(
         `Tidligere arbeidstekst ${index + 1}`,
         [
           `Tittel: ${artifact.title}`,
           `Type: ${artifact.artifact_type}`,
+          input.artifactType === "gjennomforing_og_risiko"
+            ? "Bruk kun som bakgrunn. Ikke kopier struktur, fasetitler eller formuleringer."
+            : "",
           compactText(artifact.content_markdown, 2200),
-        ].join("\n"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
       ),
     )
     .join("\n\n");
@@ -3596,7 +3687,9 @@ export async function generateProjectArtifact(input: {
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
     buildDelimitedContext(
       "Kunnskapsregel",
-      "Bruk hele prosjektgrunnlaget som kunnskapsbase: kundedokument, løsningsdokument, støttedokumenter, strategi- og notatdokumenter, tjenestebeskrivelse, lagret analyse og tidligere arbeidstekster. Prioriter det mest oppdaterte og mest konkrete innholdet hvis kilder overlapper.",
+      input.artifactType === "gjennomforing_og_risiko"
+        ? "Bruk prosjektgrunnlaget som kunnskapsbase, men prioriter kundedokument, lagret kundeanalyse, dokumenterte risikoer, krav, avhengigheter og evalueringskriterier over tidligere arbeidstekster. Tidligere arbeidstekster er kun bakgrunn og skal ikke styre faseinndeling eller formuleringer."
+        : "Bruk hele prosjektgrunnlaget som kunnskapsbase: kundedokument, løsningsdokument, støttedokumenter, strategi- og notatdokumenter, tjenestebeskrivelse, lagret analyse og tidligere arbeidstekster. Prioriter det mest oppdaterte og mest konkrete innholdet hvis kilder overlapper.",
     ),
     input.artifactType === "bilag1_rekonstruksjon"
       ? buildDelimitedContext(
@@ -3607,9 +3700,10 @@ export async function generateProjectArtifact(input: {
     serviceDescriptionContext
       ? buildDelimitedContext(
           "Regel for tjenestebeskrivelse",
-          "Tjenestebeskrivelsen er firmaets tjeneste- og verktøykatalog. Tjenestedokumentene i denne konteksten er enten faste for alle prosjekter eller eksplisitt valgt på dette prosjektet. Når du lager systemløsning eller løsningsbeskrivelse, skal du aktivt vurdere hvilke tjenester, leveranseområder, metoder og kapabiliteter derfra som er relevante for kundens behov. Bruk bare relevante deler, og knytt dem konkret til kundens situasjon. Ikke list alt firmaet tilbyr ukritisk.",
+          "Tjenestesammendragene viser alle faste eller valgte tjenestedokumenter i prosjektet. Detaljert tjenestekontekst er bare hentet for dokumenter som ser mest relevante ut. Når du lager kravsvar, systemløsning eller løsningsbeskrivelse, skal du aktivt vurdere hvilke tjenester, leveranseområder, metoder og kapabiliteter som er relevante for kundens behov. Bruk bare relevante deler, og knytt dem konkret til kundens situasjon. Ikke list alt firmaet tilbyr ukritisk.",
         )
       : "",
+    serviceSummaryContext,
     serviceDescriptionContext,
     requirementSourceLedgerContext,
     requirementContinuityContext,
@@ -3656,6 +3750,11 @@ export async function generateProjectArtifact(input: {
       input.artifactType === "bilag1_rekonstruksjon"
         ? ANALYSIS_MODEL
         : FAST_MODEL,
+    reasoningEffort:
+      input.artifactType === "forbedret_kravsvar" ||
+      input.artifactType === "bilag1_rekonstruksjon"
+        ? ANALYSIS_REASONING_EFFORT
+        : FAST_REASONING_EFFORT,
   };
 
   if (
@@ -3756,7 +3855,8 @@ export async function synthesizeAndEvaluateSolution(input: {
     system: buildSyntheticSolutionEvaluationPrompt(),
     user: userPrompt,
     temperature: 0.15,
-    model: FAST_MODEL,
+    model: ANALYSIS_MODEL,
+    reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
   return {
@@ -3822,6 +3922,8 @@ export async function answerProjectChat(input: {
     system: buildChatPrompt(),
     user: userPrompt,
     temperature: 0.35,
+    model: FAST_MODEL,
+    reasoningEffort: FAST_REASONING_EFFORT,
   });
 }
 
@@ -3844,7 +3946,8 @@ export async function inferProjectMetadataFromCustomerDocument(input: {
     system: buildProjectMetadataPrompt(),
     user: userPrompt,
     temperature: 0.1,
-    model: ANALYSIS_MODEL,
+    model: FAST_MODEL,
+    reasoningEffort: FAST_REASONING_EFFORT,
   });
 
   return {

@@ -19,6 +19,7 @@ import {
   listGeneratedArtifacts,
   listProjectDocuments,
   listServiceDocumentDetailsForProject,
+  listServiceDocumentSummariesForProject,
   saveCustomerAnalysis,
   saveGeneratedArtifact,
   saveSolutionEvaluation,
@@ -30,6 +31,7 @@ import type {
   ProjectDocumentDetail,
   ProjectJobRecord,
   ProjectJobResult,
+  ServiceDocument,
 } from "@/lib/types";
 
 type JobRunner = (helpers: { setProgress: (message: string) => void }) => Promise<ProjectJobResult>;
@@ -185,6 +187,68 @@ function getLatestSolutionDraft(
   );
 }
 
+function serviceDocumentLimitForArtifact(artifactType: GeneratedArtifactType) {
+  if (artifactType === "bilag1_rekonstruksjon") {
+    return 0;
+  }
+
+  if (artifactType === "forbedret_kravsvar") {
+    return 5;
+  }
+
+  return 3;
+}
+
+function tokenizeForRelevance(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .toLowerCase()
+        .replace(/[^a-z0-9æøå]+/gi, " ")
+        .split(/\s+/)
+        .filter((word) => word.length >= 4)
+        .slice(0, 80),
+    ),
+  );
+}
+
+function selectRelevantServiceDocumentIds(input: {
+  artifactType: GeneratedArtifactType;
+  projectName: string;
+  customerAnalysis: unknown;
+  instructions?: string;
+  serviceDocumentSummaries: ServiceDocument[];
+}) {
+  const limit = serviceDocumentLimitForArtifact(input.artifactType);
+  if (!limit) {
+    return [];
+  }
+
+  const queryTokens = tokenizeForRelevance(
+    [
+      input.artifactType,
+      input.projectName,
+      input.instructions ?? "",
+      JSON.stringify(input.customerAnalysis ?? {}),
+    ].join(" "),
+  );
+
+  return [...input.serviceDocumentSummaries]
+    .map((document, index) => {
+      const haystack = `${document.title} ${document.file_name} ${
+        document.ai_summary ?? ""
+      }`.toLowerCase();
+      const score = queryTokens.reduce(
+        (sum, token) => sum + (haystack.includes(token) ? 1 : 0),
+        0,
+      );
+      return { document, index, score };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, limit)
+    .map(({ document }) => document.id);
+}
+
 function selectProjectDocuments(documents: ProjectDocumentDetail[]) {
   const customerDocument =
     documents.find((document) => document.role === "primary_customer_document") ??
@@ -243,13 +307,13 @@ export async function queueArtifactGenerationJob(input: {
       customerAnalysis,
       documents,
       generatedArtifacts,
-      serviceDescriptionDocuments,
+      serviceDocumentSummaries,
     ] = await Promise.all([
       getProjectDetail(input.projectId),
       getCustomerAnalysis(input.projectId),
       listProjectDocuments(input.projectId),
       listGeneratedArtifacts(input.projectId),
-      listServiceDocumentDetailsForProject(input.projectId),
+      listServiceDocumentSummariesForProject(input.projectId),
     ]);
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
@@ -268,6 +332,20 @@ export async function queueArtifactGenerationJob(input: {
         "Bilag 1 kan ikke genereres fordi dokumentgrunnlaget mangler lesbar tekst.",
       );
     }
+    const serviceDescriptionDocuments =
+      input.artifactType === "bilag1_rekonstruksjon"
+        ? []
+        : serviceDocumentSummaries.length
+          ? await listServiceDocumentDetailsForProject(input.projectId, {
+              documentIds: selectRelevantServiceDocumentIds({
+                artifactType: input.artifactType,
+                projectName: project.name,
+                customerAnalysis,
+                instructions: input.instructions,
+                serviceDocumentSummaries,
+              }),
+            })
+          : await listServiceDocumentDetailsForProject(input.projectId);
 
     setProgress("Genererer nytt utkast med AI ...");
     const generated = await generateProjectArtifact({
@@ -279,6 +357,7 @@ export async function queueArtifactGenerationJob(input: {
       solutionDocument,
       serviceDescriptionDocument,
       serviceDescriptionDocuments,
+      serviceDocumentSummaries,
       supportingDocuments,
       requirementDocuments:
         input.artifactType === "forbedret_kravsvar" && selectedDocumentIds.size
@@ -409,13 +488,13 @@ export async function queuePerfectSystemSolutionJob(input: { projectId: string }
       customerAnalysis,
       documents,
       generatedArtifacts,
-      serviceDescriptionDocuments,
+      serviceDocumentSummaries,
     ] = await Promise.all([
       getProjectDetail(input.projectId),
       getCustomerAnalysis(input.projectId),
       listProjectDocuments(input.projectId),
       listGeneratedArtifacts(input.projectId),
-      listServiceDocumentDetailsForProject(input.projectId),
+      listServiceDocumentSummariesForProject(input.projectId),
     ]);
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
@@ -433,6 +512,17 @@ export async function queuePerfectSystemSolutionJob(input: { projectId: string }
     if (systemScore >= 100) {
       throw new Error("Systemløsningen har allerede 100/100 i vurderingen.");
     }
+    const serviceDescriptionDocuments = serviceDocumentSummaries.length
+      ? await listServiceDocumentDetailsForProject(input.projectId, {
+          documentIds: selectRelevantServiceDocumentIds({
+            artifactType: "losningsutkast",
+            projectName: project.name,
+            customerAnalysis,
+            instructions: "Forbedret systemløsning mot 100/100",
+            serviceDocumentSummaries,
+          }),
+        })
+      : await listServiceDocumentDetailsForProject(input.projectId);
 
     setProgress("Skriver forbedret systemløsning mot 100/100 ...");
     const generated = await generateProjectArtifact({
@@ -444,6 +534,7 @@ export async function queuePerfectSystemSolutionJob(input: { projectId: string }
       solutionDocument,
       serviceDescriptionDocument,
       serviceDescriptionDocuments,
+      serviceDocumentSummaries,
       supportingDocuments,
       knowledgeArtifacts: generatedArtifacts,
       instructions: [

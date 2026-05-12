@@ -164,6 +164,8 @@ interface ServiceDocumentRow {
   file_base64: string;
   raw_text: string;
   structure_map: Json;
+  ai_summary?: string | null;
+  ai_summary_updated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -176,6 +178,8 @@ interface ServiceDocumentSummaryRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  ai_summary?: string | null;
+  ai_summary_updated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -470,6 +474,9 @@ function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
     file_format: row.file_format as ServiceDocument["file_format"],
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
+    ai_summary:
+      typeof row.ai_summary === "string" ? decryptString(row.ai_summary) : "",
+    ai_summary_updated_at: row.ai_summary_updated_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -505,6 +512,9 @@ function decryptServiceDocumentRow(
     file_base64: decryptString(row.file_base64),
     raw_text: decryptString(row.raw_text),
     structure_map: decryptJson(row.structure_map, []),
+    ai_summary:
+      typeof row.ai_summary === "string" ? decryptString(row.ai_summary) : "",
+    ai_summary_updated_at: row.ai_summary_updated_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -1116,7 +1126,111 @@ export async function deleteServiceDescription(serviceId: string) {
 
 export async function listServiceDocumentDetailsForProject(
   projectId: string,
+  options?: {
+    limit?: number;
+    documentIds?: string[];
+  },
 ): Promise<ServiceDocumentDetail[]> {
+  const limit =
+    typeof options?.limit === "number" && Number.isFinite(options.limit)
+      ? Math.max(0, Math.floor(options.limit))
+      : undefined;
+
+  if (limit === 0) {
+    return [];
+  }
+
+  const supabase = createServiceClient();
+  const hasDocumentIdFilter = Array.isArray(options?.documentIds);
+  const documentIds = hasDocumentIdFilter
+    ? options.documentIds!.filter(Boolean)
+    : [];
+
+  if (hasDocumentIdFilter && !documentIds.length) {
+    return [];
+  }
+
+  if (documentIds.length) {
+    let query = supabase
+      .from("service_documents")
+      .select("*")
+      .in("id", documentIds)
+      .order("created_at", { ascending: false });
+
+    if (limit) {
+      query = query.limit(limit);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return ((data ?? []) as ServiceDocumentRow[]).map(decryptServiceDocumentRow);
+  }
+
+  const [{ data: fixedServices, error: fixedError }, { data: selections, error: selectionsError }] =
+    await Promise.all([
+      supabase
+        .from("service_descriptions")
+        .select("id")
+        .eq("inclusion_mode", "fixed"),
+      supabase
+        .from("project_service_selections")
+        .select("service_id")
+        .eq("project_id", projectId)
+        .eq("selected", true),
+    ]);
+
+  if (
+    isMissingRelationColumn(fixedError, "service_descriptions") ||
+    isMissingRelationColumn(selectionsError, "project_service_selections")
+  ) {
+    return [];
+  }
+  if (fixedError || selectionsError) {
+    throw new Error(
+      fixedError?.message ||
+        selectionsError?.message ||
+        "Kunne ikke hente valgte tjenester.",
+    );
+  }
+
+  const serviceIds = Array.from(
+    new Set([
+      ...((fixedServices ?? []) as Array<{ id: string }>).map((item) => item.id),
+      ...((selections ?? []) as Array<{ service_id: string }>).map(
+        (item) => item.service_id,
+      ),
+    ]),
+  );
+
+  if (!serviceIds.length) {
+    return [];
+  }
+
+  let query = supabase
+    .from("service_documents")
+    .select("*")
+    .in("service_id", serviceIds)
+    .order("created_at", { ascending: false });
+
+  if (limit) {
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as ServiceDocumentRow[]).map(decryptServiceDocumentRow);
+}
+
+export async function listServiceDocumentSummariesForProject(
+  projectId: string,
+): Promise<ServiceDocument[]> {
   const supabase = createServiceClient();
   const [{ data: fixedServices, error: fixedError }, { data: selections, error: selectionsError }] =
     await Promise.all([
@@ -1160,15 +1274,39 @@ export async function listServiceDocumentDetailsForProject(
 
   const { data, error } = await supabase
     .from("service_documents")
-    .select("*")
+    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, ai_summary, ai_summary_updated_at, created_at, updated_at")
     .in("service_id", serviceIds)
     .order("created_at", { ascending: false });
 
   if (error) {
+    if (isMissingRelationColumn(error, "ai_summary")) {
+      return [];
+    }
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as ServiceDocumentRow[]).map(decryptServiceDocumentRow);
+  return ((data ?? []) as ServiceDocumentSummaryRow[]).map(mapServiceDocument);
+}
+
+export async function updateServiceDocumentAiSummary(input: {
+  documentId: string;
+  aiSummary: string;
+}) {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("service_documents")
+    .update({
+      ai_summary: encryptString(input.aiSummary),
+      ai_summary_updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.documentId);
+
+  if (error && !isMissingRelationColumn(error, "ai_summary")) {
+    throw new Error(error.message);
+  }
+
+  revalidateServiceCaches();
 }
 
 export async function listProjectServiceDescriptions(

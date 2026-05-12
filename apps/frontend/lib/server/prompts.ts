@@ -5,9 +5,9 @@ export function buildPromptTemplate(input: {
   task: string[];
   rules: string[];
   outputContract: string[];
-  exampleOutput: string;
+  exampleOutput?: string;
 }) {
-  return [
+  const sections = [
     "### Role",
     input.role,
     "",
@@ -19,10 +19,18 @@ export function buildPromptTemplate(input: {
     "",
     "### Output contract",
     ...input.outputContract.map((rule) => `- ${rule}`),
-    "",
-    "### Example output",
-    input.exampleOutput,
-  ].join("\n");
+  ];
+
+  if (input.exampleOutput) {
+    sections.push(
+      "",
+      "### Schema shape",
+      "This is only a minimal shape example. Do not copy wording, domain, technologies, phase names, claims or structure unless the project evidence supports it.",
+      input.exampleOutput,
+    );
+  }
+
+  return sections.join("\n");
 }
 
 export function buildDelimitedContext(label: string, content: string) {
@@ -69,7 +77,7 @@ export function buildCustomerAnalysisPrompt() {
       "positioning_recommendations skal ligne en senior anbefaling til tilbudsteamet, ikke generiske råd.",
       "positioning_recommendations skal være konkrete og bruke språk som faktisk kan brukes i tilbudsarbeid, for eksempel anbefalt hovedvinkling, hva kunden bør selges inn på, hva man ikke bør overfokusere på, og en sterk formulering eller one-liner når det er relevant.",
       "positioning_recommendations skal prioritere trygghet, differensiering og handlingsvalg fremfor abstrakte beskrivelser.",
-      "positioning_recommendations skal alltid inneholde minst ett tydelig leveransepunkt som beskriver en strukturert faseplan for gjennomføring av løsningen i pragmatisk rekkefølge.",
+      "Hvis gjennomføring er en tydelig kjøpsdriver i kildene, kan positioning_recommendations inneholde et leveransegrep. Ikke press inn faseplan i strategi hvis andre posisjoneringsvalg er viktigere.",
       "executive_summary skal være tilbudsteamets operative konklusjon og ikke bare parafrasere customer_profile_summary eller customer_goals_summary.",
       "Hver value_opportunity må ha nøyaktig én gyldig value_category fra den faste listen.",
       "value_opportunities skal være maksimalt 4 punkter totalt.",
@@ -99,7 +107,7 @@ export function buildCustomerAnalysisPrompt() {
       "Ingen value_category kan gjentas i value_opportunities.",
       "risks_for_us og risks_for_customer skal begge være lister med konkrete tekstpunkter, men kan være tomme hvis dokumentgrunnlaget ikke støtter kategorien.",
     ],
-    exampleOutput: `{"customer_profile_summary":"Kunden er en stor og styringsorientert virksomhet med lav toleranse for driftsavbrudd, høye krav til sikkerhet og behov for tydelig kontroll i leveransen.","customer_goals_summary":"Kunden prøver å modernisere plattformen og redusere operasjonell risiko gjennom en trygg, standardisert og styrbar leveransemodell.","high_level_solution_design":"Anbefalt high-level design er en sikker og standardisert Azure-basert plattform med tydelig landing zone, sentral identitets- og tilgangsstyring, segmentert nettverk, felles logging og overvåking, og API-basert integrasjon mot kjernesystemer og eksterne fellestjenester som ID-porten. Løsningen bør etableres stegvis: først plattformgrunnlag og governance, deretter migrering av prioriterte tjenester, og til slutt målrettet modernisering av funksjoner der det gir tydelig verdi i drift, etterlevelse og brukeropplevelse.","high_level_architecture_mermaid":"flowchart LR\\n  User[Brukere] --> UI[Brukerflate]\\n  UI --> IAM[Identitet og tilgang]\\n  UI --> API[API- og integrasjonslag]\\n  IAM --> Platform[Azure plattformtjenester]\\n  API --> Apps[Applikasjoner og arbeidslaster]\\n  Apps --> Data[Data og lagring]\\n  Platform --> Security[Sikkerhet, logging og overvåking]\\n  Security --> Ops[Drift og hendelseshåndtering]","customer_profile":["Stor virksomhet med krav til sikkerhet og styring"],"customer_goals":["Modernisere plattform og redusere operasjonell risiko"],"implicit_requirements":[{"title":"Sterk overgangskontroll","description":"Kunden forventer en kontrollert overgang med tydelig ansvar og risikohåndtering.","category":"Gjennomføring","importance":"Viktig","kind":"Implisitt","source_reference":"Kundedokument – kapittel 2","source_excerpt":"Kunden beskriver høy kompleksitet og liten toleranse for driftsavbrudd."}],"prioritized_requirements":[{"requirement":"Kontrollert overgang og risikostyring","priority":"Kritisk","reason":"Dette virker avgjørende for å bygge tillit og redusere kundens opplevde risiko."}],"ambiguities":["Uklart om kunden forventer dedikert eller standardisert leveransemodell."],"risks":["Manglende overgangsplan kan gi lav tillit hos kunden.","Uklare avklaringer kan gi feil tilbudsforutsetninger."],"risks_for_us":["Uklare avklaringer kan gi feil tilbudsforutsetninger og svakere presisjon i gjennomføringsplanen."],"risks_for_customer":["Manglende overgangsplan kan gi lav tillit hos kunden og økt bekymring for driftsavbrudd."],"likely_evaluation_criteria":["Sikkerhet","Gjennomføringsevne","Troverdighet"],"signal_words":["Azure","GDPR","Noark 5","ID-porten"],"expected_solution_direction":["Standardisert, sikker og styrt skyplattform med tydelig forvaltningsmodell"],"value_opportunities":[{"title":"Redusere operasjonell risiko","description":"Vis hvordan leverandøren reduserer overgangs- og driftsrisiko gjennom standardiserte kontroller, fordi kundens lave toleranse for nedetid gjør stabilitet og kontroll til den viktigste forretningsverdien.","value_categories":["Redusert risiko"],"profit_share_percent":100}],"positioning_recommendations":["Anbefalt hovedvinkling: selg dette som trygg og stegvis modernisering, ikke som en stor teknologireise.","Kunden bør møte et budskap om sikker plattformetablering først, deretter kontrollert migrering og målrettet modernisering i riktig rekkefølge.","Unngå å overfokusere på bred innovasjon eller sky som mål i seg selv; vektlegg lavere risiko, styring, driftsevne og kostnadskontroll.","En brukbar one-liner i tilbudet kan være: Vi anbefaler en stegvis etablering av en sikker og standardisert skyplattform som reduserer operasjonell risiko umiddelbart og legger grunnlaget for videre modernisering."],"executive_summary":"Tilbudsteamet bør posisjonere seg som den trygge leverandøren som kombinerer kontrollert modernisering, tydelig styringsmodell og lav implementeringsrisiko."}`,
+    exampleOutput: `{"customer_profile_summary":"<tekstnær oppsummering>","customer_goals_summary":"<mål og ønsket effekt>","high_level_solution_design":"<anbefalt retning basert på kildene>","high_level_architecture_mermaid":"flowchart LR\\n  A[Domene] --> B[Domene]","customer_profile":["<kundesignal>"],"customer_goals":["<mål>"],"implicit_requirements":[{"title":"<underliggende behov>","description":"<tolkning med kontrast>","category":"<kategori>","importance":"Viktig","kind":"Implisitt","source_reference":"<kilde>","source_excerpt":"<kort utdrag>"}],"prioritized_requirements":[{"requirement":"<prioritert krav/behov>","priority":"Kritisk","reason":"<hvorfor>"}],"ambiguities":["<avklaring>"],"risks":["<samlet risiko>"],"risks_for_us":["<tilbuds-/leveranserisiko>"],"risks_for_customer":["<kunderisiko>"],"likely_evaluation_criteria":["<kriterium>"],"signal_words":["<navngitt signal>"],"expected_solution_direction":["<retning>"],"value_opportunities":[{"title":"<verdi>","description":"<hvordan verdi skapes>","value_categories":["Redusert risiko"],"profit_share_percent":100}],"positioning_recommendations":["<konkret anbefaling>"],"executive_summary":"<operativ konklusjon>"}`,
   });
 }
 
@@ -128,7 +136,7 @@ export function buildHighLevelDesignPrompt() {
       "high_level_solution_design skal være markdown-kompatibel tekst, men uten ekstra JSON-felter eller sideinformasjon.",
       "high_level_architecture_mermaid skal være ren Mermaid-kode som starter med flowchart eller graph.",
     ],
-    exampleOutput: `{"high_level_solution_design":"Plattformen bør etableres som en styrt Azure-basert målarkitektur med tydelig landing zone, sentral identitets- og tilgangsstyring, segmentert nettverk, standardiserte applikasjonsmiljøer, felles logging og overvåking, samt et integrasjonslag som håndterer koblingen mellom kjernesystemer og fellestjenester. Gjennomføringen bør skje stegvis: først plattformgrunnlag og governance, deretter migrering av prioriterte tjenester, og til slutt målrettet modernisering der det gir tydelig verdi i drift, sikkerhet og endringsevne.","high_level_architecture_mermaid":"flowchart LR\\n  subgraph Business[Brukerflate og virksomhet]\\n    Users[Brukere]\\n    Apps[ERP / WMS / CRM]\\n  end\\n  subgraph Identity[Identitet og tilgang]\\n    Entra[Microsoft Entra ID]\\n    IAM[RBAC og MFA]\\n  end\\n  subgraph Platform[Skyplattform]\\n    Landing[Azure Landing Zone]\\n    Network[Segmentert nettverk]\\n    Env[Dev / Test / Prod]\\n  end\\n  subgraph Data[Data og integrasjoner]\\n    API[API- og integrasjonslag]\\n    DataStore[Data- og lagringstjenester]\\n  end\\n  subgraph Ops[Sikkerhet og drift]\\n    Log[Logging og sporbarhet]\\n    Monitor[Overvåking og hendelser]\\n    Backup[Backup og gjenoppretting]\\n  end\\n  Users --> Apps\\n  Apps --> API\\n  Entra --> IAM\\n  IAM --> Landing\\n  Landing --> Network\\n  Landing --> Env\\n  API --> DataStore\\n  Landing --> Log\\n  Log --> Monitor\\n  DataStore --> Backup"}`,
+    exampleOutput: `{"high_level_solution_design":"<prosjektspesifikk arkitekturanbefaling>","high_level_architecture_mermaid":"flowchart LR\\n  A[Relevant domene] --> B[Relevant domene]"}`,
   });
 }
 
@@ -171,7 +179,7 @@ export function buildSolutionEvaluationPrompt() {
       "rewrite_suggestions skal være objekter med target og suggestion.",
       "architecture_comparison skal være et objekt med winner, architect_solution_score, system_solution_score, verdict, strong_critique, pragmatic_reflections og strategy_improvement_advice.",
     ],
-    exampleOutput: `{"fit_to_customer_needs":"Arkitektløsningen svarer delvis på målarkitekturen, men er svakere enn systemløsningen på overgang, styring og risikoreduserende rekkefølge.","strengths":["Har en tydelig teknisk retning for Azure-plattformen","Beskriver enkelte sikkerhetskontroller konkret"],"weaknesses":["Mangler konkret overgangsmodell og beslutningspunkter","Kobler arkitekturvalg for svakt til kundens evalueringskriterier"],"generic_sections":["Innledningen bruker leveranseevne-formuleringer uten kundespesifikk konsekvens"],"missing_elements":["Konkret modell for ansvar, cutover og tilbakeføring"],"risks_to_customer":["Kunden kan oppleve at leverandøren undervurderer overgangsrisikoen"],"trust_signals":["Teknologivalgene er relevante og gjenkjennelige"],"likely_score_assessment":{"quality":"Middels","delivery_confidence":"Middels til svak","risk":"For høy uten bedre overgangsplan","competitiveness":"Svakere enn systemstrategien slik den står"},"improvement_recommendations":["Bruk systemløsningens faseplan som ryggrad og flytt arkitektløsningens tekniske valg inn i riktig rekkefølge."],"value_assessment":[{"title":"Lavere overgangsrisiko","description":"Verdien øker hvis arkitektløsningen konkretiserer overgang, kontrollpunkter og tilbakeføring.","value_categories":["Redusert risiko"],"profit_share_percent":55}],"rewrite_suggestions":[{"target":"Gjennomføringskapittel","suggestion":"Skriv om kapitlet som fire faser med beslutningspunkt, ansvar, test og exit-kriterier."}],"architecture_comparison":{"winner":"Systemløsning","architect_solution_score":62,"system_solution_score":78,"verdict":"Systemløsningen er sterkere fordi den binder arkitektur, strategi og overgangsrisiko bedre sammen. Arkitektløsningen har tekniske byggesteiner, men mangler nok kommersiell og operasjonell presisjon til å være beste tilbudsgrunnlag alene.","strong_critique":["Arkitektløsningen beskriver hva som bør bygges, men ikke godt nok hvordan kunden trygt kommer dit.","Den undervurderer hvor mye poeng som kan tapes på uklar overgang, ansvar og driftskontinuitet."],"pragmatic_reflections":["Den beste løsningen er trolig en hybrid: behold systemets strategiske rekkefølge og bruk arkitektløsningen som teknisk konkretisering der den er presis.","Teknisk riktighet er mindre verdt i tilbudet hvis kunden ikke ser lav gjennomføringsrisiko."],"strategy_improvement_advice":["Spiss strategien rundt trygg overgang først, deretter modernisering.","Legg inn eksplisitte beslutningspunkter, risiko-eiere og bevis for gjennomføringsevne."]},"executive_summary":"Arkitektløsningen er nyttig som teknisk råmateriale, men systemløsningen er foreløpig bedre som vinnende tilbudsstrategi."}`,
+    exampleOutput: `{"fit_to_customer_needs":"<vurdering>","strengths":["<styrke>"],"weaknesses":["<svakhet>"],"generic_sections":["<for generisk del>"],"missing_elements":["<mangel>"],"risks_to_customer":["<risiko>"],"trust_signals":["<tillitssignal>"],"likely_score_assessment":{"quality":"<kort vurdering>","delivery_confidence":"<kort vurdering>","risk":"<kort vurdering>","competitiveness":"<kort vurdering>"},"improvement_recommendations":["<forbedring>"],"value_assessment":[{"title":"<verdi>","description":"<forklaring>","value_categories":["Redusert risiko"],"profit_share_percent":50}],"rewrite_suggestions":[{"target":"<del>","suggestion":"<råd>"}],"architecture_comparison":{"winner":"Uavgjort","architect_solution_score":50,"system_solution_score":50,"verdict":"<begrunnelse>","strong_critique":["<kritikk>"],"pragmatic_reflections":["<tradeoff>"],"strategy_improvement_advice":["<råd>"]},"executive_summary":"<konklusjon>"}`,
   });
 }
 
@@ -198,7 +206,7 @@ export function buildExecutiveSummaryPrompt() {
       "likely_score_assessment skal være et objekt med quality, delivery_confidence, risk og competitiveness.",
       "strengths og weaknesses skal være arrays med korte tekstpunkter.",
     ],
-    exampleOutput: `{"source_solution_evaluation_present":true,"executive_summary":"Systemløsningen bør brukes som hovedretning fordi den gir tydeligere styring, lavere overgangsrisiko og bedre kobling til kundens faktiske behov.","fit_to_customer_needs":"Løsningen treffer kundens behov godt når målarkitektur, migreringsrekkefølge og driftsmodell ses samlet. Arkitektløsningen bør brukes som teknisk underlag, men er ikke alene sterk nok som tilbudsstrategi.","likely_score_assessment":{"quality":"God, men må konkretiseres i tilbudsteksten.","delivery_confidence":"Sterkest når faseplan og ansvar beskrives tydelig.","risk":"Akseptabel dersom overgang, test og rollback låses i planen.","competitiveness":"Sterk når systemløsningen brukes som hovedhistorie."},"strengths":["Tydelig strategisk retning","God kobling mellom behov, risiko og gjennomføring"],"weaknesses":["Arkitektløsningen er for lite operasjonell alene","Ansvar og overgang må beskrives konkret"]}`,
+    exampleOutput: `{"source_solution_evaluation_present":true,"executive_summary":"<lederkonklusjon>","fit_to_customer_needs":"<kort fit-vurdering>","likely_score_assessment":{"quality":"<vurdering>","delivery_confidence":"<vurdering>","risk":"<vurdering>","competitiveness":"<vurdering>"},"strengths":["<styrke>"],"weaknesses":["<svakhet>"]}`,
   });
 }
 
@@ -227,7 +235,7 @@ export function buildSyntheticSolutionEvaluationPrompt() {
       "likely_score_assessment skal være et objekt med quality, delivery_confidence, risk og competitiveness.",
       "Alle value_assessment.value_categories skal alltid være en array med nøyaktig ett element fra: Høyere produktivitet, Lavere kostnader, Redusert risiko, Bedre brukeropplevelse.",
     ],
-    exampleOutput: `{"synthetic_solution":{"title":"Intern løsningsbeskrivelse","content_markdown":"## Foreslått løsning\\n\\nVi anbefaler ..."},"evaluation":{"fit_to_customer_needs":"Beskrivelsen dekker hovedbehovene, men er fortsatt svak på overgang og styringsmodell.","strengths":["Tydelig retning for målarkitektur"],"weaknesses":["For lite konkret om gjennomføring"],"generic_sections":["Avsnittet om leveranseevne er fortsatt for generisk"],"missing_elements":["Konkret overgangsmodell"],"risks_to_customer":["Kunden kan oppleve usikkerhet rundt ansvar og styring"],"trust_signals":["Teknisk retning er troverdig"],"likely_score_assessment":{"quality":"Middels","delivery_confidence":"Middels","risk":"Middels","competitiveness":"Middels"},"improvement_recommendations":["Beskriv styringsmodell og overgang tydeligere."],"value_assessment":[{"title":"Lavere risiko i overgang","description":"Løsningen kan skape verdi hvis overgangsmodellen konkretiseres bedre.","value_categories":["Redusert risiko"]}],"rewrite_suggestions":[{"target":"Gjennomføringskapittel","suggestion":"Legg inn faseinndeling, ansvar og kontrollpunkter."}],"executive_summary":"Dette er en brukbar førsteversjon, men den må konkretiseres betydelig før den er konkurransedyktig."}}`,
+    exampleOutput: `{"synthetic_solution":{"title":"<tittel>","content_markdown":"## <relevant seksjon>\\n\\n<prosjektspesifikk tekst>"},"evaluation":{"fit_to_customer_needs":"<vurdering>","strengths":["<styrke>"],"weaknesses":["<svakhet>"],"generic_sections":["<generisk del>"],"missing_elements":["<mangel>"],"risks_to_customer":["<risiko>"],"trust_signals":["<signal>"],"likely_score_assessment":{"quality":"<vurdering>","delivery_confidence":"<vurdering>","risk":"<vurdering>","competitiveness":"<vurdering>"},"improvement_recommendations":["<forbedring>"],"value_assessment":[{"title":"<verdi>","description":"<forklaring>","value_categories":["Redusert risiko"]}],"rewrite_suggestions":[{"target":"<del>","suggestion":"<råd>"}],"executive_summary":"<konklusjon>"}}`,
   });
 }
 
@@ -255,8 +263,8 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Returner kun gyldig JSON.",
         "Ikke finn opp kundebehov, krav, smertepunkter, frister, budsjetter, systemnavn eller kontraktsforpliktelser som ikke støttes av kildene.",
         "Skill tydelig mellom bekreftet informasjon, rimelige tolkninger og åpne avklaringer.",
-        "Prioriter kundens egne dokumenter høyest. Bruk tjenestebeskrivelser og tidligere arbeidstekster bare som støtte for forståelse, ikke som kilder til kundens behov.",
-        "Ikke bruk tjenestebeskrivelsen til å legge inn leverandørens løsninger eller salgsargumenter i Bilag 1. Bilag 1 skal beskrive kundens behov og problem, ikke Ateas tilbud.",
+        "Prioriter kundens egne dokumenter høyest. Ikke bruk tjenestebeskrivelser eller leverandørens tjenestekatalog i Bilag 1-genereringen.",
+        "Bilag 1 skal beskrive kundens behov og problem, ikke leverandørens løsning, tjenestekatalog eller salgsargumenter.",
         "Hvis Bilag 1 allerede finnes i grunnlaget, forbedre og strukturér det med støtte fra øvrige dokumenter. Hvis Bilag 1 mangler eller er svakt, rekonstruer det fra de andre kundedokumentene.",
         "Hvis flere dokumenter motsier hverandre, bruk den nyeste eller mest kontraktsnære kilden og legg motstriden inn som åpen avklaring.",
         "Bruk kundens egne begreper, organisasjonsnavn, systemnavn, kravområder og målformuleringer når de finnes.",
@@ -265,7 +273,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Hver sentrale påstand skal ha en enkel kildeindikasjon i teksten, for eksempel '(Kilde: Bilag 2, drift og forvaltning)' eller '(Kilde: konkurransegrunnlag, side 4)' når kilden kan utledes.",
         "Når kildegrunnlaget er uklart, skriv det som et avklaringspunkt i stedet for å formulere det som fakta.",
         "Ikke fyll seksjoner med generiske standardtekster. Hvis kildene ikke gir nok grunnlag for en seksjon, skriv kort hva som er kjent og flytt usikkerheten til åpne avklaringer.",
-        "content_markdown skal bruke nøyaktig disse H2-seksjonene i denne rekkefølgen: ## 1. Kundesituasjon, ## 2. Smertepunkter og drivere, ## 3. Ønsket effekt, ## 4. Etterspurt leveranse, ## 5. Viktige krav og rammer, ## 6. Forutsetninger og avgrensninger, ## 7. Åpne avklaringer, ## 8. Sporbarhet og konfidens.",
+        "Velg en ryddig Bilag 1-struktur som følger kundens dokumentlogikk. Bruk normalt seksjoner for kundesituasjon, drivere, ønsket effekt, etterspurt leveranse, krav/rammer, forutsetninger, åpne avklaringer og sporbarhet, men slå sammen, omdøp eller omprioriter seksjoner når kildene tilsier det.",
         "I seksjonen 'Viktige krav og rammer' skal krav-ID-er, evalueringskriterier, frister, roller, avhengigheter og kontraktsrammer bevares når de finnes i kildene.",
         "Seksjonen 'Sporbarhet og konfidens' skal oppsummere 5 til 10 sentrale utsagn i en markdown-tabell med kolonnene Utsagn, Kildegrunnlag og Konfidens. Konfidens skal være Høy, Middels eller Lav.",
         "Seksjonen 'Åpne avklaringer' skal være en punktliste med konkrete spørsmål til kunden eller tilbudsteamet.",
@@ -275,7 +283,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "title skal være en kort tittel for det rekonstruerte Bilag 1.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"Rekonstruert Bilag 1 - kundebehov","content_markdown":"## 1. Kundesituasjon\\n\\nKunden har ... (Kilde: Bilag 2, kapittel 2)\\n\\n## 2. Smertepunkter og drivere\\n\\n- ...\\n\\n## 3. Ønsket effekt\\n\\n...\\n\\n## 4. Etterspurt leveranse\\n\\n...\\n\\n## 5. Viktige krav og rammer\\n\\n...\\n\\n## 6. Forutsetninger og avgrensninger\\n\\n...\\n\\n## 7. Åpne avklaringer\\n\\n- Kunden bør bekrefte ...\\n\\n## 8. Sporbarhet og konfidens\\n\\n| Utsagn | Kildegrunnlag | Konfidens |\\n|---|---|---|\\n| Kunden trenger kontrollert overgang. | Bilag 2, overgang og drift | Høy |"}`,
+      exampleOutput: `{"title":"<tittel>","content_markdown":"## <seksjon valgt fra kildene>\\n\\n<tekst med kildeindikasjon>\\n\\n## Sporbarhet og konfidens\\n\\n| Utsagn | Kildegrunnlag | Konfidens |\\n|---|---|---|\\n| <utsagn> | <kilde> | Høy |"}`,
     });
   }
 
@@ -306,11 +314,11 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Hvis en ID-rad, overskrift eller tekstblokk bare introduserer en tabellseksjon eller kravgruppe, skal den ikke besvares som ett samlet fritekstkrav. Besvar i stedet hver selvstendige tabellrad, punktliste eller delkrav separat og utelat container-raden.",
         "Ikke overtilpass tolkningen til ett bestemt kravdokument. Bruk generelle signaler som krav-ID, skal/må/bør-formuleringer, tabelloverskrifter, radnavn, delkrav, sidetall og nærmeste overskrift for å finne krav i både enkle og komplekse dokumenter.",
         "Ikke bruk kildegrunnlag til å liste analysegrunnlag, løsningsbeskrivelse eller tjenestebeskrivelse. Kildegrunnlag skal peke på kravets plassering, ikke på hva svaret bygger på.",
-        "Svar skal skrives på vegne av Atea. Ikke bruk 'jeg', 'vi', 'vår' eller 'våre' i svarteksten; bruk 'Atea', 'Ateas' eller nøytral formulering.",
+        "Svar skal skrives på vegne av leverandøren. Bruk leverandørnavnet når det er kjent i prosjektgrunnlaget; ellers bruk nøytrale formuleringer som 'leverandøren'. Ikke bruk 'jeg', 'vi', 'vår' eller 'våre' i svarteksten.",
         "Svarene skal være relevante, ensartede i stil og ha samme detaljnivå på tvers av krav med tilsvarende kompleksitet.",
         "Svar kortere og mer konkret enn vanlig tilbudstekst. Unngå overflødige innledninger, gjentakelser og brede beskrivelser hvis kravet kan besvares presist.",
         "Bruk standardlengde på 1-2 setninger per krav. Bruk 3 setninger bare når kravet har flere tydelige delkrav, avhengigheter eller forbehold som må presiseres.",
-        "For enkle krav, skriv direkte handlingssvar: hva Atea gjør, hvordan det kontrolleres eller dokumenteres, og eventuelt når det skjer. Ikke legg til bakgrunn, motivasjon eller generelle kvalitetsutsagn.",
+        "For enkle krav, skriv direkte handlingssvar: hva leverandøren gjør, hvordan det kontrolleres eller dokumenteres, og eventuelt når det skjer. Ikke legg til bakgrunn, motivasjon eller generelle kvalitetsutsagn.",
         "For tabellkrav skal svaret være ekstra kompakt og egnet for leverandørens svarfelt: normalt én presis setning, eventuelt to korte setninger ved behov.",
         "Ikke gjenta hele kravteksten i svaret. Svar på kravet, ikke parafraser det.",
         "Match tonen og lengden i kravdokumentet. Er kravskjemaet kort og tabellarisk, skal svarene være korte, konkrete og tabellvennlige.",
@@ -332,7 +340,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Returner ett JSON-objekt med nøklene title og content_markdown.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"Kravbesvarelse","content_markdown":"## Status\\n\\n12 krav er identifisert og besvart i samme rekkefølge som kravdokumentet.\\n\\n## Kravbesvarelse\\n\\n| Kravref. | Krav | Svar | Kildegrunnlag |\\n|---|---|---|---|\\n| K-01 | Leverandøren skal etablere overvåking. | Atea etablerer overvåking med avtalte terskler, varsling og hendelseshåndtering for prioriterte tjenester. Status rapporteres i avtalt driftsforum. | Side 4, Driftstjenester, krav K-01 |"}`,
+      exampleOutput: `{"title":"<tittel>","content_markdown":"## Status\\n\\n<n> krav er identifisert og besvart.\\n\\n## Kravbesvarelse\\n\\n| Kravref. | Krav | Svar | Kildegrunnlag |\\n|---|---|---|---|\\n| <ref> | <kravtekst> | <konkret, kildebasert svar> | <plassering i kravdokument> |"}`,
     });
   }
 
@@ -354,7 +362,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Bruk samme språk, begreper og tone som kunden bruker i kundedokumentet. Hvis kunden skriver formelt og kravorientert, skriv formelt og kravorientert. Hvis kunden bruker bestemte systemnavn, prosesser eller målformuleringer, bruk dem presist.",
         "Vær konkret om leveranseinnhold, avgrensning, viktigste aktiviteter, kundens bidrag, overlevering og hva kunden sitter igjen med.",
         "Hvis løsningsvurderingen peker på svakheter, mangler, risiko eller forbedringsforslag, skal disse lukkes direkte i teksten.",
-        "content_markdown skal bruke nøyaktig disse undertitlene, i denne rekkefølgen, og ingen andre H2-undertitler: ## Leveranse til kunden, ## Hva som inngår, ## Gjennomføring og overlevering, ## Forutsetninger.",
+        "Velg undertitler som passer prosjektets tilbudslogikk. Bruk gjerne leveranse, innhold, gjennomføring, avgrensning og forutsetninger når det er naturlig, men ikke tving denne strukturen hvis en annen rekkefølge gir en mer presis løsning.",
         "Seksjonen 'Hva som inngår' skal være en punktliste med 4 til 7 konkrete leveranser. Hvert punkt skal beskrive hva som leveres og hvorfor det er relevant for denne kunden.",
         "Seksjonen 'Gjennomføring og overlevering' skal være kort og praktisk, ikke en full prosjektplan.",
         "Seksjonen 'Forutsetninger' skal bare ta med reelle avhengigheter eller kundebidrag som følger av kildene.",
@@ -365,34 +373,35 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Returner ett JSON-objekt med nøklene title og content_markdown.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"Løsningsutkast - konkret leveranse","content_markdown":"## Leveranse til kunden\\n\\nAtea leverer en kundetilpasset sky- og driftsløsning som etablerer et styrt grunnlag for sikker drift, kontrollert overgang og videre modernisering av kundens prioriterte tjenester. Leveransen er avgrenset til de delene som direkte støtter kundens dokumenterte behov for redusert risiko, tydelig ansvar og forutsigbar forvaltning.\\n\\n## Hva som inngår\\n\\n- Etablert målarkitektur for identitet, nettverk, applikasjoner, data, integrasjoner og drift, tilpasset kundens eksisterende systemlandskap og krav til styring.\\n- Plan for overgang og første leveransebølge, med prioritering av tjenester etter risiko, avhengigheter og kundeverdi.\\n- Konfigurerte sikkerhets- og tilgangsprinsipper, inkludert roller, kontrollpunkter og dokumenterte beslutninger for produksjonssetting.\\n- Overvåking, hendelseshåndtering og operativ oppfølging for de tjenesteområdene som er relevante for kundens driftsbehov.\\n- Dokumentert test, akseptanse og overlevering slik at kunden kan godkjenne leveransen før videre utrulling.\\n\\n## Gjennomføring og overlevering\\n\\nLeveransen gjennomføres stegvis med avklaring, etablering, pilot og kontrollert innføring. Hver fase avsluttes med en tydelig beslutning om videreføring, og kunden får overlevert dokumentasjon, akseptansekriterier og anbefalt videre plan.\\n\\n## Forutsetninger\\n\\nKunden må bidra med tilgang til relevant dokumentasjon, beslutningstakere, tekniske avklaringer og godkjenning av prioritering, testkriterier og produksjonssetting."}`,
+      exampleOutput: `{"title":"<kort løsningsutkast>","content_markdown":"## <prosjektspesifikk undertittel>\\n\\n<konkret leveransetekst basert på kildene>\\n\\n- <relevant leveranse eller aktivitet>\\n- <relevant avgrensning eller forutsetning>"}`,
     });
   }
 
   if (artifactType === "gjennomforing_og_risiko") {
     return buildPromptTemplate({
-      role: "Du er en senior skyarkitekt og leveranseleder som skriver en konkret fremdriftsplan for hva teamet bør gjøre etter kundeanalysen.",
+      role: "Du er en senior leveransearkitekt og tilbudsleder som lager prosjektspesifikke gjennomføringsplaner uten standardmaler.",
       task: [
-        "Generer en pragmatisk fremdriftsplan for hva neste steg bør være etter kundeanalysen.",
-        "Skriv for et team som skal etablere landing zone, styre migreringer, håndtere avhengigheter og ta kontroll på risiko i overgangsfasen.",
-        "Gi et tilbudsteam og et skyarkitekt-team en faseplan de kan bruke til å gå fra innsikt til neste praktiske arbeid.",
+        "Generer en pragmatisk fremdriftsplan for dette konkrete prosjektet, basert på kundens dokumenterte mål, krav, risiko, avhengigheter, evalueringskriterier og leveranseobjekt.",
+        "Planen skal hjelpe tilbudsteamet å velge riktig gjennomføringshistorie, ikke fylle ut en generell prosjektmodell.",
+        "Velg faseinndeling, rekkefølge og innhold ut fra prosjektgrunnlaget. Antall faser skal være fleksibelt.",
       ],
       rules: [
         "Returner kun gyldig JSON.",
-        "Ikke skriv generisk konsulentspråk eller diffuse ambisjoner.",
-        "Vær realistisk om kundens begrensede kapasitet, avhengigheter, driftsvinduer, styringsbehov og overgangsrisiko.",
-        "Vær konkret om rekkefølge, leveranser, ansvar og hva som må være på plass før neste fase.",
-        "content_markdown skal kun inneholde fase-undertitler. Ikke legg inn innledning, gjennomføringslogikk, egne risikoseksjoner, beslutningspunktseksjoner eller oppsummering.",
-        "content_markdown skal bruke nøyaktig disse undertitlene, i denne rekkefølgen, og ingen andre undertitler: ## Fase 1: Avklar neste beslutning, ## Fase 2: Konkretiser løsningsretning, ## Fase 3: Planlegg første leveransebølge, ## Fase 4: Klargjør tilbuds- og leveransegrunnlag.",
-        "Hver fase skal starte med et kort avsnitt og deretter ha 3 til 5 presise punkter som beskriver hva teamet faktisk gjør.",
-        "Planen skal være håndholdende for et skyarkitekt-team og gjøre det lett å se hva som skjer først, hva som avhenger av hva, og hva som bør tas videre etter kundeanalysen.",
+        "Ikke bruk standard sky-, migrerings-, landing-zone- eller moderniseringsfaser med mindre kildene faktisk gjør dette relevant.",
+        "Ikke kopier eksempeltekst, tidligere artefakter eller tjenestebeskrivelser. Tjenestebeskrivelser kan bare brukes når de konkret støtter kundens dokumenterte behov.",
+        "Lag 3 til 6 faser. Fasenavnene skal være spesifikke for prosjektet og beskrive faktisk arbeid, ikke generiske overskrifter som 'Avklar neste beslutning' eller 'Konkretiser løsningsretning'.",
+        "Hver fase skal starte med et kort avsnitt som forklarer hvorfor fasen finnes i akkurat dette prosjektet.",
+        "Hver fase skal ha 3 til 5 presise punkter. Minst to punkter per fase skal nevne et konkret krav, system, mål, risiko, avhengighet, dokumentert leveranse eller kundebidrag fra prosjektgrunnlaget.",
+        "Vær eksplisitt om rekkefølge, leveranser, ansvar, kundens bidrag, beslutningspunkter, bevis/akseptansekriterier og hva som må være sant før neste fase.",
+        "Hvis grunnlaget er for tynt for en sikker anbefaling, skriv en fase for målrettet avklaring med konkrete spørsmål. Ikke fyll tomrommet med generisk metode.",
+        "content_markdown skal kun inneholde fase-undertitler på formatet ## Fase N: Prosjektspesifikk fasetittel. Ikke legg inn innledning, oppsummering eller egne seksjoner utenfor fasene.",
         "Bruk profesjonell markdown med ryddige avsnitt og punktlister som passer som intern arbeidstekst.",
       ],
       outputContract: [
         "Returner ett JSON-objekt med nøklene title og content_markdown.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"Fremdriftsplan etter kundeanalyse","content_markdown":"## Fase 1: Avklar neste beslutning\\n\\nFørste steg er å gjøre kundeanalysen beslutningsklar og avklare hva tilbudsteamet må låse før løsningsarbeidet går videre.\\n\\n- bekrefte kundens viktigste beslutningsdriver og hvor risiko må reduseres først\\n- avklare hvilke krav som må besvares med konkret faseplan, ansvar og bevis\\n- identifisere åpne spørsmål som må avklares med kunden eller internt før løsningsteksten ferdigstilles\\n\\n## Fase 2: Konkretiser løsningsretning\\n\\nNeste fase oversetter innsikten til en tydelig løsningsretning som kan brukes i tilbud og arkitekturarbeid.\\n\\n- formulere anbefalt målarkitektur og de viktigste plattformgrepene\\n- koble løsningens hovedvalg til kundens mål, risiko og evalueringskriterier\\n- definere hvilke deler som må beskrives mer konkret for å styrke tillit og gjennomføringsevne\\n\\n## Fase 3: Planlegg første leveransebølge\\n\\nDenne fasen gjør planen operativ ved å beskrive hva som bør leveres først og hvorfor.\\n\\n- velge første leveransebølge basert på risiko, avhengigheter og kundeverdi\\n- beskrive hva teamet må etablere før første leveranse kan starte\\n- tydeliggjøre ansvar, kundebidrag og akseptansekriterier for første bølge\\n\\n## Fase 4: Klargjør tilbuds- og leveransegrunnlag\\n\\nSiste fase gjør materialet klart for videre tilbudsarbeid og praktisk oppfølging.\\n\\n- oppdatere løsningsbeskrivelsen med faseplanen og kundespesifikke bevis\\n- sikre at fremdriftsplanen henger sammen med risiko, verdi og evalueringskriterier\\n- avklare hvilke beslutninger som skal følges opp før endelig tilbud eller oppstart"}`,
+      exampleOutput: `{"title":"<prosjektspesifikk fremdriftsplan>","content_markdown":"## Fase 1: <fasetittel fra prosjektlogikken>\\n\\n<hvorfor fasen finnes i dette prosjektet>\\n\\n- <konkret aktivitet eller beslutning>\\n- <kundebidrag, avhengighet eller akseptkriterium>"}`,
     });
   }
 
@@ -415,7 +424,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
       "Returner ett JSON-objekt med nøklene title og content_markdown.",
       "content_markdown skal være ferdig tekst i markdown-format.",
     ],
-    exampleOutput: `{"title":"Anbefalt løsningsretning for kunden","content_markdown":"## Anbefalt retning\\n\\nLeverandøren bør ... "}`,
+    exampleOutput: `{"title":"<tittel>","content_markdown":"## <relevant seksjon>\\n\\n<prosjektspesifikk tekst>"}`,
   });
 }
 
@@ -439,7 +448,7 @@ export function buildChatPrompt() {
       "Returner ren tekst i markdown-format.",
       "Ikke returner JSON.",
     ],
-    exampleOutput: `Kunden virker å vektlegge trygg gjennomføring høyere enn teknologisk nyhetsverdi. Det betyr at dere bør styrke beskrivelsen av overgang, ansvar og risikoreduserende tiltak før tilbudet kan fremstå som vinnende.`,
+    exampleOutput: `<kort, prosjektspesifikt svar i markdown>`,
   });
 }
 
@@ -465,6 +474,6 @@ export function buildProjectMetadataPrompt() {
       "Bruk null når informasjonen ikke kan bestemmes trygt.",
     ],
     exampleOutput:
-      '{"name":"Modernisering av kommunal skyplattform","customer_name":"Fjordvik kommune","industry":"Offentlig sektor","description":"Konkurranse om drift, sikkerhetsforvaltning og videreutvikling av Azure-plattform."}',
+      '{"name":"<prosjektnavn eller null>","customer_name":"<kundenavn eller null>","industry":"<domene eller null>","description":"<kort dokumentbasert beskrivelse eller null>"}',
   });
 }

@@ -108,6 +108,8 @@ export interface ServiceDocument {
   file_format: DocumentFileFormat;
   content_type: string;
   file_size_bytes: number;
+  ai_summary?: string;
+  ai_summary_updated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
