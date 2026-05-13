@@ -90,6 +90,7 @@ interface DocumentSummaryRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  file_base64?: string;
   structure_map?: Json;
   created_at: string;
   updated_at: string;
@@ -202,7 +203,7 @@ interface ProjectCacheSnapshot {
 const DOCUMENT_SELECT_SAFE =
   "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, raw_text, structure_map, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_SAFE =
-  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, structure_map, created_at, updated_at";
+  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, structure_map, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_LEGACY =
   "id, project_id, role, subtype, display_name, file_format, content_type, created_at";
 const PROJECT_SELECT_SAFE =
@@ -782,7 +783,7 @@ async function fetchDocumentSummaryRows(
   }
 
   if (isMissingLegacyDocumentColumn(first.error)) {
-    const retry = await build(DOCUMENT_SUMMARY_SELECT_LEGACY);
+    const retry = await build("*");
     if (retry.error) {
       throw new Error(retry.error.message || "Kunne ikke hente dokumentene.");
     }
