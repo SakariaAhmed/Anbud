@@ -146,6 +146,7 @@ create table generated_artifacts (
 );
 
 create index generated_artifacts_project_id_idx on generated_artifacts(project_id, created_at desc);
+create index generated_artifacts_project_type_idx on generated_artifacts(project_id, artifact_type, created_at desc);
 
 create table project_jobs (
   id uuid primary key default gen_random_uuid(),
@@ -169,6 +170,7 @@ create table project_jobs (
 
 create index project_jobs_project_id_idx on project_jobs(project_id, created_at desc);
 create index project_jobs_status_idx on project_jobs(status, updated_at desc);
+create index project_jobs_project_status_idx on project_jobs(project_id, status, updated_at desc);
 
 create table chat_messages (
   id uuid primary key default gen_random_uuid(),
@@ -180,3 +182,16 @@ create table chat_messages (
 );
 
 create index chat_messages_project_id_idx on chat_messages(project_id, created_at asc);
+
+create table audit_events (
+  id uuid primary key default gen_random_uuid(),
+  action text not null,
+  project_id uuid references projects(id) on delete set null,
+  entity_type text,
+  entity_id uuid,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index audit_events_project_idx on audit_events(project_id, created_at desc);
+create index audit_events_action_idx on audit_events(action, created_at desc);

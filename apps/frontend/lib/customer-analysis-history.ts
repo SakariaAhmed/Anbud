@@ -10,6 +10,7 @@ import type {
 export const CUSTOMER_ANALYSIS_SECTIONS = [
   "summary",
   "strategy",
+  "clarifications",
   "design",
   "risks",
   "needs",
@@ -51,6 +52,16 @@ export function getCustomerAnalysisSectionSnapshot<
         executive_summary: cleanAnalysis.executive_summary,
         positioning_recommendations: cloneJson(
           cleanAnalysis.positioning_recommendations,
+        ),
+      } as CustomerAnalysisSectionSnapshot<TSection>;
+    case "clarifications":
+      return {
+        ambiguities: cloneJson(cleanAnalysis.ambiguities),
+        expected_solution_direction: cloneJson(
+          cleanAnalysis.expected_solution_direction,
+        ),
+        likely_evaluation_criteria: cloneJson(
+          cleanAnalysis.likely_evaluation_criteria,
         ),
       } as CustomerAnalysisSectionSnapshot<TSection>;
     case "design":
@@ -101,6 +112,15 @@ function isSnapshotEmpty(
       return !(
         value.executive_summary.trim() ||
         value.positioning_recommendations.length
+      );
+    }
+    case "clarifications": {
+      const value =
+        snapshot as CustomerAnalysisSectionSnapshotMap["clarifications"];
+      return !(
+        value.ambiguities.length ||
+        value.expected_solution_direction.length ||
+        value.likely_evaluation_criteria.length
       );
     }
     case "design": {

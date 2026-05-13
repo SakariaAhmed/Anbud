@@ -13,7 +13,10 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
-import { AnalysisTabEmptyState } from "@/components/projects/project-workspace-shared";
+import {
+  AnalysisTabEmptyState,
+  GenerationProgress,
+} from "@/components/projects/project-workspace-shared";
 import { Spinner } from "@/components/ui/spinner";
 import type { ExecutiveSummaryResult } from "@/lib/types";
 
@@ -124,12 +127,14 @@ export function ProjectExecutiveSummaryTab({
   hasSolutionEvaluation,
   busy,
   busyMessage,
+  busyProgress,
   onGenerate,
 }: {
   executiveSummary: ExecutiveSummaryResult | null;
   hasSolutionEvaluation: boolean;
   busy: boolean;
   busyMessage: string;
+  busyProgress: number;
   onGenerate: () => void;
 }) {
   if (!summary) {
@@ -150,10 +155,7 @@ export function ProjectExecutiveSummaryTab({
           </Button>
         </div>
         {busy && busyMessage ? (
-          <div className="flex items-center gap-2 text-sm text-primary">
-            <Spinner className="size-3.5" />
-            <span>{busyMessage}</span>
-          </div>
+          <GenerationProgress message={busyMessage} progress={busyProgress} />
         ) : null}
         <AnalysisTabEmptyState>
           {hasSolutionEvaluation
@@ -196,11 +198,8 @@ export function ProjectExecutiveSummaryTab({
         </div>
 
         {busy && busyMessage ? (
-          <div className="border-b border-slate-200 px-5 py-3 text-sm text-primary md:px-7">
-            <span className="inline-flex items-center gap-2">
-              <Spinner className="size-3.5" />
-              {busyMessage}
-            </span>
+          <div className="border-b border-slate-200 px-5 py-3 md:px-7">
+            <GenerationProgress message={busyMessage} progress={busyProgress} />
           </div>
         ) : null}
 

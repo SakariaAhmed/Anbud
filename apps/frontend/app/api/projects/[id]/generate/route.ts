@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { generateProjectArtifact } from "@/lib/server/ai";
+import { generateProjectArtifact, resolveOpenAIModelOverride } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
   getProjectDetail,
   getProjectSnapshot,
+  deleteGeneratedArtifact,
   listGeneratedArtifacts,
   listProjectDocuments,
   listServiceDocumentDetailsForProject,
@@ -117,6 +118,9 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
+    const model = await resolveOpenAIModelOverride(
+      request.headers.get("x-openai-model"),
+    );
     const body = (await request.json()) as {
       artifact_type?: string;
       instructions?: string;
@@ -180,6 +184,7 @@ export async function POST(
       supportingDocuments,
       knowledgeArtifacts: generatedArtifacts,
       instructions: body.instructions?.trim(),
+      model,
     });
 
     const artifact = await saveGeneratedArtifact(
@@ -245,6 +250,43 @@ export async function PATCH(
           error instanceof Error
             ? error.message
             : "Kunne ikke oppdatere kravbesvarelsen.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await context.params;
+    const body = (await request.json().catch(() => ({}))) as {
+      artifact_id?: string;
+    };
+
+    if (!body.artifact_id) {
+      return NextResponse.json(
+        { error: "Mangler artefakt som skal slettes." },
+        { status: 400 },
+      );
+    }
+
+    await deleteGeneratedArtifact({
+      projectId: id,
+      artifactId: body.artifact_id,
+    });
+    const snapshot = await getProjectSnapshot(id);
+
+    return NextResponse.json({ project: snapshot });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Kunne ikke slette artefakten.",
       },
       { status: 500 },
     );

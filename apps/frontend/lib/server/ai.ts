@@ -28,7 +28,8 @@ import type {
   ValueOpportunity,
 } from "@/lib/types";
 
-const ANALYSIS_MODEL = "gpt-5.4";
+export const DEFAULT_OPENAI_MODEL = "gpt-5.4";
+const ANALYSIS_MODEL = DEFAULT_OPENAI_MODEL;
 const FAST_MODEL = "gpt-5.4-mini";
 type ReasoningEffort = "low" | "medium" | "high";
 const ANALYSIS_REASONING_EFFORT: ReasoningEffort = "medium";
@@ -42,6 +43,15 @@ const VALUE_CATEGORIES: ValueCategory[] = [
 ];
 
 type OpenAIClient = {
+  models: {
+    list: () => Promise<{
+      data: Array<{
+        id: string;
+        created?: number | null;
+        owned_by?: string | null;
+      }>;
+    }>;
+  };
   chat: {
     completions: {
       create: (input: Record<string, unknown>) => Promise<{
@@ -54,6 +64,12 @@ type OpenAIClient = {
       output_text?: string;
     }>;
   };
+};
+
+export type OpenAIModelSummary = {
+  id: string;
+  created: number | null;
+  owned_by: string | null;
 };
 
 type DocumentInsightDigest = {
@@ -141,6 +157,48 @@ async function getClient() {
   }
 
   return cachedClientPromise;
+}
+
+function normalizeModelId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.length > 120 || /[\s<>"'`]/.test(normalized)) {
+    throw new Error("Ugyldig modellvalg.");
+  }
+
+  return normalized;
+}
+
+export async function listAvailableOpenAIModels(): Promise<OpenAIModelSummary[]> {
+  const client = await getClient();
+  const response = await client.models.list();
+
+  return response.data
+    .map((model) => ({
+      id: model.id,
+      created: model.created ?? null,
+      owned_by: model.owned_by ?? null,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export async function resolveOpenAIModelOverride(
+  value: string | null | undefined,
+) {
+  const modelId = normalizeModelId(value);
+  if (!modelId) {
+    return undefined;
+  }
+
+  const models = await listAvailableOpenAIModels();
+  if (!models.some((model) => model.id === modelId)) {
+    throw new Error("Valgt modell er ikke tilgjengelig for denne API-nøkkelen.");
+  }
+
+  return modelId;
 }
 
 function compactText(value: unknown, limit = 16000) {
@@ -2623,6 +2681,7 @@ function normalizeCustomerAnalysisResult(
   );
   const ambiguities = capNormalizedList(
     Array.isArray(result.ambiguities) ? result.ambiguities : [],
+    { max: 12 },
   );
   const prioritizedRequirements = (
     Array.isArray(result.prioritized_requirements)
@@ -2725,6 +2784,9 @@ type CustomerAnalysisSectionPatch = Partial<
     | "risks_for_customer"
     | "signal_words"
     | "value_opportunities"
+    | "ambiguities"
+    | "expected_solution_direction"
+    | "likely_evaluation_criteria"
     | "positioning_recommendations"
     | "executive_summary"
   >
@@ -2763,6 +2825,24 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     outputContract: [
       "Returner kun JSON med executive_summary og positioning_recommendations.",
       "positioning_recommendations skal være en liste med 3 til 5 konkrete tekstpunkter.",
+    ],
+  },
+  clarifications: {
+    label: "Avklaringer",
+    fields:
+      "ambiguities, expected_solution_direction og likely_evaluation_criteria",
+    guidance: [
+      "Rediger kun avklaringer og foreløpig retning mellom strategi og design.",
+      "ambiguities skal være konkrete åpne spørsmål som må tas med kunden eller tilbudsteamet før design låses. Formuler dem som spørsmål.",
+      "Punktene skal opplyse hvilke behov, prioriteringer, rammer, ansvar, kontraktsføringer eller retningsvalg kunden faktisk har.",
+      "Se spesielt etter avklaringer om Annex 01B-01G, krav-ID-er, omfang, multisourcing-ansvar, eksisterende avtaler, onsite support, lokasjoner, brukergrupper, åpningstid, beredskap/24x7, servicedesk, overvåkning, sikkerhetsoperasjon, applikasjonsforvaltning, RPO/RTO, backup/restore, Azure/on-prem-miljøer, modernisering, migrering, KPI-er, governance, bærekraft, språkkrav, sikkerhet, regulatoriske føringer og samfunnskritisk rolle.",
+      "expected_solution_direction skal beskrive hvilken løsningsretning kildene peker mot før endelig high-level design.",
+      "likely_evaluation_criteria skal forklare hva kunden sannsynligvis vil vurdere leverandører og løsning på.",
+    ],
+    outputContract: [
+      "Returner kun JSON med ambiguities, expected_solution_direction og likely_evaluation_criteria.",
+      "Alle tre feltene skal være lister med konkrete tekstpunkter.",
+      "ambiguities skal normalt ha 8 til 12 spørsmål når dokumentgrunnlaget gir nok usikkerhet. De to andre listene skal normalt ha 3 til 5 punkter.",
     ],
   },
   design: {
@@ -3075,6 +3155,7 @@ export async function analyzeCustomerDocuments(input: {
   projectName: string;
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
+  model?: string;
 }) {
   const supportingContexts = input.supportingDocuments
     .slice(0, 2)
@@ -3120,7 +3201,7 @@ export async function analyzeCustomerDocuments(input: {
     system: buildCustomerAnalysisPrompt(),
     user: userPrompt,
     temperature: 0.1,
-    model: ANALYSIS_MODEL,
+    model: input.model ?? ANALYSIS_MODEL,
     reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
@@ -3138,6 +3219,7 @@ export async function regenerateCustomerAnalysisSection(input: {
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
   customerAnalysis: CustomerAnalysisResult;
+  model?: string;
 }) {
   const config = CUSTOMER_ANALYSIS_SECTION_CONFIG[input.section];
   const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
@@ -3205,7 +3287,7 @@ export async function regenerateCustomerAnalysisSection(input: {
     system: systemPrompt,
     user: userPrompt,
     temperature: 0.1,
-    model: ANALYSIS_MODEL,
+    model: input.model ?? ANALYSIS_MODEL,
     reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
@@ -3228,6 +3310,7 @@ export async function generateHighLevelDesign(input: {
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
   customerAnalysis: CustomerAnalysisResult;
+  model?: string;
 }) {
   const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
   const customerDocumentDigest = await buildDocumentInsightDigest(
@@ -3277,7 +3360,7 @@ export async function generateHighLevelDesign(input: {
     system: buildHighLevelDesignPrompt(),
     user: userPrompt,
     temperature: 0.12,
-    model: ANALYSIS_MODEL,
+    model: input.model ?? ANALYSIS_MODEL,
     reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
@@ -3309,6 +3392,7 @@ export async function evaluateSolutionDocument(input: {
     title: string;
     content_markdown: string;
   } | null;
+  model?: string;
 }) {
   const [customerDocumentDigest, solutionDocumentDigest] = await Promise.all([
     buildDocumentInsightDigest("Primært kundedokument", input.customerDocument, {
@@ -3383,7 +3467,7 @@ export async function evaluateSolutionDocument(input: {
     system: buildSolutionEvaluationPrompt(),
     user: userPrompt,
     temperature: 0.1,
-    model: ANALYSIS_MODEL,
+    model: input.model ?? ANALYSIS_MODEL,
     reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
@@ -3394,6 +3478,7 @@ export async function generateExecutiveSummary(input: {
   projectName: string;
   customerAnalysis: CustomerAnalysisResult | null;
   solutionEvaluation: SolutionEvaluationResult;
+  model?: string;
 }) {
   const userPrompt = [
     "Lag en separat lederoppsummering basert på den ferdige løsningsvurderingen.",
@@ -3425,7 +3510,7 @@ export async function generateExecutiveSummary(input: {
     system: buildExecutiveSummaryPrompt(),
     user: userPrompt,
     temperature: 0.12,
-    model: FAST_MODEL,
+    model: input.model ?? FAST_MODEL,
     reasoningEffort: FAST_REASONING_EFFORT,
   });
 
@@ -3450,6 +3535,7 @@ export async function generateProjectArtifact(input: {
     artifact_type: GeneratedArtifactType;
   }>;
   instructions?: string;
+  model?: string;
 }) {
   const [customerDocumentDigest, solutionDocumentDigest] = await Promise.all([
     input.customerDocument
@@ -3746,10 +3832,11 @@ export async function generateProjectArtifact(input: {
     user: userPrompt,
     temperature: input.artifactType === "forbedret_kravsvar" ? 0.12 : 0.25,
     model:
-      input.artifactType === "forbedret_kravsvar" ||
+      input.model ??
+      (input.artifactType === "forbedret_kravsvar" ||
       input.artifactType === "bilag1_rekonstruksjon"
         ? ANALYSIS_MODEL
-        : FAST_MODEL,
+        : FAST_MODEL),
     reasoningEffort:
       input.artifactType === "forbedret_kravsvar" ||
       input.artifactType === "bilag1_rekonstruksjon"
@@ -3815,6 +3902,7 @@ export async function synthesizeAndEvaluateSolution(input: {
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
   customerAnalysis: CustomerAnalysisResult;
+  model?: string;
 }) {
   const supportingContexts = input.supportingDocuments
     .slice(0, 2)
@@ -3855,7 +3943,7 @@ export async function synthesizeAndEvaluateSolution(input: {
     system: buildSyntheticSolutionEvaluationPrompt(),
     user: userPrompt,
     temperature: 0.15,
-    model: ANALYSIS_MODEL,
+    model: input.model ?? ANALYSIS_MODEL,
     reasoningEffort: ANALYSIS_REASONING_EFFORT,
   });
 
@@ -3873,6 +3961,7 @@ export async function answerProjectChat(input: {
   customerDocument: ProjectDocumentDetail | null;
   solutionDocument: ProjectDocumentDetail | null;
   question: string;
+  model?: string;
 }) {
   const history = input.recentMessages
     .slice(-8)
@@ -3922,7 +4011,7 @@ export async function answerProjectChat(input: {
     system: buildChatPrompt(),
     user: userPrompt,
     temperature: 0.35,
-    model: FAST_MODEL,
+    model: input.model ?? FAST_MODEL,
     reasoningEffort: FAST_REASONING_EFFORT,
   });
 }

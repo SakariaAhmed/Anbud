@@ -1,11 +1,22 @@
 "use client";
 
 import { FormEvent } from "react";
-import { CalendarClock, ChevronDown, Flag, Milestone, Sparkles } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronDown,
+  Flag,
+  Milestone,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { ArtifactActions } from "@/components/projects/artifact-actions";
-import { formatDate } from "@/components/projects/project-workspace-shared";
+import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
+import {
+  formatDate,
+  GenerationProgress,
+} from "@/components/projects/project-workspace-shared";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { GeneratedArtifact } from "@/lib/types";
@@ -37,13 +48,17 @@ export function ProjectDeliveryTab({
   artifacts,
   busy,
   busyMessage,
+  busyProgress,
   hasCustomerAnalysis,
+  onDeleteArtifact,
   onSubmit,
 }: {
   artifacts: GeneratedArtifact[];
   busy: boolean;
   busyMessage: string;
+  busyProgress: number;
   hasCustomerAnalysis: boolean;
+  onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const progressArtifacts = [...artifacts]
@@ -93,9 +108,8 @@ export function ProjectDeliveryTab({
         </div>
 
         {busy && busyMessage ? (
-          <div className="mx-5 mt-5 flex min-w-0 items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary md:mx-6">
-            <Spinner className="size-3.5" />
-            <span className="min-w-0">{busyMessage}</span>
+          <div className="mx-5 mt-5 md:mx-6">
+            <GenerationProgress message={busyMessage} progress={busyProgress} />
           </div>
         ) : null}
 
@@ -107,8 +121,19 @@ export function ProjectDeliveryTab({
 
         <div className="px-5 py-5 md:px-6">
           {latestArtifact ? (
-            <div className="mb-5">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
               <ArtifactActions artifact={latestArtifact} />
+              <DeleteConfirmDialog
+                title="Slett fremdriftsplan?"
+                description={`Dette sletter "${latestArtifact.title || "fremdriftsplan uten tittel"}" fra prosjektet. Handlingen kan ikke angres.`}
+                confirmLabel="Slett plan"
+                onConfirm={() => onDeleteArtifact(latestArtifact)}
+              >
+                <Button type="button" variant="destructive" className="h-9 rounded-lg">
+                  <Trash2 data-icon="inline-start" />
+                  Slett
+                </Button>
+              </DeleteConfirmDialog>
             </div>
           ) : null}
           {latestArtifact && latestPhases.length ? (
@@ -141,6 +166,19 @@ export function ProjectDeliveryTab({
                   <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="border-t border-border/70 px-3 py-3">
+                  <div className="mb-3 flex justify-end">
+                    <DeleteConfirmDialog
+                      title="Slett fremdriftsplan?"
+                      description={`Dette sletter "${artifact.title || "fremdriftsplan uten tittel"}" fra prosjektet. Handlingen kan ikke angres.`}
+                      confirmLabel="Slett plan"
+                      onConfirm={() => onDeleteArtifact(artifact)}
+                    >
+                      <Button type="button" variant="destructive" size="sm">
+                        <Trash2 data-icon="inline-start" />
+                        Slett
+                      </Button>
+                    </DeleteConfirmDialog>
+                  </div>
                   <PhaseList
                     phases={extractProgressPhases(artifact.content_markdown)}
                   />

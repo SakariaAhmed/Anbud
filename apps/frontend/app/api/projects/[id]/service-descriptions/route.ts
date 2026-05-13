@@ -6,7 +6,7 @@ import {
 } from "@/lib/server/projects-db";
 
 const PROJECT_SERVICE_CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=120, stale-while-revalidate=600",
+  "Cache-Control": "no-store",
 };
 
 export async function GET(

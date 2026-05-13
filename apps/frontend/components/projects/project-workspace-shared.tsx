@@ -94,3 +94,28 @@ export function AnalysisTabEmptyState({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+export function GenerationProgress({
+  message,
+  progress,
+}: {
+  message: string;
+  progress: number;
+}) {
+  const safeProgress = Math.min(100, Math.max(3, Math.round(progress)));
+
+  return (
+    <div className="min-w-0 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3">
+      <div className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold text-primary">
+        <span className="min-w-0 truncate">{message}</span>
+        <span className="shrink-0 tabular-nums">{safeProgress}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-primary/15">
+        <div
+          className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
+          style={{ width: `${safeProgress}%` }}
+        />
+      </div>
+    </div>
+  );
+}

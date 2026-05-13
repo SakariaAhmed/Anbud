@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent,
+  type FormEvent,
+  type MouseEvent,
+} from "react";
 import {
   ArrowDownToLine,
   CheckSquare,
@@ -16,7 +23,11 @@ import {
 } from "lucide-react";
 
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
-import { formatDate } from "@/components/projects/project-workspace-shared";
+import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
+import {
+  formatDate,
+  GenerationProgress,
+} from "@/components/projects/project-workspace-shared";
 import { Input } from "@/components/projects/primitives";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -440,12 +451,14 @@ export function ProjectRequirementResponseTab({
   uploadBusy,
   generateBusy,
   busyMessage,
+  busyProgress,
   deletingDocumentId,
   onUpload,
   selectedDocumentId,
   onSelectedDocumentChange,
   onDeleteDocument,
   onUpdateArtifact,
+  onDeleteArtifact,
   onSubmit,
 }: {
   projectId: string;
@@ -454,6 +467,7 @@ export function ProjectRequirementResponseTab({
   uploadBusy: boolean;
   generateBusy: boolean;
   busyMessage: string;
+  busyProgress: number;
   deletingDocumentId: string | null;
   onUpload: (file: File) => Promise<ProjectDocument | null>;
   selectedDocumentId: string;
@@ -463,6 +477,7 @@ export function ProjectRequirementResponseTab({
     artifact: GeneratedArtifact,
     value: { title: string; content_markdown: string },
   ) => Promise<void>;
+  onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const requirementDocuments = useMemo(
@@ -482,6 +497,9 @@ export function ProjectRequirementResponseTab({
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
   const [savingArtifactId, setSavingArtifactId] = useState<string | null>(null);
+  const [deletingArtifactId, setDeletingArtifactId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!selectableDocuments.length) {
@@ -536,10 +554,31 @@ export function ProjectRequirementResponseTab({
     }
   }
 
+  async function deleteArtifact(artifact: GeneratedArtifact) {
+    setDeletingArtifactId(artifact.id);
+    try {
+      await onDeleteArtifact(artifact);
+      if (editingArtifactId === artifact.id) {
+        setEditingArtifactId(null);
+        setEditTitle("");
+        setEditContent("");
+      }
+    } catch {
+      // Parent action sets the visible error message.
+    } finally {
+      setDeletingArtifactId(null);
+    }
+  }
+
   async function onDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setDragActive(false);
     await uploadSelectedFile(event.dataTransfer.files?.[0] ?? null);
+  }
+
+  function stopSummaryToggle(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
   }
 
   const savedRequirementResponses = (
@@ -559,7 +598,7 @@ export function ProjectRequirementResponseTab({
               open={index === 0}
               className="group min-w-0 rounded-2xl border bg-card"
             >
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/30">
+              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-muted/30 [&::-webkit-details-marker]:hidden">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                     <span>Kravbesvarelse</span>
@@ -570,7 +609,55 @@ export function ProjectRequirementResponseTab({
                     {artifact.title || "Kravbesvarelse uten tittel"}
                   </h4>
                 </div>
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                <div className="flex shrink-0 items-start gap-3">
+                  {editingArtifactId !== artifact.id ? (
+                    <div
+                      className="flex flex-wrap justify-end gap-2"
+                      onClick={stopSummaryToggle}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 rounded-lg"
+                        onClick={() => downloadRequirementResponsePdf(artifact)}
+                      >
+                        <FileDown data-icon="inline-start" />
+                        Last ned PDF
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 rounded-lg"
+                        onClick={() => startEdit(artifact)}
+                      >
+                        <Pencil data-icon="inline-start" />
+                        Rediger
+                      </Button>
+                      <DeleteConfirmDialog
+                        title="Slett kravbesvarelse?"
+                        description={`Dette sletter "${artifact.title || "kravbesvarelse uten tittel"}" fra prosjektet. Handlingen kan ikke angres.`}
+                        confirmLabel="Slett kravbesvarelse"
+                        onConfirm={() => deleteArtifact(artifact)}
+                      >
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          className="h-9 rounded-lg"
+                          disabled={deletingArtifactId === artifact.id}
+                        >
+                          {deletingArtifactId === artifact.id ? (
+                            <Spinner className="size-4" />
+                          ) : (
+                            <Trash2 data-icon="inline-start" />
+                          )}
+                          Slett
+                        </Button>
+                      </DeleteConfirmDialog>
+                    </div>
+                  ) : null}
+                  <ChevronDown className="mt-2 size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                </div>
               </summary>
               <div className="space-y-4 rounded-b-2xl border-t bg-card px-7 py-7">
                 {editingArtifactId === artifact.id ? (
@@ -630,26 +717,6 @@ export function ProjectRequirementResponseTab({
                   </div>
                 ) : (
                   <>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 rounded-lg"
-                        onClick={() => downloadRequirementResponsePdf(artifact)}
-                      >
-                        <FileDown data-icon="inline-start" />
-                        Last ned PDF
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 rounded-lg"
-                        onClick={() => startEdit(artifact)}
-                      >
-                        <Pencil data-icon="inline-start" />
-                        Rediger
-                      </Button>
-                    </div>
                     <RequirementResponseContent
                       content={
                         artifact.content_markdown ||
@@ -714,9 +781,8 @@ export function ProjectRequirementResponseTab({
             Generer kravbesvarelse
           </Button>
           {generateBusy && busyMessage ? (
-            <div className="mt-3 flex min-w-0 items-center gap-2 text-sm text-primary">
-              <Spinner className="size-3.5" />
-              <span className="min-w-0">{busyMessage}</span>
+            <div className="mt-3">
+              <GenerationProgress message={busyMessage} progress={busyProgress} />
             </div>
           ) : null}
         </form>
@@ -842,18 +908,24 @@ export function ProjectRequirementResponseTab({
                     >
                       <ArrowDownToLine className="size-3.5" />
                     </a>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => void onDeleteDocument(document)}
-                      disabled={deletingDocumentId === document.id}
+                    <DeleteConfirmDialog
+                      title="Slett kravdokument?"
+                      description={`Dette sletter "${document.title}" fra prosjektet. Relaterte analyser kan også bli nullstilt. Handlingen kan ikke angres.`}
+                      confirmLabel="Slett dokument"
+                      onConfirm={() => onDeleteDocument(document)}
                     >
-                      {deletingDocumentId === document.id ? (
-                        <Spinner className="size-3.5" />
-                      ) : (
-                        <Trash2 className="size-3.5" />
-                      )}
-                    </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={deletingDocumentId === document.id}
+                      >
+                        {deletingDocumentId === document.id ? (
+                          <Spinner className="size-3.5" />
+                        ) : (
+                          <Trash2 className="size-3.5" />
+                        )}
+                      </Button>
+                    </DeleteConfirmDialog>
                   </div>
                 </div>
               ))}

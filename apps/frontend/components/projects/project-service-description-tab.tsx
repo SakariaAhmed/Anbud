@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/projects/primitives";
+import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
   clearClientCache,
   getClientCache,
@@ -51,6 +52,9 @@ export function ProjectServiceDescriptionTab({
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [dragActive, setDragActive] = useState(false);
+  const [savingSelectionIds, setSavingSelectionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const selectedIds = useMemo(
     () =>
@@ -74,7 +78,9 @@ export function ProjectServiceDescriptionTab({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/service-descriptions`);
+      const response = await fetch(`/api/projects/${projectId}/service-descriptions`, {
+        cache: "no-store",
+      });
       const payload = (await response.json()) as {
         services?: ProjectServiceDescription[];
         error?: string;
@@ -95,8 +101,12 @@ export function ProjectServiceDescriptionTab({
     void loadServices();
   }, [projectId]);
 
-  async function saveSelections(nextIds: string[]) {
-    setBusy("selection");
+  async function saveSelections(
+    nextIds: string[],
+    optimisticServices: ProjectServiceDescription[],
+    changedServiceId: string,
+  ) {
+    setSavingSelectionIds((current) => new Set(current).add(changedServiceId));
     setError("");
     try {
       const response = await fetch(`/api/projects/${projectId}/service-descriptions`, {
@@ -117,19 +127,42 @@ export function ProjectServiceDescriptionTab({
         payload.services,
         PROJECT_SERVICES_CACHE_TTL_MS,
       );
+      window.dispatchEvent(new CustomEvent("project-services-updated"));
     } catch (err) {
+      setServices(optimisticServices);
+      setClientCache(
+        projectServicesCacheKey(projectId),
+        optimisticServices,
+        PROJECT_SERVICES_CACHE_TTL_MS,
+      );
       setError(err instanceof Error ? err.message : "Kunne ikke lagre tjenestevalg.");
     } finally {
-      setBusy("");
+      setSavingSelectionIds((current) => {
+        const next = new Set(current);
+        next.delete(changedServiceId);
+        return next;
+      });
     }
   }
 
   async function toggleSelected(service: ProjectServiceDescription) {
     if (service.inclusion_mode === "fixed") return;
-    const nextIds = service.selected
-      ? selectedIds.filter((id) => id !== service.id)
-      : [...selectedIds, service.id];
-    await saveSelections(nextIds);
+    const previousServices = services;
+    const optimisticServices = services.map((item) =>
+      item.id === service.id ? { ...item, selected: !service.selected } : item,
+    );
+    const nextIds = optimisticServices
+      .filter((item) => item.inclusion_mode === "selected" && item.selected)
+      .map((item) => item.id);
+
+    setServices(optimisticServices);
+    setClientCache(
+      projectServicesCacheKey(projectId),
+      optimisticServices,
+      PROJECT_SERVICES_CACHE_TTL_MS,
+    );
+    window.dispatchEvent(new CustomEvent("project-services-updated"));
+    await saveSelections(nextIds, previousServices, service.id);
   }
 
   async function updateMode(service: ProjectServiceDescription, nextMode: ServiceInclusionMode) {
@@ -148,6 +181,7 @@ export function ProjectServiceDescriptionTab({
       clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
       clearClientCache(projectServicesCacheKey(projectId));
       await loadServices();
+      window.dispatchEvent(new CustomEvent("project-services-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke oppdatere tjenesten.");
     } finally {
@@ -170,6 +204,7 @@ export function ProjectServiceDescriptionTab({
       clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
       clearClientCache(projectServicesCacheKey(projectId));
       await loadServices();
+      window.dispatchEvent(new CustomEvent("project-services-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke slette dokumentet.");
     } finally {
@@ -215,6 +250,7 @@ export function ProjectServiceDescriptionTab({
       setFile(null);
       setFileInputKey((current) => current + 1);
       await loadServices();
+      window.dispatchEvent(new CustomEvent("project-services-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke lagre tjenestebeskrivelsen.");
     } finally {
@@ -407,17 +443,22 @@ export function ProjectServiceDescriptionTab({
                     <button
                       type="button"
                       onClick={() => void toggleSelected(service)}
-                      disabled={service.inclusion_mode === "fixed" || busy === "selection"}
-                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                      disabled={service.inclusion_mode === "fixed"}
+                      aria-busy={savingSelectionIds.has(service.id)}
+                      className="group flex min-w-0 flex-1 items-start gap-3 text-left transition-opacity disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       <span
-                        className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border ${
+                        className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
                           service.selected
                             ? "border-slate-950 bg-slate-950 text-white"
-                            : "border-slate-300 bg-white"
+                            : "border-slate-300 bg-white group-hover:border-slate-500"
                         }`}
                       >
-                        {service.selected ? <CheckCircle2 className="size-3.5" /> : null}
+                        {savingSelectionIds.has(service.id) ? (
+                          <Spinner className="size-3 text-current" />
+                        ) : service.selected ? (
+                          <CheckCircle2 className="size-3.5" />
+                        ) : null}
                       </span>
                       <span className="min-w-0">
                         <span className="flex flex-wrap items-center gap-2">
@@ -431,6 +472,11 @@ export function ProjectServiceDescriptionTab({
                           {service.recommended ? (
                             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900">
                               Anbefalt
+                            </span>
+                          ) : null}
+                          {savingSelectionIds.has(service.id) ? (
+                            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
+                              Lagrer
                             </span>
                           ) : null}
                         </span>
@@ -459,24 +505,30 @@ export function ProjectServiceDescriptionTab({
                         key={document.id}
                         className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
                       >
-                        <div className="min-w-0 flex items-center gap-2">
+                        <div className="flex min-w-0 items-start gap-2">
                           <FileText className="size-4 shrink-0 text-teal-700" />
-                          <span className="truncate text-sm font-medium text-slate-700">
+                          <span className="break-words text-sm font-medium leading-5 text-slate-700">
                             {document.title}
                           </span>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => void deleteDocument(service.id, document.id)}
-                          disabled={busy === `delete-document-${document.id}`}
+                        <DeleteConfirmDialog
+                          title="Slett tjenestedokument?"
+                          description={`Dette fjerner "${document.title}" fra tjenestebeskrivelsen. Handlingen kan ikke angres.`}
+                          confirmLabel="Slett dokument"
+                          onConfirm={() => deleteDocument(service.id, document.id)}
                         >
-                          {busy === `delete-document-${document.id}` ? (
-                            <Spinner className="size-3.5" />
-                          ) : (
-                            <Trash2 className="size-3.5" />
-                          )}
-                        </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            disabled={busy === `delete-document-${document.id}`}
+                          >
+                            {busy === `delete-document-${document.id}` ? (
+                              <Spinner className="size-3.5" />
+                            ) : (
+                              <Trash2 className="size-3.5" />
+                            )}
+                          </Button>
+                        </DeleteConfirmDialog>
                       </div>
                     ))}
                   </div>

@@ -7,6 +7,7 @@ import { createServiceClient } from "@/lib/server/supabase";
 import {
   analyzeCustomerDocuments,
   evaluateSolutionDocument,
+  generateExecutiveSummary,
   generateHighLevelDesign,
   generateProjectArtifact,
   synthesizeAndEvaluateSolution,
@@ -14,6 +15,7 @@ import {
 import {
   getCustomerAnalysis,
   getDocumentDetail,
+  getSolutionEvaluation,
   getProjectDetail,
   getProjectSnapshot,
   listGeneratedArtifacts,
@@ -21,6 +23,7 @@ import {
   listServiceDocumentDetailsForProject,
   listServiceDocumentSummariesForProject,
   saveCustomerAnalysis,
+  saveExecutiveSummary,
   saveGeneratedArtifact,
   saveSolutionEvaluation,
 } from "@/lib/server/projects-db";
@@ -283,6 +286,7 @@ export async function queueArtifactGenerationJob(input: {
   artifactType: GeneratedArtifactType;
   instructions?: string;
   sourceDocumentIds?: string[];
+  model?: string;
 }) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
@@ -365,6 +369,7 @@ export async function queueArtifactGenerationJob(input: {
           : undefined,
       knowledgeArtifacts: generatedArtifacts,
       instructions: input.instructions?.trim(),
+      model: input.model,
     });
 
     setProgress("Lagrer generatorresultatet i prosjektet ...");
@@ -397,7 +402,10 @@ export async function queueArtifactGenerationJob(input: {
   return record;
 }
 
-export async function queueCustomerAnalysisJob(input: { projectId: string }) {
+export async function queueCustomerAnalysisJob(input: {
+  projectId: string;
+  model?: string;
+}) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
   const record: ProjectJobRecord = {
@@ -437,6 +445,7 @@ export async function queueCustomerAnalysisJob(input: { projectId: string }) {
       projectName: customerDocument.title,
       customerDocument,
       supportingDocuments,
+      model: input.model,
     });
 
     setProgress("Lagrer kundeanalysen ...");
@@ -464,7 +473,10 @@ export async function queueCustomerAnalysisJob(input: { projectId: string }) {
   return record;
 }
 
-export async function queuePerfectSystemSolutionJob(input: { projectId: string }) {
+export async function queuePerfectSystemSolutionJob(input: {
+  projectId: string;
+  model?: string;
+}) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
   const record: ProjectJobRecord = {
@@ -545,6 +557,7 @@ export async function queuePerfectSystemSolutionJob(input: { projectId: string }
         "Målet er en løsningsbeskrivelse som kan vurderes til 100/100 fordi den er kundespesifikk, komplett, gjennomførbar, risikoreduserende og tydelig differensiert.",
         "Hvis vurderingen peker på manglende overgangsmodell, beslutningspunkter, ansvar, risiko, bevis eller kundeverdi, skal dette konkret innarbeides i riktig seksjon.",
       ].join("\n"),
+      model: input.model,
     });
 
     setProgress("Lagrer forbedret 100%-utkast ...");
@@ -576,6 +589,7 @@ export async function queuePerfectSystemSolutionJob(input: { projectId: string }
       supportingDocuments,
       customerAnalysis,
       systemSolutionArtifact: artifact,
+      model: input.model,
     });
 
     await saveSolutionEvaluation(input.projectId, {
@@ -599,6 +613,7 @@ export async function queueSolutionEvaluationJob(input: {
   projectId: string;
   allowGeneratedSolution: boolean;
   solutionDocumentId?: string;
+  model?: string;
 }) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
@@ -662,6 +677,7 @@ export async function queueSolutionEvaluationJob(input: {
         customerAnalysis,
         customerDocument,
         supportingDocuments,
+        model: input.model,
       });
 
       setProgress("Lagrer systemgenerert utkast ...");
@@ -700,6 +716,7 @@ export async function queueSolutionEvaluationJob(input: {
       supportingDocuments,
       customerAnalysis,
       systemSolutionArtifact: getLatestSolutionDraft(generatedArtifacts),
+      model: input.model,
     });
 
     setProgress("Lagrer sammenligning og vurdering ...");
@@ -721,7 +738,10 @@ export async function queueSolutionEvaluationJob(input: {
   return record;
 }
 
-export async function queueHighLevelDesignJob(input: { projectId: string }) {
+export async function queueHighLevelDesignJob(input: {
+  projectId: string;
+  model?: string;
+}) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
   const record: ProjectJobRecord = {
@@ -765,6 +785,7 @@ export async function queueHighLevelDesignJob(input: { projectId: string }) {
       customerDocument,
       supportingDocuments,
       customerAnalysis,
+      model: input.model,
     });
 
     setProgress("Lagrer oppdatert high-level design i kundeanalysen ...");
@@ -787,6 +808,67 @@ export async function queueHighLevelDesignJob(input: { projectId: string }) {
     const projectSnapshot = await getProjectSnapshot(input.projectId);
     return {
       analysis,
+      project: projectSnapshot,
+    };
+  });
+
+  return record;
+}
+
+export async function queueExecutiveSummaryJob(input: {
+  projectId: string;
+  model?: string;
+}) {
+  const jobId = randomUUID();
+  const now = new Date().toISOString();
+  const record: ProjectJobRecord = {
+    id: jobId,
+    project_id: input.projectId,
+    kind: "executive_summary",
+    status: "queued",
+    message: "Køer lederoppsummering ...",
+    created_at: now,
+    updated_at: now,
+    error: null,
+    result: null,
+  };
+
+  await enqueueJob(record);
+
+  startRunner(jobId, async ({ setProgress }) => {
+    setProgress("Laster prosjekt, kundeanalyse og vurdering ...");
+    const [project, customerAnalysis, solutionEvaluation] = await Promise.all([
+      getProjectDetail(input.projectId),
+      getCustomerAnalysis(input.projectId),
+      getSolutionEvaluation(input.projectId),
+    ]);
+
+    if (!solutionEvaluation) {
+      throw new Error("Generer vurdering før lederoppsummering.");
+    }
+
+    setProgress("Genererer lederoppsummering ...");
+    const generated = await generateExecutiveSummary({
+      projectName: project.name,
+      customerAnalysis,
+      solutionEvaluation,
+      model: input.model,
+    });
+
+    setProgress("Lagrer lederoppsummeringen ...");
+    const executiveSummary = await saveExecutiveSummary(input.projectId, generated, {
+      source: "solution_evaluation",
+      solution_evaluation_present: true,
+      solution_evaluation_snapshot: {
+        fit_to_customer_needs: solutionEvaluation.fit_to_customer_needs,
+        likely_score_assessment: solutionEvaluation.likely_score_assessment,
+        architecture_comparison: solutionEvaluation.architecture_comparison,
+      },
+    });
+
+    const projectSnapshot = await getProjectSnapshot(input.projectId);
+    return {
+      executive_summary: executiveSummary,
       project: projectSnapshot,
     };
   });

@@ -30,6 +30,7 @@ import {
   DECORATIVE_LOTTIES,
   DecorativeLottie,
 } from "@/components/projects/decorative-lottie";
+import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import { consumeNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -444,24 +445,30 @@ export function GlobalServiceDescriptionsPanel() {
                           key={document.id}
                           className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
                         >
-                          <div className="min-w-0 flex items-center gap-2">
+                          <div className="flex min-w-0 items-start gap-2">
                             <FileText className="size-4 shrink-0 text-blue-800" />
-                            <span className="truncate text-sm font-medium text-slate-700">
+                            <span className="break-words text-sm font-medium leading-5 text-slate-700">
                               {document.title}
                             </span>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => void deleteDocument(service.id, document.id)}
-                            disabled={busy === `delete-document-${document.id}`}
+                          <DeleteConfirmDialog
+                            title="Slett tjenestedokument?"
+                            description={`Dette fjerner "${document.title}" fra tjenestebeskrivelsen. Handlingen kan ikke angres.`}
+                            confirmLabel="Slett dokument"
+                            onConfirm={() => deleteDocument(service.id, document.id)}
                           >
-                            {busy === `delete-document-${document.id}` ? (
-                              <Spinner className="size-3.5" />
-                            ) : (
-                              <Trash2 className="size-3.5" />
-                            )}
-                          </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              disabled={busy === `delete-document-${document.id}`}
+                            >
+                              {busy === `delete-document-${document.id}` ? (
+                                <Spinner className="size-3.5" />
+                              ) : (
+                                <Trash2 className="size-3.5" />
+                              )}
+                            </Button>
+                          </DeleteConfirmDialog>
                         </div>
                       ))
                     ) : (
@@ -1505,6 +1512,8 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [deletingProjectId, setDeletingProjectId] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const latestProject = projects[0] ?? null;
 
   async function handleSpotlightUpload(file: File | null) {
@@ -1552,6 +1561,30 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
     const selectedFile = event.target.files?.[0] ?? null;
     void handleSpotlightUpload(selectedFile);
     event.target.value = "";
+  }
+
+  async function handleDeleteProject(project: ProjectSummary) {
+    if (deletingProjectId) return;
+    setDeleteError("");
+    setDeletingProjectId(project.id);
+    try {
+      const response = await fetch(`/api/projects/${project.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(payload.error || "Kunne ikke slette prosjektet.");
+      }
+      router.refresh();
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Kunne ikke slette prosjektet.",
+      );
+    } finally {
+      setDeletingProjectId("");
+    }
   }
 
   return (
@@ -1681,6 +1714,11 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
             {projects.length} {projects.length === 1 ? "prosjekt" : "totalt"}
           </span>
         </div>
+        {deleteError ? (
+          <div className="border-b border-red-100 bg-red-50 px-7 py-3 text-sm font-medium text-red-700">
+            {deleteError}
+          </div>
+        ) : null}
 
         {projects.length === 0 ? (
           <div className="py-16 text-center">
@@ -1757,12 +1795,33 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                       {formatDate(project.last_activity_at)}
                     </td>
                     <td className="px-7 py-5 text-right">
-                      <Link
-                        href={`/projects/${project.id}`}
-                        className="inline-flex h-9 items-center gap-2 rounded-md border border-blue-100 bg-white px-3 text-sm font-semibold text-blue-800 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50"
-                      >
-                        Åpne <ArrowRight className="size-4" />
-                      </Link>
+                      <div className="flex justify-end gap-2">
+                        <DeleteConfirmDialog
+                          title="Slett prosjekt?"
+                          description={`Dette sletter "${project.name}" med dokumenter, analyser, chat og genererte utkast. Handlingen kan ikke angres.`}
+                          confirmLabel="Slett prosjekt"
+                          onConfirm={() => handleDeleteProject(project)}
+                        >
+                          <button
+                            type="button"
+                            disabled={Boolean(deletingProjectId)}
+                            aria-label={`Slett ${project.name}`}
+                            className="inline-flex size-9 items-center justify-center rounded-md border border-red-100 bg-white text-red-700 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            {deletingProjectId === project.id ? (
+                              <Spinner className="size-4" />
+                            ) : (
+                              <Trash2 className="size-4" />
+                            )}
+                          </button>
+                        </DeleteConfirmDialog>
+                        <Link
+                          href={`/projects/${project.id}`}
+                          className="inline-flex h-9 items-center gap-2 rounded-md border border-blue-100 bg-white px-3 text-sm font-semibold text-blue-800 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50"
+                        >
+                          Åpne <ArrowRight className="size-4" />
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

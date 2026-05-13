@@ -4,10 +4,11 @@ import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
   getProjectSnapshot,
-  listProjectDocuments,
+  listProjectDocumentSummaries,
   saveDocument,
   updateProjectMetadataFromInference,
 } from "@/lib/server/projects-db";
+import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import type { ProjectDocumentRole, SupportingDocumentSubtype } from "@/lib/types";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -57,7 +58,7 @@ async function inferUploadRole(
     return explicitRole;
   }
 
-  const existingDocuments = await listProjectDocuments(projectId);
+  const existingDocuments = await listProjectDocumentSummaries(projectId);
   const text = `${title} ${fileName}`.toLowerCase();
 
   if (
@@ -117,6 +118,27 @@ function enforceUploadRateLimit(projectId: string) {
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    const requestLimit = checkRateLimit(request, "document-upload", {
+      limit: 16,
+      windowMs: 60_000,
+    });
+    if (!requestLimit.allowed) {
+      return NextResponse.json(
+        {
+          error:
+            "For mange opplastinger på kort tid. Vent litt før du prøver igjen.",
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(requestLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
+    return await withTiming(
+      "POST /api/projects/[id]/documents",
+      { project_id: id },
+      async () => {
     const formData = await request.formData();
     const file = formData.get("file");
     const title = `${formData.get("title") || ""}`.trim();
@@ -194,6 +216,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
 
     let snapshot = await getProjectSnapshot(id);
+    await auditEvent({
+      action: "document_uploaded",
+      projectId: id,
+      entityType: "document",
+      entityId: document.id,
+      metadata: {
+        role,
+        file_format: document.file_format,
+        file_size_bytes: document.file_size_bytes,
+      },
+    });
 
     try {
       if (role !== "primary_customer_document") {
@@ -212,6 +245,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
 
     return NextResponse.json({ document, project: snapshot }, { status: 201 });
+      },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Kunne ikke lagre dokumentet." },
