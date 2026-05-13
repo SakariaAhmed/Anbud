@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { answerProjectChat } from "@/lib/server/ai";
+import { answerProjectChat, resolveOpenAIModelOverride } from "@/lib/server/ai";
 import {
   appendChatMessage,
   getCustomerAnalysis,
@@ -25,6 +25,9 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    const model = await resolveOpenAIModelOverride(
+      request.headers.get("x-openai-model"),
+    );
     const body = (await request.json()) as { message?: string };
     const message = body.message?.trim();
 
@@ -62,6 +65,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       customerDocument,
       solutionDocument,
       question: message,
+      model,
     });
 
     await appendChatMessage(id, "assistant", assistantMessage, {

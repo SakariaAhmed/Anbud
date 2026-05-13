@@ -18,15 +18,20 @@ import {
   ClipboardCheck,
   FileCheck2,
   FileText,
+  FolderOpen,
   LayoutGrid,
   Scale,
   Sparkles,
+  Trash2,
+  Upload,
   Wrench,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
+import { Input } from "@/components/projects/primitives";
+import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -44,6 +49,7 @@ import {
 import {
   deriveProjectStatus,
   formatDate,
+  GenerationProgress,
 } from "@/components/projects/project-workspace-shared";
 import type {
   CustomerAnalysisResult,
@@ -54,6 +60,7 @@ import type {
   ProjectDetail,
   ProjectDocument,
   ProjectDocumentRole,
+  ProjectServiceDescription,
   ProjectJobRecord,
   ProjectStatus,
   SolutionEvaluationResult,
@@ -86,6 +93,265 @@ const ProjectAnalysisTab = dynamic(
     ),
   },
 );
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "Ukjent størrelse";
+  }
+
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  }
+
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function pageCountLabel(pageCount: number | null | undefined) {
+  if (!pageCount) {
+    return "Sider: ikke tilgjengelig";
+  }
+
+  return pageCount === 1 ? "1 side" : `${pageCount} sider`;
+}
+
+function projectDocumentRoleLabel(document: ProjectDocument) {
+  if (document.role === "primary_customer_document") return "Kundedokument";
+  if (document.role === "primary_solution_document") return "Løsningsdokument";
+  if (document.supporting_subtype === "kravdokument") return "Kravdokument";
+  if (document.supporting_subtype === "rfp") return "RFP";
+  if (document.supporting_subtype === "vedlegg") return "Vedlegg";
+  return "Støttedokument";
+}
+
+function serviceModeLabel(service: ProjectServiceDescription) {
+  return service.inclusion_mode === "fixed" ? "Fast" : "Valgt";
+}
+
+function ProjectDocumentsTab({
+  projectId,
+  documents,
+  services,
+  uploadOpen,
+  onToggleUploadOpen,
+  docTitle,
+  onDocTitleChange,
+  uploadRole,
+  onUploadRoleChange,
+  selectedDocumentName,
+  onFileChange,
+  documentFileInputKey,
+  onUploadDocument,
+  uploadBusy,
+  deletingDocumentId,
+  onDeleteDocument,
+}: {
+  projectId: string;
+  documents: ProjectDocument[];
+  services: ProjectServiceDescription[];
+  uploadOpen: boolean;
+  onToggleUploadOpen: () => void;
+  docTitle: string;
+  onDocTitleChange: (value: string) => void;
+  uploadRole: ProjectDocumentRole;
+  onUploadRoleChange: (value: ProjectDocumentRole) => void;
+  selectedDocumentName: string;
+  onFileChange: (file: File | null) => void;
+  documentFileInputKey: number;
+  onUploadDocument: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  uploadBusy: boolean;
+  deletingDocumentId: string | null;
+  onDeleteDocument: (document: ProjectDocument) => Promise<void>;
+}) {
+  const serviceDocuments = services.flatMap((service) =>
+    service.documents.map((document) => ({ service, document })),
+  );
+
+  return (
+    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={onToggleUploadOpen}
+        className="flex w-full items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-5 text-left transition-colors hover:bg-slate-100/80"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+            <FolderOpen className="size-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-xl font-bold text-slate-950">
+              Dokumenter
+            </span>
+            <span className="mt-1 block text-sm text-slate-500">
+              Prosjektdokumenter og tjenestebeskrivelser som brukes som grunnlag.
+            </span>
+          </span>
+        </span>
+        <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-bold text-blue-700">
+          {documents.length} dokumenter
+        </span>
+      </button>
+
+      {uploadOpen ? (
+        <form
+          onSubmit={onUploadDocument}
+          className="grid gap-3 border-b border-slate-200 bg-white px-5 py-5 lg:grid-cols-[minmax(14rem,1fr)_minmax(12rem,16rem)_minmax(12rem,1fr)_auto]"
+        >
+          <Input
+            value={docTitle}
+            onChange={(event) => onDocTitleChange(event.target.value)}
+            placeholder="Dokumenttittel"
+            className="h-10 rounded-lg text-sm"
+          />
+          <select
+            value={uploadRole}
+            onChange={(event) =>
+              onUploadRoleChange(event.target.value as ProjectDocumentRole)
+            }
+            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-primary"
+          >
+            <option value="primary_customer_document">Kundedokument</option>
+            <option value="primary_solution_document">Løsningsdokument</option>
+            <option value="supporting_document">Støttedokument</option>
+          </select>
+          <label
+            htmlFor="workspace-document-file"
+            className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 text-center text-sm font-semibold text-slate-600 hover:border-primary/60 hover:bg-primary/5"
+          >
+            <Upload className="size-4" />
+            <span className="min-w-0 truncate">
+              {selectedDocumentName || "Velg dokument"}
+            </span>
+          </label>
+          <Input
+            key={documentFileInputKey}
+            id="workspace-document-file"
+            type="file"
+            accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
+            className="sr-only"
+            onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+          />
+          <Button
+            type="submit"
+            className="h-10"
+            disabled={uploadBusy}
+          >
+            {uploadBusy ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <Upload data-icon="inline-start" />
+            )}
+            Last opp
+          </Button>
+        </form>
+      ) : null}
+
+      <div className="grid min-w-0 gap-6 px-5 py-5 xl:grid-cols-2">
+        <div>
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+            Prosjektdokumenter
+          </p>
+          {documents.length ? (
+            <div className="grid gap-3">
+              {documents.map((document) => (
+                <div
+                  key={document.id}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="break-words text-base font-semibold leading-6 text-slate-950">
+                        {document.title}
+                      </p>
+                      <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                        {projectDocumentRoleLabel(document)}
+                      </p>
+                    </div>
+                    <DeleteConfirmDialog
+                      title="Slett dokument?"
+                      description={`Dette sletter "${document.title}" fra prosjektet. Relaterte analyser kan også bli nullstilt. Handlingen kan ikke angres.`}
+                      confirmLabel="Slett dokument"
+                      onConfirm={() => onDeleteDocument(document)}
+                    >
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={deletingDocumentId === document.id}
+                        className="text-slate-400 hover:text-destructive"
+                      >
+                        {deletingDocumentId === document.id ? (
+                          <Spinner className="size-3" />
+                        ) : (
+                          <Trash2 className="size-3" />
+                        )}
+                      </Button>
+                    </DeleteConfirmDialog>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-500">
+                    <span>{formatFileSize(document.file_size_bytes)}</span>
+                    <span>·</span>
+                    <span>{pageCountLabel(document.page_count)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm leading-6 text-muted-foreground">
+              Ingen dokumenter i prosjektet.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+            Tjenestebeskrivelser
+          </p>
+          {serviceDocuments.length ? (
+            <div className="grid gap-3">
+              {serviceDocuments.map(({ service, document }) => (
+                <div
+                  key={`${service.id}-${document.id}`}
+                  className="rounded-xl border border-teal-200 bg-teal-50/55 px-4 py-4 shadow-sm"
+                >
+                  <div className="flex min-w-0 items-start gap-2">
+                    <FileText className="mt-1 size-4 shrink-0 text-teal-700" />
+                    <div className="min-w-0">
+                      <p className="break-words text-base font-semibold leading-6 text-slate-950">
+                        {document.title}
+                      </p>
+                      <p className="mt-1 break-words text-sm leading-5 text-slate-600">
+                        {service.name}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.1em] text-teal-800">
+                      {serviceModeLabel(service)}
+                    </span>
+                    {service.recommended ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold text-amber-900">
+                        Anbefalt
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-500">
+                    <span>{formatFileSize(document.file_size_bytes)}</span>
+                    <span>·</span>
+                    <span>{pageCountLabel(document.page_count)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-teal-200 px-4 py-8 text-center text-sm leading-6 text-muted-foreground">
+              Ingen tjenestedokumenter er valgt eller faste ennå.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 const ProjectDeliveryTab = dynamic(
   () =>
@@ -185,6 +451,7 @@ interface ProjectSnapshotPayload {
 }
 
 const PROJECT_WORKSPACE_TABS = [
+  "documents",
   "analysis",
   "bilag1",
   "service-description",
@@ -290,12 +557,12 @@ function DeferredSectionLoader({ label }: { label: string }) {
 async function pollProjectJob({
   projectId,
   jobId,
-  onMessage,
+  onStatus,
   signal,
 }: {
   projectId: string;
   jobId: string;
-  onMessage: (message: string) => void;
+  onStatus: (job: ProjectJobRecord) => void;
   signal?: AbortSignal;
 }) {
   const delays = [800, 1500, 2500];
@@ -309,15 +576,15 @@ async function pollProjectJob({
       `/api/projects/${projectId}/jobs/${jobId}`,
       { cache: "no-store", signal },
     );
-    const statusPayload = (await statusResponse.json()) as {
+    const statusPayload = await readJsonPayload<{
       error?: string;
       job?: ProjectJobRecord;
-    };
+    }>(statusResponse, "Kunne ikke hente jobbstatus.");
     if (!statusResponse.ok || !statusPayload.job) {
       throw new Error(statusPayload.error || "Kunne ikke hente jobbstatus.");
     }
 
-    onMessage(statusPayload.job.message);
+    onStatus(statusPayload.job);
 
     if (statusPayload.job.status === "failed") {
       throw new Error(statusPayload.job.error || "Jobben feilet.");
@@ -335,12 +602,90 @@ async function pollProjectJob({
 const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
   "summary",
   "strategy",
+  "clarifications",
   "design",
   "risks",
   "needs",
   "keywords",
   "value",
 ];
+
+function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "message">) {
+  if (job.status === "completed") return 100;
+  if (job.status === "failed") return 100;
+  if (job.status === "queued") return 8;
+
+  const message = job.message.toLowerCase();
+
+  if (message.includes("laster")) return 18;
+  if (message.includes("køer")) return 8;
+  if (message.includes("genererer") || message.includes("analyserer") || message.includes("sammenligner") || message.includes("skriver")) {
+    return job.kind === "artifact_generation" ? 62 : 58;
+  }
+  if (message.includes("kjører ny vurdering")) return 78;
+  if (message.includes("lagrer")) return 88;
+  if (message.includes("ferdig")) return 100;
+
+  return 28;
+}
+
+function estimatedJobDurationMs(
+  job: Pick<ProjectJobRecord, "kind">,
+  modelId: string,
+) {
+  const model = modelId.toLowerCase();
+  const modelMultiplier = model.includes("pro")
+    ? 1.75
+    : model.includes("5.5")
+      ? 1.35
+      : model.includes("nano")
+        ? 0.55
+        : model.includes("mini")
+          ? 0.7
+          : 1;
+  const baseByKind: Record<ProjectJobRecord["kind"], number> = {
+    customer_analysis: 75_000,
+    solution_evaluation: 80_000,
+    artifact_generation: 95_000,
+    high_level_design: 65_000,
+    perfect_system_solution: 135_000,
+    executive_summary: 45_000,
+  };
+
+  return Math.round((baseByKind[job.kind] ?? 75_000) * modelMultiplier);
+}
+
+function estimatedProgressFromElapsed(elapsedMs: number, estimatedDurationMs: number) {
+  const ratio = Math.min(1, Math.max(0, elapsedMs / estimatedDurationMs));
+  // Ease out toward 86%; final save/completion remains controlled by job status.
+  return Math.round(8 + (1 - Math.pow(1 - ratio, 1.7)) * 78);
+}
+
+const MODEL_STORAGE_KEY = "anbud-openai-model";
+const PREFERRED_MODEL_ORDER = [
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+  "gpt-5.5",
+  "gpt-5.5-pro",
+  "gpt-5.2",
+  "gpt-5.2-pro",
+];
+const MODEL_HELP_TEXT: Record<string, string> = {
+  "gpt-5.5": "Best balanse for komplekse tilbud: høy intelligens, god kvalitet, høyere kostnad.",
+  "gpt-5.5-pro": "Tyngste valg for kritiske leveranser: maksimal resonnering og kvalitet, tregest og dyrest.",
+  "gpt-5.4": "Sterkt standardvalg: høy kvalitet med bedre fart og kostnad enn pro-modellene.",
+  "gpt-5.4-mini": "Raskere og rimeligere: godt for utkast, omskriving og enklere analyser.",
+  "gpt-5.4-nano": "Raskest og billigst: best for korte oppgaver, lavere presisjon på kompleks strategi.",
+  "gpt-5.2": "Stabilt kvalitetsvalg: god intelligens og forutsigbarhet, men eldre enn 5.4/5.5.",
+  "gpt-5.2-pro": "Sterk eldre pro-modell: bra på krevende resonnement, ofte tregere og dyrere enn standard.",
+};
+
+type OpenAIModelSummary = {
+  id: string;
+  created: number | null;
+  owned_by: string | null;
+};
 
 function parseCustomerAnalysisSectionBusy(
   busy: string | null,
@@ -356,6 +701,27 @@ function parseCustomerAnalysisSectionBusy(
     : null;
 }
 
+function pickDefaultModel(
+  models: OpenAIModelSummary[],
+  preferredModel?: string,
+) {
+  const modelIds = new Set(models.map((model) => model.id));
+  if (preferredModel && modelIds.has(preferredModel)) {
+    return preferredModel;
+  }
+
+  return (
+    PREFERRED_MODEL_ORDER.find((modelId) => modelIds.has(modelId)) ??
+    models.find((model) => /^gpt-/i.test(model.id))?.id ??
+    models[0]?.id ??
+    ""
+  );
+}
+
+function modelHelpText(modelId: string) {
+  return MODEL_HELP_TEXT[modelId] ?? "Velg modell ut fra behov for kvalitet, fart og kostnad.";
+}
+
 export function ProjectWorkspacePage({
   initialData,
   initialTab = "analysis",
@@ -365,13 +731,17 @@ export function ProjectWorkspacePage({
 }) {
   const DEFAULT_SIDEBAR_WIDTH = 240;
   const MIN_SIDEBAR_WIDTH = 236;
-  const MAX_SIDEBAR_WIDTH = 360;
+  const MAX_SIDEBAR_WIDTH = 440;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [project, setProject] = useState(initialData);
+  const [serviceDescriptions, setServiceDescriptions] = useState<
+    ProjectServiceDescription[]
+  >([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [busyMessage, setBusyMessage] = useState("");
+  const [busyProgress, setBusyProgress] = useState(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [docTitle, setDocTitle] = useState("");
@@ -405,15 +775,16 @@ export function ProjectWorkspacePage({
   const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
+  const [availableModels, setAvailableModels] = useState<OpenAIModelSummary[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
+  const [modelsLoading, setModelsLoading] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
   const sidebarResizeRef = useRef(false);
 
   useEffect(() => {
     const tabFromUrl = searchParams.get("tab");
-    if (isProjectWorkspaceTab(tabFromUrl) && tabFromUrl !== activeTab) {
-      setActiveTab(tabFromUrl);
-    }
-  }, [activeTab, searchParams]);
+    setActiveTab(isProjectWorkspaceTab(tabFromUrl) ? tabFromUrl : "analysis");
+  }, [searchParams]);
 
   const setWorkspaceTab = useCallback(
     (tab: ProjectWorkspaceTab) => {
@@ -431,6 +802,98 @@ export function ProjectWorkspacePage({
   );
   const activeJobAbortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY) ?? "";
+    if (storedModel) {
+      setSelectedModel(storedModel);
+    }
+
+    let cancelled = false;
+    setModelsLoading(true);
+    fetch("/api/openai-models", { cache: "no-store" })
+      .then((response) =>
+        readJsonPayload<{
+          models?: OpenAIModelSummary[];
+          default_model?: string;
+        }>(response, "Kunne ikke hente modeller."),
+      )
+      .then((payload) => {
+        if (cancelled) return;
+        const models = payload.models ?? [];
+        setAvailableModels(models);
+        setSelectedModel((current) => {
+          const currentIsValid =
+            Boolean(current) && models.some((model) => model.id === current);
+          const storedIsValid =
+            Boolean(storedModel) &&
+            models.some((model) => model.id === storedModel);
+          const next =
+            (currentIsValid ? current : "") ||
+            (storedIsValid ? storedModel : "") ||
+            pickDefaultModel(models, payload.default_model);
+          if (next) {
+            window.localStorage.setItem(MODEL_STORAGE_KEY, next);
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAvailableModels([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setModelsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const aiModelHeaders = useCallback((): Record<string, string> => {
+    return selectedModel ? { "X-OpenAI-Model": selectedModel } : {};
+  }, [selectedModel]);
+
+  const onModelChange = useCallback((value: string) => {
+    setSelectedModel(value);
+    if (value) {
+      window.localStorage.setItem(MODEL_STORAGE_KEY, value);
+    } else {
+      window.localStorage.removeItem(MODEL_STORAGE_KEY);
+    }
+  }, []);
+
+  const loadSidebarServiceDescriptions = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `/api/projects/${project.id}/service-descriptions`,
+        { cache: "no-store" },
+      );
+      const payload = await readJsonPayload<{
+        services?: ProjectServiceDescription[];
+        error?: string;
+      }>(response, "Kunne ikke hente tjenestebeskrivelser.");
+      if (!response.ok || !payload.services) {
+        throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
+      }
+      setServiceDescriptions(payload.services);
+    } catch {
+      setServiceDescriptions([]);
+    }
+  }, [project.id]);
+
+  useEffect(() => {
+    void loadSidebarServiceDescriptions();
+    const onServicesUpdated = () => void loadSidebarServiceDescriptions();
+    window.addEventListener("project-services-updated", onServicesUpdated);
+    return () => {
+      window.removeEventListener("project-services-updated", onServicesUpdated);
+    };
+  }, [loadSidebarServiceDescriptions]);
+
   const stopSidebarResize = useCallback(() => {
     if (!sidebarResizeRef.current) return;
     sidebarResizeRef.current = false;
@@ -444,18 +907,35 @@ export function ProjectWorkspacePage({
       progressIntervalRef.current = null;
     }
     setBusyMessage("");
+    setBusyProgress(0);
   }
 
   function startProgressTicker(messages: string[]) {
     stopProgressTicker();
-    if (!messages.length) return;
+    setBusyProgress(6);
+    if (!messages.length) {
+      setBusyMessage("Starter ...");
+      return;
+    }
     setBusyMessage(messages[0] ?? "");
-    if (messages.length < 2) return;
-    let index = 0;
+  }
+
+  function startEstimatedProgress(job: ProjectJobRecord) {
+    if (progressIntervalRef.current) {
+      window.clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    const startedAt = Date.now();
+    const estimatedDuration = estimatedJobDurationMs(job, selectedModel);
+    setBusyProgress((current) => Math.max(current, progressForJobStatus(job)));
     progressIntervalRef.current = window.setInterval(() => {
-      index = Math.min(index + 1, messages.length - 1);
-      setBusyMessage(messages[index] ?? "");
-    }, 3200);
+      const elapsed = Date.now() - startedAt;
+      const estimatedProgress = estimatedProgressFromElapsed(
+        elapsed,
+        estimatedDuration,
+      );
+      setBusyProgress((current) => Math.min(86, Math.max(current, estimatedProgress)));
+    }, 1200);
   }
 
   useEffect(() => stopProgressTicker, []);
@@ -469,16 +949,25 @@ export function ProjectWorkspacePage({
   async function waitForProjectJob(
     jobId: string,
     failedFallbackMessage: string,
+    initialJob?: ProjectJobRecord,
   ) {
     activeJobAbortRef.current?.abort();
     const controller = new AbortController();
     activeJobAbortRef.current = controller;
+    if (initialJob) {
+      startEstimatedProgress(initialJob);
+    }
 
     try {
       const job = await pollProjectJob({
         projectId: project.id,
         jobId,
-        onMessage: setBusyMessage,
+        onStatus(jobStatus) {
+          setBusyMessage(jobStatus.message);
+          setBusyProgress((current) =>
+            Math.max(current, progressForJobStatus(jobStatus)),
+          );
+        },
         signal: controller.signal,
       });
 
@@ -738,6 +1227,7 @@ export function ProjectWorkspacePage({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
     } finally {
+      setBusyProgress(100);
       stopProgressTicker();
       setBusy(null);
     }
@@ -938,7 +1428,7 @@ export function ProjectWorkspacePage({
     try {
       const response = await fetch(`/api/projects/${project.id}/generate`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...aiModelHeaders() },
         body: JSON.stringify({
           artifact_id: artifact.id,
           title: value.title,
@@ -967,6 +1457,45 @@ export function ProjectWorkspacePage({
         ),
       );
       setNotice("Kravbesvarelsen er oppdatert.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Noe gikk galt.");
+      throw err;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onDeleteArtifact(artifact: GeneratedArtifact) {
+    setError("");
+    setNotice("");
+    setBusy(`delete-artifact-${artifact.id}`);
+    try {
+      const response = await fetch(`/api/projects/${project.id}/generate`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", ...aiModelHeaders() },
+        body: JSON.stringify({ artifact_id: artifact.id }),
+      });
+      const payload = await readJsonPayload<{
+        error?: string;
+        project?: ProjectSnapshotPayload;
+      }>(response, "Kunne ikke slette artefakten.");
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error || "Kunne ikke slette artefakten.");
+      }
+      setProject((current) =>
+        normalizeProjectState(
+          patchProjectWithSnapshot(
+            {
+              ...current,
+              generated_artifacts: current.generated_artifacts.filter(
+                (item) => item.id !== artifact.id,
+              ),
+            },
+            payload.project!,
+          ),
+        ),
+      );
+      setNotice("Artefakten er slettet.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
       throw err;
@@ -1028,23 +1557,33 @@ export function ProjectWorkspacePage({
     await runAction(
       "analysis",
       async () => {
-        const response = await fetch(
-          `/api/projects/${project.id}/customer-analysis`,
-          { method: "POST" },
-        );
+        const response = await fetch(`/api/projects/${project.id}/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
+          body: JSON.stringify({ kind: "customer_analysis" }),
+        });
         const payload = await readJsonPayload<{
           error?: string;
-          analysis?: CustomerAnalysisResult;
-          project?: ProjectSnapshotPayload;
-        }>(response, "Kunne ikke generere kundeanalyse.");
-        if (!response.ok || !payload.analysis || !payload.project) {
-          throw new Error(payload.error || "Kunne ikke generere kundeanalyse.");
+          job?: ProjectJobRecord;
+        }>(response, "Kunne ikke starte kundeanalysen.");
+        if (!response.ok || !payload.job) {
+          throw new Error(payload.error || "Kunne ikke starte kundeanalysen.");
         }
+        setBusyMessage(payload.job.message);
+        const completedJob = await waitForProjectJob(
+          payload.job.id,
+          "Kundeanalysen feilet.",
+          payload.job,
+        );
+        const result = completedJob.result as {
+          analysis: CustomerAnalysisResult;
+          project: ProjectSnapshotPayload;
+        };
         setProject((current) =>
           normalizeProjectState(
             patchProjectWithSnapshot(
-              { ...current, customer_analysis: payload.analysis! },
-              payload.project!,
+              { ...current, customer_analysis: result.analysis },
+              result.project,
             ),
             {
               preserveArtifactCount: !artifactsLoaded,
@@ -1063,15 +1602,15 @@ export function ProjectWorkspacePage({
       async () => {
         const response = await fetch(`/api/projects/${project.id}/jobs`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
           body: JSON.stringify({
             kind: "high_level_design",
           }),
         });
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           error?: string;
           job?: ProjectJobRecord;
-        };
+        }>(response, "Kunne ikke starte jobben.");
         if (!response.ok || !payload.job) {
           throw new Error(
             payload.error ||
@@ -1082,6 +1621,7 @@ export function ProjectWorkspacePage({
         const completedJob = await waitForProjectJob(
           payload.job.id,
           "Jobben for overordnet løsningsdesign feilet.",
+          payload.job,
         );
         const result = completedJob.result as {
           analysis: CustomerAnalysisResult;
@@ -1116,7 +1656,7 @@ export function ProjectWorkspacePage({
         `/api/projects/${project.id}/customer-analysis`,
         {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
           body: JSON.stringify({
             section,
             section_snapshot: snapshot,
@@ -1154,17 +1694,17 @@ export function ProjectWorkspacePage({
       async () => {
         const response = await fetch(`/api/projects/${project.id}/jobs`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
           body: JSON.stringify({
             kind: "artifact_generation",
             artifact_type: "losningsutkast",
             instructions: artifactInstructions,
           }),
         });
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           error?: string;
           job?: ProjectJobRecord;
-        };
+        }>(response, "Kunne ikke starte jobben.");
         if (!response.ok || !payload.job) {
           throw new Error(
             payload.error || "Kunne ikke starte generatorjobben.",
@@ -1174,6 +1714,7 @@ export function ProjectWorkspacePage({
         const completedJob = await waitForProjectJob(
           payload.job.id,
           "Generatorjobben feilet.",
+          payload.job,
         );
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
@@ -1210,16 +1751,16 @@ export function ProjectWorkspacePage({
       async () => {
         const response = await fetch(`/api/projects/${project.id}/jobs`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
           body: JSON.stringify({
             kind: "artifact_generation",
             artifact_type: "gjennomforing_og_risiko",
           }),
         });
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           error?: string;
           job?: ProjectJobRecord;
-        };
+        }>(response, "Kunne ikke starte jobben.");
         if (!response.ok || !payload.job) {
           throw new Error(
             payload.error || "Kunne ikke starte jobben for fremdriftsplan.",
@@ -1229,6 +1770,7 @@ export function ProjectWorkspacePage({
         const completedJob = await waitForProjectJob(
           payload.job.id,
           "Jobben for fremdriftsplanen feilet.",
+          payload.job,
         );
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
@@ -1264,17 +1806,17 @@ export function ProjectWorkspacePage({
       async () => {
         const response = await fetch(`/api/projects/${project.id}/jobs`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
           body: JSON.stringify({
             kind: "artifact_generation",
             artifact_type: "bilag1_rekonstruksjon",
             instructions,
           }),
         });
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           error?: string;
           job?: ProjectJobRecord;
-        };
+        }>(response, "Kunne ikke starte jobben.");
         if (!response.ok || !payload.job) {
           throw new Error(
             payload.error || "Kunne ikke starte jobben for Bilag 1.",
@@ -1284,6 +1826,7 @@ export function ProjectWorkspacePage({
         const completedJob = await waitForProjectJob(
           payload.job.id,
           "Jobben for Bilag 1 feilet.",
+          payload.job,
         );
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
@@ -1317,7 +1860,7 @@ export function ProjectWorkspacePage({
       async () => {
         const response = await fetch(`/api/projects/${project.id}/jobs`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
           body: JSON.stringify({
             kind: "artifact_generation",
             artifact_type: "forbedret_kravsvar",
@@ -1326,10 +1869,10 @@ export function ProjectWorkspacePage({
               : [],
           }),
         });
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           error?: string;
           job?: ProjectJobRecord;
-        };
+        }>(response, "Kunne ikke starte jobben.");
         if (!response.ok || !payload.job) {
           throw new Error(
             payload.error || "Kunne ikke starte jobben for kravbesvarelse.",
@@ -1339,6 +1882,7 @@ export function ProjectWorkspacePage({
         const completedJob = await waitForProjectJob(
           payload.job.id,
           "Jobben for kravbesvarelse feilet.",
+          payload.job,
         );
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
@@ -1371,17 +1915,17 @@ export function ProjectWorkspacePage({
       async () => {
         const response = await fetch(`/api/projects/${project.id}/jobs`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
           body: JSON.stringify({
             kind: "solution_evaluation",
             allow_generated_solution: false,
             solution_document_id: solutionDocumentId,
           }),
         });
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           error?: string;
           job?: ProjectJobRecord;
-        };
+        }>(response, "Kunne ikke starte jobben.");
         if (!response.ok || !payload.job) {
           throw new Error(
             payload.error || "Kunne ikke starte løsningsvurderingen.",
@@ -1391,6 +1935,7 @@ export function ProjectWorkspacePage({
         const completedJob = await waitForProjectJob(
           payload.job.id,
           "Løsningsvurderingen feilet.",
+          payload.job,
         );
         const result = completedJob.result as {
           evaluation: SolutionEvaluationResult;
@@ -1423,28 +1968,38 @@ export function ProjectWorkspacePage({
     await runAction(
       "executive-summary",
       async () => {
-        const response = await fetch(
-          `/api/projects/${project.id}/executive-summary`,
-          { method: "POST" },
-        );
-        const payload = (await response.json()) as {
+        const response = await fetch(`/api/projects/${project.id}/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
+          body: JSON.stringify({ kind: "executive_summary" }),
+        });
+        const payload = await readJsonPayload<{
           error?: string;
-          executive_summary?: ExecutiveSummaryResult;
-          project?: ProjectSnapshotPayload;
-        };
-        if (!response.ok || !payload.executive_summary || !payload.project) {
+          job?: ProjectJobRecord;
+        }>(response, "Kunne ikke starte lederoppsummeringen.");
+        if (!response.ok || !payload.job) {
           throw new Error(
-            payload.error || "Kunne ikke generere lederoppsummering.",
+            payload.error || "Kunne ikke starte lederoppsummeringen.",
           );
         }
+        setBusyMessage(payload.job.message);
+        const completedJob = await waitForProjectJob(
+          payload.job.id,
+          "Lederoppsummeringen feilet.",
+          payload.job,
+        );
+        const result = completedJob.result as {
+          executive_summary: ExecutiveSummaryResult;
+          project: ProjectSnapshotPayload;
+        };
         setProject((current) =>
           normalizeProjectState(
             patchProjectWithSnapshot(
               {
                 ...current,
-                executive_summary: payload.executive_summary!,
+                executive_summary: result.executive_summary,
               },
-              payload.project!,
+              result.project,
             ),
             {
               preserveArtifactCount: !artifactsLoaded,
@@ -1465,6 +2020,7 @@ export function ProjectWorkspacePage({
   const executiveSummary =
     project.executive_summary as ExecutiveSummaryResult | null;
   const workspaceNavItems = [
+    { value: "documents", label: "Dokumenter", icon: FolderOpen },
     { value: "analysis", label: "Kundeanalyse", icon: Brain },
     { value: "bilag1", label: "Bilag 1", icon: FileText },
     { value: "service-description", label: "Tjenestebeskrivelse", icon: Wrench },
@@ -1479,6 +2035,14 @@ export function ProjectWorkspacePage({
     { value: "executive-summary", label: "Leder oppsummering", icon: ClipboardCheck },
   ] as const;
   const projectMonogram = project.name.trim().charAt(0).toUpperCase() || "A";
+  const showModelSelector =
+    activeTab === "analysis" ||
+    activeTab === "bilag1" ||
+    activeTab === "requirements" ||
+    activeTab === "generator" ||
+    activeTab === "evaluation" ||
+    activeTab === "delivery" ||
+    activeTab === "executive-summary";
 
   function onSidebarResizeStart(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!sidebarOpen) return;
@@ -1656,6 +2220,44 @@ export function ProjectWorkspacePage({
                     ) : null}
                   </div>
                 </div>
+                {showModelSelector ? (
+                  <div className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm sm:w-[21rem]">
+                    <label
+                      htmlFor="workspace-ai-model"
+                      className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500"
+                    >
+                      Modell
+                    </label>
+                    <select
+                      id="workspace-ai-model"
+                      value={selectedModel}
+                      onChange={(event) => onModelChange(event.target.value)}
+                      disabled={modelsLoading || !availableModels.length}
+                      className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-slate-50 px-2 text-sm font-semibold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:text-slate-400"
+                    >
+                      {selectedModel &&
+                      !availableModels.some((model) => model.id === selectedModel) ? (
+                        <option value={selectedModel}>{selectedModel}</option>
+                      ) : null}
+                      {modelsLoading ? (
+                        <option value="">Henter modeller ...</option>
+                      ) : null}
+                      {!modelsLoading && !availableModels.length ? (
+                        <option value="">Ingen modeller funnet</option>
+                      ) : null}
+                    {availableModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.id}
+                      </option>
+                    ))}
+                  </select>
+                    {selectedModel ? (
+                      <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                        {modelHelpText(selectedModel)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </section>
 
@@ -1670,10 +2272,37 @@ export function ProjectWorkspacePage({
               </div>
             ) : null}
             {busyMessage && busy === "artifact" ? (
-              <div className="mb-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
-                <Spinner className="size-3.5" />
-                <span className="min-w-0">{busyMessage}</span>
+              <div className="mb-3">
+                <GenerationProgress
+                  message={busyMessage}
+                  progress={busyProgress}
+                />
               </div>
+            ) : null}
+
+            {activeTab === "documents" ? (
+              <ProjectDocumentsTab
+                projectId={project.id}
+                documents={project.documents}
+                services={serviceDescriptions}
+                uploadOpen={uploadOpen}
+                onToggleUploadOpen={() => setUploadOpen((open) => !open)}
+                docTitle={docTitle}
+                onDocTitleChange={setDocTitle}
+                uploadRole={uploadRole}
+                onUploadRoleChange={setUploadRole}
+                selectedDocumentName={file?.name ?? ""}
+                onFileChange={setFile}
+                documentFileInputKey={documentFileInputKey}
+                onUploadDocument={onUploadDocument}
+                uploadBusy={busy === "upload"}
+                deletingDocumentId={
+                  busy?.startsWith("delete-")
+                    ? busy.slice("delete-".length)
+                    : null
+                }
+                onDeleteDocument={onDeleteDocument}
+              />
             ) : null}
 
             {activeTab === "analysis" ? (
@@ -1690,6 +2319,7 @@ export function ProjectWorkspacePage({
                   busyMessage={
                     parseCustomerAnalysisSectionBusy(busy) ? busyMessage : ""
                   }
+                  busyProgress={busyProgress}
                   onGenerate={onGenerateCustomerAnalysis}
                   onSaveAnalysis={onSaveAnalysis}
                   uploadOpen={uploadOpen}
@@ -1723,6 +2353,7 @@ export function ProjectWorkspacePage({
                   hasSolutionDocument={project.documents.length > 0}
                   busy={busy === "solution-evaluation"}
                   busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
+                  busyProgress={busyProgress}
                   onGenerate={onGenerateSolutionEvaluation}
                 />
               )
@@ -1737,6 +2368,8 @@ export function ProjectWorkspacePage({
                 )}
                 busy={busy === "bilag1-artifact"}
                 busyMessage={busy === "bilag1-artifact" ? busyMessage : ""}
+                busyProgress={busyProgress}
+                onDeleteArtifact={onDeleteArtifact}
                 onSubmit={onGenerateBilag1Artifact}
               />
             ) : null}
@@ -1749,7 +2382,9 @@ export function ProjectWorkspacePage({
                 )}
                 busy={busy === "delivery-artifact"}
                 busyMessage={busy === "delivery-artifact" ? busyMessage : ""}
+                busyProgress={busyProgress}
                 hasCustomerAnalysis={Boolean(customerAnalysis)}
+                onDeleteArtifact={onDeleteArtifact}
                 onSubmit={onGenerateDeliveryArtifact}
               />
             ) : null}
@@ -1772,6 +2407,7 @@ export function ProjectWorkspacePage({
                 busyMessage={
                   busy === "requirement-response" ? busyMessage : ""
                 }
+                busyProgress={busyProgress}
                 deletingDocumentId={
                   busy?.startsWith("delete-")
                     ? busy.slice("delete-".length)
@@ -1782,6 +2418,7 @@ export function ProjectWorkspacePage({
                 onSelectedDocumentChange={setSelectedRequirementDocumentId}
                 onDeleteDocument={onDeleteDocument}
                 onUpdateArtifact={onUpdateRequirementArtifact}
+                onDeleteArtifact={onDeleteArtifact}
                 onSubmit={onGenerateRequirementResponse}
               />
             ) : null}
@@ -1797,6 +2434,7 @@ export function ProjectWorkspacePage({
                   busyMessage={
                     busy === "executive-summary" ? busyMessage : ""
                   }
+                  busyProgress={busyProgress}
                   onGenerate={onGenerateExecutiveSummary}
                 />
               )
@@ -1810,7 +2448,9 @@ export function ProjectWorkspacePage({
                 artifactInstructions={artifactInstructions}
                 busy={busy === "artifact"}
                 busyMessage={busy === "artifact" ? busyMessage : ""}
+                busyProgress={busyProgress}
                 onArtifactInstructionsChange={setArtifactInstructions}
+                onDeleteArtifact={onDeleteArtifact}
                 onSubmit={onGenerateArtifact}
               />
             ) : null}

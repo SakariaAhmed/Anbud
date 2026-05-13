@@ -14,7 +14,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
-import { AnalysisTabEmptyState } from "@/components/projects/project-workspace-shared";
+import {
+  AnalysisTabEmptyState,
+  GenerationProgress,
+} from "@/components/projects/project-workspace-shared";
 import type { ProjectDocument, SolutionEvaluationResult } from "@/lib/types";
 
 function getArchitectureComparison(evaluation: SolutionEvaluationResult) {
@@ -286,6 +289,7 @@ export function ProjectEvaluationTab({
   hasSolutionDocument,
   busy,
   busyMessage,
+  busyProgress,
   onGenerate,
 }: {
   documents: ProjectDocument[];
@@ -293,6 +297,7 @@ export function ProjectEvaluationTab({
   hasSolutionDocument: boolean;
   busy: boolean;
   busyMessage: string;
+  busyProgress: number;
   onGenerate: (documentId: string) => void;
 }) {
   const [selectedDocumentId, setSelectedDocumentId] = useState(
@@ -431,9 +436,8 @@ export function ProjectEvaluationTab({
       </section>
 
       {busy && busyMessage ? (
-        <div className="mb-4 flex items-center gap-2 text-sm text-primary">
-          <Spinner className="size-3.5" />
-          <span>{busyMessage}</span>
+        <div className="mb-4">
+          <GenerationProgress message={busyMessage} progress={busyProgress} />
         </div>
       ) : null}
 

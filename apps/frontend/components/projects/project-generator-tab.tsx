@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent } from "react";
-import { ChevronDown, Sparkles } from "lucide-react";
+import { ChevronDown, Sparkles, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { ArtifactActions } from "@/components/projects/artifact-actions";
-import { formatDate } from "@/components/projects/project-workspace-shared";
+import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
+import {
+  formatDate,
+  GenerationProgress,
+} from "@/components/projects/project-workspace-shared";
 import type { GeneratedArtifact } from "@/lib/types";
 
 export function ProjectGeneratorTab({
@@ -17,14 +21,18 @@ export function ProjectGeneratorTab({
   artifactInstructions,
   busy,
   busyMessage,
+  busyProgress,
   onArtifactInstructionsChange,
+  onDeleteArtifact,
   onSubmit,
 }: {
   artifacts: GeneratedArtifact[];
   artifactInstructions: string;
   busy: boolean;
   busyMessage: string;
+  busyProgress: number;
   onArtifactInstructionsChange: (value: string) => void;
+  onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const losningsutkast = artifacts.filter(
@@ -75,9 +83,8 @@ export function ProjectGeneratorTab({
         </form>
 
         {busy && busyMessage ? (
-          <div className="mt-1 flex min-w-0 items-center gap-2 px-5 pb-4 text-sm text-primary">
-            <Spinner className="size-3.5" />
-            <span className="min-w-0">{busyMessage}</span>
+          <div className="px-5 pb-5">
+            <GenerationProgress message={busyMessage} progress={busyProgress} />
           </div>
         ) : null}
       </div>
@@ -109,8 +116,19 @@ export function ProjectGeneratorTab({
                   <ChevronDown className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="rounded-b-2xl border-t bg-card px-7 py-7">
-                    <div className="mb-5">
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
                       <ArtifactActions artifact={artifact} />
+                      <DeleteConfirmDialog
+                        title="Slett løsningsbeskrivelse?"
+                        description={`Dette sletter "${artifact.title || "utkast uten tittel"}" fra prosjektet. Handlingen kan ikke angres.`}
+                        confirmLabel="Slett utkast"
+                        onConfirm={() => onDeleteArtifact(artifact)}
+                      >
+                        <Button type="button" variant="destructive" className="h-9 rounded-lg">
+                          <Trash2 data-icon="inline-start" />
+                          Slett
+                        </Button>
+                      </DeleteConfirmDialog>
                     </div>
                     <MarkdownViewer
                       content={

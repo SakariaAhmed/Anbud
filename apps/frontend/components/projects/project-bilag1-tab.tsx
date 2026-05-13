@@ -7,11 +7,16 @@ import {
   ChevronDown,
   FileText,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 
 import { ArtifactActions } from "@/components/projects/artifact-actions";
+import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
-import { formatDate } from "@/components/projects/project-workspace-shared";
+import {
+  formatDate,
+  GenerationProgress,
+} from "@/components/projects/project-workspace-shared";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,12 +27,16 @@ export function ProjectBilag1Tab({
   artifacts,
   busy,
   busyMessage,
+  busyProgress,
+  onDeleteArtifact,
   onSubmit,
 }: {
   documents: ProjectDocument[];
   artifacts: GeneratedArtifact[];
   busy: boolean;
   busyMessage: string;
+  busyProgress: number;
+  onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const [reviewNotes, setReviewNotes] = useState("");
@@ -95,9 +104,8 @@ export function ProjectBilag1Tab({
         </div>
 
         {busy && busyMessage ? (
-          <div className="mt-5 flex min-w-0 items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
-            <Spinner className="size-3.5" />
-            <span className="min-w-0">{busyMessage}</span>
+          <div className="mt-5">
+            <GenerationProgress message={busyMessage} progress={busyProgress} />
           </div>
         ) : null}
 
@@ -123,8 +131,19 @@ export function ProjectBilag1Tab({
               <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
             </summary>
             <div className="px-5 py-5 md:px-7 md:py-7">
-              <div className="mb-5">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
                 <ArtifactActions artifact={latestArtifact} />
+                <DeleteConfirmDialog
+                  title="Slett Bilag 1-utkast?"
+                  description={`Dette sletter "${latestArtifact.title || "Bilag 1-utkast"}" fra prosjektet. Handlingen kan ikke angres.`}
+                  confirmLabel="Slett utkast"
+                  onConfirm={() => onDeleteArtifact(latestArtifact)}
+                >
+                  <Button type="button" variant="destructive" className="h-9 rounded-lg">
+                    <Trash2 data-icon="inline-start" />
+                    Slett
+                  </Button>
+                </DeleteConfirmDialog>
               </div>
               <MarkdownViewer
                 content={
@@ -176,6 +195,19 @@ export function ProjectBilag1Tab({
                   <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="border-t px-4 py-4">
+                  <div className="mb-4 flex justify-end">
+                    <DeleteConfirmDialog
+                      title="Slett Bilag 1-utkast?"
+                      description={`Dette sletter "${artifact.title || "Bilag 1-utkast"}" fra prosjektet. Handlingen kan ikke angres.`}
+                      confirmLabel="Slett utkast"
+                      onConfirm={() => onDeleteArtifact(artifact)}
+                    >
+                      <Button type="button" variant="destructive" size="sm">
+                        <Trash2 data-icon="inline-start" />
+                        Slett
+                      </Button>
+                    </DeleteConfirmDialog>
+                  </div>
                   <MarkdownViewer
                     content={artifact.content_markdown}
                     className="artifact-markdown text-[0.98rem] text-foreground"

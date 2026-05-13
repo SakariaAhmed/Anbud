@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { evaluateSolutionDocument, synthesizeAndEvaluateSolution } from "@/lib/server/ai";
+import {
+  evaluateSolutionDocument,
+  resolveOpenAIModelOverride,
+  synthesizeAndEvaluateSolution,
+} from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
   getDocumentDetail,
@@ -33,6 +37,9 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    const model = await resolveOpenAIModelOverride(
+      request.headers.get("x-openai-model"),
+    );
     const body = (await request.json().catch(() => ({}))) as {
       allow_generated_solution?: boolean;
       solution_document_id?: string;
@@ -81,6 +88,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         customerAnalysis,
         customerDocument,
         supportingDocuments,
+        model,
       });
 
       generatedArtifact = await saveGeneratedArtifact(
@@ -115,6 +123,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       solutionDocument: evaluationDocument,
       supportingDocuments,
       customerAnalysis,
+      model,
     });
 
     const saved = await saveSolutionEvaluation(id, {

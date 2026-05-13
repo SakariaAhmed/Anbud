@@ -85,6 +85,7 @@ export interface ProjectDocument {
   file_format: DocumentFileFormat;
   content_type: string;
   file_size_bytes: number;
+  page_count?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -108,6 +109,7 @@ export interface ServiceDocument {
   file_format: DocumentFileFormat;
   content_type: string;
   file_size_bytes: number;
+  page_count?: number | null;
   ai_summary?: string;
   ai_summary_updated_at?: string | null;
   created_at: string;
@@ -164,6 +166,7 @@ export type CustomerAnalysisHistorySource =
 export type CustomerAnalysisSection =
   | "summary"
   | "strategy"
+  | "clarifications"
   | "design"
   | "risks"
   | "needs"
@@ -178,6 +181,11 @@ export interface CustomerAnalysisSectionSnapshotMap {
   strategy: {
     executive_summary: string;
     positioning_recommendations: string[];
+  };
+  clarifications: {
+    ambiguities: string[];
+    expected_solution_direction: string[];
+    likely_evaluation_criteria: string[];
   };
   design: {
     high_level_solution_design: string;
@@ -361,7 +369,8 @@ export type ProjectJobKind =
   | "solution_evaluation"
   | "artifact_generation"
   | "high_level_design"
-  | "perfect_system_solution";
+  | "perfect_system_solution"
+  | "executive_summary";
 export type ProjectJobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface ArtifactGenerationJobResult {
@@ -386,11 +395,17 @@ export interface CustomerAnalysisJobResult {
   project: ProjectSnapshotResult;
 }
 
+export interface ExecutiveSummaryJobResult {
+  executive_summary: ExecutiveSummaryResult;
+  project: ProjectSnapshotResult;
+}
+
 export type ProjectJobResult =
   | ArtifactGenerationJobResult
   | SolutionEvaluationJobResult
   | HighLevelDesignJobResult
-  | CustomerAnalysisJobResult;
+  | CustomerAnalysisJobResult
+  | ExecutiveSummaryJobResult;
 
 export interface ProjectJobRecord {
   id: string;

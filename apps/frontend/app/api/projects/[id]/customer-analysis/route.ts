@@ -4,6 +4,7 @@ import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
 import {
   analyzeCustomerDocuments,
   regenerateCustomerAnalysisSection,
+  resolveOpenAIModelOverride,
 } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
@@ -110,6 +111,24 @@ function applySectionSnapshot(
         ...analysis,
         executive_summary: snapshot.executive_summary,
         positioning_recommendations: snapshot.positioning_recommendations,
+      };
+    }
+    case "clarifications": {
+      if (
+        !isStringArray(snapshot.ambiguities) ||
+        !isStringArray(snapshot.expected_solution_direction) ||
+        !isStringArray(snapshot.likely_evaluation_criteria)
+      ) {
+        throw new Error(
+          "Avklaringer må inneholde tekstlistene ambiguities, expected_solution_direction og likely_evaluation_criteria.",
+        );
+      }
+
+      return {
+        ...analysis,
+        ambiguities: snapshot.ambiguities,
+        expected_solution_direction: snapshot.expected_solution_direction,
+        likely_evaluation_criteria: snapshot.likely_evaluation_criteria,
       };
     }
     case "design": {
@@ -235,6 +254,9 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
+    const model = await resolveOpenAIModelOverride(
+      request.headers.get("x-openai-model"),
+    );
     const body = (await request.json().catch(() => ({}))) as {
       section?: unknown;
     };
@@ -293,11 +315,13 @@ export async function POST(
             customerDocument,
             supportingDocuments,
             customerAnalysis: existingAnalysis,
+            model,
           })
         : await analyzeCustomerDocuments({
             projectName: customerDocument.title,
             customerDocument,
             supportingDocuments,
+            model,
           });
 
     const saved = await saveCustomerAnalysis(

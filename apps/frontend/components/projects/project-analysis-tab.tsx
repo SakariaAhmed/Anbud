@@ -45,6 +45,7 @@ import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { Input, Label } from "@/components/projects/primitives";
 import {
   AnalysisTabEmptyState,
+  GenerationProgress,
   VALUE_LABELS,
   ValueTags,
 } from "@/components/projects/project-workspace-shared";
@@ -231,6 +232,29 @@ function SectionHistoryContent({
             title="Posisjoneringsspor"
             items={value.positioning_recommendations}
             emptyText="Ingen posisjoneringsspor var lagret i denne versjonen."
+          />
+        </div>
+      );
+    }
+    case "clarifications": {
+      const value =
+        snapshot as CustomerAnalysisSectionSnapshotMap["clarifications"];
+      return (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <HistoryBulletList
+            title="Avklaringer"
+            items={value.ambiguities}
+            emptyText="Ingen avklaringer var lagret i denne versjonen."
+          />
+          <HistoryBulletList
+            title="Foreløpig retning"
+            items={value.expected_solution_direction}
+            emptyText="Ingen foreløpig løsningsretning var lagret i denne versjonen."
+          />
+          <HistoryBulletList
+            title="Evalueringssignaler"
+            items={value.likely_evaluation_criteria}
+            emptyText="Ingen evalueringssignaler var lagret i denne versjonen."
           />
         </div>
       );
@@ -1577,9 +1601,9 @@ function extractSummaryHighlights(content: string) {
 }
 
 const SECTION_TABS = [
-  { value: "documents", label: "Dokumenter" },
   { value: "summary", label: "Oppsummering" },
   { value: "strategy", label: "Strategi" },
+  { value: "clarifications", label: "Avklaringer" },
   { value: "design", label: "Design" },
   { value: "risks", label: "Risiko" },
   { value: "needs", label: "Behov" },
@@ -1955,6 +1979,7 @@ export function ProjectAnalysisTab({
   saveBusy,
   sectionBusy,
   busyMessage,
+  busyProgress,
   onGenerate,
   onSaveAnalysis,
   uploadOpen,
@@ -1978,6 +2003,7 @@ export function ProjectAnalysisTab({
   saveBusy: boolean;
   sectionBusy: CustomerAnalysisSection | null;
   busyMessage: string;
+  busyProgress: number;
   onGenerate: () => void;
   onSaveAnalysis: (
     section: CustomerAnalysisSection,
@@ -2003,7 +2029,7 @@ export function ProjectAnalysisTab({
   const [sectionDraftError, setSectionDraftError] = useState("");
   const [activeSection, setActiveSection] =
     useState<(typeof SECTION_TABS)[number]["value"]>(
-      customerAnalysis ? "summary" : "documents",
+      "summary",
     );
   const [selectedValueIndex, setSelectedValueIndex] = useState<number | null>(
     null,
@@ -2016,7 +2042,7 @@ export function ProjectAnalysisTab({
 
   useEffect(() => {
     if (!customerAnalysis) {
-      setActiveSection("documents");
+      setActiveSection("summary");
       setEditingSection(null);
       setSectionDraft("");
       setSectionDraftError("");
@@ -2266,9 +2292,8 @@ export function ProjectAnalysisTab({
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       {sectionBusy && busyMessage ? (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
-          <Spinner className="size-3.5" />
-          <span className="min-w-0">{busyMessage}</span>
+        <div className="mb-4">
+          <GenerationProgress message={busyMessage} progress={busyProgress} />
         </div>
       ) : null}
 
@@ -2277,7 +2302,7 @@ export function ProjectAnalysisTab({
         onValueChange={(value) =>
           setActiveSection(value as (typeof SECTION_TABS)[number]["value"])
         }
-        defaultValue="documents"
+        defaultValue="summary"
         className="min-w-0 gap-4"
       >
         <div className="-mx-5 mb-4 overflow-y-hidden border-b border-border/70 bg-background px-5 pt-0 pb-0.5 md:-mx-8 md:px-8">
@@ -2316,186 +2341,6 @@ export function ProjectAnalysisTab({
             ) : null}
           </div>
         </div>
-
-        <TabsContent value="documents" className="mt-0">
-          <SectionSurface
-            title={`Dokumentgrunnlag (${documents.length})`}
-            description="Alle opplastede filer lagres i samme dokumentbank og kan velges der dokumentgrunnlag trengs."
-            icon={FileText}
-          >
-            <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]">
-              <div className="relative overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
-                <div>
-                  <button
-                    type="button"
-                    onClick={onToggleUploadOpen}
-                  className="flex w-full items-center justify-between gap-3 bg-muted px-4 py-3 text-left text-sm font-semibold text-foreground hover:text-primary"
-                >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Upload className="size-4" />
-                      <span>Last opp dokument</span>
-                    </span>
-                    <ChevronDown
-                      className={`size-4 text-muted-foreground transition-transform ${uploadOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {uploadOpen ? (
-                    <form onSubmit={onUploadDocument} className="space-y-4 p-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="docTitle" className="font-medium">
-                          Tittel
-                        </Label>
-                        <Input
-                          id="docTitle"
-                          value={docTitle}
-                          onChange={(e) => onDocTitleChange(e.target.value)}
-                          placeholder="Visningsnavn i prosjektet"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="documentRole" className="font-medium">
-                          Dokumentrolle
-                        </Label>
-                        <select
-                          id="documentRole"
-                          value={uploadRole}
-                          onChange={(event) =>
-                            onUploadRoleChange(
-                              event.target.value as ProjectDocumentRole,
-                            )
-                          }
-                          className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
-                        >
-                          <option value="primary_customer_document">
-                            Kundedokument
-                          </option>
-                          <option value="primary_solution_document">
-                            Løsningsdokument
-                          </option>
-                          <option value="supporting_document">
-                            Støttedokument
-                          </option>
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="file" className="font-medium">
-                          Dokument
-                        </Label>
-                        <label
-                          htmlFor="file"
-                          onDragOver={(event) => {
-                            event.preventDefault();
-                            event.dataTransfer.dropEffect = "copy";
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            onFileChange(event.dataTransfer.files?.[0] ?? null);
-                          }}
-                          className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-7 text-center transition-colors hover:border-primary/60 hover:bg-primary/5"
-                        >
-                          <span className="mb-3 flex size-11 items-center justify-center rounded-lg bg-white text-primary shadow-sm">
-                            <Upload className="size-5" />
-                          </span>
-                          <span className="text-sm font-semibold text-foreground">
-                            Dra og slipp dokumentet her
-                          </span>
-                          <span className="mt-1 text-xs leading-5 text-muted-foreground">
-                            eller klikk for å velge PDF, DOCX, Excel, TXT eller MD.
-                          </span>
-                          {selectedDocumentName ? (
-                            <span className="mt-3 max-w-full truncate rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                              {selectedDocumentName}
-                            </span>
-                          ) : null}
-                        </label>
-                        <Input
-                          key={documentFileInputKey}
-                          id="file"
-                          type="file"
-                          accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
-                          className="sr-only"
-                          onChange={(e) =>
-                            onFileChange(e.target.files?.[0] ?? null)
-                          }
-                        />
-                      </div>
-                      <Button
-                        type="submit"
-                        className="w-full"
-                        disabled={uploadBusy}
-                      >
-                        {uploadBusy ? (
-                          <Spinner className="size-4" />
-                        ) : (
-                          <Upload data-icon="inline-start" />
-                        )}
-                        Last opp
-                      </Button>
-                    </form>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="relative overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
-                <div className="bg-muted px-4 py-3">
-                  <h3 className="text-sm font-bold text-foreground">
-                    Dokumenter i prosjektet
-                  </h3>
-                </div>
-                {documents.length === 0 ? (
-                  <p className="bg-background py-8 text-center text-sm text-muted-foreground">
-                    Ingen dokumenter lastet opp ennå.
-                  </p>
-                ) : (
-                  <div>
-                    {documents.map((document) => (
-                      <div
-                        key={document.id}
-                        className="flex min-w-0 items-start justify-between gap-3 border-t bg-background px-4 py-3"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <FileText className="size-4 shrink-0 text-primary" />
-                            <span className="truncate text-sm font-semibold text-foreground">
-                              {document.title}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
-                            {document.file_format.toUpperCase()}{" "}
-                            {Math.round(document.file_size_bytes / 1024)} KB
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <a
-                            href={`/api/projects/${projectId}/documents/${document.id}`}
-                            className={cn(
-                              "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                            )}
-                          >
-                            <ArrowDownToLine className="size-3.5" />
-                          </a>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => void onDeleteDocument(document)}
-                            disabled={deletingDocumentId === document.id}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            {deletingDocumentId === document.id ? (
-                              <Spinner className="size-3.5" />
-                            ) : (
-                              <Trash2 className="size-3.5" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </SectionSurface>
-        </TabsContent>
 
         {customerAnalysis ? (
           <>
@@ -2672,6 +2517,136 @@ export function ProjectAnalysisTab({
                 </div>
               </div>
               <SectionHistoryPanel analysis={customerAnalysis} section="strategy" />
+            </SectionSurface>
+          </TabsContent>
+
+          <TabsContent value="clarifications" className="mt-0">
+            <SectionSurface
+              title="Avklaringer før design"
+              description="Spørsmål og retningsvalg som må avklares med kunden før strategien gjøres om til endelig løsningsdesign."
+              icon={Compass}
+              action={renderSectionActions("clarifications")}
+            >
+              {renderSectionEditor("clarifications")}
+              <div className="space-y-5">
+                <div className="rounded-[1.35rem] border border-amber-300/80 bg-[#fffdf3] px-5 py-6 shadow-[0_18px_45px_rgba(15,23,42,0.08)] md:px-7">
+                  <div className="mb-6 flex items-start gap-4">
+                    <div className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)]">
+                      <ListChecks className="size-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[0.78rem] font-bold uppercase tracking-[0.28em] text-amber-800/75">
+                        Kundespørsmål
+                      </p>
+                      <h4 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
+                        Åpne avklaringer
+                      </h4>
+                    </div>
+                  </div>
+                  {customerAnalysis.ambiguities.length ? (
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      {customerAnalysis.ambiguities.map((item, index) => (
+                        <div
+                          key={`ambiguity-${index}`}
+                          className="rounded-xl border border-white/85 bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+                        >
+                          <p className="mb-3 text-sm font-bold uppercase tracking-[0.22em] text-amber-700">
+                            Avklaring {index + 1}
+                          </p>
+                          <MarkdownViewer
+                            content={item}
+                            className="analysis-prose max-w-none text-[1.02rem] leading-8 text-slate-700"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-amber-300 bg-white/55 px-4 py-4 text-sm leading-6 text-amber-900/70">
+                      Ingen åpne avklaringer er identifisert ennå.
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+                  <div className="rounded-xl border border-blue-200/80 bg-blue-50/70 px-5 py-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+                    <div className="mb-4 flex items-start gap-3">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+                        <Workflow className="size-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-blue-800/70">
+                          Strategi til design
+                        </p>
+                        <h4 className="mt-1 text-base font-semibold text-slate-950">
+                          Foreløpig løsningsretning
+                        </h4>
+                      </div>
+                    </div>
+                    {customerAnalysis.expected_solution_direction.length ? (
+                      <div className="space-y-3">
+                        {customerAnalysis.expected_solution_direction.map(
+                          (item, index) => (
+                            <div
+                              key={`direction-${index}`}
+                              className="rounded-lg border border-white/80 bg-white/82 px-4 py-4"
+                            >
+                              <MarkdownViewer
+                                content={item}
+                                className="analysis-prose max-w-none text-[0.98rem] text-slate-700"
+                              />
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    ) : (
+                      <p className="rounded-lg border border-dashed border-blue-300 bg-white/55 px-4 py-4 text-sm leading-6 text-blue-900/70">
+                        Ingen foreløpig løsningsretning er identifisert ennå.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 px-5 py-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+                    <div className="mb-4 flex items-start gap-3">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm">
+                        <Target className="size-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-emerald-800/70">
+                          Kundens prioritering
+                        </p>
+                        <h4 className="mt-1 text-base font-semibold text-slate-950">
+                          Sannsynlige vurderingskriterier
+                        </h4>
+                      </div>
+                    </div>
+                    {customerAnalysis.likely_evaluation_criteria.length ? (
+                      <div className="space-y-3">
+                        {customerAnalysis.likely_evaluation_criteria.map(
+                          (item, index) => (
+                            <div
+                              key={`criteria-${index}`}
+                              className="rounded-lg border border-white/80 bg-white/82 px-4 py-4"
+                            >
+                              <MarkdownViewer
+                                content={item}
+                                className="analysis-prose max-w-none text-[0.98rem] text-slate-700"
+                              />
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    ) : (
+                      <p className="rounded-lg border border-dashed border-emerald-300 bg-white/55 px-4 py-4 text-sm leading-6 text-emerald-900/70">
+                        Ingen vurderingskriterier er identifisert ennå.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <SectionHistoryPanel
+                analysis={customerAnalysis}
+                section="clarifications"
+              />
             </SectionSurface>
           </TabsContent>
 
@@ -2914,7 +2889,7 @@ export function ProjectAnalysisTab({
           </>
         ) : (
           <>
-            {SECTION_TABS.filter((tab) => tab.value !== "documents").map((tab) => (
+            {SECTION_TABS.map((tab) => (
               <TabsContent key={tab.value} value={tab.value} className="mt-0">
                 <AnalysisTabEmptyState>
                   Ingen analyse ennå. Last opp et dokument og generer analysen.

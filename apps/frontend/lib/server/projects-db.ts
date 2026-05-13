@@ -90,6 +90,7 @@ interface DocumentSummaryRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  structure_map?: Json;
   created_at: string;
   updated_at: string;
 }
@@ -178,6 +179,7 @@ interface ServiceDocumentSummaryRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  structure_map?: Json;
   ai_summary?: string | null;
   ai_summary_updated_at?: string | null;
   created_at: string;
@@ -198,11 +200,15 @@ interface ProjectCacheSnapshot {
 }
 
 const DOCUMENT_SELECT_SAFE =
-  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, raw_text, created_at, updated_at";
+  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, raw_text, structure_map, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_SAFE =
-  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, created_at, updated_at";
+  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, structure_map, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_LEGACY =
   "id, project_id, role, subtype, display_name, file_format, content_type, created_at";
+const PROJECT_SELECT_SAFE =
+  "id, name, customer_name, description, industry, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
+const PROJECT_SELECT_LEGACY =
+  "id, title, client_name, description, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
 
 const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   customer_profile_summary: "",
@@ -386,7 +392,35 @@ function decryptDocumentRow(row: DocumentRow): ProjectDocumentDetail {
   };
 }
 
+function pageCountFromStructureMap(
+  structureMap: unknown,
+  fileFormat: string,
+): number | null {
+  if (fileFormat !== "pdf" || !Array.isArray(structureMap)) {
+    return null;
+  }
+
+  const pageNumbers = structureMap
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const reference = String(
+        (entry as { reference?: unknown }).reference ?? "",
+      );
+      const match = reference.match(/\bside\s+(\d{1,5})\b/i);
+      return match ? Number(match[1]) : null;
+    })
+    .filter((value): value is number => Number.isFinite(value));
+
+  return pageNumbers.length ? Math.max(...pageNumbers) : null;
+}
+
 function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
+  const structureMap = row.structure_map
+    ? decryptJson(row.structure_map, [])
+    : [];
+
   return {
     id: row.id,
     project_id: row.project_id,
@@ -397,6 +431,7 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
     file_format: row.file_format as ProjectDocument["file_format"],
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
+    page_count: pageCountFromStructureMap(structureMap, row.file_format),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -466,6 +501,10 @@ function mapChatMessage(row: ChatRow): ChatMessage {
 }
 
 function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
+  const structureMap = row.structure_map
+    ? decryptJson(row.structure_map, [])
+    : [];
+
   return {
     id: row.id,
     service_id: row.service_id,
@@ -474,6 +513,7 @@ function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
     file_format: row.file_format as ServiceDocument["file_format"],
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
+    page_count: pageCountFromStructureMap(structureMap, row.file_format),
     ai_summary:
       typeof row.ai_summary === "string" ? decryptString(row.ai_summary) : "",
     ai_summary_updated_at: row.ai_summary_updated_at ?? null,
@@ -685,6 +725,7 @@ function fromUnknownDocumentSummaryRow(
     file_format: String(row.file_format ?? "txt"),
     content_type: String(row.content_type ?? "application/octet-stream"),
     file_size_bytes: fileSizeBytes,
+    structure_map: (row.structure_map ?? row.source_map ?? []) as Json,
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(
       row.updated_at ?? row.created_at ?? new Date().toISOString(),
@@ -781,37 +822,58 @@ async function fetchSingleDocumentRow(
 
 async function queryProjectRow(projectId: string) {
   const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const first = await supabase
     .from("projects")
-    .select("*")
+    .select(PROJECT_SELECT_SAFE)
     .eq("id", projectId)
     .single<Record<string, unknown>>();
 
-  if (error || !data) {
-    throw new Error("Fant ikke prosjektet.");
+  if (!first.error && first.data) {
+    return fromUnknownProjectRow(first.data);
   }
 
-  return fromUnknownProjectRow(data);
+  if (isMissingLegacyProjectColumn(first.error)) {
+    const retry = await supabase
+      .from("projects")
+      .select(PROJECT_SELECT_LEGACY)
+      .eq("id", projectId)
+      .single<Record<string, unknown>>();
+
+    if (!retry.error && retry.data) {
+      return fromUnknownProjectRow(retry.data);
+    }
+  }
+
+  throw new Error("Fant ikke prosjektet.");
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {
   return unstable_cache(
     async () => {
       const supabase = createServiceClient();
+      const projectQuery = async (select: string) =>
+        supabase
+          .from("projects")
+          .select(select)
+          .order("last_activity_at", { ascending: false });
       const [
-        { data: projects, error: projectsError },
+        projectsResult,
         documentRows,
         { data: artifacts },
       ] = await Promise.all([
-        supabase
-          .from("projects")
-          .select("*")
-          .order("last_activity_at", { ascending: false }),
+        projectQuery(PROJECT_SELECT_SAFE),
         fetchDocumentSummaryRows((select) =>
           supabase.from("documents").select(select),
         ),
         supabase.from("generated_artifacts").select("id, project_id"),
       ]);
+      let { data: projects, error: projectsError } = projectsResult;
+
+      if (projectsError && isMissingLegacyProjectColumn(projectsError)) {
+        const retry = await projectQuery(PROJECT_SELECT_LEGACY);
+        projects = retry.data;
+        projectsError = retry.error;
+      }
 
       if (projectsError) {
         throw new Error(projectsError.message);
@@ -832,7 +894,7 @@ export async function listProjects(): Promise<ProjectSummary[]> {
         );
       }
 
-      return ((projects ?? []) as Record<string, unknown>[]).map((row) => {
+      return ((projects ?? []) as unknown as Record<string, unknown>[]).map((row) => {
         const project = fromUnknownProjectRow(row);
         return {
           ...mapProjectSummary(
@@ -902,6 +964,18 @@ export async function createProject(
   return mapProjectSummary(project, []);
 }
 
+export async function deleteProject(projectId: string) {
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("projects").delete().eq("id", projectId);
+
+  if (error) {
+    throw new Error(error.message || "Kunne ikke slette prosjektet.");
+  }
+
+  revalidateProjectCaches(projectId);
+  revalidatePath("/projects/new");
+}
+
 export async function listServiceDescriptions(): Promise<ServiceDescription[]> {
   return unstable_cache(
     async () => {
@@ -915,7 +989,7 @@ export async function listServiceDescriptions(): Promise<ServiceDescription[]> {
             .order("name", { ascending: true }),
           supabase
             .from("service_documents")
-            .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, created_at, updated_at")
+            .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, structure_map, created_at, updated_at")
             .order("created_at", { ascending: false }),
         ]);
 
@@ -1274,7 +1348,7 @@ export async function listServiceDocumentSummariesForProject(
 
   const { data, error } = await supabase
     .from("service_documents")
-    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, ai_summary, ai_summary_updated_at, created_at, updated_at")
+    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, structure_map, ai_summary, ai_summary_updated_at, created_at, updated_at")
     .in("service_id", serviceIds)
     .order("created_at", { ascending: false });
 
@@ -2084,6 +2158,19 @@ export async function listSupportingDocuments(projectId: string) {
   return rows.map(decryptDocumentRow);
 }
 
+export async function listProjectDocumentSummaries(projectId: string) {
+  const supabase = createServiceClient();
+  const rows = await fetchDocumentSummaryRows((select) =>
+    supabase
+      .from("documents")
+      .select(select)
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false }),
+  );
+
+  return rows.map(mapDocumentSummary);
+}
+
 export async function listProjectDocuments(projectId: string) {
   const supabase = createServiceClient();
   const rows = await fetchDocumentRows((select) =>
@@ -2431,6 +2518,28 @@ export async function updateGeneratedArtifact(input: {
     .eq("id", input.projectId);
   revalidateProjectCaches(input.projectId);
   return mapArtifact(data);
+}
+
+export async function deleteGeneratedArtifact(input: {
+  projectId: string;
+  artifactId: string;
+}) {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("generated_artifacts")
+    .delete()
+    .eq("id", input.artifactId)
+    .eq("project_id", input.projectId);
+
+  if (error) {
+    throw new Error(error.message || "Kunne ikke slette artefakten.");
+  }
+
+  await supabase
+    .from("projects")
+    .update({ last_activity_at: new Date().toISOString() })
+    .eq("id", input.projectId);
+  revalidateProjectCaches(input.projectId);
 }
 
 export async function listGeneratedArtifacts(projectId: string) {
