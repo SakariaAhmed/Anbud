@@ -405,7 +405,8 @@ export type ProjectJobResult =
   | SolutionEvaluationJobResult
   | HighLevelDesignJobResult
   | CustomerAnalysisJobResult
-  | ExecutiveSummaryJobResult;
+  | ExecutiveSummaryJobResult
+  | Record<string, unknown>;
 
 export interface ProjectJobRecord {
   id: string;

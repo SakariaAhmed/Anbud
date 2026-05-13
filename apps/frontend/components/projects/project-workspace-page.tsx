@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Brain,
   ClipboardCheck,
+  Download,
   FileCheck2,
   FileText,
   FolderOpen,
@@ -112,6 +113,10 @@ function pageCountLabel(pageCount: number | null | undefined) {
   }
 
   return pageCount === 1 ? "1 side" : `${pageCount} sider`;
+}
+
+function downloadFileName(document: ProjectDocument) {
+  return document.file_name || `${document.title}.${document.file_format}`;
 }
 
 function projectDocumentRoleLabel(document: ProjectDocument) {
@@ -266,26 +271,36 @@ function ProjectDocumentsTab({
                         {projectDocumentRoleLabel(document)}
                       </p>
                     </div>
-                    <DeleteConfirmDialog
-                      title="Slett dokument?"
-                      description={`Dette sletter "${document.title}" fra prosjektet. Relaterte analyser kan også bli nullstilt. Handlingen kan ikke angres.`}
-                      confirmLabel="Slett dokument"
-                      onConfirm={() => onDeleteDocument(document)}
-                    >
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        disabled={deletingDocumentId === document.id}
-                        className="text-slate-400 hover:text-destructive"
+                    <div className="flex shrink-0 items-center gap-1">
+                      <a
+                        href={`/api/projects/${projectId}/documents/${document.id}`}
+                        download={downloadFileName(document)}
+                        className="inline-flex size-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-950"
+                        title={`Last ned ${downloadFileName(document)}`}
                       >
-                        {deletingDocumentId === document.id ? (
-                          <Spinner className="size-3" />
-                        ) : (
-                          <Trash2 className="size-3" />
-                        )}
-                      </Button>
-                    </DeleteConfirmDialog>
+                        <Download className="size-3.5" />
+                      </a>
+                      <DeleteConfirmDialog
+                        title="Slett dokument?"
+                        description={`Dette sletter "${document.title}" fra prosjektet. Relaterte analyser kan også bli nullstilt. Handlingen kan ikke angres.`}
+                        confirmLabel="Slett dokument"
+                        onConfirm={() => onDeleteDocument(document)}
+                      >
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={deletingDocumentId === document.id}
+                          className="text-slate-400 hover:text-destructive"
+                        >
+                          {deletingDocumentId === document.id ? (
+                            <Spinner className="size-3" />
+                          ) : (
+                            <Trash2 className="size-3" />
+                          )}
+                        </Button>
+                      </DeleteConfirmDialog>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-500">
                     <span>{formatFileSize(document.file_size_bytes)}</span>
