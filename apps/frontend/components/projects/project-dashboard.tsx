@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import {
   useRef,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useState,
@@ -51,6 +52,8 @@ function fileTitle(file: File) {
 
 const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
 const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
+const HOME_INTRO_SEEN_KEY = "bidsite-home-intro-seen";
+const PROJECT_PREFETCH_LIMIT = 12;
 
 async function uploadProjectDocument({
   projectId,
@@ -531,7 +534,15 @@ function HomepageRefreshAnimation() {
   });
 
   useLayoutEffect(() => {
-    if (consumeNextHomeNavigationWithoutAnimation()) {
+    let hasSeenIntro = false;
+    try {
+      hasSeenIntro = window.sessionStorage.getItem(HOME_INTRO_SEEN_KEY) === "1";
+      window.sessionStorage.setItem(HOME_INTRO_SEEN_KEY, "1");
+    } catch {
+      hasSeenIntro = false;
+    }
+
+    if (hasSeenIntro || consumeNextHomeNavigationWithoutAnimation()) {
       skipAnimationRef.current = true;
       setVisible(false);
       setCompleted(true);
@@ -1516,6 +1527,34 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   const [deleteError, setDeleteError] = useState("");
   const latestProject = projects[0] ?? null;
 
+  const prefetchProject = useCallback(
+    (projectId: string) => {
+      router.prefetch(`/projects/${projectId}`);
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (!projects.length) return;
+
+    const prefetchVisibleProjects = () => {
+      for (const project of projects.slice(0, PROJECT_PREFETCH_LIMIT)) {
+        router.prefetch(`/projects/${project.id}`);
+      }
+      void import("@/components/projects/project-analysis-tab");
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(prefetchVisibleProjects, {
+        timeout: 1500,
+      });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timeoutId = setTimeout(prefetchVisibleProjects, 300);
+    return () => clearTimeout(timeoutId);
+  }, [projects, router]);
+
   async function handleSpotlightUpload(file: File | null) {
     if (!file || uploading) return;
 
@@ -1645,6 +1684,9 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               {latestProject ? (
                 <Link
                   href={`/projects/${latestProject.id}`}
+                  prefetch
+                  onFocus={() => prefetchProject(latestProject.id)}
+                  onPointerEnter={() => prefetchProject(latestProject.id)}
                   className="inline-flex h-10 items-center gap-2 rounded-md border border-white/20 bg-white/[0.08] px-4 text-sm font-semibold text-white backdrop-blur transition-colors hover:border-white/35 hover:bg-white/[0.13] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 >
                   Siste prosjekt
@@ -1769,7 +1811,13 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                     className="group border-b border-slate-200/80 transition-colors last:border-b-0 hover:bg-blue-50/35"
                   >
                     <td className="px-7 py-5">
-                      <Link href={`/projects/${project.id}`} className="block">
+                      <Link
+                        href={`/projects/${project.id}`}
+                        prefetch
+                        onFocus={() => prefetchProject(project.id)}
+                        onPointerEnter={() => prefetchProject(project.id)}
+                        className="block"
+                      >
                         <p className="text-lg font-bold tracking-[-0.02em] text-slate-950 transition-colors group-hover:text-blue-800">
                           {project.name}
                         </p>
@@ -1817,6 +1865,9 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                         </DeleteConfirmDialog>
                         <Link
                           href={`/projects/${project.id}`}
+                          prefetch
+                          onFocus={() => prefetchProject(project.id)}
+                          onPointerEnter={() => prefetchProject(project.id)}
                           className="inline-flex h-9 items-center gap-2 rounded-md border border-blue-100 bg-white px-3 text-sm font-semibold text-blue-800 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50"
                         >
                           Åpne <ArrowRight className="size-4" />

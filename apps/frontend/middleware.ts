@@ -4,13 +4,16 @@ import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/password-auth";
 
 const PUBLIC_PATH_PREFIXES = [
   "/_next",
-  "/api/auth",
   "/favicon.ico",
   "/bidsite-logo.png",
 ];
 
 function isPublicPath(pathname: string) {
-  return pathname === "/login" || PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  return (
+    pathname === "/login" ||
+    pathname === "/api/auth/login" ||
+    PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+  );
 }
 
 function unauthorizedJson() {
