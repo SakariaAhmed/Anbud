@@ -2056,7 +2056,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                           onPointerEnter={() => prefetchProject(project.id)}
                           className="inline-flex h-9 items-center gap-2 rounded-md border border-blue-100 bg-white px-3 text-sm font-semibold text-blue-800 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50"
                         >
-                          {action.label} <ArrowRight className="size-4" />
+                          Åpne <ArrowRight className="size-4" />
                         </Link>
                       </div>
                     </td>
@@ -2148,7 +2148,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                       href={projectActionHref(project)}
                       className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white shadow-sm"
                     >
-                      {action.label}
+                      Åpne
                       <ArrowRight className="size-4" />
                     </Link>
                   </div>
