@@ -28,6 +28,7 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { markNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
@@ -2170,6 +2171,13 @@ export function ProjectWorkspacePage({
                 className={cn(!sidebarOpen && "flex justify-center")}
               >
                 <SidebarMenuButton
+                  render={
+                    <Link
+                      href="/"
+                      prefetch
+                      onClick={markNextHomeNavigationWithoutAnimation}
+                    />
+                  }
                   size="lg"
                   tooltip="Alle prosjekter"
                   className={cn(
@@ -2177,7 +2185,6 @@ export function ProjectWorkspacePage({
                     !sidebarOpen &&
                       "mx-auto size-10 justify-center rounded-md px-0",
                   )}
-                  onClick={() => router.push("/")}
                 >
                   <LayoutGrid className="size-4.5" />
                   {sidebarOpen ? <span>Alle prosjekter</span> : null}
