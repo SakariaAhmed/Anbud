@@ -91,6 +91,7 @@ interface DocumentSummaryRow {
   content_type: string;
   file_size_bytes: number;
   file_base64?: string;
+  raw_text?: string;
   structure_map?: Json;
   created_at: string;
   updated_at: string;
@@ -180,6 +181,7 @@ interface ServiceDocumentSummaryRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  raw_text?: string;
   structure_map?: Json;
   ai_summary?: string | null;
   ai_summary_updated_at?: string | null;
@@ -203,7 +205,7 @@ interface ProjectCacheSnapshot {
 const DOCUMENT_SELECT_SAFE =
   "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, raw_text, structure_map, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_SAFE =
-  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, structure_map, created_at, updated_at";
+  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, raw_text, structure_map, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_LEGACY =
   "id, project_id, role, subtype, display_name, file_format, content_type, created_at";
 const PROJECT_SELECT_SAFE =
@@ -417,10 +419,39 @@ function pageCountFromStructureMap(
   return pageNumbers.length ? Math.max(...pageNumbers) : null;
 }
 
+function pageCountFromRawText(rawText: string | undefined, fileFormat: string) {
+  if (fileFormat !== "pdf" || !rawText) {
+    return null;
+  }
+
+  const pageNumbers = [...rawText.matchAll(/\[\[SIDE:(\d{1,5})\]\]/g)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value));
+
+  return pageNumbers.length ? Math.max(...pageNumbers) : null;
+}
+
+function decryptOptionalString(value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return decryptString(value);
+  } catch {
+    return "";
+  }
+}
+
 function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
   const structureMap = row.structure_map
     ? decryptJson(row.structure_map, [])
     : [];
+  const structurePageCount = pageCountFromStructureMap(
+    structureMap,
+    row.file_format,
+  );
+  const rawText = decryptOptionalString(row.raw_text);
 
   return {
     id: row.id,
@@ -432,7 +463,8 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
     file_format: row.file_format as ProjectDocument["file_format"],
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
-    page_count: pageCountFromStructureMap(structureMap, row.file_format),
+    page_count:
+      structurePageCount ?? pageCountFromRawText(rawText, row.file_format),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -505,6 +537,11 @@ function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
   const structureMap = row.structure_map
     ? decryptJson(row.structure_map, [])
     : [];
+  const structurePageCount = pageCountFromStructureMap(
+    structureMap,
+    row.file_format,
+  );
+  const rawText = decryptOptionalString(row.raw_text);
 
   return {
     id: row.id,
@@ -514,7 +551,8 @@ function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
     file_format: row.file_format as ServiceDocument["file_format"],
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
-    page_count: pageCountFromStructureMap(structureMap, row.file_format),
+    page_count:
+      structurePageCount ?? pageCountFromRawText(rawText, row.file_format),
     ai_summary:
       typeof row.ai_summary === "string" ? decryptString(row.ai_summary) : "",
     ai_summary_updated_at: row.ai_summary_updated_at ?? null,
@@ -726,6 +764,7 @@ function fromUnknownDocumentSummaryRow(
     file_format: String(row.file_format ?? "txt"),
     content_type: String(row.content_type ?? "application/octet-stream"),
     file_size_bytes: fileSizeBytes,
+    raw_text: typeof row.raw_text === "string" ? row.raw_text : undefined,
     structure_map: (row.structure_map ?? row.source_map ?? []) as Json,
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(
@@ -990,7 +1029,7 @@ export async function listServiceDescriptions(): Promise<ServiceDescription[]> {
             .order("name", { ascending: true }),
           supabase
             .from("service_documents")
-            .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, structure_map, created_at, updated_at")
+            .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, raw_text, structure_map, created_at, updated_at")
             .order("created_at", { ascending: false }),
         ]);
 
@@ -1130,7 +1169,7 @@ export async function saveServiceDocument(input: {
       raw_text: encryptString(input.rawText),
       structure_map: encryptJson(input.structureMap),
     })
-    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, created_at, updated_at")
+    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, raw_text, structure_map, created_at, updated_at")
     .single<ServiceDocumentSummaryRow>();
 
   if (error || !data) {
@@ -1349,7 +1388,7 @@ export async function listServiceDocumentSummariesForProject(
 
   const { data, error } = await supabase
     .from("service_documents")
-    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, structure_map, ai_summary, ai_summary_updated_at, created_at, updated_at")
+    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, raw_text, structure_map, ai_summary, ai_summary_updated_at, created_at, updated_at")
     .in("service_id", serviceIds)
     .order("created_at", { ascending: false });
 

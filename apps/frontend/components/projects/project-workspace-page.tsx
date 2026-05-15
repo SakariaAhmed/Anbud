@@ -113,7 +113,7 @@ function pageCountLabel(pageCount: number | null | undefined) {
     return "Sider: ikke tilgjengelig";
   }
 
-  return pageCount === 1 ? "1 side" : `${pageCount} sider`;
+  return pageCount === 1 ? "Sider: 1" : `Sider: ${pageCount}`;
 }
 
 function downloadFileName(document: ProjectDocument) {

@@ -747,23 +747,26 @@ export function ProjectRequirementResponseTab({
             >
               Bruk dokument
             </Label>
-            <select
-              id="requirement-document-select"
-              value={selectedDocumentId}
-              onChange={(event) => onSelectedDocumentChange(event.target.value)}
-              disabled={generateBusy || uploadBusy || selectableDocuments.length === 0}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition-colors focus:border-slate-950 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-            >
-              {selectableDocuments.length ? (
-                selectableDocuments.map((document) => (
-                  <option key={document.id} value={document.id}>
-                    {document.title}
-                  </option>
-                ))
-              ) : (
-                <option value="">Ingen dokumenter lastet opp</option>
-              )}
-            </select>
+            <div className="relative">
+              <select
+                id="requirement-document-select"
+                value={selectedDocumentId}
+                onChange={(event) => onSelectedDocumentChange(event.target.value)}
+                disabled={generateBusy || uploadBusy || selectableDocuments.length === 0}
+                className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-12 text-sm font-medium text-slate-950 outline-none transition-colors focus:border-slate-950 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+              >
+                {selectableDocuments.length ? (
+                  selectableDocuments.map((document) => (
+                    <option key={document.id} value={document.id}>
+                      {document.title}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Ingen dokumenter lastet opp</option>
+                )}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-5 top-1/2 size-4 -translate-y-1/2 text-slate-950" />
+            </div>
             <p className="text-xs leading-5 text-slate-500">
               Valgt dokument brukes som kravgrunnlag. Nye opplastinger velges automatisk.
             </p>
