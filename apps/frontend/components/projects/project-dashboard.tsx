@@ -1728,6 +1728,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
 
   return (
     <>
+      <HomepageRefreshAnimation />
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <section className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
