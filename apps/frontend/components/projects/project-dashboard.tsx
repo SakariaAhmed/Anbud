@@ -54,7 +54,6 @@ function fileTitle(file: File) {
 
 const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
 const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
-const HOME_INTRO_SEEN_KEY = "bidsite-home-intro-seen";
 const PROJECT_PREFETCH_LIMIT = 12;
 type ProjectStatusFilter = ProjectSummary["status"] | "Alle";
 type ProjectSort = "recent" | "name" | "documents" | "artifacts";
@@ -585,15 +584,7 @@ function HomepageRefreshAnimation() {
   });
 
   useLayoutEffect(() => {
-    let hasSeenIntro = false;
-    try {
-      hasSeenIntro = window.sessionStorage.getItem(HOME_INTRO_SEEN_KEY) === "1";
-      window.sessionStorage.setItem(HOME_INTRO_SEEN_KEY, "1");
-    } catch {
-      hasSeenIntro = false;
-    }
-
-    if (hasSeenIntro || consumeNextHomeNavigationWithoutAnimation()) {
+    if (consumeNextHomeNavigationWithoutAnimation()) {
       skipAnimationRef.current = true;
       setVisible(false);
       setCompleted(true);
