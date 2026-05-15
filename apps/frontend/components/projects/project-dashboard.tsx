@@ -29,6 +29,10 @@ import {
   type FormEvent,
 } from "react";
 
+import {
+  DECORATIVE_LOTTIES,
+  DecorativeLottie,
+} from "@/components/projects/decorative-lottie";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import { consumeNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
 import { Button } from "@/components/ui/button";
@@ -1759,43 +1763,60 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
         </div>
       </section>
 
-      <section className="mb-6 grid gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-stretch">
-          <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-950">
-                  Start nytt arbeid
-                </p>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
-                  Last opp anbudsgrunnlag direkte, eller opprett prosjekt med
-                  mer metadata først.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
+      <section className="relative mb-8 overflow-hidden rounded-xl border border-blue-100/25 bg-slate-950/82 px-7 py-8 shadow-[0_24px_70px_rgba(15,23,42,0.22)] backdrop-blur-2xl">
+        <div className="pointer-events-none absolute -left-16 -top-24 h-64 w-64 rounded-full bg-blue-500/18 blur-3xl" />
+        <div className="pointer-events-none absolute left-[38%] top-[-6.5rem] h-56 w-56 rounded-full bg-slate-100/8 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-[-7rem] right-[-4rem] h-72 w-72 rounded-full bg-blue-950/42 blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(15,23,42,0.94)_0%,rgba(30,64,175,0.66)_54%,rgba(15,23,42,0.88)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-white/[0.04] backdrop-blur-2xl" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.18),rgba(255,255,255,0.06)_30%,rgba(255,255,255,0.015)_62%,rgba(255,255,255,0.08))]" />
+        <DecorativeLottie
+          src={DECORATIVE_LOTTIES.dataOrbit}
+          className="pointer-events-none absolute -bottom-8 left-[44%] hidden size-52 opacity-30 mix-blend-screen blur-[0.2px] lg:block"
+        />
+        <div className="pointer-events-none absolute inset-x-4 top-4 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-4 bottom-4 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+        <div className="relative grid gap-7 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
+          <div className="max-w-3xl">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.2em] text-blue-200/70">
+              Arbeidsflate
+            </p>
+            <h2 className="mt-3 text-[1.9rem] font-bold tracking-[-0.035em] text-white sm:text-[2.4rem]">
+              Tilbudsarbeidsflate
+            </h2>
+            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-slate-200/85">
+              Last opp dokumenter, analyser med AI, og generer profesjonelle
+              løsningsbeskrivelser for teamet.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <Link
+                href="/projects/new"
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              >
+                <Plus className="size-4" />
+                Nytt prosjekt
+              </Link>
+              {latestProject ? (
                 <Link
-                  href="/projects/new"
-                  className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                  href={`/projects/${latestProject.id}`}
+                  prefetch
+                  onFocus={() => prefetchProject(latestProject.id)}
+                  onPointerEnter={() => prefetchProject(latestProject.id)}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-white/20 bg-white/[0.08] px-4 text-sm font-semibold text-white backdrop-blur transition-colors hover:border-white/35 hover:bg-white/[0.13] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 >
-                  <Plus className="size-4" />
-                  Nytt prosjekt
+                  Siste prosjekt
+                  <ArrowRight className="size-4" />
                 </Link>
-                {latestProject ? (
-                  <Link
-                    href={projectActionHref(latestProject)}
-                    prefetch
-                    onFocus={() => prefetchProject(latestProject.id)}
-                    onPointerEnter={() => prefetchProject(latestProject.id)}
-                    className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-                  >
-                    Åpne siste steg
-                    <ArrowRight className="size-4" />
-                  </Link>
-                ) : null}
-              </div>
+              ) : null}
             </div>
           </div>
 
-          <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-950 p-3 shadow-sm">
+          <div className="relative overflow-hidden rounded-lg border border-white/20 bg-white/[0.08] p-3 shadow-sm backdrop-blur-md">
+            <DecorativeLottie
+              src={DECORATIVE_LOTTIES.documentFlight}
+              className="pointer-events-none absolute -right-12 top-14 size-44 opacity-20 mix-blend-screen"
+              speed={0.42}
+            />
             <input
               ref={fileInputRef}
               type="file"
@@ -1820,7 +1841,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               className={`relative z-10 flex min-h-36 w-full flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition-colors disabled:cursor-wait ${
                 dragActive
                   ? "border-white bg-white/[0.16]"
-                  : "border-white/30 bg-white/[0.06] hover:bg-white/[0.10]"
+                  : "border-white/30 bg-slate-950/10 hover:bg-white/[0.10]"
               }`}
             >
               <UploadCloud className="size-7 text-blue-100" />
@@ -1837,6 +1858,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               </p>
             ) : null}
           </div>
+        </div>
       </section>
 
       {/* Project Table */}
