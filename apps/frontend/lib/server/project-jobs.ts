@@ -322,15 +322,15 @@ export async function queueArtifactGenerationJob(input: {
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
     const selectedDocumentIds = new Set(input.sourceDocumentIds ?? []);
-    const scopedProjectDocuments = selectedDocumentIds.size
+    const selectedRequirementDocuments = selectedDocumentIds.size
       ? projectDocuments.filter((document) => selectedDocumentIds.has(document.id))
-      : projectDocuments;
+      : [];
     const { customerDocument, solutionDocument, supportingDocuments } =
-      selectProjectDocuments(scopedProjectDocuments);
+      selectProjectDocuments(projectDocuments);
 
     if (
       input.artifactType === "bilag1_rekonstruksjon" &&
-      !scopedProjectDocuments.some((document) => document.raw_text.trim())
+      !projectDocuments.some((document) => document.raw_text.trim())
     ) {
       throw new Error(
         "Bilag 1 kan ikke genereres fordi dokumentgrunnlaget mangler lesbar tekst.",
@@ -365,7 +365,7 @@ export async function queueArtifactGenerationJob(input: {
       supportingDocuments,
       requirementDocuments:
         input.artifactType === "forbedret_kravsvar" && selectedDocumentIds.size
-          ? scopedProjectDocuments
+          ? selectedRequirementDocuments
           : undefined,
       knowledgeArtifacts: generatedArtifacts,
       instructions: input.instructions?.trim(),
@@ -382,8 +382,13 @@ export async function queueArtifactGenerationJob(input: {
         instructions: input.instructions?.trim() || "",
         customer_analysis_present: Boolean(customerAnalysis),
         solution_evaluation_present: Boolean(project.solution_evaluation),
-        source_document_ids: scopedProjectDocuments.map((document) => document.id),
-        source_document_roles: scopedProjectDocuments.map((document) => ({
+        source_document_ids: selectedDocumentIds.size
+          ? selectedRequirementDocuments.map((document) => document.id)
+          : projectDocuments.map((document) => document.id),
+        source_document_roles: (selectedDocumentIds.size
+          ? selectedRequirementDocuments
+          : projectDocuments
+        ).map((document) => ({
           id: document.id,
           title: document.title,
           role: document.role,

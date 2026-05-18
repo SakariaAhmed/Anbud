@@ -105,8 +105,12 @@ type PageHeadingEntry = {
   headingPath: string;
   text: string;
 };
+type MammothHtmlModule = {
+  convertToHtml: (input: { buffer: Buffer }) => Promise<{ value: string }>;
+};
 
 let cachedClientPromise: Promise<OpenAIClient> | null = null;
+let cachedMammothHtmlPromise: Promise<MammothHtmlModule> | null = null;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -157,6 +161,16 @@ async function getClient() {
   }
 
   return cachedClientPromise;
+}
+
+async function getMammothHtml() {
+  if (!cachedMammothHtmlPromise) {
+    cachedMammothHtmlPromise = import("mammoth").then(
+      (module) => module as unknown as MammothHtmlModule,
+    );
+  }
+
+  return cachedMammothHtmlPromise;
 }
 
 function normalizeModelId(value: string | null | undefined) {
@@ -390,6 +404,32 @@ function detectRequirementIds(text: string) {
   }
 
   return ids;
+}
+
+function hasRequirementSignal(value: string) {
+  const text = normalizePageText(value);
+  if (text.length < 18 || text.length > 1600) {
+    return false;
+  }
+
+  return /\b(skal|må|bør|bes|krever|forutsetter|ønsker|etterspør|skal kunne|må kunne|shall|must|should|required)\b/i.test(
+    text,
+  );
+}
+
+function isStructuredRequirementStart(value: string) {
+  const text = normalizePageText(value);
+  return (
+    detectRequirementIds(text).length > 0 ||
+    /^\s*(?:[-*•]|\d{1,3}[.)]|\d+(?:\.\d+){1,4})\s+/.test(value) ||
+    /^\s*(?:Krav|Requirement|Leverandøren|Tilbyder|Løsningen|Tjenesten|Systemet|Plattformen|Kunden)\b/i.test(
+      text,
+    )
+  );
+}
+
+function syntheticRequirementId(page: number, index: number) {
+  return `Side ${page} krav ${index}`;
 }
 
 function pageExcerpt(text: string, position: "start" | "end") {
@@ -861,9 +901,300 @@ function buildTableRequirementLedger(document: ProjectDocumentDetail) {
   return requirements;
 }
 
+function splitDocumentPagesForRequirementScan(document: ProjectDocumentDetail) {
+  if (document.file_format === "pdf") {
+    const pages = splitPdfPagesPreservingLines(document.raw_text);
+    if (pages.length) {
+      return pages;
+    }
+  }
+
+  return [{ page: 1, text: document.raw_text.replace(/\r\n/g, "\n").trim() }];
+}
+
+function dedupeRequirementLedger(entries: RequirementLedgerEntry[]) {
+  const seen = new Set<string>();
+  const result: RequirementLedgerEntry[] = [];
+
+  for (const entry of entries) {
+    const id = normalizeRequirementId(entry.id);
+    const text = normalizeEvidenceText(entry.text);
+    const key = id ? `${id}:${text.slice(0, 120)}` : text.slice(0, 180);
+    if (!text || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(entry);
+  }
+
+  return result;
+}
+
+function buildStructuredRequirementLedger(document: ProjectDocumentDetail) {
+  const pageHeadingMap =
+    document.file_format === "pdf" ? buildPageHeadingMap(document) : new Map<number, string>();
+  const requirements: RequirementLedgerEntry[] = [];
+  let sequence = 1;
+
+  for (const page of splitDocumentPagesForRequirementScan(document).slice(0, 160)) {
+    const pageHeading = pageHeadingMap.get(page.page) ?? "";
+    const blocks = page.text
+      .split(/\n{2,}|(?=\n\s*(?:[-*•]|\d{1,3}[.)]|\d+(?:\.\d+){1,4})\s+)/g)
+      .map((block) => block.replace(/\n+/g, " ").trim())
+      .filter(Boolean);
+
+    for (const block of blocks) {
+      const text = stripRequirementChrome(block);
+      if (!hasRequirementSignal(text) || !isStructuredRequirementStart(block)) {
+        continue;
+      }
+
+      const explicitId = detectRequirementIds(text)[0] ?? "";
+      requirements.push({
+        id: explicitId || syntheticRequirementId(page.page, sequence),
+        text,
+        pages: [page.page],
+        heading: pageHeading,
+      });
+      sequence += 1;
+    }
+  }
+
+  return dedupeRequirementLedger(requirements);
+}
+
+function isRequirementTableHeaderLabel(line: string) {
+  return /^(Req\.?\s*No\.?|Requirement text|Type|Response instruction|Y\/N|Detailed response)$/i.test(
+    line.trim(),
+  );
+}
+
+function isRequirementTypeOrInstructionLine(line: string) {
+  const trimmed = line.trim();
+  return (
+    /^(M|E|O|A|B|C|D|K|S)$/i.test(trimmed) ||
+    /^(M|E|O|A|B|C|D|K|S)\s+TK\s*\d+$/i.test(trimmed) ||
+    /^TK\s*\d+$/i.test(trimmed) ||
+    /^Relevant experience,\s*technical depth,\s*delivery\s+capability$/i.test(
+      trimmed,
+    )
+  );
+}
+
+function buildLinearTableRequirementLedger(document: ProjectDocumentDetail) {
+  const lines = document.raw_text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => normalizePageText(line))
+    .filter(Boolean);
+  const requirements: RequirementLedgerEntry[] = [];
+  let activeHeading = "";
+  let inRequirementTable = false;
+  let sequence = 1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const next = lines[index + 1] ?? "";
+
+    if (/^Req\.?\s*No\.?$/i.test(line)) {
+      inRequirementTable = true;
+      activeHeading = lines[index - 1] && !isRequirementTableHeaderLabel(lines[index - 1])
+        ? lines[index - 1]
+        : activeHeading;
+      continue;
+    }
+
+    if (!inRequirementTable) {
+      continue;
+    }
+
+    if (
+      isRequirementTableHeaderLabel(line) ||
+      isRequirementTypeOrInstructionLine(line) ||
+      /^(Requirements to|Competence requirements to)\b/i.test(line)
+    ) {
+      continue;
+    }
+
+    if (/^Req\.?\s*No\.?$/i.test(next)) {
+      activeHeading = line;
+      continue;
+    }
+
+    if (line.length < 18) {
+      continue;
+    }
+
+    requirements.push({
+      id: syntheticRequirementId(1, sequence),
+      text: line,
+      pages: [1],
+      heading: activeHeading,
+    });
+    sequence += 1;
+  }
+
+  return dedupeRequirementLedger(requirements);
+}
+
+function decodeHtmlText(value: string) {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, code: string) =>
+      String.fromCharCode(Number(code)),
+    );
+}
+
+function htmlCellText(value: string) {
+  return decodeHtmlText(
+    value
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{2,}/g, "\n")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim(),
+  );
+}
+
+function parseHtmlTableRows(html: string) {
+  const rows: string[][] = [];
+
+  for (const rowMatch of html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const rowHtml = rowMatch[1] ?? "";
+    const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map((match) => htmlCellText(match[1] ?? ""));
+
+    if (cells.some((cell) => cell.trim().length > 0)) {
+      rows.push(cells);
+    }
+  }
+
+  return rows;
+}
+
+function isRequirementTableHeaderCells(cells: string[]) {
+  const normalized = cells.map((cell) => normalizePageText(cell).toLowerCase());
+  return (
+    normalized.some((cell) => /^req\.?\s*no\.?$/.test(cell)) &&
+    normalized.some((cell) => cell === "requirement text")
+  );
+}
+
+function looksLikeDocxRequirementRow(cells: string[], inRequirementTable: boolean) {
+  if (cells.length < 2 || isRequirementTableHeaderCells(cells)) {
+    return false;
+  }
+
+  const requirementText = normalizePageText(cells[1] ?? "");
+  if (requirementText.length < 18) {
+    return false;
+  }
+
+  if (/^(requirement text|response instruction|detailed response)$/i.test(requirementText)) {
+    return false;
+  }
+
+  if (cells.length >= 5 && inRequirementTable) {
+    return true;
+  }
+
+  return (
+    cells.length >= 5 &&
+    (isRequirementTypeOrInstructionLine(cells[2] ?? "") ||
+      /^(yes|no|y|n)$/i.test(normalizePageText(cells[4] ?? "")) ||
+      hasRequirementSignal(requirementText))
+  );
+}
+
+function docxRequirementId(cells: string[], sequence: number) {
+  const explicitId = normalizePageText(cells[0] ?? "");
+  if (
+    explicitId &&
+    !/^(req\.?\s*no\.?|requirement text)$/i.test(explicitId) &&
+    explicitId.length <= 80
+  ) {
+    return explicitId;
+  }
+
+  return `Tabellrad ${sequence}`;
+}
+
+async function buildDocxTableRequirementLedger(document: ProjectDocumentDetail) {
+  if (
+    document.file_format !== "docx" ||
+    !document.file_base64 ||
+    document.file_base64.length < 100
+  ) {
+    return [];
+  }
+
+  try {
+    const mammoth = await getMammothHtml();
+    const html = await mammoth.convertToHtml({
+      buffer: Buffer.from(document.file_base64, "base64"),
+    });
+    const rows = parseHtmlTableRows(html.value);
+    const requirements: RequirementLedgerEntry[] = [];
+    let activeHeading = "";
+    let inRequirementTable = false;
+    let sequence = 1;
+
+    for (const cells of rows) {
+      if (isRequirementTableHeaderCells(cells)) {
+        inRequirementTable = true;
+        continue;
+      }
+
+      if (
+        cells.length === 1 &&
+        /^(Requirements to|Competence requirements to|Annex\s+\d+)/i.test(
+          cells[0] ?? "",
+        )
+      ) {
+        activeHeading = normalizePageText(cells[0] ?? "");
+        continue;
+      }
+
+      if (!looksLikeDocxRequirementRow(cells, inRequirementTable)) {
+        continue;
+      }
+
+      const requirementText = normalizePageText(cells[1] ?? "");
+      const responseInstruction = normalizePageText(cells[3] ?? "");
+      const rowNote = responseInstruction
+        ? ` Responsinstruks: ${responseInstruction}`
+        : "";
+
+      requirements.push({
+        id: docxRequirementId(cells, sequence),
+        text: `${requirementText}${rowNote}`,
+        pages: [1],
+        heading: activeHeading,
+        tableId: "DOCX kravtabell",
+      });
+      sequence += 1;
+    }
+
+    return dedupeRequirementLedger(requirements);
+  } catch {
+    return [];
+  }
+}
+
 function buildRequirementSourceLedger(document: ProjectDocumentDetail) {
   if (document.file_format !== "pdf") {
-    return [];
+    return dedupeRequirementLedger([
+      ...buildLinearTableRequirementLedger(document),
+      ...buildStructuredRequirementLedger(document),
+    ]);
   }
 
   const pages = splitPdfPages(document.raw_text);
@@ -959,8 +1290,24 @@ function buildRequirementSourceLedger(document: ProjectDocumentDetail) {
   const regularRequirements = requirements.filter(
     (item) => item.text.length >= 20 && !isTableContainerRequirement(item),
   );
+  const structuredRequirements = buildStructuredRequirementLedger(document);
+  const linearTableRequirements = buildLinearTableRequirementLedger(document);
 
-  return [...regularRequirements, ...tableRequirements];
+  return dedupeRequirementLedger([
+    ...regularRequirements,
+    ...tableRequirements,
+    ...linearTableRequirements,
+    ...structuredRequirements,
+  ]);
+}
+
+async function buildRequirementSourceLedgerWithFiles(
+  document: ProjectDocumentDetail,
+) {
+  const baseLedger = buildRequirementSourceLedger(document);
+  const docxTableLedger = await buildDocxTableRequirementLedger(document);
+
+  return dedupeRequirementLedger([...docxTableLedger, ...baseLedger]);
 }
 
 function requirementLedgerSource(entry: RequirementLedgerEntry) {
@@ -981,9 +1328,33 @@ function requirementLedgerSource(entry: RequirementLedgerEntry) {
     .join(", ");
 }
 
-function buildRequirementSourceLedgerContext(document: ProjectDocumentDetail) {
-  const rows = buildRequirementSourceLedger(document)
-    .slice(0, 80)
+function isSyntheticRequirementId(id: string) {
+  return /^Side\s+\d+\s+krav\s+\d+$/i.test(id.trim());
+}
+
+function isReliableRequirementLedger(ledger: RequirementLedgerEntry[]) {
+  if (!ledger.length) {
+    return false;
+  }
+
+  const tableRows = ledger.filter((entry) => entry.tableId).length;
+  const explicitRows = ledger.filter(
+    (entry) => !entry.tableId && !isSyntheticRequirementId(entry.id),
+  ).length;
+
+  return ledger.length >= 20 || tableRows >= 8 || explicitRows >= 8;
+}
+
+function buildRequirementSourceLedgerContext(
+  document: ProjectDocumentDetail,
+  ledger: RequirementLedgerEntry[],
+) {
+  if (!isReliableRequirementLedger(ledger)) {
+    return "";
+  }
+
+  const rows = ledger
+    .slice(0, 180)
     .map((item) => {
       return `- ${item.id} | ${requirementLedgerSource(item)} | ${compactText(item.text, 500)}`;
     });
@@ -996,8 +1367,9 @@ function buildRequirementSourceLedgerContext(document: ProjectDocumentDetail) {
     `Kravfasit fra skjemamarkører for ${document.title}`,
     [
       "Bruk denne listen som primær fasit for krav-ID, kravrekkefølge og kravtekst når kravdokumentet har Leverandørens besvarelse-markører.",
+      "Listen kan også inneholde syntetiske kravreferanser som 'Side X krav Y' når dokumentet ikke har synlige krav-ID-er. Disse er likevel kravkandidater som skal besvares hvis kravteksten er selvstendig.",
       "Tekst som ligger før neste ID-markør på ny side er behandlet som fortsettelse av forrige krav, ikke som nytt krav.",
-      "Hvis denne fasiten finnes, skal kravbesvarelsen følge den fremfor å dele krav på sidebrudd i råteksten.",
+      "Hvis denne fasiten finnes, skal kravbesvarelsen følge den fremfor å dele krav på sidebrudd i råteksten. Antall krav i svaret skal minst matche denne listen, med mindre du eksplisitt markerer duplikater.",
       "",
       ...rows,
     ].join("\n"),
@@ -1649,15 +2021,13 @@ function alignRequirementRowsWithLedger(
       }
 
       if (!matchedRows.length) {
-        if (entry.tableId) {
-          alignedRows.push(
-            synthesizeRequirementLedgerRow(
-              entry,
-              { refIndex, requirementIndex, answerIndex, sourceIndex },
-              headerCells.length,
-            ),
-          );
-        }
+        alignedRows.push(
+          synthesizeRequirementLedgerRow(
+            entry,
+            { refIndex, requirementIndex, answerIndex, sourceIndex },
+            headerCells.length,
+          ),
+        );
         continue;
       }
 
@@ -3612,7 +3982,7 @@ export async function generateProjectArtifact(input: {
       ),
     )
     .join("\n\n");
-  const requirementDocumentContext =
+  const requirementDocuments =
     input.artifactType === "forbedret_kravsvar"
       ? (input.requirementDocuments?.length
           ? input.requirementDocuments
@@ -3627,6 +3997,20 @@ export async function generateProjectArtifact(input: {
               (Boolean(input.requirementDocuments?.length) ||
                 isRequirementDocument(document)),
           )
+          .slice(0, 3)
+      : [];
+  const requirementLedgers =
+    input.artifactType === "forbedret_kravsvar"
+      ? await Promise.all(
+          requirementDocuments.map((document) =>
+            buildRequirementSourceLedgerWithFiles(document),
+          ),
+        )
+      : [];
+  const requirementLedger = requirementLedgers.flat();
+  const requirementDocumentContext =
+    input.artifactType === "forbedret_kravsvar"
+      ? requirementDocuments
           .slice(0, 3)
           .map((document, index) =>
             documentContext(`Kravdokument ${index + 1}`, document, {
@@ -3639,19 +4023,7 @@ export async function generateProjectArtifact(input: {
       : "";
   const requirementContinuityContext =
     input.artifactType === "forbedret_kravsvar"
-      ? (input.requirementDocuments?.length
-          ? input.requirementDocuments
-          : [
-              input.customerDocument,
-              input.solutionDocument,
-              ...input.supportingDocuments,
-            ])
-          .filter(
-            (document): document is ProjectDocumentDetail =>
-              document !== null &&
-              (Boolean(input.requirementDocuments?.length) ||
-                isRequirementDocument(document)),
-          )
+      ? requirementDocuments
           .slice(0, 3)
           .map((document) => buildRequirementContinuityContext(document))
           .filter(Boolean)
@@ -3659,21 +4031,14 @@ export async function generateProjectArtifact(input: {
       : "";
   const requirementSourceLedgerContext =
     input.artifactType === "forbedret_kravsvar"
-      ? (input.requirementDocuments?.length
-          ? input.requirementDocuments
-          : [
-              input.customerDocument,
-              input.solutionDocument,
-              ...input.supportingDocuments,
-            ])
-          .filter(
-            (document): document is ProjectDocumentDetail =>
-              document !== null &&
-              (Boolean(input.requirementDocuments?.length) ||
-                isRequirementDocument(document)),
-          )
+      ? requirementDocuments
           .slice(0, 3)
-          .map((document) => buildRequirementSourceLedgerContext(document))
+          .map((document, index) =>
+            buildRequirementSourceLedgerContext(
+              document,
+              requirementLedgers[index] ?? [],
+            ),
+          )
           .filter(Boolean)
           .join("\n\n")
       : "";
@@ -3696,28 +4061,11 @@ export async function generateProjectArtifact(input: {
           )
           .slice(0, 3)
       : [];
-  const requirementDocuments =
-    input.artifactType === "forbedret_kravsvar"
-      ? (input.requirementDocuments?.length
-          ? input.requirementDocuments
-          : [
-              input.customerDocument,
-              input.solutionDocument,
-              ...input.supportingDocuments,
-            ])
-          .filter(
-            (document): document is ProjectDocumentDetail =>
-              document !== null &&
-              (Boolean(input.requirementDocuments?.length) ||
-                isRequirementDocument(document)),
-          )
-          .slice(0, 3)
-      : [];
   const continuationPages = buildContinuationPageMap(requirementDocuments);
   const pageEvidence = buildRequirementPageEvidence(requirementDocuments);
-  const requirementLedger = requirementDocuments.flatMap((document) =>
-    buildRequirementSourceLedger(document),
-  );
+  const alignmentRequirementLedger = isReliableRequirementLedger(requirementLedger)
+    ? requirementLedger
+    : [];
   const bilag1SourceContext =
     input.artifactType === "bilag1_rekonstruksjon"
       ? [
@@ -3868,7 +4216,7 @@ export async function generateProjectArtifact(input: {
           continuationPages,
           pageEvidence,
         ),
-        requirementLedger,
+        alignmentRequirementLedger,
       ),
     };
   }
@@ -3892,7 +4240,7 @@ export async function generateProjectArtifact(input: {
         continuationPages,
         pageEvidence,
       ),
-      requirementLedger,
+      alignmentRequirementLedger,
     ),
   };
 }
