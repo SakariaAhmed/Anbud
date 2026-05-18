@@ -15,6 +15,8 @@ import {
 import {
   ArrowRight,
   Brain,
+  CheckCircle2,
+  CircleDashed,
   ClipboardCheck,
   Download,
   FileCheck2,
@@ -26,6 +28,7 @@ import {
   Trash2,
   Upload,
   Wrench,
+  type LucideIcon,
 } from "lucide-react";
 
 import { markNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
@@ -127,6 +130,26 @@ function projectDocumentRoleLabel(document: ProjectDocument) {
   if (document.supporting_subtype === "rfp") return "RFP";
   if (document.supporting_subtype === "vedlegg") return "Vedlegg";
   return "Støttedokument";
+}
+
+function completionLabel(done: boolean) {
+  return done ? "Klar" : "Gjenstår";
+}
+
+function workspaceActionForProject(project: ProjectDetail) {
+  if (!project.customer_document_uploaded && project.documents.length === 0) {
+    return "Last opp kundedokument eller konkurransegrunnlag.";
+  }
+  if (!project.customer_analysis_generated) {
+    return "Generer kundeanalyse før du lager utkast.";
+  }
+  if (!project.generated_artifacts.length) {
+    return "Lag første løsningsbeskrivelse eller Bilag 1-utkast.";
+  }
+  if (!project.solution_evaluation_generated) {
+    return "Kjør vurdering før leveransearbeidet ferdigstilles.";
+  }
+  return "Prosjektet er klart for leveransepakke og lederoppsummering.";
 }
 
 function serviceModeLabel(service: ProjectServiceDescription) {
@@ -312,9 +335,26 @@ function ProjectDocumentsTab({
               ))}
             </div>
           ) : (
-            <p className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm leading-6 text-muted-foreground">
-              Ingen dokumenter i prosjektet.
-            </p>
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-7">
+              <p className="text-sm font-semibold text-slate-950">
+                Ingen prosjektdokumenter ennå
+              </p>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Start med kundedokument, kravspesifikasjon eller RFP. Det gir
+                kundeanalyse, kravbesvarelse og utkast et felles grunnlag.
+              </p>
+              {!uploadOpen ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-4"
+                  onClick={onToggleUploadOpen}
+                >
+                  <Upload data-icon="inline-start" />
+                  Last opp dokument
+                </Button>
+              ) : null}
+            </div>
           )}
         </div>
 
@@ -359,9 +399,15 @@ function ProjectDocumentsTab({
               ))}
             </div>
           ) : (
-            <p className="rounded-xl border border-dashed border-teal-200 px-4 py-8 text-center text-sm leading-6 text-muted-foreground">
-              Ingen tjenestedokumenter er valgt eller faste ennå.
-            </p>
+            <div className="rounded-xl border border-dashed border-teal-200 bg-teal-50/40 px-4 py-7">
+              <p className="text-sm font-semibold text-slate-950">
+                Ingen tjenestedokumenter valgt
+              </p>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Velg relevante tjenester i tjenestebeskrivelse-fanen for å
+                bruke dem som kontekst i genereringene.
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -479,6 +525,12 @@ const PROJECT_WORKSPACE_TABS = [
 ] as const;
 
 export type ProjectWorkspaceTab = (typeof PROJECT_WORKSPACE_TABS)[number];
+
+type WorkspaceNavItem = {
+  value: ProjectWorkspaceTab;
+  label: string;
+  icon: LucideIcon;
+};
 
 function isProjectWorkspaceTab(value: string | null | undefined): value is ProjectWorkspaceTab {
   return PROJECT_WORKSPACE_TABS.includes(value as ProjectWorkspaceTab);
@@ -2035,22 +2087,69 @@ export function ProjectWorkspacePage({
     project.solution_evaluation as SolutionEvaluationResult | null;
   const executiveSummary =
     project.executive_summary as ExecutiveSummaryResult | null;
-  const workspaceNavItems = [
-    { value: "documents", label: "Dokumenter", icon: FolderOpen },
-    { value: "analysis", label: "Kundeanalyse", icon: Brain },
-    { value: "bilag1", label: "Bilag 1", icon: FileText },
-    { value: "service-description", label: "Tjenestebeskrivelse", icon: Wrench },
-    { value: "requirements", label: "Kravbesvarelse", icon: FileCheck2 },
+  const workspaceNavGroups: Array<{
+    label: string;
+    items: WorkspaceNavItem[];
+  }> = [
     {
-      value: "generator",
-      label: "Løsningsbeskrivelse",
-      icon: Sparkles,
+      label: "Grunnlag",
+      items: [
+        { value: "documents", label: "Dokumenter", icon: FolderOpen },
+        { value: "service-description", label: "Tjenestebeskrivelse", icon: Wrench },
+      ],
     },
-    { value: "evaluation", label: "Vurdering", icon: Scale },
-    { value: "delivery", label: "Fremdriftsplan", icon: ArrowRight },
-    { value: "executive-summary", label: "Leder oppsummering", icon: ClipboardCheck },
-  ] as const;
+    {
+      label: "Analyse",
+      items: [
+        { value: "analysis", label: "Kundeanalyse", icon: Brain },
+        { value: "requirements", label: "Kravbesvarelse", icon: FileCheck2 },
+      ],
+    },
+    {
+      label: "Produksjon",
+      items: [
+        { value: "bilag1", label: "Bilag 1", icon: FileText },
+        {
+          value: "generator",
+          label: "Løsningsbeskrivelse",
+          icon: Sparkles,
+        },
+        { value: "delivery", label: "Fremdriftsplan", icon: ArrowRight },
+      ],
+    },
+    {
+      label: "Kvalitet",
+      items: [
+        { value: "evaluation", label: "Vurdering", icon: Scale },
+        { value: "executive-summary", label: "Leder oppsummering", icon: ClipboardCheck },
+      ],
+    },
+  ];
+  const workspaceNavItems = workspaceNavGroups.flatMap((group) => group.items);
   const projectMonogram = project.name.trim().charAt(0).toUpperCase() || "A";
+  const projectStatus = deriveProjectStatus(project);
+  const readinessItems = [
+    {
+      label: "Grunnlag",
+      done: project.documents.length > 0,
+      value: `${project.documents.length} dok.`,
+    },
+    {
+      label: "Analyse",
+      done: project.customer_analysis_generated,
+      value: completionLabel(project.customer_analysis_generated),
+    },
+    {
+      label: "Utkast",
+      done: project.generated_artifacts.length > 0,
+      value: `${project.generated_artifacts.length} stk.`,
+    },
+    {
+      label: "Vurdering",
+      done: project.solution_evaluation_generated,
+      value: completionLabel(project.solution_evaluation_generated),
+    },
+  ];
   const showModelSelector =
     activeTab === "analysis" ||
     activeTab === "bilag1" ||
@@ -2127,37 +2226,45 @@ export function ProjectWorkspacePage({
               !sidebarOpen && "px-1.5",
             )}
           >
-            <SidebarGroup
-              className={cn("gap-4 p-3", !sidebarOpen && "gap-3 px-0 py-2")}
-            >
-              <SidebarGroupContent>
-                <SidebarMenu
-                  className={cn("gap-1", !sidebarOpen && "items-center")}
-                >
-                  {workspaceNavItems.map((item) => (
-                    <SidebarMenuItem
-                      key={item.value}
-                      className={cn(!sidebarOpen && "flex justify-center")}
-                    >
-                      <SidebarMenuButton
-                        isActive={activeTab === item.value}
-                        size="lg"
-                        tooltip={item.label}
-                        className={cn(
-                          "h-11 rounded-lg px-3 text-[0.95rem] transition-colors duration-150 ease-out",
-                          !sidebarOpen &&
-                            "mx-auto size-10 justify-center rounded-md px-0",
-                        )}
-                        onClick={() => setWorkspaceTab(item.value)}
+            {workspaceNavGroups.map((group) => (
+              <SidebarGroup
+                key={group.label}
+                className={cn("gap-2 px-3 py-2", !sidebarOpen && "px-0")}
+              >
+                {sidebarOpen ? (
+                  <p className="px-3 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-sidebar-foreground/45">
+                    {group.label}
+                  </p>
+                ) : null}
+                <SidebarGroupContent>
+                  <SidebarMenu
+                    className={cn("gap-1", !sidebarOpen && "items-center")}
+                  >
+                    {group.items.map((item) => (
+                      <SidebarMenuItem
+                        key={item.value}
+                        className={cn(!sidebarOpen && "flex justify-center")}
                       >
-                        <item.icon className="size-4.5" />
-                        {sidebarOpen ? <span>{item.label}</span> : null}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+                        <SidebarMenuButton
+                          isActive={activeTab === item.value}
+                          size="lg"
+                          tooltip={`${group.label}: ${item.label}`}
+                          className={cn(
+                            "h-10 rounded-lg px-3 text-[0.92rem] transition-colors duration-150 ease-out",
+                            !sidebarOpen &&
+                              "mx-auto size-10 justify-center rounded-md px-0",
+                          )}
+                          onClick={() => setWorkspaceTab(item.value)}
+                        >
+                          <item.icon className="size-4.5" />
+                          {sidebarOpen ? <span>{item.label}</span> : null}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
           </SidebarContent>
 
           <SidebarFooter
@@ -2280,6 +2387,34 @@ export function ProjectWorkspacePage({
                     ) : null}
                   </div>
                 ) : null}
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                {readinessItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"
+                  >
+                    {item.done ? (
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                    ) : (
+                      <CircleDashed className="size-4 shrink-0 text-slate-400" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
+                        {item.label}
+                      </p>
+                      <p className="truncate text-sm font-semibold text-slate-950">
+                        {item.value}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold ${projectStatus === "Venter på dokument" ? "border-slate-200 bg-white text-slate-600" : "border-blue-200 bg-blue-50 text-blue-800"}`}>
+                  {projectStatus}
+                </span>
+                <span>{workspaceActionForProject(project)}</span>
               </div>
             </section>
 
