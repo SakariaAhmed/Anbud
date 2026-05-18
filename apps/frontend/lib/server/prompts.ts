@@ -299,10 +299,15 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Les kravdokumentet som et menneske ville gjort: følg dokumentets struktur, underoverskrifter, sidemarkører, tabeller og tekstblokker før du skriver svar.",
         "Bruk kravdokumentet som svarmal: behold kravreferanser, kravtekst, underoverskrifter og rekkefølge så langt det er mulig.",
         "Svarene skal bygge på to hovedgrunnlag: kundens analysegrunnlag med Bilag 1, kundeanalyse og løsningsbeskrivelse, og tjenestebeskrivelsen som beskriver driftstjenestene arkitekten tilbyr.",
+        "Når konteksten inneholder 'Kravfasit fra skjemamarkører', skal denne behandles som primær kravliste. Besvar alle kravkandidater i listen før du eventuelt supplerer fra råtekst.",
       ],
       rules: [
         "Returner kun gyldig JSON.",
         "Kravlisten skal være uttømmende for kravdokumentet. Ikke stopp etter de første eller tydeligste kravene hvis dokumentet har flere sider eller flere kravseksjoner.",
+        "Hvis det ikke finnes en tydelig kravfasit i konteksten, skal du selv gå bredt gjennom hele kravdokumentet og trekke ut krav fra alle overskrifter, nummererte punkter, kulepunkter, tabeller, delkrav og skal/må/bør-formuleringer.",
+        "Ikke bruk status-/innledningsdelen alene som kravliste. Les videre gjennom alle kapitler og underkapitler før du konkluderer med antall krav.",
+        "Hvis kravfasiten inneholder syntetiske referanser som 'Side X krav Y', betyr det at dokumentet mangler synlig krav-ID. Behold disse referansene og besvar kravene i samme rekkefølge.",
+        "Antall krav i statusoppsummeringen skal ikke være lavere enn antall krav i kravfasiten, med mindre du tydelig forklarer hvilke krav som er slått sammen som duplikater.",
         "Krav kan stå som nummererte krav, tabellrader, kulepunkter, skal/bør-formuleringer, leveransekrav, akseptansekriterier, SLA-krav eller underoverskrifter. Fang dem opp når de fungerer som krav leverandøren må svare på.",
         "Hvert krav skal være fullstendig. Ikke kutt kravtekst midt i setninger, ikke slå sammen selvstendige krav, og ikke utelat viktige delkrav, terskler, frister, roller eller akseptansekriterier.",
         "Hvis et krav går over flere linjer, sider eller tabellceller, rekonstruer hele kravet før svaret skrives.",
@@ -318,7 +323,9 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Hvis en ID-rad, overskrift eller tekstblokk bare introduserer en tabellseksjon eller kravgruppe, skal den ikke besvares som ett samlet fritekstkrav. Besvar i stedet hver selvstendige tabellrad, punktliste eller delkrav separat og utelat container-raden.",
         "Ikke overtilpass tolkningen til ett bestemt kravdokument. Bruk generelle signaler som krav-ID, skal/må/bør-formuleringer, tabelloverskrifter, radnavn, delkrav, sidetall og nærmeste overskrift for å finne krav i både enkle og komplekse dokumenter.",
         "Ikke bruk kildegrunnlag til å liste analysegrunnlag, løsningsbeskrivelse eller tjenestebeskrivelse. Kildegrunnlag skal peke på kravets plassering, ikke på hva svaret bygger på.",
-        "Svar skal skrives på vegne av leverandøren. Bruk leverandørnavnet når det er kjent i prosjektgrunnlaget; ellers bruk nøytrale formuleringer som 'leverandøren'. Ikke bruk 'jeg', 'vi', 'vår' eller 'våre' i svarteksten.",
+        "Svar skal skrives på vegne av Atea når prosjektgrunnlaget ikke tydelig angir et annet leverandørnavn. Bruk Atea aktivt i svarene der det er naturlig, og unngå 'jeg', 'vi', 'vår' eller 'våre'.",
+        "Hvert svar skal vise kort forståelse for hva kunden faktisk ber om, før eller samtidig som svaret forklarer hvordan Atea dekker kravet. Ikke bare bekreft at kravet oppfylles.",
+        "Svarformelen skal normalt være: Atea forstår kravet som <kort kravforståelse> og besvarer det gjennom <konkret leveranse, prosess, ansvar, kontroll eller dokumentasjon>. Hold dette kompakt og naturlig, ikke mekanisk.",
         "Svarene skal være relevante, ensartede i stil og ha samme detaljnivå på tvers av krav med tilsvarende kompleksitet.",
         "Svar kortere og mer konkret enn vanlig tilbudstekst. Unngå overflødige innledninger, gjentakelser og brede beskrivelser hvis kravet kan besvares presist.",
         "Bruk standardlengde på 1-2 setninger per krav. Bruk 3 setninger bare når kravet har flere tydelige delkrav, avhengigheter eller forbehold som må presiseres.",
@@ -422,6 +429,12 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
       "Ikke skriv generisk konsulentspråk.",
       "Koble verdi til de fire faste verdikategoriene når det er relevant.",
       "Vær konkret om løsning, gjennomføring, risiko og differensiering.",
+      ...(artifactType === "tilbudsstrategi"
+        ? [
+            "Tilbudsstrategien skal fortsatt inneholde en konkret leveransestrategi med steg for gjennomføring. Bruk fasevis struktur som Fase 1, Fase 2, Fase 3 osv. når gjennomføring beskrives.",
+            "Fasene skal være prosjektspesifikke og beskrive rekkefølge, hovedaktiviteter, leveranser, ansvar, kundebidrag og beslutningspunkter. Ikke erstatt faseplanen med bare overordnet posisjonering eller salgsbudskap.",
+          ]
+        : []),
       "Teksten skal være handlingsrettet og gi et tilbudsteam noe konkret å bruke videre.",
     ],
     outputContract: [
