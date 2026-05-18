@@ -12,6 +12,7 @@ import {
   LockKeyhole,
   Plus,
   Search,
+  SlidersHorizontal,
   Trash2,
   Upload,
   UploadCloud,
@@ -21,6 +22,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useState,
   type ChangeEvent,
   type DragEvent,
@@ -52,8 +54,9 @@ function fileTitle(file: File) {
 
 const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
 const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
-const HOME_INTRO_SEEN_KEY = "bidsite-home-intro-seen";
 const PROJECT_PREFETCH_LIMIT = 12;
+type ProjectStatusFilter = ProjectSummary["status"] | "Alle";
+type ProjectSort = "recent" | "name" | "documents" | "artifacts";
 
 async function uploadProjectDocument({
   projectId,
@@ -109,6 +112,53 @@ function formatDate(value: string) {
 
 function serviceModeLabel(mode: ServiceInclusionMode) {
   return mode === "fixed" ? "Fast for alle" : "Velges per prosjekt";
+}
+
+function nextProjectAction(project: ProjectSummary) {
+  if (!project.customer_document_uploaded && project.document_count === 0) {
+    return {
+      label: "Last opp grunnlag",
+      detail: "Kundedokument eller konkurransegrunnlag mangler.",
+      tab: "documents",
+    };
+  }
+  if (!project.customer_analysis_generated) {
+    return {
+      label: "Generer kundeanalyse",
+      detail: "Bruk dokumentgrunnlaget til å finne krav og risiko.",
+      tab: "analysis",
+    };
+  }
+  if (!project.solution_document_uploaded) {
+    return {
+      label: "Lag løsningsbeskrivelse",
+      detail: "Prosjektet er klart for utkast og videre bearbeiding.",
+      tab: "generator",
+    };
+  }
+  if (!project.solution_evaluation_generated) {
+    return {
+      label: "Vurder løsning",
+      detail: "Sjekk treff mot kundebehov før leveranse.",
+      tab: "evaluation",
+    };
+  }
+  return {
+    label: "Klargjør leveranse",
+    detail: "Samle vurdering, fremdriftsplan og lederoppsummering.",
+    tab: "delivery",
+  };
+}
+
+function projectActionHref(project: ProjectSummary) {
+  const action = nextProjectAction(project);
+  return action.tab === "analysis"
+    ? `/projects/${project.id}`
+    : `/projects/${project.id}?tab=${action.tab}`;
+}
+
+function normalizeSearch(value: string) {
+  return value.trim().toLocaleLowerCase("nb-NO");
 }
 
 export function GlobalServiceDescriptionsPanel() {
@@ -534,15 +584,7 @@ function HomepageRefreshAnimation() {
   });
 
   useLayoutEffect(() => {
-    let hasSeenIntro = false;
-    try {
-      hasSeenIntro = window.sessionStorage.getItem(HOME_INTRO_SEEN_KEY) === "1";
-      window.sessionStorage.setItem(HOME_INTRO_SEEN_KEY, "1");
-    } catch {
-      hasSeenIntro = false;
-    }
-
-    if (hasSeenIntro || consumeNextHomeNavigationWithoutAnimation()) {
+    if (consumeNextHomeNavigationWithoutAnimation()) {
       skipAnimationRef.current = true;
       setVisible(false);
       setCompleted(true);
@@ -1526,6 +1568,55 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   const [deletingProjectId, setDeletingProjectId] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const latestProject = projects[0] ?? null;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ProjectStatusFilter>("Alle");
+  const [sortBy, setSortBy] = useState<ProjectSort>("recent");
+  const statusOptions = useMemo<ProjectStatusFilter[]>(
+    () => [
+      "Alle",
+      ...Array.from(new Set(projects.map((project) => project.status))),
+    ],
+    [projects],
+  );
+  const filteredProjects = useMemo(() => {
+    const query = normalizeSearch(searchQuery);
+    const result = projects.filter((project) => {
+      const matchesStatus =
+        statusFilter === "Alle" || project.status === statusFilter;
+      const searchable = [
+        project.name,
+        project.customer_name ?? "",
+        project.industry ?? "",
+        project.description ?? "",
+        project.status,
+      ]
+        .join(" ")
+        .toLocaleLowerCase("nb-NO");
+      return matchesStatus && (!query || searchable.includes(query));
+    });
+
+    return result.sort((a, b) => {
+      if (sortBy === "name") {
+        return a.name.localeCompare(b.name, "nb-NO");
+      }
+      if (sortBy === "documents") {
+        return b.document_count - a.document_count;
+      }
+      if (sortBy === "artifacts") {
+        return b.artifact_count - a.artifact_count;
+      }
+      return (
+        new Date(b.last_activity_at).getTime() -
+        new Date(a.last_activity_at).getTime()
+      );
+    });
+  }, [projects, searchQuery, sortBy, statusFilter]);
+  const activeProjectCount = projects.filter(
+    (project) => project.status !== "Venter på dokument",
+  ).length;
+  const readyForActionCount = projects.filter(
+    (project) => !project.customer_analysis_generated || project.artifact_count === 0,
+  ).length;
 
   const prefetchProject = useCallback(
     (projectId: string) => {
@@ -1629,25 +1720,41 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   return (
     <>
       <HomepageRefreshAnimation />
-      <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-8">
-      {/* Page Header */}
-      <section className="mb-8">
-        <div className="flex items-center justify-center text-center">
-          <div className="mx-auto">
-            <h1 className="text-[1.9rem] font-bold tracking-[-0.035em] text-foreground sm:text-[2.4rem]">
-              Prosjektoversikt
-            </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-[1.2rem] font-medium leading-8 text-slate-600 md:text-[1.35rem]">
-              Et verktøy som støtter tilbudsprosjekter, analyser og løsningsbeskrivelser.
-              <span className="mt-2 block text-[1.55rem] font-semibold tracking-[-0.02em] text-slate-950 md:text-[1.8rem]">
-                Litt enklere. Hver dag
-              </span>
-            </p>
-          </div>
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <section className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+            Prosjektoversikt
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
+            Aktiv anbudsflate
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            Finn prosjektet, se hva som stopper fremdriften, og start neste
+            handling uten å åpne unødvendige steg.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:min-w-[24rem]">
+          {[
+            { label: "Totalt", value: projects.length },
+            { label: "Aktive", value: activeProjectCount },
+            { label: "Neste steg", value: readyForActionCount },
+          ].map((metric) => (
+            <div
+              key={metric.label}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"
+            >
+              <p className="text-xl font-semibold tabular-nums text-slate-950">
+                {metric.value}
+              </p>
+              <p className="mt-1 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
+                {metric.label}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* Creative Workbench Spotlight */}
       <section className="relative mb-8 overflow-hidden rounded-xl border border-blue-100/25 bg-slate-950/82 px-7 py-8 shadow-[0_24px_70px_rgba(15,23,42,0.22)] backdrop-blur-2xl">
         <div className="pointer-events-none absolute -left-16 -top-24 h-64 w-64 rounded-full bg-blue-500/18 blur-3xl" />
         <div className="pointer-events-none absolute left-[38%] top-[-6.5rem] h-56 w-56 rounded-full bg-slate-100/8 blur-3xl" />
@@ -1748,13 +1855,62 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
 
       {/* Project Table */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-7 py-5">
-          <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-900">
-            Prosjekter
-          </h2>
+        <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/80 px-4 py-4 lg:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-900">
+                Prosjekter
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Sorter etter aktivitet, filtrer på status, og åpne anbefalt neste steg.
+              </p>
+            </div>
           <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-semibold text-slate-600 shadow-sm">
-            {projects.length} {projects.length === 1 ? "prosjekt" : "totalt"}
+              {filteredProjects.length} av {projects.length}
           </span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_13rem_13rem]">
+            <label className="relative">
+              <span className="sr-only">Søk i prosjekter</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Søk etter prosjekt, kunde, bransje eller status"
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm font-medium text-slate-950 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400"
+              />
+            </label>
+            <label className="relative">
+              <span className="sr-only">Filtrer status</span>
+              <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+              <select
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as ProjectStatusFilter)
+                }
+                className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-400"
+              >
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {status === "Alle" ? "Alle statuser" : status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="sr-only">Sorter prosjekter</span>
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value as ProjectSort)}
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-400"
+              >
+                <option value="recent">Sist endret</option>
+                <option value="name">Navn A-Å</option>
+                <option value="documents">Flest dokumenter</option>
+                <option value="artifacts">Flest utkast</option>
+              </select>
+            </label>
+          </div>
         </div>
         {deleteError ? (
           <div className="border-b border-red-100 bg-red-50 px-7 py-3 text-sm font-medium text-red-700">
@@ -1781,8 +1937,21 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               Opprett prosjekt
             </Link>
           </div>
+        ) : filteredProjects.length === 0 ? (
+          <div className="px-6 py-14 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-md bg-slate-100">
+              <Search className="size-5 text-slate-500" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-slate-950">
+              Ingen prosjekter matcher filtrene
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Juster søk, statusfilter eller sortering for å se flere prosjekter.
+            </p>
+          </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-slate-200 bg-white">
@@ -1805,14 +1974,16 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                 </tr>
               </thead>
               <tbody>
-                {projects.map((project) => (
+                {filteredProjects.map((project) => {
+                  const action = nextProjectAction(project);
+                  return (
                   <tr
                     key={project.id}
                     className="group border-b border-slate-200/80 transition-colors last:border-b-0 hover:bg-blue-50/35"
                   >
                     <td className="px-7 py-5">
                       <Link
-                        href={`/projects/${project.id}`}
+                        href={projectActionHref(project)}
                         prefetch
                         onFocus={() => prefetchProject(project.id)}
                         onPointerEnter={() => prefetchProject(project.id)}
@@ -1824,6 +1995,13 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                         <p className="mt-1 text-base leading-6 text-slate-500">
                           {project.customer_name || "Kunde ikke satt"}
                           {project.industry ? ` · ${project.industry}` : ""}
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-700">
+                          {action.label}
+                          <span className="font-normal text-slate-400"> · </span>
+                          <span className="ml-2 font-normal text-slate-500">
+                            {action.detail}
+                          </span>
                         </p>
                       </Link>
                     </td>
@@ -1864,7 +2042,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                           </button>
                         </DeleteConfirmDialog>
                         <Link
-                          href={`/projects/${project.id}`}
+                          href={projectActionHref(project)}
                           prefetch
                           onFocus={() => prefetchProject(project.id)}
                           onPointerEnter={() => prefetchProject(project.id)}
@@ -1875,10 +2053,102 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          <div className="grid gap-3 p-4 md:hidden">
+            {filteredProjects.map((project) => {
+              const action = nextProjectAction(project);
+              return (
+                <article
+                  key={project.id}
+                  className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link
+                        href={projectActionHref(project)}
+                        className="block text-base font-bold text-slate-950"
+                      >
+                        {project.name}
+                      </Link>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {project.customer_name || "Kunde ikke satt"}
+                        {project.industry ? ` · ${project.industry}` : ""}
+                      </p>
+                    </div>
+                    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold ${statusColor(project.status)}`}>
+                      <span className={`inline-block size-1.5 rounded-full ${statusDot(project.status)}`} />
+                      {project.status}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-md bg-slate-50 px-2 py-2">
+                      <p className="font-semibold tabular-nums text-slate-950">
+                        {project.document_count}
+                      </p>
+                      <p className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-slate-500">
+                        Dok.
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 px-2 py-2">
+                      <p className="font-semibold tabular-nums text-slate-950">
+                        {project.artifact_count}
+                      </p>
+                      <p className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-slate-500">
+                        Utkast
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 px-2 py-2">
+                      <p className="truncate text-sm font-semibold text-slate-950">
+                        {formatDate(project.last_activity_at)}
+                      </p>
+                      <p className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-slate-500">
+                        Endret
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-sm font-semibold text-slate-950">
+                    {action.label}
+                  </p>
+                  <p className="mt-1 text-sm leading-5 text-slate-500">
+                    {action.detail}
+                  </p>
+                  <div className="mt-4 flex justify-between gap-2">
+                    <DeleteConfirmDialog
+                      title="Slett prosjekt?"
+                      description={`Dette sletter "${project.name}" med dokumenter, analyser, chat og genererte utkast. Handlingen kan ikke angres.`}
+                      confirmLabel="Slett prosjekt"
+                      onConfirm={() => handleDeleteProject(project)}
+                    >
+                      <button
+                        type="button"
+                        disabled={Boolean(deletingProjectId)}
+                        aria-label={`Slett ${project.name}`}
+                        className="inline-flex size-9 items-center justify-center rounded-md border border-red-100 bg-white text-red-700 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {deletingProjectId === project.id ? (
+                          <Spinner className="size-4" />
+                        ) : (
+                          <Trash2 className="size-4" />
+                        )}
+                      </button>
+                    </DeleteConfirmDialog>
+                    <Link
+                      href={projectActionHref(project)}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white shadow-sm"
+                    >
+                      Åpne
+                      <ArrowRight className="size-4" />
+                    </Link>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          </>
         )}
       </section>
 
@@ -1887,13 +2157,13 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
         <h2 className="mb-5 text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/75">
           Arbeidsflyt
         </h2>
-        <div className="flex items-start gap-4">
+        <div className="grid gap-4 lg:grid-cols-3">
           {[
             { step: "1", title: "Last opp grunnlag", desc: "Samle alle dokumenter i samme dokumentbank." },
             { step: "2", title: "Analyser kunden", desc: "Generer kundeanalyse med krav, risiko og posisjonering." },
             { step: "3", title: "Generer beskrivelse", desc: "Generer løsningsbeskrivelse basert på prosjektkonteksten." },
           ].map((item, i) => (
-            <div key={item.step} className="flex flex-1 items-start gap-3">
+            <div key={item.step} className="flex min-w-0 items-start gap-3">
               <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                 {item.step}
               </div>
@@ -1901,7 +2171,6 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                 <p className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">{item.title}</p>
                 <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{item.desc}</p>
               </div>
-              {i < 2 ? <div className="mt-3.5 hidden h-px flex-1 bg-border lg:block" /> : null}
             </div>
           ))}
         </div>
