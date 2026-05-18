@@ -1,7 +1,14 @@
 export const AUTH_COOKIE_NAME = "bidsite_session";
 export const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+export const AUTH_VERIFIED_HEADER = "x-bidsite-auth-verified";
 
 const encoder = new TextEncoder();
+let signingKeyCache:
+  | {
+      secret: string;
+      promise: Promise<CryptoKey>;
+    }
+  | null = null;
 
 function getPassword() {
   return process.env.APP_ACCESS_PASSWORD?.trim() ?? "";
@@ -35,13 +42,20 @@ async function sign(value: string) {
     throw new Error("Missing APP_ACCESS_PASSWORD.");
   }
 
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
+  if (!signingKeyCache || signingKeyCache.secret !== secret) {
+    signingKeyCache = {
+      secret,
+      promise: crypto.subtle.importKey(
+        "raw",
+        encoder.encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+      ),
+    };
+  }
+
+  const key = await signingKeyCache.promise;
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
   return toBase64Url(signature);
 }

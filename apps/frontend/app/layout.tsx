@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Layers3 } from "lucide-react";
 import { AppHeaderLogo } from "@/components/layout/app-header-logo";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/password-auth";
+import {
+  AUTH_COOKIE_NAME,
+  AUTH_VERIFIED_HEADER,
+  verifySessionToken,
+} from "@/lib/password-auth";
 
 import "./globals.css";
 
@@ -21,8 +25,12 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const cookieStore = await cookies();
-  const authenticated = await verifySessionToken(cookieStore.get(AUTH_COOKIE_NAME)?.value);
+  const requestHeaders = await headers();
+  const authenticated =
+    requestHeaders.get(AUTH_VERIFIED_HEADER) === "1" ||
+    (await verifySessionToken(
+      (await cookies()).get(AUTH_COOKIE_NAME)?.value,
+    ));
 
   return (
     <html lang="no">

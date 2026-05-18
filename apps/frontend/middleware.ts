@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/password-auth";
+import {
+  AUTH_COOKIE_NAME,
+  AUTH_VERIFIED_HEADER,
+  verifySessionToken,
+} from "@/lib/password-auth";
 
 const PUBLIC_PATH_PREFIXES = [
   "/_next",
@@ -36,7 +40,13 @@ export async function middleware(request: NextRequest) {
   }
 
   if (authenticated) {
-    return NextResponse.next();
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set(AUTH_VERIFIED_HEADER, "1");
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
   }
 
   if (pathname.startsWith("/api/")) {
