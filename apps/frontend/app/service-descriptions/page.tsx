@@ -1,4 +1,4 @@
-import { GlobalServiceDescriptionsPanel } from "@/components/projects/project-dashboard";
+import { GlobalServiceDescriptionsPanel } from "@/components/projects/global-service-descriptions-panel";
 
 export default function ServiceDescriptionsPage() {
   return (

@@ -847,6 +847,7 @@ export function ProjectWorkspacePage({
   const [selectedModel, setSelectedModel] = useState("");
   const [modelsLoading, setModelsLoading] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
+  const modelsRequestRef = useRef<Promise<void> | null>(null);
   const sidebarResizeRef = useRef(false);
 
   useEffect(() => {
@@ -875,19 +876,25 @@ export function ProjectWorkspacePage({
     if (storedModel) {
       setSelectedModel(storedModel);
     }
+  }, []);
 
-    let cancelled = false;
-    setModelsLoading(true);
-    fetch("/api/openai-models", { cache: "no-store" })
-      .then((response) =>
-        readJsonPayload<{
+  const loadAvailableModels = useCallback(async () => {
+    if (availableModels.length) return;
+    if (modelsRequestRef.current) {
+      await modelsRequestRef.current;
+      return;
+    }
+
+    const request = (async () => {
+      setModelsLoading(true);
+      try {
+        const response = await fetch("/api/openai-models", { cache: "no-store" });
+        const payload = await readJsonPayload<{
           models?: OpenAIModelSummary[];
           default_model?: string;
-        }>(response, "Kunne ikke hente modeller."),
-      )
-      .then((payload) => {
-        if (cancelled) return;
+        }>(response, "Kunne ikke hente modeller.");
         const models = payload.models ?? [];
+        const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY) ?? "";
         setAvailableModels(models);
         setSelectedModel((current) => {
           const currentIsValid =
@@ -904,22 +911,16 @@ export function ProjectWorkspacePage({
           }
           return next;
         });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAvailableModels([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setModelsLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      } catch {
+        setAvailableModels([]);
+      } finally {
+        setModelsLoading(false);
+        modelsRequestRef.current = null;
+      }
+    })();
+    modelsRequestRef.current = request;
+    await request;
+  }, [availableModels.length]);
 
   const aiModelHeaders = useCallback((): Record<string, string> => {
     return selectedModel ? { "X-OpenAI-Model": selectedModel } : {};
@@ -2361,7 +2362,9 @@ export function ProjectWorkspacePage({
                       id="workspace-ai-model"
                       value={selectedModel}
                       onChange={(event) => onModelChange(event.target.value)}
-                      disabled={modelsLoading || !availableModels.length}
+                      onFocus={() => void loadAvailableModels()}
+                      onPointerDown={() => void loadAvailableModels()}
+                      disabled={modelsLoading}
                       className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-slate-50 px-2 text-sm font-semibold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:text-slate-400"
                     >
                       {selectedModel &&
@@ -2372,14 +2375,14 @@ export function ProjectWorkspacePage({
                         <option value="">Henter modeller ...</option>
                       ) : null}
                       {!modelsLoading && !availableModels.length ? (
-                        <option value="">Ingen modeller funnet</option>
+                        <option value="">Åpne for å hente modeller</option>
                       ) : null}
-                    {availableModels.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.id}
-                      </option>
-                    ))}
-                  </select>
+                      {availableModels.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.id}
+                        </option>
+                      ))}
+                    </select>
                     {selectedModel ? (
                       <p className="mt-2 text-xs leading-relaxed text-slate-500">
                         {modelHelpText(selectedModel)}

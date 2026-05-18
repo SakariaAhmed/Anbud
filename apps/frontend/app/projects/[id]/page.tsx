@@ -7,6 +7,7 @@ import {
 import { getProjectShell } from "@/lib/server/projects-db";
 
 const validTabs = new Set<string>([
+  "documents",
   "analysis",
   "bilag1",
   "service-description",
@@ -31,11 +32,16 @@ export default async function ProjectPage({
 }) {
   try {
     const [{ id }, query] = await Promise.all([params, searchParams]);
-    const project = await getProjectShell(id);
+    const initialTab = parseInitialTab(query.tab);
+    const project = await getProjectShell(id, {
+      includeCustomerAnalysis: initialTab === "analysis",
+      includeSolutionEvaluation: initialTab === "evaluation",
+      includeExecutiveSummary: initialTab === "executive-summary",
+    });
     return (
       <ProjectWorkspacePage
         initialData={project}
-        initialTab={parseInitialTab(query.tab)}
+        initialTab={initialTab}
       />
     );
   } catch {

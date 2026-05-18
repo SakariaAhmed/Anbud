@@ -1798,30 +1798,88 @@ export async function getProjectDetail(
 
 export async function getProjectShell(
   projectId: string,
+  options: {
+    includeCustomerAnalysis?: boolean;
+    includeSolutionEvaluation?: boolean;
+    includeExecutiveSummary?: boolean;
+  } = {},
 ): Promise<ProjectDetail> {
   return unstable_cache(
     async () => {
       const supabase = createServiceClient();
 
-      const [projectRow, documentRows, { data: artifactRows, error: artifactsError }] =
-        await Promise.all([
-          queryProjectRow(projectId),
-          fetchDocumentSummaryRows((select) =>
-            supabase
-              .from("documents")
-              .select(select)
-              .eq("project_id", projectId)
-              .order("created_at", { ascending: false }),
-          ),
+      const [
+        projectRow,
+        documentRows,
+        { data: artifactRows, error: artifactsError },
+        { data: analyses, error: analysesError },
+        { data: evaluations, error: evaluationsError },
+        { data: executiveSummaries, error: executiveSummariesError },
+      ] = await Promise.all([
+        queryProjectRow(projectId),
+        fetchDocumentSummaryRows((select) =>
           supabase
-            .from("generated_artifacts")
-            .select("id")
-            .eq("project_id", projectId),
-        ]);
+            .from("documents")
+            .select(select)
+            .eq("project_id", projectId)
+            .order("created_at", { ascending: false }),
+        ),
+        supabase
+          .from("generated_artifacts")
+          .select("id")
+          .eq("project_id", projectId),
+        options.includeCustomerAnalysis
+          ? supabase
+              .from("customer_analyses")
+              .select("*")
+              .eq("project_id", projectId)
+              .order("created_at", { ascending: false })
+              .limit(1)
+          : Promise.resolve({ data: null, error: null }),
+        options.includeSolutionEvaluation
+          ? supabase
+              .from("solution_evaluations")
+              .select("*")
+              .eq("project_id", projectId)
+              .order("created_at", { ascending: false })
+              .limit(1)
+          : Promise.resolve({ data: null, error: null }),
+        options.includeExecutiveSummary
+          ? supabase
+              .from("executive_summaries")
+              .select("*")
+              .eq("project_id", projectId)
+              .order("created_at", { ascending: false })
+              .limit(1)
+          : Promise.resolve({ data: null, error: null }),
+      ]);
 
-      if (artifactsError) {
-        throw new Error(artifactsError.message);
+      if (
+        artifactsError ||
+        analysesError ||
+        evaluationsError ||
+        (executiveSummariesError &&
+          !isMissingRelationColumn(
+            executiveSummariesError,
+            "executive_summaries",
+          ))
+      ) {
+        throw new Error(
+          artifactsError?.message ||
+            analysesError?.message ||
+            evaluationsError?.message ||
+            executiveSummariesError?.message ||
+            "Kunne ikke laste prosjektet.",
+        );
       }
+
+      const analysisRow =
+        ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
+      const evaluationRow =
+        ((evaluations ?? [])[0] as SolutionEvaluationRow | undefined) ?? null;
+      const executiveSummaryRow =
+        ((executiveSummaries ?? [])[0] as ExecutiveSummaryRow | undefined) ??
+        null;
 
       return {
         id: projectRow.id,
@@ -1844,14 +1902,26 @@ export async function getProjectShell(
         artifact_count: (artifactRows ?? []).length,
         has_chat: false,
         documents: documentRows.map(mapDocumentSummary),
-        customer_analysis: null,
-        solution_evaluation: null,
-        executive_summary: null,
+        customer_analysis: analysisRow
+          ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
+          : null,
+        solution_evaluation: evaluationRow
+          ? mapSolutionEvaluationRow(evaluationRow)
+          : null,
+        executive_summary: executiveSummaryRow
+          ? mapExecutiveSummaryRow(executiveSummaryRow)
+          : null,
         generated_artifacts: [],
         chat_messages: [],
       };
     },
-    ["project-shell", projectId],
+    [
+      "project-shell",
+      projectId,
+      options.includeCustomerAnalysis ? "analysis" : "no-analysis",
+      options.includeSolutionEvaluation ? "evaluation" : "no-evaluation",
+      options.includeExecutiveSummary ? "executive-summary" : "no-executive-summary",
+    ],
     {
       tags: [projectTag(projectId)],
       revalidate: 60,
