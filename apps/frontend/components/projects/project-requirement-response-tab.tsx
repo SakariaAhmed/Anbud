@@ -59,6 +59,32 @@ type RequirementContentSegment =
   | { type: "markdown"; content: string }
   | { type: "table"; rows: RequirementTableRow[] };
 
+type ArtifactQualityReport = {
+  status?: "pass" | "warning" | "fail";
+  metrics?: {
+    requirementRows?: number;
+    tocRows?: number;
+    dotLeaderRows?: number;
+    emptyAnswers?: number;
+    missingSources?: number;
+    duplicateRequirementTexts?: number;
+    emptySections?: number;
+  };
+};
+
+type DocumentLedgerSummary = {
+  document_id?: string;
+  confidence?: "high" | "medium" | "low";
+  confidence_score?: number;
+  requirement_count?: number;
+  toc_line_count?: number;
+};
+
+type GenerationTiming = {
+  phase?: string;
+  duration_ms?: number;
+};
+
 function splitMarkdownTableRow(line: string) {
   return line
     .trim()
@@ -294,6 +320,203 @@ function downloadRequirementResponsePdf(artifact: GeneratedArtifact) {
   printWindow.document.close();
 }
 
+function snapshotRecord(artifact: GeneratedArtifact) {
+  return artifact.input_snapshot && typeof artifact.input_snapshot === "object"
+    ? (artifact.input_snapshot as Record<string, unknown>)
+    : {};
+}
+
+function qualityReportFromArtifact(artifact: GeneratedArtifact) {
+  const report = snapshotRecord(artifact).artifact_quality_report;
+  if (report && typeof report === "object") {
+    return report as ArtifactQualityReport;
+  }
+
+  return deriveQualityReportFromMarkdown(artifact.content_markdown || "");
+}
+
+function ledgerSummariesFromArtifact(artifact: GeneratedArtifact) {
+  const ledgers = snapshotRecord(artifact).document_ledgers;
+  return Array.isArray(ledgers) ? (ledgers as DocumentLedgerSummary[]) : [];
+}
+
+function timingsFromArtifact(artifact: GeneratedArtifact) {
+  const timings = snapshotRecord(artifact).generation_timings;
+  return Array.isArray(timings) ? (timings as GenerationTiming[]) : [];
+}
+
+function deriveQualityReportFromMarkdown(markdown: string): ArtifactQualityReport | null {
+  if (!markdown.trim()) return null;
+
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  let inRequirementTable = false;
+  let requirementRows = 0;
+  let tocRows = 0;
+  let dotLeaderRows = 0;
+  let emptyAnswers = 0;
+  let missingSources = 0;
+  const seenRequirements = new Map<string, number>();
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (isRequirementTableHeader(line)) {
+      inRequirementTable = true;
+      index += isMarkdownDivider(lines[index + 1] ?? "") ? 1 : 0;
+      continue;
+    }
+
+    if (!line.trim().startsWith("|")) {
+      inRequirementTable = false;
+      continue;
+    }
+    if (!inRequirementTable || isMarkdownDivider(line)) continue;
+
+    const row = splitMarkdownTableRow(line);
+    const requirement = row[1] ?? "";
+    const answer = row[2] ?? "";
+    const source = row[3] ?? "";
+    requirementRows += 1;
+
+    if (/table of contents|innholdsfortegnelse/i.test(requirement)) tocRows += 1;
+    if (/\.{4,}\s*\d{1,4}\s*$/.test(requirement)) dotLeaderRows += 1;
+    if (!answer.trim()) emptyAnswers += 1;
+    if (!source.trim()) missingSources += 1;
+
+    const key = requirement.replace(/\s+/g, " ").trim().toLowerCase();
+    if (key.length >= 20) {
+      seenRequirements.set(key, (seenRequirements.get(key) ?? 0) + 1);
+    }
+  }
+
+  const duplicateRequirementTexts = Array.from(seenRequirements.values()).reduce(
+    (sum, count) => sum + Math.max(0, count - 1),
+    0,
+  );
+  const hasHighIssue =
+    tocRows > 0 ||
+    dotLeaderRows > 0 ||
+    emptyAnswers > 0 ||
+    missingSources > 0 ||
+    requirementRows === 0;
+
+  return {
+    status: hasHighIssue
+      ? "fail"
+      : duplicateRequirementTexts > 0
+        ? "warning"
+        : "pass",
+    metrics: {
+      requirementRows,
+      tocRows,
+      dotLeaderRows,
+      emptyAnswers,
+      missingSources,
+      duplicateRequirementTexts,
+      emptySections: 0,
+    },
+  };
+}
+
+function requirementDocumentConfidence(
+  document: ProjectDocument | undefined,
+  artifacts: GeneratedArtifact[],
+) {
+  if (!document) {
+    return {
+      label: "Ingen dokumentanalyse",
+      tone: "muted" as const,
+      description: "Velg et dokument før generering.",
+    };
+  }
+
+  for (const artifact of artifacts) {
+    const ledger = ledgerSummariesFromArtifact(artifact).find(
+      (summary) => summary.document_id === document.id,
+    );
+    if (!ledger?.confidence) continue;
+
+    const label =
+      ledger.confidence === "high"
+        ? "Høy kravtillit"
+        : ledger.confidence === "medium"
+          ? "Middels kravtillit"
+          : "Lav kravtillit";
+    return {
+      label,
+      tone: ledger.confidence,
+      description: `${ledger.requirement_count ?? 0} kravindikasjoner funnet. ${
+        ledger.toc_line_count ?? 0
+      } innholdsfortegnelseslinjer filtrert.`,
+    };
+  }
+
+  const text = `${document.title} ${document.file_name} ${
+    document.supporting_subtype ?? ""
+  }`.toLowerCase();
+  if (text.includes("krav") || text.includes("requirement")) {
+    return {
+      label: "Sannsynlig kravdokument",
+      tone: "medium" as const,
+      description: "Serveren gjør full dokumentanalyse før resultatet lagres.",
+    };
+  }
+
+  return {
+    label: "Lav kravtillit",
+    tone: "low" as const,
+    description: "Dokumentet kan brukes, men generatoren stopper lagring hvis kravgrunnlaget gir feiloutput.",
+  };
+}
+
+function QualityReportPanel({
+  report,
+  timings,
+}: {
+  report: ArtifactQualityReport | null;
+  timings: GenerationTiming[];
+}) {
+  if (!report?.metrics) return null;
+
+  const metrics = report.metrics;
+  const sourceOk = (metrics.missingSources ?? 0) === 0;
+  const totalTiming = timings.find((timing) => timing.phase === "total");
+  const seconds =
+    typeof totalTiming?.duration_ms === "number"
+      ? Math.round(totalTiming.duration_ms / 100) / 10
+      : null;
+  const tone =
+    report.status === "pass"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : report.status === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-900"
+        : "border-red-200 bg-red-50 text-red-900";
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm ${tone}`}>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="font-semibold">Kvalitetsrapport</p>
+        <span className="text-xs font-semibold uppercase tracking-[0.12em]">
+          {report.status === "pass"
+            ? "OK"
+            : report.status === "warning"
+              ? "Varsel"
+              : "Feil"}
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <span>{metrics.requirementRows ?? 0} krav funnet</span>
+        <span>{metrics.tocRows ?? 0} TOC-rader</span>
+        <span>{metrics.emptyAnswers ?? 0} tomme svar</span>
+        <span>{metrics.duplicateRequirementTexts ?? 0} duplikater</span>
+        <span>Kildegrunnlag: {sourceOk ? "OK" : "Mangler"}</span>
+      </div>
+      {seconds !== null ? (
+        <p className="mt-2 text-xs opacity-80">Genereringstid: {seconds} sek.</p>
+      ) : null}
+    </div>
+  );
+}
+
 function parseRequirementContent(content: string): RequirementContentSegment[] {
   const lines = content.split("\n");
   const segments: RequirementContentSegment[] = [];
@@ -488,6 +711,13 @@ export function ProjectRequirementResponseTab({
   const requirementResponses = artifacts.filter(
     (artifact) => artifact.artifact_type === "forbedret_kravsvar",
   );
+  const selectedDocument = selectableDocuments.find(
+    (document) => document.id === selectedDocumentId,
+  );
+  const selectedDocumentConfidence = requirementDocumentConfidence(
+    selectedDocument,
+    requirementResponses,
+  );
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [dragActive, setDragActive] = useState(false);
@@ -592,7 +822,10 @@ export function ProjectRequirementResponseTab({
         </p>
       ) : (
         <div className="space-y-3">
-          {requirementResponses.map((artifact, index) => (
+          {requirementResponses.map((artifact, index) => {
+            const qualityReport = qualityReportFromArtifact(artifact);
+            const timings = timingsFromArtifact(artifact);
+            return (
             <details
               key={artifact.id}
               open={index === 0}
@@ -717,6 +950,7 @@ export function ProjectRequirementResponseTab({
                   </div>
                 ) : (
                   <>
+                    <QualityReportPanel report={qualityReport} timings={timings} />
                     <RequirementResponseContent
                       content={
                         artifact.content_markdown ||
@@ -727,7 +961,8 @@ export function ProjectRequirementResponseTab({
                 )}
               </div>
             </details>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
@@ -770,6 +1005,20 @@ export function ProjectRequirementResponseTab({
             <p className="text-xs leading-5 text-slate-500">
               Valgt dokument brukes som kravgrunnlag. Nye opplastinger velges automatisk.
             </p>
+            <div
+              className={`rounded-lg border px-3 py-2 text-xs leading-5 ${
+                selectedDocumentConfidence.tone === "high"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  : selectedDocumentConfidence.tone === "medium"
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : selectedDocumentConfidence.tone === "low"
+                      ? "border-red-200 bg-red-50 text-red-900"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+            >
+              <span className="font-semibold">{selectedDocumentConfidence.label}</span>
+              <span className="ml-1">{selectedDocumentConfidence.description}</span>
+            </div>
           </div>
           <Button
             type="submit"

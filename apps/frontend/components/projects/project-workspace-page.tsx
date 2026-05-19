@@ -499,6 +499,24 @@ const ProjectGeneratorTab = dynamic(
   },
 );
 
+const workspaceTabPreloaders: Partial<Record<ProjectWorkspaceTab, () => Promise<unknown>>> = {
+  analysis: () => import("@/components/projects/project-analysis-tab"),
+  bilag1: () => import("@/components/projects/project-bilag1-tab"),
+  "service-description": () =>
+    import("@/components/projects/project-service-description-tab"),
+  requirements: () =>
+    import("@/components/projects/project-requirement-response-tab"),
+  generator: () => import("@/components/projects/project-generator-tab"),
+  evaluation: () => import("@/components/projects/project-evaluation-tab"),
+  delivery: () => import("@/components/projects/project-delivery-tab"),
+  "executive-summary": () =>
+    import("@/components/projects/project-executive-summary-tab"),
+};
+
+function preloadWorkspaceTab(tab: ProjectWorkspaceTab) {
+  void workspaceTabPreloaders[tab]?.();
+}
+
 interface ProjectSnapshotPayload {
   name: string;
   customer_name: string | null;
@@ -684,6 +702,10 @@ function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "m
   if (job.status === "queued") return 8;
 
   const message = job.message.toLowerCase();
+  const explicitProgress = message.match(/\[(\d{1,3})%\]/);
+  if (explicitProgress) {
+    return Math.min(99, Math.max(3, Number(explicitProgress[1])));
+  }
 
   if (message.includes("laster")) return 18;
   if (message.includes("køer")) return 8;
@@ -695,6 +717,14 @@ function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "m
   if (message.includes("ferdig")) return 100;
 
   return 28;
+}
+
+function hasExplicitProgress(message: string) {
+  return /\[\d{1,3}%\]/.test(message);
+}
+
+function progressMessageLabel(message: string) {
+  return message.replace(/^\[\d{1,3}%\]\s*/, "");
 }
 
 function estimatedJobDurationMs(
@@ -857,6 +887,10 @@ export function ProjectWorkspacePage({
 
   const setWorkspaceTab = useCallback(
     (tab: ProjectWorkspaceTab) => {
+      preloadWorkspaceTab(tab);
+      if (tab === activeTab) {
+        return;
+      }
       setActiveTab(tab);
       const nextParams = new URLSearchParams(searchParams.toString());
       if (tab === "analysis") {
@@ -867,7 +901,7 @@ export function ProjectWorkspacePage({
       const query = nextParams.toString();
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
-    [pathname, router, searchParams],
+    [activeTab, pathname, router, searchParams],
   );
   const activeJobAbortRef = useRef<AbortController | null>(null);
 
@@ -1032,10 +1066,17 @@ export function ProjectWorkspacePage({
         projectId: project.id,
         jobId,
         onStatus(jobStatus) {
-          setBusyMessage(jobStatus.message);
-          setBusyProgress((current) =>
-            Math.max(current, progressForJobStatus(jobStatus)),
-          );
+          setBusyMessage(progressMessageLabel(jobStatus.message));
+          const nextProgress = progressForJobStatus(jobStatus);
+          if (hasExplicitProgress(jobStatus.message)) {
+            if (progressIntervalRef.current) {
+              window.clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
+            setBusyProgress(nextProgress);
+          } else {
+            setBusyProgress((current) => Math.max(current, nextProgress));
+          }
         },
         signal: controller.signal,
       });
@@ -1306,7 +1347,8 @@ export function ProjectWorkspacePage({
     if (
 	      (activeTab !== "generator" &&
 	        activeTab !== "delivery" &&
-	        activeTab !== "requirements") ||
+	        activeTab !== "requirements" &&
+	        activeTab !== "bilag1") ||
 	      artifactsLoaded ||
 	      project.artifact_count === 0
 	    )
@@ -2255,6 +2297,9 @@ export function ProjectWorkspacePage({
                             !sidebarOpen &&
                               "mx-auto size-10 justify-center rounded-md px-0",
                           )}
+                          onFocus={() => preloadWorkspaceTab(item.value)}
+                          onPointerEnter={() => preloadWorkspaceTab(item.value)}
+                          onPointerDown={() => preloadWorkspaceTab(item.value)}
                           onClick={() => setWorkspaceTab(item.value)}
                         >
                           <item.icon className="size-4.5" />
