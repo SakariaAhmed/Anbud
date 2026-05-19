@@ -305,7 +305,7 @@ export async function queueArtifactGenerationJob(input: {
   await enqueueJob(record);
 
   startRunner(jobId, async ({ setProgress }) => {
-    setProgress("Laster prosjektkontekst og relevante dokumenter ...");
+    setProgress("[12%] Laster prosjektkontekst og relevante dokumenter ...");
     const [
       project,
       customerAnalysis,
@@ -351,7 +351,11 @@ export async function queueArtifactGenerationJob(input: {
             })
           : await listServiceDocumentDetailsForProject(input.projectId);
 
-    setProgress("Genererer nytt utkast med AI ...");
+    setProgress(
+      input.artifactType === "forbedret_kravsvar"
+        ? "[18%] Kartlegger kravdokumenter og forbereder kravbesvarelse ..."
+        : "[38%] Genererer nytt utkast med AI ...",
+    );
     const generated = await generateProjectArtifact({
       artifactType: input.artifactType,
       projectName: project.name,
@@ -370,9 +374,11 @@ export async function queueArtifactGenerationJob(input: {
       knowledgeArtifacts: generatedArtifacts,
       instructions: input.instructions?.trim(),
       model: input.model,
+      onProgress:
+        input.artifactType === "forbedret_kravsvar" ? setProgress : undefined,
     });
 
-    setProgress("Lagrer generatorresultatet i prosjektet ...");
+    setProgress("[90%] Lagrer generatorresultatet i prosjektet ...");
     const artifact = await saveGeneratedArtifact(
       input.projectId,
       input.artifactType,
