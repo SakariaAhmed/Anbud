@@ -684,6 +684,10 @@ function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "m
   if (job.status === "queued") return 8;
 
   const message = job.message.toLowerCase();
+  const explicitProgress = message.match(/\[(\d{1,3})%\]/);
+  if (explicitProgress) {
+    return Math.min(99, Math.max(3, Number(explicitProgress[1])));
+  }
 
   if (message.includes("laster")) return 18;
   if (message.includes("køer")) return 8;
@@ -695,6 +699,14 @@ function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "m
   if (message.includes("ferdig")) return 100;
 
   return 28;
+}
+
+function hasExplicitProgress(message: string) {
+  return /\[\d{1,3}%\]/.test(message);
+}
+
+function progressMessageLabel(message: string) {
+  return message.replace(/^\[\d{1,3}%\]\s*/, "");
 }
 
 function estimatedJobDurationMs(
@@ -1032,10 +1044,17 @@ export function ProjectWorkspacePage({
         projectId: project.id,
         jobId,
         onStatus(jobStatus) {
-          setBusyMessage(jobStatus.message);
-          setBusyProgress((current) =>
-            Math.max(current, progressForJobStatus(jobStatus)),
-          );
+          setBusyMessage(progressMessageLabel(jobStatus.message));
+          const nextProgress = progressForJobStatus(jobStatus);
+          if (hasExplicitProgress(jobStatus.message)) {
+            if (progressIntervalRef.current) {
+              window.clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
+            setBusyProgress(nextProgress);
+          } else {
+            setBusyProgress((current) => Math.max(current, nextProgress));
+          }
         },
         signal: controller.signal,
       });
