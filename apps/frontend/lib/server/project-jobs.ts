@@ -3,6 +3,15 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
+import {
+  repairGeneratedArtifactContent,
+  validateGeneratedArtifact,
+} from "@/lib/server/artifact-validation";
+import {
+  buildDocumentLedger,
+  buildDocumentLedgerContext,
+  summarizeDocumentLedgers,
+} from "@/lib/server/document-ledger";
 import { createServiceClient } from "@/lib/server/supabase";
 import {
   analyzeCustomerDocuments,
@@ -305,7 +314,16 @@ export async function queueArtifactGenerationJob(input: {
   await enqueueJob(record);
 
   startRunner(jobId, async ({ setProgress }) => {
-    setProgress("Laster prosjektkontekst og relevante dokumenter ...");
+    const totalStartedAt = Date.now();
+    let phaseStartedAt = totalStartedAt;
+    const generationTimings: Array<{ phase: string; duration_ms: number }> = [];
+    function markPhase(phase: string) {
+      const now = Date.now();
+      generationTimings.push({ phase, duration_ms: now - phaseStartedAt });
+      phaseStartedAt = now;
+    }
+
+    setProgress("[12%] Laster prosjektkontekst og relevante dokumenter ...");
     const [
       project,
       customerAnalysis,
@@ -319,6 +337,7 @@ export async function queueArtifactGenerationJob(input: {
       listGeneratedArtifacts(input.projectId),
       listServiceDocumentSummariesForProject(input.projectId),
     ]);
+    markPhase("dokumenthenting");
     const { projectDocuments, serviceDescriptionDocument } =
       splitServiceDescriptionDetails(documents);
     const selectedDocumentIds = new Set(input.sourceDocumentIds ?? []);
@@ -336,6 +355,25 @@ export async function queueArtifactGenerationJob(input: {
         "Bilag 1 kan ikke genereres fordi dokumentgrunnlaget mangler lesbar tekst.",
       );
     }
+    setProgress("[16%] Bygger dokumentledger for struktur, krav og kildegrunnlag ...");
+    const ledgerDocuments =
+      input.artifactType === "forbedret_kravsvar" && selectedDocumentIds.size
+        ? selectedRequirementDocuments
+        : [
+            customerDocument,
+            solutionDocument,
+            ...supportingDocuments,
+          ].filter(
+            (document): document is ProjectDocumentDetail =>
+              document !== null && Boolean(document.raw_text.trim()),
+          );
+    const documentLedgers = ledgerDocuments.slice(0, 8).map(buildDocumentLedger);
+    const documentLedgerContext = buildDocumentLedgerContext({
+      artifactType: input.artifactType,
+      ledgers: documentLedgers,
+    });
+    markPhase("ledgerbygging");
+
     const serviceDescriptionDocuments =
       input.artifactType === "bilag1_rekonstruksjon"
         ? []
@@ -350,8 +388,13 @@ export async function queueArtifactGenerationJob(input: {
               }),
             })
           : await listServiceDocumentDetailsForProject(input.projectId);
+    markPhase("tjenestedokumenthenting");
 
-    setProgress("Genererer nytt utkast med AI ...");
+    setProgress(
+      input.artifactType === "forbedret_kravsvar"
+        ? "[18%] Kartlegger kravdokumenter og forbereder kravbesvarelse ..."
+        : "[38%] Genererer nytt utkast med AI ...",
+    );
     const generated = await generateProjectArtifact({
       artifactType: input.artifactType,
       projectName: project.name,
@@ -370,14 +413,40 @@ export async function queueArtifactGenerationJob(input: {
       knowledgeArtifacts: generatedArtifacts,
       instructions: input.instructions?.trim(),
       model: input.model,
+      onProgress:
+        input.artifactType === "forbedret_kravsvar" ? setProgress : undefined,
+      documentLedgerContext,
     });
+    markPhase("ai_batcher");
 
-    setProgress("Lagrer generatorresultatet i prosjektet ...");
+    setProgress("[86%] Validerer og reparerer generatorresultatet ...");
+    const repaired = repairGeneratedArtifactContent({
+      artifactType: input.artifactType,
+      contentMarkdown: generated.content_markdown,
+    });
+    if (repaired.repairedRows > 10) {
+      throw new Error(
+        `Generatorresultatet inneholdt ${repaired.repairedRows} rader fra innholdsfortegnelse. Jobben stoppes i stedet for å lagre feiloutput.`,
+      );
+    }
+    const qualityReport = validateGeneratedArtifact({
+      artifactType: input.artifactType,
+      title: generated.title,
+      contentMarkdown: repaired.contentMarkdown,
+    });
+    if (qualityReport.status === "fail") {
+      throw new Error(
+        `Generatorresultatet stoppet i kvalitetskontroll: ${qualityReport.issues.join(" ")}`,
+      );
+    }
+    markPhase("validering");
+
+    setProgress("[90%] Lagrer validert generatorresultat i prosjektet ...");
     const artifact = await saveGeneratedArtifact(
       input.projectId,
       input.artifactType,
       generated.title,
-      generated.content_markdown,
+      repaired.contentMarkdown,
       {
         instructions: input.instructions?.trim() || "",
         customer_analysis_present: Boolean(customerAnalysis),
@@ -394,8 +463,18 @@ export async function queueArtifactGenerationJob(input: {
           role: document.role,
           subtype: document.supporting_subtype,
         })),
+        document_ledgers: summarizeDocumentLedgers(documentLedgers),
+        artifact_quality_report: qualityReport,
+        artifact_repair: {
+          repaired_rows: repaired.repairedRows,
+        },
+        generation_timings: [
+          ...generationTimings,
+          { phase: "total", duration_ms: Date.now() - totalStartedAt },
+        ],
       },
     );
+    markPhase("lagring");
 
     const projectSnapshot = await getProjectSnapshot(input.projectId);
     return {
@@ -671,6 +750,23 @@ export async function queueSolutionEvaluationJob(input: {
       throw new Error("Generer kundeanalyse før løsningsvurdering.");
     }
 
+    setProgress("Bygger evalueringsledger fra krav, kriterier og dokumentstruktur ...");
+    const evaluationLedgers = [
+      customerDocument,
+      solutionDocument,
+      ...supportingDocuments,
+    ]
+      .filter(
+        (document): document is ProjectDocumentDetail =>
+          document !== null && Boolean(document.raw_text.trim()),
+      )
+      .slice(0, 8)
+      .map(buildDocumentLedger);
+    const evaluationLedgerContext = buildDocumentLedgerContext({
+      artifactType: "gjennomforing_og_risiko",
+      ledgers: evaluationLedgers,
+    });
+
     if (!solutionDocument) {
       if (!input.allowGeneratedSolution) {
         throw new Error("Velg dokumentet som skal vurderes som arkitektløsning.");
@@ -683,6 +779,7 @@ export async function queueSolutionEvaluationJob(input: {
         customerDocument,
         supportingDocuments,
         model: input.model,
+        documentLedgerContext: evaluationLedgerContext,
       });
 
       setProgress("Lagrer systemgenerert utkast ...");
@@ -722,6 +819,7 @@ export async function queueSolutionEvaluationJob(input: {
       customerAnalysis,
       systemSolutionArtifact: getLatestSolutionDraft(generatedArtifacts),
       model: input.model,
+      documentLedgerContext: evaluationLedgerContext,
     });
 
     setProgress("Lagrer sammenligning og vurdering ...");

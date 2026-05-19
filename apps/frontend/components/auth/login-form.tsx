@@ -48,7 +48,6 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
       }
 
       router.replace(safeNextPath(payload.redirectTo || nextPath));
-      router.refresh();
     } finally {
       setLoading(false);
     }
