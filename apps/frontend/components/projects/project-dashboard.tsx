@@ -142,6 +142,32 @@ function normalizeSearch(value: string) {
 }
 
 const refreshEase = [0.76, 0, 0.24, 1] as const;
+const HOME_ANIMATION_SEEN_KEY = "bidsite-home-animation-seen";
+
+function shouldSkipHomeAnimation() {
+  if (consumeNextHomeNavigationWithoutAnimation()) {
+    return true;
+  }
+
+  try {
+    const navigation = window.performance.getEntriesByType("navigation")[0] as
+      | PerformanceNavigationTiming
+      | undefined;
+    if (navigation?.type === "reload") {
+      window.sessionStorage.setItem(HOME_ANIMATION_SEEN_KEY, "1");
+      return false;
+    }
+
+    if (window.sessionStorage.getItem(HOME_ANIMATION_SEEN_KEY) === "1") {
+      return true;
+    }
+    window.sessionStorage.setItem(HOME_ANIMATION_SEEN_KEY, "1");
+  } catch {
+    // If storage is unavailable, keep the existing first-load animation behavior.
+  }
+
+  return false;
+}
 
 function HomepageRefreshAnimation() {
   const reduceMotion = useReducedMotion();
@@ -175,7 +201,7 @@ function HomepageRefreshAnimation() {
   });
 
   useLayoutEffect(() => {
-    if (consumeNextHomeNavigationWithoutAnimation()) {
+    if (shouldSkipHomeAnimation()) {
       skipAnimationRef.current = true;
       setVisible(false);
       setCompleted(true);
@@ -1202,9 +1228,9 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
       );
     });
   }, [projects, searchQuery, sortBy, statusFilter]);
-  const prefetchProject = useCallback(
-    (projectId: string) => {
-      router.prefetch(`/projects/${projectId}`);
+  const prefetchProjectHref = useCallback(
+    (href: string) => {
+      router.prefetch(href);
     },
     [router],
   );
@@ -1214,7 +1240,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
 
     const prefetchVisibleProjects = () => {
       for (const project of projects.slice(0, PROJECT_PREFETCH_LIMIT)) {
-        router.prefetch(`/projects/${project.id}`);
+        router.prefetch(projectActionHref(project));
       }
     };
 
@@ -1356,8 +1382,9 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                 <Link
                   href={`/projects/${latestProject.id}`}
                   prefetch={false}
-                  onFocus={() => prefetchProject(latestProject.id)}
-                  onPointerEnter={() => prefetchProject(latestProject.id)}
+                  onFocus={() => prefetchProjectHref(`/projects/${latestProject.id}`)}
+                  onPointerDown={() => prefetchProjectHref(`/projects/${latestProject.id}`)}
+                  onPointerEnter={() => prefetchProjectHref(`/projects/${latestProject.id}`)}
                   className="inline-flex h-10 items-center gap-2 rounded-md border border-white/20 bg-white/[0.08] px-4 text-sm font-semibold text-white backdrop-blur transition-colors hover:border-white/35 hover:bg-white/[0.13] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 >
                   Siste prosjekt
@@ -1540,6 +1567,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               <tbody>
                 {filteredProjects.map((project) => {
                   const action = nextProjectAction(project);
+                  const href = projectActionHref(project);
                   return (
                   <tr
                     key={project.id}
@@ -1547,10 +1575,11 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                   >
                     <td className="px-7 py-5">
                       <Link
-                        href={projectActionHref(project)}
+                        href={href}
                         prefetch={false}
-                        onFocus={() => prefetchProject(project.id)}
-                        onPointerEnter={() => prefetchProject(project.id)}
+                        onFocus={() => prefetchProjectHref(href)}
+                        onPointerDown={() => prefetchProjectHref(href)}
+                        onPointerEnter={() => prefetchProjectHref(href)}
                         className="block"
                       >
                         <p className="text-lg font-bold tracking-[-0.02em] text-slate-950 transition-colors group-hover:text-blue-800">
@@ -1606,10 +1635,11 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                           </button>
                         </DeleteConfirmDialog>
                         <Link
-                          href={projectActionHref(project)}
+                          href={href}
                           prefetch={false}
-                          onFocus={() => prefetchProject(project.id)}
-                          onPointerEnter={() => prefetchProject(project.id)}
+                          onFocus={() => prefetchProjectHref(href)}
+                          onPointerDown={() => prefetchProjectHref(href)}
+                          onPointerEnter={() => prefetchProjectHref(href)}
                           className="inline-flex h-9 items-center gap-2 rounded-md border border-blue-100 bg-white px-3 text-sm font-semibold text-blue-800 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50"
                         >
                           Åpne <ArrowRight className="size-4" />
@@ -1625,6 +1655,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
           <div className="grid gap-3 p-4 md:hidden">
             {filteredProjects.map((project) => {
               const action = nextProjectAction(project);
+              const href = projectActionHref(project);
               return (
                 <article
                   key={project.id}
@@ -1633,7 +1664,11 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <Link
-                        href={projectActionHref(project)}
+                        href={href}
+                        prefetch={false}
+                        onFocus={() => prefetchProjectHref(href)}
+                        onPointerDown={() => prefetchProjectHref(href)}
+                        onPointerEnter={() => prefetchProjectHref(href)}
                         className="block text-base font-bold text-slate-950"
                       >
                         {project.name}
@@ -1701,7 +1736,11 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                       </button>
                     </DeleteConfirmDialog>
                     <Link
-                      href={projectActionHref(project)}
+                      href={href}
+                      prefetch={false}
+                      onFocus={() => prefetchProjectHref(href)}
+                      onPointerDown={() => prefetchProjectHref(href)}
+                      onPointerEnter={() => prefetchProjectHref(href)}
                       className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white shadow-sm"
                     >
                       Åpne

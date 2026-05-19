@@ -4559,6 +4559,7 @@ export async function evaluateSolutionDocument(input: {
     content_markdown: string;
   } | null;
   model?: string;
+  documentLedgerContext?: string;
 }) {
   const [customerDocumentDigest, solutionDocumentDigest] = await Promise.all([
     buildDocumentInsightDigest("Primært kundedokument", input.customerDocument, {
@@ -4587,6 +4588,13 @@ export async function evaluateSolutionDocument(input: {
     "Returner kun gyldig JSON.",
     "",
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
+    input.documentLedgerContext
+      ? buildDelimitedContext(
+          "Evalueringsledger",
+          "Bruk ledgeren til å koble evalueringskriterier, må-krav og bør-krav til løsningens dekning. Gi bare score når kildegrunnlaget finnes.\n\n" +
+            input.documentLedgerContext,
+        )
+      : "",
     documentContext("Primært kundedokument", input.customerDocument, {
       textLimit: 7000,
       structureLimit: 8,
@@ -4703,6 +4711,7 @@ export async function generateProjectArtifact(input: {
   instructions?: string;
   model?: string;
   onProgress?: (message: string) => void;
+  documentLedgerContext?: string;
 }) {
   const shouldBuildPrimaryDigests = input.artifactType !== "forbedret_kravsvar";
   const [customerDocumentDigest, solutionDocumentDigest] =
@@ -4949,6 +4958,9 @@ export async function generateProjectArtifact(input: {
       input.instructions
         ? buildDelimitedContext("Brukerbestilling", input.instructions)
         : "",
+      input.documentLedgerContext
+        ? buildDelimitedContext("Strukturert dokumentledger", input.documentLedgerContext)
+        : "",
       buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
       buildDelimitedContext(
         "Kunnskapsregel",
@@ -5007,6 +5019,9 @@ export async function generateProjectArtifact(input: {
     "Generer artefakten som gyldig JSON med feltene title og content_markdown.",
     input.instructions
       ? buildDelimitedContext("Brukerbestilling", input.instructions)
+      : "",
+    input.documentLedgerContext
+      ? buildDelimitedContext("Strukturert dokumentledger", input.documentLedgerContext)
       : "",
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
     buildDelimitedContext(
@@ -5141,6 +5156,7 @@ export async function synthesizeAndEvaluateSolution(input: {
   supportingDocuments: ProjectDocumentDetail[];
   customerAnalysis: CustomerAnalysisResult;
   model?: string;
+  documentLedgerContext?: string;
 }) {
   const supportingContexts = input.supportingDocuments
     .slice(0, 2)
@@ -5160,6 +5176,13 @@ export async function synthesizeAndEvaluateSolution(input: {
     "Returner kun gyldig JSON.",
     "",
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
+    input.documentLedgerContext
+      ? buildDelimitedContext(
+          "Krav-til-løsning-matrise",
+          "Bruk ledgeren til å bygge intern matrise fra krav til løsningspunkt og forbehold. Ikke finn krav direkte fra råtekst når ledgeren har konkrete krav.\n\n" +
+            input.documentLedgerContext,
+        )
+      : "",
     documentContext("Primært kundedokument", input.customerDocument, {
       textLimit: 7000,
       structureLimit: 8,
