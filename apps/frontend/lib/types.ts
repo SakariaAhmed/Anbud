@@ -320,6 +320,15 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export interface ChatSessionSummary {
+  id: string;
+  title: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+  last_message_preview: string;
+}
+
 export interface ProjectDetail extends ProjectSummary {
   documents: ProjectDocument[];
   customer_analysis: CustomerAnalysisResult | null;

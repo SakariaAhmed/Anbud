@@ -1025,7 +1025,6 @@ export async function listServiceDescriptions(): Promise<ServiceDescription[]> {
           supabase
             .from("service_descriptions")
             .select("*")
-            .order("inclusion_mode", { ascending: true })
             .order("name", { ascending: true }),
           supabase
             .from("service_documents")
@@ -1081,7 +1080,6 @@ export async function upsertServiceDescription(input: {
   serviceId?: string | null;
   name: string;
   description?: string | null;
-  inclusionMode: ServiceInclusionMode;
 }) {
   const supabase = createServiceClient();
   const payload = {
@@ -1090,7 +1088,7 @@ export async function upsertServiceDescription(input: {
     keywords: keywordsFromText(
       `${input.name} ${input.description?.trim() || ""}`,
     ),
-    inclusion_mode: input.inclusionMode,
+    inclusion_mode: "selected" as ServiceInclusionMode,
     updated_at: new Date().toISOString(),
   };
 
@@ -1283,40 +1281,27 @@ export async function listServiceDocumentDetailsForProject(
     return ((data ?? []) as ServiceDocumentRow[]).map(decryptServiceDocumentRow);
   }
 
-  const [{ data: fixedServices, error: fixedError }, { data: selections, error: selectionsError }] =
-    await Promise.all([
-      supabase
-        .from("service_descriptions")
-        .select("id")
-        .eq("inclusion_mode", "fixed"),
-      supabase
-        .from("project_service_selections")
-        .select("service_id")
-        .eq("project_id", projectId)
-        .eq("selected", true),
-    ]);
+  const { data: selections, error: selectionsError } = await supabase
+    .from("project_service_selections")
+    .select("service_id")
+    .eq("project_id", projectId)
+    .eq("selected", true);
 
-  if (
-    isMissingRelationColumn(fixedError, "service_descriptions") ||
-    isMissingRelationColumn(selectionsError, "project_service_selections")
-  ) {
+  if (isMissingRelationColumn(selectionsError, "project_service_selections")) {
     return [];
   }
-  if (fixedError || selectionsError) {
+  if (selectionsError) {
     throw new Error(
-      fixedError?.message ||
-        selectionsError?.message ||
-        "Kunne ikke hente valgte tjenester.",
+      selectionsError.message || "Kunne ikke hente valgte tjenester.",
     );
   }
 
   const serviceIds = Array.from(
-    new Set([
-      ...((fixedServices ?? []) as Array<{ id: string }>).map((item) => item.id),
-      ...((selections ?? []) as Array<{ service_id: string }>).map(
-        (item) => item.service_id,
-      ),
-    ]),
+    new Set(
+      ((selections ?? []) as Array<{ service_id: string }>)
+        .map((item) => item.service_id)
+        .filter(Boolean),
+    ),
   );
 
   if (!serviceIds.length) {
@@ -1346,40 +1331,27 @@ export async function listServiceDocumentSummariesForProject(
   projectId: string,
 ): Promise<ServiceDocument[]> {
   const supabase = createServiceClient();
-  const [{ data: fixedServices, error: fixedError }, { data: selections, error: selectionsError }] =
-    await Promise.all([
-      supabase
-        .from("service_descriptions")
-        .select("id")
-        .eq("inclusion_mode", "fixed"),
-      supabase
-        .from("project_service_selections")
-        .select("service_id")
-        .eq("project_id", projectId)
-        .eq("selected", true),
-    ]);
+  const { data: selections, error: selectionsError } = await supabase
+    .from("project_service_selections")
+    .select("service_id")
+    .eq("project_id", projectId)
+    .eq("selected", true);
 
-  if (
-    isMissingRelationColumn(fixedError, "service_descriptions") ||
-    isMissingRelationColumn(selectionsError, "project_service_selections")
-  ) {
+  if (isMissingRelationColumn(selectionsError, "project_service_selections")) {
     return [];
   }
-  if (fixedError || selectionsError) {
+  if (selectionsError) {
     throw new Error(
-      fixedError?.message ||
-        selectionsError?.message ||
-        "Kunne ikke hente valgte tjenester.",
+      selectionsError.message || "Kunne ikke hente valgte tjenester.",
     );
   }
 
   const serviceIds = Array.from(
-    new Set([
-      ...((fixedServices ?? []) as Array<{ id: string }>).map((item) => item.id),
-      ...((selections ?? []) as Array<{ service_id: string }>).map(
-        (item) => item.service_id,
-      ),
-    ]),
+    new Set(
+      ((selections ?? []) as Array<{ service_id: string }>)
+        .map((item) => item.service_id)
+        .filter(Boolean),
+    ),
   );
 
   if (!serviceIds.length) {
@@ -1494,11 +1466,8 @@ export async function listProjectServiceDescriptions(
     );
     return {
       ...service,
-      selected:
-        service.inclusion_mode === "fixed"
-          ? true
-          : selected.get(service.id) ?? false,
-      recommended: service.inclusion_mode === "selected" && score >= 18,
+      selected: selected.get(service.id) ?? false,
+      recommended: score >= 18,
       recommendation_score: score,
       recommendation_reason: overlap.length
         ? `Matcher prosjektet på ${overlap.slice(0, 4).join(", ")}.`
@@ -1514,14 +1483,12 @@ export async function setProjectServiceSelections(
   const supabase = createServiceClient();
   const uniqueIds = Array.from(new Set(serviceIds.filter(Boolean)));
   const services = await listServiceDescriptions();
-  const selectableIds = services
-    .filter((service) => service.inclusion_mode === "selected")
-    .map((service) => service.id);
+  const selectableIds = new Set(services.map((service) => service.id));
 
   await supabase.from("project_service_selections").delete().eq("project_id", projectId);
 
   const rows = uniqueIds
-    .filter((serviceId) => selectableIds.includes(serviceId))
+    .filter((serviceId) => selectableIds.has(serviceId))
     .map((serviceId) => ({
       project_id: projectId,
       service_id: serviceId,

@@ -6,6 +6,8 @@ import {
   verifySessionToken,
 } from "@/lib/password-auth";
 
+export const CURRENT_PATH_HEADER = "x-current-pathname";
+
 const PUBLIC_PATH_PREFIXES = [
   "/_next",
   "/favicon.ico",
@@ -42,6 +44,7 @@ export async function middleware(request: NextRequest) {
   if (authenticated) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set(AUTH_VERIFIED_HEADER, "1");
+    requestHeaders.set(CURRENT_PATH_HEADER, pathname);
     return NextResponse.next({
       request: {
         headers: requestHeaders,

@@ -18,6 +18,7 @@ import {
   KeyRound,
   ListChecks,
   PencilLine,
+  Plus,
   RefreshCw,
   Save,
   Shield,
@@ -50,16 +51,175 @@ import {
   ValueTags,
 } from "@/components/projects/project-workspace-shared";
 import { getCustomerAnalysisSectionSnapshot } from "@/lib/customer-analysis-history";
+import { normalizeTechnologySignalWords } from "@/lib/signal-words";
 import type {
   CustomerAnalysisHistorySource,
   CustomerAnalysisResult,
   CustomerAnalysisSection,
   CustomerAnalysisSectionHistoryEntry,
   CustomerAnalysisSectionSnapshotMap,
+  AnalysisRequirement,
   ProjectDocument,
   ProjectDocumentRole,
+  RequirementImportance,
+  RequirementKind,
+  ValueCategory,
+  ValueOpportunity,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+type EditableCustomerAnalysisSnapshot =
+  CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
+
+const REQUIREMENT_IMPORTANCE_OPTIONS: RequirementImportance[] = [
+  "Kritisk",
+  "Viktig",
+  "Mindre viktig",
+];
+
+const REQUIREMENT_KIND_OPTIONS: RequirementKind[] = [
+  "Eksplisitt",
+  "Implisitt",
+];
+
+function cloneEditableSnapshot<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function cleanStringList(items: string[]) {
+  return items.map((item) => item.trim()).filter(Boolean);
+}
+
+function emptyAnalysisRequirement(kind: RequirementKind): AnalysisRequirement {
+  return {
+    title: "",
+    description: "",
+    category: "",
+    importance: "Viktig",
+    kind,
+    source_reference: "",
+    source_excerpt: "",
+  };
+}
+
+function emptyValueOpportunity(): ValueOpportunity {
+  return {
+    title: "",
+    description: "",
+    value_categories: [],
+    profit_share_percent: 0,
+  };
+}
+
+function sanitizeSectionDraft(
+  section: CustomerAnalysisSection,
+  snapshot: EditableCustomerAnalysisSnapshot,
+): EditableCustomerAnalysisSnapshot {
+  switch (section) {
+    case "summary": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["summary"];
+      return {
+        customer_profile_summary: value.customer_profile_summary.trim(),
+        customer_goals_summary: value.customer_goals_summary.trim(),
+      };
+    }
+    case "strategy": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["strategy"];
+      return {
+        executive_summary: value.executive_summary.trim(),
+        positioning_recommendations: cleanStringList(
+          value.positioning_recommendations,
+        ),
+      };
+    }
+    case "clarifications": {
+      const value =
+        snapshot as CustomerAnalysisSectionSnapshotMap["clarifications"];
+      return {
+        ambiguities: cleanStringList(value.ambiguities),
+        expected_solution_direction: cleanStringList(
+          value.expected_solution_direction,
+        ),
+        likely_evaluation_criteria: cleanStringList(
+          value.likely_evaluation_criteria,
+        ),
+      };
+    }
+    case "design": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["design"];
+      return {
+        high_level_solution_design: value.high_level_solution_design.trim(),
+        high_level_architecture_mermaid:
+          value.high_level_architecture_mermaid.trim(),
+      };
+    }
+    case "risks": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["risks"];
+      return {
+        risks: cleanStringList(value.risks),
+        risks_for_us: cleanStringList(value.risks_for_us ?? []),
+        risks_for_customer: cleanStringList(value.risks_for_customer ?? []),
+      };
+    }
+    case "needs": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["needs"];
+      return {
+        implicit_requirements: value.implicit_requirements
+          .map((item) => ({
+            title: item.title.trim(),
+            description: item.description.trim(),
+            category: item.category.trim(),
+            importance: item.importance,
+            kind: item.kind,
+            source_reference: item.source_reference.trim(),
+            source_excerpt: item.source_excerpt.trim(),
+          }))
+          .filter((item) => item.title || item.description),
+        prioritized_requirements: value.prioritized_requirements
+          .map((item) => ({
+            requirement: item.requirement.trim(),
+            priority: item.priority,
+            reason: item.reason.trim(),
+          }))
+          .filter((item) => item.requirement || item.reason),
+      };
+    }
+    case "keywords": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["keywords"];
+      const signalWords = normalizeTechnologySignalWords(value.signal_words);
+      const counts = Object.fromEntries(
+        Object.entries(value.signal_word_counts ?? {})
+          .map(([word, count]) => [word.trim(), Number(count)] as const)
+          .filter(
+            ([word, count]) =>
+              signalWords.includes(word) && Number.isFinite(count),
+          ),
+      );
+      return {
+        signal_words: signalWords,
+        signal_word_counts: counts,
+      };
+    }
+    case "value": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["value"];
+      return {
+        value_opportunities: value.value_opportunities
+          .map((item) => ({
+            title: item.title.trim(),
+            description: item.description.trim(),
+            value_categories: item.value_categories.filter(
+              (category): category is ValueCategory =>
+                VALUE_LABELS.includes(category),
+            ),
+            profit_share_percent: Number.isFinite(item.profit_share_percent)
+              ? Math.max(0, Math.min(100, item.profit_share_percent))
+              : 0,
+          }))
+          .filter((item) => item.title || item.description),
+      };
+    }
+  }
+}
 
 const MermaidDiagram = dynamic(
   () =>
@@ -240,21 +400,11 @@ function SectionHistoryContent({
       const value =
         snapshot as CustomerAnalysisSectionSnapshotMap["clarifications"];
       return (
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-4">
           <HistoryBulletList
             title="Avklaringer"
             items={value.ambiguities}
             emptyText="Ingen avklaringer var lagret i denne versjonen."
-          />
-          <HistoryBulletList
-            title="Foreløpig retning"
-            items={value.expected_solution_direction}
-            emptyText="Ingen foreløpig løsningsretning var lagret i denne versjonen."
-          />
-          <HistoryBulletList
-            title="Evalueringssignaler"
-            items={value.likely_evaluation_criteria}
-            emptyText="Ingen evalueringssignaler var lagret i denne versjonen."
           />
         </div>
       );
@@ -340,10 +490,11 @@ function SectionHistoryContent({
     }
     case "keywords": {
       const value = snapshot as CustomerAnalysisSectionSnapshotMap["keywords"];
+      const signalWords = normalizeTechnologySignalWords(value.signal_words);
       return (
         <div className="flex flex-wrap gap-2">
-          {value.signal_words.length ? (
-            value.signal_words.map((item, index) => (
+          {signalWords.length ? (
+            signalWords.map((item, index) => (
               <span
                 key={`${item}-${index}`}
                 className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-2 text-sm font-medium text-foreground"
@@ -609,21 +760,23 @@ const NEED_CARD_STYLES = [
 const RISK_AUDIENCE_STYLES = [
   {
     eyebrow: "Leveranserisiko",
-    iconClassName: "bg-amber-500 text-white",
+    iconClassName: "bg-red-600 text-white",
     shellClassName:
-      "border-amber-200/70 bg-[linear-gradient(135deg,rgba(255,251,235,0.72),rgba(255,255,255,0.92)_42%,rgba(248,250,252,0.88))]",
-    numberClassName: "bg-amber-500/12 text-amber-800",
-    accentClassName: "bg-amber-500",
+      "border-red-200/75 bg-[linear-gradient(135deg,rgba(254,242,242,0.82),rgba(255,255,255,0.94)_42%,rgba(248,250,252,0.88))]",
+    numberClassName: "bg-red-600/10 text-red-800",
+    accentClassName: "bg-red-600",
   },
   {
     eyebrow: "Kunderisiko",
-    iconClassName: "bg-blue-600 text-white",
+    iconClassName: "bg-orange-500 text-white",
     shellClassName:
-      "border-blue-200/70 bg-[linear-gradient(135deg,rgba(239,246,255,0.78),rgba(255,255,255,0.92)_42%,rgba(240,253,250,0.62))]",
-    numberClassName: "bg-blue-600/10 text-blue-800",
-    accentClassName: "bg-blue-600",
+      "border-orange-200/75 bg-[linear-gradient(135deg,rgba(255,247,237,0.84),rgba(255,255,255,0.94)_42%,rgba(255,251,235,0.7))]",
+    numberClassName: "bg-orange-500/12 text-orange-800",
+    accentClassName: "bg-orange-500",
   },
 ] as const;
+
+const MAX_RISKS_PER_AUDIENCE = 3;
 
 type PieDatum = {
   id: string;
@@ -1671,7 +1824,7 @@ function getKeywordMentionCount(
 }
 
 function getTopSignalWords(analysis: CustomerAnalysisResult) {
-  return analysis.signal_words
+  return normalizeTechnologySignalWords(analysis.signal_words)
     .map((keyword, index) => ({ keyword, index }))
     .sort((left, right) => {
       const countDiff =
@@ -1722,6 +1875,7 @@ function RiskAudienceGroup({
   tone: 0 | 1;
 }) {
   const style = RISK_AUDIENCE_STYLES[tone];
+  const visibleItems = items.slice(0, MAX_RISKS_PER_AUDIENCE);
 
   return (
     <div
@@ -1745,9 +1899,9 @@ function RiskAudienceGroup({
           </p>
         </div>
       </div>
-      {items.length ? (
+      {visibleItems.length ? (
         <div className="space-y-3 px-5 py-5 md:px-6">
-          {items.map((item, index) => {
+          {visibleItems.map((item, index) => {
             const riskText = splitLeadSentence(item);
 
             return (
@@ -2025,7 +2179,8 @@ export function ProjectAnalysisTab({
 }) {
   const [editingSection, setEditingSection] =
     useState<CustomerAnalysisSection | null>(null);
-  const [sectionDraft, setSectionDraft] = useState("");
+  const [sectionDraft, setSectionDraft] =
+    useState<EditableCustomerAnalysisSnapshot | null>(null);
   const [sectionDraftError, setSectionDraftError] = useState("");
   const [activeSection, setActiveSection] =
     useState<(typeof SECTION_TABS)[number]["value"]>(
@@ -2044,7 +2199,7 @@ export function ProjectAnalysisTab({
     if (!customerAnalysis) {
       setActiveSection("summary");
       setEditingSection(null);
-      setSectionDraft("");
+      setSectionDraft(null);
       setSectionDraftError("");
     }
   }, [customerAnalysis]);
@@ -2131,6 +2286,10 @@ export function ProjectAnalysisTab({
         )
     : [];
   const riskGroups = customerAnalysis ? getRiskGroups(customerAnalysis) : null;
+  const visibleRiskCount = riskGroups
+    ? Math.min(riskGroups.risksForUs.length, MAX_RISKS_PER_AUDIENCE) +
+      Math.min(riskGroups.risksForCustomer.length, MAX_RISKS_PER_AUDIENCE)
+    : Math.min(customerAnalysis?.risks.length ?? 0, MAX_RISKS_PER_AUDIENCE * 2);
   const topImplicitRequirements = customerAnalysis
     ? getTopImplicitRequirements(customerAnalysis.implicit_requirements)
     : [];
@@ -2143,48 +2302,42 @@ export function ProjectAnalysisTab({
     return SECTION_TABS.find((tab) => tab.value === section)?.label ?? section;
   }
 
-  function serializeSectionDraft(section: CustomerAnalysisSection) {
+  function makeSectionDraft(section: CustomerAnalysisSection) {
     if (!customerAnalysis) {
-      return "";
+      return null;
     }
 
-    return JSON.stringify(
+    return cloneEditableSnapshot(
       getCustomerAnalysisSectionSnapshot(customerAnalysis, section),
-      null,
-      2,
     );
   }
 
   function onStartSectionEdit(section: CustomerAnalysisSection) {
     setEditingSection(section);
-    setSectionDraft(serializeSectionDraft(section));
+    setSectionDraft(makeSectionDraft(section));
     setSectionDraftError("");
   }
 
   function onCancelSectionEdit() {
     setEditingSection(null);
-    setSectionDraft("");
+    setSectionDraft(null);
     setSectionDraftError("");
   }
 
   async function onSaveSectionEdit(section: CustomerAnalysisSection) {
-    let snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
-
-    try {
-      snapshot = JSON.parse(
-        sectionDraft,
-      ) as CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
-    } catch {
-      setSectionDraftError(
-        "Ugyldig JSON. Kontroller komma, anførselstegn og klammer.",
-      );
+    if (!sectionDraft) {
+      setSectionDraftError("Ingen endringer å lagre.");
       return;
     }
 
     try {
-      await onSaveAnalysis(section, snapshot);
+      const snapshot = sanitizeSectionDraft(section, sectionDraft);
+      await onSaveAnalysis(
+        section,
+        snapshot as CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
+      );
       setEditingSection(null);
-      setSectionDraft("");
+      setSectionDraft(null);
       setSectionDraftError("");
     } catch {
       // runAction owns the user-facing error message in the parent.
@@ -2208,7 +2361,7 @@ export function ProjectAnalysisTab({
           </Button>
           <Button
             onClick={() => void onSaveSectionEdit(section)}
-            disabled={saveBusy || !sectionDraft.trim()}
+            disabled={saveBusy || !sectionDraft}
             variant="outline"
             size="sm"
           >
@@ -2242,8 +2395,733 @@ export function ProjectAnalysisTab({
     return renderEditButton(section);
   }
 
+  function updateDraft(nextDraft: EditableCustomerAnalysisSnapshot) {
+    setSectionDraft(nextDraft);
+    setSectionDraftError("");
+  }
+
+  function renderTextEditField({
+    id,
+    label,
+    value,
+    onChange,
+    placeholder,
+    rows = 5,
+  }: {
+    id: string;
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    placeholder?: string;
+    rows?: number;
+  }) {
+    return (
+      <div className="space-y-2">
+        <Label
+          htmlFor={id}
+          className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground"
+        >
+          {label}
+        </Label>
+        <Textarea
+          id={id}
+          value={value}
+          rows={rows}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="min-h-28 resize-y rounded-lg border-primary/20 bg-white text-sm leading-6 text-slate-900 shadow-none"
+        />
+      </div>
+    );
+  }
+
+  function renderStringListEditor({
+    id,
+    label,
+    items,
+    onChange,
+    placeholder,
+  }: {
+    id: string;
+    label: string;
+    items: string[];
+    onChange: (items: string[]) => void;
+    placeholder: string;
+  }) {
+    return (
+      <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            {label}
+          </Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange([...items, ""])}
+          >
+            <Plus data-icon="inline-start" />
+            Legg til
+          </Button>
+        </div>
+        {items.length ? (
+          <div className="space-y-2.5">
+            {items.map((item, index) => (
+              <div
+                key={`${id}-${index}`}
+                className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+              >
+                <Textarea
+                  value={item}
+                  rows={2}
+                  onChange={(event) =>
+                    onChange(
+                      items.map((current, currentIndex) =>
+                        currentIndex === index ? event.target.value : current,
+                      ),
+                    )
+                  }
+                  placeholder={placeholder}
+                  className="min-h-20 resize-y border-slate-200 bg-white text-sm leading-6 shadow-none"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="self-start text-slate-500 hover:text-red-700"
+                  onClick={() =>
+                    onChange(items.filter((_, currentIndex) => currentIndex !== index))
+                  }
+                  aria-label={`Fjern punkt ${index + 1}`}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-muted-foreground">
+            Ingen punkter ennå.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  function renderRequirementListEditor({
+    label,
+    items,
+    onChange,
+    defaultKind,
+  }: {
+    label: string;
+    items: AnalysisRequirement[];
+    onChange: (items: AnalysisRequirement[]) => void;
+    defaultKind: RequirementKind;
+  }) {
+    return (
+      <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            {label}
+          </Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange([...items, emptyAnalysisRequirement(defaultKind)])}
+          >
+            <Plus data-icon="inline-start" />
+            Legg til
+          </Button>
+        </div>
+        <div className="space-y-3">
+          {items.map((item, index) => {
+            const updateItem = (nextItem: AnalysisRequirement) =>
+              onChange(
+                items.map((current, currentIndex) =>
+                  currentIndex === index ? nextItem : current,
+                ),
+              );
+
+            return (
+              <div
+                key={`${label}-${index}`}
+                className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Behov {index + 1}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-slate-500 hover:text-red-700"
+                    onClick={() =>
+                      onChange(
+                        items.filter((_, currentIndex) => currentIndex !== index),
+                      )
+                    }
+                    aria-label={`Fjern behov ${index + 1}`}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    value={item.title}
+                    onChange={(event) =>
+                      updateItem({ ...item, title: event.target.value })
+                    }
+                    placeholder="Tittel"
+                  />
+                  <Input
+                    value={item.category}
+                    onChange={(event) =>
+                      updateItem({ ...item, category: event.target.value })
+                    }
+                    placeholder="Kategori"
+                  />
+                  <select
+                    value={item.importance}
+                    onChange={(event) =>
+                      updateItem({
+                        ...item,
+                        importance: event.target.value as RequirementImportance,
+                      })
+                    }
+                    className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm"
+                  >
+                    {REQUIREMENT_IMPORTANCE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={item.kind}
+                    onChange={(event) =>
+                      updateItem({
+                        ...item,
+                        kind: event.target.value as RequirementKind,
+                      })
+                    }
+                    className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm"
+                  >
+                    {REQUIREMENT_KIND_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {renderTextEditField({
+                  id: `${label}-${index}-description`,
+                  label: "Beskrivelse",
+                  value: item.description,
+                  onChange: (value) => updateItem({ ...item, description: value }),
+                  placeholder: "Beskriv behovet slik det skal brukes videre.",
+                  rows: 3,
+                })}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    value={item.source_reference}
+                    onChange={(event) =>
+                      updateItem({
+                        ...item,
+                        source_reference: event.target.value,
+                      })
+                    }
+                    placeholder="Kildehenvisning"
+                  />
+                  <Input
+                    value={item.source_excerpt}
+                    onChange={(event) =>
+                      updateItem({ ...item, source_excerpt: event.target.value })
+                    }
+                    placeholder="Kildeutdrag"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderPrioritizedRequirementsEditor(
+    items: CustomerAnalysisSectionSnapshotMap["needs"]["prioritized_requirements"],
+    onChange: (
+      items: CustomerAnalysisSectionSnapshotMap["needs"]["prioritized_requirements"],
+    ) => void,
+  ) {
+    return (
+      <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            Prioriterte behov
+          </Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              onChange([
+                ...items,
+                { requirement: "", priority: "Viktig", reason: "" },
+              ])
+            }
+          >
+            <Plus data-icon="inline-start" />
+            Legg til
+          </Button>
+        </div>
+        <div className="space-y-3">
+          {items.map((item, index) => {
+            const updateItem = (nextItem: (typeof items)[number]) =>
+              onChange(
+                items.map((current, currentIndex) =>
+                  currentIndex === index ? nextItem : current,
+                ),
+              );
+
+            return (
+              <div
+                key={`prioritized-${index}`}
+                className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Prioritet {index + 1}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-slate-500 hover:text-red-700"
+                    onClick={() =>
+                      onChange(
+                        items.filter((_, currentIndex) => currentIndex !== index),
+                      )
+                    }
+                    aria-label={`Fjern prioritert behov ${index + 1}`}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+                <select
+                  value={item.priority}
+                  onChange={(event) =>
+                    updateItem({
+                      ...item,
+                      priority: event.target.value as RequirementImportance,
+                    })
+                  }
+                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                >
+                  {REQUIREMENT_IMPORTANCE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                {renderTextEditField({
+                  id: `prioritized-${index}-requirement`,
+                  label: "Behov",
+                  value: item.requirement,
+                  onChange: (value) => updateItem({ ...item, requirement: value }),
+                  placeholder: "Skriv det prioriterte behovet.",
+                  rows: 3,
+                })}
+                {renderTextEditField({
+                  id: `prioritized-${index}-reason`,
+                  label: "Begrunnelse",
+                  value: item.reason,
+                  onChange: (value) => updateItem({ ...item, reason: value }),
+                  placeholder: "Hvorfor er dette viktig?",
+                  rows: 3,
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderKeywordCountsEditor(
+    counts: Record<string, number>,
+    onChange: (counts: Record<string, number>) => void,
+  ) {
+    const entries = Object.entries(counts);
+    const updateEntries = (nextEntries: Array<[string, number]>) => {
+      onChange(
+        Object.fromEntries(
+          nextEntries.filter(([word]) => word.trim()).map(([word, count]) => [
+            word,
+            count,
+          ]),
+        ),
+      );
+    };
+
+    return (
+      <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            Frekvens
+          </Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              updateEntries([...entries, [`Nytt signalord ${entries.length + 1}`, 1]])
+            }
+          >
+            <Plus data-icon="inline-start" />
+            Legg til
+          </Button>
+        </div>
+        <div className="space-y-2">
+          {entries.map(([word, count], index) => (
+            <div
+              key={`${word}-${index}`}
+              className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto]"
+            >
+              <Input
+                value={word}
+                onChange={(event) => {
+                  const nextEntries = [...entries] as Array<[string, number]>;
+                  nextEntries[index] = [event.target.value, count];
+                  updateEntries(nextEntries);
+                }}
+                placeholder="Signalord"
+              />
+              <Input
+                type="number"
+                min={0}
+                value={count}
+                onChange={(event) => {
+                  const nextEntries = [...entries] as Array<[string, number]>;
+                  nextEntries[index] = [word, Number(event.target.value)];
+                  updateEntries(nextEntries);
+                }}
+                placeholder="Antall"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-slate-500 hover:text-red-700"
+                onClick={() =>
+                  updateEntries(
+                    entries.filter((_, currentIndex) => currentIndex !== index),
+                  )
+                }
+                aria-label={`Fjern signalord ${index + 1}`}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderValueOpportunitiesEditor(
+    items: ValueOpportunity[],
+    onChange: (items: ValueOpportunity[]) => void,
+  ) {
+    return (
+      <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            Verdimuligheter
+          </Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange([...items, emptyValueOpportunity()])}
+          >
+            <Plus data-icon="inline-start" />
+            Legg til
+          </Button>
+        </div>
+        <div className="space-y-3">
+          {items.map((item, index) => {
+            const updateItem = (nextItem: ValueOpportunity) =>
+              onChange(
+                items.map((current, currentIndex) =>
+                  currentIndex === index ? nextItem : current,
+                ),
+              );
+
+            return (
+              <div
+                key={`value-${index}`}
+                className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Verdi {index + 1}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-slate-500 hover:text-red-700"
+                    onClick={() =>
+                      onChange(
+                        items.filter((_, currentIndex) => currentIndex !== index),
+                      )
+                    }
+                    aria-label={`Fjern verdi ${index + 1}`}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_9rem]">
+                  <Input
+                    value={item.title}
+                    onChange={(event) =>
+                      updateItem({ ...item, title: event.target.value })
+                    }
+                    placeholder="Tittel"
+                  />
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={item.profit_share_percent}
+                    onChange={(event) =>
+                      updateItem({
+                        ...item,
+                        profit_share_percent: Number(event.target.value),
+                      })
+                    }
+                    placeholder="Andel %"
+                  />
+                </div>
+                {renderTextEditField({
+                  id: `value-${index}-description`,
+                  label: "Beskrivelse",
+                  value: item.description,
+                  onChange: (value) => updateItem({ ...item, description: value }),
+                  placeholder: "Beskriv verdien for kunden.",
+                  rows: 3,
+                })}
+                <div className="flex flex-wrap gap-2">
+                  {VALUE_LABELS.map((category) => {
+                    const checked = item.value_categories.includes(category);
+                    return (
+                      <label
+                        key={category}
+                        className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                          checked
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) =>
+                            updateItem({
+                              ...item,
+                              value_categories: event.target.checked
+                                ? [...item.value_categories, category]
+                                : item.value_categories.filter(
+                                    (current) => current !== category,
+                                  ),
+                            })
+                          }
+                          className="size-3.5"
+                        />
+                        {category}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSectionDraftFields(section: CustomerAnalysisSection) {
+    switch (section) {
+      case "summary": {
+        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["summary"];
+        return (
+          <>
+            {renderTextEditField({
+              id: "edit-customer-profile-summary",
+              label: "Kundesituasjon",
+              value: draft.customer_profile_summary,
+              onChange: (value) =>
+                updateDraft({ ...draft, customer_profile_summary: value }),
+              placeholder: "Beskriv kundens nåsituasjon.",
+              rows: 7,
+            })}
+            {renderTextEditField({
+              id: "edit-customer-goals-summary",
+              label: "Kundens mål",
+              value: draft.customer_goals_summary,
+              onChange: (value) =>
+                updateDraft({ ...draft, customer_goals_summary: value }),
+              placeholder: "Beskriv kundens mål og ønskede retning.",
+              rows: 7,
+            })}
+          </>
+        );
+      }
+      case "strategy": {
+        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["strategy"];
+        return (
+          <>
+            {renderTextEditField({
+              id: "edit-executive-summary",
+              label: "Arbeidstekst",
+              value: draft.executive_summary,
+              onChange: (value) => updateDraft({ ...draft, executive_summary: value }),
+              placeholder: "Skriv strategisk oppsummering.",
+              rows: 8,
+            })}
+            {renderStringListEditor({
+              id: "edit-positioning-recommendations",
+              label: "Posisjoneringsspor",
+              items: draft.positioning_recommendations,
+              onChange: (items) =>
+                updateDraft({ ...draft, positioning_recommendations: items }),
+              placeholder: "Skriv anbefaling eller posisjonering.",
+            })}
+          </>
+        );
+      }
+      case "clarifications": {
+        const draft =
+          sectionDraft as CustomerAnalysisSectionSnapshotMap["clarifications"];
+        return (
+          <div>
+            {renderStringListEditor({
+              id: "edit-ambiguities",
+              label: "Avklaringer",
+              items: draft.ambiguities,
+              onChange: (items) => updateDraft({ ...draft, ambiguities: items }),
+              placeholder: "Skriv avklaring eller usikkerhet.",
+            })}
+          </div>
+        );
+      }
+      case "design": {
+        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["design"];
+        return (
+          <>
+            {renderTextEditField({
+              id: "edit-high-level-design",
+              label: "Løsningsdesign",
+              value: draft.high_level_solution_design,
+              onChange: (value) =>
+                updateDraft({ ...draft, high_level_solution_design: value }),
+              placeholder: "Beskriv overordnet løsning.",
+              rows: 8,
+            })}
+            {renderTextEditField({
+              id: "edit-architecture-diagram",
+              label: "Arkitekturdiagram",
+              value: draft.high_level_architecture_mermaid,
+              onChange: (value) =>
+                updateDraft({ ...draft, high_level_architecture_mermaid: value }),
+              placeholder: "Mermaid-diagram hvis det finnes.",
+              rows: 8,
+            })}
+          </>
+        );
+      }
+      case "risks": {
+        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["risks"];
+        return (
+          <>
+            {renderStringListEditor({
+              id: "edit-risks",
+              label: "Risikoer",
+              items: draft.risks,
+              onChange: (items) => updateDraft({ ...draft, risks: items }),
+              placeholder: "Skriv risiko.",
+            })}
+            {renderStringListEditor({
+              id: "edit-risks-for-us",
+              label: "Risiko for oss",
+              items: draft.risks_for_us ?? [],
+              onChange: (items) => updateDraft({ ...draft, risks_for_us: items }),
+              placeholder: "Skriv leverandørrisiko.",
+            })}
+            {renderStringListEditor({
+              id: "edit-risks-for-customer",
+              label: "Risiko for kunden",
+              items: draft.risks_for_customer ?? [],
+              onChange: (items) =>
+                updateDraft({ ...draft, risks_for_customer: items }),
+              placeholder: "Skriv kunderisiko.",
+            })}
+          </>
+        );
+      }
+      case "needs": {
+        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["needs"];
+        return (
+          <>
+            {renderRequirementListEditor({
+              label: "Implisitte behov",
+              items: draft.implicit_requirements,
+              onChange: (items) =>
+                updateDraft({ ...draft, implicit_requirements: items }),
+              defaultKind: "Implisitt",
+            })}
+            {renderPrioritizedRequirementsEditor(
+              draft.prioritized_requirements,
+              (items) => updateDraft({ ...draft, prioritized_requirements: items }),
+            )}
+          </>
+        );
+      }
+      case "keywords": {
+        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["keywords"];
+        return (
+          <>
+            {renderStringListEditor({
+              id: "edit-signal-words",
+              label: "Signalord",
+              items: draft.signal_words,
+              onChange: (items) => updateDraft({ ...draft, signal_words: items }),
+              placeholder: "Skriv signalord.",
+            })}
+            {renderKeywordCountsEditor(
+              draft.signal_word_counts ?? {},
+              (counts) => updateDraft({ ...draft, signal_word_counts: counts }),
+            )}
+          </>
+        );
+      }
+      case "value": {
+        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["value"];
+        return renderValueOpportunitiesEditor(
+          draft.value_opportunities,
+          (items) => updateDraft({ ...draft, value_opportunities: items }),
+        );
+      }
+    }
+  }
+
   function renderSectionEditor(section: CustomerAnalysisSection) {
-    if (editingSection !== section) {
+    if (editingSection !== section || !sectionDraft) {
       return null;
     }
 
@@ -2254,19 +3132,13 @@ export function ProjectAnalysisTab({
             Rediger {getSectionLabel(section).toLowerCase()}
           </p>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Oppdater feltene i seksjonens JSON og lagre. Endringen lagres i
-            historikken som manuell lagring.
+            Rediger teksten i vanlige felt. Endringen lagres i historikken som
+            manuell lagring.
           </p>
         </div>
-        <Textarea
-          value={sectionDraft}
-          onChange={(event) => {
-            setSectionDraft(event.target.value);
-            setSectionDraftError("");
-          }}
-          spellCheck={false}
-          className="min-h-72 resize-y rounded-lg border-primary/20 bg-white font-mono text-xs leading-5 text-slate-900 shadow-none"
-        />
+        <div className="space-y-4">
+          {renderSectionDraftFields(section)}
+        </div>
         {sectionDraftError ? (
           <p className="mt-2 text-sm text-destructive">{sectionDraftError}</p>
         ) : null}
@@ -2522,8 +3394,8 @@ export function ProjectAnalysisTab({
 
           <TabsContent value="clarifications" className="mt-0">
             <SectionSurface
-              title="Avklaringer før design"
-              description="Spørsmål og retningsvalg som må avklares med kunden før strategien gjøres om til endelig løsningsdesign."
+              title="Avklaringer"
+              description="Spørsmål som må avklares med kunden før strategien gjøres om til endelig løsningsdesign."
               icon={Compass}
               action={renderSectionActions("clarifications")}
             >
@@ -2566,87 +3438,7 @@ export function ProjectAnalysisTab({
                     </p>
                   )}
                 </div>
-
-                <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-                  <div className="rounded-xl border border-blue-200/80 bg-blue-50/70 px-5 py-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-                    <div className="mb-4 flex items-start gap-3">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
-                        <Workflow className="size-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-blue-800/70">
-                          Strategi til design
-                        </p>
-                        <h4 className="mt-1 text-base font-semibold text-slate-950">
-                          Foreløpig løsningsretning
-                        </h4>
-                      </div>
-                    </div>
-                    {customerAnalysis.expected_solution_direction.length ? (
-                      <div className="space-y-3">
-                        {customerAnalysis.expected_solution_direction.map(
-                          (item, index) => (
-                            <div
-                              key={`direction-${index}`}
-                              className="rounded-lg border border-white/80 bg-white/82 px-4 py-4"
-                            >
-                              <MarkdownViewer
-                                content={item}
-                                className="analysis-prose max-w-none text-[0.98rem] text-slate-700"
-                              />
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    ) : (
-                      <p className="rounded-lg border border-dashed border-blue-300 bg-white/55 px-4 py-4 text-sm leading-6 text-blue-900/70">
-                        Ingen foreløpig løsningsretning er identifisert ennå.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 px-5 py-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-                    <div className="mb-4 flex items-start gap-3">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm">
-                        <Target className="size-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-emerald-800/70">
-                          Kundens prioritering
-                        </p>
-                        <h4 className="mt-1 text-base font-semibold text-slate-950">
-                          Sannsynlige vurderingskriterier
-                        </h4>
-                      </div>
-                    </div>
-                    {customerAnalysis.likely_evaluation_criteria.length ? (
-                      <div className="space-y-3">
-                        {customerAnalysis.likely_evaluation_criteria.map(
-                          (item, index) => (
-                            <div
-                              key={`criteria-${index}`}
-                              className="rounded-lg border border-white/80 bg-white/82 px-4 py-4"
-                            >
-                              <MarkdownViewer
-                                content={item}
-                                className="analysis-prose max-w-none text-[0.98rem] text-slate-700"
-                              />
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    ) : (
-                      <p className="rounded-lg border border-dashed border-emerald-300 bg-white/55 px-4 py-4 text-sm leading-6 text-emerald-900/70">
-                        Ingen vurderingskriterier er identifisert ennå.
-                      </p>
-                    )}
-                  </div>
-                </div>
               </div>
-              <SectionHistoryPanel
-                analysis={customerAnalysis}
-                section="clarifications"
-              />
             </SectionSurface>
           </TabsContent>
 
@@ -2699,7 +3491,7 @@ export function ProjectAnalysisTab({
 
           <TabsContent value="risks" className="mt-0">
             <SectionSurface
-              title={`Risiko og usikkerhet (${riskGroups ? riskGroups.risksForUs.length + riskGroups.risksForCustomer.length : customerAnalysis.risks.length})`}
+              title={`Risiko og usikkerhet (${visibleRiskCount})`}
               description="Risikobildet er delt mellom hva som kan treffe tilbudsteamet og hva som kan treffe kunden."
               icon={AlertTriangle}
               action={renderSectionActions("risks")}

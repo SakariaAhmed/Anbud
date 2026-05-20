@@ -10,8 +10,8 @@ export default function ServiceDescriptionsPage() {
               Tjenestebeskrivelser
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-[1.05rem] font-medium leading-8 text-slate-600 md:text-[1.2rem]">
-              Administrer tjenestedokumentene som kan brukes som fast eller valgt
-              kontekst i tilbudsprosjektene.
+              Administrer den globale tjenestekatalogen og velg relevante
+              tjenester inne på hvert tilbudsprosjekt.
             </p>
           </div>
         </div>

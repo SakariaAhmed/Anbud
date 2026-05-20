@@ -5,11 +5,6 @@ import {
   getServiceDescription,
   upsertServiceDescription,
 } from "@/lib/server/projects-db";
-import type { ServiceInclusionMode } from "@/lib/types";
-
-function isInclusionMode(value: unknown): value is ServiceInclusionMode {
-  return value === "fixed" || value === "selected";
-}
 
 export async function PATCH(
   request: Request,
@@ -21,15 +16,11 @@ export async function PATCH(
     const body = (await request.json().catch(() => ({}))) as {
       name?: string;
       description?: string;
-      inclusion_mode?: ServiceInclusionMode;
     };
     const service = await upsertServiceDescription({
       serviceId,
       name: body.name?.trim() || current.name,
       description: body.description ?? current.description,
-      inclusionMode: isInclusionMode(body.inclusion_mode)
-        ? body.inclusion_mode
-        : current.inclusion_mode,
     });
     return NextResponse.json({ service });
   } catch (error) {

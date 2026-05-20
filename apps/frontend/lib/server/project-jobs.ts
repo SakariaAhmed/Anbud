@@ -50,6 +50,37 @@ type JobRunner = (helpers: { setProgress: (message: string) => void }) => Promis
 
 type JobStore = Map<string, ProjectJobRecord>;
 
+type QueueJobOptions = {
+  jobId?: string;
+  skipEnqueue?: boolean;
+  runNow?: boolean;
+};
+
+type QueuedProjectJobInput =
+  | { kind: "customer_analysis"; projectId: string; model?: string }
+  | {
+      kind: "solution_evaluation";
+      projectId: string;
+      allowGeneratedSolution: boolean;
+      solutionDocumentId?: string;
+      model?: string;
+    }
+  | {
+      kind: "artifact_generation";
+      projectId: string;
+      artifactType: GeneratedArtifactType;
+      instructions?: string;
+      sourceDocumentIds?: string[];
+      model?: string;
+    }
+  | { kind: "high_level_design"; projectId: string; model?: string }
+  | { kind: "perfect_system_solution"; projectId: string; model?: string }
+  | { kind: "executive_summary"; projectId: string; model?: string };
+
+type StoredQueuedJobPayload = {
+  __job_input: QueuedProjectJobInput;
+};
+
 type JobRow = {
   id: string;
   project_id: string;
@@ -57,7 +88,7 @@ type JobRow = {
   status: ProjectJobRecord["status"];
   message: string;
   error: string | null;
-  result_json: ProjectJobResult | null;
+  result_json: ProjectJobResult | StoredQueuedJobPayload | null;
   created_at: string;
   updated_at: string;
 };
@@ -65,6 +96,10 @@ type JobRow = {
 declare global {
   // eslint-disable-next-line no-var
   var __anbudProjectJobs: JobStore | undefined;
+  // eslint-disable-next-line no-var
+  var __anbudProjectJobProgressWrites:
+    | Map<string, { message: string; writtenAt: number }>
+    | undefined;
 }
 
 function getStore() {
@@ -73,6 +108,28 @@ function getStore() {
   }
 
   return globalThis.__anbudProjectJobs;
+}
+
+function getProgressWriteStore() {
+  if (!globalThis.__anbudProjectJobProgressWrites) {
+    globalThis.__anbudProjectJobProgressWrites = new Map<
+      string,
+      { message: string; writtenAt: number }
+    >();
+  }
+
+  return globalThis.__anbudProjectJobProgressWrites;
+}
+
+function isStoredQueuedJobPayload(
+  value: unknown,
+): value is StoredQueuedJobPayload {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "__job_input" in value &&
+      (value as StoredQueuedJobPayload).__job_input,
+  );
 }
 
 function mapJobRow(row: JobRow): ProjectJobRecord {
@@ -85,11 +142,17 @@ function mapJobRow(row: JobRow): ProjectJobRecord {
     created_at: row.created_at,
     updated_at: row.updated_at,
     error: row.error,
-    result: row.result_json,
+    result:
+      row.status === "completed" && !isStoredQueuedJobPayload(row.result_json)
+        ? (row.result_json as ProjectJobResult | null)
+        : null,
   };
 }
 
-async function persistJob(record: ProjectJobRecord) {
+async function persistJob(
+  record: ProjectJobRecord,
+  input: QueuedProjectJobInput,
+) {
   try {
     const supabase = createServiceClient();
     await supabase.from("project_jobs").insert({
@@ -99,7 +162,7 @@ async function persistJob(record: ProjectJobRecord) {
       status: record.status,
       message: record.message,
       error: record.error,
-      result_json: record.result,
+      result_json: { __job_input: input },
       created_at: record.created_at,
       updated_at: record.updated_at,
     });
@@ -111,15 +174,17 @@ async function persistJob(record: ProjectJobRecord) {
 async function patchPersistedJob(jobId: string, patch: Partial<ProjectJobRecord>) {
   try {
     const supabase = createServiceClient();
+    const payload: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (patch.status !== undefined) payload.status = patch.status;
+    if (patch.message !== undefined) payload.message = patch.message;
+    if (patch.error !== undefined) payload.error = patch.error;
+    if (patch.result !== undefined) payload.result_json = patch.result;
+
     await supabase
       .from("project_jobs")
-      .update({
-        status: patch.status,
-        message: patch.message,
-        error: patch.error,
-        result_json: patch.result,
-        updated_at: new Date().toISOString(),
-      })
+      .update(payload)
       .eq("id", jobId);
   } catch {
     // See persistJob fallback note.
@@ -129,15 +194,36 @@ async function patchPersistedJob(jobId: string, patch: Partial<ProjectJobRecord>
 function updateJob(jobId: string, patch: Partial<ProjectJobRecord>) {
   const store = getStore();
   const current = store.get(jobId);
-  if (!current) {
-    return;
+  const updatedAt = new Date().toISOString();
+
+  if (current) {
+    store.set(jobId, {
+      ...current,
+      ...patch,
+      updated_at: updatedAt,
+    });
   }
 
-  store.set(jobId, {
-    ...current,
-    ...patch,
-    updated_at: new Date().toISOString(),
-  });
+  if (
+    patch.status === "running" &&
+    patch.message &&
+    patch.result === undefined &&
+    patch.error === undefined
+  ) {
+    const writes = getProgressWriteStore();
+    const previous = writes.get(jobId);
+    const now = Date.now();
+    if (
+      previous &&
+      previous.message === patch.message &&
+      now - previous.writtenAt < 1500
+    ) {
+      return;
+    }
+
+    writes.set(jobId, { message: patch.message, writtenAt: now });
+  }
+
   void patchPersistedJob(jobId, patch);
 }
 
@@ -162,31 +248,35 @@ export async function getProjectJob(projectId: string, jobId: string) {
   return record;
 }
 
-function startRunner(jobId: string, runner: JobRunner) {
+async function runRunner(jobId: string, runner: JobRunner) {
+  updateJob(jobId, { status: "running" });
+
+  try {
+    const result = await runner({
+      setProgress(message) {
+        updateJob(jobId, { message, status: "running" });
+      },
+    });
+
+    updateJob(jobId, {
+      status: "completed",
+      message: "Ferdig.",
+      result,
+      error: null,
+    });
+  } catch (error) {
+    updateJob(jobId, {
+      status: "failed",
+      message: "Jobben feilet.",
+      error: error instanceof Error ? error.message : "Ukjent feil.",
+      result: null,
+    });
+  }
+}
+
+async function startRunner(jobId: string, runner: JobRunner) {
   setTimeout(async () => {
-    updateJob(jobId, { status: "running" });
-
-    try {
-      const result = await runner({
-        setProgress(message) {
-          updateJob(jobId, { message, status: "running" });
-        },
-      });
-
-      updateJob(jobId, {
-        status: "completed",
-        message: "Ferdig.",
-        result,
-        error: null,
-      });
-    } catch (error) {
-      updateJob(jobId, {
-        status: "failed",
-        message: "Jobben feilet.",
-        error: error instanceof Error ? error.message : "Ukjent feil.",
-        result: null,
-      });
-    }
+    await runRunner(jobId, runner);
   }, 0);
 }
 
@@ -285,9 +375,78 @@ function selectProjectDocuments(documents: ProjectDocumentDetail[]) {
   return { customerDocument, solutionDocument, supportingDocuments };
 }
 
-async function enqueueJob(record: ProjectJobRecord) {
+function logJobPhase(input: {
+  jobId: string;
+  kind: ProjectJobRecord["kind"];
+  phase: string;
+  durationMs: number;
+}) {
+  console.info(
+    JSON.stringify({
+      event: "project_job_phase_timing",
+      job_id: input.jobId,
+      kind: input.kind,
+      phase: input.phase,
+      duration_ms: input.durationMs,
+    }),
+  );
+}
+
+function createJobPhaseTimer(jobId: string, kind: ProjectJobRecord["kind"]) {
+  const totalStartedAt = Date.now();
+  let phaseStartedAt = totalStartedAt;
+  const timings: Array<{ phase: string; duration_ms: number }> = [];
+
+  return {
+    mark(phase: string) {
+      const now = Date.now();
+      const durationMs = now - phaseStartedAt;
+      timings.push({ phase, duration_ms: durationMs });
+      logJobPhase({ jobId, kind, phase, durationMs });
+      phaseStartedAt = now;
+    },
+    total() {
+      return Date.now() - totalStartedAt;
+    },
+    timings() {
+      return timings;
+    },
+  };
+}
+
+async function enqueueJob(
+  record: ProjectJobRecord,
+  input: QueuedProjectJobInput,
+) {
   getStore().set(record.id, record);
-  await persistJob(record);
+  await persistJob(record, input);
+}
+
+async function getQueuedJobInput(jobId: string) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("project_jobs")
+    .select("id, result_json, status")
+    .eq("id", jobId)
+    .maybeSingle<{
+      id: string;
+      result_json: StoredQueuedJobPayload | ProjectJobResult | null;
+      status: ProjectJobRecord["status"];
+    }>();
+
+  if (error || !data) {
+    throw new Error("Fant ikke køet prosjektjobb.");
+  }
+
+  if (data.status !== "queued") {
+    return null;
+  }
+
+  if (!isStoredQueuedJobPayload(data.result_json)) {
+    throw new Error("Prosjektjobben mangler kjøredata.");
+  }
+
+  return data.result_json.__job_input;
 }
 
 export async function queueArtifactGenerationJob(input: {
@@ -296,9 +455,17 @@ export async function queueArtifactGenerationJob(input: {
   instructions?: string;
   sourceDocumentIds?: string[];
   model?: string;
-}) {
-  const jobId = randomUUID();
+}, options: QueueJobOptions = {}) {
+  const jobId = options.jobId ?? randomUUID();
   const now = new Date().toISOString();
+  const jobInput: QueuedProjectJobInput = {
+    kind: "artifact_generation",
+    projectId: input.projectId,
+    artifactType: input.artifactType,
+    instructions: input.instructions,
+    sourceDocumentIds: input.sourceDocumentIds,
+    model: input.model,
+  };
   const record: ProjectJobRecord = {
     id: jobId,
     project_id: input.projectId,
@@ -311,16 +478,14 @@ export async function queueArtifactGenerationJob(input: {
     result: null,
   };
 
-  await enqueueJob(record);
+  if (!options.skipEnqueue) {
+    await enqueueJob(record, jobInput);
+  }
 
-  startRunner(jobId, async ({ setProgress }) => {
-    const totalStartedAt = Date.now();
-    let phaseStartedAt = totalStartedAt;
-    const generationTimings: Array<{ phase: string; duration_ms: number }> = [];
+  const runner: JobRunner = async ({ setProgress }) => {
+    const phaseTimer = createJobPhaseTimer(jobId, "artifact_generation");
     function markPhase(phase: string) {
-      const now = Date.now();
-      generationTimings.push({ phase, duration_ms: now - phaseStartedAt });
-      phaseStartedAt = now;
+      phaseTimer.mark(phase);
     }
 
     setProgress("[12%] Laster prosjektkontekst og relevante dokumenter ...");
@@ -346,6 +511,20 @@ export async function queueArtifactGenerationJob(input: {
       : [];
     const { customerDocument, solutionDocument, supportingDocuments } =
       selectProjectDocuments(projectDocuments);
+    const serviceDescriptionDocumentsPromise =
+      input.artifactType === "bilag1_rekonstruksjon"
+        ? Promise.resolve([])
+        : serviceDocumentSummaries.length
+          ? listServiceDocumentDetailsForProject(input.projectId, {
+              documentIds: selectRelevantServiceDocumentIds({
+                artifactType: input.artifactType,
+                projectName: project.name,
+                customerAnalysis,
+                instructions: input.instructions,
+                serviceDocumentSummaries,
+              }),
+            })
+          : listServiceDocumentDetailsForProject(input.projectId);
 
     if (
       input.artifactType === "bilag1_rekonstruksjon" &&
@@ -374,27 +553,14 @@ export async function queueArtifactGenerationJob(input: {
     });
     markPhase("ledgerbygging");
 
-    const serviceDescriptionDocuments =
-      input.artifactType === "bilag1_rekonstruksjon"
-        ? []
-        : serviceDocumentSummaries.length
-          ? await listServiceDocumentDetailsForProject(input.projectId, {
-              documentIds: selectRelevantServiceDocumentIds({
-                artifactType: input.artifactType,
-                projectName: project.name,
-                customerAnalysis,
-                instructions: input.instructions,
-                serviceDocumentSummaries,
-              }),
-            })
-          : await listServiceDocumentDetailsForProject(input.projectId);
-    markPhase("tjenestedokumenthenting");
-
     setProgress(
       input.artifactType === "forbedret_kravsvar"
         ? "[18%] Kartlegger kravdokumenter og forbereder kravbesvarelse ..."
         : "[38%] Genererer nytt utkast med AI ...",
     );
+    const serviceDescriptionDocuments = await serviceDescriptionDocumentsPromise;
+    markPhase("tjenestedokumenthenting");
+
     const generated = await generateProjectArtifact({
       artifactType: input.artifactType,
       projectName: project.name,
@@ -469,19 +635,31 @@ export async function queueArtifactGenerationJob(input: {
           repaired_rows: repaired.repairedRows,
         },
         generation_timings: [
-          ...generationTimings,
-          { phase: "total", duration_ms: Date.now() - totalStartedAt },
+          ...phaseTimer.timings(),
+          { phase: "total", duration_ms: phaseTimer.total() },
         ],
       },
     );
     markPhase("lagring");
+    logJobPhase({
+      jobId,
+      kind: "artifact_generation",
+      phase: "total",
+      durationMs: phaseTimer.total(),
+    });
 
     const projectSnapshot = await getProjectSnapshot(input.projectId);
     return {
       artifact,
       project: projectSnapshot,
     };
-  });
+  };
+
+  if (options.runNow) {
+    await runRunner(jobId, runner);
+  } else {
+    await startRunner(jobId, runner);
+  }
 
   return record;
 }
@@ -489,9 +667,14 @@ export async function queueArtifactGenerationJob(input: {
 export async function queueCustomerAnalysisJob(input: {
   projectId: string;
   model?: string;
-}) {
-  const jobId = randomUUID();
+}, options: QueueJobOptions = {}) {
+  const jobId = options.jobId ?? randomUUID();
   const now = new Date().toISOString();
+  const jobInput: QueuedProjectJobInput = {
+    kind: "customer_analysis",
+    projectId: input.projectId,
+    model: input.model,
+  };
   const record: ProjectJobRecord = {
     id: jobId,
     project_id: input.projectId,
@@ -504,15 +687,19 @@ export async function queueCustomerAnalysisJob(input: {
     result: null,
   };
 
-  await enqueueJob(record);
+  if (!options.skipEnqueue) {
+    await enqueueJob(record, jobInput);
+  }
 
-  startRunner(jobId, async ({ setProgress }) => {
+  const runner: JobRunner = async ({ setProgress }) => {
+    const phaseTimer = createJobPhaseTimer(jobId, "customer_analysis");
     setProgress("Laster dokumentgrunnlag ...");
     const projectDocuments = await listProjectDocuments(input.projectId);
     const { projectDocuments: analysisDocuments } =
       splitServiceDescriptionDetails(projectDocuments);
     const { customerDocument, supportingDocuments } =
       selectProjectDocuments(analysisDocuments);
+    phaseTimer.mark("dokumenthenting");
 
     if (!customerDocument) {
       throw new Error("Last opp minst ett dokument først.");
@@ -531,6 +718,7 @@ export async function queueCustomerAnalysisJob(input: {
       supportingDocuments,
       model: input.model,
     });
+    phaseTimer.mark("ai_analyse");
 
     setProgress("Lagrer kundeanalysen ...");
     const analysis = await saveCustomerAnalysis(
@@ -546,13 +734,26 @@ export async function queueCustomerAnalysisJob(input: {
         historySource: "full_regeneration",
       },
     );
+    phaseTimer.mark("lagring");
+    logJobPhase({
+      jobId,
+      kind: "customer_analysis",
+      phase: "total",
+      durationMs: phaseTimer.total(),
+    });
 
     const projectSnapshot = await getProjectSnapshot(input.projectId);
     return {
       analysis,
       project: projectSnapshot,
     };
-  });
+  };
+
+  if (options.runNow) {
+    await runRunner(jobId, runner);
+  } else {
+    await startRunner(jobId, runner);
+  }
 
   return record;
 }
@@ -560,9 +761,14 @@ export async function queueCustomerAnalysisJob(input: {
 export async function queuePerfectSystemSolutionJob(input: {
   projectId: string;
   model?: string;
-}) {
-  const jobId = randomUUID();
+}, options: QueueJobOptions = {}) {
+  const jobId = options.jobId ?? randomUUID();
   const now = new Date().toISOString();
+  const jobInput: QueuedProjectJobInput = {
+    kind: "perfect_system_solution",
+    projectId: input.projectId,
+    model: input.model,
+  };
   const record: ProjectJobRecord = {
     id: jobId,
     project_id: input.projectId,
@@ -575,9 +781,12 @@ export async function queuePerfectSystemSolutionJob(input: {
     result: null,
   };
 
-  await enqueueJob(record);
+  if (!options.skipEnqueue) {
+    await enqueueJob(record, jobInput);
+  }
 
-  startRunner(jobId, async ({ setProgress }) => {
+  const runner: JobRunner = async ({ setProgress }) => {
+    const phaseTimer = createJobPhaseTimer(jobId, "perfect_system_solution");
     setProgress("Laster vurdering, dokumenter og siste løsningsbeskrivelse ...");
     const [
       project,
@@ -596,6 +805,7 @@ export async function queuePerfectSystemSolutionJob(input: {
       splitServiceDescriptionDetails(documents);
     const { customerDocument, solutionDocument, supportingDocuments } =
       selectProjectDocuments(projectDocuments);
+    phaseTimer.mark("dokumenthenting");
 
     if (!project.solution_evaluation) {
       throw new Error("Generer vurdering før du forbedrer systemløsningen.");
@@ -608,8 +818,8 @@ export async function queuePerfectSystemSolutionJob(input: {
     if (systemScore >= 100) {
       throw new Error("Systemløsningen har allerede 100/100 i vurderingen.");
     }
-    const serviceDescriptionDocuments = serviceDocumentSummaries.length
-      ? await listServiceDocumentDetailsForProject(input.projectId, {
+    const serviceDescriptionDocumentsPromise = serviceDocumentSummaries.length
+      ? listServiceDocumentDetailsForProject(input.projectId, {
           documentIds: selectRelevantServiceDocumentIds({
             artifactType: "losningsutkast",
             projectName: project.name,
@@ -618,9 +828,12 @@ export async function queuePerfectSystemSolutionJob(input: {
             serviceDocumentSummaries,
           }),
         })
-      : await listServiceDocumentDetailsForProject(input.projectId);
+      : listServiceDocumentDetailsForProject(input.projectId);
 
     setProgress("Skriver forbedret systemløsning mot 100/100 ...");
+    const serviceDescriptionDocuments = await serviceDescriptionDocumentsPromise;
+    phaseTimer.mark("tjenestedokumenthenting");
+
     const generated = await generateProjectArtifact({
       artifactType: "losningsutkast",
       projectName: project.name,
@@ -643,6 +856,7 @@ export async function queuePerfectSystemSolutionJob(input: {
       ].join("\n"),
       model: input.model,
     });
+    phaseTimer.mark("ai_generering");
 
     setProgress("Lagrer forbedret 100%-utkast ...");
     const artifact = await saveGeneratedArtifact(
@@ -656,8 +870,15 @@ export async function queuePerfectSystemSolutionJob(input: {
         source: "solution_evaluation_improvement",
       },
     );
+    phaseTimer.mark("lagring");
 
     if (!customerDocument || !customerAnalysis || !solutionDocument) {
+      logJobPhase({
+        jobId,
+        kind: "perfect_system_solution",
+        phase: "total",
+        durationMs: phaseTimer.total(),
+      });
       const projectSnapshot = await getProjectSnapshot(input.projectId);
       return {
         artifact,
@@ -675,11 +896,19 @@ export async function queuePerfectSystemSolutionJob(input: {
       systemSolutionArtifact: artifact,
       model: input.model,
     });
+    phaseTimer.mark("ai_revaluering");
 
     await saveSolutionEvaluation(input.projectId, {
       customerDocumentId: customerDocument.id,
       solutionDocumentId: solutionDocument.id,
       result: improvedEvaluation,
+    });
+    phaseTimer.mark("vurderingslagring");
+    logJobPhase({
+      jobId,
+      kind: "perfect_system_solution",
+      phase: "total",
+      durationMs: phaseTimer.total(),
     });
 
     const projectSnapshot = await getProjectSnapshot(input.projectId);
@@ -688,7 +917,13 @@ export async function queuePerfectSystemSolutionJob(input: {
       project: projectSnapshot,
       evaluation: improvedEvaluation,
     };
-  });
+  };
+
+  if (options.runNow) {
+    await runRunner(jobId, runner);
+  } else {
+    await startRunner(jobId, runner);
+  }
 
   return record;
 }
@@ -698,9 +933,16 @@ export async function queueSolutionEvaluationJob(input: {
   allowGeneratedSolution: boolean;
   solutionDocumentId?: string;
   model?: string;
-}) {
-  const jobId = randomUUID();
+}, options: QueueJobOptions = {}) {
+  const jobId = options.jobId ?? randomUUID();
   const now = new Date().toISOString();
+  const jobInput: QueuedProjectJobInput = {
+    kind: "solution_evaluation",
+    projectId: input.projectId,
+    allowGeneratedSolution: input.allowGeneratedSolution,
+    solutionDocumentId: input.solutionDocumentId,
+    model: input.model,
+  };
   const record: ProjectJobRecord = {
     id: jobId,
     project_id: input.projectId,
@@ -713,9 +955,12 @@ export async function queueSolutionEvaluationJob(input: {
     result: null,
   };
 
-  await enqueueJob(record);
+  if (!options.skipEnqueue) {
+    await enqueueJob(record, jobInput);
+  }
 
-  startRunner(jobId, async ({ setProgress }) => {
+  const runner: JobRunner = async ({ setProgress }) => {
+    const phaseTimer = createJobPhaseTimer(jobId, "solution_evaluation");
     setProgress("Laster kundedokument, analyse og støttedokumenter ...");
     const [projectDocuments, selectedSolutionDocument, customerAnalysis, generatedArtifacts] =
       await Promise.all([
@@ -741,6 +986,7 @@ export async function queueSolutionEvaluationJob(input: {
       (document) =>
         document.id !== customerDocument?.id && document.id !== solutionDocument?.id,
     );
+    phaseTimer.mark("dokumenthenting");
 
     if (!customerDocument) {
       throw new Error("Last opp minst ett dokument først.");
@@ -766,6 +1012,7 @@ export async function queueSolutionEvaluationJob(input: {
       artifactType: "gjennomforing_og_risiko",
       ledgers: evaluationLedgers,
     });
+    phaseTimer.mark("ledgerbygging");
 
     if (!solutionDocument) {
       if (!input.allowGeneratedSolution) {
@@ -781,6 +1028,7 @@ export async function queueSolutionEvaluationJob(input: {
         model: input.model,
         documentLedgerContext: evaluationLedgerContext,
       });
+      phaseTimer.mark("ai_syntese_og_vurdering");
 
       setProgress("Lagrer systemgenerert utkast ...");
       const artifact = await saveGeneratedArtifact(
@@ -799,6 +1047,13 @@ export async function queueSolutionEvaluationJob(input: {
         customerDocumentId: customerDocument.id,
         solutionDocumentId: null,
         result: generated.evaluation,
+      });
+      phaseTimer.mark("lagring");
+      logJobPhase({
+        jobId,
+        kind: "solution_evaluation",
+        phase: "total",
+        durationMs: phaseTimer.total(),
       });
 
       const projectSnapshot = await getProjectSnapshot(input.projectId);
@@ -821,12 +1076,20 @@ export async function queueSolutionEvaluationJob(input: {
       model: input.model,
       documentLedgerContext: evaluationLedgerContext,
     });
+    phaseTimer.mark("ai_vurdering");
 
     setProgress("Lagrer sammenligning og vurdering ...");
     const evaluation = await saveSolutionEvaluation(input.projectId, {
       customerDocumentId: customerDocument.id,
       solutionDocumentId: solutionDocument.id,
       result,
+    });
+    phaseTimer.mark("lagring");
+    logJobPhase({
+      jobId,
+      kind: "solution_evaluation",
+      phase: "total",
+      durationMs: phaseTimer.total(),
     });
 
     const projectSnapshot = await getProjectSnapshot(input.projectId);
@@ -836,7 +1099,13 @@ export async function queueSolutionEvaluationJob(input: {
       artifact: null,
       used_generated_solution: false,
     };
-  });
+  };
+
+  if (options.runNow) {
+    await runRunner(jobId, runner);
+  } else {
+    await startRunner(jobId, runner);
+  }
 
   return record;
 }
@@ -844,9 +1113,14 @@ export async function queueSolutionEvaluationJob(input: {
 export async function queueHighLevelDesignJob(input: {
   projectId: string;
   model?: string;
-}) {
-  const jobId = randomUUID();
+}, options: QueueJobOptions = {}) {
+  const jobId = options.jobId ?? randomUUID();
   const now = new Date().toISOString();
+  const jobInput: QueuedProjectJobInput = {
+    kind: "high_level_design",
+    projectId: input.projectId,
+    model: input.model,
+  };
   const record: ProjectJobRecord = {
     id: jobId,
     project_id: input.projectId,
@@ -859,9 +1133,12 @@ export async function queueHighLevelDesignJob(input: {
     result: null,
   };
 
-  await enqueueJob(record);
+  if (!options.skipEnqueue) {
+    await enqueueJob(record, jobInput);
+  }
 
-  startRunner(jobId, async ({ setProgress }) => {
+  const runner: JobRunner = async ({ setProgress }) => {
+    const phaseTimer = createJobPhaseTimer(jobId, "high_level_design");
     setProgress("Laster kundedokument, analyse og støttedokumenter ...");
     const [documents, customerAnalysis] =
       await Promise.all([
@@ -871,6 +1148,7 @@ export async function queueHighLevelDesignJob(input: {
     const { projectDocuments } = splitServiceDescriptionDetails(documents);
     const { customerDocument, supportingDocuments } =
       selectProjectDocuments(projectDocuments);
+    phaseTimer.mark("dokumenthenting");
 
     if (!customerDocument) {
       throw new Error("Last opp minst ett dokument først.");
@@ -890,6 +1168,7 @@ export async function queueHighLevelDesignJob(input: {
       customerAnalysis,
       model: input.model,
     });
+    phaseTimer.mark("ai_design");
 
     setProgress("Lagrer oppdatert high-level design i kundeanalysen ...");
     const analysis = await saveCustomerAnalysis(
@@ -907,13 +1186,26 @@ export async function queueHighLevelDesignJob(input: {
         historySource: "high_level_design_update",
       },
     );
+    phaseTimer.mark("lagring");
+    logJobPhase({
+      jobId,
+      kind: "high_level_design",
+      phase: "total",
+      durationMs: phaseTimer.total(),
+    });
 
     const projectSnapshot = await getProjectSnapshot(input.projectId);
     return {
       analysis,
       project: projectSnapshot,
     };
-  });
+  };
+
+  if (options.runNow) {
+    await runRunner(jobId, runner);
+  } else {
+    await startRunner(jobId, runner);
+  }
 
   return record;
 }
@@ -921,9 +1213,14 @@ export async function queueHighLevelDesignJob(input: {
 export async function queueExecutiveSummaryJob(input: {
   projectId: string;
   model?: string;
-}) {
-  const jobId = randomUUID();
+}, options: QueueJobOptions = {}) {
+  const jobId = options.jobId ?? randomUUID();
   const now = new Date().toISOString();
+  const jobInput: QueuedProjectJobInput = {
+    kind: "executive_summary",
+    projectId: input.projectId,
+    model: input.model,
+  };
   const record: ProjectJobRecord = {
     id: jobId,
     project_id: input.projectId,
@@ -936,15 +1233,19 @@ export async function queueExecutiveSummaryJob(input: {
     result: null,
   };
 
-  await enqueueJob(record);
+  if (!options.skipEnqueue) {
+    await enqueueJob(record, jobInput);
+  }
 
-  startRunner(jobId, async ({ setProgress }) => {
+  const runner: JobRunner = async ({ setProgress }) => {
+    const phaseTimer = createJobPhaseTimer(jobId, "executive_summary");
     setProgress("Laster prosjekt, kundeanalyse og vurdering ...");
     const [project, customerAnalysis, solutionEvaluation] = await Promise.all([
       getProjectDetail(input.projectId),
       getCustomerAnalysis(input.projectId),
       getSolutionEvaluation(input.projectId),
     ]);
+    phaseTimer.mark("dokumenthenting");
 
     if (!solutionEvaluation) {
       throw new Error("Generer vurdering før lederoppsummering.");
@@ -957,6 +1258,7 @@ export async function queueExecutiveSummaryJob(input: {
       solutionEvaluation,
       model: input.model,
     });
+    phaseTimer.mark("ai_oppsummering");
 
     setProgress("Lagrer lederoppsummeringen ...");
     const executiveSummary = await saveExecutiveSummary(input.projectId, generated, {
@@ -968,13 +1270,89 @@ export async function queueExecutiveSummaryJob(input: {
         architecture_comparison: solutionEvaluation.architecture_comparison,
       },
     });
+    phaseTimer.mark("lagring");
+    logJobPhase({
+      jobId,
+      kind: "executive_summary",
+      phase: "total",
+      durationMs: phaseTimer.total(),
+    });
 
     const projectSnapshot = await getProjectSnapshot(input.projectId);
     return {
       executive_summary: executiveSummary,
       project: projectSnapshot,
     };
-  });
+  };
+
+  if (options.runNow) {
+    await runRunner(jobId, runner);
+  } else {
+    await startRunner(jobId, runner);
+  }
 
   return record;
+}
+
+export async function runQueuedProjectJob(jobId: string) {
+  const input = await getQueuedJobInput(jobId);
+  if (!input) {
+    return;
+  }
+
+  const options: QueueJobOptions = {
+    jobId,
+    skipEnqueue: true,
+    runNow: true,
+  };
+
+  switch (input.kind) {
+    case "customer_analysis":
+      await queueCustomerAnalysisJob(
+        { projectId: input.projectId, model: input.model },
+        options,
+      );
+      return;
+    case "solution_evaluation":
+      await queueSolutionEvaluationJob(
+        {
+          projectId: input.projectId,
+          allowGeneratedSolution: input.allowGeneratedSolution,
+          solutionDocumentId: input.solutionDocumentId,
+          model: input.model,
+        },
+        options,
+      );
+      return;
+    case "artifact_generation":
+      await queueArtifactGenerationJob(
+        {
+          projectId: input.projectId,
+          artifactType: input.artifactType,
+          instructions: input.instructions,
+          sourceDocumentIds: input.sourceDocumentIds,
+          model: input.model,
+        },
+        options,
+      );
+      return;
+    case "high_level_design":
+      await queueHighLevelDesignJob(
+        { projectId: input.projectId, model: input.model },
+        options,
+      );
+      return;
+    case "perfect_system_solution":
+      await queuePerfectSystemSolutionJob(
+        { projectId: input.projectId, model: input.model },
+        options,
+      );
+      return;
+    case "executive_summary":
+      await queueExecutiveSummaryJob(
+        { projectId: input.projectId, model: input.model },
+        options,
+      );
+      return;
+  }
 }

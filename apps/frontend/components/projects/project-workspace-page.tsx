@@ -15,14 +15,13 @@ import {
 import {
   ArrowRight,
   Brain,
-  CheckCircle2,
-  CircleDashed,
   ClipboardCheck,
   Download,
   FileCheck2,
   FileText,
   FolderOpen,
   LayoutGrid,
+  MessageSquareText,
   Scale,
   Sparkles,
   Trash2,
@@ -130,30 +129,6 @@ function projectDocumentRoleLabel(document: ProjectDocument) {
   if (document.supporting_subtype === "rfp") return "RFP";
   if (document.supporting_subtype === "vedlegg") return "Vedlegg";
   return "Støttedokument";
-}
-
-function completionLabel(done: boolean) {
-  return done ? "Klar" : "Gjenstår";
-}
-
-function workspaceActionForProject(project: ProjectDetail) {
-  if (!project.customer_document_uploaded && project.documents.length === 0) {
-    return "Last opp kundedokument eller konkurransegrunnlag.";
-  }
-  if (!project.customer_analysis_generated) {
-    return "Generer kundeanalyse før du lager utkast.";
-  }
-  if (!project.generated_artifacts.length) {
-    return "Lag første løsningsbeskrivelse eller Bilag 1-utkast.";
-  }
-  if (!project.solution_evaluation_generated) {
-    return "Kjør vurdering før leveransearbeidet ferdigstilles.";
-  }
-  return "Prosjektet er klart for leveransepakke og lederoppsummering.";
-}
-
-function serviceModeLabel(service: ProjectServiceDescription) {
-  return service.inclusion_mode === "fixed" ? "Fast" : "Valgt";
 }
 
 function ProjectDocumentsTab({
@@ -380,16 +355,13 @@ function ProjectDocumentsTab({
                       </p>
                     </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.1em] text-teal-800">
-                      {serviceModeLabel(service)}
-                    </span>
-                    {service.recommended ? (
+                  {service.recommended ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold text-amber-900">
                         Anbefalt
                       </span>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-500">
                     <span>{formatFileSize(document.file_size_bytes)}</span>
                     <span>·</span>
@@ -651,11 +623,17 @@ async function pollProjectJob({
   onStatus: (job: ProjectJobRecord) => void;
   signal?: AbortSignal;
 }) {
-  const delays = [800, 1500, 2500];
+  const delays = [1500, 3000, 5000, 8000, 12000];
   let attempt = 0;
 
   while (true) {
-    await sleep(delays[Math.min(attempt, delays.length - 1)] ?? 2500, signal);
+    const baseDelay = delays[Math.min(attempt, delays.length - 1)] ?? 12000;
+    const delay =
+      typeof document !== "undefined" && document.visibilityState === "hidden"
+        ? Math.max(baseDelay, 20000)
+        : baseDelay;
+
+    await sleep(delay, signal);
     attempt += 1;
 
     const statusResponse = await fetch(
@@ -761,15 +739,14 @@ function estimatedProgressFromElapsed(elapsedMs: number, estimatedDurationMs: nu
 
 const MODEL_STORAGE_KEY = "anbud-openai-model";
 const PREFERRED_MODEL_ORDER = [
+  "gpt-5-mini",
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.4-nano",
-  "gpt-5.5",
-  "gpt-5.5-pro",
   "gpt-5.2",
-  "gpt-5.2-pro",
 ];
 const MODEL_HELP_TEXT: Record<string, string> = {
+  "gpt-5-mini": "Rask standard for produksjon: lavere ventetid og kostnad for generering.",
   "gpt-5.5": "Best balanse for komplekse tilbud: høy intelligens, god kvalitet, høyere kostnad.",
   "gpt-5.5-pro": "Tyngste valg for kritiske leveranser: maksimal resonnering og kvalitet, tregest og dyrest.",
   "gpt-5.4": "Sterkt standardvalg: høy kvalitet med bedre fart og kostnad enn pro-modellene.",
@@ -818,6 +795,10 @@ function pickDefaultModel(
 
 function modelHelpText(modelId: string) {
   return MODEL_HELP_TEXT[modelId] ?? "Velg modell ut fra behov for kvalitet, fart og kostnad.";
+}
+
+function isSlowOrExpensiveModel(modelId: string) {
+  return /\bpro\b|5\.5/i.test(modelId);
 }
 
 export function ProjectWorkspacePage({
@@ -922,7 +903,7 @@ export function ProjectWorkspacePage({
     const request = (async () => {
       setModelsLoading(true);
       try {
-        const response = await fetch("/api/openai-models", { cache: "no-store" });
+        const response = await fetch("/api/openai-models");
         const payload = await readJsonPayload<{
           models?: OpenAIModelSummary[];
           default_model?: string;
@@ -935,6 +916,7 @@ export function ProjectWorkspacePage({
             Boolean(current) && models.some((model) => model.id === current);
           const storedIsValid =
             Boolean(storedModel) &&
+            !isSlowOrExpensiveModel(storedModel) &&
             models.some((model) => model.id === storedModel);
           const next =
             (currentIsValid ? current : "") ||
@@ -961,13 +943,16 @@ export function ProjectWorkspacePage({
   }, [selectedModel]);
 
   const onModelChange = useCallback((value: string) => {
-    setSelectedModel(value);
-    if (value) {
-      window.localStorage.setItem(MODEL_STORAGE_KEY, value);
+    const normalizedValue = isSlowOrExpensiveModel(value)
+      ? pickDefaultModel(availableModels, "")
+      : value;
+    setSelectedModel(normalizedValue);
+    if (normalizedValue) {
+      window.localStorage.setItem(MODEL_STORAGE_KEY, normalizedValue);
     } else {
       window.localStorage.removeItem(MODEL_STORAGE_KEY);
     }
-  }, []);
+  }, [availableModels]);
 
   const loadSidebarServiceDescriptions = useCallback(async () => {
     try {
@@ -1488,6 +1473,8 @@ export function ProjectWorkspacePage({
         "title",
         `Kravdokument - ${file.name.replace(/\.[^.]+$/, "")}`,
       );
+      formData.append("role", "supporting_document");
+      formData.append("supporting_subtype", "kravdokument");
       const response = await fetch(`/api/projects/${project.id}/documents`, {
         method: "POST",
         body: formData,
@@ -2170,29 +2157,6 @@ export function ProjectWorkspacePage({
   ];
   const workspaceNavItems = workspaceNavGroups.flatMap((group) => group.items);
   const projectMonogram = project.name.trim().charAt(0).toUpperCase() || "A";
-  const projectStatus = deriveProjectStatus(project);
-  const readinessItems = [
-    {
-      label: "Grunnlag",
-      done: project.documents.length > 0,
-      value: `${project.documents.length} dok.`,
-    },
-    {
-      label: "Analyse",
-      done: project.customer_analysis_generated,
-      value: completionLabel(project.customer_analysis_generated),
-    },
-    {
-      label: "Utkast",
-      done: project.generated_artifacts.length > 0,
-      value: `${project.generated_artifacts.length} stk.`,
-    },
-    {
-      label: "Vurdering",
-      done: project.solution_evaluation_generated,
-      value: completionLabel(project.solution_evaluation_generated),
-    },
-  ];
   const showModelSelector =
     activeTab === "analysis" ||
     activeTab === "bilag1" ||
@@ -2208,6 +2172,31 @@ export function ProjectWorkspacePage({
     sidebarResizeRef.current = true;
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
+  }
+
+  function openChatPopout() {
+    const width = 920;
+    const height = 820;
+    const left = Math.max(0, window.screenX + window.outerWidth - width - 32);
+    const top = Math.max(0, window.screenY + 72);
+    const url = `/projects/${project.id}/chat`;
+    const features = [
+      "popup=yes",
+      `width=${width}`,
+      `height=${height}`,
+      `left=${left}`,
+      `top=${top}`,
+      "resizable=yes",
+      "scrollbars=yes",
+    ].join(",");
+    const chatWindow = window.open(
+      url,
+      `bidsite-project-chat-${project.id}`,
+      features,
+    );
+
+    chatWindow?.focus();
+    return chatWindow;
   }
 
   return (
@@ -2325,6 +2314,30 @@ export function ProjectWorkspacePage({
               >
                 <SidebarMenuButton
                   render={
+                    <a
+                      href={`/projects/${project.id}/chat`}
+                      target={`bidsite-project-chat-${project.id}`}
+                      rel="noopener noreferrer"
+                      onClick={openChatPopout}
+                    />
+                  }
+                  size="lg"
+                  tooltip="Åpne sparring i pop-out vindu"
+                  className={cn(
+                    "h-11 rounded-lg px-3 text-[0.95rem] transition-colors duration-150 ease-out",
+                    !sidebarOpen &&
+                      "mx-auto size-10 justify-center rounded-md px-0",
+                  )}
+                >
+                  <MessageSquareText className="size-4.5" />
+                  {sidebarOpen ? <span>Sparring</span> : null}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem
+                className={cn(!sidebarOpen && "flex justify-center")}
+              >
+                <SidebarMenuButton
+                  render={
                     <Link
                       href="/"
                       prefetch
@@ -2435,34 +2448,6 @@ export function ProjectWorkspacePage({
                     ) : null}
                   </div>
                 ) : null}
-              </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                {readinessItems.map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"
-                  >
-                    {item.done ? (
-                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-                    ) : (
-                      <CircleDashed className="size-4 shrink-0 text-slate-400" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
-                        {item.label}
-                      </p>
-                      <p className="truncate text-sm font-semibold text-slate-950">
-                        {item.value}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold ${projectStatus === "Venter på dokument" ? "border-slate-200 bg-white text-slate-600" : "border-blue-200 bg-blue-50 text-blue-800"}`}>
-                  {projectStatus}
-                </span>
-                <span>{workspaceActionForProject(project)}</span>
               </div>
             </section>
 

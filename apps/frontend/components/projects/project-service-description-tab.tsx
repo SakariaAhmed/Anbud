@@ -1,18 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useState, type DragEvent, type FormEvent } from "react";
 import {
   CheckCircle2,
   FileText,
   Layers3,
   Lightbulb,
-  LockKeyhole,
   Plus,
   Trash2,
   Upload,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/projects/primitives";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
@@ -21,7 +28,7 @@ import {
   getClientCache,
   setClientCache,
 } from "@/lib/client-cache";
-import type { ProjectServiceDescription, ServiceInclusionMode } from "@/lib/types";
+import type { ProjectServiceDescription } from "@/lib/types";
 
 const projectServicesCacheKey = (projectId: string) =>
   `project-service-descriptions:${projectId}`;
@@ -30,10 +37,6 @@ const PROJECT_SERVICES_CACHE_TTL_MS = 2 * 60 * 1000;
 
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
-}
-
-function modeLabel(mode: ServiceInclusionMode) {
-  return mode === "fixed" ? "Fast" : "Valgt";
 }
 
 export function ProjectServiceDescriptionTab({
@@ -45,24 +48,17 @@ export function ProjectServiceDescriptionTab({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [uploadError, setUploadError] = useState("");
   const [serviceName, setServiceName] = useState("");
-  const [description, setDescription] = useState("");
-  const [mode, setMode] = useState<ServiceInclusionMode>("selected");
   const [targetServiceId, setTargetServiceId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [savingSelectionIds, setSavingSelectionIds] = useState<Set<string>>(
     () => new Set(),
   );
 
-  const selectedIds = useMemo(
-    () =>
-      services
-        .filter((service) => service.inclusion_mode === "selected" && service.selected)
-        .map((service) => service.id),
-    [services],
-  );
   const recommendedServices = services.filter((service) => service.recommended);
 
   async function loadServices() {
@@ -146,13 +142,12 @@ export function ProjectServiceDescriptionTab({
   }
 
   async function toggleSelected(service: ProjectServiceDescription) {
-    if (service.inclusion_mode === "fixed") return;
     const previousServices = services;
     const optimisticServices = services.map((item) =>
       item.id === service.id ? { ...item, selected: !service.selected } : item,
     );
     const nextIds = optimisticServices
-      .filter((item) => item.inclusion_mode === "selected" && item.selected)
+      .filter((item) => item.selected)
       .map((item) => item.id);
 
     setServices(optimisticServices);
@@ -163,30 +158,6 @@ export function ProjectServiceDescriptionTab({
     );
     window.dispatchEvent(new CustomEvent("project-services-updated"));
     await saveSelections(nextIds, previousServices, service.id);
-  }
-
-  async function updateMode(service: ProjectServiceDescription, nextMode: ServiceInclusionMode) {
-    setBusy(`mode-${service.id}`);
-    setError("");
-    try {
-      const response = await fetch(`/api/service-descriptions/${service.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inclusion_mode: nextMode }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Kunne ikke oppdatere tjenesten.");
-      }
-      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
-      clearClientCache(projectServicesCacheKey(projectId));
-      await loadServices();
-      window.dispatchEvent(new CustomEvent("project-services-updated"));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke oppdatere tjenesten.");
-    } finally {
-      setBusy("");
-    }
   }
 
   async function deleteDocument(serviceId: string, documentId: string) {
@@ -212,27 +183,65 @@ export function ProjectServiceDescriptionTab({
     }
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+  function resetUploadDraft() {
+    setServiceName("");
+    setTargetServiceId("");
+    setFile(null);
+    setUploadError("");
+    setFileInputKey((current) => current + 1);
+  }
+
+  function openUploadDialog(nextFile: File | null | undefined) {
+    if (!nextFile) return;
+    setFile(nextFile);
+    setTargetServiceId("");
+    setServiceName("");
+    setUploadError("");
+    setUploadDialogOpen(true);
+  }
+
+  function closeUploadDialog() {
+    if (busy === "upload") return;
+    setUploadDialogOpen(false);
+    resetUploadDraft();
+  }
+
+  function selectTargetService(value: string) {
+    setTargetServiceId(value);
+    const service = services.find((item) => item.id === value);
+    setServiceName(service?.name ?? "");
+    setUploadError("");
+  }
+
+  async function onUploadSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file && !serviceName.trim()) return;
+    if (!file) {
+      setUploadError("Velg et dokument først.");
+      return;
+    }
+
+    const selectedService = targetServiceId
+      ? services.find((service) => service.id === targetServiceId)
+      : null;
+    const nextName = targetServiceId
+      ? selectedService?.name ?? ""
+      : serviceName.trim();
+
+    if (!nextName) {
+      setUploadError("Velg en tjeneste eller skriv navn på ny tjeneste.");
+      return;
+    }
 
     setBusy("upload");
     setError("");
+    setUploadError("");
     try {
       const formData = new FormData();
-      if (file) {
-        formData.append("file", file);
-        formData.append("title", fileTitle(file));
-      }
+      formData.append("file", file);
+      formData.append("title", fileTitle(file));
       formData.append("service_id", targetServiceId);
-      formData.append(
-        "name",
-        targetServiceId
-          ? services.find((service) => service.id === targetServiceId)?.name ?? serviceName
-          : serviceName,
-      );
-      formData.append("description", description);
-      formData.append("inclusion_mode", mode);
+      formData.append("name", nextName);
+      formData.append("description", "");
 
       const response = await fetch("/api/service-descriptions", {
         method: "POST",
@@ -244,15 +253,16 @@ export function ProjectServiceDescriptionTab({
       }
       clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
       clearClientCache(projectServicesCacheKey(projectId));
-      setServiceName("");
-      setDescription("");
-      setTargetServiceId("");
-      setFile(null);
-      setFileInputKey((current) => current + 1);
+      setUploadDialogOpen(false);
+      resetUploadDraft();
       await loadServices();
       window.dispatchEvent(new CustomEvent("project-services-updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke lagre tjenestebeskrivelsen.");
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : "Kunne ikke lagre tjenestebeskrivelsen.",
+      );
     } finally {
       setBusy("");
     }
@@ -261,7 +271,7 @@ export function ProjectServiceDescriptionTab({
   function onDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setDragActive(false);
-    setFile(event.dataTransfer.files?.[0] ?? null);
+    openUploadDialog(event.dataTransfer.files?.[0]);
   }
 
   if (loading) {
@@ -273,7 +283,7 @@ export function ProjectServiceDescriptionTab({
   }
 
   return (
-    <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]">
+    <div className="min-w-0 space-y-6">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 bg-slate-50 px-5 py-5">
           <div className="flex items-start gap-3">
@@ -288,65 +298,14 @@ export function ProjectServiceDescriptionTab({
                 Tjenestebeskrivelser
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                En tjeneste kan ha flere dokumenter. Faste tjenester er alltid i
-                AI-kontekst, mens valgte tjenester må hukes av per prosjekt.
+                Tjenester og dokumenter lagres globalt på tvers av prosjekter.
+                Huk av hvilke tjenester som skal brukes i dette prosjektet.
               </p>
             </div>
           </div>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4 p-5">
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-700">Tjenestegruppe</p>
-            <select
-              value={targetServiceId}
-              onChange={(event) => {
-                const value = event.target.value;
-                setTargetServiceId(value);
-                const service = services.find((item) => item.id === value);
-                if (service) {
-                  setServiceName(service.name);
-                  setDescription(service.description);
-                  setMode(service.inclusion_mode);
-                }
-              }}
-              className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-            >
-              <option value="">Ny tjeneste</option>
-              {services.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-700">Navn</p>
-            <Input
-              value={serviceName}
-              onChange={(event) => setServiceName(event.target.value)}
-              placeholder="For eksempel Azure drift, sikkerhet, nettverk"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {(["fixed", "selected"] as const).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setMode(item)}
-                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                  mode === item
-                    ? "border-slate-950 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                {modeLabel(item)}
-              </button>
-            ))}
-          </div>
-
+        <div className="p-5">
           <label
             htmlFor="service-file"
             onDragEnter={(event) => {
@@ -368,10 +327,10 @@ export function ProjectServiceDescriptionTab({
           >
             <Upload className="mb-3 size-5 text-primary" />
             <span className="text-sm font-semibold text-slate-950">
-              Legg til dokument under tjenesten
+              Slipp dokument her
             </span>
             <span className="mt-1 text-xs text-slate-500">
-              PDF, DOCX, Excel, TXT eller MD.
+              Velg tjeneste og navn i neste steg.
             </span>
             {file ? (
               <span className="mt-3 max-w-full truncate rounded-lg bg-primary/10 px-3 py-2 text-xs font-semibold text-primary">
@@ -385,19 +344,116 @@ export function ProjectServiceDescriptionTab({
             type="file"
             accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
             className="sr-only"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => openUploadDialog(event.target.files?.[0])}
           />
-
-          <Button
-            type="submit"
-            className="h-11 w-full rounded-lg"
-            disabled={busy === "upload" || (!file && !serviceName.trim())}
-          >
-            {busy === "upload" ? <Spinner className="size-4" /> : <Plus data-icon="inline-start" />}
-            Lagre tjeneste
-          </Button>
-        </form>
+        </div>
       </section>
+
+      <Dialog
+        open={uploadDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setUploadDialogOpen(true);
+          } else {
+            closeUploadDialog();
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <form onSubmit={onUploadSubmit} className="space-y-5">
+            <DialogHeader>
+              <DialogTitle>Knytt dokument til tjeneste</DialogTitle>
+              <DialogDescription>
+                Velg eksisterende tjenestegruppe, eller opprett en ny før
+                dokumentet lagres i den globale katalogen.
+              </DialogDescription>
+            </DialogHeader>
+
+            {file ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Dokument
+                </p>
+                <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+                  {file.name}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <label
+                htmlFor="service-group-modal"
+                className="text-sm font-medium text-slate-700"
+              >
+                Tjenestegruppe
+              </label>
+              <select
+                id="service-group-modal"
+                value={targetServiceId}
+                onChange={(event) => selectTargetService(event.target.value)}
+                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950"
+                disabled={busy === "upload"}
+              >
+                <option value="">Ny tjeneste</option>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="service-name-modal"
+                className="text-sm font-medium text-slate-700"
+              >
+                Navn
+              </label>
+              <Input
+                id="service-name-modal"
+                value={serviceName}
+                onChange={(event) => {
+                  setServiceName(event.target.value);
+                  setUploadError("");
+                }}
+                placeholder="For eksempel Azure drift, sikkerhet, nettverk"
+                disabled={busy === "upload" || Boolean(targetServiceId)}
+              />
+              {targetServiceId ? (
+                <p className="text-xs text-slate-500">
+                  Navnet hentes fra tjenestegruppen.
+                </p>
+              ) : null}
+            </div>
+
+            {uploadError ? (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {uploadError}
+              </p>
+            ) : null}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeUploadDialog}
+                disabled={busy === "upload"}
+              >
+                Avbryt
+              </Button>
+              <Button type="submit" disabled={busy === "upload"}>
+                {busy === "upload" ? (
+                  <Spinner className="size-4" />
+                ) : (
+                  <Plus data-icon="inline-start" />
+                )}
+                Lagre dokument
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <section className="min-w-0 space-y-4">
         {error ? (
@@ -443,9 +499,8 @@ export function ProjectServiceDescriptionTab({
                     <button
                       type="button"
                       onClick={() => void toggleSelected(service)}
-                      disabled={service.inclusion_mode === "fixed"}
                       aria-busy={savingSelectionIds.has(service.id)}
-                      className="group flex min-w-0 flex-1 items-start gap-3 text-left transition-opacity disabled:cursor-not-allowed disabled:opacity-70"
+                      className="group flex min-w-0 flex-1 items-start gap-3 text-left transition-opacity"
                     >
                       <span
                         className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
@@ -463,12 +518,6 @@ export function ProjectServiceDescriptionTab({
                       <span className="min-w-0">
                         <span className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-bold text-slate-950">{service.name}</span>
-                          <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
-                            {modeLabel(service.inclusion_mode)}
-                          </span>
-                          {service.inclusion_mode === "fixed" ? (
-                            <LockKeyhole className="size-3.5 text-slate-500" />
-                          ) : null}
                           {service.recommended ? (
                             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900">
                               Anbefalt
@@ -485,18 +534,6 @@ export function ProjectServiceDescriptionTab({
                         </span>
                       </span>
                     </button>
-
-                    <select
-                      value={service.inclusion_mode}
-                      disabled={busy === `mode-${service.id}`}
-                      onChange={(event) =>
-                        void updateMode(service, event.target.value as ServiceInclusionMode)
-                      }
-                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold"
-                    >
-                      <option value="fixed">Fast</option>
-                      <option value="selected">Valgt</option>
-                    </select>
                   </div>
 
                   <div className="mt-3 ml-8 space-y-2">
