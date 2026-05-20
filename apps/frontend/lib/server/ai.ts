@@ -13,11 +13,13 @@ import {
   buildSyntheticSolutionEvaluationPrompt,
   buildSolutionEvaluationPrompt,
 } from "@/lib/server/prompts";
+import { normalizeTechnologySignalWords } from "@/lib/signal-words";
 import type {
   ChatMessage,
   CustomerAnalysisResult,
   CustomerAnalysisSection,
   ExecutiveSummaryResult,
+  GeneratedArtifact,
   GeneratedArtifactType,
   ProjectMetadataInference,
   ProjectDocumentDetail,
@@ -28,7 +30,14 @@ import type {
   ValueOpportunity,
 } from "@/lib/types";
 
-export const DEFAULT_OPENAI_MODEL = "gpt-5.4";
+export const DEFAULT_OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() || "gpt-5.4";
+export const WORKSPACE_MODEL_IDS = [
+  "gpt-5-mini",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+  "gpt-5.2",
+];
 const ANALYSIS_MODEL = DEFAULT_OPENAI_MODEL;
 const FAST_MODEL = "gpt-5.4-mini";
 type ReasoningEffort = "low" | "medium" | "high";
@@ -118,6 +127,12 @@ type MammothHtmlModule = {
 
 let cachedClientPromise: Promise<OpenAIClient> | null = null;
 let cachedMammothHtmlPromise: Promise<MammothHtmlModule> | null = null;
+let cachedModels:
+  | {
+      expiresAt: number;
+      models: OpenAIModelSummary[];
+    }
+  | null = null;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -220,16 +235,27 @@ function normalizeModelId(value: string | null | undefined) {
 }
 
 export async function listAvailableOpenAIModels(): Promise<OpenAIModelSummary[]> {
+  if (cachedModels && cachedModels.expiresAt > Date.now()) {
+    return cachedModels.models;
+  }
+
   const client = await getClient();
   const response = await client.models.list();
 
-  return response.data
+  const models = response.data
     .map((model) => ({
       id: model.id,
       created: model.created ?? null,
       owned_by: model.owned_by ?? null,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
+
+  cachedModels = {
+    expiresAt: Date.now() + 15 * 60 * 1000,
+    models,
+  };
+
+  return models;
 }
 
 export async function resolveOpenAIModelOverride(
@@ -240,8 +266,19 @@ export async function resolveOpenAIModelOverride(
     return undefined;
   }
 
-  const models = await listAvailableOpenAIModels();
-  if (!models.some((model) => model.id === modelId)) {
+  if (/\bpro\b|5\.5/i.test(modelId)) {
+    console.info(
+      JSON.stringify({
+        event: "openai_model_override_normalized",
+        requested_model: modelId,
+        selected_model: DEFAULT_OPENAI_MODEL,
+        reason: "slow_or_expensive_model",
+      }),
+    );
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  if (![...WORKSPACE_MODEL_IDS, DEFAULT_OPENAI_MODEL].includes(modelId)) {
     throw new Error("Valgt modell er ikke tilgjengelig for denne API-nøkkelen.");
   }
 
@@ -3300,65 +3337,8 @@ function dedupeSummary(value: string, references: string[]) {
   return normalized;
 }
 
-const VAGUE_SIGNAL_WORDS = new Set([
-  "moderne",
-  "skybasert",
-  "erstatte eksisterende systemer",
-  "effektivitet",
-  "bedre datakvalitet",
-  "forbedret brukeropplevelse",
-  "bedre brukeropplevelse",
-  "smidig",
-  "mvp",
-  "robust drift",
-  "skalerbar",
-  "kontinuerlig videreutvikling",
-]);
-
-const SIGNAL_WORD_PATTERNS = [
-  /\bazure\b/i,
-  /\bgdpr\b/i,
-  /\bnoark\b/i,
-  /\bwcag\b/i,
-  /\bid-?porten\b/i,
-  /\bpower bi\b/i,
-  /\bci\/?cd\b/i,
-  /\bssa-d\b/i,
-  /\bcontainer/i,
-  /\bmikrotjen/i,
-  /\bmodulær arkitektur\b/i,
-  /\båpne standarder\b/i,
-  /\bsky-native\b/i,
-  /\brolle- og rettighetsstyring\b/i,
-  /\barkivkrav\b/i,
-  /\bapi\b/i,
-  /\boauth\b/i,
-  /\bsaml\b/i,
-  /\bterraform\b/i,
-  /\bkubernetes\b/i,
-  /\bentra\b/i,
-];
-
 function normalizeSignalWords(items: string[]) {
-  return capNormalizedList(
-    items.filter((item) => {
-      const trimmed = item.replace(/\s+/g, " ").trim();
-      if (!trimmed) {
-        return false;
-      }
-
-      const normalized = normalizeComparableText(trimmed);
-      if (!normalized || VAGUE_SIGNAL_WORDS.has(normalized)) {
-        return false;
-      }
-
-      if (SIGNAL_WORD_PATTERNS.some((pattern) => pattern.test(trimmed))) {
-        return true;
-      }
-
-      return /[A-Z]{2,}|\d/.test(trimmed);
-    }),
-  );
+  return normalizeTechnologySignalWords(items);
 }
 
 function escapeRegExp(value: string) {
@@ -4063,12 +4043,15 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     fields: "signal_words",
     guidance: [
       "Rediger kun gjenbrukte nøkkelord.",
-      "signal_words skal bare inneholde konkrete teknologier, standarder, rammeverk, integrasjonspunkter, regulatoriske referanser eller navngitte signalord.",
+      "signal_words skal være konkrete teknologier, tekniske tjenester, kontrollflater, integrasjonsteknologier eller arkitekturkomponenter med en tydelig funksjon i løsningen.",
+      "Ikke inkluder brede plattformnavn alene, som Azure, Microsoft 365, M365, cloud, sikkerhet, nettverk eller compliance. Bruk presise tjenester eller funksjoner, for eksempel Azure Monitor, Azure Backup, Azure Policy, Azure Landing Zone, Microsoft Defender for Endpoint, Intune MDM, SharePoint Online, Exchange Online, Entra ID Conditional Access, OAuth 2.0 eller OpenAPI.",
+      "Ikke inkluder kontrakts-, dokument- eller vedleggstitler som SSA-D, Annex 01B-01G, Bilag, Vedlegg, kravnummer eller kapittelnavn.",
       "Ikke inkluder generiske ord som moderne, effektivitet, brukeropplevelse, robust eller skalerbar.",
+      "Hvis kildene bare nevner en bred plattform uten konkret tjeneste eller teknisk funksjon, utelat den fremfor å gjette.",
     ],
     outputContract: [
       "Returner kun JSON med signal_words.",
-      "signal_words skal være en liste med maksimalt 10 konkrete tekststrenger.",
+      "signal_words skal være en liste med maksimalt 8 konkrete teknologi-/funksjonsnavn.",
     ],
   },
   value: {
@@ -5039,7 +5022,7 @@ export async function generateProjectArtifact(input: {
     serviceDescriptionContext
       ? buildDelimitedContext(
           "Regel for tjenestebeskrivelse",
-          "Tjenestesammendragene viser alle faste eller valgte tjenestedokumenter i prosjektet. Detaljert tjenestekontekst er bare hentet for dokumenter som ser mest relevante ut. Når du lager kravsvar, systemløsning eller løsningsbeskrivelse, skal du aktivt vurdere hvilke tjenester, leveranseområder, metoder og kapabiliteter som er relevante for kundens behov. Bruk bare relevante deler, og knytt dem konkret til kundens situasjon. Ikke list alt firmaet tilbyr ukritisk.",
+          "Tjenestesammendragene viser tjenestedokumenter som er huket av for dette prosjektet. Detaljert tjenestekontekst er bare hentet for dokumenter som ser mest relevante ut. Når du lager kravsvar, systemløsning eller løsningsbeskrivelse, skal du aktivt vurdere hvilke tjenester, leveranseområder, metoder og kapabiliteter som er relevante for kundens behov. Bruk bare relevante deler, og knytt dem konkret til kundens situasjon. Ikke list alt firmaet tilbyr ukritisk.",
         )
       : "",
     serviceSummaryContext,
@@ -5218,9 +5201,11 @@ export async function answerProjectChat(input: {
   projectName: string;
   customerAnalysis: CustomerAnalysisResult | null;
   solutionEvaluation: SolutionEvaluationResult | null;
+  generatedArtifacts?: GeneratedArtifact[];
   recentMessages: ChatMessage[];
   customerDocument: ProjectDocumentDetail | null;
   solutionDocument: ProjectDocumentDetail | null;
+  supportingDocuments?: ProjectDocumentDetail[];
   question: string;
   model?: string;
 }) {
@@ -5231,6 +5216,22 @@ export async function answerProjectChat(input: {
         `${message.role === "user" ? "Bruker" : "Assistent"}: ${message.content}`,
     )
     .join("\n");
+  const supportingDocuments = (input.supportingDocuments ?? [])
+    .slice(0, 4)
+    .map((document, index) =>
+      buildDelimitedContext(
+        `Støttedokument ${index + 1}: ${document.title}`,
+        compactText(document.raw_text, 3500),
+      ),
+    );
+  const generatedArtifacts = (input.generatedArtifacts ?? [])
+    .slice(0, 5)
+    .map((artifact, index) =>
+      buildDelimitedContext(
+        `Generert artefakt ${index + 1}: ${artifact.title}`,
+        compactText(artifact.content_markdown, 3500),
+      ),
+    );
 
   const userPrompt = [
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
@@ -5262,6 +5263,8 @@ export async function answerProjectChat(input: {
           compactText(input.solutionDocument.raw_text, 9000),
         )
       : "",
+    ...supportingDocuments,
+    ...generatedArtifacts,
     history ? buildDelimitedContext("Samtalehistorikk", history) : "",
     buildDelimitedContext("Nytt spørsmål", input.question),
   ]

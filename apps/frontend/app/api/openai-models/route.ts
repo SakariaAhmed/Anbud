@@ -2,19 +2,10 @@ import { NextResponse } from "next/server";
 
 import {
   DEFAULT_OPENAI_MODEL,
+  WORKSPACE_MODEL_IDS,
   listAvailableOpenAIModels,
   type OpenAIModelSummary,
 } from "@/lib/server/ai";
-
-const WORKSPACE_MODEL_IDS = [
-  "gpt-5.5",
-  "gpt-5.5-pro",
-  "gpt-5.4",
-  "gpt-5.4-mini",
-  "gpt-5.4-nano",
-  "gpt-5.2",
-  "gpt-5.2-pro",
-];
 
 export async function GET() {
   try {
@@ -33,7 +24,7 @@ export async function GET() {
       },
       {
         headers: {
-          "Cache-Control": "no-store",
+          "Cache-Control": "private, max-age=900",
         },
       },
     );

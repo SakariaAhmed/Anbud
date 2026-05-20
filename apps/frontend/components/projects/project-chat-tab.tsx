@@ -6,6 +6,7 @@ import { ArrowUp, Bot, User2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/lib/types";
 
 export function ProjectChatTab({
@@ -13,6 +14,9 @@ export function ProjectChatTab({
   chatInput,
   streamingMessage,
   busy,
+  loading = false,
+  error = "",
+  variant = "page",
   chatContainerRef,
   onChatInputChange,
   onSubmit,
@@ -21,28 +25,56 @@ export function ProjectChatTab({
   chatInput: string;
   streamingMessage: string;
   busy: boolean;
+  loading?: boolean;
+  error?: string;
+  variant?: "page" | "drawer";
   chatContainerRef: RefObject<HTMLDivElement | null>;
   onChatInputChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const isDrawer = variant === "drawer";
+
   return (
-    <div className="space-y-4">
-      <div className="mb-1">
-        <h2 className="text-lg font-bold text-foreground">
-          Sparring med prosjektkontekst
-        </h2>
-        <p className="mt-1 max-w-xl text-sm text-foreground/60">
-          Chatten bruker dokumenter, analyse, løsningsvurdering og tidligere
-          meldinger som kontekst.
-        </p>
-      </div>
+    <div className={cn(isDrawer ? "flex h-full min-h-0 flex-col" : "space-y-4")}>
+      {!isDrawer ? (
+        <div className="mb-1">
+          <h2 className="text-lg font-bold text-foreground">
+            Sparring med prosjektkontekst
+          </h2>
+          <p className="mt-1 max-w-xl text-sm text-foreground/60">
+            Chatten bruker dokumenter, analyse, løsningsvurdering og tidligere
+            meldinger som kontekst.
+          </p>
+        </div>
+      ) : null}
 
       {/* Chat container */}
-      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <div
+        className={cn(
+          "overflow-hidden border bg-card shadow-sm",
+          isDrawer ? "flex min-h-0 flex-1 flex-col rounded-lg" : "rounded-xl",
+        )}
+      >
         <div
           ref={chatContainerRef}
-          className="flex h-[72vh] min-h-[42rem] flex-col gap-2.5 overflow-y-auto px-5 py-5"
+          className={cn(
+            "flex flex-col gap-2.5 overflow-y-auto px-5 py-5",
+            isDrawer ? "min-h-0 flex-1" : "h-[72vh] min-h-[42rem]",
+          )}
         >
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+              <Spinner className="size-4" />
+              Laster chat ...
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
+
           {chatMessages.map((message) => (
             <div
               key={message.id}
@@ -91,7 +123,7 @@ export function ProjectChatTab({
             </div>
           ) : null}
 
-          {chatMessages.length === 0 && !streamingMessage ? (
+          {chatMessages.length === 0 && !streamingMessage && !loading ? (
             <div className="py-6 text-center">
               <p className="text-sm font-medium text-foreground">
                 Ingen meldinger ennå
@@ -111,13 +143,16 @@ export function ProjectChatTab({
               value={chatInput}
               onChange={(e) => onChatInputChange(e.target.value)}
               placeholder="Skriv en melding..."
-              className="mb-3 min-h-14 w-full resize-none rounded-xl border bg-transparent px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
+              className={cn(
+                "mb-3 w-full resize-none rounded-xl border bg-transparent px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring",
+                isDrawer ? "min-h-24" : "min-h-14",
+              )}
             />
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
                 Svar bygger på hele prosjektkonteksten.
               </p>
-              <Button type="submit" disabled={busy} className="h-10 px-4">
+              <Button type="submit" disabled={busy || loading} className="h-10 px-4">
                 {busy ? (
                   <Spinner className="size-4" />
                 ) : (

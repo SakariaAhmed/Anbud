@@ -9,12 +9,10 @@ import {
   type MouseEvent,
 } from "react";
 import {
-  ArrowDownToLine,
   CheckSquare,
   ChevronDown,
   FileDown,
   FileCheck2,
-  FileText,
   Pencil,
   Save,
   Trash2,
@@ -40,9 +38,13 @@ function fileTitle(file: File) {
 }
 
 function isRequirementDocument(document: ProjectDocument) {
+  if (document.supporting_subtype === "kravdokument") {
+    return true;
+  }
+
   const text = `${document.title} ${document.file_name}`.toLowerCase();
   return (
-    text.includes("krav") ||
+    text.includes("kravdokument") ||
     text.includes("requirement") ||
     text.includes("requirements")
   );
@@ -58,32 +60,6 @@ type RequirementTableRow = {
 type RequirementContentSegment =
   | { type: "markdown"; content: string }
   | { type: "table"; rows: RequirementTableRow[] };
-
-type ArtifactQualityReport = {
-  status?: "pass" | "warning" | "fail";
-  metrics?: {
-    requirementRows?: number;
-    tocRows?: number;
-    dotLeaderRows?: number;
-    emptyAnswers?: number;
-    missingSources?: number;
-    duplicateRequirementTexts?: number;
-    emptySections?: number;
-  };
-};
-
-type DocumentLedgerSummary = {
-  document_id?: string;
-  confidence?: "high" | "medium" | "low";
-  confidence_score?: number;
-  requirement_count?: number;
-  toc_line_count?: number;
-};
-
-type GenerationTiming = {
-  phase?: string;
-  duration_ms?: number;
-};
 
 function splitMarkdownTableRow(line: string) {
   return line
@@ -320,203 +296,6 @@ function downloadRequirementResponsePdf(artifact: GeneratedArtifact) {
   printWindow.document.close();
 }
 
-function snapshotRecord(artifact: GeneratedArtifact) {
-  return artifact.input_snapshot && typeof artifact.input_snapshot === "object"
-    ? (artifact.input_snapshot as Record<string, unknown>)
-    : {};
-}
-
-function qualityReportFromArtifact(artifact: GeneratedArtifact) {
-  const report = snapshotRecord(artifact).artifact_quality_report;
-  if (report && typeof report === "object") {
-    return report as ArtifactQualityReport;
-  }
-
-  return deriveQualityReportFromMarkdown(artifact.content_markdown || "");
-}
-
-function ledgerSummariesFromArtifact(artifact: GeneratedArtifact) {
-  const ledgers = snapshotRecord(artifact).document_ledgers;
-  return Array.isArray(ledgers) ? (ledgers as DocumentLedgerSummary[]) : [];
-}
-
-function timingsFromArtifact(artifact: GeneratedArtifact) {
-  const timings = snapshotRecord(artifact).generation_timings;
-  return Array.isArray(timings) ? (timings as GenerationTiming[]) : [];
-}
-
-function deriveQualityReportFromMarkdown(markdown: string): ArtifactQualityReport | null {
-  if (!markdown.trim()) return null;
-
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  let inRequirementTable = false;
-  let requirementRows = 0;
-  let tocRows = 0;
-  let dotLeaderRows = 0;
-  let emptyAnswers = 0;
-  let missingSources = 0;
-  const seenRequirements = new Map<string, number>();
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    if (isRequirementTableHeader(line)) {
-      inRequirementTable = true;
-      index += isMarkdownDivider(lines[index + 1] ?? "") ? 1 : 0;
-      continue;
-    }
-
-    if (!line.trim().startsWith("|")) {
-      inRequirementTable = false;
-      continue;
-    }
-    if (!inRequirementTable || isMarkdownDivider(line)) continue;
-
-    const row = splitMarkdownTableRow(line);
-    const requirement = row[1] ?? "";
-    const answer = row[2] ?? "";
-    const source = row[3] ?? "";
-    requirementRows += 1;
-
-    if (/table of contents|innholdsfortegnelse/i.test(requirement)) tocRows += 1;
-    if (/\.{4,}\s*\d{1,4}\s*$/.test(requirement)) dotLeaderRows += 1;
-    if (!answer.trim()) emptyAnswers += 1;
-    if (!source.trim()) missingSources += 1;
-
-    const key = requirement.replace(/\s+/g, " ").trim().toLowerCase();
-    if (key.length >= 20) {
-      seenRequirements.set(key, (seenRequirements.get(key) ?? 0) + 1);
-    }
-  }
-
-  const duplicateRequirementTexts = Array.from(seenRequirements.values()).reduce(
-    (sum, count) => sum + Math.max(0, count - 1),
-    0,
-  );
-  const hasHighIssue =
-    tocRows > 0 ||
-    dotLeaderRows > 0 ||
-    emptyAnswers > 0 ||
-    missingSources > 0 ||
-    requirementRows === 0;
-
-  return {
-    status: hasHighIssue
-      ? "fail"
-      : duplicateRequirementTexts > 0
-        ? "warning"
-        : "pass",
-    metrics: {
-      requirementRows,
-      tocRows,
-      dotLeaderRows,
-      emptyAnswers,
-      missingSources,
-      duplicateRequirementTexts,
-      emptySections: 0,
-    },
-  };
-}
-
-function requirementDocumentConfidence(
-  document: ProjectDocument | undefined,
-  artifacts: GeneratedArtifact[],
-) {
-  if (!document) {
-    return {
-      label: "Ingen dokumentanalyse",
-      tone: "muted" as const,
-      description: "Velg et dokument før generering.",
-    };
-  }
-
-  for (const artifact of artifacts) {
-    const ledger = ledgerSummariesFromArtifact(artifact).find(
-      (summary) => summary.document_id === document.id,
-    );
-    if (!ledger?.confidence) continue;
-
-    const label =
-      ledger.confidence === "high"
-        ? "Høy kravtillit"
-        : ledger.confidence === "medium"
-          ? "Middels kravtillit"
-          : "Lav kravtillit";
-    return {
-      label,
-      tone: ledger.confidence,
-      description: `${ledger.requirement_count ?? 0} kravindikasjoner funnet. ${
-        ledger.toc_line_count ?? 0
-      } innholdsfortegnelseslinjer filtrert.`,
-    };
-  }
-
-  const text = `${document.title} ${document.file_name} ${
-    document.supporting_subtype ?? ""
-  }`.toLowerCase();
-  if (text.includes("krav") || text.includes("requirement")) {
-    return {
-      label: "Sannsynlig kravdokument",
-      tone: "medium" as const,
-      description: "Serveren gjør full dokumentanalyse før resultatet lagres.",
-    };
-  }
-
-  return {
-    label: "Lav kravtillit",
-    tone: "low" as const,
-    description: "Dokumentet kan brukes, men generatoren stopper lagring hvis kravgrunnlaget gir feiloutput.",
-  };
-}
-
-function QualityReportPanel({
-  report,
-  timings,
-}: {
-  report: ArtifactQualityReport | null;
-  timings: GenerationTiming[];
-}) {
-  if (!report?.metrics) return null;
-
-  const metrics = report.metrics;
-  const sourceOk = (metrics.missingSources ?? 0) === 0;
-  const totalTiming = timings.find((timing) => timing.phase === "total");
-  const seconds =
-    typeof totalTiming?.duration_ms === "number"
-      ? Math.round(totalTiming.duration_ms / 100) / 10
-      : null;
-  const tone =
-    report.status === "pass"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-      : report.status === "warning"
-        ? "border-amber-200 bg-amber-50 text-amber-900"
-        : "border-red-200 bg-red-50 text-red-900";
-
-  return (
-    <div className={`rounded-xl border px-4 py-3 text-sm ${tone}`}>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="font-semibold">Kvalitetsrapport</p>
-        <span className="text-xs font-semibold uppercase tracking-[0.12em]">
-          {report.status === "pass"
-            ? "OK"
-            : report.status === "warning"
-              ? "Varsel"
-              : "Feil"}
-        </span>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        <span>{metrics.requirementRows ?? 0} krav funnet</span>
-        <span>{metrics.tocRows ?? 0} TOC-rader</span>
-        <span>{metrics.emptyAnswers ?? 0} tomme svar</span>
-        <span>{metrics.duplicateRequirementTexts ?? 0} duplikater</span>
-        <span>Kildegrunnlag: {sourceOk ? "OK" : "Mangler"}</span>
-      </div>
-      {seconds !== null ? (
-        <p className="mt-2 text-xs opacity-80">Genereringstid: {seconds} sek.</p>
-      ) : null}
-    </div>
-  );
-}
-
 function parseRequirementContent(content: string): RequirementContentSegment[] {
   const lines = content.split("\n");
   const segments: RequirementContentSegment[] = [];
@@ -668,18 +447,15 @@ function RequirementResponseContent({
 }
 
 export function ProjectRequirementResponseTab({
-  projectId,
   documents,
   artifacts,
   uploadBusy,
   generateBusy,
   busyMessage,
   busyProgress,
-  deletingDocumentId,
   onUpload,
   selectedDocumentId,
   onSelectedDocumentChange,
-  onDeleteDocument,
   onUpdateArtifact,
   onDeleteArtifact,
   onSubmit,
@@ -707,16 +483,9 @@ export function ProjectRequirementResponseTab({
     () => documents.filter(isRequirementDocument),
     [documents],
   );
-  const selectableDocuments = useMemo(() => documents, [documents]);
+  const selectableDocuments = requirementDocuments;
   const requirementResponses = artifacts.filter(
     (artifact) => artifact.artifact_type === "forbedret_kravsvar",
-  );
-  const selectedDocument = selectableDocuments.find(
-    (document) => document.id === selectedDocumentId,
-  );
-  const selectedDocumentConfidence = requirementDocumentConfidence(
-    selectedDocument,
-    requirementResponses,
   );
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -823,8 +592,6 @@ export function ProjectRequirementResponseTab({
       ) : (
         <div className="space-y-3">
           {requirementResponses.map((artifact, index) => {
-            const qualityReport = qualityReportFromArtifact(artifact);
-            const timings = timingsFromArtifact(artifact);
             return (
             <details
               key={artifact.id}
@@ -919,7 +686,7 @@ export function ProjectRequirementResponseTab({
                         id={`requirement-content-${artifact.id}`}
                         value={editContent}
                         onChange={(event) => setEditContent(event.target.value)}
-                        className="min-h-[28rem] resize-y rounded-xl font-mono text-sm leading-6"
+                        className="min-h-[28rem] resize-y rounded-xl bg-white text-sm leading-6 text-slate-900 shadow-none"
                       />
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
@@ -949,15 +716,12 @@ export function ProjectRequirementResponseTab({
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <QualityReportPanel report={qualityReport} timings={timings} />
-                    <RequirementResponseContent
-                      content={
-                        artifact.content_markdown ||
-                        "Denne kravbesvarelsen mangler lagret innhold. Generer den på nytt for å få et komplett resultat."
-                      }
-                    />
-                  </>
+                  <RequirementResponseContent
+                    content={
+                      artifact.content_markdown ||
+                      "Denne kravbesvarelsen mangler lagret innhold. Generer den på nytt for å få et komplett resultat."
+                    }
+                  />
                 )}
               </div>
             </details>
@@ -971,232 +735,143 @@ export function ProjectRequirementResponseTab({
   return (
     <div className="min-w-0 space-y-6">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-          <h3 className="text-sm font-bold text-slate-950">Generer svar</h3>
+        <div className="border-b border-slate-200 bg-slate-50 px-5 py-5">
+          <div className="flex items-start gap-3">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white">
+              <FileCheck2 className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                Krav og svar
+              </p>
+              <h2 className="mt-1 text-xl font-bold text-slate-950">
+                Kravbesvarelse
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Last opp kravdokumentet som skal fylles ut. AI-en bruker
+                kundeanalyse, Bilag 1, løsningsbeskrivelse og tjenestebeskrivelse
+                som grunnlag for svarene.
+              </p>
+            </div>
+          </div>
         </div>
-        <form onSubmit={onSubmit} className="p-5">
-          <div className="mb-4 space-y-2">
-            <Label
-              htmlFor="requirement-document-select"
-              className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
-            >
-              Bruk dokument
-            </Label>
-            <div className="relative">
-              <select
-                id="requirement-document-select"
-                value={selectedDocumentId}
-                onChange={(event) => onSelectedDocumentChange(event.target.value)}
-                disabled={generateBusy || uploadBusy || selectableDocuments.length === 0}
-                className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-12 text-sm font-medium text-slate-950 outline-none transition-colors focus:border-slate-950 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+
+        <div className="space-y-4 p-5">
+          {selectableDocuments.length ? (
+            <div className="space-y-2">
+              <Label
+                htmlFor="requirement-document-select"
+                className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
               >
-                {selectableDocuments.length ? (
-                  selectableDocuments.map((document) => (
+                Kravdokument
+              </Label>
+              <div className="relative">
+                <select
+                  id="requirement-document-select"
+                  value={selectedDocumentId}
+                  onChange={(event) =>
+                    onSelectedDocumentChange(event.target.value)
+                  }
+                  disabled={generateBusy || uploadBusy}
+                  className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-12 text-sm font-medium text-slate-950 outline-none transition-colors focus:border-slate-950 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                >
+                  {selectableDocuments.map((document) => (
                     <option key={document.id} value={document.id}>
                       {document.title}
                     </option>
-                  ))
-                ) : (
-                  <option value="">Ingen dokumenter lastet opp</option>
-                )}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-5 top-1/2 size-4 -translate-y-1/2 text-slate-950" />
-            </div>
-            <p className="text-xs leading-5 text-slate-500">
-              Valgt dokument brukes som kravgrunnlag. Nye opplastinger velges automatisk.
-            </p>
-            <div
-              className={`rounded-lg border px-3 py-2 text-xs leading-5 ${
-                selectedDocumentConfidence.tone === "high"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                  : selectedDocumentConfidence.tone === "medium"
-                    ? "border-amber-200 bg-amber-50 text-amber-900"
-                    : selectedDocumentConfidence.tone === "low"
-                      ? "border-red-200 bg-red-50 text-red-900"
-                      : "border-slate-200 bg-slate-50 text-slate-600"
-              }`}
-            >
-              <span className="font-semibold">{selectedDocumentConfidence.label}</span>
-              <span className="ml-1">{selectedDocumentConfidence.description}</span>
-            </div>
-          </div>
-          <Button
-            type="submit"
-            className="h-11 w-full rounded-xl"
-            disabled={generateBusy || !selectedDocumentId}
-          >
-            {generateBusy ? (
-              <Spinner className="size-4" />
-            ) : (
-              <CheckSquare data-icon="inline-start" />
-            )}
-            Generer kravbesvarelse
-          </Button>
-          {generateBusy && busyMessage ? (
-            <div className="mt-3">
-              <GenerationProgress message={busyMessage} progress={busyProgress} />
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-5 top-1/2 size-4 -translate-y-1/2 text-slate-950" />
+              </div>
             </div>
           ) : null}
-        </form>
-      </section>
 
-      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,23rem)]">
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:col-start-1">
-          <div className="border-b border-slate-200 bg-slate-50 px-5 py-5">
-            <div className="flex items-start gap-3">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white">
-                <FileCheck2 className="size-5" />
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-700">
+              Last inn dokument
+            </p>
+            <label
+              htmlFor="requirement-file"
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setDragActive(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={onDrop}
+              className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center transition-colors ${
+                dragActive
+                  ? "border-slate-950 bg-slate-100"
+                  : "border-slate-300 bg-slate-50 hover:border-primary/60 hover:bg-primary/5"
+              }`}
+            >
+              <span className="mb-3 flex size-11 items-center justify-center rounded-lg bg-white text-primary shadow-sm">
+                <Upload className="size-5" />
               </span>
-              <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                  Krav og svar
-                </p>
-                <h2 className="mt-1 text-xl font-bold text-slate-950">
-                  Kravbesvarelse
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Last opp kravdokumentet som skal fylles ut. AI-en bruker
-                  kundeanalyse, Bilag 1, løsningsbeskrivelse og tjenestebeskrivelse
-                  som grunnlag for svarene.
-                </p>
-              </div>
-            </div>
+              <span className="text-sm font-semibold text-slate-950">
+                Dra og slipp kravdokumentet her
+              </span>
+              <span className="mt-1 text-xs leading-5 text-slate-500">
+                eller klikk for å velge PDF, DOCX, Excel, TXT eller MD.
+              </span>
+              {file ? (
+                <span className="mt-3 flex max-w-full flex-col items-center gap-1 rounded-lg bg-primary/10 px-3 py-2 text-xs font-semibold text-primary">
+                  <span className="max-w-full truncate">{file.name}</span>
+                  <span className="font-medium text-primary/70">
+                    {uploadBusy
+                      ? "Laster opp ..."
+                      : `Tittel: ${fileTitle(file)}`}
+                  </span>
+                </span>
+              ) : null}
+            </label>
+            <Input
+              key={fileInputKey}
+              id="requirement-file"
+              type="file"
+              accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
+              className="sr-only"
+              onChange={(event) =>
+                void uploadSelectedFile(event.target.files?.[0] ?? null)
+              }
+            />
           </div>
 
-          <div className="space-y-4 p-5">
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-slate-700">
-                Kravdokument
-              </p>
-              <label
-                htmlFor="requirement-file"
-                onDragEnter={(event) => {
-                  event.preventDefault();
-                  setDragActive(true);
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "copy";
-                  setDragActive(true);
-                }}
-                onDragLeave={() => setDragActive(false)}
-                onDrop={onDrop}
-                className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center transition-colors ${
-                  dragActive
-                    ? "border-slate-950 bg-slate-100"
-                    : "border-slate-300 bg-slate-50 hover:border-primary/60 hover:bg-primary/5"
-                }`}
-              >
-                <span className="mb-3 flex size-11 items-center justify-center rounded-lg bg-white text-primary shadow-sm">
-                  <Upload className="size-5" />
-                </span>
-                <span className="text-sm font-semibold text-slate-950">
-                  Dra og slipp kravdokumentet her
-                </span>
-                <span className="mt-1 text-xs leading-5 text-slate-500">
-                  eller klikk for å velge PDF, DOCX, Excel, TXT eller MD.
-                </span>
-                {file ? (
-                  <span className="mt-3 flex max-w-full flex-col items-center gap-1 rounded-lg bg-primary/10 px-3 py-2 text-xs font-semibold text-primary">
-                    <span className="max-w-full truncate">{file.name}</span>
-                    <span className="font-medium text-primary/70">
-                      {uploadBusy
-                        ? "Laster opp ..."
-                        : `Tittel: ${fileTitle(file)}`}
-                    </span>
-                  </span>
-                ) : null}
-              </label>
-              <Input
-                key={fileInputKey}
-                id="requirement-file"
-                type="file"
-                accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
-                className="sr-only"
-                onChange={(event) =>
-                  void uploadSelectedFile(event.target.files?.[0] ?? null)
-                }
-              />
+          {uploadBusy ? (
+            <div className="flex min-w-0 items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-primary">
+              <Spinner className="size-4" />
+              <span className="min-w-0">Laster opp kravdokument ...</span>
             </div>
+          ) : null}
 
-            {uploadBusy ? (
-              <div className="flex min-w-0 items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-primary">
+          <form onSubmit={onSubmit}>
+            <Button
+              type="submit"
+              className="h-11 w-full rounded-xl"
+              disabled={generateBusy || !selectedDocumentId}
+            >
+              {generateBusy ? (
                 <Spinner className="size-4" />
-                <span className="min-w-0">Laster opp kravdokument ...</span>
+              ) : (
+                <CheckSquare data-icon="inline-start" />
+              )}
+              Generer kravbesvarelse
+            </Button>
+            {generateBusy && busyMessage ? (
+              <div className="mt-3">
+                <GenerationProgress
+                  message={busyMessage}
+                  progress={busyProgress}
+                />
               </div>
             ) : null}
-          </div>
-        </section>
-
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-            <h3 className="text-sm font-bold text-slate-950">
-              Lagrede kravdokumenter
-            </h3>
-          </div>
-          {requirementDocuments.length ? (
-            <div className="divide-y divide-slate-200">
-              {requirementDocuments.map((document) => (
-                <div
-                  key={document.id}
-                  className="flex min-w-0 items-start justify-between gap-3 px-5 py-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <FileText className="size-4 shrink-0 text-sky-700" />
-                      <p className="truncate text-sm font-semibold text-slate-950">
-                        {document.title}
-                      </p>
-                    </div>
-                    <p className="mt-1 pl-6 text-xs text-slate-500">
-                      {document.file_format.toUpperCase()} ·{" "}
-                      {Math.max(1, Math.round(document.file_size_bytes / 1024))} KB
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <a
-                      href={`/api/projects/${projectId}/documents/${document.id}`}
-                      className="inline-flex size-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"
-                    >
-                      <ArrowDownToLine className="size-3.5" />
-                    </a>
-                    <DeleteConfirmDialog
-                      title="Slett kravdokument?"
-                      description={`Dette sletter "${document.title}" fra prosjektet. Relaterte analyser kan også bli nullstilt. Handlingen kan ikke angres.`}
-                      confirmLabel="Slett dokument"
-                      onConfirm={() => onDeleteDocument(document)}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        disabled={deletingDocumentId === document.id}
-                      >
-                        {deletingDocumentId === document.id ? (
-                          <Spinner className="size-3.5" />
-                        ) : (
-                          <Trash2 className="size-3.5" />
-                        )}
-                      </Button>
-                    </DeleteConfirmDialog>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="px-5 py-8 text-center">
-              <div className="mx-auto flex size-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                <FileText className="size-5" />
-              </div>
-              <p className="mt-3 text-sm font-semibold text-slate-950">
-                Ingen kravdokumenter funnet
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Last opp et dokument med krav eller kravspesifikasjon.
-              </p>
-            </div>
-          )}
-        </section>
-      </div>
+          </form>
+        </div>
+      </section>
 
       {savedRequirementResponses}
     </div>

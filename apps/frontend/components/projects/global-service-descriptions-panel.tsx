@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   FileText,
   Layers3,
-  LockKeyhole,
   Plus,
   Trash2,
   Upload,
@@ -19,17 +18,13 @@ import {
   getClientCache,
   setClientCache,
 } from "@/lib/client-cache";
-import type { ServiceDescription, ServiceInclusionMode } from "@/lib/types";
+import type { ServiceDescription } from "@/lib/types";
 
 const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
 const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
-}
-
-function serviceModeLabel(mode: ServiceInclusionMode) {
-  return mode === "fixed" ? "Fast for alle" : "Velges per prosjekt";
 }
 
 export function GlobalServiceDescriptionsPanel() {
@@ -40,7 +35,6 @@ export function GlobalServiceDescriptionsPanel() {
   const [targetServiceId, setTargetServiceId] = useState("");
   const [serviceName, setServiceName] = useState("");
   const [description, setDescription] = useState("");
-  const [mode, setMode] = useState<ServiceInclusionMode>("selected");
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [dragActive, setDragActive] = useState(false);
@@ -84,28 +78,6 @@ export function GlobalServiceDescriptionsPanel() {
     void loadServices();
   }, []);
 
-  async function updateMode(service: ServiceDescription, nextMode: ServiceInclusionMode) {
-    setBusy(`mode-${service.id}`);
-    setError("");
-    try {
-      const response = await fetch(`/api/service-descriptions/${service.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inclusion_mode: nextMode }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Kunne ikke oppdatere tjenesten.");
-      }
-      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
-      await loadServices();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke oppdatere tjenesten.");
-    } finally {
-      setBusy("");
-    }
-  }
-
   async function deleteDocument(serviceId: string, documentId: string) {
     setBusy(`delete-document-${documentId}`);
     setError("");
@@ -147,7 +119,6 @@ export function GlobalServiceDescriptionsPanel() {
           : serviceName,
       );
       formData.append("description", description);
-      formData.append("inclusion_mode", mode);
 
       const response = await fetch("/api/service-descriptions", {
         method: "POST",
@@ -161,7 +132,6 @@ export function GlobalServiceDescriptionsPanel() {
       setTargetServiceId("");
       setServiceName("");
       setDescription("");
-      setMode("selected");
       setFile(null);
       setFileInputKey((current) => current + 1);
       await loadServices();
@@ -188,9 +158,9 @@ export function GlobalServiceDescriptionsPanel() {
                 Global tjenestekatalog
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Dokumenter her brukes som firmaets tjenestegrunnlag. Faste tjenester
-                følger alle prosjekter, mens valgte tjenester må hukes av før de blir
-                del av prosjektkonteksten.
+                Dokumenter her brukes som firmaets tjenestegrunnlag på tvers av
+                prosjekter. Velg hvilke tjenester som skal brukes inne på hvert
+                prosjekt.
               </p>
             </div>
           </div>
@@ -204,7 +174,6 @@ export function GlobalServiceDescriptionsPanel() {
                 const service = services.find((item) => item.id === value);
                 setServiceName(service?.name ?? "");
                 setDescription(service?.description ?? "");
-                setMode(service?.inclusion_mode ?? "selected");
               }}
               className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
             >
@@ -229,23 +198,6 @@ export function GlobalServiceDescriptionsPanel() {
               rows={3}
               className="w-full resize-none rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
             />
-
-            <div className="grid grid-cols-2 gap-2">
-              {(["fixed", "selected"] as const).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setMode(item)}
-                  className={`rounded-lg border px-3 py-2 text-xs font-bold ${
-                    mode === item
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  {serviceModeLabel(item)}
-                </button>
-              ))}
-            </div>
 
             <label
               htmlFor="home-service-file"
@@ -309,7 +261,7 @@ export function GlobalServiceDescriptionsPanel() {
             <div>
               <h3 className="text-sm font-bold text-slate-950">Alle tjenestedokumenter</h3>
               <p className="mt-1 text-sm text-slate-500">
-                Prosjektsiden kan anbefale relevante valgbare tjenester uten å legge dem i kontekst før de er valgt.
+                Alle tjenester kan hukes av per prosjekt før de blir del av prosjektkonteksten.
               </p>
             </div>
             <div className="shrink-0 text-right">
@@ -335,12 +287,8 @@ export function GlobalServiceDescriptionsPanel() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="text-sm font-bold text-slate-950">{service.name}</h4>
                         <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
-                          {service.inclusion_mode === "fixed" ? (
-                            <LockKeyhole className="size-3" />
-                          ) : (
-                            <CheckCircle2 className="size-3" />
-                          )}
-                          {serviceModeLabel(service.inclusion_mode)}
+                          <CheckCircle2 className="size-3" />
+                          Global
                         </span>
                       </div>
                       {service.description ? (
@@ -349,17 +297,6 @@ export function GlobalServiceDescriptionsPanel() {
                         </p>
                       ) : null}
                     </div>
-                    <select
-                      value={service.inclusion_mode}
-                      disabled={busy === `mode-${service.id}`}
-                      onChange={(event) =>
-                        void updateMode(service, event.target.value as ServiceInclusionMode)
-                      }
-                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold"
-                    >
-                      <option value="fixed">Fast for alle</option>
-                      <option value="selected">Velges per prosjekt</option>
-                    </select>
                   </div>
 
                   <div className="mt-3 grid gap-2">

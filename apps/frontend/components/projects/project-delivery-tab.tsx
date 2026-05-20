@@ -26,6 +26,35 @@ interface ProgressPhase {
   body: string;
 }
 
+const MAX_PROGRESS_PHASES = 4;
+
+const PHASE_CARD_STYLES = [
+  {
+    railClassName: "from-blue-600 via-blue-500 to-cyan-500",
+    iconClassName: "bg-blue-600 text-white",
+    shellClassName: "border-blue-200 bg-blue-50/70 text-blue-950",
+    phaseIconClassName: "text-blue-700",
+  },
+  {
+    railClassName: "from-emerald-600 via-emerald-500 to-teal-500",
+    iconClassName: "bg-emerald-600 text-white",
+    shellClassName: "border-emerald-200 bg-emerald-50/70 text-emerald-950",
+    phaseIconClassName: "text-emerald-700",
+  },
+  {
+    railClassName: "from-amber-500 via-orange-400 to-rose-400",
+    iconClassName: "bg-amber-500 text-white",
+    shellClassName: "border-amber-200 bg-amber-50/72 text-amber-950",
+    phaseIconClassName: "text-amber-700",
+  },
+  {
+    railClassName: "from-slate-800 via-slate-700 to-indigo-500",
+    iconClassName: "bg-slate-950 text-white",
+    shellClassName: "border-slate-200 bg-slate-50/85 text-slate-950",
+    phaseIconClassName: "text-slate-700",
+  },
+] as const;
+
 function extractProgressPhases(markdown: string): ProgressPhase[] {
   const sections = markdown.split(/\n(?=##\s+)/g);
 
@@ -199,7 +228,9 @@ function PhaseList({
   phases: ProgressPhase[];
   muted?: boolean;
 }) {
-  if (!phases.length) {
+  const visiblePhases = phases.slice(0, MAX_PROGRESS_PHASES);
+
+  if (!visiblePhases.length) {
     return (
       <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-5 py-8 text-center text-sm text-muted-foreground">
         Ingen faser er lagret i denne planen.
@@ -208,38 +239,55 @@ function PhaseList({
   }
 
   return (
-    <div className="space-y-4">
-      {phases.map((phase, index) => (
+    <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+      {visiblePhases.map((phase, index) => {
+        const style = PHASE_CARD_STYLES[index % PHASE_CARD_STYLES.length];
+        const isFinalVisiblePhase = index === visiblePhases.length - 1;
+
+        return (
         <article
           key={`${phase.title}-${index}`}
-          className={`grid min-w-0 gap-4 rounded-xl border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,1),rgba(248,250,252,0.92))] px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] md:grid-cols-[3.5rem_minmax(0,1fr)] md:px-5 ${
+          className={`relative flex h-full min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white/88 shadow-[0_16px_40px_rgba(15,23,42,0.06)] ${
             muted ? "border-dashed" : ""
           }`}
         >
-          <div className="flex items-center gap-3 md:block">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-sm font-black text-white shadow-sm">
-              {index + 1}
+          <div
+            className={`absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b ${style.railClassName}`}
+          />
+          <div className="flex min-w-0 flex-1 px-5 py-5 md:px-6">
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-4">
+              <div
+                className={`flex size-12 shrink-0 items-center justify-center rounded-lg shadow-sm ${style.iconClassName}`}
+              >
+                <span className="text-base font-black">{index + 1}</span>
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex min-w-0 items-start gap-2">
+                  {isFinalVisiblePhase ? (
+                    <Flag
+                      className={`mt-1 size-4 shrink-0 ${style.phaseIconClassName}`}
+                    />
+                  ) : (
+                    <Milestone
+                      className={`mt-1 size-4 shrink-0 ${style.phaseIconClassName}`}
+                    />
+                  )}
+                  <h4 className="min-w-0 text-lg font-semibold leading-7 tracking-[-0.025em] text-slate-950">
+                    {phase.title}
+                  </h4>
+                </div>
+                <div className={`mt-4 flex-1 rounded-lg border px-4 py-4 ${style.shellClassName}`}>
+                  <MarkdownViewer
+                    content={phase.body}
+                    className="analysis-prose max-w-none text-[0.96rem] font-medium leading-7"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="h-px flex-1 bg-slate-200 md:mx-auto md:mt-3 md:h-full md:w-px" />
-          </div>
-          <div className="min-w-0">
-            <div className="mb-3 flex min-w-0 items-center gap-2">
-              {index === phases.length - 1 ? (
-                <Flag className="size-4 shrink-0 text-emerald-600" />
-              ) : (
-                <Milestone className="size-4 shrink-0 text-blue-600" />
-              )}
-              <h4 className="min-w-0 text-lg font-bold tracking-tight text-slate-950">
-                {phase.title}
-              </h4>
-            </div>
-            <MarkdownViewer
-              content={phase.body}
-              className="analysis-prose max-w-none text-[0.98rem] leading-7 text-slate-700"
-            />
           </div>
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }

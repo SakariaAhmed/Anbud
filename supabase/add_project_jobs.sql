@@ -7,7 +7,8 @@ create table if not exists project_jobs (
       'solution_evaluation',
       'artifact_generation',
       'high_level_design',
-      'perfect_system_solution'
+      'perfect_system_solution',
+      'executive_summary'
     )
   ),
   status text not null default 'queued' check (status in ('queued', 'running', 'completed', 'failed')),

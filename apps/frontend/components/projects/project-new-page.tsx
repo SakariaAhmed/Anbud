@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, LockKeyhole } from "lucide-react";
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { markNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
@@ -167,19 +167,17 @@ export function ProjectNewPage() {
                     Tjenestebeskrivelser
                   </p>
                   <p className="mt-1 text-sm text-slate-600">
-                    Faste tjenester blir alltid med. Velg relevante prosjektspesifikke tjenester nå, eller gjør det senere i prosjektet.
+                    Velg relevante tjenestebeskrivelser nå, eller gjør det senere i prosjektet.
                   </p>
                 </div>
               </div>
               <div className="mt-4 grid gap-2">
                 {services.map((service) => {
-                  const fixed = service.inclusion_mode === "fixed";
-                  const selected = fixed || selectedServiceIds.includes(service.id);
+                  const selected = selectedServiceIds.includes(service.id);
                   return (
                     <button
                       key={service.id}
                       type="button"
-                      disabled={fixed}
                       onClick={() =>
                         setSelectedServiceIds((current) =>
                           current.includes(service.id)
@@ -201,9 +199,7 @@ export function ProjectNewPage() {
                           {service.documents.length} dokument
                         </span>
                       </span>
-                      {fixed ? (
-                        <LockKeyhole className="size-4 shrink-0 text-slate-500" />
-                      ) : selected ? (
+                      {selected ? (
                         <CheckCircle2 className="size-4 shrink-0 text-slate-950" />
                       ) : null}
                     </button>

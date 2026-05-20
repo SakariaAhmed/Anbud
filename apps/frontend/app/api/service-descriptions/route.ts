@@ -9,15 +9,10 @@ import {
   updateServiceDocumentAiSummary,
   upsertServiceDescription,
 } from "@/lib/server/projects-db";
-import type { ServiceInclusionMode } from "@/lib/types";
 
 const SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=300, stale-while-revalidate=1800",
 };
-
-function isInclusionMode(value: unknown): value is ServiceInclusionMode {
-  return value === "fixed" || value === "selected";
-}
 
 export async function GET() {
   try {
@@ -43,8 +38,6 @@ export async function POST(request: Request) {
     const serviceId = `${formData.get("service_id") || ""}`.trim();
     const name = `${formData.get("name") || ""}`.trim();
     const description = `${formData.get("description") || ""}`.trim();
-    const modeRaw = `${formData.get("inclusion_mode") || "selected"}`;
-    const inclusionMode = isInclusionMode(modeRaw) ? modeRaw : "selected";
 
     if (!serviceId && !name) {
       return NextResponse.json(
@@ -60,7 +53,6 @@ export async function POST(request: Request) {
       serviceId: serviceId || null,
       name: name || existingService?.name || "",
       description: description || existingService?.description || "",
-      inclusionMode: existingService?.inclusion_mode ?? inclusionMode,
     });
 
     let document = null;

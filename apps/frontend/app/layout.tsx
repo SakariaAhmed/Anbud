@@ -13,6 +13,8 @@ import {
 
 import "./globals.css";
 
+const CURRENT_PATH_HEADER = "x-current-pathname";
+
 export const metadata: Metadata = {
   title: "bidsite",
   description:
@@ -26,17 +28,21 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const requestHeaders = await headers();
+  const pathname = requestHeaders.get(CURRENT_PATH_HEADER) ?? "";
   const authenticated =
     requestHeaders.get(AUTH_VERIFIED_HEADER) === "1" ||
     (await verifySessionToken(
       (await cookies()).get(AUTH_COOKIE_NAME)?.value,
     ));
+  const isolatedChatWindow = /^\/projects\/[^/]+\/chat\/?$/.test(pathname);
 
   return (
     <html lang="no">
       <body className="min-h-screen bg-background text-foreground antialiased">
         <TooltipProvider>
-          {authenticated ? (
+          {authenticated && isolatedChatWindow ? (
+            <div className="min-h-screen">{children}</div>
+          ) : authenticated ? (
             <div className="min-h-screen">
               <header
                 className="fixed inset-x-0 top-0 z-[60] border-b border-slate-700/50 bg-slate-900 shadow-md"

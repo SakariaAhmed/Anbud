@@ -77,7 +77,7 @@ function applySectionSnapshot(
   snapshot: unknown,
 ): CustomerAnalysisResult {
   if (!isRecord(snapshot)) {
-    throw new Error("Seksjonsdata må være et JSON-objekt.");
+    throw new Error("Seksjonsdata må være et gyldig sett med redigerbare felter.");
   }
 
   switch (section) {
