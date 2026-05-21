@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { LockKeyhole, LogIn } from "lucide-react";
 
@@ -18,7 +17,6 @@ function safeNextPath(value: string) {
 }
 
 export function LoginForm({ nextPath }: { nextPath: string }) {
-  const router = useRouter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -47,7 +45,7 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
         return;
       }
 
-      router.replace(safeNextPath(payload.redirectTo || nextPath));
+      window.location.replace(safeNextPath(payload.redirectTo || nextPath));
     } finally {
       setLoading(false);
     }
