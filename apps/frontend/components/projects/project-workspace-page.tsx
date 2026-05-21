@@ -2335,15 +2335,15 @@ export function ProjectWorkspacePage({
                   </div>
                 </div>
                 {showModelSelector ? (
-                  <div className="w-full rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-md shadow-slate-200/70 sm:w-[23.5rem]">
+                  <div className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3.5 shadow-md shadow-slate-200/70 sm:w-[21.5rem]">
                     <label
                       htmlFor="workspace-ai-model"
-                      className="text-[0.74rem] font-bold uppercase tracking-[0.18em] text-slate-500"
+                      className="text-[0.7rem] font-bold uppercase tracking-[0.18em] text-slate-500"
                     >
                       Modell
                     </label>
                     <div
-                      className="relative mt-3"
+                      className="relative mt-2.5"
                       aria-busy={modelsLoading ? "true" : undefined}
                     >
                       <select
@@ -2352,7 +2352,7 @@ export function ProjectWorkspacePage({
                         onChange={(event) => onModelChange(event.target.value)}
                         onFocus={() => void loadAvailableModels()}
                         onPointerDown={() => void loadAvailableModels()}
-                        className="h-12 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-4 pr-11 text-lg font-bold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary/15"
+                        className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-3.5 pr-10 text-base font-bold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary/15"
                       >
                         {selectedModel &&
                         !availableModels.some((model) => model.id === selectedModel) ? (
@@ -2366,11 +2366,11 @@ export function ProjectWorkspacePage({
                       </select>
                       <ChevronDown
                         aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 right-3 size-5 -translate-y-1/2 text-slate-950"
+                        className="pointer-events-none absolute top-1/2 right-3 size-4.5 -translate-y-1/2 text-slate-950"
                       />
                     </div>
                     {selectedModel ? (
-                      <p className="mt-4 text-base leading-7 text-slate-500">
+                      <p className="mt-3 text-sm leading-6 text-slate-500">
                         {modelHelpText(selectedModel)}
                       </p>
                     ) : null}
