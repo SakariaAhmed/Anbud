@@ -15,6 +15,7 @@ import {
 import {
   ArrowRight,
   Brain,
+  ChevronDown,
   ClipboardCheck,
   Download,
   FileCheck2,
@@ -744,9 +745,10 @@ function estimatedProgressFromElapsed(elapsedMs: number, estimatedDurationMs: nu
 }
 
 const MODEL_STORAGE_KEY = "anbud-openai-model";
+const DEFAULT_WORKSPACE_MODEL = "gpt-5.4";
 const PREFERRED_MODEL_ORDER = [
-  "gpt-5-mini",
   "gpt-5.4",
+  "gpt-5-mini",
   "gpt-5.4-mini",
   "gpt-5.4-nano",
   "gpt-5.2",
@@ -861,7 +863,7 @@ export function ProjectWorkspacePage({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
   const [availableModels, setAvailableModels] = useState<OpenAIModelSummary[]>([]);
-  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_WORKSPACE_MODEL);
   const [modelsLoading, setModelsLoading] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
   const modelsRequestRef = useRef<Promise<void> | null>(null);
@@ -894,8 +896,8 @@ export function ProjectWorkspacePage({
 
   useEffect(() => {
     const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY) ?? "";
-    if (storedModel) {
-      setSelectedModel(storedModel);
+    if (!storedModel || isSlowOrExpensiveModel(storedModel)) {
+      window.localStorage.setItem(MODEL_STORAGE_KEY, DEFAULT_WORKSPACE_MODEL);
     }
   }, []);
 
@@ -943,6 +945,10 @@ export function ProjectWorkspacePage({
     modelsRequestRef.current = request;
     await request;
   }, [availableModels.length]);
+
+  useEffect(() => {
+    void loadAvailableModels();
+  }, [loadAvailableModels]);
 
   const aiModelHeaders = useCallback((): Record<string, string> => {
     return selectedModel ? { "X-OpenAI-Model": selectedModel } : {};
@@ -2329,40 +2335,42 @@ export function ProjectWorkspacePage({
                   </div>
                 </div>
                 {showModelSelector ? (
-                  <div className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm sm:w-[21rem]">
+                  <div className="w-full rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-md shadow-slate-200/70 sm:w-[23.5rem]">
                     <label
                       htmlFor="workspace-ai-model"
-                      className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500"
+                      className="text-[0.74rem] font-bold uppercase tracking-[0.18em] text-slate-500"
                     >
                       Modell
                     </label>
-                    <select
-                      id="workspace-ai-model"
-                      value={selectedModel}
-                      onChange={(event) => onModelChange(event.target.value)}
-                      onFocus={() => void loadAvailableModels()}
-                      onPointerDown={() => void loadAvailableModels()}
-                      disabled={modelsLoading}
-                      className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-slate-50 px-2 text-sm font-semibold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:text-slate-400"
+                    <div
+                      className="relative mt-3"
+                      aria-busy={modelsLoading ? "true" : undefined}
                     >
-                      {selectedModel &&
-                      !availableModels.some((model) => model.id === selectedModel) ? (
-                        <option value={selectedModel}>{selectedModel}</option>
-                      ) : null}
-                      {modelsLoading ? (
-                        <option value="">Henter modeller ...</option>
-                      ) : null}
-                      {!modelsLoading && !availableModels.length ? (
-                        <option value="">Åpne for å hente modeller</option>
-                      ) : null}
-                      {availableModels.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.id}
-                        </option>
-                      ))}
-                    </select>
+                      <select
+                        id="workspace-ai-model"
+                        value={selectedModel}
+                        onChange={(event) => onModelChange(event.target.value)}
+                        onFocus={() => void loadAvailableModels()}
+                        onPointerDown={() => void loadAvailableModels()}
+                        className="h-12 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-4 pr-11 text-lg font-bold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary/15"
+                      >
+                        {selectedModel &&
+                        !availableModels.some((model) => model.id === selectedModel) ? (
+                          <option value={selectedModel}>{selectedModel}</option>
+                        ) : null}
+                        {availableModels.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.id}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-1/2 right-3 size-5 -translate-y-1/2 text-slate-950"
+                      />
+                    </div>
                     {selectedModel ? (
-                      <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                      <p className="mt-4 text-base leading-7 text-slate-500">
                         {modelHelpText(selectedModel)}
                       </p>
                     ) : null}
