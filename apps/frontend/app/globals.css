@@ -198,18 +198,18 @@
     transition: opacity 320ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  body[data-home-loader="intro"] [data-app-header="true"] {
+  body[data-route="home"][data-home-loader="intro"] [data-app-header="true"] {
     opacity: 0;
   }
 
-  body[data-home-loader="boot"] [data-app-header="true"],
-  body[data-home-loader="reveal"] [data-app-header="true"] {
+  body[data-route="home"][data-home-loader="boot"] [data-app-header="true"],
+  body[data-route="home"][data-home-loader="reveal"] [data-app-header="true"] {
     opacity: 0;
   }
 
-  body[data-home-loader="move"] [data-app-header="true"],
-  body[data-home-loader="settled"] [data-app-header="true"],
-  body[data-home-loader="done"] [data-app-header="true"] {
+  body[data-route="home"][data-home-loader="move"] [data-app-header="true"],
+  body[data-route="home"][data-home-loader="settled"] [data-app-header="true"],
+  body[data-route="home"][data-home-loader="done"] [data-app-header="true"] {
     opacity: 1;
   }
 
@@ -220,19 +220,19 @@
       opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  body[data-home-loader="intro"] [data-brand-anchor="true"],
-  body[data-home-loader="boot"] [data-brand-anchor="true"],
-  body[data-home-loader="reveal"] [data-brand-anchor="true"],
-  body[data-home-loader="move"] [data-brand-anchor="true"] {
+  body[data-route="home"][data-home-loader="intro"] [data-brand-anchor="true"],
+  body[data-route="home"][data-home-loader="boot"] [data-brand-anchor="true"],
+  body[data-route="home"][data-home-loader="reveal"] [data-brand-anchor="true"],
+  body[data-route="home"][data-home-loader="move"] [data-brand-anchor="true"] {
     opacity: 0;
   }
 
-  body[data-home-loader="settled"] [data-brand-anchor="true"],
-  body[data-home-loader="done"] [data-brand-anchor="true"] {
+  body[data-route="home"][data-home-loader="settled"] [data-brand-anchor="true"],
+  body[data-route="home"][data-home-loader="done"] [data-brand-anchor="true"] {
     opacity: 1;
   }
 
-  body[data-home-loader="done"] [data-brand-anchor="true"] {
+  body[data-route="home"][data-home-loader="done"] [data-brand-anchor="true"] {
     transition: none;
   }
 
@@ -264,19 +264,19 @@
     transition: opacity 220ms linear;
   }
 
-  body[data-home-loader]:not([data-home-loader="boot"]) .bidsite-boot-cover {
+  body[data-route="home"][data-home-loader]:not([data-home-loader="boot"]) .bidsite-boot-cover {
     opacity: 0;
   }
 
-  body[data-home-loader="boot"] .site-reload-enter,
-  body[data-home-loader="intro"] .site-reload-enter,
-  body[data-home-loader="reveal"] .site-reload-enter,
-  body[data-home-loader="move"] .site-reload-enter {
+  body[data-route="home"][data-home-loader="boot"] .site-reload-enter,
+  body[data-route="home"][data-home-loader="intro"] .site-reload-enter,
+  body[data-route="home"][data-home-loader="reveal"] .site-reload-enter,
+  body[data-route="home"][data-home-loader="move"] .site-reload-enter {
     opacity: 0;
   }
 
-  body[data-home-loader="settled"] .site-reload-enter,
-  body[data-home-loader="done"] .site-reload-enter {
+  body[data-route="home"][data-home-loader="settled"] .site-reload-enter,
+  body[data-route="home"][data-home-loader="done"] .site-reload-enter {
     opacity: 1;
     transition: opacity 280ms cubic-bezier(0.16, 1, 0.3, 1);
   }
