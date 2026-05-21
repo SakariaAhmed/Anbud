@@ -27,6 +27,21 @@ function unauthorizedJson() {
   return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 }
 
+function nextWithRequestHeaders(request: NextRequest, authenticated: boolean) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(CURRENT_PATH_HEADER, request.nextUrl.pathname);
+
+  if (authenticated) {
+    requestHeaders.set(AUTH_VERIFIED_HEADER, "1");
+  }
+
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authenticated = await verifySessionToken(request.cookies.get(AUTH_COOKIE_NAME)?.value);
@@ -39,18 +54,11 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPublicPath(pathname)) {
-    return NextResponse.next();
+    return nextWithRequestHeaders(request, authenticated);
   }
 
   if (authenticated) {
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set(AUTH_VERIFIED_HEADER, "1");
-    requestHeaders.set(CURRENT_PATH_HEADER, pathname);
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
+    return nextWithRequestHeaders(request, true);
   }
 
   if (pathname.startsWith("/api/")) {
