@@ -2,17 +2,14 @@
 
 import dynamic from "next/dynamic";
 import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   AlertTriangle,
-  ArrowDownToLine,
   Building2,
-  ChevronDown,
   Cloud,
   Compass,
   Cpu,
   Database,
-  FileText,
   FilePenLine,
   History,
   KeyRound,
@@ -25,7 +22,6 @@ import {
   Target,
   Trash2,
   TrendingUp,
-  Upload,
   Workflow,
   X,
   type LucideIcon,
@@ -60,7 +56,6 @@ import type {
   CustomerAnalysisSectionSnapshotMap,
   AnalysisRequirement,
   ProjectDocument,
-  ProjectDocumentRole,
   RequirementImportance,
   RequirementKind,
   ValueCategory,
@@ -2136,19 +2131,6 @@ export function ProjectAnalysisTab({
   busyProgress,
   onGenerate,
   onSaveAnalysis,
-  uploadOpen,
-  onToggleUploadOpen,
-  docTitle,
-  onDocTitleChange,
-  uploadRole,
-  onUploadRoleChange,
-  selectedDocumentName,
-  onFileChange,
-  documentFileInputKey,
-  onUploadDocument,
-  uploadBusy,
-  deletingDocumentId,
-  onDeleteDocument,
 }: {
   projectId: string;
   documents: ProjectDocument[];
@@ -2163,19 +2145,6 @@ export function ProjectAnalysisTab({
     section: CustomerAnalysisSection,
     snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
   ) => Promise<void>;
-  uploadOpen: boolean;
-  onToggleUploadOpen: () => void;
-  docTitle: string;
-  onDocTitleChange: (value: string) => void;
-  uploadRole: ProjectDocumentRole;
-  onUploadRoleChange: (value: ProjectDocumentRole) => void;
-  selectedDocumentName: string;
-  onFileChange: (file: File | null) => void;
-  documentFileInputKey: number;
-  onUploadDocument: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  uploadBusy: boolean;
-  deletingDocumentId: string | null;
-  onDeleteDocument: (document: ProjectDocument) => Promise<void>;
 }) {
   const [editingSection, setEditingSection] =
     useState<CustomerAnalysisSection | null>(null);

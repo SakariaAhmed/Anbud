@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { deleteProject, getProjectDetail } from "@/lib/server/projects-db";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 
+const READ_CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+};
+
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
@@ -11,7 +15,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       { project_id: id },
       async () => {
         const project = await getProjectDetail(id);
-        return NextResponse.json(project);
+        return NextResponse.json(project, { headers: READ_CACHE_HEADERS });
       },
     );
   } catch (error) {

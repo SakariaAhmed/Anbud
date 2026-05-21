@@ -21,7 +21,6 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
-  type FormEvent,
 } from "react";
 
 import {
@@ -30,7 +29,6 @@ import {
 } from "@/components/projects/decorative-lottie";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import { consumeNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
-import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ProjectSummary } from "@/lib/types";
 
@@ -1765,7 +1763,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
             { step: "1", title: "Last opp grunnlag", desc: "Samle alle dokumenter i samme dokumentbank." },
             { step: "2", title: "Analyser kunden", desc: "Generer kundeanalyse med krav, risiko og posisjonering." },
             { step: "3", title: "Generer beskrivelse", desc: "Generer løsningsbeskrivelse basert på prosjektkonteksten." },
-          ].map((item, i) => (
+          ].map((item) => (
             <div key={item.step} className="flex min-w-0 items-start gap-3">
               <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                 {item.step}

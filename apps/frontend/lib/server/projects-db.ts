@@ -1,8 +1,15 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 
 import { createServiceClient } from "@/lib/server/supabase";
+import {
+  buildStoredFilePath,
+  downloadEncryptedBase64File,
+  removeStoredFiles,
+  uploadEncryptedBase64File,
+} from "@/lib/server/file-storage";
 import {
   decryptJson,
   decryptString,
@@ -73,6 +80,9 @@ interface DocumentRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  page_count: number | null;
+  file_storage_bucket: string | null;
+  file_storage_path: string | null;
   file_base64: string;
   raw_text: string;
   structure_map: Json;
@@ -90,6 +100,9 @@ interface DocumentSummaryRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  page_count?: number | null;
+  file_storage_bucket?: string | null;
+  file_storage_path?: string | null;
   file_base64?: string;
   raw_text?: string;
   structure_map?: Json;
@@ -164,6 +177,9 @@ interface ServiceDocumentRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  page_count?: number | null;
+  file_storage_bucket?: string | null;
+  file_storage_path?: string | null;
   file_base64: string;
   raw_text: string;
   structure_map: Json;
@@ -181,6 +197,9 @@ interface ServiceDocumentSummaryRow {
   file_format: string;
   content_type: string;
   file_size_bytes: number;
+  page_count?: number | null;
+  file_storage_bucket?: string | null;
+  file_storage_path?: string | null;
   raw_text?: string;
   structure_map?: Json;
   ai_summary?: string | null;
@@ -203,15 +222,17 @@ interface ProjectCacheSnapshot {
 }
 
 const DOCUMENT_SELECT_SAFE =
-  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, raw_text, structure_map, created_at, updated_at";
+  "id, project_id, role, supporting_subtype, title, file_name, file_format, content_type, file_size_bytes, page_count, file_storage_bucket, file_storage_path, file_base64, raw_text, structure_map, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_SAFE =
-  "id, project_id, role, file_name, file_format, content_type, file_size_bytes, file_base64, raw_text, structure_map, created_at, updated_at";
+  "id, project_id, role, supporting_subtype, title, file_name, file_format, content_type, file_size_bytes, page_count, created_at, updated_at";
 const DOCUMENT_SUMMARY_SELECT_LEGACY =
   "id, project_id, role, subtype, display_name, file_format, content_type, created_at";
 const PROJECT_SELECT_SAFE =
   "id, name, customer_name, description, industry, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
 const PROJECT_SELECT_LEGACY =
   "id, title, client_name, description, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
+const SERVICE_DOCUMENT_SUMMARY_SELECT =
+  "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, ai_summary, ai_summary_updated_at, created_at, updated_at";
 
 const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   customer_profile_summary: "",
@@ -387,11 +408,29 @@ function decryptDocumentRow(row: DocumentRow): ProjectDocumentDetail {
     file_format: row.file_format as ProjectDocumentDetail["file_format"],
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
+    page_count: row.page_count,
     file_base64: decryptString(row.file_base64),
     raw_text: decryptString(row.raw_text),
     structure_map: decryptJson(row.structure_map, []),
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+}
+
+async function resolveDocumentRow(row: DocumentRow): Promise<ProjectDocumentDetail> {
+  const document = decryptDocumentRow(row);
+  if (document.file_base64 || !row.file_storage_path) {
+    return document;
+  }
+
+  return {
+    ...document,
+    file_base64: decryptString(
+      await downloadEncryptedBase64File({
+        bucket: row.file_storage_bucket,
+        path: row.file_storage_path,
+      }),
+    ),
   };
 }
 
@@ -464,7 +503,9 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
     page_count:
-      structurePageCount ?? pageCountFromRawText(rawText, row.file_format),
+      row.page_count ??
+      structurePageCount ??
+      pageCountFromRawText(rawText, row.file_format),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -552,7 +593,9 @@ function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
     page_count:
-      structurePageCount ?? pageCountFromRawText(rawText, row.file_format),
+      row.page_count ??
+      structurePageCount ??
+      pageCountFromRawText(rawText, row.file_format),
     ai_summary:
       typeof row.ai_summary === "string" ? decryptString(row.ai_summary) : "",
     ai_summary_updated_at: row.ai_summary_updated_at ?? null,
@@ -588,6 +631,7 @@ function decryptServiceDocumentRow(
     file_format: row.file_format as ServiceDocumentDetail["file_format"],
     content_type: row.content_type,
     file_size_bytes: row.file_size_bytes,
+    page_count: row.page_count ?? null,
     file_base64: decryptString(row.file_base64),
     raw_text: decryptString(row.raw_text),
     structure_map: decryptJson(row.structure_map, []),
@@ -596,6 +640,25 @@ function decryptServiceDocumentRow(
     ai_summary_updated_at: row.ai_summary_updated_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+}
+
+async function resolveServiceDocumentRow(
+  row: ServiceDocumentRow,
+): Promise<ServiceDocumentDetail> {
+  const document = decryptServiceDocumentRow(row);
+  if (document.file_base64 || !row.file_storage_path) {
+    return document;
+  }
+
+  return {
+    ...document,
+    file_base64: decryptString(
+      await downloadEncryptedBase64File({
+        bucket: row.file_storage_bucket,
+        path: row.file_storage_path,
+      }),
+    ),
   };
 }
 
@@ -678,6 +741,9 @@ function isMissingLegacyDocumentColumn(error: { message?: string } | null) {
     message.includes("display_name") ||
     message.includes("file_name") ||
     message.includes("file_size_bytes") ||
+    message.includes("page_count") ||
+    message.includes("file_storage_bucket") ||
+    message.includes("file_storage_path") ||
     message.includes("structure_map") ||
     message.includes("source_map")
   );
@@ -764,6 +830,14 @@ function fromUnknownDocumentSummaryRow(
     file_format: String(row.file_format ?? "txt"),
     content_type: String(row.content_type ?? "application/octet-stream"),
     file_size_bytes: fileSizeBytes,
+    page_count:
+      typeof row.page_count === "number" && Number.isFinite(row.page_count)
+        ? row.page_count
+        : null,
+    file_storage_bucket:
+      row.file_storage_bucket == null ? null : String(row.file_storage_bucket),
+    file_storage_path:
+      row.file_storage_path == null ? null : String(row.file_storage_path),
     raw_text: typeof row.raw_text === "string" ? row.raw_text : undefined,
     structure_map: (row.structure_map ?? row.source_map ?? []) as Json,
     created_at: String(row.created_at ?? new Date().toISOString()),
@@ -774,8 +848,12 @@ function fromUnknownDocumentSummaryRow(
 }
 
 function fromUnknownDocumentRow(row: Record<string, unknown>): DocumentRow {
+  const summary = fromUnknownDocumentSummaryRow(row);
   return {
-    ...fromUnknownDocumentSummaryRow(row),
+    ...summary,
+    page_count: summary.page_count ?? null,
+    file_storage_bucket: summary.file_storage_bucket ?? null,
+    file_storage_path: summary.file_storage_path ?? null,
     file_base64: String(row.file_base64 ?? ""),
     raw_text: String(row.raw_text ?? ""),
     structure_map: (row.structure_map ?? row.source_map ?? []) as Json,
@@ -822,7 +900,7 @@ async function fetchDocumentSummaryRows(
   }
 
   if (isMissingLegacyDocumentColumn(first.error)) {
-    const retry = await build("*");
+    const retry = await build(DOCUMENT_SUMMARY_SELECT_LEGACY);
     if (retry.error) {
       throw new Error(retry.error.message || "Kunne ikke hente dokumentene.");
     }
@@ -1006,12 +1084,25 @@ export async function createProject(
 
 export async function deleteProject(projectId: string) {
   const supabase = createServiceClient();
+  const { data: storedFiles } = await supabase
+    .from("documents")
+    .select("file_storage_bucket, file_storage_path")
+    .eq("project_id", projectId);
   const { error } = await supabase.from("projects").delete().eq("id", projectId);
 
   if (error) {
     throw new Error(error.message || "Kunne ikke slette prosjektet.");
   }
 
+  await removeStoredFiles(
+    ((storedFiles ?? []) as Array<{
+      file_storage_bucket?: string | null;
+      file_storage_path?: string | null;
+    }>).map((file) => ({
+      bucket: file.file_storage_bucket,
+      path: file.file_storage_path,
+    })),
+  );
   revalidateProjectCaches(projectId);
   revalidatePath("/projects/new");
 }
@@ -1028,7 +1119,7 @@ export async function listServiceDescriptions(): Promise<ServiceDescription[]> {
             .order("name", { ascending: true }),
           supabase
             .from("service_documents")
-            .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, raw_text, structure_map, created_at, updated_at")
+            .select(SERVICE_DOCUMENT_SUMMARY_SELECT)
             .order("created_at", { ascending: false }),
         ]);
 
@@ -1154,23 +1245,42 @@ export async function saveServiceDocument(input: {
   structureMap: unknown;
 }) {
   const supabase = createServiceClient();
+  const documentId = randomUUID();
+  const pageCount =
+    pageCountFromStructureMap(input.structureMap, input.fileFormat) ??
+    pageCountFromRawText(input.rawText, input.fileFormat);
+  const encryptedBase64 = encryptString(input.fileBase64);
+  const storedFile = await uploadEncryptedBase64File({
+    path: buildStoredFilePath({
+      scope: "services",
+      ownerId: input.serviceId,
+      fileId: documentId,
+      fileName: input.fileName,
+    }),
+    encryptedBase64,
+  });
   const { data, error } = await supabase
     .from("service_documents")
     .insert({
+      id: documentId,
       service_id: input.serviceId,
       title: input.title,
       file_name: input.fileName,
       file_format: input.fileFormat,
       content_type: input.contentType,
       file_size_bytes: input.fileSizeBytes,
-      file_base64: encryptString(input.fileBase64),
+      page_count: pageCount,
+      file_storage_bucket: storedFile.bucket,
+      file_storage_path: storedFile.path,
+      file_base64: "",
       raw_text: encryptString(input.rawText),
       structure_map: encryptJson(input.structureMap),
     })
-    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, raw_text, structure_map, created_at, updated_at")
+    .select(SERVICE_DOCUMENT_SUMMARY_SELECT)
     .single<ServiceDocumentSummaryRow>();
 
   if (error || !data) {
+    await removeStoredFiles([storedFile]);
     throw new Error(error?.message || "Kunne ikke lagre tjenestedokumentet.");
   }
 
@@ -1213,6 +1323,15 @@ export async function deleteServiceDocument(
   documentId: string,
 ) {
   const supabase = createServiceClient();
+  const { data: storedFile } = await supabase
+    .from("service_documents")
+    .select("file_storage_bucket, file_storage_path")
+    .eq("service_id", serviceId)
+    .eq("id", documentId)
+    .maybeSingle<{
+      file_storage_bucket?: string | null;
+      file_storage_path?: string | null;
+    }>();
   const { error } = await supabase
     .from("service_documents")
     .delete()
@@ -1221,11 +1340,23 @@ export async function deleteServiceDocument(
   if (error) {
     throw new Error(error.message);
   }
+  if (storedFile) {
+    await removeStoredFiles([
+      {
+        bucket: storedFile.file_storage_bucket,
+        path: storedFile.file_storage_path,
+      },
+    ]);
+  }
   revalidateServiceCaches();
 }
 
 export async function deleteServiceDescription(serviceId: string) {
   const supabase = createServiceClient();
+  const { data: storedFiles } = await supabase
+    .from("service_documents")
+    .select("file_storage_bucket, file_storage_path")
+    .eq("service_id", serviceId);
   const { error } = await supabase
     .from("service_descriptions")
     .delete()
@@ -1233,6 +1364,15 @@ export async function deleteServiceDescription(serviceId: string) {
   if (error) {
     throw new Error(error.message);
   }
+  await removeStoredFiles(
+    ((storedFiles ?? []) as Array<{
+      file_storage_bucket?: string | null;
+      file_storage_path?: string | null;
+    }>).map((file) => ({
+      bucket: file.file_storage_bucket,
+      path: file.file_storage_path,
+    })),
+  );
   revalidateServiceCaches();
 }
 
@@ -1278,7 +1418,9 @@ export async function listServiceDocumentDetailsForProject(
       throw new Error(error.message);
     }
 
-    return ((data ?? []) as ServiceDocumentRow[]).map(decryptServiceDocumentRow);
+    return Promise.all(
+      ((data ?? []) as ServiceDocumentRow[]).map(resolveServiceDocumentRow),
+    );
   }
 
   const { data: selections, error: selectionsError } = await supabase
@@ -1324,7 +1466,9 @@ export async function listServiceDocumentDetailsForProject(
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as ServiceDocumentRow[]).map(decryptServiceDocumentRow);
+  return Promise.all(
+    ((data ?? []) as ServiceDocumentRow[]).map(resolveServiceDocumentRow),
+  );
 }
 
 export async function listServiceDocumentSummariesForProject(
@@ -1360,7 +1504,7 @@ export async function listServiceDocumentSummariesForProject(
 
   const { data, error } = await supabase
     .from("service_documents")
-    .select("id, service_id, title, file_name, file_format, content_type, file_size_bytes, raw_text, structure_map, ai_summary, ai_summary_updated_at, created_at, updated_at")
+    .select(SERVICE_DOCUMENT_SUMMARY_SELECT)
     .in("service_id", serviceIds)
     .order("created_at", { ascending: false });
 
@@ -1910,7 +2054,22 @@ export async function saveDocument(input: {
   structureMap: unknown;
 }) {
   const supabase = createServiceClient();
+  const documentId = randomUUID();
+  const pageCount =
+    pageCountFromStructureMap(input.structureMap, input.fileFormat) ??
+    pageCountFromRawText(input.rawText, input.fileFormat);
+  const encryptedBase64 = encryptString(input.fileBase64);
+  const storedFile = await uploadEncryptedBase64File({
+    path: buildStoredFilePath({
+      scope: "projects",
+      ownerId: input.projectId,
+      fileId: documentId,
+      fileName: input.fileName,
+    }),
+    encryptedBase64,
+  });
   const payloadWithSubtype = {
+    id: documentId,
     project_id: input.projectId,
     role: input.role,
     supporting_subtype:
@@ -1922,12 +2081,16 @@ export async function saveDocument(input: {
     file_format: input.fileFormat,
     content_type: input.contentType,
     file_size_bytes: input.fileSizeBytes,
-    file_base64: encryptString(input.fileBase64),
+    page_count: pageCount,
+    file_storage_bucket: storedFile.bucket,
+    file_storage_path: storedFile.path,
+    file_base64: "",
     raw_text: encryptString(input.rawText),
     structure_map: encryptJson(input.structureMap),
   };
 
   let inserted: DocumentRow | null = null;
+  let usedLegacyDocumentInsert = false;
   let insertResult = await supabase
     .from("documents")
     .insert(payloadWithSubtype)
@@ -1935,8 +2098,10 @@ export async function saveDocument(input: {
     .single<DocumentRow>();
 
   if (insertResult.error && isMissingLegacyDocumentColumn(insertResult.error)) {
+    usedLegacyDocumentInsert = true;
     const payloadLegacy: Record<string, unknown> = {
       ...payloadWithSubtype,
+      file_base64: encryptedBase64,
       display_name: input.title,
       subtype:
         input.role === "supporting_document"
@@ -1947,6 +2112,9 @@ export async function saveDocument(input: {
     delete payloadLegacy.title;
     delete payloadLegacy.file_name;
     delete payloadLegacy.file_size_bytes;
+    delete payloadLegacy.page_count;
+    delete payloadLegacy.file_storage_bucket;
+    delete payloadLegacy.file_storage_path;
     insertResult = await supabase
       .from("documents")
       .insert(payloadLegacy)
@@ -1955,6 +2123,7 @@ export async function saveDocument(input: {
   }
 
   if (insertResult.error || !insertResult.data) {
+    await removeStoredFiles([storedFile]);
     throw new Error(
       insertResult.error?.message || "Kunne ikke lagre dokumentet.",
     );
@@ -1962,6 +2131,9 @@ export async function saveDocument(input: {
   inserted = fromUnknownDocumentRow(
     insertResult.data as unknown as Record<string, unknown>,
   );
+  if (usedLegacyDocumentInsert) {
+    await removeStoredFiles([storedFile]);
+  }
 
   const projectPatch: Partial<ProjectRow> = {
     customer_document_uploaded: true,
@@ -2036,17 +2208,22 @@ export async function getDocumentDetail(
     throw new Error("Fant ikke dokumentet.");
   }
 
-  return decryptDocumentRow(data);
+  return resolveDocumentRow(data);
 }
 
 export async function deleteDocument(projectId: string, documentId: string) {
   const supabase = createServiceClient();
   const { data: beforeDelete } = await supabase
     .from("documents")
-    .select("id, role")
+    .select("id, role, file_storage_bucket, file_storage_path")
     .eq("project_id", projectId)
     .eq("id", documentId)
-    .single<{ id: string; role: ProjectDocumentRole }>();
+    .single<{
+      id: string;
+      role: ProjectDocumentRole;
+      file_storage_bucket?: string | null;
+      file_storage_path?: string | null;
+    }>();
 
   const { error } = await supabase
     .from("documents")
@@ -2056,6 +2233,12 @@ export async function deleteDocument(projectId: string, documentId: string) {
   if (error) {
     throw new Error(error.message);
   }
+  await removeStoredFiles([
+    {
+      bucket: beforeDelete?.file_storage_bucket,
+      path: beforeDelete?.file_storage_path,
+    },
+  ]);
 
   const { data: remaining } = await supabase
     .from("documents")
@@ -2218,7 +2401,7 @@ export async function getPrimaryDocument(
       .limit(1),
   );
   const row = rows[0] ?? null;
-  return row ? decryptDocumentRow(row) : null;
+  return row ? resolveDocumentRow(row) : null;
 }
 
 export async function listSupportingDocuments(projectId: string) {
@@ -2232,7 +2415,7 @@ export async function listSupportingDocuments(projectId: string) {
       .order("created_at", { ascending: false }),
   );
 
-  return rows.map(decryptDocumentRow);
+  return Promise.all(rows.map(resolveDocumentRow));
 }
 
 export async function listProjectDocumentSummaries(projectId: string) {
@@ -2258,7 +2441,7 @@ export async function listProjectDocuments(projectId: string) {
       .order("created_at", { ascending: false }),
   );
 
-  return rows.map(decryptDocumentRow);
+  return Promise.all(rows.map(resolveDocumentRow));
 }
 
 export async function saveCustomerAnalysis(

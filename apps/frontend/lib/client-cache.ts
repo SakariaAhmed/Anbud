@@ -7,6 +7,12 @@ interface ClientCacheEntry<T> {
 
 const clientCache = new Map<string, ClientCacheEntry<unknown>>();
 
+export const PROJECT_SERVICES_CACHE_TTL_MS = 2 * 60 * 1000;
+
+export function projectServicesCacheKey(projectId: string) {
+  return `project-service-descriptions:${projectId}`;
+}
+
 export function getClientCache<T>(key: string): T | null {
   const entry = clientCache.get(key) as ClientCacheEntry<T> | undefined;
   if (!entry || entry.expiresAt <= Date.now()) {

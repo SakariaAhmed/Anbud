@@ -37,18 +37,27 @@ create table projects (
   updated_at timestamptz not null default now()
 );
 
+create index projects_last_activity_idx on projects(last_activity_at desc);
+
 create table documents (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
   role text not null check (role in ('primary_customer_document', 'primary_solution_document', 'supporting_document')),
-  subtype text check (subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'annet')),
-  display_name text not null,
+  supporting_subtype text check (supporting_subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'notat', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'annet')),
+  subtype text check (subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'notat', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'annet')),
+  title text not null,
+  file_name text not null,
   content_type text not null,
   file_format text not null check (file_format in ('pdf', 'docx', 'txt', 'md', 'xlsx', 'xls')),
-  file_base64 text not null,
+  file_size_bytes integer not null default 0,
+  page_count integer,
+  file_storage_bucket text not null default 'anbud-documents',
+  file_storage_path text,
+  file_base64 text not null default '',
   raw_text text not null default '',
   structure_map jsonb not null default '[]'::jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create index documents_project_id_idx on documents(project_id);
@@ -75,7 +84,10 @@ create table service_documents (
   file_format text not null check (file_format in ('pdf', 'docx', 'txt', 'md', 'xlsx', 'xls')),
   content_type text not null,
   file_size_bytes integer not null default 0,
-  file_base64 text not null,
+  page_count integer,
+  file_storage_bucket text not null default 'anbud-documents',
+  file_storage_path text,
+  file_base64 text not null default '',
   raw_text text not null default '',
   structure_map jsonb not null default '[]'::jsonb,
   ai_summary text not null default '',
@@ -96,6 +108,7 @@ create table project_service_selections (
 );
 
 create index project_service_selections_project_idx on project_service_selections(project_id);
+create index project_service_selections_service_idx on project_service_selections(service_id);
 
 create table customer_analyses (
   id uuid primary key default gen_random_uuid(),

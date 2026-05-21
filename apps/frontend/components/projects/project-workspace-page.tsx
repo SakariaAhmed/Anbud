@@ -33,6 +33,12 @@ import {
 import { markNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  getClientCache,
+  PROJECT_SERVICES_CACHE_TTL_MS,
+  projectServicesCacheKey,
+  setClientCache,
+} from "@/lib/client-cache";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/projects/primitives";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
@@ -955,11 +961,15 @@ export function ProjectWorkspacePage({
   }, [availableModels]);
 
   const loadSidebarServiceDescriptions = useCallback(async () => {
+    const cacheKey = projectServicesCacheKey(project.id);
+    const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
+    if (cached) {
+      setServiceDescriptions(cached);
+      return;
+    }
+
     try {
-      const response = await fetch(
-        `/api/projects/${project.id}/service-descriptions`,
-        { cache: "no-store" },
-      );
+      const response = await fetch(`/api/projects/${project.id}/service-descriptions`);
       const payload = await readJsonPayload<{
         services?: ProjectServiceDescription[];
         error?: string;
@@ -968,6 +978,7 @@ export function ProjectWorkspacePage({
         throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
       }
       setServiceDescriptions(payload.services);
+      setClientCache(cacheKey, payload.services, PROJECT_SERVICES_CACHE_TTL_MS);
     } catch {
       setServiceDescriptions([]);
     }
@@ -1422,46 +1433,6 @@ export function ProjectWorkspacePage({
     });
   }
 
-  async function onUploadServiceDescriptionDocument(file: File) {
-    await runAction("upload-service-description", async () => {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("title", file.name.replace(/\.[^.]+$/, ""));
-      const response = await fetch(`/api/projects/${project.id}/documents`, {
-        method: "POST",
-        body: formData,
-      });
-      const payload = (await response.json()) as {
-        error?: string;
-        document?: ProjectDocument;
-        project?: ProjectSnapshotPayload;
-      };
-      if (!response.ok || !payload.document || !payload.project) {
-        throw new Error(
-          payload.error || "Kunne ikke laste opp tjenestebeskrivelsen.",
-        );
-      }
-      setProject((current) =>
-        normalizeProjectState(
-          patchProjectWithSnapshot(
-            {
-              ...current,
-              documents: dedupeDocuments([
-                payload.document!,
-                ...current.documents,
-              ]),
-            },
-            payload.project!,
-          ),
-          {
-            preserveArtifactCount: !artifactsLoaded,
-          },
-        ),
-      );
-      setArtifactsLoaded(true);
-    });
-  }
-
   async function onUploadRequirementDocument(file: File) {
     let uploadedDocument: ProjectDocument | null = null;
     let uploadedDocumentId = "";
@@ -1691,57 +1662,6 @@ export function ProjectWorkspacePage({
         setAnalysisLoaded(true);
       },
       ["Starter kundeanalysen ..."],
-    );
-  }
-
-  async function onGenerateHighLevelDesign() {
-    await runAction(
-      "high-level-design",
-      async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({
-            kind: "high_level_design",
-          }),
-        });
-        const payload = await readJsonPayload<{
-          error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte jobben.");
-        if (!response.ok || !payload.job) {
-          throw new Error(
-            payload.error ||
-              "Kunne ikke starte jobben for overordnet løsningsdesign.",
-          );
-        }
-        setBusyMessage(payload.job.message);
-        const completedJob = await waitForProjectJob(
-          payload.job.id,
-          "Jobben for overordnet løsningsdesign feilet.",
-          payload.job,
-        );
-        const result = completedJob.result as {
-          analysis: CustomerAnalysisResult;
-          project: ProjectSnapshotPayload;
-        };
-        setProject((current) =>
-          normalizeProjectState(
-            patchProjectWithSnapshot(
-              { ...current, customer_analysis: result.analysis },
-              result.project,
-            ),
-            {
-              preserveArtifactCount: !artifactsLoaded,
-            },
-          ),
-        );
-        setAnalysisLoaded(true);
-        setNotice(
-          "Overordnet løsningsdesign og arkitekturdiagram er oppdatert uten å redigere hele kundeanalysen.",
-        );
-      },
-      ["Starter generering av overordnet løsningsdesign ..."],
     );
   }
 
@@ -2512,23 +2432,6 @@ export function ProjectWorkspacePage({
                   busyProgress={busyProgress}
                   onGenerate={onGenerateCustomerAnalysis}
                   onSaveAnalysis={onSaveAnalysis}
-                  uploadOpen={uploadOpen}
-                  onToggleUploadOpen={() => setUploadOpen((open) => !open)}
-                  docTitle={docTitle}
-                  onDocTitleChange={setDocTitle}
-                  uploadRole={uploadRole}
-                  onUploadRoleChange={setUploadRole}
-                  selectedDocumentName={file?.name ?? ""}
-                  onFileChange={setFile}
-                  documentFileInputKey={documentFileInputKey}
-                  onUploadDocument={onUploadDocument}
-                  uploadBusy={busy === "upload"}
-                  deletingDocumentId={
-                    busy?.startsWith("delete-")
-                      ? busy.slice("delete-".length)
-                      : null
-                  }
-                  onDeleteDocument={onDeleteDocument}
                 />
               )
             ) : null}

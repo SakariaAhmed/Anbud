@@ -1,0 +1,22 @@
+# Keep Azure/container builds small and deterministic.
+node_modules
+**/node_modules
+.next
+**/.next
+out
+**/out
+*.tsbuildinfo
+
+.git
+.github
+.claude
+.mcp.json
+
+.env
+.env.*
+*.env.local
+
+test-data
+**/__pycache__
+**/*.pyc
+.DS_Store

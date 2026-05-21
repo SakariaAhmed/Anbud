@@ -4,11 +4,15 @@ import { createProject, listProjects } from "@/lib/server/projects-db";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import type { ProjectCreateInput } from "@/lib/types";
 
+const READ_CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+};
+
 export async function GET() {
   try {
     return await withTiming("GET /api/projects", {}, async () => {
       const projects = await listProjects();
-      return NextResponse.json(projects);
+      return NextResponse.json(projects, { headers: READ_CACHE_HEADERS });
     });
   } catch (error) {
     return NextResponse.json(

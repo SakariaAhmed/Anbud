@@ -26,14 +26,13 @@ import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog
 import {
   clearClientCache,
   getClientCache,
+  PROJECT_SERVICES_CACHE_TTL_MS,
+  projectServicesCacheKey,
   setClientCache,
 } from "@/lib/client-cache";
 import type { ProjectServiceDescription } from "@/lib/types";
 
-const projectServicesCacheKey = (projectId: string) =>
-  `project-service-descriptions:${projectId}`;
 const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
-const PROJECT_SERVICES_CACHE_TTL_MS = 2 * 60 * 1000;
 
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
@@ -74,9 +73,7 @@ export function ProjectServiceDescriptionTab({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/service-descriptions`, {
-        cache: "no-store",
-      });
+      const response = await fetch(`/api/projects/${projectId}/service-descriptions`);
       const payload = (await response.json()) as {
         services?: ProjectServiceDescription[];
         error?: string;
