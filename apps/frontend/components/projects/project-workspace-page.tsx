@@ -748,10 +748,10 @@ const MODEL_STORAGE_KEY = "anbud-openai-model";
 const DEFAULT_WORKSPACE_MODEL = "gpt-5.4";
 const PREFERRED_MODEL_ORDER = [
   "gpt-5.4",
-  "gpt-5-mini",
   "gpt-5.4-mini",
   "gpt-5.4-nano",
   "gpt-5.2",
+  "gpt-5-mini",
 ];
 const MODEL_HELP_TEXT: Record<string, string> = {
   "gpt-5-mini": "Rask standard for produksjon: lavere ventetid og kostnad for generering.",

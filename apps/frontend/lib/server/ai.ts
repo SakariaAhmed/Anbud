@@ -33,10 +33,10 @@ import type {
 export const DEFAULT_OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() || "gpt-5.4";
 export const WORKSPACE_MODEL_IDS = [
   "gpt-5.4",
-  "gpt-5-mini",
   "gpt-5.4-mini",
   "gpt-5.4-nano",
   "gpt-5.2",
+  "gpt-5-mini",
 ];
 const ANALYSIS_MODEL = DEFAULT_OPENAI_MODEL;
 const FAST_MODEL = "gpt-5.4-mini";
