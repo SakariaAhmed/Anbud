@@ -35,10 +35,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       (await cookies()).get(AUTH_COOKIE_NAME)?.value,
     ));
   const isolatedChatWindow = /^\/projects\/[^/]+\/chat\/?$/.test(pathname);
+  const isHomeRoute = pathname === "/";
 
   return (
     <html lang="no">
-      <body className="min-h-screen bg-background text-foreground antialiased">
+      <body
+        className="min-h-screen bg-background text-foreground antialiased"
+        data-route={isHomeRoute ? "home" : undefined}
+      >
         <TooltipProvider>
           {authenticated && isolatedChatWindow ? (
             <div className="min-h-screen">{children}</div>
