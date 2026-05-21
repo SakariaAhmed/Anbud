@@ -116,11 +116,6 @@ type RequirementBatchAnswer = {
   svar?: string;
   answer?: string;
 };
-type PageHeadingEntry = {
-  page: number;
-  headingPath: string;
-  text: string;
-};
 type MammothHtmlModule = {
   convertToHtml: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 };
@@ -353,22 +348,6 @@ function serviceDocumentAsProjectDocument(
     created_at: document.created_at,
     updated_at: document.updated_at,
   };
-}
-
-function fallbackServiceDocumentSummary(document: ServiceDocumentDetail) {
-  const structure = document.structure_map
-    .slice(0, 4)
-    .map((entry) => `${entry.reference}: ${compactText(entry.text, 220)}`)
-    .join(" | ");
-
-  return compactText(
-    [
-      document.title,
-      structure,
-      compactText(document.raw_text, 900),
-    ].filter(Boolean).join("\n"),
-    1200,
-  );
 }
 
 export async function summarizeServiceDocumentForAi(input: {
@@ -2891,21 +2870,6 @@ function isRequirementDocument(document: ProjectDocumentDetail) {
     text.includes("requirement") ||
     text.includes("requirements")
   );
-}
-
-function emptyDocumentInsightDigest(): DocumentInsightDigest {
-  return {
-    document_summary: "",
-    important_requirements: [],
-    implicit_needs: [],
-    risks: [],
-    evaluation_criteria: [],
-    architecture_and_solution_signals: [],
-    technologies_and_standards: [],
-    value_signals: [],
-    visual_or_table_notes: [],
-    source_references: [],
-  };
 }
 
 function normalizeDocumentInsightDigest(
