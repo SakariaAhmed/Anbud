@@ -85,6 +85,7 @@ function sameSecret(left, right) {
 const oldSecrets = VERIFY_NEW_ONLY
   ? [newEncryptionSecret]
   : uniqueSecrets([
+      newEncryptionSecret,
       process.env.OLD_APP_ENCRYPTION_KEY,
       process.env.APP_ENCRYPTION_KEY,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -96,8 +97,12 @@ if (!oldSecrets.length) {
   );
 }
 
-if (!VERIFY_NEW_ONLY && oldSecrets.some((secret) => sameSecret(secret, newEncryptionSecret))) {
-  throw new Error("NEW_APP_ENCRYPTION_KEY must be different from the existing encryption keys.");
+if (
+  !VERIFY_NEW_ONLY &&
+  process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() &&
+  sameSecret(process.env.SUPABASE_SERVICE_ROLE_KEY.trim(), newEncryptionSecret)
+) {
+  throw new Error("NEW_APP_ENCRYPTION_KEY must be different from SUPABASE_SERVICE_ROLE_KEY.");
 }
 
 const decryptionKeys = oldSecrets.map(deriveKey);
@@ -296,12 +301,17 @@ async function rotateStoredFiles(table, ownerField, stats) {
     const path = row.file_storage_path;
     if (!path) continue;
 
-    const encryptedBase64 = await downloadStorageText(bucket, path);
-    if (!encryptedBase64) continue;
+    try {
+      const encryptedBase64 = await downloadStorageText(bucket, path);
+      if (!encryptedBase64) continue;
 
-    const rotated = rotateString(encryptedBase64);
-    await uploadStorageText(bucket, path, rotated);
-    updateStats(stats, table, "storage_file");
+      const rotated = rotateString(encryptedBase64);
+      await uploadStorageText(bucket, path, rotated);
+      updateStats(stats, table, "storage_file");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${table}.${row.id} storage ${bucket}/${path}: ${message}`);
+    }
   }
 }
 
