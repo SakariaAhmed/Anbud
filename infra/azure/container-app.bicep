@@ -15,6 +15,16 @@ param logAnalyticsWorkspaceName string = '${appName}-logs'
 @description('Fully qualified container image, for example myregistry.azurecr.io/anbud:2026-05-21.')
 param image string
 
+@description('Container registry server, for example myregistry.azurecr.io.')
+param registryServer string
+
+@description('Container registry username.')
+param registryUsername string
+
+@secure()
+@description('Container registry password.')
+param registryPassword string
+
 @secure()
 @description('Current Supabase project URL. Kept for phase 1 Azure hosting migration.')
 param supabaseUrl string
@@ -112,6 +122,17 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'openai-api-key'
           value: openAiApiKey
+        }
+        {
+          name: 'registry-password'
+          value: registryPassword
+        }
+      ]
+      registries: [
+        {
+          server: registryServer
+          username: registryUsername
+          passwordSecretRef: 'registry-password'
         }
       ]
     }
