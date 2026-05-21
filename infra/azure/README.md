@@ -25,6 +25,9 @@ az deployment group create \
   --parameters \
     appName=anbud \
     image=<acr-name>.azurecr.io/anbud:phase1 \
+    registryServer=<acr-name>.azurecr.io \
+    registryUsername=<acr-name> \
+    registryPassword="$ACR_PASSWORD" \
     supabaseUrl="$SUPABASE_URL" \
     supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
     appEncryptionKey="$APP_ENCRYPTION_KEY" \
