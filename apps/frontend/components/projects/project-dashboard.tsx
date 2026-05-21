@@ -129,10 +129,7 @@ function nextProjectAction(project: ProjectSummary) {
 }
 
 function projectActionHref(project: ProjectSummary) {
-  const action = nextProjectAction(project);
-  return action.tab === "analysis"
-    ? `/projects/${project.id}`
-    : `/projects/${project.id}?tab=${action.tab}`;
+  return `/projects/${project.id}`;
 }
 
 function normalizeSearch(value: string) {

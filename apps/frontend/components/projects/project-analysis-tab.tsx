@@ -2214,10 +2214,10 @@ export function ProjectAnalysisTab({
             customerAnalysis.customer_profile_summary || "",
           ),
           accentClassName:
-            "border-blue-200/80 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.92))]",
-          iconClassName: "bg-blue-600 text-white",
-          chipClassName: "bg-blue-600/10 text-blue-800",
-          expandedLeadClassName: "font-semibold",
+            "border-emerald-200/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.94),rgba(255,255,255,0.92))]",
+          iconClassName: "bg-emerald-600 text-white",
+          chipClassName: "bg-emerald-600/10 text-emerald-800",
+          expandedLeadClassName: "font-normal",
         },
         {
           key: "goals",

@@ -888,7 +888,7 @@ export function ProjectWorkspacePage({
         nextParams.set("tab", tab);
       }
       const query = nextParams.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
     [activeTab, pathname, router, searchParams],
   );
