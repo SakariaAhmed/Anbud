@@ -13,6 +13,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/favicon.ico",
   "/bidsite-logo.png",
 ];
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function isPublicPath(pathname: string) {
   return (
@@ -27,9 +28,31 @@ function unauthorizedJson() {
   return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 }
 
+function forbiddenJson() {
+  return NextResponse.json({ error: "Forbidden request origin." }, { status: 403 });
+}
+
+function isTrustedOrigin(request: NextRequest) {
+  if (SAFE_METHODS.has(request.method) || !request.nextUrl.pathname.startsWith("/api/")) {
+    return true;
+  }
+
+  const origin = request.headers.get("origin");
+  if (!origin) {
+    return true;
+  }
+
+  try {
+    return new URL(origin).origin === request.nextUrl.origin;
+  } catch {
+    return false;
+  }
+}
+
 function nextWithRequestHeaders(request: NextRequest, authenticated: boolean) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(CURRENT_PATH_HEADER, request.nextUrl.pathname);
+  requestHeaders.delete(AUTH_VERIFIED_HEADER);
 
   if (authenticated) {
     requestHeaders.set(AUTH_VERIFIED_HEADER, "1");
@@ -45,6 +68,19 @@ function nextWithRequestHeaders(request: NextRequest, authenticated: boolean) {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authenticated = await verifySessionToken(request.cookies.get(AUTH_COOKIE_NAME)?.value);
+  const workerToken = process.env.PROJECT_JOB_WORKER_TOKEN?.trim();
+
+  if (!isTrustedOrigin(request)) {
+    return forbiddenJson();
+  }
+
+  if (
+    pathname === "/api/project-jobs/worker" &&
+    workerToken &&
+    request.headers.get("x-worker-token") === workerToken
+  ) {
+    return nextWithRequestHeaders(request, true);
+  }
 
   if (pathname === "/login" && authenticated) {
     const redirectUrl = request.nextUrl.clone();

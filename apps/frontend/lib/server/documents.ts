@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { ProjectDocumentRole } from "@/lib/types";
-import type { WorkBook, WorkSheet } from "xlsx";
+import type { WorkBook, WorkSheet } from "@e965/xlsx";
 
 export interface SourceMapEntry {
   reference: string;
@@ -28,7 +28,7 @@ let pdfParsePromise: Promise<PdfParseFn> | null = null;
 let mammothPromise: Promise<{
   extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 }> | null = null;
-let xlsxPromise: Promise<typeof import("xlsx")> | null = null;
+let xlsxPromise: Promise<typeof import("@e965/xlsx")> | null = null;
 
 async function getPdfParse() {
   if (!pdfParsePromise) {
@@ -48,7 +48,7 @@ async function getMammoth() {
 
 async function getXlsx() {
   if (!xlsxPromise) {
-    xlsxPromise = import("xlsx");
+    xlsxPromise = import("@e965/xlsx");
   }
   return xlsxPromise;
 }
@@ -256,7 +256,7 @@ function cellToText(value: unknown) {
   return String(value).replace(/\s+/g, " ").trim();
 }
 
-function getSheetRange(xlsx: typeof import("xlsx"), sheet: WorkSheet) {
+function getSheetRange(xlsx: typeof import("@e965/xlsx"), sheet: WorkSheet) {
   const ref = sheet["!ref"];
   if (!ref) {
     return null;
@@ -266,7 +266,7 @@ function getSheetRange(xlsx: typeof import("xlsx"), sheet: WorkSheet) {
 }
 
 function extractSheetRows(
-  xlsx: typeof import("xlsx"),
+  xlsx: typeof import("@e965/xlsx"),
   workbook: WorkBook,
   role?: ProjectDocumentRole,
 ) {

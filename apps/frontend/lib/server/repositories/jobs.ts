@@ -232,3 +232,41 @@ export async function claimQueuedProjectJob(jobId: string) {
 
   return Boolean(legacyClaimed.data);
 }
+
+export async function listQueuedProjectJobIds(limit = 3) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("project_jobs")
+    .select("id")
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => row.id as string);
+}
+
+export async function resetStaleRunningProjectJobs(staleAfterMs = 15 * 60_000) {
+  const supabase = createServiceClient();
+  const now = new Date().toISOString();
+  const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
+  const reset = await supabase
+    .from("project_jobs")
+    .update({
+      status: "queued",
+      message: "Gjenopptar avbrutt jobb ...",
+      locked_at: null,
+      updated_at: now,
+    })
+    .eq("status", "running")
+    .lt("locked_at", cutoff);
+
+  if (!reset.error || isMissingDurableJobColumn(reset.error)) {
+    return;
+  }
+
+  throw new Error(reset.error.message);
+}

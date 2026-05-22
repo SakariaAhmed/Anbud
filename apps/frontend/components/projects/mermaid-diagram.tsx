@@ -121,6 +121,11 @@ const TECHNOLOGIES: TechnologyMeta[] = [
     stroke: "#475569",
   },
 ];
+const MAX_MERMAID_CHARS = 6000;
+const MAX_MERMAID_LINES = 120;
+const BLOCKED_MERMAID_LINE =
+  /^\s*(%%\{|classDef\b|class\s+\S+\s+\S+|click\b|href\b|linkStyle\b|style\b|accTitle\b|accDescr\b)/i;
+const BLOCKED_MERMAID_CONTENT = /<|>|javascript:|data:|@import|url\s*\(/i;
 
 function normalizeLabel(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -381,6 +386,8 @@ function enhanceRenderedSvg(svgMarkup: string) {
   const root = doc.documentElement;
   const found = new Map<string, TechnologyMeta>();
 
+  sanitizeRenderedSvg(root);
+
   Array.from(root.querySelectorAll("g.node")).forEach((node) => {
     const label = getNodeLabel(node);
     const meta = getTechnologyMeta(label);
@@ -569,6 +576,78 @@ function sanitizeFileName(input: string) {
     .replace(/^-+|-+$/g, "") || "diagram";
 }
 
+function sanitizeMermaidChart(input: string) {
+  const normalized = input.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) {
+    return { chart: "", error: "" };
+  }
+
+  if (normalized.length > MAX_MERMAID_CHARS) {
+    return {
+      chart: "",
+      error: "Diagrammet er for stort til å rendres trygt.",
+    };
+  }
+
+  const lines = normalized.split("\n");
+  if (lines.length > MAX_MERMAID_LINES) {
+    return {
+      chart: "",
+      error: "Diagrammet har for mange linjer til å rendres trygt.",
+    };
+  }
+
+  if (!/^(flowchart|graph)\s+/i.test(normalized)) {
+    return {
+      chart: "",
+      error: "Diagrammet må være et flowchart eller graph.",
+    };
+  }
+
+  if (
+    BLOCKED_MERMAID_CONTENT.test(normalized) ||
+    lines.some((line) => BLOCKED_MERMAID_LINE.test(line))
+  ) {
+    return {
+      chart: "",
+      error: "Diagrammet inneholder styling eller lenker som ikke rendres av sikkerhetshensyn.",
+    };
+  }
+
+  return { chart: normalized, error: "" };
+}
+
+function sanitizeRenderedSvg(root: Element) {
+  root
+    .querySelectorAll("script, foreignObject, iframe, object, embed, image, audio, video")
+    .forEach((element) => element.remove());
+
+  root.querySelectorAll("style").forEach((element) => {
+    const css = element.textContent ?? "";
+    if (/@import|url\s*\(|expression\s*\(|javascript:|data:/i.test(css)) {
+      element.remove();
+    }
+  });
+
+  root.querySelectorAll("*").forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim();
+      const loweredValue = value.toLowerCase();
+      const isHref = name === "href" || name === "xlink:href";
+
+      if (
+        name.startsWith("on") ||
+        loweredValue.includes("javascript:") ||
+        loweredValue.includes("data:text/html") ||
+        (isHref && value && !value.startsWith("#"))
+      ) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  });
+}
+
 function getSvgDimensions(svgMarkup: string) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgMarkup, "image/svg+xml");
@@ -600,16 +679,17 @@ export function MermaidDiagram({
   const [error, setError] = useState("");
   const [technologies, setTechnologies] = useState<TechnologyMeta[]>([]);
   const [downloading, setDownloading] = useState<"svg" | "png" | null>(null);
-  const normalizedChart = (chart ?? "").trim();
+  const sanitizedChart = sanitizeMermaidChart(chart ?? "");
+  const normalizedChart = sanitizedChart.chart;
   const safeDownloadName = sanitizeFileName(downloadName || "high-level-architecture");
 
   useEffect(() => {
     let cancelled = false;
 
     async function render() {
-      if (!normalizedChart) {
+      if (!normalizedChart || sanitizedChart.error) {
         setSvg("");
-        setError("");
+        setError(sanitizedChart.error);
         setTechnologies([]);
         return;
       }
@@ -669,7 +749,7 @@ export function MermaidDiagram({
     return () => {
       cancelled = true;
     };
-  }, [normalizedChart, renderId]);
+  }, [normalizedChart, sanitizedChart.error, renderId]);
 
   async function downloadSvgFile() {
     if (!svg) return;
@@ -743,7 +823,7 @@ export function MermaidDiagram({
     }
   }
 
-  if (!normalizedChart) {
+  if (!normalizedChart && !sanitizedChart.error) {
     return (
       <p className="text-sm text-muted-foreground">
         Diagram blir tilgjengelig når kundeanalysen genererer en gyldig
@@ -752,8 +832,8 @@ export function MermaidDiagram({
     );
   }
 
-  if (error) {
-    return <p className="text-sm text-muted-foreground">{error}</p>;
+  if (sanitizedChart.error || error) {
+    return <p className="text-sm text-muted-foreground">{sanitizedChart.error || error}</p>;
   }
 
   if (!svg) {

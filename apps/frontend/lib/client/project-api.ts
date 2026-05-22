@@ -9,14 +9,94 @@ import type {
   SolutionEvaluationResult,
   CustomerAnalysisSection,
 } from "@/lib/types";
+import {
+  clearClientCache,
+  getClientCache,
+  setClientCache,
+} from "@/lib/client-cache";
 
 export type ProjectSnapshotPayload = ProjectSnapshotResult;
+
+type ProjectWorkspaceTabName =
+  | "documents"
+  | "analysis"
+  | "bilag1"
+  | "service-description"
+  | "requirements"
+  | "generator"
+  | "evaluation"
+  | "delivery"
+  | "executive-summary";
+
+const PROJECT_READ_CACHE_TTL_MS = 30_000;
+const pendingProjectReads = new Map<string, Promise<unknown>>();
 
 export type OpenAIModelSummary = {
   id: string;
   created: number | null;
   owned_by: string | null;
 };
+
+function projectReadCacheKey(projectId: string, resource: string) {
+  return `project-read:${projectId}:${resource}`;
+}
+
+function cachedProjectRead<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  ttlMs = PROJECT_READ_CACHE_TTL_MS,
+) {
+  const cached = getClientCache<{ value: T }>(key);
+  if (cached) {
+    return Promise.resolve(cached.value);
+  }
+
+  const pending = pendingProjectReads.get(key) as Promise<T> | undefined;
+  if (pending) {
+    return pending;
+  }
+
+  const request = fetcher()
+    .then((value) => {
+      setClientCache(key, { value }, ttlMs);
+      return value;
+    })
+    .finally(() => {
+      pendingProjectReads.delete(key);
+    });
+
+  pendingProjectReads.set(key, request);
+  return request;
+}
+
+export function invalidateProjectReadCache(projectId: string) {
+  clearClientCache(`project-read:${projectId}:`);
+  for (const key of pendingProjectReads.keys()) {
+    if (key.startsWith(`project-read:${projectId}:`)) {
+      pendingProjectReads.delete(key);
+    }
+  }
+}
+
+export function markClientPerformance(
+  name: string,
+  detail?: Record<string, unknown>,
+) {
+  if (typeof window === "undefined" || !("performance" in window)) {
+    return;
+  }
+
+  const markName = `anbud:${name}`;
+  performance.mark(markName, { detail });
+  console.info(
+    JSON.stringify({
+      event: "client_performance_mark",
+      name,
+      detail,
+      at: Math.round(performance.now()),
+    }),
+  );
+}
 
 export async function readJsonPayload<T>(
   response: Response,
@@ -106,6 +186,88 @@ export async function pollProjectJob({
   }
 }
 
+export async function watchProjectJob({
+  projectId,
+  jobId,
+  onStatus,
+  signal,
+}: {
+  projectId: string;
+  jobId: string;
+  onStatus: (job: ProjectJobRecord) => void;
+  signal?: AbortSignal;
+}) {
+  if (typeof window === "undefined" || !("EventSource" in window)) {
+    return pollProjectJob({ projectId, jobId, onStatus, signal });
+  }
+
+  return new Promise<ProjectJobRecord>((resolve, reject) => {
+    let settled = false;
+    let sawEvent = false;
+    let fallbackStarted = false;
+    const source = new EventSource(
+      `/api/projects/${projectId}/jobs/${jobId}/events`,
+    );
+
+    const cleanup = () => {
+      settled = true;
+      source.close();
+      signal?.removeEventListener("abort", onAbort);
+    };
+
+    const fallbackToPolling = () => {
+      if (settled || fallbackStarted) return;
+      fallbackStarted = true;
+      source.close();
+      signal?.removeEventListener("abort", onAbort);
+      void pollProjectJob({ projectId, jobId, onStatus, signal })
+        .then(resolve)
+        .catch(reject);
+    };
+
+    const onAbort = () => {
+      cleanup();
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    source.addEventListener("job", (event) => {
+      sawEvent = true;
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        job?: ProjectJobRecord;
+      };
+      if (!payload.job || settled) {
+        return;
+      }
+
+      onStatus(payload.job);
+
+      if (payload.job.status === "failed") {
+        cleanup();
+        reject(new Error(payload.job.error || "Jobben feilet."));
+        return;
+      }
+
+      if (payload.job.status === "completed" && payload.job.result) {
+        cleanup();
+        markClientPerformance("project_job_completed", {
+          project_id: projectId,
+          job_id: jobId,
+          kind: payload.job.kind,
+        });
+        resolve(payload.job);
+      }
+    });
+
+    source.addEventListener("error", () => {
+      if (!sawEvent || source.readyState === EventSource.CLOSED) {
+        fallbackToPolling();
+      }
+    });
+  });
+}
+
 export async function fetchOpenAIModels() {
   const response = await fetch("/api/openai-models");
   return readJsonPayload<{
@@ -127,53 +289,120 @@ export async function fetchProjectServices(projectId: string) {
 }
 
 export async function fetchCustomerAnalysis(projectId: string) {
-  const response = await fetch(`/api/projects/${projectId}/customer-analysis`);
-  const payload = await readJsonPayload<{
-    error?: string;
-    analysis?: CustomerAnalysisResult | null;
-  }>(response, "Kunne ikke hente kundeanalysen.");
-  if (!response.ok) {
-    throw new Error(payload.error || "Kunne ikke hente kundeanalysen.");
-  }
-  return payload.analysis ?? null;
+  return cachedProjectRead(
+    projectReadCacheKey(projectId, "customer-analysis"),
+    async () => {
+      const response = await fetch(`/api/projects/${projectId}/customer-analysis`);
+      const payload = await readJsonPayload<{
+        error?: string;
+        analysis?: CustomerAnalysisResult | null;
+      }>(response, "Kunne ikke hente kundeanalysen.");
+      if (!response.ok) {
+        throw new Error(payload.error || "Kunne ikke hente kundeanalysen.");
+      }
+      return payload.analysis ?? null;
+    },
+  );
 }
 
 export async function fetchSolutionEvaluation(projectId: string) {
-  const response = await fetch(`/api/projects/${projectId}/solution-evaluation`);
-  const payload = await readJsonPayload<{
-    error?: string;
-    evaluation?: SolutionEvaluationResult | null;
-  }>(response, "Kunne ikke hente løsningsvurderingen.");
-  if (!response.ok) {
-    throw new Error(payload.error || "Kunne ikke hente løsningsvurderingen.");
-  }
-  return payload.evaluation ?? null;
+  return cachedProjectRead(
+    projectReadCacheKey(projectId, "solution-evaluation"),
+    async () => {
+      const response = await fetch(
+        `/api/projects/${projectId}/solution-evaluation`,
+      );
+      const payload = await readJsonPayload<{
+        error?: string;
+        evaluation?: SolutionEvaluationResult | null;
+      }>(response, "Kunne ikke hente løsningsvurderingen.");
+      if (!response.ok) {
+        throw new Error(payload.error || "Kunne ikke hente løsningsvurderingen.");
+      }
+      return payload.evaluation ?? null;
+    },
+  );
 }
 
 export async function fetchExecutiveSummary(projectId: string) {
-  const response = await fetch(`/api/projects/${projectId}/executive-summary`);
-  const payload = await readJsonPayload<{
-    error?: string;
-    executive_summary?: ExecutiveSummaryResult | null;
-  }>(response, "Kunne ikke hente lederoppsummeringen.");
-  if (!response.ok) {
-    throw new Error(payload.error || "Kunne ikke hente lederoppsummeringen.");
-  }
-  return payload.executive_summary ?? null;
+  return cachedProjectRead(
+    projectReadCacheKey(projectId, "executive-summary"),
+    async () => {
+      const response = await fetch(`/api/projects/${projectId}/executive-summary`);
+      const payload = await readJsonPayload<{
+        error?: string;
+        executive_summary?: ExecutiveSummaryResult | null;
+      }>(response, "Kunne ikke hente lederoppsummeringen.");
+      if (!response.ok) {
+        throw new Error(payload.error || "Kunne ikke hente lederoppsummeringen.");
+      }
+      return payload.executive_summary ?? null;
+    },
+  );
 }
 
 export async function fetchGeneratedArtifacts(projectId: string) {
-  const response = await fetch(`/api/projects/${projectId}/generate`, {
-    cache: "no-store",
-  });
-  const payload = await readJsonPayload<{
-    error?: string;
-    artifacts?: GeneratedArtifact[];
-  }>(response, "Kunne ikke hente generatorresultatene.");
-  if (!response.ok || !payload.artifacts) {
-    throw new Error(payload.error || "Kunne ikke hente generatorresultatene.");
+  return cachedProjectRead(
+    projectReadCacheKey(projectId, "generated-artifacts"),
+    async () => {
+      const response = await fetch(`/api/projects/${projectId}/generate`, {
+        cache: "no-store",
+      });
+      const payload = await readJsonPayload<{
+        error?: string;
+        artifacts?: GeneratedArtifact[];
+      }>(response, "Kunne ikke hente generatorresultatene.");
+      if (!response.ok || !payload.artifacts) {
+        throw new Error(payload.error || "Kunne ikke hente generatorresultatene.");
+      }
+      return payload.artifacts;
+    },
+  );
+}
+
+export function prefetchProjectTabData(
+  projectId: string,
+  tab: ProjectWorkspaceTabName,
+  hints?: {
+    customerAnalysisGenerated?: boolean;
+    solutionEvaluationGenerated?: boolean;
+    artifactCount?: number;
+  },
+) {
+  const requests: Array<Promise<unknown>> = [];
+
+  if (tab === "analysis" && hints?.customerAnalysisGenerated !== false) {
+    requests.push(fetchCustomerAnalysis(projectId));
   }
-  return payload.artifacts;
+
+  if (tab === "evaluation" && hints?.solutionEvaluationGenerated !== false) {
+    requests.push(fetchSolutionEvaluation(projectId));
+  }
+
+  if (
+    tab === "executive-summary" &&
+    hints?.solutionEvaluationGenerated !== false
+  ) {
+    requests.push(fetchExecutiveSummary(projectId));
+  }
+
+  if (
+    (tab === "generator" ||
+      tab === "delivery" ||
+      tab === "requirements" ||
+      tab === "bilag1") &&
+    hints?.artifactCount !== 0
+  ) {
+    requests.push(fetchGeneratedArtifacts(projectId));
+  }
+
+  if (!requests.length) {
+    return Promise.resolve();
+  }
+
+  return Promise.all(requests.map((request) => request.catch(() => null))).then(
+    () => undefined,
+  );
 }
 
 export async function uploadProjectDocument(input: {
@@ -181,6 +410,7 @@ export async function uploadProjectDocument(input: {
   formData: FormData;
   fallbackMessage: string;
 }) {
+  invalidateProjectReadCache(input.projectId);
   const response = await fetch(`/api/projects/${input.projectId}/documents`, {
     method: "POST",
     body: input.formData,
@@ -205,6 +435,7 @@ export async function startProjectJob(input: {
   headers?: Record<string, string>;
   fallbackMessage: string;
 }) {
+  invalidateProjectReadCache(input.projectId);
   const response = await fetch(`/api/projects/${input.projectId}/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...input.headers },
@@ -226,6 +457,7 @@ export async function saveCustomerAnalysisSection(input: {
   snapshot: unknown;
   headers?: Record<string, string>;
 }) {
+  invalidateProjectReadCache(input.projectId);
   const response = await fetch(
     `/api/projects/${input.projectId}/customer-analysis`,
     {
@@ -258,6 +490,7 @@ export async function updateGeneratedArtifact(input: {
   contentMarkdown: string;
   headers?: Record<string, string>;
 }) {
+  invalidateProjectReadCache(input.projectId);
   const response = await fetch(`/api/projects/${input.projectId}/generate`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...input.headers },
@@ -286,6 +519,7 @@ export async function deleteGeneratedArtifact(input: {
   artifactId: string;
   headers?: Record<string, string>;
 }) {
+  invalidateProjectReadCache(input.projectId);
   const response = await fetch(`/api/projects/${input.projectId}/generate`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json", ...input.headers },
@@ -307,6 +541,7 @@ export async function deleteProjectDocument(input: {
   projectId: string;
   documentId: string;
 }) {
+  invalidateProjectReadCache(input.projectId);
   const response = await fetch(
     `/api/projects/${input.projectId}/documents/${input.documentId}`,
     { method: "DELETE" },

@@ -18,6 +18,7 @@ import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import {
   saveGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
+import { checkRateLimit } from "@/lib/server/observability";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 
 const READ_CACHE_HEADERS = {
@@ -41,6 +42,20 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    const rateLimit = await checkRateLimit(request, `solution-evaluation:${id}`, {
+      limit: 8,
+      windowMs: 5 * 60_000,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "For mange løsningsvurderinger på kort tid." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const model = await resolveOpenAIModelOverride(
       request.headers.get("x-openai-model"),
     );

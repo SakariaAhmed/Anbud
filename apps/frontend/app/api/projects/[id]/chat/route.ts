@@ -7,6 +7,7 @@ import {
 } from "@/lib/server/repositories/chat";
 import { getCustomerAnalysis } from "@/lib/server/repositories/analyses";
 import { getProjectDetail } from "@/lib/server/repositories/projects";
+import { checkRateLimit } from "@/lib/server/observability";
 import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
 import { listProjectDocuments } from "@/lib/server/repositories/documents";
 import type { ChatMessage, ChatSessionSummary } from "@/lib/types";
@@ -133,6 +134,20 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    const rateLimit = await checkRateLimit(request, `project-chat:${id}`, {
+      limit: 30,
+      windowMs: 60_000,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "For mange chatmeldinger på kort tid." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const model = await resolveOpenAIModelOverride(
       request.headers.get("x-openai-model"),
     );
@@ -145,6 +160,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     if (!message) {
       return NextResponse.json({ error: "Meldingen kan ikke være tom." }, { status: 400 });
+    }
+    if (message.length > 8000) {
+      return NextResponse.json(
+        { error: "Meldingen er for lang." },
+        { status: 413 },
+      );
     }
     const sessionId = normalizeSessionId(body.session_id) ?? crypto.randomUUID();
     const sessionTitle = normalizeSessionTitle(body.session_title, message);

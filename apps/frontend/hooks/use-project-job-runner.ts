@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
-import { pollProjectJob } from "@/lib/client/project-api";
+import { watchProjectJob } from "@/lib/client/project-api";
 import type { ProjectJobRecord } from "@/lib/types";
 
 export function useProjectJobRunner({
@@ -36,7 +36,7 @@ export function useProjectJobRunner({
       }
 
       try {
-        const job = await pollProjectJob({
+        const job = await watchProjectJob({
           projectId,
           jobId,
           onStatus,

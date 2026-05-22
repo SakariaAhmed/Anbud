@@ -7,6 +7,8 @@ import {
   findProjectJob,
   getQueuedProjectJobInput,
   insertProjectJob,
+  listQueuedProjectJobIds,
+  resetStaleRunningProjectJobs,
   updatePersistedProjectJob,
 } from "@/lib/server/repositories/jobs";
 import {
@@ -168,7 +170,7 @@ function shouldThrottleProgressWrite(
   if (
     previous &&
     previous.message === patch.message &&
-    now - previous.writtenAt < 1500
+    now - previous.writtenAt < 500
   ) {
     return true;
   }
@@ -355,12 +357,7 @@ export async function queueExecutiveSummaryJob(input: {
   );
 }
 
-export async function runQueuedProjectJob(jobId: string) {
-  const queuedInput = await getQueuedProjectJobInput(jobId);
-  if (!queuedInput) {
-    return;
-  }
-
+async function runQueuedProjectJobInput(jobId: string, queuedInput: unknown) {
   const input = parseProjectWorkflowInput(queuedInput);
   const claimed = await claimQueuedProjectJob(jobId);
   if (!claimed) {
@@ -368,4 +365,47 @@ export async function runQueuedProjectJob(jobId: string) {
   }
 
   await runProjectJob(jobId, input);
+}
+
+export async function runQueuedProjectJob(jobId: string) {
+  const queuedInput = await getQueuedProjectJobInput(jobId);
+  if (!queuedInput) {
+    return;
+  }
+
+  await runQueuedProjectJobInput(jobId, queuedInput);
+}
+
+export async function runAvailableProjectJobs(options?: {
+  limit?: number;
+  staleAfterMs?: number;
+}) {
+  await resetStaleRunningProjectJobs(options?.staleAfterMs);
+  const jobIds = await listQueuedProjectJobIds(options?.limit ?? 1);
+  const results: Array<{
+    job_id: string;
+    status: "processed" | "skipped" | "failed";
+    error?: string;
+  }> = [];
+
+  for (const jobId of jobIds) {
+    try {
+      const queuedInput = await getQueuedProjectJobInput(jobId);
+      if (!queuedInput) {
+        results.push({ job_id: jobId, status: "skipped" });
+        continue;
+      }
+
+      await runQueuedProjectJobInput(jobId, queuedInput);
+      results.push({ job_id: jobId, status: "processed" });
+    } catch (error) {
+      results.push({
+        job_id: jobId,
+        status: "failed",
+        error: error instanceof Error ? error.message : "Ukjent feil.",
+      });
+    }
+  }
+
+  return results;
 }

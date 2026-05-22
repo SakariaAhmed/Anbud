@@ -12,6 +12,7 @@ import {
   buildDocumentLedger,
   buildDocumentLedgerContext,
   summarizeDocumentLedgers,
+  type DocumentLedger,
 } from "@/lib/server/document-ledger";
 import {
   selectProjectDocuments,
@@ -77,6 +78,74 @@ export interface GenerateAndSaveArtifactResult {
   project: ProjectSnapshotResult;
 }
 
+const DOCUMENT_LEDGER_CACHE_TTL_MS = 5 * 60_000;
+const DOCUMENT_LEDGER_CACHE_MAX = 50;
+const documentLedgerCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    ledgers: DocumentLedger[];
+    context: string;
+  }
+>();
+
+function documentLedgerCacheKey(input: {
+  artifactType: GeneratedArtifactType;
+  documents: ProjectDocumentDetail[];
+}) {
+  return [
+    input.artifactType,
+    ...input.documents.map((document) =>
+      [
+        document.id,
+        document.updated_at,
+        document.raw_text.length,
+        document.title,
+      ].join(":"),
+    ),
+  ].join("|");
+}
+
+function getDocumentLedgerBundle(input: {
+  artifactType: GeneratedArtifactType;
+  documents: ProjectDocumentDetail[];
+}) {
+  const key = documentLedgerCacheKey(input);
+  const cached = documentLedgerCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return {
+      documentLedgers: cached.ledgers,
+      documentLedgerContext: cached.context,
+      cacheHit: true,
+    };
+  }
+
+  documentLedgerCache.delete(key);
+  if (documentLedgerCache.size >= DOCUMENT_LEDGER_CACHE_MAX) {
+    const firstKey = documentLedgerCache.keys().next().value;
+    if (firstKey) {
+      documentLedgerCache.delete(firstKey);
+    }
+  }
+
+  const ledgers = input.documents.slice(0, 8).map(buildDocumentLedger);
+  const context = buildDocumentLedgerContext({
+    artifactType: input.artifactType,
+    ledgers,
+  });
+  documentLedgerCache.set(key, {
+    expiresAt: Date.now() + DOCUMENT_LEDGER_CACHE_TTL_MS,
+    ledgers,
+    context,
+  });
+
+  return {
+    documentLedgers: ledgers,
+    documentLedgerContext: context,
+    cacheHit: false,
+  };
+}
+
 export async function generateAndSaveProjectArtifact(
   input: GenerateAndSaveArtifactInput,
 ): Promise<GenerateAndSaveArtifactResult> {
@@ -130,11 +199,17 @@ export async function generateAndSaveProjectArtifact(
           (document): document is ProjectDocumentDetail =>
             document !== null && Boolean(document.raw_text.trim()),
         );
-  const documentLedgers = ledgerDocuments.slice(0, 8).map(buildDocumentLedger);
-  const documentLedgerContext = buildDocumentLedgerContext({
+  const {
+    documentLedgers,
+    documentLedgerContext,
+    cacheHit: ledgerCacheHit,
+  } = getDocumentLedgerBundle({
     artifactType: input.artifactType,
-    ledgers: documentLedgers,
+    documents: ledgerDocuments,
   });
+  if (ledgerCacheHit) {
+    input.onProgress?.("[18%] Gjenbruker dokumentledger fra hurtigbuffer ...");
+  }
   input.onPhase?.("ledgerbygging");
 
   input.onProgress?.(

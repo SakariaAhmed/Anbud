@@ -30,7 +30,7 @@ export async function DELETE(
   _: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const rateLimit = checkRateLimit(_, "projects-delete", {
+  const rateLimit = await checkRateLimit(_, "projects-delete", {
     limit: 10,
     windowMs: 60_000,
   });

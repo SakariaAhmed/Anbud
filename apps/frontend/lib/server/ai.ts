@@ -1493,6 +1493,71 @@ function shortRequirementName(requirementText: string, responseInstruction: stri
     .trim();
 }
 
+function normalizeDocxSectionTitle(value: string) {
+  return normalizePageText(value)
+    .replace(/^\d{1,3}(?:\.\d{1,3})*\s+/, "")
+    .replace(/\s+\d{1,4}$/, "")
+    .replace(/:$/, "")
+    .toLowerCase();
+}
+
+function buildDocxRequirementSectionRefs(rawText: string) {
+  const sectionRefs = new Map<string, string>();
+  const lines = rawText
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map(normalizePageText)
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const match = line.match(
+      /^(\d{1,3}(?:\.\d{1,3})*)\s+(.+?)\s+\d{1,4}$/,
+    );
+    if (!match) {
+      continue;
+    }
+
+    const ref = match[1] ?? "";
+    const title = normalizeDocxSectionTitle(match[2] ?? "");
+    if (ref && title) {
+      sectionRefs.set(title, ref);
+    }
+  }
+
+  return sectionRefs;
+}
+
+function withDocxSectionRef(
+  heading: string,
+  sectionRefs: Map<string, string>,
+) {
+  const parts = heading
+    .split(">")
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const last = parts.at(-1) ?? heading.replace(/\s+/g, " ").trim();
+  if (!last || /^\d{1,3}(?:\.\d{1,3})*\s+/.test(last)) {
+    return heading;
+  }
+
+  const ref = sectionRefs.get(normalizeDocxSectionTitle(last));
+  if (!ref) {
+    return heading;
+  }
+
+  if (!parts.length) {
+    return `${ref} ${last}`;
+  }
+
+  parts[parts.length - 1] = `${ref} ${last}`;
+  return parts.join(" > ");
+}
+
+function docxSectionRefFromHeading(heading: string) {
+  const segment = lastHeadingSegment(heading);
+  return segment.match(/^(\d{1,3}(?:\.\d{1,3})*)\s+/)?.[1] ?? "";
+}
+
 function docxRequirementId(input: {
   cells: string[];
   sequence: number;
@@ -1510,7 +1575,13 @@ function docxRequirementId(input: {
   }
 
   const section = lastHeadingSegment(heading) || "Kravtabell";
+  const sectionRef = docxSectionRefFromHeading(section);
   const name = shortRequirementName(cells[1] ?? "", responseInstruction);
+  if (sectionRef) {
+    return [`${sectionRef}.${sequence}`, name ? `- ${name}` : ""]
+      .filter(Boolean)
+      .join(" ");
+  }
 
   return [section, String(sequence), name ? `- ${name}` : ""]
     .filter(Boolean)
@@ -1589,6 +1660,7 @@ async function buildDocxTableRequirementLedger(document: ProjectDocumentDetail) 
     });
     const rows = parseHtmlTableRows(html.value);
     const requirements: RequirementLedgerEntry[] = [];
+    const sectionRefs = buildDocxRequirementSectionRefs(document.raw_text);
     let activeHeading = "";
     let inRequirementTable = false;
     let sequence = 1;
@@ -1606,7 +1678,10 @@ async function buildDocxTableRequirementLedger(document: ProjectDocumentDetail) 
           cells[0] ?? "",
         )
       ) {
-        activeHeading = normalizePageText(cells[0] ?? "");
+        activeHeading = withDocxSectionRef(
+          normalizePageText(cells[0] ?? ""),
+          sectionRefs,
+        );
         continue;
       }
 
@@ -1616,10 +1691,13 @@ async function buildDocxTableRequirementLedger(document: ProjectDocumentDetail) 
 
       const requirementText = normalizePageText(cells[1] ?? "");
       const responseInstruction = normalizePageText(cells[3] ?? "");
-      const rowHeading = findDocxHeadingForRequirement(
-        document.raw_text,
-        requirementText,
-        activeHeading,
+      const rowHeading = withDocxSectionRef(
+        findDocxHeadingForRequirement(
+          document.raw_text,
+          requirementText,
+          activeHeading,
+        ),
+        sectionRefs,
       );
       const headingKey = rowHeading || "Kravtabell";
       const headingSequence = (headingCounts.get(headingKey) ?? 0) + 1;
@@ -1787,6 +1865,19 @@ function requirementLedgerSource(entry: RequirementLedgerEntry) {
     pages.length === 1
       ? `Side ${pages[0]}`
       : `Side ${pages[0]}-${pages[pages.length - 1]}`;
+  const normalizedId = normalizeRequirementId(entry.id);
+  const normalizedTableId = entry.tableId
+    ? normalizeRequirementId(entry.tableId)
+    : "";
+  const normalizedService = entry.service
+    ? normalizeRequirementId(entry.service)
+    : "";
+  const sourceAlreadyDescribesId = Boolean(
+    entry.tableId &&
+      entry.service &&
+      normalizedId.includes(normalizedTableId) &&
+      normalizedId.includes(normalizedService),
+  );
 
   return [
     entry.documentTitle,
@@ -1794,7 +1885,7 @@ function requirementLedgerSource(entry: RequirementLedgerEntry) {
     entry.heading,
     entry.tableId,
     entry.service,
-    entry.tableId ? "" : entry.id,
+    sourceAlreadyDescribesId ? "" : entry.id,
   ]
     .filter(Boolean)
     .join(", ");

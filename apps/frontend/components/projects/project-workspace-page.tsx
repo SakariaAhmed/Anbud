@@ -9,6 +9,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useTransition,
   type PointerEvent as ReactPointerEvent,
   type CSSProperties,
 } from "react";
@@ -49,6 +50,7 @@ import {
   fetchOpenAIModels,
   fetchProjectServices,
   fetchSolutionEvaluation,
+  markClientPerformance,
   saveCustomerAnalysisSection,
   startProjectJob,
   updateGeneratedArtifact,
@@ -58,6 +60,7 @@ import {
 } from "@/lib/client/project-api";
 import { Spinner } from "@/components/ui/spinner";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
+import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
 import { Input } from "@/components/projects/primitives";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
@@ -113,6 +116,7 @@ const ProjectAnalysisTab = dynamic(
       (module) => module.ProjectAnalysisTab,
     ),
   {
+    ssr: false,
     loading: () => (
       <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
         Laster kundeanalyse ...
@@ -494,24 +498,6 @@ const ProjectGeneratorTab = dynamic(
   },
 );
 
-const workspaceTabPreloaders: Partial<Record<ProjectWorkspaceTab, () => Promise<unknown>>> = {
-  analysis: () => import("@/components/projects/project-analysis-tab"),
-  bilag1: () => import("@/components/projects/project-bilag1-tab"),
-  "service-description": () =>
-    import("@/components/projects/project-service-description-tab"),
-  requirements: () =>
-    import("@/components/projects/project-requirement-response-tab"),
-  generator: () => import("@/components/projects/project-generator-tab"),
-  evaluation: () => import("@/components/projects/project-evaluation-tab"),
-  delivery: () => import("@/components/projects/project-delivery-tab"),
-  "executive-summary": () =>
-    import("@/components/projects/project-executive-summary-tab"),
-};
-
-function preloadWorkspaceTab(tab: ProjectWorkspaceTab) {
-  void workspaceTabPreloaders[tab]?.();
-}
-
 const PROJECT_WORKSPACE_TABS = [
   "documents",
   "analysis",
@@ -596,6 +582,13 @@ const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
   "value",
 ];
 
+type ProgressDriverState = {
+  startedAt: number;
+  estimatedDurationMs: number;
+  floor: number;
+  ceiling: number;
+};
+
 function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "message">) {
   if (job.status === "completed") return 100;
   if (job.status === "failed") return 100;
@@ -617,6 +610,28 @@ function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "m
   if (message.includes("ferdig")) return 100;
 
   return 28;
+}
+
+function progressCeilingForJobStatus(
+  job: Pick<ProjectJobRecord, "status" | "message">,
+) {
+  if (job.status === "completed" || job.status === "failed") return 100;
+  if (job.status === "queued") return 18;
+
+  const message = job.message.toLowerCase();
+  if (message.includes("lagrer") || message.includes("validerer")) return 97;
+  if (
+    message.includes("genererer") ||
+    message.includes("analyserer") ||
+    message.includes("sammenligner") ||
+    message.includes("skriver")
+  ) {
+    return 93;
+  }
+  if (message.includes("henter") || message.includes("klargjør")) return 76;
+  if (message.includes("bygger") || message.includes("kartlegger")) return 66;
+
+  return 88;
 }
 
 function hasExplicitProgress(message: string) {
@@ -653,14 +668,27 @@ function estimatedJobDurationMs(
   return Math.round((baseByKind[job.kind] ?? 75_000) * modelMultiplier);
 }
 
-function estimatedProgressFromElapsed(elapsedMs: number, estimatedDurationMs: number) {
+function estimatedProgressFromElapsed(
+  elapsedMs: number,
+  estimatedDurationMs: number,
+  floor = 8,
+  ceiling = 93,
+) {
   const ratio = Math.min(1, Math.max(0, elapsedMs / estimatedDurationMs));
-  // Ease out toward 86%; final save/completion remains controlled by job status.
-  return Math.round(8 + (1 - Math.pow(1 - ratio, 1.7)) * 78);
+  const eased = 1 - Math.pow(1 - ratio, 1.45);
+  return Math.round(floor + eased * (ceiling - floor));
+}
+
+function nextDisplayedProgress(current: number, target: number) {
+  if (target <= current) return current;
+  const distance = target - current;
+  const maxStep = distance > 20 ? 4 : distance > 8 ? 2.5 : 1.5;
+  return Math.min(target, current + maxStep);
 }
 
 const MODEL_STORAGE_KEY = "anbud-openai-model";
 const DEFAULT_WORKSPACE_MODEL = "gpt-5.4";
+const FAST_WORKSPACE_MODEL = "gpt-5.4-mini";
 const PREFERRED_MODEL_ORDER = [
   "gpt-5.4",
   "gpt-5.4-mini",
@@ -748,6 +776,7 @@ export function ProjectWorkspacePage({
   const [selectedRequirementDocumentId, setSelectedRequirementDocumentId] =
     useState("");
   const [activeTab, setActiveTab] = useState<ProjectWorkspaceTab>(initialTab);
+  const [isTabPending, startTabTransition] = useTransition();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [artifactsLoaded, setArtifactsLoaded] = useState(
@@ -775,8 +804,19 @@ export function ProjectWorkspacePage({
   const [selectedModel, setSelectedModel] = useState(DEFAULT_WORKSPACE_MODEL);
   const [modelsLoading, setModelsLoading] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
+  const progressDriverRef = useRef<ProgressDriverState | null>(null);
   const modelsRequestRef = useRef<Promise<void> | null>(null);
   const sidebarResizeRef = useRef(false);
+  const preloadWorkspaceTab = useProjectWorkspacePrefetch({
+    projectId: project.id,
+    customerAnalysisGenerated: project.customer_analysis_generated,
+    solutionEvaluationGenerated: project.solution_evaluation_generated,
+    artifactCount: project.artifact_count,
+    analysisLoaded,
+    evaluationLoaded,
+    executiveSummaryLoaded,
+    artifactsLoaded,
+  });
 
   useEffect(() => {
     const tabFromUrl = searchParams.get("tab");
@@ -789,7 +829,14 @@ export function ProjectWorkspacePage({
       if (tab === activeTab) {
         return;
       }
-      setActiveTab(tab);
+      markClientPerformance("workspace_tab_change", {
+        project_id: project.id,
+        from: activeTab,
+        to: tab,
+      });
+      startTabTransition(() => {
+        setActiveTab(tab);
+      });
       const nextParams = new URLSearchParams(searchParams.toString());
       if (tab === "analysis") {
         nextParams.delete("tab");
@@ -797,9 +844,11 @@ export function ProjectWorkspacePage({
         nextParams.set("tab", tab);
       }
       const query = nextParams.toString();
-      router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      const nextHref = query ? `${pathname}?${query}` : pathname;
+      router.prefetch(nextHref);
+      router.push(nextHref, { scroll: false });
     },
-    [activeTab, pathname, router, searchParams],
+    [activeTab, pathname, preloadWorkspaceTab, project.id, router, searchParams],
   );
   useEffect(() => {
     const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY) ?? "";
@@ -853,9 +902,13 @@ export function ProjectWorkspacePage({
     void loadAvailableModels();
   }, [loadAvailableModels]);
 
-  const aiModelHeaders = useCallback((): Record<string, string> => {
-    return selectedModel ? { "X-OpenAI-Model": selectedModel } : {};
-  }, [selectedModel]);
+  const aiModelHeaders = useCallback(
+    (mode: "quality" | "fast" = "quality"): Record<string, string> => {
+      const model = mode === "fast" ? FAST_WORKSPACE_MODEL : selectedModel;
+      return model ? { "X-OpenAI-Model": model } : {};
+    },
+    [selectedModel],
+  );
 
   const onModelChange = useCallback((value: string) => {
     const normalizedValue = isSlowOrExpensiveModel(value)
@@ -907,12 +960,19 @@ export function ProjectWorkspacePage({
       window.clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
     }
+    progressDriverRef.current = null;
     setBusyMessage("");
     setBusyProgress(0);
   }
 
   function startProgressTicker(messages: string[]) {
     stopProgressTicker();
+    progressDriverRef.current = {
+      startedAt: Date.now(),
+      estimatedDurationMs: 45_000,
+      floor: 6,
+      ceiling: 82,
+    };
     setBusyProgress(6);
     if (!messages.length) {
       setBusyMessage("Starter ...");
@@ -926,17 +986,32 @@ export function ProjectWorkspacePage({
       window.clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
     }
-    const startedAt = Date.now();
-    const estimatedDuration = estimatedJobDurationMs(job, selectedModel);
-    setBusyProgress((current) => Math.max(current, progressForJobStatus(job)));
+    progressDriverRef.current = {
+      startedAt: Date.now(),
+      estimatedDurationMs: estimatedJobDurationMs(job, selectedModel),
+      floor: progressForJobStatus(job),
+      ceiling: progressCeilingForJobStatus(job),
+    };
+    setBusyProgress((current) =>
+      nextDisplayedProgress(current, progressDriverRef.current?.floor ?? current),
+    );
     progressIntervalRef.current = window.setInterval(() => {
-      const elapsed = Date.now() - startedAt;
-      const estimatedProgress = estimatedProgressFromElapsed(
+      const driver = progressDriverRef.current;
+      if (!driver) return;
+      const elapsed = Date.now() - driver.startedAt;
+      const targetProgress = estimatedProgressFromElapsed(
         elapsed,
-        estimatedDuration,
+        driver.estimatedDurationMs,
+        driver.floor,
+        driver.ceiling,
       );
-      setBusyProgress((current) => Math.min(86, Math.max(current, estimatedProgress)));
-    }, 1200);
+      setBusyProgress((current) =>
+        Math.min(
+          driver.ceiling,
+          nextDisplayedProgress(current, Math.max(driver.floor, targetProgress)),
+        ),
+      );
+    }, 650);
   }
 
   useEffect(() => stopProgressTicker, []);
@@ -947,15 +1022,27 @@ export function ProjectWorkspacePage({
     onStatus(jobStatus) {
       setBusyMessage(progressMessageLabel(jobStatus.message));
       const nextProgress = progressForJobStatus(jobStatus);
-      if (hasExplicitProgress(jobStatus.message)) {
-        if (progressIntervalRef.current) {
-          window.clearInterval(progressIntervalRef.current);
-          progressIntervalRef.current = null;
-        }
-        setBusyProgress(nextProgress);
-      } else {
-        setBusyProgress((current) => Math.max(current, nextProgress));
+      const nextCeiling = progressCeilingForJobStatus(jobStatus);
+      if (progressDriverRef.current) {
+        progressDriverRef.current = {
+          ...progressDriverRef.current,
+          floor: Math.max(progressDriverRef.current.floor, nextProgress),
+          ceiling: Math.max(progressDriverRef.current.ceiling, nextCeiling),
+        };
       }
+      setBusyProgress((current) =>
+        jobStatus.status === "completed" || jobStatus.status === "failed"
+          ? 100
+          : nextDisplayedProgress(
+              current,
+              Math.min(
+                progressCeilingForJobStatus(jobStatus),
+                hasExplicitProgress(jobStatus.message)
+                  ? Math.max(current, nextProgress)
+                  : Math.max(current, nextProgress),
+              ),
+            ),
+      );
     },
   });
 
@@ -1311,6 +1398,20 @@ export function ProjectWorkspacePage({
     setError("");
     setNotice("");
     setBusy(`update-artifact-${artifact.id}`);
+    const previousProject = project;
+    const optimisticArtifact: GeneratedArtifact = {
+      ...artifact,
+      title: value.title,
+      content_markdown: value.content_markdown,
+    };
+    setProject((current) =>
+      normalizeProjectState({
+        ...current,
+        generated_artifacts: current.generated_artifacts.map((item) =>
+          item.id === artifact.id ? optimisticArtifact : item,
+        ),
+      }),
+    );
     try {
       const payload = await updateGeneratedArtifact({
         projectId: project.id,
@@ -1334,6 +1435,7 @@ export function ProjectWorkspacePage({
       );
       setNotice("Kravbesvarelsen er oppdatert.");
     } catch (err) {
+      setProject(previousProject);
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
       throw err;
     } finally {
@@ -1345,6 +1447,15 @@ export function ProjectWorkspacePage({
     setError("");
     setNotice("");
     setBusy(`delete-artifact-${artifact.id}`);
+    const previousProject = project;
+    setProject((current) =>
+      normalizeProjectState({
+        ...current,
+        generated_artifacts: current.generated_artifacts.filter(
+          (item) => item.id !== artifact.id,
+        ),
+      }),
+    );
     try {
       const payload = await deleteGeneratedArtifact({
         projectId: project.id,
@@ -1366,6 +1477,7 @@ export function ProjectWorkspacePage({
       );
       setNotice("Artefakten er slettet.");
     } catch (err) {
+      setProject(previousProject);
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
       throw err;
     } finally {
@@ -1374,11 +1486,31 @@ export function ProjectWorkspacePage({
   }
 
   async function onDeleteDocument(document: ProjectDocument) {
+    const previousProject = project;
     await runAction(`delete-${document.id}`, async () => {
-      const payload = await deleteProjectDocument({
-        projectId: project.id,
-        documentId: document.id,
-      });
+      setProject((current) =>
+        normalizeProjectState(
+          {
+            ...current,
+            documents: current.documents.filter(
+              (item) => item.id !== document.id,
+            ),
+          },
+          {
+            preserveArtifactCount: !artifactsLoaded,
+          },
+        ),
+      );
+      let payload: Awaited<ReturnType<typeof deleteProjectDocument>>;
+      try {
+        payload = await deleteProjectDocument({
+          projectId: project.id,
+          documentId: document.id,
+        });
+      } catch (err) {
+        setProject(previousProject);
+        throw err;
+      }
       setProject((current) => {
         const next = patchProjectWithSnapshot(
           {
@@ -1416,10 +1548,15 @@ export function ProjectWorkspacePage({
   }
 
   function startWorkspaceJob(body: unknown, fallbackMessage: string) {
+    const kind =
+      body && typeof body === "object" && "kind" in body
+        ? (body as { kind?: string }).kind
+        : "";
+    const modelMode = kind === "executive_summary" ? "fast" : "quality";
     return startProjectJob({
       projectId: project.id,
       body,
-      headers: aiModelHeaders(),
+      headers: aiModelHeaders(modelMode),
       fallbackMessage,
     });
   }
@@ -2113,6 +2250,15 @@ export function ProjectWorkspacePage({
               </div>
             ) : null}
 
+            <div
+              className={cn(
+                "transition-[opacity,transform] duration-150 ease-out",
+                isTabPending
+                  ? "translate-y-1 opacity-80"
+                  : "translate-y-0 opacity-100",
+              )}
+              aria-busy={isTabPending ? "true" : undefined}
+            >
             {activeTab === "documents" ? (
               <ProjectDocumentsTab
                 projectId={project.id}
@@ -2270,6 +2416,7 @@ export function ProjectWorkspacePage({
                 onSubmit={onGenerateArtifact}
               />
             ) : null}
+            </div>
           </div>
         </SidebarInset>
       </SidebarProvider>

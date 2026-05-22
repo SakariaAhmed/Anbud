@@ -44,7 +44,7 @@ export async function GET(
 }
 
 export async function DELETE(_: Request, context: { params: Promise<{ id: string; documentId: string }> }) {
-  const rateLimit = checkRateLimit(_, "document-delete", {
+  const rateLimit = await checkRateLimit(_, "document-delete", {
     limit: 20,
     windowMs: 60_000,
   });

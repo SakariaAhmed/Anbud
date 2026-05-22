@@ -105,16 +105,27 @@ export function GenerationProgress({
   const safeProgress = Math.min(100, Math.max(3, Math.round(progress)));
 
   return (
-    <div className="min-w-0 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3">
+    <div
+      className="min-w-0 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3"
+      aria-live="polite"
+    >
       <div className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold text-primary">
         <span className="min-w-0 truncate">{message}</span>
         <span className="shrink-0 tabular-nums">{safeProgress}%</span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-primary/15">
+      <div
+        className="h-2 overflow-hidden rounded-full bg-primary/15"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={safeProgress}
+      >
         <div
-          className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
+          className="relative h-full overflow-hidden rounded-full bg-primary transition-[width] duration-500 ease-out"
           style={{ width: `${safeProgress}%` }}
-        />
+        >
+          <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-70 motion-safe:animate-pulse" />
+        </div>
       </div>
     </div>
   );

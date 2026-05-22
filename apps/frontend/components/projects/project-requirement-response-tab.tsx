@@ -123,9 +123,131 @@ function cleanSourceReference(value: string, group: string) {
     .join(", ");
 }
 
-function serviceFromRef(ref: string, tableId: string) {
-  const stripped = stripRepeatedGroup(ref, tableId);
-  return stripped || ref.trim();
+function sourceWithRequirementReference(
+  source: string,
+  ref: string,
+  section: string,
+) {
+  const cleanedSource = source.replace(/\s+/g, " ").trim();
+  const cleanedRef = ref.replace(/\s+/g, " ").trim();
+  if (!cleanedRef) {
+    return cleanedSource;
+  }
+
+  const localRef = stripRepeatedGroup(cleanedRef, section);
+  const displayRef = displayRequirementReference(cleanedRef, section);
+  const sourceWithoutLocalRef =
+    displayRef &&
+    localRef &&
+    normalizeLabel(displayRef) !== normalizeLabel(localRef)
+      ? cleanedSource
+          .split(",")
+          .map((part) => part.trim())
+          .filter((part) => normalizeLabel(part) !== normalizeLabel(localRef))
+          .join(", ")
+      : cleanedSource;
+  const normalizedSource = normalizeLabel(sourceWithoutLocalRef);
+  if (displayRef && normalizedSource.includes(normalizeLabel(displayRef))) {
+    return sourceWithoutLocalRef;
+  }
+
+  return [sourceWithoutLocalRef, `Kravref. ${displayRef}`]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function compactRequirementId(value: string) {
+  return value
+    .replace(/^Tabell\s+ID\s*/i, "")
+    .replace(/^Krav\s*(?:nr\.?|nummer)?\s*/i, "Krav ")
+    .replace(/^Req\s*[- ]?\s*/i, "REQ-")
+    .replace(/^ID\s*/i, "ID ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function requirementSectionPrefix(section: string) {
+  const sectionLabel = section.replace(/\s+/g, " ").trim();
+  const explicit = sectionLabel.match(/^(\d{1,3}(?:\.\d{1,3})*)\s+/)?.[1];
+  if (explicit) {
+    return explicit;
+  }
+
+  const normalized = normalizeLabel(sectionLabel.replace(/:$/, ""));
+  if (normalized === "functional requirements") {
+    return "3.1";
+  }
+  if (normalized === "commercial requirements") {
+    return "3.2";
+  }
+
+  return "";
+}
+
+function splitRequirementReference(value: string, section: string) {
+  const sectionLabel = section.replace(/\s+/g, " ").trim();
+  const fullReference = value.replace(/\s+/g, " ").trim();
+  const localReference = stripRepeatedGroup(fullReference, sectionLabel);
+  const match = localReference.match(
+    /^(Tabell\s+ID\s+\d{1,4}\s*[-.]\s*\d{1,4}[A-Z]?|Krav\s*(?:nr\.?|nummer)?\s*\d{1,4}(?:\s*[.-]\s*\d{1,4}){0,5}[A-Z]?|ID\s*\d{1,4}(?:\s*[.-]\s*\d{1,4}){1,5}[A-Z]?|REQ\s*[- ]?\s*\d{1,5}[A-Z]?|\d{1,4}(?:\s*[.-]\s*\d{1,4}){0,5}[A-Z]?)(?:\s*[-–]\s*(.+))?$/i,
+  );
+
+  if (!match) {
+    return {
+      sourceId: compactRequirementId(localReference || fullReference),
+      requirementType: sectionLabel || "Krav",
+      title: "",
+      fullReference,
+    };
+  }
+
+  const rawSourceId = compactRequirementId(match[1] ?? localReference);
+  const prefix = requirementSectionPrefix(sectionLabel);
+  const sourceId =
+    prefix && /^\d{1,4}[A-Z]?$/i.test(rawSourceId)
+      ? `${prefix}.${rawSourceId}`
+      : rawSourceId;
+
+  return {
+    sourceId,
+    requirementType: sectionLabel || "Krav",
+    title: match[2]?.replace(/\s+/g, " ").trim() ?? "",
+    fullReference,
+  };
+}
+
+function displayRequirementReference(reference: string, section: string) {
+  const { sourceId, title } = splitRequirementReference(reference, section);
+  return [sourceId, title ? `- ${title}` : ""].filter(Boolean).join(" ");
+}
+
+function RequirementIdCell({
+  section,
+  reference,
+}: {
+  section: string;
+  reference: string;
+}) {
+  const { sourceId, requirementType, fullReference } =
+    splitRequirementReference(reference, section);
+  const label = [requirementType, fullReference].filter(Boolean).join(": ");
+
+  return (
+    <div
+      aria-label={label}
+      title={label}
+      className="min-w-0 space-y-1"
+    >
+      <span className="block whitespace-nowrap text-sm font-bold leading-5 tabular-nums text-slate-950">
+        {sourceId || "-"}
+      </span>
+      {requirementType ? (
+        <span className="block max-w-[12rem] truncate whitespace-nowrap text-xs font-medium leading-5 text-slate-500">
+          {requirementType}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function takeTrailingTableHeading(lines: string[]) {
@@ -456,52 +578,72 @@ function RequirementResponseContent({
                     {rows.length} krav
                   </span>
                 </div>
-                <div className="space-y-3">
-                  {rows.map((row, rowIndex) => {
-                    const service = serviceFromRef(row.ref, tableId);
-                    return (
-                      <article
-                        key={`${row.ref}-${rowIndex}`}
-                        className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-                      >
-                        {service ? (
-                          <div className="mb-4 flex flex-wrap items-center gap-2">
-                            <span className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white">
-                              {service}
-                            </span>
-                          </div>
-                        ) : null}
-                        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
-                          <div>
-                            <p className="mb-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-slate-500">
-                              Krav
-                            </p>
-                            <p className="text-sm leading-7 text-slate-900">
-                              {row.requirement}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="mb-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-slate-500">
-                              Atea svar
-                            </p>
-                            <p className="text-sm leading-7 text-slate-900">
-                              {row.answer}
-                            </p>
-                          </div>
-                        </div>
-                        {row.source ? (
-                          <div className="mt-4 border-t border-slate-100 pt-3 text-[0.78rem] leading-6 text-slate-600">
-                            <span className="mr-2 font-bold uppercase tracking-[0.12em] text-slate-400">
-                              Kildegrunnlag
-                            </span>
-                            <span className="break-words font-medium">
-                              {row.source}
-                            </span>
-                          </div>
-                        ) : null}
-                      </article>
-                    );
-                  })}
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[820px] w-full border-collapse text-left">
+                      <thead className="bg-slate-50 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
+                        <tr>
+                          <th className="w-40 border-b border-slate-200 px-4 py-3">
+                            ID
+                          </th>
+                          <th className="w-[34%] border-b border-slate-200 px-4 py-3">
+                            Krav
+                          </th>
+                          <th className="w-[42%] border-b border-slate-200 px-4 py-3">
+                            Atea svar
+                          </th>
+                          <th className="w-[15rem] border-b border-slate-200 px-4 py-3">
+                            Kildegrunnlag
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-sm text-slate-900">
+                        {rows.map((row, rowIndex) => {
+                          const source = sourceWithRequirementReference(
+                            row.source,
+                            row.ref,
+                            tableId,
+                          );
+                          return (
+                            <tr
+                              key={`${row.ref}-${rowIndex}`}
+                              className="align-top transition-colors hover:bg-slate-50/80"
+                            >
+                              <td className="px-4 py-4">
+                                {row.ref ? (
+                                  <RequirementIdCell
+                                    section={tableId}
+                                    reference={row.ref}
+                                  />
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-4">
+                                <p className="max-w-[38rem] whitespace-pre-wrap text-sm leading-6 text-slate-900">
+                                  {row.requirement}
+                                </p>
+                              </td>
+                              <td className="px-4 py-4">
+                                <p className="max-w-[46rem] whitespace-pre-wrap text-sm leading-6 text-slate-900">
+                                  {row.answer}
+                                </p>
+                              </td>
+                              <td className="px-4 py-4">
+                                {source ? (
+                                  <p className="max-w-[17rem] break-words text-[0.78rem] font-medium leading-5 text-slate-600">
+                                    {source}
+                                  </p>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </section>
             ))}

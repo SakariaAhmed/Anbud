@@ -5,12 +5,27 @@ import {
   getServiceDescription,
   upsertServiceDescription,
 } from "@/lib/server/repositories/services";
+import { checkRateLimit } from "@/lib/server/observability";
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ serviceId: string }> },
 ) {
   try {
+    const rateLimit = await checkRateLimit(request, "service-descriptions-write", {
+      limit: 16,
+      windowMs: 60_000,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "For mange tjenesteendringer på kort tid." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const { serviceId } = await context.params;
     const current = await getServiceDescription(serviceId);
     const body = (await request.json().catch(() => ({}))) as {
@@ -32,10 +47,24 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ serviceId: string }> },
 ) {
   try {
+    const rateLimit = await checkRateLimit(request, "service-descriptions-write", {
+      limit: 16,
+      windowMs: 60_000,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "For mange tjenesteendringer på kort tid." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const { serviceId } = await context.params;
     await deleteServiceDescription(serviceId);
     return NextResponse.json({ ok: true });

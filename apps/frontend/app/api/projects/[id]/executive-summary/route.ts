@@ -11,6 +11,7 @@ import {
   getProjectDetail,
   getProjectSnapshot,
 } from "@/lib/server/repositories/projects";
+import { checkRateLimit } from "@/lib/server/observability";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
@@ -46,6 +47,20 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
+    const rateLimit = await checkRateLimit(request, `executive-summary:${id}`, {
+      limit: 10,
+      windowMs: 5 * 60_000,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "For mange lederoppsummeringer på kort tid." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const model = await resolveOpenAIModelOverride(
       request.headers.get("x-openai-model"),
     );

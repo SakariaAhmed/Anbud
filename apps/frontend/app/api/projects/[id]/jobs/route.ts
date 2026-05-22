@@ -25,7 +25,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const rateLimit = checkRateLimit(request, "project-jobs", {
+  const rateLimit = await checkRateLimit(request, "project-jobs", {
     limit: 20,
     windowMs: 60_000,
   });

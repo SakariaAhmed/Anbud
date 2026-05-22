@@ -23,7 +23,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const rateLimit = checkRateLimit(request, "projects-create", {
+  const rateLimit = await checkRateLimit(request, "projects-create", {
     limit: 12,
     windowMs: 60_000,
   });

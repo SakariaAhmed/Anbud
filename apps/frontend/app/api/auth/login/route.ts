@@ -7,6 +7,7 @@ import {
   isPasswordAuthConfigured,
   verifyPassword,
 } from "@/lib/password-auth";
+import { checkRateLimit } from "@/lib/server/observability";
 
 function safeRedirectPath(value: unknown) {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
@@ -21,6 +22,20 @@ function safeRedirectPath(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const rateLimit = await checkRateLimit(request, "auth-login", {
+    limit: 8,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many sign-in attempts. Try again shortly." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+      },
+    );
+  }
+
   if (!isPasswordAuthConfigured()) {
     return NextResponse.json(
       { error: "APP_ACCESS_PASSWORD is not configured." },

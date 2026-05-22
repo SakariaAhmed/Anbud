@@ -319,6 +319,8 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Når et mulig kravfragment mangler krav-ID, verb, full setning eller tydelig start, vurder først om det er fortsettelsen av forrige krav før det legges inn som eget krav.",
         "Følg alltid seksjonen 'Sideskift- og krav-ID-kontroll' når den finnes. Hvis den sier at en side ikke har ny synlig krav-ID, skal teksten på den siden slås sammen med forrige krav. Ikke opprett for eksempel ID 2-03 bare fordi forrige krav var ID 2-02.",
         "Ny krav-ID skal komme fra dokumentet, ikke fra antatt sekvens.",
+        "Kravref.-kolonnen skal bruke eksakt synlig krav-ID fra kildedokumentet når den finnes, for eksempel ID, Kravnummer, Req. No. eller tabellrad-ID. Ikke erstatt en dokument-ID med et kort løpenummer.",
+        "Hvis dokumentet ikke har en synlig krav-ID for raden, bruk en tydelig lokator basert på seksjon og rad, for eksempel '<seksjon> <radnummer> - <radnavn>', og sørg for at Kildegrunnlag peker til side, seksjon og tabell/rad.",
         "Kildegrunnlag-kolonnen skal bare vise hvor kravet ligger i kravdokumentet: sidetall og eksakt nærmeste overskrift/underoverskrift. Ta med krav-ID/kravnummer bare hvis det står ved selve kravet.",
         "Hvis kravet mangler ID eller kravnummer, er Kildegrunnlag ekstra viktig: oppgi alltid sidetall og mest presise overskrift/underoverskrift, seksjon, punkt eller tabellnavn som kan lokaliseres i dokumentet.",
         "Krav kan ligge i ulike strukturer i samme dokument: punkter, brødtekst, tabeller, skjema, underpunkter eller tabellrader med flere delkrav. Bevar selvstendige underkrav når de må besvares separat, og bruk presist Kildegrunnlag for hvert underkrav.",

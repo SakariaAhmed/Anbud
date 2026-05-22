@@ -10,6 +10,7 @@ import {
   getCustomerAnalysis,
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
+import { checkRateLimit } from "@/lib/server/observability";
 import { listProjectDocuments } from "@/lib/server/repositories/documents";
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
@@ -254,6 +255,20 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
+    const rateLimit = await checkRateLimit(request, `customer-analysis:${id}`, {
+      limit: 8,
+      windowMs: 5 * 60_000,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "For mange analyser på kort tid." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const model = await resolveOpenAIModelOverride(
       request.headers.get("x-openai-model"),
     );

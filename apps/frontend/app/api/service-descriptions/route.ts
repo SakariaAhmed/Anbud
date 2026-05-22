@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { summarizeServiceDocumentForAi } from "@/lib/server/ai";
 import { extractTextFromUpload } from "@/lib/server/documents";
+import { checkRateLimit } from "@/lib/server/observability";
 import {
   getServiceDescription,
   listServiceDescriptions,
@@ -13,6 +14,7 @@ import {
 const SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=300, stale-while-revalidate=1800",
 };
+const MAX_SERVICE_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export async function GET() {
   try {
@@ -33,6 +35,20 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const rateLimit = await checkRateLimit(request, "service-descriptions-write", {
+      limit: 16,
+      windowMs: 60_000,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "For mange tjenesteendringer på kort tid." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     const serviceId = `${formData.get("service_id") || ""}`.trim();
@@ -61,6 +77,15 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: "Filen er tom. Last opp et dokument med innhold." },
           { status: 400 },
+        );
+      }
+      if (file.size > MAX_SERVICE_UPLOAD_BYTES) {
+        return NextResponse.json(
+          {
+            error:
+              "Filen er for stor. Maksimal størrelse er 25 MB per dokument.",
+          },
+          { status: 413 },
         );
       }
       const parsed = await extractTextFromUpload(file);

@@ -120,7 +120,7 @@ function enforceUploadRateLimit(projectId: string) {
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    const requestLimit = checkRateLimit(request, "document-upload", {
+    const requestLimit = await checkRateLimit(request, "document-upload", {
       limit: 16,
       windowMs: 60_000,
     });

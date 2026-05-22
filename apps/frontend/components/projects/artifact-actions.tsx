@@ -30,11 +30,17 @@ function downloadBlob(fileName: string, type: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-function markdownToHtml(markdown: string) {
-  return markdown
+function escapeHtml(value: string) {
+  return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function markdownToHtml(markdown: string) {
+  return escapeHtml(markdown)
     .split("\n")
     .map((line) => {
       if (line.startsWith("## ")) return `<h2>${line.slice(3)}</h2>`;
@@ -49,11 +55,12 @@ function markdownToHtml(markdown: string) {
 }
 
 function artifactHtml(artifact: GeneratedArtifact) {
+  const title = escapeHtml(artifact.title || "Artefakt");
   return `<!doctype html>
 <html lang="no">
 <head>
   <meta charset="utf-8" />
-  <title>${artifact.title}</title>
+  <title>${title}</title>
   <style>
     body { color: #111827; font-family: Georgia, "Times New Roman", serif; line-height: 1.55; margin: 48px; }
     h1, h2 { font-family: Arial, sans-serif; line-height: 1.2; margin: 28px 0 10px; }
@@ -65,7 +72,7 @@ function artifactHtml(artifact: GeneratedArtifact) {
   </style>
 </head>
 <body>
-  <h1>${artifact.title}</h1>
+  <h1>${title}</h1>
   ${markdownToHtml(artifact.content_markdown)}
 </body>
 </html>`;

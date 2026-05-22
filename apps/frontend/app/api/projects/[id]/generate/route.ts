@@ -8,6 +8,7 @@ import {
   updateGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
+import { checkRateLimit } from "@/lib/server/observability";
 import { generateAndSaveProjectArtifact } from "@/lib/server/use-cases/generate-artifact";
 
 const READ_CACHE_HEADERS = {
@@ -41,6 +42,20 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
+    const rateLimit = await checkRateLimit(request, `ai-generate:${id}`, {
+      limit: 8,
+      windowMs: 5 * 60_000,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "For mange genereringer på kort tid." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const model = await resolveOpenAIModelOverride(
       request.headers.get("x-openai-model"),
     );
@@ -48,6 +63,10 @@ export async function POST(
       artifact_type?: string;
       instructions?: string;
     };
+    const instructions =
+      typeof body.instructions === "string"
+        ? body.instructions.trim().slice(0, 4000)
+        : undefined;
 
     if (!body.artifact_type || !isArtifactType(body.artifact_type)) {
       return NextResponse.json(
@@ -68,7 +87,7 @@ export async function POST(
     const result = await generateAndSaveProjectArtifact({
       projectId: id,
       artifactType: body.artifact_type,
-      instructions: body.instructions?.trim(),
+      instructions,
       model,
       onPhase: markPhase,
       timings: () => generationTimings,
