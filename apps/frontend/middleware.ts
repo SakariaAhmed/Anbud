@@ -15,6 +15,49 @@ const PUBLIC_PATH_PREFIXES = [
 ];
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+function firstForwardedHeaderValue(value: string | null) {
+  return value?.split(",")[0]?.trim() || "";
+}
+
+function originFromHostAndProtocol(host: string, protocol: string) {
+  const normalizedHost = host.trim();
+  if (!normalizedHost) {
+    return "";
+  }
+
+  const normalizedProtocol = protocol.trim().replace(/:$/, "") || "https";
+  return `${normalizedProtocol}://${normalizedHost}`;
+}
+
+function configuredTrustedOrigins() {
+  return [
+    process.env.APP_PUBLIC_ORIGIN,
+    process.env.APP_ALLOWED_ORIGINS,
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+}
+
+function forwardedOriginCandidates(request: NextRequest) {
+  const forwardedHost = firstForwardedHeaderValue(
+    request.headers.get("x-forwarded-host"),
+  );
+  const forwardedProtocol =
+    firstForwardedHeaderValue(request.headers.get("x-forwarded-proto")) ||
+    request.nextUrl.protocol.replace(/:$/, "") ||
+    "https";
+  const host = firstForwardedHeaderValue(request.headers.get("host"));
+
+  return [
+    request.nextUrl.origin,
+    originFromHostAndProtocol(host, forwardedProtocol),
+    originFromHostAndProtocol(forwardedHost, forwardedProtocol),
+    ...configuredTrustedOrigins(),
+  ].filter(Boolean);
+}
+
 function isPublicPath(pathname: string) {
   return (
     pathname === "/login" ||
@@ -43,7 +86,10 @@ function isTrustedOrigin(request: NextRequest) {
   }
 
   try {
-    return new URL(origin).origin === request.nextUrl.origin;
+    const requestOrigin = new URL(origin).origin;
+    return forwardedOriginCandidates(request).some(
+      (candidate) => new URL(candidate).origin === requestOrigin,
+    );
   } catch {
     return false;
   }
