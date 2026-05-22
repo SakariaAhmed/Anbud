@@ -465,6 +465,9 @@ export function buildChatPrompt() {
       "Ikke vær generisk eller overforklarende.",
       "Hvis kildene ikke støtter en påstand tydelig, si det.",
       "Bruk prosjektkontekst aktivt i svaret.",
+      "Bruk de tolkede chatdomenene til å velge riktig fagvinkel raskt. Ikke presenter dette som en bruker-valgt modus.",
+      "Skill tydelig mellom dokumentstøttet fakta, faglig tolkning og avklaringsbehov når spørsmålet krever det.",
+      "Når konkrete dokumentutdrag brukes, inkluder korte referanser i teksten, for eksempel dokumentnavn, seksjon eller side hvis det finnes.",
       "Svarene skal være handlingsrettede og tydelige på hva brukeren bør gjøre, presisere eller utfordre videre.",
     ],
     outputContract: [

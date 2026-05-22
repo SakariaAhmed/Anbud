@@ -687,6 +687,7 @@ function nextDisplayedProgress(current: number, target: number) {
 }
 
 const MODEL_STORAGE_KEY = "anbud-openai-model";
+const CHAT_ARTIFACT_SEED_STORAGE_KEY_PREFIX = "anbud-chat-artifact-seed";
 const DEFAULT_WORKSPACE_MODEL = "gpt-5.4";
 const FAST_WORKSPACE_MODEL = "gpt-5.4-mini";
 const PREFERRED_MODEL_ORDER = [
@@ -822,6 +823,20 @@ export function ProjectWorkspacePage({
     const tabFromUrl = searchParams.get("tab");
     setActiveTab(isProjectWorkspaceTab(tabFromUrl) ? tabFromUrl : "analysis");
   }, [searchParams]);
+
+  useEffect(() => {
+    const key = `${CHAT_ARTIFACT_SEED_STORAGE_KEY_PREFIX}:${project.id}`;
+    const seed = window.localStorage.getItem(key);
+    if (!seed?.trim()) {
+      return;
+    }
+
+    setArtifactInstructions((current) =>
+      current.trim() ? current : seed.trim(),
+    );
+    window.localStorage.removeItem(key);
+    setNotice("Sparringen er lagt inn som føring for neste generering.");
+  }, [project.id]);
 
   const setWorkspaceTab = useCallback(
     (tab: ProjectWorkspaceTab) => {

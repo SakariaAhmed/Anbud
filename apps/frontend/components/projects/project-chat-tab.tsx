@@ -1,13 +1,73 @@
 "use client";
 
-import { FormEvent, RefObject } from "react";
-import { ArrowUp, Bot, User2 } from "lucide-react";
+import { FormEvent, RefObject, useState } from "react";
+import {
+  ArrowUp,
+  Bot,
+  Check,
+  Copy,
+  FilePlus2,
+  RefreshCcw,
+  ScrollText,
+  User2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { cn } from "@/lib/utils";
-import type { ChatMessage } from "@/lib/types";
+import type {
+  ChatDomainHint,
+  ChatMessage,
+  ChatSourceReference,
+} from "@/lib/types";
+
+const QUICK_PROMPTS = [
+  "Hva er de største tilbudsrisikoene akkurat nå?",
+  "Hva prøver kunden egentlig å få til?",
+  "Lag fem presise avklaringsspørsmål til kunden.",
+  "Hvor er løsningen eller posisjoneringen svakest?",
+  "Hva bør vi løfte som tydelig verdiargumentasjon?",
+];
+
+function messageSourceReferences(message: ChatMessage): ChatSourceReference[] {
+  if (message.source_references?.length) {
+    return message.source_references;
+  }
+
+  const snapshot = message.context_snapshot;
+  if (!snapshot || typeof snapshot !== "object") {
+    return [];
+  }
+
+  const value = (snapshot as { source_references?: unknown }).source_references;
+  return Array.isArray(value) ? (value as ChatSourceReference[]) : [];
+}
+
+function messageDomainHints(message: ChatMessage): ChatDomainHint[] {
+  if (message.domain_hints?.length) {
+    return message.domain_hints;
+  }
+
+  const snapshot = message.context_snapshot;
+  if (!snapshot || typeof snapshot !== "object") {
+    return [];
+  }
+
+  const value = (snapshot as { domain_hints?: unknown }).domain_hints;
+  return Array.isArray(value) ? (value as ChatDomainHint[]) : [];
+}
+
+function sourceLabel(source: ChatSourceReference) {
+  const page =
+    source.page_start != null
+      ? source.page_end && source.page_end !== source.page_start
+        ? `side ${source.page_start}-${source.page_end}`
+        : `side ${source.page_start}`
+      : "";
+  const reference = [source.reference, page].filter(Boolean).join(", ");
+  return reference ? `${source.document_title} · ${reference}` : source.document_title;
+}
 
 export function ProjectChatTab({
   chatMessages,
@@ -17,9 +77,12 @@ export function ProjectChatTab({
   loading = false,
   error = "",
   variant = "page",
+  sessionDomainHints = [],
   chatContainerRef,
   onChatInputChange,
   onSubmit,
+  onRegenerateResponse,
+  onUseAsArtifactSeed,
 }: {
   chatMessages: ChatMessage[];
   chatInput: string;
@@ -28,11 +91,21 @@ export function ProjectChatTab({
   loading?: boolean;
   error?: string;
   variant?: "page" | "drawer";
+  sessionDomainHints?: ChatDomainHint[];
   chatContainerRef: RefObject<HTMLDivElement | null>;
   onChatInputChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onRegenerateResponse?: (messageId: string) => void;
+  onUseAsArtifactSeed?: (message: ChatMessage) => void;
 }) {
   const isDrawer = variant === "drawer";
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+
+  async function copyMessage(message: ChatMessage) {
+    await navigator.clipboard.writeText(message.content);
+    setCopiedMessageId(message.id);
+    window.setTimeout(() => setCopiedMessageId(null), 1400);
+  }
 
   return (
     <div className={cn(isDrawer ? "flex h-full min-h-0 flex-col" : "space-y-4")}>
@@ -75,7 +148,12 @@ export function ProjectChatTab({
             </div>
           ) : null}
 
-          {chatMessages.map((message) => (
+          {chatMessages.map((message) => {
+            const sources = messageSourceReferences(message);
+            const domains = messageDomainHints(message);
+            const isAssistant = message.role === "assistant";
+
+            return (
             <div
               key={message.id}
               className={`flex w-full items-start gap-2.5 ${
@@ -99,6 +177,68 @@ export function ProjectChatTab({
                   tone={message.role === "user" ? "inverse" : "default"}
                   className="chat-markdown text-[0.98rem]"
                 />
+                {isAssistant ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
+                    <button
+                      type="button"
+                      title="Kopier svar"
+                      onClick={() => void copyMessage(message)}
+                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                    >
+                      {copiedMessageId === message.id ? (
+                        <Check className="size-3.5" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
+                    </button>
+                    {onRegenerateResponse ? (
+                      <button
+                        type="button"
+                        title="Svar på nytt"
+                        onClick={() => onRegenerateResponse(message.id)}
+                        className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                      >
+                        <RefreshCcw className="size-3.5" />
+                      </button>
+                    ) : null}
+                    {onUseAsArtifactSeed ? (
+                      <button
+                        type="button"
+                        title="Bruk som generatorføring"
+                        onClick={() => onUseAsArtifactSeed(message)}
+                        className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                      >
+                        <FilePlus2 className="size-3.5" />
+                      </button>
+                    ) : null}
+                    {domains.map((domain) => (
+                      <span
+                        key={domain}
+                        className="inline-flex min-h-7 items-center rounded-md bg-background px-2 text-[0.7rem] font-medium text-muted-foreground"
+                      >
+                        {domain}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {isAssistant && sources.length ? (
+                  <details className="mt-2 rounded-md border border-border/70 bg-background/70 px-2.5 py-2 text-xs text-muted-foreground">
+                    <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-foreground">
+                      <ScrollText className="size-3.5" />
+                      {sources.length} kilde{sources.length === 1 ? "" : "r"}
+                    </summary>
+                    <div className="mt-2 grid gap-1.5">
+                      {sources.slice(0, 5).map((source, index) => (
+                        <div
+                          key={`${source.source_id}-${source.reference}-${index}`}
+                          className="leading-5"
+                        >
+                          {sourceLabel(source)}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
               </div>
               {message.role === "user" ? (
                 <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm">
@@ -106,7 +246,8 @@ export function ProjectChatTab({
                 </div>
               ) : null}
             </div>
-          ))}
+            );
+          })}
 
           {streamingMessage ? (
             <div className="flex w-full items-start gap-2.5">
@@ -132,6 +273,18 @@ export function ProjectChatTab({
                 Start med å spørre hva kunden egentlig prøver å få til, hvor
                 løsningen er svak, eller hvordan dere bør posisjonere dere.
               </p>
+              <div className="mx-auto mt-5 grid max-w-2xl gap-2 sm:grid-cols-2">
+                {QUICK_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => onChatInputChange(prompt)}
+                    className="min-h-11 rounded-lg border bg-background px-3 py-2 text-left text-xs font-medium text-foreground shadow-sm transition-colors hover:border-foreground/25 hover:bg-muted/40"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
         </div>
@@ -149,9 +302,20 @@ export function ProjectChatTab({
               )}
             />
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                Svar bygger på hele prosjektkonteksten.
-              </p>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                {sessionDomainHints.length ? (
+                  sessionDomainHints.slice(0, 3).map((domain) => (
+                    <span
+                      key={domain}
+                      className="inline-flex h-7 items-center rounded-md border bg-muted/40 px-2 font-medium text-muted-foreground"
+                    >
+                      {domain}
+                    </span>
+                  ))
+                ) : (
+                  <span>Svar bygger på hele prosjektkonteksten.</span>
+                )}
+              </div>
               <Button type="submit" disabled={busy || loading} className="h-10 px-4">
                 {busy ? (
                   <Spinner className="size-4" />

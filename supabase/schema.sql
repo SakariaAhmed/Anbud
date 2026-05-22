@@ -4,6 +4,7 @@ create extension if not exists vector with schema extensions;
 drop table if exists generated_artifacts cascade;
 drop table if exists project_jobs cascade;
 drop table if exists chat_messages cascade;
+drop table if exists chat_sessions cascade;
 drop table if exists solution_evaluations cascade;
 drop table if exists executive_summaries cascade;
 drop table if exists customer_analyses cascade;
@@ -269,16 +270,37 @@ create index project_jobs_status_idx on project_jobs(status, updated_at desc);
 create index project_jobs_project_status_idx on project_jobs(project_id, status, updated_at desc);
 create index project_jobs_queue_claim_idx on project_jobs(status, locked_at, created_at) where status in ('queued', 'running');
 
+create table chat_sessions (
+  id text not null,
+  project_id uuid not null references projects(id) on delete cascade,
+  title text not null default 'Ny chat',
+  summary_encrypted text not null default '',
+  domain_hints text[] not null default '{}',
+  pinned boolean not null default false,
+  status text not null default 'active' check (status in ('active', 'archived')),
+  message_count integer not null default 0,
+  last_message_preview text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (project_id, id)
+);
+
+create index chat_sessions_project_updated_idx on chat_sessions(project_id, pinned desc, updated_at desc);
+
 create table chat_messages (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
+  session_id text,
   role text not null check (role in ('user', 'assistant')),
   content text not null,
   context_snapshot jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint chat_messages_project_session_fk
+    foreign key (project_id, session_id) references chat_sessions(project_id, id) on delete cascade
 );
 
 create index chat_messages_project_id_idx on chat_messages(project_id, created_at asc);
+create index chat_messages_project_session_idx on chat_messages(project_id, session_id, created_at asc) where session_id is not null;
 
 create table audit_events (
   id uuid primary key default gen_random_uuid(),
@@ -379,6 +401,7 @@ alter table solution_evaluations enable row level security;
 alter table executive_summaries enable row level security;
 alter table generated_artifacts enable row level security;
 alter table project_jobs enable row level security;
+alter table chat_sessions enable row level security;
 alter table chat_messages enable row level security;
 alter table audit_events enable row level security;
 alter table app_rate_limits enable row level security;

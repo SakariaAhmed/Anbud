@@ -311,18 +311,46 @@ export interface GeneratedArtifact {
 
 export type ChatMessageRole = "user" | "assistant";
 
+export type ChatDomainHint =
+  | "Kunde og behov"
+  | "Krav og etterlevelse"
+  | "Risiko"
+  | "Verdi og gevinst"
+  | "Arkitektur og løsning"
+  | "Tilbudsstrategi og posisjonering"
+  | "Leveranse og drift"
+  | "Kontrakt og kommersielt"
+  | "Dokument og kildegrunnlag";
+
+export interface ChatSourceReference {
+  document_title: string;
+  reference: string;
+  heading_path: string[];
+  page_start: number | null;
+  page_end: number | null;
+  source_type: "project_document" | "service_document";
+  source_id: string;
+}
+
 export interface ChatMessage {
   id: string;
   project_id: string;
+  session_id?: string | null;
   role: ChatMessageRole;
   content: string;
   context_snapshot: unknown;
+  source_references?: ChatSourceReference[];
+  domain_hints?: ChatDomainHint[];
   created_at: string;
 }
 
 export interface ChatSessionSummary {
   id: string;
   title: string;
+  summary: string;
+  domain_hints: ChatDomainHint[];
+  pinned: boolean;
+  status: "active" | "archived";
   message_count: number;
   created_at: string;
   updated_at: string;

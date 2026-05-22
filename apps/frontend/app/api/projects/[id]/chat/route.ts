@@ -1,16 +1,28 @@
 import { NextResponse } from "next/server";
 
-import { answerProjectChat, resolveOpenAIModelOverride } from "@/lib/server/ai";
+import {
+  CHAT_SESSION_MEMORY_STORAGE_LIMIT,
+  inferProjectChatDomains,
+  resolveOpenAIModelOverride,
+  streamProjectChat,
+} from "@/lib/server/ai";
 import {
   appendChatMessage,
+  listChatSessions,
   listChatMessages,
+  updateChatSessionMemory,
+  upsertChatSession,
 } from "@/lib/server/repositories/chat";
 import { getCustomerAnalysis } from "@/lib/server/repositories/analyses";
 import { getProjectDetail } from "@/lib/server/repositories/projects";
 import { checkRateLimit } from "@/lib/server/observability";
 import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
 import { listProjectDocuments } from "@/lib/server/repositories/documents";
-import type { ChatMessage, ChatSessionSummary } from "@/lib/types";
+import type {
+  ChatDomainHint,
+  ChatMessage,
+  ChatSessionSummary,
+} from "@/lib/types";
 
 function truncateTitle(value: string, limit = 64) {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -22,6 +34,10 @@ function truncateTitle(value: string, limit = 64) {
 }
 
 function sessionIdFromMessage(message: ChatMessage) {
+  if (message.session_id?.trim()) {
+    return message.session_id.trim();
+  }
+
   const snapshot = message.context_snapshot;
   if (!snapshot || typeof snapshot !== "object") {
     return "legacy";
@@ -48,7 +64,11 @@ function sessionTitleFromMessage(message: ChatMessage) {
   return "Tidligere samtale";
 }
 
-function buildChatSessions(messages: ChatMessage[]): ChatSessionSummary[] {
+function mergeDomainHints(...groups: Array<ChatDomainHint[] | undefined>) {
+  return Array.from(new Set(groups.flatMap((group) => group ?? []))).slice(0, 4);
+}
+
+function buildChatSessionsFromMessages(messages: ChatMessage[]): ChatSessionSummary[] {
   const sessionMap = new Map<string, ChatSessionSummary>();
 
   for (const message of messages) {
@@ -60,6 +80,10 @@ function buildChatSessions(messages: ChatMessage[]): ChatSessionSummary[] {
       sessionMap.set(id, {
         id,
         title: sessionTitleFromMessage(message),
+        summary: "",
+        domain_hints: message.domain_hints ?? [],
+        pinned: false,
+        status: "active",
         message_count: 1,
         created_at: message.created_at,
         updated_at: message.created_at,
@@ -69,6 +93,10 @@ function buildChatSessions(messages: ChatMessage[]): ChatSessionSummary[] {
     }
 
     existing.message_count += 1;
+    existing.domain_hints = mergeDomainHints(
+      existing.domain_hints,
+      message.domain_hints,
+    );
     if (message.role === "user" && existing.title === "Tidligere samtale") {
       existing.title = sessionTitleFromMessage(message);
     }
@@ -82,7 +110,94 @@ function buildChatSessions(messages: ChatMessage[]): ChatSessionSummary[] {
   }
 
   return [...sessionMap.values()].sort((left, right) =>
+    Number(right.pinned) - Number(left.pinned) ||
     right.updated_at.localeCompare(left.updated_at),
+  );
+}
+
+function mergeChatSessions(
+  storedSessions: ChatSessionSummary[],
+  messages: ChatMessage[],
+) {
+  const messageSessions = buildChatSessionsFromMessages(messages);
+  const byId = new Map<string, ChatSessionSummary>();
+
+  for (const session of storedSessions) {
+    byId.set(session.id, session);
+  }
+
+  for (const session of messageSessions) {
+    const existing = byId.get(session.id);
+    if (!existing) {
+      byId.set(session.id, session);
+      continue;
+    }
+
+    byId.set(session.id, {
+      ...existing,
+      message_count: Math.max(existing.message_count, session.message_count),
+      created_at:
+        session.created_at < existing.created_at
+          ? session.created_at
+          : existing.created_at,
+      updated_at:
+        session.updated_at > existing.updated_at
+          ? session.updated_at
+          : existing.updated_at,
+      last_message_preview:
+        session.updated_at >= existing.updated_at
+          ? session.last_message_preview
+          : existing.last_message_preview,
+      domain_hints: mergeDomainHints(existing.domain_hints, session.domain_hints),
+    });
+  }
+
+  return [...byId.values()]
+    .filter((session) => session.status !== "archived")
+    .sort(
+      (left, right) =>
+        Number(right.pinned) - Number(left.pinned) ||
+        right.updated_at.localeCompare(left.updated_at),
+    );
+}
+
+function trimSessionMemory(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= CHAT_SESSION_MEMORY_STORAGE_LIMIT) {
+    return normalized;
+  }
+
+  return `Eldre minne er komprimert bort. ${normalized.slice(
+    normalized.length - CHAT_SESSION_MEMORY_STORAGE_LIMIT + 32,
+  )}`;
+}
+
+function buildNextSessionMemory(input: {
+  previousSummary: string;
+  question: string;
+  answer: string;
+  domainHints: ChatDomainHint[];
+}) {
+  const answerSignals =
+    input.answer
+      .split("\n")
+      .map((line) => line.replace(/^[-#*\d.\s]+/, "").trim())
+      .filter((line) => line.length > 20)
+      .slice(0, 8)
+      .join(" ") || input.answer;
+  const entry = [
+    `Dato: ${new Date().toISOString()}`,
+    input.domainHints.length ? `Domener: ${input.domainHints.join(", ")}` : "",
+    `Brukerbehov: ${truncateTitle(input.question, 900)}`,
+    `Svar/konklusjon: ${truncateTitle(answerSignals, 2600)}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return trimSessionMemory(
+    [input.previousSummary.trim(), "Nyeste samtalepunkt:", entry]
+      .filter(Boolean)
+      .join("\n\n"),
   );
 }
 
@@ -110,8 +225,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     const { id } = await context.params;
     const requestedSessionId = new URL(request.url).searchParams.get("session_id");
-    const allMessages = await listChatMessages(id);
-    const sessions = buildChatSessions(allMessages);
+    const [allMessages, storedSessions] = await Promise.all([
+      listChatMessages(id),
+      listChatSessions(id),
+    ]);
+    const sessions = mergeChatSessions(storedSessions, allMessages);
     const activeSessionId =
       normalizeSessionId(requestedSessionId) ?? sessions[0]?.id ?? null;
     const messages = activeSessionId
@@ -176,12 +294,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       documents,
       generatedArtifacts,
       chatHistory,
+      storedSessions,
     ] = await Promise.all([
       getProjectDetail(id),
       getCustomerAnalysis(id),
       listProjectDocuments(id),
       listGeneratedArtifacts(id),
       listChatMessages(id),
+      listChatSessions(id),
     ]);
     const customerDocument =
       documents.find((document) => document.role === "primary_customer_document") ??
@@ -197,16 +317,35 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const chatHistoryForSession = chatHistory.filter(
       (chatMessage) => sessionIdFromMessage(chatMessage) === sessionId,
     );
+    const activeSession =
+      storedSessions.find((session) => session.id === sessionId) ?? null;
+    const domainHints = inferProjectChatDomains({
+      question: message,
+      recentMessages: chatHistoryForSession,
+      sessionSummary: activeSession?.summary,
+    });
     const contextSnapshot = {
       customer_analysis_present: Boolean(customerAnalysis),
       solution_evaluation_present: Boolean(project.solution_evaluation),
       chat_session_id: sessionId,
       chat_session_title: sessionTitle,
+      domain_hints: domainHints,
     };
 
-    await appendChatMessage(id, "user", message, contextSnapshot);
+    await upsertChatSession({
+      projectId: id,
+      sessionId,
+      title: sessionTitle,
+      domainHints,
+      lastMessagePreview: truncateTitle(message, 120),
+      messageCount: chatHistoryForSession.length + 1,
+    });
 
-    const assistantMessage = await answerProjectChat({
+    await appendChatMessage(id, "user", message, contextSnapshot, {
+      sessionId,
+    });
+
+    const chatStream = await streamProjectChat({
       projectName: project.name,
       customerAnalysis,
       solutionEvaluation: project.solution_evaluation,
@@ -226,20 +365,63 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       supportingDocuments,
       question: message,
       model,
+      sessionSummary: activeSession?.summary,
+      domainHints,
     });
-
-    await appendChatMessage(id, "assistant", assistantMessage, contextSnapshot);
-
     const encoder = new TextEncoder();
-    const chunks = assistantMessage.match(/.{1,160}(\s|$)/g) ?? [assistantMessage];
+    const assistantContextSnapshot = {
+      ...contextSnapshot,
+      domain_hints: chatStream.domainHints,
+      source_references: chatStream.sourceReferences,
+    };
 
     return new NextResponse(
       new ReadableStream({
-        start(controller) {
-          for (const chunk of chunks) {
-            controller.enqueue(encoder.encode(chunk));
+        async start(controller) {
+          let assistantMessage = "";
+
+          try {
+            for await (const chunk of chatStream.stream) {
+              assistantMessage += chunk;
+              controller.enqueue(encoder.encode(chunk));
+            }
+
+            const cleanedAssistantMessage = assistantMessage.trim();
+            if (!cleanedAssistantMessage) {
+              throw new Error("AI returnerte tomt svar.");
+            }
+
+            await appendChatMessage(
+              id,
+              "assistant",
+              cleanedAssistantMessage,
+              assistantContextSnapshot,
+              { sessionId },
+            );
+
+            await updateChatSessionMemory({
+              projectId: id,
+              sessionId,
+              summary: buildNextSessionMemory({
+                previousSummary: activeSession?.summary ?? "",
+                question: message,
+                answer: cleanedAssistantMessage,
+                domainHints: chatStream.domainHints,
+              }),
+              domainHints: mergeDomainHints(
+                activeSession?.domain_hints,
+                chatStream.domainHints,
+              ),
+              lastMessagePreview: truncateTitle(cleanedAssistantMessage, 120),
+              messageCount: chatHistoryForSession.length + 2,
+            }).catch((memoryError) => {
+              console.error("Kunne ikke oppdatere chat-minne.", memoryError);
+            });
+
+            controller.close();
+          } catch (error) {
+            controller.error(error);
           }
-          controller.close();
         },
       }),
       {
@@ -248,6 +430,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           "Cache-Control": "no-store",
           "X-Chat-Session-Id": sessionId,
           "X-Chat-Session-Title": encodeURIComponent(sessionTitle),
+          "X-Chat-Domains": encodeURIComponent(
+            JSON.stringify(chatStream.domainHints),
+          ),
         },
       },
     );

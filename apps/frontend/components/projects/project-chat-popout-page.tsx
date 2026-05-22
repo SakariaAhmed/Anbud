@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { ProjectChatTab } from "@/components/projects/project-chat-tab";
 import { cn } from "@/lib/utils";
 import type {
+  ChatDomainHint,
   ChatMessage,
   ChatSessionSummary,
   ProjectSummary,
@@ -28,6 +29,11 @@ type ChatPayload = {
 };
 
 const MODEL_STORAGE_KEY = "anbud-openai-model";
+const ARTIFACT_SEED_STORAGE_KEY_PREFIX = "anbud-chat-artifact-seed";
+
+function artifactSeedStorageKey(projectId: string) {
+  return `${ARTIFACT_SEED_STORAGE_KEY_PREFIX}:${projectId}`;
+}
 
 function makeLocalMessage(input: {
   projectId: string;
@@ -40,6 +46,7 @@ function makeLocalMessage(input: {
   return {
     id: `local-${input.role}-${createdAt}`,
     project_id: input.projectId,
+    session_id: input.sessionId,
     role: input.role,
     content: input.content,
     context_snapshot: {
@@ -69,6 +76,21 @@ function formatSessionDate(value: string) {
     }).format(new Date(value));
   } catch {
     return "";
+  }
+}
+
+function parseChatDomainsHeader(value: string | null): ChatDomainHint[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value));
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is ChatDomainHint => typeof item === "string")
+      : [];
+  } catch {
+    return [];
   }
 }
 
@@ -200,9 +222,8 @@ export function ProjectChatPopoutPage({
     await loadChat(sessionId);
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const message = chatInput.trim();
+  async function sendChatMessage(rawMessage: string) {
+    const message = rawMessage.trim();
     if (!message || chatBusy) {
       return;
     }
@@ -255,6 +276,9 @@ export function ProjectChatPopoutPage({
           response.headers.get("x-chat-session-title") ?? sessionTitle,
         ),
       );
+      const responseDomains = parseChatDomainsHeader(
+        response.headers.get("x-chat-domains"),
+      );
       const decoder = new TextDecoder();
       const reader = response.body?.getReader();
       let assistantText = "";
@@ -278,13 +302,23 @@ export function ProjectChatPopoutPage({
         throw new Error("Chatten returnerte ikke noe svar.");
       }
 
-      const assistantMessage = makeLocalMessage({
+      const assistantMessage: ChatMessage = makeLocalMessage({
         projectId,
         role: "assistant",
         content: cleanedAssistantText,
         sessionId: responseSessionId,
         sessionTitle: responseSessionTitle,
       });
+      assistantMessage.domain_hints = responseDomains;
+      const assistantSnapshot =
+        assistantMessage.context_snapshot &&
+        typeof assistantMessage.context_snapshot === "object"
+          ? assistantMessage.context_snapshot
+          : {};
+      assistantMessage.context_snapshot = {
+        ...assistantSnapshot,
+        domain_hints: responseDomains,
+      };
 
       setStreamingMessage("");
       setActiveSessionId(responseSessionId);
@@ -302,6 +336,42 @@ export function ProjectChatPopoutPage({
     } finally {
       setChatBusy(false);
     }
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await sendChatMessage(chatInput);
+  }
+
+  function regenerateResponse(messageId: string) {
+    const messageIndex = chatMessages.findIndex((message) => message.id === messageId);
+    const previousUserMessage = [...chatMessages.slice(0, messageIndex)]
+      .reverse()
+      .find((message) => message.role === "user");
+
+    if (!previousUserMessage) {
+      return;
+    }
+
+    void sendChatMessage(
+      [
+        "Svar på nytt på forrige spørsmål. Vær strammere, mer kildekritisk og mer konkret.",
+        "",
+        previousUserMessage.content,
+      ].join("\n"),
+    );
+  }
+
+  function useAsArtifactSeed(message: ChatMessage) {
+    window.localStorage.setItem(
+      artifactSeedStorageKey(projectId),
+      [
+        "Bruk denne sparringen som føring for neste løsningsbeskrivelse:",
+        "",
+        message.content,
+      ].join("\n"),
+    );
+    window.location.href = `/projects/${projectId}?tab=generator`;
   }
 
   return (
@@ -406,6 +476,23 @@ export function ProjectChatPopoutPage({
                           {session.last_message_preview}
                         </span>
                       ) : null}
+                      {session.domain_hints.length ? (
+                        <span className="mt-2 flex flex-wrap gap-1">
+                          {session.domain_hints.slice(0, 3).map((domain) => (
+                            <span
+                              key={domain}
+                              className={cn(
+                                "rounded-md px-1.5 py-0.5 text-[0.65rem] font-medium",
+                                session.id === activeSessionId
+                                  ? "bg-white/10 text-slate-200"
+                                  : "bg-slate-100 text-slate-500",
+                              )}
+                            >
+                              {domain}
+                            </span>
+                          ))}
+                        </span>
+                      ) : null}
                     </button>
                   ))}
                 </div>
@@ -500,9 +587,12 @@ export function ProjectChatPopoutPage({
               busy={chatBusy}
               loading={chatLoading}
               error={chatError}
+              sessionDomainHints={activeSession?.domain_hints ?? []}
               chatContainerRef={chatContainerRef}
               onChatInputChange={setChatInput}
               onSubmit={onSubmit}
+              onRegenerateResponse={regenerateResponse}
+              onUseAsArtifactSeed={useAsArtifactSeed}
             />
           </div>
         </main>

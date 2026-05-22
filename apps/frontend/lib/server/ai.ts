@@ -19,7 +19,9 @@ import {
 } from "@/lib/server/prompts";
 import { normalizeTechnologySignalWords } from "@/lib/signal-words";
 import type {
+  ChatDomainHint,
   ChatMessage,
+  ChatSourceReference,
   CustomerAnalysisResult,
   CustomerAnalysisSection,
   ExecutiveSummaryResult,
@@ -67,9 +69,7 @@ type OpenAIClient = {
   };
   chat: {
     completions: {
-      create: (input: Record<string, unknown>) => Promise<{
-        choices: Array<{ message?: { content?: string | null } | null }>;
-      }>;
+      create: (input: Record<string, unknown>) => Promise<unknown>;
     };
   };
   responses: {
@@ -77,6 +77,16 @@ type OpenAIClient = {
       output_text?: string;
     }>;
   };
+};
+
+type ChatCompletionResponse = {
+  choices: Array<{ message?: { content?: string | null } | null }>;
+};
+
+type ChatCompletionStreamChunk = {
+  choices: Array<{
+    delta?: { content?: string | null } | null;
+  }>;
 };
 
 export type OpenAIModelSummary = {
@@ -370,6 +380,164 @@ function retrievedSnippetContext(
       )
       .join("\n\n"),
   );
+}
+
+const CHAT_HISTORY_MESSAGE_LIMIT = 20;
+const CHAT_HISTORY_CHAR_LIMIT = 14000;
+const CHAT_SESSION_MEMORY_PROMPT_LIMIT = 5600;
+export const CHAT_SESSION_MEMORY_STORAGE_LIMIT = 8000;
+
+const CHAT_DOMAIN_PROFILES: Array<{
+  label: ChatDomainHint;
+  terms: string[];
+  retrievalTerms: string[];
+}> = [
+  {
+    label: "Kunde og behov",
+    terms: ["kunde", "behov", "mål", "situasjon", "modenhet", "hva prøver", "ønsker", "utfordring"],
+    retrievalTerms: ["behov", "mål", "kunde", "situasjon", "utfordring"],
+  },
+  {
+    label: "Krav og etterlevelse",
+    terms: ["krav", "skal", "må", "obligatorisk", "etterlevelse", "compliance", "gdpr", "sikkerhetskrav", "evalueringskrav"],
+    retrievalTerms: ["krav", "skal", "må", "obligatorisk", "etterlevelse", "sikkerhet"],
+  },
+  {
+    label: "Risiko",
+    terms: ["risiko", "svak", "svakhet", "usikker", "konsekvens", "avhengighet", "kritisk", "fallgruve", "bekymring"],
+    retrievalTerms: ["risiko", "svakhet", "avhengighet", "konsekvens", "usikkerhet"],
+  },
+  {
+    label: "Verdi og gevinst",
+    terms: ["verdi", "gevinst", "nytte", "effekt", "kost", "kostnad", "produktivitet", "brukeropplevelse", "roi"],
+    retrievalTerms: ["verdi", "gevinst", "effekt", "kostnad", "produktivitet"],
+  },
+  {
+    label: "Arkitektur og løsning",
+    terms: ["arkitektur", "løsning", "design", "plattform", "integrasjon", "sky", "azure", "applikasjon", "dataflyt", "målarkitektur"],
+    retrievalTerms: ["arkitektur", "løsning", "integrasjon", "plattform", "målarkitektur"],
+  },
+  {
+    label: "Tilbudsstrategi og posisjonering",
+    terms: ["strategi", "posisjon", "posisjonering", "vinne", "differensiere", "tilbud", "salgs", "budskap", "vinkling"],
+    retrievalTerms: ["strategi", "posisjonering", "tilbud", "evalueringskriterier", "budskap"],
+  },
+  {
+    label: "Leveranse og drift",
+    terms: ["leveranse", "gjennomføring", "implementering", "fase", "drift", "forvaltning", "sla", "rto", "rpo", "migrering", "overgang"],
+    retrievalTerms: ["leveranse", "gjennomføring", "drift", "forvaltning", "migrering"],
+  },
+  {
+    label: "Kontrakt og kommersielt",
+    terms: ["kontrakt", "kommersiell", "pris", "betaling", "ssa", "avtale", "opsjon", "sanksjon", "anskaffelse"],
+    retrievalTerms: ["kontrakt", "kommersiell", "pris", "avtale", "anskaffelse"],
+  },
+  {
+    label: "Dokument og kildegrunnlag",
+    terms: ["dokument", "kilde", "side", "vedlegg", "bilag", "annex", "referanse", "står det", "hvor står"],
+    retrievalTerms: ["dokument", "kilde", "vedlegg", "bilag", "referanse"],
+  },
+];
+
+function normalizeForChatDomain(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ø/g, "o")
+    .replace(/æ/g, "ae")
+    .replace(/å/g, "a")
+    .replace(/[^a-z0-9\s.-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function inferProjectChatDomains(input: {
+  question: string;
+  recentMessages?: ChatMessage[];
+  sessionSummary?: string | null;
+}): ChatDomainHint[] {
+  const recentUserText = (input.recentMessages ?? [])
+    .filter((message) => message.role === "user")
+    .slice(-3)
+    .map((message) => message.content)
+    .join(" ");
+  const normalized = normalizeForChatDomain(
+    [input.question, recentUserText, input.sessionSummary ?? ""].join(" "),
+  );
+  const scored = CHAT_DOMAIN_PROFILES.map((profile) => {
+    const score = profile.terms.reduce((sum, term) => {
+      const normalizedTerm = normalizeForChatDomain(term);
+      if (!normalizedTerm) return sum;
+      return normalized.includes(normalizedTerm)
+        ? sum + (normalizedTerm.includes(" ") ? 2 : 1)
+        : sum;
+    }, 0);
+    return { label: profile.label, score };
+  })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map((item) => item.label);
+
+  return scored.length ? scored : ["Kunde og behov"];
+}
+
+function retrievalTermsForChatDomains(domains: ChatDomainHint[]) {
+  return Array.from(
+    new Set(
+      CHAT_DOMAIN_PROFILES.filter((profile) => domains.includes(profile.label))
+        .flatMap((profile) => profile.retrievalTerms)
+        .slice(0, 18),
+    ),
+  );
+}
+
+function sourceReferencesFromSnippets(
+  snippets: RetrievedDocumentSnippet[],
+): ChatSourceReference[] {
+  const byKey = new Map<string, ChatSourceReference>();
+
+  for (const snippet of snippets) {
+    const reference: ChatSourceReference = {
+      document_title: snippet.documentTitle,
+      reference: snippet.reference,
+      heading_path: snippet.headingPath,
+      page_start: snippet.pageStart,
+      page_end: snippet.pageEnd,
+      source_type: snippet.sourceType,
+      source_id: snippet.sourceId,
+    };
+    const key = [
+      reference.source_type,
+      reference.source_id,
+      reference.reference,
+      reference.page_start ?? "",
+      reference.page_end ?? "",
+    ].join(":");
+    if (!byKey.has(key)) {
+      byKey.set(key, reference);
+    }
+  }
+
+  return [...byKey.values()].slice(0, 8);
+}
+
+function buildChatHistoryContext(messages: ChatMessage[]) {
+  const lines: string[] = [];
+  let charCount = 0;
+
+  for (const message of messages.slice(-CHAT_HISTORY_MESSAGE_LIMIT).reverse()) {
+    const role = message.role === "user" ? "Bruker" : "Assistent";
+    const line = `${role}: ${compactText(message.content, 1200)}`;
+    if (charCount + line.length > CHAT_HISTORY_CHAR_LIMIT && lines.length) {
+      break;
+    }
+    lines.unshift(line);
+    charCount += line.length;
+  }
+
+  return lines.join("\n\n");
 }
 
 function serviceDocumentAsProjectDocument(
@@ -4390,7 +4558,7 @@ async function createJsonCompletion<T>(input: {
 }): Promise<T> {
   const client = await getClient();
   const model = input.model ?? ANALYSIS_MODEL;
-  const response = await client.chat.completions.create({
+  const response = (await client.chat.completions.create({
     model,
     reasoning_effort: input.reasoningEffort ?? ANALYSIS_REASONING_EFFORT,
     ...(supportsCustomTemperature(model)
@@ -4401,7 +4569,7 @@ async function createJsonCompletion<T>(input: {
       { role: "system", content: input.system },
       { role: "user", content: input.user },
     ],
-  });
+  })) as ChatCompletionResponse;
 
   const content = response.choices[0]?.message?.content;
   if (!content) {
@@ -4459,7 +4627,7 @@ async function createTextCompletion(input: {
 }) {
   const client = await getClient();
   const model = input.model ?? ANALYSIS_MODEL;
-  const response = await client.chat.completions.create({
+  const response = (await client.chat.completions.create({
     model,
     reasoning_effort: input.reasoningEffort ?? ANALYSIS_REASONING_EFFORT,
     ...(supportsCustomTemperature(model)
@@ -4469,9 +4637,43 @@ async function createTextCompletion(input: {
       { role: "system", content: input.system },
       { role: "user", content: input.user },
     ],
-  });
+  })) as ChatCompletionResponse;
 
   return response.choices[0]?.message?.content?.trim() || "";
+}
+
+async function createTextCompletionStream(input: {
+  system: string;
+  user: string;
+  temperature?: number;
+  model?: string;
+  reasoningEffort?: ReasoningEffort;
+}) {
+  const client = await getClient();
+  const model = input.model ?? ANALYSIS_MODEL;
+  const stream = (await client.chat.completions.create({
+    model,
+    stream: true,
+    reasoning_effort: input.reasoningEffort ?? ANALYSIS_REASONING_EFFORT,
+    ...(supportsCustomTemperature(model)
+      ? { temperature: input.temperature ?? 0.3 }
+      : {}),
+    messages: [
+      { role: "system", content: input.system },
+      { role: "user", content: input.user },
+    ],
+  })) as AsyncIterable<ChatCompletionStreamChunk>;
+
+  async function* textChunks() {
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        yield content;
+      }
+    }
+  }
+
+  return textChunks();
 }
 
 export async function analyzeCustomerDocuments(input: {
@@ -5386,7 +5588,7 @@ export async function synthesizeAndEvaluateSolution(input: {
   };
 }
 
-export async function answerProjectChat(input: {
+type ProjectChatInput = {
   projectName: string;
   customerAnalysis: CustomerAnalysisResult | null;
   solutionEvaluation: SolutionEvaluationResult | null;
@@ -5397,29 +5599,41 @@ export async function answerProjectChat(input: {
   supportingDocuments?: ProjectDocumentDetail[];
   question: string;
   model?: string;
-}) {
-  const history = input.recentMessages
-    .slice(-8)
-    .map(
-      (message) =>
-        `${message.role === "user" ? "Bruker" : "Assistent"}: ${message.content}`,
-    )
-    .join("\n");
+  sessionSummary?: string | null;
+  domainHints?: ChatDomainHint[];
+};
+
+async function prepareProjectChatCompletion(input: ProjectChatInput) {
+  const domainHints =
+    input.domainHints?.length
+      ? input.domainHints
+      : inferProjectChatDomains({
+          question: input.question,
+          recentMessages: input.recentMessages,
+          sessionSummary: input.sessionSummary,
+        });
+  const domainTerms = retrievalTermsForChatDomains(domainHints);
+  const history = buildChatHistoryContext(input.recentMessages);
   const projectDocumentsForRetrieval = [
     input.customerDocument,
     input.solutionDocument,
     ...(input.supportingDocuments ?? []),
   ].filter((document): document is ProjectDocumentDetail => Boolean(document));
+  const retrievedSnippets = await retrieveDocumentSnippets({
+    query: [input.question, domainHints.join(" "), domainTerms.join(" ")]
+      .filter(Boolean)
+      .join("\n"),
+    projectId: projectDocumentsForRetrieval[0]?.project_id ?? null,
+    documents: projectDocumentsForRetrieval,
+    exactTerms: domainTerms,
+    limit: 12,
+  });
   const retrievalContext = retrievedSnippetContext(
     "Mest relevante dokumentutdrag for spørsmålet",
-    await retrieveDocumentSnippets({
-      query: input.question,
-      projectId: projectDocumentsForRetrieval[0]?.project_id ?? null,
-      documents: projectDocumentsForRetrieval,
-      limit: 10,
-    }),
+    retrievedSnippets,
     { textLimit: 1300 },
   );
+  const sourceReferences = sourceReferencesFromSnippets(retrievedSnippets);
   const supportingDocuments = (input.supportingDocuments ?? [])
     .slice(0, 4)
     .map((document, index) =>
@@ -5439,6 +5653,13 @@ export async function answerProjectChat(input: {
 
   const userPrompt = [
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
+    buildDelimitedContext("Tolkede chatdomener", domainHints.join(", ")),
+    input.sessionSummary
+      ? buildDelimitedContext(
+          "Samtaleminne",
+          compactText(input.sessionSummary, CHAT_SESSION_MEMORY_PROMPT_LIMIT),
+        )
+      : "",
     input.customerAnalysis
       ? buildDelimitedContext(
           "Kundeanalyse",
@@ -5476,13 +5697,43 @@ export async function answerProjectChat(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  return createTextCompletion({
+  return {
     system: buildChatPrompt(),
     user: userPrompt,
     temperature: 0.35,
     model: input.model ?? FAST_MODEL,
     reasoningEffort: FAST_REASONING_EFFORT,
+    sourceReferences,
+    domainHints,
+  };
+}
+
+export async function answerProjectChat(input: ProjectChatInput) {
+  const completionInput = await prepareProjectChatCompletion(input);
+  return createTextCompletion({
+    system: completionInput.system,
+    user: completionInput.user,
+    temperature: completionInput.temperature,
+    model: completionInput.model,
+    reasoningEffort: completionInput.reasoningEffort,
   });
+}
+
+export async function streamProjectChat(input: ProjectChatInput) {
+  const completionInput = await prepareProjectChatCompletion(input);
+  const stream = await createTextCompletionStream({
+    system: completionInput.system,
+    user: completionInput.user,
+    temperature: completionInput.temperature,
+    model: completionInput.model,
+    reasoningEffort: completionInput.reasoningEffort,
+  });
+
+  return {
+    stream,
+    sourceReferences: completionInput.sourceReferences,
+    domainHints: completionInput.domainHints,
+  };
 }
 
 export async function inferProjectMetadataFromCustomerDocument(input: {

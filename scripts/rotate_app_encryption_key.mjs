@@ -351,6 +351,11 @@ async function main() {
       jsonFields: ["input_snapshot"],
     },
     {
+      table: "chat_sessions",
+      select: "id, summary_encrypted",
+      stringFields: ["summary_encrypted"],
+    },
+    {
       table: "chat_messages",
       select: "id, context_snapshot",
       jsonFields: ["context_snapshot"],

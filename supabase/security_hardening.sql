@@ -87,6 +87,7 @@ alter table solution_evaluations enable row level security;
 alter table executive_summaries enable row level security;
 alter table generated_artifacts enable row level security;
 alter table project_jobs enable row level security;
+alter table chat_sessions enable row level security;
 alter table chat_messages enable row level security;
 alter table audit_events enable row level security;
 alter table app_rate_limits enable row level security;
