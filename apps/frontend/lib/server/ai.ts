@@ -7,6 +7,7 @@ import {
 } from "@/lib/server/document-chunks";
 import {
   buildChatPrompt,
+  CUSTOMER_ANALYSIS_READABILITY_RULES,
   buildCustomerAnalysisPrompt,
   buildDelimitedContext,
   buildExecutiveSummaryPrompt,
@@ -3661,22 +3662,37 @@ function splitIntoSentences(value: string) {
 }
 
 function dedupeSummary(value: string, references: string[]) {
-  const sentences = splitIntoSentences(value);
-  if (!sentences.length) {
+  const paragraphs = value
+    .split(/\n\s*\n+/)
+    .map((paragraph) =>
+      paragraph.replace(/[ \t]+/g, " ").replace(/\n+/g, " ").trim(),
+    )
+    .filter(Boolean);
+
+  if (!paragraphs.length) {
     return value.replace(/\s+/g, " ").trim();
   }
 
-  const kept = sentences.filter((sentence) => {
-    return !references.some((reference) =>
-      isNearDuplicate(sentence, reference, 0.76),
-    );
-  });
+  const keptParagraphs = paragraphs
+    .map((paragraph) => {
+      const sentences = splitIntoSentences(paragraph);
+      if (!sentences.length) {
+        return paragraph;
+      }
 
-  const normalized = (kept.length ? kept : sentences)
-    .join(" ")
-    .replace(/\s+/g, " ")
+      const keptSentences = sentences.filter((sentence) => {
+        return !references.some((reference) =>
+          isNearDuplicate(sentence, reference, 0.76),
+        );
+      });
+
+      return keptSentences.join(" ").replace(/\s+/g, " ").trim();
+    })
+    .filter(Boolean);
+
+  return (keptParagraphs.length ? keptParagraphs : paragraphs)
+    .join("\n\n")
     .trim();
-  return normalized;
 }
 
 function normalizeSignalWords(items: string[]) {
@@ -4792,6 +4808,7 @@ export async function regenerateCustomerAnalysisSection(input: {
       "Ikke returner felter som ikke er bedt om.",
       "Ikke skriv generisk konsulentspråk.",
       "Ikke gjenta samme observasjon med små omskrivninger.",
+      ...CUSTOMER_ANALYSIS_READABILITY_RULES,
       ...config.guidance,
     ],
     outputContract: config.outputContract,

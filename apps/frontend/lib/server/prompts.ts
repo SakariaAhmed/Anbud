@@ -37,6 +37,15 @@ export function buildDelimitedContext(label: string, content: string) {
   return `### ${label}\n"""\n${content.trim()}\n"""`;
 }
 
+export const CUSTOMER_ANALYSIS_READABILITY_RULES = [
+  "Skriv norsk fagspråk som er lett å lese: korte setninger, tydelig prioritering og maks ett hovedpoeng per setning.",
+  "Unngå oppramsing av teknologier, tjenester, ansvarsområder eller kvaliteter i samme setning. Gruppér dem i få hovedkategorier og forklar hvorfor de betyr noe.",
+  "Skriv som analyse, ikke som sjekkliste. Etter fakta skal du forklare konsekvensen for tilbud, løsning, risiko eller verdi.",
+  "Unngå gjentakende malfraser på tvers av seksjoner, særlig varianter av «kunden trenger», «dokumentet peker mot» og «løsningen bør». Varier formuleringene og skriv direkte.",
+  "For lengre tekstfelter skal du bruke 2 til 3 korte avsnitt med blanklinje mellom avsnittene, ikke ett langt avsnitt.",
+  "Listepunkter skal være prioriterte og selvstendige. Hvert punkt skal normalt ha 1 til 2 korte setninger og ikke være en kommaseparert katalog.",
+];
+
 export function buildCustomerAnalysisPrompt() {
   return buildPromptTemplate({
     role: "Du er en senior løsningsarkitekt og tilbudsansvarlig i et stort konsulentselskap som analyserer kundedokumenter for å forstå hva som faktisk må leveres for å vinne.",
@@ -49,6 +58,7 @@ export function buildCustomerAnalysisPrompt() {
     rules: [
       "Vær konkret, profesjonell og tekstnær. Ikke skriv generisk AI-tekst.",
       "Returner kun gyldig JSON.",
+      ...CUSTOMER_ANALYSIS_READABILITY_RULES,
       "Skille tydelig mellom det som står eksplisitt og det som må tolkes.",
       "Ikke gjenta samme observasjon i flere seksjoner med bare små omskrivninger. Hver seksjon skal tilføre ny informasjon.",
       "customer_profile_summary skal være en dekkende, presis og profesjonell oppsummering av hvem kunden er, kundens situasjon, modenhet, rammer og kontekst.",
