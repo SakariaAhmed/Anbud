@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 
 import { ProjectChatPopoutPage } from "@/components/projects/project-chat-popout-page";
-import { getProjectShell, listProjects } from "@/lib/server/projects-db";
+import {
+  getProjectShell,
+  listProjects,
+} from "@/lib/server/repositories/projects";
 
 function parseSessionId(value: string | string[] | undefined) {
   const sessionId = Array.isArray(value) ? value[0] : value;

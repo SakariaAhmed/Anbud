@@ -7,13 +7,17 @@ import {
 } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
-  getDocumentDetail,
-  getProjectSnapshot,
   getSolutionEvaluation,
-  listProjectDocuments,
-  saveGeneratedArtifact,
   saveSolutionEvaluation,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/analyses";
+import {
+  getDocumentDetail,
+  listProjectDocuments,
+} from "@/lib/server/repositories/documents";
+import { getProjectSnapshot } from "@/lib/server/repositories/projects";
+import {
+  saveGeneratedArtifact,
+} from "@/lib/server/repositories/artifacts";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 
 const READ_CACHE_HEADERS = {

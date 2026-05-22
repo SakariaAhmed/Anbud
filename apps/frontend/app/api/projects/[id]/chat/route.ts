@@ -3,12 +3,12 @@ import { NextResponse } from "next/server";
 import { answerProjectChat, resolveOpenAIModelOverride } from "@/lib/server/ai";
 import {
   appendChatMessage,
-  getCustomerAnalysis,
-  getProjectDetail,
-  listGeneratedArtifacts,
   listChatMessages,
-  listProjectDocuments,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/chat";
+import { getCustomerAnalysis } from "@/lib/server/repositories/analyses";
+import { getProjectDetail } from "@/lib/server/repositories/projects";
+import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
+import { listProjectDocuments } from "@/lib/server/repositories/documents";
 import type { ChatMessage, ChatSessionSummary } from "@/lib/types";
 
 function truncateTitle(value: string, limit = 64) {

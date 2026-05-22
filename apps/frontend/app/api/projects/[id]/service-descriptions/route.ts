@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import {
   listProjectServiceDescriptions,
   setProjectServiceSelections,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/services";
 
 const PROJECT_SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=60, stale-while-revalidate=300",

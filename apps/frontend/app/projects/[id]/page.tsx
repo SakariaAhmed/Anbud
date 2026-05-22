@@ -4,7 +4,7 @@ import {
   ProjectWorkspacePage,
   type ProjectWorkspaceTab,
 } from "@/components/projects/project-workspace-page";
-import { getProjectShell } from "@/lib/server/projects-db";
+import { getProjectShell } from "@/lib/server/repositories/projects";
 
 const validTabs = new Set<string>([
   "documents",

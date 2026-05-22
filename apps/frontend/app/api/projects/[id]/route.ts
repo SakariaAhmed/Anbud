@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { deleteProject, getProjectDetail } from "@/lib/server/projects-db";
+import { deleteProject, getProjectDetail } from "@/lib/server/repositories/projects";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 
 const READ_CACHE_HEADERS = {

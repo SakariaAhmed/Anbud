@@ -4,11 +4,13 @@ import { generateExecutiveSummary, resolveOpenAIModelOverride } from "@/lib/serv
 import {
   getCustomerAnalysis,
   getExecutiveSummary,
-  getProjectDetail,
-  getProjectSnapshot,
   getSolutionEvaluation,
   saveExecutiveSummary,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/analyses";
+import {
+  getProjectDetail,
+  getProjectSnapshot,
+} from "@/lib/server/repositories/projects";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=30, stale-while-revalidate=300",

@@ -8,10 +8,10 @@ import {
 } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
-  getProjectSnapshot,
-  listProjectDocuments,
   saveCustomerAnalysis,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/analyses";
+import { listProjectDocuments } from "@/lib/server/repositories/documents";
+import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
   AnalysisRequirement,

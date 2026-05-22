@@ -255,7 +255,11 @@ create table project_jobs (
   status text not null default 'queued' check (status in ('queued', 'running', 'completed', 'failed')),
   message text not null default '',
   error text,
+  input_json jsonb,
   result_json jsonb,
+  locked_at timestamptz,
+  started_at timestamptz,
+  completed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -263,6 +267,7 @@ create table project_jobs (
 create index project_jobs_project_id_idx on project_jobs(project_id, created_at desc);
 create index project_jobs_status_idx on project_jobs(status, updated_at desc);
 create index project_jobs_project_status_idx on project_jobs(project_id, status, updated_at desc);
+create index project_jobs_queue_claim_idx on project_jobs(status, locked_at, created_at) where status in ('queued', 'running');
 
 create table chat_messages (
   id uuid primary key default gen_random_uuid(),

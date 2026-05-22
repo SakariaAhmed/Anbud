@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { deleteServiceDocument } from "@/lib/server/projects-db";
+import { deleteServiceDocument } from "@/lib/server/repositories/services";
 
 export async function DELETE(
   _: Request,

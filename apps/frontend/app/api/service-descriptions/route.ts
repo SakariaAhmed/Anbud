@@ -8,7 +8,7 @@ import {
   saveServiceDocument,
   updateServiceDocumentAiSummary,
   upsertServiceDescription,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/services";
 
 const SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=300, stale-while-revalidate=1800",

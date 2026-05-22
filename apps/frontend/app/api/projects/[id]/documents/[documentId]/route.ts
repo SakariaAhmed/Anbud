@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import {
   deleteDocument,
   getDocumentDetail,
-  getProjectSnapshot,
   markDocumentAsPrimarySolution,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/documents";
+import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 
 export async function GET(

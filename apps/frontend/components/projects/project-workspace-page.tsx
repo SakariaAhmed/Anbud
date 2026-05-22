@@ -40,7 +40,24 @@ import {
   projectServicesCacheKey,
   setClientCache,
 } from "@/lib/client-cache";
+import {
+  deleteGeneratedArtifact,
+  deleteProjectDocument,
+  fetchCustomerAnalysis,
+  fetchExecutiveSummary,
+  fetchGeneratedArtifacts,
+  fetchOpenAIModels,
+  fetchProjectServices,
+  fetchSolutionEvaluation,
+  saveCustomerAnalysisSection,
+  startProjectJob,
+  updateGeneratedArtifact,
+  uploadProjectDocument,
+  type OpenAIModelSummary,
+  type ProjectSnapshotPayload,
+} from "@/lib/client/project-api";
 import { Spinner } from "@/components/ui/spinner";
+import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { Input } from "@/components/projects/primitives";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
@@ -73,7 +90,6 @@ import type {
   ProjectDocumentRole,
   ProjectServiceDescription,
   ProjectJobRecord,
-  ProjectStatus,
   SolutionEvaluationResult,
 } from "@/lib/types";
 
@@ -496,19 +512,6 @@ function preloadWorkspaceTab(tab: ProjectWorkspaceTab) {
   void workspaceTabPreloaders[tab]?.();
 }
 
-interface ProjectSnapshotPayload {
-  name: string;
-  customer_name: string | null;
-  description: string | null;
-  industry: string | null;
-  status: ProjectStatus;
-  customer_document_uploaded: boolean;
-  customer_analysis_generated: boolean;
-  solution_document_uploaded: boolean;
-  solution_evaluation_generated: boolean;
-  last_activity_at: string;
-}
-
 const PROJECT_WORKSPACE_TABS = [
   "documents",
   "analysis",
@@ -573,43 +576,6 @@ function prependGeneratedArtifact(
   return [artifact, ...artifacts.filter((item) => item.id !== artifact.id)];
 }
 
-function sleep(ms: number, signal?: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason);
-      return;
-    }
-
-    const timeout = window.setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        window.clearTimeout(timeout);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
-  });
-}
-
-async function readJsonPayload<T>(
-  response: Response,
-  fallbackMessage: string,
-): Promise<T & { error?: string }> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    return (await response.json()) as T & { error?: string };
-  }
-
-  const text = await response.text().catch(() => "");
-  const looksLikeHtml = /^\s*</.test(text);
-  return {
-    error: looksLikeHtml
-      ? `${fallbackMessage} Serveren returnerte en HTML-feilside i stedet for JSON. Sjekk serverloggen for detaljer.`
-      : text.trim() || fallbackMessage,
-  } as T & { error?: string };
-}
-
 function DeferredSectionLoader({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground shadow-sm">
@@ -617,57 +583,6 @@ function DeferredSectionLoader({ label }: { label: string }) {
       <span>{label}</span>
     </div>
   );
-}
-
-async function pollProjectJob({
-  projectId,
-  jobId,
-  onStatus,
-  signal,
-}: {
-  projectId: string;
-  jobId: string;
-  onStatus: (job: ProjectJobRecord) => void;
-  signal?: AbortSignal;
-}) {
-  const delays = [1500, 3000, 5000, 8000, 12000];
-  let attempt = 0;
-
-  while (true) {
-    const baseDelay = delays[Math.min(attempt, delays.length - 1)] ?? 12000;
-    const delay =
-      typeof document !== "undefined" && document.visibilityState === "hidden"
-        ? Math.max(baseDelay, 20000)
-        : baseDelay;
-
-    await sleep(delay, signal);
-    attempt += 1;
-
-    const statusResponse = await fetch(
-      `/api/projects/${projectId}/jobs/${jobId}`,
-      { cache: "no-store", signal },
-    );
-    const statusPayload = await readJsonPayload<{
-      error?: string;
-      job?: ProjectJobRecord;
-    }>(statusResponse, "Kunne ikke hente jobbstatus.");
-    if (!statusResponse.ok || !statusPayload.job) {
-      throw new Error(statusPayload.error || "Kunne ikke hente jobbstatus.");
-    }
-
-    onStatus(statusPayload.job);
-
-    if (statusPayload.job.status === "failed") {
-      throw new Error(statusPayload.job.error || "Jobben feilet.");
-    }
-
-    if (
-      statusPayload.job.status === "completed" &&
-      statusPayload.job.result
-    ) {
-      return statusPayload.job;
-    }
-  }
 }
 
 const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
@@ -762,12 +677,6 @@ const MODEL_HELP_TEXT: Record<string, string> = {
   "gpt-5.4-nano": "Raskest og billigst: best for korte oppgaver, lavere presisjon på kompleks strategi.",
   "gpt-5.2": "Stabilt kvalitetsvalg: god intelligens og forutsigbarhet, men eldre enn 5.4/5.5.",
   "gpt-5.2-pro": "Sterk eldre pro-modell: bra på krevende resonnement, ofte tregere og dyrere enn standard.",
-};
-
-type OpenAIModelSummary = {
-  id: string;
-  created: number | null;
-  owned_by: string | null;
 };
 
 function parseCustomerAnalysisSectionBusy(
@@ -892,8 +801,6 @@ export function ProjectWorkspacePage({
     },
     [activeTab, pathname, router, searchParams],
   );
-  const activeJobAbortRef = useRef<AbortController | null>(null);
-
   useEffect(() => {
     const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY) ?? "";
     if (!storedModel || isSlowOrExpensiveModel(storedModel)) {
@@ -911,11 +818,7 @@ export function ProjectWorkspacePage({
     const request = (async () => {
       setModelsLoading(true);
       try {
-        const response = await fetch("/api/openai-models");
-        const payload = await readJsonPayload<{
-          models?: OpenAIModelSummary[];
-          default_model?: string;
-        }>(response, "Kunne ikke hente modeller.");
+        const payload = await fetchOpenAIModels();
         const models = payload.models ?? [];
         const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY) ?? "";
         setAvailableModels(models);
@@ -975,16 +878,9 @@ export function ProjectWorkspacePage({
     }
 
     try {
-      const response = await fetch(`/api/projects/${project.id}/service-descriptions`);
-      const payload = await readJsonPayload<{
-        services?: ProjectServiceDescription[];
-        error?: string;
-      }>(response, "Kunne ikke hente tjenestebeskrivelser.");
-      if (!response.ok || !payload.services) {
-        throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
-      }
-      setServiceDescriptions(payload.services);
-      setClientCache(cacheKey, payload.services, PROJECT_SERVICES_CACHE_TTL_MS);
+      const services = await fetchProjectServices(project.id);
+      setServiceDescriptions(services);
+      setClientCache(cacheKey, services, PROJECT_SERVICES_CACHE_TTL_MS);
     } catch {
       setServiceDescriptions([]);
     }
@@ -1045,60 +941,23 @@ export function ProjectWorkspacePage({
 
   useEffect(() => stopProgressTicker, []);
 
-  useEffect(() => {
-    return () => {
-      activeJobAbortRef.current?.abort();
-    };
-  }, []);
-
-  async function waitForProjectJob(
-    jobId: string,
-    failedFallbackMessage: string,
-    initialJob?: ProjectJobRecord,
-  ) {
-    activeJobAbortRef.current?.abort();
-    const controller = new AbortController();
-    activeJobAbortRef.current = controller;
-    if (initialJob) {
-      startEstimatedProgress(initialJob);
-    }
-
-    try {
-      const job = await pollProjectJob({
-        projectId: project.id,
-        jobId,
-        onStatus(jobStatus) {
-          setBusyMessage(progressMessageLabel(jobStatus.message));
-          const nextProgress = progressForJobStatus(jobStatus);
-          if (hasExplicitProgress(jobStatus.message)) {
-            if (progressIntervalRef.current) {
-              window.clearInterval(progressIntervalRef.current);
-              progressIntervalRef.current = null;
-            }
-            setBusyProgress(nextProgress);
-          } else {
-            setBusyProgress((current) => Math.max(current, nextProgress));
-          }
-        },
-        signal: controller.signal,
-      });
-
-      if (job.status === "failed") {
-        throw new Error(job.error || failedFallbackMessage);
+  const { waitForProjectJob } = useProjectJobRunner({
+    projectId: project.id,
+    onStart: startEstimatedProgress,
+    onStatus(jobStatus) {
+      setBusyMessage(progressMessageLabel(jobStatus.message));
+      const nextProgress = progressForJobStatus(jobStatus);
+      if (hasExplicitProgress(jobStatus.message)) {
+        if (progressIntervalRef.current) {
+          window.clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+        setBusyProgress(nextProgress);
+      } else {
+        setBusyProgress((current) => Math.max(current, nextProgress));
       }
-
-      return job;
-    } catch (error) {
-      if (controller.signal.aborted) {
-        throw new Error("Jobben ble avbrutt.");
-      }
-      throw error;
-    } finally {
-      if (activeJobAbortRef.current === controller) {
-        activeJobAbortRef.current = null;
-      }
-    }
-  }
+    },
+  });
 
   useEffect(() => {
     try {
@@ -1170,19 +1029,12 @@ export function ProjectWorkspacePage({
 
     let cancelled = false;
     setAnalysisLoading(true);
-    fetch(`/api/projects/${project.id}/customer-analysis`)
-      .then(async (response) => {
-        const payload = await readJsonPayload<{
-          error?: string;
-          analysis?: CustomerAnalysisResult | null;
-        }>(response, "Kunne ikke hente kundeanalysen.");
-        if (!response.ok) {
-          throw new Error(payload.error || "Kunne ikke hente kundeanalysen.");
-        }
+    fetchCustomerAnalysis(project.id)
+      .then((analysis) => {
         if (!cancelled) {
           setProject((current) => ({
             ...current,
-            customer_analysis: payload.analysis ?? null,
+            customer_analysis: analysis,
           }));
           setAnalysisLoaded(true);
         }
@@ -1224,21 +1076,12 @@ export function ProjectWorkspacePage({
 
     let cancelled = false;
     setEvaluationLoading(true);
-    fetch(`/api/projects/${project.id}/solution-evaluation`)
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          error?: string;
-          evaluation?: SolutionEvaluationResult | null;
-        };
-        if (!response.ok) {
-          throw new Error(
-            payload.error || "Kunne ikke hente løsningsvurderingen.",
-          );
-        }
+    fetchSolutionEvaluation(project.id)
+      .then((evaluation) => {
         if (!cancelled) {
           setProject((current) => ({
             ...current,
-            solution_evaluation: payload.evaluation ?? null,
+            solution_evaluation: evaluation,
           }));
           setEvaluationLoaded(true);
         }
@@ -1280,21 +1123,12 @@ export function ProjectWorkspacePage({
 
     let cancelled = false;
     setExecutiveSummaryLoading(true);
-    fetch(`/api/projects/${project.id}/executive-summary`)
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          error?: string;
-          executive_summary?: ExecutiveSummaryResult | null;
-        };
-        if (!response.ok) {
-          throw new Error(
-            payload.error || "Kunne ikke hente lederoppsummeringen.",
-          );
-        }
+    fetchExecutiveSummary(project.id)
+      .then((executiveSummary) => {
         if (!cancelled) {
           setProject((current) => ({
             ...current,
-            executive_summary: payload.executive_summary ?? null,
+            executive_summary: executiveSummary,
           }));
           setExecutiveSummaryLoaded(true);
         }
@@ -1356,22 +1190,13 @@ export function ProjectWorkspacePage({
 	    )
       return;
     let cancelled = false;
-    fetch(`/api/projects/${project.id}/generate`, { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          error?: string;
-          artifacts?: GeneratedArtifact[];
-        };
-        if (!response.ok || !payload.artifacts) {
-          throw new Error(
-            payload.error || "Kunne ikke hente generatorresultatene.",
-          );
-        }
+    fetchGeneratedArtifacts(project.id)
+      .then((artifacts) => {
         if (!cancelled) {
           setProject((current) =>
             normalizeProjectState({
               ...current,
-              generated_artifacts: payload.artifacts ?? [],
+              generated_artifacts: artifacts,
             }),
           );
           setArtifactsLoaded(true);
@@ -1402,18 +1227,11 @@ export function ProjectWorkspacePage({
       formData.append("file", file);
       formData.append("title", docTitle);
       formData.append("role", uploadRole);
-      const response = await fetch(`/api/projects/${project.id}/documents`, {
-        method: "POST",
-        body: formData,
+      const payload = await uploadProjectDocument({
+        projectId: project.id,
+        formData,
+        fallbackMessage: "Kunne ikke laste opp dokumentet.",
       });
-      const payload = await readJsonPayload<{
-        error?: string;
-        document?: ProjectDocument;
-        project?: ProjectSnapshotPayload;
-      }>(response, "Kunne ikke laste opp dokumentet.");
-      if (!response.ok || !payload.document || !payload.project) {
-        throw new Error(payload.error || "Kunne ikke laste opp dokumentet.");
-      }
       setDocTitle("");
       setFile(null);
       setUploadRole("supporting_document");
@@ -1452,18 +1270,11 @@ export function ProjectWorkspacePage({
       );
       formData.append("role", "supporting_document");
       formData.append("supporting_subtype", "kravdokument");
-      const response = await fetch(`/api/projects/${project.id}/documents`, {
-        method: "POST",
-        body: formData,
+      const payload = await uploadProjectDocument({
+        projectId: project.id,
+        formData,
+        fallbackMessage: "Kunne ikke laste opp kravdokumentet.",
       });
-      const payload = (await response.json()) as {
-        error?: string;
-        document?: ProjectDocument;
-        project?: ProjectSnapshotPayload;
-      };
-      if (!response.ok || !payload.document || !payload.project) {
-        throw new Error(payload.error || "Kunne ikke laste opp kravdokumentet.");
-      }
       uploadedDocument = payload.document;
       uploadedDocumentId = payload.document.id;
       setProject((current) =>
@@ -1501,23 +1312,13 @@ export function ProjectWorkspacePage({
     setNotice("");
     setBusy(`update-artifact-${artifact.id}`);
     try {
-      const response = await fetch(`/api/projects/${project.id}/generate`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-        body: JSON.stringify({
-          artifact_id: artifact.id,
-          title: value.title,
-          content_markdown: value.content_markdown,
-        }),
+      const payload = await updateGeneratedArtifact({
+        projectId: project.id,
+        artifactId: artifact.id,
+        title: value.title,
+        contentMarkdown: value.content_markdown,
+        headers: aiModelHeaders(),
       });
-      const payload = await readJsonPayload<{
-        error?: string;
-        artifact?: GeneratedArtifact;
-        project?: ProjectSnapshotPayload;
-      }>(response, "Kunne ikke lagre kravbesvarelsen.");
-      if (!response.ok || !payload.artifact || !payload.project) {
-        throw new Error(payload.error || "Kunne ikke lagre kravbesvarelsen.");
-      }
       setProject((current) =>
         normalizeProjectState(
           patchProjectWithSnapshot(
@@ -1545,18 +1346,11 @@ export function ProjectWorkspacePage({
     setNotice("");
     setBusy(`delete-artifact-${artifact.id}`);
     try {
-      const response = await fetch(`/api/projects/${project.id}/generate`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-        body: JSON.stringify({ artifact_id: artifact.id }),
+      const payload = await deleteGeneratedArtifact({
+        projectId: project.id,
+        artifactId: artifact.id,
+        headers: aiModelHeaders(),
       });
-      const payload = await readJsonPayload<{
-        error?: string;
-        project?: ProjectSnapshotPayload;
-      }>(response, "Kunne ikke slette artefakten.");
-      if (!response.ok || !payload.project) {
-        throw new Error(payload.error || "Kunne ikke slette artefakten.");
-      }
       setProject((current) =>
         normalizeProjectState(
           patchProjectWithSnapshot(
@@ -1581,17 +1375,10 @@ export function ProjectWorkspacePage({
 
   async function onDeleteDocument(document: ProjectDocument) {
     await runAction(`delete-${document.id}`, async () => {
-      const response = await fetch(
-        `/api/projects/${project.id}/documents/${document.id}`,
-        { method: "DELETE" },
-      );
-      const payload = (await response.json()) as {
-        error?: string;
-        project?: ProjectSnapshotPayload;
-      };
-      if (!response.ok || !payload.project) {
-        throw new Error(payload.error || "Kunne ikke slette dokumentet.");
-      }
+      const payload = await deleteProjectDocument({
+        projectId: project.id,
+        documentId: document.id,
+      });
       setProject((current) => {
         const next = patchProjectWithSnapshot(
           {
@@ -1628,27 +1415,28 @@ export function ProjectWorkspacePage({
     });
   }
 
+  function startWorkspaceJob(body: unknown, fallbackMessage: string) {
+    return startProjectJob({
+      projectId: project.id,
+      body,
+      headers: aiModelHeaders(),
+      fallbackMessage,
+    });
+  }
+
   async function onGenerateCustomerAnalysis() {
     await runAction(
       "analysis",
       async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({ kind: "customer_analysis" }),
-        });
-        const payload = await readJsonPayload<{
-          error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte kundeanalysen.");
-        if (!response.ok || !payload.job) {
-          throw new Error(payload.error || "Kunne ikke starte kundeanalysen.");
-        }
-        setBusyMessage(payload.job.message);
+        const job = await startWorkspaceJob(
+          { kind: "customer_analysis" },
+          "Kunne ikke starte kundeanalysen.",
+        );
+        setBusyMessage(job.message);
         const completedJob = await waitForProjectJob(
-          payload.job.id,
+          job.id,
           "Kundeanalysen feilet.",
-          payload.job,
+          job,
         );
         const result = completedJob.result as {
           analysis: CustomerAnalysisResult;
@@ -1676,25 +1464,12 @@ export function ProjectWorkspacePage({
     snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
   ) {
     await runAction("save-analysis", async () => {
-      const response = await fetch(
-        `/api/projects/${project.id}/customer-analysis`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({
-            section,
-            section_snapshot: snapshot,
-          }),
-        },
-      );
-      const payload = (await response.json()) as {
-        error?: string;
-        analysis?: CustomerAnalysisResult;
-        project?: ProjectSnapshotPayload;
-      };
-      if (!response.ok || !payload.analysis || !payload.project) {
-        throw new Error(payload.error || "Kunne ikke lagre analysen.");
-      }
+      const payload = await saveCustomerAnalysisSection({
+        projectId: project.id,
+        section,
+        snapshot,
+        headers: aiModelHeaders(),
+      });
       setProject((current) =>
         normalizeProjectState(
           patchProjectWithSnapshot(
@@ -1716,29 +1491,19 @@ export function ProjectWorkspacePage({
     await runAction(
       "artifact",
       async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({
+        const job = await startWorkspaceJob(
+          {
             kind: "artifact_generation",
             artifact_type: "losningsutkast",
             instructions: artifactInstructions,
-          }),
-        });
-        const payload = await readJsonPayload<{
-          error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte jobben.");
-        if (!response.ok || !payload.job) {
-          throw new Error(
-            payload.error || "Kunne ikke starte generatorjobben.",
-          );
-        }
-        setBusyMessage(payload.job.message);
+          },
+          "Kunne ikke starte generatorjobben.",
+        );
+        setBusyMessage(job.message);
         const completedJob = await waitForProjectJob(
-          payload.job.id,
+          job.id,
           "Generatorjobben feilet.",
-          payload.job,
+          job,
         );
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
@@ -1773,28 +1538,18 @@ export function ProjectWorkspacePage({
     await runAction(
       "delivery-artifact",
       async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({
+        const job = await startWorkspaceJob(
+          {
             kind: "artifact_generation",
             artifact_type: "gjennomforing_og_risiko",
-          }),
-        });
-        const payload = await readJsonPayload<{
-          error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte jobben.");
-        if (!response.ok || !payload.job) {
-          throw new Error(
-            payload.error || "Kunne ikke starte jobben for fremdriftsplan.",
-          );
-        }
-        setBusyMessage(payload.job.message);
+          },
+          "Kunne ikke starte jobben for fremdriftsplan.",
+        );
+        setBusyMessage(job.message);
         const completedJob = await waitForProjectJob(
-          payload.job.id,
+          job.id,
           "Jobben for fremdriftsplanen feilet.",
-          payload.job,
+          job,
         );
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
@@ -1828,29 +1583,19 @@ export function ProjectWorkspacePage({
     await runAction(
       "bilag1-artifact",
       async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({
+        const job = await startWorkspaceJob(
+          {
             kind: "artifact_generation",
             artifact_type: "bilag1_rekonstruksjon",
             instructions,
-          }),
-        });
-        const payload = await readJsonPayload<{
-          error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte jobben.");
-        if (!response.ok || !payload.job) {
-          throw new Error(
-            payload.error || "Kunne ikke starte jobben for Bilag 1.",
-          );
-        }
-        setBusyMessage(payload.job.message);
+          },
+          "Kunne ikke starte jobben for Bilag 1.",
+        );
+        setBusyMessage(job.message);
         const completedJob = await waitForProjectJob(
-          payload.job.id,
+          job.id,
           "Jobben for Bilag 1 feilet.",
-          payload.job,
+          job,
         );
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
@@ -1882,31 +1627,21 @@ export function ProjectWorkspacePage({
     await runAction(
       "requirement-response",
       async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({
+        const job = await startWorkspaceJob(
+          {
             kind: "artifact_generation",
             artifact_type: "forbedret_kravsvar",
             source_document_ids: selectedRequirementDocumentId
               ? [selectedRequirementDocumentId]
               : [],
-          }),
-        });
-        const payload = await readJsonPayload<{
-          error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte jobben.");
-        if (!response.ok || !payload.job) {
-          throw new Error(
-            payload.error || "Kunne ikke starte jobben for kravbesvarelse.",
-          );
-        }
-        setBusyMessage(payload.job.message);
+          },
+          "Kunne ikke starte jobben for kravbesvarelse.",
+        );
+        setBusyMessage(job.message);
         const completedJob = await waitForProjectJob(
-          payload.job.id,
+          job.id,
           "Jobben for kravbesvarelse feilet.",
-          payload.job,
+          job,
         );
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
@@ -1937,29 +1672,19 @@ export function ProjectWorkspacePage({
     await runAction(
       "solution-evaluation",
       async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({
+        const job = await startWorkspaceJob(
+          {
             kind: "solution_evaluation",
             allow_generated_solution: false,
             solution_document_id: solutionDocumentId,
-          }),
-        });
-        const payload = await readJsonPayload<{
-          error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte jobben.");
-        if (!response.ok || !payload.job) {
-          throw new Error(
-            payload.error || "Kunne ikke starte løsningsvurderingen.",
-          );
-        }
-        setBusyMessage(payload.job.message);
+          },
+          "Kunne ikke starte løsningsvurderingen.",
+        );
+        setBusyMessage(job.message);
         const completedJob = await waitForProjectJob(
-          payload.job.id,
+          job.id,
           "Løsningsvurderingen feilet.",
-          payload.job,
+          job,
         );
         const result = completedJob.result as {
           evaluation: SolutionEvaluationResult;
@@ -1992,25 +1717,15 @@ export function ProjectWorkspacePage({
     await runAction(
       "executive-summary",
       async () => {
-        const response = await fetch(`/api/projects/${project.id}/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...aiModelHeaders() },
-          body: JSON.stringify({ kind: "executive_summary" }),
-        });
-        const payload = await readJsonPayload<{
-          error?: string;
-          job?: ProjectJobRecord;
-        }>(response, "Kunne ikke starte lederoppsummeringen.");
-        if (!response.ok || !payload.job) {
-          throw new Error(
-            payload.error || "Kunne ikke starte lederoppsummeringen.",
-          );
-        }
-        setBusyMessage(payload.job.message);
+        const job = await startWorkspaceJob(
+          { kind: "executive_summary" },
+          "Kunne ikke starte lederoppsummeringen.",
+        );
+        setBusyMessage(job.message);
         const completedJob = await waitForProjectJob(
-          payload.job.id,
+          job.id,
           "Lederoppsummeringen feilet.",
-          payload.job,
+          job,
         );
         const result = completedJob.result as {
           executive_summary: ExecutiveSummaryResult;

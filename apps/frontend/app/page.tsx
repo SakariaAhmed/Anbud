@@ -1,5 +1,5 @@
 import { ProjectDashboard } from "@/components/projects/project-dashboard";
-import { listProjects } from "@/lib/server/projects-db";
+import { listProjects } from "@/lib/server/repositories/projects";
 
 export default async function HomePage() {
   const projects = await listProjects();

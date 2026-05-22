@@ -4,7 +4,7 @@ import {
   deleteServiceDescription,
   getServiceDescription,
   upsertServiceDescription,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/services";
 
 export async function PATCH(
   request: Request,

@@ -3,11 +3,13 @@ import { NextResponse } from "next/server";
 import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
-  getProjectSnapshot,
   listProjectDocumentSummaries,
   saveDocument,
+} from "@/lib/server/repositories/documents";
+import {
+  getProjectSnapshot,
   updateProjectMetadataFromInference,
-} from "@/lib/server/projects-db";
+} from "@/lib/server/repositories/projects";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import type { ProjectDocumentRole, SupportingDocumentSubtype } from "@/lib/types";
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createProject, listProjects } from "@/lib/server/projects-db";
+import { createProject, listProjects } from "@/lib/server/repositories/projects";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import type { ProjectCreateInput } from "@/lib/types";
 
