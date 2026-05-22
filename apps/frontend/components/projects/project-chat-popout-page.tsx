@@ -2,8 +2,10 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Clock3,
   FolderOpen,
   History,
+  MessageSquare,
   MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
@@ -77,6 +79,15 @@ function formatSessionDate(value: string) {
   } catch {
     return "";
   }
+}
+
+function cleanSessionPreview(value: string) {
+  return value
+    .replace(/#{1,6}\s*/g, "")
+    .replace(/\*\*/g, "")
+    .replace(/[`_>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function parseChatDomainsHeader(value: string | null): ChatDomainHint[] {
@@ -380,20 +391,23 @@ export function ProjectChatPopoutPage({
         <aside
           className={cn(
             "hidden shrink-0 overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 md:block",
-            activePanel ? "w-80" : "w-0",
+            activePanel ? "w-[22rem] xl:w-96" : "w-0",
           )}
         >
           <div className="flex h-full min-h-0 flex-col">
             <div className="border-b border-slate-200 px-4 py-4">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-                    {activePanel === "projects" ? "Prosjekter" : "Tidligere chats"}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    {activePanel === "projects" ? "Prosjektliste" : "Samtalehistorikk"}
                   </p>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <h2 className="mt-1 truncate text-base font-semibold text-slate-950">
+                    {activePanel === "projects" ? "Prosjekter" : "Tidligere chats"}
+                  </h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
                     {activePanel === "projects"
                       ? "Bytt til chatten for et annet prosjekt."
-                      : "Velg en samtale og fortsett fra historikken."}
+                      : "Finn riktig samtale raskt og fortsett der dere slapp."}
                   </p>
                 </div>
                 <Button
@@ -437,55 +451,71 @@ export function ProjectChatPopoutPage({
                   ))}
                 </div>
               ) : sessions.length ? (
-                <div className="grid gap-2">
+                <div className="grid gap-2.5">
+                  <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+                    <span>{sessions.length} samtale{sessions.length === 1 ? "" : "r"}</span>
+                    <span>Sist oppdatert</span>
+                  </div>
                   {sessions.map((session) => (
                     <button
                       key={session.id}
                       type="button"
                       onClick={() => void selectSession(session.id)}
                       className={cn(
-                        "rounded-lg border px-3 py-3 text-left transition-colors",
+                        "group relative overflow-hidden rounded-lg border px-3.5 py-3 text-left shadow-sm transition-colors",
                         session.id === activeSessionId
-                          ? "border-slate-900 bg-slate-950 text-white"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                          ? "border-slate-300 bg-slate-50 text-slate-950 ring-1 ring-slate-200"
+                          : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50",
                       )}
                     >
-                      <span className="block truncate text-sm font-semibold">
-                        {session.title}
-                      </span>
-                      <span
-                        className={cn(
-                          "mt-1 block truncate text-xs",
-                          session.id === activeSessionId
-                            ? "text-slate-300"
-                            : "text-slate-500",
-                        )}
-                      >
-                        {session.message_count} meldinger ·{" "}
-                        {formatSessionDate(session.updated_at)}
+                      {session.id === activeSessionId ? (
+                        <span className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-slate-950" />
+                      ) : null}
+                      <span className="flex min-w-0 items-start justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className="block truncate text-[0.95rem] font-semibold leading-5">
+                            {session.title}
+                          </span>
+                          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                            <span className="inline-flex items-center gap-1">
+                              <MessageSquare className="size-3.5" />
+                              {session.message_count} melding
+                              {session.message_count === 1 ? "" : "er"}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Clock3 className="size-3.5" />
+                              {formatSessionDate(session.updated_at)}
+                            </span>
+                          </span>
+                        </span>
+                        {session.id === activeSessionId ? (
+                          <span className="shrink-0 rounded-md bg-slate-950 px-2 py-1 text-[0.65rem] font-semibold text-white">
+                            Aktiv
+                          </span>
+                        ) : null}
                       </span>
                       {session.last_message_preview ? (
                         <span
                           className={cn(
-                            "mt-2 line-clamp-2 block text-xs leading-5",
+                            "mt-3 line-clamp-3 block rounded-md border px-2.5 py-2 text-xs leading-5",
                             session.id === activeSessionId
-                              ? "text-slate-300"
-                              : "text-slate-500",
+                              ? "border-slate-200 bg-white text-slate-600"
+                              : "border-slate-100 bg-slate-50/80 text-slate-600",
                           )}
                         >
-                          {session.last_message_preview}
+                          {cleanSessionPreview(session.last_message_preview)}
                         </span>
                       ) : null}
                       {session.domain_hints.length ? (
-                        <span className="mt-2 flex flex-wrap gap-1">
+                        <span className="mt-3 flex flex-wrap gap-1.5">
                           {session.domain_hints.slice(0, 3).map((domain) => (
                             <span
                               key={domain}
                               className={cn(
-                                "rounded-md px-1.5 py-0.5 text-[0.65rem] font-medium",
+                                "rounded-md border px-2 py-1 text-[0.68rem] font-medium",
                                 session.id === activeSessionId
-                                  ? "bg-white/10 text-slate-200"
-                                  : "bg-slate-100 text-slate-500",
+                                  ? "border-slate-200 bg-white text-slate-600"
+                                  : "border-slate-200 bg-white text-slate-500",
                               )}
                             >
                               {domain}

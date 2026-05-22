@@ -289,6 +289,25 @@ export function ProjectChatTab({
             );
           })}
 
+          {busy && !streamingMessage ? (
+            <div className="flex w-full items-start gap-2.5" aria-live="polite">
+              <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-sm">
+                <Bot className="size-3" />
+              </div>
+              <div className="max-w-[min(100%,24rem)] rounded-2xl border bg-muted/60 px-4 py-3 shadow-sm">
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Spinner className="size-3.5" />
+                  Leser prosjektkontekst
+                </div>
+                <div className="flex h-5 items-center gap-1.5">
+                  <span className="size-2 animate-bounce rounded-full bg-foreground/35 [animation-delay:-0.24s]" />
+                  <span className="size-2 animate-bounce rounded-full bg-foreground/35 [animation-delay:-0.12s]" />
+                  <span className="size-2 animate-bounce rounded-full bg-foreground/35" />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {streamingMessage ? (
             <div className="flex w-full items-start gap-2.5">
               <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-sm">
