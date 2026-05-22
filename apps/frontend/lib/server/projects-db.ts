@@ -17,6 +17,11 @@ import {
   encryptString,
 } from "@/lib/server/crypto";
 import {
+  deleteDocumentChunks,
+  replaceProjectDocumentChunks,
+  replaceServiceDocumentChunks,
+} from "@/lib/server/document-chunks";
+import {
   appendCustomerAnalysisSectionHistory,
   CUSTOMER_ANALYSIS_SECTIONS,
 } from "@/lib/customer-analysis-history";
@@ -35,6 +40,7 @@ import type {
   ProjectDocument,
   ProjectDocumentDetail,
   ProjectDocumentRole,
+  ProjectDocumentStructureEntry,
   ProjectServiceDescription,
   ProjectStatus,
   ProjectSummary,
@@ -468,6 +474,30 @@ function pageCountFromRawText(rawText: string | undefined, fileFormat: string) {
     .filter((value) => Number.isFinite(value));
 
   return pageNumbers.length ? Math.max(...pageNumbers) : null;
+}
+
+function normalizeStructureMapForChunks(
+  value: unknown,
+): ProjectDocumentStructureEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const record = entry as { reference?: unknown; text?: unknown };
+      return {
+        reference: String(record.reference ?? ""),
+        text: String(record.text ?? ""),
+      };
+    })
+    .filter(
+      (entry): entry is ProjectDocumentStructureEntry =>
+        Boolean(entry?.reference || entry?.text),
+    );
 }
 
 function decryptOptionalString(value: string | undefined) {
@@ -1314,6 +1344,18 @@ export async function saveServiceDocument(input: {
       .eq("id", input.serviceId);
   }
 
+  await replaceServiceDocumentChunks({
+    documentId,
+    serviceId: input.serviceId,
+    title: input.title,
+    fileName: input.fileName,
+    fileFormat: input.fileFormat,
+    rawText: input.rawText,
+    structureMap: normalizeStructureMapForChunks(input.structureMap),
+  }).catch(() => {
+    // Chunk indexing should improve retrieval, not block uploads.
+  });
+
   revalidateServiceCaches();
   return mapServiceDocument(data);
 }
@@ -1340,6 +1382,12 @@ export async function deleteServiceDocument(
   if (error) {
     throw new Error(error.message);
   }
+  await deleteDocumentChunks({
+    sourceType: "service_document",
+    sourceId: documentId,
+  }).catch(() => {
+    // Best-effort cleanup for deployments before the chunk table exists.
+  });
   if (storedFile) {
     await removeStoredFiles([
       {
@@ -2184,6 +2232,20 @@ export async function saveDocument(input: {
     .update(projectPatch)
     .eq("id", input.projectId);
 
+  await replaceProjectDocumentChunks({
+    documentId: inserted.id,
+    projectId: input.projectId,
+    role: input.role,
+    supportingSubtype: input.supportingSubtype ?? null,
+    title: input.title,
+    fileName: input.fileName,
+    fileFormat: input.fileFormat,
+    rawText: input.rawText,
+    structureMap: normalizeStructureMapForChunks(input.structureMap),
+  }).catch(() => {
+    // Chunk indexing should improve retrieval, not block uploads.
+  });
+
   await updateProjectContextKeywords(input.projectId);
   revalidateProjectCaches(input.projectId);
 
@@ -2233,6 +2295,12 @@ export async function deleteDocument(projectId: string, documentId: string) {
   if (error) {
     throw new Error(error.message);
   }
+  await deleteDocumentChunks({
+    sourceType: "project_document",
+    sourceId: documentId,
+  }).catch(() => {
+    // Best-effort cleanup for deployments before the chunk table exists.
+  });
   await removeStoredFiles([
     {
       bucket: beforeDelete?.file_storage_bucket,

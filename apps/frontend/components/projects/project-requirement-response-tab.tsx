@@ -52,6 +52,7 @@ function isRequirementDocument(document: ProjectDocument) {
 
 type RequirementTableRow = {
   ref: string;
+  group: string;
   requirement: string;
   answer: string;
   source: string;
@@ -88,8 +89,62 @@ function tableIdFromRef(ref: string) {
   return ref.match(/Tabell ID\s+\d{1,3}-\d{1,3}[A-Z]?/i)?.[0] ?? "";
 }
 
+function normalizeLabel(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function stripRepeatedGroup(value: string, group: string) {
+  const text = value.replace(/\s+/g, " ").trim();
+  const groupText = group.replace(/\s+/g, " ").trim();
+  if (!text || !groupText) {
+    return text;
+  }
+
+  if (normalizeLabel(text) === normalizeLabel(groupText)) {
+    return "";
+  }
+
+  if (normalizeLabel(text).startsWith(`${normalizeLabel(groupText)} `)) {
+    return text
+      .slice(groupText.length)
+      .replace(/^\s*[-:,]\s*/, "")
+      .trim();
+  }
+
+  return text;
+}
+
+function cleanSourceReference(value: string, group: string) {
+  return value
+    .split(",")
+    .map((part) => stripRepeatedGroup(part.trim(), group))
+    .filter(Boolean)
+    .filter((part) => normalizeLabel(part) !== normalizeLabel(group))
+    .join(", ");
+}
+
 function serviceFromRef(ref: string, tableId: string) {
-  return ref.replace(tableId, "").replace(/^\s*[-:,]\s*/, "").trim();
+  const stripped = stripRepeatedGroup(ref, tableId);
+  return stripped || ref.trim();
+}
+
+function takeTrailingTableHeading(lines: string[]) {
+  let index = lines.length - 1;
+  while (index >= 0 && !(lines[index] ?? "").trim()) {
+    index -= 1;
+  }
+
+  const line = (lines[index] ?? "").trim();
+  const match = line.match(/^#{2,6}\s+(.+)$/);
+  if (!match) {
+    return "";
+  }
+
+  lines.splice(index, 1);
+  while (lines.length && !(lines[lines.length - 1] ?? "").trim()) {
+    lines.pop();
+  }
+  return match[1]?.trim() ?? "";
 }
 
 function escapeHtml(value: string) {
@@ -324,14 +379,16 @@ function parseRequirementContent(content: string): RequirementContentSegment[] {
     }
     index -= 1;
 
+    const groupTitle = takeTrailingTableHeading(markdownBuffer);
     const rows = tableLines.slice(2).map(splitMarkdownTableRow);
     const tableRequirementRows = rows
-      .filter((row) => tableIdFromRef(row[0] ?? ""))
+      .filter((row) => row.length >= 4 && Boolean((row[1] ?? "").trim()))
       .map((row) => ({
-        ref: row[0] ?? "",
+        ref: stripRepeatedGroup(row[0] ?? "", groupTitle),
+        group: groupTitle || tableIdFromRef(row[0] ?? "") || "Kravliste",
         requirement: row[1] ?? "",
         answer: row[2] ?? "",
-        source: row[3] ?? "",
+        source: cleanSourceReference(row[3] ?? "", groupTitle),
       }));
 
     if (!tableRequirementRows.length) {
@@ -339,7 +396,9 @@ function parseRequirementContent(content: string): RequirementContentSegment[] {
       continue;
     }
 
-    const regularRows = rows.filter((row) => !tableIdFromRef(row[0] ?? ""));
+    const regularRows = rows.filter(
+      (row) => row.length < 4 || !Boolean((row[1] ?? "").trim()),
+    );
     if (regularRows.length) {
       markdownBuffer.push(
         [
@@ -380,7 +439,7 @@ function RequirementResponseContent({
 
         const groups = new Map<string, RequirementTableRow[]>();
         for (const row of segment.rows) {
-          const tableId = tableIdFromRef(row.ref) || "Tabellkrav";
+          const tableId = row.group || tableIdFromRef(row.ref) || "Kravliste";
           groups.set(tableId, [...(groups.get(tableId) ?? []), row]);
         }
 
@@ -405,16 +464,13 @@ function RequirementResponseContent({
                         key={`${row.ref}-${rowIndex}`}
                         className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
                       >
-                        <div className="mb-3 flex flex-wrap items-center gap-2">
-                          {service ? (
+                        {service ? (
+                          <div className="mb-4 flex flex-wrap items-center gap-2">
                             <span className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white">
                               {service}
                             </span>
-                          ) : null}
-                          <span className="text-xs font-medium text-slate-500">
-                            {row.source}
-                          </span>
-                        </div>
+                          </div>
+                        ) : null}
                         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
                           <div>
                             <p className="mb-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-slate-500">
@@ -433,6 +489,16 @@ function RequirementResponseContent({
                             </p>
                           </div>
                         </div>
+                        {row.source ? (
+                          <div className="mt-4 border-t border-slate-100 pt-3 text-[0.78rem] leading-6 text-slate-600">
+                            <span className="mr-2 font-bold uppercase tracking-[0.12em] text-slate-400">
+                              Kildegrunnlag
+                            </span>
+                            <span className="break-words font-medium">
+                              {row.source}
+                            </span>
+                          </div>
+                        ) : null}
                       </article>
                     );
                   })}

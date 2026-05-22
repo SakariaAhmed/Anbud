@@ -125,6 +125,50 @@ function buildTextSourceMap(text: string, role?: ProjectDocumentRole) {
   return sections.length ? sections : [{ reference: `${label} – tekstblokk 1`, text: normalizeText(text) }];
 }
 
+type PdfTextItem = {
+  str: string;
+  transform: number[];
+  width?: number;
+};
+
+function renderPdfTextItems(items: PdfTextItem[]) {
+  const lines: Array<{ y: number; items: PdfTextItem[] }> = [];
+
+  for (const item of items) {
+    const text = item.str.trim();
+    const y = item.transform[5] ?? 0;
+    if (!text) {
+      continue;
+    }
+
+    const line = lines.find((candidate) => Math.abs(candidate.y - y) <= 2);
+    if (line) {
+      line.items.push(item);
+    } else {
+      lines.push({ y, items: [item] });
+    }
+  }
+
+  return lines
+    .sort((left, right) => right.y - left.y)
+    .map((line) => {
+      let previousEnd: number | null = null;
+      return line.items
+        .sort((left, right) => (left.transform[4] ?? 0) - (right.transform[4] ?? 0))
+        .map((item) => {
+          const x = item.transform[4] ?? 0;
+          const gap = previousEnd == null ? 0 : x - previousEnd;
+          previousEnd = x + (item.width ?? item.str.length * 4);
+          return `${gap > 3 ? " " : ""}${item.str.trim()}`;
+        })
+        .join("")
+        .replace(/[ \t]+/g, " ")
+        .trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
 async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocumentRole): Promise<ParsedUpload> {
   let pageNumber = 0;
   const pageEntries: SourceMapEntry[] = [];
@@ -134,7 +178,7 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
   const parsed = await pdfParse(buffer, {
       pagerender: (pageData: {
         getTextContent: (options: { normalizeWhitespace: boolean; disableCombineTextItems: boolean }) => Promise<{
-          items: Array<{ str: string; transform: number[] }>;
+          items: PdfTextItem[];
         }>;
       }) => {
         pageNumber += 1;
@@ -144,19 +188,7 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
             disableCombineTextItems: false,
           })
           .then((textContent) => {
-            let lastY: number | undefined;
-            let text = "";
-
-            for (const item of textContent.items as Array<{ str: string; transform: number[] }>) {
-              if (!lastY || lastY === item.transform[5]) {
-                text += item.str;
-              } else {
-                text += `\n${item.str}`;
-              }
-              lastY = item.transform[5];
-            }
-
-            const normalized = normalizeText(text);
+            const normalized = normalizeText(renderPdfTextItems(textContent.items));
             if (normalized) {
               pageEntries.push({
                 reference: `${label} – side ${pageNumber}`,

@@ -8,6 +8,10 @@ import {
   validateGeneratedArtifact,
 } from "@/lib/server/artifact-validation";
 import {
+  ensureProjectDocumentChunks,
+  ensureServiceDocumentChunks,
+} from "@/lib/server/document-chunks";
+import {
   buildDocumentLedger,
   buildDocumentLedgerContext,
   summarizeDocumentLedgers,
@@ -560,6 +564,25 @@ export async function queueArtifactGenerationJob(input: {
     );
     const serviceDescriptionDocuments = await serviceDescriptionDocumentsPromise;
     markPhase("tjenestedokumenthenting");
+
+    setProgress(
+      input.artifactType === "forbedret_kravsvar"
+        ? "[22%] Klargjør semantiske dokumentutdrag ..."
+        : "[40%] Klargjør semantiske dokumentutdrag ...",
+    );
+    await Promise.all([
+      ...projectDocuments
+        .filter((document) => document.raw_text.trim())
+        .map((document) =>
+          ensureProjectDocumentChunks({ document }).catch(() => undefined),
+        ),
+      ...serviceDescriptionDocuments
+        .filter((document) => document.raw_text.trim())
+        .map((document) =>
+          ensureServiceDocumentChunks({ document }).catch(() => undefined),
+        ),
+    ]);
+    markPhase("dokumentindeksering");
 
     const generated = await generateProjectArtifact({
       artifactType: input.artifactType,

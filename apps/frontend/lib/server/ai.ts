@@ -2,6 +2,10 @@ import "server-only";
 
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import {
+  retrieveDocumentSnippets,
+  type RetrievedDocumentSnippet,
+} from "@/lib/server/document-chunks";
+import {
   buildChatPrompt,
   buildCustomerAnalysisPrompt,
   buildDelimitedContext,
@@ -327,6 +331,45 @@ function documentContext(
       compactText(document.raw_text, options?.textLimit ?? 22000),
     ),
   ].join("\n\n");
+}
+
+function retrievedSnippetContext(
+  label: string,
+  snippets: RetrievedDocumentSnippet[],
+  options?: { textLimit?: number },
+) {
+  if (!snippets.length) {
+    return "";
+  }
+
+  const textLimit = options?.textLimit ?? 1200;
+  return buildDelimitedContext(
+    label,
+    snippets
+      .map((snippet, index) =>
+        [
+          `${index + 1}. ${snippet.documentTitle}`,
+          `Referanse: ${snippet.reference}`,
+          snippet.headingPath.length
+            ? `Seksjon: ${snippet.headingPath.join(" > ")}`
+            : "",
+          snippet.pageStart
+            ? `Side: ${
+                snippet.pageEnd && snippet.pageEnd !== snippet.pageStart
+                  ? `${snippet.pageStart}-${snippet.pageEnd}`
+                  : snippet.pageStart
+              }`
+            : "",
+          snippet.similarity != null
+            ? `Semantisk treff: ${snippet.similarity.toFixed(3)}`
+            : `Nøkkelordtreff: ${snippet.lexicalScore}`,
+          compactText(snippet.text, textLimit),
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      )
+      .join("\n\n"),
+  );
 }
 
 function serviceDocumentAsProjectDocument(
@@ -2615,7 +2658,7 @@ function requirementRetrievalTokens(entries: RequirementLedgerEntry[]) {
   );
 }
 
-function buildRequirementBatchRetrievalContext(input: {
+async function buildRequirementBatchRetrievalContext(input: {
   entries: RequirementLedgerEntry[];
   supportingDocuments: ProjectDocumentDetail[];
   serviceDocuments: ProjectDocumentDetail[];
@@ -2623,6 +2666,32 @@ function buildRequirementBatchRetrievalContext(input: {
   const tokens = requirementRetrievalTokens(input.entries);
   if (!tokens.length) {
     return "";
+  }
+
+  const query = input.entries
+    .map((entry) => [entry.id, entry.heading, entry.text].filter(Boolean).join(" "))
+    .join("\n");
+  const snippets = await retrieveDocumentSnippets({
+    query,
+    documents: input.supportingDocuments,
+    serviceDocuments: input.serviceDocuments.map((document) => ({
+      ...document,
+      service_id:
+        (document as ProjectDocumentDetail & { service_id?: string }).service_id ??
+        document.project_id,
+    })),
+    exactTerms: input.entries
+      .map((entry) => entry.id)
+      .filter((id) => id && !isSyntheticRequirementId(id)),
+    limit: 7,
+  });
+
+  if (snippets.length) {
+    return retrievedSnippetContext(
+      "Relevante semantiske utdrag for denne kravbatchen",
+      snippets,
+      { textLimit: 1100 },
+    );
   }
 
   const candidates = [
@@ -2713,6 +2782,51 @@ function requirementGroupHeading(entry: RequirementLedgerEntry) {
   return heading;
 }
 
+function normalizeRequirementLabel(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function stripRepeatedRequirementHeading(value: string, heading: string) {
+  const text = value.replace(/\s+/g, " ").trim();
+  const headingText = heading.replace(/\s+/g, " ").trim();
+  if (!text || !headingText) {
+    return text;
+  }
+
+  if (normalizeRequirementLabel(text) === normalizeRequirementLabel(headingText)) {
+    return "";
+  }
+
+  if (
+    normalizeRequirementLabel(text).startsWith(
+      `${normalizeRequirementLabel(headingText)} `,
+    )
+  ) {
+    return text
+      .slice(headingText.length)
+      .replace(/^\s*[-:,]\s*/, "")
+      .trim();
+  }
+
+  return text;
+}
+
+function requirementDisplayRef(entry: RequirementLedgerEntry, heading: string) {
+  return stripRepeatedRequirementHeading(entry.id, heading) || entry.id;
+}
+
+function requirementDisplaySource(entry: RequirementLedgerEntry, heading: string) {
+  return requirementLedgerSource(entry)
+    .split(",")
+    .map((part) => stripRepeatedRequirementHeading(part.trim(), heading))
+    .filter(Boolean)
+    .filter(
+      (part) =>
+        normalizeRequirementLabel(part) !== normalizeRequirementLabel(heading),
+    )
+    .join(", ");
+}
+
 function requirementTableMarkdown(rows: string[][]) {
   return [
     "| Kravref. | Krav | Svar | Kildegrunnlag |",
@@ -2728,10 +2842,12 @@ function buildRequirementResponseMarkdown(input: {
   const rows = input.ledger.map((entry, index) => ({
     heading: requirementGroupHeading(entry),
     cells: [
-      markdownTableCell(entry.id),
+      markdownTableCell(requirementDisplayRef(entry, requirementGroupHeading(entry))),
       markdownTableCell(entry.text),
       markdownTableCell(input.answers[index] ?? tableRequirementAnswer(entry)),
-      markdownTableCell(requirementLedgerSource(entry)),
+      markdownTableCell(
+        requirementDisplaySource(entry, requirementGroupHeading(entry)),
+      ),
     ],
   }));
   const groupedRows: string[] = [];
@@ -2804,11 +2920,14 @@ async function generateRequirementResponseFromLedger(input: {
     async (chunk) => {
       const krav = chunk.entries.map((entry, localIndex) => ({
         nr: chunk.startIndex + localIndex + 1,
-        ref: entry.id,
+        ref: requirementDisplayRef(entry, requirementGroupHeading(entry)),
         kravtekst: compactText(entry.text, 1200),
-        kildegrunnlag: requirementLedgerSource(entry),
+        kildegrunnlag: requirementDisplaySource(
+          entry,
+          requirementGroupHeading(entry),
+        ),
       }));
-      const relevantExcerpts = buildRequirementBatchRetrievalContext({
+      const relevantExcerpts = await buildRequirementBatchRetrievalContext({
         entries: chunk.entries,
         supportingDocuments: input.supportingDocuments,
         serviceDocuments: input.serviceDocuments,
@@ -4270,6 +4389,16 @@ export async function analyzeCustomerDocuments(input: {
   supportingDocuments: ProjectDocumentDetail[];
   model?: string;
 }) {
+  const analysisSnippets = await retrieveDocumentSnippets({
+    query: [
+      input.projectName,
+      "kundens behov mål krav risiko evalueringskriterier forutsetninger arkitektur løsning verdi",
+    ].join("\n"),
+    projectId: input.customerDocument.project_id,
+    documents: [input.customerDocument, ...input.supportingDocuments],
+    exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål"],
+    limit: 10,
+  });
   const supportingContexts = input.supportingDocuments
     .slice(0, 2)
     .map((document, index) =>
@@ -4290,12 +4419,17 @@ export async function analyzeCustomerDocuments(input: {
       "Prosjekt",
       `Prosjektnavn: ${input.projectName}\nArbeid som et tilbudsteam som skal forstå kunden dypt og bruke funnene i posisjonering, løsningsarbeid og tilbudsbesvarelse.`,
     ),
-    documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: 12000,
-      structureLimit: 10,
-      structureTextLimit: 180,
-    }),
-    buildDelimitedContext(
+	    documentContext("Primært kundedokument", input.customerDocument, {
+	      textLimit: 12000,
+	      structureLimit: 10,
+	      structureTextLimit: 180,
+	    }),
+	    retrievedSnippetContext(
+	      "Semantisk dokumentdekning",
+	      analysisSnippets,
+	      { textLimit: 1200 },
+	    ),
+	    buildDelimitedContext(
       "Dokumentdekningsregel",
       "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
     ),
@@ -5180,6 +5314,21 @@ export async function answerProjectChat(input: {
         `${message.role === "user" ? "Bruker" : "Assistent"}: ${message.content}`,
     )
     .join("\n");
+  const projectDocumentsForRetrieval = [
+    input.customerDocument,
+    input.solutionDocument,
+    ...(input.supportingDocuments ?? []),
+  ].filter((document): document is ProjectDocumentDetail => Boolean(document));
+  const retrievalContext = retrievedSnippetContext(
+    "Mest relevante dokumentutdrag for spørsmålet",
+    await retrieveDocumentSnippets({
+      query: input.question,
+      projectId: projectDocumentsForRetrieval[0]?.project_id ?? null,
+      documents: projectDocumentsForRetrieval,
+      limit: 10,
+    }),
+    { textLimit: 1300 },
+  );
   const supportingDocuments = (input.supportingDocuments ?? [])
     .slice(0, 4)
     .map((document, index) =>
@@ -5221,13 +5370,14 @@ export async function answerProjectChat(input: {
           compactText(input.customerDocument.raw_text, 9000),
         )
       : "",
-    input.solutionDocument
-      ? buildDelimitedContext(
-          "Løsningsdokument",
-          compactText(input.solutionDocument.raw_text, 9000),
-        )
-      : "",
-    ...supportingDocuments,
+	    input.solutionDocument
+	      ? buildDelimitedContext(
+	          "Løsningsdokument",
+	          compactText(input.solutionDocument.raw_text, 9000),
+	        )
+	      : "",
+	    retrievalContext,
+	    ...supportingDocuments,
     ...generatedArtifacts,
     history ? buildDelimitedContext("Samtalehistorikk", history) : "",
     buildDelimitedContext("Nytt spørsmål", input.question),
