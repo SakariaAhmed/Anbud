@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, RefObject, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowUp,
   Bot,
@@ -100,11 +107,44 @@ export function ProjectChatTab({
 }) {
   const isDrawer = variant === "drawer";
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) {
+      return;
+    }
+
+    const maxHeight = isDrawer ? 128 : 116;
+    input.style.height = "auto";
+    input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
+    input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
+  }, [chatInput, isDrawer]);
 
   async function copyMessage(message: ChatMessage) {
     await navigator.clipboard.writeText(message.content);
     setCopiedMessageId(message.id);
     window.setTimeout(() => setCopiedMessageId(null), 1400);
+  }
+
+  function handleInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.nativeEvent.isComposing
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    if (busy || loading || !chatInput.trim()) {
+      return;
+    }
+
+    event.currentTarget.form?.requestSubmit();
   }
 
   return (
@@ -293,12 +333,14 @@ export function ProjectChatTab({
         <div className="border-t bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <form onSubmit={onSubmit}>
             <textarea
+              ref={inputRef}
               value={chatInput}
               onChange={(e) => onChatInputChange(e.target.value)}
+              onKeyDown={handleInputKeyDown}
               placeholder="Skriv en melding..."
+              rows={1}
               className={cn(
-                "mb-3 w-full resize-none rounded-xl border bg-transparent px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring",
-                isDrawer ? "min-h-24" : "min-h-14",
+                "mb-2 block max-h-32 min-h-11 w-full resize-none rounded-lg border bg-transparent px-3.5 py-2.5 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring",
               )}
             />
             <div className="flex items-center justify-between">
@@ -316,7 +358,11 @@ export function ProjectChatTab({
                   <span>Svar bygger på hele prosjektkonteksten.</span>
                 )}
               </div>
-              <Button type="submit" disabled={busy || loading} className="h-10 px-4">
+              <Button
+                type="submit"
+                disabled={busy || loading || !chatInput.trim()}
+                className="h-10 px-4"
+              >
                 {busy ? (
                   <Spinner className="size-4" />
                 ) : (
