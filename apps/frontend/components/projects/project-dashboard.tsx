@@ -36,7 +36,7 @@ function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
 }
 
-const PROJECT_PREFETCH_LIMIT = 4;
+const PROJECT_PREFETCH_LIMIT = 12;
 type ProjectStatusFilter = ProjectSummary["status"] | "Alle";
 type ProjectSort = "recent" | "name" | "documents" | "artifacts";
 
@@ -1174,6 +1174,7 @@ function HomepageRefreshAnimation() {
 export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prefetchedProjectHrefsRef = useRef<Set<string>>(new Set());
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -1225,17 +1226,21 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
   }, [projects, searchQuery, sortBy, statusFilter]);
   const prefetchProjectHref = useCallback(
     (href: string) => {
+      if (prefetchedProjectHrefsRef.current.has(href)) {
+        return;
+      }
+      prefetchedProjectHrefsRef.current.add(href);
       router.prefetch(href);
     },
     [router],
   );
 
   useEffect(() => {
-    if (!projects.length) return;
+    if (!filteredProjects.length) return;
 
     const prefetchVisibleProjects = () => {
-      for (const project of projects.slice(0, PROJECT_PREFETCH_LIMIT)) {
-        router.prefetch(projectActionHref(project));
+      for (const project of filteredProjects.slice(0, PROJECT_PREFETCH_LIMIT)) {
+        prefetchProjectHref(projectActionHref(project));
       }
     };
 
@@ -1248,7 +1253,7 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
 
     const timeoutId = setTimeout(prefetchVisibleProjects, 300);
     return () => clearTimeout(timeoutId);
-  }, [projects, router]);
+  }, [filteredProjects, prefetchProjectHref]);
 
   async function handleSpotlightUpload(file: File | null) {
     if (!file || uploading) return;
@@ -1566,6 +1571,8 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
                   return (
                   <tr
                     key={project.id}
+                    onFocusCapture={() => prefetchProjectHref(href)}
+                    onPointerEnter={() => prefetchProjectHref(href)}
                     className="group border-b border-slate-200/80 transition-colors last:border-b-0 hover:bg-blue-50/35"
                   >
                     <td className="px-7 py-5">
@@ -1654,6 +1661,8 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
               return (
                 <article
                   key={project.id}
+                  onFocusCapture={() => prefetchProjectHref(href)}
+                  onPointerEnter={() => prefetchProjectHref(href)}
                   className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-3">

@@ -15,6 +15,7 @@ export const CUSTOMER_ANALYSIS_SECTIONS = [
   "risks",
   "needs",
   "keywords",
+  "services",
   "value",
 ] as const satisfies CustomerAnalysisSection[];
 
@@ -88,6 +89,12 @@ export function getCustomerAnalysisSectionSnapshot<
         signal_words: cloneJson(cleanAnalysis.signal_words),
         signal_word_counts: cloneJson(cleanAnalysis.signal_word_counts ?? {}),
       } as CustomerAnalysisSectionSnapshot<TSection>;
+    case "services":
+      return {
+        recommended_services: cloneJson(
+          cleanAnalysis.recommended_services ?? [],
+        ),
+      } as CustomerAnalysisSectionSnapshot<TSection>;
     case "value":
       return {
         value_opportunities: cloneJson(cleanAnalysis.value_opportunities),
@@ -149,6 +156,10 @@ function isSnapshotEmpty(
       return !(
         snapshot as CustomerAnalysisSectionSnapshotMap["keywords"]
       ).signal_words.length;
+    case "services":
+      return !(
+        snapshot as CustomerAnalysisSectionSnapshotMap["services"]
+      ).recommended_services.length;
     case "value":
       return !(
         snapshot as CustomerAnalysisSectionSnapshotMap["value"]

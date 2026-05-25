@@ -13,11 +13,13 @@ import {
 import { checkRateLimit } from "@/lib/server/observability";
 import { listProjectDocuments } from "@/lib/server/repositories/documents";
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
+import { listProjectServiceDescriptions } from "@/lib/server/repositories/services";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
   AnalysisRequirement,
   CustomerAnalysisResult,
   CustomerAnalysisSection,
+  RecommendedService,
   RequirementImportance,
   ValueOpportunity,
 } from "@/lib/types";
@@ -69,6 +71,21 @@ function isValueOpportunity(value: unknown): value is ValueOpportunity {
     Array.isArray(value.value_categories) &&
     value.value_categories.every((item) => typeof item === "string") &&
     typeof value.profit_share_percent === "number"
+  );
+}
+
+function isRecommendedService(value: unknown): value is RecommendedService {
+  return (
+    isRecord(value) &&
+    (typeof value.service_id === "undefined" ||
+      value.service_id === null ||
+      typeof value.service_id === "string") &&
+    typeof value.service_name === "string" &&
+    typeof value.usefulness_percent === "number" &&
+    typeof value.customer_need === "string" &&
+    typeof value.recommendation_reason === "string" &&
+    typeof value.evidence === "string" &&
+    typeof value.risk_or_caveat === "string"
   );
 }
 
@@ -231,6 +248,21 @@ function applySectionSnapshot(
           | undefined,
       };
     }
+    case "services": {
+      if (
+        !Array.isArray(snapshot.recommended_services) ||
+        !snapshot.recommended_services.every(isRecommendedService)
+      ) {
+        throw new Error(
+          "Anbefalte tjenester må inneholde en gyldig recommended_services-liste.",
+        );
+      }
+
+      return {
+        ...analysis,
+        recommended_services: snapshot.recommended_services,
+      };
+    }
     case "value": {
       if (
         !Array.isArray(snapshot.value_opportunities) ||
@@ -289,10 +321,11 @@ export async function POST(
     const section = isCustomerAnalysisSection(body.section)
       ? body.section
       : null;
-    const [projectDocuments, existingAnalysis] =
+    const [projectDocuments, existingAnalysis, serviceCandidates] =
       await Promise.all([
         listProjectDocuments(id),
         section ? getCustomerAnalysis(id) : Promise.resolve(null),
+        listProjectServiceDescriptions(id),
       ]);
     const { projectDocuments: analysisDocuments } =
       splitServiceDescriptionDetails(projectDocuments);
@@ -330,12 +363,14 @@ export async function POST(
             customerDocument,
             supportingDocuments,
             customerAnalysis: existingAnalysis,
+            serviceCandidates,
             model,
           })
         : await analyzeCustomerDocuments({
             projectName: customerDocument.title,
             customerDocument,
             supportingDocuments,
+            serviceCandidates,
             model,
           });
 

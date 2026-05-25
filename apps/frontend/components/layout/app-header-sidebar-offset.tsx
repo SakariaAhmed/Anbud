@@ -2,10 +2,11 @@
 
 import { useEffect } from "react";
 
-const DEFAULT_SIDEBAR_WIDTH = 240;
+const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v2";
+const DEFAULT_SIDEBAR_WIDTH = 255;
 const COLLAPSED_SIDEBAR_WIDTH = 56;
-const MIN_SIDEBAR_WIDTH = 236;
-const MAX_SIDEBAR_WIDTH = 360;
+const MIN_SIDEBAR_WIDTH = 255;
+const MAX_SIDEBAR_WIDTH = 440;
 
 function clampSidebarWidth(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_SIDEBAR_WIDTH;
@@ -22,7 +23,7 @@ function readSidebarOpen() {
 function readSidebarWidth() {
   try {
     return clampSidebarWidth(
-      Number(window.localStorage.getItem("project-workspace-sidebar-width")),
+      Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)),
     );
   } catch {
     return DEFAULT_SIDEBAR_WIDTH;
@@ -43,7 +44,7 @@ export function AppHeaderSidebarOffset() {
     syncHeaderOffset();
 
     const onStorage = (event: StorageEvent) => {
-      if (event.key === "project-workspace-sidebar-width") {
+      if (event.key === SIDEBAR_WIDTH_STORAGE_KEY) {
         syncHeaderOffset();
       }
     };

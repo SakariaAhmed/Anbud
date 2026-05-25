@@ -218,22 +218,30 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
 
 async function extractDocx(buffer: Buffer, fileName: string, role?: ProjectDocumentRole): Promise<ParsedUpload> {
   try {
-    const mammoth = await getMammoth();
-    const result = await mammoth.extractRawText({ buffer });
-    const rawText = normalizeText(result.value);
-    ensureReadableText(rawText, fileName);
-
-    return {
-      rawText,
-      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      fileName,
-      fileFormat: "docx",
-      fileBase64: buffer.toString("base64"),
-      sourceMap: buildTextSourceMap(rawText, role),
-    };
-  } catch (error) {
-    return extractDocxFromWordXml(buffer, fileName, role, error);
+    return await extractDocxFromWordXml(buffer, fileName, role, null);
+  } catch (wordXmlError) {
+    try {
+      return await extractDocxWithMammoth(buffer, fileName, role);
+    } catch {
+      throw wordXmlError;
+    }
   }
+}
+
+async function extractDocxWithMammoth(buffer: Buffer, fileName: string, role?: ProjectDocumentRole): Promise<ParsedUpload> {
+  const mammoth = await getMammoth();
+  const result = await mammoth.extractRawText({ buffer });
+  const rawText = normalizeText(result.value);
+  ensureReadableText(rawText, fileName);
+
+  return {
+    rawText,
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    fileName,
+    fileFormat: "docx",
+    fileBase64: buffer.toString("base64"),
+    sourceMap: buildTextSourceMap(rawText, role),
+  };
 }
 
 function elementLocalName(element: Element) {

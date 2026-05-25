@@ -5,6 +5,8 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useId, useState } from "react";
 import {
   AlertTriangle,
+  BadgeCheck,
+  BriefcaseBusiness,
   Building2,
   Cloud,
   Compass,
@@ -56,6 +58,7 @@ import type {
   CustomerAnalysisSectionSnapshotMap,
   AnalysisRequirement,
   ProjectDocument,
+  RecommendedService,
   RequirementImportance,
   RequirementKind,
   ValueCategory,
@@ -103,6 +106,18 @@ function emptyValueOpportunity(): ValueOpportunity {
     description: "",
     value_categories: [],
     profit_share_percent: 0,
+  };
+}
+
+function emptyRecommendedService(): RecommendedService {
+  return {
+    service_id: "",
+    service_name: "",
+    usefulness_percent: 0,
+    customer_need: "",
+    recommendation_reason: "",
+    evidence: "",
+    risk_or_caveat: "",
   };
 }
 
@@ -193,6 +208,24 @@ function sanitizeSectionDraft(
       return {
         signal_words: signalWords,
         signal_word_counts: counts,
+      };
+    }
+    case "services": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["services"];
+      return {
+        recommended_services: value.recommended_services
+          .map((item) => ({
+            service_id: item.service_id?.trim() || null,
+            service_name: item.service_name.trim(),
+            usefulness_percent: Number.isFinite(item.usefulness_percent)
+              ? Math.max(0, Math.min(100, Math.round(item.usefulness_percent)))
+              : 0,
+            customer_need: item.customer_need.trim(),
+            recommendation_reason: item.recommendation_reason.trim(),
+            evidence: item.evidence.trim(),
+            risk_or_caveat: item.risk_or_caveat.trim(),
+          }))
+          .filter((item) => item.service_name && item.recommendation_reason),
       };
     }
     case "value": {
@@ -503,6 +536,43 @@ function SectionHistoryContent({
           ) : (
             <p className="text-sm leading-6 text-muted-foreground">
               Ingen nøkkelord var lagret i denne versjonen.
+            </p>
+          )}
+        </div>
+      );
+    }
+    case "services": {
+      const value = snapshot as CustomerAnalysisSectionSnapshotMap["services"];
+      return (
+        <div className="space-y-3">
+          {value.recommended_services.length ? (
+            value.recommended_services.map((item, index) => (
+              <article
+                key={`${item.service_name}-${index}`}
+                className="rounded-lg border border-border/70 bg-background/80 px-4 py-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h4 className="text-base font-semibold text-foreground">
+                      {item.service_name}
+                    </h4>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      {item.customer_need}
+                    </p>
+                  </div>
+                  <span className="rounded-md bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary">
+                    {item.usefulness_percent}% nyttig
+                  </span>
+                </div>
+                <MarkdownViewer
+                  content={item.recommendation_reason}
+                  className="analysis-prose mt-3 max-w-none text-[0.98rem] text-muted-foreground"
+                />
+              </article>
+            ))
+          ) : (
+            <p className="text-sm leading-6 text-muted-foreground">
+              Ingen anbefalte tjenester var lagret i denne versjonen.
             </p>
           )}
         </div>
@@ -1593,40 +1663,42 @@ function summarizePhaseContext(analysis: CustomerAnalysisResult) {
   const primaryDirection = analysis.expected_solution_direction[0];
   const topSignals = analysis.signal_words.slice(0, 3).join(", ");
 
-  return compactDeliverySignal(
+  const signal = compactDeliverySignal(
     primaryDirection ||
       topRequirement ||
       (topSignals
-        ? `Løsningen må ta høyde for ${topSignals} i riktig rekkefølge.`
+        ? `signalene ${topSignals}`
         : undefined),
-    "Løsningen må gjennomføres i en kontrollert, faseinndelt leveranse.",
+    "hvilke premisser som faktisk skal styre leveransen",
   );
+
+  return `Før dette kan bli en endelig leveranseplan, bør teamet avklare hva som fortsatt er usikkert. Det viktigste nå er ${signal}.`;
 }
 
 function buildDeliveryPhases(analysis: CustomerAnalysisResult): DeliveryPhase[] {
   const topRequirement = compactDeliverySignal(
     analysis.prioritized_requirements[0]?.requirement ||
       analysis.implicit_requirements[0]?.title,
-    "kritiske krav og avhengigheter",
+    "hvilke krav og avhengigheter som faktisk skal styre første leveranserekkefølge",
   );
   const topGoal = compactDeliverySignal(
     analysis.customer_goals[0] || analysis.customer_goals_summary,
-    "kundens ønskede effekt",
+    "hvilken forretningseffekt kunden må se først",
   );
   const evaluationSignal = compactDeliverySignal(
     analysis.likely_evaluation_criteria[0],
-    "målbare aksept- og evalueringspunkter",
+    "hvilke akseptkriterier som avgjør om leveransen oppfattes som god nok",
   );
   const deliveryRisk = compactDeliverySignal(
     analysis.risks_for_us?.[0] ||
       analysis.risks_for_customer?.[0] ||
       analysis.risks[0],
-    "risiko, avhengigheter og beslutningspunkter",
+    "hvilken risiko som kan endre omfang, rekkefølge eller ansvar",
   );
   const direction = compactDeliverySignal(
     analysis.expected_solution_direction[0] ||
       analysis.high_level_solution_design,
-    "valgt løsningsretning",
+    "hvilken leveransemodell kunden faktisk forventer",
   );
   const topSignals = analysis.signal_words.slice(0, 3);
   const signalText = topSignals.length
@@ -1638,36 +1710,36 @@ function buildDeliveryPhases(analysis: CustomerAnalysisResult): DeliveryPhase[] 
       title: "Fase 1",
       label: "Forankring og avklaringer",
       bullets: [
-        `Avklar hva kunden må få kontroll på først, særlig: ${topRequirement}.`,
-        `Koble målbildet til ${topGoal}, og avklar hvilke beslutninger kunden må ta før leveransen starter.`,
-        "Etabler ansvarslinje, kundebidrag, eskaleringsvei og hva som skal dokumenteres som første bevis.",
+        `Avklar først ${topRequirement}. Knytt punktet til en eier, kundebidrag og et konkret akseptbevis.`,
+        `Målbildet peker mot ${topGoal}. Før oppstart bør det være tydelig hvem som godkjenner neste steg, hva de godkjenner og hvilket grunnlag de bruker.`,
+        "Definer ansvarslinje, eskaleringsvei og første dokumenterte leveransebevis før leverandøren tar operasjonelt ansvar.",
       ],
     },
     {
       title: "Fase 2",
       label: "Leveransemodell og styring",
       bullets: [
-        `Oversett ${direction} til konkrete arbeidspakker, eiere og avhengigheter.`,
-        `Sett opp styring mot ${evaluationSignal}, med tydelige kontrollpunkter og rapportering.`,
-        `Håndter ${deliveryRisk} før teamet binder seg til endelig rekkefølge og omfang.`,
+        `${direction} må konkretiseres før modellen prises eller bemannes. Bryt det ned i arbeidspakker, eiere og avhengigheter.`,
+        `Bruk ${evaluationSignal} som styringspunkt. Avklar hvilke kontroller som viser reell fremdrift, ikke bare aktivitet.`,
+        `${deliveryRisk} bør lukkes eller eies eksplisitt. La det styre rekkefølge, forbehold og kundens bidrag.`,
       ],
     },
     {
       title: "Fase 3",
       label: "Kontrollert gjennomføring",
       bullets: [
-        "Start med et avgrenset leveransespor som beviser metode, samhandling og ansvar før mer komplekse deler tas inn.",
-        `Bruk ${signalText} som praktiske føringer for prioritering, kvalitetssikring og dialog med kunden.`,
-        "Hold beslutningspunkter, endringshåndtering og akseptkriterier synlige slik at fremdrift ikke blir frikoblet fra kravene.",
+        "Start med et avgrenset spor der premissene er sterke nok. Bruk det til å teste ansvar, samhandling og beslutningsflyt før mer komplekse deler tas inn.",
+        `Valider prioriteringene med kunden mot ${signalText}. Hvis signalene ikke kan kobles til konkrete krav, bør de behandles som antakelser.`,
+        "Avklar hvilke funn som skal stoppe, endre eller eskalere leveransen. Da blir fremdrift koblet til krav, ikke bare tempo.",
       ],
     },
     {
       title: "Fase 4",
       label: "Stabilisering og overlevering",
       bullets: [
-        "Stabiliser leveransen med dokumenterte rutiner, eierskap, målinger og avklarte drifts- eller forvaltningsansvar.",
-        "Bekreft aksept mot kundens viktigste krav før prosjektet lukkes eller går over i ordinær leveranse.",
-        "Avslutt med en konkret restanseliste, forbedringslogg og plan for videre utvikling eller forvaltning.",
+        "Før overlevering må det være tydelig hvem som eier rutiner, målinger og drifts- eller forvaltningsansvar etter prosjektet.",
+        `Koble aksept tilbake til ${evaluationSignal}. Ellers kan leveransen se ferdig ut uten at kundens viktigste bekymring er lukket.`,
+        "Kvalifiser restanser tydelig: hva kan vente, hvem eier det, hvilken konsekvens har det, og hva må løses før ordinær leveranse starter?",
       ],
     },
   ];
@@ -1689,7 +1761,7 @@ function DeliveryBlueprint({
               Løsningsfaser for gjennomføring
             </p>
             <h6 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-cyan-950">
-              Strukturert og pragmatisk leveranseplan
+              Det som må avklares før leveranseplanen låses
             </h6>
           </div>
           <span className="rounded-md bg-cyan-700 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white">
@@ -1928,8 +2000,47 @@ const SECTION_TABS = [
   { value: "risks", label: "Risiko" },
   { value: "needs", label: "Behov" },
   { value: "keywords", label: "Nøkkelord" },
+  { value: "services", label: "Anbefalt tjeneste" },
   { value: "value", label: "Verdi" },
 ] as const;
+
+function getRecommendedServices(analysis: CustomerAnalysisResult) {
+  return [...(analysis.recommended_services ?? [])]
+    .filter((item) => item.service_name.trim() && item.recommendation_reason.trim())
+    .sort(
+      (left, right) =>
+        right.usefulness_percent - left.usefulness_percent ||
+        left.service_name.localeCompare(right.service_name, "nb"),
+    )
+    .slice(0, 5);
+}
+
+function serviceFitTone(score: number) {
+  if (score >= 85) {
+    return {
+      badgeClassName: "bg-emerald-600 text-white",
+      barClassName: "bg-emerald-600",
+      shellClassName:
+        "border-emerald-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.92),rgba(255,255,255,0.94)_46%,rgba(240,253,250,0.76))]",
+    };
+  }
+
+  if (score >= 65) {
+    return {
+      badgeClassName: "bg-blue-600 text-white",
+      barClassName: "bg-blue-600",
+      shellClassName:
+        "border-blue-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.92),rgba(255,255,255,0.94)_46%,rgba(236,254,255,0.72))]",
+    };
+  }
+
+  return {
+    badgeClassName: "bg-amber-500 text-white",
+    barClassName: "bg-amber-500",
+    shellClassName:
+      "border-amber-200 bg-[linear-gradient(135deg,rgba(255,251,235,0.92),rgba(255,255,255,0.94)_46%,rgba(255,247,237,0.72))]",
+  };
+}
 
 function getKeywordIcon(keyword: string): LucideIcon {
   const value = keyword.toLowerCase();
@@ -2436,6 +2547,9 @@ export function ProjectAnalysisTab({
     : [];
   const topSignalWords = customerAnalysis
     ? getTopSignalWords(customerAnalysis)
+    : [];
+  const recommendedServices = customerAnalysis
+    ? getRecommendedServices(customerAnalysis)
     : [];
   const hasDocuments = documents.length > 0;
 
@@ -2973,6 +3087,129 @@ export function ProjectAnalysisTab({
     );
   }
 
+  function renderRecommendedServicesEditor(
+    items: RecommendedService[],
+    onChange: (items: RecommendedService[]) => void,
+  ) {
+    return (
+      <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            Anbefalte tjenester
+          </Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange([...items, emptyRecommendedService()])}
+          >
+            <Plus data-icon="inline-start" />
+            Legg til
+          </Button>
+        </div>
+        <div className="space-y-3">
+          {items.map((item, index) => {
+            const updateItem = (nextItem: RecommendedService) =>
+              onChange(
+                items.map((current, currentIndex) =>
+                  currentIndex === index ? nextItem : current,
+                ),
+              );
+
+            return (
+              <div
+                key={`service-${index}`}
+                className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Tjeneste {index + 1}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-slate-500 hover:text-red-700"
+                    onClick={() =>
+                      onChange(
+                        items.filter((_, currentIndex) => currentIndex !== index),
+                      )
+                    }
+                    aria-label={`Fjern anbefalt tjeneste ${index + 1}`}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_9rem]">
+                  <Input
+                    value={item.service_name}
+                    onChange={(event) =>
+                      updateItem({ ...item, service_name: event.target.value })
+                    }
+                    placeholder="Tjenestenavn"
+                  />
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={item.usefulness_percent}
+                    onChange={(event) =>
+                      updateItem({
+                        ...item,
+                        usefulness_percent: Number(event.target.value),
+                      })
+                    }
+                    placeholder="Nytte %"
+                  />
+                </div>
+                <Input
+                  value={item.service_id ?? ""}
+                  onChange={(event) =>
+                    updateItem({ ...item, service_id: event.target.value })
+                  }
+                  placeholder="Service ID"
+                />
+                {renderTextEditField({
+                  id: `service-${index}-need`,
+                  label: "Kundebehov",
+                  value: item.customer_need,
+                  onChange: (value) => updateItem({ ...item, customer_need: value }),
+                  placeholder: "Beskriv behovet tjenesten treffer.",
+                  rows: 2,
+                })}
+                {renderTextEditField({
+                  id: `service-${index}-reason`,
+                  label: "Hvorfor",
+                  value: item.recommendation_reason,
+                  onChange: (value) =>
+                    updateItem({ ...item, recommendation_reason: value }),
+                  placeholder: "Forklar hvorfor tjenesten er nyttig her.",
+                  rows: 3,
+                })}
+                {renderTextEditField({
+                  id: `service-${index}-evidence`,
+                  label: "Grunnlag",
+                  value: item.evidence,
+                  onChange: (value) => updateItem({ ...item, evidence: value }),
+                  placeholder: "Skriv dokument- eller analysesignal.",
+                  rows: 2,
+                })}
+                {renderTextEditField({
+                  id: `service-${index}-caveat`,
+                  label: "Forutsetning",
+                  value: item.risk_or_caveat,
+                  onChange: (value) => updateItem({ ...item, risk_or_caveat: value }),
+                  placeholder: "Skriv viktigste avklaring eller avgrensning.",
+                  rows: 2,
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   function renderValueOpportunitiesEditor(
     items: ValueOpportunity[],
     onChange: (items: ValueOpportunity[]) => void,
@@ -3251,6 +3488,13 @@ export function ProjectAnalysisTab({
           </>
         );
       }
+      case "services": {
+        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["services"];
+        return renderRecommendedServicesEditor(
+          draft.recommended_services,
+          (items) => updateDraft({ ...draft, recommended_services: items }),
+        );
+      }
       case "value": {
         const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["value"];
         return renderValueOpportunitiesEditor(
@@ -3330,7 +3574,7 @@ export function ProjectAnalysisTab({
                     <TabsTrigger
                       key={tab.value}
                       value={tab.value}
-                      className="h-11 flex-none rounded-none px-5 text-base font-medium tracking-[-0.01em] text-foreground/55 after:bottom-[-1px] after:h-[3px] after:rounded-full after:bg-primary data-active:bg-transparent data-active:text-primary"
+                      className="h-11 flex-none rounded-none px-3.5 text-sm font-medium tracking-[-0.01em] text-foreground/55 after:bottom-[-1px] after:h-[3px] after:rounded-full after:bg-primary data-active:bg-transparent data-active:text-primary lg:px-4 lg:text-[0.95rem]"
                     >
                       {tab.label}
                     </TabsTrigger>
@@ -3743,6 +3987,108 @@ export function ProjectAnalysisTab({
                 </AnalysisTabEmptyState>
               )}
               <SectionHistoryPanel analysis={customerAnalysis} section="keywords" />
+            </SectionSurface>
+          </TabsContent>
+
+          <TabsContent value="services" className="mt-0">
+            <SectionSurface
+              title={`Anbefalte tjenester (${recommendedServices.length})`}
+              description="Tjenester som passer kundens faktiske behov, med nytteprosent, begrunnelse, grunnlag og avklaringer."
+              icon={BriefcaseBusiness}
+              action={renderSectionActions("services")}
+            >
+              {renderSectionEditor("services")}
+              {recommendedServices.length ? (
+                <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+                  {recommendedServices.map((service, index) => {
+                    const score = Math.max(
+                      0,
+                      Math.min(100, Math.round(service.usefulness_percent)),
+                    );
+                    const tone = serviceFitTone(score);
+
+                    return (
+                      <article
+                        key={`${service.service_name}-${index}`}
+                        className={`min-w-0 overflow-hidden rounded-xl border px-5 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.055)] ${tone.shellClassName}`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
+                              <BadgeCheck className="size-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                                Anbefaling {index + 1}
+                              </p>
+                              <h4 className="mt-1 text-lg font-semibold text-slate-950">
+                                {service.service_name}
+                              </h4>
+                            </div>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-md px-3 py-1.5 text-sm font-bold ${tone.badgeClassName}`}
+                          >
+                            {score}% nyttig
+                          </span>
+                        </div>
+
+                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/85">
+                          <div
+                            className={`h-full rounded-full ${tone.barClassName}`}
+                            style={{ width: `${score}%` }}
+                          />
+                        </div>
+
+                        {service.customer_need.trim() ? (
+                          <div className="mt-4 rounded-lg border border-white/85 bg-white/72 px-4 py-3">
+                            <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                              Kundebehov
+                            </p>
+                            <p className="mt-1 text-sm leading-6 text-slate-700">
+                              {service.customer_need}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-4 rounded-lg border border-white/85 bg-white/78 px-4 py-4">
+                          <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                            Hvorfor
+                          </p>
+                          <MarkdownViewer
+                            content={service.recommendation_reason}
+                            className="analysis-prose mt-2 max-w-none text-[0.96rem] leading-6 text-slate-700"
+                          />
+                        </div>
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-lg border border-white/85 bg-white/68 px-4 py-3">
+                            <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                              Grunnlag
+                            </p>
+                            <p className="mt-1 text-sm leading-6 text-slate-700">
+                              {service.evidence || "Ikke angitt."}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-white/85 bg-white/68 px-4 py-3">
+                            <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                              Forutsetning
+                            </p>
+                            <p className="mt-1 text-sm leading-6 text-slate-700">
+                              {service.risk_or_caveat || "Ikke angitt."}
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <AnalysisTabEmptyState>
+                  Ingen anbefalte tjenester er identifisert ennå.
+                </AnalysisTabEmptyState>
+              )}
+              <SectionHistoryPanel analysis={customerAnalysis} section="services" />
             </SectionSurface>
           </TabsContent>
 
