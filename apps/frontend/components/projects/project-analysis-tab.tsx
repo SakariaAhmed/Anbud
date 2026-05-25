@@ -1568,13 +1568,179 @@ function KeywordPieModule({
   );
 }
 
+type DeliveryPhase = {
+  title: string;
+  label: string;
+  bullets: string[];
+};
+
+function compactDeliverySignal(value: string | undefined, fallback: string) {
+  const normalized = value
+    ?.replace(/\s+/g, " ")
+    .replace(/^(eksplisitt|implisitt):\s*/i, "")
+    .trim();
+  if (!normalized) {
+    return fallback;
+  }
+
+  return normalized.length > 130
+    ? `${normalized.slice(0, 127).trim()}...`
+    : normalized;
+}
+
+function summarizePhaseContext(analysis: CustomerAnalysisResult) {
+  const topRequirement = analysis.prioritized_requirements[0]?.requirement;
+  const primaryDirection = analysis.expected_solution_direction[0];
+  const topSignals = analysis.signal_words.slice(0, 3).join(", ");
+
+  return compactDeliverySignal(
+    primaryDirection ||
+      topRequirement ||
+      (topSignals
+        ? `Løsningen må ta høyde for ${topSignals} i riktig rekkefølge.`
+        : undefined),
+    "Løsningen må gjennomføres i en kontrollert, faseinndelt leveranse.",
+  );
+}
+
+function buildDeliveryPhases(analysis: CustomerAnalysisResult): DeliveryPhase[] {
+  const topRequirement = compactDeliverySignal(
+    analysis.prioritized_requirements[0]?.requirement ||
+      analysis.implicit_requirements[0]?.title,
+    "kritiske krav og avhengigheter",
+  );
+  const topGoal = compactDeliverySignal(
+    analysis.customer_goals[0] || analysis.customer_goals_summary,
+    "kundens ønskede effekt",
+  );
+  const evaluationSignal = compactDeliverySignal(
+    analysis.likely_evaluation_criteria[0],
+    "målbare aksept- og evalueringspunkter",
+  );
+  const deliveryRisk = compactDeliverySignal(
+    analysis.risks_for_us?.[0] ||
+      analysis.risks_for_customer?.[0] ||
+      analysis.risks[0],
+    "risiko, avhengigheter og beslutningspunkter",
+  );
+  const direction = compactDeliverySignal(
+    analysis.expected_solution_direction[0] ||
+      analysis.high_level_solution_design,
+    "valgt løsningsretning",
+  );
+  const topSignals = analysis.signal_words.slice(0, 3);
+  const signalText = topSignals.length
+    ? topSignals.join(", ")
+    : "kundens dokumenterte føringer";
+
+  return [
+    {
+      title: "Fase 1",
+      label: "Forankring og avklaringer",
+      bullets: [
+        `Avklar hva kunden må få kontroll på først, særlig: ${topRequirement}.`,
+        `Koble målbildet til ${topGoal}, og avklar hvilke beslutninger kunden må ta før leveransen starter.`,
+        "Etabler ansvarslinje, kundebidrag, eskaleringsvei og hva som skal dokumenteres som første bevis.",
+      ],
+    },
+    {
+      title: "Fase 2",
+      label: "Leveransemodell og styring",
+      bullets: [
+        `Oversett ${direction} til konkrete arbeidspakker, eiere og avhengigheter.`,
+        `Sett opp styring mot ${evaluationSignal}, med tydelige kontrollpunkter og rapportering.`,
+        `Håndter ${deliveryRisk} før teamet binder seg til endelig rekkefølge og omfang.`,
+      ],
+    },
+    {
+      title: "Fase 3",
+      label: "Kontrollert gjennomføring",
+      bullets: [
+        "Start med et avgrenset leveransespor som beviser metode, samhandling og ansvar før mer komplekse deler tas inn.",
+        `Bruk ${signalText} som praktiske føringer for prioritering, kvalitetssikring og dialog med kunden.`,
+        "Hold beslutningspunkter, endringshåndtering og akseptkriterier synlige slik at fremdrift ikke blir frikoblet fra kravene.",
+      ],
+    },
+    {
+      title: "Fase 4",
+      label: "Stabilisering og overlevering",
+      bullets: [
+        "Stabiliser leveransen med dokumenterte rutiner, eierskap, målinger og avklarte drifts- eller forvaltningsansvar.",
+        "Bekreft aksept mot kundens viktigste krav før prosjektet lukkes eller går over i ordinær leveranse.",
+        "Avslutt med en konkret restanseliste, forbedringslogg og plan for videre utvikling eller forvaltning.",
+      ],
+    },
+  ];
+}
+
+function DeliveryBlueprint({
+  analysis,
+  phases,
+}: {
+  analysis: CustomerAnalysisResult;
+  phases: DeliveryPhase[];
+}) {
+  return (
+    <article className="overflow-hidden rounded-xl border border-cyan-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(236,254,255,0.82))] shadow-[0_16px_38px_rgba(8,145,178,0.10)]">
+      <div className="border-b border-cyan-100/90 px-5 py-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-cyan-700/75">
+              Løsningsfaser for gjennomføring
+            </p>
+            <h6 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-cyan-950">
+              Strukturert og pragmatisk leveranseplan
+            </h6>
+          </div>
+          <span className="rounded-md bg-cyan-700 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white">
+            {phases.length} steg
+          </span>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-slate-700">
+          {summarizePhaseContext(analysis)}
+        </p>
+      </div>
+
+      <div className="grid gap-3 px-5 py-5 lg:grid-cols-2">
+        {phases.map((phase) => (
+          <div
+            key={phase.title}
+            className="rounded-lg border border-cyan-100 bg-white/92 px-4 py-4 shadow-[0_10px_24px_rgba(14,116,144,0.06)]"
+          >
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <span className="rounded-md bg-cyan-700/10 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-cyan-800">
+                {phase.title}
+              </span>
+              <span className="text-sm font-semibold text-slate-900">
+                {phase.label}
+              </span>
+            </div>
+            <ul className="space-y-2.5 text-[0.94rem] leading-6 text-slate-700">
+              {phase.bullets.map((bullet, bulletIndex) => (
+                <li
+                  key={`${phase.title}-${bulletIndex}`}
+                  className="flex items-start gap-2.5"
+                >
+                  <span className="mt-2 size-1.5 shrink-0 rounded-full bg-cyan-600" />
+                  <span>{bullet}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 function PositioningKanban({
   items,
-  analysis: _analysis,
+  analysis,
 }: {
   items: string[];
   analysis: CustomerAnalysisResult;
 }) {
+  const deliveryPhases = buildDeliveryPhases(analysis);
   const lanes = POSITIONING_LANES.map((lane, laneIndex) => ({
     ...lane,
     items: items
@@ -1601,6 +1767,7 @@ function PositioningKanban({
   }
 
   const ActiveLaneIcon = activeLane.icon;
+  const hasDeliveryBlueprint = activeLane.title === "Leveranse";
 
   return (
     <div className="min-w-0 space-y-4">
@@ -1609,7 +1776,8 @@ function PositioningKanban({
           {lanes.map((lane) => {
             const Icon = lane.icon;
             const isActive = lane.title === activeLane.title;
-            const itemCount = lane.items.length;
+            const itemCount =
+              lane.items.length + (lane.title === "Leveranse" ? 1 : 0);
 
             return (
               <button
@@ -1689,6 +1857,10 @@ function PositioningKanban({
         </div>
 
         <div className="flex flex-1 flex-col gap-4">
+          {hasDeliveryBlueprint ? (
+            <DeliveryBlueprint analysis={analysis} phases={deliveryPhases} />
+          ) : null}
+
           {activeLane.items.map(({ content, index }) => (
             <article
               key={`positioning-kanban-${index}`}
@@ -1701,7 +1873,7 @@ function PositioningKanban({
             </article>
           ))}
 
-          {activeLane.items.length === 0 ? (
+          {activeLane.items.length === 0 && !hasDeliveryBlueprint ? (
             <div className="rounded-xl border border-dashed border-white/80 bg-white/70 px-5 py-5 text-sm leading-6 text-slate-600">
               Ingen prosjektspesifikke anbefalinger er generert for dette sporet
               ennå. Lag fremdriftsplan i egen fane for en konkret

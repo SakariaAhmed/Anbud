@@ -1,5 +1,7 @@
 import "server-only";
 
+import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
+import JSZip from "jszip";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
 
@@ -215,19 +217,244 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
 }
 
 async function extractDocx(buffer: Buffer, fileName: string, role?: ProjectDocumentRole): Promise<ParsedUpload> {
-  const mammoth = await getMammoth();
-  const result = await mammoth.extractRawText({ buffer });
-  const rawText = normalizeText(result.value);
-  ensureReadableText(rawText, fileName);
+  try {
+    const mammoth = await getMammoth();
+    const result = await mammoth.extractRawText({ buffer });
+    const rawText = normalizeText(result.value);
+    ensureReadableText(rawText, fileName);
 
-  return {
-    rawText,
-    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    fileName,
-    fileFormat: "docx",
-    fileBase64: buffer.toString("base64"),
-    sourceMap: buildTextSourceMap(rawText, role),
-  };
+    return {
+      rawText,
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      fileName,
+      fileFormat: "docx",
+      fileBase64: buffer.toString("base64"),
+      sourceMap: buildTextSourceMap(rawText, role),
+    };
+  } catch (error) {
+    return extractDocxFromWordXml(buffer, fileName, role, error);
+  }
+}
+
+function elementLocalName(element: Element) {
+  return element.localName || element.nodeName.replace(/^.*:/, "");
+}
+
+function isElement(node: Node): node is Element {
+  return node.nodeType === 1;
+}
+
+function childElements(node: Node) {
+  return Array.from(node.childNodes).filter(isElement);
+}
+
+function findFirstDescendant(element: Element, localName: string): Element | null {
+  if (elementLocalName(element) === localName) {
+    return element;
+  }
+
+  for (const child of childElements(element)) {
+    const match = findFirstDescendant(child, localName);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+function findDescendants(element: Element, localName: string): Element[] {
+  const matches: Element[] = [];
+
+  for (const child of childElements(element)) {
+    if (elementLocalName(child) === localName) {
+      matches.push(child);
+    }
+    matches.push(...findDescendants(child, localName));
+  }
+
+  return matches;
+}
+
+function normalizeDocxInlineText(value: string) {
+  return value
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+function readWordText(node: Node): string {
+  if (isElement(node)) {
+    const localName = elementLocalName(node);
+    if (localName === "t") {
+      return node.textContent ?? "";
+    }
+    if (localName === "tab") {
+      return " ";
+    }
+    if (localName === "br" || localName === "cr") {
+      return "\n";
+    }
+  }
+
+  return Array.from(node.childNodes).map(readWordText).join("");
+}
+
+function extractParagraphText(paragraph: Element) {
+  return normalizeDocxInlineText(readWordText(paragraph));
+}
+
+function extractTableRows(table: Element) {
+  return childElements(table)
+    .filter((child) => elementLocalName(child) === "tr")
+    .map((row) => {
+      const cells = childElements(row)
+        .filter((child) => elementLocalName(child) === "tc")
+        .map((cell) => {
+          const paragraphText = findDescendants(cell, "p")
+            .map(extractParagraphText)
+            .filter(Boolean)
+            .join(" / ");
+
+          return paragraphText || normalizeDocxInlineText(readWordText(cell));
+        })
+        .map((cell) => cell.trim())
+        .filter(Boolean);
+
+      return cells.join(" | ");
+    })
+    .filter(Boolean);
+}
+
+function docxParseErrorMessage(fileName: string, fallbackError: unknown) {
+  const detail =
+    fallbackError instanceof Error && fallbackError.message.trim()
+      ? ` Teknisk detalj: ${fallbackError.message}`
+      : "";
+
+  return [
+    `${fileName} kunne ikke leses som DOCX.`,
+    "Dokumentet kan være låst, korrupt eller lagret i et Word-format parseren ikke støtter.",
+    `Lagre det på nytt som .docx, eller eksporter til PDF/Excel og last opp på nytt.${detail}`,
+  ].join(" ");
+}
+
+async function extractDocxFromWordXml(
+  buffer: Buffer,
+  fileName: string,
+  role: ProjectDocumentRole | undefined,
+  originalError: unknown,
+): Promise<ParsedUpload> {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    const documentXml = zip.file("word/document.xml");
+
+    if (!documentXml) {
+      throw new Error("Fant ikke word/document.xml i DOCX-filen.");
+    }
+
+    const xml = await documentXml.async("text");
+    let parserError = "";
+    const xmlDocument = new XmlDomParser({
+      errorHandler: {
+        warning: () => undefined,
+        error: (message) => {
+          parserError = String(message);
+        },
+        fatalError: (message) => {
+          parserError = String(message);
+        },
+      },
+    }).parseFromString(xml, "application/xml");
+
+    if (parserError) {
+      throw new Error(parserError);
+    }
+
+    const body = findFirstDescendant(xmlDocument.documentElement, "body");
+    if (!body) {
+      throw new Error("Fant ikke dokumentinnhold i DOCX-filen.");
+    }
+
+    const label = documentLabel(role);
+    const rawBlocks: string[] = [];
+    const sourceMap: SourceMapEntry[] = [];
+    const pendingParagraphs: string[] = [];
+    let textBlockCounter = 1;
+    let tableCounter = 1;
+
+    const flushParagraphs = () => {
+      if (!pendingParagraphs.length) {
+        return;
+      }
+
+      sourceMap.push({
+        reference: `${label} – tekstblokk ${textBlockCounter}`,
+        text: pendingParagraphs.join("\n").trim(),
+      });
+      pendingParagraphs.length = 0;
+      textBlockCounter += 1;
+    };
+
+    for (const block of childElements(body)) {
+      const localName = elementLocalName(block);
+
+      if (localName === "p") {
+        const text = extractParagraphText(block);
+        if (!text) {
+          continue;
+        }
+
+        rawBlocks.push(text);
+        pendingParagraphs.push(text);
+        if (pendingParagraphs.length >= 10) {
+          flushParagraphs();
+        }
+        continue;
+      }
+
+      if (localName === "tbl") {
+        const rows = extractTableRows(block);
+        if (!rows.length) {
+          continue;
+        }
+
+        flushParagraphs();
+        const tableText = rows
+          .map((row, rowIndex) => `Rad ${rowIndex + 1}: ${row}`)
+          .join("\n");
+        rawBlocks.push(`Tabell ${tableCounter}\n${tableText}`);
+        sourceMap.push({
+          reference: `${label} – tabell ${tableCounter}`,
+          text: tableText,
+        });
+        tableCounter += 1;
+      }
+    }
+
+    flushParagraphs();
+
+    const rawText = normalizeText(rawBlocks.join("\n\n"));
+    ensureReadableText(rawText, fileName);
+
+    return {
+      rawText,
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      fileName,
+      fileFormat: "docx",
+      fileBase64: buffer.toString("base64"),
+      sourceMap: sourceMap.length ? sourceMap : buildTextSourceMap(rawText, role),
+    };
+  } catch (fallbackError) {
+    throw new Error(
+      docxParseErrorMessage(
+        fileName,
+        fallbackError instanceof Error ? fallbackError : originalError,
+      ),
+    );
+  }
 }
 
 async function extractTxtLike(buffer: Buffer, fileName: string, fileFormat: "txt" | "md", role?: ProjectDocumentRole): Promise<ParsedUpload> {
