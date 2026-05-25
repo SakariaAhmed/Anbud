@@ -36,7 +36,7 @@ import { downloadElementAsPdf } from "@/lib/client/pdf-download";
 import type { GeneratedArtifact, ProjectDocument } from "@/lib/types";
 
 function fileTitle(file: File) {
-  return `Kravdokument - ${file.name.replace(/\.[^.]+$/, "")}`;
+  return `Kravgrunnlag - ${file.name.replace(/\.[^.]+$/, "")}`;
 }
 
 function isRequirementDocument(document: ProjectDocument) {
@@ -502,7 +502,19 @@ export function ProjectRequirementResponseTab({
     () => documents.filter(isRequirementDocument),
     [documents],
   );
-  const selectableDocuments = requirementDocuments;
+  const selectableDocuments = useMemo(
+    () =>
+      [...documents].sort((left, right) => {
+        const leftIsRequirement = isRequirementDocument(left);
+        const rightIsRequirement = isRequirementDocument(right);
+        if (leftIsRequirement !== rightIsRequirement) {
+          return leftIsRequirement ? -1 : 1;
+        }
+
+        return left.title.localeCompare(right.title, "nb");
+      }),
+    [documents],
+  );
   const requirementResponses = artifacts.filter(
     (artifact) => artifact.artifact_type === "forbedret_kravsvar",
   );
@@ -815,7 +827,8 @@ export function ProjectRequirementResponseTab({
                 Kravbesvarelse
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Last opp kravdokumentet som skal fylles ut. AI-en bruker
+                Last opp eller velg dokumentet som inneholder kravene. AI-en
+                finner krav i tekst, tabeller, punkter og skjema, og bruker
                 kundeanalyse, Bilag 1, løsningsbeskrivelse og tjenestebeskrivelse
                 som grunnlag for svarene.
               </p>
@@ -830,7 +843,7 @@ export function ProjectRequirementResponseTab({
                 htmlFor="requirement-document-select"
                 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
               >
-                Kravdokument
+                Dokument som skal besvares
               </Label>
               <div className="relative">
                 <select
@@ -880,7 +893,7 @@ export function ProjectRequirementResponseTab({
                 <Upload className="size-5" />
               </span>
               <span className="text-sm font-semibold text-slate-950">
-                Dra og slipp kravdokumentet her
+                Dra og slipp dokumentet her
               </span>
               <span className="mt-1 text-xs leading-5 text-slate-500">
                 eller klikk for å velge PDF, DOCX, Excel, TXT eller MD.

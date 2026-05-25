@@ -891,19 +891,36 @@ function shouldUseInferredValue(
 }
 
 function isMissingLegacyDocumentColumn(error: { message?: string } | null) {
-  const message = error?.message ?? "";
+  const message = (error?.message ?? "").toLowerCase();
+  if (
+    message.includes("violates") ||
+    message.includes("not-null") ||
+    message.includes("not null")
+  ) {
+    return false;
+  }
+
+  const mentionsMissingColumn =
+    message.includes("schema cache") ||
+    message.includes("does not exist") ||
+    message.includes("could not find") ||
+    message.includes("column documents.");
+  const legacyColumnNames = [
+    "supporting_subtype",
+    "title",
+    "display_name",
+    "file_name",
+    "file_size_bytes",
+    "page_count",
+    "file_storage_bucket",
+    "file_storage_path",
+    "structure_map",
+    "source_map",
+  ];
+
   return (
-    message.includes("column documents.") ||
-    message.includes("supporting_subtype") ||
-    message.includes("title") ||
-    message.includes("display_name") ||
-    message.includes("file_name") ||
-    message.includes("file_size_bytes") ||
-    message.includes("page_count") ||
-    message.includes("file_storage_bucket") ||
-    message.includes("file_storage_path") ||
-    message.includes("structure_map") ||
-    message.includes("source_map")
+    mentionsMissingColumn &&
+    legacyColumnNames.some((columnName) => message.includes(columnName))
   );
 }
 
@@ -2231,6 +2248,10 @@ export async function saveDocument(input: {
 }) {
   const supabase = createServiceClient();
   const documentId = randomUUID();
+  const normalizedTitle =
+    input.title?.trim() ||
+    input.fileName.replace(/\.[^.]+$/, "").trim() ||
+    "Dokument";
   const pageCount =
     pageCountFromStructureMap(input.structureMap, input.fileFormat) ??
     pageCountFromRawText(input.rawText, input.fileFormat);
@@ -2252,7 +2273,7 @@ export async function saveDocument(input: {
       input.role === "supporting_document"
         ? (input.supportingSubtype ?? null)
         : null,
-    title: input.title,
+    title: normalizedTitle,
     file_name: input.fileName,
     file_format: input.fileFormat,
     content_type: input.contentType,
@@ -2278,7 +2299,7 @@ export async function saveDocument(input: {
     const payloadLegacy: Record<string, unknown> = {
       ...payloadWithSubtype,
       file_base64: encryptedBase64,
-      display_name: input.title,
+      display_name: normalizedTitle,
       subtype:
         input.role === "supporting_document"
           ? (input.supportingSubtype ?? null)

@@ -1368,7 +1368,7 @@ export function ProjectWorkspacePage({
       formData.append("file", file);
       formData.append(
         "title",
-        `Kravdokument - ${file.name.replace(/\.[^.]+$/, "")}`,
+        `Kravgrunnlag - ${file.name.replace(/\.[^.]+$/, "")}`,
       );
       formData.append("role", "supporting_document");
       formData.append("supporting_subtype", "kravdokument");
