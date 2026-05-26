@@ -37,6 +37,7 @@ import {
   getProjectSnapshot,
 } from "@/lib/server/repositories/projects";
 import {
+  listProjectServiceDescriptions,
   listServiceDocumentDetailsForProject,
   listServiceDocumentSummariesForProject,
 } from "@/lib/server/repositories/services";
@@ -120,7 +121,10 @@ export async function runCustomerAnalysisWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster dokumentgrunnlag ...");
-  const projectDocuments = await listProjectDocuments(input.projectId);
+  const [projectDocuments, serviceCandidates] = await Promise.all([
+    listProjectDocuments(input.projectId),
+    listProjectServiceDescriptions(input.projectId),
+  ]);
   const { projectDocuments: analysisDocuments } =
     splitServiceDescriptionDetails(projectDocuments);
   const { customerDocument, supportingDocuments } =
@@ -142,6 +146,7 @@ export async function runCustomerAnalysisWorkflow(
     projectName: customerDocument.title,
     customerDocument,
     supportingDocuments,
+    serviceCandidates,
     model: input.model,
   });
   handlers.onPhase?.("ai_analyse");

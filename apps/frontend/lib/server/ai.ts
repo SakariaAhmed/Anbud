@@ -28,8 +28,10 @@ import type {
   ExecutiveSummaryResult,
   GeneratedArtifact,
   GeneratedArtifactType,
+  ProjectServiceDescription,
   ProjectMetadataInference,
   ProjectDocumentDetail,
+  RecommendedService,
   ServiceDocument,
   ServiceDocumentDetail,
   SolutionEvaluationResult,
@@ -380,6 +382,65 @@ function retrievedSnippetContext(
           .join("\n"),
       )
       .join("\n\n"),
+  );
+}
+
+function selectServiceRecommendationCandidates(
+  services: ProjectServiceDescription[] | undefined,
+) {
+  return [...(services ?? [])]
+    .filter((service) => service.name.trim())
+    .map((service, index) => ({
+      service,
+      index,
+      hasDocumentContext:
+        service.description.trim().length > 0 ||
+        service.documents.some((document) => document.ai_summary?.trim()),
+    }))
+    .sort(
+      (left, right) =>
+        Number(right.service.selected) - Number(left.service.selected) ||
+        Number(right.service.recommended) - Number(left.service.recommended) ||
+        right.service.recommendation_score - left.service.recommendation_score ||
+        Number(right.hasDocumentContext) - Number(left.hasDocumentContext) ||
+        left.index - right.index,
+    )
+    .slice(0, 12)
+    .map(({ service }) => service);
+}
+
+function serviceRecommendationContext(
+  services: ProjectServiceDescription[] | undefined,
+) {
+  const candidates = selectServiceRecommendationCandidates(services);
+
+  if (!candidates.length) {
+    return buildDelimitedContext(
+      "Tjenestekandidater",
+      "Ingen tjenestekatalog er valgt eller tilgjengelig for prosjektet. Returner recommended_services som en tom liste.",
+    );
+  }
+
+  return buildDelimitedContext(
+    "Tjenestekandidater",
+    JSON.stringify(
+      candidates.map((service) => ({
+        service_id: service.id,
+        service_name: service.name,
+        description: compactText(service.description, 900),
+        selected_in_project: service.selected,
+        heuristic_match_percent: service.recommendation_score,
+        heuristic_reason: service.recommendation_reason,
+        service_documents: service.documents.slice(0, 4).map((document) => ({
+          document_id: document.id,
+          title: document.title,
+          file_name: document.file_name,
+          ai_summary: compactText(document.ai_summary ?? "", 900),
+        })),
+      })),
+      null,
+      2,
+    ),
   );
 }
 
@@ -3548,6 +3609,14 @@ function summarizeCustomerAnalysis(analysis: CustomerAnalysisResult) {
         0,
         5,
       ),
+      recommended_services: (analysis.recommended_services ?? [])
+        .slice(0, 5)
+        .map((item) => ({
+          service_name: item.service_name,
+          usefulness_percent: item.usefulness_percent,
+          customer_need: compactText(item.customer_need, 180),
+          recommendation_reason: compactText(item.recommendation_reason, 240),
+        })),
       value_opportunities: analysis.value_opportunities.slice(0, 4),
       executive_summary: compactText(analysis.executive_summary, 500),
     },
@@ -3925,6 +3994,83 @@ function normalizePercentShare(raw: unknown) {
   return Math.min(100, Math.max(1, Math.round(raw)));
 }
 
+function serviceLookupKey(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizeTextField(value: unknown) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function normalizeRecommendedServices(
+  items: RecommendedService[],
+  serviceCandidates?: ProjectServiceDescription[],
+): RecommendedService[] {
+  const hasCandidateInput = Array.isArray(serviceCandidates);
+  const candidateList = serviceCandidates?.length
+    ? selectServiceRecommendationCandidates(serviceCandidates)
+    : [];
+  if (hasCandidateInput && !candidateList.length) {
+    return [];
+  }
+  const candidatesById = new Map(
+    candidateList.map((service) => [service.id, service]),
+  );
+  const candidatesByName = new Map(
+    candidateList.map((service) => [serviceLookupKey(service.name), service]),
+  );
+  const constrainToCandidates = hasCandidateInput && candidateList.length > 0;
+  const seen = new Set<string>();
+
+  return (Array.isArray(items) ? items : [])
+    .filter(
+      (item) =>
+        item &&
+        typeof item.service_name === "string" &&
+        typeof item.recommendation_reason === "string",
+    )
+    .flatMap((item): RecommendedService[] => {
+      const serviceId =
+        typeof item.service_id === "string" ? item.service_id.trim() : "";
+      const serviceName = item.service_name.replace(/\s+/g, " ").trim();
+      const candidate =
+        (serviceId ? candidatesById.get(serviceId) : undefined) ??
+        candidatesByName.get(serviceLookupKey(serviceName));
+
+      if (constrainToCandidates && !candidate) {
+        return [];
+      }
+
+      return [
+        {
+          service_id: candidate?.id ?? (serviceId || null),
+          service_name: candidate?.name ?? serviceName,
+          usefulness_percent:
+            normalizePercentShare(item.usefulness_percent) ?? 1,
+          customer_need: normalizeTextField(item.customer_need),
+          recommendation_reason: normalizeTextField(item.recommendation_reason),
+          evidence: normalizeTextField(item.evidence),
+          risk_or_caveat: normalizeTextField(item.risk_or_caveat),
+        },
+      ];
+    })
+    .filter((item) => {
+      const key = item.service_id ?? serviceLookupKey(item.service_name);
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .filter((item) => item.usefulness_percent >= 40)
+    .sort(
+      (left, right) =>
+        right.usefulness_percent - left.usefulness_percent ||
+        left.service_name.localeCompare(right.service_name, "nb"),
+    )
+    .slice(0, 5);
+}
+
 function isValueCategory(value: unknown): value is ValueCategory {
   return (
     typeof value === "string" &&
@@ -4152,7 +4298,10 @@ function normalizeRiskGroups(result: CustomerAnalysisResult) {
 
 function normalizeCustomerAnalysisResult(
   result: CustomerAnalysisResult,
-  options?: { signalSourceText?: string },
+  options?: {
+    signalSourceText?: string;
+    serviceCandidates?: ProjectServiceDescription[];
+  },
 ): CustomerAnalysisResult {
   const customerProfile = capNormalizedList(
     Array.isArray(result.customer_profile) ? result.customer_profile : [],
@@ -4204,6 +4353,12 @@ function normalizeCustomerAnalysisResult(
     .slice(0, 10);
   const valueOpportunities = normalizeValueOpportunities(
     Array.isArray(result.value_opportunities) ? result.value_opportunities : [],
+  );
+  const recommendedServices = normalizeRecommendedServices(
+    Array.isArray(result.recommended_services)
+      ? result.recommended_services
+      : [],
+    options?.serviceCandidates,
   );
 
   const customerProfileSummary = dedupeSummary(
@@ -4269,6 +4424,7 @@ function normalizeCustomerAnalysisResult(
     signal_words: signalWords,
     signal_word_counts: signalWordCounts,
     expected_solution_direction: expectedSolutionDirection,
+    recommended_services: recommendedServices,
     value_opportunities: valueOpportunities,
     positioning_recommendations: positioningRecommendations,
     executive_summary: executiveSummary,
@@ -4287,6 +4443,7 @@ type CustomerAnalysisSectionPatch = Partial<
     | "risks_for_us"
     | "risks_for_customer"
     | "signal_words"
+    | "recommended_services"
     | "value_opportunities"
     | "ambiguities"
     | "expected_solution_direction"
@@ -4410,6 +4567,25 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
     outputContract: [
       "Returner kun JSON med signal_words.",
       "signal_words skal være en liste med maksimalt 8 konkrete teknologi-/funksjonsnavn.",
+    ],
+  },
+  services: {
+    label: "Anbefalte tjenester",
+    fields: "recommended_services",
+    guidance: [
+      "Rediger kun anbefalte tjenester.",
+      "Anbefal bare tjenester som finnes i tjenestekandidatene i prompten. Ikke finn opp tjenestenavn eller interne kapabiliteter.",
+      "Vurder tjenestene mot kundens mål, implisitte behov, risiko, evalueringssignaler, forventet løsningsretning og dokumenterte tjenesteinnhold.",
+      "recommended_services skal sorteres etter usefulness_percent synkende og ha maksimalt 5 tjenester.",
+      "usefulness_percent skal være en fit-score fra 1 til 100 og skal ikke summeres til 100. Ikke anbefal tjenester under 40 prosent.",
+      "recommendation_reason skal forklare hvorfor tjenesten er nyttig for akkurat denne kunden.",
+      "customer_need skal beskrive behovet tjenesten treffer, evidence skal vise tekstnært grunnlag, og risk_or_caveat skal angi viktigste forutsetning eller avklaring.",
+    ],
+    outputContract: [
+      "Returner kun JSON med recommended_services.",
+      "recommended_services skal være en liste av objekter med service_id, service_name, usefulness_percent, customer_need, recommendation_reason, evidence og risk_or_caveat.",
+      "service_id og service_name skal komme fra tjenestekandidatene i prompten.",
+      "usefulness_percent skal være et heltall mellom 1 og 100.",
     ],
   },
   value: {
@@ -4696,6 +4872,7 @@ export async function analyzeCustomerDocuments(input: {
   projectName: string;
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
+  serviceCandidates?: ProjectServiceDescription[];
   model?: string;
 }) {
   const analysisSnippets = await retrieveDocumentSnippets({
@@ -4728,20 +4905,19 @@ export async function analyzeCustomerDocuments(input: {
       "Prosjekt",
       `Prosjektnavn: ${input.projectName}\nArbeid som et tilbudsteam som skal forstå kunden dypt og bruke funnene i posisjonering, løsningsarbeid og tilbudsbesvarelse.`,
     ),
-	    documentContext("Primært kundedokument", input.customerDocument, {
-	      textLimit: 12000,
-	      structureLimit: 10,
-	      structureTextLimit: 180,
-	    }),
-	    retrievedSnippetContext(
-	      "Semantisk dokumentdekning",
-	      analysisSnippets,
-	      { textLimit: 1200 },
-	    ),
-	    buildDelimitedContext(
+    documentContext("Primært kundedokument", input.customerDocument, {
+      textLimit: 12000,
+      structureLimit: 10,
+      structureTextLimit: 180,
+    }),
+    retrievedSnippetContext("Semantisk dokumentdekning", analysisSnippets, {
+      textLimit: 1200,
+    }),
+    buildDelimitedContext(
       "Dokumentdekningsregel",
       "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
     ),
+    serviceRecommendationContext(input.serviceCandidates),
     supportingContexts
       ? buildDelimitedContext(
           "Tilleggsregel",
@@ -4766,7 +4942,10 @@ export async function analyzeCustomerDocuments(input: {
     ...input.supportingDocuments.map((document) => document.raw_text),
   ].join("\n\n");
 
-  return normalizeCustomerAnalysisResult(result, { signalSourceText });
+  return normalizeCustomerAnalysisResult(result, {
+    signalSourceText,
+    serviceCandidates: input.serviceCandidates,
+  });
 }
 
 export async function regenerateCustomerAnalysisSection(input: {
@@ -4774,6 +4953,7 @@ export async function regenerateCustomerAnalysisSection(input: {
   projectName: string;
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
+  serviceCandidates?: ProjectServiceDescription[];
   customerAnalysis: CustomerAnalysisResult;
   model?: string;
 }) {
@@ -4832,6 +5012,9 @@ export async function regenerateCustomerAnalysisSection(input: {
         )
       : "",
     supportingContexts,
+    input.section === "services"
+      ? serviceRecommendationContext(input.serviceCandidates)
+      : "",
     buildDelimitedContext(
       "Eksisterende kundeanalyse",
       JSON.stringify(customerAnalysis, null, 2),
@@ -4858,7 +5041,10 @@ export async function regenerateCustomerAnalysisSection(input: {
       ...customerAnalysis,
       ...patch,
     },
-    { signalSourceText },
+    {
+      signalSourceText,
+      serviceCandidates: input.serviceCandidates,
+    },
   );
 }
 

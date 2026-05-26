@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   FormEvent,
@@ -17,12 +16,13 @@ import {
   ArrowRight,
   Brain,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Download,
   FileCheck2,
   FileText,
   FolderOpen,
-  LayoutGrid,
   MessageSquareText,
   Scale,
   Sparkles,
@@ -32,7 +32,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { markNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -66,7 +65,6 @@ import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -95,6 +93,8 @@ import type {
   ProjectJobRecord,
   SolutionEvaluationResult,
 } from "@/lib/types";
+
+const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v2";
 
 const ProjectEvaluationTab = dynamic(
   () =>
@@ -518,6 +518,28 @@ type WorkspaceNavItem = {
   icon: LucideIcon;
 };
 
+type WorkflowStepStatus =
+  | "Ikke startet"
+  | "Venter"
+  | "Klar"
+  | "Generert"
+  | "Må sjekkes"
+  | "Ferdig";
+
+type WorkflowStepItem = WorkspaceNavItem & {
+  step: number;
+  status: WorkflowStepStatus;
+};
+
+const WORKFLOW_SIDEBAR_STATUS_STYLES: Record<WorkflowStepStatus, string> = {
+  "Ikke startet": "border-slate-300 bg-slate-50 text-slate-700",
+  Venter: "border-amber-300 bg-amber-50 text-amber-900",
+  Klar: "border-sky-300 bg-sky-50 text-sky-900",
+  Generert: "border-teal-300 bg-teal-50 text-teal-950",
+  "Må sjekkes": "border-orange-300 bg-orange-50 text-orange-950",
+  Ferdig: "border-emerald-300 bg-emerald-50 text-emerald-950",
+};
+
 function isProjectWorkspaceTab(value: string | null | undefined): value is ProjectWorkspaceTab {
   return PROJECT_WORKSPACE_TABS.includes(value as ProjectWorkspaceTab);
 }
@@ -754,8 +776,8 @@ export function ProjectWorkspacePage({
   initialData: ProjectDetail;
   initialTab?: ProjectWorkspaceTab;
 }) {
-  const DEFAULT_SIDEBAR_WIDTH = 240;
-  const MIN_SIDEBAR_WIDTH = 236;
+  const DEFAULT_SIDEBAR_WIDTH = 255;
+  const MIN_SIDEBAR_WIDTH = 255;
   const MAX_SIDEBAR_WIDTH = 440;
   const router = useRouter();
   const pathname = usePathname();
@@ -1064,7 +1086,7 @@ export function ProjectWorkspacePage({
   useEffect(() => {
     try {
       const storedWidth = window.localStorage.getItem(
-        "project-workspace-sidebar-width",
+        SIDEBAR_WIDTH_STORAGE_KEY,
       );
       const parsedWidth = Number(storedWidth);
       if (Number.isFinite(parsedWidth)) {
@@ -1080,7 +1102,7 @@ export function ProjectWorkspacePage({
   useEffect(() => {
     try {
       window.localStorage.setItem(
-        "project-workspace-sidebar-width",
+        SIDEBAR_WIDTH_STORAGE_KEY,
         String(sidebarWidth),
       );
     } catch {
@@ -1910,46 +1932,112 @@ export function ProjectWorkspacePage({
     project.solution_evaluation as SolutionEvaluationResult | null;
   const executiveSummary =
     project.executive_summary as ExecutiveSummaryResult | null;
-  const workspaceNavGroups: Array<{
+  const requirementArtifacts = project.generated_artifacts.filter(
+    (artifact) => artifact.artifact_type === "forbedret_kravsvar",
+  );
+  const solutionDraftArtifacts = project.generated_artifacts.filter(
+    (artifact) => artifact.artifact_type === "losningsutkast",
+  );
+  const deliveryArtifacts = project.generated_artifacts.filter(
+    (artifact) => artifact.artifact_type === "gjennomforing_og_risiko",
+  );
+  const hasDocuments = project.documents.length > 0;
+  const hasCustomerAnalysis =
+    Boolean(customerAnalysis) || project.customer_analysis_generated;
+  const hasRequirementResponse = requirementArtifacts.length > 0;
+  const hasSolutionDraft =
+    solutionDraftArtifacts.length > 0 || project.solution_document_uploaded;
+  const hasSolutionEvaluation =
+    Boolean(solutionEvaluation) || project.solution_evaluation_generated;
+  const hasDeliveryPlan = deliveryArtifacts.length > 0;
+  const hasExecutiveSummary = Boolean(executiveSummary);
+  const primaryWorkflowSteps: WorkflowStepItem[] = [
+    {
+      step: 1,
+      value: "documents",
+      label: "Dokumenter",
+      icon: FolderOpen,
+      status: hasDocuments ? "Ferdig" : "Ikke startet",
+    },
+    {
+      step: 2,
+      value: "analysis",
+      label: "Kundeanalyse",
+      icon: Brain,
+      status: hasCustomerAnalysis ? "Generert" : hasDocuments ? "Klar" : "Venter",
+    },
+    {
+      step: 3,
+      value: "requirements",
+      label: "Krav og svar",
+      icon: FileCheck2,
+      status: hasRequirementResponse
+        ? "Generert"
+        : hasCustomerAnalysis
+          ? "Klar"
+          : "Venter",
+    },
+    {
+      step: 4,
+      value: "generator",
+      label: "Løsningsforslag",
+      icon: Sparkles,
+      status: hasSolutionDraft
+        ? "Generert"
+        : hasCustomerAnalysis
+          ? "Klar"
+          : "Venter",
+    },
+    {
+      step: 5,
+      value: "evaluation",
+      label: "Vurdering",
+      icon: Scale,
+      status: hasSolutionEvaluation
+        ? "Generert"
+        : hasSolutionDraft
+          ? "Klar"
+          : "Venter",
+    },
+    {
+      step: 6,
+      value: "delivery",
+      label: "Fremdriftsplan",
+      icon: ArrowRight,
+      status: hasDeliveryPlan
+        ? "Generert"
+        : hasSolutionEvaluation
+          ? "Klar"
+          : "Venter",
+    },
+    {
+      step: 7,
+      value: "executive-summary",
+      label: "Leder oppsummering",
+      icon: ClipboardCheck,
+      status: hasExecutiveSummary
+        ? "Generert"
+        : hasSolutionEvaluation
+          ? "Klar"
+          : "Venter",
+    },
+  ];
+  const secondaryNavGroups: Array<{
     label: string;
     items: WorkspaceNavItem[];
   }> = [
     {
-      label: "Grunnlag",
+      label: "Verktøy",
       items: [
-        { value: "documents", label: "Dokumenter", icon: FolderOpen },
-        { value: "service-description", label: "Tjenestebeskrivelse", icon: Wrench },
-      ],
-    },
-    {
-      label: "Analyse",
-      items: [
-        { value: "analysis", label: "Kundeanalyse", icon: Brain },
-        { value: "requirements", label: "Kravbesvarelse", icon: FileCheck2 },
-      ],
-    },
-    {
-      label: "Produksjon",
-      items: [
-        { value: "bilag1", label: "Bilag 1", icon: FileText },
-        {
-          value: "generator",
-          label: "Løsningsbeskrivelse",
-          icon: Sparkles,
-        },
-        { value: "delivery", label: "Fremdriftsplan", icon: ArrowRight },
-      ],
-    },
-    {
-      label: "Kvalitet",
-      items: [
-        { value: "evaluation", label: "Vurdering", icon: Scale },
-        { value: "executive-summary", label: "Leder oppsummering", icon: ClipboardCheck },
+        { value: "service-description", label: "Velg tjenester", icon: Wrench },
+        { value: "bilag1", label: "Bilag 1-utkast", icon: FileText },
       ],
     },
   ];
-  const workspaceNavItems = workspaceNavGroups.flatMap((group) => group.items);
-  const projectMonogram = project.name.trim().charAt(0).toUpperCase() || "A";
+  const workspaceNavItems = [
+    ...primaryWorkflowSteps,
+    ...secondaryNavGroups.flatMap((group) => group.items),
+  ];
   const showModelSelector =
     activeTab === "analysis" ||
     activeTab === "bilag1" ||
@@ -2003,68 +2091,148 @@ export function ProjectWorkspacePage({
             "--sidebar-width-icon": "3.5rem",
             "--sidebar-offset-top": "var(--app-header-height)",
             "--sidebar-offset-bottom": "0px",
+            "--sidebar": "rgb(239, 247, 255)",
+            "--sidebar-foreground": "rgb(38, 62, 92)",
+            "--sidebar-primary": "rgb(37, 99, 235)",
+            "--sidebar-primary-foreground": "rgb(255, 255, 255)",
+            "--sidebar-accent": "rgb(225, 241, 253)",
+            "--sidebar-accent-foreground": "rgb(24, 48, 82)",
+            "--sidebar-border": "rgb(203, 218, 235)",
+            "--sidebar-ring": "rgb(37, 99, 235)",
           } as CSSProperties
         }
         className="min-h-[calc(100dvh-var(--app-header-height))] bg-white/70 max-md:flex-col"
       >
         <Sidebar
           collapsible="icon"
-          className="bg-sidebar/70 md:border-r md:border-sidebar-border/70"
+          className="bg-[#eff7ff] md:border-r md:border-[#c8d9ea]"
         >
           <SidebarHeader
             className={cn(
-              "border-b border-sidebar-border/70 bg-sidebar/95 p-3 backdrop-blur transition-[padding] duration-150 ease-out",
-              !sidebarOpen && "px-2 py-2",
+              "flex min-h-18 flex-row items-center border-b border-[#c8d9ea] bg-[#eff7ff] px-4 py-3 transition-[padding] duration-150 ease-out",
+              sidebarOpen ? "justify-between gap-3" : "justify-center px-2",
             )}
           >
             {sidebarOpen ? (
-              <div className="relative px-1 py-1">
-                <SidebarTrigger className="absolute top-0 right-0 size-8 shrink-0 text-muted-foreground hover:bg-sidebar-accent/80 hover:text-foreground" />
-
-                <div className="flex min-w-0 items-center gap-3 pr-10">
-                  <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary/12 text-base font-semibold text-sidebar-primary">
-                    {projectMonogram}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Arbeidsflate
-                    </p>
-                    <p className="mt-1 truncate text-[1.02rem] font-semibold text-foreground">
-                      {project.name}
-                    </p>
-                  </div>
-                </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[0.96rem] font-semibold leading-6 text-slate-800">
+                  {project.name}
+                </p>
+                {project.customer_name ? (
+                  <p className="mt-0.5 truncate text-[0.82rem] font-medium leading-5 text-slate-600">
+                    {project.customer_name}
+                  </p>
+                ) : null}
               </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2 py-1">
-                <SidebarTrigger className="size-8 shrink-0 rounded-md text-muted-foreground hover:bg-sidebar-accent/80 hover:text-foreground" />
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary/12 text-xs font-semibold text-sidebar-primary">
-                  {projectMonogram}
-                </div>
-              </div>
-            )}
+            ) : null}
+            <SidebarTrigger
+              aria-label={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
+              title={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
+              className="size-8 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            >
+              {sidebarOpen ? (
+                <ChevronLeft className="size-4.5" />
+              ) : (
+                <ChevronRight className="size-4.5" />
+              )}
+            </SidebarTrigger>
           </SidebarHeader>
 
           <SidebarContent
             className={cn(
-              "min-h-0 flex-1 p-2 transition-[padding] duration-150 ease-out",
+              "min-h-0 flex-1 bg-[#eff7ff] px-2 py-2.5 transition-[padding] duration-150 ease-out",
               !sidebarOpen && "px-1.5",
             )}
           >
-            {workspaceNavGroups.map((group) => (
+            <SidebarGroup
+              className={cn("gap-2 px-1 py-2.5", !sidebarOpen && "px-0")}
+            >
+              <SidebarGroupContent>
+                <SidebarMenu
+                  className={cn("gap-2", !sidebarOpen && "items-center")}
+                >
+                  {primaryWorkflowSteps.map((item) => (
+                    <SidebarMenuItem
+                      key={item.value}
+                      className={cn(!sidebarOpen && "flex justify-center")}
+                    >
+                      <SidebarMenuButton
+                        isActive={activeTab === item.value}
+                        size="lg"
+                        tooltip={`${item.step}. ${item.label}: ${item.status}`}
+                        className={cn(
+                          "h-auto min-h-[3.3rem] gap-1.5 rounded-lg border border-transparent px-2 py-2 text-[0.88rem] font-medium text-slate-700 transition-colors duration-150 ease-out hover:border-sky-200 hover:bg-[#e7f4fd] hover:text-slate-950 data-active:bg-[#e7f4fd] data-active:text-blue-950",
+                          !sidebarOpen &&
+                            "mx-auto size-10 min-h-10 justify-center rounded-md px-0 py-0",
+                        )}
+                        onFocus={() => preloadWorkspaceTab(item.value)}
+                        onPointerEnter={() => preloadWorkspaceTab(item.value)}
+                        onPointerDown={() => preloadWorkspaceTab(item.value)}
+                        onClick={() => setWorkspaceTab(item.value)}
+                      >
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-[0.78rem] font-bold text-blue-700 group-data-active/menu-button:border-blue-300 group-data-active/menu-button:bg-blue-100 group-data-active/menu-button:text-blue-900">
+                          {item.step}
+                        </span>
+                        {sidebarOpen ? (
+                          <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                            <span className="min-w-0 text-left leading-5">
+                              {item.label}
+                            </span>
+                            <span
+                              className={cn(
+                                "shrink-0 rounded-full border px-2 py-0.5 text-[0.68rem] font-bold leading-4",
+                                WORKFLOW_SIDEBAR_STATUS_STYLES[item.status],
+                              )}
+                            >
+                              {item.status}
+                            </span>
+                          </span>
+                        ) : null}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {secondaryNavGroups.map((group) => (
               <SidebarGroup
                 key={group.label}
-                className={cn("gap-2 px-3 py-2", !sidebarOpen && "px-0")}
+                className={cn("gap-2 px-1 py-2.5", !sidebarOpen && "px-0")}
               >
                 {sidebarOpen ? (
-                  <p className="px-3 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-sidebar-foreground/45">
+                  <p className="px-2 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-slate-600">
                     {group.label}
                   </p>
                 ) : null}
                 <SidebarGroupContent>
                   <SidebarMenu
-                    className={cn("gap-1", !sidebarOpen && "items-center")}
+                    className={cn("gap-1.5", !sidebarOpen && "items-center")}
                   >
+                    <SidebarMenuItem
+                      className={cn(!sidebarOpen && "flex justify-center")}
+                    >
+                      <SidebarMenuButton
+                        render={
+                          <a
+                            href={`/projects/${project.id}/chat`}
+                            target={`bidsite-project-chat-${project.id}`}
+                            rel="noopener noreferrer"
+                            onClick={openChatPopout}
+                          />
+                        }
+                        size="lg"
+                        tooltip="Åpne AI Chat i pop-out vindu"
+                        className={cn(
+                          "h-10 gap-1.5 rounded-lg border border-transparent px-2 text-[0.86rem] font-medium text-slate-700 transition-colors duration-150 ease-out hover:border-sky-200 hover:bg-[#e7f4fd] hover:text-slate-950",
+                          !sidebarOpen &&
+                            "mx-auto size-10 justify-center rounded-md px-0",
+                        )}
+                      >
+                        <MessageSquareText className="size-4.5 text-slate-600" />
+                        {sidebarOpen ? <span>AI Chat</span> : null}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
                     {group.items.map((item) => (
                       <SidebarMenuItem
                         key={item.value}
@@ -2075,7 +2243,7 @@ export function ProjectWorkspacePage({
                           size="lg"
                           tooltip={`${group.label}: ${item.label}`}
                           className={cn(
-                            "h-10 rounded-lg px-3 text-[0.92rem] transition-colors duration-150 ease-out",
+                            "h-10 gap-1.5 rounded-lg border border-transparent px-2 text-[0.86rem] font-medium text-slate-700 transition-colors duration-150 ease-out hover:border-sky-200 hover:bg-[#e7f4fd] hover:text-slate-950 data-active:border-sky-200 data-active:bg-[#e7f4fd] data-active:text-blue-950",
                             !sidebarOpen &&
                               "mx-auto size-10 justify-center rounded-md px-0",
                           )}
@@ -2084,7 +2252,7 @@ export function ProjectWorkspacePage({
                           onPointerDown={() => preloadWorkspaceTab(item.value)}
                           onClick={() => setWorkspaceTab(item.value)}
                         >
-                          <item.icon className="size-4.5" />
+                          <item.icon className="size-4.5 text-slate-600" />
                           {sidebarOpen ? <span>{item.label}</span> : null}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -2094,63 +2262,6 @@ export function ProjectWorkspacePage({
               </SidebarGroup>
             ))}
           </SidebarContent>
-
-          <SidebarFooter
-            className={cn(
-              "border-t border-sidebar-border/70 bg-sidebar/95 p-3 backdrop-blur transition-[padding] duration-150 ease-out",
-              !sidebarOpen && "px-1.5 py-2",
-            )}
-          >
-            <SidebarMenu className={cn(!sidebarOpen && "items-center")}>
-              <SidebarMenuItem
-                className={cn(!sidebarOpen && "flex justify-center")}
-              >
-                <SidebarMenuButton
-                  render={
-                    <a
-                      href={`/projects/${project.id}/chat`}
-                      target={`bidsite-project-chat-${project.id}`}
-                      rel="noopener noreferrer"
-                      onClick={openChatPopout}
-                    />
-                  }
-                  size="lg"
-                  tooltip="Åpne sparring i pop-out vindu"
-                  className={cn(
-                    "h-11 rounded-lg px-3 text-[0.95rem] transition-colors duration-150 ease-out",
-                    !sidebarOpen &&
-                      "mx-auto size-10 justify-center rounded-md px-0",
-                  )}
-                >
-                  <MessageSquareText className="size-4.5" />
-                  {sidebarOpen ? <span>Sparring</span> : null}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem
-                className={cn(!sidebarOpen && "flex justify-center")}
-              >
-                <SidebarMenuButton
-                  render={
-                    <Link
-                      href="/"
-                      prefetch
-                      onClick={markNextHomeNavigationWithoutAnimation}
-                    />
-                  }
-                  size="lg"
-                  tooltip="Alle prosjekter"
-                  className={cn(
-                    "h-11 rounded-lg px-3 text-[0.95rem] transition-colors duration-150 ease-out",
-                    !sidebarOpen &&
-                      "mx-auto size-10 justify-center rounded-md px-0",
-                  )}
-                >
-                  <LayoutGrid className="size-4.5" />
-                  {sidebarOpen ? <span>Alle prosjekter</span> : null}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarFooter>
           {sidebarOpen ? (
             <button
               type="button"

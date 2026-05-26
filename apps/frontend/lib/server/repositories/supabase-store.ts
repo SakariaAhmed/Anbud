@@ -310,6 +310,7 @@ const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   signal_words: [],
   signal_word_counts: {},
   expected_solution_direction: [],
+  recommended_services: [],
   value_opportunities: [],
   positioning_recommendations: [],
   executive_summary: "",
@@ -2551,7 +2552,10 @@ export async function saveDocument(input: {
       .eq("role", "primary_solution_document")
       .neq("id", inserted.id);
 
-    if (demoteResult.error && isMissingLegacyDocumentColumn(demoteResult.error)) {
+    if (
+      demoteResult.error &&
+      isMissingLegacyDocumentColumn(demoteResult.error)
+    ) {
       demoteResult = await supabase
         .from("documents")
         .update({

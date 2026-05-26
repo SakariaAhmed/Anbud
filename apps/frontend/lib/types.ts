@@ -157,6 +157,16 @@ export interface ValueOpportunity {
   profit_share_percent: number;
 }
 
+export interface RecommendedService {
+  service_id?: string | null;
+  service_name: string;
+  usefulness_percent: number;
+  customer_need: string;
+  recommendation_reason: string;
+  evidence: string;
+  risk_or_caveat: string;
+}
+
 export type CustomerAnalysisHistorySource =
   | "full_regeneration"
   | "section_regeneration"
@@ -171,6 +181,7 @@ export type CustomerAnalysisSection =
   | "risks"
   | "needs"
   | "keywords"
+  | "services"
   | "value";
 
 export interface CustomerAnalysisSectionSnapshotMap {
@@ -207,6 +218,9 @@ export interface CustomerAnalysisSectionSnapshotMap {
   keywords: {
     signal_words: string[];
     signal_word_counts?: Record<string, number>;
+  };
+  services: {
+    recommended_services: RecommendedService[];
   };
   value: {
     value_opportunities: ValueOpportunity[];
@@ -245,6 +259,7 @@ export interface CustomerAnalysisResult {
   signal_words: string[];
   signal_word_counts?: Record<string, number>;
   expected_solution_direction: string[];
+  recommended_services: RecommendedService[];
   value_opportunities: ValueOpportunity[];
   positioning_recommendations: string[];
   executive_summary: string;
