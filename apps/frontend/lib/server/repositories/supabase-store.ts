@@ -257,6 +257,41 @@ const PROJECT_SELECT_LEGACY =
   "id, title, client_name, description, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
 const SERVICE_DOCUMENT_SUMMARY_SELECT =
   "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, ai_summary, ai_summary_updated_at, created_at, updated_at";
+const PROJECT_DOCUMENT_INSERT_COLUMN_NAMES = [
+  "id",
+  "project_id",
+  "role",
+  "supporting_subtype",
+  "subtype",
+  "title",
+  "display_name",
+  "file_name",
+  "file_format",
+  "content_type",
+  "file_size_bytes",
+  "page_count",
+  "file_storage_bucket",
+  "file_storage_path",
+  "file_base64",
+  "raw_text",
+  "structure_map",
+  "source_map",
+] as const;
+const SERVICE_DOCUMENT_INSERT_COLUMN_NAMES = [
+  "id",
+  "service_id",
+  "title",
+  "file_name",
+  "file_format",
+  "content_type",
+  "file_size_bytes",
+  "page_count",
+  "file_storage_bucket",
+  "file_storage_path",
+  "file_base64",
+  "raw_text",
+  "structure_map",
+] as const;
 
 const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   customer_profile_summary: "",
@@ -369,6 +404,27 @@ function isMissingLegacyProjectColumn(error: { message?: string } | null) {
   );
 }
 
+function isMissingSchemaColumn(error: { message?: string } | null) {
+  const message = (error?.message ?? "").toLowerCase();
+  if (!message) {
+    return false;
+  }
+  if (
+    message.includes("violates") ||
+    message.includes("not-null") ||
+    message.includes("not null")
+  ) {
+    return false;
+  }
+
+  return (
+    message.includes("schema cache") ||
+    message.includes("does not exist") ||
+    message.includes("could not find") ||
+    message.includes("column ")
+  );
+}
+
 function isMissingRelationColumn(
   error: { message?: string } | null,
   relation: string,
@@ -384,6 +440,35 @@ function isMissingRelationColumn(
     (message.includes(relation) && message.includes("schema cache")) ||
     (message.includes(relation) && message.includes("does not exist"))
   );
+}
+
+function missingColumnNameFromError<const TColumn extends string>(
+  error: { message?: string } | null,
+  columns: readonly TColumn[],
+): TColumn | null {
+  if (!isMissingSchemaColumn(error)) {
+    return null;
+  }
+
+  const message = (error?.message ?? "").toLowerCase();
+  return (
+    columns.find((column) => {
+      const normalized = column.toLowerCase();
+      return (
+        message.includes(`'${normalized}' column`) ||
+        message.includes(`"${normalized}" column`) ||
+        message.includes(`column '${normalized}'`) ||
+        message.includes(`column "${normalized}"`) ||
+        message.includes(`column ${normalized}`) ||
+        message.includes(`.${normalized}`)
+      );
+    }) ?? null
+  );
+}
+
+function removeMissingStorageColumns(payload: Record<string, unknown>) {
+  delete payload.file_storage_bucket;
+  delete payload.file_storage_path;
 }
 
 const CHAT_DOMAIN_HINTS = new Set<ChatDomainHint>([
@@ -762,6 +847,53 @@ function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
   };
 }
 
+function fromUnknownServiceDocumentSummaryRow(
+  row: Record<string, unknown>,
+): ServiceDocumentSummaryRow {
+  let fileSizeBytes =
+    typeof row.file_size_bytes === "number" &&
+    Number.isFinite(row.file_size_bytes)
+      ? row.file_size_bytes
+      : 0;
+  if (fileSizeBytes <= 0 && typeof row.file_base64 === "string") {
+    try {
+      fileSizeBytes = Buffer.from(decryptString(row.file_base64), "base64")
+        .length;
+    } catch {
+      fileSizeBytes = 0;
+    }
+  }
+  const createdAt = String(row.created_at ?? new Date().toISOString());
+
+  return {
+    id: String(row.id ?? ""),
+    service_id: String(row.service_id ?? ""),
+    title: String(row.title ?? row.file_name ?? "Tjenestedokument"),
+    file_name: String(row.file_name ?? row.title ?? "document.txt"),
+    file_format: String(row.file_format ?? "txt"),
+    content_type: String(row.content_type ?? "application/octet-stream"),
+    file_size_bytes: fileSizeBytes,
+    page_count:
+      typeof row.page_count === "number" && Number.isFinite(row.page_count)
+        ? row.page_count
+        : null,
+    file_storage_bucket:
+      row.file_storage_bucket == null ? null : String(row.file_storage_bucket),
+    file_storage_path:
+      row.file_storage_path == null ? null : String(row.file_storage_path),
+    raw_text: typeof row.raw_text === "string" ? row.raw_text : undefined,
+    structure_map: (row.structure_map ?? []) as Json,
+    ai_summary:
+      typeof row.ai_summary === "string" ? row.ai_summary : undefined,
+    ai_summary_updated_at:
+      row.ai_summary_updated_at == null
+        ? null
+        : String(row.ai_summary_updated_at),
+    created_at: createdAt,
+    updated_at: String(row.updated_at ?? createdAt),
+  };
+}
+
 function mapServiceDescription(
   row: ServiceDescriptionRow,
   documents: ServiceDocumentSummaryRow[],
@@ -892,35 +1024,25 @@ function shouldUseInferredValue(
 
 function isMissingLegacyDocumentColumn(error: { message?: string } | null) {
   const message = (error?.message ?? "").toLowerCase();
-  if (
-    message.includes("violates") ||
-    message.includes("not-null") ||
-    message.includes("not null")
-  ) {
-    return false;
-  }
-
-  const mentionsMissingColumn =
-    message.includes("schema cache") ||
-    message.includes("does not exist") ||
-    message.includes("could not find") ||
-    message.includes("column documents.");
-  const legacyColumnNames = [
-    "supporting_subtype",
-    "title",
-    "display_name",
-    "file_name",
-    "file_size_bytes",
-    "page_count",
-    "file_storage_bucket",
-    "file_storage_path",
-    "structure_map",
-    "source_map",
-  ];
+  const mentionsMissingColumn = isMissingSchemaColumn(error);
 
   return (
     mentionsMissingColumn &&
-    legacyColumnNames.some((columnName) => message.includes(columnName))
+    PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.some((columnName) =>
+      message.includes(columnName),
+    )
+  );
+}
+
+function isMissingServiceDocumentColumn(error: { message?: string } | null) {
+  const message = (error?.message ?? "").toLowerCase();
+  const mentionsMissingColumn = isMissingSchemaColumn(error);
+
+  return (
+    mentionsMissingColumn &&
+    SERVICE_DOCUMENT_INSERT_COLUMN_NAMES.some((columnName) =>
+      message.includes(columnName),
+    )
   );
 }
 
@@ -1421,10 +1543,16 @@ export async function saveServiceDocument(input: {
 }) {
   const supabase = createServiceClient();
   const documentId = randomUUID();
+  const normalizedTitle =
+    input.title?.trim() ||
+    input.fileName.replace(/\.[^.]+$/, "").trim() ||
+    "Tjenestedokument";
   const pageCount =
     pageCountFromStructureMap(input.structureMap, input.fileFormat) ??
     pageCountFromRawText(input.rawText, input.fileFormat);
   const encryptedBase64 = encryptString(input.fileBase64);
+  const encryptedRawText = encryptString(input.rawText);
+  const encryptedStructureMap = encryptJson(input.structureMap);
   const storedFile = await uploadEncryptedBase64File({
     path: buildStoredFilePath({
       scope: "services",
@@ -1434,33 +1562,85 @@ export async function saveServiceDocument(input: {
     }),
     encryptedBase64,
   });
-  const { data, error } = await supabase
-    .from("service_documents")
-    .insert({
-      id: documentId,
-      service_id: input.serviceId,
-      title: input.title,
-      file_name: input.fileName,
-      file_format: input.fileFormat,
-      content_type: input.contentType,
-      file_size_bytes: input.fileSizeBytes,
-      page_count: pageCount,
-      file_storage_bucket: storedFile.bucket,
-      file_storage_path: storedFile.path,
-      file_base64: "",
-      raw_text: encryptString(input.rawText),
-      structure_map: encryptJson(input.structureMap),
-    })
-    .select(SERVICE_DOCUMENT_SUMMARY_SELECT)
-    .single<ServiceDocumentSummaryRow>();
+  const insertPayload: Record<string, unknown> = {
+    id: documentId,
+    service_id: input.serviceId,
+    title: normalizedTitle,
+    file_name: input.fileName,
+    file_format: input.fileFormat,
+    content_type: input.contentType,
+    file_size_bytes: input.fileSizeBytes,
+    page_count: pageCount,
+    file_storage_bucket: storedFile.bucket,
+    file_storage_path: storedFile.path,
+    file_base64: "",
+    raw_text: encryptedRawText,
+    structure_map: encryptedStructureMap,
+  };
 
-  if (error || !data) {
-    await removeStoredFiles([storedFile]);
-    throw new Error(error?.message || "Kunne ikke lagre tjenestedokumentet.");
+  let shouldRemoveStoredFileAfterInsert = false;
+  let insertResult: {
+    data: Record<string, unknown> | null;
+    error: { message?: string } | null;
+  } | null = null;
+  for (
+    let attempt = 0;
+    attempt < SERVICE_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
+    attempt += 1
+  ) {
+    const payloadForAttempt = { ...insertPayload };
+    const hasStorageColumns =
+      "file_storage_bucket" in payloadForAttempt &&
+      "file_storage_path" in payloadForAttempt;
+    if (!hasStorageColumns && "file_base64" in payloadForAttempt) {
+      payloadForAttempt.file_base64 = encryptedBase64;
+      shouldRemoveStoredFileAfterInsert = true;
+    }
+
+    insertResult = await supabase
+      .from("service_documents")
+      .insert(payloadForAttempt)
+      .select("*")
+      .single<Record<string, unknown>>();
+
+    if (
+      !insertResult.error ||
+      !isMissingServiceDocumentColumn(insertResult.error)
+    ) {
+      break;
+    }
+
+    const missingColumn = missingColumnNameFromError(
+      insertResult.error,
+      SERVICE_DOCUMENT_INSERT_COLUMN_NAMES,
+    );
+    if (!missingColumn || !(missingColumn in insertPayload)) {
+      break;
+    }
+
+    if (
+      missingColumn === "file_storage_bucket" ||
+      missingColumn === "file_storage_path"
+    ) {
+      removeMissingStorageColumns(insertPayload);
+    } else {
+      delete insertPayload[missingColumn];
+    }
   }
 
+  if (insertResult?.error || !insertResult?.data) {
+    await removeStoredFiles([storedFile]);
+    throw new Error(
+      insertResult?.error?.message || "Kunne ikke lagre tjenestedokumentet.",
+    );
+  }
+  if (shouldRemoveStoredFileAfterInsert) {
+    await removeStoredFiles([storedFile]);
+  }
+  const data = fromUnknownServiceDocumentSummaryRow(insertResult.data);
+
   const nextKeywords = keywordsFromText(
-    `${input.title} ${input.fileName} ${input.rawText}`,
+    `${normalizedTitle} ${input.fileName} ${input.rawText}`,
   );
   const currentService = await getServiceDescription(input.serviceId).catch(
     () => null,
@@ -1492,7 +1672,7 @@ export async function saveServiceDocument(input: {
   await replaceServiceDocumentChunks({
     documentId,
     serviceId: input.serviceId,
-    title: input.title,
+    title: normalizedTitle,
     fileName: input.fileName,
     fileFormat: input.fileFormat,
     rawText: input.rawText,
@@ -2256,6 +2436,8 @@ export async function saveDocument(input: {
     pageCountFromStructureMap(input.structureMap, input.fileFormat) ??
     pageCountFromRawText(input.rawText, input.fileFormat);
   const encryptedBase64 = encryptString(input.fileBase64);
+  const encryptedRawText = encryptString(input.rawText);
+  const encryptedStructureMap = encryptJson(input.structureMap);
   const storedFile = await uploadEncryptedBase64File({
     path: buildStoredFilePath({
       scope: "projects",
@@ -2265,15 +2447,18 @@ export async function saveDocument(input: {
     }),
     encryptedBase64,
   });
-  const payloadWithSubtype = {
+  const supportingSubtype =
+    input.role === "supporting_document"
+      ? (input.supportingSubtype ?? null)
+      : null;
+  const insertPayload: Record<string, unknown> = {
     id: documentId,
     project_id: input.projectId,
     role: input.role,
-    supporting_subtype:
-      input.role === "supporting_document"
-        ? (input.supportingSubtype ?? null)
-        : null,
+    supporting_subtype: supportingSubtype,
+    subtype: supportingSubtype,
     title: normalizedTitle,
+    display_name: normalizedTitle,
     file_name: input.fileName,
     file_format: input.fileFormat,
     content_type: input.contentType,
@@ -2282,53 +2467,72 @@ export async function saveDocument(input: {
     file_storage_bucket: storedFile.bucket,
     file_storage_path: storedFile.path,
     file_base64: "",
-    raw_text: encryptString(input.rawText),
-    structure_map: encryptJson(input.structureMap),
+    raw_text: encryptedRawText,
+    structure_map: encryptedStructureMap,
   };
 
   let inserted: DocumentRow | null = null;
-  let usedLegacyDocumentInsert = false;
-  let insertResult = await supabase
-    .from("documents")
-    .insert(payloadWithSubtype)
-    .select("*")
-    .single<DocumentRow>();
+  let shouldRemoveStoredFileAfterInsert = false;
+  let insertResult: {
+    data: Record<string, unknown> | null;
+    error: { message?: string } | null;
+  } | null = null;
+  for (
+    let attempt = 0;
+    attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
+    attempt += 1
+  ) {
+    const payloadForAttempt = { ...insertPayload };
+    const hasStorageColumns =
+      "file_storage_bucket" in payloadForAttempt &&
+      "file_storage_path" in payloadForAttempt;
+    if (!hasStorageColumns && "file_base64" in payloadForAttempt) {
+      payloadForAttempt.file_base64 = encryptedBase64;
+      shouldRemoveStoredFileAfterInsert = true;
+    }
 
-  if (insertResult.error && isMissingLegacyDocumentColumn(insertResult.error)) {
-    usedLegacyDocumentInsert = true;
-    const payloadLegacy: Record<string, unknown> = {
-      ...payloadWithSubtype,
-      file_base64: encryptedBase64,
-      display_name: normalizedTitle,
-      subtype:
-        input.role === "supporting_document"
-          ? (input.supportingSubtype ?? null)
-          : null,
-    };
-    delete payloadLegacy.supporting_subtype;
-    delete payloadLegacy.title;
-    delete payloadLegacy.file_name;
-    delete payloadLegacy.file_size_bytes;
-    delete payloadLegacy.page_count;
-    delete payloadLegacy.file_storage_bucket;
-    delete payloadLegacy.file_storage_path;
     insertResult = await supabase
       .from("documents")
-      .insert(payloadLegacy)
+      .insert(payloadForAttempt)
       .select("*")
-      .single<DocumentRow>();
+      .single<Record<string, unknown>>();
+
+    if (
+      !insertResult.error ||
+      !isMissingLegacyDocumentColumn(insertResult.error)
+    ) {
+      break;
+    }
+
+    const missingColumn = missingColumnNameFromError(
+      insertResult.error,
+      PROJECT_DOCUMENT_INSERT_COLUMN_NAMES,
+    );
+    if (!missingColumn || !(missingColumn in insertPayload)) {
+      break;
+    }
+
+    if (
+      missingColumn === "file_storage_bucket" ||
+      missingColumn === "file_storage_path"
+    ) {
+      removeMissingStorageColumns(insertPayload);
+    } else {
+      delete insertPayload[missingColumn];
+      if (missingColumn === "structure_map") {
+        insertPayload.source_map = encryptedStructureMap;
+      }
+    }
   }
 
-  if (insertResult.error || !insertResult.data) {
+  if (insertResult?.error || !insertResult?.data) {
     await removeStoredFiles([storedFile]);
     throw new Error(
-      insertResult.error?.message || "Kunne ikke lagre dokumentet.",
+      insertResult?.error?.message || "Kunne ikke lagre dokumentet.",
     );
   }
-  inserted = fromUnknownDocumentRow(
-    insertResult.data as unknown as Record<string, unknown>,
-  );
-  if (usedLegacyDocumentInsert) {
+  inserted = fromUnknownDocumentRow(insertResult.data);
+  if (shouldRemoveStoredFileAfterInsert) {
     await removeStoredFiles([storedFile]);
   }
 
@@ -2386,7 +2590,7 @@ export async function saveDocument(input: {
     projectId: input.projectId,
     role: input.role,
     supportingSubtype: input.supportingSubtype ?? null,
-    title: input.title,
+    title: normalizedTitle,
     fileName: input.fileName,
     fileFormat: input.fileFormat,
     rawText: input.rawText,
