@@ -1,0 +1,53 @@
+name: Rotate App Encryption Key
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply database/storage updates"
+        required: true
+        type: boolean
+        default: false
+      verify_new_only:
+        description: "Verify all encrypted payloads only with APP_ENCRYPTION_KEY"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix apps/frontend
+
+      - name: Rotate encryption key
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
+          NEW_APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
+        run: |
+          args=()
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            args+=(--apply)
+          fi
+          if [ "${{ inputs.verify_new_only }}" = "true" ]; then
+            args+=(--verify-new-only)
+          fi
+          node scripts/rotate_app_encryption_key.mjs "${args[@]}"
