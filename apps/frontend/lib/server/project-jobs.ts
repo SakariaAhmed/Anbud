@@ -132,8 +132,10 @@ function createJobPhaseTimer(jobId: string, kind: ProjectJobRecord["kind"]) {
 async function persistJob(record: ProjectJobRecord, input: ProjectWorkflowInput) {
   try {
     await insertProjectJob(record, input);
+    return true;
   } catch {
     // Keep local development and older databases working with in-memory jobs.
+    return false;
   }
 }
 
@@ -197,7 +199,24 @@ async function enqueueProjectJob(
 
   if (!options.skipEnqueue) {
     getStore().set(record.id, record);
-    await persistJob(record, input);
+    const persisted = await persistJob(record, input);
+    if (options.runNow) {
+      if (persisted) {
+        await runQueuedProjectJob(record.id);
+      } else {
+        await runProjectJob(record.id, input);
+      }
+    } else {
+      setTimeout(() => {
+        if (persisted) {
+          void runQueuedProjectJob(record.id);
+        } else {
+          void runProjectJob(record.id, input);
+        }
+      }, 0);
+    }
+
+    return record;
   }
 
   if (options.runNow) {

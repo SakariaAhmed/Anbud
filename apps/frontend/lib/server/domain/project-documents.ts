@@ -78,12 +78,19 @@ export function selectRelevantServiceDocumentIds(input: {
 }
 
 export function selectProjectDocuments(documents: ProjectDocumentDetail[]) {
+  const primarySolutionDocument =
+    documents.find((document) => document.role === "primary_solution_document") ??
+    null;
   const customerDocument =
     documents.find((document) => document.role === "primary_customer_document") ??
-    documents[0] ??
+    documents.find(
+      (document) =>
+        document.id !== primarySolutionDocument?.id &&
+        document.role !== "primary_solution_document",
+    ) ??
     null;
   const solutionDocument =
-    documents.find((document) => document.role === "primary_solution_document") ??
+    primarySolutionDocument ??
     documents.find(
       (document) =>
         document.id !== customerDocument?.id &&

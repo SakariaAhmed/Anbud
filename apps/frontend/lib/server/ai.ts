@@ -51,6 +51,7 @@ const ANALYSIS_MODEL = DEFAULT_OPENAI_MODEL;
 const FAST_MODEL = "gpt-5.4-mini";
 type ReasoningEffort = "low" | "medium" | "high";
 const ANALYSIS_REASONING_EFFORT: ReasoningEffort = "medium";
+const EVALUATION_REASONING_EFFORT: ReasoningEffort = "low";
 const FAST_REASONING_EFFORT: ReasoningEffort = "low";
 const GPT_MODELS_USE_DEFAULT_TEMPERATURE = /^gpt-5/i;
 const VALUE_CATEGORIES: ValueCategory[] = [
@@ -126,6 +127,7 @@ type RequirementLedgerEntry = {
   documentTitle?: string;
   tableId?: string;
   service?: string;
+  sourceExcerpt?: string;
 };
 type RequirementBatchAnswer = {
   nr?: number;
@@ -133,12 +135,47 @@ type RequirementBatchAnswer = {
   svar?: string;
   answer?: string;
 };
+type RequirementCoverage = NonNullable<
+  SolutionEvaluationResult["requirement_coverage"]
+>;
+type RequirementCoverageItem = RequirementCoverage["items"][number];
+type RequirementCoverageBatchAnswer = {
+  nr?: number;
+  ref?: string;
+  assessment?: string;
+  vurdering?: string;
+  rationale?: string;
+  begrunnelse?: string;
+  evidence?: string;
+  bevis?: string;
+  recommendation?: string;
+  anbefaling?: string;
+};
 type MammothHtmlModule = {
   convertToHtml: (input: { buffer: Buffer }) => Promise<{ value: string }>;
+};
+type PdfParseFn = (
+  buffer: Buffer,
+  options: Record<string, unknown>,
+) => Promise<{ text: string; numpages?: number }>;
+type PdfLayoutTextItem = {
+  str: string;
+  transform: number[];
+  width?: number;
+};
+type PdfLayoutLine = {
+  y: number;
+  items: Array<{ str: string; x: number; y: number; width: number }>;
+  text: string;
+};
+type PdfLayoutPage = {
+  page: number;
+  lines: PdfLayoutLine[];
 };
 
 let cachedClientPromise: Promise<OpenAIClient> | null = null;
 let cachedMammothHtmlPromise: Promise<MammothHtmlModule> | null = null;
+let cachedPdfParsePromise: Promise<PdfParseFn> | null = null;
 let cachedModels:
   | {
       expiresAt: number;
@@ -158,6 +195,9 @@ const CHUNK_CONCURRENCY = 3;
 const REQUIREMENT_RESPONSE_BATCH_SIZE = 22;
 const LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE = 30;
 const REQUIREMENT_RESPONSE_BATCH_CONCURRENCY = 4;
+const REQUIREMENT_COVERAGE_BATCH_SIZE = 36;
+const REQUIREMENT_COVERAGE_BATCH_CONCURRENCY = 4;
+const REQUIREMENT_COVERAGE_RETRIEVAL_LIMIT = 4;
 const REQUIREMENT_RETRIEVAL_STOP_WORDS = new Set([
   "atea",
   "eller",
@@ -231,6 +271,16 @@ async function getMammothHtml() {
   }
 
   return cachedMammothHtmlPromise;
+}
+
+async function getPdfParse() {
+  if (!cachedPdfParsePromise) {
+    cachedPdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then(
+      (module) => module.default as unknown as PdfParseFn,
+    );
+  }
+
+  return cachedPdfParsePromise;
 }
 
 function normalizeModelId(value: string | null | undefined) {
@@ -918,7 +968,6 @@ function normalizeTableId(value: string) {
 
 function normalizePdfSpacing(value: string) {
   return value
-    .replace(/\bPetor\s*os\b/gi, "Petoros")
     .replace(/\bI\s*D\b/gi, "ID")
     .replace(/\bkr\s*a\s*v\b/gi, "krav")
     .replace(/\bTa\s*b\s*e\s*ll\b/gi, "Tabell")
@@ -929,6 +978,27 @@ function normalizePdfSpacing(value: string) {
     .replace(/\bD\s*eta\s*l\s*j\s*er\s*i\s*ng\s*er\b/gi, "Detaljeringer")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizePdfReferenceTypography(value: string) {
+  let text = normalizePdfSpacing(value)
+    .replace(/\b(Tabell\s+ID\s+\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi, "$1-$2")
+    .replace(/\bID\s+(\d{1,3})\s*[-.]\s*(\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi, "ID $1-$2-$3");
+
+  for (let index = 0; index < 4; index += 1) {
+    const next = text
+      .replace(/\b(\p{Lu}[\p{Ll}]{2,})\s+(\p{Ll})\s+(\p{Ll}{2,})\b/gu, "$1$2$3")
+      .replace(/\b([A-ZÆØÅ]{2,})\s+([A-ZÆØÅ])\s+([A-ZÆØÅ]{2,})\b/g, "$1$2$3")
+      .replace(/\b(\p{Lu}[\p{Ll}]{6,})\s+(ing|ering|nning|erhet|dtering)\b/gu, "$1$2");
+
+    if (next === text) {
+      break;
+    }
+
+    text = next;
+  }
+
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function detectTableId(line: string) {
@@ -967,7 +1037,7 @@ function tableRequirementStartIndex(line: string) {
 }
 
 function cleanTableService(value: string) {
-  return normalizePdfSpacing(value)
+  return normalizePdfReferenceTypography(value)
     .replace(/\s*-\s*/g, "-")
     .replace(/\s+/g, " ")
     .trim();
@@ -978,6 +1048,600 @@ function cleanTableRequirement(value: string) {
     .replace(/\s+([,.;:])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+type PdfRequirementTableLayout = {
+  serviceX: number;
+  requirementX: number;
+  yesX: number;
+  noX: number;
+  answerX: number;
+  answerBoundary: number;
+};
+
+type PdfLayoutRequirementDraft = {
+  tableId: string;
+  service: string;
+  requirementLines: string[];
+  answerLines: string[];
+  sourceLines: string[];
+  pages: number[];
+  heading: string;
+  startPage: number;
+  standalone: boolean;
+};
+
+function renderPdfLayoutLines(items: PdfLayoutTextItem[]) {
+  const lines: PdfLayoutLine[] = [];
+
+  for (const item of items) {
+    const text = item.str.trim();
+    if (!text) {
+      continue;
+    }
+
+    const x = Number(item.transform[4] ?? 0);
+    const y = Number(item.transform[5] ?? 0);
+    const line = lines.find((candidate) => Math.abs(candidate.y - y) <= 2);
+    const target =
+      line ??
+      (() => {
+        const created: PdfLayoutLine = { y, items: [], text: "" };
+        lines.push(created);
+        return created;
+      })();
+
+    target.items.push({
+      str: text,
+      x,
+      y,
+      width: Number(item.width ?? 0),
+    });
+  }
+
+  return lines
+    .sort(
+      (left, right) =>
+        right.y - left.y ||
+        ((left.items[0]?.x ?? 0) - (right.items[0]?.x ?? 0)),
+    )
+    .map((line) => {
+      const sortedItems = [...line.items].sort((left, right) => left.x - right.x);
+      return {
+        ...line,
+        items: sortedItems,
+        text: normalizePdfSpacing(sortedItems.map((item) => item.str).join(" ")),
+      };
+    });
+}
+
+async function readPdfLayoutPages(document: ProjectDocumentDetail) {
+  if (
+    document.file_format !== "pdf" ||
+    !document.file_base64 ||
+    document.file_base64.length < 100
+  ) {
+    return [];
+  }
+
+  const pages: PdfLayoutPage[] = [];
+  let pageNumber = 0;
+
+  try {
+    const pdfParse = await getPdfParse();
+    await pdfParse(Buffer.from(document.file_base64, "base64"), {
+      pagerender: (pageData: {
+        getTextContent: (options: {
+          normalizeWhitespace: boolean;
+          disableCombineTextItems: boolean;
+        }) => Promise<{ items: PdfLayoutTextItem[] }>;
+      }) => {
+        pageNumber += 1;
+        return pageData
+          .getTextContent({
+            normalizeWhitespace: false,
+            disableCombineTextItems: false,
+          })
+          .then((textContent) => {
+            pages.push({
+              page: pageNumber,
+              lines: renderPdfLayoutLines(textContent.items),
+            });
+
+            return "";
+          });
+      },
+    });
+  } catch {
+    return [];
+  }
+
+  return pages.sort((left, right) => left.page - right.page);
+}
+
+function pdfLayoutHeaderItem(
+  line: PdfLayoutLine,
+  pattern: RegExp,
+) {
+  return line.items.find((item) => pattern.test(normalizePdfSpacing(item.str)));
+}
+
+function detectPdfRequirementTableLayout(
+  line: PdfLayoutLine,
+): PdfRequirementTableLayout | null {
+  const service = pdfLayoutHeaderItem(line, /^Tjeneste$/i);
+  const requirement = pdfLayoutHeaderItem(line, /Spesifiserte\s+krav/i);
+  const yes = pdfLayoutHeaderItem(line, /^Ja$/i);
+  const no = pdfLayoutHeaderItem(line, /^Nei$/i);
+  const answer = pdfLayoutHeaderItem(
+    line,
+    /Detaljeringer|presiseringer|Detailed|Response/i,
+  );
+
+  if (!service || !requirement) {
+    return null;
+  }
+
+  const yesX = yes?.x ?? (answer ? requirement.x + (answer.x - requirement.x) * 0.55 : requirement.x + 180);
+  const noX = no?.x ?? yesX + 20;
+  const answerX = answer?.x ?? noX + 75;
+
+  return {
+    serviceX: service.x,
+    requirementX: requirement.x,
+    yesX,
+    noX,
+    answerX,
+    answerBoundary: noX + (answerX - noX) * 0.45,
+  };
+}
+
+function pdfLayoutTableHeading(line: string, tableId: string) {
+  return normalizePdfSpacing(line)
+    .replace(new RegExp(escapeRegExp(tableId), "i"), " ")
+    .replace(/\bLeverandørens\s+svar\b/gi, " ")
+    .replace(/\bSupplier\s+response\b/gi, " ")
+    .replace(/[–-]\s*$/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isPdfLayoutBoilerplateLine(line: string) {
+  const text = normalizePdfSpacing(line);
+  return (
+    !text ||
+    /^Konfidensiell$/i.test(text) ||
+    /^(Tjeneste|Spesifiserte krav|Ja|Nei|Del|-vis)$/i.test(text) ||
+    /^RA-\d+\s*BILAG/i.test(text) ||
+    /^,\d*\s*TIL\s*SSA-D/i.test(text) ||
+    /^Side\s*\d+\s*av\s*\d+$/i.test(text) ||
+    /Side\s*\d+\s*av\s*\d+$/i.test(text)
+  );
+}
+
+function splitPdfLayoutRequirementColumns(
+  line: PdfLayoutLine,
+  layout: PdfRequirementTableLayout,
+) {
+  const service: string[] = [];
+  const requirement: string[] = [];
+  const answer: string[] = [];
+  const marker: string[] = [];
+
+  for (const item of line.items) {
+    if (item.x < layout.requirementX - 8) {
+      service.push(item.str);
+      continue;
+    }
+
+    if (item.x >= layout.answerBoundary - 6) {
+      answer.push(item.str);
+      continue;
+    }
+
+    if (item.x >= layout.yesX - 12 && item.x < layout.answerBoundary - 6) {
+      marker.push(item.str);
+      continue;
+    }
+
+    requirement.push(item.str);
+  }
+
+  return {
+    service: cleanTableService(service.join(" ")),
+    requirement: cleanTableRequirement(requirement.join(" ")),
+    answer: cleanTableRequirement(answer.join(" ")),
+    marker: cleanTableRequirement(marker.join(" ")),
+  };
+}
+
+function isPdfLayoutServiceStart(value: string) {
+  const service = cleanTableService(value);
+  if (
+    !service ||
+    service.length > 110 ||
+    /[.!?]$/.test(service) ||
+    /^[-•]/.test(service) ||
+    /^(og|eller|for|til|i|av|på|med)\b/i.test(service) ||
+    /\b(skal|må|bes|følge|sikre|utføre|beskrive)\b/i.test(service)
+  ) {
+    return false;
+  }
+
+  return /^[A-ZÆØÅ0-9]/.test(service) && service.split(/\s+/).length <= 10;
+}
+
+function shouldContinuePdfLayoutService(input: {
+  current: PdfLayoutRequirementDraft | null;
+  service: string;
+  requirement: string;
+  answer: string;
+  page: number;
+}) {
+  const service = cleanTableService(input.service);
+  if (
+    !input.current ||
+    !service ||
+    input.page !== input.current.startPage ||
+    input.current.sourceLines.length > 8
+  ) {
+    return false;
+  }
+
+  if (/^[a-zæøå]/.test(service) || input.current.service.endsWith("-")) {
+    return true;
+  }
+
+  const serviceWords = service.split(/\s+/);
+  const compactService = service.replace(/\s+/g, "");
+  if (
+    serviceWords.length <= 3 &&
+    compactService.length <= 28 &&
+    input.current.sourceLines.length <= 4
+  ) {
+    return true;
+  }
+
+  return (
+    service.length <= 28 &&
+    !hasRequirementSignal(input.requirement) &&
+    input.current.requirementLines.join(" ").length < 260 &&
+    !input.answer
+  );
+}
+
+function isPdfLayoutStandaloneRequirementHeading(value: string) {
+  const service = cleanTableService(value);
+  return (
+    service.length >= 18 &&
+    service.length <= 130 &&
+    /krav/i.test(service) &&
+    /^[A-ZÆØÅ0-9]/.test(service) &&
+    !/[.!?]$/.test(service)
+  );
+}
+
+function sourceExcerptFromLayoutDraft(draft: PdfLayoutRequirementDraft) {
+  return compactText(cleanTableRequirement(draft.sourceLines.join(" ")), 1600);
+}
+
+function layoutDraftToRequirement(
+  draft: PdfLayoutRequirementDraft,
+): RequirementLedgerEntry | null {
+  const service = cleanTableService(draft.service);
+  const text = cleanTableRequirement(draft.requirementLines.join(" "));
+  const answer = cleanTableRequirement(draft.answerLines.join(" "));
+  const pages = [...new Set(draft.pages)].sort((left, right) => left - right);
+
+  if ((!text || text.length < 18) && answer.length < 120) {
+    return null;
+  }
+
+  return {
+    id: `${draft.tableId} - ${service || text.slice(0, 48)}`,
+    text: text || compactText(answer, 700),
+    pages,
+    heading: draft.heading,
+    tableId: draft.tableId,
+    service,
+    sourceExcerpt: sourceExcerptFromLayoutDraft(draft),
+  };
+}
+
+function shortPdfLayoutRequirementLabel(text: string) {
+  return cleanTableRequirement(text)
+    .replace(/^(Leverandøren|Tilbyder|Kunden|Løsningen|Tjenesten)\s+(skal|må|bør|bes|kan)\s+/i, "")
+    .split(/\s+/)
+    .slice(0, 6)
+    .join(" ")
+    .replace(/[.,;:]$/g, "")
+    .trim();
+}
+
+function makePdfLayoutRequirementReferencesUnique(
+  entries: RequirementLedgerEntry[],
+) {
+  const groups = new Map<string, RequirementLedgerEntry[]>();
+  for (const entry of entries) {
+    const key = normalizeRequirementLedgerText(
+      `${entry.tableId ?? ""}|${entry.service ?? entry.id}`,
+    );
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+
+  return entries.map((entry) => {
+    const key = normalizeRequirementLedgerText(
+      `${entry.tableId ?? ""}|${entry.service ?? entry.id}`,
+    );
+    const group = groups.get(key) ?? [];
+    if (group.length <= 1) {
+      return entry;
+    }
+
+    const index = group.indexOf(entry);
+    const label = shortPdfLayoutRequirementLabel(entry.text) || `del ${index + 1}`;
+    return {
+      ...entry,
+      id: `${entry.id} - ${label}`,
+    };
+  });
+}
+
+function buildPdfLayoutOptionRequirements(document: ProjectDocumentDetail) {
+  if (document.file_format !== "pdf") {
+    return [];
+  }
+
+  const requirements: RequirementLedgerEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const page of splitPdfPagesPreservingLines(document.raw_text)) {
+    const text = normalizePdfSpacing(page.text);
+    for (const match of text.matchAll(
+      /\b(?:Opsjon|Option)\s+ID\s*(\d{1,3}\s*[-.]\s*\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?)\s*:\s*([^•\n]+(?:\s+(?!Opsjon\s+ID|Option\s+ID)[^•\n]+){0,2})/gi,
+    )) {
+      const id = `ID ${normalizePdfSpacing(match[1] ?? "").replace(/\s*[-.]\s*/g, "-")}`;
+      const optionText = cleanTableRequirement(match[2] ?? "");
+      const key = normalizeRequirementId(id);
+
+      if (!optionText || seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      requirements.push({
+        id,
+        text: optionText,
+        pages: [page.page],
+        heading: "Opsjoner",
+        service: id,
+        sourceExcerpt: optionText,
+      });
+    }
+  }
+
+  return requirements;
+}
+
+async function buildPdfLayoutTableRequirementLedger(
+  document: ProjectDocumentDetail,
+) {
+  const pages = await readPdfLayoutPages(document);
+  if (!pages.length) {
+    return [];
+  }
+
+  const requirements: RequirementLedgerEntry[] = [];
+  let activeTableId = "";
+  let activeHeading = "";
+  let layout: PdfRequirementTableLayout | null = null;
+  let current: PdfLayoutRequirementDraft | null = null;
+  let mode: "table" | "standaloneRequirement" | "standaloneAnswer" = "table";
+
+  function flushCurrent() {
+    if (!current) {
+      return;
+    }
+
+    const entry = layoutDraftToRequirement(current);
+    if (entry) {
+      requirements.push(entry);
+    }
+
+    current = null;
+    mode = "table";
+  }
+
+  function appendToCurrent(input: {
+    page: number;
+    source: string;
+    requirement?: string;
+    answer?: string;
+  }) {
+    if (!current) {
+      return;
+    }
+
+    if (!current.pages.includes(input.page)) {
+      current.pages.push(input.page);
+    }
+
+    if (input.requirement) {
+      current.requirementLines.push(input.requirement);
+    }
+
+    if (input.answer) {
+      current.answerLines.push(input.answer);
+    }
+
+    if (input.source) {
+      current.sourceLines.push(input.source);
+    }
+  }
+
+  for (const page of pages) {
+    for (const line of page.lines) {
+      const tableId = detectTableId(line.text);
+      if (tableId) {
+        if (
+          (activeTableId && tableId !== activeTableId) ||
+          (current?.standalone &&
+            mode === "standaloneAnswer" &&
+            page.page > current.startPage + 1)
+        ) {
+          flushCurrent();
+        }
+
+        activeTableId = tableId;
+        activeHeading = pdfLayoutTableHeading(line.text, tableId) || activeHeading;
+        continue;
+      }
+
+      const detectedLayout = detectPdfRequirementTableLayout(line);
+      if (detectedLayout) {
+        layout = detectedLayout;
+        continue;
+      }
+
+      if (
+        !activeTableId ||
+        !layout ||
+        line.y < 95 ||
+        line.y > 470 ||
+        isPdfLayoutBoilerplateLine(line.text)
+      ) {
+        continue;
+      }
+
+      const columns = splitPdfLayoutRequirementColumns(line, layout);
+      const hasColumnText = Boolean(columns.requirement || columns.answer);
+
+      if (current?.standalone && mode === "standaloneAnswer") {
+        if (page.page > current.startPage + 1) {
+          flushCurrent();
+          activeTableId = "";
+          layout = null;
+          continue;
+        }
+
+        appendToCurrent({
+          page: page.page,
+          source: line.text,
+          answer: line.text,
+        });
+        continue;
+      }
+
+      if (/^Leverandørens\s+besvarelse\b/i.test(line.text)) {
+        if (current) {
+          mode = "standaloneAnswer";
+          appendToCurrent({
+            page: page.page,
+            source: line.text,
+            answer: line.text,
+          });
+        }
+        continue;
+      }
+
+      if (current?.standalone && mode === "standaloneRequirement") {
+        appendToCurrent({
+          page: page.page,
+          source: line.text,
+          requirement: line.text,
+        });
+        continue;
+      }
+
+      if (
+        columns.service &&
+        hasColumnText &&
+        shouldContinuePdfLayoutService({
+          current,
+          service: columns.service,
+          requirement: columns.requirement,
+          answer: columns.answer,
+          page: page.page,
+        })
+      ) {
+        if (current) {
+          current.service = cleanTableService(
+            [current.service, columns.service].join(" "),
+          );
+        }
+        appendToCurrent({
+          page: page.page,
+          source: line.text,
+          requirement: columns.requirement,
+          answer: columns.answer,
+        });
+        continue;
+      }
+
+      if (
+        columns.service &&
+        isPdfLayoutServiceStart(columns.service) &&
+        hasColumnText &&
+        (hasRequirementSignal(columns.requirement) || columns.answer || !current)
+      ) {
+        flushCurrent();
+        current = {
+          tableId: activeTableId,
+          service: columns.service,
+          requirementLines: columns.requirement ? [columns.requirement] : [],
+          answerLines: columns.answer ? [columns.answer] : [],
+          sourceLines: [line.text],
+          pages: [page.page],
+          heading: activeHeading,
+          startPage: page.page,
+          standalone: false,
+        };
+        mode = "table";
+        continue;
+      }
+
+      if (
+        columns.service &&
+        !hasColumnText &&
+        isPdfLayoutStandaloneRequirementHeading(columns.service)
+      ) {
+        flushCurrent();
+        current = {
+          tableId: activeTableId,
+          service: columns.service,
+          requirementLines: [columns.service],
+          answerLines: [],
+          sourceLines: [line.text],
+          pages: [page.page],
+          heading: activeHeading,
+          startPage: page.page,
+          standalone: true,
+        };
+        mode = "standaloneRequirement";
+        continue;
+      }
+
+      if (current) {
+        appendToCurrent({
+          page: page.page,
+          source: line.text,
+          requirement: columns.requirement,
+          answer:
+            columns.answer ||
+            (!columns.requirement && !columns.service ? line.text : ""),
+        });
+      }
+    }
+  }
+
+  flushCurrent();
+
+  return dedupeRequirementLedger(
+    makePdfLayoutRequirementReferencesUnique([
+      ...requirements,
+      ...buildPdfLayoutOptionRequirements(document),
+    ]),
+  );
 }
 
 function normalizeRequirementLedgerText(value: string) {
@@ -1043,7 +1707,7 @@ function buildPageHeadingMap(document: ProjectDocumentDetail) {
   const map = new Map<number, string>();
   const stack: string[] = [];
 
-  for (const page of splitPdfPagesPreservingLines(document.raw_text).slice(0, 120)) {
+  for (const page of splitPdfPagesPreservingLines(document.raw_text).slice(0, 240)) {
     const lines = page.text
       .split("\n")
       .map((line) => line.trim())
@@ -1170,7 +1834,7 @@ function buildTableRequirementLedger(document: ProjectDocumentDetail) {
     }
   }
 
-  for (const page of splitPdfPagesPreservingLines(document.raw_text).slice(0, 120)) {
+  for (const page of splitPdfPagesPreservingLines(document.raw_text).slice(0, 240)) {
     const pageHeading = pageHeadingMap.get(page.page) ?? "";
     const lines = page.text
       .split("\n")
@@ -3070,6 +3734,533 @@ async function buildRequirementBatchRetrievalContext(input: {
   );
 }
 
+function requirementCoverageSystemPrompt() {
+  return buildPromptTemplate({
+    role: "Du er en streng, men rettferdig tilbudsevaluator og skyarkitekt som vurderer leverandørens arkitektsvar krav for krav.",
+    task: [
+      "Vurder hver kravrad mot arkitektens svar i Bilag 2 og kundekonteksten.",
+      "Du skal ikke finne nye krav, slå sammen krav eller endre rekkefølgen.",
+      "Gi en kort vurdering som et tilbudsteam kan bruke til å rette svaret.",
+    ],
+    rules: [
+      "Returner kun gyldig JSON.",
+      "Returner nøyaktig én rad per krav i input, i samme rekkefølge.",
+      "Bruk nr og ref fra input uendret.",
+      "assessment skal være nøyaktig én av: Godt, Dårlig, Mangler, Uklart.",
+      "Godt betyr at arkitektens svar konkret dekker kravet og passer kundens situasjon.",
+      "Dårlig betyr at svaret finnes, men er for generisk, svakt, risikabelt eller lite kundetilpasset.",
+      "Mangler betyr at du ikke finner et reelt svar på kravet i utdragene.",
+      "Uklart betyr at et svar finnes, men dekningen eller dokumentgrunnlaget er for uklart til å gi Godt eller Dårlig.",
+      "Når konteksten inneholder eksakte kravradutdrag, skal disse være primærkilde for både krav og arkitektens svar.",
+      "Vurder hele kravraden: kravtekst, svar, forbehold, avklaringer og om svaret faktisk er operasjonelt nok for Petoros kontekst.",
+      "evidence skal være et kort tekstnært utdrag eller en presis parafrase fra Bilag 2. Ikke bruk kundeanalysen som evidence.",
+      "recommendation skal være en konkret retting som kan gjøres i arkitektens svar.",
+      "Ikke overdriv svakheter. Vær konservativ når utdragene ikke gir sikkert grunnlag.",
+    ],
+    outputContract: [
+      "Returner ett JSON-objekt med nøkkelen rows.",
+      "rows skal være en liste med objekter som har nr, ref, assessment, rationale, evidence og recommendation.",
+      "nr skal være samme nummer som i input. ref skal være samme kravreferanse som i input.",
+    ],
+    exampleOutput:
+      '{"rows":[{"nr":1,"ref":"ID2-11 - Tilgang","assessment":"Uklart","rationale":"Svaret omtaler tilgangsstyring, men mangler konkret prosess for periodiske kontroller.","evidence":"Bilag 2 beskriver least privilege og tilgangsreview på overordnet nivå.","recommendation":"Legg til ansvar, frekvens og dokumentasjon for tilgangsreview."}]}',
+  });
+}
+
+function normalizeRequirementCoverageAssessment(
+  value: unknown,
+): RequirementCoverageItem["assessment"] {
+  if (
+    value === "Godt" ||
+    value === "Dårlig" ||
+    value === "Mangler" ||
+    value === "Uklart"
+  ) {
+    return value;
+  }
+
+  return "Uklart";
+}
+
+function chunkRequirementCoverage(entries: RequirementLedgerEntry[]) {
+  const chunks: Array<{
+    startIndex: number;
+    entries: RequirementLedgerEntry[];
+  }> = [];
+
+  for (
+    let startIndex = 0;
+    startIndex < entries.length;
+    startIndex += REQUIREMENT_COVERAGE_BATCH_SIZE
+  ) {
+    chunks.push({
+      startIndex,
+      entries: entries.slice(
+        startIndex,
+        startIndex + REQUIREMENT_COVERAGE_BATCH_SIZE,
+      ),
+    });
+  }
+
+  return chunks;
+}
+
+function buildRequirementCoveragePageContext(input: {
+  document: ProjectDocumentDetail;
+  entries: RequirementLedgerEntry[];
+}) {
+  const wantedPages = new Set<number>();
+  for (const entry of input.entries) {
+    for (const page of entry.pages) {
+      if (page > 1) {
+        wantedPages.add(page - 1);
+      }
+      wantedPages.add(page);
+      wantedPages.add(page + 1);
+    }
+  }
+
+  if (!wantedPages.size) {
+    return "";
+  }
+
+  const pages =
+    input.document.file_format === "pdf"
+      ? splitPdfPagesPreservingLines(input.document.raw_text)
+      : [{ page: 1, text: input.document.raw_text }];
+  const selected = pages
+    .filter((page) => wantedPages.has(page.page))
+    .slice(0, 4);
+
+  if (!selected.length) {
+    return "";
+  }
+
+  return buildDelimitedContext(
+    "Sider rundt kravene i Bilag 2",
+    selected
+      .map((page) =>
+        [
+          `${input.document.title} – side ${page.page}`,
+          compactText(page.text, 520),
+        ].join("\n"),
+      )
+      .join("\n\n"),
+  );
+}
+
+function buildRequirementCoverageExactRowContext(
+  entries: RequirementLedgerEntry[],
+) {
+  const rows = entries
+    .filter((entry) => entry.sourceExcerpt)
+    .map((entry) => ({
+      ref: requirementCoverageRef(entry),
+      source_reference: requirementCoverageSource(entry),
+      requirement: compactText(entry.text, 420),
+      row_excerpt: compactText(entry.sourceExcerpt, 900),
+    }));
+
+  if (rows.length !== entries.length || !rows.length) {
+    return "";
+  }
+
+  return buildDelimitedContext(
+    "Eksakte kravradutdrag fra Bilag 2",
+    JSON.stringify(rows, null, 2),
+  );
+}
+
+async function buildRequirementCoverageRetrievalContext(input: {
+  entries: RequirementLedgerEntry[];
+  solutionDocument: ProjectDocumentDetail;
+}) {
+  const exactContext = buildRequirementCoverageExactRowContext(input.entries);
+  if (exactContext) {
+    return exactContext;
+  }
+
+  const query = input.entries
+    .map((entry) =>
+      [entry.id, entry.tableId, entry.service, entry.heading, entry.text]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join("\n");
+  const snippets = await retrieveDocumentSnippets({
+    query,
+    documents: [input.solutionDocument],
+    exactTerms: input.entries
+      .map((entry) => entry.id)
+      .filter((id) => id && !isSyntheticRequirementId(id)),
+    limit: REQUIREMENT_COVERAGE_RETRIEVAL_LIMIT,
+  });
+  const semanticContext = snippets.length
+    ? retrievedSnippetContext("Relevante Bilag 2-utdrag", snippets, {
+        textLimit: 480,
+      })
+    : "";
+
+  return [
+    buildRequirementCoveragePageContext({
+      document: input.solutionDocument,
+      entries: input.entries,
+    }),
+    semanticContext,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function requirementCoverageRef(entry: RequirementLedgerEntry) {
+  return requirementDisplayRef(entry, requirementGroupHeading(entry));
+}
+
+function requirementCoverageSource(entry: RequirementLedgerEntry) {
+  return requirementDisplaySource(entry, requirementGroupHeading(entry));
+}
+
+function coverageItemFromBatchRow(input: {
+  row: RequirementCoverageBatchAnswer | undefined;
+  entry: RequirementLedgerEntry;
+}): RequirementCoverageItem {
+  const row = input.row;
+  const fallbackReference = requirementCoverageRef(input.entry);
+  const sourceReference = requirementCoverageSource(input.entry);
+
+  return {
+    reference: compactText(row?.ref || fallbackReference, 220),
+    source_reference: compactText(sourceReference, 260),
+    table_id: input.entry.tableId || null,
+    requirement: compactText(input.entry.text, 700),
+    assessment: normalizeRequirementCoverageAssessment(
+      row?.assessment ?? row?.vurdering,
+    ),
+    rationale: compactText(row?.rationale ?? row?.begrunnelse ?? "", 460),
+    evidence: compactText(row?.evidence ?? row?.bevis ?? "", 420),
+    recommendation: compactText(
+      row?.recommendation ?? row?.anbefaling ?? "",
+      520,
+    ),
+  };
+}
+
+function matchCoverageBatchRow(input: {
+  rows: RequirementCoverageBatchAnswer[];
+  entry: RequirementLedgerEntry;
+  localIndex: number;
+  absoluteIndex: number;
+}) {
+  const expectedNr = input.absoluteIndex + 1;
+  const expectedRef = normalizeRequirementId(requirementCoverageRef(input.entry));
+
+  return (
+    input.rows.find((row) => row.nr === expectedNr) ??
+    input.rows.find(
+      (row) => normalizeRequirementId(row.ref ?? "") === expectedRef,
+    ) ??
+    input.rows[input.localIndex]
+  );
+}
+
+function emptyRequirementCoverage(summary = ""): RequirementCoverage {
+  return {
+    total_requirements: 0,
+    assessed_requirements: 0,
+    good: 0,
+    weak: 0,
+    missing: 0,
+    unclear: 0,
+    confidence: "Lav",
+    coverage_summary: summary,
+    items: [],
+  };
+}
+
+function countRequirementCoverage(items: RequirementCoverageItem[]) {
+  return {
+    good: items.filter((item) => item.assessment === "Godt").length,
+    weak: items.filter((item) => item.assessment === "Dårlig").length,
+    missing: items.filter((item) => item.assessment === "Mangler").length,
+    unclear: items.filter((item) => item.assessment === "Uklart").length,
+  };
+}
+
+function normalizeSolutionRequirementCoverage(
+  value: Partial<RequirementCoverage> | null | undefined,
+): RequirementCoverage {
+  const source = value ?? {};
+  const items = (Array.isArray(source.items) ? source.items : [])
+    .map((item) => ({
+      reference: compactText(item.reference ?? "", 220),
+      source_reference: compactText(item.source_reference ?? "", 260),
+      table_id: item.table_id ? compactText(item.table_id, 80) : null,
+      requirement: compactText(item.requirement ?? "", 700),
+      assessment: normalizeRequirementCoverageAssessment(item.assessment),
+      rationale: compactText(item.rationale ?? "", 460),
+      evidence: compactText(item.evidence ?? "", 420),
+      recommendation: compactText(item.recommendation ?? "", 520),
+    }))
+    .filter((item) => item.reference || item.requirement);
+  const counts = countRequirementCoverage(items);
+  const totalRequirements =
+    typeof source.total_requirements === "number" &&
+    Number.isFinite(source.total_requirements)
+      ? Math.max(0, Math.round(source.total_requirements))
+      : items.length;
+  const confidence =
+    source.confidence === "Høy" ||
+    source.confidence === "Middels" ||
+    source.confidence === "Lav"
+      ? source.confidence
+      : items.length >= totalRequirements && totalRequirements > 0
+        ? "Høy"
+        : items.length > 0
+          ? "Middels"
+          : "Lav";
+  const coverageSummary =
+    compactText(source.coverage_summary ?? "", 900) ||
+    (items.length
+      ? `${items.length} av ${totalRequirements || items.length} identifiserte krav er vurdert.`
+      : "");
+
+  return {
+    total_requirements: totalRequirements,
+    assessed_requirements:
+      typeof source.assessed_requirements === "number" &&
+      Number.isFinite(source.assessed_requirements)
+        ? Math.max(0, Math.round(source.assessed_requirements))
+        : items.length,
+    good: counts.good,
+    weak: counts.weak,
+    missing: counts.missing,
+    unclear: counts.unclear,
+    confidence,
+    coverage_summary: coverageSummary,
+    items,
+  };
+}
+
+function buildRequirementCoverageSummary(items: RequirementCoverageItem[]) {
+  const counts = countRequirementCoverage(items);
+  const total = items.length;
+  if (!total) {
+    return "Ingen kravdekning kunne bygges fra dokumentstrukturen.";
+  }
+
+  return [
+    `${total} krav ble identifisert og vurdert fra Bilag 2-strukturen.`,
+    `${counts.good} er vurdert som gode, ${counts.weak} som dårlige, ${counts.missing} mangler svar og ${counts.unclear} er uklare.`,
+    "Krav med Mangler, Dårlig eller Uklart bør prioriteres i rettingen før tilbudet kvalitetssikres.",
+  ].join(" ");
+}
+
+function buildRequirementCoverageEvaluationContext(
+  coverage: RequirementCoverage,
+) {
+  if (!coverage.items.length) {
+    return "";
+  }
+
+  const weakItems = coverage.items
+    .filter((item) => item.assessment !== "Godt")
+    .slice(0, 10)
+    .map((item) => ({
+      reference: item.reference,
+      source_reference: item.source_reference,
+      assessment: item.assessment,
+      rationale: compactText(item.rationale, 240),
+      recommendation: compactText(item.recommendation, 260),
+    }));
+  const goodExamples = coverage.items
+    .filter((item) => item.assessment === "Godt")
+    .slice(0, 3)
+    .map((item) => ({
+      reference: item.reference,
+      source_reference: item.source_reference,
+      rationale: compactText(item.rationale, 220),
+    }));
+
+  return buildDelimitedContext(
+    "Kravdekning fra egen batchvurdering",
+    JSON.stringify(
+      {
+        total_requirements: coverage.total_requirements,
+        assessed_requirements: coverage.assessed_requirements,
+        good: coverage.good,
+        weak: coverage.weak,
+        missing: coverage.missing,
+        unclear: coverage.unclear,
+        confidence: coverage.confidence,
+        coverage_summary: coverage.coverage_summary,
+        prioritized_non_good_requirements: weakItems,
+        good_examples: goodExamples,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function isHighConfidenceRequirementCoverageFallback(
+  entry: RequirementLedgerEntry,
+) {
+  const normalized = normalizeRequirementId(entry.id).replace(/\s+/g, "");
+  return (
+    /^ID2-\d{1,3}(?:-\d{1,3})?[A-Z]?$/i.test(normalized) ||
+    /^REQ-\d{1,5}[A-Z]?$/i.test(normalized)
+  );
+}
+
+function requirementTableKey(value: string | null | undefined) {
+  const normalized = normalizeRequirementId(value ?? "");
+  const match = normalized.match(/\bID\s*2-(\d{1,3})\b/i);
+  return match ? `2-${match[1]}` : "";
+}
+
+async function buildRequirementCoverageLedger(document: ProjectDocumentDetail) {
+  const withTitle = (entries: RequirementLedgerEntry[]) =>
+    dedupeRequirementLedger(entries).map((entry) => ({
+      ...entry,
+      documentTitle: document.title,
+    }));
+
+  const docxTableRequirements = await buildDocxTableRequirementLedger(document);
+  if (docxTableRequirements.length >= 5) {
+    return withTitle(docxTableRequirements);
+  }
+
+  const pdfLayoutTableRequirements =
+    await buildPdfLayoutTableRequirementLedger(document);
+  if (pdfLayoutTableRequirements.length >= 5) {
+    return withTitle(pdfLayoutTableRequirements);
+  }
+
+  const tableRequirements = buildTableRequirementLedger(document);
+  if (tableRequirements.length >= 5) {
+    const coveredTableKeys = new Set(
+      tableRequirements
+        .map((entry) => requirementTableKey(entry.tableId || entry.id))
+        .filter(Boolean),
+    );
+    const fallbackRequirements = (
+      await buildRequirementSourceLedgerWithFiles(document)
+    ).filter((entry) => {
+      const key = requirementTableKey(entry.id);
+      return (
+        key &&
+        !coveredTableKeys.has(key) &&
+        isHighConfidenceRequirementCoverageFallback(entry)
+      );
+    });
+    return withTitle([...tableRequirements, ...fallbackRequirements]);
+  }
+
+  const pdfTableRequirements = buildPdfRequirementTableLedger(document);
+  if (pdfTableRequirements.length >= 5) {
+    return withTitle(pdfTableRequirements);
+  }
+
+  return buildRequirementSourceLedgerWithFiles(document);
+}
+
+async function buildSolutionRequirementCoverage(input: {
+  projectName: string;
+  solutionDocument: ProjectDocumentDetail;
+  customerAnalysis: CustomerAnalysisResult;
+  model?: string;
+  onProgress?: (message: string) => void;
+}) {
+  const ledger = await buildRequirementCoverageLedger(input.solutionDocument);
+  const requirements = dedupeRequirementLedger(ledger).filter(
+    (entry) => entry.text.length >= 20,
+  );
+
+  if (!requirements.length) {
+    return emptyRequirementCoverage(
+      "Fant ingen tydelige kravrader i Bilag 2-strukturen.",
+    );
+  }
+
+  const chunks = chunkRequirementCoverage(requirements);
+  let completedBatches = 0;
+  input.onProgress?.(
+    `[18%] Fant ${requirements.length} krav. Vurderer kravdekning i ${chunks.length} batcher ...`,
+  );
+
+  const batches = await mapWithConcurrency(
+    chunks,
+    REQUIREMENT_COVERAGE_BATCH_CONCURRENCY,
+    async (chunk) => {
+      const krav = chunk.entries.map((entry, localIndex) => ({
+        nr: chunk.startIndex + localIndex + 1,
+        ref: requirementCoverageRef(entry),
+        source_reference: requirementCoverageSource(entry),
+        table_id: entry.tableId || null,
+        requirement: compactText(entry.text, 450),
+      }));
+      const excerpts = await buildRequirementCoverageRetrievalContext({
+        entries: chunk.entries,
+        solutionDocument: input.solutionDocument,
+      });
+      const generated = await createJsonCompletion<{
+        rows?: RequirementCoverageBatchAnswer[];
+      }>({
+        system: requirementCoverageSystemPrompt(),
+        user: [
+          "Vurder kravene i JSON. Ikke legg til, fjern eller slå sammen krav.",
+          buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
+          buildDelimitedContext(
+            "Kundekontekst for vurdering",
+            summarizeCustomerAnalysisForRequirementCoverage(input.customerAnalysis),
+          ),
+          excerpts,
+          buildDelimitedContext("Krav som skal vurderes", JSON.stringify(krav, null, 2)),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        temperature: 0,
+        model: requirementResponseBatchModel(input.model),
+        reasoningEffort: FAST_REASONING_EFFORT,
+      });
+      const rows = Array.isArray(generated.rows) ? generated.rows : [];
+      completedBatches += 1;
+      input.onProgress?.(
+        `[${Math.min(
+          56,
+          18 + Math.round((completedBatches / chunks.length) * 38),
+        )}%] Vurdert ${Math.min(
+          requirements.length,
+          completedBatches * REQUIREMENT_COVERAGE_BATCH_SIZE,
+        )} av ${requirements.length} krav ...`,
+      );
+
+      return chunk.entries.map((entry, localIndex) => {
+        const row = matchCoverageBatchRow({
+          rows,
+          entry,
+          localIndex,
+          absoluteIndex: chunk.startIndex + localIndex,
+        });
+
+        return coverageItemFromBatchRow({
+          row,
+          entry,
+        });
+      });
+    },
+  );
+
+  const items = batches.flat();
+  return normalizeSolutionRequirementCoverage({
+    total_requirements: requirements.length,
+    assessed_requirements: items.length,
+    confidence: items.length === requirements.length ? "Høy" : "Middels",
+    coverage_summary: buildRequirementCoverageSummary(items),
+    items,
+  });
+}
+
 function requirementCoverageSummary(input: {
   ledger: RequirementLedgerEntry[];
   answers: string[];
@@ -3625,6 +4816,47 @@ function summarizeCustomerAnalysis(analysis: CustomerAnalysisResult) {
   );
 }
 
+function summarizeCustomerAnalysisForRequirementCoverage(
+  analysis: CustomerAnalysisResult,
+) {
+  return JSON.stringify(
+    {
+      customer_profile_summary: compactText(
+        analysis.customer_profile_summary,
+        240,
+      ),
+      customer_goals_summary: compactText(analysis.customer_goals_summary, 240),
+      executive_summary: compactText(analysis.executive_summary, 280),
+      expected_solution_direction: analysis.expected_solution_direction
+        .slice(0, 4)
+        .map((item) => compactText(item, 150)),
+      prioritized_requirements: analysis.prioritized_requirements
+        .slice(0, 6)
+        .map((item) => ({
+          requirement: compactText(item.requirement, 150),
+          priority: item.priority,
+          reason: compactText(item.reason, 140),
+        })),
+      implicit_requirements: analysis.implicit_requirements
+        .slice(0, 6)
+        .map((item) => ({
+          title: compactText(item.title, 120),
+          description: compactText(item.description, 150),
+          importance: item.importance,
+          source_reference: compactText(item.source_reference, 120),
+        })),
+      likely_evaluation_criteria: analysis.likely_evaluation_criteria
+        .slice(0, 4)
+        .map((item) => compactText(item, 150)),
+      risks_for_customer: (analysis.risks_for_customer ?? analysis.risks)
+        .slice(0, 4)
+        .map((item) => compactText(item, 150)),
+    },
+    null,
+    2,
+  );
+}
+
 function summarizeSolutionEvaluation(evaluation: SolutionEvaluationResult) {
   return JSON.stringify(
     {
@@ -3637,6 +4869,22 @@ function summarizeSolutionEvaluation(evaluation: SolutionEvaluationResult) {
         0,
         5,
       ),
+      requirement_coverage: evaluation.requirement_coverage
+        ? {
+            total_requirements:
+              evaluation.requirement_coverage.total_requirements,
+            assessed_requirements:
+              evaluation.requirement_coverage.assessed_requirements,
+            good: evaluation.requirement_coverage.good,
+            weak: evaluation.requirement_coverage.weak,
+            missing: evaluation.requirement_coverage.missing,
+            unclear: evaluation.requirement_coverage.unclear,
+            coverage_summary: compactText(
+              evaluation.requirement_coverage.coverage_summary,
+              500,
+            ),
+          }
+        : null,
       likely_score_assessment: evaluation.likely_score_assessment,
       executive_summary: compactText(evaluation.executive_summary, 500),
     },
@@ -4639,6 +5887,34 @@ function normalizeSolutionEvaluationResult(
   const valueAssessment = normalizeValueOpportunities(
     Array.isArray(result.value_assessment) ? result.value_assessment : [],
   );
+  const documentFindings = (
+    Array.isArray(result.document_findings) ? result.document_findings : []
+  )
+    .map((item) => {
+      const assessment =
+        item.assessment === "Godt" ||
+        item.assessment === "Dårlig" ||
+        item.assessment === "Mangler" ||
+        item.assessment === "Uklart"
+          ? item.assessment
+          : ("Uklart" as const);
+
+      return {
+        reference: compactText(item.reference, 220),
+        assessment,
+        finding: compactText(item.finding, 500),
+        evidence: compactText(item.evidence, 500),
+        recommendation: compactText(item.recommendation, 650),
+      };
+    })
+    .filter(
+      (item) =>
+        item.reference || item.finding || item.evidence || item.recommendation,
+    )
+    .slice(0, 6);
+  const requirementCoverage = normalizeSolutionRequirementCoverage(
+    result.requirement_coverage,
+  );
   const rawComparison = result.architecture_comparison;
   const comparisonWinner = rawComparison?.winner;
   const architectureComparison = {
@@ -4688,6 +5964,8 @@ function normalizeSolutionEvaluationResult(
     trust_signals: trustSignals,
     improvement_recommendations: improvementRecommendations,
     value_assessment: valueAssessment,
+    document_findings: documentFindings,
+    requirement_coverage: requirementCoverage,
     architecture_comparison: architectureComparison,
     executive_summary: dedupeSummary(result.executive_summary || "", [
       result.fit_to_customer_needs,
@@ -4750,9 +6028,11 @@ async function createJsonCompletion<T>(input: {
 }): Promise<T> {
   const client = await getClient();
   const model = input.model ?? ANALYSIS_MODEL;
+  const reasoningEffort = input.reasoningEffort ?? ANALYSIS_REASONING_EFFORT;
+  const startedAt = Date.now();
   const response = (await client.chat.completions.create({
     model,
-    reasoning_effort: input.reasoningEffort ?? ANALYSIS_REASONING_EFFORT,
+    reasoning_effort: reasoningEffort,
     ...(supportsCustomTemperature(model)
       ? { temperature: input.temperature ?? 0.1 }
       : {}),
@@ -4762,6 +6042,16 @@ async function createJsonCompletion<T>(input: {
       { role: "user", content: input.user },
     ],
   })) as ChatCompletionResponse;
+  console.info(
+    JSON.stringify({
+      event: "ai_json_completion_timing",
+      model,
+      reasoning_effort: reasoningEffort,
+      system_chars: input.system.length,
+      user_chars: input.user.length,
+      duration_ms: Date.now() - startedAt,
+    }),
+  );
 
   const content = response.choices[0]?.message?.content;
   if (!content) {
@@ -5137,31 +6427,40 @@ export async function evaluateSolutionDocument(input: {
   } | null;
   model?: string;
   documentLedgerContext?: string;
+  onProgress?: (message: string) => void;
 }) {
-  const [customerDocumentDigest, solutionDocumentDigest] = await Promise.all([
-    buildDocumentInsightDigest("Primært kundedokument", input.customerDocument, {
-      maxChunks: 5,
-    }),
-    buildDocumentInsightDigest(
-      "Importert arkitekt-/løsningsdokument",
-      input.solutionDocument,
-      { maxChunks: 6 },
-    ),
-  ]);
+  const requirementCoverage = await buildSolutionRequirementCoverage({
+    projectName: input.projectName,
+    solutionDocument: input.solutionDocument,
+    customerAnalysis: input.customerAnalysis,
+    model: input.model,
+    onProgress: input.onProgress,
+  });
+  const hasRequirementCoverage = requirementCoverage.items.length > 0;
+  const solutionDocumentDigest = hasRequirementCoverage
+    ? null
+    : await buildDocumentInsightDigest(
+        "Importert arkitekt-/løsningsdokument",
+        input.solutionDocument,
+        { maxChunks: 4 },
+      );
   const supportingContexts = input.supportingDocuments
-    .slice(0, 2)
+    .slice(0, 1)
     .map((document, index) =>
       documentContext(`Støttedokument ${index + 1}`, document, {
-        textLimit: 3500,
+        textLimit: 2000,
         structureLimit: 4,
-        structureTextLimit: 140,
+        structureTextLimit: 120,
       }),
     )
     .join("\n\n");
 
   const userPrompt = [
     "Sammenlign systemets lagrede strategi/løsning med det importerte løsnings-/arkitektdokumentet.",
-    "Vurder hvilken løsning som er best, gi sterk kritikk, pragmatiske refleksjoner, strategiråd og score.",
+    "Vurder hvilken løsning som er best, gi sterk kritikk, pragmatiske refleksjoner, strategiråd, score og konkrete funn med eksakte referanser tilbake til det importerte Bilag 2 / arkitektdokumentet.",
+    hasRequirementCoverage
+      ? "Bruk kravdekningen som primær fasit for om arkitektens svar dekker kravene. Document_findings skal være toppfunn, ikke en full kravliste."
+      : "",
     "Returner kun gyldig JSON.",
     "",
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
@@ -5173,11 +6472,10 @@ export async function evaluateSolutionDocument(input: {
         )
       : "",
     documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: 7000,
-      structureLimit: 8,
-      structureTextLimit: 160,
+      textLimit: hasRequirementCoverage ? 3000 : 4000,
+      structureLimit: hasRequirementCoverage ? 4 : 5,
+      structureTextLimit: 120,
     }),
-    customerDocumentDigest ?? "",
     buildDelimitedContext(
       "Lagret kundeanalyse",
       summarizeCustomerAnalysis(input.customerAnalysis),
@@ -5187,7 +6485,10 @@ export async function evaluateSolutionDocument(input: {
           "Systemløsning som skal scores",
           [
             `Tittel: ${input.systemSolutionArtifact.title}`,
-            compactText(input.systemSolutionArtifact.content_markdown, 9000),
+            compactText(
+              input.systemSolutionArtifact.content_markdown,
+              hasRequirementCoverage ? 3800 : 4500,
+            ),
           ].join("\n\n"),
         )
       : "",
@@ -5197,11 +6498,16 @@ export async function evaluateSolutionDocument(input: {
           "Når en systemløsning er oppgitt i eget felt, skal denne teksten være primærgrunnlaget for architecture_comparison.system_solution_score. Kundeanalysen er da støtte og kontekst, ikke erstatning for systemløsningen.",
         )
       : "",
-    documentContext("Primært løsningsdokument", input.solutionDocument, {
-      textLimit: 7000,
-      structureLimit: 8,
-      structureTextLimit: 160,
+    documentContext("Importert Bilag 2 / arkitektens svar", input.solutionDocument, {
+      textLimit: hasRequirementCoverage ? 2600 : 6000,
+      structureLimit: hasRequirementCoverage ? 4 : 12,
+      structureTextLimit: hasRequirementCoverage ? 120 : 160,
     }),
+    buildRequirementCoverageEvaluationContext(requirementCoverage),
+    buildDelimitedContext(
+      "Referanseregel for importert Bilag 2",
+      "Når du lager document_findings, skal reference peke til den mest presise synlige referansen i strukturkartet eller teksten for Bilag 2: side, seksjon, tabell, rad, ark eller overskrift. Bruk samme referanseform som finnes i dokumentkonteksten.",
+    ),
     solutionDocumentDigest
       ? buildDelimitedContext(
           "Analyseinstruks for arkitektdokument",
@@ -5219,10 +6525,13 @@ export async function evaluateSolutionDocument(input: {
     user: userPrompt,
     temperature: 0.1,
     model: input.model ?? ANALYSIS_MODEL,
-    reasoningEffort: ANALYSIS_REASONING_EFFORT,
+    reasoningEffort: EVALUATION_REASONING_EFFORT,
   });
 
-  return normalizeSolutionEvaluationResult(result);
+  return normalizeSolutionEvaluationResult({
+    ...result,
+    requirement_coverage: requirementCoverage,
+  });
 }
 
 export async function generateExecutiveSummary(input: {

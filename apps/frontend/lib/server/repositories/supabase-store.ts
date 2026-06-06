@@ -334,6 +334,18 @@ const SOLUTION_EVALUATION_EMPTY: SolutionEvaluationResult = {
   improvement_recommendations: [],
   value_assessment: [],
   rewrite_suggestions: [],
+  document_findings: [],
+  requirement_coverage: {
+    total_requirements: 0,
+    assessed_requirements: 0,
+    good: 0,
+    weak: 0,
+    missing: 0,
+    unclear: 0,
+    confidence: "Lav",
+    coverage_summary: "",
+    items: [],
+  },
   architecture_comparison: {
     winner: "Uavgjort",
     architect_solution_score: 0,
@@ -606,8 +618,18 @@ function decryptDocumentRow(row: DocumentRow): ProjectDocumentDetail {
   };
 }
 
-async function resolveDocumentRow(row: DocumentRow): Promise<ProjectDocumentDetail> {
+async function resolveDocumentRow(
+  row: DocumentRow,
+  options?: { includeFileBase64?: boolean },
+): Promise<ProjectDocumentDetail> {
   const document = decryptDocumentRow(row);
+  if (options?.includeFileBase64 === false) {
+    return {
+      ...document,
+      file_base64: "",
+    };
+  }
+
   if (document.file_base64 || !row.file_storage_path) {
     return document;
   }
@@ -724,8 +746,35 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
   };
 }
 
+async function listProjectDocumentRoleRows(
+  supabase: ReturnType<typeof createServiceClient>,
+  projectId: string,
+) {
+  const { data, error } = await supabase
+    .from("documents")
+    .select("role")
+    .eq("project_id", projectId);
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as Array<{ role: ProjectDocumentRole | null }>;
+}
+
+function projectDocumentStatusPatch(
+  rows: Array<{ role: ProjectDocumentRole | null }>,
+) {
+  return {
+    customer_document_uploaded: rows.length > 0,
+    solution_document_uploaded: rows.some(
+      (row) => row.role === "primary_solution_document",
+    ),
+  };
+}
+
 function mapSolutionEvaluationRow(row: SolutionEvaluationRow) {
   return {
+    ...SOLUTION_EVALUATION_EMPTY,
     ...decryptJson(row.result_json, SOLUTION_EVALUATION_EMPTY),
     customer_document_id: row.customer_document_id,
     solution_document_id: row.solution_document_id,
@@ -2538,18 +2587,22 @@ export async function saveDocument(input: {
   }
 
   const projectPatch: Partial<ProjectRow> = {
-    customer_document_uploaded: true,
     last_activity_at: new Date().toISOString(),
   };
-  if (input.role === "primary_solution_document") {
+  if (
+    input.role === "primary_customer_document" ||
+    input.role === "primary_solution_document"
+  ) {
+    const demotedSubtype =
+      input.role === "primary_solution_document" ? "utkast" : "rfp";
     let demoteResult = await supabase
       .from("documents")
       .update({
         role: "supporting_document",
-        supporting_subtype: "utkast",
+        supporting_subtype: demotedSubtype,
       })
       .eq("project_id", input.projectId)
-      .eq("role", "primary_solution_document")
+      .eq("role", input.role)
       .neq("id", inserted.id);
 
     if (
@@ -2560,10 +2613,10 @@ export async function saveDocument(input: {
         .from("documents")
         .update({
           role: "supporting_document",
-          subtype: "utkast",
+          subtype: demotedSubtype,
         })
         .eq("project_id", input.projectId)
-        .eq("role", "primary_solution_document")
+        .eq("role", input.role)
         .neq("id", inserted.id);
     }
 
@@ -2571,18 +2624,39 @@ export async function saveDocument(input: {
       throw new Error(demoteResult.error.message);
     }
 
-    projectPatch.solution_document_uploaded = true;
-    projectPatch.solution_evaluation_generated = false;
-    await supabase
-      .from("solution_evaluations")
-      .delete()
-      .eq("project_id", input.projectId);
+    if (input.role === "primary_customer_document") {
+      projectPatch.customer_analysis_generated = false;
+      projectPatch.solution_evaluation_generated = false;
+      await supabase
+        .from("customer_analyses")
+        .delete()
+        .eq("project_id", input.projectId);
+      await supabase
+        .from("solution_evaluations")
+        .delete()
+        .eq("project_id", input.projectId);
+    }
+
+    if (input.role === "primary_solution_document") {
+      projectPatch.solution_evaluation_generated = false;
+      await supabase
+        .from("solution_evaluations")
+        .delete()
+        .eq("project_id", input.projectId);
+    }
   }
 
   await supabase
     .from("executive_summaries")
     .delete()
     .eq("project_id", input.projectId);
+
+  Object.assign(
+    projectPatch,
+    projectDocumentStatusPatch(
+      await listProjectDocumentRoleRows(supabase, input.projectId),
+    ),
+  );
 
   await supabase
     .from("projects")
@@ -2669,41 +2743,41 @@ export async function deleteDocument(projectId: string, documentId: string) {
     .from("documents")
     .select("role")
     .eq("project_id", projectId);
-  const rows = remaining ?? [];
-  const hasDocuments = rows.length > 0;
+  const rows = (remaining ?? []) as Array<{ role: ProjectDocumentRole | null }>;
+  const statusPatch = projectDocumentStatusPatch(rows);
+  const shouldClearCustomerAnalysis =
+    !statusPatch.customer_document_uploaded ||
+    beforeDelete?.role === "primary_customer_document";
+  const shouldClearSolutionEvaluation =
+    !statusPatch.solution_document_uploaded ||
+    beforeDelete?.role === "primary_solution_document" ||
+    shouldClearCustomerAnalysis;
+  const projectPatch: Partial<ProjectRow> = {
+    ...statusPatch,
+    last_activity_at: new Date().toISOString(),
+  };
 
-  await supabase
-    .from("projects")
-    .update({
-      customer_document_uploaded: hasDocuments,
-      solution_document_uploaded: rows.some(
-        (row) => row.role === "primary_solution_document",
-      ),
-      last_activity_at: new Date().toISOString(),
-    })
-    .eq("id", projectId);
-
-  if (!hasDocuments || beforeDelete?.role === "primary_customer_document") {
+  if (shouldClearCustomerAnalysis) {
     await supabase
       .from("customer_analyses")
       .delete()
       .eq("project_id", projectId);
-    await supabase
-      .from("projects")
-      .update({ customer_analysis_generated: false })
-      .eq("id", projectId);
+    projectPatch.customer_analysis_generated = false;
   }
 
-  if (!hasDocuments || beforeDelete?.role === "primary_solution_document") {
+  if (shouldClearSolutionEvaluation) {
     await supabase
       .from("solution_evaluations")
       .delete()
       .eq("project_id", projectId);
     await supabase
-      .from("projects")
-      .update({ solution_evaluation_generated: false })
-      .eq("id", projectId);
+      .from("executive_summaries")
+      .delete()
+      .eq("project_id", projectId);
+    projectPatch.solution_evaluation_generated = false;
   }
+
+  await supabase.from("projects").update(projectPatch).eq("id", projectId);
 
   revalidateProjectCaches(projectId);
 }
@@ -2725,6 +2799,10 @@ export async function markDocumentAsPrimarySolution(
 
   if (!selected) {
     throw new Error("Fant ikke dokumentet som skal brukes som arkitektløsning.");
+  }
+
+  if (selected.role === "primary_customer_document") {
+    throw new Error("Kundedokumentet kan ikke brukes som Bilag 2 / arkitektløsning.");
   }
 
   let demoteResult = await supabase
@@ -2793,7 +2871,9 @@ export async function markDocumentAsPrimarySolution(
   await supabase
     .from("projects")
     .update({
-      solution_document_uploaded: true,
+      ...projectDocumentStatusPatch(
+        await listProjectDocumentRoleRows(supabase, projectId),
+      ),
       solution_evaluation_generated: false,
       last_activity_at: new Date().toISOString(),
     })
@@ -2840,7 +2920,7 @@ export async function listSupportingDocuments(projectId: string) {
       .order("created_at", { ascending: false }),
   );
 
-  return Promise.all(rows.map(resolveDocumentRow));
+  return Promise.all(rows.map((row) => resolveDocumentRow(row)));
 }
 
 export async function listProjectDocumentSummaries(projectId: string) {
@@ -2866,7 +2946,22 @@ export async function listProjectDocuments(projectId: string) {
       .order("created_at", { ascending: false }),
   );
 
-  return Promise.all(rows.map(resolveDocumentRow));
+  return Promise.all(rows.map((row) => resolveDocumentRow(row)));
+}
+
+export async function listProjectDocumentsForAnalysis(projectId: string) {
+  const supabase = createServiceClient();
+  const rows = await fetchDocumentRows((select) =>
+    supabase
+      .from("documents")
+      .select(select)
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false }),
+  );
+
+  return Promise.all(
+    rows.map((row) => resolveDocumentRow(row, { includeFileBase64: false })),
+  );
 }
 
 export async function saveCustomerAnalysis(

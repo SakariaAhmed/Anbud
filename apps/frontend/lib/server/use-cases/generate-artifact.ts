@@ -27,7 +27,8 @@ import {
   saveGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
 import {
-  listProjectDocuments,
+  getDocumentDetail,
+  listProjectDocumentsForAnalysis,
 } from "@/lib/server/repositories/documents";
 import {
   getProjectDetail,
@@ -76,6 +77,35 @@ export interface GenerateAndSaveArtifactInput {
 export interface GenerateAndSaveArtifactResult {
   artifact: GeneratedArtifact;
   project: ProjectSnapshotResult;
+}
+
+const ARTIFACT_FILE_LEDGER_FORMATS = new Set(["pdf", "docx", "xlsx", "xls"]);
+
+function isLikelyRequirementDocument(document: ProjectDocumentDetail) {
+  const text = `${document.title} ${document.file_name}`.toLowerCase();
+  return (
+    text.includes("krav") ||
+    text.includes("requirement") ||
+    text.includes("requirements")
+  );
+}
+
+async function hydrateArtifactFileDocument(
+  projectId: string,
+  document: ProjectDocumentDetail,
+) {
+  if (
+    document.file_base64 ||
+    !ARTIFACT_FILE_LEDGER_FORMATS.has(document.file_format)
+  ) {
+    return document;
+  }
+
+  try {
+    return await getDocumentDetail(projectId, document.id);
+  } catch {
+    return document;
+  }
 }
 
 const DOCUMENT_LEDGER_CACHE_TTL_MS = 5 * 60_000;
@@ -159,7 +189,7 @@ export async function generateAndSaveProjectArtifact(
   ] = await Promise.all([
     getProjectDetail(input.projectId),
     getCustomerAnalysis(input.projectId),
-    listProjectDocuments(input.projectId),
+    listProjectDocumentsForAnalysis(input.projectId),
     listGeneratedArtifacts(input.projectId),
     listServiceDocumentSummariesForProject(input.projectId),
   ]);
@@ -173,6 +203,43 @@ export async function generateAndSaveProjectArtifact(
     : [];
   const { customerDocument, solutionDocument, supportingDocuments } =
     selectProjectDocuments(projectDocuments);
+  const requirementFileCandidates =
+    input.artifactType === "forbedret_kravsvar"
+      ? (selectedDocumentIds.size
+          ? selectedRequirementDocuments
+          : [
+              customerDocument,
+              solutionDocument,
+              ...supportingDocuments,
+            ].filter(
+              (document): document is ProjectDocumentDetail =>
+                document !== null && isLikelyRequirementDocument(document),
+            )
+        ).slice(0, 3)
+      : [];
+  const hydratedRequirementFiles = new Map(
+    (
+      await Promise.all(
+        requirementFileCandidates.map(async (document) => [
+          document.id,
+          await hydrateArtifactFileDocument(input.projectId, document),
+        ] as const),
+      )
+    ),
+  );
+  const useHydratedRequirementFile = (
+    document: ProjectDocumentDetail | null,
+  ) => (document ? hydratedRequirementFiles.get(document.id) ?? document : null);
+  const generationCustomerDocument =
+    useHydratedRequirementFile(customerDocument);
+  const generationSolutionDocument =
+    useHydratedRequirementFile(solutionDocument);
+  const generationSupportingDocuments = supportingDocuments.map(
+    (document) => useHydratedRequirementFile(document) ?? document,
+  );
+  const generationRequirementDocuments = selectedRequirementDocuments.map(
+    (document) => useHydratedRequirementFile(document) ?? document,
+  );
 
   if (
     input.artifactType === "bilag1_rekonstruksjon" &&
@@ -264,15 +331,15 @@ export async function generateAndSaveProjectArtifact(
     projectName: project.name,
     customerAnalysis,
     solutionEvaluation: project.solution_evaluation,
-    customerDocument,
-    solutionDocument,
+    customerDocument: generationCustomerDocument,
+    solutionDocument: generationSolutionDocument,
     serviceDescriptionDocument,
     serviceDescriptionDocuments,
     serviceDocumentSummaries,
-    supportingDocuments,
+    supportingDocuments: generationSupportingDocuments,
     requirementDocuments:
       input.artifactType === "forbedret_kravsvar" && selectedDocumentIds.size
-        ? selectedRequirementDocuments
+        ? generationRequirementDocuments
         : undefined,
     knowledgeArtifacts: generatedArtifacts,
     instructions: input.instructions?.trim(),

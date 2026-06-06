@@ -288,6 +288,33 @@ export interface SolutionEvaluationResult {
     target: string;
     suggestion: string;
   }>;
+  document_findings: Array<{
+    reference: string;
+    assessment: "Godt" | "Dårlig" | "Mangler" | "Uklart";
+    finding: string;
+    evidence: string;
+    recommendation: string;
+  }>;
+  requirement_coverage?: {
+    total_requirements: number;
+    assessed_requirements: number;
+    good: number;
+    weak: number;
+    missing: number;
+    unclear: number;
+    confidence: "Høy" | "Middels" | "Lav";
+    coverage_summary: string;
+    items: Array<{
+      reference: string;
+      source_reference: string;
+      table_id?: string | null;
+      requirement: string;
+      assessment: "Godt" | "Dårlig" | "Mangler" | "Uklart";
+      rationale: string;
+      evidence: string;
+      recommendation: string;
+    }>;
+  };
   architecture_comparison?: {
     winner: "Systemløsning" | "Arkitektløsning" | "Uavgjort";
     architect_solution_score: number;

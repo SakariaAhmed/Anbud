@@ -11,7 +11,7 @@ import {
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
 import { checkRateLimit } from "@/lib/server/observability";
-import { listProjectDocuments } from "@/lib/server/repositories/documents";
+import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/services";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
@@ -323,7 +323,7 @@ export async function POST(
       : null;
     const [projectDocuments, existingAnalysis, serviceCandidates] =
       await Promise.all([
-        listProjectDocuments(id),
+        listProjectDocumentsForAnalysis(id),
         section ? getCustomerAnalysis(id) : Promise.resolve(null),
         listProjectServiceDescriptions(id),
       ]);
@@ -464,7 +464,7 @@ export async function PUT(
     const [existingAnalysis, projectDocuments] =
       await Promise.all([
         getCustomerAnalysis(id),
-        listProjectDocuments(id),
+        listProjectDocumentsForAnalysis(id),
       ]);
     const { projectDocuments: analysisDocuments } =
       splitServiceDescriptionDetails(projectDocuments);

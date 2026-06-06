@@ -30,7 +30,7 @@ import {
 } from "@/lib/server/repositories/artifacts";
 import {
   getDocumentDetail,
-  listProjectDocuments,
+  listProjectDocumentsForAnalysis,
 } from "@/lib/server/repositories/documents";
 import {
   getProjectDetail,
@@ -99,6 +99,17 @@ function readableDocument(
   return Boolean(document?.raw_text.trim());
 }
 
+async function hydratePdfFileForLayout(
+  projectId: string,
+  document: ProjectDocumentDetail,
+) {
+  if (document.file_format !== "pdf" || document.file_base64) {
+    return document;
+  }
+
+  return getDocumentDetail(projectId, document.id);
+}
+
 function assertWorkflowKind(
   value: unknown,
 ): asserts value is ProjectWorkflowInput {
@@ -122,7 +133,7 @@ export async function runCustomerAnalysisWorkflow(
 ) {
   handlers.setProgress("Laster dokumentgrunnlag ...");
   const [projectDocuments, serviceCandidates] = await Promise.all([
-    listProjectDocuments(input.projectId),
+    listProjectDocumentsForAnalysis(input.projectId),
     listProjectServiceDescriptions(input.projectId),
   ]);
   const { projectDocuments: analysisDocuments } =
@@ -198,27 +209,43 @@ export async function runSolutionEvaluationWorkflow(
   handlers.setProgress("Laster kundedokument, analyse og støttedokumenter ...");
   const [
     projectDocuments,
-    selectedSolutionDocument,
     customerAnalysis,
     generatedArtifacts,
   ] = await Promise.all([
-    listProjectDocuments(input.projectId),
-    input.solutionDocumentId
-      ? getDocumentDetail(input.projectId, input.solutionDocumentId)
-      : Promise.resolve(null),
+    listProjectDocumentsForAnalysis(input.projectId),
     getCustomerAnalysis(input.projectId),
     listGeneratedArtifacts(input.projectId),
   ]);
   const { projectDocuments: evaluationDocuments } =
     splitServiceDescriptionDetails(projectDocuments);
+  const selectedSolutionDocument = input.solutionDocumentId
+    ? evaluationDocuments.find(
+        (document) => document.id === input.solutionDocumentId,
+      ) ?? null
+    : null;
+  if (input.solutionDocumentId && !selectedSolutionDocument) {
+    throw new Error("Fant ikke dokumentet som skal vurderes som Bilag 2 / arkitektløsning.");
+  }
   const selectedDocuments = selectProjectDocuments(evaluationDocuments);
-  const customerDocument =
-    selectedDocuments.customerDocument?.id === input.solutionDocumentId
-      ? evaluationDocuments.find(
-          (document) => document.id !== input.solutionDocumentId,
-        ) ?? null
-      : selectedDocuments.customerDocument;
-  const solutionDocument =
+  if (selectedSolutionDocument?.role === "primary_customer_document") {
+    throw new Error("Kundedokumentet kan ikke vurderes som Bilag 2 / arkitektløsning.");
+  }
+  let customerDocument = selectedDocuments.customerDocument;
+  if (customerDocument?.id === input.solutionDocumentId) {
+    customerDocument =
+      evaluationDocuments.find(
+        (document) =>
+          document.id !== input.solutionDocumentId &&
+          document.role === "primary_customer_document",
+      ) ??
+      evaluationDocuments.find(
+        (document) =>
+          document.id !== input.solutionDocumentId &&
+          document.role !== "primary_solution_document",
+      ) ??
+      null;
+  }
+  let solutionDocument =
     selectedSolutionDocument ?? selectedDocuments.solutionDocument ?? null;
   const supportingDocuments = evaluationDocuments.filter(
     (document) =>
@@ -227,7 +254,7 @@ export async function runSolutionEvaluationWorkflow(
   handlers.onPhase?.("dokumenthenting");
 
   if (!customerDocument) {
-    throw new Error("Last opp minst ett dokument først.");
+    throw new Error("Last opp eller merk et primært kundedokument først.");
   }
 
   if (!customerAnalysis) {
@@ -295,6 +322,11 @@ export async function runSolutionEvaluationWorkflow(
     };
   }
 
+  solutionDocument = await hydratePdfFileForLayout(
+    input.projectId,
+    solutionDocument,
+  );
+
   handlers.setProgress(
     "Sammenligner systemløsning og importert arkitektløsning ...",
   );
@@ -307,6 +339,7 @@ export async function runSolutionEvaluationWorkflow(
     systemSolutionArtifact: getLatestSolutionDraft(generatedArtifacts),
     model: input.model,
     documentLedgerContext: evaluationLedgerContext,
+    onProgress: handlers.setProgress,
   });
   handlers.onPhase?.("ai_vurdering");
 
@@ -332,7 +365,7 @@ export async function runHighLevelDesignWorkflow(
 ) {
   handlers.setProgress("Laster kundedokument, analyse og støttedokumenter ...");
   const [documents, customerAnalysis] = await Promise.all([
-    listProjectDocuments(input.projectId),
+    listProjectDocumentsForAnalysis(input.projectId),
     getCustomerAnalysis(input.projectId),
   ]);
   const { projectDocuments } = splitServiceDescriptionDetails(documents);
@@ -479,7 +512,7 @@ export async function runPerfectSystemSolutionWorkflow(
   handlers.setProgress("Laster dokumentgrunnlag for ny vurdering ...");
   const [customerAnalysis, documents] = await Promise.all([
     getCustomerAnalysis(input.projectId),
-    listProjectDocuments(input.projectId),
+    listProjectDocumentsForAnalysis(input.projectId),
   ]);
   const { projectDocuments } = splitServiceDescriptionDetails(documents);
   const { customerDocument, solutionDocument, supportingDocuments } =
@@ -493,11 +526,16 @@ export async function runPerfectSystemSolutionWorkflow(
     };
   }
 
+  const hydratedSolutionDocument = await hydratePdfFileForLayout(
+    input.projectId,
+    solutionDocument,
+  );
+
   handlers.setProgress("Kjører ny vurdering av forbedret systemløsning ...");
   const improvedEvaluation = await evaluateSolutionDocument({
     projectName: project.name,
     customerDocument,
-    solutionDocument,
+    solutionDocument: hydratedSolutionDocument,
     supportingDocuments,
     customerAnalysis,
     systemSolutionArtifact: artifact,
@@ -507,7 +545,7 @@ export async function runPerfectSystemSolutionWorkflow(
 
   await saveSolutionEvaluation(input.projectId, {
     customerDocumentId: customerDocument.id,
-    solutionDocumentId: solutionDocument.id,
+    solutionDocumentId: hydratedSolutionDocument.id,
     result: improvedEvaluation,
   });
   handlers.onPhase?.("vurderingslagring");

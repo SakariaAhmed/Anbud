@@ -282,11 +282,11 @@ export function buildDocumentLedgerContext(input: {
     `Tillit: ${ledger.confidence} (${ledger.confidenceScore})`,
     `Krav: ${ledger.requirements.length}`,
     `Seksjoner: ${ledger.sections
-      .slice(0, 18)
+      .slice(0, 12)
       .map((section) => `${section.ref} ${section.title}`)
       .join(" | ")}`,
     `Kravutdrag: ${ledger.requirements
-      .slice(0, 35)
+      .slice(0, 20)
       .map((requirement) => `${requirement.ref}: ${requirement.text}`)
       .join(" | ")}`,
   ]);

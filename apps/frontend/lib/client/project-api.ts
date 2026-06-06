@@ -30,6 +30,7 @@ type ProjectWorkspaceTabName =
 
 const PROJECT_READ_CACHE_TTL_MS = 30_000;
 const pendingProjectReads = new Map<string, Promise<unknown>>();
+const projectReadVersions = new Map<string, number>();
 
 export type OpenAIModelSummary = {
   id: string;
@@ -39,6 +40,21 @@ export type OpenAIModelSummary = {
 
 function projectReadCacheKey(projectId: string, resource: string) {
   return `project-read:${projectId}:${resource}`;
+}
+
+function projectIdFromReadCacheKey(key: string) {
+  const prefix = "project-read:";
+  if (!key.startsWith(prefix)) {
+    return "";
+  }
+
+  const rest = key.slice(prefix.length);
+  const separatorIndex = rest.indexOf(":");
+  return separatorIndex >= 0 ? rest.slice(0, separatorIndex) : "";
+}
+
+function projectReadVersion(projectId: string) {
+  return projectReadVersions.get(projectId) ?? 0;
 }
 
 function cachedProjectRead<T>(
@@ -56,9 +72,13 @@ function cachedProjectRead<T>(
     return pending;
   }
 
+  const projectId = projectIdFromReadCacheKey(key);
+  const version = projectId ? projectReadVersion(projectId) : 0;
   const request = fetcher()
     .then((value) => {
-      setClientCache(key, { value }, ttlMs);
+      if (!projectId || projectReadVersion(projectId) === version) {
+        setClientCache(key, { value }, ttlMs);
+      }
       return value;
     })
     .finally(() => {
@@ -70,6 +90,7 @@ function cachedProjectRead<T>(
 }
 
 export function invalidateProjectReadCache(projectId: string) {
+  projectReadVersions.set(projectId, projectReadVersion(projectId) + 1);
   clearClientCache(`project-read:${projectId}:`);
   for (const key of pendingProjectReads.keys()) {
     if (key.startsWith(`project-read:${projectId}:`)) {
