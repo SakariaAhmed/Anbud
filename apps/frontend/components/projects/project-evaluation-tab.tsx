@@ -1,12 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+} from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CheckSquare,
   FileText,
-  RefreshCw,
+  ListChecks,
+  MapPin,
   Scale,
   ShieldCheck,
   Sparkles,
+  UploadCloud,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -19,6 +31,36 @@ import {
   GenerationProgress,
 } from "@/components/projects/project-workspace-shared";
 import type { ProjectDocument, SolutionEvaluationResult } from "@/lib/types";
+
+type SolutionDocumentFinding =
+  SolutionEvaluationResult["document_findings"][number];
+type RequirementCoverage = NonNullable<
+  SolutionEvaluationResult["requirement_coverage"]
+>;
+type RequirementCoverageItem = RequirementCoverage["items"][number];
+
+function cleanEvaluationTypography(value: string) {
+  let text = value
+    .replace(/\b(Tabell\s+ID\s+\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi, "$1-$2")
+    .replace(/\bID\s+(\d{1,3})\s*[-.]\s*(\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi, "ID $1-$2-$3")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  for (let index = 0; index < 4; index += 1) {
+    const next = text
+      .replace(/\b(\p{Lu}[\p{Ll}]{2,})\s+(\p{Ll})\s+(\p{Ll}{2,})\b/gu, "$1$2$3")
+      .replace(/\b([A-ZÆØÅ]{2,})\s+([A-ZÆØÅ])\s+([A-ZÆØÅ]{2,})\b/g, "$1$2$3")
+      .replace(/\b(\p{Lu}[\p{Ll}]{6,})\s+(ing|ering|nning|erhet|dtering)\b/gu, "$1$2");
+
+    if (next === text) {
+      break;
+    }
+
+    text = next;
+  }
+
+  return text;
+}
 
 function getArchitectureComparison(evaluation: SolutionEvaluationResult) {
   return (
@@ -185,7 +227,19 @@ function FindingPanel({
 }
 
 function buildArchitectureActions(evaluation: SolutionEvaluationResult) {
-  const sourceItems = evaluation.rewrite_suggestions.length
+  const referencedFindings = evaluation.document_findings
+    .filter((finding) => finding.assessment !== "Godt")
+    .map((finding) => ({
+      location: finding.reference || "Arkitektløsningen generelt",
+      action:
+        finding.recommendation ||
+        "Rett svaret slik at det kobles tydeligere til kundens behov, krav og evalueringssignaler.",
+      reason: finding.finding || finding.evidence,
+    }));
+
+  const sourceItems = referencedFindings.length
+    ? referencedFindings
+    : evaluation.rewrite_suggestions.length
     ? evaluation.rewrite_suggestions.map((suggestion, index) => ({
         location: suggestion.target || "Arkitektløsningen generelt",
         action: suggestion.suggestion,
@@ -207,6 +261,437 @@ function buildArchitectureActions(evaluation: SolutionEvaluationResult) {
       }));
 
   return sourceItems.slice(0, 4);
+}
+
+function findingTone(finding: SolutionDocumentFinding) {
+  switch (finding.assessment) {
+    case "Godt":
+      return {
+        shell: "border-emerald-200 bg-emerald-50/70",
+        badge: "border-emerald-200 bg-emerald-100 text-emerald-800",
+        icon: CheckCircle2,
+      };
+    case "Dårlig":
+      return {
+        shell: "border-rose-200 bg-rose-50/70",
+        badge: "border-rose-200 bg-rose-100 text-rose-800",
+        icon: XCircle,
+      };
+    case "Mangler":
+      return {
+        shell: "border-amber-200 bg-amber-50/70",
+        badge: "border-amber-200 bg-amber-100 text-amber-800",
+        icon: AlertTriangle,
+      };
+    default:
+      return {
+        shell: "border-slate-200 bg-slate-50/80",
+        badge: "border-slate-200 bg-slate-100 text-slate-700",
+        icon: MapPin,
+      };
+  }
+}
+
+function assessmentTone(assessment: RequirementCoverageItem["assessment"]) {
+  switch (assessment) {
+    case "Godt":
+      return {
+        shell: "border-emerald-200 bg-emerald-50/70",
+        badge: "border-emerald-200 bg-emerald-100 text-emerald-800",
+        icon: CheckCircle2,
+      };
+    case "Dårlig":
+      return {
+        shell: "border-rose-200 bg-rose-50/70",
+        badge: "border-rose-200 bg-rose-100 text-rose-800",
+        icon: XCircle,
+      };
+    case "Mangler":
+      return {
+        shell: "border-amber-200 bg-amber-50/70",
+        badge: "border-amber-200 bg-amber-100 text-amber-800",
+        icon: AlertTriangle,
+      };
+    default:
+      return {
+        shell: "border-slate-200 bg-slate-50/80",
+        badge: "border-slate-200 bg-slate-100 text-slate-700",
+        icon: MapPin,
+      };
+  }
+}
+
+function RequirementCoveragePanel({
+  coverage,
+}: {
+  coverage?: RequirementCoverage | null;
+}) {
+  if (!coverage?.items.length) {
+    return null;
+  }
+
+  const total = Math.max(
+    coverage.total_requirements || 0,
+    coverage.items.length,
+  );
+  const assessed = Math.min(total, coverage.assessed_requirements || coverage.items.length);
+  const assessedPercent = total ? Math.round((assessed / total) * 100) : 0;
+  const stats = [
+    {
+      label: "Godt",
+      value: coverage.good,
+      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    },
+    {
+      label: "Dårlig",
+      value: coverage.weak,
+      className: "border-rose-200 bg-rose-50 text-rose-800",
+    },
+    {
+      label: "Mangler",
+      value: coverage.missing,
+      className: "border-amber-200 bg-amber-50 text-amber-800",
+    },
+    {
+      label: "Uklart",
+      value: coverage.unclear,
+      className: "border-slate-200 bg-slate-50 text-slate-700",
+    },
+  ];
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
+              <ListChecks className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-slate-500">
+                Kravdekning
+              </p>
+              <h3 className="mt-1 text-lg font-black text-slate-950">
+                Krav vurdert mot arkitektens svar
+              </h3>
+            </div>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600">
+            {assessed} av {total} krav
+          </span>
+        </div>
+
+        <div className="mt-4">
+          <div className="h-2 overflow-hidden rounded-full bg-white shadow-inner">
+            <div
+              className="h-full rounded-full bg-slate-950"
+              style={{ width: `${assessedPercent}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs font-semibold text-slate-500">
+            Dekningssikkerhet: {coverage.confidence}
+          </p>
+        </div>
+      </div>
+
+      <div className="px-5 py-5">
+        {coverage.coverage_summary ? (
+          <MarkdownViewer
+            content={coverage.coverage_summary}
+            className="analysis-prose mb-4 max-w-none text-sm leading-6 text-slate-700"
+          />
+        ) : null}
+
+        <div className="mb-4 grid gap-2 sm:grid-cols-4">
+          {stats.map((stat) => (
+            <div
+              key={stat.label}
+              className={`rounded-lg border px-3 py-3 ${stat.className}`}
+            >
+              <p className="text-[0.68rem] font-black uppercase tracking-[0.14em]">
+                {stat.label}
+              </p>
+              <p className="mt-1 text-2xl font-black tabular-nums">
+                {stat.value}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
+          {coverage.items.map((item, index) => {
+            const tone = assessmentTone(item.assessment);
+            const Icon = tone.icon;
+
+            return (
+              <article
+                key={`${item.reference}-${index}`}
+                className={`rounded-xl border px-4 py-4 ${tone.shell}`}
+              >
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-800 shadow-sm">
+                      <Icon className="size-4.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tone.badge}`}>
+                          {item.assessment}
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                          {item.reference
+                            ? cleanEvaluationTypography(item.reference)
+                            : "Kravreferanse mangler"}
+                        </span>
+                      </div>
+                      <MarkdownViewer
+                        content={item.requirement || "Kravtekst mangler."}
+                        className="analysis-prose mt-3 max-w-none text-sm font-semibold leading-6 text-slate-900"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-3 inline-flex max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+                  <MapPin className="size-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {item.source_reference
+                      ? cleanEvaluationTypography(item.source_reference)
+                      : "Kilde mangler"}
+                  </span>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
+                    <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-slate-500">
+                      Vurdering
+                    </p>
+                    <MarkdownViewer
+                      content={item.rationale || "Ikke angitt."}
+                      className="analysis-prose text-sm leading-6 text-slate-700"
+                    />
+                  </div>
+                  <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
+                    <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-slate-500">
+                      Bevis
+                    </p>
+                    <MarkdownViewer
+                      content={item.evidence || "Ikke angitt."}
+                      className="analysis-prose text-sm leading-6 text-slate-700"
+                    />
+                  </div>
+                  <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
+                    <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-blue-700">
+                      Retting
+                    </p>
+                    <MarkdownViewer
+                      content={item.recommendation || "Ikke angitt."}
+                      className="analysis-prose text-sm leading-6 text-slate-800"
+                    />
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DocumentFindingsPanel({
+  findings,
+}: {
+  findings: SolutionDocumentFinding[];
+}) {
+  if (!findings.length) {
+    return null;
+  }
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-slate-500">
+              Bilag 2-referanser
+            </p>
+            <h3 className="mt-1 text-lg font-black text-slate-950">
+              Funn i arkitektens svar
+            </h3>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600">
+            {findings.length} funn
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-3 px-5 py-5">
+        {findings.map((finding, index) => {
+          const tone = findingTone(finding);
+          const Icon = tone.icon;
+
+          return (
+            <article
+              key={`${finding.reference}-${finding.finding}-${index}`}
+              className={`rounded-xl border px-4 py-4 ${tone.shell}`}
+            >
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-800 shadow-sm">
+                    <Icon className="size-4.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tone.badge}`}>
+                        {finding.assessment}
+                      </span>
+                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                        <MapPin className="size-3.5 shrink-0" />
+                        <span className="min-w-0 truncate">
+                          {finding.reference
+                            ? cleanEvaluationTypography(finding.reference)
+                            : "Referanse mangler"}
+                        </span>
+                      </span>
+                    </div>
+                    <MarkdownViewer
+                      content={finding.finding || "Ingen vurderingstekst."}
+                      className="analysis-prose mt-3 max-w-none text-sm font-medium leading-6 text-slate-800"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
+                  <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-slate-500">
+                    Bevis i Bilag 2
+                  </p>
+                  <MarkdownViewer
+                    content={finding.evidence || "Ikke angitt."}
+                    className="analysis-prose text-sm leading-6 text-slate-700"
+                  />
+                </div>
+                <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
+                  <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-blue-700">
+                    Anbefalt retting
+                  </p>
+                  <MarkdownViewer
+                    content={finding.recommendation || "Ikke angitt."}
+                    className="analysis-prose text-sm leading-6 text-slate-800"
+                  />
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function compactFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "Ukjent størrelse";
+  }
+
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  }
+
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function ArchitectureDocumentDropzone({
+  busy,
+  disabled,
+  onFile,
+}: {
+  busy: boolean;
+  disabled: boolean;
+  onFile: (file: File) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  function handleFiles(files: FileList | null) {
+    const nextFile = files?.[0];
+    if (!nextFile || disabled) return;
+    onFile(nextFile);
+  }
+
+  function onDrop(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setDragActive(false);
+    handleFiles(event.dataTransfer.files);
+  }
+
+  function onInputChange(event: ChangeEvent<HTMLInputElement>) {
+    handleFiles(event.target.files);
+    event.target.value = "";
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => inputRef.current?.click()}
+      onDragOver={(event) => {
+        event.preventDefault();
+        if (!disabled) setDragActive(true);
+      }}
+      onDragLeave={() => setDragActive(false)}
+      onDrop={onDrop}
+      disabled={disabled}
+      className={`group relative flex min-h-28 w-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed px-4 py-4 text-center transition-colors ${
+        dragActive
+          ? "border-blue-400 bg-blue-50"
+          : "border-slate-300 bg-slate-50/70 hover:border-blue-300 hover:bg-blue-50/35"
+      } disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400`}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf,.docx,.txt,.md,.xlsx,.xls"
+        className="hidden"
+        onChange={onInputChange}
+        disabled={disabled}
+      />
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white text-blue-800 shadow-sm transition-colors group-hover:text-blue-700">
+        {busy ? <Spinner className="size-5" /> : <UploadCloud className="size-5" />}
+      </span>
+      <p className="mt-3 text-sm font-black text-slate-950">
+        {busy ? "Laster inn dokumentet ..." : "Dra og slipp dokumentet her"}
+      </p>
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        eller klikk for å velge PDF, DOCX, Excel, TXT eller MD.
+      </p>
+    </button>
+  );
+}
+
+function EvaluationSourceMeta({
+  document,
+}: {
+  document: ProjectDocument | null;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[0.72rem] text-slate-500">
+      <FileText className="size-3 shrink-0 text-teal-700" />
+      <span className="font-black uppercase tracking-[0.11em] text-slate-500">
+        Vurdering gjort fra
+      </span>
+      <span className="min-w-0 truncate font-semibold text-slate-700">
+        {document?.title ?? "Ukjent dokumentgrunnlag"}
+      </span>
+      {document ? (
+        <span className="shrink-0 text-slate-500">
+          {document.file_format.toUpperCase()} ·{" "}
+          {compactFileSize(document.file_size_bytes)}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function ArchitectureCallToAction({
@@ -252,7 +737,7 @@ function ArchitectureCallToAction({
                   Hvor i arkitektløsningen
                 </p>
                 <p className="mt-1 text-sm font-bold leading-6 text-slate-950">
-                  {item.location}
+                  {cleanEvaluationTypography(item.location)}
                 </p>
               </div>
             </div>
@@ -291,6 +776,8 @@ export function ProjectEvaluationTab({
   busyMessage,
   busyProgress,
   onGenerate,
+  importBusy,
+  onImportArchitectureDocument,
 }: {
   documents: ProjectDocument[];
   solutionEvaluation: SolutionEvaluationResult | null;
@@ -299,23 +786,42 @@ export function ProjectEvaluationTab({
   busyMessage: string;
   busyProgress: number;
   onGenerate: (documentId: string) => void;
+  importBusy: boolean;
+  onImportArchitectureDocument: (file: File) => Promise<ProjectDocument | null>;
 }) {
+  const candidateDocuments = useMemo(
+    () =>
+      documents.filter(
+        (document) => document.role !== "primary_customer_document",
+      ),
+    [documents],
+  );
   const [selectedDocumentId, setSelectedDocumentId] = useState(
-    documents[0]?.id ?? "",
+    candidateDocuments[0]?.id ?? "",
+  );
+  const selectedDocument = candidateDocuments.find(
+    (document) => document.id === selectedDocumentId,
   );
   const evaluatedDocument = solutionEvaluation?.solution_document_id
     ? (documents.find(
         (document) => document.id === solutionEvaluation.solution_document_id,
-      ) ?? documents[0] ?? null)
-    : (documents.find((document) => document.id === selectedDocumentId) ??
-      documents[0] ??
+      ) ?? candidateDocuments[0] ?? null)
+    : (selectedDocument ??
+      candidateDocuments[0] ??
       null);
-  const actionBusy = busy;
+  const actionBusy = busy || importBusy;
+
+  async function importAndEvaluate(file: File) {
+    const document = await onImportArchitectureDocument(file);
+    if (!document) return;
+    setSelectedDocumentId(document.id);
+    onGenerate(document.id);
+  }
 
   useEffect(() => {
     if (
       solutionEvaluation?.solution_document_id &&
-      documents.some(
+      candidateDocuments.some(
         (document) => document.id === solutionEvaluation.solution_document_id,
       )
     ) {
@@ -323,116 +829,76 @@ export function ProjectEvaluationTab({
       return;
     }
 
-    const selectedDocumentExists = documents.some(
+    const selectedDocumentExists = candidateDocuments.some(
       (document) => document.id === selectedDocumentId,
     );
-    if (!selectedDocumentExists && documents[0]) {
-      setSelectedDocumentId(documents[0].id);
-    } else if (!documents.length && selectedDocumentId) {
+    if (!selectedDocumentExists && candidateDocuments[0]) {
+      setSelectedDocumentId(candidateDocuments[0].id);
+    } else if (!candidateDocuments.length && selectedDocumentId) {
       setSelectedDocumentId("");
     }
-  }, [documents, selectedDocumentId, solutionEvaluation?.solution_document_id]);
+  }, [candidateDocuments, selectedDocumentId, solutionEvaluation?.solution_document_id]);
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <div className="mb-6 flex flex-wrap justify-end gap-2">
-        <Button
-          onClick={() => onGenerate(selectedDocumentId)}
-          disabled={actionBusy || !selectedDocumentId}
-          size="lg"
-        >
-          {busy ? (
-            <Spinner className="size-4" />
-          ) : (
-            <RefreshCw data-icon="inline-start" />
-          )}
-          Generer sammenligning
-        </Button>
-      </div>
-
-      <section className="mb-6 overflow-hidden rounded-xl border border-slate-200/80 bg-white px-5 py-5 shadow-sm">
-        {solutionEvaluation ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-              Vurdering gjort fra
-            </p>
-            <div className="mt-3 flex min-w-0 items-start gap-3">
-              <FileText className="mt-0.5 size-4 shrink-0 text-teal-700" />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-950">
-                  {evaluatedDocument?.title ?? "Ukjent dokumentgrunnlag"}
-                </p>
-                {evaluatedDocument ? (
-                  <p className="mt-1 text-xs text-slate-500">
-                    {evaluatedDocument.file_format.toUpperCase()} ·{" "}
-                    {Math.max(
-                      1,
-                      Math.round(evaluatedDocument.file_size_bytes / 1024),
-                    )}{" "}
-                    KB
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Dokumentet finnes ikke lenger i dokumentbanken.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-slate-200/80 bg-white/78 px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-black text-foreground">
-                  Velg fra opplastede dokumenter
-                </h4>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Velg hvilket dokument som skal vurderes som arkitektløsning.
-                </p>
-              </div>
-            </div>
-
-            {documents.length ? (
-              <div className="space-y-2">
+      <section className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+        <div className="space-y-3">
+          <div>
+            <label className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-slate-500">
+              Dokument som skal vurderes
+            </label>
+            {candidateDocuments.length ? (
+              <>
                 <select
                   value={selectedDocumentId}
                   onChange={(event) => setSelectedDocumentId(event.target.value)}
                   disabled={actionBusy}
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition-colors focus:border-slate-950 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition-colors focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                 >
-                  {documents.map((document) => (
+                  {candidateDocuments.map((document) => (
                     <option key={document.id} value={document.id}>
                       {document.title}
                     </option>
                   ))}
                 </select>
-                {documents.find((document) => document.id === selectedDocumentId) ? (
-                  <p className="text-xs text-muted-foreground">
-                    {
-                      documents.find(
-                        (document) => document.id === selectedDocumentId,
-                      )?.file_format.toUpperCase()
-                    }{" "}
-                    ·{" "}
-                    {Math.max(
-                      1,
-                      Math.round(
-                        (documents.find(
-                          (document) => document.id === selectedDocumentId,
-                        )?.file_size_bytes ?? 0) / 1024,
-                      ),
-                    )}{" "}
-                    KB
-                  </p>
-                ) : null}
-              </div>
+                <div className="mt-2">
+                  <EvaluationSourceMeta document={evaluatedDocument} />
+                </div>
+              </>
             ) : (
-              <div className="rounded-lg border border-dashed border-border bg-white px-4 py-8 text-center text-sm text-muted-foreground">
-                Ingen aktuelle dokumenter er lastet opp ennå.
+              <div className="mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-500">
+                Ingen Bilag 2- eller støttedokumenter er lastet opp ennå.
               </div>
             )}
           </div>
-        )}
+
+          <div>
+            <h4 className="text-sm font-semibold text-slate-700">
+              Last inn dokument
+            </h4>
+            <div className="mt-2">
+              <ArchitectureDocumentDropzone
+                busy={importBusy}
+                disabled={actionBusy}
+                onFile={(file) => void importAndEvaluate(file)}
+              />
+            </div>
+          </div>
+
+          <Button
+            onClick={() => onGenerate(selectedDocumentId)}
+            disabled={actionBusy || !selectedDocumentId}
+            size="lg"
+            className="h-10 w-full justify-center rounded-lg bg-blue-900 text-sm font-semibold text-white hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
+          >
+            {busy || importBusy ? (
+              <Spinner className="size-4" />
+            ) : (
+              <CheckSquare data-icon="inline-start" />
+            )}
+            Generer sammenligning
+          </Button>
+        </div>
       </section>
 
       {busy && busyMessage ? (
@@ -479,6 +945,14 @@ export function ProjectEvaluationTab({
               </section>
             );
           })()}
+
+          <RequirementCoveragePanel
+            coverage={solutionEvaluation.requirement_coverage}
+          />
+
+          <DocumentFindingsPanel
+            findings={solutionEvaluation.document_findings}
+          />
 
           <div className="grid gap-5 lg:grid-cols-2">
             <FindingPanel

@@ -6,6 +6,7 @@ export {
   getPrimaryDocument,
   listProjectDocumentSummaries,
   listProjectDocuments,
+  listProjectDocumentsForAnalysis,
   listSupportingDocuments,
   markDocumentAsPrimarySolution,
   saveDocument,

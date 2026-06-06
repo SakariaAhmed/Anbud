@@ -10,30 +10,17 @@ function deriveKey(secret: string) {
   return createHash("sha256").update(secret).digest();
 }
 
-function getEncryptionSecrets() {
-  const candidates = [process.env.APP_ENCRYPTION_KEY, process.env.SUPABASE_SERVICE_ROLE_KEY]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .map((value) => value.trim());
+function getEncryptionSecret() {
+  const secret = process.env.APP_ENCRYPTION_KEY?.trim();
+  if (!secret) {
+    throw new Error("Missing APP_ENCRYPTION_KEY.");
+  }
 
-  return Array.from(new Set(candidates));
+  return secret;
 }
 
 function getEncryptionKey() {
-  const [primary] = getEncryptionSecrets();
-  if (!primary) {
-    throw new Error("Missing encryption key. Set APP_ENCRYPTION_KEY or SUPABASE_SERVICE_ROLE_KEY.");
-  }
-
-  return deriveKey(primary);
-}
-
-function getDecryptionKeys() {
-  const secrets = getEncryptionSecrets();
-  if (!secrets.length) {
-    throw new Error("Missing encryption key. Set APP_ENCRYPTION_KEY or SUPABASE_SERVICE_ROLE_KEY.");
-  }
-
-  return secrets.map((secret) => deriveKey(secret));
+  return deriveKey(getEncryptionSecret());
 }
 
 export function encryptString(value: string) {
@@ -83,16 +70,14 @@ export function decryptString(value: string) {
   for (const { iv, tag } of payloadVariants) {
     const authTagLength = SUPPORTED_AUTH_TAG_LENGTHS.has(tag.length) ? tag.length : AUTH_TAG_LENGTH;
 
-    for (const key of getDecryptionKeys()) {
-      try {
-        const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength });
-        decipher.setAuthTag(tag);
+    try {
+      const decipher = createDecipheriv("aes-256-gcm", getEncryptionKey(), iv, { authTagLength });
+      decipher.setAuthTag(tag);
 
-        const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-        return decrypted.toString("utf8");
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error("Kunne ikke dekryptere payload.");
-      }
+      const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+      return decrypted.toString("utf8");
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Kunne ikke dekryptere payload.");
     }
   }
 

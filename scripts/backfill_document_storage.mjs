@@ -45,10 +45,13 @@ function deriveKey(secret) {
   return createHash("sha256").update(secret).digest();
 }
 
-function getDecryptionKeys() {
-  return [process.env.APP_ENCRYPTION_KEY, process.env.SUPABASE_SERVICE_ROLE_KEY]
-    .filter((value) => value?.trim())
-    .map((value) => deriveKey(value.trim()));
+function getEncryptionKey() {
+  const secret = process.env.APP_ENCRYPTION_KEY?.trim();
+  if (!secret) {
+    throw new Error("APP_ENCRYPTION_KEY is required.");
+  }
+
+  return deriveKey(secret);
 }
 
 function decryptString(value) {
@@ -76,19 +79,17 @@ function decryptString(value) {
     const authTagLength = SUPPORTED_AUTH_TAG_LENGTHS.has(tag.length)
       ? tag.length
       : AUTH_TAG_LENGTH;
-    for (const key of getDecryptionKeys()) {
-      try {
-        const decipher = createDecipheriv("aes-256-gcm", key, iv, {
-          authTagLength,
-        });
-        decipher.setAuthTag(tag);
-        return Buffer.concat([
-          decipher.update(encrypted),
-          decipher.final(),
-        ]).toString("utf8");
-      } catch (error) {
-        lastError = error;
-      }
+    try {
+      const decipher = createDecipheriv("aes-256-gcm", getEncryptionKey(), iv, {
+        authTagLength,
+      });
+      decipher.setAuthTag(tag);
+      return Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final(),
+      ]).toString("utf8");
+    } catch (error) {
+      lastError = error;
     }
   }
 

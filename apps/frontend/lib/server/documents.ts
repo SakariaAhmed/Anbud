@@ -32,6 +32,11 @@ let mammothPromise: Promise<{
 }> | null = null;
 let xlsxPromise: Promise<typeof import("@e965/xlsx")> | null = null;
 
+const MAX_SPREADSHEET_SHEETS = 12;
+const MAX_SPREADSHEET_ROWS_PER_SHEET = 2000;
+const MAX_SPREADSHEET_COLUMNS_PER_SHEET = 80;
+const MAX_SPREADSHEET_CELLS = 80_000;
+
 async function getPdfParse() {
   if (!pdfParsePromise) {
     pdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then(
@@ -505,9 +510,16 @@ function extractSheetRows(
   workbook: WorkBook,
   role?: ProjectDocumentRole,
 ) {
+  if (workbook.SheetNames.length > MAX_SPREADSHEET_SHEETS) {
+    throw new Error(
+      `Regnearket har for mange ark. Maks ${MAX_SPREADSHEET_SHEETS} ark kan importeres om gangen.`,
+    );
+  }
+
   const sourceMap: SourceMapEntry[] = [];
   const sheetTexts: string[] = [];
   const label = documentLabel(role);
+  let scannedCells = 0;
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
@@ -519,6 +531,16 @@ function extractSheetRows(
     if (!range) {
       continue;
     }
+    const rowCount = range.e.r - range.s.r + 1;
+    const columnCount = range.e.c - range.s.c + 1;
+    if (
+      rowCount > MAX_SPREADSHEET_ROWS_PER_SHEET ||
+      columnCount > MAX_SPREADSHEET_COLUMNS_PER_SHEET
+    ) {
+      throw new Error(
+        `Arket "${sheetName}" er for stort til direkte import. Maks ${MAX_SPREADSHEET_ROWS_PER_SHEET} rader og ${MAX_SPREADSHEET_COLUMNS_PER_SHEET} kolonner støttes per ark.`,
+      );
+    }
 
     const rows: string[] = [];
     let lastNonEmptyRow = 0;
@@ -527,6 +549,13 @@ function extractSheetRows(
       const cells: string[] = [];
 
       for (let colIndex = range.s.c; colIndex <= range.e.c; colIndex += 1) {
+        scannedCells += 1;
+        if (scannedCells > MAX_SPREADSHEET_CELLS) {
+          throw new Error(
+            `Regnearket er for stort til direkte import. Maks ${MAX_SPREADSHEET_CELLS} celler kan skannes om gangen.`,
+          );
+        }
+
         const address = xlsx.utils.encode_cell({ r: rowIndex, c: colIndex });
         const cell = sheet[address];
         const text = cellToText(cell?.w ?? cell?.v);

@@ -17,7 +17,7 @@ import { getCustomerAnalysis } from "@/lib/server/repositories/analyses";
 import { getProjectDetail } from "@/lib/server/repositories/projects";
 import { checkRateLimit } from "@/lib/server/observability";
 import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
-import { listProjectDocuments } from "@/lib/server/repositories/documents";
+import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
 import type {
   ChatDomainHint,
   ChatMessage,
@@ -298,7 +298,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     ] = await Promise.all([
       getProjectDetail(id),
       getCustomerAnalysis(id),
-      listProjectDocuments(id),
+      listProjectDocumentsForAnalysis(id),
       listGeneratedArtifacts(id),
       listChatMessages(id),
       listChatSessions(id),

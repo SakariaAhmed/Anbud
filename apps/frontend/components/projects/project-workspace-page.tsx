@@ -6,6 +6,7 @@ import {
   FormEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useTransition,
@@ -840,6 +841,13 @@ export function ProjectWorkspacePage({
     executiveSummaryLoaded,
     artifactsLoaded,
   });
+  const architectureDocumentCandidates = useMemo(
+    () =>
+      project.documents.filter(
+        (document) => document.role !== "primary_customer_document",
+      ),
+    [project.documents],
+  );
 
   useEffect(() => {
     const tabFromUrl = searchParams.get("tab");
@@ -1428,6 +1436,46 @@ export function ProjectWorkspacePage({
     return uploadedDocument as ProjectDocument | null;
   }
 
+  async function onUploadArchitectureDocument(file: File) {
+    let uploadedDocument: ProjectDocument | null = null;
+
+    await runAction("upload-architecture-document", async () => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append(
+        "title",
+        `Bilag 2 - arkitektens svar - ${file.name.replace(/\.[^.]+$/, "")}`,
+      );
+      formData.append("role", "primary_solution_document");
+      const payload = await uploadProjectDocument({
+        projectId: project.id,
+        formData,
+        fallbackMessage: "Kunne ikke laste opp Bilag 2.",
+      });
+      uploadedDocument = payload.document;
+      setProject((current) =>
+        normalizeProjectState(
+          patchProjectWithSnapshot(
+            {
+              ...current,
+              documents: dedupeDocuments([
+                payload.document!,
+                ...current.documents,
+              ]),
+            },
+            payload.project!,
+          ),
+          {
+            preserveArtifactCount: !artifactsLoaded,
+          },
+        ),
+      );
+      setArtifactsLoaded(true);
+    });
+
+    return uploadedDocument as ProjectDocument | null;
+  }
+
   async function onUpdateRequirementArtifact(
     artifact: GeneratedArtifact,
     value: { title: string; content_markdown: string },
@@ -1883,7 +1931,7 @@ export function ProjectWorkspacePage({
         setExecutiveSummaryLoaded(true);
         setNotice("Sammenligningen er generert og lagret i prosjektet.");
       },
-      ["Starter sammenligning av systemløsning og arkitektløsning ..."],
+      ["Starter vurdering av Bilag 2 og arkitektens svar ..."],
     );
   }
 
@@ -2436,13 +2484,15 @@ export function ProjectWorkspacePage({
                 <DeferredSectionLoader label="Laster vurdering ..." />
               ) : (
                 <ProjectEvaluationTab
-                  documents={project.documents}
+                  documents={architectureDocumentCandidates}
                   solutionEvaluation={solutionEvaluation}
-                  hasSolutionDocument={project.documents.length > 0}
+                  hasSolutionDocument={architectureDocumentCandidates.length > 0}
                   busy={busy === "solution-evaluation"}
                   busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
                   busyProgress={busyProgress}
                   onGenerate={onGenerateSolutionEvaluation}
+                  importBusy={busy === "upload-architecture-document"}
+                  onImportArchitectureDocument={onUploadArchitectureDocument}
                 />
               )
             ) : null}

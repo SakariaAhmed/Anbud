@@ -191,6 +191,11 @@ export function buildSolutionEvaluationPrompt() {
       "strong_critique skal være tydelig og konkret på hva som kan koste poeng, tillit eller gjennomføringsevne.",
       "pragmatic_reflections skal forklare de viktigste tradeoffene og hvorfor de betyr noe i et faktisk tilbud.",
       "strategy_improvement_advice skal gi forbedringsråd til strategien, ikke bare tekstlige omskrivinger.",
+      "document_findings skal peke tilbake til konkrete steder i det importerte Bilag 2 / arkitektdokumentet.",
+      "Hvert document_findings.reference skal være en eksakt referanse fra dokumentstrukturen eller nærmeste kildeindikasjon, for eksempel side, seksjon, tabell, rad, ark eller overskrift. Ikke bruk generiske referanser som 'dokumentet' eller 'løsningen'.",
+      "Hvert document_findings-punkt skal si om arkitektens svar er Godt, Dårlig, Mangler eller Uklart, og forklare hvorfor opp mot kundeanalysen og kundens dokumenterte behov.",
+      "Hvert document_findings.evidence skal være et kort tekstnært utdrag eller en presis parafrase fra det vurderte dokumentet.",
+      "Hvis referansen ikke kan bestemmes helt presist, bruk nærmeste tilgjengelige referanse fra strukturkartet og skriv dette tydelig i reference.",
       "Alle oppsummeringer og vurderinger skal være konkrete, relevante og handlingsrettede for et tilbudsteam.",
       "Punktlister skal normalt holdes på 3 til 5 punkter og aldri overstige 10 punkter.",
       "generic_sections skal peke på steder der teksten fremstår som standardtekst eller for lite kundetilpasset.",
@@ -199,14 +204,16 @@ export function buildSolutionEvaluationPrompt() {
       "likely_score_assessment skal være korte, direkte vurderinger.",
     ],
     outputContract: [
-      "Returner ett JSON-objekt med nøklene fit_to_customer_needs, strengths, weaknesses, generic_sections, missing_elements, risks_to_customer, trust_signals, likely_score_assessment, improvement_recommendations, value_assessment, rewrite_suggestions, architecture_comparison og executive_summary.",
+      "Returner ett JSON-objekt med nøklene fit_to_customer_needs, strengths, weaknesses, generic_sections, missing_elements, risks_to_customer, trust_signals, likely_score_assessment, improvement_recommendations, value_assessment, rewrite_suggestions, document_findings, architecture_comparison og executive_summary.",
       "likely_score_assessment skal være et objekt med quality, delivery_confidence, risk og competitiveness.",
       "value_assessment skal være objekter med title, description, value_categories og profit_share_percent.",
       "value_categories skal alltid være en array med nøyaktig ett element fra: Høyere produktivitet, Lavere kostnader, Redusert risiko, Bedre brukeropplevelse.",
       "rewrite_suggestions skal være objekter med target og suggestion.",
+      "document_findings skal være en liste med maks 6 objekter med reference, assessment, finding, evidence og recommendation.",
+      "document_findings.assessment skal være nøyaktig én av: Godt, Dårlig, Mangler, Uklart.",
       "architecture_comparison skal være et objekt med winner, architect_solution_score, system_solution_score, verdict, strong_critique, pragmatic_reflections og strategy_improvement_advice.",
     ],
-    exampleOutput: `{"fit_to_customer_needs":"<vurdering>","strengths":["<styrke>"],"weaknesses":["<svakhet>"],"generic_sections":["<for generisk del>"],"missing_elements":["<mangel>"],"risks_to_customer":["<risiko>"],"trust_signals":["<tillitssignal>"],"likely_score_assessment":{"quality":"<kort vurdering>","delivery_confidence":"<kort vurdering>","risk":"<kort vurdering>","competitiveness":"<kort vurdering>"},"improvement_recommendations":["<forbedring>"],"value_assessment":[{"title":"<verdi>","description":"<forklaring>","value_categories":["Redusert risiko"],"profit_share_percent":50}],"rewrite_suggestions":[{"target":"<del>","suggestion":"<råd>"}],"architecture_comparison":{"winner":"Uavgjort","architect_solution_score":50,"system_solution_score":50,"verdict":"<begrunnelse>","strong_critique":["<kritikk>"],"pragmatic_reflections":["<tradeoff>"],"strategy_improvement_advice":["<råd>"]},"executive_summary":"<konklusjon>"}`,
+    exampleOutput: `{"fit_to_customer_needs":"<vurdering>","strengths":["<styrke>"],"weaknesses":["<svakhet>"],"generic_sections":["<for generisk del>"],"missing_elements":["<mangel>"],"risks_to_customer":["<risiko>"],"trust_signals":["<tillitssignal>"],"likely_score_assessment":{"quality":"<kort vurdering>","delivery_confidence":"<kort vurdering>","risk":"<kort vurdering>","competitiveness":"<kort vurdering>"},"improvement_recommendations":["<forbedring>"],"value_assessment":[{"title":"<verdi>","description":"<forklaring>","value_categories":["Redusert risiko"],"profit_share_percent":50}],"rewrite_suggestions":[{"target":"<del>","suggestion":"<råd>"}],"document_findings":[{"reference":"<eksakt side/seksjon/tabell/rad>","assessment":"Dårlig","finding":"<hva som er svakt eller godt>","evidence":"<kort utdrag eller tekstnær parafrase>","recommendation":"<konkret retting>"}],"architecture_comparison":{"winner":"Uavgjort","architect_solution_score":50,"system_solution_score":50,"verdict":"<begrunnelse>","strong_critique":["<kritikk>"],"pragmatic_reflections":["<tradeoff>"],"strategy_improvement_advice":["<råd>"]},"executive_summary":"<konklusjon>"}`,
   });
 }
 
