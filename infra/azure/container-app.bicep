@@ -9,8 +9,14 @@ param appName string = 'anbud'
 @description('Container Apps managed environment name.')
 param environmentName string = '${appName}-env'
 
+@description('Environment label used for tags and application health metadata.')
+param environmentLabel string = 'prod'
+
 @description('Log Analytics workspace name.')
 param logAnalyticsWorkspaceName string = '${appName}-logs'
+
+@description('Criticality label used for Azure resource tags.')
+param workloadCriticality string = 'mission-critical'
 
 @description('Fully qualified container image, for example myregistry.azurecr.io/anbud:2026-05-21.')
 param image string
@@ -103,9 +109,17 @@ param minReplicas int = 1
 @minValue(1)
 param maxReplicas int = 3
 
+var missionCriticalTags = {
+  workload: appName
+  environment: environmentLabel
+  criticality: workloadCriticality
+  deploymentStamp: appName
+}
+
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
+  tags: missionCriticalTags
   properties: {
     sku: {
       name: 'PerGB2018'
@@ -117,6 +131,7 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
   location: location
+  tags: missionCriticalTags
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -131,6 +146,7 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
+  tags: missionCriticalTags
   properties: {
     managedEnvironmentId: environment.id
     configuration: {
@@ -202,6 +218,22 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               value: '0.0.0.0'
             }
             {
+              name: 'APP_ENVIRONMENT'
+              value: environmentLabel
+            }
+            {
+              name: 'APP_REGION'
+              value: location
+            }
+            {
+              name: 'APP_STAMP'
+              value: appName
+            }
+            {
+              name: 'APP_VERSION'
+              value: image
+            }
+            {
               name: 'SUPABASE_URL'
               secretRef: 'supabase-url'
             }
@@ -246,7 +278,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               type: 'Liveness'
               httpGet: {
-                path: '/api/health'
+                path: '/api/health/live'
                 port: 3000
               }
               initialDelaySeconds: 20
@@ -255,7 +287,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               type: 'Readiness'
               httpGet: {
-                path: '/api/health'
+                path: '/api/health/ready'
                 port: 3000
               }
               initialDelaySeconds: 10
@@ -289,6 +321,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
   name: '${appName}-project-job-worker'
   location: location
+  tags: missionCriticalTags
   properties: {
     environmentId: environment.id
     configuration: {
@@ -365,6 +398,22 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'HOSTNAME'
               value: '0.0.0.0'
+            }
+            {
+              name: 'APP_ENVIRONMENT'
+              value: environmentLabel
+            }
+            {
+              name: 'APP_REGION'
+              value: location
+            }
+            {
+              name: 'APP_STAMP'
+              value: '${appName}-project-job-worker'
+            }
+            {
+              name: 'APP_VERSION'
+              value: image
             }
             {
               name: 'SUPABASE_URL'

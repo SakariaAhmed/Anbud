@@ -62,8 +62,8 @@ function artifactHtml(artifact: GeneratedArtifact) {
   <meta charset="utf-8" />
   <title>${title}</title>
   <style>
-    body { color: #111827; font-family: Georgia, "Times New Roman", serif; line-height: 1.55; margin: 48px; }
-    h1, h2 { font-family: Arial, sans-serif; line-height: 1.2; margin: 28px 0 10px; }
+    body { color: #111827; font-family: "IBM Plex Serif", Georgia, "Times New Roman", serif; line-height: 1.62; margin: 48px; }
+    h1, h2 { font-family: "IBM Plex Sans", Arial, sans-serif; line-height: 1.22; margin: 28px 0 10px; }
     h1 { font-size: 26px; }
     h2 { border-bottom: 1px solid #d1d5db; font-size: 18px; padding-bottom: 6px; }
     p, li { font-size: 11.5pt; }

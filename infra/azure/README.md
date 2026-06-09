@@ -43,7 +43,9 @@ The deployment output includes the Container App FQDN and creates a scheduled Co
 Verify:
 
 ```bash
-curl "https://<fqdn>/api/health"
+curl "https://<fqdn>/api/health/live"
+curl "https://<fqdn>/api/health/ready"
+node apps/frontend/scripts/smoke_health.mjs "https://<fqdn>"
 az containerapp job show \
   --resource-group anbud-prod \
   --name anbud-project-job-worker \
@@ -52,7 +54,9 @@ az containerapp job show \
 
 ## Cutover checklist
 
-- Confirm `/api/health` returns `status: ok`.
+- Confirm `/api/health/live` returns `status: healthy`.
+- Confirm `/api/health/ready` and `/api/health` do not return `status: unhealthy`.
+- Confirm the health response contains the expected `runtime.region`, `runtime.stamp`, and image-backed `runtime.version`.
 - Log in with the existing app password.
 - Open an existing project from Supabase.
 - Upload and delete a test document.

@@ -96,7 +96,7 @@ import type {
   SolutionEvaluationResult,
 } from "@/lib/types";
 
-const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v2";
+const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v3";
 
 const ProjectEvaluationTab = dynamic(
   () =>
@@ -584,12 +584,12 @@ type WorkflowStepItem = WorkspaceNavItem & {
 };
 
 const WORKFLOW_SIDEBAR_STATUS_STYLES: Record<WorkflowStepStatus, string> = {
-  "Ikke startet": "border-slate-300 bg-slate-50 text-slate-700",
-  Venter: "border-amber-300 bg-amber-50 text-amber-900",
-  Klar: "border-sky-300 bg-sky-50 text-sky-900",
-  Generert: "border-teal-300 bg-teal-50 text-teal-950",
-  "Må sjekkes": "border-orange-300 bg-orange-50 text-orange-950",
-  Ferdig: "border-emerald-300 bg-emerald-50 text-emerald-950",
+  "Ikke startet": "border-slate-200 bg-slate-50 text-slate-600",
+  Venter: "border-amber-200 bg-amber-50 text-amber-800",
+  Klar: "border-sky-200 bg-sky-50 text-sky-700",
+  Generert: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  "Må sjekkes": "border-orange-200 bg-orange-50 text-orange-800",
+  Ferdig: "border-emerald-200 bg-emerald-50 text-emerald-800",
 };
 
 function isProjectWorkspaceTab(value: string | null | undefined): value is ProjectWorkspaceTab {
@@ -787,17 +787,6 @@ const PREFERRED_MODEL_ORDER = [
   "gpt-5.2",
   "gpt-5-mini",
 ];
-const MODEL_HELP_TEXT: Record<string, string> = {
-  "gpt-5-mini": "Rask standard for produksjon: lavere ventetid og kostnad for generering.",
-  "gpt-5.5": "Best balanse for komplekse tilbud: høy intelligens, god kvalitet, høyere kostnad.",
-  "gpt-5.5-pro": "Tyngste valg for kritiske leveranser: maksimal resonnering og kvalitet, tregest og dyrest.",
-  "gpt-5.4": "Sterkt standardvalg: høy kvalitet med bedre fart og kostnad enn pro-modellene.",
-  "gpt-5.4-mini": "Raskere og rimeligere: godt for utkast, omskriving og enklere analyser.",
-  "gpt-5.4-nano": "Raskest og billigst: best for korte oppgaver, lavere presisjon på kompleks strategi.",
-  "gpt-5.2": "Stabilt kvalitetsvalg: god intelligens og forutsigbarhet, men eldre enn 5.4/5.5.",
-  "gpt-5.2-pro": "Sterk eldre pro-modell: bra på krevende resonnement, ofte tregere og dyrere enn standard.",
-};
-
 function parseCustomerAnalysisSectionBusy(
   busy: string | null,
 ): CustomerAnalysisSection | null {
@@ -829,10 +818,6 @@ function pickDefaultModel(
   );
 }
 
-function modelHelpText(modelId: string) {
-  return MODEL_HELP_TEXT[modelId] ?? "Velg modell ut fra behov for kvalitet, fart og kostnad.";
-}
-
 function isSlowOrExpensiveModel(modelId: string) {
   return /\bpro\b|5\.5/i.test(modelId);
 }
@@ -844,8 +829,8 @@ export function ProjectWorkspacePage({
   initialData: ProjectDetail;
   initialTab?: ProjectWorkspaceTab;
 }) {
-  const DEFAULT_SIDEBAR_WIDTH = 255;
-  const MIN_SIDEBAR_WIDTH = 255;
+  const DEFAULT_SIDEBAR_WIDTH = 285;
+  const MIN_SIDEBAR_WIDTH = 270;
   const MAX_SIDEBAR_WIDTH = 440;
   const router = useRouter();
   const pathname = usePathname();
@@ -2318,35 +2303,35 @@ export function ProjectWorkspacePage({
             "--sidebar-width-icon": "3.5rem",
             "--sidebar-offset-top": "var(--app-header-height)",
             "--sidebar-offset-bottom": "0px",
-            "--sidebar": "rgb(239, 247, 255)",
-            "--sidebar-foreground": "rgb(38, 62, 92)",
+            "--sidebar": "rgb(255, 255, 255)",
+            "--sidebar-foreground": "rgb(71, 85, 105)",
             "--sidebar-primary": "rgb(37, 99, 235)",
             "--sidebar-primary-foreground": "rgb(255, 255, 255)",
-            "--sidebar-accent": "rgb(225, 241, 253)",
-            "--sidebar-accent-foreground": "rgb(24, 48, 82)",
-            "--sidebar-border": "rgb(203, 218, 235)",
+            "--sidebar-accent": "rgb(248, 250, 252)",
+            "--sidebar-accent-foreground": "rgb(15, 23, 42)",
+            "--sidebar-border": "rgb(226, 232, 240)",
             "--sidebar-ring": "rgb(37, 99, 235)",
           } as CSSProperties
         }
-        className="min-h-[calc(100dvh-var(--app-header-height))] bg-white/70 max-md:flex-col"
+        className="min-h-[calc(100dvh-var(--app-header-height))] bg-slate-50/35 max-md:flex-col"
       >
         <Sidebar
           collapsible="icon"
-          className="bg-[#eff7ff] md:border-r md:border-[#c8d9ea]"
+          className="bg-white md:border-r md:border-slate-200"
         >
           <SidebarHeader
             className={cn(
-              "flex min-h-18 flex-row items-center border-b border-[#c8d9ea] bg-[#eff7ff] px-4 py-3 transition-[padding] duration-150 ease-out",
+              "flex min-h-20 flex-row items-center border-b border-slate-200 bg-white px-5 py-4 transition-[padding] duration-150 ease-out",
               sidebarOpen ? "justify-between gap-3" : "justify-center px-2",
             )}
           >
             {sidebarOpen ? (
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[0.96rem] font-semibold leading-6 text-slate-800">
+                <p className="truncate text-[1.02rem] font-semibold leading-6 text-slate-950">
                   {project.name}
                 </p>
                 {project.customer_name ? (
-                  <p className="mt-0.5 truncate text-[0.82rem] font-medium leading-5 text-slate-600">
+                  <p className="mt-1 truncate text-[0.88rem] font-medium leading-5 text-slate-500">
                     {project.customer_name}
                   </p>
                 ) : null}
@@ -2355,7 +2340,7 @@ export function ProjectWorkspacePage({
             <SidebarTrigger
               aria-label={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
               title={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
-              className="size-8 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              className="size-8 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
             >
               {sidebarOpen ? (
                 <ChevronLeft className="size-4.5" />
@@ -2367,7 +2352,7 @@ export function ProjectWorkspacePage({
 
           <SidebarContent
             className={cn(
-              "min-h-0 flex-1 bg-[#eff7ff] px-2 py-2.5 transition-[padding] duration-150 ease-out",
+              "min-h-0 flex-1 bg-white px-4 py-3 transition-[padding] duration-150 ease-out",
               !sidebarOpen && "px-1.5",
             )}
           >
@@ -2388,7 +2373,7 @@ export function ProjectWorkspacePage({
                         size="lg"
                         tooltip={`${item.step}. ${item.label}: ${item.status}`}
                         className={cn(
-                          "h-auto min-h-[3.3rem] gap-1.5 rounded-lg border border-transparent px-2 py-2 text-[0.88rem] font-medium text-slate-700 transition-colors duration-150 ease-out hover:border-sky-200 hover:bg-[#e7f4fd] hover:text-slate-950 data-active:bg-[#e7f4fd] data-active:text-blue-950",
+                          "relative h-auto min-h-[4.65rem] gap-3 overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-3 text-[0.94rem] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-all duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 data-active:border-slate-200 data-active:bg-blue-50/60 data-active:text-blue-950 data-active:shadow-[0_8px_22px_rgba(37,99,235,0.08)] data-active:before:absolute data-active:before:inset-y-0 data-active:before:left-0 data-active:before:w-0.5 data-active:before:bg-blue-600",
                           !sidebarOpen &&
                             "mx-auto size-10 min-h-10 justify-center rounded-md px-0 py-0",
                         )}
@@ -2397,11 +2382,12 @@ export function ProjectWorkspacePage({
                         onPointerDown={() => preloadWorkspaceTab(item.value)}
                         onClick={() => setWorkspaceTab(item.value)}
                       >
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-[0.78rem] font-bold text-blue-700 group-data-active/menu-button:border-blue-300 group-data-active/menu-button:bg-blue-100 group-data-active/menu-button:text-blue-900">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-[0.86rem] font-semibold text-blue-600 shadow-sm group-data-active/menu-button:border-blue-200 group-data-active/menu-button:bg-white group-data-active/menu-button:text-blue-700">
                           {item.step}
                         </span>
                         {sidebarOpen ? (
-                          <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                          <span className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
                             <span className="min-w-0 text-left leading-5">
                               {item.label}
                             </span>
@@ -2413,6 +2399,8 @@ export function ProjectWorkspacePage({
                             >
                               {item.status}
                             </span>
+                            </span>
+                            <ChevronRight className="size-4 shrink-0 text-slate-400 transition-colors group-data-active/menu-button:text-slate-600" />
                           </span>
                         ) : null}
                       </SidebarMenuButton>
@@ -2451,12 +2439,12 @@ export function ProjectWorkspacePage({
                         size="lg"
                         tooltip="Åpne AI Chat i pop-out vindu"
                         className={cn(
-                          "h-10 gap-1.5 rounded-lg border border-transparent px-2 text-[0.86rem] font-medium text-slate-700 transition-colors duration-150 ease-out hover:border-sky-200 hover:bg-[#e7f4fd] hover:text-slate-950",
+                          "h-11 gap-3 rounded-lg border border-transparent px-2 text-[0.94rem] font-medium text-slate-600 transition-colors duration-150 ease-out hover:bg-slate-50 hover:text-slate-950",
                           !sidebarOpen &&
                             "mx-auto size-10 justify-center rounded-md px-0",
                         )}
                       >
-                        <MessageSquareText className="size-4.5 text-slate-600" />
+                        <MessageSquareText className="size-4.5 text-slate-500" />
                         {sidebarOpen ? <span>AI Chat</span> : null}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -2470,7 +2458,7 @@ export function ProjectWorkspacePage({
                           size="lg"
                           tooltip={`${group.label}: ${item.label}`}
                           className={cn(
-                            "h-10 gap-1.5 rounded-lg border border-transparent px-2 text-[0.86rem] font-medium text-slate-700 transition-colors duration-150 ease-out hover:border-sky-200 hover:bg-[#e7f4fd] hover:text-slate-950 data-active:border-sky-200 data-active:bg-[#e7f4fd] data-active:text-blue-950",
+                            "h-11 gap-3 rounded-lg border border-transparent px-2 text-[0.94rem] font-medium text-slate-600 transition-colors duration-150 ease-out hover:bg-slate-50 hover:text-slate-950 data-active:bg-blue-50 data-active:text-blue-950",
                             !sidebarOpen &&
                               "mx-auto size-10 justify-center rounded-md px-0",
                           )}
@@ -2479,7 +2467,7 @@ export function ProjectWorkspacePage({
                           onPointerDown={() => preloadWorkspaceTab(item.value)}
                           onClick={() => setWorkspaceTab(item.value)}
                         >
-                          <item.icon className="size-4.5 text-slate-600" />
+                          <item.icon className="size-4.5 text-slate-500" />
                           {sidebarOpen ? <span>{item.label}</span> : null}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -2504,7 +2492,7 @@ export function ProjectWorkspacePage({
         <SidebarInset className="min-w-0 overflow-x-hidden bg-transparent">
           <div
             className={cn(
-              "relative w-full max-w-full overflow-x-hidden px-5 py-5 md:px-8 md:py-7",
+              "relative w-full max-w-full overflow-x-hidden px-5 py-6 md:px-9 md:py-9",
               !sidebarOpen && "mx-auto",
             )}
           >
@@ -2513,19 +2501,19 @@ export function ProjectWorkspacePage({
                 <div className="flex min-w-0 items-start gap-3">
                   <SidebarTrigger className="mt-0.5 shrink-0 md:hidden" />
                   <div className="min-w-0">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.26em] text-slate-500">
                       {workspaceNavItems.find(
                         (item) => item.value === activeTab,
                       )?.label ?? "Prosjekt"}
                     </p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+                    <h2 className="mt-2 text-[2rem] font-semibold leading-tight tracking-[-0.015em] text-slate-950">
                       {project.name}
                     </h2>
-                    <p className="mt-1.5 text-left text-sm text-muted-foreground">
+                    <p className="mt-2 text-left text-[1rem] text-slate-500">
                       Oppdatert {formatDate(project.last_activity_at)}
                     </p>
                     {project.customer_name || project.industry ? (
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-sm text-muted-foreground">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[1rem] text-slate-500">
                         {project.customer_name ? (
                           <span className="font-medium">
                             {project.customer_name}
@@ -2540,10 +2528,10 @@ export function ProjectWorkspacePage({
                   </div>
                 </div>
                 {showModelSelector ? (
-                  <div className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2.5 shadow-sm shadow-slate-200/70 sm:w-[16rem]">
+                  <div className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(15,23,42,0.05)] sm:w-[13rem]">
                     <label
                       htmlFor="workspace-ai-model"
-                      className="text-[0.58rem] font-bold uppercase tracking-[0.14em] text-slate-500"
+                      className="text-[0.58rem] font-bold uppercase tracking-[0.2em] text-slate-500"
                     >
                       Modell
                     </label>
@@ -2557,7 +2545,7 @@ export function ProjectWorkspacePage({
                         onChange={(event) => onModelChange(event.target.value)}
                         onFocus={() => void loadAvailableModels()}
                         onPointerDown={() => void loadAvailableModels()}
-                        className="h-8 w-full appearance-none rounded-md border border-slate-200 bg-slate-50 px-2.5 pr-8 text-[0.82rem] font-bold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary/15"
+                        className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-slate-50 px-2.5 pr-8 text-[0.86rem] font-semibold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary/15"
                       >
                         {selectedModel &&
                         !availableModels.some((model) => model.id === selectedModel) ? (
@@ -2574,11 +2562,6 @@ export function ProjectWorkspacePage({
                         className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-slate-950"
                       />
                     </div>
-                    {selectedModel ? (
-                      <p className="mt-2 text-[0.68rem] leading-4 text-slate-500">
-                        {modelHelpText(selectedModel)}
-                      </p>
-                    ) : null}
                   </div>
                 ) : null}
               </div>

@@ -104,7 +104,7 @@ Serverruter og repositories bruker service-role Supabase-tilgang. Ikke eksponer 
 ## Deploy
 
 - Azure Container Apps-oppsett ligger i `infra/azure`; Dockerfile ligger i `apps/frontend/Dockerfile`.
-- `/api/health` brukes som helseendepunkt.
+- `/api/health/live` brukes for liveness, `/api/health/ready` for readiness, og `/api/health` for detaljert helsemodell.
 
 ## Verifisering før levering
 

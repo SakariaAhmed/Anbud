@@ -28,7 +28,7 @@ No API routes were removed. Each current route is referenced by the UI or by ser
 - `/api/service-descriptions/[serviceId]/documents/[documentId]`
 - `/api/openai-models`
 
-`/api/health` was added for Azure liveness and readiness probes.
+`/api/health/live` and `/api/health/ready` are used for Azure liveness and readiness probes. `/api/health` exposes the detailed health model.
 
 ## Index cleanup candidates
 

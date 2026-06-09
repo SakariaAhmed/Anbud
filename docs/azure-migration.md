@@ -7,7 +7,9 @@ Goal: move the web runtime first without changing the data plane.
 - Build with `apps/frontend/Dockerfile`.
 - Deploy `infra/azure/container-app.bicep`.
 - Keep these runtime variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_ENCRYPTION_KEY`, `APP_ACCESS_PASSWORD`, `APP_SESSION_SECRET`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
-- Use `/api/health` as the Azure liveness/readiness endpoint.
+- Use `/api/health/live` for liveness and `/api/health/ready` for readiness.
+- Use `/api/health` for the detailed workload health model.
+- Run `node apps/frontend/scripts/smoke_health.mjs "https://<fqdn>"` after each deployment before DNS or traffic cutover.
 
 ## Phase 2: isolate data adapters
 

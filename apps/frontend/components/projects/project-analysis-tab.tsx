@@ -277,15 +277,15 @@ function SectionSurface({
   children: React.ReactNode;
 }) {
   return (
-    <section className="max-w-full overflow-hidden rounded-xl border border-border/70 bg-white/85 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/70 px-5 py-4 md:px-6">
+    <section className="max-w-full overflow-hidden rounded-b-lg border border-t-0 border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.055)]">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-6 py-6 md:px-7">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
-            <Icon className="size-5" />
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(135deg,rgb(239,246,255),rgb(219,234,254)_52%,rgb(224,242,254))] text-blue-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_12px_24px_rgba(37,99,235,0.12)] ring-1 ring-blue-100/80">
+            <Icon className="size-5 drop-shadow-[0_1px_1px_rgba(255,255,255,0.55)]" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-foreground">{title}</h3>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+            <h3 className="text-[1.08rem] font-semibold leading-6 text-slate-950">{title}</h3>
+            <p className="mt-2 max-w-3xl text-[0.94rem] leading-6 text-slate-500">
               {description}
             </p>
           </div>
@@ -296,7 +296,7 @@ function SectionSurface({
           </div>
         ) : null}
       </div>
-      <div className="px-5 py-5 md:px-6 md:py-6">{children}</div>
+      <div className="px-6 py-6 md:px-7 md:py-7">{children}</div>
     </section>
   );
 }
@@ -2501,8 +2501,8 @@ export function ProjectAnalysisTab({
             customerAnalysis.customer_profile_summary || "",
           ),
           accentClassName:
-            "border-emerald-200/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.94),rgba(255,255,255,0.92))]",
-          iconClassName: "bg-emerald-600 text-white",
+            "border-emerald-200 bg-[linear-gradient(180deg,rgba(237,253,245,0.92),rgba(247,254,251,0.82))]",
+          iconClassName: "bg-[linear-gradient(135deg,rgb(16,185,129),rgb(5,150,105)_58%,rgb(4,120,87))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_14px_28px_rgba(5,150,105,0.24)] ring-1 ring-emerald-300/40",
           chipClassName: "bg-emerald-600/10 text-emerald-800",
           expandedLeadClassName: "font-normal",
         },
@@ -2518,8 +2518,8 @@ export function ProjectAnalysisTab({
             customerAnalysis.customer_goals_summary || "",
           ),
           accentClassName:
-            "border-emerald-200/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.94),rgba(255,255,255,0.92))]",
-          iconClassName: "bg-emerald-600 text-white",
+            "border-sky-200 bg-[linear-gradient(180deg,rgba(239,246,255,0.94),rgba(248,250,252,0.86))]",
+          iconClassName: "bg-[linear-gradient(135deg,rgb(59,130,246),rgb(37,99,235)_56%,rgb(29,78,216))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_14px_28px_rgba(37,99,235,0.22)] ring-1 ring-blue-300/40",
           chipClassName: "bg-emerald-600/10 text-emerald-800",
           expandedLeadClassName: "font-normal",
         },
@@ -2643,6 +2643,7 @@ export function ProjectAnalysisTab({
         }
         variant="outline"
         size="sm"
+        className="h-10 rounded-md border-slate-200 px-4 text-[0.94rem] text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
       >
         <PencilLine data-icon="inline-start" />
         Rediger
@@ -3564,21 +3565,21 @@ export function ProjectAnalysisTab({
           setActiveSection(value as (typeof SECTION_TABS)[number]["value"])
         }
         defaultValue="summary"
-        className="min-w-0 gap-4"
+        className="min-w-0 gap-0"
       >
-        <div className="-mx-5 mb-4 overflow-y-hidden border-b border-border/70 bg-background px-5 pt-0 pb-0.5 md:-mx-8 md:px-8">
+        <div className="overflow-hidden border-b border-slate-200 bg-transparent pb-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0 flex-1 overflow-hidden">
               <div className="no-scrollbar overflow-x-auto overflow-y-hidden touch-pan-x">
                 <TabsList
                   variant="line"
-                  className="h-auto min-w-max rounded-none p-0"
+                  className="h-auto min-w-max gap-0 rounded-none p-0"
                 >
                   {SECTION_TABS.map((tab) => (
                     <TabsTrigger
                       key={tab.value}
                       value={tab.value}
-                      className="h-11 flex-none rounded-none px-3.5 text-sm font-medium tracking-[-0.01em] text-foreground/55 after:bottom-[-1px] after:h-[3px] after:rounded-full after:bg-primary data-active:bg-transparent data-active:text-primary lg:px-4 lg:text-[0.95rem]"
+                      className="h-16 flex-none rounded-none border-y-0 border-l-0 border-r border-slate-200/80 px-6 text-[1.18rem] font-medium text-slate-500 after:bottom-0 after:h-[2px] after:rounded-none after:bg-blue-600 data-active:bg-transparent data-active:text-blue-700 last:border-r-0 lg:px-7"
                     >
                       {tab.label}
                     </TabsTrigger>
@@ -3615,7 +3616,7 @@ export function ProjectAnalysisTab({
               {renderSectionEditor("summary")}
               {summaryPanels.length > 0 ? (
                 <div className="space-y-5">
-                  <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
+                  <div className="grid min-w-0 gap-5">
                     {summaryPanels.map((panel) => {
                       const Icon = panel.icon;
                       const summaryText = splitLeadSentence(panel.content);
@@ -3623,22 +3624,22 @@ export function ProjectAnalysisTab({
                       return (
                         <div
                           key={panel.key}
-                          className={`min-w-0 overflow-hidden rounded-2xl border px-5 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.06)] ${panel.accentClassName}`}
+                          className={`min-w-0 overflow-hidden rounded-lg border px-5 py-6 shadow-[0_14px_34px_rgba(15,23,42,0.045)] md:px-6 ${panel.accentClassName}`}
                         >
-                          <div className="mb-5 flex items-start gap-3">
+                          <div className="mb-6 flex items-start gap-4">
                             <div
-                              className={`flex size-11 shrink-0 items-center justify-center rounded-xl shadow-sm ${panel.iconClassName}`}
+                              className={`flex size-12 shrink-0 items-center justify-center rounded-lg ${panel.iconClassName}`}
                             >
-                              <Icon className="size-5" />
+                              <Icon className="size-5 drop-shadow-[0_1px_1px_rgba(255,255,255,0.28)]" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[0.7rem] font-bold uppercase tracking-[0.18em] text-slate-500">
+                              <p className="text-[0.72rem] font-bold uppercase tracking-[0.24em] text-slate-500">
                                 {panel.eyebrow}
                               </p>
-                              <h4 className="text-base font-semibold text-foreground">
+                              <h4 className="mt-1 text-[1.08rem] font-semibold leading-6 text-slate-950">
                                 {panel.title}
                               </h4>
-                              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                              <p className="mt-2 text-[0.94rem] leading-6 text-slate-500">
                                 {panel.description}
                               </p>
                             </div>
@@ -3646,7 +3647,7 @@ export function ProjectAnalysisTab({
 
                           <div className="space-y-4">
                             {panel.bullets.length ? (
-                              <div className="rounded-2xl border border-white/80 bg-white/72 px-4 py-4">
+                              <div className="rounded-lg border border-white/85 bg-white/72 px-4 py-4">
                                 <p className="mb-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
                                   Punktoppsummering
                                 </p>
@@ -3654,7 +3655,7 @@ export function ProjectAnalysisTab({
                                   {panel.bullets.map((bullet, index) => (
                                     <div
                                       key={`${panel.key}-bullet-${index}`}
-                                      className="flex items-start gap-3 rounded-xl bg-slate-50/90 px-3 py-3"
+                                      className="flex items-start gap-3 rounded-md bg-white/80 px-3 py-3"
                                     >
                                       <span
                                         className={`mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[0.72rem] font-bold ${panel.chipClassName}`}
@@ -3669,7 +3670,7 @@ export function ProjectAnalysisTab({
                                 </div>
                               </div>
                             ) : (
-                              <div className="rounded-2xl border border-white/80 bg-white/88 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+                              <div className="rounded-lg border border-white/85 bg-white/90 px-5 py-5 shadow-[0_10px_26px_rgba(15,23,42,0.045)]">
                                 <p
                                   className={`text-[1.08rem] leading-7 text-slate-950 ${panel.expandedLeadClassName}`}
                                 >
@@ -3678,14 +3679,14 @@ export function ProjectAnalysisTab({
                                 {summaryText.body ? (
                                   <MarkdownViewer
                                     content={summaryText.body}
-                                    className="analysis-prose mt-3 max-w-none text-[0.98rem] leading-7 text-slate-600"
+                                    className="analysis-prose mt-4 max-w-none text-[0.98rem] leading-8 text-slate-600"
                                   />
                                 ) : null}
                               </div>
                             )}
 
                             {panel.bullets.length ? (
-                              <details className="group rounded-2xl border border-white/80 bg-white/88 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+                              <details className="group rounded-lg border border-white/85 bg-white/90 px-5 py-5 shadow-[0_10px_26px_rgba(15,23,42,0.045)]">
                                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-left [&::-webkit-details-marker]:hidden">
                                   <div>
                                     <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
@@ -3709,7 +3710,7 @@ export function ProjectAnalysisTab({
                                   {summaryText.body ? (
                                     <MarkdownViewer
                                       content={summaryText.body}
-                                      className="analysis-prose mt-3 max-w-none text-[0.98rem] leading-7 text-slate-600"
+                                      className="analysis-prose mt-4 max-w-none text-[0.98rem] leading-8 text-slate-600"
                                     />
                                   ) : null}
                                 </div>

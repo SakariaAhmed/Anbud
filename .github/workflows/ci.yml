@@ -1,0 +1,25 @@
+name: Frontend CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - name: Validate frontend
+        working-directory: apps/frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run build

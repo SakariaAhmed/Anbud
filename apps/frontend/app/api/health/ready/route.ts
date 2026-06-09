@@ -7,13 +7,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const model = await createReadinessModel();
 
-  return NextResponse.json(
-    model,
-    {
-      status: healthStatusCode(model),
-      headers: {
-        "Cache-Control": "no-store",
-      },
+  return NextResponse.json(model, {
+    status: healthStatusCode(model),
+    headers: {
+      "Cache-Control": "no-store",
     },
-  );
+  });
 }

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
+    "smoke:health": "node scripts/smoke_health.mjs",
     "rag:backfill": "node ../../scripts/backfill_document_chunks.mjs",
     "rag:eval": "node ../../scripts/rag_eval.mjs ../../scripts/rag_eval_cases.example.json"
   },

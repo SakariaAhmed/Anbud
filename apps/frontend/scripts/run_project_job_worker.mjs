@@ -9,7 +9,7 @@ const limit = Math.min(
   5,
   Math.max(1, Number(process.env.PROJECT_JOB_WORKER_LIMIT) || 2),
 );
-const healthUrl = `http://127.0.0.1:${port}/api/health`;
+const healthUrl = `http://127.0.0.1:${port}/api/health/ready`;
 const workerUrl = `http://127.0.0.1:${port}/api/project-jobs/worker`;
 
 if (!token && process.env.NODE_ENV === "production") {
