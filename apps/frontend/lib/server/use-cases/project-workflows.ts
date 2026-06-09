@@ -5,20 +5,23 @@ import {
   buildDocumentLedger,
   buildDocumentLedgerContext,
 } from "@/lib/server/document-ledger";
-import {
-  selectProjectDocuments,
-  selectRelevantServiceDocumentIds,
-} from "@/lib/server/domain/project-documents";
+import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import {
   analyzeCustomerDocuments,
   evaluateSolutionDocument,
   generateExecutiveSummary,
   generateHighLevelDesign,
-  generateProjectArtifact,
+  inferProjectMetadataFromCustomerDocument,
   synthesizeAndEvaluateSolution,
 } from "@/lib/server/ai";
 import {
-  getCustomerAnalysis,
+  canUseDoclingForFormat,
+  extractTextFromBuffer,
+  isDoclingEnabled,
+  type ParsedUpload,
+} from "@/lib/server/documents";
+import {
+  getFreshCustomerAnalysis,
   getSolutionEvaluation,
   saveCustomerAnalysis,
   saveExecutiveSummary,
@@ -31,15 +34,16 @@ import {
 import {
   getDocumentDetail,
   listProjectDocumentsForAnalysis,
+  saveDocumentIngestionResult,
+  updateDocumentProcessingState,
 } from "@/lib/server/repositories/documents";
 import {
   getProjectDetail,
   getProjectSnapshot,
+  updateProjectMetadataFromInference,
 } from "@/lib/server/repositories/projects";
 import {
   listProjectServiceDescriptions,
-  listServiceDocumentDetailsForProject,
-  listServiceDocumentSummariesForProject,
 } from "@/lib/server/repositories/services";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
@@ -55,6 +59,12 @@ import {
 } from "@/lib/server/use-cases/generate-artifact";
 
 export type ProjectWorkflowInput =
+  | { kind: "document_ingestion"; projectId: string; documentId: string }
+  | {
+      kind: "document_docling_enhancement";
+      projectId: string;
+      documentId: string;
+    }
   | { kind: "customer_analysis"; projectId: string; model?: string }
   | {
       kind: "solution_evaluation";
@@ -127,6 +137,525 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
   return value;
 }
 
+const DEFAULT_DOCLING_COMPLEXITY_MIN_CHARS = 60_000;
+const DEFAULT_DOCLING_COMPLEXITY_MIN_SECTIONS = 80;
+const DEFAULT_DOCLING_POOR_EXTRACTION_MAX_CHARS = 2_000;
+type DoclingEnhancementMode = "async" | "inline" | "off";
+
+function optionalPositiveNumberEnv(name: string, fallback: number) {
+  const parsed = Number(process.env[name]?.trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function doclingEnhancementMode(): DoclingEnhancementMode {
+  const configured = process.env.DOCLING_ENHANCEMENT_MODE?.trim().toLowerCase();
+  if (configured === "off" || configured === "inline") {
+    return configured;
+  }
+
+  return "async";
+}
+
+function alphaRatio(value: string) {
+  if (!value.trim()) {
+    return 0;
+  }
+
+  const letters = value.match(/[A-Za-zÆØÅæøå]/g)?.length ?? 0;
+  return letters / value.length;
+}
+
+function looksLikePoorPdfExtraction(input: {
+  rawText: string;
+  fileSizeBytes: number;
+}) {
+  const text = input.rawText.trim();
+  if (!text) {
+    return true;
+  }
+
+  const maxChars = optionalPositiveNumberEnv(
+    "DOCLING_POOR_EXTRACTION_MAX_CHARS",
+    DEFAULT_DOCLING_POOR_EXTRACTION_MAX_CHARS,
+  );
+  if (input.fileSizeBytes >= 250_000 && text.length < maxChars) {
+    return true;
+  }
+
+  return text.length >= 400 && alphaRatio(text) < 0.35;
+}
+
+function looksLikePdfWithTablesOrRequirements(rawText: string) {
+  const lines = rawText.split("\n");
+  const tableLineCount = lines.filter((line) => {
+    const trimmed = line.trim();
+    return (
+      (trimmed.includes("|") && trimmed.split("|").length >= 3) ||
+      /\S+\s{2,}\S+\s{2,}\S+/.test(trimmed)
+    );
+  }).length;
+  const requirementTermCount =
+    rawText.match(
+      /\b(?:krav|kravspesifikasjon|skal|må|shall|must|requirement|requirements)\b/gi,
+    )?.length ?? 0;
+  const requirementIdCount =
+    rawText.match(/\b[A-ZÆØÅ]{1,8}-?\d{1,5}(?:\.\d+)*\b/g)?.length ?? 0;
+
+  return (
+    tableLineCount >= 3 ||
+    requirementTermCount >= 8 ||
+    requirementIdCount >= 3 ||
+    /\b(?:evalueringskriter|tildelingskriter|award criteria|evaluation criteria)\b/i.test(
+      rawText,
+    )
+  );
+}
+
+function looksLikeComplexDocument(input: {
+  rawText: string;
+  sourceMapLength: number;
+}) {
+  const minChars = optionalPositiveNumberEnv(
+    "DOCLING_COMPLEXITY_MIN_CHARS",
+    DEFAULT_DOCLING_COMPLEXITY_MIN_CHARS,
+  );
+  const minSections = optionalPositiveNumberEnv(
+    "DOCLING_COMPLEXITY_MIN_SECTIONS",
+    DEFAULT_DOCLING_COMPLEXITY_MIN_SECTIONS,
+  );
+
+  return input.rawText.length >= minChars || input.sourceMapLength >= minSections;
+}
+
+function shouldRunDoclingEnhancement(input: {
+  fileFormat: ProjectDocumentDetail["file_format"];
+  parserUsed: string;
+  role: ProjectDocumentDetail["role"];
+  rawText: string;
+  sourceMapLength: number;
+  fileSizeBytes: number;
+}) {
+  if (
+    !isDoclingEnabled() ||
+    input.parserUsed === "docling" ||
+    !canUseDoclingForFormat(input.fileFormat)
+  ) {
+    return false;
+  }
+
+  if (input.fileFormat !== "pdf" && input.fileFormat !== "docx") {
+    return false;
+  }
+
+  return (
+    input.role === "primary_customer_document" ||
+    (input.fileFormat === "pdf" && looksLikePoorPdfExtraction(input)) ||
+    looksLikePdfWithTablesOrRequirements(input.rawText) ||
+    looksLikeComplexDocument(input)
+  );
+}
+
+function isUsableDoclingResult(
+  parsed: ParsedUpload | null,
+): parsed is ParsedUpload {
+  return parsed?.parserUsed === "docling" && Boolean(parsed.rawText.trim());
+}
+
+function isDoclingResultWorthReplacing(input: {
+  currentRawText: string;
+  enhancedRawText: string;
+}) {
+  const currentLength = input.currentRawText.trim().length;
+  const enhancedLength = input.enhancedRawText.trim().length;
+  if (currentLength < 2_000) {
+    return enhancedLength > 0;
+  }
+
+  return enhancedLength >= currentLength * 0.5;
+}
+
+export async function runDocumentIngestionWorkflow(
+  input: Extract<ProjectWorkflowInput, { kind: "document_ingestion" }>,
+  handlers: ProjectWorkflowHandlers,
+) {
+  try {
+    handlers.setProgress("[8%] Henter dokumentfil ...");
+    await updateDocumentProcessingState({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      status: "processing",
+      message: "Henter dokumentfil ...",
+      error: null,
+    });
+    const document = await getDocumentDetail(input.projectId, input.documentId);
+    handlers.onPhase?.("filhenting");
+
+    if (!document.file_base64) {
+      throw new Error("Dokumentfilen mangler i lagring.");
+    }
+
+    const buffer = Buffer.from(document.file_base64, "base64");
+
+    handlers.setProgress("[22%] Leser dokumentet med rask parser ...");
+    await updateDocumentProcessingState({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      status: "processing",
+      message: "Leser dokumentet med rask parser ...",
+      error: null,
+    });
+    const parsed = await extractTextFromBuffer({
+      buffer,
+      fileName: document.file_name,
+      contentType: document.content_type,
+      role: document.role,
+      useDocling: false,
+    });
+    handlers.onPhase?.("rask_parser");
+
+    if (!parsed.rawText.trim()) {
+      const shouldAttemptDocling = shouldRunDoclingEnhancement({
+        fileFormat: parsed.fileFormat,
+        parserUsed: parsed.parserUsed,
+        role: document.role,
+        rawText: parsed.rawText,
+        sourceMapLength: parsed.sourceMap.length,
+        fileSizeBytes: document.file_size_bytes,
+      });
+      if (shouldAttemptDocling) {
+        handlers.setProgress("[48%] Prøver Docling for tekstuttrekk ...");
+        await updateDocumentProcessingState({
+          projectId: input.projectId,
+          documentId: input.documentId,
+          status: "processing",
+          message: "Prøver Docling for tekstuttrekk ...",
+          error: null,
+          parserUsed: parsed.parserUsed,
+        });
+
+        const enhanced = await extractTextFromBuffer({
+          buffer,
+          fileName: document.file_name,
+          contentType: document.content_type,
+          role: document.role,
+          useDocling: true,
+        }).catch(() => null);
+
+        if (isUsableDoclingResult(enhanced)) {
+          handlers.setProgress("[90%] Bygger Docling-baserte chunks ...");
+          const enhancedDocument = await saveDocumentIngestionResult({
+            projectId: input.projectId,
+            documentId: input.documentId,
+            role: document.role,
+            supportingSubtype: document.supporting_subtype,
+            title: document.title,
+            fileName: enhanced.fileName,
+            fileFormat: enhanced.fileFormat,
+            contentType: enhanced.contentType,
+            rawText: enhanced.rawText,
+            structureMap: enhanced.sourceMap,
+            parserUsed: enhanced.parserUsed,
+            status: "enhanced_ready",
+            message: "Dokumentet er forbedret og klart for RAG.",
+          });
+          handlers.onPhase?.("docling_indeksering");
+
+          return {
+            document: enhancedDocument,
+            document_id: input.documentId,
+            status: enhancedDocument.processing_status,
+            parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
+            project: await getProjectSnapshot(input.projectId),
+          };
+        }
+      }
+
+      throw new Error(
+        "Dokumentet har ingen lesbar tekst. Last opp en tekstbasert PDF/DOCX/Excel-fil, eller bruk OCR før opplasting.",
+      );
+    }
+
+    const doclingMode = doclingEnhancementMode();
+    const hasDoclingEnhancement = shouldRunDoclingEnhancement({
+      fileFormat: parsed.fileFormat,
+      parserUsed: parsed.parserUsed,
+      role: document.role,
+      rawText: parsed.rawText,
+      sourceMapLength: parsed.sourceMap.length,
+      fileSizeBytes: document.file_size_bytes,
+    }) && doclingMode !== "off";
+    const shouldRunInlineDocling =
+      hasDoclingEnhancement && doclingMode === "inline";
+    const shouldQueueDoclingEnhancement =
+      hasDoclingEnhancement && doclingMode === "async";
+    handlers.setProgress(
+      shouldRunInlineDocling
+        ? "[48%] Lagrer raskt tekstgrunnlag ..."
+        : "[48%] Bygger chunks og embeddings ...",
+    );
+    const basicDocument = await saveDocumentIngestionResult({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      role: document.role,
+      supportingSubtype: document.supporting_subtype,
+      title: document.title,
+      fileName: parsed.fileName,
+      fileFormat: parsed.fileFormat,
+      contentType: parsed.contentType,
+      rawText: parsed.rawText,
+      structureMap: parsed.sourceMap,
+      parserUsed: parsed.parserUsed,
+      status: shouldRunInlineDocling
+        ? "processing"
+        : shouldQueueDoclingEnhancement
+          ? "basic_ready"
+          : "enhanced_ready",
+      message: shouldRunInlineDocling
+        ? "Rask parser er ferdig. Forbedrer struktur med Docling ..."
+        : shouldQueueDoclingEnhancement
+          ? "Dokumentet er RAG-klart. Docling-forbedring er køet."
+        : "Dokumentet er klart for RAG.",
+      indexChunks: !shouldRunInlineDocling,
+    });
+    handlers.onPhase?.(
+      shouldRunInlineDocling ? "rask_parser_lagring" : "basic_indeksering",
+    );
+
+    if (document.role === "primary_customer_document") {
+      handlers.setProgress("[62%] Oppdaterer prosjektmetadata ...");
+      try {
+        const inferredMetadata = await inferProjectMetadataFromCustomerDocument({
+          fileName: parsed.fileName,
+          title: document.title,
+          rawText: parsed.rawText,
+        });
+        await updateProjectMetadataFromInference(
+          input.projectId,
+          inferredMetadata,
+        );
+      } catch {
+        // Metadata inference should not block RAG readiness.
+      }
+      handlers.onPhase?.("metadata");
+    }
+
+    if (!shouldRunInlineDocling) {
+      return {
+        document: basicDocument,
+        document_id: input.documentId,
+        status: basicDocument.processing_status,
+        parser_used: basicDocument.parser_used ?? parsed.parserUsed,
+        project: await getProjectSnapshot(input.projectId),
+        docling_enhancement_requested: shouldQueueDoclingEnhancement,
+      };
+    }
+
+    handlers.setProgress("[78%] Forbedrer struktur med Docling ...");
+    await updateDocumentProcessingState({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      status: "processing",
+      message: "Forbedrer struktur med Docling ...",
+      error: null,
+      parserUsed: parsed.parserUsed,
+    });
+    const enhanced = await extractTextFromBuffer({
+      buffer,
+      fileName: document.file_name,
+      contentType: document.content_type,
+      role: document.role,
+      useDocling: true,
+    });
+
+    if (isUsableDoclingResult(enhanced)) {
+      handlers.setProgress("[90%] Oppdaterer forbedrede chunks ...");
+      const enhancedDocument = await saveDocumentIngestionResult({
+        projectId: input.projectId,
+        documentId: input.documentId,
+        role: document.role,
+        supportingSubtype: document.supporting_subtype,
+        title: document.title,
+        fileName: enhanced.fileName,
+        fileFormat: enhanced.fileFormat,
+        contentType: enhanced.contentType,
+        rawText: enhanced.rawText,
+        structureMap: enhanced.sourceMap,
+        parserUsed: enhanced.parserUsed,
+        pageCountFallback: basicDocument.page_count,
+        status: "enhanced_ready",
+        message: "Dokumentet er forbedret og klart for RAG.",
+      });
+      handlers.onPhase?.("docling_indeksering");
+
+      return {
+        document: enhancedDocument,
+        document_id: input.documentId,
+        status: enhancedDocument.processing_status,
+        parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
+        project: await getProjectSnapshot(input.projectId),
+      };
+    }
+
+    const fallbackDocument = await saveDocumentIngestionResult({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      role: document.role,
+      supportingSubtype: document.supporting_subtype,
+      title: document.title,
+      fileName: parsed.fileName,
+      fileFormat: parsed.fileFormat,
+      contentType: parsed.contentType,
+      rawText: parsed.rawText,
+      structureMap: parsed.sourceMap,
+      parserUsed: parsed.parserUsed,
+      pageCountFallback: basicDocument.page_count,
+      status: "basic_ready",
+      message: "Dokumentet er klart for RAG. Docling-forbedring ble hoppet over.",
+    });
+    handlers.onPhase?.("docling_hoppet_over");
+
+    return {
+      document: fallbackDocument,
+      document_id: input.documentId,
+      status: "basic_ready",
+      parser_used: parsed.parserUsed,
+      project: await getProjectSnapshot(input.projectId),
+    };
+  } catch (error) {
+    await updateDocumentProcessingState({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      status: "failed",
+      message: "Dokumentindeksering feilet.",
+      error: error instanceof Error ? error.message : "Ukjent feil.",
+    }).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function runDocumentDoclingEnhancementWorkflow(
+  input: Extract<
+    ProjectWorkflowInput,
+    { kind: "document_docling_enhancement" }
+  >,
+  handlers: ProjectWorkflowHandlers,
+) {
+  handlers.setProgress("Henter dokument for Docling-forbedring ...");
+  const document = await getDocumentDetail(input.projectId, input.documentId);
+  handlers.onPhase?.("filhenting");
+
+  const readyStatus =
+    document.processing_status === "enhanced_ready"
+      ? "enhanced_ready"
+      : "basic_ready";
+
+  if (!document.file_base64 || document.parser_used === "docling") {
+    return {
+      document,
+      document_id: input.documentId,
+      status: document.processing_status,
+      parser_used: document.parser_used,
+      project: await getProjectSnapshot(input.projectId),
+      skipped: true,
+    };
+  }
+
+  const shouldEnhance = shouldRunDoclingEnhancement({
+    fileFormat: document.file_format,
+    parserUsed: document.parser_used ?? "",
+    role: document.role,
+    rawText: document.raw_text,
+    sourceMapLength: document.structure_map.length,
+    fileSizeBytes: document.file_size_bytes,
+  });
+
+  if (!shouldEnhance) {
+    return {
+      document,
+      document_id: input.documentId,
+      status: document.processing_status,
+      parser_used: document.parser_used,
+      project: await getProjectSnapshot(input.projectId),
+      skipped: true,
+    };
+  }
+
+  handlers.setProgress("Forbedrer dokumentstruktur med Docling ...");
+  await updateDocumentProcessingState({
+    projectId: input.projectId,
+    documentId: input.documentId,
+    status: readyStatus,
+    message: "Dokumentet er RAG-klart. Docling-forbedring pågår i bakgrunnen ...",
+    error: null,
+    parserUsed: document.parser_used,
+  });
+
+  const buffer = Buffer.from(document.file_base64, "base64");
+  const enhanced = await extractTextFromBuffer({
+    buffer,
+    fileName: document.file_name,
+    contentType: document.content_type,
+    role: document.role,
+    useDocling: true,
+  }).catch(() => null);
+  handlers.onPhase?.("docling_parser");
+
+  if (
+    !isUsableDoclingResult(enhanced) ||
+    !isDoclingResultWorthReplacing({
+      currentRawText: document.raw_text,
+      enhancedRawText: enhanced.rawText,
+    })
+  ) {
+    await updateDocumentProcessingState({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      status: readyStatus,
+      message:
+        "Dokumentet er RAG-klart. Docling-forbedring ga ikke bedre tekstgrunnlag.",
+      error: null,
+      parserUsed: document.parser_used,
+    });
+
+    return {
+      document,
+      document_id: input.documentId,
+      status: readyStatus,
+      parser_used: document.parser_used,
+      project: await getProjectSnapshot(input.projectId),
+      skipped: true,
+    };
+  }
+
+  handlers.setProgress("Erstatter chunks med Docling-forbedret struktur ...");
+  const enhancedDocument = await saveDocumentIngestionResult({
+    projectId: input.projectId,
+    documentId: input.documentId,
+    role: document.role,
+    supportingSubtype: document.supporting_subtype,
+    title: document.title,
+    fileName: enhanced.fileName,
+    fileFormat: enhanced.fileFormat,
+    contentType: enhanced.contentType,
+    rawText: enhanced.rawText,
+    structureMap: enhanced.sourceMap,
+    parserUsed: enhanced.parserUsed,
+    pageCountFallback: document.page_count,
+    status: "enhanced_ready",
+    message: "Dokumentet er forbedret med Docling og klart for RAG.",
+  });
+  handlers.onPhase?.("docling_indeksering");
+
+  return {
+    document: enhancedDocument,
+    document_id: input.documentId,
+    status: enhancedDocument.processing_status,
+    parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
+    project: await getProjectSnapshot(input.projectId),
+    skipped: false,
+  };
+}
+
 export async function runCustomerAnalysisWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "customer_analysis" }>,
   handlers: ProjectWorkflowHandlers,
@@ -144,6 +673,22 @@ export async function runCustomerAnalysisWorkflow(
 
   if (!customerDocument) {
     throw new Error("Last opp minst ett dokument først.");
+  }
+
+  if (
+    customerDocument.processing_status === "queued" ||
+    customerDocument.processing_status === "processing"
+  ) {
+    throw new Error(
+      "Kundedokumentet indekseres fortsatt. Prøv kundeanalysen igjen når dokumentet er RAG-klart.",
+    );
+  }
+
+  if (customerDocument.processing_status === "failed") {
+    throw new Error(
+      customerDocument.processing_error ||
+        "Kundedokumentet kunne ikke indekseres. Last det opp på nytt eller bruk OCR først.",
+    );
   }
 
   if (!customerDocument.raw_text.trim()) {
@@ -213,7 +758,7 @@ export async function runSolutionEvaluationWorkflow(
     generatedArtifacts,
   ] = await Promise.all([
     listProjectDocumentsForAnalysis(input.projectId),
-    getCustomerAnalysis(input.projectId),
+    getFreshCustomerAnalysis(input.projectId),
     listGeneratedArtifacts(input.projectId),
   ]);
   const { projectDocuments: evaluationDocuments } =
@@ -366,7 +911,7 @@ export async function runHighLevelDesignWorkflow(
   handlers.setProgress("Laster kundedokument, analyse og støttedokumenter ...");
   const [documents, customerAnalysis] = await Promise.all([
     listProjectDocumentsForAnalysis(input.projectId),
-    getCustomerAnalysis(input.projectId),
+    getFreshCustomerAnalysis(input.projectId),
   ]);
   const { projectDocuments } = splitServiceDescriptionDetails(documents);
   const { customerDocument, supportingDocuments } =
@@ -426,7 +971,7 @@ export async function runExecutiveSummaryWorkflow(
   handlers.setProgress("Laster prosjekt, kundeanalyse og vurdering ...");
   const [project, customerAnalysis, solutionEvaluation] = await Promise.all([
     getProjectDetail(input.projectId),
-    getCustomerAnalysis(input.projectId),
+    getFreshCustomerAnalysis(input.projectId),
     getSolutionEvaluation(input.projectId),
   ]);
   handlers.onPhase?.("dokumenthenting");
@@ -511,7 +1056,7 @@ export async function runPerfectSystemSolutionWorkflow(
 
   handlers.setProgress("Laster dokumentgrunnlag for ny vurdering ...");
   const [customerAnalysis, documents] = await Promise.all([
-    getCustomerAnalysis(input.projectId),
+    getFreshCustomerAnalysis(input.projectId),
     listProjectDocumentsForAnalysis(input.projectId),
   ]);
   const { projectDocuments } = splitServiceDescriptionDetails(documents);
@@ -562,6 +1107,10 @@ export async function runProjectWorkflow(
   handlers: ProjectWorkflowHandlers,
 ): Promise<ProjectJobResult> {
   switch (input.kind) {
+    case "document_ingestion":
+      return runDocumentIngestionWorkflow(input, handlers);
+    case "document_docling_enhancement":
+      return runDocumentDoclingEnhancementWorkflow(input, handlers);
     case "customer_analysis":
       return runCustomerAnalysisWorkflow(input, handlers);
     case "solution_evaluation":

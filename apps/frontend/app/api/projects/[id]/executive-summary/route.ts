@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import { generateExecutiveSummary, resolveOpenAIModelOverride } from "@/lib/server/ai";
 import {
-  getCustomerAnalysis,
   getExecutiveSummary,
+  getFreshCustomerAnalysis,
   getSolutionEvaluation,
   saveExecutiveSummary,
 } from "@/lib/server/repositories/analyses";
@@ -66,7 +66,7 @@ export async function POST(
     );
     const [project, customerAnalysis, solutionEvaluation] = await Promise.all([
       getProjectDetail(id),
-      getCustomerAnalysis(id),
+      getFreshCustomerAnalysis(id),
       getSolutionEvaluation(id),
     ]);
 

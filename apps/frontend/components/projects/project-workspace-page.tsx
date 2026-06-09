@@ -55,6 +55,7 @@ import {
   startProjectJob,
   updateGeneratedArtifact,
   uploadProjectDocument,
+  watchProjectJob,
   type OpenAIModelSummary,
   type ProjectSnapshotPayload,
 } from "@/lib/client/project-api";
@@ -157,6 +158,36 @@ function projectDocumentRoleLabel(document: ProjectDocument) {
   if (document.supporting_subtype === "rfp") return "RFP";
   if (document.supporting_subtype === "vedlegg") return "Vedlegg";
   return "Støttedokument";
+}
+
+function documentProcessingLabel(document: ProjectDocument) {
+  switch (document.processing_status) {
+    case "queued":
+      return "Venter på RAG";
+    case "processing":
+      return "Indekserer";
+    case "basic_ready":
+      return "RAG klar";
+    case "enhanced_ready":
+      return "RAG forbedret";
+    case "failed":
+      return "Indeksering feilet";
+  }
+}
+
+function documentProcessingClassName(document: ProjectDocument) {
+  switch (document.processing_status) {
+    case "queued":
+      return "bg-slate-100 text-slate-700";
+    case "processing":
+      return "bg-blue-100 text-blue-700";
+    case "basic_ready":
+      return "bg-emerald-100 text-emerald-700";
+    case "enhanced_ready":
+      return "bg-teal-100 text-teal-700";
+    case "failed":
+      return "bg-red-100 text-red-700";
+  }
 }
 
 function ProjectDocumentsTab({
@@ -297,6 +328,19 @@ function ProjectDocumentsTab({
                       <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
                         {projectDocumentRoleLabel(document)}
                       </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[0.68rem] font-bold",
+                            documentProcessingClassName(document),
+                          )}
+                        >
+                          {documentProcessingLabel(document)}
+                        </span>
+                        {document.processing_status === "processing" ? (
+                          <Spinner className="size-3 text-blue-600" />
+                        ) : null}
+                      </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <a
@@ -334,6 +378,13 @@ function ProjectDocumentsTab({
                     <span>·</span>
                     <span>{pageCountLabel(document.page_count)}</span>
                   </div>
+                  {document.processing_message ||
+                  document.processing_error ? (
+                    <p className="mt-2 break-words text-xs leading-5 text-slate-500">
+                      {document.processing_error ??
+                        document.processing_message}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -578,6 +629,21 @@ function dedupeDocuments(documents: ProjectDocument[]) {
   });
 }
 
+function documentFromJobResult(
+  result: ProjectJobRecord["result"],
+): ProjectDocument | null {
+  if (!result || typeof result !== "object" || !("document" in result)) {
+    return null;
+  }
+
+  const document = (result as { document?: unknown }).document;
+  if (!document || typeof document !== "object" || !("id" in document)) {
+    return null;
+  }
+
+  return document as ProjectDocument;
+}
+
 function prependGeneratedArtifact(
   artifacts: GeneratedArtifact[],
   artifact: GeneratedArtifact,
@@ -680,6 +746,8 @@ function estimatedJobDurationMs(
           ? 0.7
           : 1;
   const baseByKind: Record<ProjectJobRecord["kind"], number> = {
+    document_ingestion: 45_000,
+    document_docling_enhancement: 120_000,
     customer_analysis: 75_000,
     solution_evaluation: 80_000,
     artifact_generation: 95_000,
@@ -710,7 +778,6 @@ function nextDisplayedProgress(current: number, target: number) {
 }
 
 const MODEL_STORAGE_KEY = "anbud-openai-model";
-const CHAT_ARTIFACT_SEED_STORAGE_KEY_PREFIX = "anbud-chat-artifact-seed";
 const DEFAULT_WORKSPACE_MODEL = "gpt-5.4";
 const FAST_WORKSPACE_MODEL = "gpt-5.4-mini";
 const PREFERRED_MODEL_ORDER = [
@@ -796,7 +863,6 @@ export function ProjectWorkspacePage({
   const [file, setFile] = useState<File | null>(null);
   const [uploadRole, setUploadRole] =
     useState<ProjectDocumentRole>("supporting_document");
-  const [artifactInstructions, setArtifactInstructions] = useState("");
   const [selectedRequirementDocumentId, setSelectedRequirementDocumentId] =
     useState("");
   const [activeTab, setActiveTab] = useState<ProjectWorkspaceTab>(initialTab);
@@ -830,6 +896,7 @@ export function ProjectWorkspacePage({
   const progressIntervalRef = useRef<number | null>(null);
   const progressDriverRef = useRef<ProgressDriverState | null>(null);
   const modelsRequestRef = useRef<Promise<void> | null>(null);
+  const documentJobAbortControllersRef = useRef<Set<AbortController>>(new Set());
   const sidebarResizeRef = useRef(false);
   const preloadWorkspaceTab = useProjectWorkspacePrefetch({
     projectId: project.id,
@@ -853,20 +920,6 @@ export function ProjectWorkspacePage({
     const tabFromUrl = searchParams.get("tab");
     setActiveTab(isProjectWorkspaceTab(tabFromUrl) ? tabFromUrl : "analysis");
   }, [searchParams]);
-
-  useEffect(() => {
-    const key = `${CHAT_ARTIFACT_SEED_STORAGE_KEY_PREFIX}:${project.id}`;
-    const seed = window.localStorage.getItem(key);
-    if (!seed?.trim()) {
-      return;
-    }
-
-    setArtifactInstructions((current) =>
-      current.trim() ? current : seed.trim(),
-    );
-    window.localStorage.removeItem(key);
-    setNotice("Sparringen er lagt inn som føring for neste generering.");
-  }, [project.id]);
 
   const setWorkspaceTab = useCallback(
     (tab: ProjectWorkspaceTab) => {
@@ -1061,6 +1114,16 @@ export function ProjectWorkspacePage({
 
   useEffect(() => stopProgressTicker, []);
 
+  useEffect(() => {
+    const documentJobAbortControllers = documentJobAbortControllersRef.current;
+    return () => {
+      for (const controller of documentJobAbortControllers) {
+        controller.abort();
+      }
+      documentJobAbortControllers.clear();
+    };
+  }, []);
+
   const { waitForProjectJob } = useProjectJobRunner({
     projectId: project.id,
     onStart: startEstimatedProgress,
@@ -1090,6 +1153,120 @@ export function ProjectWorkspacePage({
       );
     },
   });
+
+  function trackDocumentIngestionJob(
+    job: ProjectJobRecord | null | undefined,
+    documentId: string,
+  ) {
+    if (!job || job.kind !== "document_ingestion") {
+      return;
+    }
+
+    const controller = new AbortController();
+    documentJobAbortControllersRef.current.add(controller);
+
+    void watchProjectJob({
+      projectId: project.id,
+      jobId: job.id,
+      signal: controller.signal,
+      onStatus(jobStatus) {
+        setProject((current) =>
+          normalizeProjectState(
+            {
+              ...current,
+              documents: current.documents.map((document) => {
+                if (document.id !== documentId) {
+                  return document;
+                }
+
+                if (jobStatus.status === "failed") {
+                  return {
+                    ...document,
+                    processing_status: "failed",
+                    processing_message: "Dokumentindeksering feilet.",
+                    processing_error: jobStatus.error,
+                  };
+                }
+
+                if (jobStatus.status === "completed") {
+                  return document;
+                }
+
+                return {
+                  ...document,
+                  processing_status:
+                    jobStatus.status === "queued" ? "queued" : "processing",
+                  processing_message: progressMessageLabel(jobStatus.message),
+                  processing_error: null,
+                };
+              }),
+            },
+            { preserveArtifactCount: !artifactsLoaded },
+          ),
+        );
+      },
+    })
+      .then((completedJob) => {
+        const completedDocument = documentFromJobResult(completedJob.result);
+        if (!completedDocument) {
+          return;
+        }
+
+        const projectSnapshot =
+          completedJob.result &&
+          typeof completedJob.result === "object" &&
+          "project" in completedJob.result
+            ? (completedJob.result as { project?: ProjectSnapshotPayload })
+                .project
+            : null;
+
+        setProject((current) =>
+          normalizeProjectState(
+            patchProjectWithSnapshot(
+              {
+                ...current,
+                documents: dedupeDocuments([
+                  completedDocument,
+                  ...current.documents.filter(
+                    (document) => document.id !== completedDocument.id,
+                  ),
+                ]),
+              },
+              projectSnapshot ?? current,
+            ),
+            { preserveArtifactCount: !artifactsLoaded },
+          ),
+        );
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setProject((current) =>
+          normalizeProjectState(
+            {
+              ...current,
+              documents: current.documents.map((document) =>
+                document.id === documentId
+                  ? {
+                      ...document,
+                      processing_status: "failed",
+                      processing_message: "Dokumentindeksering feilet.",
+                      processing_error:
+                        err instanceof Error ? err.message : "Ukjent feil.",
+                    }
+                  : document,
+              ),
+            },
+            { preserveArtifactCount: !artifactsLoaded },
+          ),
+        );
+      })
+      .finally(() => {
+        documentJobAbortControllersRef.current.delete(controller);
+      });
+  }
 
   useEffect(() => {
     try {
@@ -1364,21 +1541,22 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp dokumentet.",
       });
+      trackDocumentIngestionJob(payload.job, payload.document.id);
       setDocTitle("");
       setFile(null);
       setUploadRole("supporting_document");
       setDocumentFileInputKey((current) => current + 1);
-	        setProject((current) =>
-	          normalizeProjectState(
+      setProject((current) =>
+        normalizeProjectState(
           patchProjectWithSnapshot(
             {
               ...current,
               documents: dedupeDocuments([
-                payload.document!,
+                payload.document,
                 ...current.documents,
               ]),
             },
-            payload.project!,
+            payload.project,
           ),
           {
             preserveArtifactCount: !artifactsLoaded,
@@ -1407,6 +1585,7 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp kravdokumentet.",
       });
+      trackDocumentIngestionJob(payload.job, payload.document.id);
       uploadedDocument = payload.document;
       uploadedDocumentId = payload.document.id;
       setProject((current) =>
@@ -1415,11 +1594,11 @@ export function ProjectWorkspacePage({
             {
               ...current,
               documents: dedupeDocuments([
-                payload.document!,
+                payload.document,
                 ...current.documents,
               ]),
             },
-            payload.project!,
+            payload.project,
           ),
           {
             preserveArtifactCount: !artifactsLoaded,
@@ -1452,6 +1631,7 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp Bilag 2.",
       });
+      trackDocumentIngestionJob(payload.job, payload.document.id);
       uploadedDocument = payload.document;
       setProject((current) =>
         normalizeProjectState(
@@ -1459,11 +1639,11 @@ export function ProjectWorkspacePage({
             {
               ...current,
               documents: dedupeDocuments([
-                payload.document!,
+                payload.document,
                 ...current.documents,
               ]),
             },
-            payload.project!,
+            payload.project,
           ),
           {
             preserveArtifactCount: !artifactsLoaded,
@@ -1511,10 +1691,10 @@ export function ProjectWorkspacePage({
             {
               ...current,
               generated_artifacts: current.generated_artifacts.map((item) =>
-                item.id === payload.artifact!.id ? payload.artifact! : item,
+                item.id === payload.artifact.id ? payload.artifact : item,
               ),
             },
-            payload.project!,
+            payload.project,
           ),
         ),
       );
@@ -1556,7 +1736,7 @@ export function ProjectWorkspacePage({
                 (item) => item.id !== artifact.id,
               ),
             },
-            payload.project!,
+            payload.project,
           ),
         ),
       );
@@ -1616,7 +1796,7 @@ export function ProjectWorkspacePage({
                 ? null
                 : current.executive_summary,
           },
-          payload.project!,
+          payload.project,
         );
         return normalizeProjectState(next, {
           preserveArtifactCount: !artifactsLoaded,
@@ -1695,8 +1875,8 @@ export function ProjectWorkspacePage({
       setProject((current) =>
         normalizeProjectState(
           patchProjectWithSnapshot(
-            { ...current, customer_analysis: payload.analysis! },
-            payload.project!,
+            { ...current, customer_analysis: payload.analysis },
+            payload.project,
           ),
           {
             preserveArtifactCount: !artifactsLoaded,
@@ -1717,7 +1897,6 @@ export function ProjectWorkspacePage({
           {
             kind: "artifact_generation",
             artifact_type: "losningsutkast",
-            instructions: artifactInstructions,
           },
           "Kunne ikke starte generatorjobben.",
         );
@@ -2583,11 +2762,9 @@ export function ProjectWorkspacePage({
                 artifacts={project.generated_artifacts.filter(
                   (artifact) => artifact.artifact_type === "losningsutkast",
                 )}
-                artifactInstructions={artifactInstructions}
                 busy={busy === "artifact"}
                 busyMessage={busy === "artifact" ? busyMessage : ""}
                 busyProgress={busyProgress}
-                onArtifactInstructionsChange={setArtifactInstructions}
                 onDeleteArtifact={onDeleteArtifact}
                 onSubmit={onGenerateArtifact}
               />

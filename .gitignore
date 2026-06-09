@@ -12,8 +12,13 @@ __pycache__/
 
 # Env
 .env
+.env.*
+!.env.example
 .env.local
 *.env.local
+
+# Local/generated test fixtures
+test-data/
 
 # OS
 .DS_Store

@@ -34,6 +34,8 @@ import type {
   CustomerAnalysisHistorySource,
   CustomerAnalysisResult,
   CustomerAnalysisSection,
+  DocumentFileFormat,
+  DocumentProcessingStatus,
   ExecutiveSummaryResult,
   GeneratedArtifact,
   GeneratedArtifactType,
@@ -95,6 +97,11 @@ interface DocumentRow {
   file_base64: string;
   raw_text: string;
   structure_map: Json;
+  processing_status: DocumentProcessingStatus;
+  processing_message: string | null;
+  processing_error: string | null;
+  parser_used: string | null;
+  indexed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -115,6 +122,11 @@ interface DocumentSummaryRow {
   file_base64?: string;
   raw_text?: string;
   structure_map?: Json;
+  processing_status?: DocumentProcessingStatus;
+  processing_message?: string | null;
+  processing_error?: string | null;
+  parser_used?: string | null;
+  indexed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -246,9 +258,26 @@ interface ProjectCacheSnapshot {
 }
 
 const DOCUMENT_SELECT_SAFE =
-  "id, project_id, role, supporting_subtype, title, file_name, file_format, content_type, file_size_bytes, page_count, file_storage_bucket, file_storage_path, file_base64, raw_text, structure_map, created_at, updated_at";
-const DOCUMENT_SUMMARY_SELECT_SAFE =
-  "id, project_id, role, supporting_subtype, title, file_name, file_format, content_type, file_size_bytes, page_count, created_at, updated_at";
+  "id, project_id, role, supporting_subtype, title, file_name, file_format, content_type, file_size_bytes, page_count, file_storage_bucket, file_storage_path, file_base64, raw_text, structure_map, processing_status, processing_message, processing_error, parser_used, indexed_at, created_at, updated_at";
+const DOCUMENT_SUMMARY_SELECT_COLUMNS = [
+  "id",
+  "project_id",
+  "role",
+  "supporting_subtype",
+  "title",
+  "file_name",
+  "file_format",
+  "content_type",
+  "file_size_bytes",
+  "page_count",
+  "processing_status",
+  "processing_message",
+  "processing_error",
+  "parser_used",
+  "indexed_at",
+  "created_at",
+  "updated_at",
+] as const;
 const DOCUMENT_SUMMARY_SELECT_LEGACY =
   "id, project_id, role, subtype, display_name, file_format, content_type, created_at";
 const PROJECT_SELECT_SAFE =
@@ -276,6 +305,11 @@ const PROJECT_DOCUMENT_INSERT_COLUMN_NAMES = [
   "raw_text",
   "structure_map",
   "source_map",
+  "processing_status",
+  "processing_message",
+  "processing_error",
+  "parser_used",
+  "indexed_at",
 ] as const;
 const SERVICE_DOCUMENT_INSERT_COLUMN_NAMES = [
   "id",
@@ -599,6 +633,7 @@ function fromUnknownProjectRow(row: Record<string, unknown>): ProjectRow {
 }
 
 function decryptDocumentRow(row: DocumentRow): ProjectDocumentDetail {
+  const rawText = decryptString(row.raw_text);
   return {
     id: row.id,
     project_id: row.project_id,
@@ -611,8 +646,16 @@ function decryptDocumentRow(row: DocumentRow): ProjectDocumentDetail {
     file_size_bytes: row.file_size_bytes,
     page_count: row.page_count,
     file_base64: decryptString(row.file_base64),
-    raw_text: decryptString(row.raw_text),
+    raw_text: rawText,
     structure_map: decryptJson(row.structure_map, []),
+    processing_status: normalizeDocumentProcessingStatus(
+      row.processing_status,
+      rawText,
+    ),
+    processing_message: row.processing_message,
+    processing_error: row.processing_error,
+    parser_used: row.parser_used,
+    indexed_at: row.indexed_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -681,6 +724,23 @@ function pageCountFromRawText(rawText: string | undefined, fileFormat: string) {
   return pageNumbers.length ? Math.max(...pageNumbers) : null;
 }
 
+function normalizeDocumentProcessingStatus(
+  value: unknown,
+  rawText?: string,
+): DocumentProcessingStatus {
+  if (
+    value === "queued" ||
+    value === "processing" ||
+    value === "basic_ready" ||
+    value === "enhanced_ready" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+
+  return rawText?.trim() ? "enhanced_ready" : "queued";
+}
+
 function normalizeStructureMapForChunks(
   value: unknown,
 ): ProjectDocumentStructureEntry[] {
@@ -741,6 +801,14 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
       row.page_count ??
       structurePageCount ??
       pageCountFromRawText(rawText, row.file_format),
+    processing_status: normalizeDocumentProcessingStatus(
+      row.processing_status,
+      rawText,
+    ),
+    processing_message: row.processing_message ?? null,
+    processing_error: row.processing_error ?? null,
+    parser_used: row.parser_used ?? null,
+    indexed_at: row.indexed_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -1187,6 +1255,16 @@ function fromUnknownDocumentSummaryRow(
       row.file_storage_path == null ? null : String(row.file_storage_path),
     raw_text: typeof row.raw_text === "string" ? row.raw_text : undefined,
     structure_map: (row.structure_map ?? row.source_map ?? []) as Json,
+    processing_status: normalizeDocumentProcessingStatus(
+      row.processing_status,
+      typeof row.raw_text === "string" ? decryptOptionalString(row.raw_text) : "",
+    ),
+    processing_message:
+      row.processing_message == null ? null : String(row.processing_message),
+    processing_error:
+      row.processing_error == null ? null : String(row.processing_error),
+    parser_used: row.parser_used == null ? null : String(row.parser_used),
+    indexed_at: row.indexed_at == null ? null : String(row.indexed_at),
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(
       row.updated_at ?? row.created_at ?? new Date().toISOString(),
@@ -1204,6 +1282,11 @@ function fromUnknownDocumentRow(row: Record<string, unknown>): DocumentRow {
     file_base64: String(row.file_base64 ?? ""),
     raw_text: String(row.raw_text ?? ""),
     structure_map: (row.structure_map ?? row.source_map ?? []) as Json,
+    processing_status: summary.processing_status ?? "queued",
+    processing_message: summary.processing_message ?? null,
+    processing_error: summary.processing_error ?? null,
+    parser_used: summary.parser_used ?? null,
+    indexed_at: summary.indexed_at ?? null,
   };
 }
 
@@ -1239,24 +1322,47 @@ async function fetchDocumentSummaryRows(
     error: { message?: string } | null;
   }>,
 ): Promise<DocumentSummaryRow[]> {
-  const first = await build(DOCUMENT_SUMMARY_SELECT_SAFE);
-  if (!first.error) {
-    return ((first.data ?? []) as Record<string, unknown>[]).map(
-      fromUnknownDocumentSummaryRow,
-    );
-  }
+  let selectedColumns = [...DOCUMENT_SUMMARY_SELECT_COLUMNS];
+  let lastError: { message?: string } | null = null;
 
-  if (isMissingLegacyDocumentColumn(first.error)) {
-    const retry = await build(DOCUMENT_SUMMARY_SELECT_LEGACY);
-    if (retry.error) {
-      throw new Error(retry.error.message || "Kunne ikke hente dokumentene.");
+  for (
+    let attempt = 0;
+    attempt < DOCUMENT_SUMMARY_SELECT_COLUMNS.length + 1;
+    attempt += 1
+  ) {
+    const result = await build(selectedColumns.join(", "));
+    if (!result.error) {
+      return ((result.data ?? []) as Record<string, unknown>[]).map(
+        fromUnknownDocumentSummaryRow,
+      );
     }
-    return ((retry.data ?? []) as Record<string, unknown>[]).map(
-      fromUnknownDocumentSummaryRow,
+
+    lastError = result.error;
+    if (!isMissingLegacyDocumentColumn(result.error)) {
+      break;
+    }
+
+    const missingColumn = missingColumnNameFromError(
+      result.error,
+      DOCUMENT_SUMMARY_SELECT_COLUMNS,
     );
+    if (!missingColumn || !selectedColumns.includes(missingColumn)) {
+      break;
+    }
+    selectedColumns = selectedColumns.filter((column) => column !== missingColumn);
   }
 
-  throw new Error(first.error.message || "Kunne ikke hente dokumentene.");
+  if (isMissingLegacyDocumentColumn(lastError)) {
+    const retry = await build(DOCUMENT_SUMMARY_SELECT_LEGACY);
+    if (!retry.error) {
+      return ((retry.data ?? []) as Record<string, unknown>[]).map(
+        fromUnknownDocumentSummaryRow,
+      );
+    }
+    throw new Error(retry.error.message || "Kunne ikke hente dokumentene.");
+  }
+
+  throw new Error(lastError?.message || "Kunne ikke hente dokumentene.");
 }
 
 async function fetchSingleDocumentRow(
@@ -1816,12 +1922,12 @@ export async function listServiceDocumentDetailsForProject(
   }
 
   const supabase = createServiceClient();
-  const hasDocumentIdFilter = Array.isArray(options?.documentIds);
-  const documentIds = hasDocumentIdFilter
-    ? options.documentIds!.filter(Boolean)
-    : [];
+  const documentIdFilter = Array.isArray(options?.documentIds)
+    ? options.documentIds
+    : null;
+  const documentIds = documentIdFilter ? documentIdFilter.filter(Boolean) : [];
 
-  if (hasDocumentIdFilter && !documentIds.length) {
+  if (documentIdFilter && !documentIds.length) {
     return [];
   }
 
@@ -2217,117 +2323,101 @@ async function updateProjectContextKeywords(projectId: string) {
 export async function getProjectDetail(
   projectId: string,
 ): Promise<ProjectDetail> {
-  return unstable_cache(
-    async () => {
-      const supabase = createServiceClient();
+  const supabase = createServiceClient();
 
-      const [
-        projectRow,
-        documentRows,
-        { data: analyses, error: analysesError },
-        { data: evaluations, error: evaluationsError },
-        { data: executiveSummaries, error: executiveSummariesError },
-        { data: artifactRows, error: artifactsError },
-      ] = await Promise.all([
-        queryProjectRow(projectId),
-        fetchDocumentSummaryRows((select) =>
-          supabase
-            .from("documents")
-            .select(select)
-            .eq("project_id", projectId)
-            .order("created_at", { ascending: false }),
-        ),
-        supabase
-          .from("customer_analyses")
-          .select("*")
-          .eq("project_id", projectId)
-          .order("created_at", { ascending: false })
-          .limit(1),
-        supabase
-          .from("solution_evaluations")
-          .select("*")
-          .eq("project_id", projectId)
-          .order("created_at", { ascending: false })
-          .limit(1),
-        supabase
-          .from("executive_summaries")
-          .select("*")
-          .eq("project_id", projectId)
-          .order("created_at", { ascending: false })
-          .limit(1),
-        supabase
-          .from("generated_artifacts")
-          .select("id")
-          .eq("project_id", projectId),
-      ]);
+  const [
+    projectRow,
+    documentRows,
+    { data: analyses, error: analysesError },
+    { data: evaluations, error: evaluationsError },
+    { data: executiveSummaries, error: executiveSummariesError },
+    { data: artifactRows, error: artifactsError },
+  ] = await Promise.all([
+    queryProjectRow(projectId),
+    fetchDocumentSummaryRows((select) =>
+      supabase
+        .from("documents")
+        .select(select)
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false }),
+    ),
+    supabase
+      .from("customer_analyses")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("solution_evaluations")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("executive_summaries")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    supabase.from("generated_artifacts").select("id").eq("project_id", projectId),
+  ]);
 
-      if (
-        analysesError ||
-        evaluationsError ||
-        artifactsError ||
-        (executiveSummariesError &&
-          !isMissingRelationColumn(
-            executiveSummariesError,
-            "executive_summaries",
-          ))
-      ) {
-        throw new Error(
-          analysesError?.message ||
-            evaluationsError?.message ||
-            executiveSummariesError?.message ||
-            artifactsError?.message ||
-            "Kunne ikke laste prosjektet.",
-        );
-      }
+  if (
+    analysesError ||
+    evaluationsError ||
+    artifactsError ||
+    (executiveSummariesError &&
+      !isMissingRelationColumn(executiveSummariesError, "executive_summaries"))
+  ) {
+    throw new Error(
+      analysesError?.message ||
+        evaluationsError?.message ||
+        executiveSummariesError?.message ||
+        artifactsError?.message ||
+        "Kunne ikke laste prosjektet.",
+    );
+  }
 
-      const analysisRow =
-        ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
-      const evaluationRow =
-        ((evaluations ?? [])[0] as SolutionEvaluationRow | undefined) ?? null;
-      const executiveSummaryRow =
-        ((executiveSummaries ?? [])[0] as ExecutiveSummaryRow | undefined) ??
-        null;
+  const analysisRow =
+    ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
+  const evaluationRow =
+    ((evaluations ?? [])[0] as SolutionEvaluationRow | undefined) ?? null;
+  const executiveSummaryRow =
+    ((executiveSummaries ?? [])[0] as ExecutiveSummaryRow | undefined) ?? null;
 
-      return {
-        id: projectRow.id,
-        name: projectRow.name,
-        customer_name: projectRow.customer_name,
-        description: projectRow.description,
-        industry: projectRow.industry,
-        status: mapProjectStatus(projectRow),
-        customer_document_uploaded: projectRow.customer_document_uploaded,
-        customer_analysis_generated: projectRow.customer_analysis_generated,
-        solution_document_uploaded: projectRow.solution_document_uploaded,
-        solution_evaluation_generated: projectRow.solution_evaluation_generated,
-        last_activity_at: projectRow.last_activity_at,
-        created_at: projectRow.created_at,
-        updated_at: projectRow.updated_at,
-        document_count: documentRows.length,
-        supporting_document_count: documentRows.filter(
-          (document) => document.role === "supporting_document",
-        ).length,
-        artifact_count: (artifactRows ?? []).length,
-        has_chat: false,
-        documents: documentRows.map(mapDocumentSummary),
-        customer_analysis: analysisRow
-          ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
-          : null,
-        solution_evaluation: evaluationRow
-          ? mapSolutionEvaluationRow(evaluationRow)
-          : null,
-        executive_summary: executiveSummaryRow
-          ? mapExecutiveSummaryRow(executiveSummaryRow)
-          : null,
-        generated_artifacts: [],
-        chat_messages: [],
-      };
-    },
-    ["project-detail", projectId],
-    {
-      tags: [projectTag(projectId)],
-      revalidate: 60,
-    },
-  )();
+  return {
+    id: projectRow.id,
+    name: projectRow.name,
+    customer_name: projectRow.customer_name,
+    description: projectRow.description,
+    industry: projectRow.industry,
+    status: mapProjectStatus(projectRow),
+    customer_document_uploaded: projectRow.customer_document_uploaded,
+    customer_analysis_generated: projectRow.customer_analysis_generated,
+    solution_document_uploaded: projectRow.solution_document_uploaded,
+    solution_evaluation_generated: projectRow.solution_evaluation_generated,
+    last_activity_at: projectRow.last_activity_at,
+    created_at: projectRow.created_at,
+    updated_at: projectRow.updated_at,
+    document_count: documentRows.length,
+    supporting_document_count: documentRows.filter(
+      (document) => document.role === "supporting_document",
+    ).length,
+    artifact_count: (artifactRows ?? []).length,
+    has_chat: false,
+    documents: documentRows.map(mapDocumentSummary),
+    customer_analysis: analysisRow
+      ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
+      : null,
+    solution_evaluation: evaluationRow
+      ? mapSolutionEvaluationRow(evaluationRow)
+      : null,
+    executive_summary: executiveSummaryRow
+      ? mapExecutiveSummaryRow(executiveSummaryRow)
+      : null,
+    generated_artifacts: [],
+    chat_messages: [],
+  };
 }
 
 export async function getProjectShell(
@@ -2683,6 +2773,353 @@ export async function saveDocument(input: {
   return mapDocumentSummary(inserted);
 }
 
+export async function savePendingDocument(input: {
+  projectId: string;
+  title: string;
+  role: ProjectDocumentRole;
+  supportingSubtype?: SupportingDocumentSubtype | null;
+  fileName: string;
+  fileFormat: DocumentFileFormat;
+  contentType: string;
+  fileSizeBytes: number;
+  fileBase64: string;
+}) {
+  const supabase = createServiceClient();
+  const documentId = randomUUID();
+  const normalizedTitle =
+    input.title?.trim() ||
+    input.fileName.replace(/\.[^.]+$/, "").trim() ||
+    "Dokument";
+  const encryptedBase64 = encryptString(input.fileBase64);
+  const storedFile = await uploadEncryptedBase64File({
+    path: buildStoredFilePath({
+      scope: "projects",
+      ownerId: input.projectId,
+      fileId: documentId,
+      fileName: input.fileName,
+    }),
+    encryptedBase64,
+  });
+  const supportingSubtype =
+    input.role === "supporting_document"
+      ? (input.supportingSubtype ?? null)
+      : null;
+  const insertPayload: Record<string, unknown> = {
+    id: documentId,
+    project_id: input.projectId,
+    role: input.role,
+    supporting_subtype: supportingSubtype,
+    subtype: supportingSubtype,
+    title: normalizedTitle,
+    display_name: normalizedTitle,
+    file_name: input.fileName,
+    file_format: input.fileFormat,
+    content_type: input.contentType,
+    file_size_bytes: input.fileSizeBytes,
+    page_count: null,
+    file_storage_bucket: storedFile.bucket,
+    file_storage_path: storedFile.path,
+    file_base64: "",
+    raw_text: "",
+    structure_map: encryptJson([]),
+    processing_status: "queued",
+    processing_message: "Venter på indeksering.",
+    processing_error: null,
+    parser_used: null,
+    indexed_at: null,
+  };
+
+  let insertResult: {
+    data: Record<string, unknown> | null;
+    error: { message?: string } | null;
+  } | null = null;
+  let shouldRemoveStoredFileAfterInsert = false;
+  for (
+    let attempt = 0;
+    attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
+    attempt += 1
+  ) {
+    const payloadForAttempt = { ...insertPayload };
+    const hasStorageColumns =
+      "file_storage_bucket" in payloadForAttempt &&
+      "file_storage_path" in payloadForAttempt;
+    if (!hasStorageColumns && "file_base64" in payloadForAttempt) {
+      payloadForAttempt.file_base64 = encryptedBase64;
+      shouldRemoveStoredFileAfterInsert = true;
+    }
+
+    insertResult = await supabase
+      .from("documents")
+      .insert(payloadForAttempt)
+      .select("*")
+      .single<Record<string, unknown>>();
+
+    if (
+      !insertResult.error ||
+      !isMissingLegacyDocumentColumn(insertResult.error)
+    ) {
+      break;
+    }
+
+    const missingColumn = missingColumnNameFromError(
+      insertResult.error,
+      PROJECT_DOCUMENT_INSERT_COLUMN_NAMES,
+    );
+    if (!missingColumn || !(missingColumn in insertPayload)) {
+      break;
+    }
+
+    if (
+      missingColumn === "file_storage_bucket" ||
+      missingColumn === "file_storage_path"
+    ) {
+      removeMissingStorageColumns(insertPayload);
+    } else {
+      delete insertPayload[missingColumn];
+      if (missingColumn === "structure_map") {
+        insertPayload.source_map = encryptJson([]);
+      }
+    }
+  }
+
+  if (insertResult?.error || !insertResult?.data) {
+    await removeStoredFiles([storedFile]);
+    throw new Error(
+      insertResult?.error?.message || "Kunne ikke lagre dokumentet.",
+    );
+  }
+  const inserted = fromUnknownDocumentRow(insertResult.data);
+  if (shouldRemoveStoredFileAfterInsert) {
+    await removeStoredFiles([storedFile]);
+  }
+
+  const projectPatch: Partial<ProjectRow> = {
+    last_activity_at: new Date().toISOString(),
+  };
+  if (
+    input.role === "primary_customer_document" ||
+    input.role === "primary_solution_document"
+  ) {
+    const demotedSubtype =
+      input.role === "primary_solution_document" ? "utkast" : "rfp";
+    let demoteResult = await supabase
+      .from("documents")
+      .update({
+        role: "supporting_document",
+        supporting_subtype: demotedSubtype,
+      })
+      .eq("project_id", input.projectId)
+      .eq("role", input.role)
+      .neq("id", inserted.id);
+
+    if (
+      demoteResult.error &&
+      isMissingLegacyDocumentColumn(demoteResult.error)
+    ) {
+      demoteResult = await supabase
+        .from("documents")
+        .update({
+          role: "supporting_document",
+          subtype: demotedSubtype,
+        })
+        .eq("project_id", input.projectId)
+        .eq("role", input.role)
+        .neq("id", inserted.id);
+    }
+
+    if (demoteResult.error) {
+      throw new Error(demoteResult.error.message);
+    }
+
+    if (input.role === "primary_customer_document") {
+      projectPatch.customer_analysis_generated = false;
+      projectPatch.solution_evaluation_generated = false;
+      await supabase
+        .from("customer_analyses")
+        .delete()
+        .eq("project_id", input.projectId);
+      await supabase
+        .from("solution_evaluations")
+        .delete()
+        .eq("project_id", input.projectId);
+    }
+
+    if (input.role === "primary_solution_document") {
+      projectPatch.solution_evaluation_generated = false;
+      await supabase
+        .from("solution_evaluations")
+        .delete()
+        .eq("project_id", input.projectId);
+    }
+  }
+
+  await supabase
+    .from("executive_summaries")
+    .delete()
+    .eq("project_id", input.projectId);
+
+  Object.assign(
+    projectPatch,
+    projectDocumentStatusPatch(
+      await listProjectDocumentRoleRows(supabase, input.projectId),
+    ),
+  );
+
+  await supabase
+    .from("projects")
+    .update(projectPatch)
+    .eq("id", input.projectId);
+
+  await updateProjectContextKeywords(input.projectId);
+  revalidateProjectCaches(input.projectId);
+
+  return mapDocumentSummary(inserted);
+}
+
+export async function updateDocumentProcessingState(input: {
+  projectId: string;
+  documentId: string;
+  status: DocumentProcessingStatus;
+  message?: string | null;
+  error?: string | null;
+  parserUsed?: string | null;
+  indexedAt?: string | null;
+}) {
+  const payload: Record<string, unknown> = {
+    processing_status: input.status,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.message !== undefined) payload.processing_message = input.message;
+  if (input.error !== undefined) payload.processing_error = input.error;
+  if (input.parserUsed !== undefined) payload.parser_used = input.parserUsed;
+  if (input.indexedAt !== undefined) payload.indexed_at = input.indexedAt;
+
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("documents")
+    .update(payload)
+    .eq("project_id", input.projectId)
+    .eq("id", input.documentId);
+
+  if (error && !isMissingLegacyDocumentColumn(error)) {
+    throw new Error(error.message);
+  }
+
+  revalidateProjectCaches(input.projectId);
+}
+
+export async function saveDocumentIngestionResult(input: {
+  projectId: string;
+  documentId: string;
+  role: ProjectDocumentRole;
+  supportingSubtype?: SupportingDocumentSubtype | null;
+  title: string;
+  fileName: string;
+  fileFormat: DocumentFileFormat;
+  contentType: string;
+  rawText: string;
+  structureMap: unknown;
+  parserUsed: string | null;
+  pageCountFallback?: number | null;
+  status: Extract<
+    DocumentProcessingStatus,
+    "processing" | "basic_ready" | "enhanced_ready"
+  >;
+  message: string;
+  indexChunks?: boolean;
+}) {
+  const supabase = createServiceClient();
+  const shouldIndexChunks = input.indexChunks !== false;
+  const pageCount =
+    pageCountFromStructureMap(input.structureMap, input.fileFormat) ??
+    pageCountFromRawText(input.rawText, input.fileFormat) ??
+    input.pageCountFallback ??
+    null;
+  const encryptedRawText = encryptString(input.rawText);
+  const encryptedStructureMap = encryptJson(input.structureMap);
+  const updatedAt = new Date().toISOString();
+  const updatePayload: Record<string, unknown> = {
+    file_name: input.fileName,
+    file_format: input.fileFormat,
+    content_type: input.contentType,
+    page_count: pageCount,
+    raw_text: encryptedRawText,
+    structure_map: encryptedStructureMap,
+    processing_status: input.status,
+    processing_message: input.message,
+    processing_error: null,
+    parser_used: input.parserUsed,
+    indexed_at: shouldIndexChunks ? updatedAt : null,
+    updated_at: updatedAt,
+  };
+
+  let updateResult: {
+    data: Record<string, unknown> | null;
+    error: { message?: string } | null;
+  } | null = null;
+  for (
+    let attempt = 0;
+    attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
+    attempt += 1
+  ) {
+    updateResult = await supabase
+      .from("documents")
+      .update(updatePayload)
+      .eq("project_id", input.projectId)
+      .eq("id", input.documentId)
+      .select("*")
+      .single<Record<string, unknown>>();
+
+    if (
+      !updateResult.error ||
+      !isMissingLegacyDocumentColumn(updateResult.error)
+    ) {
+      break;
+    }
+
+    const missingColumn = missingColumnNameFromError(
+      updateResult.error,
+      PROJECT_DOCUMENT_INSERT_COLUMN_NAMES,
+    );
+    if (!missingColumn || !(missingColumn in updatePayload)) {
+      break;
+    }
+
+    delete updatePayload[missingColumn];
+    if (missingColumn === "structure_map") {
+      updatePayload.source_map = encryptedStructureMap;
+    }
+  }
+
+  if (updateResult?.error || !updateResult?.data) {
+    throw new Error(
+      updateResult?.error?.message || "Kunne ikke oppdatere dokumentet.",
+    );
+  }
+
+  const updated = fromUnknownDocumentRow(updateResult.data);
+  if (shouldIndexChunks) {
+    await replaceProjectDocumentChunks({
+      documentId: input.documentId,
+      projectId: input.projectId,
+      role: input.role,
+      supportingSubtype: input.supportingSubtype ?? null,
+      title: input.title,
+      fileName: input.fileName,
+      fileFormat: input.fileFormat,
+      rawText: input.rawText,
+      structureMap: normalizeStructureMapForChunks(input.structureMap),
+    }).catch(() => {
+      // Chunk indexing should improve retrieval, not block ingestion status.
+    });
+  }
+
+  await updateProjectContextKeywords(input.projectId);
+  revalidateProjectCaches(input.projectId);
+
+  return mapDocumentSummary(updated);
+}
+
 export async function getDocumentDetail(
   projectId: string,
   documentId: string,
@@ -2978,7 +3415,7 @@ export async function saveCustomerAnalysis(
   const previousAnalysis =
     options && "previousAnalysis" in options
       ? (options.previousAnalysis ?? null)
-      : await getCustomerAnalysis(projectId);
+      : await getFreshCustomerAnalysis(projectId);
   const resultWithHistory = appendCustomerAnalysisSectionHistory({
     previousAnalysis,
     nextAnalysis: result,
@@ -3043,24 +3480,26 @@ export async function saveCustomerAnalysis(
   return decryptJson(data.result_json, CUSTOMER_ANALYSIS_EMPTY);
 }
 
+export async function getFreshCustomerAnalysis(projectId: string) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("customer_analyses")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = (data?.[0] as CustomerAnalysisRow | undefined) ?? null;
+  return row ? decryptJson(row.result_json, CUSTOMER_ANALYSIS_EMPTY) : null;
+}
+
 export async function getCustomerAnalysis(projectId: string) {
   return unstable_cache(
-    async () => {
-      const supabase = createServiceClient();
-      const { data, error } = await supabase
-        .from("customer_analyses")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      const row = (data?.[0] as CustomerAnalysisRow | undefined) ?? null;
-      return row ? decryptJson(row.result_json, CUSTOMER_ANALYSIS_EMPTY) : null;
-    },
+    () => getFreshCustomerAnalysis(projectId),
     ["project-customer-analysis", projectId],
     {
       tags: [projectTag(projectId)],

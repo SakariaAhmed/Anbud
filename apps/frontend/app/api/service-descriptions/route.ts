@@ -10,6 +10,7 @@ import {
   updateServiceDocumentAiSummary,
   upsertServiceDescription,
 } from "@/lib/server/repositories/services";
+import type { ServiceDocument } from "@/lib/types";
 
 const SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=300, stale-while-revalidate=1800",
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
       description: description || existingService?.description || "",
     });
 
-    let document = null;
+    let document: ServiceDocument | null = null;
     if (file instanceof File) {
       if (file.size <= 0) {
         return NextResponse.json(
@@ -88,7 +89,9 @@ export async function POST(request: Request) {
           { status: 413 },
         );
       }
-      const parsed = await extractTextFromUpload(file);
+      const parsed = await extractTextFromUpload(file, undefined, {
+        useDocling: false,
+      });
       if (!parsed.rawText.trim()) {
         return NextResponse.json(
           { error: "Dokumentet har ingen lesbar tekst." },
@@ -108,6 +111,7 @@ export async function POST(request: Request) {
         rawText: parsed.rawText,
         structureMap: parsed.sourceMap,
       });
+      const documentId = document.id;
       void summarizeServiceDocumentForAi({
         title: document.title,
         fileName: document.file_name,
@@ -115,7 +119,7 @@ export async function POST(request: Request) {
       })
         .then((summary) =>
           updateServiceDocumentAiSummary({
-            documentId: document!.id,
+            documentId,
             aiSummary: summary,
           }),
         )

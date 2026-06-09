@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai";
-import { extractTextFromUpload } from "@/lib/server/documents";
+import {
+  contentTypeForUploadFormat,
+  inferUploadFileFormat,
+} from "@/lib/server/documents";
+import { queueDocumentIngestionJob } from "@/lib/server/project-jobs";
 import {
   listProjectDocumentSummaries,
-  saveDocument,
+  savePendingDocument,
 } from "@/lib/server/repositories/documents";
-import {
-  getProjectSnapshot,
-  updateProjectMetadataFromInference,
-} from "@/lib/server/repositories/projects";
+import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import type { ProjectDocumentRole, SupportingDocumentSubtype } from "@/lib/types";
 
@@ -191,33 +191,30 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           )
         : null;
 
-    const parsed = await extractTextFromUpload(file, role);
-
-    if (!parsed.rawText.trim()) {
-      return NextResponse.json(
-        {
-          error:
-            "Dokumentet har ingen lesbar tekst. Last opp en tekstbasert PDF/DOCX/Excel-fil, eller bruk OCR før opplasting.",
-        },
-        { status: 400 },
-      );
-    }
-
-    const document = await saveDocument({
+    const fileFormat = inferUploadFileFormat({
+      fileName: file.name || "document.txt",
+      contentType: file.type || "application/octet-stream",
+    });
+    const document = await savePendingDocument({
       projectId: id,
       title: title || file.name.replace(/\.[^.]+$/, ""),
       role,
       supportingSubtype,
-      fileName: parsed.fileName,
-      fileFormat: parsed.fileFormat,
-      contentType: parsed.contentType,
+      fileName: file.name || "document.txt",
+      fileFormat,
+      contentType: contentTypeForUploadFormat(
+        fileFormat,
+        file.type || "application/octet-stream",
+      ),
       fileSizeBytes: file.size,
-      fileBase64: parsed.fileBase64,
-      rawText: parsed.rawText,
-      structureMap: parsed.sourceMap,
+      fileBase64: Buffer.from(await file.arrayBuffer()).toString("base64"),
     });
 
-    let snapshot = await getProjectSnapshot(id);
+    const job = await queueDocumentIngestionJob({
+      projectId: id,
+      documentId: document.id,
+    });
+    const snapshot = await getProjectSnapshot(id);
     await auditEvent({
       action: "document_uploaded",
       projectId: id,
@@ -227,26 +224,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         role,
         file_format: document.file_format,
         file_size_bytes: document.file_size_bytes,
+        ingestion_job_id: job.id,
       },
     });
 
-    try {
-      if (role !== "primary_customer_document") {
-        return NextResponse.json({ document, project: snapshot }, { status: 201 });
-      }
-
-      const inferredMetadata = await inferProjectMetadataFromCustomerDocument({
-        fileName: parsed.fileName,
-        title: title || file.name.replace(/\.[^.]+$/, ""),
-        rawText: parsed.rawText,
-      });
-      await updateProjectMetadataFromInference(id, inferredMetadata);
-      snapshot = await getProjectSnapshot(id);
-    } catch {
-      // Best-effort metadata extraction should not block document upload.
-    }
-
-    return NextResponse.json({ document, project: snapshot }, { status: 201 });
+    return NextResponse.json({ document, project: snapshot, job }, { status: 201 });
       },
     );
   } catch (error) {

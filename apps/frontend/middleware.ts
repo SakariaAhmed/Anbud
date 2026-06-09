@@ -95,6 +95,19 @@ function isTrustedOrigin(request: NextRequest) {
   }
 }
 
+function timingSafeTokenEqual(left: string | null, right: string) {
+  if (!left || left.length !== right.length) {
+    return false;
+  }
+
+  let diff = 0;
+  for (let index = 0; index < right.length; index += 1) {
+    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+
+  return diff === 0;
+}
+
 function nextWithRequestHeaders(request: NextRequest, authenticated: boolean) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(CURRENT_PATH_HEADER, request.nextUrl.pathname);
@@ -123,7 +136,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname === "/api/project-jobs/worker" &&
     workerToken &&
-    request.headers.get("x-worker-token") === workerToken
+    timingSafeTokenEqual(request.headers.get("x-worker-token"), workerToken)
   ) {
     return nextWithRequestHeaders(request, true);
   }

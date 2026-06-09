@@ -5,7 +5,9 @@ import {
   inferProjectChatDomains,
   resolveOpenAIModelOverride,
   streamProjectChat,
+  type ChatPromptAttachment,
 } from "@/lib/server/ai";
+import { extractTextFromUpload } from "@/lib/server/documents";
 import {
   appendChatMessage,
   listChatSessions,
@@ -13,7 +15,7 @@ import {
   updateChatSessionMemory,
   upsertChatSession,
 } from "@/lib/server/repositories/chat";
-import { getCustomerAnalysis } from "@/lib/server/repositories/analyses";
+import { getFreshCustomerAnalysis } from "@/lib/server/repositories/analyses";
 import { getProjectDetail } from "@/lib/server/repositories/projects";
 import { checkRateLimit } from "@/lib/server/observability";
 import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
@@ -24,6 +26,18 @@ import type {
   ChatSessionSummary,
 } from "@/lib/types";
 
+const MAX_CHAT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_CHAT_ATTACHMENTS = 1;
+
+class ChatRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 function truncateTitle(value: string, limit = 64) {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= limit) {
@@ -31,6 +45,106 @@ function truncateTitle(value: string, limit = 64) {
   }
 
   return `${normalized.slice(0, limit - 1).trim()}…`;
+}
+
+async function parseChatRequest(request: Request): Promise<{
+  message: string;
+  sessionId: string | null;
+  sessionTitle: string | null;
+  attachments: ChatPromptAttachment[];
+  attachmentMetadata: Array<{
+    title: string;
+    file_name: string;
+    file_format: string;
+    file_size_bytes: number;
+    text_length: number;
+  }>;
+}> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
+    const body = (await request.json()) as {
+      message?: string;
+      session_id?: string;
+      session_title?: string;
+    };
+    return {
+      message: body.message?.trim() ?? "",
+      sessionId: body.session_id ?? null,
+      sessionTitle: body.session_title ?? null,
+      attachments: [],
+      attachmentMetadata: [],
+    };
+  }
+
+  const formData = await request.formData();
+  const message = `${formData.get("message") || ""}`.trim();
+  const sessionId = `${formData.get("session_id") || ""}`.trim() || null;
+  const sessionTitle = `${formData.get("session_title") || ""}`.trim() || null;
+  const fileEntries = formData
+    .getAll("attachment")
+    .filter((entry): entry is File => entry instanceof File);
+
+  if (fileEntries.length > MAX_CHAT_ATTACHMENTS) {
+    throw new ChatRequestError("Maks ett chat-vedlegg per melding.", 400);
+  }
+
+  const attachments: ChatPromptAttachment[] = [];
+  const attachmentMetadata: Array<{
+    title: string;
+    file_name: string;
+    file_format: string;
+    file_size_bytes: number;
+    text_length: number;
+  }> = [];
+
+  for (const file of fileEntries) {
+    if (file.size <= 0) {
+      throw new ChatRequestError(
+        "Vedlegget er tomt. Last opp et dokument med innhold.",
+        400,
+      );
+    }
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      throw new ChatRequestError(
+        "Vedlegget er for stort. Maksimal størrelse er 25 MB.",
+        413,
+      );
+    }
+
+    const parsed = await extractTextFromUpload(file, undefined, {
+      useDocling: false,
+    });
+    const rawText = parsed.rawText.trim();
+    if (!rawText) {
+      throw new ChatRequestError("Vedlegget har ingen lesbar tekst.", 400);
+    }
+
+    const title =
+      `${formData.get("attachment_title") || ""}`.trim() ||
+      parsed.fileName.replace(/\.[^.]+$/, "") ||
+      parsed.fileName;
+    attachments.push({
+      title,
+      fileName: parsed.fileName,
+      fileFormat: parsed.fileFormat,
+      rawText,
+    });
+    attachmentMetadata.push({
+      title,
+      file_name: parsed.fileName,
+      file_format: parsed.fileFormat,
+      file_size_bytes: file.size,
+      text_length: rawText.length,
+    });
+  }
+
+  return {
+    message,
+    sessionId,
+    sessionTitle,
+    attachments,
+    attachmentMetadata,
+  };
 }
 
 function sessionIdFromMessage(message: ChatMessage) {
@@ -269,12 +383,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const model = await resolveOpenAIModelOverride(
       request.headers.get("x-openai-model"),
     );
-    const body = (await request.json()) as {
-      message?: string;
-      session_id?: string;
-      session_title?: string;
-    };
-    const message = body.message?.trim();
+    const chatRequest = await parseChatRequest(request);
+    const message = chatRequest.message;
 
     if (!message) {
       return NextResponse.json({ error: "Meldingen kan ikke være tom." }, { status: 400 });
@@ -285,8 +395,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         { status: 413 },
       );
     }
-    const sessionId = normalizeSessionId(body.session_id) ?? crypto.randomUUID();
-    const sessionTitle = normalizeSessionTitle(body.session_title, message);
+    const sessionId = normalizeSessionId(chatRequest.sessionId) ?? crypto.randomUUID();
+    const sessionTitle = normalizeSessionTitle(chatRequest.sessionTitle, message);
 
     const [
       project,
@@ -297,7 +407,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       storedSessions,
     ] = await Promise.all([
       getProjectDetail(id),
-      getCustomerAnalysis(id),
+      getFreshCustomerAnalysis(id),
       listProjectDocumentsForAnalysis(id),
       listGeneratedArtifacts(id),
       listChatMessages(id),
@@ -330,6 +440,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       chat_session_id: sessionId,
       chat_session_title: sessionTitle,
       domain_hints: domainHints,
+      prompt_attachments: chatRequest.attachmentMetadata,
     };
 
     await upsertChatSession({
@@ -364,6 +475,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       solutionDocument,
       supportingDocuments,
       question: message,
+      promptAttachments: chatRequest.attachments,
       model,
       sessionSummary: activeSession?.summary,
       domainHints,
@@ -373,6 +485,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       ...contextSnapshot,
       domain_hints: chatStream.domainHints,
       source_references: chatStream.sourceReferences,
+      retrieval_plan: chatStream.retrievalPlan,
+      retrieval_telemetry: chatStream.retrievalTelemetry,
     };
 
     return new NextResponse(
@@ -433,10 +547,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           "X-Chat-Domains": encodeURIComponent(
             JSON.stringify(chatStream.domainHints),
           ),
+          "X-Retrieval-Quality": encodeURIComponent(
+            JSON.stringify(chatStream.retrievalTelemetry?.quality ?? null),
+          ),
         },
       },
     );
   } catch (error) {
+    if (error instanceof ChatRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Kunne ikke sende chatmelding." },
       { status: 500 },

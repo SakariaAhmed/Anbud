@@ -17,9 +17,11 @@ import {
   type ProjectWorkflowInput,
 } from "@/lib/server/use-cases/project-workflows";
 import type {
+  DocumentIngestionJobResult,
   GeneratedArtifactType,
   ProjectJobKind,
   ProjectJobRecord,
+  ProjectJobResult,
 } from "@/lib/types";
 
 type JobStore = Map<string, ProjectJobRecord>;
@@ -28,12 +30,11 @@ type QueueJobOptions = {
   jobId?: string;
   skipEnqueue?: boolean;
   runNow?: boolean;
+  autoRun?: boolean;
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __anbudProjectJobs: JobStore | undefined;
-  // eslint-disable-next-line no-var
   var __anbudProjectJobProgressWrites:
     | Map<string, { message: string; writtenAt: number }>
     | undefined;
@@ -60,6 +61,10 @@ function getProgressWriteStore() {
 
 function initialMessageForKind(kind: ProjectJobKind) {
   switch (kind) {
+    case "document_ingestion":
+      return "Køer dokumentindeksering ...";
+    case "document_docling_enhancement":
+      return "Køer Docling-forbedring ...";
     case "customer_analysis":
       return "Køer kundeanalysen ...";
     case "solution_evaluation":
@@ -196,6 +201,7 @@ async function enqueueProjectJob(
   options: QueueJobOptions = {},
 ) {
   const record = createJobRecord(input, options.jobId);
+  const shouldAutoRun = options.autoRun !== false;
 
   if (!options.skipEnqueue) {
     getStore().set(record.id, record);
@@ -206,7 +212,7 @@ async function enqueueProjectJob(
       } else {
         await runProjectJob(record.id, input);
       }
-    } else {
+    } else if (shouldAutoRun) {
       setTimeout(() => {
         if (persisted) {
           void runQueuedProjectJob(record.id);
@@ -221,13 +227,44 @@ async function enqueueProjectJob(
 
   if (options.runNow) {
     await runProjectJob(record.id, input);
-  } else {
+  } else if (shouldAutoRun) {
     setTimeout(() => {
       void runProjectJob(record.id, input);
     }, 0);
   }
 
   return record;
+}
+
+function envFlag(name: string, fallback = false) {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (!value) {
+    return fallback;
+  }
+
+  return value === "1" || value === "true" || value === "on" || value === "yes";
+}
+
+function isDocumentIngestionResult(
+  result: ProjectJobResult,
+): result is DocumentIngestionJobResult {
+  return (
+    Boolean(result) &&
+    typeof result === "object" &&
+    "document_id" in result &&
+    typeof (result as { document_id?: unknown }).document_id === "string"
+  );
+}
+
+function shouldQueueDoclingEnhancement(
+  input: ProjectWorkflowInput,
+  result: ProjectJobResult,
+): result is DocumentIngestionJobResult {
+  return (
+    input.kind === "document_ingestion" &&
+    isDocumentIngestionResult(result) &&
+    result.docling_enhancement_requested === true
+  );
 }
 
 async function runProjectJob(jobId: string, input: ProjectWorkflowInput) {
@@ -245,6 +282,23 @@ async function runProjectJob(jobId: string, input: ProjectWorkflowInput) {
       timings: () => phaseTimer.timings(),
       totalDurationMs: () => phaseTimer.total(),
     });
+
+    if (
+      input.kind === "document_ingestion" &&
+      shouldQueueDoclingEnhancement(input, result)
+    ) {
+      const queuedEnhancement = await enqueueProjectJob(
+        {
+          kind: "document_docling_enhancement",
+          projectId: input.projectId,
+          documentId: input.documentId,
+        },
+        {
+          autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false),
+        },
+      );
+      result.docling_enhancement_job_id = queuedEnhancement.id;
+    }
 
     logJobPhase({
       jobId,
@@ -297,6 +351,34 @@ export async function queueArtifactGenerationJob(input: {
       instructions: input.instructions,
       sourceDocumentIds: input.sourceDocumentIds,
       model: input.model,
+    },
+    options,
+  );
+}
+
+export async function queueDocumentIngestionJob(input: {
+  projectId: string;
+  documentId: string;
+}, options: QueueJobOptions = {}) {
+  return enqueueProjectJob(
+    {
+      kind: "document_ingestion",
+      projectId: input.projectId,
+      documentId: input.documentId,
+    },
+    options,
+  );
+}
+
+export async function queueDocumentDoclingEnhancementJob(input: {
+  projectId: string;
+  documentId: string;
+}, options: QueueJobOptions = {}) {
+  return enqueueProjectJob(
+    {
+      kind: "document_docling_enhancement",
+      projectId: input.projectId,
+      documentId: input.documentId,
     },
     options,
   );

@@ -3,6 +3,8 @@ create table if not exists project_jobs (
   project_id uuid not null references projects(id) on delete cascade,
   kind text not null check (
     kind in (
+      'document_ingestion',
+      'document_docling_enhancement',
       'customer_analysis',
       'solution_evaluation',
       'artifact_generation',

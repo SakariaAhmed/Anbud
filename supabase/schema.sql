@@ -5,6 +5,8 @@ drop table if exists generated_artifacts cascade;
 drop table if exists project_jobs cascade;
 drop table if exists chat_messages cascade;
 drop table if exists chat_sessions cascade;
+drop table if exists app_rate_limits cascade;
+drop table if exists audit_events cascade;
 drop table if exists solution_evaluations cascade;
 drop table if exists executive_summaries cascade;
 drop table if exists customer_analyses cascade;
@@ -60,12 +62,18 @@ create table documents (
   file_base64 text not null default '',
   raw_text text not null default '',
   structure_map jsonb not null default '[]'::jsonb,
+  processing_status text not null default 'enhanced_ready' check (processing_status in ('queued', 'processing', 'basic_ready', 'enhanced_ready', 'failed')),
+  processing_message text,
+  processing_error text,
+  parser_used text,
+  indexed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index documents_project_id_idx on documents(project_id);
 create index documents_project_role_idx on documents(project_id, role, created_at desc);
+create index documents_processing_status_idx on documents(project_id, processing_status, updated_at desc);
 
 create table service_descriptions (
   id uuid primary key default gen_random_uuid(),
@@ -117,13 +125,14 @@ create table document_chunks (
     or supporting_subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'notat', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'annet')
   ),
   chunk_index integer not null,
-  kind text not null check (kind in ('section', 'page', 'paragraph', 'table', 'requirement', 'spreadsheet_rows')),
+  kind text not null check (kind in ('section', 'page', 'paragraph', 'table', 'requirement', 'requirement_row', 'answer_cell', 'evaluation_criteria', 'risk', 'commercial_term', 'architecture_signal', 'spreadsheet_rows')),
   reference text not null default '',
   heading_path text[] not null default '{}',
   page_start integer,
   page_end integer,
   token_count integer not null default 0,
   text_encrypted text not null,
+  fts tsvector not null default ''::tsvector,
   content_hash text not null,
   metadata jsonb not null default '{}'::jsonb,
   embedding extensions.vector(1536),
@@ -143,6 +152,7 @@ create index document_chunks_source_idx on document_chunks(source_type, source_i
 create index document_chunks_project_idx on document_chunks(project_id, source_type, chunk_index) where project_id is not null;
 create index document_chunks_service_idx on document_chunks(service_id, source_id, chunk_index) where service_id is not null;
 create index document_chunks_content_hash_idx on document_chunks(source_type, source_id, content_hash);
+create index document_chunks_fts_idx on document_chunks using gin(fts);
 create index document_chunks_embedding_hnsw_idx on document_chunks using hnsw (embedding vector_cosine_ops) where embedding is not null;
 
 create or replace function match_document_chunks(
@@ -177,6 +187,134 @@ $$;
 
 revoke execute on function match_document_chunks(extensions.vector, int, float, uuid, uuid[]) from anon;
 revoke execute on function match_document_chunks(extensions.vector, int, float, uuid, uuid[]) from authenticated;
+grant execute on function match_document_chunks(extensions.vector, int, float, uuid, uuid[]) to service_role;
+
+create or replace function update_document_chunk_search_vectors(
+  source_type_filter text,
+  source_id_filter uuid,
+  chunks jsonb
+)
+returns void
+language plpgsql
+set search_path = public, extensions
+as $$
+begin
+  if source_type_filter not in ('project_document', 'service_document') then
+    raise exception 'Invalid document chunk source type: %', source_type_filter;
+  end if;
+
+  update document_chunks
+  set
+    fts = to_tsvector(
+      'simple',
+      left(coalesce(chunk_payload.search_text, ''), 200000)
+    ),
+    updated_at = now()
+  from jsonb_to_recordset(chunks) as chunk_payload(
+    chunk_index integer,
+    search_text text
+  )
+  where document_chunks.source_type = source_type_filter
+    and document_chunks.source_id = source_id_filter
+    and document_chunks.chunk_index = chunk_payload.chunk_index;
+end;
+$$;
+
+revoke execute on function update_document_chunk_search_vectors(text, uuid, jsonb) from anon;
+revoke execute on function update_document_chunk_search_vectors(text, uuid, jsonb) from authenticated;
+grant execute on function update_document_chunk_search_vectors(text, uuid, jsonb) to service_role;
+
+create or replace function hybrid_match_document_chunks(
+  query_embedding extensions.vector(1536),
+  query_text text,
+  match_count int default 12,
+  match_threshold float default 0.15,
+  project_filter uuid default null,
+  source_id_filter uuid[] default null,
+  rrf_k int default 50,
+  full_text_weight float default 1,
+  semantic_weight float default 1
+)
+returns table (
+  id uuid,
+  source_type text,
+  source_id uuid,
+  similarity float,
+  keyword_rank int,
+  semantic_rank int,
+  rrf_score float
+)
+language sql stable
+set search_path = public, extensions
+as $$
+  with settings as (
+    select
+      websearch_to_tsquery('simple', coalesce(query_text, '')) as keyword_query,
+      least(greatest(match_count, 1), 200) as requested_count,
+      greatest(rrf_k, 1) as smoothing_k,
+      greatest(full_text_weight, 0) as keyword_weight,
+      greatest(semantic_weight, 0) as vector_weight
+  ),
+  semantic_matches as (
+    select
+      document_chunks.id,
+      document_chunks.source_type,
+      document_chunks.source_id,
+      1 - (document_chunks.embedding <=> query_embedding) as similarity,
+      row_number() over (order by document_chunks.embedding <=> query_embedding asc)::int as semantic_rank
+    from document_chunks
+    where document_chunks.embedding is not null
+      and (project_filter is null or document_chunks.project_id = project_filter)
+      and (source_id_filter is null or document_chunks.source_id = any(source_id_filter))
+      and 1 - (document_chunks.embedding <=> query_embedding) >= match_threshold
+    order by document_chunks.embedding <=> query_embedding asc
+    limit least(greatest(match_count * 4, 12), 200)
+  ),
+  keyword_matches as (
+    select
+      document_chunks.id,
+      document_chunks.source_type,
+      document_chunks.source_id,
+      row_number() over (
+        order by ts_rank_cd(document_chunks.fts, settings.keyword_query) desc, document_chunks.chunk_index asc
+      )::int as keyword_rank
+    from document_chunks
+    cross join settings
+    where numnode(settings.keyword_query) > 0
+      and document_chunks.fts @@ settings.keyword_query
+      and (project_filter is null or document_chunks.project_id = project_filter)
+      and (source_id_filter is null or document_chunks.source_id = any(source_id_filter))
+    order by ts_rank_cd(document_chunks.fts, settings.keyword_query) desc, document_chunks.chunk_index asc
+    limit least(greatest(match_count * 4, 12), 200)
+  ),
+  combined_ids as (
+    select id from semantic_matches
+    union
+    select id from keyword_matches
+  )
+  select
+    document_chunks.id,
+    document_chunks.source_type,
+    document_chunks.source_id,
+    semantic_matches.similarity,
+    keyword_matches.keyword_rank,
+    semantic_matches.semantic_rank,
+    (
+      coalesce(settings.vector_weight / (settings.smoothing_k + semantic_matches.semantic_rank), 0) +
+      coalesce(settings.keyword_weight / (settings.smoothing_k + keyword_matches.keyword_rank), 0)
+    )::float as rrf_score
+  from combined_ids
+  join document_chunks on document_chunks.id = combined_ids.id
+  cross join settings
+  left join semantic_matches on semantic_matches.id = document_chunks.id
+  left join keyword_matches on keyword_matches.id = document_chunks.id
+  order by rrf_score desc, semantic_matches.similarity desc nulls last
+  limit (select requested_count from settings);
+$$;
+
+revoke execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) from anon;
+revoke execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) from authenticated;
+grant execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) to service_role;
 
 create table project_service_selections (
   project_id uuid not null references projects(id) on delete cascade,
@@ -246,6 +384,8 @@ create table project_jobs (
   project_id uuid not null references projects(id) on delete cascade,
   kind text not null check (
     kind in (
+      'document_ingestion',
+      'document_docling_enhancement',
       'customer_analysis',
       'solution_evaluation',
       'artifact_generation',
@@ -411,6 +551,9 @@ revoke all on all tables in schema public from anon;
 revoke all on all tables in schema public from authenticated;
 revoke all on all sequences in schema public from anon;
 revoke all on all sequences in schema public from authenticated;
+grant usage on schema public to service_role;
+grant all privileges on all tables in schema public to service_role;
+grant all privileges on all sequences in schema public to service_role;
 revoke execute on all functions in schema public from public;
 revoke execute on all functions in schema public from anon;
 revoke execute on all functions in schema public from authenticated;
@@ -418,11 +561,15 @@ revoke execute on all functions in schema public from authenticated;
 grant execute on all functions in schema public to service_role;
 grant execute on function check_app_rate_limit(text, text, integer, integer) to service_role;
 grant execute on function match_document_chunks(extensions.vector, int, float, uuid, uuid[]) to service_role;
+grant execute on function update_document_chunk_search_vectors(text, uuid, jsonb) to service_role;
+grant execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) to service_role;
 
 alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke all on tables from authenticated;
 alter default privileges in schema public revoke all on sequences from anon;
 alter default privileges in schema public revoke all on sequences from authenticated;
+alter default privileges in schema public grant all privileges on tables to service_role;
+alter default privileges in schema public grant all privileges on sequences to service_role;
 alter default privileges in schema public revoke execute on functions from public;
 alter default privileges in schema public revoke execute on functions from anon;
 alter default privileges in schema public revoke execute on functions from authenticated;

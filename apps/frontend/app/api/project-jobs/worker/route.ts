@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 
 import { runAvailableProjectJobs } from "@/lib/server/project-jobs";
 import { checkRateLimit } from "@/lib/server/observability";
@@ -7,13 +8,26 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+function safeTokenEquals(candidate: string | null, expected: string) {
+  if (!candidate) {
+    return false;
+  }
+
+  const candidateBytes = Buffer.from(candidate);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    candidateBytes.length === expectedBytes.length &&
+    timingSafeEqual(candidateBytes, expectedBytes)
+  );
+}
+
 function isAuthorized(request: Request) {
   const token = process.env.PROJECT_JOB_WORKER_TOKEN;
   if (!token) {
     return process.env.NODE_ENV !== "production";
   }
 
-  return request.headers.get("x-worker-token") === token;
+  return safeTokenEquals(request.headers.get("x-worker-token"), token);
 }
 
 export async function POST(request: Request) {

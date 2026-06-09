@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useState, type DragEvent, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type DragEvent,
+  type FormEvent,
+} from "react";
 import {
   CheckCircle2,
   FileText,
@@ -60,7 +66,7 @@ export function ProjectServiceDescriptionTab({
 
   const recommendedServices = services.filter((service) => service.recommended);
 
-  async function loadServices() {
+  const loadServices = useCallback(async () => {
     const cacheKey = projectServicesCacheKey(projectId);
     const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
     if (cached) {
@@ -88,11 +94,11 @@ export function ProjectServiceDescriptionTab({
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId]);
 
   useEffect(() => {
     void loadServices();
-  }, [projectId]);
+  }, [loadServices]);
 
   async function saveSelections(
     nextIds: string[],

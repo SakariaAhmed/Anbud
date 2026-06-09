@@ -2,6 +2,7 @@ import "server-only";
 
 export {
   getCustomerAnalysis,
+  getFreshCustomerAnalysis,
   getExecutiveSummary,
   getSolutionEvaluation,
   saveCustomerAnalysis,

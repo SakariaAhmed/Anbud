@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -308,6 +308,7 @@ function formatHistoryTimestamp(value: string) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Europe/Oslo",
   }).format(new Date(value));
 }
 
@@ -618,7 +619,10 @@ function SectionHistoryPanel({
   analysis: CustomerAnalysisResult;
   section: CustomerAnalysisSection;
 }) {
-  const entries = analysis.section_histories?.[section] ?? [];
+  const entries = useMemo(
+    () => analysis.section_histories?.[section] ?? [],
+    [analysis.section_histories, section],
+  );
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(
     null,
   );

@@ -1,5 +1,9 @@
 import "server-only";
 
+import { execFile } from "node:child_process";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
 import JSZip from "jszip";
 import type { ProjectDocumentRole } from "@/lib/types";
@@ -17,6 +21,7 @@ export interface ParsedUpload {
   fileFormat: "pdf" | "docx" | "txt" | "md" | "xlsx" | "xls";
   fileBase64: string;
   sourceMap: SourceMapEntry[];
+  parserUsed: string;
 }
 
 type PdfParseFn = (
@@ -36,6 +41,33 @@ const MAX_SPREADSHEET_SHEETS = 12;
 const MAX_SPREADSHEET_ROWS_PER_SHEET = 2000;
 const MAX_SPREADSHEET_COLUMNS_PER_SHEET = 80;
 const MAX_SPREADSHEET_CELLS = 80_000;
+const DEFAULT_DOCLING_TIMEOUT_MS = 180_000;
+const DOCLING_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+const DOCLING_DEFAULT_IMAGE_EXPORT_MODE = "placeholder";
+const DOCLING_SUPPORTED_FORMATS = new Set<ParsedUpload["fileFormat"]>([
+  "pdf",
+  "docx",
+  "xlsx",
+]);
+const DOCLING_DEFAULT_FORMATS = new Set<ParsedUpload["fileFormat"]>(["pdf"]);
+
+class DoclingCommandError extends Error {
+  readonly timedOut: boolean;
+  readonly stderr: string;
+
+  constructor(message: string, options: { timedOut: boolean; stderr: string }) {
+    super(message);
+    this.name = "DoclingCommandError";
+    this.timedOut = options.timedOut;
+    this.stderr = options.stderr;
+  }
+}
+
+type ExecFileError = Error & {
+  killed?: boolean;
+  signal?: NodeJS.Signals | null;
+  code?: string | number | null;
+};
 
 async function getPdfParse() {
   if (!pdfParsePromise) {
@@ -72,6 +104,302 @@ function ensureReadableText(rawText: string, fileName: string) {
   throw new Error(
     `${fileName} har ingen lesbar tekst. Last opp en tekstbasert fil, eller bruk OCR/eksport til DOCX, Excel, TXT eller Markdown før opplasting.`,
   );
+}
+
+export function isDoclingEnabled() {
+  return process.env.DOCLING_INGESTION?.trim().toLowerCase() === "on";
+}
+
+export function canUseDoclingForFormat(fileFormat: ParsedUpload["fileFormat"]) {
+  const configuredFormats = process.env.DOCLING_FORMATS?.trim().toLowerCase();
+  if (!configuredFormats) {
+    return DOCLING_DEFAULT_FORMATS.has(fileFormat);
+  }
+
+  if (configuredFormats === "all") {
+    return DOCLING_SUPPORTED_FORMATS.has(fileFormat);
+  }
+
+  const formats = new Set(
+    configuredFormats
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value): value is ParsedUpload["fileFormat"] =>
+        DOCLING_SUPPORTED_FORMATS.has(value as ParsedUpload["fileFormat"]),
+      ),
+  );
+
+  return formats.size > 0
+    ? formats.has(fileFormat)
+    : DOCLING_DEFAULT_FORMATS.has(fileFormat);
+}
+
+function doclingCommand() {
+  return process.env.DOCLING_CLI_COMMAND?.trim() || "docling";
+}
+
+function normalizedOptionalEnv(name: string) {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
+}
+
+function doclingTimeoutMs() {
+  const rawValue = normalizedOptionalEnv("DOCLING_TIMEOUT_MS");
+  const parsed = rawValue ? Number(rawValue) : DEFAULT_DOCLING_TIMEOUT_MS;
+  if (!Number.isFinite(parsed) || parsed < 1_000) {
+    return DEFAULT_DOCLING_TIMEOUT_MS;
+  }
+
+  return Math.min(parsed, 600_000);
+}
+
+function doclingImageExportMode() {
+  return normalizedOptionalEnv("DOCLING_IMAGE_EXPORT_MODE") ?? DOCLING_DEFAULT_IMAGE_EXPORT_MODE;
+}
+
+function doclingNumThreads() {
+  const rawValue = normalizedOptionalEnv("DOCLING_NUM_THREADS");
+  const parsed = rawValue ? Number(rawValue) : null;
+  if (!Number.isInteger(parsed) || !parsed || parsed < 1) {
+    return null;
+  }
+
+  return String(Math.min(parsed, 16));
+}
+
+function doclingCliArgs(inputPath: string, outputDir: string) {
+  const args = [
+    "--to",
+    "md",
+    "--output",
+    outputDir,
+    "--image-export-mode",
+    doclingImageExportMode(),
+    "--document-timeout",
+    String(Math.ceil(doclingTimeoutMs() / 1000)),
+  ];
+  const artifactsPath = normalizedOptionalEnv("DOCLING_ARTIFACTS_PATH");
+  const numThreads = doclingNumThreads();
+  const tableMode = normalizedOptionalEnv("DOCLING_TABLE_MODE")?.toLowerCase();
+  const ocrMode = normalizedOptionalEnv("DOCLING_OCR")?.toLowerCase();
+
+  if (artifactsPath) {
+    args.push("--artifacts-path", artifactsPath);
+  }
+
+  if (numThreads) {
+    args.push("--num-threads", numThreads);
+  }
+
+  if (tableMode === "fast" || tableMode === "accurate") {
+    args.push("--table-mode", tableMode);
+  }
+
+  if (ocrMode === "off" || ocrMode === "false" || ocrMode === "0") {
+    args.push("--no-ocr");
+  } else if (ocrMode === "on" || ocrMode === "true" || ocrMode === "1") {
+    args.push("--ocr");
+  }
+
+  args.push(inputPath);
+  return args;
+}
+
+function execDocling(args: string[]) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile(
+      doclingCommand(),
+      args,
+      {
+        timeout: doclingTimeoutMs(),
+        maxBuffer: DOCLING_MAX_BUFFER_BYTES,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const execError = error as ExecFileError;
+          const timedOut =
+            (execError.killed === true && execError.signal === "SIGTERM") ||
+            /\b(?:timed out|timeout)\b/i.test(execError.message);
+          reject(
+            new DoclingCommandError(
+              [
+                error.message,
+                stderr?.trim() ? `stderr: ${stderr.trim()}` : "",
+              ]
+                .filter(Boolean)
+                .join("\n"),
+              {
+                timedOut,
+                stderr: stderr?.trim() ?? "",
+              },
+            ),
+          );
+          return;
+        }
+
+        resolve({ stdout, stderr });
+      },
+    );
+  });
+}
+
+function shouldRetryDoclingFallback(error: unknown) {
+  if (error instanceof DoclingCommandError && error.timedOut) {
+    return false;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /\b(?:unknown|unrecognized|unsupported|invalid)\b.*\b(?:option|argument|flag)\b/i.test(
+      message,
+    ) || /\bno such option\b/i.test(message)
+  );
+}
+
+async function findMarkdownFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await findMarkdownFiles(fullPath)));
+    } else if (entry.isFile() && /\.md$/i.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
+function stdoutLooksLikeMarkdown(stdout: string) {
+  if (!stdout) {
+    return false;
+  }
+
+  if (
+    stdout.length < 160 &&
+    /\b(converted|saved|generated|processed|docling|output)\b/i.test(stdout)
+  ) {
+    return false;
+  }
+
+  return /(^|\n)\s{0,3}#{1,6}\s+\S/.test(stdout) || stdout.split("\n").length >= 4;
+}
+
+async function readDoclingMarkdown(tempDir: string, stdout: string) {
+  const markdownFiles = await findMarkdownFiles(tempDir);
+  const preferredFiles = markdownFiles.sort((left, right) => {
+    const leftSource = /(^|\/)source\.md$/i.test(left) ? 0 : 1;
+    const rightSource = /(^|\/)source\.md$/i.test(right) ? 0 : 1;
+    return leftSource - rightSource || left.localeCompare(right);
+  });
+
+  for (const filePath of preferredFiles) {
+    const markdown = normalizeText(await readFile(filePath, "utf8"));
+    if (markdown) {
+      return markdown;
+    }
+  }
+
+  const stdoutMarkdown = normalizeText(stdout);
+  return stdoutLooksLikeMarkdown(stdoutMarkdown) ? stdoutMarkdown : "";
+}
+
+async function tryExtractWithDocling(input: {
+  buffer: Buffer;
+  fileName: string;
+  fileFormat: ParsedUpload["fileFormat"];
+  contentType: string;
+  role?: ProjectDocumentRole;
+}): Promise<ParsedUpload | null> {
+  if (!isDoclingEnabled()) {
+    return null;
+  }
+
+  if (!canUseDoclingForFormat(input.fileFormat)) {
+    return null;
+  }
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), "anbud-docling-"));
+  const suffix = path.extname(input.fileName) || `.${input.fileFormat}`;
+  const inputPath = path.join(tempDir, `source${suffix}`);
+
+  try {
+    await writeFile(inputPath, input.buffer);
+    const primaryArgs = doclingCliArgs(inputPath, tempDir);
+    const fallbackArgs = ["--to", "md", "--output", tempDir, inputPath];
+    let markdown = "";
+    let lastError: unknown = null;
+
+    try {
+      const result = await execDocling(primaryArgs);
+      markdown = await readDoclingMarkdown(tempDir, result.stdout);
+    } catch (error) {
+      lastError = error;
+      if (shouldRetryDoclingFallback(error)) {
+        console.info(
+          JSON.stringify({
+            event: "docling_ingestion_cli_fallback",
+            file_name: input.fileName,
+            reason: error instanceof Error ? error.message : "unknown_error",
+          }),
+        );
+
+        try {
+          const result = await execDocling(fallbackArgs);
+          markdown = await readDoclingMarkdown(tempDir, result.stdout);
+        } catch (fallbackError) {
+          lastError = fallbackError;
+        }
+      }
+    }
+
+    if (!markdown) {
+      if (lastError) {
+        console.info(
+          JSON.stringify({
+            event: "docling_ingestion_fallback",
+            file_name: input.fileName,
+            reason:
+              lastError instanceof Error ? lastError.message : "unknown_error",
+          }),
+        );
+      }
+      return null;
+    }
+
+    ensureReadableText(markdown, input.fileName);
+    console.info(
+      JSON.stringify({
+        event: "docling_ingestion_success",
+        file_name: input.fileName,
+        file_format: input.fileFormat,
+        chars: markdown.length,
+      }),
+    );
+
+    return {
+      rawText: markdown,
+      contentType: input.contentType,
+      fileName: input.fileName,
+      fileFormat: input.fileFormat,
+      fileBase64: input.buffer.toString("base64"),
+      sourceMap: buildTextSourceMap(markdown, input.role),
+      parserUsed: "docling",
+    };
+  } catch (error) {
+    console.info(
+      JSON.stringify({
+        event: "docling_ingestion_fallback",
+        file_name: input.fileName,
+        reason: error instanceof Error ? error.message : "unknown_error",
+      }),
+    );
+    return null;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 function documentLabel(role?: ProjectDocumentRole) {
@@ -218,6 +546,7 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
     fileFormat: "pdf",
     fileBase64: buffer.toString("base64"),
     sourceMap: pageEntries.filter((entry) => entry.text),
+    parserUsed: "pdf-parse",
   };
 }
 
@@ -246,6 +575,7 @@ async function extractDocxWithMammoth(buffer: Buffer, fileName: string, role?: P
     fileFormat: "docx",
     fileBase64: buffer.toString("base64"),
     sourceMap: buildTextSourceMap(rawText, role),
+    parserUsed: "mammoth",
   };
 }
 
@@ -459,6 +789,7 @@ async function extractDocxFromWordXml(
       fileFormat: "docx",
       fileBase64: buffer.toString("base64"),
       sourceMap: sourceMap.length ? sourceMap : buildTextSourceMap(rawText, role),
+      parserUsed: "docx-xml",
     };
   } catch (fallbackError) {
     throw new Error(
@@ -481,6 +812,7 @@ async function extractTxtLike(buffer: Buffer, fileName: string, fileFormat: "txt
     fileFormat,
     fileBase64: buffer.toString("base64"),
     sourceMap: buildTextSourceMap(rawText, role),
+    parserUsed: fileFormat === "md" ? "markdown" : "text",
   };
 }
 
@@ -619,52 +951,147 @@ async function extractSpreadsheet(
     fileFormat,
     fileBase64: buffer.toString("base64"),
     sourceMap: extracted.sourceMap,
+    parserUsed: "spreadsheet",
   };
 }
 
-export async function extractTextFromUpload(file: File, role?: ProjectDocumentRole): Promise<ParsedUpload> {
-  const fileName = file.name || "document.txt";
-  const suffix = fileName.toLowerCase();
-  const contentType = file.type || "application/octet-stream";
-  const buffer = Buffer.from(await file.arrayBuffer());
+export function inferUploadFileFormat(input: {
+  fileName: string;
+  contentType?: string | null;
+}): ParsedUpload["fileFormat"] {
+  const suffix = input.fileName.toLowerCase();
+  const contentType = input.contentType || "application/octet-stream";
 
   if (contentType === "application/pdf" || suffix.endsWith(".pdf")) {
-    return extractPdf(buffer, fileName, role);
+    return "pdf";
   }
-
   if (
     contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     suffix.endsWith(".docx")
   ) {
-    return extractDocx(buffer, fileName, role);
+    return "docx";
   }
-
   if (contentType === "application/msword" || suffix.endsWith(".doc")) {
     throw new Error("`.doc` støttes ikke direkte. Lagre dokumentet som `.docx` og last opp på nytt.");
   }
-
   if (contentType === "text/plain" || suffix.endsWith(".txt")) {
-    return extractTxtLike(buffer, fileName, "txt", role);
+    return "txt";
   }
-
   if (contentType === "text/markdown" || suffix.endsWith(".md")) {
-    return extractTxtLike(buffer, fileName, "md", role);
+    return "md";
   }
-
   if (
     contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
     suffix.endsWith(".xlsx")
   ) {
-    return extractSpreadsheet(buffer, fileName, "xlsx", role);
+    return "xlsx";
   }
-
   if (
     contentType === "application/vnd.ms-excel" ||
     contentType === "application/xls" ||
     suffix.endsWith(".xls")
   ) {
+    return "xls";
+  }
+
+  throw new Error("Kun PDF, DOCX, Excel, TXT og Markdown støttes.");
+}
+
+export function contentTypeForUploadFormat(
+  fileFormat: ParsedUpload["fileFormat"],
+  fallback?: string | null,
+) {
+  if (fallback && fallback !== "application/octet-stream") {
+    return fallback;
+  }
+
+  switch (fileFormat) {
+    case "pdf":
+      return "application/pdf";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "txt":
+      return "text/plain";
+    case "md":
+      return "text/markdown";
+    case "xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "xls":
+      return "application/vnd.ms-excel";
+  }
+}
+
+export async function extractTextFromBuffer(input: {
+  buffer: Buffer;
+  fileName: string;
+  contentType?: string | null;
+  role?: ProjectDocumentRole;
+  useDocling?: boolean;
+}): Promise<ParsedUpload> {
+  const fileName = input.fileName || "document.txt";
+  const suffix = fileName.toLowerCase();
+  const fileFormat = inferUploadFileFormat({
+    fileName,
+    contentType: input.contentType,
+  });
+  const contentType = contentTypeForUploadFormat(fileFormat, input.contentType);
+  const buffer = input.buffer;
+  const role = input.role;
+
+  if (input.useDocling !== false && canUseDoclingForFormat(fileFormat)) {
+    const docling = await tryExtractWithDocling({
+      buffer,
+      fileName,
+      fileFormat,
+      contentType,
+      role,
+    });
+    if (docling) {
+      return docling;
+    }
+  }
+
+  if (fileFormat === "pdf") {
+    return extractPdf(buffer, fileName, role);
+  }
+
+  if (fileFormat === "docx") {
+    return extractDocx(buffer, fileName, role);
+  }
+
+  if (suffix.endsWith(".doc")) {
+    throw new Error("`.doc` støttes ikke direkte. Lagre dokumentet som `.docx` og last opp på nytt.");
+  }
+
+  if (fileFormat === "txt") {
+    return extractTxtLike(buffer, fileName, "txt", role);
+  }
+
+  if (fileFormat === "md") {
+    return extractTxtLike(buffer, fileName, "md", role);
+  }
+
+  if (fileFormat === "xlsx") {
+    return extractSpreadsheet(buffer, fileName, "xlsx", role);
+  }
+
+  if (fileFormat === "xls") {
     return extractSpreadsheet(buffer, fileName, "xls", role);
   }
 
   throw new Error("Kun PDF, DOCX, Excel, TXT og Markdown støttes.");
+}
+
+export async function extractTextFromUpload(
+  file: File,
+  role?: ProjectDocumentRole,
+  options?: { useDocling?: boolean },
+): Promise<ParsedUpload> {
+  return extractTextFromBuffer({
+    buffer: Buffer.from(await file.arrayBuffer()),
+    fileName: file.name || "document.txt",
+    contentType: file.type || "application/octet-stream",
+    role,
+    useDocling: options?.useDocling,
+  });
 }

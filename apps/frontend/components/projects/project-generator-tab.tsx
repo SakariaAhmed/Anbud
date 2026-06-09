@@ -4,9 +4,7 @@ import { FormEvent } from "react";
 import { ChevronDown, Sparkles, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { Textarea } from "@/components/ui/textarea";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { ArtifactActions } from "@/components/projects/artifact-actions";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
@@ -18,20 +16,16 @@ import type { GeneratedArtifact } from "@/lib/types";
 
 export function ProjectGeneratorTab({
   artifacts,
-  artifactInstructions,
   busy,
   busyMessage,
   busyProgress,
-  onArtifactInstructionsChange,
   onDeleteArtifact,
   onSubmit,
 }: {
   artifacts: GeneratedArtifact[];
-  artifactInstructions: string;
   busy: boolean;
   busyMessage: string;
   busyProgress: number;
-  onArtifactInstructionsChange: (value: string) => void;
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -40,39 +34,24 @@ export function ProjectGeneratorTab({
   );
 
   return (
-    <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(18rem,22.5rem)_minmax(0,1fr)]">
+    <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(18rem,22.5rem)_minmax(0,1fr)]">
       {/* Form */}
-      <div className="min-w-0 overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="border-b bg-muted/50 px-6 py-5">
+      <div className="min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="border-b bg-muted/50 px-4 py-4">
           <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-muted-foreground">
             Løsningsbeskrivelse
           </p>
-          <h2 className="mt-2 text-xl font-bold text-foreground">
+          <h2 className="mt-1.5 text-lg font-bold text-foreground">
             Bygg neste versjon av utkastet
           </h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
             Generatoren bruker dokumentbanken, tjenestebeskrivelsen, lagret
             analyse og tidligere løsningsbeskrivelser som kunnskapsbase.
           </p>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-5 p-6">
-          <div className="space-y-2">
-            <Label
-              htmlFor="artifactInstructions"
-              className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground"
-            >
-              Ekstra føringer
-            </Label>
-            <Textarea
-              id="artifactInstructions"
-              value={artifactInstructions}
-              onChange={(e) => onArtifactInstructionsChange(e.target.value)}
-              placeholder="Hva skal neste versjon av løsningsbeskrivelsen fokusere på?"
-              className="min-h-36 resize-y rounded-xl"
-            />
-          </div>
-          <Button type="submit" className="h-11 w-full rounded-xl" disabled={busy}>
+        <form onSubmit={onSubmit} className="p-4">
+          <Button type="submit" className="h-10 w-full rounded-lg text-sm" disabled={busy}>
             {busy ? (
               <Spinner className="size-4" />
             ) : (
@@ -83,7 +62,7 @@ export function ProjectGeneratorTab({
         </form>
 
         {busy && busyMessage ? (
-          <div className="px-5 pb-5">
+          <div className="px-4 pb-4">
             <GenerationProgress message={busyMessage} progress={busyProgress} />
           </div>
         ) : null}

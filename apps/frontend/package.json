@@ -6,11 +6,14 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint . --max-warnings=0",
+    "rag:backfill": "node ../../scripts/backfill_document_chunks.mjs",
+    "rag:eval": "node ../../scripts/rag_eval.mjs ../../scripts/rag_eval_cases.example.json"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
     "@e965/xlsx": "^0.20.3",
+    "@langchain/langgraph": "^1.3.6",
     "@radix-ui/react-dialog": "^1.1.15",
     "@supabase/supabase-js": "2.57.4",
     "@xmldom/xmldom": "0.8.13",
@@ -47,6 +50,8 @@
     "@types/pdf-parse": "1.1.4",
     "@types/react": "19.0.12",
     "@types/react-dom": "19.0.4",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^15.5.19",
     "postcss": "^8.5.15",
     "shadcn": "^4.1.2",
     "tailwindcss": "^4.2.1",

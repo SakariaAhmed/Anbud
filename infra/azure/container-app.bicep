@@ -52,6 +52,49 @@ param openAiApiKey string
 @description('Optional OpenAI model override.')
 param openAiModel string = 'gpt-5.4'
 
+@secure()
+@description('Shared token required by the project job worker endpoint.')
+param projectJobWorkerToken string
+
+@description('Docling enhancement mode. async keeps uploads RAG-ready quickly and queues enhancement.')
+@allowed([
+  'async'
+  'inline'
+  'off'
+])
+param doclingEnhancementMode string = 'async'
+
+@description('Whether app processes should immediately run queued async Docling jobs. Keep off when a scheduled worker job is deployed.')
+@allowed([
+  'on'
+  'off'
+])
+param doclingAsyncAutoRun string = 'off'
+
+@description('Cron schedule for the same-image project job worker. Evaluated in UTC.')
+param projectJobWorkerCron string = '*/5 * * * *'
+
+@description('Maximum project jobs processed by one scheduled worker execution.')
+@minValue(1)
+@maxValue(5)
+param projectJobWorkerLimit int = 2
+
+@description('CPU cores for the web container.')
+param webCpu string = '1.0'
+
+@description('Memory for the web container.')
+param webMemory string = '2Gi'
+
+@description('CPU cores for the scheduled project job worker. Docling benefits from more CPU than the web path.')
+param projectJobWorkerCpu string = '2.0'
+
+@description('Memory for the scheduled project job worker.')
+param projectJobWorkerMemory string = '4Gi'
+
+@description('Maximum seconds a scheduled worker replica can run.')
+@minValue(300)
+param projectJobWorkerReplicaTimeout int = 900
+
 @description('Minimum active replicas.')
 @minValue(0)
 param minReplicas int = 1
@@ -124,6 +167,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           value: openAiApiKey
         }
         {
+          name: 'project-job-worker-token'
+          value: projectJobWorkerToken
+        }
+        {
           name: 'registry-password'
           value: registryPassword
         }
@@ -182,6 +229,18 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'OPENAI_MODEL'
               value: openAiModel
             }
+            {
+              name: 'PROJECT_JOB_WORKER_TOKEN'
+              secretRef: 'project-job-worker-token'
+            }
+            {
+              name: 'DOCLING_ENHANCEMENT_MODE'
+              value: doclingEnhancementMode
+            }
+            {
+              name: 'DOCLING_ASYNC_AUTO_RUN'
+              value: doclingAsyncAutoRun
+            }
           ]
           probes: [
             {
@@ -204,8 +263,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             }
           ]
           resources: {
-            cpu: json('1.0')
-            memory: '2Gi'
+            cpu: json(webCpu)
+            memory: webMemory
           }
         }
       ]
@@ -223,6 +282,141 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           }
         ]
       }
+    }
+  }
+}
+
+resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
+  name: '${appName}-project-job-worker'
+  location: location
+  properties: {
+    environmentId: environment.id
+    configuration: {
+      triggerType: 'Schedule'
+      scheduleTriggerConfig: {
+        cronExpression: projectJobWorkerCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      replicaRetryLimit: 1
+      replicaTimeout: projectJobWorkerReplicaTimeout
+      secrets: [
+        {
+          name: 'supabase-url'
+          value: supabaseUrl
+        }
+        {
+          name: 'supabase-service-role-key'
+          value: supabaseServiceRoleKey
+        }
+        {
+          name: 'app-encryption-key'
+          value: appEncryptionKey
+        }
+        {
+          name: 'app-access-password'
+          value: appAccessPassword
+        }
+        {
+          name: 'app-session-secret'
+          value: appSessionSecret
+        }
+        {
+          name: 'openai-api-key'
+          value: openAiApiKey
+        }
+        {
+          name: 'project-job-worker-token'
+          value: projectJobWorkerToken
+        }
+        {
+          name: 'registry-password'
+          value: registryPassword
+        }
+      ]
+      registries: [
+        {
+          server: registryServer
+          username: registryUsername
+          passwordSecretRef: 'registry-password'
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'worker'
+          image: image
+          command: [
+            'node'
+          ]
+          args: [
+            'scripts/run_project_job_worker.mjs'
+          ]
+          env: [
+            {
+              name: 'NODE_ENV'
+              value: 'production'
+            }
+            {
+              name: 'PORT'
+              value: '3000'
+            }
+            {
+              name: 'HOSTNAME'
+              value: '0.0.0.0'
+            }
+            {
+              name: 'SUPABASE_URL'
+              secretRef: 'supabase-url'
+            }
+            {
+              name: 'SUPABASE_SERVICE_ROLE_KEY'
+              secretRef: 'supabase-service-role-key'
+            }
+            {
+              name: 'APP_ENCRYPTION_KEY'
+              secretRef: 'app-encryption-key'
+            }
+            {
+              name: 'APP_ACCESS_PASSWORD'
+              secretRef: 'app-access-password'
+            }
+            {
+              name: 'APP_SESSION_SECRET'
+              secretRef: 'app-session-secret'
+            }
+            {
+              name: 'OPENAI_API_KEY'
+              secretRef: 'openai-api-key'
+            }
+            {
+              name: 'OPENAI_MODEL'
+              value: openAiModel
+            }
+            {
+              name: 'PROJECT_JOB_WORKER_TOKEN'
+              secretRef: 'project-job-worker-token'
+            }
+            {
+              name: 'PROJECT_JOB_WORKER_LIMIT'
+              value: string(projectJobWorkerLimit)
+            }
+            {
+              name: 'DOCLING_ENHANCEMENT_MODE'
+              value: doclingEnhancementMode
+            }
+            {
+              name: 'DOCLING_ASYNC_AUTO_RUN'
+              value: 'off'
+            }
+          ]
+          resources: {
+            cpu: json(projectJobWorkerCpu)
+            memory: projectJobWorkerMemory
+          }
+        }
+      ]
     }
   }
 }

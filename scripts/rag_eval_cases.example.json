@@ -1,0 +1,22 @@
+[
+  {
+    "question": "Hva sier kravgrunnlaget om SLA og responstid?",
+    "expected_source_ids": ["00000000-0000-0000-0000-000000000000"],
+    "expected_references": ["SLA", "responstid"],
+    "retrieved": [
+      {
+        "source_id": "00000000-0000-0000-0000-000000000000",
+        "document_title": "Kravspesifikasjon",
+        "reference": "Kundedokument - side 12",
+        "heading_path": ["Drift og SLA"]
+      }
+    ],
+    "citations": [
+      {
+        "source_id": "00000000-0000-0000-0000-000000000000",
+        "reference": "Kundedokument - side 12"
+      }
+    ],
+    "retrieval_latency_ms": 180
+  }
+]

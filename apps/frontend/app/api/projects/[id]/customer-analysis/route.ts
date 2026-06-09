@@ -8,6 +8,7 @@ import {
 } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
+  getFreshCustomerAnalysis,
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
 import { checkRateLimit } from "@/lib/server/observability";
@@ -324,7 +325,7 @@ export async function POST(
     const [projectDocuments, existingAnalysis, serviceCandidates] =
       await Promise.all([
         listProjectDocumentsForAnalysis(id),
-        section ? getCustomerAnalysis(id) : Promise.resolve(null),
+        section ? getFreshCustomerAnalysis(id) : Promise.resolve(null),
         listProjectServiceDescriptions(id),
       ]);
     const { projectDocuments: analysisDocuments } =
@@ -463,7 +464,7 @@ export async function PUT(
 
     const [existingAnalysis, projectDocuments] =
       await Promise.all([
-        getCustomerAnalysis(id),
+        getFreshCustomerAnalysis(id),
         listProjectDocumentsForAnalysis(id),
       ]);
     const { projectDocuments: analysisDocuments } =

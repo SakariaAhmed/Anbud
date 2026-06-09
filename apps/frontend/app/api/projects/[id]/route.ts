@@ -4,7 +4,7 @@ import { deleteProject, getProjectDetail } from "@/lib/server/repositories/proje
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 
 const READ_CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+  "Cache-Control": "private, no-store",
 };
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {

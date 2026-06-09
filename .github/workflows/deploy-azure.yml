@@ -59,7 +59,7 @@ jobs:
         run: |
           az extension add --name containerapp --upgrade
 
-      - name: Sync Container App secrets
+      - name: Deploy Container App and worker
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -68,6 +68,12 @@ jobs:
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
+          PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
+          PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
+          PROJECT_JOB_WORKER_LIMIT: ${{ vars.PROJECT_JOB_WORKER_LIMIT || '2' }}
+          DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
+          DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
           missing=0
@@ -78,6 +84,8 @@ jobs:
             APP_ACCESS_PASSWORD \
             APP_SESSION_SECRET \
             OPENAI_API_KEY \
+            PROJECT_JOB_WORKER_TOKEN \
+            ACR_USERNAME \
             ACR_PASSWORD
           do
             if [ -z "${!name}" ]; then
@@ -90,28 +98,38 @@ jobs:
             exit 1
           fi
 
-          az containerapp secret set \
+          az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
-            --name "$CONTAINER_APP" \
-            --secrets \
-              supabase-url="$SUPABASE_URL" \
-              supabase-service-role-key="$SUPABASE_SERVICE_ROLE_KEY" \
-              app-encryption-key="$APP_ENCRYPTION_KEY" \
-              app-access-password="$APP_ACCESS_PASSWORD" \
-              app-session-secret="$APP_SESSION_SECRET" \
-              openai-api-key="$OPENAI_API_KEY" \
-              registry-password="$ACR_PASSWORD"
+            --name "anbud-${GITHUB_SHA}" \
+            --template-file infra/azure/container-app.bicep \
+            --parameters \
+              appName="$CONTAINER_APP" \
+              image="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${GITHUB_SHA}" \
+              registryServer="${ACR_NAME}.azurecr.io" \
+              registryUsername="$ACR_USERNAME" \
+              registryPassword="$ACR_PASSWORD" \
+              supabaseUrl="$SUPABASE_URL" \
+              supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
+              appEncryptionKey="$APP_ENCRYPTION_KEY" \
+              appAccessPassword="$APP_ACCESS_PASSWORD" \
+              appSessionSecret="$APP_SESSION_SECRET" \
+              openAiApiKey="$OPENAI_API_KEY" \
+              openAiModel="$OPENAI_MODEL" \
+              projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN" \
+              projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON" \
+              projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT" \
+              doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE" \
+              doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN" \
+              minReplicas="$MIN_REPLICAS"
 
-          az containerapp update \
+          az containerapp show \
             --resource-group "$RESOURCE_GROUP" \
             --name "$CONTAINER_APP" \
-            --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${GITHUB_SHA}" \
-            --min-replicas "$MIN_REPLICAS" \
-            --set-env-vars \
-              SUPABASE_URL=secretref:supabase-url \
-              SUPABASE_SERVICE_ROLE_KEY=secretref:supabase-service-role-key \
-              APP_ENCRYPTION_KEY=secretref:app-encryption-key \
-              APP_ACCESS_PASSWORD=secretref:app-access-password \
-              APP_SESSION_SECRET=secretref:app-session-secret \
-              OPENAI_API_KEY=secretref:openai-api-key \
-              OPENAI_MODEL="$OPENAI_MODEL"
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv
+
+          az containerapp job show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "${CONTAINER_APP}-project-job-worker" \
+            --query "properties.configuration.triggerType" \
+            --output tsv

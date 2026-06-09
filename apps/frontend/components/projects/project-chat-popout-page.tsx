@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Clock3,
   FolderOpen,
@@ -14,7 +21,10 @@ import {
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { ProjectChatTab } from "@/components/projects/project-chat-tab";
+import {
+  ProjectChatTab,
+  type ChatDocumentUploadState,
+} from "@/components/projects/project-chat-tab";
 import { cn } from "@/lib/utils";
 import type {
   ChatDomainHint,
@@ -31,11 +41,6 @@ type ChatPayload = {
 };
 
 const MODEL_STORAGE_KEY = "anbud-openai-model";
-const ARTIFACT_SEED_STORAGE_KEY_PREFIX = "anbud-chat-artifact-seed";
-
-function artifactSeedStorageKey(projectId: string) {
-  return `${ARTIFACT_SEED_STORAGE_KEY_PREFIX}:${projectId}`;
-}
 
 function makeLocalMessage(input: {
   projectId: string;
@@ -43,6 +48,7 @@ function makeLocalMessage(input: {
   content: string;
   sessionId: string;
   sessionTitle: string;
+  contextSnapshot?: Record<string, unknown>;
 }) {
   const createdAt = new Date().toISOString();
   return {
@@ -54,6 +60,7 @@ function makeLocalMessage(input: {
     context_snapshot: {
       chat_session_id: input.sessionId,
       chat_session_title: input.sessionTitle,
+      ...(input.contextSnapshot ?? {}),
     },
     created_at: createdAt,
   } satisfies ChatMessage;
@@ -75,6 +82,7 @@ function formatSessionDate(value: string) {
       month: "short",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Europe/Oslo",
     }).format(new Date(value));
   } catch {
     return "";
@@ -103,6 +111,25 @@ function parseChatDomainsHeader(value: string | null): ChatDomainHint[] {
   } catch {
     return [];
   }
+}
+
+function stripFileExtension(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, "").trim();
+}
+
+function fileFormatFromName(fileName: string) {
+  const extension = fileName.match(/\.([^.]+)$/)?.[1]?.trim();
+  return extension ? extension.toUpperCase() : "DOCUMENT";
+}
+
+function promptAttachmentMetadata(file: File, fileName: string) {
+  return {
+    title: stripFileExtension(fileName) || fileName || "Dokument",
+    file_name: fileName || "dokument",
+    file_format: fileFormatFromName(fileName),
+    file_size_bytes: file.size,
+    text_length: 0,
+  };
 }
 
 async function readJsonPayload<T>(
@@ -137,6 +164,9 @@ export function ProjectChatPopoutPage({
   const [chatLoading, setChatLoading] = useState(true);
   const [chatError, setChatError] = useState("");
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
+  const [documentUploadState, setDocumentUploadState] =
+    useState<ChatDocumentUploadState>({ status: "idle" });
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     initialSessionId,
   );
@@ -225,11 +255,15 @@ export function ProjectChatPopoutPage({
     setChatMessages([]);
     setStreamingMessage("");
     setChatError("");
+    setPendingAttachment(null);
+    setDocumentUploadState({ status: "idle" });
     setActivePanel(null);
   }
 
   async function selectSession(sessionId: string) {
     setActivePanel(null);
+    setPendingAttachment(null);
+    setDocumentUploadState({ status: "idle" });
     await loadChat(sessionId);
   }
 
@@ -239,6 +273,11 @@ export function ProjectChatPopoutPage({
       return;
     }
 
+    const attachment = pendingAttachment;
+    const attachmentFileName = attachment?.name || "";
+    const promptAttachments = attachment
+      ? [promptAttachmentMetadata(attachment, attachmentFileName)]
+      : [];
     const nextSessionId = activeSessionId ?? crypto.randomUUID();
     const sessionTitle = activeSession?.title ?? compactTitle(message);
     const userMessage = makeLocalMessage({
@@ -247,6 +286,9 @@ export function ProjectChatPopoutPage({
       content: message,
       sessionId: nextSessionId,
       sessionTitle,
+      ...(promptAttachments.length
+        ? { contextSnapshot: { prompt_attachments: promptAttachments } }
+        : {}),
     });
 
     setActiveSessionId(nextSessionId);
@@ -255,21 +297,44 @@ export function ProjectChatPopoutPage({
     setChatBusy(true);
     setStreamingMessage("");
     setChatMessages((current) => [...current, userMessage]);
+    if (attachment) {
+      setDocumentUploadState({
+        status: "sending",
+        fileName: attachmentFileName,
+        message: `${attachmentFileName} sendes direkte i prompten ...`,
+      });
+    }
 
     try {
       const selectedModel =
         window.localStorage.getItem(MODEL_STORAGE_KEY)?.trim() ?? "";
-      const response = await fetch(`/api/projects/${projectId}/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(selectedModel ? { "X-OpenAI-Model": selectedModel } : {}),
-        },
-        body: JSON.stringify({
+      const headers: Record<string, string> = selectedModel
+        ? { "X-OpenAI-Model": selectedModel }
+        : {};
+      let body: BodyInit;
+      if (attachment) {
+        const formData = new FormData();
+        formData.append("message", message);
+        formData.append("session_id", nextSessionId);
+        formData.append("session_title", sessionTitle);
+        formData.append("attachment", attachment);
+        formData.append(
+          "attachment_title",
+          stripFileExtension(attachmentFileName) || attachmentFileName,
+        );
+        body = formData;
+      } else {
+        headers["Content-Type"] = "application/json";
+        body = JSON.stringify({
           message,
           session_id: nextSessionId,
           session_title: sessionTitle,
-        }),
+        });
+      }
+      const response = await fetch(`/api/projects/${projectId}/chat`, {
+        method: "POST",
+        headers,
+        body,
       });
 
       if (!response.ok) {
@@ -278,6 +343,11 @@ export function ProjectChatPopoutPage({
           "Kunne ikke sende chatmelding.",
         );
         throw new Error(payload.error || "Kunne ikke sende chatmelding.");
+      }
+
+      if (attachment) {
+        setPendingAttachment(null);
+        setDocumentUploadState({ status: "idle" });
       }
 
       const responseSessionId =
@@ -341,6 +411,14 @@ export function ProjectChatPopoutPage({
         current.filter((item) => item.id !== userMessage.id),
       );
       setChatInput(message);
+      if (attachment) {
+        setPendingAttachment(attachment);
+        setDocumentUploadState({
+          status: "attached",
+          fileName: attachmentFileName,
+          message: `${attachmentFileName} ligger fortsatt ved prompten.`,
+        });
+      }
       setChatError(
         err instanceof Error ? err.message : "Kunne ikke sende chatmelding.",
       );
@@ -352,6 +430,22 @@ export function ProjectChatPopoutPage({
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await sendChatMessage(chatInput);
+  }
+
+  async function uploadChatDocument(file: File) {
+    const fileName = file.name || "dokument";
+    setChatError("");
+    setPendingAttachment(file);
+    setDocumentUploadState({
+      status: "attached",
+      fileName,
+      message: `${fileName} er lagt ved prompten. Send meldingen når du er klar.`,
+    });
+  }
+
+  function clearChatDocumentAttachment() {
+    setPendingAttachment(null);
+    setDocumentUploadState({ status: "idle" });
   }
 
   function regenerateResponse(messageId: string) {
@@ -371,18 +465,6 @@ export function ProjectChatPopoutPage({
         previousUserMessage.content,
       ].join("\n"),
     );
-  }
-
-  function useAsArtifactSeed(message: ChatMessage) {
-    window.localStorage.setItem(
-      artifactSeedStorageKey(projectId),
-      [
-        "Bruk denne sparringen som føring for neste løsningsbeskrivelse:",
-        "",
-        message.content,
-      ].join("\n"),
-    );
-    window.location.href = `/projects/${projectId}?tab=generator`;
   }
 
   return (
@@ -621,8 +703,10 @@ export function ProjectChatPopoutPage({
               chatContainerRef={chatContainerRef}
               onChatInputChange={setChatInput}
               onSubmit={onSubmit}
+              onUploadDocument={uploadChatDocument}
+              onClearDocumentUpload={clearChatDocumentAttachment}
+              documentUploadState={documentUploadState}
               onRegenerateResponse={regenerateResponse}
-              onUseAsArtifactSeed={useAsArtifactSeed}
             />
           </div>
         </main>

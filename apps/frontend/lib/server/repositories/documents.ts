@@ -9,5 +9,8 @@ export {
   listProjectDocumentsForAnalysis,
   listSupportingDocuments,
   markDocumentAsPrimarySolution,
+  saveDocumentIngestionResult,
   saveDocument,
+  savePendingDocument,
+  updateDocumentProcessingState,
 } from "@/lib/server/repositories/supabase-store";

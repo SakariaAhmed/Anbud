@@ -10,15 +10,14 @@ import {
 } from "react";
 import {
   AlertTriangle,
+  ChevronDown,
   CheckCircle2,
   CheckSquare,
-  FileText,
   ListChecks,
   MapPin,
   Scale,
   ShieldCheck,
   Sparkles,
-  UploadCloud,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -28,7 +27,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import {
   AnalysisTabEmptyState,
+  DocumentSourceMeta,
+  DocumentUploadDropzoneContent,
   GenerationProgress,
+  documentDropzoneClass,
 } from "@/components/projects/project-workspace-shared";
 import type { ProjectDocument, SolutionEvaluationResult } from "@/lib/types";
 
@@ -591,18 +593,6 @@ function DocumentFindingsPanel({
   );
 }
 
-function compactFileSize(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "Ukjent størrelse";
-  }
-
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
-  }
-
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
 function ArchitectureDocumentDropzone({
   busy,
   disabled,
@@ -643,11 +633,7 @@ function ArchitectureDocumentDropzone({
       onDragLeave={() => setDragActive(false)}
       onDrop={onDrop}
       disabled={disabled}
-      className={`group relative flex min-h-28 w-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed px-4 py-4 text-center transition-colors ${
-        dragActive
-          ? "border-blue-400 bg-blue-50"
-          : "border-slate-300 bg-slate-50/70 hover:border-blue-300 hover:bg-blue-50/35"
-      } disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400`}
+      className={documentDropzoneClass({ active: dragActive, disabled })}
     >
       <input
         ref={inputRef}
@@ -657,40 +643,11 @@ function ArchitectureDocumentDropzone({
         onChange={onInputChange}
         disabled={disabled}
       />
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white text-blue-800 shadow-sm transition-colors group-hover:text-blue-700">
-        {busy ? <Spinner className="size-5" /> : <UploadCloud className="size-5" />}
-      </span>
-      <p className="mt-3 text-sm font-black text-slate-950">
-        {busy ? "Laster inn dokumentet ..." : "Dra og slipp dokumentet her"}
-      </p>
-      <p className="mt-1 text-xs leading-5 text-slate-500">
-        eller klikk for å velge PDF, DOCX, Excel, TXT eller MD.
-      </p>
+      <DocumentUploadDropzoneContent
+        busy={busy}
+        busyLabel="Laster inn dokumentet ..."
+      />
     </button>
-  );
-}
-
-function EvaluationSourceMeta({
-  document,
-}: {
-  document: ProjectDocument | null;
-}) {
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[0.72rem] text-slate-500">
-      <FileText className="size-3 shrink-0 text-teal-700" />
-      <span className="font-black uppercase tracking-[0.11em] text-slate-500">
-        Vurdering gjort fra
-      </span>
-      <span className="min-w-0 truncate font-semibold text-slate-700">
-        {document?.title ?? "Ukjent dokumentgrunnlag"}
-      </span>
-      {document ? (
-        <span className="shrink-0 text-slate-500">
-          {document.file_format.toUpperCase()} ·{" "}
-          {compactFileSize(document.file_size_bytes)}
-        </span>
-      ) : null}
-    </div>
   );
 }
 
@@ -842,31 +799,37 @@ export function ProjectEvaluationTab({
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <section className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div>
-            <label className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-slate-500">
+            <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
               Dokument som skal vurderes
             </label>
             {candidateDocuments.length ? (
               <>
-                <select
-                  value={selectedDocumentId}
-                  onChange={(event) => setSelectedDocumentId(event.target.value)}
-                  disabled={actionBusy}
-                  className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition-colors focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                >
-                  {candidateDocuments.map((document) => (
-                    <option key={document.id} value={document.id}>
-                      {document.title}
-                    </option>
-                  ))}
-                </select>
-                <div className="mt-2">
-                  <EvaluationSourceMeta document={evaluatedDocument} />
+                <div className="relative mt-3">
+                  <select
+                    value={selectedDocumentId}
+                    onChange={(event) => setSelectedDocumentId(event.target.value)}
+                    disabled={actionBusy}
+                    className="h-11 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-10 text-sm font-semibold text-slate-950 shadow-sm outline-none transition-colors focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  >
+                    {candidateDocuments.map((document) => (
+                      <option key={document.id} value={document.id}>
+                        {document.title}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-950" />
+                </div>
+                <div className="mt-3">
+                  <DocumentSourceMeta
+                    document={evaluatedDocument}
+                    label="Vurdering gjort fra"
+                  />
                 </div>
               </>
             ) : (
-              <div className="mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-500">
+              <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-500">
                 Ingen Bilag 2- eller støttedokumenter er lastet opp ennå.
               </div>
             )}
@@ -876,7 +839,7 @@ export function ProjectEvaluationTab({
             <h4 className="text-sm font-semibold text-slate-700">
               Last inn dokument
             </h4>
-            <div className="mt-2">
+            <div className="mt-3">
               <ArchitectureDocumentDropzone
                 busy={importBusy}
                 disabled={actionBusy}
@@ -888,8 +851,7 @@ export function ProjectEvaluationTab({
           <Button
             onClick={() => onGenerate(selectedDocumentId)}
             disabled={actionBusy || !selectedDocumentId}
-            size="lg"
-            className="h-10 w-full justify-center rounded-lg bg-blue-900 text-sm font-semibold text-white hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
+            className="h-10 w-full justify-center rounded-lg bg-blue-900 text-sm font-bold text-white hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
           >
             {busy || importBusy ? (
               <Spinner className="size-4" />

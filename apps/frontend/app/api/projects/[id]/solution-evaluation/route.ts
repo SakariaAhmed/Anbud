@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveOpenAIModelOverride } from "@/lib/server/ai";
 import {
-  getCustomerAnalysis,
+  getFreshCustomerAnalysis,
   getSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
 import { checkRateLimit } from "@/lib/server/observability";
@@ -51,7 +51,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       solution_document_id?: string;
     };
 
-    if (!(await getCustomerAnalysis(id))) {
+    if (!(await getFreshCustomerAnalysis(id))) {
       return NextResponse.json({ error: "Generer kundeanalyse før løsningsvurdering." }, { status: 400 });
     }
 

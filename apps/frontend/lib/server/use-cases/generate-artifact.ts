@@ -20,7 +20,7 @@ import {
 } from "@/lib/server/domain/project-documents";
 import { generateProjectArtifact } from "@/lib/server/ai";
 import {
-  getCustomerAnalysis,
+  getFreshCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
 import {
   listGeneratedArtifacts,
@@ -188,7 +188,7 @@ export async function generateAndSaveProjectArtifact(
     serviceDocumentSummaries,
   ] = await Promise.all([
     getProjectDetail(input.projectId),
-    getCustomerAnalysis(input.projectId),
+    getFreshCustomerAnalysis(input.projectId),
     listProjectDocumentsForAnalysis(input.projectId),
     listGeneratedArtifacts(input.projectId),
     listServiceDocumentSummariesForProject(input.projectId),
@@ -227,18 +227,18 @@ export async function generateAndSaveProjectArtifact(
       )
     ),
   );
-  const useHydratedRequirementFile = (
+  const getHydratedRequirementFile = (
     document: ProjectDocumentDetail | null,
   ) => (document ? hydratedRequirementFiles.get(document.id) ?? document : null);
   const generationCustomerDocument =
-    useHydratedRequirementFile(customerDocument);
+    getHydratedRequirementFile(customerDocument);
   const generationSolutionDocument =
-    useHydratedRequirementFile(solutionDocument);
+    getHydratedRequirementFile(solutionDocument);
   const generationSupportingDocuments = supportingDocuments.map(
-    (document) => useHydratedRequirementFile(document) ?? document,
+    (document) => getHydratedRequirementFile(document) ?? document,
   );
   const generationRequirementDocuments = selectedRequirementDocuments.map(
-    (document) => useHydratedRequirementFile(document) ?? document,
+    (document) => getHydratedRequirementFile(document) ?? document,
   );
 
   if (
@@ -348,6 +348,10 @@ export async function generateAndSaveProjectArtifact(
       input.artifactType === "forbedret_kravsvar" ? input.onProgress : undefined,
     documentLedgerContext,
   });
+  const generationMetadata =
+    generated && typeof generated === "object" && "generation_metadata" in generated
+      ? generated.generation_metadata
+      : undefined;
   input.onPhase?.("ai_batcher");
 
   input.onProgress?.("[86%] Validerer og reparerer generatorresultatet ...");
@@ -397,6 +401,7 @@ export async function generateAndSaveProjectArtifact(
       artifact_repair: {
         repaired_rows: repaired.repairedRows,
       },
+      generation_metadata: generationMetadata ?? null,
       ...(input.inputSnapshotExtra ?? {}),
       generation_timings: [
         ...(input.timings?.() ?? []),

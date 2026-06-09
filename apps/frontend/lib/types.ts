@@ -17,6 +17,12 @@ export type SupportingDocumentSubtype =
 
 export type DocumentFileFormat = "pdf" | "docx" | "txt" | "md" | "xlsx" | "xls";
 export type ServiceInclusionMode = "fixed" | "selected";
+export type DocumentProcessingStatus =
+  | "queued"
+  | "processing"
+  | "basic_ready"
+  | "enhanced_ready"
+  | "failed";
 
 export type ValueCategory =
   | "Høyere produktivitet"
@@ -86,6 +92,11 @@ export interface ProjectDocument {
   content_type: string;
   file_size_bytes: number;
   page_count?: number | null;
+  processing_status: DocumentProcessingStatus;
+  processing_message?: string | null;
+  processing_error?: string | null;
+  parser_used?: string | null;
+  indexed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -444,6 +455,8 @@ export interface ChatRequestInput {
 }
 
 export type ProjectJobKind =
+  | "document_ingestion"
+  | "document_docling_enhancement"
   | "customer_analysis"
   | "solution_evaluation"
   | "artifact_generation"
@@ -479,7 +492,18 @@ export interface ExecutiveSummaryJobResult {
   project: ProjectSnapshotResult;
 }
 
+export interface DocumentIngestionJobResult {
+  document: ProjectDocument;
+  document_id: string;
+  status: DocumentProcessingStatus;
+  parser_used: string | null;
+  project: ProjectSnapshotResult;
+  docling_enhancement_requested?: boolean;
+  docling_enhancement_job_id?: string;
+}
+
 export type ProjectJobResult =
+  | DocumentIngestionJobResult
   | ArtifactGenerationJobResult
   | SolutionEvaluationJobResult
   | HighLevelDesignJobResult

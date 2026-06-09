@@ -34,13 +34,20 @@ az deployment group create \
     appAccessPassword="$APP_ACCESS_PASSWORD" \
     appSessionSecret="$APP_SESSION_SECRET" \
     openAiApiKey="$OPENAI_API_KEY" \
-    openAiModel="${OPENAI_MODEL:-gpt-5.4}"
+    openAiModel="${OPENAI_MODEL:-gpt-5.4}" \
+    projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
 ```
 
-The deployment output includes the Container App FQDN. Verify:
+The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN` as a repository secret before deploying.
+
+Verify:
 
 ```bash
 curl "https://<fqdn>/api/health"
+az containerapp job show \
+  --resource-group anbud-prod \
+  --name anbud-project-job-worker \
+  --query "properties.configuration.triggerType"
 ```
 
 ## Cutover checklist
@@ -50,4 +57,5 @@ curl "https://<fqdn>/api/health"
 - Open an existing project from Supabase.
 - Upload and delete a test document.
 - Run one short OpenAI-backed workflow.
-- Only then move DNS from Netlify to Azure.
+- Confirm the scheduled project job worker exists and has recent executions.
+- Only then move DNS from the current host to Azure.

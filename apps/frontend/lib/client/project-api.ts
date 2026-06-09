@@ -440,6 +440,7 @@ export async function uploadProjectDocument(input: {
     error?: string;
     document?: ProjectDocument;
     project?: ProjectSnapshotPayload;
+    job?: ProjectJobRecord;
   }>(response, input.fallbackMessage);
   if (!response.ok || !payload.document || !payload.project) {
     throw new Error(payload.error || input.fallbackMessage);
@@ -447,6 +448,7 @@ export async function uploadProjectDocument(input: {
   return {
     document: payload.document,
     project: payload.project,
+    job: payload.job ?? null,
   };
 }
 
