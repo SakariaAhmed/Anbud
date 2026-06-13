@@ -57,7 +57,7 @@
     "@types/react-dom": "19.2.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "^15.5.19",
-    "jiti": "^2.6.1",
+    "jiti": "^2.7.0",
     "postcss": "^8.5.15",
     "shadcn": "^4.1.2",
     "tailwindcss": "^4.2.1",
