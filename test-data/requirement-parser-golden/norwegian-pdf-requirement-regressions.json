@@ -1,0 +1,197 @@
+{
+  "normalization": [
+    {
+      "name": "table id spacing",
+      "function": "normalizePdfReferenceTypography",
+      "input": "Tabell ID 2 - 11",
+      "expected": "Tabell ID 2-11"
+    },
+    {
+      "name": "split third-party supplier service",
+      "function": "cleanTableService",
+      "input": "Tredjepart s - leverandører",
+      "expected": "Tredjeparts-leverandører"
+    },
+    {
+      "name": "third-party software compound word",
+      "function": "cleanTableRequirement",
+      "input": "Leverandøren skal koordinere support og drift for all tredjeparts programvare og løsninger.",
+      "expected": "Leverandøren skal koordinere support og drift for all tredjepartsprogramvare og løsninger."
+    },
+    {
+      "name": "document availability spacing and role casing",
+      "function": "cleanTableRequirement",
+      "input": "Leverandøren skal etablere og vedlikeholde en dokumentasjon for Leveransen, som også skal være tilgjengelig forKunden.",
+      "expected": "Leverandøren skal etablere og vedlikeholde en dokumentasjon for leveransen, som også skal være tilgjengelig for kunden."
+    },
+    {
+      "name": "operations phase merged infinitive and role casing",
+      "function": "cleanTableRequirement",
+      "input": "Leverandøren skal levere en helhetlig Leveranse for drift. Leverandøren er herunder ansvarlig for åiverksetterutiner og løsninger",
+      "expected": "Leverandøren skal levere en helhetlig leveranse for drift. Leverandøren er herunder ansvarlig for å iverksette rutiner og løsninger"
+    },
+    {
+      "name": "third-party incident supplier wording",
+      "function": "cleanTableRequirement",
+      "input": "Leverandøren skal håndtere alle typer feil, herunder også koordinere og følge opp mot 3'dje partsleverandører. Hvis nødvendig skal Leverandøren lese tilbake sikkerhetskopier av data.",
+      "expected": "Leverandøren skal håndtere alle typer feil, herunder også koordinere og følge opp mot tredjepartsleverandører. Hvis nødvendig skal leverandøren lese tilbake sikkerhetskopier av data."
+    },
+    {
+      "name": "merged role after relative clause",
+      "function": "cleanTableRequirement",
+      "input": "CV-ene må inneholde referanser, somKundenforbeholder seg retten til å kontakte.",
+      "expected": "CV-ene må inneholde referanser, som kunden forbeholder seg retten til å kontakte."
+    },
+    {
+      "name": "plural supplier suffix split",
+      "function": "cleanTableRequirement",
+      "input": "Leverandøren skal følge opp endringer på underleverandør er og diverse leverandør er som leverer programvare.",
+      "expected": "Leverandøren skal følge opp endringer på underleverandører og diverse leverandører som leverer programvare."
+    }
+  ],
+  "tableRepairs": [
+    {
+      "name": "line-wrapped third-party suppliers row",
+      "service": "Tredjeparts-",
+      "text": "Leverandøren skal koordinere support og drift for all tredjeparts programvare og løsninger som kjøres på servere og arbeidsstasjoner driftet av Leverandøren.",
+      "expectedService": "Tredjeparts-leverandører",
+      "expectedText": "Leverandøren skal koordinere support og drift for all tredjepartsprogramvare og løsninger som kjøres på servere og arbeidsstasjoner driftet av leverandøren."
+    },
+    {
+      "name": "license management role casing",
+      "service": "Lisenshåndtering",
+      "text": "Leverandøren skal følge opp og rapportere brukere mot programvaren for å sikre at Kunden til enhver tid er riktig lisensiert.",
+      "expectedService": "Lisenshåndtering",
+      "expectedText": "Leverandøren skal følge opp og rapportere brukere mot programvaren for å sikre at kunden til enhver tid er riktig lisensiert. Leverandøren skal på vegne av kunden administrere og fakturere lisenser på programvare som kjører under leveransen og som leverandøren har ansvaret for. Dette inkluderer også Microsoft 365. Leverandøren har oppgaven med optimalisering av lisenser inkludert antall lisenser, korrekte lisenser og eventuell binding av lisenser for prisoptimalisering."
+    },
+    {
+      "name": "incident handling supplier wording",
+      "service": "Feilhåndtering",
+      "text": "Leverandøren skal håndtere alle typer feil, herunder også koordinere og følge opp mot 3'dje partsleverandører.",
+      "expectedService": "Feilhåndtering",
+      "expectedText": "Leverandøren skal håndtere alle typer feil, herunder også koordinere og følge opp mot tredjepartsleverandører. Hvis nødvendig skal leverandøren lese tilbake sikkerhetskopier av data."
+    },
+    {
+      "name": "privileged access full row",
+      "service": "Privilegerte",
+      "text": "Redegjør for kontrollmekanismer ved bruk av administratorrettigheter og hvordan dere sikrer at personell kun har tilgang ved tjenstlig behov og beskriv hvilket PAM-verktøy dere bruker.",
+      "expectedService": "Privilegerte tilganger",
+      "expectedText": "Redegjør for kontrollmekanismer ved bruk av administratorrettigheter og hvordan dere sikrer at personell kun har tilgang ved tjenstlig behov og beskriv hvilket PAM-verktøy dere bruker."
+    },
+    {
+      "name": "secure change handling full row",
+      "service": "Sikker endringshåndtering ering",
+      "text": "Leverandøren skal beskrive endringsprosessen som sikrer at alle endringer har gjennomgått en CAB eller forhåndsgodkjenning.",
+      "expectedService": "Sikker endringshåndtering",
+      "expectedText": "Leverandøren skal beskrive endringsprosessen som sikrer at alle endringer har gjennomgått en CAB eller forhåndsgodkjenning."
+    }
+  ],
+  "qualityGate": {
+    "pass": [
+      {
+        "name": "valid third-party supplier row",
+        "entry": {
+          "id": "Tabell ID 2-11 - Tredjeparts-leverandører",
+          "text": "Leverandøren skal koordinere support og drift for all tredjepartsprogramvare og løsninger som kjøres på servere og arbeidsstasjoner driftet av leverandøren.",
+          "tableId": "Tabell ID 2-11",
+          "service": "Tredjeparts-leverandører"
+        }
+      },
+      {
+        "name": "valid mid-sentence leveransen og som phrase",
+        "entry": {
+          "id": "Tabell ID 2-13 - Applikasjonsforvaltning",
+          "text": "Leverandøren skal levere applikasjonsforvaltning som omfatter oppfølging, vedlikehold, feilretting og oppdateringer av programvaren som kjøres under Leveransen og som Leverandøren har ansvaret for.",
+          "tableId": "Tabell ID 2-13",
+          "service": "Applikasjonsforvaltning"
+        }
+      }
+    ],
+    "fail": [
+      {
+        "name": "split third-party supplier reference",
+        "expectedCode": "split_third_party_supplier",
+        "entry": {
+          "id": "Tabell ID 2-11 - Tredjepart s-leverandører",
+          "text": "Leverandøren skal koordinere support og drift for all tredjepartsprogramvare.",
+          "tableId": "Tabell ID 2-11",
+          "service": "Tredjepart s-leverandører"
+        }
+      },
+      {
+        "name": "truncated describe requirement",
+        "expectedCode": "truncated_describe_requirement",
+        "entry": {
+          "id": "Tabell ID 2-31 - Sikker",
+          "text": "Leverandøren skal beskrive",
+          "tableId": "Tabell ID 2-31",
+          "service": "Sikker"
+        }
+      },
+      {
+        "name": "dangling leveransen og som suffix",
+        "expectedCode": "dangling_software_responsibility_phrase",
+        "entry": {
+          "id": "Tabell ID 2-13 - Applikasjonsforvaltning",
+          "text": "Leverandøren skal levere applikasjonsforvaltning under Leveransen og som",
+          "tableId": "Tabell ID 2-13",
+          "service": "Applikasjonsforvaltning"
+        }
+      },
+      {
+        "name": "misclassified requirement sentence heading",
+        "expectedCode": "misclassified_requirement_heading",
+        "entry": {
+          "id": "ID 2-04",
+          "text": "Leverandøren skal etablere og vedlikeholde en dokumentasjon for leveransen.",
+          "heading": "Dokumentasjonen vil omfatte følgende hovedområder:",
+          "service": "ID 2-04"
+        }
+      },
+      {
+        "name": "named continuation reference",
+        "expectedCode": "misclassified_named_continuation",
+        "entry": {
+          "id": "Tabell ID 2-13 - Eksempel løpende",
+          "text": "Aktiviteter under applikasjonsforvaltning skal følges opp og rapporteres på ukentlige statusmøter.",
+          "tableId": "Tabell ID 2-13",
+          "service": "Eksempel løpende"
+        }
+      }
+    ]
+  },
+  "ledgerExtraction": [
+    {
+      "name": "split answer id and answer subsection heading",
+      "documentTitle": "Generisk norsk krav-PDF",
+      "rawText": "[[SIDE:58]]\nKundenhar et tydelig fokus på korrekt og effektiv bruk av samhandlingsverktøy. Det forventes derfor at Helpdesk-ressurser har solid\nkompetanse innen Microsoft-produktene som benyttes i organisasjonen, herunder spesielt Teams, SharePoint Online, OneDrive, Planner og\nOneNote. Det er videre ønskelig med noe kompetanse innen Power Automate og Copilot, og ressursene må kunne utføre enklere oppgaver på\ntenant-nivå.\nLeverandørens besvarelse\nID2- Leverandøren bekrefter at leveransen omfatter stedlige ressurser for å ivareta sentrale deler av leveransen.\n14\nOn-site Helpdesk fungerer som Single Point of Contact (SPOC) for brukerstøttehenvendelser.\n1) SPOC-modell, sakshåndtering og koordinering\nLeverandøren etablerer en samlet SPOC-modell der kunden forholder seg til ett operativt kontaktpunkt.\n[[SIDE:60]]\nLeverandøren skal også tilby helhetlige løsninger for forvaltning og administrasjon av Microsofts portefølje. Dette inkluderer løpende\nrådgivning knyttet til nye funksjoner, endringer og videreutvikling av plattformen, blant annet Power Automate og Copilot.\nLeverandørens besvarelse\nID2- Leverandøren bekrefter at leveransen omfatter helhetlig forvaltning og administrasjon av Microsoft 365-porteføljen.\n15\nTjenesten omfatter løpende drift og rådgivning.\n",
+      "expectedEntries": [
+        {
+          "id": "ID 2-14",
+          "display": "ID 2-14",
+          "textIncludes": [
+            "Power Automate",
+            "Copilot",
+            "tenant-nivå"
+          ]
+        },
+        {
+          "id": "ID 2-15",
+          "display": "ID 2-15",
+          "textIncludes": [
+            "Microsofts portefølje"
+          ],
+          "displayExcludes": [
+            "1) SPOC",
+            "SPOC-modell"
+          ]
+        }
+      ],
+      "forbiddenDisplays": [
+        "ID 2-15-1)",
+        "SPOC-modell",
+        "Leverandørenssvar"
+      ]
+    }
+  ]
+}
