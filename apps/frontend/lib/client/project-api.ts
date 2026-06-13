@@ -32,12 +32,6 @@ const PROJECT_READ_CACHE_TTL_MS = 30_000;
 const pendingProjectReads = new Map<string, Promise<unknown>>();
 const projectReadVersions = new Map<string, number>();
 
-export type OpenAIModelSummary = {
-  id: string;
-  created: number | null;
-  owned_by: string | null;
-};
-
 function projectReadCacheKey(projectId: string, resource: string) {
   return `project-read:${projectId}:${resource}`;
 }
@@ -89,7 +83,7 @@ function cachedProjectRead<T>(
   return request;
 }
 
-export function invalidateProjectReadCache(projectId: string) {
+function invalidateProjectReadCache(projectId: string) {
   projectReadVersions.set(projectId, projectReadVersion(projectId) + 1);
   clearClientCache(`project-read:${projectId}:`);
   for (const key of pendingProjectReads.keys()) {
@@ -97,6 +91,24 @@ export function invalidateProjectReadCache(projectId: string) {
       pendingProjectReads.delete(key);
     }
   }
+}
+
+async function readJsonPayload<T>(
+  response: Response,
+  fallbackMessage: string,
+): Promise<T & { error?: string }> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    return (await response.json()) as T & { error?: string };
+  }
+
+  const text = await response.text().catch(() => "");
+  const looksLikeHtml = /^\s*</.test(text);
+  return {
+    error: looksLikeHtml
+      ? `${fallbackMessage} Serveren returnerte en HTML-feilside i stedet for JSON. Sjekk serverloggen for detaljer.`
+      : text.trim() || fallbackMessage,
+  } as T & { error?: string };
 }
 
 export function markClientPerformance(
@@ -119,24 +131,6 @@ export function markClientPerformance(
   );
 }
 
-export async function readJsonPayload<T>(
-  response: Response,
-  fallbackMessage: string,
-): Promise<T & { error?: string }> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    return (await response.json()) as T & { error?: string };
-  }
-
-  const text = await response.text().catch(() => "");
-  const looksLikeHtml = /^\s*</.test(text);
-  return {
-    error: looksLikeHtml
-      ? `${fallbackMessage} Serveren returnerte en HTML-feilside i stedet for JSON. Sjekk serverloggen for detaljer.`
-      : text.trim() || fallbackMessage,
-  } as T & { error?: string };
-}
-
 function sleep(ms: number, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) {
@@ -156,7 +150,7 @@ function sleep(ms: number, signal?: AbortSignal) {
   });
 }
 
-export async function pollProjectJob({
+async function pollProjectJob({
   projectId,
   jobId,
   onStatus,
@@ -287,14 +281,6 @@ export async function watchProjectJob({
       }
     });
   });
-}
-
-export async function fetchOpenAIModels() {
-  const response = await fetch("/api/openai-models");
-  return readJsonPayload<{
-    models?: OpenAIModelSummary[];
-    default_model?: string;
-  }>(response, "Kunne ikke hente modeller.");
 }
 
 export async function fetchProjectServices(projectId: string) {

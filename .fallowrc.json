@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "apps/frontend/scripts/run_project_job_worker.mjs",
+    "scripts/backfill_document_storage.mjs",
+    "scripts/llm_quality_eval.mjs",
+    "scripts/run_evaluation_smoke.mjs",
+    "scripts/run_requirement_generation_smoke.mjs",
+    "scripts/run_requirement_parser_golden.mjs",
+    "scripts/run_requirement_quality_gate.mjs",
+    "scripts/verify_workflow_boundaries.mjs"
+  ],
+  "ignoreExports": [
+    {
+      "file": "apps/frontend/components/projects/primitives.tsx",
+      "exports": ["*"]
+    },
+    {
+      "file": "apps/frontend/components/ui/*.tsx",
+      "exports": ["*"]
+    }
+  ]
+}

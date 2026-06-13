@@ -6,7 +6,7 @@ import { checkRateLimit } from "@/lib/server/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 900;
 
 function safeTokenEquals(candidate: string | null, expected: string) {
   if (!candidate) {

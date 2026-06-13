@@ -3,32 +3,8 @@
 import { Download, FileDown, Printer, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { downloadTextFile, sanitizeDownloadFileBase } from "@/lib/client/download";
 import type { GeneratedArtifact } from "@/lib/types";
-
-function sanitizeFileName(value: string) {
-  return (
-    value
-      .trim()
-      .toLowerCase()
-      .replace(/æ/g, "ae")
-      .replace(/ø/g, "o")
-      .replace(/å/g, "a")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "artefakt"
-  );
-}
-
-function downloadBlob(fileName: string, type: string, content: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
 
 function escapeHtml(value: string) {
   return value
@@ -79,7 +55,7 @@ function artifactHtml(artifact: GeneratedArtifact) {
 }
 
 export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
-  const fileBase = sanitizeFileName(artifact.title);
+  const fileBase = sanitizeDownloadFileBase(artifact.title, "artefakt");
   const inputSnapshot =
     artifact.input_snapshot && typeof artifact.input_snapshot === "object"
       ? (artifact.input_snapshot as Record<string, unknown>)
@@ -108,7 +84,7 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
           variant="outline"
           size="sm"
           onClick={() =>
-            downloadBlob(
+            downloadTextFile(
               `${fileBase}.md`,
               "text/markdown;charset=utf-8",
               artifact.content_markdown,
@@ -123,7 +99,7 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
           variant="outline"
           size="sm"
           onClick={() =>
-            downloadBlob(
+            downloadTextFile(
               `${fileBase}.doc`,
               "application/msword;charset=utf-8",
               artifactHtml(artifact),

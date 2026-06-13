@@ -1,5 +1,7 @@
 "use client";
 
+import { downloadBrowserBlob } from "@/lib/client/download";
+
 type DownloadElementPdfOptions = {
   element: HTMLElement;
   fileName: string;
@@ -17,17 +19,6 @@ function waitForFonts() {
   }
 
   return document.fonts.ready.then(() => undefined);
-}
-
-function downloadBlob(fileName: string, blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function createExportContainer({
@@ -156,7 +147,7 @@ function addCanvasToPdf(canvas: HTMLCanvasElement, fileName: string) {
       );
     }
 
-    downloadBlob(fileName, pdf.output("blob"));
+    downloadBrowserBlob(fileName, pdf.output("blob"), { revokeDelayMs: 1000 });
   });
 }
 

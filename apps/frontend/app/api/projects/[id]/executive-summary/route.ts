@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { generateExecutiveSummary, resolveOpenAIModelOverride } from "@/lib/server/ai";
+import { generateExecutiveSummary } from "@/lib/server/ai";
 import {
   getExecutiveSummary,
   getFreshCustomerAnalysis,
@@ -11,7 +11,7 @@ import {
   getProjectDetail,
   getProjectSnapshot,
 } from "@/lib/server/repositories/projects";
-import { checkRateLimit } from "@/lib/server/observability";
+import { prepareProjectAiRoute } from "@/lib/server/project-ai-route";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
@@ -46,24 +46,21 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await context.params;
-    const rateLimit = await checkRateLimit(request, `executive-summary:${id}`, {
-      limit: 10,
-      windowMs: 5 * 60_000,
-    });
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "For mange lederoppsummeringer på kort tid." },
-        {
-          status: 429,
-          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-        },
-      );
+    const preflight = await prepareProjectAiRoute(
+      request,
+      context,
+      {
+        scopePrefix: "executive-summary",
+        message: "For mange lederoppsummeringer på kort tid.",
+        limit: 10,
+        windowMs: 5 * 60_000,
+      },
+    );
+    if (preflight.response) {
+      return preflight.response;
     }
 
-    const model = await resolveOpenAIModelOverride(
-      request.headers.get("x-openai-model"),
-    );
+    const { id, model } = preflight;
     const [project, customerAnalysis, solutionEvaluation] = await Promise.all([
       getProjectDetail(id),
       getFreshCustomerAnalysis(id),

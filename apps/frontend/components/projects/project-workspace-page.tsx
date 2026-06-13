@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   FormEvent,
@@ -11,30 +10,19 @@ import {
   useState,
   useTransition,
   type PointerEvent as ReactPointerEvent,
-  type CSSProperties,
 } from "react";
 import {
   ArrowRight,
   Brain,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ClipboardCheck,
-  Download,
   FileCheck2,
   FileText,
   FolderOpen,
-  MessageSquareText,
   Scale,
   Sparkles,
-  Trash2,
-  Upload,
   Wrench,
-  type LucideIcon,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import {
   getClientCache,
   PROJECT_SERVICES_CACHE_TTL_MS,
@@ -47,7 +35,6 @@ import {
   fetchCustomerAnalysis,
   fetchExecutiveSummary,
   fetchGeneratedArtifacts,
-  fetchOpenAIModels,
   fetchProjectServices,
   fetchSolutionEvaluation,
   markClientPerformance,
@@ -56,32 +43,21 @@ import {
   updateGeneratedArtifact,
   uploadProjectDocument,
   watchProjectJob,
-  type OpenAIModelSummary,
   type ProjectSnapshotPayload,
 } from "@/lib/client/project-api";
-import { Spinner } from "@/components/ui/spinner";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
-import { Input } from "@/components/projects/primitives";
-import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
+  ProjectWorkspaceShell,
+  ProjectWorkspaceTabContent,
+  type SecondaryNavGroup,
+} from "@/components/projects/project-workspace-shell";
 import {
-  deriveProjectStatus,
-  formatDate,
-  GenerationProgress,
-} from "@/components/projects/project-workspace-shared";
+  isProjectWorkspaceTab,
+  type ProjectWorkspaceTab,
+  type WorkflowStepItem,
+} from "@/components/projects/project-workspace-types";
+import { deriveProjectStatus } from "@/components/projects/project-workspace-shared";
 import type {
   CustomerAnalysisResult,
   CustomerAnalysisSection,
@@ -96,505 +72,9 @@ import type {
   SolutionEvaluationResult,
 } from "@/lib/types";
 
+export type { ProjectWorkspaceTab } from "@/components/projects/project-workspace-types";
+
 const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v3";
-
-const ProjectEvaluationTab = dynamic(
-  () =>
-    import("@/components/projects/project-evaluation-tab").then(
-      (module) => module.ProjectEvaluationTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster vurdering ...
-      </div>
-    ),
-  },
-);
-
-const ProjectAnalysisTab = dynamic(
-  () =>
-    import("@/components/projects/project-analysis-tab").then(
-      (module) => module.ProjectAnalysisTab,
-    ),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster kundeanalyse ...
-      </div>
-    ),
-  },
-);
-
-function formatFileSize(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "Ukjent størrelse";
-  }
-
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
-  }
-
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
-function pageCountLabel(pageCount: number | null | undefined) {
-  if (!pageCount) {
-    return "Sider: ikke tilgjengelig";
-  }
-
-  return pageCount === 1 ? "Sider: 1" : `Sider: ${pageCount}`;
-}
-
-function downloadFileName(document: ProjectDocument) {
-  return document.file_name || `${document.title}.${document.file_format}`;
-}
-
-function projectDocumentRoleLabel(document: ProjectDocument) {
-  if (document.role === "primary_customer_document") return "Kundedokument";
-  if (document.role === "primary_solution_document") return "Løsningsdokument";
-  if (document.supporting_subtype === "kravdokument") return "Kravdokument";
-  if (document.supporting_subtype === "rfp") return "RFP";
-  if (document.supporting_subtype === "vedlegg") return "Vedlegg";
-  return "Støttedokument";
-}
-
-function documentProcessingLabel(document: ProjectDocument) {
-  switch (document.processing_status) {
-    case "queued":
-      return "Venter på RAG";
-    case "processing":
-      return "Indekserer";
-    case "basic_ready":
-      return "RAG klar";
-    case "enhanced_ready":
-      return "RAG forbedret";
-    case "failed":
-      return "Indeksering feilet";
-  }
-}
-
-function documentProcessingClassName(document: ProjectDocument) {
-  switch (document.processing_status) {
-    case "queued":
-      return "bg-slate-100 text-slate-700";
-    case "processing":
-      return "bg-blue-100 text-blue-700";
-    case "basic_ready":
-      return "bg-emerald-100 text-emerald-700";
-    case "enhanced_ready":
-      return "bg-teal-100 text-teal-700";
-    case "failed":
-      return "bg-red-100 text-red-700";
-  }
-}
-
-function ProjectDocumentsTab({
-  projectId,
-  documents,
-  services,
-  uploadOpen,
-  onToggleUploadOpen,
-  docTitle,
-  onDocTitleChange,
-  uploadRole,
-  onUploadRoleChange,
-  selectedDocumentName,
-  onFileChange,
-  documentFileInputKey,
-  onUploadDocument,
-  uploadBusy,
-  deletingDocumentId,
-  onDeleteDocument,
-}: {
-  projectId: string;
-  documents: ProjectDocument[];
-  services: ProjectServiceDescription[];
-  uploadOpen: boolean;
-  onToggleUploadOpen: () => void;
-  docTitle: string;
-  onDocTitleChange: (value: string) => void;
-  uploadRole: ProjectDocumentRole;
-  onUploadRoleChange: (value: ProjectDocumentRole) => void;
-  selectedDocumentName: string;
-  onFileChange: (file: File | null) => void;
-  documentFileInputKey: number;
-  onUploadDocument: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  uploadBusy: boolean;
-  deletingDocumentId: string | null;
-  onDeleteDocument: (document: ProjectDocument) => Promise<void>;
-}) {
-  const serviceDocuments = services.flatMap((service) =>
-    service.documents.map((document) => ({ service, document })),
-  );
-
-  return (
-    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <button
-        type="button"
-        onClick={onToggleUploadOpen}
-        className="flex w-full items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-5 text-left transition-colors hover:bg-slate-100/80"
-      >
-        <span className="flex min-w-0 items-center gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-            <FolderOpen className="size-5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-xl font-bold text-slate-950">
-              Dokumenter
-            </span>
-            <span className="mt-1 block text-sm text-slate-500">
-              Prosjektdokumenter og tjenestebeskrivelser som brukes som grunnlag.
-            </span>
-          </span>
-        </span>
-        <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-bold text-blue-700">
-          {documents.length} dokumenter
-        </span>
-      </button>
-
-      {uploadOpen ? (
-        <form
-          onSubmit={onUploadDocument}
-          className="grid gap-3 border-b border-slate-200 bg-white px-5 py-5 lg:grid-cols-[minmax(14rem,1fr)_minmax(12rem,16rem)_minmax(12rem,1fr)_auto]"
-        >
-          <Input
-            value={docTitle}
-            onChange={(event) => onDocTitleChange(event.target.value)}
-            placeholder="Dokumenttittel"
-            className="h-10 rounded-lg text-sm"
-          />
-          <select
-            value={uploadRole}
-            onChange={(event) =>
-              onUploadRoleChange(event.target.value as ProjectDocumentRole)
-            }
-            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-primary"
-          >
-            <option value="primary_customer_document">Kundedokument</option>
-            <option value="primary_solution_document">Løsningsdokument</option>
-            <option value="supporting_document">Støttedokument</option>
-          </select>
-          <label
-            htmlFor="workspace-document-file"
-            className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 text-center text-sm font-semibold text-slate-600 hover:border-primary/60 hover:bg-primary/5"
-          >
-            <Upload className="size-4" />
-            <span className="min-w-0 truncate">
-              {selectedDocumentName || "Velg dokument"}
-            </span>
-          </label>
-          <Input
-            key={documentFileInputKey}
-            id="workspace-document-file"
-            type="file"
-            accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
-            className="sr-only"
-            onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
-          />
-          <Button
-            type="submit"
-            className="h-10"
-            disabled={uploadBusy}
-          >
-            {uploadBusy ? (
-              <Spinner className="size-3.5" />
-            ) : (
-              <Upload data-icon="inline-start" />
-            )}
-            Last opp
-          </Button>
-        </form>
-      ) : null}
-
-      <div className="grid min-w-0 gap-6 px-5 py-5 xl:grid-cols-2">
-        <div>
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-            Prosjektdokumenter
-          </p>
-          {documents.length ? (
-            <div className="grid gap-3">
-              {documents.map((document) => (
-                <div
-                  key={document.id}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
-                >
-                  <div className="flex min-w-0 items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="break-words text-base font-semibold leading-6 text-slate-950">
-                        {document.title}
-                      </p>
-                      <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-                        {projectDocumentRoleLabel(document)}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[0.68rem] font-bold",
-                            documentProcessingClassName(document),
-                          )}
-                        >
-                          {documentProcessingLabel(document)}
-                        </span>
-                        {document.processing_status === "processing" ? (
-                          <Spinner className="size-3 text-blue-600" />
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <a
-                        href={`/api/projects/${projectId}/documents/${document.id}`}
-                        download={downloadFileName(document)}
-                        className="inline-flex size-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-950"
-                        title={`Last ned ${downloadFileName(document)}`}
-                      >
-                        <Download className="size-3.5" />
-                      </a>
-                      <DeleteConfirmDialog
-                        title="Slett dokument?"
-                        description={`Dette sletter "${document.title}" fra prosjektet. Relaterte analyser kan også bli nullstilt. Handlingen kan ikke angres.`}
-                        confirmLabel="Slett dokument"
-                        onConfirm={() => onDeleteDocument(document)}
-                      >
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          disabled={deletingDocumentId === document.id}
-                          className="text-slate-400 hover:text-destructive"
-                        >
-                          {deletingDocumentId === document.id ? (
-                            <Spinner className="size-3" />
-                          ) : (
-                            <Trash2 className="size-3" />
-                          )}
-                        </Button>
-                      </DeleteConfirmDialog>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-500">
-                    <span>{formatFileSize(document.file_size_bytes)}</span>
-                    <span>·</span>
-                    <span>{pageCountLabel(document.page_count)}</span>
-                  </div>
-                  {document.processing_message ||
-                  document.processing_error ? (
-                    <p className="mt-2 break-words text-xs leading-5 text-slate-500">
-                      {document.processing_error ??
-                        document.processing_message}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-7">
-              <p className="text-sm font-semibold text-slate-950">
-                Ingen prosjektdokumenter ennå
-              </p>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Start med kundedokument, kravspesifikasjon eller RFP. Det gir
-                kundeanalyse, kravbesvarelse og utkast et felles grunnlag.
-              </p>
-              {!uploadOpen ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mt-4"
-                  onClick={onToggleUploadOpen}
-                >
-                  <Upload data-icon="inline-start" />
-                  Last opp dokument
-                </Button>
-              ) : null}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-            Tjenestebeskrivelser
-          </p>
-          {serviceDocuments.length ? (
-            <div className="grid gap-3">
-              {serviceDocuments.map(({ service, document }) => (
-                <div
-                  key={`${service.id}-${document.id}`}
-                  className="rounded-xl border border-teal-200 bg-teal-50/55 px-4 py-4 shadow-sm"
-                >
-                  <div className="flex min-w-0 items-start gap-2">
-                    <FileText className="mt-1 size-4 shrink-0 text-teal-700" />
-                    <div className="min-w-0">
-                      <p className="break-words text-base font-semibold leading-6 text-slate-950">
-                        {document.title}
-                      </p>
-                      <p className="mt-1 break-words text-sm leading-5 text-slate-600">
-                        {service.name}
-                      </p>
-                    </div>
-                  </div>
-                  {service.recommended ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold text-amber-900">
-                        Anbefalt
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-500">
-                    <span>{formatFileSize(document.file_size_bytes)}</span>
-                    <span>·</span>
-                    <span>{pageCountLabel(document.page_count)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-teal-200 bg-teal-50/40 px-4 py-7">
-              <p className="text-sm font-semibold text-slate-950">
-                Ingen tjenestedokumenter valgt
-              </p>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Velg relevante tjenester i tjenestebeskrivelse-fanen for å
-                bruke dem som kontekst i genereringene.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-const ProjectDeliveryTab = dynamic(
-  () =>
-    import("@/components/projects/project-delivery-tab").then(
-      (module) => module.ProjectDeliveryTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster fremdriftsplan ...
-      </div>
-    ),
-  },
-);
-
-const ProjectExecutiveSummaryTab = dynamic(
-  () =>
-    import("@/components/projects/project-executive-summary-tab").then(
-      (module) => module.ProjectExecutiveSummaryTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster leder oppsummering ...
-      </div>
-    ),
-  },
-);
-
-const ProjectServiceDescriptionTab = dynamic(
-  () =>
-    import("@/components/projects/project-service-description-tab").then(
-      (module) => module.ProjectServiceDescriptionTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster tjenestebeskrivelse ...
-      </div>
-    ),
-  },
-);
-
-const ProjectBilag1Tab = dynamic(
-  () =>
-    import("@/components/projects/project-bilag1-tab").then(
-      (module) => module.ProjectBilag1Tab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster Bilag 1 ...
-      </div>
-    ),
-  },
-);
-
-const ProjectRequirementResponseTab = dynamic(
-  () =>
-    import("@/components/projects/project-requirement-response-tab").then(
-      (module) => module.ProjectRequirementResponseTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster kravbesvarelse ...
-      </div>
-    ),
-  },
-);
-
-const ProjectGeneratorTab = dynamic(
-  () =>
-    import("@/components/projects/project-generator-tab").then(
-      (module) => module.ProjectGeneratorTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster løsningsbeskrivelse ...
-      </div>
-    ),
-  },
-);
-
-const PROJECT_WORKSPACE_TABS = [
-  "documents",
-  "analysis",
-  "bilag1",
-  "service-description",
-  "requirements",
-  "generator",
-  "evaluation",
-  "delivery",
-  "executive-summary",
-] as const;
-
-export type ProjectWorkspaceTab = (typeof PROJECT_WORKSPACE_TABS)[number];
-
-type WorkspaceNavItem = {
-  value: ProjectWorkspaceTab;
-  label: string;
-  icon: LucideIcon;
-};
-
-type WorkflowStepStatus =
-  | "Ikke startet"
-  | "Venter"
-  | "Klar"
-  | "Generert"
-  | "Må sjekkes"
-  | "Ferdig";
-
-type WorkflowStepItem = WorkspaceNavItem & {
-  step: number;
-  status: WorkflowStepStatus;
-};
-
-const WORKFLOW_SIDEBAR_STATUS_STYLES: Record<WorkflowStepStatus, string> = {
-  "Ikke startet": "border-slate-200 bg-slate-50 text-slate-600",
-  Venter: "border-amber-200 bg-amber-50 text-amber-800",
-  Klar: "border-sky-200 bg-sky-50 text-sky-700",
-  Generert: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  "Må sjekkes": "border-orange-200 bg-orange-50 text-orange-800",
-  Ferdig: "border-emerald-200 bg-emerald-50 text-emerald-800",
-};
-
-function isProjectWorkspaceTab(value: string | null | undefined): value is ProjectWorkspaceTab {
-  return PROJECT_WORKSPACE_TABS.includes(value as ProjectWorkspaceTab);
-}
 
 function patchProjectWithSnapshot(
   project: ProjectDetail,
@@ -651,15 +131,6 @@ function prependGeneratedArtifact(
   return [artifact, ...artifacts.filter((item) => item.id !== artifact.id)];
 }
 
-function DeferredSectionLoader({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground shadow-sm">
-      <Spinner className="size-4 text-primary" />
-      <span>{label}</span>
-    </div>
-  );
-}
-
 const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
   "summary",
   "strategy",
@@ -708,6 +179,11 @@ function progressCeilingForJobStatus(
   if (job.status === "queued") return 18;
 
   const message = job.message.toLowerCase();
+  const explicitProgress = message.match(/\[(\d{1,3})%\]/);
+  if (explicitProgress) {
+    const progress = Math.min(99, Math.max(3, Number(explicitProgress[1])));
+    return Math.min(99, progress + 8);
+  }
   if (message.includes("lagrer") || message.includes("validerer")) return 97;
   if (
     message.includes("genererer") ||
@@ -731,20 +207,7 @@ function progressMessageLabel(message: string) {
   return message.replace(/^\[\d{1,3}%\]\s*/, "");
 }
 
-function estimatedJobDurationMs(
-  job: Pick<ProjectJobRecord, "kind">,
-  modelId: string,
-) {
-  const model = modelId.toLowerCase();
-  const modelMultiplier = model.includes("pro")
-    ? 1.75
-    : model.includes("5.5")
-      ? 1.35
-      : model.includes("nano")
-        ? 0.55
-        : model.includes("mini")
-          ? 0.7
-          : 1;
+function estimatedJobDurationMs(job: Pick<ProjectJobRecord, "kind">) {
   const baseByKind: Record<ProjectJobRecord["kind"], number> = {
     document_ingestion: 45_000,
     document_docling_enhancement: 120_000,
@@ -756,7 +219,7 @@ function estimatedJobDurationMs(
     executive_summary: 45_000,
   };
 
-  return Math.round((baseByKind[job.kind] ?? 75_000) * modelMultiplier);
+  return baseByKind[job.kind] ?? 75_000;
 }
 
 function estimatedProgressFromElapsed(
@@ -777,16 +240,6 @@ function nextDisplayedProgress(current: number, target: number) {
   return Math.min(target, current + maxStep);
 }
 
-const MODEL_STORAGE_KEY = "anbud-openai-model";
-const DEFAULT_WORKSPACE_MODEL = "gpt-5.4";
-const FAST_WORKSPACE_MODEL = "gpt-5.4-mini";
-const PREFERRED_MODEL_ORDER = [
-  "gpt-5.4",
-  "gpt-5.4-mini",
-  "gpt-5.4-nano",
-  "gpt-5.2",
-  "gpt-5-mini",
-];
 function parseCustomerAnalysisSectionBusy(
   busy: string | null,
 ): CustomerAnalysisSection | null {
@@ -799,27 +252,6 @@ function parseCustomerAnalysisSectionBusy(
   return CUSTOMER_ANALYSIS_SECTIONS.includes(section as CustomerAnalysisSection)
     ? (section as CustomerAnalysisSection)
     : null;
-}
-
-function pickDefaultModel(
-  models: OpenAIModelSummary[],
-  preferredModel?: string,
-) {
-  const modelIds = new Set(models.map((model) => model.id));
-  if (preferredModel && modelIds.has(preferredModel)) {
-    return preferredModel;
-  }
-
-  return (
-    PREFERRED_MODEL_ORDER.find((modelId) => modelIds.has(modelId)) ??
-    models.find((model) => /^gpt-/i.test(model.id))?.id ??
-    models[0]?.id ??
-    ""
-  );
-}
-
-function isSlowOrExpensiveModel(modelId: string) {
-  return /\bpro\b|5\.5/i.test(modelId);
 }
 
 export function ProjectWorkspacePage({
@@ -875,12 +307,8 @@ export function ProjectWorkspacePage({
   const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
-  const [availableModels, setAvailableModels] = useState<OpenAIModelSummary[]>([]);
-  const [selectedModel, setSelectedModel] = useState(DEFAULT_WORKSPACE_MODEL);
-  const [modelsLoading, setModelsLoading] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
   const progressDriverRef = useRef<ProgressDriverState | null>(null);
-  const modelsRequestRef = useRef<Promise<void> | null>(null);
   const documentJobAbortControllersRef = useRef<Set<AbortController>>(new Set());
   const sidebarResizeRef = useRef(false);
   const preloadWorkspaceTab = useProjectWorkspacePrefetch({
@@ -933,78 +361,6 @@ export function ProjectWorkspacePage({
     },
     [activeTab, pathname, preloadWorkspaceTab, project.id, router, searchParams],
   );
-  useEffect(() => {
-    const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY) ?? "";
-    if (!storedModel || isSlowOrExpensiveModel(storedModel)) {
-      window.localStorage.setItem(MODEL_STORAGE_KEY, DEFAULT_WORKSPACE_MODEL);
-    }
-  }, []);
-
-  const loadAvailableModels = useCallback(async () => {
-    if (availableModels.length) return;
-    if (modelsRequestRef.current) {
-      await modelsRequestRef.current;
-      return;
-    }
-
-    const request = (async () => {
-      setModelsLoading(true);
-      try {
-        const payload = await fetchOpenAIModels();
-        const models = payload.models ?? [];
-        const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY) ?? "";
-        setAvailableModels(models);
-        setSelectedModel((current) => {
-          const currentIsValid =
-            Boolean(current) && models.some((model) => model.id === current);
-          const storedIsValid =
-            Boolean(storedModel) &&
-            !isSlowOrExpensiveModel(storedModel) &&
-            models.some((model) => model.id === storedModel);
-          const next =
-            (currentIsValid ? current : "") ||
-            (storedIsValid ? storedModel : "") ||
-            pickDefaultModel(models, payload.default_model);
-          if (next) {
-            window.localStorage.setItem(MODEL_STORAGE_KEY, next);
-          }
-          return next;
-        });
-      } catch {
-        setAvailableModels([]);
-      } finally {
-        setModelsLoading(false);
-        modelsRequestRef.current = null;
-      }
-    })();
-    modelsRequestRef.current = request;
-    await request;
-  }, [availableModels.length]);
-
-  useEffect(() => {
-    void loadAvailableModels();
-  }, [loadAvailableModels]);
-
-  const aiModelHeaders = useCallback(
-    (mode: "quality" | "fast" = "quality"): Record<string, string> => {
-      const model = mode === "fast" ? FAST_WORKSPACE_MODEL : selectedModel;
-      return model ? { "X-OpenAI-Model": model } : {};
-    },
-    [selectedModel],
-  );
-
-  const onModelChange = useCallback((value: string) => {
-    const normalizedValue = isSlowOrExpensiveModel(value)
-      ? pickDefaultModel(availableModels, "")
-      : value;
-    setSelectedModel(normalizedValue);
-    if (normalizedValue) {
-      window.localStorage.setItem(MODEL_STORAGE_KEY, normalizedValue);
-    } else {
-      window.localStorage.removeItem(MODEL_STORAGE_KEY);
-    }
-  }, [availableModels]);
-
   const loadSidebarServiceDescriptions = useCallback(async () => {
     const cacheKey = projectServicesCacheKey(project.id);
     const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
@@ -1071,7 +427,7 @@ export function ProjectWorkspacePage({
     }
     progressDriverRef.current = {
       startedAt: Date.now(),
-      estimatedDurationMs: estimatedJobDurationMs(job, selectedModel),
+      estimatedDurationMs: estimatedJobDurationMs(job),
       floor: progressForJobStatus(job),
       ceiling: progressCeilingForJobStatus(job),
     };
@@ -1668,7 +1024,6 @@ export function ProjectWorkspacePage({
         artifactId: artifact.id,
         title: value.title,
         contentMarkdown: value.content_markdown,
-        headers: aiModelHeaders(),
       });
       setProject((current) =>
         normalizeProjectState(
@@ -1710,7 +1065,6 @@ export function ProjectWorkspacePage({
       const payload = await deleteGeneratedArtifact({
         projectId: project.id,
         artifactId: artifact.id,
-        headers: aiModelHeaders(),
       });
       setProject((current) =>
         normalizeProjectState(
@@ -1798,15 +1152,9 @@ export function ProjectWorkspacePage({
   }
 
   function startWorkspaceJob(body: unknown, fallbackMessage: string) {
-    const kind =
-      body && typeof body === "object" && "kind" in body
-        ? (body as { kind?: string }).kind
-        : "";
-    const modelMode = kind === "executive_summary" ? "fast" : "quality";
     return startProjectJob({
       projectId: project.id,
       body,
-      headers: aiModelHeaders(modelMode),
       fallbackMessage,
     });
   }
@@ -1855,7 +1203,6 @@ export function ProjectWorkspacePage({
         projectId: project.id,
         section,
         snapshot,
-        headers: aiModelHeaders(),
       });
       setProject((current) =>
         normalizeProjectState(
@@ -2061,7 +1408,6 @@ export function ProjectWorkspacePage({
         const job = await startWorkspaceJob(
           {
             kind: "solution_evaluation",
-            allow_generated_solution: false,
             solution_document_id: solutionDocumentId,
           },
           "Kunne ikke starte løsningsvurderingen.",
@@ -2150,15 +1496,20 @@ export function ProjectWorkspacePage({
   const solutionDraftArtifacts = project.generated_artifacts.filter(
     (artifact) => artifact.artifact_type === "losningsutkast",
   );
+  const bilag1Artifacts = project.generated_artifacts.filter(
+    (artifact) => artifact.artifact_type === "bilag1_rekonstruksjon",
+  );
   const deliveryArtifacts = project.generated_artifacts.filter(
     (artifact) => artifact.artifact_type === "gjennomforing_og_risiko",
   );
+  const analysisSectionBusy = parseCustomerAnalysisSectionBusy(busy);
   const hasDocuments = project.documents.length > 0;
   const hasCustomerAnalysis =
     Boolean(customerAnalysis) || project.customer_analysis_generated;
   const hasRequirementResponse = requirementArtifacts.length > 0;
-  const hasSolutionDraft =
-    solutionDraftArtifacts.length > 0 || project.solution_document_uploaded;
+  const hasSolutionDraft = solutionDraftArtifacts.length > 0;
+  const hasEvaluationReadySolutionDocument =
+    architectureDocumentCandidates.length > 0;
   const hasSolutionEvaluation =
     Boolean(solutionEvaluation) || project.solution_evaluation_generated;
   const hasDeliveryPlan = deliveryArtifacts.length > 0;
@@ -2194,7 +1545,7 @@ export function ProjectWorkspacePage({
       value: "generator",
       label: "Løsningsforslag",
       icon: Sparkles,
-      status: hasSolutionDraft
+      status: hasSolutionDraft || hasEvaluationReadySolutionDocument
         ? "Generert"
         : hasCustomerAnalysis
           ? "Klar"
@@ -2207,7 +1558,7 @@ export function ProjectWorkspacePage({
       icon: Scale,
       status: hasSolutionEvaluation
         ? "Generert"
-        : hasSolutionDraft
+        : hasEvaluationReadySolutionDocument
           ? "Klar"
           : "Venter",
     },
@@ -2234,10 +1585,7 @@ export function ProjectWorkspacePage({
           : "Venter",
     },
   ];
-  const secondaryNavGroups: Array<{
-    label: string;
-    items: WorkspaceNavItem[];
-  }> = [
+  const secondaryNavGroups: SecondaryNavGroup[] = [
     {
       label: "Verktøy",
       items: [
@@ -2246,18 +1594,11 @@ export function ProjectWorkspacePage({
       ],
     },
   ];
-  const workspaceNavItems = [
-    ...primaryWorkflowSteps,
-    ...secondaryNavGroups.flatMap((group) => group.items),
-  ];
-  const showModelSelector =
-    activeTab === "analysis" ||
-    activeTab === "bilag1" ||
-    activeTab === "requirements" ||
-    activeTab === "generator" ||
-    activeTab === "evaluation" ||
-    activeTab === "delivery" ||
-    activeTab === "executive-summary";
+  const activeTabLabel =
+    [
+      ...primaryWorkflowSteps,
+      ...secondaryNavGroups.flatMap((group) => group.items),
+    ].find((item) => item.value === activeTab)?.label ?? "Prosjekt";
 
   function onSidebarResizeStart(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!sidebarOpen) return;
@@ -2293,469 +1634,74 @@ export function ProjectWorkspacePage({
   }
 
   return (
-    <div className="min-h-[calc(100dvh-var(--app-header-height))] w-full overflow-x-hidden">
-      <SidebarProvider
-        open={sidebarOpen}
-        onOpenChange={setSidebarOpen}
-        style={
-          {
-            "--sidebar-width": `${sidebarWidth}px`,
-            "--sidebar-width-icon": "3.5rem",
-            "--sidebar-offset-top": "var(--app-header-height)",
-            "--sidebar-offset-bottom": "0px",
-            "--sidebar": "rgb(255, 255, 255)",
-            "--sidebar-foreground": "rgb(71, 85, 105)",
-            "--sidebar-primary": "rgb(37, 99, 235)",
-            "--sidebar-primary-foreground": "rgb(255, 255, 255)",
-            "--sidebar-accent": "rgb(248, 250, 252)",
-            "--sidebar-accent-foreground": "rgb(15, 23, 42)",
-            "--sidebar-border": "rgb(226, 232, 240)",
-            "--sidebar-ring": "rgb(37, 99, 235)",
-          } as CSSProperties
-        }
-        className="min-h-[calc(100dvh-var(--app-header-height))] bg-slate-50/35 max-md:flex-col"
-      >
-        <Sidebar
-          collapsible="icon"
-          className="bg-white md:border-r md:border-slate-200"
-        >
-          <SidebarHeader
-            className={cn(
-              "flex min-h-20 flex-row items-center border-b border-slate-200 bg-white px-5 py-4 transition-[padding] duration-150 ease-out",
-              sidebarOpen ? "justify-between gap-3" : "justify-center px-2",
-            )}
-          >
-            {sidebarOpen ? (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[1.02rem] font-semibold leading-6 text-slate-950">
-                  {project.name}
-                </p>
-                {project.customer_name ? (
-                  <p className="mt-1 truncate text-[0.88rem] font-medium leading-5 text-slate-500">
-                    {project.customer_name}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-            <SidebarTrigger
-              aria-label={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
-              title={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
-              className="size-8 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
-            >
-              {sidebarOpen ? (
-                <ChevronLeft className="size-4.5" />
-              ) : (
-                <ChevronRight className="size-4.5" />
-              )}
-            </SidebarTrigger>
-          </SidebarHeader>
-
-          <SidebarContent
-            className={cn(
-              "min-h-0 flex-1 bg-white px-4 py-3 transition-[padding] duration-150 ease-out",
-              !sidebarOpen && "px-1.5",
-            )}
-          >
-            <SidebarGroup
-              className={cn("gap-2 px-1 py-2.5", !sidebarOpen && "px-0")}
-            >
-              <SidebarGroupContent>
-                <SidebarMenu
-                  className={cn("gap-2", !sidebarOpen && "items-center")}
-                >
-                  {primaryWorkflowSteps.map((item) => (
-                    <SidebarMenuItem
-                      key={item.value}
-                      className={cn(!sidebarOpen && "flex justify-center")}
-                    >
-                      <SidebarMenuButton
-                        isActive={activeTab === item.value}
-                        size="lg"
-                        tooltip={`${item.step}. ${item.label}: ${item.status}`}
-                        className={cn(
-                          "relative h-auto min-h-[4.65rem] gap-3 overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-3 text-[0.94rem] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-all duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 data-active:border-slate-200 data-active:bg-blue-50/60 data-active:text-blue-950 data-active:shadow-[0_8px_22px_rgba(37,99,235,0.08)] data-active:before:absolute data-active:before:inset-y-0 data-active:before:left-0 data-active:before:w-0.5 data-active:before:bg-blue-600",
-                          !sidebarOpen &&
-                            "mx-auto size-10 min-h-10 justify-center rounded-md px-0 py-0",
-                        )}
-                        onFocus={() => preloadWorkspaceTab(item.value)}
-                        onPointerEnter={() => preloadWorkspaceTab(item.value)}
-                        onPointerDown={() => preloadWorkspaceTab(item.value)}
-                        onClick={() => setWorkspaceTab(item.value)}
-                      >
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-[0.86rem] font-semibold text-blue-600 shadow-sm group-data-active/menu-button:border-blue-200 group-data-active/menu-button:bg-white group-data-active/menu-button:text-blue-700">
-                          {item.step}
-                        </span>
-                        {sidebarOpen ? (
-                          <span className="flex min-w-0 flex-1 items-center gap-3">
-                            <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                            <span className="min-w-0 text-left leading-5">
-                              {item.label}
-                            </span>
-                            <span
-                              className={cn(
-                                "shrink-0 rounded-full border px-2 py-0.5 text-[0.68rem] font-bold leading-4",
-                                WORKFLOW_SIDEBAR_STATUS_STYLES[item.status],
-                              )}
-                            >
-                              {item.status}
-                            </span>
-                            </span>
-                            <ChevronRight className="size-4 shrink-0 text-slate-400 transition-colors group-data-active/menu-button:text-slate-600" />
-                          </span>
-                        ) : null}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            {secondaryNavGroups.map((group) => (
-              <SidebarGroup
-                key={group.label}
-                className={cn("gap-2 px-1 py-2.5", !sidebarOpen && "px-0")}
-              >
-                {sidebarOpen ? (
-                  <p className="px-2 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-slate-600">
-                    {group.label}
-                  </p>
-                ) : null}
-                <SidebarGroupContent>
-                  <SidebarMenu
-                    className={cn("gap-1.5", !sidebarOpen && "items-center")}
-                  >
-                    <SidebarMenuItem
-                      className={cn(!sidebarOpen && "flex justify-center")}
-                    >
-                      <SidebarMenuButton
-                        render={
-                          <a
-                            href={`/projects/${project.id}/chat`}
-                            target={`bidsite-project-chat-${project.id}`}
-                            rel="noopener noreferrer"
-                            onClick={openChatPopout}
-                          />
-                        }
-                        size="lg"
-                        tooltip="Åpne AI Chat i pop-out vindu"
-                        className={cn(
-                          "h-11 gap-3 rounded-lg border border-transparent px-2 text-[0.94rem] font-medium text-slate-600 transition-colors duration-150 ease-out hover:bg-slate-50 hover:text-slate-950",
-                          !sidebarOpen &&
-                            "mx-auto size-10 justify-center rounded-md px-0",
-                        )}
-                      >
-                        <MessageSquareText className="size-4.5 text-slate-500" />
-                        {sidebarOpen ? <span>AI Chat</span> : null}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                    {group.items.map((item) => (
-                      <SidebarMenuItem
-                        key={item.value}
-                        className={cn(!sidebarOpen && "flex justify-center")}
-                      >
-                        <SidebarMenuButton
-                          isActive={activeTab === item.value}
-                          size="lg"
-                          tooltip={`${group.label}: ${item.label}`}
-                          className={cn(
-                            "h-11 gap-3 rounded-lg border border-transparent px-2 text-[0.94rem] font-medium text-slate-600 transition-colors duration-150 ease-out hover:bg-slate-50 hover:text-slate-950 data-active:bg-blue-50 data-active:text-blue-950",
-                            !sidebarOpen &&
-                              "mx-auto size-10 justify-center rounded-md px-0",
-                          )}
-                          onFocus={() => preloadWorkspaceTab(item.value)}
-                          onPointerEnter={() => preloadWorkspaceTab(item.value)}
-                          onPointerDown={() => preloadWorkspaceTab(item.value)}
-                          onClick={() => setWorkspaceTab(item.value)}
-                        >
-                          <item.icon className="size-4.5 text-slate-500" />
-                          {sidebarOpen ? <span>{item.label}</span> : null}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
-            ))}
-          </SidebarContent>
-          {sidebarOpen ? (
-            <button
-              type="button"
-              aria-label="Resize sidebar"
-              onPointerDown={onSidebarResizeStart}
-              className="absolute top-0 right-[-3px] bottom-0 hidden w-2 cursor-col-resize touch-none bg-transparent md:block"
-            >
-              <span className="absolute top-0 right-[2px] bottom-0 w-px bg-border/70 transition-colors hover:bg-primary/50" />
-            </button>
-          ) : null}
-        </Sidebar>
-
-        <SidebarInset className="min-w-0 overflow-x-hidden bg-transparent">
-          <div
-            className={cn(
-              "relative w-full max-w-full overflow-x-hidden px-5 py-6 md:px-9 md:py-9",
-              !sidebarOpen && "mx-auto",
-            )}
-          >
-            <section className="mb-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <SidebarTrigger className="mt-0.5 shrink-0 md:hidden" />
-                  <div className="min-w-0">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.26em] text-slate-500">
-                      {workspaceNavItems.find(
-                        (item) => item.value === activeTab,
-                      )?.label ?? "Prosjekt"}
-                    </p>
-                    <h2 className="mt-2 text-[2rem] font-semibold leading-tight tracking-[-0.015em] text-slate-950">
-                      {project.name}
-                    </h2>
-                    <p className="mt-2 text-left text-[1rem] text-slate-500">
-                      Oppdatert {formatDate(project.last_activity_at)}
-                    </p>
-                    {project.customer_name || project.industry ? (
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[1rem] text-slate-500">
-                        {project.customer_name ? (
-                          <span className="font-medium">
-                            {project.customer_name}
-                          </span>
-                        ) : null}
-                        {project.customer_name && project.industry ? (
-                          <span className="text-border">·</span>
-                        ) : null}
-                        {project.industry ? <span>{project.industry}</span> : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                {showModelSelector ? (
-                  <div className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(15,23,42,0.05)] sm:w-[13rem]">
-                    <label
-                      htmlFor="workspace-ai-model"
-                      className="text-[0.58rem] font-bold uppercase tracking-[0.2em] text-slate-500"
-                    >
-                      Modell
-                    </label>
-                    <div
-                      className="relative mt-1.5"
-                      aria-busy={modelsLoading ? "true" : undefined}
-                    >
-                      <select
-                        id="workspace-ai-model"
-                        value={selectedModel}
-                        onChange={(event) => onModelChange(event.target.value)}
-                        onFocus={() => void loadAvailableModels()}
-                        onPointerDown={() => void loadAvailableModels()}
-                        className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-slate-50 px-2.5 pr-8 text-[0.86rem] font-semibold text-slate-950 outline-none transition-colors hover:bg-white focus-visible:border-primary focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary/15"
-                      >
-                        {selectedModel &&
-                        !availableModels.some((model) => model.id === selectedModel) ? (
-                          <option value={selectedModel}>{selectedModel}</option>
-                        ) : null}
-                        {availableModels.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.id}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-slate-950"
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </section>
-
-            {error ? (
-              <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                {error}
-              </div>
-            ) : null}
-            {!error && notice ? (
-              <div className="mb-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
-                {notice}
-              </div>
-            ) : null}
-            {busyMessage && busy === "artifact" ? (
-              <div className="mb-3">
-                <GenerationProgress
-                  message={busyMessage}
-                  progress={busyProgress}
-                />
-              </div>
-            ) : null}
-
-            <div
-              className={cn(
-                "transition-[opacity,transform] duration-150 ease-out",
-                isTabPending
-                  ? "translate-y-1 opacity-80"
-                  : "translate-y-0 opacity-100",
-              )}
-              aria-busy={isTabPending ? "true" : undefined}
-            >
-            {activeTab === "documents" ? (
-              <ProjectDocumentsTab
-                projectId={project.id}
-                documents={project.documents}
-                services={serviceDescriptions}
-                uploadOpen={uploadOpen}
-                onToggleUploadOpen={() => setUploadOpen((open) => !open)}
-                docTitle={docTitle}
-                onDocTitleChange={setDocTitle}
-                uploadRole={uploadRole}
-                onUploadRoleChange={setUploadRole}
-                selectedDocumentName={file?.name ?? ""}
-                onFileChange={setFile}
-                documentFileInputKey={documentFileInputKey}
-                onUploadDocument={onUploadDocument}
-                uploadBusy={busy === "upload"}
-                deletingDocumentId={
-                  busy?.startsWith("delete-")
-                    ? busy.slice("delete-".length)
-                    : null
-                }
-                onDeleteDocument={onDeleteDocument}
-              />
-            ) : null}
-
-            {activeTab === "analysis" ? (
-              !analysisLoaded || analysisLoading ? (
-                <DeferredSectionLoader label="Laster kundeanalyse ..." />
-              ) : (
-                <ProjectAnalysisTab
-                  projectId={project.id}
-                  documents={project.documents}
-                  customerAnalysis={customerAnalysis}
-                  busy={busy === "analysis"}
-                  saveBusy={busy === "save-analysis"}
-                  sectionBusy={parseCustomerAnalysisSectionBusy(busy)}
-                  busyMessage={
-                    parseCustomerAnalysisSectionBusy(busy) ? busyMessage : ""
-                  }
-                  busyProgress={busyProgress}
-                  onGenerate={onGenerateCustomerAnalysis}
-                  onSaveAnalysis={onSaveAnalysis}
-                />
-              )
-            ) : null}
-
-            {activeTab === "evaluation" ? (
-              !evaluationLoaded || evaluationLoading ? (
-                <DeferredSectionLoader label="Laster vurdering ..." />
-              ) : (
-                <ProjectEvaluationTab
-                  documents={architectureDocumentCandidates}
-                  solutionEvaluation={solutionEvaluation}
-                  hasSolutionDocument={architectureDocumentCandidates.length > 0}
-                  busy={busy === "solution-evaluation"}
-                  busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
-                  busyProgress={busyProgress}
-                  onGenerate={onGenerateSolutionEvaluation}
-                  importBusy={busy === "upload-architecture-document"}
-                  onImportArchitectureDocument={onUploadArchitectureDocument}
-                />
-              )
-            ) : null}
-
-            {activeTab === "bilag1" ? (
-              <ProjectBilag1Tab
-                documents={project.documents}
-                artifacts={project.generated_artifacts.filter(
-                  (artifact) =>
-                    artifact.artifact_type === "bilag1_rekonstruksjon",
-                )}
-                busy={busy === "bilag1-artifact"}
-                busyMessage={busy === "bilag1-artifact" ? busyMessage : ""}
-                busyProgress={busyProgress}
-                onDeleteArtifact={onDeleteArtifact}
-                onSubmit={onGenerateBilag1Artifact}
-              />
-            ) : null}
-
-            {activeTab === "delivery" ? (
-              <ProjectDeliveryTab
-                artifacts={project.generated_artifacts.filter(
-                  (artifact) =>
-                    artifact.artifact_type === "gjennomforing_og_risiko",
-                )}
-                busy={busy === "delivery-artifact"}
-                busyMessage={busy === "delivery-artifact" ? busyMessage : ""}
-                busyProgress={busyProgress}
-                hasCustomerAnalysis={Boolean(customerAnalysis)}
-                onDeleteArtifact={onDeleteArtifact}
-                onSubmit={onGenerateDeliveryArtifact}
-              />
-            ) : null}
-
-            {activeTab === "service-description" ? (
-              <ProjectServiceDescriptionTab
-                projectId={project.id}
-              />
-            ) : null}
-
-            {activeTab === "requirements" ? (
-              <ProjectRequirementResponseTab
-                projectId={project.id}
-                documents={project.documents}
-                artifacts={project.generated_artifacts.filter(
-                  (artifact) => artifact.artifact_type === "forbedret_kravsvar",
-                )}
-                uploadBusy={busy === "upload-requirement-document"}
-                generateBusy={busy === "requirement-response"}
-                busyMessage={
-                  busy === "requirement-response" ? busyMessage : ""
-                }
-                busyProgress={busyProgress}
-                deletingDocumentId={
-                  busy?.startsWith("delete-")
-                    ? busy.slice("delete-".length)
-                    : null
-                }
-                onUpload={onUploadRequirementDocument}
-                selectedDocumentId={selectedRequirementDocumentId}
-                onSelectedDocumentChange={setSelectedRequirementDocumentId}
-                onDeleteDocument={onDeleteDocument}
-                onUpdateArtifact={onUpdateRequirementArtifact}
-                onDeleteArtifact={onDeleteArtifact}
-                onSubmit={onGenerateRequirementResponse}
-              />
-            ) : null}
-
-            {activeTab === "executive-summary" ? (
-              !executiveSummaryLoaded || executiveSummaryLoading ? (
-                <DeferredSectionLoader label="Laster lederoppsummering ..." />
-              ) : (
-                <ProjectExecutiveSummaryTab
-                  executiveSummary={executiveSummary}
-                  hasSolutionEvaluation={Boolean(solutionEvaluation)}
-                  busy={busy === "executive-summary"}
-                  busyMessage={
-                    busy === "executive-summary" ? busyMessage : ""
-                  }
-                  busyProgress={busyProgress}
-                  onGenerate={onGenerateExecutiveSummary}
-                />
-              )
-            ) : null}
-
-            {activeTab === "generator" ? (
-              <ProjectGeneratorTab
-                artifacts={project.generated_artifacts.filter(
-                  (artifact) => artifact.artifact_type === "losningsutkast",
-                )}
-                busy={busy === "artifact"}
-                busyMessage={busy === "artifact" ? busyMessage : ""}
-                busyProgress={busyProgress}
-                onDeleteArtifact={onDeleteArtifact}
-                onSubmit={onGenerateArtifact}
-              />
-            ) : null}
-            </div>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </div>
+    <ProjectWorkspaceShell
+      project={project}
+      activeTab={activeTab}
+      activeTabLabel={activeTabLabel}
+      sidebarOpen={sidebarOpen}
+      sidebarWidth={sidebarWidth}
+      isTabPending={isTabPending}
+      primaryWorkflowSteps={primaryWorkflowSteps}
+      secondaryNavGroups={secondaryNavGroups}
+      error={error}
+      notice={notice}
+      busy={busy}
+      busyMessage={busyMessage}
+      busyProgress={busyProgress}
+      onSidebarOpenChange={setSidebarOpen}
+      onSidebarResizeStart={onSidebarResizeStart}
+      onPreloadWorkspaceTab={preloadWorkspaceTab}
+      onSetWorkspaceTab={setWorkspaceTab}
+      onOpenChatPopout={openChatPopout}
+    >
+      <ProjectWorkspaceTabContent
+        activeTab={activeTab}
+        project={project}
+        serviceDescriptions={serviceDescriptions}
+        architectureDocumentCandidates={architectureDocumentCandidates}
+        customerAnalysis={customerAnalysis}
+        solutionEvaluation={solutionEvaluation}
+        executiveSummary={executiveSummary}
+        analysisLoaded={analysisLoaded}
+        analysisLoading={analysisLoading}
+        evaluationLoaded={evaluationLoaded}
+        evaluationLoading={evaluationLoading}
+        executiveSummaryLoaded={executiveSummaryLoaded}
+        executiveSummaryLoading={executiveSummaryLoading}
+        busy={busy}
+        busyMessage={busyMessage}
+        busyProgress={busyProgress}
+        analysisSectionBusy={analysisSectionBusy}
+        uploadOpen={uploadOpen}
+        docTitle={docTitle}
+        uploadRole={uploadRole}
+        selectedDocumentName={file?.name ?? ""}
+        documentFileInputKey={documentFileInputKey}
+        selectedRequirementDocumentId={selectedRequirementDocumentId}
+        requirementArtifacts={requirementArtifacts}
+        solutionDraftArtifacts={solutionDraftArtifacts}
+        deliveryArtifacts={deliveryArtifacts}
+        bilag1Artifacts={bilag1Artifacts}
+        onToggleUploadOpen={() => setUploadOpen((open) => !open)}
+        onDocTitleChange={setDocTitle}
+        onUploadRoleChange={setUploadRole}
+        onFileChange={setFile}
+        onUploadDocument={onUploadDocument}
+        onDeleteDocument={onDeleteDocument}
+        onGenerateCustomerAnalysis={onGenerateCustomerAnalysis}
+        onSaveAnalysis={onSaveAnalysis}
+        onGenerateSolutionEvaluation={onGenerateSolutionEvaluation}
+        onUploadArchitectureDocument={onUploadArchitectureDocument}
+        onDeleteArtifact={onDeleteArtifact}
+        onGenerateBilag1Artifact={onGenerateBilag1Artifact}
+        onGenerateDeliveryArtifact={onGenerateDeliveryArtifact}
+        onUploadRequirementDocument={onUploadRequirementDocument}
+        onSelectedRequirementDocumentChange={setSelectedRequirementDocumentId}
+        onUpdateRequirementArtifact={onUpdateRequirementArtifact}
+        onGenerateRequirementResponse={onGenerateRequirementResponse}
+        onGenerateExecutiveSummary={onGenerateExecutiveSummary}
+        onGenerateArtifact={onGenerateArtifact}
+      />
+    </ProjectWorkspaceShell>
   );
 }

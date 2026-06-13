@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { summarizeServiceDocumentForAi } from "@/lib/server/ai";
+import { enforceServiceDescriptionWriteRateLimit } from "@/lib/server/api-responses";
 import { extractTextFromUpload } from "@/lib/server/documents";
-import { checkRateLimit } from "@/lib/server/observability";
 import {
   getServiceDescription,
   listServiceDescriptions,
@@ -36,18 +36,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const rateLimit = await checkRateLimit(request, "service-descriptions-write", {
-      limit: 16,
-      windowMs: 60_000,
-    });
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "For mange tjenesteendringer på kort tid." },
-        {
-          status: 429,
-          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-        },
-      );
+    const limited = await enforceServiceDescriptionWriteRateLimit(request);
+    if (limited) {
+      return limited;
     }
 
     const formData = await request.formData();

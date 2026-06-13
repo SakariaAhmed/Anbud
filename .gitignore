@@ -19,6 +19,10 @@ __pycache__/
 
 # Local/generated test fixtures
 test-data/
+!test-data/
+test-data/*
+!test-data/requirement-parser-golden/
+!test-data/requirement-parser-golden/norwegian-pdf-requirement-regressions.json
 
 # OS
 .DS_Store

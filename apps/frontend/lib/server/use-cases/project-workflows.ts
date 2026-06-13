@@ -2,6 +2,10 @@ import "server-only";
 
 import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
 import {
+  normalizeArtifactInstructions,
+  normalizeSourceDocumentIds,
+} from "@/lib/server/artifact-generation-input";
+import {
   buildDocumentLedger,
   buildDocumentLedgerContext,
 } from "@/lib/server/document-ledger";
@@ -9,10 +13,10 @@ import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import {
   analyzeCustomerDocuments,
   evaluateSolutionDocument,
+  extractRequirementLedgerForDocument,
   generateExecutiveSummary,
   generateHighLevelDesign,
   inferProjectMetadataFromCustomerDocument,
-  synthesizeAndEvaluateSolution,
 } from "@/lib/server/ai";
 import {
   canUseDoclingForFormat,
@@ -27,10 +31,6 @@ import {
   saveExecutiveSummary,
   saveSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
-import {
-  listGeneratedArtifacts,
-  saveGeneratedArtifact,
-} from "@/lib/server/repositories/artifacts";
 import {
   getDocumentDetail,
   listProjectDocumentsForAnalysis,
@@ -47,10 +47,8 @@ import {
 } from "@/lib/server/repositories/services";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
-  GeneratedArtifact,
   GeneratedArtifactType,
   ProjectDocumentDetail,
-  ProjectJobKind,
   ProjectJobResult,
 } from "@/lib/types";
 import {
@@ -69,7 +67,6 @@ export type ProjectWorkflowInput =
   | {
       kind: "solution_evaluation";
       projectId: string;
-      allowGeneratedSolution: boolean;
       solutionDocumentId?: string;
       model?: string;
     }
@@ -79,6 +76,7 @@ export type ProjectWorkflowInput =
       artifactType: GeneratedArtifactType;
       instructions?: string;
       sourceDocumentIds?: string[];
+      useSolutionEvaluationContext?: boolean;
       model?: string;
     }
   | { kind: "high_level_design"; projectId: string; model?: string }
@@ -94,47 +92,216 @@ export interface ProjectWorkflowHandlers {
   totalDurationMs?: () => number;
 }
 
-function getLatestSolutionDraft(
-  artifacts: GeneratedArtifact[],
-): GeneratedArtifact | null {
-  return (
-    artifacts.find((artifact) => artifact.artifact_type === "losningsutkast") ??
-    null
-  );
-}
-
 function readableDocument(
   document: ProjectDocumentDetail | null,
 ): document is ProjectDocumentDetail {
   return Boolean(document?.raw_text.trim());
 }
 
-async function hydratePdfFileForLayout(
+const EVALUATION_FILE_LEDGER_FORMATS = new Set(["pdf", "docx", "xlsx", "xls"]);
+
+async function hydrateEvaluationFileDocument(
   projectId: string,
   document: ProjectDocumentDetail,
 ) {
-  if (document.file_format !== "pdf" || document.file_base64) {
+  if (
+    document.file_base64 ||
+    !EVALUATION_FILE_LEDGER_FORMATS.has(document.file_format)
+  ) {
     return document;
   }
 
   return getDocumentDetail(projectId, document.id);
 }
 
-function assertWorkflowKind(
-  value: unknown,
-): asserts value is ProjectWorkflowInput {
+function compactLedgerText(value: string, maxLength = 420) {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 3).trim()}...`;
+}
+
+function formatRequirementPages(pages: number[]) {
+  const sorted = [...new Set(pages)]
+    .filter((page) => Number.isFinite(page))
+    .sort((left, right) => left - right);
+  if (!sorted.length) {
+    return "";
+  }
+
+  return sorted.length === 1
+    ? `Side ${sorted[0]}`
+    : `Side ${sorted[0]}-${sorted[sorted.length - 1]}`;
+}
+
+function formatEvaluationRequirementLedger(input: {
+  document: ProjectDocumentDetail;
+  ledger: Awaited<ReturnType<typeof extractRequirementLedgerForDocument>>;
+}) {
+  if (!input.ledger.length) {
+    return "";
+  }
+
+  const rows = input.ledger.slice(0, 180).map((entry, index) => {
+    const source = [
+      formatRequirementPages(entry.pages),
+      entry.heading,
+      entry.tableId,
+      entry.id,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    return `- ${index + 1}. ${entry.id || `Krav ${index + 1}`} | ${
+      source || input.document.title
+    } | ${compactLedgerText(entry.text)}`;
+  });
+
+  return [
+    `Dokument: ${input.document.title}`,
+    `Krav funnet: ${input.ledger.length}`,
+    ...rows,
+  ].join("\n");
+}
+
+async function buildEvaluationLedgerContext(input: {
+  artifactType: GeneratedArtifactType;
+  documents: ProjectDocumentDetail[];
+}) {
+  const readableDocuments = input.documents.filter(readableDocument).slice(0, 8);
+  const documentLedgerContext = buildDocumentLedgerContext({
+    artifactType: input.artifactType,
+    ledgers: readableDocuments.map(buildDocumentLedger),
+  });
+  const requirementLedgerContexts = await Promise.all(
+    readableDocuments.map(async (document) => {
+      try {
+        const ledger = await extractRequirementLedgerForDocument(document);
+        return formatEvaluationRequirementLedger({ document, ledger });
+      } catch (error) {
+        console.info(
+          JSON.stringify({
+            event: "evaluation_requirement_ledger_failed",
+            document_id: document.id,
+            reason: error instanceof Error ? error.message : String(error),
+          }),
+        );
+        return "";
+      }
+    }),
+  );
+  const preciseRequirementLedgerContext = requirementLedgerContexts
+    .filter(Boolean)
+    .join("\n\n");
+
+  return [
+    documentLedgerContext,
+    preciseRequirementLedgerContext
+      ? [
+          "### Presis kravledger for vurdering",
+          "Denne kravledgeren er bygget deterministisk fra krav-/svar-dokumentene. Bruk den som primær kravliste for kravdekning, kravrekkefølge og kildehenvisninger. Ikke legg til, fjern eller slå sammen krav i vurderingen.",
+          preciseRequirementLedgerContext,
+        ].join("\n")
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function workflowInputRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || !("kind" in value)) {
     throw new Error("Prosjektjobben mangler gyldig kjøredata.");
   }
+
+  return value as Record<string, unknown>;
 }
 
-export function workflowKind(input: ProjectWorkflowInput): ProjectJobKind {
-  return input.kind;
+function requiredWorkflowString(
+  value: unknown,
+  message: string,
+) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(message);
+  }
+
+  return value.trim();
+}
+
+function optionalWorkflowString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function parseWorkflowArtifactType(value: unknown): GeneratedArtifactType {
+  if (
+    value === "losningsutkast" ||
+    value === "bilag1_rekonstruksjon" ||
+    value === "forbedret_kravsvar" ||
+    value === "gjennomforing_og_risiko"
+  ) {
+    return value;
+  }
+
+  throw new Error("Prosjektjobben har ugyldig artefakttype.");
 }
 
 export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput {
-  assertWorkflowKind(value);
-  return value;
+  const input = workflowInputRecord(value);
+  const projectId = requiredWorkflowString(
+    input.projectId,
+    "Prosjektjobben mangler prosjekt-ID.",
+  );
+  const model = optionalWorkflowString(input.model);
+
+  switch (input.kind) {
+    case "document_ingestion":
+      return {
+        kind: "document_ingestion",
+        projectId,
+        documentId: requiredWorkflowString(
+          input.documentId,
+          "Dokumentjobben mangler dokument-ID.",
+        ),
+      };
+    case "document_docling_enhancement":
+      return {
+        kind: "document_docling_enhancement",
+        projectId,
+        documentId: requiredWorkflowString(
+          input.documentId,
+          "Docling-jobben mangler dokument-ID.",
+        ),
+      };
+    case "customer_analysis":
+      return { kind: "customer_analysis", projectId, model };
+    case "solution_evaluation":
+      return {
+        kind: "solution_evaluation",
+        projectId,
+        solutionDocumentId: optionalWorkflowString(input.solutionDocumentId),
+        model,
+      };
+    case "artifact_generation":
+      return {
+        kind: "artifact_generation",
+        projectId,
+        artifactType: parseWorkflowArtifactType(input.artifactType),
+        instructions: normalizeArtifactInstructions(input.instructions),
+        sourceDocumentIds: normalizeSourceDocumentIds(input.sourceDocumentIds),
+        useSolutionEvaluationContext:
+          input.useSolutionEvaluationContext === true,
+        model,
+      };
+    case "high_level_design":
+      return { kind: "high_level_design", projectId, model };
+    case "perfect_system_solution":
+      return { kind: "perfect_system_solution", projectId, model };
+    case "executive_summary":
+      return { kind: "executive_summary", projectId, model };
+    default:
+      throw new Error("Prosjektjobben har ugyldig jobbtype.");
+  }
 }
 
 const DEFAULT_DOCLING_COMPLEXITY_MIN_CHARS = 60_000;
@@ -231,6 +398,7 @@ function shouldRunDoclingEnhancement(input: {
   fileFormat: ProjectDocumentDetail["file_format"];
   parserUsed: string;
   role: ProjectDocumentDetail["role"];
+  supportingSubtype?: ProjectDocumentDetail["supporting_subtype"];
   rawText: string;
   sourceMapLength: number;
   fileSizeBytes: number;
@@ -249,10 +417,32 @@ function shouldRunDoclingEnhancement(input: {
 
   return (
     input.role === "primary_customer_document" ||
+    input.supportingSubtype === "kravdokument" ||
     (input.fileFormat === "pdf" && looksLikePoorPdfExtraction(input)) ||
     looksLikePdfWithTablesOrRequirements(input.rawText) ||
     looksLikeComplexDocument(input)
   );
+}
+
+function shouldUseDoclingOcr(input: {
+  fileFormat: ProjectDocumentDetail["file_format"];
+  rawText: string;
+  sourceMapLength: number;
+  fileSizeBytes: number;
+}) {
+  if (input.fileFormat !== "pdf") {
+    return false;
+  }
+
+  const configured = process.env.DOCLING_OCR?.trim().toLowerCase();
+  if (configured === "on" || configured === "true" || configured === "1") {
+    return true;
+  }
+  if (configured === "off" || configured === "false" || configured === "0") {
+    return false;
+  }
+
+  return looksLikePoorPdfExtraction(input);
 }
 
 function isUsableDoclingResult(
@@ -274,7 +464,7 @@ function isDoclingResultWorthReplacing(input: {
   return enhancedLength >= currentLength * 0.5;
 }
 
-export async function runDocumentIngestionWorkflow(
+async function runDocumentIngestionWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "document_ingestion" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
@@ -315,12 +505,13 @@ export async function runDocumentIngestionWorkflow(
 
     if (!parsed.rawText.trim()) {
       const shouldAttemptDocling = shouldRunDoclingEnhancement({
-        fileFormat: parsed.fileFormat,
-        parserUsed: parsed.parserUsed,
-        role: document.role,
-        rawText: parsed.rawText,
-        sourceMapLength: parsed.sourceMap.length,
-        fileSizeBytes: document.file_size_bytes,
+          fileFormat: parsed.fileFormat,
+          parserUsed: parsed.parserUsed,
+          role: document.role,
+          supportingSubtype: document.supporting_subtype,
+          rawText: parsed.rawText,
+          sourceMapLength: parsed.sourceMap.length,
+          fileSizeBytes: document.file_size_bytes,
       });
       if (shouldAttemptDocling) {
         handlers.setProgress("[48%] Prøver Docling for tekstuttrekk ...");
@@ -339,6 +530,7 @@ export async function runDocumentIngestionWorkflow(
           contentType: document.content_type,
           role: document.role,
           useDocling: true,
+          useDoclingOcr: true,
         }).catch(() => null);
 
         if (isUsableDoclingResult(enhanced)) {
@@ -380,6 +572,7 @@ export async function runDocumentIngestionWorkflow(
       fileFormat: parsed.fileFormat,
       parserUsed: parsed.parserUsed,
       role: document.role,
+      supportingSubtype: document.supporting_subtype,
       rawText: parsed.rawText,
       sourceMapLength: parsed.sourceMap.length,
       fileSizeBytes: document.file_size_bytes,
@@ -465,6 +658,12 @@ export async function runDocumentIngestionWorkflow(
       contentType: document.content_type,
       role: document.role,
       useDocling: true,
+      useDoclingOcr: shouldUseDoclingOcr({
+        fileFormat: parsed.fileFormat,
+        rawText: parsed.rawText,
+        sourceMapLength: parsed.sourceMap.length,
+        fileSizeBytes: document.file_size_bytes,
+      }),
     });
 
     if (isUsableDoclingResult(enhanced)) {
@@ -533,7 +732,7 @@ export async function runDocumentIngestionWorkflow(
   }
 }
 
-export async function runDocumentDoclingEnhancementWorkflow(
+async function runDocumentDoclingEnhancementWorkflow(
   input: Extract<
     ProjectWorkflowInput,
     { kind: "document_docling_enhancement" }
@@ -564,6 +763,7 @@ export async function runDocumentDoclingEnhancementWorkflow(
     fileFormat: document.file_format,
     parserUsed: document.parser_used ?? "",
     role: document.role,
+    supportingSubtype: document.supporting_subtype,
     rawText: document.raw_text,
     sourceMapLength: document.structure_map.length,
     fileSizeBytes: document.file_size_bytes,
@@ -597,6 +797,12 @@ export async function runDocumentDoclingEnhancementWorkflow(
     contentType: document.content_type,
     role: document.role,
     useDocling: true,
+    useDoclingOcr: shouldUseDoclingOcr({
+      fileFormat: document.file_format,
+      rawText: document.raw_text,
+      sourceMapLength: document.structure_map.length,
+      fileSizeBytes: document.file_size_bytes,
+    }),
   }).catch(() => null);
   handlers.onPhase?.("docling_parser");
 
@@ -656,7 +862,7 @@ export async function runDocumentDoclingEnhancementWorkflow(
   };
 }
 
-export async function runCustomerAnalysisWorkflow(
+async function runCustomerAnalysisWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "customer_analysis" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
@@ -729,7 +935,7 @@ export async function runCustomerAnalysisWorkflow(
   };
 }
 
-export async function runArtifactGenerationWorkflow(
+async function runArtifactGenerationWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "artifact_generation" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
@@ -738,6 +944,7 @@ export async function runArtifactGenerationWorkflow(
     artifactType: input.artifactType,
     instructions: input.instructions,
     sourceDocumentIds: input.sourceDocumentIds,
+    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
     model: input.model,
     ensureSemanticChunks: true,
     onProgress: handlers.setProgress,
@@ -752,14 +959,9 @@ export async function runSolutionEvaluationWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster kundedokument, analyse og støttedokumenter ...");
-  const [
-    projectDocuments,
-    customerAnalysis,
-    generatedArtifacts,
-  ] = await Promise.all([
+  const [projectDocuments, customerAnalysis] = await Promise.all([
     listProjectDocumentsForAnalysis(input.projectId),
     getFreshCustomerAnalysis(input.projectId),
-    listGeneratedArtifacts(input.projectId),
   ]);
   const { projectDocuments: evaluationDocuments } =
     splitServiceDescriptionDetails(projectDocuments);
@@ -792,7 +994,7 @@ export async function runSolutionEvaluationWorkflow(
   }
   let solutionDocument =
     selectedSolutionDocument ?? selectedDocuments.solutionDocument ?? null;
-  const supportingDocuments = evaluationDocuments.filter(
+  let supportingDocuments = evaluationDocuments.filter(
     (document) =>
       document.id !== customerDocument?.id && document.id !== solutionDocument?.id,
   );
@@ -806,71 +1008,34 @@ export async function runSolutionEvaluationWorkflow(
     throw new Error("Generer kundeanalyse før løsningsvurdering.");
   }
 
-  handlers.setProgress(
-    "Bygger evalueringsledger fra krav, kriterier og dokumentstruktur ...",
-  );
-  const evaluationLedgers = [
-    customerDocument,
-    solutionDocument,
-    ...supportingDocuments,
-  ]
-    .filter(readableDocument)
-    .slice(0, 8)
-    .map(buildDocumentLedger);
-  const evaluationLedgerContext = buildDocumentLedgerContext({
-    artifactType: "gjennomforing_og_risiko",
-    ledgers: evaluationLedgers,
-  });
-  handlers.onPhase?.("ledgerbygging");
-
   if (!solutionDocument) {
-    if (!input.allowGeneratedSolution) {
-      throw new Error("Velg dokumentet som skal vurderes som arkitektløsning.");
-    }
-
-    handlers.setProgress("Genererer en kort intern løsningsbeskrivelse ...");
-    const generated = await synthesizeAndEvaluateSolution({
-      projectName: customerDocument.title,
-      customerAnalysis,
-      customerDocument,
-      supportingDocuments,
-      model: input.model,
-      documentLedgerContext: evaluationLedgerContext,
-    });
-    handlers.onPhase?.("ai_syntese_og_vurdering");
-
-    handlers.setProgress("Lagrer systemgenerert utkast ...");
-    const artifact = await saveGeneratedArtifact(
-      input.projectId,
-      "losningsutkast",
-      generated.synthetic_solution.title,
-      generated.synthetic_solution.content_markdown,
-      {
-        generated_for: "solution_evaluation_fallback",
-        source: "system_generated_when_solution_document_missing",
-      },
-    );
-
-    handlers.setProgress("Lagrer løsningsvurderingen ...");
-    const evaluation = await saveSolutionEvaluation(input.projectId, {
-      customerDocumentId: customerDocument.id,
-      solutionDocumentId: null,
-      result: generated.evaluation,
-    });
-    handlers.onPhase?.("lagring");
-
-    return {
-      evaluation,
-      project: await getProjectSnapshot(input.projectId),
-      artifact,
-      used_generated_solution: true,
-    };
+    throw new Error("Velg dokumentet som skal vurderes som arkitektløsning.");
   }
 
-  solutionDocument = await hydratePdfFileForLayout(
+  customerDocument = await hydrateEvaluationFileDocument(
+    input.projectId,
+    customerDocument,
+  );
+  solutionDocument = await hydrateEvaluationFileDocument(
     input.projectId,
     solutionDocument,
   );
+  supportingDocuments = await Promise.all(
+    supportingDocuments.map((document) =>
+      hydrateEvaluationFileDocument(input.projectId, document),
+    ),
+  );
+
+  handlers.setProgress(
+    "Bygger evalueringsledger fra krav, kriterier og dokumentstruktur ...",
+  );
+  const evaluationLedgerContext = await buildEvaluationLedgerContext({
+    artifactType: "gjennomforing_og_risiko",
+    documents: [customerDocument, solutionDocument, ...supportingDocuments].filter(
+      readableDocument,
+    ),
+  });
+  handlers.onPhase?.("ledgerbygging");
 
   handlers.setProgress(
     "Sammenligner systemløsning og importert arkitektløsning ...",
@@ -881,14 +1046,14 @@ export async function runSolutionEvaluationWorkflow(
     solutionDocument,
     supportingDocuments,
     customerAnalysis,
-    systemSolutionArtifact: getLatestSolutionDraft(generatedArtifacts),
+    systemSolutionArtifact: null,
     model: input.model,
     documentLedgerContext: evaluationLedgerContext,
     onProgress: handlers.setProgress,
   });
   handlers.onPhase?.("ai_vurdering");
 
-  handlers.setProgress("Lagrer sammenligning og vurdering ...");
+  handlers.setProgress("[96%] Lagrer sammenligning og vurdering ...");
   const evaluation = await saveSolutionEvaluation(input.projectId, {
     customerDocumentId: customerDocument.id,
     solutionDocumentId: solutionDocument.id,
@@ -904,7 +1069,7 @@ export async function runSolutionEvaluationWorkflow(
   };
 }
 
-export async function runHighLevelDesignWorkflow(
+async function runHighLevelDesignWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "high_level_design" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
@@ -964,7 +1129,7 @@ export async function runHighLevelDesignWorkflow(
   };
 }
 
-export async function runExecutiveSummaryWorkflow(
+async function runExecutiveSummaryWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "executive_summary" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
@@ -1007,7 +1172,7 @@ export async function runExecutiveSummaryWorkflow(
   };
 }
 
-export async function runPerfectSystemSolutionWorkflow(
+async function runPerfectSystemSolutionWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "perfect_system_solution" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
@@ -1071,20 +1236,38 @@ export async function runPerfectSystemSolutionWorkflow(
     };
   }
 
-  const hydratedSolutionDocument = await hydratePdfFileForLayout(
+  const hydratedSolutionDocument = await hydrateEvaluationFileDocument(
     input.projectId,
     solutionDocument,
   );
+  const hydratedCustomerDocument = await hydrateEvaluationFileDocument(
+    input.projectId,
+    customerDocument,
+  );
+  const hydratedSupportingDocuments = await Promise.all(
+    supportingDocuments.map((document) =>
+      hydrateEvaluationFileDocument(input.projectId, document),
+    ),
+  );
+  const evaluationLedgerContext = await buildEvaluationLedgerContext({
+    artifactType: "gjennomforing_og_risiko",
+    documents: [
+      hydratedCustomerDocument,
+      hydratedSolutionDocument,
+      ...hydratedSupportingDocuments,
+    ],
+  });
 
   handlers.setProgress("Kjører ny vurdering av forbedret systemløsning ...");
   const improvedEvaluation = await evaluateSolutionDocument({
     projectName: project.name,
-    customerDocument,
+    customerDocument: hydratedCustomerDocument,
     solutionDocument: hydratedSolutionDocument,
-    supportingDocuments,
+    supportingDocuments: hydratedSupportingDocuments,
     customerAnalysis,
     systemSolutionArtifact: artifact,
     model: input.model,
+    documentLedgerContext: evaluationLedgerContext,
   });
   handlers.onPhase?.("ai_revaluering");
 

@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  isMarkdownSeparatorRow,
+  splitMarkdownTableRow,
+} from "@/lib/server/requirements/markdown-table";
 import type { GeneratedArtifactType } from "@/lib/types";
 
 export type ArtifactQualityStatus = "pass" | "warning" | "fail";
@@ -15,6 +19,9 @@ export type ArtifactQualityReport = {
   status: ArtifactQualityStatus;
   metrics: {
     requirementRows: number;
+    expectedRequirementRows: number;
+    missingExpectedRequirements: number;
+    unresolvedFallbackAnswers: number;
     tocRows: number;
     dotLeaderRows: number;
     emptyAnswers: number;
@@ -34,21 +41,30 @@ type MarkdownTable = {
 
 const DOT_LEADER_PATTERN = /\.{4,}\s*\d{1,4}\s*$/;
 
-function splitMarkdownTableRow(line: string) {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((cell) => cell.trim());
-}
-
-function isMarkdownDivider(line: string) {
-  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
-}
-
 function normalize(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeRequirementRef(value: string) {
+  return normalize(value)
+    .toLowerCase()
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s*\.\s*/g, ".")
+    .replace(/^krav\s*(?:nr\.?|nummer)?\s*/i, "krav ")
+    .replace(/^id\s*/i, "id ")
+    .replace(/^req\s*[- ]?\s*/i, "req-");
+}
+
+function requirementRefVariants(value: string) {
+  const normalized = normalizeRequirementRef(value);
+  return Array.from(
+    new Set([
+      normalized,
+      normalized.replace(/\s+/g, ""),
+      normalized.replace(/^id\s+/i, "id"),
+      normalized.replace(/^krav\s+/i, "krav"),
+    ].filter(Boolean)),
+  );
 }
 
 function parseMarkdownTables(markdown: string) {
@@ -62,7 +78,7 @@ function parseMarkdownTables(markdown: string) {
       return;
     }
 
-    const nonDivider = current.filter((line) => !isMarkdownDivider(line));
+    const nonDivider = current.filter((line) => !isMarkdownSeparatorRow(line));
     if (nonDivider.length >= 2) {
       tables.push({
         header: splitMarkdownTableRow(nonDivider[0]),
@@ -123,10 +139,14 @@ export function validateGeneratedArtifact(input: {
   artifactType: GeneratedArtifactType;
   title: string;
   contentMarkdown: string;
+  expectedRequirementCount?: number;
+  expectedRequirementRefs?: string[];
+  unresolvedFallbackAnswers?: number;
 }): ArtifactQualityReport {
   const tables = parseMarkdownTables(input.contentMarkdown);
   const requirementTables = tables.filter(isRequirementTable);
   let requirementRows = 0;
+  const requirementRefs = new Set<string>();
   let tocRows = 0;
   let dotLeaderRows = 0;
   let emptyAnswers = 0;
@@ -135,14 +155,19 @@ export function validateGeneratedArtifact(input: {
 
   for (const table of requirementTables) {
     const requirementIndex = getColumnIndex(table, /^krav$/i);
+    const refIndex = getColumnIndex(table, /kravref/i);
     const answerIndex = getColumnIndex(table, /^svar$/i);
     const sourceIndex = getColumnIndex(table, /kilde|grunnlag|source/i);
 
     for (const row of table.rows) {
       requirementRows += 1;
+      const ref = normalizeRequirementRef(row[refIndex] ?? "");
       const requirement = normalize(row[requirementIndex] ?? "");
       const answer = normalize(row[answerIndex] ?? "");
       const source = normalize(row[sourceIndex] ?? "");
+      if (ref) {
+        requirementRefs.add(ref);
+      }
 
       if (/^table of contents$/i.test(requirement) || /^innholdsfortegnelse$/i.test(requirement)) {
         tocRows += 1;
@@ -169,6 +194,29 @@ export function validateGeneratedArtifact(input: {
     0,
   );
   const emptySections = detectEmptySections(input.contentMarkdown);
+  const normalizedContent = normalizeRequirementRef(input.contentMarkdown);
+  const expectedRequirementRefs = (input.expectedRequirementRefs ?? [])
+    .map(normalizeRequirementRef)
+    .filter(Boolean);
+  const missingExpectedRequirements = expectedRequirementRefs.filter((ref) => {
+    const variants = requirementRefVariants(ref);
+    return !variants.some(
+      (variant) =>
+        requirementRefs.has(variant) ||
+        normalizedContent.includes(variant) ||
+        normalizedContent.replace(/\s+/g, "").includes(variant),
+    );
+  }).length;
+  const coveredExpectedRequirements =
+    expectedRequirementRefs.length - missingExpectedRequirements;
+  const expectedRequirementRows = Math.max(
+    0,
+    Math.round(input.expectedRequirementCount ?? 0),
+  );
+  const unresolvedFallbackAnswers = Math.max(
+    0,
+    Math.round(input.unresolvedFallbackAnswers ?? 0),
+  );
   const issues: string[] = [];
   const checks: ArtifactQualityCheck[] = [];
   let highIssues = 0;
@@ -202,6 +250,56 @@ export function validateGeneratedArtifact(input: {
         severity: "high",
       },
       requirementRows > 0 ? undefined : "Kravbesvarelsen mangler kravtabell.",
+    );
+    if (expectedRequirementRows > 0) {
+      addCheck(
+        {
+          label: "Forventet kravdekning",
+          value: expectedRequirementRefs.length
+            ? `${coveredExpectedRequirements}/${expectedRequirementRows}`
+            : `${requirementRows}/${expectedRequirementRows}`,
+          status:
+            (expectedRequirementRefs.length
+              ? coveredExpectedRequirements
+              : requirementRows) >= expectedRequirementRows
+              ? "pass"
+              : "fail",
+          severity: "high",
+        },
+        (expectedRequirementRefs.length
+          ? coveredExpectedRequirements
+          : requirementRows) >= expectedRequirementRows
+          ? undefined
+          : `Kravbesvarelsen dekker ${
+              expectedRequirementRefs.length
+                ? coveredExpectedRequirements
+                : requirementRows
+            } krav, men kravledgeren forventer minst ${expectedRequirementRows}.`,
+      );
+    }
+    if (expectedRequirementRefs.length > 0) {
+      addCheck(
+        {
+          label: "Kjente kravreferanser",
+          value: `${expectedRequirementRefs.length - missingExpectedRequirements}/${expectedRequirementRefs.length}`,
+          status: missingExpectedRequirements === 0 ? "pass" : "fail",
+          severity: "high",
+        },
+        missingExpectedRequirements === 0
+          ? undefined
+          : `${missingExpectedRequirements} kravreferanser fra kravledgeren mangler i kravbesvarelsen.`,
+      );
+    }
+    addCheck(
+      {
+        label: "Svar til manuell kontroll",
+        value: unresolvedFallbackAnswers,
+        status: unresolvedFallbackAnswers === 0 ? "pass" : "warning",
+        severity: "warning",
+      },
+      unresolvedFallbackAnswers === 0
+        ? undefined
+        : `${unresolvedFallbackAnswers} kravsvar bør kontrolleres manuelt etter fallback-reparasjon.`,
     );
     addCheck(
       {
@@ -260,6 +358,9 @@ export function validateGeneratedArtifact(input: {
     status: statusFromHighIssues(highIssues, warnings),
     metrics: {
       requirementRows,
+      expectedRequirementRows,
+      missingExpectedRequirements,
+      unresolvedFallbackAnswers,
       tocRows,
       dotLeaderRows,
       emptyAnswers,
@@ -296,7 +397,9 @@ export function repairGeneratedArtifactContent(input: {
 
   function flushTable() {
     if (!tableBuffer.length) return;
-    const header = splitMarkdownTableRow(tableBuffer.find((line) => !isMarkdownDivider(line)) ?? "");
+    const header = splitMarkdownTableRow(
+      tableBuffer.find((line) => !isMarkdownSeparatorRow(line)) ?? "",
+    );
     const isReqTable =
       header.some((cell) => cell.toLowerCase().includes("kravref")) &&
       header.some((cell) => cell.toLowerCase() === "krav");
@@ -308,7 +411,7 @@ export function repairGeneratedArtifactContent(input: {
     }
 
     const cleaned = tableBuffer.filter((line, index) => {
-      if (index < 2 || isMarkdownDivider(line)) return true;
+      if (index < 2 || isMarkdownSeparatorRow(line)) return true;
       const row = splitMarkdownTableRow(line);
       if (!isRepairableRequirementRow(row)) return true;
       repairedRows += 1;

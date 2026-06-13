@@ -1,0 +1,428 @@
+#!/usr/bin/env node
+
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+import { resolveExistingFixturePath } from "./fixture_paths.mjs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, "..");
+const frontendRoot = path.join(repoRoot, "apps", "frontend");
+const outputRoot = path.join(repoRoot, "test-data", "requirement-generation-smoke");
+
+function loadEnvFile(filePath) {
+  if (!existsSync(filePath)) return;
+
+  const lines = readFileSync(filePath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (process.env[key]) continue;
+    process.env[key] = rawValue.replace(/^['"]|['"]$/g, "").trim();
+  }
+}
+
+loadEnvFile(path.join(repoRoot, ".env"));
+loadEnvFile(path.join(frontendRoot, ".env.local"));
+
+const require = createRequire(import.meta.url);
+const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
+const jiti = createJiti(path.join(frontendRoot, "generation-smoke.cjs"), {
+  moduleCache: false,
+  interopDefault: true,
+  alias: {
+    "@": frontendRoot,
+    "server-only": "/dev/null",
+  },
+});
+
+const {
+  extractTextFromBuffer,
+  contentTypeForUploadFormat,
+  inferUploadFileFormat,
+} = jiti(path.join(frontendRoot, "lib", "server", "documents.ts"));
+const {
+  analyzeCustomerDocuments,
+  extractRequirementLedgerForDocument,
+  generateProjectArtifact,
+} = jiti(path.join(frontendRoot, "lib", "server", "ai.ts"));
+
+const PROJECTS = [
+  {
+    id: "01",
+    name: "Nordlys Logistikk AS",
+    customer: "sky_bilag_5_par_ny/01_Bilag_1_Nordlys_Logistikk_AS.docx",
+    requirements: "sky_bilag_5_par_ny/01_Bilag_2_Krav_Nordlys_Logistikk_AS.docx",
+  },
+  {
+    id: "02",
+    name: "HelseBro Klinikkdrift AS",
+    customer: "sky_bilag_5_par_ny/02_Bilag_1_HelseBro_Klinikkdrift_AS.docx",
+    requirements: "sky_bilag_5_par_ny/02_Bilag_2_Krav_HelseBro_Klinikkdrift_AS.docx",
+  },
+  {
+    id: "03",
+    name: "GrønnFjord Energi SA",
+    customer: "sky_bilag_5_par_ny/03_Bilag_1_Gr_nnFjord_Energi_SA.docx",
+    requirements: "sky_bilag_5_par_ny/03_Bilag_2_Krav_Gr_nnFjord_Energi_SA.docx",
+  },
+  {
+    id: "04",
+    name: "KulturHub Østlandet IKS",
+    customer: "sky_bilag_5_par_ny/04_Bilag_1_KulturHub_stlandet_IKS.docx",
+    requirements: "sky_bilag_5_par_ny/04_Bilag_2_Krav_KulturHub_stlandet_IKS.docx",
+  },
+  {
+    id: "05",
+    name: "TryggVakt Bemanning AS",
+    customer: "sky_bilag_5_par_ny/05_Bilag_1_TryggVakt_Bemanning_AS.docx",
+    requirements: "sky_bilag_5_par_ny/05_Bilag_2_Krav_TryggVakt_Bemanning_AS.docx",
+  },
+  {
+    id: "11",
+    name: "PolarNett Feltservice AS",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/DOCX/11_Bilag_1_PolarNett_Feltservice_AS.docx",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/DOCX/11_Bilag_2_Krav_PolarNett_Feltservice_AS.docx",
+  },
+  {
+    id: "12",
+    name: "Matrett Direkte AS",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/DOCX/12_Bilag_1_Matrett_Direkte_AS.docx",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/DOCX/12_Bilag_2_Krav_Matrett_Direkte_AS.docx",
+  },
+  {
+    id: "13",
+    name: "ArenaPulse Eventdrift AS",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/DOCX/13_Bilag_1_ArenaPulse_Eventdrift_AS.docx",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/DOCX/13_Bilag_2_Krav_ArenaPulse_Eventdrift_AS.docx",
+  },
+  {
+    id: "14",
+    name: "TreLinje Modulbygg AS",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/DOCX/14_Bilag_1_TreLinje_Modulbygg_AS.docx",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/DOCX/14_Bilag_2_Krav_TreLinje_Modulbygg_AS.docx",
+  },
+  {
+    id: "15",
+    name: "OmsorgLink Hjemmetjeneste KF",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/DOCX/15_Bilag_1_OmsorgLink_Hjemmetjeneste_KF.docx",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/DOCX/15_Bilag_2_Krav_OmsorgLink_Hjemmetjeneste_KF.docx",
+  },
+  {
+    id: "16",
+    name: "FjordByte Regnskap AS",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/PDF/16_Bilag_1_FjordByte_Regnskap_AS.pdf",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/PDF/16_Bilag_2_Krav_FjordByte_Regnskap_AS.pdf",
+  },
+  {
+    id: "17",
+    name: "NordVask Industrirens AS",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/PDF/17_Bilag_1_NordVask_Industrirens_AS.pdf",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/PDF/17_Bilag_2_Krav_NordVask_Industrirens_AS.pdf",
+  },
+  {
+    id: "18",
+    name: "BySykkel Verksteddrift AS",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/PDF/18_Bilag_1_BySykkel_Verksteddrift_AS.pdf",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/PDF/18_Bilag_2_Krav_BySykkel_Verksteddrift_AS.pdf",
+  },
+  {
+    id: "19",
+    name: "SkoleMat Pluss SA",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/PDF/19_Bilag_1_SkoleMat_Pluss_SA.pdf",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/PDF/19_Bilag_2_Krav_SkoleMat_Pluss_SA.pdf",
+  },
+  {
+    id: "20",
+    name: "HavnKontroll Terminaldrift IKS",
+    customer: "sky_10_unike_ustrukturerte_prosjekter/PDF/20_Bilag_1_HavnKontroll_Terminaldrift_IKS.pdf",
+    requirements: "sky_10_unike_ustrukturerte_prosjekter/PDF/20_Bilag_2_Krav_HavnKontroll_Terminaldrift_IKS.pdf",
+  },
+];
+
+function resolveFixturePath(relativePath) {
+  const filePath = resolveExistingFixturePath(relativePath);
+  if (!filePath) {
+    throw new Error(
+      `Fant ikke fixture ${relativePath}. Sett REQUIREMENT_VERIFY_FIXTURE_ROOT til katalogen som inneholder testkorpuset.`,
+    );
+  }
+
+  return filePath;
+}
+
+function resolveProjectFixturePaths(project) {
+  return {
+    ...project,
+    customer: resolveFixturePath(project.customer),
+    requirements: resolveFixturePath(project.requirements),
+  };
+}
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const limitIndex = args.indexOf("--limit");
+  const onlyIndex = args.indexOf("--only");
+  const idsIndex = args.indexOf("--ids");
+  const modelIndex = args.indexOf("--model");
+
+  return {
+    limit:
+      limitIndex >= 0 && args[limitIndex + 1]
+        ? Math.max(1, Number(args[limitIndex + 1]))
+        : PROJECTS.length,
+    only: onlyIndex >= 0 ? args[onlyIndex + 1] : "",
+    ids:
+      idsIndex >= 0 && args[idsIndex + 1]
+        ? new Set(args[idsIndex + 1].split(",").map((id) => id.trim()).filter(Boolean))
+        : null,
+    model: modelIndex >= 0 ? args[modelIndex + 1] : undefined,
+  };
+}
+
+function normalizeInlineText(value) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function splitMarkdownTableRow(line) {
+  const trimmed = line.trim();
+  const body = trimmed
+    .replace(/^\|/, "")
+    .replace(/(?<!\\)\|$/, "");
+  const cells = [];
+  let current = "";
+
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    const next = body[index + 1];
+    if (char === "\\" && next === "|") {
+      current += "|";
+      index += 1;
+      continue;
+    }
+    if (char === "|") {
+      cells.push(normalizeInlineText(current));
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  cells.push(normalizeInlineText(current));
+
+  return cells;
+}
+
+function projectDocumentDetailFromParsed({
+  filePath,
+  parsed,
+  buffer,
+  projectId,
+  role,
+  supportingSubtype = null,
+}) {
+  const now = new Date(0).toISOString();
+  const fileName = path.basename(filePath);
+
+  return {
+    id: `${projectId}-${fileName}`,
+    project_id: projectId,
+    role,
+    supporting_subtype: supportingSubtype,
+    title: fileName,
+    file_name: fileName,
+    file_format: parsed.fileFormat,
+    content_type: parsed.contentType,
+    file_size_bytes: buffer.length,
+    page_count: null,
+    processing_status: "enhanced_ready",
+    processing_message: null,
+    processing_error: null,
+    parser_used: parsed.parserUsed,
+    indexed_at: null,
+    ai_summary: null,
+    ai_summary_updated_at: null,
+    created_at: now,
+    updated_at: now,
+    raw_text: parsed.rawText,
+    file_base64: parsed.fileBase64,
+    structure_map: parsed.sourceMap,
+  };
+}
+
+async function loadProjectDocument({ filePath, projectId, role, supportingSubtype }) {
+  const buffer = await readFile(filePath);
+  const fileName = path.basename(filePath);
+  const fileFormat = inferUploadFileFormat({ fileName });
+  const parsed = await extractTextFromBuffer({
+    buffer,
+    fileName,
+    contentType: contentTypeForUploadFormat(fileFormat),
+    role,
+    useDocling: false,
+  });
+
+  return projectDocumentDetailFromParsed({
+    filePath,
+    parsed,
+    buffer,
+    projectId,
+    role,
+    supportingSubtype,
+  });
+}
+
+function extractRequirementRows(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const rows = [];
+  let inRequirementTable = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^\|\s*Kravref\.?\s*\|\s*Krav\s*\|\s*Svar\s*\|\s*Kildegrunnlag\s*\|/i.test(trimmed)) {
+      inRequirementTable = true;
+      continue;
+    }
+    if (!inRequirementTable) continue;
+    if (!trimmed.startsWith("|")) {
+      if (rows.length) break;
+      continue;
+    }
+    if (/^\|\s*:?-{3,}:?\s*\|/.test(trimmed)) continue;
+
+    const cells = splitMarkdownTableRow(trimmed);
+    if (cells.length >= 4 && cells.some(Boolean)) {
+      rows.push(cells);
+    }
+  }
+
+  return rows;
+}
+
+function missingRefsFromRows({ ledger, rows }) {
+  const rowText = rows.map((row) => row.join(" ")).join("\n").toLowerCase();
+  return ledger
+    .map((entry) => normalizeInlineText(entry.id))
+    .filter(Boolean)
+    .filter((id) => !rowText.includes(id.toLowerCase()));
+}
+
+async function writeJson(filePath, value) {
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function runOne(project, options) {
+  const projectId = `local-smoke-${project.id}`;
+  const outDir = path.join(outputRoot, project.id);
+  await mkdir(outDir, { recursive: true });
+
+  const customerDocument = await loadProjectDocument({
+    filePath: project.customer,
+    projectId,
+    role: "primary_customer_document",
+  });
+  const requirementDocument = await loadProjectDocument({
+    filePath: project.requirements,
+    projectId,
+    role: "supporting_document",
+    supportingSubtype: "kravdokument",
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(requirementDocument);
+  await writeJson(path.join(outDir, "requirement-ledger.json"), ledger);
+
+  console.log(`\n${project.id} ${project.name}`);
+  console.log(`  ledger: ${ledger.length} krav`);
+
+  const customerAnalysis = await analyzeCustomerDocuments({
+    projectName: project.name,
+    customerDocument,
+    supportingDocuments: [requirementDocument],
+    model: options.model,
+  });
+  await writeJson(path.join(outDir, "customer-analysis.json"), customerAnalysis);
+  console.log("  kundeanalyse: OK");
+
+  const artifact = await generateProjectArtifact({
+    artifactType: "forbedret_kravsvar",
+    projectName: project.name,
+    customerAnalysis,
+    solutionEvaluation: null,
+    customerDocument,
+    solutionDocument: null,
+    supportingDocuments: [],
+    requirementDocuments: [requirementDocument],
+    knowledgeArtifacts: [],
+    instructions:
+      "Svar på alle krav i Bilag 2. Bruk kundeanalysen som kontekst, men ikke legg til krav som ikke finnes i kravledgeren.",
+    model: options.model,
+    onProgress: (message) => console.log(`  ${message}`),
+  });
+
+  const rows = extractRequirementRows(artifact.content_markdown);
+  const missingRefs = missingRefsFromRows({ ledger, rows });
+  await writeFile(
+    path.join(outDir, "requirement-response.md"),
+    artifact.content_markdown,
+    "utf8",
+  );
+  await writeJson(path.join(outDir, "requirement-response-metadata.json"), {
+    title: artifact.title,
+    generation_metadata: artifact.generation_metadata ?? null,
+    ledger_count: ledger.length,
+    table_row_count: rows.length,
+    missing_ref_count: missingRefs.length,
+    missing_refs: missingRefs.slice(0, 30),
+  });
+
+  const ok = rows.length === ledger.length && missingRefs.length === 0;
+  console.log(
+    `  kravbesvarelse: ${rows.length}/${ledger.length} rader, manglende ref=${missingRefs.length}`,
+  );
+
+  return {
+    id: project.id,
+    name: project.name,
+    ledger_count: ledger.length,
+    table_row_count: rows.length,
+    missing_ref_count: missingRefs.length,
+    ok,
+  };
+}
+
+const options = parseArgs();
+let projects = PROJECTS;
+if (options.only) {
+  projects = projects.filter((project) => project.id === options.only);
+}
+if (options.ids) {
+  projects = projects.filter((project) => options.ids.has(project.id));
+}
+projects = projects.slice(0, options.limit).map(resolveProjectFixturePaths);
+
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error("OPENAI_API_KEY mangler. Legg nøkkelen i .env eller apps/frontend/.env.local.");
+}
+
+await mkdir(outputRoot, { recursive: true });
+const results = [];
+
+for (const project of projects) {
+  results.push(await runOne(project, options));
+}
+
+await writeJson(path.join(outputRoot, "summary.json"), {
+  generated_at: new Date().toISOString(),
+  model: options.model ?? process.env.OPENAI_MODEL ?? null,
+  results,
+});
+
+const passed = results.filter((result) => result.ok).length;
+console.log(`\nTOTAL ${passed}/${results.length}`);
+if (passed !== results.length) {
+  process.exitCode = 1;
+}

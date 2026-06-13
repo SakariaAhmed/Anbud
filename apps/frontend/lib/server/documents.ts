@@ -12,6 +12,19 @@ import type { WorkBook, WorkSheet } from "@e965/xlsx";
 export interface SourceMapEntry {
   reference: string;
   text: string;
+  kind?:
+    | "text"
+    | "table"
+    | "docling_text"
+    | "docling_table_row"
+    | "docling_markdown";
+  parser?: string;
+  page?: number | null;
+  table_index?: number;
+  row_index?: number;
+  columns?: string[];
+  cells?: Record<string, string>;
+  docling_ref?: string;
 }
 
 export interface ParsedUpload {
@@ -36,13 +49,17 @@ let mammothPromise: Promise<{
   extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 }> | null = null;
 let xlsxPromise: Promise<typeof import("@e965/xlsx")> | null = null;
+let pdfLibPromise: Promise<typeof import("pdf-lib")> | null = null;
 
 const MAX_SPREADSHEET_SHEETS = 12;
 const MAX_SPREADSHEET_ROWS_PER_SHEET = 2000;
 const MAX_SPREADSHEET_COLUMNS_PER_SHEET = 80;
 const MAX_SPREADSHEET_CELLS = 80_000;
-const DEFAULT_DOCLING_TIMEOUT_MS = 180_000;
+const DEFAULT_DOCLING_TIMEOUT_MS = 600_000;
 const DOCLING_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+const DOCLING_DEFAULT_PDF_CHUNK_PAGES = 40;
+const DOCLING_DEFAULT_PDF_CHUNK_THRESHOLD_PAGES = 120;
+const DOCLING_MAX_PDF_CHUNK_PAGES = 80;
 const DOCLING_DEFAULT_IMAGE_EXPORT_MODE = "placeholder";
 const DOCLING_SUPPORTED_FORMATS = new Set<ParsedUpload["fileFormat"]>([
   "pdf",
@@ -90,6 +107,13 @@ async function getXlsx() {
     xlsxPromise = import("@e965/xlsx");
   }
   return xlsxPromise;
+}
+
+async function getPdfLib() {
+  if (!pdfLibPromise) {
+    pdfLibPromise = import("pdf-lib");
+  }
+  return pdfLibPromise;
 }
 
 function normalizeText(value: string) {
@@ -167,10 +191,74 @@ function doclingNumThreads() {
   return String(Math.min(parsed, 16));
 }
 
-function doclingCliArgs(inputPath: string, outputDir: string) {
+function optionalPositiveIntegerEnv(
+  name: string,
+  fallback: number,
+  max: number,
+) {
+  const rawValue = normalizedOptionalEnv(name);
+  const parsed = rawValue ? Number(rawValue) : fallback;
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return Math.min(parsed, max);
+}
+
+function doclingPdfChunkPages() {
+  return optionalPositiveIntegerEnv(
+    "DOCLING_PDF_CHUNK_PAGES",
+    DOCLING_DEFAULT_PDF_CHUNK_PAGES,
+    DOCLING_MAX_PDF_CHUNK_PAGES,
+  );
+}
+
+function doclingPdfChunkThresholdPages() {
+  return optionalPositiveIntegerEnv(
+    "DOCLING_PDF_CHUNK_THRESHOLD_PAGES",
+    DOCLING_DEFAULT_PDF_CHUNK_THRESHOLD_PAGES,
+    1000,
+  );
+}
+
+function doclingPdfChunkingMode() {
+  return normalizedOptionalEnv("DOCLING_PDF_CHUNKING")?.toLowerCase() ?? "auto";
+}
+
+function doclingLargePdfTableMode() {
+  const mode =
+    normalizedOptionalEnv("DOCLING_LARGE_PDF_TABLE_MODE")?.toLowerCase() ??
+    "fast";
+  return mode === "accurate" || mode === "fast" ? mode : "fast";
+}
+
+function sourceFileExtensionForFormat(fileFormat: ParsedUpload["fileFormat"]) {
+  switch (fileFormat) {
+    case "pdf":
+      return ".pdf";
+    case "docx":
+      return ".docx";
+    case "xlsx":
+      return ".xlsx";
+    case "xls":
+      return ".xls";
+    case "md":
+      return ".md";
+    case "txt":
+      return ".txt";
+  }
+}
+
+function doclingCliArgs(
+  inputPath: string,
+  outputDir: string,
+  options: { useOcr?: boolean; tableMode?: string | null } = {},
+) {
   const args = [
     "--to",
     "md",
+    "--to",
+    "json",
     "--output",
     outputDir,
     "--image-export-mode",
@@ -180,8 +268,16 @@ function doclingCliArgs(inputPath: string, outputDir: string) {
   ];
   const artifactsPath = normalizedOptionalEnv("DOCLING_ARTIFACTS_PATH");
   const numThreads = doclingNumThreads();
-  const tableMode = normalizedOptionalEnv("DOCLING_TABLE_MODE")?.toLowerCase();
-  const ocrMode = normalizedOptionalEnv("DOCLING_OCR")?.toLowerCase();
+  const tableMode = (
+    options.tableMode ?? normalizedOptionalEnv("DOCLING_TABLE_MODE")
+  )?.toLowerCase();
+  const configuredOcrMode = normalizedOptionalEnv("DOCLING_OCR")?.toLowerCase();
+  const ocrMode =
+    typeof options.useOcr === "boolean"
+      ? options.useOcr
+        ? "on"
+        : "off"
+      : configuredOcrMode;
 
   if (artifactsPath) {
     args.push("--artifacts-path", artifactsPath);
@@ -272,6 +368,22 @@ async function findMarkdownFiles(dir: string): Promise<string[]> {
   return files;
 }
 
+async function findJsonFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await findJsonFiles(fullPath)));
+    } else if (entry.isFile() && /\.json$/i.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
 function stdoutLooksLikeMarkdown(stdout: string) {
   if (!stdout) {
     return false;
@@ -306,12 +418,576 @@ async function readDoclingMarkdown(tempDir: string, stdout: string) {
   return stdoutLooksLikeMarkdown(stdoutMarkdown) ? stdoutMarkdown : "";
 }
 
+function sortDoclingOutputFiles(files: string[], preferredSuffix: string) {
+  return files.sort((left, right) => {
+    const leftSource = new RegExp(`(^|/)source\\.${preferredSuffix}$`, "i").test(left) ? 0 : 1;
+    const rightSource = new RegExp(`(^|/)source\\.${preferredSuffix}$`, "i").test(right) ? 0 : 1;
+    return leftSource - rightSource || left.localeCompare(right);
+  });
+}
+
+async function readDoclingJson(tempDir: string) {
+  const jsonFiles = sortDoclingOutputFiles(await findJsonFiles(tempDir), "json");
+
+  for (const filePath of jsonFiles) {
+    try {
+      const parsed = JSON.parse(await readFile(filePath, "utf8"));
+      if (parsed && typeof parsed === "object") {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Ignore malformed side outputs and keep looking for Docling's main JSON.
+    }
+  }
+
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeCellText(value: unknown) {
+  return normalizeText(String(value ?? "").replace(/\s+/g, " "));
+}
+
+function doclingRef(value: unknown) {
+  if (isRecord(value)) {
+    const ref = value.$ref;
+    return typeof ref === "string" ? ref : "";
+  }
+
+  return typeof value === "string" ? value : "";
+}
+
+function doclingSelfRef(item: Record<string, unknown>) {
+  const selfRef = item.self_ref;
+  if (typeof selfRef === "string") {
+    return selfRef;
+  }
+
+  const ref = item.$ref;
+  return typeof ref === "string" ? ref : "";
+}
+
+function doclingProvenancePage(item: Record<string, unknown>) {
+  const prov = item.prov;
+  if (!Array.isArray(prov)) {
+    return null;
+  }
+
+  for (const provenance of prov) {
+    if (!isRecord(provenance)) {
+      continue;
+    }
+
+    const page = provenance.page_no;
+    if (typeof page === "number" && Number.isFinite(page)) {
+      return page;
+    }
+  }
+
+  return null;
+}
+
+function doclingText(item: Record<string, unknown>) {
+  const text = item.text ?? item.orig;
+  return typeof text === "string" ? normalizeText(text) : "";
+}
+
+function doclingLabel(item: Record<string, unknown>) {
+  const label = item.label;
+  return typeof label === "string" ? label : "text";
+}
+
+function doclingChildren(item: Record<string, unknown>) {
+  const children = item.children;
+  return Array.isArray(children) ? children.map(doclingRef).filter(Boolean) : [];
+}
+
+type DoclingItem = {
+  item: Record<string, unknown>;
+  kind: "text" | "table" | "group";
+  index: number;
+};
+
+function collectDoclingItems(doclingJson: Record<string, unknown>) {
+  const items = new Map<string, DoclingItem>();
+  const specs: Array<{
+    key: string;
+    kind: DoclingItem["kind"];
+  }> = [
+    { key: "texts", kind: "text" },
+    { key: "tables", kind: "table" },
+    { key: "groups", kind: "group" },
+  ];
+
+  for (const spec of specs) {
+    const values = doclingJson[spec.key];
+    if (!Array.isArray(values)) {
+      continue;
+    }
+
+    values.forEach((value, index) => {
+      if (!isRecord(value)) {
+        return;
+      }
+
+      const ref = doclingSelfRef(value) || `#/${spec.key}/${index}`;
+      items.set(ref, {
+        item: value,
+        kind: spec.kind,
+        index,
+      });
+    });
+  }
+
+  return items;
+}
+
+function orderedDoclingItems(doclingJson: Record<string, unknown>) {
+  const items = collectDoclingItems(doclingJson);
+  const ordered: DoclingItem[] = [];
+  const seen = new Set<string>();
+
+  function visitRef(ref: string) {
+    if (seen.has(ref)) {
+      return;
+    }
+    seen.add(ref);
+
+    const match = items.get(ref);
+    if (!match) {
+      return;
+    }
+
+    if (match.kind === "text" || match.kind === "table") {
+      ordered.push(match);
+    }
+
+    for (const childRef of doclingChildren(match.item)) {
+      visitRef(childRef);
+    }
+  }
+
+  const body = doclingJson.body;
+  if (isRecord(body)) {
+    for (const ref of doclingChildren(body)) {
+      visitRef(ref);
+    }
+  }
+
+  if (!ordered.length) {
+    return Array.from(items.values())
+      .filter((item) => item.kind === "text" || item.kind === "table")
+      .sort((left, right) => {
+        const leftPage = doclingProvenancePage(left.item) ?? Number.MAX_SAFE_INTEGER;
+        const rightPage = doclingProvenancePage(right.item) ?? Number.MAX_SAFE_INTEGER;
+        return leftPage - rightPage || left.index - right.index;
+      });
+  }
+
+  return ordered;
+}
+
+type DoclingTableCell = {
+  text: string;
+  row: number;
+  col: number;
+  columnHeader: boolean;
+};
+
+function doclingTableCells(table: Record<string, unknown>) {
+  const data = table.data;
+  if (!isRecord(data) || !Array.isArray(data.table_cells)) {
+    return [];
+  }
+
+  return data.table_cells
+    .map((value): DoclingTableCell | null => {
+      if (!isRecord(value)) {
+        return null;
+      }
+
+      const row = value.start_row_offset_idx;
+      const col = value.start_col_offset_idx;
+      if (
+        typeof row !== "number" ||
+        typeof col !== "number" ||
+        !Number.isFinite(row) ||
+        !Number.isFinite(col)
+      ) {
+        return null;
+      }
+
+      return {
+        text: normalizeCellText(value.text),
+        row,
+        col,
+        columnHeader: value.column_header === true,
+      };
+    })
+    .filter((value): value is DoclingTableCell => Boolean(value));
+}
+
+function dedupeColumnNames(names: string[]) {
+  const seen = new Map<string, number>();
+  return names.map((name, index) => {
+    const fallback = `Kolonne ${index + 1}`;
+    const base = normalizeCellText(name) || fallback;
+    const key = base.toLowerCase();
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    return count === 1 ? base : `${base} ${count}`;
+  });
+}
+
+function buildDoclingTableRows(input: {
+  table: Record<string, unknown>;
+  tableIndex: number;
+  label: string;
+  pageOffset?: number;
+}): SourceMapEntry[] {
+  const cells = doclingTableCells(input.table);
+  if (!cells.length) {
+    return [];
+  }
+
+  const page = doclingProvenancePage(input.table);
+  const sourcePage = page ? page + (input.pageOffset ?? 0) : null;
+  const rowIndexes = Array.from(new Set(cells.map((cell) => cell.row))).sort(
+    (left, right) => left - right,
+  );
+  const colIndexes = Array.from(new Set(cells.map((cell) => cell.col))).sort(
+    (left, right) => left - right,
+  );
+  const explicitHeaderRows = new Set(
+    cells.filter((cell) => cell.columnHeader).map((cell) => cell.row),
+  );
+  const headerRows = explicitHeaderRows.size
+    ? explicitHeaderRows
+    : new Set(rowIndexes.length > 1 ? [rowIndexes[0] as number] : []);
+  const columns = dedupeColumnNames(
+    colIndexes.map((colIndex) => {
+      const headerText = cells
+        .filter((cell) => cell.col === colIndex && headerRows.has(cell.row))
+        .map((cell) => cell.text)
+        .filter(Boolean)
+        .join(" ");
+
+      return headerText || `Kolonne ${colIndex + 1}`;
+    }),
+  );
+  const columnByIndex = new Map(
+    colIndexes.map((colIndex, index) => [colIndex, columns[index] ?? `Kolonne ${index + 1}`]),
+  );
+  const rows: SourceMapEntry[] = [];
+
+  for (const rowIndex of rowIndexes.filter((index) => !headerRows.has(index))) {
+    const rowCells = cells.filter((cell) => cell.row === rowIndex);
+    const cellMap: Record<string, string> = {};
+
+    for (const cell of rowCells) {
+      const column = columnByIndex.get(cell.col) ?? `Kolonne ${cell.col + 1}`;
+      if (cell.text) {
+        cellMap[column] = [cellMap[column], cell.text].filter(Boolean).join(" ");
+      }
+    }
+
+    const rowText = columns
+      .map((column) => {
+        const value = normalizeCellText(cellMap[column]);
+        return value ? `${column}: ${value}` : "";
+      })
+      .filter(Boolean)
+      .join(" | ");
+
+    if (!rowText) {
+      continue;
+    }
+
+    const pageSuffix = sourcePage ? `, side ${sourcePage}` : "";
+    rows.push({
+      reference: `${input.label} – Docling tabell ${input.tableIndex + 1}, rad ${rowIndex + 1}${pageSuffix}`,
+      text: rowText,
+      kind: "docling_table_row",
+      parser: "docling",
+      page: sourcePage,
+      table_index: input.tableIndex + 1,
+      row_index: rowIndex + 1,
+      columns,
+      cells: cellMap,
+      docling_ref: doclingSelfRef(input.table),
+    });
+  }
+
+  return rows;
+}
+
+function buildDoclingSourceMap(input: {
+  doclingJson: Record<string, unknown> | null;
+  markdown: string;
+  role?: ProjectDocumentRole;
+  pageOffset?: number;
+}) {
+  const label = documentLabel(input.role);
+  const entries: SourceMapEntry[] = [];
+
+  if (input.doclingJson) {
+    for (const ordered of orderedDoclingItems(input.doclingJson)) {
+      if (ordered.kind === "table") {
+        entries.push(
+          ...buildDoclingTableRows({
+            table: ordered.item,
+            tableIndex: ordered.index,
+            label,
+            pageOffset: input.pageOffset,
+          }),
+        );
+        continue;
+      }
+
+      const text = doclingText(ordered.item);
+      if (!text) {
+        continue;
+      }
+
+      const page = doclingProvenancePage(ordered.item);
+      const sourcePage = page ? page + (input.pageOffset ?? 0) : null;
+      const pageSuffix = sourcePage ? `, side ${sourcePage}` : "";
+      entries.push({
+        reference: `${label} – Docling ${doclingLabel(ordered.item)} ${ordered.index + 1}${pageSuffix}`,
+        text,
+        kind: "docling_text",
+        parser: "docling",
+        page: sourcePage,
+        docling_ref: doclingSelfRef(ordered.item),
+      });
+    }
+  }
+
+  if (entries.length) {
+    return entries;
+  }
+
+  if (input.markdown) {
+    return buildTextSourceMap(input.markdown, input.role).map((entry) => ({
+      ...entry,
+      kind: "docling_markdown" as const,
+      parser: "docling",
+    }));
+  }
+
+  return [];
+}
+
+async function runDoclingConversion(input: {
+  inputPath: string;
+  outputDir: string;
+  fileName: string;
+  useOcr?: boolean;
+  tableMode?: string | null;
+}) {
+  const primaryArgs = doclingCliArgs(input.inputPath, input.outputDir, {
+    useOcr: input.useOcr,
+    tableMode: input.tableMode,
+  });
+  const fallbackArgs = [
+    "--to",
+    "md",
+    "--to",
+    "json",
+    "--output",
+    input.outputDir,
+    input.inputPath,
+  ];
+  let markdown = "";
+  let doclingJson: Record<string, unknown> | null = null;
+  let lastError: unknown = null;
+
+  try {
+    const result = await execDocling(primaryArgs);
+    markdown = await readDoclingMarkdown(input.outputDir, result.stdout);
+    doclingJson = await readDoclingJson(input.outputDir);
+  } catch (error) {
+    lastError = error;
+    if (shouldRetryDoclingFallback(error)) {
+      console.info(
+        JSON.stringify({
+          event: "docling_ingestion_cli_fallback",
+          file_name: input.fileName,
+          reason: error instanceof Error ? error.message : "unknown_error",
+        }),
+      );
+
+      try {
+        const result = await execDocling(fallbackArgs);
+        markdown = await readDoclingMarkdown(input.outputDir, result.stdout);
+        doclingJson = await readDoclingJson(input.outputDir);
+      } catch (fallbackError) {
+        lastError = fallbackError;
+      }
+    }
+  }
+
+  return { markdown, doclingJson, lastError };
+}
+
+async function pdfPageCount(buffer: Buffer) {
+  const { PDFDocument } = await getPdfLib();
+  const pdf = await PDFDocument.load(buffer, { ignoreEncryption: true });
+  return pdf.getPageCount();
+}
+
+async function pdfPageRangeBuffer(input: {
+  buffer: Buffer;
+  startPage: number;
+  endPage: number;
+}) {
+  const { PDFDocument } = await getPdfLib();
+  const source = await PDFDocument.load(input.buffer, { ignoreEncryption: true });
+  const target = await PDFDocument.create();
+  const pageIndexes = Array.from(
+    { length: input.endPage - input.startPage + 1 },
+    (_, index) => input.startPage - 1 + index,
+  );
+  const pages = await target.copyPages(source, pageIndexes);
+  for (const page of pages) {
+    target.addPage(page);
+  }
+
+  return Buffer.from(await target.save());
+}
+
+async function shouldUseChunkedPdfDocling(input: {
+  buffer: Buffer;
+  fileFormat: ParsedUpload["fileFormat"];
+}) {
+  if (input.fileFormat !== "pdf") {
+    return false;
+  }
+
+  const mode = doclingPdfChunkingMode();
+  if (mode === "off" || mode === "false" || mode === "0") {
+    return false;
+  }
+  if (mode === "on" || mode === "true" || mode === "1") {
+    return true;
+  }
+
+  try {
+    return (await pdfPageCount(input.buffer)) >= doclingPdfChunkThresholdPages();
+  } catch {
+    return false;
+  }
+}
+
+async function tryExtractChunkedPdfWithDocling(input: {
+  buffer: Buffer;
+  fileName: string;
+  fileFormat: ParsedUpload["fileFormat"];
+  contentType: string;
+  role?: ProjectDocumentRole;
+  useOcr?: boolean;
+  tempDir: string;
+}) {
+  if (!(await shouldUseChunkedPdfDocling(input))) {
+    return null;
+  }
+
+  const pageCount = await pdfPageCount(input.buffer);
+  const chunkPages = doclingPdfChunkPages();
+  const rawParts: string[] = [];
+  const sourceMap: SourceMapEntry[] = [];
+  let chunkIndex = 0;
+
+  for (let startPage = 1; startPage <= pageCount; startPage += chunkPages) {
+    const endPage = Math.min(pageCount, startPage + chunkPages - 1);
+    const chunkDir = await mkdtemp(
+      path.join(input.tempDir, `chunk-${String(chunkIndex + 1).padStart(3, "0")}-`),
+    );
+    const chunkPath = path.join(chunkDir, `source-${startPage}-${endPage}.pdf`);
+    await writeFile(
+      chunkPath,
+      await pdfPageRangeBuffer({
+        buffer: input.buffer,
+        startPage,
+        endPage,
+      }),
+    );
+
+    const converted = await runDoclingConversion({
+      inputPath: chunkPath,
+      outputDir: chunkDir,
+      fileName: `${input.fileName} side ${startPage}-${endPage}`,
+      useOcr: input.useOcr,
+      tableMode: doclingLargePdfTableMode(),
+    });
+    const chunkSourceMap = buildDoclingSourceMap({
+      doclingJson: converted.doclingJson,
+      markdown: converted.markdown,
+      role: input.role,
+      pageOffset: startPage - 1,
+    });
+    const chunkText =
+      converted.markdown ||
+      normalizeText(chunkSourceMap.map((entry) => entry.text).join("\n\n"));
+
+    if (chunkText) {
+      rawParts.push(`[[SIDE:${startPage}-${endPage}]]\n${chunkText}`);
+    } else {
+      console.info(
+        JSON.stringify({
+          event: "docling_ingestion_chunk_fallback",
+          file_name: input.fileName,
+          pages: `${startPage}-${endPage}`,
+          reason:
+            converted.lastError instanceof Error
+              ? converted.lastError.message
+              : "empty_chunk_output",
+        }),
+      );
+      return null;
+    }
+    sourceMap.push(...chunkSourceMap);
+    chunkIndex += 1;
+  }
+
+  const rawText = normalizeText(rawParts.join("\n\n"));
+  if (!rawText || !sourceMap.length) {
+    return null;
+  }
+
+  console.info(
+    JSON.stringify({
+      event: "docling_ingestion_success",
+      file_name: input.fileName,
+      file_format: input.fileFormat,
+      chars: rawText.length,
+      structure_entries: sourceMap.length,
+      json: true,
+      chunks: chunkIndex,
+    }),
+  );
+
+  return {
+    rawText,
+    contentType: input.contentType,
+    fileName: input.fileName,
+    fileFormat: input.fileFormat,
+    fileBase64: input.buffer.toString("base64"),
+    sourceMap,
+    parserUsed: "docling",
+  } satisfies ParsedUpload;
+}
+
 async function tryExtractWithDocling(input: {
   buffer: Buffer;
   fileName: string;
   fileFormat: ParsedUpload["fileFormat"];
   contentType: string;
   role?: ProjectDocumentRole;
+  useOcr?: boolean;
 }): Promise<ParsedUpload | null> {
   if (!isDoclingEnabled()) {
     return null;
@@ -322,40 +998,40 @@ async function tryExtractWithDocling(input: {
   }
 
   const tempDir = await mkdtemp(path.join(tmpdir(), "anbud-docling-"));
-  const suffix = path.extname(input.fileName) || `.${input.fileFormat}`;
+  const suffix = sourceFileExtensionForFormat(input.fileFormat);
   const inputPath = path.join(tempDir, `source${suffix}`);
 
   try {
     await writeFile(inputPath, input.buffer);
-    const primaryArgs = doclingCliArgs(inputPath, tempDir);
-    const fallbackArgs = ["--to", "md", "--output", tempDir, inputPath];
-    let markdown = "";
-    let lastError: unknown = null;
-
-    try {
-      const result = await execDocling(primaryArgs);
-      markdown = await readDoclingMarkdown(tempDir, result.stdout);
-    } catch (error) {
-      lastError = error;
-      if (shouldRetryDoclingFallback(error)) {
-        console.info(
-          JSON.stringify({
-            event: "docling_ingestion_cli_fallback",
-            file_name: input.fileName,
-            reason: error instanceof Error ? error.message : "unknown_error",
-          }),
-        );
-
-        try {
-          const result = await execDocling(fallbackArgs);
-          markdown = await readDoclingMarkdown(tempDir, result.stdout);
-        } catch (fallbackError) {
-          lastError = fallbackError;
-        }
-      }
+    const chunkedPdf = await tryExtractChunkedPdfWithDocling({
+      buffer: input.buffer,
+      fileName: input.fileName,
+      fileFormat: input.fileFormat,
+      contentType: input.contentType,
+      role: input.role,
+      useOcr: input.useOcr,
+      tempDir,
+    });
+    if (chunkedPdf) {
+      return chunkedPdf;
     }
 
-    if (!markdown) {
+    const converted = await runDoclingConversion({
+      inputPath,
+      outputDir: tempDir,
+      fileName: input.fileName,
+      useOcr: input.useOcr,
+    });
+    const { markdown, doclingJson, lastError } = converted;
+
+    const sourceMap = buildDoclingSourceMap({
+      doclingJson,
+      markdown,
+      role: input.role,
+    });
+    const rawText = markdown || normalizeText(sourceMap.map((entry) => entry.text).join("\n\n"));
+
+    if (!rawText) {
       if (lastError) {
         console.info(
           JSON.stringify({
@@ -369,23 +1045,25 @@ async function tryExtractWithDocling(input: {
       return null;
     }
 
-    ensureReadableText(markdown, input.fileName);
+    ensureReadableText(rawText, input.fileName);
     console.info(
       JSON.stringify({
         event: "docling_ingestion_success",
         file_name: input.fileName,
         file_format: input.fileFormat,
-        chars: markdown.length,
+        chars: rawText.length,
+        structure_entries: sourceMap.length,
+        json: Boolean(doclingJson),
       }),
     );
 
     return {
-      rawText: markdown,
+      rawText,
       contentType: input.contentType,
       fileName: input.fileName,
       fileFormat: input.fileFormat,
       fileBase64: input.buffer.toString("base64"),
-      sourceMap: buildTextSourceMap(markdown, input.role),
+      sourceMap,
       parserUsed: "docling",
     };
   } catch (error) {
@@ -649,26 +1327,138 @@ function extractParagraphText(paragraph: Element) {
   return normalizeDocxInlineText(readWordText(paragraph));
 }
 
-function extractTableRows(table: Element) {
+type DocxTableRow = {
+  rowIndex: number;
+  cells: string[];
+};
+
+function wordAttributeValue(element: Element, localName: string) {
+  for (let index = 0; index < element.attributes.length; index += 1) {
+    const attribute = element.attributes.item(index);
+    if (!attribute) continue;
+    const attributeLocalName =
+      attribute.localName || attribute.name.replace(/^.*:/, "");
+    if (attributeLocalName === localName) {
+      return attribute.value;
+    }
+  }
+
+  return "";
+}
+
+function docxCellGridSpan(cell: Element) {
+  const gridSpan = findFirstDescendant(cell, "gridSpan");
+  const value = gridSpan ? Number(wordAttributeValue(gridSpan, "val")) : 1;
+  return Number.isInteger(value) && value > 1 ? Math.min(value, 20) : 1;
+}
+
+function docxCellVerticalMerge(cell: Element): "none" | "restart" | "continue" {
+  const verticalMerge = findFirstDescendant(cell, "vMerge");
+  if (!verticalMerge) {
+    return "none";
+  }
+
+  return wordAttributeValue(verticalMerge, "val") === "restart"
+    ? "restart"
+    : "continue";
+}
+
+function extractTableRows(table: Element): DocxTableRow[] {
+  const verticalMergeText = new Map<number, string>();
+
   return childElements(table)
     .filter((child) => elementLocalName(child) === "tr")
-    .map((row) => {
-      const cells = childElements(row)
+    .map((row, rowIndex) => {
+      const cells: string[] = [];
+      let columnIndex = 0;
+
+      for (const cell of childElements(row)
         .filter((child) => elementLocalName(child) === "tc")
-        .map((cell) => {
-          const paragraphText = findDescendants(cell, "p")
-            .map(extractParagraphText)
-            .filter(Boolean)
-            .join(" / ");
+      ) {
+        const paragraphText = findDescendants(cell, "p")
+          .map(extractParagraphText)
+          .filter(Boolean)
+          .join(" / ");
+        const text =
+          paragraphText || normalizeDocxInlineText(readWordText(cell));
+        const verticalMerge = docxCellVerticalMerge(cell);
+        const gridSpan = docxCellGridSpan(cell);
+        const effectiveText =
+          verticalMerge === "continue" && !text
+            ? verticalMergeText.get(columnIndex) ?? ""
+            : text;
 
-          return paragraphText || normalizeDocxInlineText(readWordText(cell));
-        })
-        .map((cell) => cell.trim())
-        .filter(Boolean);
+        for (let offset = 0; offset < gridSpan; offset += 1) {
+          const targetColumn = columnIndex + offset;
+          cells[targetColumn] = offset === 0 ? effectiveText.trim() : "";
+          if (verticalMerge === "restart") {
+            verticalMergeText.set(targetColumn, effectiveText.trim());
+          } else if (verticalMerge === "none") {
+            verticalMergeText.delete(targetColumn);
+          }
+        }
 
-      return cells.join(" | ");
+        columnIndex += gridSpan;
+      }
+
+      return {
+        rowIndex: rowIndex + 1,
+        cells: cells.map((cell) => cell.trim()),
+      };
     })
-    .filter(Boolean);
+    .filter((row) => row.cells.some(Boolean));
+}
+
+function docxColumnLabel(value: string, index: number) {
+  return value.replace(/\s+/g, " ").trim() || `Kolonne ${index + 1}`;
+}
+
+function uniqueDocxColumnLabels(values: string[], width: number) {
+  const seen = new Map<string, number>();
+  const labels: string[] = [];
+
+  for (let index = 0; index < width; index += 1) {
+    const baseLabel = docxColumnLabel(values[index] ?? "", index);
+    const duplicateCount = seen.get(baseLabel.toLowerCase()) ?? 0;
+    seen.set(baseLabel.toLowerCase(), duplicateCount + 1);
+    labels.push(
+      duplicateCount > 0 ? `${baseLabel} ${duplicateCount + 1}` : baseLabel,
+    );
+  }
+
+  return labels;
+}
+
+function docxTableColumns(rows: DocxTableRow[]) {
+  const width = Math.max(0, ...rows.map((row) => row.cells.length));
+  if (width <= 0) {
+    return [];
+  }
+
+  return uniqueDocxColumnLabels(rows[0]?.cells ?? [], width);
+}
+
+function docxRowCellMap(columns: string[], cells: string[]) {
+  const result: Record<string, string> = {};
+  const width = Math.max(columns.length, cells.length);
+
+  for (let index = 0; index < width; index += 1) {
+    const value = (cells[index] ?? "").replace(/\s+/g, " ").trim();
+    if (!value) {
+      continue;
+    }
+
+    result[columns[index] ?? `Kolonne ${index + 1}`] = value;
+  }
+
+  return result;
+}
+
+function docxTableRowText(row: DocxTableRow) {
+  return `Rad ${row.rowIndex}: ${row.cells
+    .map((cell) => cell.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" | ")}`;
 }
 
 function docxParseErrorMessage(fileName: string, fallbackError: unknown) {
@@ -765,14 +1555,29 @@ async function extractDocxFromWordXml(
         }
 
         flushParagraphs();
-        const tableText = rows
-          .map((row, rowIndex) => `Rad ${rowIndex + 1}: ${row}`)
-          .join("\n");
+        const columns = docxTableColumns(rows);
+        const tableText = rows.map(docxTableRowText).join("\n");
         rawBlocks.push(`Tabell ${tableCounter}\n${tableText}`);
         sourceMap.push({
           reference: `${label} – tabell ${tableCounter}`,
           text: tableText,
+          kind: "table",
+          parser: "docx-xml",
+          table_index: tableCounter,
+          columns,
         });
+        for (const row of rows) {
+          sourceMap.push({
+            reference: `${label} – tabell ${tableCounter}, rad ${row.rowIndex}`,
+            text: docxTableRowText(row),
+            kind: "table",
+            parser: "docx-xml",
+            table_index: tableCounter,
+            row_index: row.rowIndex,
+            columns,
+            cells: docxRowCellMap(columns, row.cells),
+          });
+        }
         tableCounter += 1;
       }
     }
@@ -1027,6 +1832,7 @@ export async function extractTextFromBuffer(input: {
   contentType?: string | null;
   role?: ProjectDocumentRole;
   useDocling?: boolean;
+  useDoclingOcr?: boolean;
 }): Promise<ParsedUpload> {
   const fileName = input.fileName || "document.txt";
   const suffix = fileName.toLowerCase();
@@ -1045,6 +1851,7 @@ export async function extractTextFromBuffer(input: {
       fileFormat,
       contentType,
       role,
+      useOcr: input.useDoclingOcr,
     });
     if (docling) {
       return docling;
@@ -1085,7 +1892,7 @@ export async function extractTextFromBuffer(input: {
 export async function extractTextFromUpload(
   file: File,
   role?: ProjectDocumentRole,
-  options?: { useDocling?: boolean },
+  options?: { useDocling?: boolean; useDoclingOcr?: boolean },
 ): Promise<ParsedUpload> {
   return extractTextFromBuffer({
     buffer: Buffer.from(await file.arrayBuffer()),
@@ -1093,5 +1900,6 @@ export async function extractTextFromUpload(
     contentType: file.type || "application/octet-stream",
     role,
     useDocling: options?.useDocling,
+    useDoclingOcr: options?.useDoclingOcr,
   });
 }

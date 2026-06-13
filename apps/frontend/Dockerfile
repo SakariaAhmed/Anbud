@@ -35,9 +35,13 @@ ENV DOCLING_ENHANCEMENT_MODE=async
 ENV DOCLING_ASYNC_AUTO_RUN=off
 ENV DOCLING_CLI_COMMAND=/opt/docling/bin/docling
 ENV DOCLING_IMAGE_EXPORT_MODE=placeholder
-ENV DOCLING_TABLE_MODE=fast
+ENV DOCLING_TABLE_MODE=accurate
+ENV DOCLING_LARGE_PDF_TABLE_MODE=fast
 ENV DOCLING_NUM_THREADS=2
-ENV DOCLING_TIMEOUT_MS=180000
+ENV DOCLING_TIMEOUT_MS=600000
+ENV DOCLING_PDF_CHUNKING=auto
+ENV DOCLING_PDF_CHUNK_PAGES=40
+ENV DOCLING_PDF_CHUNK_THRESHOLD_PAGES=120
 ENV PIP_DEFAULT_TIMEOUT=300
 ENV PIP_RETRIES=10
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -54,7 +58,7 @@ RUN mkdir -p /opt/docling-models \
 RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/docling/bin/pip install --force-reinstall --no-deps opencv-python-headless==4.13.0.92
 ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
-ENV DOCLING_OCR=off
+ENV DOCLING_OCR=auto
 ENV HOME=/home/node
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static

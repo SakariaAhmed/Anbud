@@ -1,5 +1,7 @@
 import "server-only";
 
+import { NextResponse } from "next/server";
+
 import { createServiceClient } from "@/lib/server/supabase";
 
 export type HealthStatus = "healthy" | "degraded" | "unhealthy";
@@ -36,6 +38,9 @@ export type HealthModel = {
 const PROCESS_STARTED_AT = Date.now();
 const SUPABASE_DEGRADED_AFTER_MS = 750;
 const SUPABASE_TIMEOUT_MS = 1_500;
+const HEALTH_CACHE_HEADERS = {
+  "Cache-Control": "no-store",
+};
 
 const REQUIRED_ENV = [
   "SUPABASE_URL",
@@ -267,8 +272,15 @@ export async function createReadinessModel(): Promise<HealthModel> {
   };
 }
 
-export function healthStatusCode(model: Pick<HealthModel, "status">) {
+function healthStatusCode(model: Pick<HealthModel, "status">) {
   return model.status === "unhealthy" ? 503 : 200;
+}
+
+export function healthJsonResponse(model: HealthModel) {
+  return NextResponse.json(model, {
+    status: healthStatusCode(model),
+    headers: HEALTH_CACHE_HEADERS,
+  });
 }
 
 function runtimeMetadata(): HealthModel["runtime"] {

@@ -40,8 +40,6 @@ type ChatPayload = {
   error?: string;
 };
 
-const MODEL_STORAGE_KEY = "anbud-openai-model";
-
 function makeLocalMessage(input: {
   projectId: string;
   role: ChatMessage["role"];
@@ -306,11 +304,7 @@ export function ProjectChatPopoutPage({
     }
 
     try {
-      const selectedModel =
-        window.localStorage.getItem(MODEL_STORAGE_KEY)?.trim() ?? "";
-      const headers: Record<string, string> = selectedModel
-        ? { "X-OpenAI-Model": selectedModel }
-        : {};
+      const headers: Record<string, string> = {};
       let body: BodyInit;
       if (attachment) {
         const formData = new FormData();

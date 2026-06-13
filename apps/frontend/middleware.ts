@@ -6,8 +6,8 @@ import {
   verifySessionToken,
 } from "@/lib/password-auth";
 
-export const CURRENT_PATH_HEADER = "x-current-pathname";
-export const CORRELATION_ID_HEADER = "x-correlation-id";
+const CURRENT_PATH_HEADER = "x-current-pathname";
+const CORRELATION_ID_HEADER = "x-correlation-id";
 
 const PUBLIC_PATH_PREFIXES = [
   "/_next",
@@ -102,6 +102,25 @@ function applyResponseHeaders(response: NextResponse, correlationId: string) {
   return response;
 }
 
+function localRedirectUrl(request: NextRequest, pathname: string) {
+  const redirectUrl = request.nextUrl.clone();
+  redirectUrl.pathname = pathname.startsWith("/") && !pathname.startsWith("//")
+    ? pathname
+    : "/";
+  redirectUrl.search = "";
+  redirectUrl.hash = "";
+  return redirectUrl;
+}
+
+function safeNextPath(pathname: string, search: string) {
+  if (!pathname.startsWith("/") || pathname.startsWith("//")) {
+    return "/";
+  }
+
+  const nextPath = `${pathname}${search}`;
+  return nextPath.startsWith("//") ? "/" : nextPath;
+}
+
 function unauthorizedJson(correlationId: string) {
   return applyResponseHeaders(
     NextResponse.json({ error: "Authentication required." }, { status: 401 }),
@@ -192,9 +211,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === "/login" && authenticated) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/";
-    redirectUrl.search = "";
+    const redirectUrl = localRedirectUrl(request, "/");
     return applyResponseHeaders(NextResponse.redirect(redirectUrl), correlationId);
   }
 
@@ -210,9 +227,8 @@ export async function middleware(request: NextRequest) {
     return unauthorizedJson(correlationId);
   }
 
-  const loginUrl = request.nextUrl.clone();
-  loginUrl.pathname = "/login";
-  loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+  const loginUrl = localRedirectUrl(request, "/login");
+  loginUrl.searchParams.set("next", safeNextPath(pathname, request.nextUrl.search));
   return applyResponseHeaders(NextResponse.redirect(loginUrl), correlationId);
 }
 

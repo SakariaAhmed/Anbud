@@ -3,6 +3,10 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import {
+  normalizeArtifactInstructions,
+  normalizeSourceDocumentIds,
+} from "@/lib/server/artifact-generation-input";
+import {
   claimQueuedProjectJob,
   findProjectJob,
   getQueuedProjectJobInput,
@@ -341,6 +345,7 @@ export async function queueArtifactGenerationJob(input: {
   artifactType: GeneratedArtifactType;
   instructions?: string;
   sourceDocumentIds?: string[];
+  useSolutionEvaluationContext?: boolean;
   model?: string;
 }, options: QueueJobOptions = {}) {
   return enqueueProjectJob(
@@ -348,8 +353,9 @@ export async function queueArtifactGenerationJob(input: {
       kind: "artifact_generation",
       projectId: input.projectId,
       artifactType: input.artifactType,
-      instructions: input.instructions,
-      sourceDocumentIds: input.sourceDocumentIds,
+      instructions: normalizeArtifactInstructions(input.instructions),
+      sourceDocumentIds: normalizeSourceDocumentIds(input.sourceDocumentIds),
+      useSolutionEvaluationContext: input.useSolutionEvaluationContext === true,
       model: input.model,
     },
     options,
@@ -363,20 +369,6 @@ export async function queueDocumentIngestionJob(input: {
   return enqueueProjectJob(
     {
       kind: "document_ingestion",
-      projectId: input.projectId,
-      documentId: input.documentId,
-    },
-    options,
-  );
-}
-
-export async function queueDocumentDoclingEnhancementJob(input: {
-  projectId: string;
-  documentId: string;
-}, options: QueueJobOptions = {}) {
-  return enqueueProjectJob(
-    {
-      kind: "document_docling_enhancement",
       projectId: input.projectId,
       documentId: input.documentId,
     },
@@ -414,7 +406,6 @@ export async function queuePerfectSystemSolutionJob(input: {
 
 export async function queueSolutionEvaluationJob(input: {
   projectId: string;
-  allowGeneratedSolution: boolean;
   solutionDocumentId?: string;
   model?: string;
 }, options: QueueJobOptions = {}) {
@@ -422,7 +413,6 @@ export async function queueSolutionEvaluationJob(input: {
     {
       kind: "solution_evaluation",
       projectId: input.projectId,
-      allowGeneratedSolution: input.allowGeneratedSolution,
       solutionDocumentId: input.solutionDocumentId,
       model: input.model,
     },
@@ -468,7 +458,7 @@ async function runQueuedProjectJobInput(jobId: string, queuedInput: unknown) {
   await runProjectJob(jobId, input);
 }
 
-export async function runQueuedProjectJob(jobId: string) {
+async function runQueuedProjectJob(jobId: string) {
   const queuedInput = await getQueuedProjectJobInput(jobId);
   if (!queuedInput) {
     return;

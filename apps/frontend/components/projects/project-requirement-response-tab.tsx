@@ -10,6 +10,7 @@ import {
   type MouseEvent,
 } from "react";
 import {
+  AlertTriangle,
   CheckSquare,
   ChevronDown,
   FileDown,
@@ -33,7 +34,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { sanitizeDownloadFileBase } from "@/lib/client/download";
 import { downloadElementAsPdf } from "@/lib/client/pdf-download";
+import { compareRequirementOrder, sortByRequirementOrder } from "@/lib/requirement-order";
 import type { GeneratedArtifact, ProjectDocument } from "@/lib/types";
 
 function fileTitle(file: File) {
@@ -59,11 +62,114 @@ type RequirementTableRow = {
   requirement: string;
   answer: string;
   source: string;
+  orderIndex: number;
 };
 
 type RequirementContentSegment =
   | { type: "markdown"; content: string }
   | { type: "table"; rows: RequirementTableRow[] };
+
+type RequirementResponseMetadata = {
+  ledgerConfidence?: {
+    level?: string;
+    score?: number;
+    requirement_count?: number;
+  };
+  fallbackAfterHandoff: number;
+  unresolvedFallbackAnswers: Array<{
+    nr: number;
+    ref: string;
+    reason?: string;
+  }>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function ledgerConfidenceLevelLabel(level: string) {
+  switch (level.toLowerCase()) {
+    case "high":
+      return "høy";
+    case "medium":
+      return "middels";
+    case "low":
+      return "lav";
+    default:
+      return level;
+  }
+}
+
+function artifactRequirementResponseMetadata(
+  artifact: GeneratedArtifact,
+): RequirementResponseMetadata {
+  const snapshot = isRecord(artifact.input_snapshot) ? artifact.input_snapshot : {};
+  const generationMetadata = isRecord(snapshot.generation_metadata)
+    ? snapshot.generation_metadata
+    : {};
+  const requirementResponse = isRecord(generationMetadata.requirement_response)
+    ? generationMetadata.requirement_response
+    : {};
+  const fallbackAfterHandoff =
+    typeof requirementResponse.deterministic_fallback_answers_after_handoff ===
+      "number" &&
+    Number.isFinite(
+      requirementResponse.deterministic_fallback_answers_after_handoff,
+    )
+      ? Math.max(
+          0,
+          Math.round(
+            requirementResponse.deterministic_fallback_answers_after_handoff,
+          ),
+        )
+      : 0;
+  const unresolvedFallbackAnswers = Array.isArray(
+    requirementResponse.unresolved_fallback_answers,
+  )
+    ? requirementResponse.unresolved_fallback_answers
+        .map((value) => (isRecord(value) ? value : null))
+        .filter((value): value is Record<string, unknown> => Boolean(value))
+        .map((value) => ({
+          nr:
+            typeof value.nr === "number" && Number.isFinite(value.nr)
+              ? Math.round(value.nr)
+              : 0,
+          ref: typeof value.ref === "string" ? value.ref : "",
+          reason: typeof value.reason === "string" ? value.reason : undefined,
+        }))
+        .filter((value) => value.nr > 0 && value.ref)
+    : [];
+  const ledgerConfidence = isRecord(requirementResponse.ledger_confidence)
+    ? {
+        level:
+          typeof requirementResponse.ledger_confidence.level === "string"
+            ? requirementResponse.ledger_confidence.level
+            : undefined,
+        score:
+          typeof requirementResponse.ledger_confidence.score === "number" &&
+          Number.isFinite(requirementResponse.ledger_confidence.score)
+            ? requirementResponse.ledger_confidence.score
+            : undefined,
+        requirement_count:
+          typeof requirementResponse.ledger_confidence.requirement_count ===
+            "number" &&
+          Number.isFinite(
+            requirementResponse.ledger_confidence.requirement_count,
+          )
+            ? requirementResponse.ledger_confidence.requirement_count
+            : undefined,
+      }
+    : undefined;
+
+  return {
+    ledgerConfidence,
+    fallbackAfterHandoff: Math.max(
+      fallbackAfterHandoff,
+      unresolvedFallbackAnswers.length,
+    ),
+    unresolvedFallbackAnswers,
+  };
+}
 
 function splitMarkdownTableRow(line: string) {
   return line
@@ -272,19 +378,6 @@ function takeTrailingTableHeading(lines: string[]) {
   return match[1]?.trim() ?? "";
 }
 
-function sanitizeDownloadName(value: string) {
-  return (
-    value
-      .trim()
-      .toLowerCase()
-      .replace(/æ/g, "ae")
-      .replace(/ø/g, "o")
-      .replace(/å/g, "a")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "kravbesvarelse"
-  );
-}
-
 function parseRequirementContent(content: string): RequirementContentSegment[] {
   const lines = content.split("\n");
   const segments: RequirementContentSegment[] = [];
@@ -317,12 +410,13 @@ function parseRequirementContent(content: string): RequirementContentSegment[] {
     const rows = tableLines.slice(2).map(splitMarkdownTableRow);
     const tableRequirementRows = rows
       .filter((row) => row.length >= 4 && Boolean((row[1] ?? "").trim()))
-      .map((row) => ({
+      .map((row, rowIndex) => ({
         ref: stripRepeatedGroup(row[0] ?? "", groupTitle),
         group: groupTitle || tableIdFromRef(row[0] ?? "") || "Kravliste",
         requirement: row[1] ?? "",
         answer: row[2] ?? "",
         source: cleanSourceReference(row[3] ?? "", groupTitle),
+        orderIndex: rowIndex,
       }));
 
     if (!tableRequirementRows.length) {
@@ -376,10 +470,36 @@ function RequirementResponseContent({
           const tableId = row.group || tableIdFromRef(row.ref) || "Kravliste";
           groups.set(tableId, [...(groups.get(tableId) ?? []), row]);
         }
+        const orderedGroups = Array.from(groups.entries())
+          .map(([tableId, rows]) => ({
+            tableId,
+            rows: sortByRequirementOrder(rows, (row, rowIndex) => ({
+              reference: row.ref,
+              sourceReference: row.source,
+              group: tableId,
+              fallbackIndex: row.orderIndex ?? rowIndex,
+            })),
+          }))
+          .sort((left, right) =>
+            compareRequirementOrder(
+              {
+                reference: left.rows[0]?.ref,
+                sourceReference: left.rows[0]?.source,
+                group: left.tableId,
+                fallbackIndex: left.rows[0]?.orderIndex ?? 0,
+              },
+              {
+                reference: right.rows[0]?.ref,
+                sourceReference: right.rows[0]?.source,
+                group: right.tableId,
+                fallbackIndex: right.rows[0]?.orderIndex ?? 0,
+              },
+            ),
+          );
 
         return (
           <div key={`table-${index}`} className="space-y-5">
-            {Array.from(groups.entries()).map(([tableId, rows]) => (
+            {orderedGroups.map(({ tableId, rows }) => (
               <section
                 key={tableId}
                 className="rounded-xl border border-slate-200 bg-slate-50/70 p-4"
@@ -620,7 +740,7 @@ export function ProjectRequirementResponseTab({
     try {
       await downloadElementAsPdf({
         element,
-        fileName: `${sanitizeDownloadName(title)}.pdf`,
+        fileName: `${sanitizeDownloadFileBase(title, "kravbesvarelse")}.pdf`,
         subtitle: `Opprettet ${formatDate(artifact.created_at)}`,
         title,
       });
@@ -663,6 +783,16 @@ export function ProjectRequirementResponseTab({
       ) : (
         <div className="space-y-3">
           {requirementResponses.map((artifact, index) => {
+            const metadata = artifactRequirementResponseMetadata(artifact);
+            const confidenceLevel = metadata.ledgerConfidence?.level;
+            const confidenceScore = metadata.ledgerConfidence?.score;
+            const confidenceLabel = confidenceLevel
+              ? `Tillit ${ledgerConfidenceLevelLabel(confidenceLevel)}${
+                  typeof confidenceScore === "number"
+                    ? ` ${Math.round(confidenceScore * 100)}%`
+                    : ""
+                }`
+              : "";
             return (
             <details
               key={artifact.id}
@@ -679,6 +809,25 @@ export function ProjectRequirementResponseTab({
                   <h4 className="mt-2 text-xl font-semibold leading-8 text-foreground">
                     {artifact.title || "Kravbesvarelse uten tittel"}
                   </h4>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {confidenceLabel ? (
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                        {confidenceLabel}
+                      </span>
+                    ) : null}
+                    {typeof metadata.ledgerConfidence?.requirement_count ===
+                    "number" ? (
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                        {metadata.ledgerConfidence.requirement_count} krav
+                      </span>
+                    ) : null}
+                    {metadata.fallbackAfterHandoff > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">
+                        <AlertTriangle className="size-3.5" />
+                        {metadata.fallbackAfterHandoff} til kontroll
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-start gap-3">
                   {editingArtifactId !== artifact.id ? (
@@ -799,12 +948,40 @@ export function ProjectRequirementResponseTab({
                     </div>
                   </div>
                 ) : (
-                  <RequirementResponseContent
-                    content={
-                      artifact.content_markdown ||
-                      "Denne kravbesvarelsen mangler lagret innhold. Generer den på nytt for å få et komplett resultat."
-                    }
-                  />
+                  <>
+                    {metadata.fallbackAfterHandoff > 0 ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                        <div className="flex items-center gap-2 font-bold">
+                          <AlertTriangle className="size-4" />
+                          Manuell kontroll anbefales
+                        </div>
+                        <p className="mt-1 leading-6">
+                          {metadata.fallbackAfterHandoff} kravsvar ble stående
+                          som fallback etter reparasjon.
+                        </p>
+                        {metadata.unresolvedFallbackAnswers.length ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {metadata.unresolvedFallbackAnswers
+                              .slice(0, 8)
+                              .map((row) => (
+                                <span
+                                  key={`${artifact.id}-${row.nr}-${row.ref}`}
+                                  className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs font-bold text-amber-900"
+                                >
+                                  {row.nr}. {row.ref}
+                                </span>
+                              ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <RequirementResponseContent
+                      content={
+                        artifact.content_markdown ||
+                        "Denne kravbesvarelsen mangler lagret innhold. Generer den på nytt for å få et komplett resultat."
+                      }
+                    />
+                  </>
                 )}
               </div>
             </details>

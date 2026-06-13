@@ -104,6 +104,19 @@ export interface ProjectDocument {
 export interface ProjectDocumentStructureEntry {
   reference: string;
   text: string;
+  kind?:
+    | "text"
+    | "table"
+    | "docling_text"
+    | "docling_table_row"
+    | "docling_markdown";
+  parser?: string;
+  page?: number | null;
+  table_index?: number;
+  row_index?: number;
+  columns?: string[];
+  cells?: Record<string, string>;
+  docling_ref?: string;
 }
 
 export interface ProjectDocumentDetail extends ProjectDocument {
@@ -280,6 +293,16 @@ export interface CustomerAnalysisResult {
 export interface SolutionEvaluationResult {
   customer_document_id?: string | null;
   solution_document_id?: string | null;
+  evaluation_context?: {
+    customer_document_id: string;
+    customer_document_title: string;
+    solution_document_id: string;
+    solution_document_title: string;
+    system_solution_artifact_id?: string | null;
+    system_solution_artifact_title?: string | null;
+    system_solution_artifact_created_at?: string | null;
+    generated_at: string;
+  };
   fit_to_customer_needs: string;
   strengths: string[];
   weaknesses: string[];
@@ -301,6 +324,8 @@ export interface SolutionEvaluationResult {
   }>;
   document_findings: Array<{
     reference: string;
+    reference_match?: "coverage" | "section" | "unmatched";
+    matched_requirement_reference?: string | null;
     assessment: "Godt" | "Dårlig" | "Mangler" | "Uklart";
     finding: string;
     evidence: string;
@@ -315,9 +340,29 @@ export interface SolutionEvaluationResult {
     unclear: number;
     confidence: "Høy" | "Middels" | "Lav";
     coverage_summary: string;
+    ledger_confidence?: {
+      level: "high" | "medium" | "low";
+      score: number;
+      requirement_count: number;
+      source_locator_coverage: number;
+      structured_entry_ratio: number;
+      explicit_reference_ratio: number;
+      generated_reference_count: number;
+      extraction_methods: string[];
+      reasons: string[];
+    };
     items: Array<{
+      order_index?: number;
       reference: string;
+      full_reference?: string;
       source_reference: string;
+      source_document_id?: string | null;
+      source_document_title?: string | null;
+      answer_document_id?: string | null;
+      answer_document_title?: string | null;
+      requirement_subtitle?: string | null;
+      heading_path?: string[];
+      page_range?: string | null;
       table_id?: string | null;
       requirement: string;
       assessment: "Godt" | "Dårlig" | "Mangler" | "Uklart";
@@ -434,26 +479,6 @@ export interface ProjectMetadataInference {
   description: string | null;
 }
 
-export interface ProjectDocumentCreateResponse {
-  document: ProjectDocument;
-}
-
-export interface CustomerAnalysisResponse {
-  analysis: CustomerAnalysisResult;
-}
-
-export interface SolutionEvaluationResponse {
-  evaluation: SolutionEvaluationResult;
-}
-
-export interface GeneratedArtifactResponse {
-  artifact: GeneratedArtifact;
-}
-
-export interface ChatRequestInput {
-  message: string;
-}
-
 export type ProjectJobKind =
   | "document_ingestion"
   | "document_docling_enhancement"
@@ -473,8 +498,8 @@ export interface ArtifactGenerationJobResult {
 export interface SolutionEvaluationJobResult {
   evaluation: SolutionEvaluationResult;
   project: ProjectSnapshotResult;
-  artifact: GeneratedArtifact | null;
-  used_generated_solution: boolean;
+  artifact: null;
+  used_generated_solution: false;
 }
 
 export interface HighLevelDesignJobResult {

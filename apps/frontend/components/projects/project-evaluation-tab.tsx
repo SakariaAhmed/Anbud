@@ -32,6 +32,7 @@ import {
   GenerationProgress,
   documentDropzoneClass,
 } from "@/components/projects/project-workspace-shared";
+import { sortByRequirementOrder } from "@/lib/requirement-order";
 import type { ProjectDocument, SolutionEvaluationResult } from "@/lib/types";
 
 type SolutionDocumentFinding =
@@ -360,6 +361,16 @@ function RequirementCoveragePanel({
       className: "border-slate-200 bg-slate-50 text-slate-700",
     },
   ];
+  const orderedItems = sortByRequirementOrder(
+    coverage.items,
+    (item, index) => ({
+      reference: item.reference,
+      sourceReference: item.full_reference || item.source_reference,
+      group: item.table_id,
+      orderIndex: item.order_index,
+      fallbackIndex: index,
+    }),
+  );
 
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -421,7 +432,7 @@ function RequirementCoveragePanel({
         </div>
 
         <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
-          {coverage.items.map((item, index) => {
+          {orderedItems.map((item, index) => {
             const tone = assessmentTone(item.assessment);
             const Icon = tone.icon;
 
@@ -454,11 +465,11 @@ function RequirementCoveragePanel({
                   </div>
                 </div>
 
-                <div className="mb-3 inline-flex max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
-                  <MapPin className="size-3.5 shrink-0" />
-                  <span className="min-w-0 truncate">
-                    {item.source_reference
-                      ? cleanEvaluationTypography(item.source_reference)
+                <div className="mb-3 inline-flex max-w-full items-start gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold leading-5 text-slate-600">
+                  <MapPin className="mt-0.5 size-3.5 shrink-0" />
+                  <span className="min-w-0 break-words">
+                    {item.full_reference || item.source_reference
+                      ? cleanEvaluationTypography(item.full_reference || item.source_reference)
                       : "Kilde mangler"}
                   </span>
                 </div>

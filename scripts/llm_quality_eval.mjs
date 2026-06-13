@@ -549,7 +549,10 @@ async function runScenario(label, baseUrl) {
         instructions:
           "Lag et kort, presist forbedret kravsvar. Behold kildehenvisninger.",
       },
-      { kind: "solution_evaluation", allow_generated_solution: true },
+      {
+        kind: "solution_evaluation",
+        solution_document_id: result.uploads[2]?.final_document?.id,
+      },
       { kind: "executive_summary" },
       { kind: "perfect_system_solution" },
     ];

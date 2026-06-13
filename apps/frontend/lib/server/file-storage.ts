@@ -2,7 +2,7 @@ import "server-only";
 
 import { createServiceClient } from "@/lib/server/supabase";
 
-export const DOCUMENT_FILE_BUCKET = "anbud-documents";
+const DOCUMENT_FILE_BUCKET = "anbud-documents";
 
 let bucketReadyPromise: Promise<void> | null = null;
 

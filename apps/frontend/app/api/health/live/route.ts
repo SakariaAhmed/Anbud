@@ -1,13 +1,7 @@
-import { NextResponse } from "next/server";
-
-import { createLivenessModel } from "@/lib/server/health";
+import { createLivenessModel, healthJsonResponse } from "@/lib/server/health";
 
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return NextResponse.json(createLivenessModel(), {
-    headers: {
-      "Cache-Control": "no-store",
-    },
-  });
+  return healthJsonResponse(createLivenessModel());
 }

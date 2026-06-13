@@ -14,7 +14,7 @@ import type {
   SupportingDocumentSubtype,
 } from "@/lib/types";
 
-export const DOCUMENT_EMBEDDING_MODEL =
+const DOCUMENT_EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL?.trim() || "text-embedding-3-small";
 
 type DocumentChunkSourceType = "project_document" | "service_document";
@@ -32,7 +32,7 @@ type DocumentChunkKind =
   | "architecture_signal"
   | "spreadsheet_rows";
 
-export type SemanticDocumentChunk = {
+type SemanticDocumentChunk = {
   chunkIndex: number;
   kind: DocumentChunkKind;
   reference: string;
@@ -178,12 +178,17 @@ function normalizeChunkText(value: string) {
   return value
     .replace(/\r\n/g, "\n")
     .replace(/\u0000/g, "")
+    .replace(/[‐‑‒–—]/g, "-")
     .replace(/[ \t]+/g, " ")
     .split("\n")
     .map((line) => line.trim())
     .join("\n")
     .replace(/\n{4,}/g, "\n\n")
     .trim();
+}
+
+function isSyntheticRequirementReference(value: string) {
+  return /^side\s+\d{1,5}\s+krav\s+\d{1,5}$/i.test(value.trim());
 }
 
 function estimateTokenCount(value: string) {
@@ -282,6 +287,13 @@ function detectChunkKind(input: {
   text: string;
 }): DocumentChunkKind {
   const text = input.text;
+  if (
+    isSyntheticRequirementReference(text) ||
+    isSyntheticRequirementReference(input.reference)
+  ) {
+    return /\bside\s+\d+\b/i.test(input.reference) ? "page" : "paragraph";
+  }
+
   if (input.fileFormat === "xlsx" || input.fileFormat === "xls") {
     return "spreadsheet_rows";
   }
@@ -419,7 +431,7 @@ function entriesFromRawText(document: ChunkableDocument) {
   return entries;
 }
 
-export function buildSemanticDocumentChunks(document: ChunkableDocument) {
+function buildSemanticDocumentChunks(document: ChunkableDocument) {
   const entries = Array.isArray(document.structureMap) && document.structureMap.length
     ? document.structureMap
     : entriesFromRawText(document);

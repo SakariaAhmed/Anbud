@@ -2,13 +2,11 @@ import type { ReactNode } from "react";
 import { FileText, UploadCloud } from "lucide-react";
 
 import type {
-  GeneratedArtifactType,
   ProjectDetail,
   ProjectDocument,
   ProjectStatus,
   ValueCategory,
 } from "@/lib/types";
-import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { Spinner } from "@/components/ui/spinner";
 
 export const VALUE_LABELS: ValueCategory[] = [
@@ -18,11 +16,6 @@ export const VALUE_LABELS: ValueCategory[] = [
   "Bedre brukeropplevelse",
 ];
 
-export const ARTIFACT_TYPES: Array<{
-  value: GeneratedArtifactType;
-  label: string;
-}> = [{ value: "losningsutkast", label: "Løsningsbeskrivelse" }];
-
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("nb-NO", {
     dateStyle: "medium",
@@ -31,7 +24,7 @@ export function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export function compactFileSize(bytes: number) {
+function compactFileSize(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return "Ukjent størrelse";
   }
@@ -150,35 +143,6 @@ export function ValueTags({ values }: { values: ValueCategory[] }) {
       <span className="text-lg font-semibold text-emerald-700 dark:text-emerald-400">
         {value}
       </span>
-    </div>
-  );
-}
-
-export function SectionList({
-  title,
-  items,
-}: {
-  title: string;
-  items: string[];
-}) {
-  if (!items.length) return null;
-
-  return (
-    <div>
-      <h3 className="mb-3 text-sm font-medium text-foreground">{title}</h3>
-      <ul className="space-y-2">
-        {items.map((item, index) => (
-          <li
-            key={`${title}-${index}`}
-            className="border-l-2 border-border pl-3"
-          >
-            <MarkdownViewer
-              content={item}
-              className="text-sm text-muted-foreground"
-            />
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

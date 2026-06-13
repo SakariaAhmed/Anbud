@@ -4,17 +4,16 @@ import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
 import {
   analyzeCustomerDocuments,
   regenerateCustomerAnalysisSection,
-  resolveOpenAIModelOverride,
 } from "@/lib/server/ai";
 import {
   getCustomerAnalysis,
   getFreshCustomerAnalysis,
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
-import { checkRateLimit } from "@/lib/server/observability";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/services";
+import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
   AnalysisRequirement,
@@ -90,6 +89,247 @@ function isRecommendedService(value: unknown): value is RecommendedService {
   );
 }
 
+type CustomerAnalysisSectionSnapshot = Record<string, unknown>;
+
+type CustomerAnalysisSectionApplier = (
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+) => CustomerAnalysisResult;
+
+function applySummarySnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  if (
+    typeof snapshot.customer_profile_summary !== "string" ||
+    typeof snapshot.customer_goals_summary !== "string"
+  ) {
+    throw new Error(
+      "Oppsummering må inneholde tekstfeltene customer_profile_summary og customer_goals_summary.",
+    );
+  }
+
+  return {
+    ...analysis,
+    customer_profile_summary: snapshot.customer_profile_summary,
+    customer_goals_summary: snapshot.customer_goals_summary,
+  };
+}
+
+function applyStrategySnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  if (
+    typeof snapshot.executive_summary !== "string" ||
+    !isStringArray(snapshot.positioning_recommendations)
+  ) {
+    throw new Error(
+      "Strategi må inneholde executive_summary og positioning_recommendations.",
+    );
+  }
+
+  return {
+    ...analysis,
+    executive_summary: snapshot.executive_summary,
+    positioning_recommendations: snapshot.positioning_recommendations,
+  };
+}
+
+function applyClarificationsSnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  if (
+    !isStringArray(snapshot.ambiguities) ||
+    !isStringArray(snapshot.expected_solution_direction) ||
+    !isStringArray(snapshot.likely_evaluation_criteria)
+  ) {
+    throw new Error(
+      "Avklaringer må inneholde tekstlistene ambiguities, expected_solution_direction og likely_evaluation_criteria.",
+    );
+  }
+
+  return {
+    ...analysis,
+    ambiguities: snapshot.ambiguities,
+    expected_solution_direction: snapshot.expected_solution_direction,
+    likely_evaluation_criteria: snapshot.likely_evaluation_criteria,
+  };
+}
+
+function applyDesignSnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  if (
+    typeof snapshot.high_level_solution_design !== "string" ||
+    typeof snapshot.high_level_architecture_mermaid !== "string"
+  ) {
+    throw new Error(
+      "Design må inneholde high_level_solution_design og high_level_architecture_mermaid.",
+    );
+  }
+
+  return {
+    ...analysis,
+    high_level_solution_design: snapshot.high_level_solution_design,
+    high_level_architecture_mermaid: snapshot.high_level_architecture_mermaid,
+  };
+}
+
+function applyRisksSnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  const risksForUs = snapshot.risks_for_us;
+  const risksForCustomer = snapshot.risks_for_customer;
+
+  if (
+    !isStringArray(snapshot.risks) ||
+    (typeof risksForUs !== "undefined" && !isStringArray(risksForUs)) ||
+    ("risks_for_customer" in snapshot && !isStringArray(risksForCustomer))
+  ) {
+    throw new Error(
+      "Risiko må inneholde tekstlister for risks, risks_for_us og risks_for_customer.",
+    );
+  }
+
+  return {
+    ...analysis,
+    risks: snapshot.risks,
+    risks_for_us: isStringArray(risksForUs) ? risksForUs : [],
+    risks_for_customer: isStringArray(risksForCustomer)
+      ? risksForCustomer
+      : [],
+  };
+}
+
+function isPrioritizedRequirement(value: unknown): value is {
+  requirement: string;
+  priority: RequirementImportance;
+  reason: string;
+} {
+  return (
+    isRecord(value) &&
+    typeof value.requirement === "string" &&
+    isRequirementImportance(value.priority) &&
+    typeof value.reason === "string"
+  );
+}
+
+function applyNeedsSnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  const implicitRequirements = snapshot.implicit_requirements;
+  const prioritizedRequirements = snapshot.prioritized_requirements;
+
+  if (
+    !Array.isArray(implicitRequirements) ||
+    !implicitRequirements.every(isAnalysisRequirement) ||
+    !Array.isArray(prioritizedRequirements) ||
+    !prioritizedRequirements.every(isPrioritizedRequirement)
+  ) {
+    throw new Error(
+      "Behov må inneholde gyldige implicit_requirements og prioritized_requirements.",
+    );
+  }
+
+  return {
+    ...analysis,
+    implicit_requirements: implicitRequirements,
+    prioritized_requirements: prioritizedRequirements,
+  };
+}
+
+function applyKeywordsSnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  if (
+    !isStringArray(snapshot.signal_words) ||
+    ("signal_word_counts" in snapshot && !isRecord(snapshot.signal_word_counts))
+  ) {
+    throw new Error(
+      "Nøkkelord må inneholde signal_words og eventuelt signal_word_counts.",
+    );
+  }
+
+  const signalWordCounts = isRecord(snapshot.signal_word_counts)
+    ? snapshot.signal_word_counts
+    : undefined;
+  if (
+    typeof signalWordCounts !== "undefined" &&
+    !Object.values(signalWordCounts).every((value) => typeof value === "number")
+  ) {
+    throw new Error("signal_word_counts må ha tallverdier.");
+  }
+
+  return {
+    ...analysis,
+    signal_words: snapshot.signal_words,
+    signal_word_counts: signalWordCounts as Record<string, number> | undefined,
+  };
+}
+
+function applyServicesSnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  const recommendedServices = snapshot.recommended_services;
+
+  if (
+    !Array.isArray(recommendedServices) ||
+    !recommendedServices.every(isRecommendedService)
+  ) {
+    throw new Error(
+      "Anbefalte tjenester må inneholde en gyldig recommended_services-liste.",
+    );
+  }
+
+  return {
+    ...analysis,
+    recommended_services: recommendedServices,
+  };
+}
+
+function applyValueSnapshot(
+  analysis: CustomerAnalysisResult,
+  snapshot: CustomerAnalysisSectionSnapshot,
+): CustomerAnalysisResult {
+  const valueOpportunities = snapshot.value_opportunities;
+
+  if (
+    !Array.isArray(valueOpportunities) ||
+    !valueOpportunities.every(isValueOpportunity)
+  ) {
+    throw new Error(
+      "Verdi må inneholde en gyldig value_opportunities-liste.",
+    );
+  }
+
+  return {
+    ...analysis,
+    value_opportunities: valueOpportunities,
+  };
+}
+
+const SECTION_SNAPSHOT_APPLIERS: Record<
+  CustomerAnalysisSection,
+  CustomerAnalysisSectionApplier
+> = {
+  summary: applySummarySnapshot,
+  strategy: applyStrategySnapshot,
+  clarifications: applyClarificationsSnapshot,
+  design: applyDesignSnapshot,
+  risks: applyRisksSnapshot,
+  needs: applyNeedsSnapshot,
+  keywords: applyKeywordsSnapshot,
+  services: applyServicesSnapshot,
+  value: applyValueSnapshot,
+};
+
 function applySectionSnapshot(
   analysis: CustomerAnalysisResult,
   section: CustomerAnalysisSection,
@@ -99,187 +339,7 @@ function applySectionSnapshot(
     throw new Error("Seksjonsdata må være et gyldig sett med redigerbare felter.");
   }
 
-  switch (section) {
-    case "summary": {
-      if (
-        typeof snapshot.customer_profile_summary !== "string" ||
-        typeof snapshot.customer_goals_summary !== "string"
-      ) {
-        throw new Error(
-          "Oppsummering må inneholde tekstfeltene customer_profile_summary og customer_goals_summary.",
-        );
-      }
-
-      return {
-        ...analysis,
-        customer_profile_summary: snapshot.customer_profile_summary,
-        customer_goals_summary: snapshot.customer_goals_summary,
-      };
-    }
-    case "strategy": {
-      if (
-        typeof snapshot.executive_summary !== "string" ||
-        !isStringArray(snapshot.positioning_recommendations)
-      ) {
-        throw new Error(
-          "Strategi må inneholde executive_summary og positioning_recommendations.",
-        );
-      }
-
-      return {
-        ...analysis,
-        executive_summary: snapshot.executive_summary,
-        positioning_recommendations: snapshot.positioning_recommendations,
-      };
-    }
-    case "clarifications": {
-      if (
-        !isStringArray(snapshot.ambiguities) ||
-        !isStringArray(snapshot.expected_solution_direction) ||
-        !isStringArray(snapshot.likely_evaluation_criteria)
-      ) {
-        throw new Error(
-          "Avklaringer må inneholde tekstlistene ambiguities, expected_solution_direction og likely_evaluation_criteria.",
-        );
-      }
-
-      return {
-        ...analysis,
-        ambiguities: snapshot.ambiguities,
-        expected_solution_direction: snapshot.expected_solution_direction,
-        likely_evaluation_criteria: snapshot.likely_evaluation_criteria,
-      };
-    }
-    case "design": {
-      if (
-        typeof snapshot.high_level_solution_design !== "string" ||
-        typeof snapshot.high_level_architecture_mermaid !== "string"
-      ) {
-        throw new Error(
-          "Design må inneholde high_level_solution_design og high_level_architecture_mermaid.",
-        );
-      }
-
-      return {
-        ...analysis,
-        high_level_solution_design: snapshot.high_level_solution_design,
-        high_level_architecture_mermaid:
-          snapshot.high_level_architecture_mermaid,
-      };
-    }
-    case "risks": {
-      const risksForUs = snapshot.risks_for_us;
-      const risksForCustomer = snapshot.risks_for_customer;
-
-      if (
-        !isStringArray(snapshot.risks) ||
-        (typeof risksForUs !== "undefined" && !isStringArray(risksForUs)) ||
-        ("risks_for_customer" in snapshot &&
-          !isStringArray(risksForCustomer))
-      ) {
-        throw new Error(
-          "Risiko må inneholde tekstlister for risks, risks_for_us og risks_for_customer.",
-        );
-      }
-
-      const nextRisksForUs = isStringArray(risksForUs) ? risksForUs : [];
-      const nextRisksForCustomer = isStringArray(risksForCustomer)
-        ? risksForCustomer
-        : [];
-
-      return {
-        ...analysis,
-        risks: snapshot.risks,
-        risks_for_us: nextRisksForUs,
-        risks_for_customer: nextRisksForCustomer,
-      };
-    }
-    case "needs": {
-      if (
-        !Array.isArray(snapshot.implicit_requirements) ||
-        !snapshot.implicit_requirements.every(isAnalysisRequirement) ||
-        !Array.isArray(snapshot.prioritized_requirements) ||
-        !snapshot.prioritized_requirements.every(
-          (item) =>
-            isRecord(item) &&
-            typeof item.requirement === "string" &&
-            isRequirementImportance(item.priority) &&
-            typeof item.reason === "string",
-        )
-      ) {
-        throw new Error(
-          "Behov må inneholde gyldige implicit_requirements og prioritized_requirements.",
-        );
-      }
-
-      return {
-        ...analysis,
-        implicit_requirements: snapshot.implicit_requirements,
-        prioritized_requirements: snapshot.prioritized_requirements,
-      };
-    }
-    case "keywords": {
-      if (
-        !isStringArray(snapshot.signal_words) ||
-        ("signal_word_counts" in snapshot &&
-          !isRecord(snapshot.signal_word_counts))
-      ) {
-        throw new Error(
-          "Nøkkelord må inneholde signal_words og eventuelt signal_word_counts.",
-        );
-      }
-
-      const signalWordCounts = isRecord(snapshot.signal_word_counts)
-        ? snapshot.signal_word_counts
-        : undefined;
-      if (
-        typeof signalWordCounts !== "undefined" &&
-        !Object.values(signalWordCounts).every(
-          (value) => typeof value === "number",
-        )
-      ) {
-        throw new Error("signal_word_counts må ha tallverdier.");
-      }
-
-      return {
-        ...analysis,
-        signal_words: snapshot.signal_words,
-        signal_word_counts: signalWordCounts as
-          | Record<string, number>
-          | undefined,
-      };
-    }
-    case "services": {
-      if (
-        !Array.isArray(snapshot.recommended_services) ||
-        !snapshot.recommended_services.every(isRecommendedService)
-      ) {
-        throw new Error(
-          "Anbefalte tjenester må inneholde en gyldig recommended_services-liste.",
-        );
-      }
-
-      return {
-        ...analysis,
-        recommended_services: snapshot.recommended_services,
-      };
-    }
-    case "value": {
-      if (
-        !Array.isArray(snapshot.value_opportunities) ||
-        !snapshot.value_opportunities.every(isValueOpportunity)
-      ) {
-        throw new Error(
-          "Verdi må inneholde en gyldig value_opportunities-liste.",
-        );
-      }
-
-      return {
-        ...analysis,
-        value_opportunities: snapshot.value_opportunities,
-      };
-    }
-  }
+  return SECTION_SNAPSHOT_APPLIERS[section](analysis, snapshot);
 }
 
 export async function POST(
@@ -287,27 +347,22 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await context.params;
-    const rateLimit = await checkRateLimit(request, `customer-analysis:${id}`, {
-      limit: 8,
-      windowMs: 5 * 60_000,
-    });
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "For mange analyser på kort tid." },
-        {
-          status: 429,
-          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-        },
-      );
+    const preflight = await prepareProjectAiJsonRoute<{ section?: unknown }>(
+      request,
+      context,
+      {
+        scopePrefix: "customer-analysis",
+        message: "For mange analyser på kort tid.",
+        limit: 8,
+        windowMs: 5 * 60_000,
+        fallbackBody: {},
+      },
+    );
+    if (preflight.response) {
+      return preflight.response;
     }
 
-    const model = await resolveOpenAIModelOverride(
-      request.headers.get("x-openai-model"),
-    );
-    const body = (await request.json().catch(() => ({}))) as {
-      section?: unknown;
-    };
+    const { id, model, body } = preflight;
 
     if (
       typeof body.section !== "undefined" &&

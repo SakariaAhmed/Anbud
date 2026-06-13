@@ -392,6 +392,57 @@ const SOLUTION_EVALUATION_EMPTY: SolutionEvaluationResult = {
   executive_summary: "",
 };
 
+type RequirementCoverage = NonNullable<SolutionEvaluationResult["requirement_coverage"]>;
+type RequirementCoverageItem = RequirementCoverage["items"][number];
+
+function isSyntheticRequirementReference(reference: string) {
+  return /^side\s+\d{1,5}\s+krav\s+\d{1,5}$/i.test(reference.trim());
+}
+
+function sanitizeRequirementCoverage(
+  coverage: RequirementCoverage | undefined,
+): RequirementCoverage | undefined {
+  if (!coverage?.items?.length) {
+    return coverage;
+  }
+
+  const anchoredItems = coverage.items.filter(
+    (item) => !isSyntheticRequirementReference(item.reference),
+  );
+  const items = anchoredItems.length >= 5 ? anchoredItems : coverage.items;
+  if (items.length === coverage.items.length) {
+    return coverage;
+  }
+
+  const counts = items.reduce(
+    (acc, item: RequirementCoverageItem) => {
+      if (item.assessment === "Godt") acc.good += 1;
+      else if (item.assessment === "Dårlig") acc.weak += 1;
+      else if (item.assessment === "Mangler") acc.missing += 1;
+      else acc.unclear += 1;
+      return acc;
+    },
+    { good: 0, weak: 0, missing: 0, unclear: 0 },
+  );
+
+  return {
+    ...coverage,
+    total_requirements: items.length,
+    assessed_requirements: items.length,
+    ...counts,
+    items,
+  };
+}
+
+function sanitizeSolutionEvaluationResult(
+  result: SolutionEvaluationResult,
+): SolutionEvaluationResult {
+  return {
+    ...result,
+    requirement_coverage: sanitizeRequirementCoverage(result.requirement_coverage),
+  };
+}
+
 const EXECUTIVE_SUMMARY_EMPTY: ExecutiveSummaryResult = {
   source_solution_evaluation_present: false,
   executive_summary: "",
@@ -841,12 +892,12 @@ function projectDocumentStatusPatch(
 }
 
 function mapSolutionEvaluationRow(row: SolutionEvaluationRow) {
-  return {
+  return sanitizeSolutionEvaluationResult({
     ...SOLUTION_EVALUATION_EMPTY,
     ...decryptJson(row.result_json, SOLUTION_EVALUATION_EMPTY),
     customer_document_id: row.customer_document_id,
     solution_document_id: row.solution_document_id,
-  };
+  });
 }
 
 function mapExecutiveSummaryRow(row: ExecutiveSummaryRow) {
@@ -2553,226 +2604,6 @@ export async function getProjectShell(
   )();
 }
 
-export async function saveDocument(input: {
-  projectId: string;
-  title: string;
-  role: ProjectDocumentRole;
-  supportingSubtype?: SupportingDocumentSubtype | null;
-  fileName: string;
-  fileFormat: ProjectDocumentDetail["file_format"];
-  contentType: string;
-  fileSizeBytes: number;
-  fileBase64: string;
-  rawText: string;
-  structureMap: unknown;
-}) {
-  const supabase = createServiceClient();
-  const documentId = randomUUID();
-  const normalizedTitle =
-    input.title?.trim() ||
-    input.fileName.replace(/\.[^.]+$/, "").trim() ||
-    "Dokument";
-  const pageCount =
-    pageCountFromStructureMap(input.structureMap, input.fileFormat) ??
-    pageCountFromRawText(input.rawText, input.fileFormat);
-  const encryptedBase64 = encryptString(input.fileBase64);
-  const encryptedRawText = encryptString(input.rawText);
-  const encryptedStructureMap = encryptJson(input.structureMap);
-  const storedFile = await uploadEncryptedBase64File({
-    path: buildStoredFilePath({
-      scope: "projects",
-      ownerId: input.projectId,
-      fileId: documentId,
-      fileName: input.fileName,
-    }),
-    encryptedBase64,
-  });
-  const supportingSubtype =
-    input.role === "supporting_document"
-      ? (input.supportingSubtype ?? null)
-      : null;
-  const insertPayload: Record<string, unknown> = {
-    id: documentId,
-    project_id: input.projectId,
-    role: input.role,
-    supporting_subtype: supportingSubtype,
-    subtype: supportingSubtype,
-    title: normalizedTitle,
-    display_name: normalizedTitle,
-    file_name: input.fileName,
-    file_format: input.fileFormat,
-    content_type: input.contentType,
-    file_size_bytes: input.fileSizeBytes,
-    page_count: pageCount,
-    file_storage_bucket: storedFile.bucket,
-    file_storage_path: storedFile.path,
-    file_base64: "",
-    raw_text: encryptedRawText,
-    structure_map: encryptedStructureMap,
-  };
-
-  let inserted: DocumentRow | null = null;
-  let shouldRemoveStoredFileAfterInsert = false;
-  let insertResult: {
-    data: Record<string, unknown> | null;
-    error: { message?: string } | null;
-  } | null = null;
-  for (
-    let attempt = 0;
-    attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
-    attempt += 1
-  ) {
-    const payloadForAttempt = { ...insertPayload };
-    const hasStorageColumns =
-      "file_storage_bucket" in payloadForAttempt &&
-      "file_storage_path" in payloadForAttempt;
-    if (!hasStorageColumns && "file_base64" in payloadForAttempt) {
-      payloadForAttempt.file_base64 = encryptedBase64;
-      shouldRemoveStoredFileAfterInsert = true;
-    }
-
-    insertResult = await supabase
-      .from("documents")
-      .insert(payloadForAttempt)
-      .select("*")
-      .single<Record<string, unknown>>();
-
-    if (
-      !insertResult.error ||
-      !isMissingLegacyDocumentColumn(insertResult.error)
-    ) {
-      break;
-    }
-
-    const missingColumn = missingColumnNameFromError(
-      insertResult.error,
-      PROJECT_DOCUMENT_INSERT_COLUMN_NAMES,
-    );
-    if (!missingColumn || !(missingColumn in insertPayload)) {
-      break;
-    }
-
-    if (
-      missingColumn === "file_storage_bucket" ||
-      missingColumn === "file_storage_path"
-    ) {
-      removeMissingStorageColumns(insertPayload);
-    } else {
-      delete insertPayload[missingColumn];
-      if (missingColumn === "structure_map") {
-        insertPayload.source_map = encryptedStructureMap;
-      }
-    }
-  }
-
-  if (insertResult?.error || !insertResult?.data) {
-    await removeStoredFiles([storedFile]);
-    throw new Error(
-      insertResult?.error?.message || "Kunne ikke lagre dokumentet.",
-    );
-  }
-  inserted = fromUnknownDocumentRow(insertResult.data);
-  if (shouldRemoveStoredFileAfterInsert) {
-    await removeStoredFiles([storedFile]);
-  }
-
-  const projectPatch: Partial<ProjectRow> = {
-    last_activity_at: new Date().toISOString(),
-  };
-  if (
-    input.role === "primary_customer_document" ||
-    input.role === "primary_solution_document"
-  ) {
-    const demotedSubtype =
-      input.role === "primary_solution_document" ? "utkast" : "rfp";
-    let demoteResult = await supabase
-      .from("documents")
-      .update({
-        role: "supporting_document",
-        supporting_subtype: demotedSubtype,
-      })
-      .eq("project_id", input.projectId)
-      .eq("role", input.role)
-      .neq("id", inserted.id);
-
-    if (
-      demoteResult.error &&
-      isMissingLegacyDocumentColumn(demoteResult.error)
-    ) {
-      demoteResult = await supabase
-        .from("documents")
-        .update({
-          role: "supporting_document",
-          subtype: demotedSubtype,
-        })
-        .eq("project_id", input.projectId)
-        .eq("role", input.role)
-        .neq("id", inserted.id);
-    }
-
-    if (demoteResult.error) {
-      throw new Error(demoteResult.error.message);
-    }
-
-    if (input.role === "primary_customer_document") {
-      projectPatch.customer_analysis_generated = false;
-      projectPatch.solution_evaluation_generated = false;
-      await supabase
-        .from("customer_analyses")
-        .delete()
-        .eq("project_id", input.projectId);
-      await supabase
-        .from("solution_evaluations")
-        .delete()
-        .eq("project_id", input.projectId);
-    }
-
-    if (input.role === "primary_solution_document") {
-      projectPatch.solution_evaluation_generated = false;
-      await supabase
-        .from("solution_evaluations")
-        .delete()
-        .eq("project_id", input.projectId);
-    }
-  }
-
-  await supabase
-    .from("executive_summaries")
-    .delete()
-    .eq("project_id", input.projectId);
-
-  Object.assign(
-    projectPatch,
-    projectDocumentStatusPatch(
-      await listProjectDocumentRoleRows(supabase, input.projectId),
-    ),
-  );
-
-  await supabase
-    .from("projects")
-    .update(projectPatch)
-    .eq("id", input.projectId);
-
-  await replaceProjectDocumentChunks({
-    documentId: inserted.id,
-    projectId: input.projectId,
-    role: input.role,
-    supportingSubtype: input.supportingSubtype ?? null,
-    title: normalizedTitle,
-    fileName: input.fileName,
-    fileFormat: input.fileFormat,
-    rawText: input.rawText,
-    structureMap: normalizeStructureMapForChunks(input.structureMap),
-  }).catch(() => {
-    // Chunk indexing should improve retrieval, not block uploads.
-  });
-
-  await updateProjectContextKeywords(input.projectId);
-  revalidateProjectCaches(input.projectId);
-
-  return mapDocumentSummary(inserted);
-}
-
 export async function savePendingDocument(input: {
   projectId: string;
   title: string;
@@ -3325,41 +3156,6 @@ export async function markDocumentAsPrimarySolution(
   );
 }
 
-export async function getPrimaryDocument(
-  projectId: string,
-  role: Extract<
-    ProjectDocumentRole,
-    "primary_customer_document" | "primary_solution_document"
-  >,
-) {
-  const supabase = createServiceClient();
-  const rows = await fetchDocumentRows((select) =>
-    supabase
-      .from("documents")
-      .select(select)
-      .eq("project_id", projectId)
-      .eq("role", role)
-      .order("created_at", { ascending: false })
-      .limit(1),
-  );
-  const row = rows[0] ?? null;
-  return row ? resolveDocumentRow(row) : null;
-}
-
-export async function listSupportingDocuments(projectId: string) {
-  const supabase = createServiceClient();
-  const rows = await fetchDocumentRows((select) =>
-    supabase
-      .from("documents")
-      .select(select)
-      .eq("project_id", projectId)
-      .eq("role", "supporting_document")
-      .order("created_at", { ascending: false }),
-  );
-
-  return Promise.all(rows.map((row) => resolveDocumentRow(row)));
-}
-
 export async function listProjectDocumentSummaries(projectId: string) {
   const supabase = createServiceClient();
   const rows = await fetchDocumentSummaryRows((select) =>
@@ -3371,19 +3167,6 @@ export async function listProjectDocumentSummaries(projectId: string) {
   );
 
   return rows.map(mapDocumentSummary);
-}
-
-export async function listProjectDocuments(projectId: string) {
-  const supabase = createServiceClient();
-  const rows = await fetchDocumentRows((select) =>
-    supabase
-      .from("documents")
-      .select(select)
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false }),
-  );
-
-  return Promise.all(rows.map((row) => resolveDocumentRow(row)));
 }
 
 export async function listProjectDocumentsForAnalysis(projectId: string) {

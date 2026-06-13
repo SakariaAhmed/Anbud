@@ -13,7 +13,7 @@ export function isArtifactType(value: string): value is GeneratedArtifactType {
   );
 }
 
-export function serviceDocumentLimitForArtifact(
+function serviceDocumentLimitForArtifact(
   artifactType: GeneratedArtifactType,
 ) {
   if (artifactType === "bilag1_rekonstruksjon") {
@@ -27,7 +27,7 @@ export function serviceDocumentLimitForArtifact(
   return 3;
 }
 
-export function tokenizeForRelevance(value: string) {
+function tokenizeForRelevance(value: string) {
   return Array.from(
     new Set(
       value

@@ -8,9 +8,14 @@ import {
   queuePerfectSystemSolutionJob,
   queueSolutionEvaluationJob,
 } from "@/lib/server/project-jobs";
+import {
+  normalizeArtifactInstructions,
+  normalizeSourceDocumentIds,
+} from "@/lib/server/artifact-generation-input";
 import { resolveOpenAIModelOverride } from "@/lib/server/ai";
-import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
-import type { GeneratedArtifactType } from "@/lib/types";
+import { enforceRateLimit } from "@/lib/server/api-responses";
+import { auditEvent, withTiming } from "@/lib/server/observability";
+import type { GeneratedArtifactType, ProjectJobRecord } from "@/lib/types";
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
   return (
@@ -21,22 +26,136 @@ function isArtifactType(value: string): value is GeneratedArtifactType {
   );
 }
 
+type ProjectJobRequestBody =
+  | {
+      kind?: "customer_analysis";
+    }
+  | {
+      kind?: "solution_evaluation";
+      solution_document_id?: string;
+    }
+  | {
+      kind?: "high_level_design";
+    }
+  | {
+      kind?: "perfect_system_solution";
+    }
+  | {
+      kind?: "executive_summary";
+    }
+  | {
+      kind?: "artifact_generation";
+      artifact_type?: string;
+      instructions?: string;
+      source_document_ids?: string[];
+      use_solution_evaluation_context?: boolean;
+    };
+
+type QueuedJobResult = {
+  job: ProjectJobRecord;
+  metadata?: Record<string, unknown>;
+};
+
+async function queueSimpleProjectJob(
+  kind: Exclude<ProjectJobRequestBody["kind"], "artifact_generation" | undefined>,
+  projectId: string,
+  model: string | undefined,
+  body: ProjectJobRequestBody,
+): Promise<QueuedJobResult | null> {
+  switch (kind) {
+    case "customer_analysis":
+      return {
+        job: await queueCustomerAnalysisJob({ projectId, model }),
+      };
+    case "solution_evaluation":
+      return {
+        job: await queueSolutionEvaluationJob({
+          projectId,
+          solutionDocumentId:
+            body.kind === "solution_evaluation" &&
+            typeof body.solution_document_id === "string"
+              ? body.solution_document_id
+              : undefined,
+          model,
+        }),
+      };
+    case "high_level_design":
+      return {
+        job: await queueHighLevelDesignJob({ projectId, model }),
+      };
+    case "perfect_system_solution":
+      return {
+        job: await queuePerfectSystemSolutionJob({ projectId, model }),
+      };
+    case "executive_summary":
+      return {
+        job: await queueExecutiveSummaryJob({ projectId, model }),
+      };
+  }
+}
+
+async function queueArtifactJob(
+  projectId: string,
+  model: string | undefined,
+  body: Extract<ProjectJobRequestBody, { kind?: "artifact_generation" }>,
+): Promise<QueuedJobResult | NextResponse> {
+  if (!body.artifact_type || !isArtifactType(body.artifact_type)) {
+    return NextResponse.json(
+      { error: "Ugyldig artefakttype." },
+      { status: 400 },
+    );
+  }
+
+  return {
+    job: await queueArtifactGenerationJob({
+      projectId,
+      artifactType: body.artifact_type,
+      instructions: normalizeArtifactInstructions(body.instructions),
+      sourceDocumentIds: normalizeSourceDocumentIds(body.source_document_ids),
+      useSolutionEvaluationContext:
+        body.use_solution_evaluation_context === true,
+      model,
+    }),
+    metadata: {
+      artifact_type: body.artifact_type,
+    },
+  };
+}
+
+async function jobAcceptedResponse(input: {
+  projectId: string;
+  kind: NonNullable<ProjectJobRequestBody["kind"]>;
+  queued: QueuedJobResult;
+}) {
+  await auditEvent({
+    action: "project_job_started",
+    projectId: input.projectId,
+    entityType: "project_job",
+    entityId: input.queued.job.id,
+    metadata: {
+      kind: input.kind,
+      ...(input.queued.metadata ?? {}),
+    },
+  });
+
+  return NextResponse.json({ job: input.queued.job }, { status: 202 });
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const rateLimit = await checkRateLimit(request, "project-jobs", {
-    limit: 20,
-    windowMs: 60_000,
-  });
-  if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "For mange jobber startet på kort tid." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-      },
-    );
+  const limited = await enforceRateLimit(
+    request,
+    "project-jobs",
+    {
+      limit: 20,
+      windowMs: 60_000,
+    },
+    "For mange jobber startet på kort tid.",
+  );
+  if (limited) {
+    return limited;
   }
 
   try {
@@ -48,150 +167,21 @@ export async function POST(
         const model = await resolveOpenAIModelOverride(
           request.headers.get("x-openai-model"),
         );
-        const body = (await request.json().catch(() => ({}))) as
-      | {
-          kind?: "customer_analysis";
+        const body = (await request.json().catch(() => ({}))) as ProjectJobRequestBody;
+
+        if (body.kind === "artifact_generation") {
+          const queued = await queueArtifactJob(id, model, body);
+          return queued instanceof NextResponse
+            ? queued
+            : jobAcceptedResponse({ projectId: id, kind: body.kind, queued });
         }
-      | {
-          kind?: "solution_evaluation";
-          allow_generated_solution?: boolean;
-          solution_document_id?: string;
+
+        if (body.kind) {
+          const queued = await queueSimpleProjectJob(body.kind, id, model, body);
+          if (queued) {
+            return jobAcceptedResponse({ projectId: id, kind: body.kind, queued });
+          }
         }
-      | {
-          kind?: "high_level_design";
-        }
-      | {
-          kind?: "perfect_system_solution";
-        }
-      | {
-          kind?: "executive_summary";
-        }
-      | {
-          kind?: "artifact_generation";
-          artifact_type?: string;
-          instructions?: string;
-          source_document_ids?: string[];
-        };
-
-    if (body.kind === "customer_analysis") {
-      const job = await queueCustomerAnalysisJob({
-        projectId: id,
-        model,
-      });
-
-      await auditEvent({
-        action: "project_job_started",
-        projectId: id,
-        entityType: "project_job",
-        entityId: job.id,
-        metadata: { kind: body.kind },
-      });
-      return NextResponse.json({ job }, { status: 202 });
-    }
-
-    if (body.kind === "solution_evaluation") {
-      const job = await queueSolutionEvaluationJob({
-        projectId: id,
-        allowGeneratedSolution: Boolean(body.allow_generated_solution),
-        solutionDocumentId:
-          typeof body.solution_document_id === "string"
-            ? body.solution_document_id
-            : undefined,
-        model,
-      });
-
-      await auditEvent({
-        action: "project_job_started",
-        projectId: id,
-        entityType: "project_job",
-        entityId: job.id,
-        metadata: { kind: body.kind },
-      });
-      return NextResponse.json({ job }, { status: 202 });
-    }
-
-    if (body.kind === "high_level_design") {
-      const job = await queueHighLevelDesignJob({
-        projectId: id,
-        model,
-      });
-
-      await auditEvent({
-        action: "project_job_started",
-        projectId: id,
-        entityType: "project_job",
-        entityId: job.id,
-        metadata: { kind: body.kind },
-      });
-      return NextResponse.json({ job }, { status: 202 });
-    }
-
-    if (body.kind === "perfect_system_solution") {
-      const job = await queuePerfectSystemSolutionJob({
-        projectId: id,
-        model,
-      });
-
-      await auditEvent({
-        action: "project_job_started",
-        projectId: id,
-        entityType: "project_job",
-        entityId: job.id,
-        metadata: { kind: body.kind },
-      });
-      return NextResponse.json({ job }, { status: 202 });
-    }
-
-    if (body.kind === "executive_summary") {
-      const job = await queueExecutiveSummaryJob({
-        projectId: id,
-        model,
-      });
-
-      await auditEvent({
-        action: "project_job_started",
-        projectId: id,
-        entityType: "project_job",
-        entityId: job.id,
-        metadata: { kind: body.kind },
-      });
-      return NextResponse.json({ job }, { status: 202 });
-    }
-
-    if (body.kind === "artifact_generation") {
-      if (!body.artifact_type || !isArtifactType(body.artifact_type)) {
-        return NextResponse.json(
-          { error: "Ugyldig artefakttype." },
-          { status: 400 },
-        );
-      }
-
-      const job = await queueArtifactGenerationJob({
-        projectId: id,
-        artifactType: body.artifact_type,
-        instructions:
-          typeof body.instructions === "string" ? body.instructions : "",
-        sourceDocumentIds: Array.isArray(body.source_document_ids)
-          ? body.source_document_ids.filter(
-              (value): value is string =>
-                typeof value === "string" && value.length > 0,
-            )
-          : [],
-        model,
-      });
-
-      await auditEvent({
-        action: "project_job_started",
-        projectId: id,
-        entityType: "project_job",
-        entityId: job.id,
-        metadata: {
-          kind: body.kind,
-          artifact_type: body.artifact_type,
-        },
-      });
-      return NextResponse.json({ job }, { status: 202 });
-    }
 
         return NextResponse.json({ error: "Ugyldig jobbtype." }, { status: 400 });
       },

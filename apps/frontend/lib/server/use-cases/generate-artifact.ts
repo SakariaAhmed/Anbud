@@ -39,6 +39,10 @@ import {
   listServiceDocumentSummariesForProject,
 } from "@/lib/server/repositories/services";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
+import {
+  shouldUseSolutionEvaluationForArtifact,
+  solutionEvaluationContextModeForArtifact,
+} from "@/lib/server/workflow-boundaries";
 import type {
   GeneratedArtifactType,
   ProjectDocumentDetail,
@@ -65,6 +69,7 @@ export interface GenerateAndSaveArtifactInput {
   artifactType: GeneratedArtifactType;
   instructions?: string;
   sourceDocumentIds?: string[];
+  useSolutionEvaluationContext?: boolean;
   model?: string;
   inputSnapshotExtra?: Record<string, unknown>;
   ensureSemanticChunks?: boolean;
@@ -84,9 +89,42 @@ const ARTIFACT_FILE_LEDGER_FORMATS = new Set(["pdf", "docx", "xlsx", "xls"]);
 function isLikelyRequirementDocument(document: ProjectDocumentDetail) {
   const text = `${document.title} ${document.file_name}`.toLowerCase();
   return (
+    document.supporting_subtype === "kravdokument" ||
     text.includes("krav") ||
     text.includes("requirement") ||
     text.includes("requirements")
+  );
+}
+
+function selectRequirementDocumentsForArtifact(input: {
+  selectedDocumentIds: Set<string>;
+  selectedRequirementDocuments: ProjectDocumentDetail[];
+  projectDocuments: ProjectDocumentDetail[];
+  customerDocument: ProjectDocumentDetail | null;
+  solutionDocument: ProjectDocumentDetail | null;
+  supportingDocuments: ProjectDocumentDetail[];
+}) {
+  if (input.selectedDocumentIds.size) {
+    return input.selectedRequirementDocuments;
+  }
+
+  const explicitRequirementDocuments = input.projectDocuments.filter(
+    (document) =>
+      document.supporting_subtype === "kravdokument" ||
+      (document.role === "supporting_document" &&
+        isLikelyRequirementDocument(document)),
+  );
+  if (explicitRequirementDocuments.length) {
+    return explicitRequirementDocuments;
+  }
+
+  return [
+    input.customerDocument,
+    input.solutionDocument,
+    ...input.supportingDocuments,
+  ].filter(
+    (document): document is ProjectDocumentDetail =>
+      document !== null && isLikelyRequirementDocument(document),
   );
 }
 
@@ -118,6 +156,66 @@ const documentLedgerCache = new Map<
     context: string;
   }
 >();
+
+function requirementQualityExpectations(
+  metadata: unknown,
+): {
+  expectedRequirementCount?: number;
+  expectedRequirementRefs?: string[];
+  unresolvedFallbackAnswers?: number;
+} {
+  if (!metadata || typeof metadata !== "object") {
+    return {};
+  }
+
+  const requirementResponse = (
+    metadata as {
+      requirement_response?: {
+        total_requirements?: unknown;
+        requirement_refs?: unknown;
+        deterministic_fallback_answers_after_handoff?: unknown;
+        unresolved_fallback_answers?: unknown;
+      };
+    }
+  ).requirement_response;
+
+  if (!requirementResponse || typeof requirementResponse !== "object") {
+    return {};
+  }
+
+  const totalRequirements =
+    typeof requirementResponse.total_requirements === "number" &&
+    Number.isFinite(requirementResponse.total_requirements)
+      ? Math.max(0, Math.round(requirementResponse.total_requirements))
+      : undefined;
+  const requirementRefs = Array.isArray(requirementResponse.requirement_refs)
+    ? requirementResponse.requirement_refs
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+    : undefined;
+  const unresolvedFallbackAnswers =
+    typeof requirementResponse.deterministic_fallback_answers_after_handoff ===
+      "number" &&
+    Number.isFinite(
+      requirementResponse.deterministic_fallback_answers_after_handoff,
+    )
+      ? Math.max(
+          0,
+          Math.round(
+            requirementResponse.deterministic_fallback_answers_after_handoff,
+          ),
+        )
+      : Array.isArray(requirementResponse.unresolved_fallback_answers)
+        ? requirementResponse.unresolved_fallback_answers.length
+        : undefined;
+
+  return {
+    expectedRequirementCount: totalRequirements,
+    expectedRequirementRefs: requirementRefs,
+    unresolvedFallbackAnswers,
+  };
+}
 
 function documentLedgerCacheKey(input: {
   artifactType: GeneratedArtifactType;
@@ -203,19 +301,20 @@ export async function generateAndSaveProjectArtifact(
     : [];
   const { customerDocument, solutionDocument, supportingDocuments } =
     selectProjectDocuments(projectDocuments);
+  const requirementDocumentsForArtifact =
+    input.artifactType === "forbedret_kravsvar"
+      ? selectRequirementDocumentsForArtifact({
+          selectedDocumentIds,
+          selectedRequirementDocuments,
+          projectDocuments,
+          customerDocument,
+          solutionDocument,
+          supportingDocuments,
+        })
+      : [];
   const requirementFileCandidates =
     input.artifactType === "forbedret_kravsvar"
-      ? (selectedDocumentIds.size
-          ? selectedRequirementDocuments
-          : [
-              customerDocument,
-              solutionDocument,
-              ...supportingDocuments,
-            ].filter(
-              (document): document is ProjectDocumentDetail =>
-                document !== null && isLikelyRequirementDocument(document),
-            )
-        ).slice(0, 3)
+      ? requirementDocumentsForArtifact.slice(0, 3)
       : [];
   const hydratedRequirementFiles = new Map(
     (
@@ -237,7 +336,7 @@ export async function generateAndSaveProjectArtifact(
   const generationSupportingDocuments = supportingDocuments.map(
     (document) => getHydratedRequirementFile(document) ?? document,
   );
-  const generationRequirementDocuments = selectedRequirementDocuments.map(
+  const generationRequirementDocuments = requirementDocumentsForArtifact.map(
     (document) => getHydratedRequirementFile(document) ?? document,
   );
 
@@ -256,8 +355,9 @@ export async function generateAndSaveProjectArtifact(
       : "[16%] Bygger dokumentledger for struktur, krav og kildegrunnlag ...",
   );
   const ledgerDocuments =
-    input.artifactType === "forbedret_kravsvar" && selectedDocumentIds.size
-      ? selectedRequirementDocuments
+    input.artifactType === "forbedret_kravsvar" &&
+    requirementDocumentsForArtifact.length
+      ? generationRequirementDocuments
       : [
           customerDocument,
           solutionDocument,
@@ -326,11 +426,21 @@ export async function generateAndSaveProjectArtifact(
       ? "[42%] Genererer kravbesvarelse med AI ..."
       : "[42%] Genererer nytt utkast med AI ...",
   );
+  const solutionEvaluationContextMode = solutionEvaluationContextModeForArtifact({
+    artifactType: input.artifactType,
+    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
+  });
+  const solutionEvaluationForGeneration = shouldUseSolutionEvaluationForArtifact({
+    artifactType: input.artifactType,
+    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
+  })
+    ? project.solution_evaluation
+    : null;
   const generated = await generateProjectArtifact({
     artifactType: input.artifactType,
     projectName: project.name,
     customerAnalysis,
-    solutionEvaluation: project.solution_evaluation,
+    solutionEvaluation: solutionEvaluationForGeneration,
     customerDocument: generationCustomerDocument,
     solutionDocument: generationSolutionDocument,
     serviceDescriptionDocument,
@@ -338,7 +448,8 @@ export async function generateAndSaveProjectArtifact(
     serviceDocumentSummaries,
     supportingDocuments: generationSupportingDocuments,
     requirementDocuments:
-      input.artifactType === "forbedret_kravsvar" && selectedDocumentIds.size
+      input.artifactType === "forbedret_kravsvar" &&
+      generationRequirementDocuments.length
         ? generationRequirementDocuments
         : undefined,
     knowledgeArtifacts: generatedArtifacts,
@@ -368,6 +479,7 @@ export async function generateAndSaveProjectArtifact(
     artifactType: input.artifactType,
     title: generated.title,
     contentMarkdown: repaired.contentMarkdown,
+    ...requirementQualityExpectations(generationMetadata),
   });
   if (qualityReport.status === "fail") {
     throw new Error(
@@ -379,6 +491,9 @@ export async function generateAndSaveProjectArtifact(
   input.onProgress?.("[90%] Lagrer validert generatorresultat i prosjektet ...");
   const sourceDocuments = selectedDocumentIds.size
     ? selectedRequirementDocuments
+    : input.artifactType === "forbedret_kravsvar" &&
+        requirementDocumentsForArtifact.length
+      ? requirementDocumentsForArtifact
     : projectDocuments;
   const artifact = await saveGeneratedArtifact(
     input.projectId,
@@ -387,8 +502,13 @@ export async function generateAndSaveProjectArtifact(
     repaired.contentMarkdown,
     {
       instructions: input.instructions?.trim() || "",
+      ...(input.inputSnapshotExtra ?? {}),
       customer_analysis_present: Boolean(customerAnalysis),
       solution_evaluation_present: Boolean(project.solution_evaluation),
+      solution_evaluation_used_as_context: Boolean(
+        solutionEvaluationForGeneration,
+      ),
+      solution_evaluation_context_mode: solutionEvaluationContextMode,
       source_document_ids: sourceDocuments.map((document) => document.id),
       source_document_roles: sourceDocuments.map((document) => ({
         id: document.id,
@@ -402,7 +522,6 @@ export async function generateAndSaveProjectArtifact(
         repaired_rows: repaired.repairedRows,
       },
       generation_metadata: generationMetadata ?? null,
-      ...(input.inputSnapshotExtra ?? {}),
       generation_timings: [
         ...(input.timings?.() ?? []),
         ...(input.totalDurationMs

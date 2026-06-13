@@ -4,7 +4,7 @@ import { useCallback } from "react";
 
 import { prefetchProjectTabData } from "@/lib/client/project-api";
 
-export type PrefetchableProjectWorkspaceTab =
+type PrefetchableProjectWorkspaceTab =
   | "documents"
   | "analysis"
   | "bilag1"

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { resolveOpenAIModelOverride } from "@/lib/server/ai";
 import {
   getFreshCustomerAnalysis,
   getSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
-import { checkRateLimit } from "@/lib/server/observability";
+import { auditEvent } from "@/lib/server/observability";
+import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
 import { runSolutionEvaluationWorkflow } from "@/lib/server/use-cases/project-workflows";
 
 const READ_CACHE_HEADERS = {
@@ -28,28 +28,24 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await context.params;
-    const rateLimit = await checkRateLimit(request, `solution-evaluation:${id}`, {
-      limit: 8,
-      windowMs: 5 * 60_000,
-    });
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "For mange løsningsvurderinger på kort tid." },
-        {
-          status: 429,
-          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-        },
-      );
+    const preflight = await prepareProjectAiJsonRoute<{
+      solution_document_id?: string;
+    }>(
+      request,
+      context,
+      {
+        scopePrefix: "solution-evaluation",
+        message: "For mange løsningsvurderinger på kort tid.",
+        limit: 8,
+        windowMs: 5 * 60_000,
+        fallbackBody: {},
+      },
+    );
+    if (preflight.response) {
+      return preflight.response;
     }
 
-    const model = await resolveOpenAIModelOverride(
-      request.headers.get("x-openai-model"),
-    );
-    const body = (await request.json().catch(() => ({}))) as {
-      allow_generated_solution?: boolean;
-      solution_document_id?: string;
-    };
+    const { id, model, body } = preflight;
 
     if (!(await getFreshCustomerAnalysis(id))) {
       return NextResponse.json({ error: "Generer kundeanalyse før løsningsvurdering." }, { status: 400 });
@@ -58,7 +54,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const result = await runSolutionEvaluationWorkflow({
       kind: "solution_evaluation",
       projectId: id,
-      allowGeneratedSolution: Boolean(body.allow_generated_solution),
       solutionDocumentId:
         typeof body.solution_document_id === "string"
           ? body.solution_document_id
@@ -66,6 +61,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       model,
     }, {
       setProgress: () => undefined,
+    });
+    await auditEvent({
+      action: "solution_evaluation_generated",
+      projectId: id,
+      entityType: "solution_evaluation",
+      entityId: result.evaluation.solution_document_id ?? null,
+      metadata: {
+        route: "direct",
+        solution_document_id: result.evaluation.solution_document_id ?? null,
+        customer_document_id: result.evaluation.customer_document_id ?? null,
+        requirement_count:
+          result.evaluation.requirement_coverage?.total_requirements ?? 0,
+        coverage_confidence:
+          result.evaluation.requirement_coverage?.confidence ?? null,
+        model: model ?? null,
+      },
     });
 
     return NextResponse.json({

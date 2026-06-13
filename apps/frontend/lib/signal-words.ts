@@ -82,7 +82,7 @@ function normalizeComparableSignalWord(value: string) {
     .trim();
 }
 
-export function isProfessionalTechnologySignalWord(value: string) {
+function isProfessionalTechnologySignalWord(value: string) {
   const trimmed = value.replace(/\s+/g, " ").trim();
   if (!trimmed) {
     return false;

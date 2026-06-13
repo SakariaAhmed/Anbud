@@ -127,130 +127,234 @@ function extractTableRequirements(input: {
   return requirements;
 }
 
-export function buildDocumentLedger(document: ProjectDocumentDetail): DocumentLedger {
-  const pages = getPages(document.raw_text || "");
-  const toc: string[] = [];
-  const sections: DocumentLedger["sections"] = [];
-  const tables: DocumentLedger["tables"] = [];
-  const requirements: DocumentLedgerRequirement[] = [];
-  const pageEvidence: DocumentLedger["pageEvidence"] = [];
-  const seenRequirements = new Set<string>();
-  let currentHeading = "";
+type DocumentLedgerAccumulator = Pick<
+  DocumentLedger,
+  "toc" | "sections" | "tables" | "requirements" | "pageEvidence"
+> & {
+  currentHeading: string;
+  seenRequirements: Set<string>;
+};
 
-  for (const page of pages) {
-    const lines = page.text
-      .split(/\r?\n/)
-      .map(normalizeLine)
-      .filter(Boolean);
-    let signalCount = 0;
+function createDocumentLedgerAccumulator(): DocumentLedgerAccumulator {
+  return {
+    toc: [],
+    sections: [],
+    tables: [],
+    requirements: [],
+    pageEvidence: [],
+    currentHeading: "",
+    seenRequirements: new Set<string>(),
+  };
+}
 
-    for (const line of lines) {
-      if (isTocLine(line)) {
-        toc.push(line);
-        continue;
-      }
+function splitDocumentLines(text: string) {
+  return text
+    .split(/\r?\n/)
+    .map(normalizeLine)
+    .filter(Boolean);
+}
 
-      if (REQUIREMENT_WORD_PATTERN.test(line)) {
-        signalCount += 1;
-      }
+function addRequirementIfNew(
+  state: DocumentLedgerAccumulator,
+  requirement: DocumentLedgerRequirement,
+) {
+  const key = requirementKey(requirement);
+  if (state.seenRequirements.has(key)) {
+    return false;
+  }
 
-      const section = line.match(SECTION_PATTERN);
-      if (section?.groups) {
-        const title = cleanRequirementText(section.groups.title);
-        if (!DOT_LEADER_PATTERN.test(line) && title.length >= 3) {
-          currentHeading = `${section.groups.ref} ${title}`;
-          sections.push({
-            ref: section.groups.ref,
-            title,
-            page: page.page,
-          });
-        }
-      }
+  state.seenRequirements.add(key);
+  state.requirements.push(requirement);
+  return true;
+}
 
-      if (/^(req\.?|no\.?|requirement text|krav|kravtekst|type)$/i.test(line)) {
-        tables.push({
-          title: currentHeading || `Tabell side ${page.page}`,
+function collectPageStructure(
+  state: DocumentLedgerAccumulator,
+  page: { page: number; text: string },
+) {
+  const lines = splitDocumentLines(page.text);
+  let signalCount = 0;
+
+  for (const line of lines) {
+    if (isTocLine(line)) {
+      state.toc.push(line);
+      continue;
+    }
+
+    if (REQUIREMENT_WORD_PATTERN.test(line)) {
+      signalCount += 1;
+    }
+
+    const section = line.match(SECTION_PATTERN);
+    if (section?.groups) {
+      const title = cleanRequirementText(section.groups.title);
+      if (!DOT_LEADER_PATTERN.test(line) && title.length >= 3) {
+        state.currentHeading = `${section.groups.ref} ${title}`;
+        state.sections.push({
+          ref: section.groups.ref,
+          title,
           page: page.page,
-          rows: 0,
         });
       }
     }
 
-    for (const requirement of extractTableRequirements({
-      document,
-      page: page.page,
-      lines,
-      heading: currentHeading,
-    })) {
-      const key = requirementKey(requirement);
-      if (seenRequirements.has(key)) continue;
-      seenRequirements.add(key);
-      requirements.push(requirement);
-      if (tables.length) {
-        tables[tables.length - 1].rows += 1;
-      }
-    }
-
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      const match = line.match(SECTION_PATTERN);
-      if (!match?.groups || isTocLine(line)) continue;
-
-      const text = cleanRequirementText(match.groups.title);
-      if (text.length < 16 || !REQUIREMENT_WORD_PATTERN.test(text)) continue;
-
-      const requirement: DocumentLedgerRequirement = {
-        ref: match.groups.ref,
-        text,
+    if (/^(req\.?|no\.?|requirement text|krav|kravtekst|type)$/i.test(line)) {
+      state.tables.push({
+        title: state.currentHeading || `Tabell side ${page.page}`,
         page: page.page,
-        heading: currentHeading,
-        source: `${document.title}, side ${page.page}, ${match.groups.ref}`,
-        kind: "explicit",
-      };
-      const key = requirementKey(requirement);
-      if (!seenRequirements.has(key)) {
-        seenRequirements.add(key);
-        requirements.push(requirement);
-      }
-    }
-
-    if (signalCount > 0) {
-      pageEvidence.push({
-        page: page.page,
-        signalCount,
-        excerpt: cleanRequirementText(
-          lines.find((line) => REQUIREMENT_WORD_PATTERN.test(line)) ?? "",
-        ).slice(0, 220),
+        rows: 0,
       });
     }
   }
 
+  return { lines, signalCount };
+}
+
+function collectTableRequirements(
+  state: DocumentLedgerAccumulator,
+  document: ProjectDocumentDetail,
+  page: number,
+  lines: string[],
+) {
+  for (const requirement of extractTableRequirements({
+    document,
+    page,
+    lines,
+    heading: state.currentHeading,
+  })) {
+    if (addRequirementIfNew(state, requirement) && state.tables.length) {
+      state.tables[state.tables.length - 1].rows += 1;
+    }
+  }
+}
+
+function explicitRequirementFromSectionLine(input: {
+  document: ProjectDocumentDetail;
+  page: number;
+  line: string;
+  heading: string;
+}): DocumentLedgerRequirement | null {
+  const match = input.line.match(SECTION_PATTERN);
+  if (!match?.groups || isTocLine(input.line)) {
+    return null;
+  }
+
+  const text = cleanRequirementText(match.groups.title);
+  if (text.length < 16 || !REQUIREMENT_WORD_PATTERN.test(text)) {
+    return null;
+  }
+
+  return {
+    ref: match.groups.ref,
+    text,
+    page: input.page,
+    heading: input.heading,
+    source: `${input.document.title}, side ${input.page}, ${match.groups.ref}`,
+    kind: "explicit",
+  };
+}
+
+function collectExplicitRequirements(
+  state: DocumentLedgerAccumulator,
+  document: ProjectDocumentDetail,
+  page: number,
+  lines: string[],
+) {
+  for (const line of lines) {
+    const requirement = explicitRequirementFromSectionLine({
+      document,
+      page,
+      line,
+      heading: state.currentHeading,
+    });
+    if (requirement) {
+      addRequirementIfNew(state, requirement);
+    }
+  }
+}
+
+function collectPageEvidence(
+  state: DocumentLedgerAccumulator,
+  page: number,
+  lines: string[],
+  signalCount: number,
+) {
+  if (signalCount <= 0) {
+    return;
+  }
+
+  state.pageEvidence.push({
+    page,
+    signalCount,
+    excerpt: cleanRequirementText(
+      lines.find((line) => REQUIREMENT_WORD_PATTERN.test(line)) ?? "",
+    ).slice(0, 220),
+  });
+}
+
+function ledgerSignals(
+  document: ProjectDocumentDetail,
+  state: DocumentLedgerAccumulator,
+) {
   const metadataSignals = `${document.title} ${document.file_name} ${document.supporting_subtype ?? ""}`;
   const signals: string[] = [];
-  if (/krav|requirement/i.test(metadataSignals)) signals.push("metadata_requirement");
-  if (requirements.length >= 5) signals.push("requirement_rows");
-  if (tables.some((table) => table.rows > 0)) signals.push("requirement_tables");
-  if (pageEvidence.length >= 2) signals.push("requirement_language");
-  if (toc.length) signals.push("toc_detected");
 
-  const confidenceScore =
+  if (/krav|requirement/i.test(metadataSignals)) signals.push("metadata_requirement");
+  if (state.requirements.length >= 5) signals.push("requirement_rows");
+  if (state.tables.some((table) => table.rows > 0)) signals.push("requirement_tables");
+  if (state.pageEvidence.length >= 2) signals.push("requirement_language");
+  if (state.toc.length) signals.push("toc_detected");
+
+  return signals;
+}
+
+function ledgerConfidenceScore(
+  signals: string[],
+  state: DocumentLedgerAccumulator,
+) {
+  return (
     (signals.includes("metadata_requirement") ? 25 : 0) +
-    (requirements.length >= 5 ? 45 : requirements.length * 7) +
-    (tables.some((table) => table.rows > 0) ? 20 : 0) +
-    Math.min(10, pageEvidence.length * 2);
+    (state.requirements.length >= 5 ? 45 : state.requirements.length * 7) +
+    (state.tables.some((table) => table.rows > 0) ? 20 : 0) +
+    Math.min(10, state.pageEvidence.length * 2)
+  );
+}
+
+function ledgerConfidence(confidenceScore: number): DocumentLedgerConfidence {
+  return confidenceScore >= 70
+    ? "high"
+    : confidenceScore >= 35
+      ? "medium"
+      : "low";
+}
+
+export function buildDocumentLedger(
+  document: ProjectDocumentDetail,
+): DocumentLedger {
+  const pages = getPages(document.raw_text || "");
+  const state = createDocumentLedgerAccumulator();
+
+  for (const page of pages) {
+    const { lines, signalCount } = collectPageStructure(state, page);
+    collectTableRequirements(state, document, page.page, lines);
+    collectExplicitRequirements(state, document, page.page, lines);
+    collectPageEvidence(state, page.page, lines, signalCount);
+  }
+
+  const signals = ledgerSignals(document, state);
+  const confidenceScore = ledgerConfidenceScore(signals, state);
 
   return {
     documentId: document.id,
     title: document.title,
     fileName: document.file_name,
     fileFormat: document.file_format,
-    toc: toc.slice(0, 60),
-    sections: sections.slice(0, 160),
-    tables,
-    requirements,
-    pageEvidence: pageEvidence.slice(0, 80),
-    confidence:
-      confidenceScore >= 70 ? "high" : confidenceScore >= 35 ? "medium" : "low",
+    toc: state.toc.slice(0, 60),
+    sections: state.sections.slice(0, 160),
+    tables: state.tables,
+    requirements: state.requirements,
+    pageEvidence: state.pageEvidence.slice(0, 80),
+    confidence: ledgerConfidence(confidenceScore),
     confidenceScore,
     signals,
   };
