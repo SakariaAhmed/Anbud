@@ -26,7 +26,7 @@ jobs:
       # actions/checkout@v5, azure/login@v3, docker/login-action@v4,
       # docker/setup-buildx-action@v4, docker/build-push-action@v7.
       - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Validate frontend
         working-directory: apps/frontend
