@@ -56,6 +56,7 @@ import {
   generateAndSaveProjectArtifact,
 } from "@/lib/server/use-cases/generate-artifact";
 import { rethrowAuthoritativeLeaseLoss } from "@/lib/server/repositories/lease-fenced-persistence";
+import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
 
 export type ProjectWorkflowInput =
   | { kind: "document_ingestion"; projectId: string; documentId: string }
@@ -191,6 +192,7 @@ async function buildEvaluationLedgerContext(input: {
           context: formatEvaluationRequirementLedger({ document, ledger }),
         };
       } catch (error) {
+        assertProjectWorkflowActive();
         console.info(
           JSON.stringify({
             event: "evaluation_requirement_ledger_failed",

@@ -31,11 +31,30 @@ const {
   path.join(frontendRoot, "lib/server/project-job-heartbeat.ts"),
 );
 const {
+  assertProjectWorkflowActive,
   getProjectWorkflowAbortSignal,
   runWithProjectWorkflowContext,
 } = jiti(
   path.join(frontendRoot, "lib/server/project-workflow-cancellation.ts"),
 );
+
+test("fallback guards rethrow the active workflow lease-loss reason", async () => {
+  const controller = new AbortController();
+  const leaseLost = new Error("lease lost during fallback");
+  controller.abort(leaseLost);
+
+  await assert.rejects(
+    runWithProjectWorkflowContext({ signal: controller.signal }, async () => {
+      try {
+        throw new Error("ordinary fallback candidate");
+      } catch {
+        assertProjectWorkflowActive();
+        return "fallback";
+      }
+    }),
+    leaseLost,
+  );
+});
 
 function project(fields, selectedColumns) {
   if (!selectedColumns || selectedColumns === "*") {

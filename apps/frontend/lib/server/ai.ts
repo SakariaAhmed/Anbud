@@ -12,7 +12,10 @@ import {
   type ReasoningEffort,
 } from "@/lib/server/ai/json-completion";
 import { buildVerifiedFoundationControls } from "@/lib/server/ai/verified-foundation-controls";
-import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
+import {
+  assertProjectWorkflowActive,
+  getProjectWorkflowAbortSignal,
+} from "@/lib/server/project-workflow-cancellation";
 import { buildSolutionEvaluationProvenance } from "@/lib/server/workflow-boundaries";
 import { sortByRequirementOrder } from "@/lib/requirement-order";
 import {
@@ -9197,6 +9200,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
 
     return repaired.source === "deterministic_fallback" ? null : repaired;
   } catch (error) {
+    assertProjectWorkflowActive();
     console.warn(
       JSON.stringify({
         event: "requirement_response_strict_handoff_failed",
@@ -9399,6 +9403,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
 
         return repairedRows;
       } catch (error) {
+        assertProjectWorkflowActive();
         failedBatches += 1;
         console.warn(
           JSON.stringify({
@@ -11390,6 +11395,7 @@ async function buildSolutionRequirementCoverage(input: {
           startIndex: chunk.startIndex,
         });
       } catch (error) {
+        assertProjectWorkflowActive();
         console.info(
           JSON.stringify({
             event: "requirement_coverage_batch_fallback",
@@ -11665,6 +11671,7 @@ async function generateRequirementResponseFromLedger(input: {
         });
         rows = Array.isArray(generated.rows) ? generated.rows : [];
       } catch (error) {
+        assertProjectWorkflowActive();
         batchError = error instanceof Error ? error.message : String(error);
         console.info(
           JSON.stringify({
@@ -13895,6 +13902,7 @@ async function retryTransientAiRequest<T>(
     try {
       return await run();
     } catch (error) {
+      assertProjectWorkflowActive();
       lastError = error;
       if (
         attempt >= TEXT_COMPLETION_RETRY_DELAYS_MS.length ||
@@ -14587,6 +14595,7 @@ export async function evaluateSolutionDocument(input: {
         }),
     );
   } catch (error) {
+    assertProjectWorkflowActive();
     console.info(
       JSON.stringify({
         event: "solution_evaluation_fallback",
@@ -15372,6 +15381,7 @@ async function runFullDocumentArtifactGeneration(
         fileInputUsed: true,
       });
     } catch (error) {
+      assertProjectWorkflowActive();
       console.warn(
         JSON.stringify({
           event: "requirement_response_file_input_fallback",

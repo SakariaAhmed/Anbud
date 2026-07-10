@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
 import JSZip from "jszip";
+import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
 
@@ -810,6 +811,7 @@ async function runDoclingConversion(input: {
     markdown = await readDoclingMarkdown(input.outputDir, result.stdout);
     doclingJson = await readDoclingJson(input.outputDir);
   } catch (error) {
+    assertProjectWorkflowActive();
     lastError = error;
     if (shouldRetryDoclingFallback(error)) {
       console.info(
@@ -825,6 +827,7 @@ async function runDoclingConversion(input: {
         markdown = await readDoclingMarkdown(input.outputDir, result.stdout);
         doclingJson = await readDoclingJson(input.outputDir);
       } catch (fallbackError) {
+        assertProjectWorkflowActive();
         lastError = fallbackError;
       }
     }
@@ -1067,6 +1070,7 @@ async function tryExtractWithDocling(input: {
       parserUsed: "docling",
     };
   } catch (error) {
+    assertProjectWorkflowActive();
     console.info(
       JSON.stringify({
         event: "docling_ingestion_fallback",
@@ -1597,6 +1601,7 @@ async function extractDocxFromWordXml(
       parserUsed: "docx-xml",
     };
   } catch (fallbackError) {
+    assertProjectWorkflowActive();
     throw new Error(
       docxParseErrorMessage(
         fileName,

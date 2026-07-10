@@ -35,6 +35,7 @@ import {
   rethrowAuthoritativeLeaseLoss,
   runLeaseFencedProjectMutation,
 } from "@/lib/server/repositories/lease-fenced-persistence";
+import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
 import type {
   ChatDomainHint,
   ChatMessage,
@@ -2383,6 +2384,7 @@ async function updateProjectContextKeywords(projectId: string) {
     }
   } catch (error) {
     rethrowAuthoritativeLeaseLoss(error);
+    assertProjectWorkflowActive();
     // Keyword cache is an optimization; never block the main workflow.
   }
 }
