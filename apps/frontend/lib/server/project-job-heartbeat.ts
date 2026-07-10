@@ -15,6 +15,40 @@ type ProjectJobHeartbeatRuntime = {
   clearInterval?: (timer: HeartbeatTimer) => void;
 };
 
+export class ProjectJobLeaseLostError extends Error {
+  constructor(jobId: string, options: { cause?: unknown } = {}) {
+    super(`Prosjektjobb ${jobId} mistet lease-eierskapet.`, options);
+    this.name = "ProjectJobLeaseLostError";
+  }
+}
+
+export type ProjectJobLeaseGuard = {
+  signal: AbortSignal;
+  assertActive: () => void;
+  abort: (cause?: unknown) => void;
+};
+
+export function createProjectJobLeaseGuard(jobId: string): ProjectJobLeaseGuard {
+  const controller = new AbortController();
+  return {
+    signal: controller.signal,
+    assertActive() {
+      controller.signal.throwIfAborted();
+    },
+    abort(cause?: unknown) {
+      if (!controller.signal.aborted) {
+        controller.abort(new ProjectJobLeaseLostError(jobId, { cause }));
+      }
+    },
+  };
+}
+
+export function isProjectJobLeaseLostError(
+  error: unknown,
+): error is ProjectJobLeaseLostError {
+  return error instanceof ProjectJobLeaseLostError;
+}
+
 export function startProjectJobHeartbeat(
   input: ProjectJobHeartbeatInput,
   runtime: ProjectJobHeartbeatRuntime = {},

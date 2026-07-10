@@ -24,8 +24,18 @@ const {
   resetStaleRunningProjectJobs,
   updatePersistedProjectJob,
 } = jiti(path.join(frontendRoot, "lib/server/repositories/jobs.ts"));
-const { startProjectJobHeartbeat } = jiti(
+const {
+  createProjectJobLeaseGuard,
+  ProjectJobLeaseLostError,
+  startProjectJobHeartbeat,
+} = jiti(
   path.join(frontendRoot, "lib/server/project-job-heartbeat.ts"),
+);
+const {
+  getProjectWorkflowAbortSignal,
+  runWithProjectWorkflowAbortSignal,
+} = jiti(
+  path.join(frontendRoot, "lib/server/project-workflow-cancellation.ts"),
 );
 
 function project(fields, selectedColumns) {
@@ -251,6 +261,50 @@ test("heartbeat scheduler renews every 30 seconds and can be stopped", async () 
   assert.equal(renewals, 1);
   stop();
   assert.equal(cancelled, "timer-1");
+});
+
+test("lease takeover aborts the old workflow before its next business side effect", async () => {
+  let scheduled;
+  let resumeWorkflow;
+  let businessWrites = 0;
+  const guard = createProjectJobLeaseGuard("job-taken-over");
+  const stop = startProjectJobHeartbeat(
+    {
+      async renew() {
+        return false;
+      },
+      onLeaseLost() {
+        guard.abort();
+      },
+      onError(error) {
+        guard.abort(error);
+      },
+    },
+    {
+      setInterval(callback) {
+        scheduled = callback;
+        return "timer-takeover";
+      },
+      clearInterval() {},
+    },
+  );
+
+  const workflow = runWithProjectWorkflowAbortSignal(guard.signal, async () => {
+    await new Promise((resolve) => {
+      resumeWorkflow = resolve;
+    });
+    getProjectWorkflowAbortSignal().throwIfAborted();
+    businessWrites += 1;
+  });
+
+  scheduled();
+  await new Promise((resolve) => setImmediate(resolve));
+  resumeWorkflow();
+
+  await assert.rejects(workflow, ProjectJobLeaseLostError);
+  assert.equal(guard.signal.aborted, true);
+  assert.equal(businessWrites, 0);
+  stop();
 });
 
 test("atomic claim grants exactly one lease and rejects foreign ownership", async () => {

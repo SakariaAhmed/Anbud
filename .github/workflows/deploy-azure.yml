@@ -19,6 +19,7 @@ env:
 jobs:
   deploy:
     name: Production deployment
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     concurrency:

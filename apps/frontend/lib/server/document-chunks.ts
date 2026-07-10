@@ -4,6 +4,10 @@ import { createHash } from "node:crypto";
 import OpenAI from "openai";
 
 import { decryptString, encryptString } from "@/lib/server/crypto";
+import {
+  assertProjectWorkflowActive,
+  getProjectWorkflowAbortSignal,
+} from "@/lib/server/project-workflow-cancellation";
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import { createServiceClient } from "@/lib/server/supabase";
 import type {
@@ -579,17 +583,25 @@ async function createEmbeddings(texts: string[]) {
   const embeddings: number[][] = [];
 
   for (let index = 0; index < texts.length; index += EMBEDDING_BATCH_SIZE) {
+    assertProjectWorkflowActive();
     const batch = texts.slice(index, index + EMBEDDING_BATCH_SIZE);
     let response: Awaited<ReturnType<typeof client.embeddings.create>> | null = null;
     for (let attempt = 0; attempt <= EMBEDDING_RETRY_DELAYS_MS.length; attempt += 1) {
       try {
-        response = await client.embeddings.create({
-          model: DOCUMENT_EMBEDDING_MODEL,
-          input: batch,
-          encoding_format: "float",
-        });
+        assertProjectWorkflowActive();
+        response = await client.embeddings.create(
+          {
+            model: DOCUMENT_EMBEDDING_MODEL,
+            input: batch,
+            encoding_format: "float",
+          },
+          getProjectWorkflowAbortSignal()
+            ? { signal: getProjectWorkflowAbortSignal() }
+            : undefined,
+        );
         break;
       } catch (error) {
+        assertProjectWorkflowActive();
         if (attempt >= EMBEDDING_RETRY_DELAYS_MS.length) {
           throw error;
         }

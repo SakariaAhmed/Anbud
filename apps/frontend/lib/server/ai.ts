@@ -11,6 +11,7 @@ import {
   runJsonCompletionWithFileInputs,
   type ReasoningEffort,
 } from "@/lib/server/ai/json-completion";
+import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
 import { buildSolutionEvaluationProvenance } from "@/lib/server/workflow-boundaries";
 import { sortByRequirementOrder } from "@/lib/requirement-order";
 import {
@@ -14745,6 +14746,8 @@ async function createTextCompletion(input: {
   reasoningEffort?: ReasoningEffort;
   maxCompletionTokens?: number;
 }) {
+  const workflowSignal = getProjectWorkflowAbortSignal();
+  workflowSignal?.throwIfAborted();
   const client = await getClient();
   const model = input.model ?? ANALYSIS_MODEL;
   const response = (await retryTransientAiRequest(
@@ -14766,7 +14769,7 @@ async function createTextCompletion(input: {
           { role: "system", content: input.system },
           { role: "user", content: input.user },
         ],
-      }),
+      }, workflowSignal ? { signal: workflowSignal } : undefined),
   )) as ChatCompletionResponse;
 
   return response.choices[0]?.message?.content?.trim() || "";
@@ -14780,6 +14783,8 @@ async function createTextCompletionStream(input: {
   reasoningEffort?: ReasoningEffort;
   maxCompletionTokens?: number;
 }) {
+  const workflowSignal = getProjectWorkflowAbortSignal();
+  workflowSignal?.throwIfAborted();
   const client = await getClient();
   const model = input.model ?? ANALYSIS_MODEL;
   const stream = (await retryTransientAiRequest(
@@ -14802,7 +14807,7 @@ async function createTextCompletionStream(input: {
           { role: "system", content: input.system },
           { role: "user", content: input.user },
         ],
-      }),
+      }, workflowSignal ? { signal: workflowSignal } : undefined),
   )) as AsyncIterable<ChatCompletionStreamChunk>;
 
   async function* textChunks() {

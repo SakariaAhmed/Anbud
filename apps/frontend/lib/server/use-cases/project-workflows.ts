@@ -88,8 +88,13 @@ export type ProjectWorkflowPhaseHandler = (phase: string) => void;
 export interface ProjectWorkflowHandlers {
   setProgress: (message: string) => void;
   onPhase?: ProjectWorkflowPhaseHandler;
+  assertActive?: () => void;
   timings?: () => ArtifactGenerationTiming[];
   totalDurationMs?: () => number;
+}
+
+function assertWorkflowActive(handlers: ProjectWorkflowHandlers) {
+  handlers.assertActive?.();
 }
 
 function readableDocument(
@@ -513,6 +518,7 @@ async function runDocumentIngestionWorkflow(
 ) {
   try {
     handlers.setProgress("[8%] Henter dokumentfil ...");
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -530,6 +536,7 @@ async function runDocumentIngestionWorkflow(
     const buffer = Buffer.from(document.file_base64, "base64");
 
     handlers.setProgress("[22%] Leser dokumentet med rask parser ...");
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -558,6 +565,7 @@ async function runDocumentIngestionWorkflow(
       });
       if (shouldAttemptDocling) {
         handlers.setProgress("[48%] Prøver Docling for tekstuttrekk ...");
+        assertWorkflowActive(handlers);
         await updateDocumentProcessingState({
           projectId: input.projectId,
           documentId: input.documentId,
@@ -578,6 +586,7 @@ async function runDocumentIngestionWorkflow(
 
         if (isUsableDoclingResult(enhanced)) {
           handlers.setProgress("[90%] Bygger Docling-baserte chunks ...");
+          assertWorkflowActive(handlers);
           const enhancedDocument = await saveDocumentIngestionResult({
             projectId: input.projectId,
             documentId: input.documentId,
@@ -629,6 +638,7 @@ async function runDocumentIngestionWorkflow(
         ? "[48%] Lagrer raskt tekstgrunnlag ..."
         : "[48%] Bygger chunks og embeddings ...",
     );
+    assertWorkflowActive(handlers);
     const basicDocument = await saveDocumentIngestionResult({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -665,11 +675,13 @@ async function runDocumentIngestionWorkflow(
           title: document.title,
           rawText: parsed.rawText,
         });
+        assertWorkflowActive(handlers);
         await updateProjectMetadataFromInference(
           input.projectId,
           inferredMetadata,
         );
       } catch {
+        assertWorkflowActive(handlers);
         // Metadata inference should not block RAG readiness.
       }
       handlers.onPhase?.("metadata");
@@ -687,6 +699,7 @@ async function runDocumentIngestionWorkflow(
     }
 
     handlers.setProgress("[78%] Forbedrer struktur med Docling ...");
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -711,6 +724,7 @@ async function runDocumentIngestionWorkflow(
 
     if (isUsableDoclingResult(enhanced)) {
       handlers.setProgress("[90%] Oppdaterer forbedrede chunks ...");
+      assertWorkflowActive(handlers);
       const enhancedDocument = await saveDocumentIngestionResult({
         projectId: input.projectId,
         documentId: input.documentId,
@@ -738,6 +752,7 @@ async function runDocumentIngestionWorkflow(
       };
     }
 
+    assertWorkflowActive(handlers);
     const fallbackDocument = await saveDocumentIngestionResult({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -764,6 +779,7 @@ async function runDocumentIngestionWorkflow(
       project: await getProjectSnapshot(input.projectId),
     };
   } catch (error) {
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -824,6 +840,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   }
 
   handlers.setProgress("Forbedrer dokumentstruktur med Docling ...");
+  assertWorkflowActive(handlers);
   await updateDocumentProcessingState({
     projectId: input.projectId,
     documentId: input.documentId,
@@ -856,6 +873,7 @@ async function runDocumentDoclingEnhancementWorkflow(
       enhancedRawText: enhanced.rawText,
     })
   ) {
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -877,6 +895,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   }
 
   handlers.setProgress("Erstatter chunks med Docling-forbedret struktur ...");
+  assertWorkflowActive(handlers);
   const enhancedDocument = await saveDocumentIngestionResult({
     projectId: input.projectId,
     documentId: input.documentId,
@@ -957,6 +976,7 @@ async function runCustomerAnalysisWorkflow(
   handlers.onPhase?.("ai_analyse");
 
   handlers.setProgress("Lagrer kundeanalysen ...");
+  assertWorkflowActive(handlers);
   const analysis = await saveCustomerAnalysis(
     input.projectId,
     [
@@ -994,6 +1014,7 @@ async function runArtifactGenerationWorkflow(
     onPhase: handlers.onPhase,
     timings: handlers.timings,
     totalDurationMs: handlers.totalDurationMs,
+    assertActive: handlers.assertActive,
   });
 }
 
@@ -1100,6 +1121,7 @@ export async function runSolutionEvaluationWorkflow(
   handlers.onPhase?.("ai_vurdering");
 
   handlers.setProgress("[96%] Lagrer sammenligning og vurdering ...");
+  assertWorkflowActive(handlers);
   const evaluation = await saveSolutionEvaluation(input.projectId, {
     customerDocumentId: customerDocument.id,
     solutionDocumentId: solutionDocument.id,
@@ -1152,6 +1174,7 @@ async function runHighLevelDesignWorkflow(
   handlers.onPhase?.("ai_design");
 
   handlers.setProgress("Lagrer oppdatert high-level design i kundeanalysen ...");
+  assertWorkflowActive(handlers);
   const analysis = await saveCustomerAnalysis(
     input.projectId,
     [customerDocument.id, ...supportingDocuments.map((document) => document.id)],
@@ -1201,6 +1224,7 @@ async function runExecutiveSummaryWorkflow(
   handlers.onPhase?.("ai_oppsummering");
 
   handlers.setProgress("Lagrer lederoppsummeringen ...");
+  assertWorkflowActive(handlers);
   const executiveSummary = await saveExecutiveSummary(input.projectId, generated, {
     source: "solution_evaluation",
     solution_evaluation_present: true,
@@ -1263,6 +1287,7 @@ async function runPerfectSystemSolutionWorkflow(
     onPhase: handlers.onPhase,
     timings: handlers.timings,
     totalDurationMs: handlers.totalDurationMs,
+    assertActive: handlers.assertActive,
   });
 
   handlers.setProgress("Laster dokumentgrunnlag for ny vurdering ...");
@@ -1324,6 +1349,7 @@ async function runPerfectSystemSolutionWorkflow(
   });
   handlers.onPhase?.("ai_revaluering");
 
+  assertWorkflowActive(handlers);
   await saveSolutionEvaluation(input.projectId, {
     customerDocumentId: customerDocument.id,
     solutionDocumentId: hydratedSolutionDocument.id,

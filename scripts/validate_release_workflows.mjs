@@ -27,6 +27,11 @@ for (const required of [
 }
 
 assert.match(deploy, /workflow_dispatch:/u, "Production deploy must be manual.");
+assert.match(
+  deploy,
+  /if:\s*github\.ref\s*==\s*['"]refs\/heads\/main['"]/u,
+  "Production deploy must enforce the main branch in workflow code.",
+);
 assert.doesNotMatch(
   deploy,
   /push:\s*[\s\S]*branches:\s*[\s\S]*- main/u,

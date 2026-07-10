@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
+import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
 import type { ProjectDocumentDetail } from "@/lib/types";
 
 export type ReasoningEffort = "low" | "medium" | "high";
@@ -205,13 +206,19 @@ function requestOptions(input: {
   maxRetries?: number;
   abortController: AbortController | null;
 }) {
-  return input.timeoutMs || typeof input.maxRetries === "number"
+  const workflowSignal = getProjectWorkflowAbortSignal();
+  const signal =
+    input.abortController && workflowSignal
+      ? AbortSignal.any([input.abortController.signal, workflowSignal])
+      : input.abortController?.signal ?? workflowSignal;
+
+  return input.timeoutMs || typeof input.maxRetries === "number" || signal
     ? {
         ...(input.timeoutMs ? { timeout: input.timeoutMs } : {}),
         ...(typeof input.maxRetries === "number"
           ? { maxRetries: input.maxRetries }
           : {}),
-        ...(input.abortController ? { signal: input.abortController.signal } : {}),
+        ...(signal ? { signal } : {}),
       }
     : undefined;
 }
@@ -318,6 +325,7 @@ export async function runJsonCompletion<T>(
     promptCacheKey?: string;
   },
 ): Promise<T> {
+  getProjectWorkflowAbortSignal()?.throwIfAborted();
   const client = await input.getClient();
   const model = input.model ?? input.defaultModel;
   const reasoningEffort = input.reasoningEffort ?? input.defaultReasoningEffort;
@@ -421,6 +429,7 @@ export async function runJsonCompletionWithFileInputs<T>(
     promptCacheKey?: string;
   },
 ): Promise<T> {
+  getProjectWorkflowAbortSignal()?.throwIfAborted();
   const client = await input.getClient();
   const model = input.model ?? input.defaultModel;
   const reasoningEffort = input.reasoningEffort ?? input.defaultReasoningEffort;

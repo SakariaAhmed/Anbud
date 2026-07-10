@@ -77,6 +77,7 @@ export interface GenerateAndSaveArtifactInput {
   onPhase?: (phase: ArtifactGenerationPhase) => void;
   timings?: () => ArtifactGenerationTiming[];
   totalDurationMs?: () => number;
+  assertActive?: () => void;
 }
 
 export interface GenerateAndSaveArtifactResult {
@@ -277,6 +278,7 @@ function getDocumentLedgerBundle(input: {
 export async function generateAndSaveProjectArtifact(
   input: GenerateAndSaveArtifactInput,
 ): Promise<GenerateAndSaveArtifactResult> {
+  input.assertActive?.();
   input.onProgress?.("[12%] Laster prosjektkontekst og relevante dokumenter ...");
   const [
     project,
@@ -291,6 +293,7 @@ export async function generateAndSaveProjectArtifact(
     listGeneratedArtifacts(input.projectId),
     listServiceDocumentSummariesForProject(input.projectId),
   ]);
+  input.assertActive?.();
   input.onPhase?.("dokumenthenting");
 
   const { projectDocuments, serviceDescriptionDocument } =
@@ -326,6 +329,7 @@ export async function generateAndSaveProjectArtifact(
       )
     ),
   );
+  input.assertActive?.();
   const getHydratedRequirementFile = (
     document: ProjectDocumentDetail | null,
   ) => (document ? hydratedRequirementFiles.get(document.id) ?? document : null);
@@ -406,6 +410,7 @@ export async function generateAndSaveProjectArtifact(
         ? "[22%] Klargjør semantiske dokumentutdrag ..."
         : "[40%] Klargjør semantiske dokumentutdrag ...",
     );
+    input.assertActive?.();
     await Promise.all([
       ...projectDocuments
         .filter((document) => document.raw_text.trim())
@@ -418,6 +423,7 @@ export async function generateAndSaveProjectArtifact(
           ensureServiceDocumentChunks({ document }).catch(() => undefined),
         ),
     ]);
+    input.assertActive?.();
     input.onPhase?.("dokumentindeksering");
   }
 
@@ -459,6 +465,7 @@ export async function generateAndSaveProjectArtifact(
       input.artifactType === "forbedret_kravsvar" ? input.onProgress : undefined,
     documentLedgerContext,
   });
+  input.assertActive?.();
   const generationMetadata =
     generated && typeof generated === "object" && "generation_metadata" in generated
       ? generated.generation_metadata
@@ -495,6 +502,7 @@ export async function generateAndSaveProjectArtifact(
         requirementDocumentsForArtifact.length
       ? requirementDocumentsForArtifact
     : projectDocuments;
+  input.assertActive?.();
   const artifact = await saveGeneratedArtifact(
     input.projectId,
     input.artifactType,
@@ -530,6 +538,7 @@ export async function generateAndSaveProjectArtifact(
       ],
     },
   );
+  input.assertActive?.();
   input.onPhase?.("lagring");
 
   return {

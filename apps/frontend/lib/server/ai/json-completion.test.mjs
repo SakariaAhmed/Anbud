@@ -22,6 +22,9 @@ const {
   runJsonCompletion,
   runJsonCompletionWithFileInputs,
 } = jiti(path.join(frontendRoot, "lib/server/ai/json-completion.ts"));
+const { runWithProjectWorkflowAbortSignal } = jiti(
+  path.join(frontendRoot, "lib/server/project-workflow-cancellation.ts"),
+);
 
 function jsonRuntime(outputText, calls = []) {
   return {
@@ -155,6 +158,63 @@ test("JSON completion applies stable prompt cache family and prefix", async () =
     calls[0].messages[0].content,
     /^### Stable Anbud JSON Contract[\s\S]+### Task-Specific Contract\nReturn JSON\./u,
   );
+});
+
+test("JSON completion forwards the active project workflow abort signal", async () => {
+  const controller = new AbortController();
+  let requestSignal;
+
+  const result = await runWithProjectWorkflowAbortSignal(controller.signal, () =>
+    runJsonCompletion({
+      ...chatJsonRuntime('{"ok":true}'),
+      async getClient() {
+        return {
+          chat: {
+            completions: {
+              async create(_body, options) {
+                requestSignal = options?.signal;
+                return { choices: [{ message: { content: '{"ok":true}' } }] };
+              },
+            },
+          },
+          responses: {
+            async create() {
+              throw new Error("responses should not be used");
+            },
+          },
+        };
+      },
+      system: "Return JSON.",
+      user: "Analyze.",
+    }),
+  );
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(requestSignal, controller.signal);
+});
+
+test("an aborted project workflow does not start another JSON completion", async () => {
+  const controller = new AbortController();
+  const leaseLost = new Error("lease lost");
+  let requests = 0;
+  controller.abort(leaseLost);
+
+  await assert.rejects(
+    runWithProjectWorkflowAbortSignal(controller.signal, () =>
+      runJsonCompletion({
+        ...chatJsonRuntime('{"ok":true}'),
+        async getClient() {
+          requests += 1;
+          return chatJsonRuntime('{"ok":true}').getClient();
+        },
+        system: "Return JSON.",
+        user: "Analyze.",
+      }),
+    ),
+    leaseLost,
+  );
+
+  assert.equal(requests, 0);
 });
 
 test("JSON completion forwards max completion tokens", async () => {

@@ -17,7 +17,12 @@ import {
   resetStaleRunningProjectJobs,
   updatePersistedProjectJob,
 } from "@/lib/server/repositories/jobs";
-import { startProjectJobHeartbeat } from "@/lib/server/project-job-heartbeat";
+import {
+  createProjectJobLeaseGuard,
+  isProjectJobLeaseLostError,
+  startProjectJobHeartbeat,
+} from "@/lib/server/project-job-heartbeat";
+import { runWithProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
 import {
   parseProjectWorkflowInput,
   runProjectWorkflow,
@@ -272,13 +277,18 @@ async function finishJob(
 }
 
 function startJobHeartbeat(jobId: string, context: JobRunContext) {
+  const guard = createProjectJobLeaseGuard(jobId);
   if (!context.persisted) {
-    return () => undefined;
+    return {
+      ...guard,
+      stop: () => undefined,
+    };
   }
 
-  return startProjectJobHeartbeat({
+  const stop = startProjectJobHeartbeat({
     renew: () => heartbeatProjectJob(jobId, context.leaseToken),
     onLeaseLost: () => {
+      guard.abort();
       console.warn(
         JSON.stringify({
           event: "project_job_heartbeat_lease_lost",
@@ -287,9 +297,15 @@ function startJobHeartbeat(jobId: string, context: JobRunContext) {
       );
     },
     onError: (error: unknown) => {
+      guard.abort(error);
       logPersistedJobUpdateError(jobId, { status: "running" }, error);
     },
   });
+
+  return {
+    ...guard,
+    stop,
+  };
 }
 
 async function enqueueProjectJob(
@@ -365,26 +381,34 @@ async function runProjectJob(
   context: JobRunContext,
 ) {
   const phaseTimer = createJobPhaseTimer(jobId, input.kind);
-  const stopHeartbeat = startJobHeartbeat(jobId, context);
+  const lease = startJobHeartbeat(jobId, context);
+  lease.assertActive();
   updateJob(jobId, { status: "running" }, context, { markStarted: true });
-  let terminalPatch: Partial<ProjectJobRecord>;
+  let terminalPatch: Partial<ProjectJobRecord> | null = null;
 
   try {
-    const result = await runProjectWorkflow(input, {
-      setProgress(message) {
-        updateJob(jobId, { message, status: "running" }, context);
-      },
-      onPhase(phase) {
-        phaseTimer.mark(phase);
-      },
-      timings: () => phaseTimer.timings(),
-      totalDurationMs: () => phaseTimer.total(),
-    });
+    const result = await runWithProjectWorkflowAbortSignal(lease.signal, () =>
+      runProjectWorkflow(input, {
+        setProgress(message) {
+          lease.assertActive();
+          updateJob(jobId, { message, status: "running" }, context);
+        },
+        onPhase(phase) {
+          lease.assertActive();
+          phaseTimer.mark(phase);
+        },
+        assertActive: lease.assertActive,
+        timings: () => phaseTimer.timings(),
+        totalDurationMs: () => phaseTimer.total(),
+      }),
+    );
+    lease.assertActive();
 
     if (
       input.kind === "document_ingestion" &&
       shouldQueueDoclingEnhancement(input, result)
     ) {
+      lease.assertActive();
       const queuedEnhancement = await enqueueProjectJob(
         {
           kind: "document_docling_enhancement",
@@ -395,6 +419,7 @@ async function runProjectJob(
           autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false),
         },
       );
+      lease.assertActive();
       result.docling_enhancement_job_id = queuedEnhancement.id;
     }
 
@@ -412,6 +437,16 @@ async function runProjectJob(
       error: null,
     };
   } catch (error) {
+    if (lease.signal.aborted || isProjectJobLeaseLostError(error)) {
+      console.warn(
+        JSON.stringify({
+          event: "project_job_execution_cancelled",
+          job_id: jobId,
+          reason: "lease_lost",
+        }),
+      );
+      return;
+    }
     terminalPatch = {
       status: "failed",
       message: "Jobben feilet.",
@@ -420,9 +455,11 @@ async function runProjectJob(
     };
   } finally {
     try {
-      await finishJob(jobId, terminalPatch!, context);
+      if (terminalPatch) {
+        await finishJob(jobId, terminalPatch, context);
+      }
     } finally {
-      stopHeartbeat();
+      lease.stop();
     }
   }
 }
