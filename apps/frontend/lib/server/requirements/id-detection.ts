@@ -7,6 +7,8 @@ import { normalizeRequirementId } from "@/lib/server/requirements/normalization"
 
 const COMPOUND_REQUIREMENT_ID =
   String.raw`\b[A-ZÆØÅ]{2,8}\s*-\s*[A-ZÆØÅ]{1,4}\s*[- ]?\d{1,5}[A-Z]?\b`;
+const NUMERIC_COMPOUND_REQUIREMENT_ID =
+  String.raw`\b[A-ZÆØÅ]{1,8}\s*-\s*\d{1,5}\s*[- ]\s*\d{1,5}[A-Z]?\b`;
 const PREFIXED_REQ_ID =
   String.raw`\b[A-ZÆØÅ0-9]{2,12}\s*[- ]\s*REQ\s*[- ]\s*\d{1,5}[A-Z]?\b`;
 const PROJECT_REQUIREMENT_ID = String.raw`\bP\d{3}\s*[- ]\s*\d{1,5}[A-Z]?\b`;
@@ -32,6 +34,7 @@ function requirementIdPattern() {
     [
       String.raw`\bKrav\s*(?:nr\.?|nummer)?\s*\d{1,3}(?:\s*[.-]\s*\d{1,3}){0,5}[A-Z]?\b`,
       COMPOUND_REQUIREMENT_ID,
+      NUMERIC_COMPOUND_REQUIREMENT_ID,
       PREFIXED_REQ_ID,
       PROJECT_REQUIREMENT_ID,
       POINT_REQUIREMENT_ID,
@@ -53,6 +56,7 @@ export function explicitRequirementIdPattern() {
     [
       String.raw`\bKrav\s*(?:nr\.?|nummer)?\s*\d{1,3}(?:\s*[.-]\s*\d{1,3}){0,5}[A-Z]?\b`,
       COMPOUND_REQUIREMENT_ID,
+      NUMERIC_COMPOUND_REQUIREMENT_ID,
       PREFIXED_REQ_ID,
       PROJECT_REQUIREMENT_ID,
       POINT_REQUIREMENT_ID,

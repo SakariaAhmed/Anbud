@@ -43,6 +43,24 @@ const {
 const { repairTableRowTextArtifacts } = jiti(
   path.join(frontendRoot, "lib/server/requirements/pdf-table-repairs.ts"),
 );
+const { assignGeneratedRequirementFallbackIds } = jiti(
+  path.join(
+    frontendRoot,
+    "lib/server/requirements/fallback-id-inference.ts",
+  ),
+);
+
+function inferenceEntry(id, text, overrides = {}) {
+  return {
+    id,
+    text,
+    pages: [1],
+    heading: "Dokumentlokal seksjon",
+    documentId: "document-a",
+    sourceExcerpt: text,
+    ...overrides,
+  };
+}
 
 function projectDocument({ rawText, fileFormat = "docx", structureMap = [] }) {
   const now = new Date(0).toISOString();
@@ -174,17 +192,7 @@ function normalizeColumnLabel(value) {
 }
 
 function detectExplicitRequirementIds(text) {
-  const normalized = normalizePageText(text);
-  const pattern =
-    /\b[A-ZÆØÅ0-9]{2,12}\s*[- ]\s*REQ\s*[- ]\s*\d{1,5}[A-Z]?\b|\bP\d{3}\s*[- ]\s*\d{1,5}[A-Z]?\b|\bPkt\s*[- ]?\s*\d{1,5}(?=\s|[A-ZÆØÅ(]|$|[-:.;\]])|\b(?:KRAV|KR|K|R|TEK)\s*[- ]?\s*\d{1,5}(?:\s*[.-]\s*\d{1,5})?[A-Z]?(?=\s|[A-ZÆØÅ(]|$|[-:.;\]])|\bREQ\s*[- ]?\s*\d{1,5}[A-Z]?\b|\b[A-ZÆØÅ]{2,8}\s*-\s*\d{1,5}\b/gi;
-  const ids = [];
-  for (const match of normalized.matchAll(pattern)) {
-    const id = normalizePageText(match[0])
-      .replace(/\s*-\s*/g, "-")
-      .replace(/\s+/g, " ");
-    if (!ids.includes(id)) ids.push(id);
-  }
-  return ids;
+  return productionDetectExplicitRequirementIds(text);
 }
 
 function hasRequirementSignal(value) {
@@ -203,7 +211,9 @@ function hasStandaloneRequirementLanguage(value) {
   return (
     /\b(?:Leverandøren|Tilbyder|Kunden|Systemet|Plattformen|Løsningen)\s+(?:skal|må|bør|bes|kan)\b/i.test(
       text,
-    ) || /\b(?:det|dette)\s+skal\b/i.test(text)
+    ) ||
+    /\b(?:det|dette)\s+skal\b/i.test(text) ||
+    /\bkrav(?:et|ene)?\s+(?:skal|må|er|bes)\b/i.test(text)
   );
 }
 
@@ -220,9 +230,15 @@ function stripRequirementChrome(text) {
 }
 
 function stripAnswerTextFromRequirement(value) {
-  return normalizePageText(value)
-    .replace(/\s+(?:Leverandørens\s+besvarelse|Detailed\s+response)\b.*$/i, "")
-    .trim();
+  const text = normalizePageText(value);
+  const marker =
+    /\s+(?:Leverandørens\s+besvarelse|Detailed\s+response)\b/i.exec(text);
+  if (!marker?.index) {
+    return text;
+  }
+
+  const before = text.slice(0, marker.index).trim();
+  return /\b(?:i|på|til|fra|av|med|for)$/iu.test(before) ? text : before;
 }
 
 function cleanHeadingCandidate(value) {
@@ -352,6 +368,127 @@ test("explicit ID detection normalizes compact Petoro ID markers", () => {
   assert.deepEqual(productionDetectExplicitRequirementIds("ID2-\n23"), [
     "ID 2-23",
   ]);
+});
+
+test("bounded ID inference fills one structurally proven gap", () => {
+  const entries = [
+    inferenceEntry("K-010", "Første eksplisitte krav."),
+    inferenceEntry("Tekstkrav-01", "Et krav uten synlig ID."),
+    inferenceEntry("K-012", "Neste eksplisitte krav."),
+  ];
+
+  assert.deepEqual(
+    assignGeneratedRequirementFallbackIds(entries).map((entry) => entry.id),
+    ["K-010", "K-011", "K-012"],
+  );
+});
+
+test("known corpus sentence cannot assign an ID without local anchors", () => {
+  const knownCorpusSentence =
+    "Alle API-kall som endrer målepunkter, sensorverdier, anleggsstatus og varsler skal valideres og returnere tydelige feilmeldinger ved ugyldige data. Dette skal kunne dokumenteres i leverandørens besvarelse.";
+
+  assert.equal(
+    assignGeneratedRequirementFallbackIds([
+      inferenceEntry("Tekstkrav-01", knownCorpusSentence),
+    ])[0].id,
+    "Tekstkrav-01",
+  );
+});
+
+test("ambiguous anchor boundaries preserve reviewable fallback IDs", () => {
+  const prefixMismatch = [
+    inferenceEntry("K-010", "Første eksplisitte krav."),
+    inferenceEntry("Tekstkrav-01", "Uavklart krav."),
+    inferenceEntry("R-012", "Annen nummerserie."),
+  ];
+  const headingMismatch = [
+    inferenceEntry("K-010", "Første eksplisitte krav."),
+    inferenceEntry("Tekstkrav-01", "Uavklart krav.", { heading: "Annen seksjon" }),
+    inferenceEntry("K-012", "Neste eksplisitte krav."),
+  ];
+  const incompleteGap = [
+    inferenceEntry("K-010", "Første eksplisitte krav."),
+    inferenceEntry("Tekstkrav-01", "Bare ett av to mulige krav."),
+    inferenceEntry("K-013", "For stort nummergap."),
+  ];
+
+  for (const entries of [prefixMismatch, headingMismatch, incompleteGap]) {
+    assert.equal(assignGeneratedRequirementFallbackIds(entries)[1].id, "Tekstkrav-01");
+  }
+});
+
+test("duplicate requirement text is inferred only from a complete local gap", () => {
+  const repeatedText = "Løsningen skal støtte dokumentlokal kontroll.";
+  const entries = [
+    inferenceEntry("K-040", "Første eksplisitte krav."),
+    inferenceEntry("Tekstkrav-01", repeatedText),
+    inferenceEntry("Tekstkrav-02", repeatedText),
+    inferenceEntry("K-043", "Neste eksplisitte krav."),
+  ];
+
+  assert.deepEqual(
+    assignGeneratedRequirementFallbackIds(entries).map((entry) => entry.id),
+    ["K-040", "K-041", "K-042", "K-043"],
+  );
+});
+
+test("ID collision rejects the complete inferred segment", () => {
+  const entries = [
+    inferenceEntry("K-010", "Første eksplisitte krav."),
+    inferenceEntry("Tekstkrav-01", "Kandidat med kolliderende ID."),
+    inferenceEntry("K-012", "Neste eksplisitte krav."),
+    inferenceEntry("K-011", "Eksisterende ID i en annen seksjon.", {
+      heading: "Annen seksjon",
+    }),
+  ];
+
+  assert.equal(
+    assignGeneratedRequirementFallbackIds(entries)[1].id,
+    "Tekstkrav-01",
+  );
+});
+
+test("changed wording does not affect structurally proven ID inference", () => {
+  const entries = [
+    inferenceEntry("B2-020", "Første eksplisitte krav."),
+    inferenceEntry(
+      "Tekstkrav-01",
+      "Helt ny ordlyd som ikke finnes i noe kjent korpus, men som skal vurderes.",
+    ),
+    inferenceEntry("B2-022", "Neste eksplisitte krav."),
+  ];
+
+  assert.equal(assignGeneratedRequirementFallbackIds(entries)[1].id, "B2-021");
+});
+
+test("bounded ID inference supports sequences offset from document order", () => {
+  const entries = [
+    inferenceEntry("K-041", "Første eksplisitte krav."),
+    inferenceEntry("Tekstkrav-01", "Dokumentets andre krav."),
+    inferenceEntry("K-043", "Neste eksplisitte krav."),
+  ];
+
+  assert.equal(assignGeneratedRequirementFallbackIds(entries)[1].id, "K-042");
+});
+
+test("ordinary non-corpus fallback remains unchanged", () => {
+  const entry = inferenceEntry("Side 1 krav 1", "Ustrukturert tekst.", {
+    sourceExcerpt: "Ustrukturert tekst uten generert korpusmarkør.",
+    tableId: "",
+  });
+
+  assert.equal(assignGeneratedRequirementFallbackIds([entry])[0].id, entry.id);
+});
+
+test("generated text repair preserves grammatical supplier prose", () => {
+  assert.equal(
+    parsers.repairGeneratedTextArtifacts("Leverandøren er ansvarlig."),
+    "Leverandøren er ansvarlig.",
+  );
+  assert.equal(
+    parsers.repairGeneratedTextArtifacts("Eksterne leverandør er involvert."),
+    "Eksterne leverandører involvert.",
+  );
 });
 
 test("legacy prefixed-line parser keeps explicit and placeholder krav rows", () => {
@@ -810,6 +947,214 @@ test("generated pdf parser removes wrapped priority comment tokens", () => {
   assert.deepEqual(ledger.map((entry) => entry.text), [
     "Leverandøren skal beskrive rutiner for datakvalitet og avvikshåndtering.",
   ]);
+});
+
+test("generated pdf parser keeps grammatical må kunne after placeholder markers", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:1]]",
+      "Bilag 2 - Krav til leverandørens løsning",
+      "Prosjektkode: P079",
+      "Tilgang og roller - både faste og midlertidige brukere",
+      "Krav registrert i tabell",
+      "ID/markering Prioritet Kravtekst Leverandøren",
+      "s svar",
+      "ikke satt Må Løsningen må kunne skille mellom aktive, arkiverte og slettede data for bilag, fakturaer,",
+      "oppgjør, kontrollspor og kundeavtaler.",
+      "Punktkrav som skal besvares:",
+      "- Kunden skal kunne konfigurere obligatoriske felt per arbeidsprosess uten kodeendring.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({ id: entry.id, text: entry.text })),
+    [
+      {
+        id: "Tabellkrav-01",
+        text: "Løsningen må kunne skille mellom aktive, arkiverte og slettede data for bilag, fakturaer, oppgjør, kontrollspor og kundeavtaler.",
+      },
+      {
+        id: "Punktkrav-01",
+        text: "Kunden skal kunne konfigurere obligatoriske felt per arbeidsprosess uten kodeendring.",
+      },
+    ],
+  );
+});
+
+test("generated pdf parser keeps lowercase table continuations with explicit IDs", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P057",
+      "1. Formål, omfang og styringsregler",
+      "Krav registrert i tabell",
+      "ID/markering Prioritet Kravtekst Leverandøren",
+      "s svar",
+      "B2-01 Bør Leverandøren skal etablere en plan for opplæring av superbrukere, administratorer og",
+      "førstelinjestøtte.",
+      "B2-02 Opsjon Alle API-kall som endrer prøver, metadata, analyser, prosjektgodkjenninger og datasett",
+      "skal valideres og returnere tydelige feilmeldinger ved ugyldige data.",
+      "B2-03 Må Det skal etableres tydelige akseptansekriterier for overgang fra pilot til produksjon.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({ id: entry.id, text: entry.text })),
+    [
+      {
+        id: "B2-01",
+        text: "Leverandøren skal etablere en plan for opplæring av superbrukere, administratorer og førstelinjestøtte.",
+      },
+      {
+        id: "B2-02",
+        text: "Alle API-kall som endrer prøver, metadata, analyser, prosjektgodkjenninger og datasett skal valideres og returnere tydelige feilmeldinger ved ugyldige data.",
+      },
+      {
+        id: "B2-03",
+        text: "Det skal etableres tydelige akseptansekriterier for overgang fra pilot til produksjon.",
+      },
+    ],
+  );
+});
+
+test("generated pdf parser does not promote verification sentence to requirement", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      "Migrering og opprydding i gamle data",
+      "Punktkrav som skal besvares:",
+      "- ?: Løsningen skal støtte standardiserte maler for registrering av bilag, fakturaer, oppgjør, kontrollspor og kundeavtaler, men også håndtere lokale variasjoner.",
+      "Kravet skal verifiseres i akseptansetest før produksjonssetting.",
+      "- Løsningen må kunne skille mellom aktive, arkiverte og slettede data for bilag, fakturaer, oppgjør, kontrollspor og kundeavtaler.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(ledger.map((entry) => entry.text), [
+    "Løsningen skal støtte standardiserte maler for registrering av bilag, fakturaer, oppgjør, kontrollspor og kundeavtaler, men også håndtere lokale variasjoner. Kravet skal verifiseres i akseptansetest før produksjonssetting.",
+    "Løsningen må kunne skille mellom aktive, arkiverte og slettede data for bilag, fakturaer, oppgjør, kontrollspor og kundeavtaler.",
+  ]);
+});
+
+test("generated pdf parser keeps documentation sentence with point requirement", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P096",
+      "1. Formål, omfang og styringsregler",
+      "Punktkrav som skal besvares:",
+      "- BYS-R-010: Rapporter for responstid, feilrate, energibruk, innbyggerhenvendelser og status per sone skal kunne filtreres på periode, enhet, rolle og status.",
+      "Dette skal kunne dokumenteres i leverandørens besvarelse.",
+      "Krav registrert i tabell",
+      "ID/markering Prioritet Kravtekst Leverandøren",
+      "s svar",
+      "BYS-R-011 Opsjon Løsningen skal støtte godkjenningsflyt for endringer som påvirker bedre prioritering, åpen rapportering og trygg drift.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({ id: entry.id, text: entry.text })),
+    [
+      {
+        id: "BYS-R-010",
+        text: "Rapporter for responstid, feilrate, energibruk, innbyggerhenvendelser og status per sone skal kunne filtreres på periode, enhet, rolle og status. Dette skal kunne dokumenteres i leverandørens besvarelse.",
+      },
+      {
+        id: "BYS-R-011",
+        text: "Løsningen skal støtte godkjenningsflyt for endringer som påvirker bedre prioritering, åpen rapportering og trygg drift.",
+      },
+    ],
+  );
+});
+
+test("generated pdf parser keeps configuration sentence with active requirement", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P068",
+      "Feltbruk, mobil og praktiske hverdagsproblemer",
+      "Punktkrav som skal besvares:",
+      "- Kunden skal kunne måle effekten av løsningen på rask årsaksanalyse, redusert nedetid og bedre planlegging av reservedeler gjennom definerte nøkkeltall.",
+      "Konfigurasjonen skal kunne justeres av autorisert administrator.",
+      "Fra arbeidsnotatet: Leverandøren skal dokumentere hvilke data som lagres, hvor de lagres og hvor lenge de oppbevares.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(ledger.map((entry) => entry.text), [
+    "Kunden skal kunne måle effekten av løsningen på rask årsaksanalyse, redusert nedetid og bedre planlegging av reservedeler gjennom definerte nøkkeltall. Konfigurasjonen skal kunne justeres av autorisert administrator.",
+    "Leverandøren skal dokumentere hvilke data som lagres, hvor de lagres og hvor lenge de oppbevares.",
+  ]);
+});
+
+test("generated pdf parser repairs source answer markers", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P098",
+      "Avklaringer/innspill som inngår i kravbildet:",
+      "Markering Avklaring/kravnotat Kommentar",
+      "098/49 Personopplysninger og sensitive virksomhetsdata skal bare behandles i regioner som kunden Skal besvares",
+      "har godkjent.",
+      "Krav registrert i tabell",
+      "ID/markering Prioritet Kravtekst Leverandøren",
+      "s svar",
+      "Bør Leverandøren skal etablere rollebasert tilgang for driftsoperatører, innbyggerservice, feltarbeidere, planleggere og leverandør er, med separate roller for lesing, godkjenning og administrasjon.",
+      "Punktkrav som skal besvares:",
+      "- Brukere i parker, gater, lyspunkter, sensornoder og mobile feltarbeidere skal kunne registrere oppgaver på mobil uten å miste data ved ustabil nettverksdekning.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.ok(
+    ledger.some(
+      (entry) =>
+        entry.id === "098/49" &&
+        entry.text ===
+          "Personopplysninger og sensitive virksomhetsdata skal bare behandles i regioner som kunden har godkjent.",
+    ),
+  );
+  assert.ok(
+    ledger.some((entry) =>
+      entry.text.includes(
+        "planleggere og leverandører, med separate roller for lesing",
+      ),
+    ),
+  );
 });
 
 test("generated pdf parser strips wrapper labels without rewriting requirement prose", () => {

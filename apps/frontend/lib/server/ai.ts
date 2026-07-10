@@ -43,6 +43,7 @@ import {
 } from "@/lib/server/requirements/markdown-table";
 import { assertRequirementCoverageIntegrity } from "@/lib/server/requirements/evaluation-coverage-integrity";
 import { assertRequirementLedgerQualityForEvaluation } from "@/lib/server/requirements/ledger-quality";
+import { assignGeneratedRequirementFallbackIds } from "@/lib/server/requirements/fallback-id-inference";
 import {
   lastHeadingSegment,
   normalizeRequirementId,
@@ -7861,121 +7862,12 @@ function finalizeRequirementLedgerEntries(entries: RequirementLedgerEntry[]) {
   return backfillMissingRequirementHeadings(recoveredFinalized);
 }
 
-function canonicalTypedFallbackRequirementKind(value: string) {
-  switch (normalizePageText(value).toLocaleLowerCase("nb")) {
-    case "tabellkrav":
-      return "Tabellkrav";
-    case "punktkrav":
-      return "Punktkrav";
-    case "tekstkrav":
-      return "Tekstkrav";
-    case "notatkrav":
-      return "Notatkrav";
-    case "avklaringskrav":
-      return "Avklaringskrav";
-    default:
-      return "";
-  }
-}
-
-function typedFallbackRequirementIdKind(entry: RequirementLedgerEntry) {
-  const id = normalizeRequirementId(entry.id);
-  const existingTyped = id.match(
-    /^(Tabellkrav|Punktkrav|Tekstkrav|Notatkrav|Avklaringskrav)-\d+$/i,
-  );
-  if (existingTyped?.[1]) {
-    return canonicalTypedFallbackRequirementKind(existingTyped[1]);
-  }
-
-  if (
-    detectExplicitRequirementIds(entry.id).length > 0 &&
-    !/^(?:Dokumenttekst\s+krav|Side\s+\d+\s+krav|Kundedokument\s+-\s+tabell|DOCX\s+tabell|Docling\s+tabell|Strukturert\s+tabell)/i.test(
-      entry.id,
-    )
-  ) {
-    return "";
-  }
-
-  const source = normalizePageText(entry.sourceExcerpt ?? "");
-  const tableId = normalizePageText(entry.tableId ?? "");
-  const isFallbackId =
-    isSyntheticRequirementId(entry.id) ||
-    /^Dokumenttekst\s+krav\s+\d+$/i.test(entry.id) ||
-    /^(?:Kundedokument\s+-\s+tabell|DOCX\s+tabell|Docling\s+tabell|Strukturert\s+tabell)\b/i.test(
-      entry.id,
-    );
-  if (!isFallbackId) {
-    return "";
-  }
-
-  if (
-    /^Krav\s+uten\s+egen\s+tabellrad:/i.test(source) ||
-    /^Fra\s+arbeidsnotatet:/i.test(source)
-  ) {
-    return "Tekstkrav";
-  }
-
-  if (/^(?:Notat\s+fra\s+behovsarbeidet|Notat)\s*[:\-]/i.test(source)) {
-    return "Notatkrav";
-  }
-
-  if (/^(?:Avklaring|Implisitt)\s*:/i.test(source)) {
-    return "Avklaringskrav";
-  }
-
-  if (/\bAvklaring\/kravnotat\s*:/i.test(source)) {
-    return "Avklaringskrav";
-  }
-
-  if (
-    /\bKravtekst\s*:/i.test(source) ||
-    /\bPrioritet\s*:/i.test(source) ||
-    /^(?:DOCX|Docling|Strukturert|PDF)\s+(?:krav)?tabell\b/i.test(tableId)
-  ) {
-    return "Tabellkrav";
-  }
-
-  return "";
-}
-
-function assignTypedFallbackRequirementIds(
-  entries: RequirementLedgerEntry[],
-) {
-  const counts = new Map<string, number>();
-
-  return entries.map((entry) => {
-    const existingTyped = normalizeRequirementId(entry.id).match(
-      /^(Tabellkrav|Punktkrav|Tekstkrav|Notatkrav|Avklaringskrav)-(\d+)$/i,
-    );
-    if (existingTyped?.[1]) {
-      const kind = canonicalTypedFallbackRequirementKind(existingTyped[1]);
-      if (!kind) {
-        return entry;
-      }
-      counts.set(kind, Math.max(counts.get(kind) ?? 0, Number(existingTyped[2])));
-      return entry;
-    }
-
-    const kind = typedFallbackRequirementIdKind(entry);
-    if (!kind) {
-      return entry;
-    }
-
-    const next = (counts.get(kind) ?? 0) + 1;
-    counts.set(kind, next);
-    return {
-      ...entry,
-      id: `${kind}-${String(next).padStart(2, "0")}`,
-    };
-  });
-}
-
 function assignGeneratedCorpusFallbackRequirementIds(
   document: ProjectDocumentDetail,
   entries: RequirementLedgerEntry[],
 ) {
   return isGeneratedKravspesifikasjonCorpus(document)
-    ? assignTypedFallbackRequirementIds(entries)
+    ? assignGeneratedRequirementFallbackIds(entries)
     : entries;
 }
 

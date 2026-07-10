@@ -250,7 +250,7 @@ function generatedPdfPriorityCommentLine(value: string) {
   );
 }
 
-const GENERATED_PDF_EXPLICIT_ID_START = String.raw`(?:P\d{3}\s*[- ]\s*[A-ZÆØÅ]{1,8}\s*[- ]?\s*\d{1,5}|P\d{3}\s*[- ]\s*\d{1,5}|\d{2,4}\s*\/\s*\d{1,3}|[A-ZÆØÅ]\d?\s*-\s*\d{1,3}|[A-ZÆØÅ]{2,8}\s*\.\s*\d{1,3}(?:\s*\.\s*\d{1,3}){1,5}|[A-ZÆØÅ]{2,8}\s*-\s*[A-ZÆØÅ]{1,4}\s*[- ]?\s*\d{1,5}|(?:K|R|KR|TEK|REQ|Pkt)\s*[- ]?\s*\d{1,5}|[A-ZÆØÅ]{2,8}\s*-\s*\d{1,5})`;
+const GENERATED_PDF_EXPLICIT_ID_START = String.raw`(?:P\d{3}\s*[- ]\s*[A-ZÆØÅ]{1,8}\s*[- ]?\s*\d{1,5}|P\d{3}\s*[- ]\s*\d{1,5}|[A-ZÆØÅ]{1,8}\s*-\s*\d{1,5}\s*[- ]\s*\d{1,5}|\d{2,4}\s*\/\s*\d{1,3}|[A-ZÆØÅ]\d?\s*-\s*\d{1,3}|[A-ZÆØÅ]{2,8}\s*\.\s*\d{1,3}(?:\s*\.\s*\d{1,3}){1,5}|[A-ZÆØÅ]{2,8}\s*-\s*[A-ZÆØÅ]{1,4}\s*[- ]?\s*\d{1,5}|(?:K|R|KR|TEK|REQ|Pkt)\s*[- ]?\s*\d{1,5}|[A-ZÆØÅ]{2,8}\s*-\s*\d{1,5})`;
 const GENERATED_PDF_REQUIREMENT_START_PATTERN = new RegExp(
   String.raw`^(?:\[` +
     GENERATED_PDF_EXPLICIT_ID_START +
@@ -361,7 +361,7 @@ function generatedPdfTableRowStartPattern() {
     String.raw`^(?:` +
       GENERATED_PDF_EXPLICIT_ID_START +
       String.raw`(?![A-ZÆØÅ])|(?:[\u2022\uF0B7*–—-]\s*)?(?:(?:x|\?|ikke\s+satt|mangler\s+ID|NB)\s+)?(?:Må\??|Bør|Kan|Skal|Opsjon|Avklares)\s+(?=\p{Lu}))`,
-    "iu",
+    "u",
   );
 }
 
@@ -419,6 +419,8 @@ function stripGeneratedRequirementIdChrome(value: string) {
   return normalizePageText(value)
     .replace(/^\s*\[P\d{3}\s*[- ]\s*\d{1,5}\]\s*/iu, "")
     .replace(/^\s*P\d{3}\s*[- ]\s*\d{1,5}\s*(?:[:.)]|[-–—])?\s*/iu, "")
+    .replace(/^\s*\[[A-ZÆØÅ]{1,8}\s*-\s*\d{1,5}\s*[- ]\s*\d{1,5}\]\s*/iu, "")
+    .replace(/^\s*[A-ZÆØÅ]{1,8}\s*-\s*\d{1,5}\s*[- ]\s*\d{1,5}\s*(?:[:.)]|[-–—])?\s*/iu, "")
     .replace(/^\s*\[\d{2,4}\s*\/\s*\d{1,3}\]\s*/u, "")
     .replace(/^\s*\d{2,4}\s*\/\s*\d{1,3}\s*(?:[:.)]|[-–—])?\s*/u, "")
     .replace(/^\s*\[[A-ZÆØÅ]\d?\s*-\s*\d{1,3}\]\s*/iu, "")
@@ -479,7 +481,7 @@ function stripGeneratedPdfRefTableChrome(value: string) {
       "skal ta høyde",
     )
     .replace(
-      /(?:Må\??|Bør|Avklares|Opsjon)(?:\s+(?:gjelder\s+fase\s+1\?|henger\s+sammen\s+med(?:\s+annet\s+punkt)?|ikke\s+ferdig\s+formulert|kunden\s+ønsker\s+forslag|må\s+prises))*\s+(?=(?:tydelig|dokumenteres|under|uten|kunne|skal|måles|med|gjennomføres|lagre|overvåking|hente|høyde|planlagt|brukes|rapportgrunnlag|avbrudd|revisjon|testmiljø|produksjonsmiljø|kontrollert))/giu,
+      /(?:Må\??|Bør|Avklares|Opsjon)(?:\s+(?:gjelder\s+fase\s+1\?|henger\s+sammen\s+med(?:\s+annet\s+punkt)?|ikke\s+ferdig\s+formulert|kunden\s+ønsker\s+forslag|må\s+prises))*\s+(?=(?:tydelig|dokumenteres|under|uten|skal|måles|med|gjennomføres|lagre|overvåking|hente|høyde|planlagt|brukes|rapportgrunnlag|avbrudd|revisjon|testmiljø|produksjonsmiljø|kontrollert))/giu,
       "",
     )
     .replace(
@@ -498,9 +500,11 @@ function cleanGeneratedPdfRequirementText(
   return repairGeneratedTextArtifacts(
     stripGeneratedDocumentFooter(
       stripGeneratedPriorityComment(
-        context.stripAnswerTextFromRequirement(
-          stripGeneratedRequirementIdChrome(
-            context.stripRequirementChrome(stripGeneratedRequirementIdChrome(value)),
+        stripGeneratedWrapperLabel(
+          context.stripAnswerTextFromRequirement(
+            stripGeneratedRequirementIdChrome(
+              context.stripRequirementChrome(stripGeneratedRequirementIdChrome(value)),
+            ),
           ),
         ),
       )
@@ -533,6 +537,14 @@ function startsGeneratedPdfRequirementRow(
     return false;
   }
   if (generatedPdfPriorityCommentLine(text)) {
+    return false;
+  }
+  if (
+    currentRawText &&
+    /^(?:Kravet\s+skal\s+verifiseres|Dette\s+skal\s+kunne\s+dokumenteres|Avvik\s+fra\s+dette\s+skal\s+beskrives|Konfigurasjonen\s+skal\s+kunne\s+justeres)\b/i.test(
+      text,
+    )
+  ) {
     return false;
   }
 
@@ -587,6 +599,15 @@ function generatedPdfHeadingForLine(
 ) {
   const heading = generatedStructureTextHeading(line, context);
   const cleaned = context.cleanHeadingCandidate(heading || line);
+  if (
+    GENERATED_PDF_REQUIREMENT_START_PATTERN.test(cleaned) ||
+    generatedPdfTableRowStartPattern().test(cleaned) ||
+    generatedPdfPointRowStartPattern().test(cleaned) ||
+    generatedPdfInlineSectionKind(cleaned)
+  ) {
+    return "";
+  }
+
   const wordCount = cleaned.split(/\s+/).filter(Boolean).length;
   const hasDisallowedHeadingPunctuation =
     /[!?]/.test(cleaned) ||
