@@ -8230,17 +8230,17 @@ function tableRequirementAnswer(entry: RequirementLedgerEntry) {
     service ||
     "kravet";
   const responseFocus = [
-    /\b(soc responsibilities|ot[-\s]network telemetry|penalty cap|oracle workloads|merger activities|meter data provider|blackout|tbd|known unclear|clarification)\b/i.test(
+    /\b(tbd|known unclear|clarification|avklaring|uavklart|uklar)\b/i.test(
       combined,
     )
       ? "Avklaringspunkt: Atea håndterer dette som en styrt avklaring før endelig forpliktelse, med eier, beslutningsfrist og konsekvens for scope, SLA, pris eller migreringsplan dokumentert i tilbudet"
       : "",
-    /\b(D1|architecture pack|D2|migration plan|D3|controls matrix|D4|cutover report|D5|transition package|22\.?\s*april|20\.?\s*mai|june\s*5|september\s*30|december\s*10)\b/i.test(
+    /\b(deliverable|leveranse|deadline|frist|milestone|milepæl|schedule|tidsplan)\b/i.test(
       combined,
     )
       ? "Atea legger hver dokumenterte leveranse og frist inn i en kildeverifisert plan med ansvarlig eier, akseptansekriterier og kvalitetssikring; manglende datoer behandles som avklaringer"
       : "",
-    /\b(EUR\s*2\.?9|2,9|year-one budget|budget ceiling|Net\s*60|payment terms|fixed implementation|monthly managed service fee|accelerated migration|pricing)\b/i.test(
+    /\b(budget|budsjett|payment terms|betalingsvilkår|fixed price|fastpris|monthly fee|månedspris|pricing|pris)\b/i.test(
       combined,
     )
       ? "Atea svarer mot de pris-, budsjett- og betalingsvilkårene som faktisk er dokumentert i kravet; manglende verdier eller prismodell behandles uttrykkelig som forslag eller avklaring"
@@ -8255,7 +8255,7 @@ function tableRequirementAnswer(entry: RequirementLedgerEntry) {
     )
       ? "Atea beskriver en kildeverifisert målarkitektur og skiller eksplisitte plattformkrav fra foreslåtte komponenter som må godkjennes før de gjøres bindende"
       : "",
-    /\b(140|wave|bølge|migration|migrering|customer-facing|analytics|archive)\b/i.test(
+    /\b(wave|bølge|migration|migrering|customer-facing|analytics|archive)\b/i.test(
       combined,
     )
       ? "Atea gjennomfører migreringen med app-for-app wave-planlegging, avhengighetsstyring, testet cutover, rollback-kriterier og tydelige go/no-go-beslutninger"
@@ -9737,7 +9737,7 @@ const ARTIFACT_FOUNDATION_FACT_PATTERNS = [
   {
     label: "Omfang og migrering",
     pattern:
-      /\b(hybrid|migration|migrat|moderni|140\s+(?:applications|applikasjoner)|applications|applikasjoner|waves?|bølger?|billing|outage|analytics|archive|on-?premise|on-?prem|landing zone|legacy|ERP|WMS|CRM|lager|logistikk|transport|distribusjon|filbaserte|integrasjoner|lokal infrastruktur|Microsoft|M365|Microsoft 365|Active Directory|\bAD\b|IaC|Infrastructure as Code)\b/i,
+      /\b(hybrid|migration|migrat|moderni|applications|applikasjoner|waves?|bølger?|billing|outage|analytics|archive|on-?premise|on-?prem|landing zone|legacy|ERP|WMS|CRM|lager|logistikk|transport|distribusjon|filbaserte|integrasjoner|lokal infrastruktur|Microsoft|M365|Microsoft 365|Active Directory|\bAD\b|IaC|Infrastructure as Code)\b/i,
   },
   {
     label: "SLA og kontinuitet",
@@ -9752,7 +9752,7 @@ const ARTIFACT_FOUNDATION_FACT_PATTERNS = [
   {
     label: "Kommersielle rammer",
     pattern:
-      /\b(EUR|NOK|budget|budsjett|Net\s*60|payment terms|betaling|pris|pricing|fixed implementation|managed service fee|accelerated|currency|index)\b/i,
+      /\b(EUR|NOK|budget|budsjett|Net\s*\d+|payment terms|betaling|pris|pricing|fixed price|fastpris|managed service fee|currency|index)\b/i,
   },
   {
     label: "Sikkerhet og etterlevelse",
@@ -9762,7 +9762,7 @@ const ARTIFACT_FOUNDATION_FACT_PATTERNS = [
   {
     label: "Avklaringer og risiko",
     pattern:
-      /\b(clarification|avklaring|TBD|unclear|risiko|risk|penalty|blackout|dependency|ansvar|Oracle|refactor|rehost|merger|priority|scope|meter data|API|renewal)\b/i,
+      /\b(clarification|avklaring|TBD|unclear|risiko|risk|penalty|sanksjon|dependency|avhengighet|ansvar|responsibility|database|workload|refactor|rehost|priority|scope|API|renewal)\b/i,
   },
 ] as const;
 
@@ -10001,7 +10001,7 @@ function documentedContinuityControlText(facts: ArtifactFoundationFact[]) {
 function hasDocumentedCommercialTerms(facts: ArtifactFoundationFact[]) {
   return factsInclude(
     facts,
-    /\b((?:EUR|NOK)\s*\d|(?:\d+[,.]\d+|\d+)\s*(?:million|mill\.|m\b)|budget ceiling|budsjettak|Net\s*60|payment terms|betalingsvilkår|fixed implementation|monthly managed service fee|accelerated migration)\b/i,
+    /\b((?:EUR|NOK)\s*\d|(?:\d+[,.]\d+|\d+)\s*(?:million|mill\.|m\b)|budget ceiling|budsjettak|Net\s*\d+|payment terms|betalingsvilkår|fixed price|fastpris|monthly fee|månedspris)\b/i,
   );
 }
 
@@ -10016,7 +10016,7 @@ function documentedFactText(facts: ArtifactFoundationFact[], pattern: RegExp) {
 function documentedDeliverableControlText(facts: ArtifactFoundationFact[]) {
   const source = documentedFactText(
     facts,
-    /\b(D[1-5]|Deliverable|Architecture pack|Migration plan|controls matrix|cutover report|transition package)\b/i,
+    /\b(D\d+|deliverable|leveranse|milestone|milepæl|frist|deadline)\b/i,
   );
   if (!source) {
     return "";
@@ -10026,13 +10026,13 @@ function documentedDeliverableControlText(facts: ArtifactFoundationFact[]) {
 }
 
 function documentedCommercialControlText(facts: ArtifactFoundationFact[]) {
-  if (!factsInclude(facts, /\b(EUR|NOK|budget|budsjett|Net\s*60|payment terms|betalingsvilkår|pricing|pris|fixed implementation|monthly managed service fee|accelerated)\b/i)) {
+  if (!factsInclude(facts, /\b(EUR|NOK|budget|budsjett|Net\s*\d+|payment terms|betalingsvilkår|pricing|pris|fixed price|fastpris|monthly fee|månedspris)\b/i)) {
     return "";
   }
 
   const controls = documentedFactText(
     facts,
-    /\b(EUR|NOK|budget|budsjett|Net\s*\d+|payment terms|betalingsvilkår|pricing|pris|fixed implementation|monthly managed service fee|accelerated)\b/i,
+    /\b(EUR|NOK|budget|budsjett|Net\s*\d+|payment terms|betalingsvilkår|pricing|pris|fixed price|fastpris|monthly fee|månedspris)\b/i,
   );
 
   if (controls && hasDocumentedCommercialTerms(facts)) {
@@ -10046,7 +10046,7 @@ function documentedRiskControlText(facts: ArtifactFoundationFact[]) {
   if (
     !factsInclude(
       facts,
-      /\b(SOC|OT telemetry|penalty|Oracle|refactor|refaktor|rehost|replatform|merger|blackout|meter data|API|renewal|eldre|legacy|teknisk gjeld|filbaserte|nøkkelperson|begrenset intern kapasitet|driftsavbrudd|nedetid)\b/i,
+      /\b(SOC|telemetry|telemetri|penalty|sanksjon|database|workload|refactor|refaktor|rehost|replatform|API|renewal|eldre|legacy|teknisk gjeld|filbaserte|nøkkelperson|begrenset intern kapasitet|driftsavbrudd|nedetid)\b/i,
     )
   ) {
     return "";
@@ -11494,7 +11494,7 @@ function isClarificationRequirementEntry(entry: RequirementLedgerEntry) {
     return false;
   }
 
-  return /\b(known unclear|clarification required|clarification needs|tbd|avklaringspunkt|soc responsibilities|ot[-\s]network telemetry|penalty cap|oracle workloads)\b/i.test(
+  return /\b(known unclear|clarification required|clarification needs|tbd|avklaringspunkt|avklaring kreves|uavklart|uklar)\b/i.test(
     content,
   );
 }
