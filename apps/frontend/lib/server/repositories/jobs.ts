@@ -1,13 +1,9 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { randomUUID as generateRandomUUID } from "node:crypto";
 
 import { createServiceClient } from "@/lib/server/supabase";
 import type { ProjectJobRecord, ProjectJobResult } from "@/lib/types";
-
-type StoredQueuedJobPayload = {
-  __job_input: unknown;
-};
 
 type JobRow = {
   id: string;
@@ -16,39 +12,43 @@ type JobRow = {
   status: ProjectJobRecord["status"];
   message: string;
   error: string | null;
-  input_json?: unknown | null;
-  result_json: ProjectJobResult | StoredQueuedJobPayload | null;
+  input_json: unknown | null;
+  result_json: ProjectJobResult | null;
   created_at: string;
   updated_at: string;
-  locked_at?: string | null;
-  lease_token?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
+  locked_at: string | null;
+  lease_token: string | null;
+  started_at: string | null;
+  completed_at: string | null;
 };
 
 export type ClaimedProjectJob = {
-  leaseToken: string | null;
+  leaseToken: string;
 };
 
 type PersistedJobUpdateOptions = {
-  expectedStatus?: ProjectJobRecord["status"];
-  leaseToken?: string | null;
+  leaseToken: string;
   markStarted?: boolean;
 };
 
-function isStoredQueuedJobPayload(value: unknown): value is StoredQueuedJobPayload {
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      "__job_input" in value &&
-      (value as StoredQueuedJobPayload).__job_input,
-  );
+type ProjectJobRepositoryRuntime = {
+  client?: ReturnType<typeof createServiceClient>;
+  now?: () => Date;
+  randomUUID?: () => string;
+};
+
+function serviceClient(runtime: ProjectJobRepositoryRuntime) {
+  return runtime.client ?? createServiceClient();
 }
 
-function isMissingDurableJobColumn(error: { message?: string } | null | undefined) {
-  return /input_json|locked_at|lease_token|started_at|completed_at|schema cache/i.test(
-    error?.message ?? "",
-  );
+function nowIso(runtime: ProjectJobRepositoryRuntime) {
+  return (runtime.now?.() ?? new Date()).toISOString();
+}
+
+function assertLeaseToken(leaseToken: string) {
+  if (!leaseToken.trim()) {
+    throw new Error("Prosjektjobben mangler en gyldig lease-token.");
+  }
 }
 
 function mapJobRow(row: JobRow): ProjectJobRecord {
@@ -61,18 +61,16 @@ function mapJobRow(row: JobRow): ProjectJobRecord {
     created_at: row.created_at,
     updated_at: row.updated_at,
     error: row.error,
-    result:
-      row.status === "completed" && !isStoredQueuedJobPayload(row.result_json)
-        ? (row.result_json as ProjectJobResult | null)
-        : null,
+    result: row.status === "completed" ? row.result_json : null,
   };
 }
 
 export async function insertProjectJob(
   record: ProjectJobRecord,
   queuedInput: unknown,
+  runtime: ProjectJobRepositoryRuntime = {},
 ) {
-  const supabase = createServiceClient();
+  const supabase = serviceClient(runtime);
   const durablePayload = {
     id: record.id,
     project_id: record.project_id,
@@ -87,38 +85,20 @@ export async function insertProjectJob(
   };
 
   const inserted = await supabase.from("project_jobs").insert(durablePayload);
-  if (!inserted.error) {
-    return;
-  }
-
-  if (!isMissingDurableJobColumn(inserted.error)) {
+  if (inserted.error) {
     throw new Error(inserted.error.message);
-  }
-
-  const legacyPayload = {
-    id: record.id,
-    project_id: record.project_id,
-    kind: record.kind,
-    status: record.status,
-    message: record.message,
-    error: record.error,
-    result_json: { __job_input: queuedInput },
-    created_at: record.created_at,
-    updated_at: record.updated_at,
-  };
-  const legacyInserted = await supabase.from("project_jobs").insert(legacyPayload);
-  if (legacyInserted.error) {
-    throw new Error(legacyInserted.error.message);
   }
 }
 
 export async function updatePersistedProjectJob(
   jobId: string,
   patch: Partial<ProjectJobRecord>,
-  options: PersistedJobUpdateOptions = {},
+  options: PersistedJobUpdateOptions,
+  runtime: ProjectJobRepositoryRuntime = {},
 ) {
-  const supabase = createServiceClient();
-  const now = new Date().toISOString();
+  assertLeaseToken(options.leaseToken);
+  const supabase = serviceClient(runtime);
+  const now = nowIso(runtime);
   const payload: Record<string, unknown> = {
     updated_at: now,
   };
@@ -140,49 +120,39 @@ export async function updatePersistedProjectJob(
   if (patch.error !== undefined) payload.error = patch.error;
   if (patch.result !== undefined) payload.result_json = patch.result;
 
-  let updateQuery = supabase
+  const updateQuery = supabase
     .from("project_jobs")
     .update(payload)
-    .eq("id", jobId);
-  if (options.expectedStatus) {
-    updateQuery = updateQuery.eq("status", options.expectedStatus);
-  }
-  if (options.leaseToken) {
-    updateQuery = updateQuery.eq("lease_token", options.leaseToken);
-  }
+    .eq("id", jobId)
+    .eq("status", "running")
+    .eq("lease_token", options.leaseToken);
 
   const updated = await updateQuery.select("id").maybeSingle<{ id: string }>();
-  if (!updated.error) {
-    return Boolean(updated.data);
-  }
-
-  if (!isMissingDurableJobColumn(updated.error)) {
+  if (updated.error) {
     throw new Error(updated.error.message);
   }
-
-  delete payload.started_at;
-  delete payload.completed_at;
-  delete payload.locked_at;
-  delete payload.lease_token;
-  let legacyUpdateQuery = supabase
-    .from("project_jobs")
-    .update(payload)
-    .eq("id", jobId);
-  if (options.expectedStatus) {
-    legacyUpdateQuery = legacyUpdateQuery.eq("status", options.expectedStatus);
-  }
-
-  const legacyUpdated = await legacyUpdateQuery
-    .select("id")
-    .maybeSingle<{ id: string }>();
-  if (legacyUpdated.error) {
-    throw new Error(legacyUpdated.error.message);
-  }
-  return Boolean(legacyUpdated.data);
+  return Boolean(updated.data);
 }
 
-export async function findProjectJob(projectId: string, jobId: string) {
-  const supabase = createServiceClient();
+export async function heartbeatProjectJob(
+  jobId: string,
+  leaseToken: string,
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  return updatePersistedProjectJob(
+    jobId,
+    { status: "running" },
+    { leaseToken },
+    runtime,
+  );
+}
+
+export async function findProjectJob(
+  projectId: string,
+  jobId: string,
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  const supabase = serviceClient(runtime);
   const { data, error } = await supabase
     .from("project_jobs")
     .select("*")
@@ -197,8 +167,11 @@ export async function findProjectJob(projectId: string, jobId: string) {
   return data ? mapJobRow(data) : null;
 }
 
-export async function getQueuedProjectJobInput(jobId: string) {
-  const supabase = createServiceClient();
+export async function getQueuedProjectJobInput(
+  jobId: string,
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  const supabase = serviceClient(runtime);
   const { data, error } = await supabase
     .from("project_jobs")
     .select("*")
@@ -213,21 +186,21 @@ export async function getQueuedProjectJobInput(jobId: string) {
     return null;
   }
 
-  if (data.input_json) {
+  if (data.input_json !== null && data.input_json !== undefined) {
     return data.input_json;
-  }
-
-  if (isStoredQueuedJobPayload(data.result_json)) {
-    return data.result_json.__job_input;
   }
 
   throw new Error("Prosjektjobben mangler kjøredata.");
 }
 
-export async function claimQueuedProjectJob(jobId: string) {
-  const supabase = createServiceClient();
-  const now = new Date().toISOString();
-  const leaseToken = randomUUID();
+export async function claimQueuedProjectJob(
+  jobId: string,
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  const supabase = serviceClient(runtime);
+  const now = nowIso(runtime);
+  const leaseToken = runtime.randomUUID?.() ?? generateRandomUUID();
+  assertLeaseToken(leaseToken);
   const payload = {
     status: "running",
     message: "Starter jobben ...",
@@ -243,36 +216,17 @@ export async function claimQueuedProjectJob(jobId: string) {
     .eq("status", "queued")
     .select("id")
     .maybeSingle<{ id: string }>();
-  if (!claimed.error) {
-    return claimed.data ? ({ leaseToken } satisfies ClaimedProjectJob) : null;
-  }
-
-  if (!isMissingDurableJobColumn(claimed.error)) {
+  if (claimed.error) {
     throw new Error(claimed.error.message);
   }
-
-  const legacyClaimed = await supabase
-    .from("project_jobs")
-    .update({
-      status: "running",
-      message: "Starter jobben ...",
-      updated_at: now,
-    })
-    .eq("id", jobId)
-    .eq("status", "queued")
-    .select("id")
-    .maybeSingle<{ id: string }>();
-  if (legacyClaimed.error) {
-    throw new Error(legacyClaimed.error.message);
-  }
-
-  return legacyClaimed.data
-    ? ({ leaseToken: null } satisfies ClaimedProjectJob)
-    : null;
+  return claimed.data ? ({ leaseToken } satisfies ClaimedProjectJob) : null;
 }
 
-export async function listQueuedProjectJobIds(limit = 3) {
-  const supabase = createServiceClient();
+export async function listQueuedProjectJobIds(
+  limit = 3,
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  const supabase = serviceClient(runtime);
   const { data, error } = await supabase
     .from("project_jobs")
     .select("id")
@@ -287,10 +241,14 @@ export async function listQueuedProjectJobIds(limit = 3) {
   return (data ?? []).map((row) => row.id as string);
 }
 
-export async function resetStaleRunningProjectJobs(staleAfterMs = 15 * 60_000) {
-  const supabase = createServiceClient();
-  const now = new Date().toISOString();
-  const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
+export async function resetStaleRunningProjectJobs(
+  staleAfterMs = 15 * 60_000,
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  const supabase = serviceClient(runtime);
+  const nowDate = runtime.now?.() ?? new Date();
+  const now = nowDate.toISOString();
+  const cutoff = new Date(nowDate.getTime() - staleAfterMs).toISOString();
   const reset = await supabase
     .from("project_jobs")
     .update({
@@ -301,27 +259,11 @@ export async function resetStaleRunningProjectJobs(staleAfterMs = 15 * 60_000) {
       updated_at: now,
     })
     .eq("status", "running")
-    .or(`locked_at.is.null,locked_at.lt.${cutoff}`);
+    .or(`locked_at.is.null,locked_at.lt.${cutoff}`)
+    .select("id");
 
-  if (!reset.error) {
-    return;
+  if (reset.error) {
+    throw new Error(reset.error.message);
   }
-
-  if (isMissingDurableJobColumn(reset.error)) {
-    const legacyReset = await supabase
-      .from("project_jobs")
-      .update({
-        status: "queued",
-        message: "Gjenopptar avbrutt jobb ...",
-        updated_at: now,
-      })
-      .eq("status", "running")
-      .lt("updated_at", cutoff);
-    if (!legacyReset.error) {
-      return;
-    }
-    throw new Error(legacyReset.error.message);
-  }
-
-  throw new Error(reset.error.message);
+  return reset.data?.length ?? 0;
 }

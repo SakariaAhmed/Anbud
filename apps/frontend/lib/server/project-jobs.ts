@@ -11,11 +11,13 @@ import {
   type ClaimedProjectJob,
   findProjectJob,
   getQueuedProjectJobInput,
+  heartbeatProjectJob,
   insertProjectJob,
   listQueuedProjectJobIds,
   resetStaleRunningProjectJobs,
   updatePersistedProjectJob,
 } from "@/lib/server/repositories/jobs";
+import { startProjectJobHeartbeat } from "@/lib/server/project-job-heartbeat";
 import {
   parseProjectWorkflowInput,
   runProjectWorkflow,
@@ -38,10 +40,9 @@ type QueueJobOptions = {
   autoRun?: boolean;
 };
 
-type JobRunContext = {
-  persisted: boolean;
-  leaseToken: string | null;
-};
+type JobRunContext =
+  | { persisted: false }
+  | { persisted: true; leaseToken: string };
 
 declare global {
   var __anbudProjectJobs: JobStore | undefined;
@@ -145,13 +146,7 @@ function createJobPhaseTimer(jobId: string, kind: ProjectJobRecord["kind"]) {
 }
 
 async function persistJob(record: ProjectJobRecord, input: ProjectWorkflowInput) {
-  try {
-    await insertProjectJob(record, input);
-    return true;
-  } catch {
-    // Keep local development and older databases working with in-memory jobs.
-    return false;
-  }
+  await insertProjectJob(record, input);
 }
 
 function patchInMemoryJob(jobId: string, patch: Partial<ProjectJobRecord>) {
@@ -196,23 +191,18 @@ function shouldThrottleProgressWrite(
   return false;
 }
 
-function shouldPersistJobUpdate(context: JobRunContext | undefined) {
-  return context?.persisted !== false;
-}
-
 async function persistJobUpdate(
   jobId: string,
   patch: Partial<ProjectJobRecord>,
-  context: JobRunContext | undefined,
+  context: JobRunContext,
   options: { markStarted?: boolean } = {},
 ) {
-  if (!shouldPersistJobUpdate(context)) {
+  if (!context.persisted) {
     return true;
   }
 
   return updatePersistedProjectJob(jobId, patch, {
-    expectedStatus: "running",
-    leaseToken: context?.leaseToken ?? null,
+    leaseToken: context.leaseToken,
     markStarted: options.markStarted,
   });
 }
@@ -235,29 +225,40 @@ function logPersistedJobUpdateError(
 function updateJob(
   jobId: string,
   patch: Partial<ProjectJobRecord>,
-  context?: JobRunContext,
+  context: JobRunContext,
   options: { markStarted?: boolean } = {},
 ) {
-  patchInMemoryJob(jobId, patch);
-
   if (shouldThrottleProgressWrite(jobId, patch)) {
     return;
   }
 
-  void persistJobUpdate(jobId, patch, context, options).catch((error: unknown) => {
-    logPersistedJobUpdateError(jobId, patch, error);
-  });
+  if (!context.persisted) {
+    patchInMemoryJob(jobId, patch);
+    return;
+  }
+
+  void persistJobUpdate(jobId, patch, context, options)
+    .then((persisted) => {
+      if (persisted) {
+        patchInMemoryJob(jobId, patch);
+      }
+    })
+    .catch((error: unknown) => {
+      logPersistedJobUpdateError(jobId, patch, error);
+    });
 }
 
 async function finishJob(
   jobId: string,
   patch: Partial<ProjectJobRecord>,
-  context?: JobRunContext,
+  context: JobRunContext,
 ) {
-  patchInMemoryJob(jobId, patch);
   getProgressWriteStore().delete(jobId);
 
   const persisted = await persistJobUpdate(jobId, patch, context);
+  if (persisted) {
+    patchInMemoryJob(jobId, patch);
+  }
   if (!persisted) {
     console.warn(
       JSON.stringify({
@@ -270,27 +271,25 @@ async function finishJob(
   }
 }
 
-function startJobHeartbeat(jobId: string, context?: JobRunContext) {
-  if (!shouldPersistJobUpdate(context) || !context?.leaseToken) {
+function startJobHeartbeat(jobId: string, context: JobRunContext) {
+  if (!context.persisted) {
     return () => undefined;
   }
 
-  const heartbeat = setInterval(() => {
-    void updatePersistedProjectJob(
-      jobId,
-      { status: "running" },
-      {
-        expectedStatus: "running",
-        leaseToken: context.leaseToken,
-      },
-    ).catch((error: unknown) => {
+  return startProjectJobHeartbeat({
+    renew: () => heartbeatProjectJob(jobId, context.leaseToken),
+    onLeaseLost: () => {
+      console.warn(
+        JSON.stringify({
+          event: "project_job_heartbeat_lease_lost",
+          job_id: jobId,
+        }),
+      );
+    },
+    onError: (error: unknown) => {
       logPersistedJobUpdateError(jobId, { status: "running" }, error);
-    });
-  }, 30_000);
-
-  return () => {
-    clearInterval(heartbeat);
-  };
+    },
+  });
 }
 
 async function enqueueProjectJob(
@@ -301,27 +300,13 @@ async function enqueueProjectJob(
   const shouldAutoRun = options.autoRun !== false;
 
   if (!options.skipEnqueue) {
+    await persistJob(record, input);
     getStore().set(record.id, record);
-    const persisted = await persistJob(record, input);
     if (options.runNow) {
-      if (persisted) {
-        await runQueuedProjectJob(record.id);
-      } else {
-        await runProjectJob(record.id, input, {
-          persisted: false,
-          leaseToken: null,
-        });
-      }
+      await runQueuedProjectJob(record.id);
     } else if (shouldAutoRun) {
       setTimeout(() => {
-        if (persisted) {
-          void runQueuedProjectJob(record.id);
-        } else {
-          void runProjectJob(record.id, input, {
-            persisted: false,
-            leaseToken: null,
-          });
-        }
+        void runQueuedProjectJob(record.id);
       }, 0);
     }
 
@@ -331,13 +316,11 @@ async function enqueueProjectJob(
   if (options.runNow) {
     await runProjectJob(record.id, input, {
       persisted: false,
-      leaseToken: null,
     });
   } else if (shouldAutoRun) {
     setTimeout(() => {
       void runProjectJob(record.id, input, {
         persisted: false,
-        leaseToken: null,
       });
     }, 0);
   }
@@ -379,7 +362,7 @@ function shouldQueueDoclingEnhancement(
 async function runProjectJob(
   jobId: string,
   input: ProjectWorkflowInput,
-  context?: JobRunContext,
+  context: JobRunContext,
 ) {
   const phaseTimer = createJobPhaseTimer(jobId, input.kind);
   const stopHeartbeat = startJobHeartbeat(jobId, context);
