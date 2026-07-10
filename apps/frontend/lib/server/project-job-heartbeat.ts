@@ -15,7 +15,7 @@ type ProjectJobHeartbeatRuntime = {
   clearInterval?: (timer: HeartbeatTimer) => void;
 };
 
-export class ProjectJobLeaseLostError extends Error {
+class ProjectJobLeaseLostError extends Error {
   constructor(jobId: string, options: { cause?: unknown } = {}) {
     super(`Prosjektjobb ${jobId} mistet lease-eierskapet.`, options);
     this.name = "ProjectJobLeaseLostError";

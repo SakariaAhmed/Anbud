@@ -26,7 +26,6 @@ const {
 } = jiti(path.join(frontendRoot, "lib/server/repositories/jobs.ts"));
 const {
   createProjectJobLeaseGuard,
-  ProjectJobLeaseLostError,
   startProjectJobHeartbeat,
 } = jiti(
   path.join(frontendRoot, "lib/server/project-job-heartbeat.ts"),
@@ -301,7 +300,7 @@ test("lease takeover aborts the old workflow before its next business side effec
   await new Promise((resolve) => setImmediate(resolve));
   resumeWorkflow();
 
-  await assert.rejects(workflow, ProjectJobLeaseLostError);
+  await assert.rejects(workflow, { name: "ProjectJobLeaseLostError" });
   assert.equal(guard.signal.aborted, true);
   assert.equal(businessWrites, 0);
   stop();
