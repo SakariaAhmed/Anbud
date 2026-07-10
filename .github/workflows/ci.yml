@@ -117,13 +117,13 @@ jobs:
         run: npm run docker:smoke:docling -- --tag anbud-frontend-ci:${{ github.sha }} --keep-image
 
       - name: Production image CVE scan
-        uses: docker/scout-action@2688993af7bafd6ba8c6a74ec652442be91dd82b
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          command: cves
-          image: local://anbud-frontend-ci:${{ github.sha }}
-          only-severities: critical,high
-          exit-code: true
-          write-comment: false
+          image-ref: anbud-frontend-ci:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
 
       - name: Remove production smoke image
         if: always()

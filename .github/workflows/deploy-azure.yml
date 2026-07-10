@@ -148,16 +148,13 @@ jobs:
           tags: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Scan candidate image
-        uses: docker/scout-action@2688993af7bafd6ba8c6a74ec652442be91dd82b
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          command: cves
-          image: registry://${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          platform: linux/amd64
-          only-severities: critical,high
-          exit-code: true
-          registry-user: ${{ secrets.ACR_USERNAME }}
-          registry-password: ${{ secrets.ACR_PASSWORD }}
-          write-comment: false
+          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
 
       - name: Roll out zero-traffic candidate and promote
         id: rollout
