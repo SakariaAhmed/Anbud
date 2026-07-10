@@ -61,6 +61,7 @@ type RequirementTableRow = {
   group: string;
   requirement: string;
   answer: string;
+  evidence: string;
   source: string;
   orderIndex: number;
 };
@@ -181,12 +182,37 @@ function splitMarkdownTableRow(line: string) {
 }
 
 function isRequirementTableHeader(line: string) {
-  const cells = splitMarkdownTableRow(line).map((cell) => cell.toLowerCase());
+  const columns = requirementTableColumns(line);
+  return Boolean(columns);
+}
+
+function normalizedHeaderCell(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/^[*_`]+|[*_`]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function requirementTableColumns(line: string) {
+  const cells = splitMarkdownTableRow(line).map(normalizedHeaderCell);
+  const refIndex = cells.findIndex((cell) => cell.includes("kravref"));
+  const requirementIndex = cells.findIndex((cell) => cell === "krav");
+  const answerIndex = cells.findIndex((cell) => cell === "svar");
+  const evidenceIndex = cells.findIndex((cell) =>
+    /^(?:svargrunnlag|answer evidence|evidence|bevis)$/.test(cell),
+  );
+  const sourceIndex = cells.findIndex((cell) =>
+    /^(?:kildegrunnlag|kilde|source|source reference)$/.test(cell),
+  );
+
   return (
-    cells.some((cell) => cell.includes("kravref")) &&
-    cells.some((cell) => cell === "krav") &&
-    cells.some((cell) => cell === "svar") &&
-    cells.some((cell) => cell.includes("kildegrunnlag"))
+    refIndex >= 0 &&
+    requirementIndex >= 0 &&
+    answerIndex >= 0 &&
+    sourceIndex >= 0
+      ? { refIndex, requirementIndex, answerIndex, evidenceIndex, sourceIndex }
+      : null
   );
 }
 
@@ -406,16 +432,29 @@ function parseRequirementContent(content: string): RequirementContentSegment[] {
     }
     index -= 1;
 
+    const columns = requirementTableColumns(tableLines[0] ?? "");
+    if (!columns) {
+      markdownBuffer.push(tableLines.join("\n"));
+      continue;
+    }
+
     const groupTitle = takeTrailingTableHeading(markdownBuffer);
     const rows = tableLines.slice(2).map(splitMarkdownTableRow);
     const tableRequirementRows = rows
-      .filter((row) => row.length >= 4 && Boolean((row[1] ?? "").trim()))
+      .filter((row) => Boolean((row[columns.requirementIndex] ?? "").trim()))
       .map((row, rowIndex) => ({
-        ref: stripRepeatedGroup(row[0] ?? "", groupTitle),
-        group: groupTitle || tableIdFromRef(row[0] ?? "") || "Kravliste",
-        requirement: row[1] ?? "",
-        answer: row[2] ?? "",
-        source: cleanSourceReference(row[3] ?? "", groupTitle),
+        ref: stripRepeatedGroup(row[columns.refIndex] ?? "", groupTitle),
+        group:
+          groupTitle ||
+          tableIdFromRef(row[columns.refIndex] ?? "") ||
+          "Kravliste",
+        requirement: row[columns.requirementIndex] ?? "",
+        answer: row[columns.answerIndex] ?? "",
+        evidence:
+          columns.evidenceIndex >= 0
+            ? row[columns.evidenceIndex] ?? ""
+            : "",
+        source: cleanSourceReference(row[columns.sourceIndex] ?? "", groupTitle),
         orderIndex: rowIndex,
       }));
 
@@ -425,7 +464,7 @@ function parseRequirementContent(content: string): RequirementContentSegment[] {
     }
 
     const regularRows = rows.filter(
-      (row) => row.length < 4 || !Boolean((row[1] ?? "").trim()),
+      (row) => !Boolean((row[columns.requirementIndex] ?? "").trim()),
     );
     if (regularRows.length) {
       markdownBuffer.push(
@@ -450,7 +489,7 @@ function RequirementResponseContent({
 }: {
   content: string;
 }) {
-  const segments = parseRequirementContent(content);
+  const segments = useMemo(() => parseRequirementContent(content), [content]);
 
   return (
     <div className="space-y-6">
@@ -512,17 +551,20 @@ function RequirementResponseContent({
                 </div>
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[820px] w-full border-collapse text-left">
+                    <table className="min-w-[1040px] w-full border-collapse text-left">
                       <thead className="bg-slate-50 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
                         <tr>
                           <th className="w-40 border-b border-slate-200 px-4 py-3">
                             ID
                           </th>
-                          <th className="w-[34%] border-b border-slate-200 px-4 py-3">
+                          <th className="w-[30%] border-b border-slate-200 px-4 py-3">
                             Krav
                           </th>
-                          <th className="w-[42%] border-b border-slate-200 px-4 py-3">
+                          <th className="w-[34%] border-b border-slate-200 px-4 py-3">
                             Atea svar
+                          </th>
+                          <th className="w-[15rem] border-b border-slate-200 px-4 py-3">
+                            Svargrunnlag
                           </th>
                           <th className="w-[15rem] border-b border-slate-200 px-4 py-3">
                             Kildegrunnlag
@@ -560,6 +602,15 @@ function RequirementResponseContent({
                                 <p className="max-w-[46rem] whitespace-pre-wrap text-sm leading-6 text-slate-900">
                                   {row.answer}
                                 </p>
+                              </td>
+                              <td className="px-4 py-4">
+                                {row.evidence ? (
+                                  <p className="max-w-[17rem] whitespace-pre-wrap text-[0.78rem] leading-5 text-slate-700">
+                                    {row.evidence}
+                                  </p>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
                               </td>
                               <td className="px-4 py-4">
                                 {source ? (

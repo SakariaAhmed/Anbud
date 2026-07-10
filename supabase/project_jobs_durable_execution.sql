@@ -1,6 +1,7 @@
 alter table project_jobs
   add column if not exists input_json jsonb,
   add column if not exists locked_at timestamptz,
+  add column if not exists lease_token uuid,
   add column if not exists started_at timestamptz,
   add column if not exists completed_at timestamptz;
 
@@ -13,3 +14,7 @@ where input_json is null
 create index if not exists project_jobs_queue_claim_idx
   on project_jobs(status, locked_at, created_at)
   where status in ('queued', 'running');
+
+create index if not exists project_jobs_running_lease_idx
+  on project_jobs(id, lease_token)
+  where status = 'running' and lease_token is not null;

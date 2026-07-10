@@ -1,4 +1,39 @@
-# Keep Azure/container builds small and deterministic.
+# Keep frontend container builds small and deterministic. The Dockerfile only
+# needs frontend package manifests, build source, public assets, and the
+# runtime worker script from the repository root build context.
+*
+!.dockerignore
+!apps/
+!apps/frontend/
+!apps/frontend/package.json
+!apps/frontend/package-lock.json
+!apps/frontend/next.config.js
+!apps/frontend/next-env.d.ts
+!apps/frontend/tsconfig.json
+!apps/frontend/postcss.config.mjs
+!apps/frontend/components.json
+!apps/frontend/middleware.ts
+!apps/frontend/app/
+!apps/frontend/app/**
+!apps/frontend/components/
+!apps/frontend/components/**
+!apps/frontend/hooks/
+!apps/frontend/hooks/**
+!apps/frontend/lib/
+!apps/frontend/lib/**
+!apps/frontend/public/
+!apps/frontend/public/**
+!apps/frontend/types/
+!apps/frontend/types/**
+!apps/frontend/scripts/
+# Keep CI/QA scripts out of the image; Azure Container Apps jobs only need the
+# worker entrypoint below.
+apps/frontend/scripts/*
+!apps/frontend/scripts/run_project_job_worker.mjs
+apps/frontend/**/*.test.*
+apps/frontend/**/__tests__
+apps/frontend/**/__tests__/**
+
 node_modules
 **/node_modules
 .next
@@ -12,7 +47,10 @@ out
 **/.git/**
 .github
 .claude
+**/.claude
 .mcp.json
+.fallow
+**/.fallow
 
 .env
 .env.*
@@ -21,7 +59,11 @@ out
 **/.env.*
 **/*.env.local
 
+tmp
+**/tmp
 test-data
+reports
+docs
 **/__pycache__
 **/*.pyc
 .DS_Store

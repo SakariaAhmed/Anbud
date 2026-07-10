@@ -141,6 +141,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       "POST /api/projects/[id]/documents",
       { project_id: id },
       async () => {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("multipart/form-data")) {
+      return NextResponse.json(
+        { error: "Opplastingen må sendes som skjemadata med filvedlegg." },
+        { status: 415 },
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     const title = `${formData.get("title") || ""}`.trim();

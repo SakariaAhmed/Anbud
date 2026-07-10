@@ -175,11 +175,15 @@ async function buildEvaluationLedgerContext(input: {
     artifactType: input.artifactType,
     ledgers: readableDocuments.map(buildDocumentLedger),
   });
-  const requirementLedgerContexts = await Promise.all(
+  const requirementLedgerResults = await Promise.all(
     readableDocuments.map(async (document) => {
       try {
         const ledger = await extractRequirementLedgerForDocument(document);
-        return formatEvaluationRequirementLedger({ document, ledger });
+        return {
+          document,
+          ledger,
+          context: formatEvaluationRequirementLedger({ document, ledger }),
+        };
       } catch (error) {
         console.info(
           JSON.stringify({
@@ -188,15 +192,20 @@ async function buildEvaluationLedgerContext(input: {
             reason: error instanceof Error ? error.message : String(error),
           }),
         );
-        return "";
+        return {
+          document,
+          ledger: [] as Awaited<ReturnType<typeof extractRequirementLedgerForDocument>>,
+          context: "",
+        };
       }
     }),
   );
-  const preciseRequirementLedgerContext = requirementLedgerContexts
+  const preciseRequirementLedgerContext = requirementLedgerResults
+    .map((result) => result.context)
     .filter(Boolean)
     .join("\n\n");
 
-  return [
+  const context = [
     documentLedgerContext,
     preciseRequirementLedgerContext
       ? [
@@ -208,6 +217,40 @@ async function buildEvaluationLedgerContext(input: {
   ]
     .filter(Boolean)
     .join("\n\n");
+
+  return {
+    context,
+    requirementLedgerResults,
+  };
+}
+
+function isLikelyRequirementSourceDocument(document: ProjectDocumentDetail) {
+  return (
+    document.supporting_subtype === "kravdokument" ||
+    /\b(?:bilag\s*2|krav|requirements?)\b/i.test(
+      `${document.title} ${document.file_name}`,
+    )
+  );
+}
+
+function sourceRequirementLedgerFromEvaluationBundle(
+  bundle: Awaited<ReturnType<typeof buildEvaluationLedgerContext>>,
+  documents: ProjectDocumentDetail[],
+) {
+  const sourceDocumentIds = new Set(
+    documents.filter(isLikelyRequirementSourceDocument).map((document) => document.id),
+  );
+  const sourceResults = bundle.requirementLedgerResults.filter((result) =>
+    sourceDocumentIds.has(result.document.id),
+  );
+
+  return sourceResults.flatMap((result, documentIndex) =>
+    result.ledger.map((entry, entryIndex) => ({
+      ...entry,
+      documentOrder: documentIndex,
+      documentEntryOrder: entryIndex,
+    })),
+  );
 }
 
 function workflowInputRecord(value: unknown): Record<string, unknown> {
@@ -1012,29 +1055,29 @@ export async function runSolutionEvaluationWorkflow(
     throw new Error("Velg dokumentet som skal vurderes som arkitektløsning.");
   }
 
-  customerDocument = await hydrateEvaluationFileDocument(
-    input.projectId,
-    customerDocument,
-  );
-  solutionDocument = await hydrateEvaluationFileDocument(
-    input.projectId,
-    solutionDocument,
-  );
-  supportingDocuments = await Promise.all(
-    supportingDocuments.map((document) =>
-      hydrateEvaluationFileDocument(input.projectId, document),
+  [customerDocument, solutionDocument, supportingDocuments] = await Promise.all([
+    hydrateEvaluationFileDocument(input.projectId, customerDocument),
+    hydrateEvaluationFileDocument(input.projectId, solutionDocument),
+    Promise.all(
+      supportingDocuments.map((document) =>
+        hydrateEvaluationFileDocument(input.projectId, document),
+      ),
     ),
-  );
+  ]);
 
   handlers.setProgress(
     "Bygger evalueringsledger fra krav, kriterier og dokumentstruktur ...",
   );
-  const evaluationLedgerContext = await buildEvaluationLedgerContext({
+  const evaluationLedgerBundle = await buildEvaluationLedgerContext({
     artifactType: "gjennomforing_og_risiko",
     documents: [customerDocument, solutionDocument, ...supportingDocuments].filter(
       readableDocument,
     ),
   });
+  const sourceRequirementLedger = sourceRequirementLedgerFromEvaluationBundle(
+    evaluationLedgerBundle,
+    supportingDocuments,
+  );
   handlers.onPhase?.("ledgerbygging");
 
   handlers.setProgress(
@@ -1048,7 +1091,10 @@ export async function runSolutionEvaluationWorkflow(
     customerAnalysis,
     systemSolutionArtifact: null,
     model: input.model,
-    documentLedgerContext: evaluationLedgerContext,
+    sourceRequirementLedger: sourceRequirementLedger.length
+      ? sourceRequirementLedger
+      : undefined,
+    documentLedgerContext: evaluationLedgerBundle.context,
     onProgress: handlers.setProgress,
   });
   handlers.onPhase?.("ai_vurdering");
@@ -1236,20 +1282,20 @@ async function runPerfectSystemSolutionWorkflow(
     };
   }
 
-  const hydratedSolutionDocument = await hydrateEvaluationFileDocument(
-    input.projectId,
-    solutionDocument,
-  );
-  const hydratedCustomerDocument = await hydrateEvaluationFileDocument(
-    input.projectId,
-    customerDocument,
-  );
-  const hydratedSupportingDocuments = await Promise.all(
-    supportingDocuments.map((document) =>
-      hydrateEvaluationFileDocument(input.projectId, document),
+  const [
+    hydratedCustomerDocument,
+    hydratedSolutionDocument,
+    hydratedSupportingDocuments,
+  ] = await Promise.all([
+    hydrateEvaluationFileDocument(input.projectId, customerDocument),
+    hydrateEvaluationFileDocument(input.projectId, solutionDocument),
+    Promise.all(
+      supportingDocuments.map((document) =>
+        hydrateEvaluationFileDocument(input.projectId, document),
+      ),
     ),
-  );
-  const evaluationLedgerContext = await buildEvaluationLedgerContext({
+  ]);
+  const evaluationLedgerBundle = await buildEvaluationLedgerContext({
     artifactType: "gjennomforing_og_risiko",
     documents: [
       hydratedCustomerDocument,
@@ -1257,6 +1303,10 @@ async function runPerfectSystemSolutionWorkflow(
       ...hydratedSupportingDocuments,
     ],
   });
+  const sourceRequirementLedger = sourceRequirementLedgerFromEvaluationBundle(
+    evaluationLedgerBundle,
+    hydratedSupportingDocuments,
+  );
 
   handlers.setProgress("Kjører ny vurdering av forbedret systemløsning ...");
   const improvedEvaluation = await evaluateSolutionDocument({
@@ -1267,7 +1317,10 @@ async function runPerfectSystemSolutionWorkflow(
     customerAnalysis,
     systemSolutionArtifact: artifact,
     model: input.model,
-    documentLedgerContext: evaluationLedgerContext,
+    sourceRequirementLedger: sourceRequirementLedger.length
+      ? sourceRequirementLedger
+      : undefined,
+    documentLedgerContext: evaluationLedgerBundle.context,
   });
   handlers.onPhase?.("ai_revaluering");
 

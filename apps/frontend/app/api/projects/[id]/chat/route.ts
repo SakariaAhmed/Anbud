@@ -62,7 +62,11 @@ async function parseChatRequest(request: Request): Promise<{
 }> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
-    const body = (await request.json()) as {
+    if (contentType && !contentType.toLowerCase().includes("application/json")) {
+      throw new ChatRequestError("Chatmeldingen må sendes som JSON eller skjemadata.", 415);
+    }
+
+    const body = (await request.json().catch(() => ({}))) as {
       message?: string;
       session_id?: string;
       session_title?: string;

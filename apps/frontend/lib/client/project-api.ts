@@ -2,6 +2,7 @@ import type {
   CustomerAnalysisResult,
   ExecutiveSummaryResult,
   GeneratedArtifact,
+  GeneratedArtifactType,
   ProjectDocument,
   ProjectJobRecord,
   ProjectServiceDescription,
@@ -12,6 +13,8 @@ import type {
 import {
   clearClientCache,
   getClientCache,
+  PROJECT_SERVICES_CACHE_TTL_MS,
+  projectServicesCacheKey,
   setClientCache,
 } from "@/lib/client-cache";
 
@@ -32,6 +35,10 @@ const PROJECT_READ_CACHE_TTL_MS = 30_000;
 const pendingProjectReads = new Map<string, Promise<unknown>>();
 const projectReadVersions = new Map<string, number>();
 
+type ProjectReadOptions = {
+  signal?: AbortSignal;
+};
+
 function projectReadCacheKey(projectId: string, resource: string) {
   return `project-read:${projectId}:${resource}`;
 }
@@ -51,10 +58,28 @@ function projectReadVersion(projectId: string) {
   return projectReadVersions.get(projectId) ?? 0;
 }
 
+function abortablePendingRead<T>(pending: Promise<T>, signal: AbortSignal) {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason);
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () =>
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending
+      .then(resolve)
+      .catch(reject)
+      .finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
 function cachedProjectRead<T>(
   key: string,
   fetcher: () => Promise<T>,
   ttlMs = PROJECT_READ_CACHE_TTL_MS,
+  options: ProjectReadOptions = {},
 ) {
   const cached = getClientCache<{ value: T }>(key);
   if (cached) {
@@ -63,23 +88,34 @@ function cachedProjectRead<T>(
 
   const pending = pendingProjectReads.get(key) as Promise<T> | undefined;
   if (pending) {
-    return pending;
+    if (!options.signal) {
+      return pending;
+    }
+
+    return abortablePendingRead(pending, options.signal);
   }
 
   const projectId = projectIdFromReadCacheKey(key);
   const version = projectId ? projectReadVersion(projectId) : 0;
   const request = fetcher()
     .then((value) => {
-      if (!projectId || projectReadVersion(projectId) === version) {
+      if (
+        !options.signal?.aborted &&
+        (!projectId || projectReadVersion(projectId) === version)
+      ) {
         setClientCache(key, { value }, ttlMs);
       }
       return value;
     })
     .finally(() => {
-      pendingProjectReads.delete(key);
+      if (!options.signal) {
+        pendingProjectReads.delete(key);
+      }
     });
 
-  pendingProjectReads.set(key, request);
+  if (!options.signal) {
+    pendingProjectReads.set(key, request);
+  }
   return request;
 }
 
@@ -93,13 +129,67 @@ function invalidateProjectReadCache(projectId: string) {
   }
 }
 
-async function readJsonPayload<T>(
+function errorMessageFromPayload(
+  payload: unknown,
+  fallbackMessage: string,
+) {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+
+  const fields = payload as {
+    error?: unknown;
+    detail?: unknown;
+    message?: unknown;
+  };
+  const value = [fields.error, fields.detail, fields.message].find(
+    (candidate): candidate is string =>
+      typeof candidate === "string" && candidate.trim().length > 0,
+  );
+  if (!value) {
+    return "";
+  }
+
+  return normalizeApiErrorMessage(value, fallbackMessage);
+}
+
+function normalizeApiErrorMessage(value: string, fallbackMessage: string) {
+  const message = value.trim();
+  if (/^unsupported\s+content\s+type$/i.test(message)) {
+    return `${fallbackMessage} Serveren mottok en forespørsel med feil innholdstype. Last siden på nytt og prøv igjen.`;
+  }
+
+  return message;
+}
+
+function errorMessageFromText(text: string, fallbackMessage: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return fallbackMessage;
+  }
+
+  try {
+    const payload = JSON.parse(trimmed) as unknown;
+    const message = errorMessageFromPayload(payload, fallbackMessage);
+    if (message) {
+      return message;
+    }
+  } catch {
+    // Not JSON; use the text below.
+  }
+
+  return normalizeApiErrorMessage(trimmed, fallbackMessage);
+}
+
+export async function readJsonPayload<T>(
   response: Response,
   fallbackMessage: string,
 ): Promise<T & { error?: string }> {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    return (await response.json()) as T & { error?: string };
+    const payload = (await response.json()) as T & { error?: string };
+    const message = errorMessageFromPayload(payload, fallbackMessage);
+    return message ? { ...payload, error: message } : payload;
   }
 
   const text = await response.text().catch(() => "");
@@ -107,7 +197,7 @@ async function readJsonPayload<T>(
   return {
     error: looksLikeHtml
       ? `${fallbackMessage} Serveren returnerte en HTML-feilside i stedet for JSON. Sjekk serverloggen for detaljer.`
-      : text.trim() || fallbackMessage,
+      : errorMessageFromText(text, fallbackMessage),
   } as T & { error?: string };
 }
 
@@ -189,7 +279,11 @@ async function pollProjectJob({
     onStatus(statusPayload.job);
 
     if (statusPayload.job.status === "failed") {
-      throw new Error(statusPayload.job.error || "Jobben feilet.");
+      throw new Error(
+        statusPayload.job.error
+          ? errorMessageFromText(statusPayload.job.error, "Jobben feilet.")
+          : "Jobben feilet.",
+      );
     }
 
     if (
@@ -260,7 +354,13 @@ export async function watchProjectJob({
 
       if (payload.job.status === "failed") {
         cleanup();
-        reject(new Error(payload.job.error || "Jobben feilet."));
+        reject(
+          new Error(
+            payload.job.error
+              ? errorMessageFromText(payload.job.error, "Jobben feilet.")
+              : "Jobben feilet.",
+          ),
+        );
         return;
       }
 
@@ -283,23 +383,72 @@ export async function watchProjectJob({
   });
 }
 
-export async function fetchProjectServices(projectId: string) {
-  const response = await fetch(`/api/projects/${projectId}/service-descriptions`);
-  const payload = await readJsonPayload<{
-    services?: ProjectServiceDescription[];
-    error?: string;
-  }>(response, "Kunne ikke hente tjenestebeskrivelser.");
-  if (!response.ok || !payload.services) {
-    throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
+export async function fetchProjectServices(
+  projectId: string,
+  options: ProjectReadOptions = {},
+) {
+  const cacheKey = projectServicesCacheKey(projectId);
+  const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
+  if (cached) {
+    return cached;
   }
-  return payload.services;
+
+  const pendingKey = `project-services:${projectId}`;
+  const pending = pendingProjectReads.get(pendingKey) as
+    | Promise<ProjectServiceDescription[]>
+    | undefined;
+  if (pending) {
+    if (!options.signal) {
+      return pending;
+    }
+    return abortablePendingRead(pending, options.signal);
+  }
+
+  const request = (async () => {
+    const response = await fetch(
+      `/api/projects/${projectId}/service-descriptions`,
+      {
+        signal: options.signal,
+      },
+    );
+    const payload = await readJsonPayload<{
+      services?: ProjectServiceDescription[];
+      error?: string;
+    }>(response, "Kunne ikke hente tjenestebeskrivelser.");
+    if (!response.ok || !payload.services) {
+      throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
+    }
+    if (!options.signal?.aborted) {
+      setClientCache(
+        cacheKey,
+        payload.services,
+        PROJECT_SERVICES_CACHE_TTL_MS,
+      );
+    }
+    return payload.services;
+  })().finally(() => {
+    if (!options.signal) {
+      pendingProjectReads.delete(pendingKey);
+    }
+  });
+
+  if (!options.signal) {
+    pendingProjectReads.set(pendingKey, request);
+  }
+
+  return request;
 }
 
-export async function fetchCustomerAnalysis(projectId: string) {
+export async function fetchCustomerAnalysis(
+  projectId: string,
+  options: ProjectReadOptions = {},
+) {
   return cachedProjectRead(
     projectReadCacheKey(projectId, "customer-analysis"),
     async () => {
-      const response = await fetch(`/api/projects/${projectId}/customer-analysis`);
+      const response = await fetch(`/api/projects/${projectId}/customer-analysis`, {
+        signal: options.signal,
+      });
       const payload = await readJsonPayload<{
         error?: string;
         analysis?: CustomerAnalysisResult | null;
@@ -309,15 +458,21 @@ export async function fetchCustomerAnalysis(projectId: string) {
       }
       return payload.analysis ?? null;
     },
+    PROJECT_READ_CACHE_TTL_MS,
+    options,
   );
 }
 
-export async function fetchSolutionEvaluation(projectId: string) {
+export async function fetchSolutionEvaluation(
+  projectId: string,
+  options: ProjectReadOptions = {},
+) {
   return cachedProjectRead(
     projectReadCacheKey(projectId, "solution-evaluation"),
     async () => {
       const response = await fetch(
         `/api/projects/${projectId}/solution-evaluation`,
+        { signal: options.signal },
       );
       const payload = await readJsonPayload<{
         error?: string;
@@ -328,14 +483,21 @@ export async function fetchSolutionEvaluation(projectId: string) {
       }
       return payload.evaluation ?? null;
     },
+    PROJECT_READ_CACHE_TTL_MS,
+    options,
   );
 }
 
-export async function fetchExecutiveSummary(projectId: string) {
+export async function fetchExecutiveSummary(
+  projectId: string,
+  options: ProjectReadOptions = {},
+) {
   return cachedProjectRead(
     projectReadCacheKey(projectId, "executive-summary"),
     async () => {
-      const response = await fetch(`/api/projects/${projectId}/executive-summary`);
+      const response = await fetch(`/api/projects/${projectId}/executive-summary`, {
+        signal: options.signal,
+      });
       const payload = await readJsonPayload<{
         error?: string;
         executive_summary?: ExecutiveSummaryResult | null;
@@ -345,15 +507,27 @@ export async function fetchExecutiveSummary(projectId: string) {
       }
       return payload.executive_summary ?? null;
     },
+    PROJECT_READ_CACHE_TTL_MS,
+    options,
   );
 }
 
-export async function fetchGeneratedArtifacts(projectId: string) {
+export async function fetchGeneratedArtifacts(
+  projectId: string,
+  options: ProjectReadOptions & { artifactType?: GeneratedArtifactType } = {},
+) {
+  const resource = options.artifactType
+    ? `generated-artifacts:${options.artifactType}`
+    : "generated-artifacts";
   return cachedProjectRead(
-    projectReadCacheKey(projectId, "generated-artifacts"),
+    projectReadCacheKey(projectId, resource),
     async () => {
-      const response = await fetch(`/api/projects/${projectId}/generate`, {
+      const query = options.artifactType
+        ? `?artifact_type=${encodeURIComponent(options.artifactType)}`
+        : "";
+      const response = await fetch(`/api/projects/${projectId}/generate${query}`, {
         cache: "no-store",
+        signal: options.signal,
       });
       const payload = await readJsonPayload<{
         error?: string;
@@ -364,6 +538,8 @@ export async function fetchGeneratedArtifacts(projectId: string) {
       }
       return payload.artifacts;
     },
+    PROJECT_READ_CACHE_TTL_MS,
+    options,
   );
 }
 
@@ -374,6 +550,7 @@ export function prefetchProjectTabData(
     customerAnalysisGenerated?: boolean;
     solutionEvaluationGenerated?: boolean;
     artifactCount?: number;
+    artifactType?: GeneratedArtifactType;
   },
 ) {
   const requests: Array<Promise<unknown>> = [];
@@ -400,7 +577,13 @@ export function prefetchProjectTabData(
       tab === "bilag1") &&
     hints?.artifactCount !== 0
   ) {
-    requests.push(fetchGeneratedArtifacts(projectId));
+    requests.push(
+      fetchGeneratedArtifacts(projectId, { artifactType: hints?.artifactType }),
+    );
+  }
+
+  if (tab === "service-description") {
+    requests.push(fetchProjectServices(projectId));
   }
 
   if (!requests.length) {

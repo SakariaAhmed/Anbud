@@ -778,6 +778,7 @@ export function ProjectEvaluationTab({
       candidateDocuments[0] ??
       null);
   const actionBusy = busy || importBusy;
+  const documentSelectId = "solution-evaluation-document-select";
 
   async function importAndEvaluate(file: File) {
     const document = await onImportArchitectureDocument(file);
@@ -787,38 +788,38 @@ export function ProjectEvaluationTab({
   }
 
   useEffect(() => {
-    if (
-      solutionEvaluation?.solution_document_id &&
-      candidateDocuments.some(
-        (document) => document.id === solutionEvaluation.solution_document_id,
-      )
-    ) {
-      setSelectedDocumentId(solutionEvaluation.solution_document_id);
-      return;
-    }
-
-    const selectedDocumentExists = candidateDocuments.some(
-      (document) => document.id === selectedDocumentId,
-    );
-    if (!selectedDocumentExists && candidateDocuments[0]) {
-      setSelectedDocumentId(candidateDocuments[0].id);
-    } else if (!candidateDocuments.length && selectedDocumentId) {
-      setSelectedDocumentId("");
-    }
-  }, [candidateDocuments, selectedDocumentId, solutionEvaluation?.solution_document_id]);
+    setSelectedDocumentId((currentId) => {
+      if (candidateDocuments.some((document) => document.id === currentId)) {
+        return currentId;
+      }
+      if (
+        solutionEvaluation?.solution_document_id &&
+        candidateDocuments.some(
+          (document) => document.id === solutionEvaluation.solution_document_id,
+        )
+      ) {
+        return solutionEvaluation.solution_document_id;
+      }
+      return candidateDocuments[0]?.id ?? "";
+    });
+  }, [candidateDocuments, solutionEvaluation?.solution_document_id]);
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <section className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+            <label
+              htmlFor={documentSelectId}
+              className="text-xs font-black uppercase tracking-[0.2em] text-slate-500"
+            >
               Dokument som skal vurderes
             </label>
             {candidateDocuments.length ? (
               <>
                 <div className="relative mt-3">
                   <select
+                    id={documentSelectId}
                     value={selectedDocumentId}
                     onChange={(event) => setSelectedDocumentId(event.target.value)}
                     disabled={actionBusy}

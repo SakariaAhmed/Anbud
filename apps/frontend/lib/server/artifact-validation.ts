@@ -21,10 +21,13 @@ export type ArtifactQualityReport = {
     requirementRows: number;
     expectedRequirementRows: number;
     missingExpectedRequirements: number;
+    extraRequirementRows: number;
+    outOfOrderExpectedRequirements: number;
     unresolvedFallbackAnswers: number;
     tocRows: number;
     dotLeaderRows: number;
     emptyAnswers: number;
+    missingAnswerEvidence: number;
     missingSources: number;
     duplicateRequirementTexts: number;
     emptySections: number;
@@ -64,6 +67,34 @@ function requirementRefVariants(value: string) {
       normalized.replace(/^id\s+/i, "id"),
       normalized.replace(/^krav\s+/i, "krav"),
     ].filter(Boolean)),
+  );
+}
+
+function normalizeRequirementRefComparable(value: string) {
+  return normalizeRequirementRef(value)
+    .replace(/[^a-z0-9æøå]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function requirementRefMatchesExpected(rowRef: string, expectedRef: string) {
+  const rowVariants = new Set(requirementRefVariants(rowRef));
+  if (
+    requirementRefVariants(expectedRef).some((variant) =>
+      rowVariants.has(variant),
+    )
+  ) {
+    return true;
+  }
+
+  const rowComparable = normalizeRequirementRefComparable(rowRef);
+  const expectedComparable = normalizeRequirementRefComparable(expectedRef);
+  return Boolean(
+    rowComparable &&
+      expectedComparable &&
+      (rowComparable === expectedComparable ||
+        rowComparable.startsWith(`${expectedComparable} `) ||
+        rowComparable.includes(` ${expectedComparable} `)),
   );
 }
 
@@ -146,28 +177,34 @@ export function validateGeneratedArtifact(input: {
   const tables = parseMarkdownTables(input.contentMarkdown);
   const requirementTables = tables.filter(isRequirementTable);
   let requirementRows = 0;
-  const requirementRefs = new Set<string>();
   let tocRows = 0;
   let dotLeaderRows = 0;
   let emptyAnswers = 0;
+  let missingAnswerEvidence = 0;
   let missingSources = 0;
   const requirementTexts = new Map<string, number>();
+  const requirementRefValues: string[] = [];
 
   for (const table of requirementTables) {
     const requirementIndex = getColumnIndex(table, /^krav$/i);
     const refIndex = getColumnIndex(table, /kravref/i);
     const answerIndex = getColumnIndex(table, /^svar$/i);
-    const sourceIndex = getColumnIndex(table, /kilde|grunnlag|source/i);
+    const evidenceIndex = getColumnIndex(
+      table,
+      /^(?:svargrunnlag|answer evidence|evidence|bevis)$/i,
+    );
+    const sourceIndex = getColumnIndex(
+      table,
+      /^(?:kildegrunnlag|kilde|source|source reference)$/i,
+    );
 
     for (const row of table.rows) {
       requirementRows += 1;
-      const ref = normalizeRequirementRef(row[refIndex] ?? "");
       const requirement = normalize(row[requirementIndex] ?? "");
       const answer = normalize(row[answerIndex] ?? "");
+      const evidence = normalize(row[evidenceIndex] ?? "");
       const source = normalize(row[sourceIndex] ?? "");
-      if (ref) {
-        requirementRefs.add(ref);
-      }
+      requirementRefValues.push(row[refIndex] ?? "");
 
       if (/^table of contents$/i.test(requirement) || /^innholdsfortegnelse$/i.test(requirement)) {
         tocRows += 1;
@@ -177,6 +214,9 @@ export function validateGeneratedArtifact(input: {
       }
       if (!answer || /^[-–—]$/.test(answer)) {
         emptyAnswers += 1;
+      }
+      if (!evidence || /^[-–—]$/.test(evidence)) {
+        missingAnswerEvidence += 1;
       }
       if (!source || /^[-–—]$/.test(source)) {
         missingSources += 1;
@@ -194,17 +234,12 @@ export function validateGeneratedArtifact(input: {
     0,
   );
   const emptySections = detectEmptySections(input.contentMarkdown);
-  const normalizedContent = normalizeRequirementRef(input.contentMarkdown);
   const expectedRequirementRefs = (input.expectedRequirementRefs ?? [])
     .map(normalizeRequirementRef)
     .filter(Boolean);
   const missingExpectedRequirements = expectedRequirementRefs.filter((ref) => {
-    const variants = requirementRefVariants(ref);
-    return !variants.some(
-      (variant) =>
-        requirementRefs.has(variant) ||
-        normalizedContent.includes(variant) ||
-        normalizedContent.replace(/\s+/g, "").includes(variant),
+    return !requirementRefValues.some((rowRef) =>
+      requirementRefMatchesExpected(rowRef, ref),
     );
   }).length;
   const coveredExpectedRequirements =
@@ -217,6 +252,14 @@ export function validateGeneratedArtifact(input: {
     0,
     Math.round(input.unresolvedFallbackAnswers ?? 0),
   );
+  const extraRequirementRows =
+    expectedRequirementRows > 0
+      ? Math.max(0, requirementRows - expectedRequirementRows)
+      : 0;
+  const outOfOrderExpectedRequirements = expectedRequirementRefs.filter(
+    (ref, index) =>
+      !requirementRefMatchesExpected(requirementRefValues[index] ?? "", ref),
+  ).length;
   const issues: string[] = [];
   const checks: ArtifactQualityCheck[] = [];
   let highIssues = 0;
@@ -254,6 +297,17 @@ export function validateGeneratedArtifact(input: {
     if (expectedRequirementRows > 0) {
       addCheck(
         {
+          label: "Eksakt kravraddekning",
+          value: `${requirementRows}/${expectedRequirementRows}`,
+          status: requirementRows === expectedRequirementRows ? "pass" : "fail",
+          severity: "high",
+        },
+        requirementRows === expectedRequirementRows
+          ? undefined
+          : `Kravbesvarelsen har ${requirementRows} kravrader, men kravledgeren forventer nøyaktig ${expectedRequirementRows}.`,
+      );
+      addCheck(
+        {
           label: "Forventet kravdekning",
           value: expectedRequirementRefs.length
             ? `${coveredExpectedRequirements}/${expectedRequirementRows}`
@@ -288,6 +342,17 @@ export function validateGeneratedArtifact(input: {
         missingExpectedRequirements === 0
           ? undefined
           : `${missingExpectedRequirements} kravreferanser fra kravledgeren mangler i kravbesvarelsen.`,
+      );
+      addCheck(
+        {
+          label: "Kravrekkefølge",
+          value: `${expectedRequirementRefs.length - outOfOrderExpectedRequirements}/${expectedRequirementRefs.length}`,
+          status: outOfOrderExpectedRequirements === 0 ? "pass" : "fail",
+          severity: "high",
+        },
+        outOfOrderExpectedRequirements === 0
+          ? undefined
+          : `${outOfOrderExpectedRequirements} kravrader står ikke i samme rekkefølge som kravledgeren.`,
       );
     }
     addCheck(
@@ -332,6 +397,17 @@ export function validateGeneratedArtifact(input: {
     );
     addCheck(
       {
+        label: "Svargrunnlag",
+        value: missingAnswerEvidence,
+        status: missingAnswerEvidence === 0 ? "pass" : "fail",
+        severity: "high",
+      },
+      missingAnswerEvidence === 0
+        ? undefined
+        : "Minst én kravrad mangler svargrunnlag.",
+    );
+    addCheck(
+      {
         label: "Kildegrunnlag",
         value: missingSources,
         status: missingSources === 0 ? "pass" : "fail",
@@ -360,10 +436,13 @@ export function validateGeneratedArtifact(input: {
       requirementRows,
       expectedRequirementRows,
       missingExpectedRequirements,
+      extraRequirementRows,
+      outOfOrderExpectedRequirements,
       unresolvedFallbackAnswers,
       tocRows,
       dotLeaderRows,
       emptyAnswers,
+      missingAnswerEvidence,
       missingSources,
       duplicateRequirementTexts,
       emptySections,

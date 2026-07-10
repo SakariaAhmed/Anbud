@@ -155,6 +155,15 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
     },
   },
   {
+    reason: "SSA PDF Tabell ID 2-11 audit assistance service split across lines",
+    service: "Bistand ved revisjoner",
+    text: "I samråd med Kunden skal Leverandøren yte nødvendig bistand i forbindelse med revisjon, internrevisjon og kvalitetskontroller av IT-drift og applikasjoner.",
+    match: {
+      servicePattern: /^Bistand ved$/i,
+      textPattern: /revisjoner\s+yte|revisjon,\s*internrevisjon|kvalitetskontroller/i,
+    },
+  },
+  {
     reason: "SSA PDF Tabell ID 2-11 log review row",
     service: "Gjennomgang av logger",
     text: "Leverandøren skal foreta daglig gjennomgang av logger som alarmer, sikkerhetskopier, antivirus, øvrige systemlogger etc. Nødvendige korrektive tiltak skal iverksettes.",
@@ -247,6 +256,15 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
     match: {
       servicePattern: /^Dokumentasjo/i,
       textPattern: /inventaroversikt/i,
+    },
+  },
+  {
+    reason: "SSA PDF vulnerability management row",
+    service: "Sårbarhetshåndtering",
+    text: "Leverandøren må redegjøre for prosess for sårbarhetshåndtering i Leveransen.",
+    match: {
+      servicePattern: /^Sårbarhetshån/i,
+      textPattern: /sårbarhetshåndtering/i,
     },
   },
   {

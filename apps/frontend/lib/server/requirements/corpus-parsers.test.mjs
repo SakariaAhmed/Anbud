@@ -1,0 +1,1749 @@
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import test from "node:test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const frontendRoot = path.resolve(__dirname, "../../..");
+const require = createRequire(import.meta.url);
+const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
+
+const jiti = createJiti(path.join(frontendRoot, "corpus-parser-tests.cjs"), {
+  interopDefault: true,
+  alias: {
+    "@": frontendRoot,
+    "server-only": "/dev/null",
+  },
+});
+
+const parsers = jiti(
+  path.join(frontendRoot, "lib/server/requirements/corpus-parsers.ts"),
+);
+const {
+  extractRequirementLedgerForDocument,
+  filterDuplicateLegacyStandaloneNoteLines,
+} = jiti(
+  path.join(frontendRoot, "lib/server/ai.ts"),
+);
+const {
+  requirementDisplaySource,
+  requirementGroupHeading,
+  requirementHeadingPath,
+  sortRequirementLedgerInDocumentOrder,
+} = jiti(
+  path.join(frontendRoot, "lib/server/requirements/presentation.ts"),
+);
+const { normalizePageText, splitPdfPages, splitPdfPagesPreservingLines } = jiti(
+  path.join(frontendRoot, "lib/server/requirements/pdf-normalization.ts"),
+);
+const {
+  detectExplicitRequirementIds: productionDetectExplicitRequirementIds,
+} = jiti(path.join(frontendRoot, "lib/server/requirements/id-detection.ts"));
+const { repairTableRowTextArtifacts } = jiti(
+  path.join(frontendRoot, "lib/server/requirements/pdf-table-repairs.ts"),
+);
+
+function projectDocument({ rawText, fileFormat = "docx", structureMap = [] }) {
+  const now = new Date(0).toISOString();
+  return {
+    id: "golden-document",
+    project_id: "golden-project",
+    role: "supporting_document",
+    supporting_subtype: "kravdokument",
+    title: "Golden document",
+    file_name: `golden-document.${fileFormat}`,
+    file_format: fileFormat,
+    content_type:
+      fileFormat === "pdf"
+        ? "application/pdf"
+        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    file_size_bytes: Buffer.byteLength(rawText),
+    page_count: null,
+    processing_status: "enhanced_ready",
+    created_at: now,
+    updated_at: now,
+    raw_text: rawText,
+    file_base64: "",
+    structure_map: structureMap,
+  };
+}
+
+test("extracts markdown kravsvar rows across repeated heading tables", async () => {
+  const rawText = [
+    "## Kravbesvarelse",
+    "",
+    "### Drift",
+    "",
+    "| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |",
+    "|---|---|---|---|---|",
+    "| K-001 | Første krav skal besvares. | Første svar dekker kravet med kontroll. | Første grunnlag. | Side 1 |",
+    "| K-002 | Andre krav skal besvares. | Andre svar dekker kravet med dokumentasjon. | Andre grunnlag. | Side 1 |",
+    "",
+    "### Sikkerhet",
+    "",
+    "| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |",
+    "|---|---|---|---|---|",
+    "| K-003 | Tredje krav skal besvares. | Tredje svar dekker kravet med ansvar. | Tredje grunnlag. | Side 2 |",
+    "",
+  ].join("\n");
+
+  const ledger = await extractRequirementLedgerForDocument(
+    projectDocument({ rawText, fileFormat: "md" }),
+  );
+
+  assert.equal(ledger.length, 3);
+  assert.deepEqual(
+    ledger.map((entry) => entry.id),
+    ["K-001", "K-002", "K-003"],
+  );
+  assert.deepEqual(
+    ledger.map((entry) => Boolean(entry.answerExcerpt)),
+    [true, true, true],
+  );
+});
+
+test("markdown kravsvar parser keeps Krav cell when Svargrunnlag includes kravtekst label", async () => {
+  const rawText = [
+    "## Kravbesvarelse",
+    "",
+    "| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |",
+    "|---|---|---|---|---|",
+    "| K-056 | Datamodellen skal beskrives på et nivå som gjør videre forvaltning mulig. | Atea beskriver datamodellen med objekter, relasjoner og eierskap. | Kravtekst: «Datamodellen skal beskrives på et nivå som gjør videre forvaltning mulig.» + Bilag 1 rad 5: «forvaltningsmodell». | Bilag 2, side 1, K-056 |",
+    "| K-057 | Endringer skal kunne rulles tilbake ved kritiske feil. | Atea bruker kontrollert utrulling og rollback-løp. | Kravtekst: «Endringer skal kunne rulles tilbake ved kritiske feil.» + Krav 45: «kontrollert utrulling». | Bilag 2, side 1, K-057 |",
+    "",
+  ].join("\n");
+
+  const ledger = await extractRequirementLedgerForDocument(
+    projectDocument({ rawText, fileFormat: "md" }),
+  );
+
+  assert.equal(ledger.length, 2);
+  assert.deepEqual(
+    ledger.map((entry) => entry.text),
+    [
+      "Datamodellen skal beskrives på et nivå som gjør videre forvaltning mulig.",
+      "Endringer skal kunne rulles tilbake ved kritiske feil.",
+    ],
+  );
+  assert.deepEqual(
+    ledger.map((entry) => Boolean(entry.answerExcerpt)),
+    [true, true],
+  );
+});
+
+test("pdf table presentation suppresses OCR heading fragments when table and service identify row", () => {
+  const entry = {
+    id: "Tabell ID 2-11 - Bistand ved",
+    tableId: "Tabell ID 2-11",
+    service: "Bistand ved",
+    text: "I samråd med kunden skal leverandøren yte nødvendig bistand ved revisjon.",
+    pages: [12],
+    heading: "24/7/365. > D el",
+    documentTitle: "Kravdokument - Bilag 2 - Petoro",
+  };
+  const heading = requirementGroupHeading(entry);
+
+  assert.equal(heading, "");
+  assert.deepEqual(requirementHeadingPath(entry), []);
+  assert.equal(
+    requirementDisplaySource(entry, heading),
+    "Kravdokument - Bilag 2 - Petoro, Side 12, Tabell ID 2-11, Bistand ved",
+  );
+});
+
+test("pdf table repair canonicalizes split Petoro audit assistance row", () => {
+  const repaired = repairTableRowTextArtifacts({
+    service: "Bistand ved",
+    text: "I samråd med kunden skal leverandøren revisjoner yte nødvendig bistand i forbindelse med revisjon, internrevisjon og kvalitetskontroller avIT-drift og applikasjoner.",
+  });
+
+  assert.equal(repaired.service, "Bistand ved revisjoner");
+  assert.equal(
+    repaired.text,
+    "I samråd med kunden skal leverandøren yte nødvendig bistand i forbindelse med revisjon, internrevisjon og kvalitetskontroller av IT-drift og applikasjoner.",
+  );
+});
+
+function normalizeColumnLabel(value) {
+  return normalizePageText(value)
+    .replace(/[‐‑‒–—_/-]+/g, " ")
+    .replace(/[.:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectExplicitRequirementIds(text) {
+  const normalized = normalizePageText(text);
+  const pattern =
+    /\b[A-ZÆØÅ0-9]{2,12}\s*[- ]\s*REQ\s*[- ]\s*\d{1,5}[A-Z]?\b|\bP\d{3}\s*[- ]\s*\d{1,5}[A-Z]?\b|\bPkt\s*[- ]?\s*\d{1,5}(?=\s|[A-ZÆØÅ(]|$|[-:.;\]])|\b(?:KRAV|KR|K|R|TEK)\s*[- ]?\s*\d{1,5}(?:\s*[.-]\s*\d{1,5})?[A-Z]?(?=\s|[A-ZÆØÅ(]|$|[-:.;\]])|\bREQ\s*[- ]?\s*\d{1,5}[A-Z]?\b|\b[A-ZÆØÅ]{2,8}\s*-\s*\d{1,5}\b/gi;
+  const ids = [];
+  for (const match of normalized.matchAll(pattern)) {
+    const id = normalizePageText(match[0])
+      .replace(/\s*-\s*/g, "-")
+      .replace(/\s+/g, " ");
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+function hasRequirementSignal(value) {
+  const text = normalizePageText(value);
+  return (
+    text.length >= 18 &&
+    (/(?:^|[^\p{L}\p{N}_])(?:skal|bes|krever|forutsetter|required|must|should)(?=$|[^\p{L}\p{N}_])/iu.test(
+      text,
+    ) ||
+      /(?:^|[\s(])(?:må|bør|ønskes|ønskelig)(?=\s|$)/i.test(text))
+  );
+}
+
+function hasStandaloneRequirementLanguage(value) {
+  const text = normalizePageText(value);
+  return (
+    /\b(?:Leverandøren|Tilbyder|Kunden|Systemet|Plattformen|Løsningen)\s+(?:skal|må|bør|bes|kan)\b/i.test(
+      text,
+    ) || /\b(?:det|dette)\s+skal\b/i.test(text)
+  );
+}
+
+function stripRequirementChrome(text) {
+  return normalizePageText(text)
+    .replace(/^[\u2022\uF0B7*–—-]\s*/u, "")
+    .replace(
+      /^\s*(?:\[(?:P\d{3}\s*[- ]\s*\d{1,5}|[A-ZÆØÅ]{2,8}\s*[- ]?\s*\d{1,5})\]\s*|(?:P\d{3}\s*[- ]\s*\d{1,5}|[A-ZÆØÅ]{2,8}\s*[- ]?\s*\d{1,5}|REQ\s*[- ]?\s*\d{1,5}|KRAV\s*[- ]?\s*\d{1,5})\s*(?:[:.)]|[-–—])?\s*)/iu,
+      "",
+    )
+    .replace(/^\s*(?:uten\s+nr\.?|må\s+avklares|x|\?)\s*[:.)-]?\s*/iu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripAnswerTextFromRequirement(value) {
+  return normalizePageText(value)
+    .replace(/\s+(?:Leverandørens\s+besvarelse|Detailed\s+response)\b.*$/i, "")
+    .trim();
+}
+
+function cleanHeadingCandidate(value) {
+  return stripRequirementChrome(value)
+    .replace(/^[•\-–—:;.,\s]+|[•\-–—:;.,\s]+$/g, "")
+    .trim();
+}
+
+function isLikelyHeadingLine(line) {
+  const cleaned = cleanHeadingCandidate(line);
+  return (
+    cleaned.length >= 4 &&
+    cleaned.length <= 90 &&
+    !/[.!?]$/.test(cleaned) &&
+    cleaned.split(/\s+/).length <= 9 &&
+    !hasRequirementSignal(cleaned)
+  );
+}
+
+function structureEntryCellMap(entry) {
+  if (!entry.cells || typeof entry.cells !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(entry.cells)
+      .map(([key, value]) => [
+        normalizePageText(key),
+        normalizePageText(String(value ?? "")),
+      ])
+      .filter(([key, value]) => key && value),
+  );
+}
+
+function doclingRequirementRowParts(cells) {
+  const entries = Object.entries(cells);
+  const explicitId =
+    entries
+      .filter(([label]) => /^(?:id|id\s+markering|ref|krav\s+id)$/i.test(normalizeColumnLabel(label)))
+      .map(([, value]) => normalizePageText(value))
+      .find((value) => /\d/.test(value)) ||
+    entries.flatMap(([, value]) => detectExplicitRequirementIds(value))[0] ||
+    "";
+  const requirementEntries = entries.filter(([label]) =>
+    /\b(?:krav|ønsket|onsket|tekst|føring)\b/i.test(normalizeColumnLabel(label)),
+  );
+  const requirementText =
+    requirementEntries.map(([, value]) => value).filter(Boolean).join(" ") ||
+    entries.map(([, value]) => value).find(hasRequirementSignal) ||
+    "";
+  const answerText = entries
+    .filter(([label]) => /\b(?:svar|besvarelse|answer|response)\b/i.test(label))
+    .map(([, value]) => value)
+    .filter(Boolean)
+    .join(" ");
+  const serviceText = entries
+    .filter(([label]) => /\b(?:tjeneste|service|kategori|type)\b/i.test(label))
+    .map(([, value]) => value)
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    explicitId,
+    requirementText: stripAnswerTextFromRequirement(requirementText),
+    answerText: normalizePageText(answerText),
+    responseInstruction: "",
+    serviceText: normalizePageText(serviceText),
+    hasRequirementColumn: requirementEntries.length > 0,
+  };
+}
+
+function doclingRequirementRowSourceExcerpt(cells) {
+  return Object.entries(cells)
+    .map(([label, value]) => `${label}: ${normalizePageText(value)}`)
+    .join(" | ");
+}
+
+function testContext() {
+  return {
+    cleanHeadingCandidate,
+    dedupeRequirementLedger(entries) {
+      const seen = new Set();
+      return entries.filter((entry) => {
+        const key = `${entry.id}|${entry.text}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    },
+    detectExplicitRequirementIds,
+    doclingRequirementRowParts,
+    doclingRequirementRowSourceExcerpt,
+    hasRequirementSignal,
+    hasStandaloneRequirementLanguage,
+    hasStructuredTableCells(entry) {
+      return Boolean(entry.cells && ["docling_table_row", "table"].includes(entry.kind));
+    },
+    isLikelyHeadingLine,
+    normalizeColumnLabel,
+    splitDocumentPagesForRequirementScan(document) {
+      return [{ page: 1, text: document.raw_text.replace(/\r\n/g, "\n").trim() }];
+    },
+    stripAnswerTextFromRequirement,
+    stripRequirementChrome,
+    structureEntryCellMap,
+    structureRequirementFallbackId(entry, tableId, sequence) {
+      return [tableId, entry.row_index ? `rad ${entry.row_index}` : `krav ${sequence}`]
+        .filter(Boolean)
+        .join(", ");
+    },
+    structureTableId(entry) {
+      return entry.parser === "docling" ? "Docling tabell 1" : "DOCX tabell 1";
+    },
+  };
+}
+
+test("explicit ID detection recognizes slash and short alphanumeric table IDs", () => {
+  assert.deepEqual(
+    productionDetectExplicitRequirementIds(
+      "088/01 Må leverandøren skal svare. B2-01 Løsningen skal støtte varsling. FRF.1.2 Leverandøren skal dokumentere.",
+    ),
+    ["088/01", "B2-01", "FRF.1.2"],
+  );
+});
+
+test("explicit ID detection normalizes compact Petoro ID markers", () => {
+  assert.deepEqual(productionDetectExplicitRequirementIds("ID2- 14"), [
+    "ID 2-14",
+  ]);
+  assert.deepEqual(productionDetectExplicitRequirementIds("ID2-\n23"), [
+    "ID 2-23",
+  ]);
+});
+
+test("legacy prefixed-line parser keeps explicit and placeholder krav rows", () => {
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene er samlet fra workshops.",
+      "Integrasjoner",
+      "ABC-001 - Leverandøren skal etablere API for ordrestatus. Må besvares",
+      "x Plattformen skal støtte eksport av logger.",
+      "Notat - Leverandøren skal dokumentere testplan.",
+      "se notatDet skal finnes dokumentert prosess for hendelser.",
+      "Rad 1: Ref | Krav/føring | Kommentar",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildPrefixedLineRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({
+      id: entry.id,
+      text: parsers.repairLegacyFofingerTextArtifacts(entry.text),
+      tableId: entry.tableId,
+    })),
+    [
+      {
+        id: "ABC-001",
+        text: "Leverandøren skal etablere API for ordrestatus.",
+        tableId: "Dokumenttekst krav-ID",
+      },
+      {
+        id: "Dokumenttekst krav 2",
+        text: "Plattformen skal støtte eksport av logger.",
+        tableId: "Dokumenttekst",
+      },
+      {
+        id: "Dokumenttekst krav 3",
+        text: "Leverandøren skal dokumentere testplan.",
+        tableId: "Dokumenttekst",
+      },
+      {
+        id: "Dokumenttekst krav 4",
+        text: "Det skal finnes dokumentert prosess for hendelser.",
+        tableId: "Dokumenttekst",
+      },
+    ],
+  );
+});
+
+test("legacy pdf parser updates heading before digit-starting continuation", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene er samlet fra workshops.",
+      "9. Avklaringer fra workshop",
+      "KRAV-01 Leverandøren skal foreslå standard for tilgjengelighet.",
+      "6. Migrering og overgang",
+      "KRAV-02 Leverandøren skal etablere migrering med testet overgang.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildPrefixedLineRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({
+      id: entry.id,
+      heading: entry.heading,
+      text: parsers.repairLegacyFofingerTextArtifacts(entry.text),
+    })),
+    [
+      {
+        id: "KRAV-01",
+        heading: "9. Avklaringer fra workshop",
+        text: "Leverandøren skal foreslå standard for tilgjengelighet.",
+      },
+      {
+        id: "KRAV-02",
+        heading: "6. Migrering og overgang",
+        text: "Leverandøren skal etablere migrering med testet overgang.",
+      },
+    ],
+  );
+});
+
+test("legacy pdf extraction keeps single-level dotted headings as subtitles", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene er samlet fra workshops.",
+      "7. Rapportering og innsikt",
+      "KRAV-01 Kunden skal kunne følge opp identitet gjennom rapporter.",
+      "1. Bakgrunn og mål",
+      "KRAV-02 Leverandøren skal etablere migrering med testet overgang.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.deepEqual(
+    ledger.map((entry) => ({
+      id: entry.id,
+      heading: entry.heading,
+      text: parsers.repairLegacyFofingerTextArtifacts(entry.text),
+    })),
+    [
+      {
+        id: "KRAV-01",
+        heading: "7. Rapportering og innsikt",
+        text: "Kunden skal kunne følge opp identitet gjennom rapporter.",
+      },
+      {
+        id: "KRAV-02",
+        heading: "1. Bakgrunn og mål",
+        text: "Leverandøren skal etablere migrering med testet overgang.",
+      },
+    ],
+  );
+});
+
+test("pdf unstructured bullet extraction keeps short supplier delivery requirements", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:1]]",
+      "Bilag 2 - Krav og føringer",
+      "Kravene er samlet fra workshops.",
+      "Leverandør må svare på",
+      "\uf0b7 Det må være mulig å følge alle batchjobber fra start til slutt.",
+      "1. Batchjobber må kunne overvåkes med status og feilmelding.",
+      "\uf0b7 Leverandøren skal levere forslag til driftsmodell med ansvarsmatrise.",
+      "2. Tilgang skal kunne styres med roller og sporbar godkjenning.",
+      "\uf0b7 Rapporter skal kunne eksporteres for månedlig oppfølging.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.deepEqual(
+    ledger.map((entry) => entry.text),
+    [
+      "Det må være mulig å følge alle batchjobber fra start til slutt.",
+      "Batchjobber må kunne overvåkes med status og feilmelding.",
+      "Leverandøren skal levere forslag til driftsmodell med ansvarsmatrise.",
+      "Tilgang skal kunne styres med roller og sporbar godkjenning.",
+      "Rapporter skal kunne eksporteres for månedlig oppfølging.",
+    ],
+  );
+});
+
+test("legacy text repair removes generated workshop-note suffix", () => {
+  assert.equal(
+    parsers.repairLegacyFofingerTextArtifacts(
+      "Leverandøren skal dokumentere testplan. [[SIDE:2]] Dette er nevnt i arbeidsmøte og må konkretiseres.",
+    ),
+    "Leverandøren skal dokumentere testplan.",
+  );
+});
+
+test("pdf page splitting accepts chunked page range markers", () => {
+  assert.deepEqual(
+    splitPdfPages("[[SIDE:3-7]]\nKravtekst på flere sider.\n[[SIDE:8]]\nNeste side."),
+    [
+      {
+        page: 3,
+        pageEnd: 7,
+        text: "Kravtekst på flere sider.",
+      },
+      {
+        page: 8,
+        pageEnd: 8,
+        text: "Neste side.",
+      },
+    ],
+  );
+  assert.deepEqual(
+    splitPdfPagesPreservingLines("[[SIDE:4-5]]\nLinje 1\nLinje 2"),
+    [
+      {
+        page: 4,
+        pageEnd: 5,
+        text: "Linje 1\nLinje 2",
+      },
+    ],
+  );
+});
+
+test("legacy text repair preserves evaluator-critical trailing clauses", () => {
+  assert.equal(
+    parsers.repairLegacyFofingerTextArtifacts(
+      "Leverandøren skal levere endelig plan innen 30. juni",
+    ),
+    "Leverandøren skal levere endelig plan innen 30. juni",
+  );
+  assert.equal(
+    parsers.repairLegacyFofingerTextArtifacts(
+      "Varsler må besvares uten opphold",
+    ),
+    "Varsler må besvares uten opphold",
+  );
+  assert.equal(
+    parsers.repairLegacyFofingerTextArtifacts(
+      "Avklares mellom partene før oppstart",
+    ),
+    "Avklares mellom partene før oppstart",
+  );
+});
+
+test("legacy docx parser keeps standalone note-section requirement lines", () => {
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene under er samlet fra behovsmøter.",
+      "5. Sikkerhet og personvern",
+      "Notater fra gjennomgang:",
+      "Leverandøren skal dokumentere tilgangsstyring.",
+      "Leverandøren må selv foreslå hvordan punktene over dokumenteres i tilbudet.",
+      "Tabell 1",
+      "Plattformen bør ikke hentes fra tabelloverskrift.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildPrefixedLineRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({
+      text: parsers.repairLegacyFofingerTextArtifacts(entry.text),
+      heading: entry.heading,
+    })),
+    [
+      {
+        text: "Leverandøren skal dokumentere tilgangsstyring.",
+        heading: "Notater fra gjennomgang",
+      },
+    ],
+  );
+});
+
+test("legacy docx extraction preserves repeated placeholder note rows", async () => {
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene under er samlet fra behovsmøter.",
+      "10. Øvrige føringer",
+      "Notater fra gjennomgang:",
+      "R2Det skal finnes dokumentert prosess for applikasjonsdrift.",
+      "rad 9Det skal finnes dokumentert prosess for applikasjonsdrift.",
+      "Leverandøren må selv foreslå hvordan punktene over dokumenteres i tilbudet.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.equal(
+    ledger.filter(
+      (entry) =>
+        entry.text ===
+        "Det skal finnes dokumentert prosess for applikasjonsdrift.",
+    ).length,
+    2,
+  );
+});
+
+test("legacy docx extraction preserves plain note repeats when source survives", async () => {
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene under er samlet fra behovsmøter.",
+      "7. Rapportering og innsikt",
+      "Notater fra gjennomgang:",
+      "Alle endringer knyttet til rapportering skal kunne spores til bruker, tidspunkt og formål.",
+      "K-002Det skal finnes dokumentert prosess for migrering.",
+      "1. Bakgrunn og mål",
+      "Notater fra gjennomgang:",
+      "K-056Alle endringer knyttet til rapportering skal kunne spores til bruker, tidspunkt og formål.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.equal(
+    ledger.filter(
+      (entry) =>
+        entry.text ===
+        "Alle endringer knyttet til rapportering skal kunne spores til bruker, tidspunkt og formål.",
+    ).length,
+    2,
+  );
+});
+
+test("legacy note duplicate filter suppresses company-prefixed glued observations", () => {
+  const text =
+    "Løsningen må håndtere tilgjengelighet uten at kunden mister kontroll på automatisk varsling ved driftsavvik.";
+  const filtered = filterDuplicateLegacyStandaloneNoteLines([
+    {
+      id: "Dokumenttekst krav 1",
+      text,
+      pages: [],
+      heading: "Notater fra gjennomgang",
+      tableId: "Dokumenttekst",
+      sourceExcerpt: text,
+    },
+    {
+      id: "AAD-REQ-055",
+      text,
+      pages: [],
+      heading: "Notater fra gjennomgang",
+      tableId: "Dokumenttekst krav-ID",
+      sourceExcerpt: `AAD-REQ-055${text}`,
+    },
+  ]);
+
+  assert.equal(filtered.length, 0);
+});
+
+test("generated mixed text parser strips generated chrome and wrapper labels", () => {
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      "Funksjonelle krav",
+      "[P123-001] Leverandør er skal støtte dashboard. Må Gjelder produksjonsløsning",
+      "Denne delen består av rå innspill og skal ignoreres.",
+      "Avklaring: Kunden må avklare datakilder før migrering.",
+      "se notat: Leverandøren skal dokumentere opplæringsopplegg.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildMixedTextRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({ id: entry.id, text: entry.text })),
+    [
+      {
+        id: "P123-001",
+        text: "leverandører skal støtte dashboard.",
+      },
+      {
+        id: "Avklaringskrav-01",
+        text: "Kunden må avklare datakilder før migrering.",
+      },
+      {
+        id: "Avklaringskrav-02",
+        text: "Leverandøren skal dokumentere opplæringsopplegg.",
+      },
+    ],
+  );
+});
+
+test("generated mixed text parser preserves distinct wrapper source rows", () => {
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      "Funksjonelle krav",
+      "[P123-001] Leverandøren skal etablere API for ordrestatus.",
+      "Avklaring: Leverandøren skal etablere API for ordrestatus.",
+      "Implisitt: Leverandøren skal etablere API for ordrestatus.",
+      "Avklaring: Kunden må avklare datakilder før migrering.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildMixedTextRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => entry.text),
+    [
+      "Leverandøren skal etablere API for ordrestatus.",
+      "Leverandøren skal etablere API for ordrestatus.",
+      "Leverandøren skal etablere API for ordrestatus.",
+      "Kunden må avklare datakilder før migrering.",
+    ],
+  );
+});
+
+test("generated pdf parser groups wrapped lines and removes priority comments", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      "Funksjonelle krav",
+      "[P123-001] Leverandøren skal støtte sikker pålogging",
+      "med MFA.",
+      "Må Gjelder produksjonsløsning",
+      "P123-002 Plattformen skal logge alle endringer.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({
+      id: entry.id,
+      text: entry.text,
+      pages: entry.pages,
+      heading: entry.heading,
+      tableId: entry.tableId,
+    })),
+    [
+      {
+        id: "P123-001",
+        text: "Leverandøren skal støtte sikker pålogging med MFA.",
+        pages: [1],
+        heading: "Funksjonelle krav",
+        tableId: "PDF krav-ID",
+      },
+      {
+        id: "P123-002",
+        text: "Plattformen skal logge alle endringer.",
+        pages: [1],
+        heading: "Funksjonelle krav",
+        tableId: "PDF krav-ID",
+      },
+    ],
+  );
+});
+
+test("generated pdf parser removes wrapped priority comment tokens", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      "Data, migrering og kvalitet",
+      "P123-010 Leverandøren skal beskrive rutiner for",
+      "Bør Dokumentasjon ønskes",
+      "datakvalitet og avvikshåndtering.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(ledger.map((entry) => entry.text), [
+    "Leverandøren skal beskrive rutiner for datakvalitet og avvikshåndtering.",
+  ]);
+});
+
+test("generated pdf parser strips wrapper labels without rewriting requirement prose", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      "Åpne avklaringer",
+      "Avklaring: Leverandøren må avklare og beskrive hvordan følgende løses: løsningen skal støtte automatisk varsling.",
+      "Implisitt: Teksten forutsetter at løsningen skal støtte mobil registrering.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(ledger.map((entry) => entry.text), [
+    "Leverandøren må avklare og beskrive hvordan følgende løses: løsningen skal støtte automatisk varsling.",
+    "Teksten forutsetter at løsningen skal støtte mobil registrering.",
+  ]);
+});
+
+test("generated pdf parser keeps continuation lines after inline priority comments", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      "Drift og support",
+      "TEK-28 Løsningen skal ha dashbord slik at brukere bare får tilgang Må Kan prises som opsjon",
+      "til data de trenger for naturpark og besøksforvaltning.",
+      "P123-KR-002 Leverandøren skal beskrive sporbarhet for engros og Må Gjelder",
+      "B2B-ordre. produksjonsløsning",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(ledger.map((entry) => entry.text), [
+    "Løsningen skal ha dashbord slik at brukere bare får tilgang til data de trenger for naturpark og besøksforvaltning.",
+    "Leverandøren skal beskrive sporbarhet for engros og B2B-ordre.",
+  ]);
+});
+
+test("generated pdf parser splits ref-table rows with priority comments", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      "Krav - blandet liste",
+      "Ref Tema Krav / observasjon Må/bør? Kommentar",
+      "K10 data Leverandøren skal ta Bør kunden ønsker forslag",
+      "høyde for e-postinnboks",
+      "for bilag i",
+      "løsningsdesign,",
+      "planlegging og",
+      "dokumentasjon.",
+      "Pkt11 drift Leverandøren skal ta Bør gjelder fase 1?",
+      "høyde for power bi",
+      "rapporter i",
+      "løsningsdesign,",
+      "planlegging og",
+      "dokumentasjon.",
+      "se notat bruker Leverandøren skal ta Må? henger sammen med",
+      "høyde for annet punkt",
+      "regnskapssystem i",
+      "løsningsdesign,",
+      "planlegging og",
+      "dokumentasjon.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildGeneratedPdfRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({
+      id: entry.id,
+      text: entry.text,
+    })),
+    [
+      {
+        id: "K10",
+        text: "Leverandøren skal ta høyde for e-postinnboks for bilag i løsningsdesign, planlegging og dokumentasjon.",
+      },
+      {
+        id: "Pkt11",
+        text: "Leverandøren skal ta høyde for power bi rapporter i løsningsdesign, planlegging og dokumentasjon.",
+      },
+      {
+        id: "Dokumenttekst krav 3",
+        text: "Leverandøren skal ta høyde for regnskapssystem i løsningsdesign, planlegging og dokumentasjon.",
+      },
+    ],
+  );
+});
+
+test("legacy linear table dump splits explicit and placeholder rows", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene er samlet fra workshops.",
+      "Markering Type Krav/føring Kommentar",
+      "K-003 tabellkrav Alle endringer skal kunne spores. Må besvares uten ID punktkrav Leverandøren skal foreslå migreringsplan. Bør beskrives",
+      "Sikkerhet",
+      "REQ-004 avklaringskrav Det skal være mulig å eksportere relevante data om migrering ved revisjon eller",
+      "kontraktsslutt. Avklares",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildPrefixedLineRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({
+      id: entry.id,
+      text: parsers.repairLegacyFofingerTextArtifacts(entry.text),
+      heading: entry.heading,
+    })),
+    [
+      {
+        id: "K-003",
+        text: "Alle endringer skal kunne spores.",
+        heading: "",
+      },
+      {
+        id: "Dokumenttekst krav 2",
+        text: "Leverandøren skal foreslå migreringsplan.",
+        heading: "",
+      },
+      {
+        id: "REQ-004",
+        text: "Det skal være mulig å eksportere relevante data om migrering ved revisjon eller kontraktsslutt.",
+        heading: "Sikkerhet",
+      },
+    ],
+  );
+});
+
+test("legacy linear table parser keeps acronym-led wrapped continuations", () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene er samlet fra workshops.",
+      "Markering Type Krav/føring Kommentar",
+      "K-062 Tabellkrav Løsningen må håndtere brukerstøtte uten at kunden mister kontroll på standardiserte Avklares",
+      "API-er der det er mulig.",
+    ].join("\n"),
+  });
+
+  const ledger = parsers.buildPrefixedLineRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => ({
+      id: entry.id,
+      text: parsers.repairLegacyFofingerTextArtifacts(entry.text),
+    })),
+    [
+      {
+        id: "K-062",
+        text: "Løsningen må håndtere brukerstøtte uten at kunden mister kontroll på standardiserte API-er der det er mulig.",
+      },
+    ],
+  );
+});
+
+test("trusted structure-map parser preserves row identity for generated kravspesifikasjon", () => {
+  const requirementText = "Leverandøren skal dokumentere beredskap.";
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P123",
+      requirementText,
+    ].join("\n"),
+    structureMap: [
+      {
+        reference: "Kravspesifikasjon - Tabell 1, rad 2",
+        text: "",
+        kind: "docling_table_row",
+        parser: "docling",
+        page: 2,
+        table_index: 1,
+        row_index: 2,
+        cells: {
+          "ID / markering": "P123-003",
+          Krav: requirementText,
+          Prioritet: "Må",
+        },
+      },
+    ],
+  });
+
+  const ledger = parsers.buildTrustedStructureMapRequirementLedger(
+    document,
+    testContext(),
+  );
+
+  assert.equal(ledger.length, 1);
+  assert.deepEqual(
+    {
+      id: ledger[0].id,
+      text: ledger[0].text,
+      pages: ledger[0].pages,
+      tableId: ledger[0].tableId,
+      heading: ledger[0].heading,
+    },
+    {
+      id: "P123-003",
+      text: requirementText,
+      pages: [2],
+      tableId: "Docling tabell 1",
+      heading: "Kravspesifikasjon - Tabell 1, rad 2",
+    },
+  );
+  assert.ok(ledger[0].documentEntryOrder < 1_000_000);
+});
+
+test("legacy structured-row gate and generated flattened-table guard stay explicit", () => {
+  const document = projectDocument({
+    rawText: "Bilag 2 - Krav og føringer\nKrav/føring",
+    structureMap: [
+      {
+        reference: "Tabell 1, rad 2",
+        text: "",
+        kind: "table",
+        parser: "docx-xml",
+        row_index: 2,
+        cells: {
+          "Krav/føring": "Leverandøren skal dokumentere SLA.",
+        },
+      },
+    ],
+  });
+
+  assert.equal(
+    parsers.hasLegacyKravFeringStructuredRows(document, testContext()),
+    true,
+  );
+  assert.equal(
+    parsers.isGeneratedFlattenedTableDump({
+      id: "dump",
+      text: "Tabell 1 Rad 1: ID / markering | krav | Må | Kommentar Rad 2: Leverandøren skal svare",
+      pages: [],
+      heading: "",
+    }),
+    true,
+  );
+  assert.equal(
+    parsers.isGeneratedFlattenedTableDump({
+      id: "KR-017",
+      text: "| Det skal være mulig å følge status på saker. | Må | Gjelder produksjonsløsning",
+      pages: [],
+      heading: "",
+    }),
+    true,
+  );
+});
+
+test("legacy mixed docx ledger keeps paragraph and table rows in source order", async () => {
+  const firstRequirement =
+    "Det skal være mulig å eksportere relevante data om applikasjonsdrift ved revisjon eller kontraktsslutt.";
+  const secondRequirement =
+    "Det skal finnes dokumentert prosess for applikasjonsdrift, inkludert ansvar, eskalering og kontrollpunkter.";
+  const thirdRequirement =
+    "Leverandøren må beskrive hvordan nettverk ivaretas ved normal drift og ved avvik.";
+  const fourthRequirement =
+    "Alle endringer knyttet til tilgjengelighet skal kunne spores til bruker, tidspunkt og formål.";
+  const fifthRequirement =
+    "Det må etableres testopplegg for nettverk før produksjonssetting.";
+  const tableRequirement =
+    "Løsningen må håndtere brukerstøtte uten at kunden mister kontroll på tydelig rollemodell og tilgangsstyring.";
+  const nextTableRequirement =
+    "Det må etableres testopplegg for dataplattform før produksjonssetting.";
+  const afterTableRequirement =
+    "Leverandøren må beskrive hvordan rapportering ivaretas ved normal drift og ved avvik.";
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Krav og føringer",
+      "Kravene under er samlet fra behovsmøter.",
+      `R1 - ${firstRequirement}`,
+      `R2 - ${secondRequirement}`,
+      `— - ${thirdRequirement}`,
+      `obs: ${fourthRequirement}`,
+      `R5 - ${fifthRequirement}`,
+      "Leverandøren må selv foreslå hvordan punktene over dokumenteres i tilbudet.",
+      "Tabell 1",
+      "Rad 1: Markering | Område/type | Krav/føring | Kommentar",
+      `Rad 2: R6 | Tekstkrav | ${tableRequirement} | Må besvares`,
+      `Rad 3: R7 | Tekstkrav | ${nextTableRequirement} | Må besvares`,
+      `R8 - ${afterTableRequirement}`,
+    ].join("\n"),
+    structureMap: [
+      {
+        reference: "Støttedokument - tabell 1, rad 2",
+        text: `Rad 2: R6 | Tekstkrav | ${tableRequirement} | Må besvares`,
+        kind: "table",
+        parser: "docx-xml",
+        table_index: 1,
+        row_index: 2,
+        cells: {
+          Markering: "R6",
+          "Område/type": "Tekstkrav",
+          "Krav/føring": tableRequirement,
+          Kommentar: "Må besvares",
+        },
+      },
+      {
+        reference: "Støttedokument - tabell 1, rad 3",
+        text: `Rad 3: R7 | Tekstkrav | ${nextTableRequirement} | Må besvares`,
+        kind: "table",
+        parser: "docx-xml",
+        table_index: 1,
+        row_index: 3,
+        cells: {
+          Markering: "R7",
+          "Område/type": "Tekstkrav",
+          "Krav/føring": nextTableRequirement,
+          Kommentar: "Må besvares",
+        },
+      },
+    ],
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.deepEqual(
+    ledger.slice(0, 8).map((entry) => entry.text),
+    [
+      firstRequirement,
+      secondRequirement,
+      thirdRequirement,
+      fourthRequirement,
+      fifthRequirement,
+      tableRequirement,
+      nextTableRequirement,
+      afterTableRequirement,
+    ],
+  );
+  assert.equal(
+    ledger.some((entry) =>
+      /selv foreslå hvordan punktene over dokumenteres/i.test(entry.text),
+    ),
+    false,
+  );
+});
+
+test("vurdering ledger sorting keeps explicit source order before reference order", () => {
+  const sorted = sortRequirementLedgerInDocumentOrder([
+    {
+      id: "K-001",
+      text: "Leverandøren skal beskrive andre krav.",
+      pages: [1],
+      heading: "Krav",
+      tableId: "Tabell 1",
+      sourceExcerpt: "Rad 3",
+      documentEntryOrder: 3,
+    },
+    {
+      id: "K-999",
+      text: "Leverandøren skal beskrive første krav.",
+      pages: [1],
+      heading: "Krav",
+      tableId: "Tabell 1",
+      sourceExcerpt: "Rad 2",
+      documentEntryOrder: 2,
+    },
+    {
+      id: "K-000",
+      text: "Leverandøren skal beskrive ukjent krav.",
+      pages: [1],
+      heading: "Krav",
+      tableId: "Tabell 1",
+      sourceExcerpt: "Rad 1",
+    },
+  ]);
+
+  assert.deepEqual(
+    sorted.map((entry) => entry.id),
+    ["K-999", "K-001", "K-000"],
+  );
+});
+
+test("vurdering ledger sorting does not let sparse source order outrank page order", () => {
+  const sorted = sortRequirementLedgerInDocumentOrder([
+    {
+      id: "Driftsaktiviteter - OneNote",
+      text: "Ressursene må kunne utføre enklere oppgaver på tenant-nivå.",
+      pages: [15],
+      heading: "Driftsaktiviteter",
+      tableId: "Driftsaktiviteter",
+      service: "OneNote",
+      documentEntryOrder: 150_021,
+    },
+    {
+      id: "ID 2-01",
+      text: "Leverandøren blir ansvarlig for tilgjengelighet og sikkerhet.",
+      pages: [6],
+      heading: "Generelle krav til tilbudet",
+    },
+  ]);
+
+  assert.deepEqual(
+    sorted.map((entry) => entry.id),
+    ["ID 2-01", "Driftsaktiviteter - OneNote"],
+  );
+});
+
+test("vurdering ledger sorting keeps page-local explicit IDs before later table IDs", () => {
+  const sorted = sortRequirementLedgerInDocumentOrder([
+    {
+      id: "Tabell ID 2-31 - Ivareta",
+      text: "Leverandøren skal ivareta informasjons- og IT-sikkerhet.",
+      pages: [24, 25],
+      heading: "Informasjons- og IT-sikkerhet",
+      tableId: "Tabell ID 2-31",
+      service: "Ivareta",
+    },
+    {
+      id: "ID 2-30",
+      text: "Leverandøren skal sikre ekstern tilgang og fjernadministrasjon.",
+      pages: [24],
+      heading: "Generelt",
+    },
+  ]);
+
+  assert.deepEqual(
+    sorted.map((entry) => entry.id),
+    ["ID 2-30", "Tabell ID 2-31 - Ivareta"],
+  );
+});
+
+test("pdf page splitting accepts ranged Docling page markers", () => {
+  assert.deepEqual(splitPdfPages("[[SIDE:12-14]]\nLeverandøren skal beskrive drift."), [
+    {
+      page: 12,
+      pageEnd: 14,
+      text: "Leverandøren skal beskrive drift.",
+    },
+  ]);
+});
+
+test("requirement id detection keeps compound ids and ignores standards tokens", () => {
+  assert.deepEqual(
+    productionDetectExplicitRequirementIds(
+      "AUR-K01: Løsningen skal støtte ISO27001, AES256 og RFC5246.",
+    ),
+    ["AUR-K01"],
+  );
+});
+
+test("legacy text repair preserves trailing deadline clauses", () => {
+  assert.equal(
+    parsers.repairLegacyFofingerTextArtifacts(
+      "KRAV-1 Tekstkrav Leverandøren skal levere plan innen 30. juni",
+    ),
+    "Leverandøren skal levere plan innen 30. juni",
+  );
+});
+
+test("vurdering ledger sorting compares document and entry order as tuple", () => {
+  const sorted = sortRequirementLedgerInDocumentOrder([
+    {
+      id: "D1-K1",
+      text: "Leverandøren skal beskrive krav fra dokument 1.",
+      pages: [1],
+      heading: "Krav",
+      documentOrder: 1,
+      documentEntryOrder: 1,
+    },
+    {
+      id: "D0-K2M",
+      text: "Leverandøren skal beskrive sent krav fra dokument 0.",
+      pages: [1],
+      heading: "Krav",
+      documentOrder: 0,
+      documentEntryOrder: 2_000_000,
+    },
+  ]);
+
+  assert.deepEqual(
+    sorted.map((entry) => entry.id),
+    ["D0-K2M", "D1-K1"],
+  );
+});
+
+test("generated structure-map rows inherit nearest section heading", async () => {
+  const requirementText = "Leverandøren skal dokumentere tilgangsstyring.";
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P999",
+      "Tilgang og roller - både faste og midlertidige brukere",
+      "Krav registrert i tabell",
+      `AUR-K01: ${requirementText}`,
+    ].join("\n"),
+    structureMap: [
+      {
+        reference: "Kundedokument - tekstblokk 1",
+        text: "Tilgang og roller - både faste og midlertidige brukere\nKrav registrert i tabell",
+      },
+      {
+        reference: "Kundedokument - tabell 2, rad 2",
+        text: `Rad 2: AUR-K01 | Må | ${requirementText}`,
+        kind: "table",
+        parser: "docx-xml",
+        table_index: 2,
+        row_index: 2,
+        cells: {
+          "ID/markering": "AUR-K01",
+          Prioritet: "Må",
+          Kravtekst: requirementText,
+        },
+      },
+    ],
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.equal(ledger[0]?.id, "AUR-K01");
+  assert.equal(
+    ledger[0]?.heading,
+    "Tilgang og roller - både faste og midlertidige brukere",
+  );
+});
+
+test("duplicate replacement keeps the earliest source position for vurdering order", async () => {
+  const requirementText = "Leverandøren skal dokumentere logging for drift.";
+  const document = projectDocument({
+    rawText: [
+      "Bilag 2 - Kravspesifikasjon",
+      `Rad 2: K-100 | ${requirementText}`,
+      `Rad 3: K-100 | ${requirementText}`,
+    ].join("\n"),
+    fileFormat: "docx",
+    structureMap: [
+      {
+        reference: "Kravspesifikasjon - Tabell 1, rad 2",
+        text: "",
+        kind: "table",
+        parser: "docx-xml",
+        page: 1,
+        table_index: 1,
+        row_index: 2,
+        cells: {
+          "ID / markering": "K-100",
+          Krav: requirementText,
+        },
+      },
+      {
+        reference: "Kravspesifikasjon - Tabell 1, rad 3",
+        text: "",
+        kind: "table",
+        parser: "docx-xml",
+        page: 1,
+        table_index: 1,
+        row_index: 3,
+        cells: {
+          "ID / markering": "K-100",
+          Krav: requirementText,
+          Tjeneste: "Logging",
+          Svar: "Vi dekker dette med sentral loggplattform.",
+        },
+      },
+    ],
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].id, "K-100");
+  assert.equal(ledger[0].service, "Logging");
+  assert.ok(ledger[0].documentEntryOrder < 1_000_000);
+});
+
+test("petoro answer-marker extraction binds IDs to text before answer field", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:6]]",
+      "Generelle krav til tilbudet",
+      "Leverandøren blir ansvarlig for tilgjengelighet, stabilitet, kapasitet og sikkerhet i levert løsning.",
+      "Leverandørens besvarelse",
+      "ID 2-",
+      "02",
+      "Leveransen skal organiseres slik at personell med tilgang til våre systemer og data ikke er lokalisert i, eller underlagt jurisdiksjon i, land som vurderes som risikoland.",
+      "[[SIDE:7]]",
+      "Kunden kan kreve at konsulenter som gis tilgang til Kundens informasjon og systemer som benyttes i Leveransen, gjennomgår bakgrunnssjekk,",
+      "herunder identitetskontroll og sanksjonsscreening, i den utstrekning dette er saklig, nødvendig og i samsvar med gjeldende lovgivning.",
+      "Leverandørens besvarelse",
+      "ID 2-",
+      "03",
+      "Leverandøren skal etablere og vedlikeholde en dokumentasjon for Leveransen, som også skal være tilgjengelig for Kunden.",
+      "Leverandørens besvarelse",
+      "ID 2-",
+      "04",
+      "Leverandøren skal inkludere minst 3 referanser med kontaktdata som kjøper like eller tilsvarende tjenester som denne forespørsel dekker.",
+      "Leverandørens besvarelse",
+      "ID 2-",
+      "05",
+      "Leverandørens arbeid med samfunnsansvar og inkludering",
+      "Leverandøren bes kort beskrive hvordan virksomheten jobber med samfunnsansvar.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+  const byId = new Map(ledger.map((entry) => [entry.id, entry]));
+
+  assert.match(byId.get("ID 2-02")?.text ?? "", /^Leverandøren blir ansvarlig/i);
+  assert.match(
+    byId.get("ID 2-03")?.text ?? "",
+    /^Leveransen skal organiseres/i,
+  );
+  assert.match(
+    byId.get("ID 2-03")?.text ?? "",
+    /Kunden kan kreve at konsulenter/i,
+  );
+  assert.doesNotMatch(byId.get("ID 2-03")?.text ?? "", /^Leverandøren skal etablere/i);
+  assert.equal(byId.get("ID 2-03")?.heading, "Generelle krav til tilbudet");
+  assert.equal(byId.get("ID 2-04")?.heading, "Generelle krav til tilbudet");
+  assert.match(byId.get("ID 2-04")?.text ?? "", /etablere og vedlikeholde/i);
+});
+
+test("petoro answer-marker repair keeps overgangsfasen IDs distinct", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:8]]",
+      "Krav til drift",
+      "Overgangsfasen",
+      "Leverandøren skal overta det som kjører per i dag inkludert administrasjon av Microsoft365 lisensene.",
+      "Leverandørens besvarelse",
+      "ID2-",
+      "07",
+      "Driftsfasen",
+      "Leverandøren skal levere en helhetlig Leveranse for drift.",
+      "Leverandøren er herunder ansvarlig for åiverksette rutiner og løsninger som ivaretar kvalitet, sikkerhet og konfidensialitet.",
+      "Leverandørens besvarelse",
+      "ID2-",
+      "08",
+      "Det er per i dag underleverandører til eksisterende avtale, som forutsettes overtatt av nyLeverandør.",
+      "Hvis noe av dette vurderes hensiktsmessig å bytte ut med andre løsninger kan leverandøren foreslå dette:",
+      "• Ecit, leveranse av printløsning, (1 printer) som er en månedlig leieavtale alt inklusive.",
+      "• Veeam sikkerhetskopiering",
+      "• Microsoft med MS 365",
+      "RA-1780BILAG2,4,6,7TILSSA-D2024",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+  const byId = new Map(ledger.map((entry) => [entry.id, entry]));
+
+  assert.match(byId.get("ID 2-07")?.text ?? "", /overta det som kjører per i dag/i);
+  assert.match(byId.get("ID 2-08")?.text ?? "", /helhetlig leveranse for drift/i);
+  assert.doesNotMatch(byId.get("ID 2-08")?.text ?? "", /underleverandører/i);
+  assert.doesNotMatch(
+    byId.get("ID 2-08")?.text ?? "",
+    /overta det som kjører per i dag/i,
+  );
+  assert.doesNotMatch(byId.get("ID 2-08")?.text ?? "", /RA-1780/i);
+});
+
+test("petoro answer-marker repair preserves variable services requirement text", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:9]]",
+      "Krav til drift",
+      "Driftsaktiviteter",
+      "• 2 stk.datalinjer",
+      "• Diverse leverandører som leverer programvare eller annet under eksisterende avtale",
+      "Leverandøren må klargjøre hvorvidt disse underleverandørene blir videreført eller om alternative løsninger blir tilbudt.",
+      "Leverandørens besvarelse",
+      "ID2-",
+      "09",
+      "Leverandøren må være tydelig på omLeveransen skal splittes i faste og variable tjenester.",
+      "Dersom det er faste deler, skal omfanget og prisen for disse fremkomme i Bilag 7 Samlet pris og prisbestemmelser.",
+      "Utover faste deler skal leverandøren estimere timer og kostnader for å levereLeveranseni tråd med kravene i forespørselen.",
+      "Estimert pris inkludert timepriser for ulike kategorier konsulenter og estimerte timeforbruk skal legges inn i Bilag 7 Samlet pris og prisbestemmelser.",
+      "Variable tjenester vil gjennomføres basert på timepriser eller annen form for variable prising.",
+      "Noen av de variable tjenestene vil være gjenstand for tilbud og aksept for eksempel prosjekter.",
+      "Leverandørens besvarelse",
+      "ID2-",
+      "10",
+      "Driftsaktiviteter",
+      "Følgende oppgaver som ikke er uttømmende, skal ivaretas i Leveransen.",
+      "RA-1780BILAG2,4,6,7TILSSA-D2024",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+  const byId = new Map(ledger.map((entry) => [entry.id, entry]));
+  const id209 = byId.get("ID 2-09")?.text ?? "";
+  const id210 = byId.get("ID 2-10")?.text ?? "";
+
+  assert.match(id209, /underleverandørene blir videreført/i);
+  assert.match(id210, /om leveransen skal splittes/i);
+  assert.match(id210, /levere Leveransen i tråd/i);
+  assert.match(id210, /Variable tjenester vil gjennomføres/i);
+  assert.doesNotMatch(id210, /omLeveransen|levereLeveranseni|Leverandørens besvarelse|RA-1780/i);
+  assert.doesNotMatch(id210, /RA-1780/i);
+});
+
+test("petoro answer-marker repair keeps ID 2-23, ID 2-24 and ID 2-25 text distinct", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:19]]",
+      "Leverandøren skal tilby konsulentbistand for prosjekter og tjenester utenfor spesifisert Leveranse.",
+      "Leverandørens besvarelse",
+      "[[SIDE:20]]",
+      "ID2-",
+      "23",
+      "Opsjoner",
+      "Leverandøren skal tilby følgende opsjoner, som kan utløses av Petoro med 1 måneds skriftlig varsel.",
+      "Priser for opsjonene følger av Bilag 7 Samlet pris og prisbestemmelser.",
+      "Leverandørens besvarelse",
+      "ID2-",
+      "24",
+      "Informasjons- og IT sikkerhet",
+      "Generelt",
+      "Kravene til Informasjons- og IT sikkerhet kan fremstå omfattende.",
+      "Det stilles derfor strenge krav til en helhetlig informasjons- og IT sikkerhet.",
+      "Leverandøren har ansvar for at Petoros krav til sikkerhet gjennomføres og følges opp inkludert implementering og oppfølging av eventuelle underleverandører.",
+      "Leverandørens besvarelse",
+      "ID2-",
+      "25",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+  const byId = new Map(ledger.map((entry) => [entry.id, entry]));
+
+  assert.match(byId.get("ID 2-23")?.text ?? "", /konsulentbistand/i);
+  assert.match(
+    byId.get("ID 2-24")?.text ?? "",
+    /tilby følgende opsjoner/i,
+  );
+  assert.match(
+    byId.get("ID 2-25")?.text ?? "",
+    /strenge krav til en helhetlig informasjons- og IT sikkerhet/i,
+  );
+  assert.doesNotMatch(byId.get("ID 2-24")?.text ?? "", /^Informasjons- og IT sikkerhet\b/i);
+});
+
+test("pdf service table keeps reporting, experience and termination rows", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:15]]",
+      "Petoros krav - Tabell ID 2-13 Leverandørens svar",
+      "Tjeneste Spesifiserte krav",
+      "Rapportering Aktiviteter under applikasjonsforvaltning",
+      "skal følges opp og rapporteres på",
+      "ukentlige statusmøter.",
+      "[[SIDE:24]]",
+      "IT Sikkerhetskrav - Tabell ID 2-31 Leverandørens svar",
+      "Tjeneste Spesifiserte krav",
+      "Ivareta Leverandøren skal ha definerte roller som er ansvarlige for å påse at informasjons- og IT-sikkerheten blir ivaretatt i Leveransen.",
+      "[[SIDE:25]]",
+      "IT Sikkerhetskrav - Tabell ID 2-31 Leverandørens svar",
+      "Tjeneste Spesifiserte krav",
+      "Leverandøren skal ha fokus på forbedringer og skal foreslå forbedringer for å redusere risiko.",
+      "Erfaring",
+      "Leverandøren må beskrive relevante erfaring og kompetanse innenfor Informasjons- og IT sikkerhet.",
+      "[[SIDE:29]]",
+      "IT Sikkerhetskrav - Tabell ID 2-31 Leverandørens svar",
+      "Tjeneste Spesifiserte krav",
+      "Avslutning",
+      "Ved avtaleperiodens utløp skal det beskrives hvordan sikker sletting av alle Kundens data blir utført i henhold til anerkjente standarder.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+  const byId = new Map(ledger.map((entry) => [entry.id, entry]));
+
+  assert.match(
+    byId.get("Tabell ID 2-13 - Rapportering")?.text ?? "",
+    /ukentlige statusmøter/i,
+  );
+  assert.match(
+    byId.get("Tabell ID 2-31 - Erfaring")?.text ?? "",
+    /relevante erfaring og kompetanse/i,
+  );
+  assert.match(
+    byId.get("Tabell ID 2-31 - Avslutning")?.text ?? "",
+    /sikker sletting/i,
+  );
+});
+
+test("petoro answer-marker repair preserves valid pre-answer requirement text", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:24]]",
+      "Leverandøren skal sikre at ekstern tilgang, fjernadministrasjon og administrative tilganger er teknisk og organisatorisk sikret.",
+      "Leverandørens besvarelse",
+      "ID2-",
+      "30",
+      "Informasjons- ogIT sikkerhet",
+      "IT Sikkerhetskrav - Tabell ID 2-31 Leverandørens svar",
+      "Del",
+      "Tjeneste Spesifiserte krav Ja Nei Detaljeringer / presiseringer / krav til Petoro",
+      "Ivareta",
+      "Leverandøren skal ha definerte roller som er ansvarlige for å påse at informasjons- og IT-sikkerheten blir ivaretatt i Leveransen.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+  const id230 = ledger.find((entry) => entry.id === "ID 2-30");
+
+  assert.match(id230?.text ?? "", /^Leverandøren skal sikre at ekstern tilgang/i);
+  assert.doesNotMatch(id230?.text ?? "", /^Informasjons- ogIT sikkerhet/i);
+  assert.doesNotMatch(id230?.text ?? "", /Tjeneste Spesifiserte krav/i);
+});
+
+test("pdf service requirement table keeps page-continuation rows anchored to heading", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:7]]",
+      "Driftsaktiviteter",
+      "Følgende oppgaver inngår i tjenesten.",
+      "Tjeneste Spesifiserte krav",
+      "Feilhåndtering Leverandøren skal håndtere alle typer feil, herunder også koordinere og følge opp mot 3'dje partsleverandører.",
+      "[[SIDE:8]]",
+      "Tjeneste Spesifiserte krav",
+      "Tredjeparts-",
+      "leverandører Leverandøren skal koordinere support og drift for all tredjepartsprogramvare og løsninger som kjøres på servere og arbeidsstasjoner driftet av Leverandøren.",
+      "Preventivt vedlikehold",
+      "Tjeneste Spesifiserte krav",
+      "Gjennomgang av logger Leverandøren skal foreta daglig gjennomgang av logger som alarmer, sikkerhetskopier, antivirus og øvrige systemlogger.",
+      "Proaktivt vedlikehold Leverandøren skal foreta løpende vurdering av mulige maskin- og programvarefeil.",
+      "Sikkerhets- og servicepatcher Leverandøren skal uten ugrunnet opphold foreta installasjon av service- og sikkerhetspatcher for maskinvare, programvare og databaser.",
+      "Applikasjonsforvaltning",
+      "Tjeneste Spesifiserte krav",
+      "1. Applikasjonsforvaltning Leverandøren skal levere applikasjonsforvaltning for applikasjoner som inngår i leveransen.",
+      "2. Sikkerhets- og servicepatcher Leverandøren skal utføre installasjon av sikkerhets- og servicepatcher for all programvare som inngår i leveransen.",
+      "3. Feilretting Leverandøren skal foreta feilretting ved avvik i applikasjonene som inngår i leveransen.",
+      "[[SIDE:9]]",
+      "Tjeneste Spesifiserte krav",
+      "Ved gjentatte feil skal Leverandøren foreslå varige tiltak for å hindre nye avvik.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+  const byId = new Map(ledger.map((entry) => [entry.id, entry]));
+  const thirdParty = byId.get("Driftsaktiviteter - Tredjeparts-leverandører");
+  const correction = byId.get("Driftsaktiviteter - Feilretting");
+
+  assert.ok(thirdParty);
+  assert.equal(thirdParty.tableId, "Driftsaktiviteter");
+  assert.deepEqual(thirdParty.pages, [8]);
+  assert.match(thirdParty.text, /tredjepartsprogramvare/i);
+  assert.match(thirdParty.text, /arbeidsstasjoner/i);
+  assert.ok(byId.has("Driftsaktiviteter - Gjennomgang av logger"));
+  assert.ok(byId.has("Driftsaktiviteter - Applikasjonsforvaltning"));
+  assert.ok(byId.has("Driftsaktiviteter - Sikkerhets- og servicepatcher"));
+  assert.ok(
+    byId.has(
+      "Driftsaktiviteter - Applikasjonsforvaltning - Sikkerhets- og servicepatcher",
+    ),
+  );
+  assert.ok(correction);
+  assert.deepEqual(correction.pages, [8, 9]);
+  assert.match(correction.text, /underliggende problemer/i);
+  assert.equal(
+    ledger.some((entry) => /^Side\s+8\s+krav\s+\d+$/i.test(entry.id)),
+    false,
+  );
+  assert.equal(
+    ledger.some((entry) => /^krav\s+1$/i.test(entry.id)),
+    false,
+  );
+  assert.equal(new Set(ledger.map((entry) => entry.id)).size, ledger.length);
+});
+
+test("pdf service table dedupes hyphen-equivalent duplicate service rows", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:33]]",
+      "Informasjons- og IT sikkerhet",
+      "IT Sikkerhetskrav - Tabell ID 2-32",
+      "Tjeneste Spesifiserte krav",
+      "Sikkerhetsovervåking Leverandøren skal beskrive prosess for leveranse av sikkerhetsovervåking. Hvis det tilbys en SOC skal denne beskrives.",
+      "Sikkerhets-overvåking Leverandøren skal beskrive prosess for leveranse av en sikkerhetsovervåking. Hvis det tilbys en SOC skal denne beskrives.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].id, "Tabell ID 2-32 - Sikkerhetsovervåking");
+  assert.equal(ledger[0].tableId, "Tabell ID 2-32");
+  assert.equal(ledger[0].service, "Sikkerhetsovervåking");
+});
+
+test("pdf flattened service-table header does not become bare krav id", async () => {
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:8]]",
+      "Applikasjonsforvaltning Tjeneste Spesifiserte krav 1. Applikasjonsforvaltning Leverandøren skal levere applikasjonsforvaltning for applikasjoner som inngår i leveransen.",
+      "[[SIDE:9]]",
+      "Tjeneste Spesifiserte krav Ved gjentatte feil skal Leverandøren foreslå varige tiltak for å hindre nye avvik.",
+    ].join("\n"),
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+
+  assert.equal(
+    ledger.some((entry) => /^krav\s+1$/i.test(entry.id)),
+    false,
+  );
+  assert.equal(
+    ledger.some(
+      (entry) => !entry.tableId && entry.pages.length > 1 && /Applikasjonsforvaltning/i.test(entry.text),
+    ),
+    false,
+  );
+});

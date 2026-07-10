@@ -1,14 +1,28 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
+    "apps/frontend/lib/client/project-api.test.mjs",
+    "apps/frontend/lib/password-auth.test.mjs",
+    "apps/frontend/lib/server/ai/json-completion.test.mjs",
+    "apps/frontend/lib/server/requirements/corpus-parsers.test.mjs",
+    "apps/frontend/lib/server/requirements/evaluation-coverage-integrity.ts",
+    "apps/frontend/lib/server/requirements/evaluation-coverage-integrity.test.mjs",
     "apps/frontend/scripts/run_project_job_worker.mjs",
     "scripts/backfill_document_storage.mjs",
+    "scripts/benchmark_workspace_ui.mjs",
     "scripts/llm_quality_eval.mjs",
+    "scripts/run_document_parser_bakeoff.mjs",
     "scripts/run_evaluation_smoke.mjs",
     "scripts/run_requirement_generation_smoke.mjs",
     "scripts/run_requirement_parser_golden.mjs",
     "scripts/run_requirement_quality_gate.mjs",
+    "scripts/run_vurdering_api_full_251.mjs",
+    "scripts/run_vurdering_full_151.mjs",
+    "scripts/generate_vurdering_answer_quality_report.mjs",
     "scripts/verify_workflow_boundaries.mjs"
+  ],
+  "ignorePatterns": [
+    "tmp/docling-bakeoff-venv/**"
   ],
   "ignoreExports": [
     {
@@ -18,6 +32,18 @@
     {
       "file": "apps/frontend/components/ui/*.tsx",
       "exports": ["*"]
+    },
+    {
+      "file": "apps/frontend/lib/client/project-api.ts",
+      "exports": ["readJsonPayload"]
+    },
+    {
+      "file": "apps/frontend/lib/server/ai.ts",
+      "exports": ["filterDuplicateLegacyStandaloneNoteLines"]
+    },
+    {
+      "file": "apps/frontend/lib/server/ai/json-completion.ts",
+      "exports": ["normalizeFileInputContentType"]
     }
   ]
 }

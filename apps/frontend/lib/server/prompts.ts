@@ -205,6 +205,8 @@ export function buildSolutionEvaluationPrompt() {
       "Sammenlign alltid mot systemets high_level_solution_design, expected_solution_direction, positioning_recommendations og executive_summary når de finnes.",
       "Når dokumentene nevner konkrete føringer som applikasjonsomfang/waves, zero downtime/RTO/RPO, hybrid/on-prem/OT, kommersielle rammer eller blackout/API-avhengigheter, skal de vurderes eksplisitt som dekning, mangel, risiko eller avklaring i topplistene.",
       "Før du skriver at noe mangler, må du kontrollere om samme krav er besvart i importert Bilag 2, kravradutdrag, svarutdrag eller kravdekningen. Hvis svaret finnes, skal du vurdere kvaliteten som Godt, Dårlig eller Uklart, ikke påstå at kravet mangler.",
+      "Når kravdekning eller coverage_registry finnes, er den autoritativ for konkrete kravfunn. Behold radidentitet: like eller gjentatte kravrader skal ikke slås sammen når de har ulike nr, ref, source_reference eller evidence.",
+      "Kravrelaterte document_findings skal knyttes til en eksisterende coverage-rad. Ikke introduser nye kravfunn uten slik kobling; formuler heller brede observasjoner som seksjons-, risiko- eller strategifunn.",
       "Hvis importert Bilag 2, kravradutdrag, svarutdrag eller kravdekning bare viser til vedlegg/annex eller vedlagt dokumentasjon som ikke finnes i vurderingsgrunnlaget, skal document_findings ikke påstå at opplysningen definitivt mangler. Marker det som verifikasjonsbehov og anbefal å kontrollere vedlegget eller løfte hovedbevis inn i svaret.",
       "Hvis arkitektens svar sier at leveranse, omfang, ansvar eller løsning må avklares før dekning kan bekreftes, skal funnet normalt markeres som Uklart og gi en konkret avklarings-/rettingsanbefaling.",
       "missing_elements skal bare inneholde reelle mangler som ikke er dekket i importert Bilag 2 eller kravdekningen. Ikke bruk missing_elements for krav som har et eksisterende, men svakt eller uklart svar; legg dem heller i weaknesses, document_findings eller improvement_recommendations.",
@@ -217,7 +219,7 @@ export function buildSolutionEvaluationPrompt() {
       "document_findings skal peke tilbake til konkrete steder i det importerte Bilag 2 / arkitektdokumentet.",
       "Hvert document_findings.reference skal være en eksakt referanse fra dokumentstrukturen eller nærmeste kildeindikasjon, for eksempel side, seksjon, tabell, rad, ark eller overskrift. Ikke bruk generiske referanser som 'dokumentet' eller 'løsningen'.",
       "Hvert document_findings-punkt skal si om arkitektens svar er Godt, Dårlig, Mangler eller Uklart, og forklare hvorfor opp mot kundeanalysen og kundens dokumenterte behov.",
-      "Hvert document_findings.evidence skal være et kort tekstnært utdrag eller en presis parafrase fra det vurderte dokumentet.",
+      "Hvert document_findings.evidence skal være et kort tekstnært utdrag fra det vurderte dokumentet, helst ordrett fra relevant kravrad, svarutdrag eller avsnitt. Ikke bruk fri parafrase.",
       "Hvis referansen ikke kan bestemmes helt presist, bruk nærmeste tilgjengelige referanse fra strukturkartet og skriv dette tydelig i reference.",
       "Alle oppsummeringer og vurderinger skal være konkrete, relevante og handlingsrettede for et tilbudsteam.",
       "Punktlister skal normalt holdes på 3 til 5 punkter og aldri overstige 10 punkter.",
@@ -236,7 +238,7 @@ export function buildSolutionEvaluationPrompt() {
       "document_findings.assessment skal være nøyaktig én av: Godt, Dårlig, Mangler, Uklart.",
       "architecture_comparison skal være et objekt med winner, architect_solution_score, system_solution_score, verdict, strong_critique, pragmatic_reflections og strategy_improvement_advice.",
     ],
-    exampleOutput: `{"fit_to_customer_needs":"<vurdering>","strengths":["<styrke>"],"weaknesses":["<svakhet>"],"generic_sections":["<for generisk del>"],"missing_elements":["<mangel>"],"risks_to_customer":["<risiko>"],"trust_signals":["<tillitssignal>"],"likely_score_assessment":{"quality":"<kort vurdering>","delivery_confidence":"<kort vurdering>","risk":"<kort vurdering>","competitiveness":"<kort vurdering>"},"improvement_recommendations":["<forbedring>"],"value_assessment":[{"title":"<verdi>","description":"<forklaring>","value_categories":["Redusert risiko"],"profit_share_percent":50}],"rewrite_suggestions":[{"target":"<del>","suggestion":"<råd>"}],"document_findings":[{"reference":"<eksakt side/seksjon/tabell/rad>","assessment":"Dårlig","finding":"<hva som er svakt eller godt>","evidence":"<kort utdrag eller tekstnær parafrase>","recommendation":"<konkret retting>"}],"architecture_comparison":{"winner":"Uavgjort","architect_solution_score":50,"system_solution_score":50,"verdict":"<begrunnelse>","strong_critique":["<kritikk>"],"pragmatic_reflections":["<tradeoff>"],"strategy_improvement_advice":["<råd>"]},"executive_summary":"<konklusjon>"}`,
+    exampleOutput: `{"fit_to_customer_needs":"<vurdering>","strengths":["<styrke>"],"weaknesses":["<svakhet>"],"generic_sections":["<for generisk del>"],"missing_elements":["<mangel>"],"risks_to_customer":["<risiko>"],"trust_signals":["<tillitssignal>"],"likely_score_assessment":{"quality":"<kort vurdering>","delivery_confidence":"<kort vurdering>","risk":"<kort vurdering>","competitiveness":"<kort vurdering>"},"improvement_recommendations":["<forbedring>"],"value_assessment":[{"title":"<verdi>","description":"<forklaring>","value_categories":["Redusert risiko"],"profit_share_percent":50}],"rewrite_suggestions":[{"target":"<del>","suggestion":"<råd>"}],"document_findings":[{"reference":"<eksakt side/seksjon/tabell/rad>","assessment":"Dårlig","finding":"<hva som er svakt eller godt>","evidence":"<kort ordrett utdrag>","recommendation":"<konkret retting>"}],"architecture_comparison":{"winner":"Uavgjort","architect_solution_score":50,"system_solution_score":50,"verdict":"<begrunnelse>","strong_critique":["<kritikk>"],"pragmatic_reflections":["<tradeoff>"],"strategy_improvement_advice":["<råd>"]},"executive_summary":"<konklusjon>"}`,
   });
 }
 
@@ -348,6 +350,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Kravref.-kolonnen skal bruke eksakt synlig krav-ID fra kildedokumentet når den finnes, for eksempel ID, Kravnummer, Req. No. eller tabellrad-ID. Ikke erstatt en dokument-ID med et kort løpenummer.",
         "Hvis dokumentet ikke har en synlig krav-ID for raden, bruk en tydelig lokator basert på seksjon og rad, for eksempel '<seksjon> <radnummer> - <radnavn>', og sørg for at Kildegrunnlag peker til side, seksjon og tabell/rad.",
         "Kildegrunnlag-kolonnen skal bare vise hvor kravet ligger i kravdokumentet: sidetall og eksakt nærmeste overskrift/underoverskrift. Ta med krav-ID/kravnummer bare hvis det står ved selve kravet.",
+        "Svargrunnlag-kolonnen skal vise kort tekstnært grunnlag for svaret: kravradutdrag, svarutdrag, kildehenvisning eller kravtekst som støtter svaret. Svargrunnlag er ikke det samme som Kildegrunnlag.",
         "Hvis kravet mangler ID eller kravnummer, er Kildegrunnlag ekstra viktig: oppgi alltid sidetall og mest presise overskrift/underoverskrift, seksjon, punkt eller tabellnavn som kan lokaliseres i dokumentet.",
         "Krav kan ligge i ulike strukturer i samme dokument: punkter, brødtekst, tabeller, skjema, underpunkter eller tabellrader med flere delkrav. Bevar selvstendige underkrav når de må besvares separat, og bruk presist Kildegrunnlag for hvert underkrav.",
         "Hvis et krav i en tabell inneholder flere underkrav eller delpunkter, del dem bare når de har egne kravhandlinger som krever eget svar. Hvis de hører naturlig sammen, behold dem som ett fullstendig krav og vis tabell-/seksjonsplasseringen i Kildegrunnlag.",
@@ -372,7 +375,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Bruk samme begreper, formalitetsnivå og tone som kunden eller mottakeren bruker i kravdokumentet, men skriv selve teksten på norsk. Hvis kunden skriver kort og skjematisk, svar kort og presist. Hvis kunden skriver formelt og kontraktsnært, svar formelt og kontraktsnært.",
         "Vær svært saklig, nøktern og etterprøvbar. Unngå salgsformuleringer, superlativer, emosjonelt språk og påstander som ikke støttes av grunnlaget.",
         "Gjenbruk kundens egne navn på systemer, prosesser, roller, kravkategorier og leveranseområder når de finnes i grunnlaget.",
-        "Dersom kravdokumentet har en tom svardel, fyll den ut. Dersom det bare finnes kravliste, lag en ryddig tabell med kravreferanse, krav, foreslått svar og kildegrunnlag.",
+        "Dersom kravdokumentet har en tom svardel, fyll den ut. Dersom det bare finnes kravliste, lag en ryddig tabell med kravreferanse, krav, foreslått svar, svargrunnlag og kildegrunnlag.",
         "Bruk tjenestebeskrivelsen aktivt når kravet gjelder drift, forvaltning, overvåking, sikkerhet, prosess, SLA, support, forbedring eller operativ leveranse.",
         "Bruk kundeanalyse, Bilag 1 og løsningsbeskrivelse aktivt når kravet gjelder kundens mål, behov, arkitektur, migrering, integrasjoner, risiko, gjennomføring eller verdi.",
         "Hvis et krav ikke kan besvares sikkert fra grunnlaget, marker svaret tydelig som forbehold eller avklaringspunkt i stedet for å dikte opp detaljer.",
@@ -383,7 +386,7 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Returner ett JSON-objekt med nøklene title og content_markdown.",
         "content_markdown skal være ferdig tekst i markdown-format.",
       ],
-      exampleOutput: `{"title":"<tittel>","content_markdown":"## Status\\n\\n<n> krav er identifisert og besvart.\\n\\n## Kravbesvarelse\\n\\n| Kravref. | Krav | Svar | Kildegrunnlag |\\n|---|---|---|---|\\n| <ref> | <kravtekst> | <konkret, kildebasert svar> | <plassering i kravdokument> |"}`,
+      exampleOutput: `{"title":"<tittel>","content_markdown":"## Status\\n\\n<n> krav er identifisert og besvart.\\n\\n## Kravbesvarelse\\n\\n| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |\\n|---|---|---|---|---|\\n| <ref> | <kravtekst> | <konkret, kildebasert svar> | <kort utdrag eller henvisning som støtter svaret> | <plassering i kravdokument> |"}`,
     });
   }
 

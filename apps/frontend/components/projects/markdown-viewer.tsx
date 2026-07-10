@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -21,7 +22,9 @@ function safeMarkdownUrl(url: string) {
   }
 }
 
-export function MarkdownViewer({
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+
+export const MarkdownViewer = memo(function MarkdownViewer({
   content,
   className,
   tone = "default",
@@ -33,7 +36,7 @@ export function MarkdownViewer({
   return (
     <div className={cn("markdown-viewer", tone === "inverse" && "markdown-viewer-inverse", className)}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={MARKDOWN_REMARK_PLUGINS}
         skipHtml
         urlTransform={safeMarkdownUrl}
       >
@@ -41,4 +44,4 @@ export function MarkdownViewer({
       </ReactMarkdown>
     </div>
   );
-}
+});

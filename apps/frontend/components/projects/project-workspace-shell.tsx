@@ -9,7 +9,6 @@ import type {
 } from "react";
 import { ChevronLeft, ChevronRight, MessageSquareText } from "lucide-react";
 
-import { ProjectDocumentsTab } from "@/components/projects/project-documents-tab";
 import {
   formatDate,
   GenerationProgress,
@@ -57,6 +56,20 @@ const ProjectEvaluationTab = dynamic(
     loading: () => (
       <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
         Laster vurdering ...
+      </div>
+    ),
+  },
+);
+
+const ProjectDocumentsTab = dynamic(
+  () =>
+    import("@/components/projects/project-documents-tab").then(
+      (module) => module.ProjectDocumentsTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster dokumenter ...
       </div>
     ),
   },
@@ -415,7 +428,7 @@ function ProjectWorkspaceSidebar({
         <SidebarTrigger
           aria-label={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
           title={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
-          className="size-8 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+          className="size-12 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
         >
           {sidebarOpen ? (
             <ChevronLeft className="size-4.5" />
@@ -448,9 +461,8 @@ function ProjectWorkspaceSidebar({
                       !sidebarOpen &&
                         "mx-auto size-10 min-h-10 justify-center rounded-md px-0 py-0",
                     )}
-                    onFocus={() => onPreloadWorkspaceTab(item.value)}
-                    onPointerEnter={() => onPreloadWorkspaceTab(item.value)}
                     onPointerDown={() => onPreloadWorkspaceTab(item.value)}
+                    onFocus={() => onPreloadWorkspaceTab(item.value)}
                     onClick={() => onSetWorkspaceTab(item.value)}
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-[0.86rem] font-semibold text-blue-600 shadow-sm group-data-active/menu-button:border-blue-200 group-data-active/menu-button:bg-white group-data-active/menu-button:text-blue-700">
@@ -531,9 +543,8 @@ function ProjectWorkspaceSidebar({
                         !sidebarOpen &&
                           "mx-auto size-10 justify-center rounded-md px-0",
                       )}
-                      onFocus={() => onPreloadWorkspaceTab(item.value)}
-                      onPointerEnter={() => onPreloadWorkspaceTab(item.value)}
                       onPointerDown={() => onPreloadWorkspaceTab(item.value)}
+                      onFocus={() => onPreloadWorkspaceTab(item.value)}
                       onClick={() => onSetWorkspaceTab(item.value)}
                     >
                       <item.icon className="size-4.5 text-slate-500" />
@@ -551,9 +562,9 @@ function ProjectWorkspaceSidebar({
           type="button"
           aria-label="Resize sidebar"
           onPointerDown={onSidebarResizeStart}
-          className="absolute top-0 right-[-3px] bottom-0 hidden w-2 cursor-col-resize touch-none bg-transparent md:block"
+          className="absolute top-0 right-[-6px] bottom-0 hidden w-3 cursor-col-resize touch-none bg-transparent md:block"
         >
-          <span className="absolute top-0 right-[2px] bottom-0 w-px bg-border/70 transition-colors hover:bg-primary/50" />
+          <span className="absolute top-0 right-[5px] bottom-0 w-px bg-border/70 transition-colors hover:bg-primary/50" />
         </button>
       ) : null}
     </Sidebar>
@@ -565,7 +576,7 @@ function WorkspaceHeader({ project, activeTabLabel }: WorkspaceHeaderProps) {
     <section className="mb-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          <SidebarTrigger className="mt-0.5 shrink-0 md:hidden" />
+          <SidebarTrigger className="mt-0.5 size-12 shrink-0 md:hidden" />
           <div className="min-w-0">
             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.26em] text-slate-500">
               {activeTabLabel}

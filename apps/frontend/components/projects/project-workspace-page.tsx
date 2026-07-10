@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   FormEvent,
   useCallback,
@@ -64,6 +64,7 @@ import type {
   CustomerAnalysisSectionSnapshotMap,
   ExecutiveSummaryResult,
   GeneratedArtifact,
+  GeneratedArtifactType,
   ProjectDetail,
   ProjectDocument,
   ProjectDocumentRole,
@@ -74,7 +75,18 @@ import type {
 
 export type { ProjectWorkspaceTab } from "@/components/projects/project-workspace-types";
 
-const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v3";
+const PROJECT_WORKSPACE_UI_SCALE = 0.9;
+const DEFAULT_SIDEBAR_WIDTH = Math.round(285 * PROJECT_WORKSPACE_UI_SCALE);
+const MIN_SIDEBAR_WIDTH = Math.round(270 * PROJECT_WORKSPACE_UI_SCALE);
+const MAX_SIDEBAR_WIDTH = Math.round(440 * PROJECT_WORKSPACE_UI_SCALE);
+
+function isAbortError(error: unknown) {
+  return (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
+}
+const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v4";
 
 function patchProjectWithSnapshot(
   project: ProjectDetail,
@@ -142,6 +154,71 @@ const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
   "value",
 ];
 
+const WORKSPACE_ARTIFACT_TYPES: GeneratedArtifactType[] = [
+  "bilag1_rekonstruksjon",
+  "forbedret_kravsvar",
+  "gjennomforing_og_risiko",
+  "losningsutkast",
+];
+
+const ARTIFACT_TYPE_BY_TAB: Partial<
+  Record<ProjectWorkspaceTab, GeneratedArtifactType>
+> = {
+  bilag1: "bilag1_rekonstruksjon",
+  delivery: "gjennomforing_og_risiko",
+  generator: "losningsutkast",
+  requirements: "forbedret_kravsvar",
+};
+
+function mergeArtifactsForType(
+  current: GeneratedArtifact[],
+  incoming: GeneratedArtifact[],
+  artifactType: GeneratedArtifactType,
+) {
+  const incomingIds = new Set(incoming.map((artifact) => artifact.id));
+  return [
+    ...incoming,
+    ...current.filter(
+      (artifact) =>
+        artifact.artifact_type !== artifactType && !incomingIds.has(artifact.id),
+    ),
+  ];
+}
+
+function loadedArtifactTypesFromArtifacts(artifacts: GeneratedArtifact[]) {
+  return Array.from(
+    new Set(
+      artifacts
+        .map((artifact) => artifact.artifact_type)
+        .filter((type) => WORKSPACE_ARTIFACT_TYPES.includes(type)),
+    ),
+  );
+}
+
+function addLoadedArtifactType(
+  current: GeneratedArtifactType[],
+  artifactType: GeneratedArtifactType,
+) {
+  return current.includes(artifactType) ? current : [...current, artifactType];
+}
+
+function initialLoadedArtifactTypes(project: ProjectDetail) {
+  if (project.artifact_count === 0) {
+    return WORKSPACE_ARTIFACT_TYPES;
+  }
+
+  const loaded = new Set(loadedArtifactTypesFromArtifacts(project.generated_artifacts));
+  if (project.artifact_counts_by_type) {
+    for (const artifactType of WORKSPACE_ARTIFACT_TYPES) {
+      if ((project.artifact_counts_by_type[artifactType] ?? 0) === 0) {
+        loaded.add(artifactType);
+      }
+    }
+  }
+
+  return Array.from(loaded);
+}
+
 type ProgressDriverState = {
   startedAt: number;
   estimatedDurationMs: number;
@@ -197,10 +274,6 @@ function progressCeilingForJobStatus(
   if (message.includes("bygger") || message.includes("kartlegger")) return 66;
 
   return 88;
-}
-
-function hasExplicitProgress(message: string) {
-  return /\[\d{1,3}%\]/.test(message);
 }
 
 function progressMessageLabel(message: string) {
@@ -261,10 +334,6 @@ export function ProjectWorkspacePage({
   initialData: ProjectDetail;
   initialTab?: ProjectWorkspaceTab;
 }) {
-  const DEFAULT_SIDEBAR_WIDTH = 285;
-  const MIN_SIDEBAR_WIDTH = 270;
-  const MAX_SIDEBAR_WIDTH = 440;
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [project, setProject] = useState(initialData);
@@ -286,10 +355,9 @@ export function ProjectWorkspacePage({
   const [isTabPending, startTabTransition] = useTransition();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
-  const [artifactsLoaded, setArtifactsLoaded] = useState(
-    initialData.generated_artifacts.length > 0 ||
-      initialData.artifact_count === 0,
-  );
+  const [loadedArtifactTypes, setLoadedArtifactTypes] = useState<
+    GeneratedArtifactType[]
+  >(() => initialLoadedArtifactTypes(initialData));
   const [analysisLoaded, setAnalysisLoaded] = useState(
     Boolean(initialData.customer_analysis) ||
       !initialData.customer_analysis_generated,
@@ -319,7 +387,7 @@ export function ProjectWorkspacePage({
     analysisLoaded,
     evaluationLoaded,
     executiveSummaryLoaded,
-    artifactsLoaded,
+    loadedArtifactTypes,
   });
   const architectureDocumentCandidates = useMemo(
     () =>
@@ -356,36 +424,44 @@ export function ProjectWorkspacePage({
       }
       const query = nextParams.toString();
       const nextHref = query ? `${pathname}?${query}` : pathname;
-      router.prefetch(nextHref);
-      router.push(nextHref, { scroll: false });
+      window.history.pushState(null, "", nextHref);
     },
-    [activeTab, pathname, preloadWorkspaceTab, project.id, router, searchParams],
+    [activeTab, pathname, preloadWorkspaceTab, project.id, searchParams],
   );
-  const loadSidebarServiceDescriptions = useCallback(async () => {
+  const loadSidebarServiceDescriptions = useCallback(async (signal?: AbortSignal) => {
     const cacheKey = projectServicesCacheKey(project.id);
     const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
     if (cached) {
+      if (signal?.aborted) return;
       setServiceDescriptions(cached);
       return;
     }
 
     try {
-      const services = await fetchProjectServices(project.id);
+      const services = await fetchProjectServices(project.id, { signal });
+      if (signal?.aborted) return;
       setServiceDescriptions(services);
       setClientCache(cacheKey, services, PROJECT_SERVICES_CACHE_TTL_MS);
-    } catch {
+    } catch (err) {
+      if (isAbortError(err) || signal?.aborted) return;
       setServiceDescriptions([]);
     }
   }, [project.id]);
 
   useEffect(() => {
-    void loadSidebarServiceDescriptions();
+    if (activeTab !== "documents") {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadSidebarServiceDescriptions(controller.signal);
     const onServicesUpdated = () => void loadSidebarServiceDescriptions();
     window.addEventListener("project-services-updated", onServicesUpdated);
     return () => {
+      controller.abort();
       window.removeEventListener("project-services-updated", onServicesUpdated);
     };
-  }, [loadSidebarServiceDescriptions]);
+  }, [activeTab, loadSidebarServiceDescriptions]);
 
   const stopSidebarResize = useCallback(() => {
     if (!sidebarResizeRef.current) return;
@@ -486,9 +562,7 @@ export function ProjectWorkspacePage({
               current,
               Math.min(
                 progressCeilingForJobStatus(jobStatus),
-                hasExplicitProgress(jobStatus.message)
-                  ? Math.max(current, nextProgress)
-                  : Math.max(current, nextProgress),
+                Math.max(current, nextProgress),
               ),
             ),
       );
@@ -542,7 +616,7 @@ export function ProjectWorkspacePage({
                 };
               }),
             },
-            { preserveArtifactCount: !artifactsLoaded },
+            { preserveArtifactCount: true },
           ),
         );
       },
@@ -575,7 +649,7 @@ export function ProjectWorkspacePage({
               },
               projectSnapshot ?? current,
             ),
-            { preserveArtifactCount: !artifactsLoaded },
+            { preserveArtifactCount: true },
           ),
         );
       })
@@ -600,7 +674,7 @@ export function ProjectWorkspacePage({
                   : document,
               ),
             },
-            { preserveArtifactCount: !artifactsLoaded },
+            { preserveArtifactCount: true },
           ),
         );
       })
@@ -677,11 +751,11 @@ export function ProjectWorkspacePage({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setAnalysisLoading(true);
-    fetchCustomerAnalysis(project.id)
+    fetchCustomerAnalysis(project.id, { signal: controller.signal })
       .then((analysis) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setProject((current) => ({
             ...current,
             customer_analysis: analysis,
@@ -690,7 +764,7 @@ export function ProjectWorkspacePage({
         }
       })
       .catch((err) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted && !isAbortError(err)) {
           setError(
             err instanceof Error
               ? err.message
@@ -700,13 +774,13 @@ export function ProjectWorkspacePage({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setAnalysisLoading(false);
         }
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     activeTab,
@@ -724,11 +798,11 @@ export function ProjectWorkspacePage({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setEvaluationLoading(true);
-    fetchSolutionEvaluation(project.id)
+    fetchSolutionEvaluation(project.id, { signal: controller.signal })
       .then((evaluation) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setProject((current) => ({
             ...current,
             solution_evaluation: evaluation,
@@ -737,7 +811,7 @@ export function ProjectWorkspacePage({
         }
       })
       .catch((err) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted && !isAbortError(err)) {
           setError(
             err instanceof Error
               ? err.message
@@ -747,13 +821,13 @@ export function ProjectWorkspacePage({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setEvaluationLoading(false);
         }
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     activeTab,
@@ -771,11 +845,11 @@ export function ProjectWorkspacePage({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setExecutiveSummaryLoading(true);
-    fetchExecutiveSummary(project.id)
+    fetchExecutiveSummary(project.id, { signal: controller.signal })
       .then((executiveSummary) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setProject((current) => ({
             ...current,
             executive_summary: executiveSummary,
@@ -784,7 +858,7 @@ export function ProjectWorkspacePage({
         }
       })
       .catch((err) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted && !isAbortError(err)) {
           setError(
             err instanceof Error
               ? err.message
@@ -794,13 +868,13 @@ export function ProjectWorkspacePage({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setExecutiveSummaryLoading(false);
         }
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     activeTab,
@@ -830,30 +904,41 @@ export function ProjectWorkspacePage({
   }
 
   useEffect(() => {
+    const artifactType = ARTIFACT_TYPE_BY_TAB[activeTab];
     if (
-	      (activeTab !== "generator" &&
-	        activeTab !== "delivery" &&
-	        activeTab !== "requirements" &&
-	        activeTab !== "bilag1") ||
-	      artifactsLoaded ||
-	      project.artifact_count === 0
-	    )
+      !artifactType ||
+      loadedArtifactTypes.includes(artifactType) ||
+      project.artifact_count === 0
+    ) {
       return;
-    let cancelled = false;
-    fetchGeneratedArtifacts(project.id)
+    }
+    const controller = new AbortController();
+    fetchGeneratedArtifacts(project.id, {
+      signal: controller.signal,
+      artifactType,
+    })
       .then((artifacts) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setProject((current) =>
-            normalizeProjectState({
-              ...current,
-              generated_artifacts: artifacts,
-            }),
+            normalizeProjectState(
+              {
+                ...current,
+                generated_artifacts: mergeArtifactsForType(
+                  current.generated_artifacts,
+                  artifacts,
+                  artifactType,
+                ),
+              },
+              { preserveArtifactCount: true },
+            ),
           );
-          setArtifactsLoaded(true);
+          setLoadedArtifactTypes((current) =>
+            addLoadedArtifactType(current, artifactType),
+          );
         }
       })
       .catch((err) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted && !isAbortError(err)) {
           setError(
             err instanceof Error
               ? err.message
@@ -862,9 +947,9 @@ export function ProjectWorkspacePage({
         }
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-	  }, [activeTab, artifactsLoaded, project.artifact_count, project.id]);
+  }, [activeTab, loadedArtifactTypes, project.artifact_count, project.id]);
 
   async function onUploadDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -900,11 +985,10 @@ export function ProjectWorkspacePage({
             payload.project,
           ),
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
-      setArtifactsLoaded(true);
     });
   }
 
@@ -942,11 +1026,10 @@ export function ProjectWorkspacePage({
             payload.project,
           ),
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
-      setArtifactsLoaded(true);
     });
 
     if (uploadedDocumentId) {
@@ -987,11 +1070,10 @@ export function ProjectWorkspacePage({
             payload.project,
           ),
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
-      setArtifactsLoaded(true);
     });
 
     return uploadedDocument as ProjectDocument | null;
@@ -1011,12 +1093,15 @@ export function ProjectWorkspacePage({
       content_markdown: value.content_markdown,
     };
     setProject((current) =>
-      normalizeProjectState({
-        ...current,
-        generated_artifacts: current.generated_artifacts.map((item) =>
-          item.id === artifact.id ? optimisticArtifact : item,
-        ),
-      }),
+      normalizeProjectState(
+        {
+          ...current,
+          generated_artifacts: current.generated_artifacts.map((item) =>
+            item.id === artifact.id ? optimisticArtifact : item,
+          ),
+        },
+        { preserveArtifactCount: true },
+      ),
     );
     try {
       const payload = await updateGeneratedArtifact({
@@ -1036,6 +1121,7 @@ export function ProjectWorkspacePage({
             },
             payload.project,
           ),
+          { preserveArtifactCount: true },
         ),
       );
       setNotice("Kravbesvarelsen er oppdatert.");
@@ -1054,12 +1140,15 @@ export function ProjectWorkspacePage({
     setBusy(`delete-artifact-${artifact.id}`);
     const previousProject = project;
     setProject((current) =>
-      normalizeProjectState({
-        ...current,
-        generated_artifacts: current.generated_artifacts.filter(
-          (item) => item.id !== artifact.id,
-        ),
-      }),
+      normalizeProjectState(
+        {
+          ...current,
+          generated_artifacts: current.generated_artifacts.filter(
+            (item) => item.id !== artifact.id,
+          ),
+        },
+        { preserveArtifactCount: true },
+      ),
     );
     try {
       const payload = await deleteGeneratedArtifact({
@@ -1077,6 +1166,7 @@ export function ProjectWorkspacePage({
             },
             payload.project,
           ),
+          { preserveArtifactCount: true },
         ),
       );
       setNotice("Artefakten er slettet.");
@@ -1101,7 +1191,7 @@ export function ProjectWorkspacePage({
             ),
           },
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
@@ -1138,7 +1228,7 @@ export function ProjectWorkspacePage({
           payload.project,
         );
         return normalizeProjectState(next, {
-          preserveArtifactCount: !artifactsLoaded,
+          preserveArtifactCount: true,
         });
       });
       if (!payload.project.customer_analysis_generated) {
@@ -1184,7 +1274,7 @@ export function ProjectWorkspacePage({
               result.project,
             ),
             {
-              preserveArtifactCount: !artifactsLoaded,
+              preserveArtifactCount: true,
             },
           ),
         );
@@ -1211,7 +1301,7 @@ export function ProjectWorkspacePage({
             payload.project,
           ),
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
@@ -1258,10 +1348,13 @@ export function ProjectWorkspacePage({
               },
               result.project,
             ),
-	          ),
-	        );
-	        setArtifactsLoaded(true);
-	      },
+            { preserveArtifactCount: true },
+          ),
+        );
+        setLoadedArtifactTypes((current) =>
+          addLoadedArtifactType(current, result.artifact.artifact_type),
+        );
+      },
       ["Starter generatorjobben ..."],
     );
   }
@@ -1288,8 +1381,8 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-	        setProject((current) =>
-	          normalizeProjectState(
+        setProject((current) =>
+          normalizeProjectState(
             patchProjectWithSnapshot(
               {
                 ...current,
@@ -1301,10 +1394,13 @@ export function ProjectWorkspacePage({
               },
               result.project,
             ),
-	          ),
-	        );
-	        setArtifactsLoaded(true);
-	      },
+            { preserveArtifactCount: true },
+          ),
+        );
+        setLoadedArtifactTypes((current) =>
+          addLoadedArtifactType(current, result.artifact.artifact_type),
+        );
+      },
       ["Starter jobben for fremdriftsplanen ..."],
     );
   }
@@ -1334,8 +1430,8 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-	        setProject((current) =>
-	          normalizeProjectState(
+        setProject((current) =>
+          normalizeProjectState(
             patchProjectWithSnapshot(
               {
                 ...current,
@@ -1347,10 +1443,13 @@ export function ProjectWorkspacePage({
               },
               result.project,
             ),
-	          ),
-	        );
-	        setArtifactsLoaded(true);
-	      },
+            { preserveArtifactCount: true },
+          ),
+        );
+        setLoadedArtifactTypes((current) =>
+          addLoadedArtifactType(current, result.artifact.artifact_type),
+        );
+      },
       ["Starter jobben for Bilag 1 ..."],
     );
   }
@@ -1380,8 +1479,8 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-	        setProject((current) =>
-	          normalizeProjectState(
+        setProject((current) =>
+          normalizeProjectState(
             patchProjectWithSnapshot(
               {
                 ...current,
@@ -1393,10 +1492,13 @@ export function ProjectWorkspacePage({
               },
               result.project,
             ),
-	          ),
-	        );
-	        setArtifactsLoaded(true);
-	      },
+            { preserveArtifactCount: true },
+          ),
+        );
+        setLoadedArtifactTypes((current) =>
+          addLoadedArtifactType(current, result.artifact.artifact_type),
+        );
+      },
       ["Starter jobben for kravbesvarelse ..."],
     );
   }
@@ -1433,7 +1535,7 @@ export function ProjectWorkspacePage({
               result.project,
             ),
             {
-              preserveArtifactCount: !artifactsLoaded,
+              preserveArtifactCount: true,
             },
           ),
         );
@@ -1473,7 +1575,7 @@ export function ProjectWorkspacePage({
               result.project,
             ),
             {
-              preserveArtifactCount: !artifactsLoaded,
+              preserveArtifactCount: true,
             },
           ),
         );

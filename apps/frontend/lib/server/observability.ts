@@ -48,13 +48,36 @@ function firstHeaderValue(value: string | null) {
   return value?.split(",")[0]?.trim() || "";
 }
 
-function requestIdentity(request: Request) {
-  const forwardedFor = firstHeaderValue(request.headers.get("x-forwarded-for"));
-  const realIp = firstHeaderValue(request.headers.get("x-real-ip"));
-  const cloudflareIp = firstHeaderValue(request.headers.get("cf-connecting-ip"));
-  const clientIp = firstHeaderValue(request.headers.get("x-client-ip"));
-  const userAgent = request.headers.get("user-agent") ?? "";
-  const source = `${cloudflareIp || realIp || forwardedFor || clientIp || "local"}:${userAgent}`;
+function shouldTrustForwardedRateLimitHeaders() {
+  const value = process.env.TRUST_FORWARDED_RATE_LIMIT_HEADERS
+    ?.trim()
+    .toLowerCase();
+  if (!value) {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function requestIdentity(request: Request, mode: "request" | "global") {
+  if (mode === "global") {
+    return createHash("sha256").update("global").digest("hex").slice(0, 24);
+  }
+
+  const trustedForwardedHeaders = shouldTrustForwardedRateLimitHeaders();
+  const forwardedFor = trustedForwardedHeaders
+    ? firstHeaderValue(request.headers.get("x-forwarded-for"))
+    : "";
+  const realIp = trustedForwardedHeaders
+    ? firstHeaderValue(request.headers.get("x-real-ip"))
+    : "";
+  const cloudflareIp = trustedForwardedHeaders
+    ? firstHeaderValue(request.headers.get("cf-connecting-ip"))
+    : "";
+  const clientIp = trustedForwardedHeaders
+    ? firstHeaderValue(request.headers.get("x-client-ip"))
+    : "";
+  const source = cloudflareIp || realIp || forwardedFor || clientIp || "direct";
   return createHash("sha256").update(source).digest("hex").slice(0, 24);
 }
 
@@ -64,10 +87,11 @@ function checkMemoryRateLimit(
   options: {
     limit: number;
     windowMs: number;
+    identityMode?: "request" | "global";
   },
 ): RateLimitResult & { identityHash: string } {
   const now = Date.now();
-  const identityHash = requestIdentity(request);
+  const identityHash = requestIdentity(request, options.identityMode ?? "request");
   const key = `${scope}:${identityHash}`;
   const store = getRateLimitStore();
   cleanupRateLimitStore(store, now);
@@ -164,6 +188,7 @@ export async function checkRateLimit(
   options: {
     limit: number;
     windowMs: number;
+    identityMode?: "request" | "global";
   },
 ) {
   const memoryLimit = checkMemoryRateLimit(request, scope, options);

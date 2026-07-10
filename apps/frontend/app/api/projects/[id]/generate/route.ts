@@ -16,12 +16,16 @@ const READ_CACHE_HEADERS = {
 };
 
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await context.params;
-    const artifacts = await listGeneratedArtifacts(id);
+    const artifactType = new URL(request.url).searchParams.get("artifact_type");
+    const artifacts =
+      artifactType && isArtifactType(artifactType)
+        ? await listGeneratedArtifacts(id, { artifactType })
+        : await listGeneratedArtifacts(id);
     return NextResponse.json({ artifacts }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     return NextResponse.json(

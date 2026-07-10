@@ -40,6 +40,15 @@ type ChatPayload = {
   error?: string;
 };
 
+const CHAT_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
+
+function isChatScrolledNearBottom(container: HTMLDivElement) {
+  const distanceFromBottom =
+    container.scrollHeight - container.scrollTop - container.clientHeight;
+
+  return distanceFromBottom <= CHAT_BOTTOM_FOLLOW_THRESHOLD_PX;
+}
+
 function makeLocalMessage(input: {
   projectId: string;
   role: ChatMessage["role"];
@@ -96,6 +105,13 @@ function cleanSessionPreview(value: string) {
     .trim();
 }
 
+function isAbortError(error: unknown) {
+  return (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
+}
+
 function parseChatDomainsHeader(value: string | null): ChatDomainHint[] {
   if (!value) {
     return [];
@@ -136,10 +152,50 @@ async function readJsonPayload<T>(
 ): Promise<T & { error?: string }> {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    return (await response.json()) as T & { error?: string };
+    const payload = (await response.json()) as T & {
+      detail?: unknown;
+      error?: string;
+      message?: unknown;
+    };
+    const message = [payload.error, payload.detail, payload.message].find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" && candidate.trim().length > 0,
+    );
+    return message
+      ? {
+          ...payload,
+          error:
+            /^unsupported\s+content\s+type$/i.test(message.trim())
+              ? `${fallbackMessage} Serveren mottok en forespørsel med feil innholdstype. Last siden på nytt og prøv igjen.`
+              : message.trim(),
+        }
+      : payload;
   }
 
-  return { error: fallbackMessage } as T & { error?: string };
+  const text = await response.text().catch(() => "");
+  try {
+    const payload = JSON.parse(text.trim()) as {
+      detail?: unknown;
+      error?: unknown;
+      message?: unknown;
+    };
+    const message = [payload.error, payload.detail, payload.message].find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" && candidate.trim().length > 0,
+    );
+    if (message) {
+      return {
+        error:
+          /^unsupported\s+content\s+type$/i.test(message.trim())
+            ? `${fallbackMessage} Serveren mottok en forespørsel med feil innholdstype. Last siden på nytt og prøv igjen.`
+            : message.trim(),
+      } as T & { error?: string };
+    }
+  } catch {
+    // Not JSON; use the fallback below.
+  }
+
+  return { error: text.trim() || fallbackMessage } as T & { error?: string };
 }
 
 export function ProjectChatPopoutPage({
@@ -172,18 +228,57 @@ export function ProjectChatPopoutPage({
     null,
   );
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
+  const chatShouldFollowOutputRef = useRef(true);
+  const lastChatScrollTopRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const streamRequestIdRef = useRef(0);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [activeSessionId, sessions],
   );
 
+  const followLatestChatOutput = useCallback(() => {
+    chatShouldFollowOutputRef.current = true;
+    const container = chatContainerRef.current;
+    if (container) {
+      lastChatScrollTopRef.current = container.scrollTop;
+    }
+  }, []);
+
+  const abortActiveLoad = useCallback(() => {
+    loadRequestIdRef.current += 1;
+    loadAbortRef.current?.abort();
+    loadAbortRef.current = null;
+  }, []);
+
+  const abortActiveStream = useCallback(() => {
+    streamRequestIdRef.current += 1;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setStreamingMessage("");
+    setChatBusy(false);
+  }, []);
+
   const loadChat = useCallback(
-    async (sessionId?: string | null, options?: { showLoading?: boolean }) => {
+    async (
+      sessionId?: string | null,
+      options?: { showLoading?: boolean; followLatest?: boolean },
+    ) => {
+      if (options?.followLatest !== false) {
+        followLatestChatOutput();
+      }
       if (options?.showLoading !== false) {
         setChatLoading(true);
       }
       setChatError("");
+      loadAbortRef.current?.abort();
+      const requestId = loadRequestIdRef.current + 1;
+      loadRequestIdRef.current = requestId;
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
 
       try {
         const params = new URLSearchParams();
@@ -192,7 +287,7 @@ export function ProjectChatPopoutPage({
         }
         const response = await fetch(
           `/api/projects/${projectId}/chat${params.toString() ? `?${params}` : ""}`,
-          { cache: "no-store" },
+          { cache: "no-store", signal: controller.signal },
         );
         const payload = await readJsonPayload<ChatPayload>(
           response,
@@ -202,19 +297,38 @@ export function ProjectChatPopoutPage({
           throw new Error(payload.error || "Kunne ikke hente chatten.");
         }
 
+        if (loadRequestIdRef.current !== requestId || controller.signal.aborted) {
+          return;
+        }
+
         setChatMessages(payload.messages);
         setSessions(payload.sessions);
         setActiveSessionId(payload.active_session_id ?? sessionId ?? null);
       } catch (err) {
+        if (isAbortError(err) || controller.signal.aborted) {
+          return;
+        }
         setChatError(
           err instanceof Error ? err.message : "Kunne ikke hente chatten.",
         );
       } finally {
-        setChatLoading(false);
+        if (loadRequestIdRef.current === requestId) {
+          loadAbortRef.current = null;
+          setChatLoading(false);
+        }
       }
     },
-    [projectId],
+    [followLatestChatOutput, projectId],
   );
+
+  useEffect(() => {
+    return () => {
+      loadRequestIdRef.current += 1;
+      loadAbortRef.current?.abort();
+      streamRequestIdRef.current += 1;
+      streamAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     void loadChat(initialSessionId);
@@ -225,11 +339,41 @@ export function ProjectChatPopoutPage({
     if (!container) {
       return;
     }
+    const scrollContainer = container;
+
+    lastChatScrollTopRef.current = scrollContainer.scrollTop;
+
+    function handleScroll() {
+      const nextScrollTop = scrollContainer.scrollTop;
+      const userScrolledUp = nextScrollTop < lastChatScrollTopRef.current - 1;
+
+      if (isChatScrolledNearBottom(scrollContainer)) {
+        chatShouldFollowOutputRef.current = true;
+      } else if (userScrolledUp) {
+        chatShouldFollowOutputRef.current = false;
+      }
+
+      lastChatScrollTopRef.current = nextScrollTop;
+    }
+
+    scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+    return () => scrollContainer.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const container = chatContainerRef.current;
+    if (!container) {
+      return;
+    }
+    if (!chatShouldFollowOutputRef.current) {
+      return;
+    }
 
     container.scrollTo({
       top: container.scrollHeight,
-      behavior: streamingMessage ? "auto" : "smooth",
+      behavior: "auto",
     });
+    lastChatScrollTopRef.current = container.scrollTop;
   }, [chatMessages, streamingMessage]);
 
   useEffect(() => {
@@ -249,6 +393,9 @@ export function ProjectChatPopoutPage({
 
   function startNewChat() {
     const nextSessionId = crypto.randomUUID();
+    abortActiveLoad();
+    abortActiveStream();
+    followLatestChatOutput();
     setActiveSessionId(nextSessionId);
     setChatMessages([]);
     setStreamingMessage("");
@@ -256,9 +403,11 @@ export function ProjectChatPopoutPage({
     setPendingAttachment(null);
     setDocumentUploadState({ status: "idle" });
     setActivePanel(null);
+    setChatLoading(false);
   }
 
   async function selectSession(sessionId: string) {
+    abortActiveStream();
     setActivePanel(null);
     setPendingAttachment(null);
     setDocumentUploadState({ status: "idle" });
@@ -289,12 +438,19 @@ export function ProjectChatPopoutPage({
         : {}),
     });
 
+    followLatestChatOutput();
     setActiveSessionId(nextSessionId);
     setChatInput("");
     setChatError("");
     setChatBusy(true);
     setStreamingMessage("");
     setChatMessages((current) => [...current, userMessage]);
+    const requestId = streamRequestIdRef.current + 1;
+    streamRequestIdRef.current = requestId;
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+    const isCurrentStream = () =>
+      streamRequestIdRef.current === requestId && !controller.signal.aborted;
     if (attachment) {
       setDocumentUploadState({
         status: "sending",
@@ -329,7 +485,11 @@ export function ProjectChatPopoutPage({
         method: "POST",
         headers,
         body,
+        signal: controller.signal,
       });
+      if (!isCurrentStream()) {
+        return;
+      }
 
       if (!response.ok) {
         const payload = await readJsonPayload<{ error?: string }>(
@@ -365,11 +525,19 @@ export function ProjectChatPopoutPage({
             break;
           }
           assistantText += decoder.decode(value, { stream: true });
+          if (!isCurrentStream()) {
+            await reader.cancel().catch(() => undefined);
+            return;
+          }
           setStreamingMessage(assistantText);
         }
         assistantText += decoder.decode();
       } else {
         assistantText = await response.text();
+      }
+
+      if (!isCurrentStream()) {
+        return;
       }
 
       const cleanedAssistantText = assistantText.trim();
@@ -398,8 +566,14 @@ export function ProjectChatPopoutPage({
       setStreamingMessage("");
       setActiveSessionId(responseSessionId);
       setChatMessages((current) => [...current, assistantMessage]);
-      await loadChat(responseSessionId, { showLoading: false });
+      await loadChat(responseSessionId, {
+        showLoading: false,
+        followLatest: false,
+      });
     } catch (err) {
+      if (isAbortError(err) || controller.signal.aborted || !isCurrentStream()) {
+        return;
+      }
       setStreamingMessage("");
       setChatMessages((current) =>
         current.filter((item) => item.id !== userMessage.id),
@@ -417,7 +591,10 @@ export function ProjectChatPopoutPage({
         err instanceof Error ? err.message : "Kunne ikke sende chatmelding.",
       );
     } finally {
-      setChatBusy(false);
+      if (streamRequestIdRef.current === requestId) {
+        streamAbortRef.current = null;
+        setChatBusy(false);
+      }
     }
   }
 
@@ -491,6 +668,7 @@ export function ProjectChatPopoutPage({
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setActivePanel(null)}
+                  aria-label="Lukk sidepanel"
                 >
                   <PanelLeftClose className="size-4" />
                 </Button>

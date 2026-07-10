@@ -167,6 +167,17 @@ export async function POST(
         const model = await resolveOpenAIModelOverride(
           request.headers.get("x-openai-model"),
         );
+        const contentType = request.headers.get("content-type") ?? "";
+        if (
+          contentType &&
+          !contentType.toLowerCase().includes("application/json")
+        ) {
+          return NextResponse.json(
+            { error: "Forespørselen må sendes som JSON." },
+            { status: 415 },
+          );
+        }
+
         const body = (await request.json().catch(() => ({}))) as ProjectJobRequestBody;
 
         if (body.kind === "artifact_generation") {

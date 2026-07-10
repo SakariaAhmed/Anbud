@@ -2,58 +2,96 @@ import "server-only";
 
 export type PdfPageText = {
   page: number;
+  pageEnd?: number;
   text: string;
 };
 
-export function splitPdfPages(rawText: string): PdfPageText[] {
-  const parts = rawText.split(/\[\[SIDE:(\d+)\]\]/g);
+export type PdfPageMarker = {
+  startPage: number;
+  endPage: number;
+  index: number;
+  marker: string;
+};
+
+const PDF_PAGE_MARKER_PATTERN = /\[\[SIDE:(\d{1,5})(?:-(\d{1,5}))?\]\]/g;
+
+export function findPdfPageMarkers(rawText: string): PdfPageMarker[] {
+  return [...rawText.matchAll(PDF_PAGE_MARKER_PATTERN)]
+    .map((match) => {
+      const startPage = Number(match[1]);
+      const endPage = Number(match[2] ?? match[1]);
+      return {
+        startPage,
+        endPage: Math.max(startPage, endPage),
+        index: match.index ?? 0,
+        marker: match[0],
+      };
+    })
+    .filter(
+      (marker) =>
+        Number.isFinite(marker.startPage) &&
+        Number.isFinite(marker.endPage) &&
+        marker.startPage > 0,
+    );
+}
+
+function splitPdfPageBlocks(
+  rawText: string,
+  normalize: (value: string) => string,
+): PdfPageText[] {
+  const markers = findPdfPageMarkers(rawText);
   const pages: PdfPageText[] = [];
 
-  for (let index = 1; index < parts.length; index += 2) {
-    const page = Number(parts[index]);
-    const text = normalizePageText(parts[index + 1] ?? "");
+  for (const [index, marker] of markers.entries()) {
+    const nextMarker = markers[index + 1];
+    const textStart = marker.index + marker.marker.length;
+    const textEnd = nextMarker?.index ?? rawText.length;
+    const text = normalize(rawText.slice(textStart, textEnd));
 
-    if (Number.isFinite(page) && text) {
-      pages.push({ page, text });
+    if (text) {
+      pages.push({
+        page: marker.startPage,
+        pageEnd: marker.endPage,
+        text,
+      });
     }
   }
 
   return pages;
 }
 
-export function splitPdfPagesPreservingLines(rawText: string): PdfPageText[] {
-  const parts = rawText.split(/\[\[SIDE:(\d+)\]\]/g);
-  const pages: PdfPageText[] = [];
+export function splitPdfPages(rawText: string): PdfPageText[] {
+  return splitPdfPageBlocks(rawText, normalizePageText);
+}
 
-  for (let index = 1; index < parts.length; index += 2) {
-    const page = Number(parts[index]);
-    const text = (parts[index + 1] ?? "")
+export function splitPdfPagesPreservingLines(rawText: string): PdfPageText[] {
+  return splitPdfPageBlocks(rawText, (value) =>
+    value
       .replace(/\r\n/g, "\n")
       .replace(/\bSide\s+\d+\s+av\s+\d+\b/gi, " ")
       .replace(/\bSide\s*\d+\s*av\s*\d+\b/gi, " ")
       .replace(/\bKonfidensiell\b/gi, " ")
-      .replace(/\bRA-\d+\s+BILAG\s+[\d,]+\s+TIL\s+SSA-D\s+\d{4}\b/gi, " ")
+      .replace(/\bRA\s*-\s*\d+\s*B\s*I\s*L\s*A\s*G\s*[\d,.\s]+\s*TIL\s*SSA\s*-\s*D\s*\d{4}\b/gi, " ")
       .replace(/\n{3,}/g, "\n\n")
-      .trim();
-
-    if (Number.isFinite(page) && text) {
-      pages.push({ page, text });
-    }
-  }
-
-  return pages;
+      .trim(),
+  );
 }
 
 function repairPdfWordFragments(value: string) {
   return value
     .replace(/\bi(?=Leveransen\b)/g, "i ")
     .replace(/\bavLeveransen\b/gi, "av Leveransen")
+    .replace(/\b(Leveransen)i\b/gi, "$1 i")
+    .replace(/\b(levere|leverer|levert)(Leveransen)i\b/gi, "$1 $2 i")
+    .replace(/\b(levere|leverer|levert)(?=(?:Leveranse|Leveransen|Leveransens)\b)/gi, "$1 ")
+    .replace(/\b(Leveransen)i\b/gi, "$1 i")
+    .replace(/\b(ny|nye)(?=(?:Leverandør|Leverandøren|Leverandørens)\b)/gi, "$1 ")
     .replace(
-      /\b(for|av|til|fra|under|over|i|på|mot|hos|med|som|at|skal|må|kan|bør|og|eller)(?=(?:Leveranse|Leveransen|Leveransens|Leverandøren|Leverandørens|Kunden|Kundens|Kunde)\b)/gi,
+      /\b(for|av|til|fra|under|over|i|på|mot|hos|med|som|at|om|skal|må|kan|bør|og|eller)(?=(?:Leveranse|Leveransen|Leveransens|Leverandøren|Leverandørens|Kunden|Kundens|Kunde)\b)/gi,
       "$1 ",
     )
     .replace(
-      /\b(for|av|til|fra|under|over|i|på|mot|hos|med|som|at|skal|må|kan|bør|og|eller)(?=(?:Kunden|Kunde|Leverandøren|Leverandør)(?:har|er|skal|må|kan|bør|forbeholder)\b)/gi,
+      /\b(for|av|til|fra|under|over|i|på|mot|hos|med|som|at|om|skal|må|kan|bør|og|eller)(?=(?:Kunden|Kunde|Leverandøren|Leverandør)(?:har|er|skal|må|kan|bør|forbeholder)\b)/gi,
       "$1 ",
     )
     .replace(
@@ -66,6 +104,7 @@ function repairPdfWordFragments(value: string) {
       "$1 leverandører",
     )
     .replace(/(^|[^\p{L}\p{N}_])åiverksetterutiner(?=$|[^\p{L}\p{N}_])/giu, "$1å iverksette rutiner")
+    .replace(/(^|[^\p{L}\p{N}_])åiverksette(?=$|[^\p{L}\p{N}_])/giu, "$1å iverksette")
     .replace(/(^|[^\p{L}\p{N}_])åiverksette(?=\p{L})/giu, "$1å iverksette ")
     .replace(/\bforvidere\b/gi, "for videre")
     .replace(/\btilå\b/gi, "til å")
@@ -110,6 +149,14 @@ export function normalizePageText(value: string) {
 
 export function documentRequirementId(value: string) {
   return normalizePageText(value)
+    .replace(
+      /\bID\s*(\d{1,3})\s*[-.]\s*(\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi,
+      "ID $1-$2-$3",
+    )
+    .replace(
+      /\bID\s*(\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi,
+      "ID $1-$2",
+    )
     .replace(/\s+([,;:])/g, "$1")
     .trim();
 }
@@ -137,6 +184,10 @@ export function normalizePdfReferenceTypography(value: string) {
     .replace(
       /\bID\s+(\d{1,3})\s*[-.]\s*(\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi,
       "ID $1-$2-$3",
+    )
+    .replace(
+      /\bID\s*(\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi,
+      "ID $1-$2",
     );
 
   for (let index = 0; index < 4; index += 1) {
@@ -165,7 +216,7 @@ export function isPdfFooterOrChromeHeadingLine(value: string) {
   return (
     /^Konfidensiell$/i.test(text) ||
     /^,?\d+\s*TIL\s*SSA-D\s*\d{4}$/i.test(text) ||
-    /^RA-\d+\s*BILAG/i.test(text) ||
+    /^RA\s*-\s*\d+\s*B\s*I\s*L\s*A\s*G/i.test(text) ||
     /^Side\s*\d+\s*av\s*\d+$/i.test(text)
   );
 }

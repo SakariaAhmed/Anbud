@@ -8,6 +8,27 @@ import {
 
 const CURRENT_PATH_HEADER = "x-current-pathname";
 const CORRELATION_ID_HEADER = "x-correlation-id";
+function contentSecurityPolicy() {
+  const scriptSrc =
+    process.env.NODE_ENV === "production"
+      ? "script-src 'self' 'unsafe-inline' blob:"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:";
+
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "style-src 'self' 'unsafe-inline'",
+    scriptSrc,
+    "connect-src 'self' https: wss:",
+    "worker-src 'self' blob:",
+    "media-src 'self' blob: data:",
+  ].join("; ");
+}
 
 const PUBLIC_PATH_PREFIXES = [
   "/_next",
@@ -86,6 +107,7 @@ function applyResponseHeaders(response: NextResponse, correlationId: string) {
   response.headers.set(CORRELATION_ID_HEADER, correlationId);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Content-Security-Policy", contentSecurityPolicy());
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set(
     "Permissions-Policy",

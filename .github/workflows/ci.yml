@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  FALLOW_VERSION: "2.104.0"
+  NODE_VERSION: "22.14.0"
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -17,9 +21,57 @@ jobs:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
       - name: Validate frontend
         working-directory: apps/frontend
         run: |
           npm ci
+          npm run secrets:scan
+          npm test
           npm run lint
           npm run build
+
+      - name: Fallow static quality gate
+        run: |
+          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" --root . --format json --score --performance > /tmp/fallow-combined.json
+          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" fix --root . --dry-run --yes --no-create-config --format json > /tmp/fallow-fix-preview.json
+          node - <<'NODE'
+          const fs = require("node:fs");
+          function readJson(path) {
+            const raw = fs.readFileSync(path, "utf8");
+            return JSON.parse(raw.slice(raw.indexOf("{")));
+          }
+          const combined = readJson("/tmp/fallow-combined.json");
+          const fixPreview = readJson("/tmp/fallow-fix-preview.json");
+          const totalIssues = combined.check?.total_issues ?? 0;
+          const totalFixes = fixPreview.summary?.total_fixes ?? fixPreview.fixes?.length ?? 0;
+          console.log(JSON.stringify({ fallow_total_issues: totalIssues, fallow_fix_preview_total_fixes: totalFixes }));
+          if (totalIssues > 0 || totalFixes > 0) process.exit(1);
+          NODE
+
+      - name: Docker image smoke
+        working-directory: apps/frontend
+        run: npm run docker:smoke
+
+      - name: Docker production image smoke
+        working-directory: apps/frontend
+        run: npm run docker:smoke:docling -- --tag anbud-frontend-ci:${{ github.sha }} --keep-image
+
+      - name: Docker production image CVE scan
+        uses: docker/scout-action@2688993af7bafd6ba8c6a74ec652442be91dd82b
+        with:
+          command: cves
+          image: local://anbud-frontend-ci:${{ github.sha }}
+          only-severities: critical,high
+          exit-code: true
+          write-comment: false
+
+      - name: Remove production smoke image
+        if: always()
+        run: docker image rm anbud-frontend-ci:${{ github.sha }} >/dev/null 2>&1 || true

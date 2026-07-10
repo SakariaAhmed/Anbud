@@ -1,6 +1,23 @@
 export const AUTH_COOKIE_NAME = "bidsite_session";
-export const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 export const AUTH_VERIFIED_HEADER = "x-bidsite-auth-verified";
+
+const DEFAULT_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+const MIN_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 15;
+const MAX_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+
+function configuredSessionMaxAgeSeconds() {
+  const configured = Number(process.env.APP_SESSION_MAX_AGE_SECONDS);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_AUTH_COOKIE_MAX_AGE_SECONDS;
+  }
+
+  return Math.min(
+    MAX_AUTH_COOKIE_MAX_AGE_SECONDS,
+    Math.max(MIN_AUTH_COOKIE_MAX_AGE_SECONDS, Math.floor(configured)),
+  );
+}
+
+export const AUTH_COOKIE_MAX_AGE_SECONDS = configuredSessionMaxAgeSeconds();
 
 const encoder = new TextEncoder();
 let signingKeyCache:
@@ -15,7 +32,7 @@ function getPassword() {
 }
 
 function getSigningSecret() {
-  return process.env.APP_SESSION_SECRET?.trim() || getPassword();
+  return process.env.APP_SESSION_SECRET?.trim() ?? "";
 }
 
 function toBase64Url(bytes: ArrayBuffer) {
@@ -39,7 +56,7 @@ function timingSafeEqual(left: string, right: string) {
 async function sign(value: string) {
   const secret = getSigningSecret();
   if (!secret) {
-    throw new Error("Missing APP_ACCESS_PASSWORD.");
+    throw new Error("Missing APP_SESSION_SECRET.");
   }
 
   if (!signingKeyCache || signingKeyCache.secret !== secret) {
@@ -61,7 +78,7 @@ async function sign(value: string) {
 }
 
 export function isPasswordAuthConfigured() {
-  return Boolean(getPassword());
+  return Boolean(getPassword() && getSigningSecret());
 }
 
 export function verifyPassword(input: string) {

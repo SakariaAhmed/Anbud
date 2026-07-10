@@ -43,6 +43,10 @@ const MALFORMED_REFERENCE_PATTERNS: Array<{ code: string; pattern: RegExp }> = [
     pattern: /\bTredjepartsprogramvare og -løsninger\b/i,
   },
   {
+    code: "malformed_compact_id",
+    pattern: /\bID\d{1,3}\s*[-.]\s*\d{1,3}\b/i,
+  },
+  {
     code: "misclassified_requirement_heading",
     pattern: /\bDokumentasjonen vil omfatte følgende hovedområder\b/i,
   },

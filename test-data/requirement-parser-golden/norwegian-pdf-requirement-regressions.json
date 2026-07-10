@@ -192,6 +192,66 @@
         "SPOC-modell",
         "Leverandørenssvar"
       ]
+    },
+    {
+      "name": "generated norwegian pdf table rows and section markers",
+      "documentTitle": "Bilag 2 - Krav til leverandørens løsning",
+      "rawText": "[[SIDE:1]]\nBilag 2 - Krav til leverandørens løsning\nKunde Test KF\nTilgang og roller - både faste og midlertidige brukere\nKravene i denne delen står i flere formater. Leverandøren skal svare på både tabellrader, punkter og tekstlige krav.\nKrav registrert i tabell\nID/markering Prioritet Kravtekst Leverandøren\ns svar\n088/01 Må Leverandøren skal dokumentere logging for drift.\nB2-01 Bør Løsningen skal støtte varsling ved avvik.\nFRF.1.2 Må Leverandøren skal dokumentere dottede krav-ID-er.\nOpsjon Kunden skal kunne eksportere rapporter til maskinlesbart format.\nPunktkrav som skal besvares:\n- 088/02: Leverandøren skal beskrive hvordan tjenesten måles.\n- x: Løsningen skal støtte separate miljøer for utvikling og test.\nKrav uten egen tabellrad: Kunden skal kunne se status på alle aktive saker. Konfigurasjonen skal kunne justeres av autorisert administrator.\nAvklaringer/innspill som inngår i kravbildet:\nMarkering Avklaring/kravnotat Kommentar\nNB Brukere skal kunne registrere oppgaver på mobil uten å miste data ved ustabil nettverksdekning. Skal besvares\nKonfigurasjonen skal kunne justeres av autorisert administrator.\n",
+      "expectedEntries": [
+        {
+          "id": "088/01",
+          "heading": "Tilgang og roller - både faste og midlertidige brukere",
+          "textIncludes": [
+            "Leverandøren skal dokumentere logging for drift."
+          ]
+        },
+        {
+          "id": "B2-01",
+          "heading": "Tilgang og roller - både faste og midlertidige brukere",
+          "textIncludes": [
+            "Løsningen skal støtte varsling ved avvik."
+          ]
+        },
+        {
+          "id": "FRF.1.2",
+          "heading": "Tilgang og roller - både faste og midlertidige brukere",
+          "textIncludes": [
+            "Leverandøren skal dokumentere dottede krav-ID-er."
+          ]
+        },
+        {
+          "id": "Tabellkrav-01",
+          "heading": "Tilgang og roller - både faste og midlertidige brukere",
+          "textIncludes": [
+            "Kunden skal kunne eksportere rapporter til maskinlesbart format."
+          ]
+        },
+        {
+          "id": "088/02",
+          "heading": "Tilgang og roller - både faste og midlertidige brukere",
+          "textIncludes": [
+            "Leverandøren skal beskrive hvordan tjenesten måles."
+          ]
+        },
+        {
+          "id": "Punktkrav-01",
+          "heading": "Tilgang og roller - både faste og midlertidige brukere",
+          "textIncludes": [
+            "Løsningen skal støtte separate miljøer for utvikling og test."
+          ]
+        },
+        {
+          "id": "Avklaringskrav-01",
+          "heading": "Tilgang og roller - både faste og midlertidige brukere",
+          "textIncludes": [
+            "Brukere skal kunne registrere oppgaver på mobil uten å miste data ved ustabil nettverksdekning. Konfigurasjonen skal kunne justeres av autorisert administrator."
+          ]
+        }
+      ],
+      "forbiddenDisplays": [
+        "Leverandøren s svar",
+        "Skal besvares"
+      ]
     }
   ]
 }

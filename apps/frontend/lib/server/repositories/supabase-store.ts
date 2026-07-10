@@ -22,6 +22,12 @@ import {
   replaceServiceDocumentChunks,
 } from "@/lib/server/document-chunks";
 import {
+  isMissingRelationColumn,
+  isMissingSchemaColumn,
+  missingColumnNameFromError,
+  removeMissingStorageColumns,
+} from "@/lib/server/repositories/supabase-compat";
+import {
   appendCustomerAnalysisSectionHistory,
   CUSTOMER_ANALYSIS_SECTIONS,
 } from "@/lib/customer-analysis-history";
@@ -171,6 +177,33 @@ interface ArtifactRow {
   updated_at?: string;
 }
 
+const GENERATED_ARTIFACT_TYPES: GeneratedArtifactType[] = [
+  "losningsutkast",
+  "bilag1_rekonstruksjon",
+  "forbedret_kravsvar",
+  "tilbudsstrategi",
+  "verdiargumentasjon",
+  "anbefalt_arkitektur",
+  "gjennomforing_og_risiko",
+];
+
+function isGeneratedArtifactType(value: unknown): value is GeneratedArtifactType {
+  return GENERATED_ARTIFACT_TYPES.includes(value as GeneratedArtifactType);
+}
+
+function artifactCountsByType(
+  rows: Array<{ artifact_type: unknown }> | null | undefined,
+) {
+  const counts: Partial<Record<GeneratedArtifactType, number>> = {};
+  for (const row of rows ?? []) {
+    if (!isGeneratedArtifactType(row.artifact_type)) {
+      continue;
+    }
+    counts[row.artifact_type] = (counts[row.artifact_type] ?? 0) + 1;
+  }
+  return counts;
+}
+
 interface ChatRow {
   id: string;
   project_id: string;
@@ -286,6 +319,8 @@ const PROJECT_SELECT_LEGACY =
   "id, title, client_name, description, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
 const SERVICE_DOCUMENT_SUMMARY_SELECT =
   "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, ai_summary, ai_summary_updated_at, created_at, updated_at";
+const SERVICE_DOCUMENT_SUMMARY_SELECT_BASE =
+  "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, created_at, updated_at";
 const PROJECT_DOCUMENT_INSERT_COLUMN_NAMES = [
   "id",
   "project_id",
@@ -459,6 +494,9 @@ const EXECUTIVE_SUMMARY_EMPTY: ExecutiveSummaryResult = {
 
 const PROJECTS_LIST_TAG = "projects:list";
 const SERVICE_DESCRIPTIONS_TAG = "service-descriptions:list";
+const PROJECT_LIST_LIMIT = 500;
+const GENERATED_ARTIFACT_LIST_LIMIT = 250;
+const CHAT_MESSAGE_LIST_LIMIT = 1200;
 
 function projectTag(projectId: string) {
   return `project:${projectId}`;
@@ -500,73 +538,6 @@ function isMissingLegacyProjectColumn(error: { message?: string } | null) {
     message.includes("client_name") ||
     message.includes("title")
   );
-}
-
-function isMissingSchemaColumn(error: { message?: string } | null) {
-  const message = (error?.message ?? "").toLowerCase();
-  if (!message) {
-    return false;
-  }
-  if (
-    message.includes("violates") ||
-    message.includes("not-null") ||
-    message.includes("not null")
-  ) {
-    return false;
-  }
-
-  return (
-    message.includes("schema cache") ||
-    message.includes("does not exist") ||
-    message.includes("could not find") ||
-    message.includes("column ")
-  );
-}
-
-function isMissingRelationColumn(
-  error: { message?: string } | null,
-  relation: string,
-) {
-  const message = (error?.message ?? "").toLowerCase();
-  if (!message) {
-    return false;
-  }
-
-  return (
-    message.includes(`column ${relation}.`) ||
-    message.includes(`of '${relation}'`) ||
-    (message.includes(relation) && message.includes("schema cache")) ||
-    (message.includes(relation) && message.includes("does not exist"))
-  );
-}
-
-function missingColumnNameFromError<const TColumn extends string>(
-  error: { message?: string } | null,
-  columns: readonly TColumn[],
-): TColumn | null {
-  if (!isMissingSchemaColumn(error)) {
-    return null;
-  }
-
-  const message = (error?.message ?? "").toLowerCase();
-  return (
-    columns.find((column) => {
-      const normalized = column.toLowerCase();
-      return (
-        message.includes(`'${normalized}' column`) ||
-        message.includes(`"${normalized}" column`) ||
-        message.includes(`column '${normalized}'`) ||
-        message.includes(`column "${normalized}"`) ||
-        message.includes(`column ${normalized}`) ||
-        message.includes(`.${normalized}`)
-      );
-    }) ?? null
-  );
-}
-
-function removeMissingStorageColumns(payload: Record<string, unknown>) {
-  delete payload.file_storage_bucket;
-  delete payload.file_storage_path;
 }
 
 const CHAT_DOMAIN_HINTS = new Set<ChatDomainHint>([
@@ -905,15 +876,7 @@ function mapExecutiveSummaryRow(row: ExecutiveSummaryRow) {
 }
 
 function mapArtifact(row: ArtifactRow): GeneratedArtifact {
-  const artifactType = [
-    "losningsutkast",
-    "bilag1_rekonstruksjon",
-    "forbedret_kravsvar",
-    "tilbudsstrategi",
-    "verdiargumentasjon",
-    "anbefalt_arkitektur",
-    "gjennomforing_og_risiko",
-  ].includes(String(row.artifact_type))
+  const artifactType = isGeneratedArtifactType(row.artifact_type)
     ? row.artifact_type
     : "losningsutkast";
   const title =
@@ -1014,6 +977,36 @@ function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+type ServiceDocumentSummaryQuery = (
+  select: string,
+) => PromiseLike<{
+  data: unknown;
+  error: { message?: string } | null;
+}>;
+
+async function fetchServiceDocumentSummaryRows(
+  query: ServiceDocumentSummaryQuery,
+  options: { emptyWhenServiceDocumentRelationMissing?: boolean } = {},
+) {
+  let { data, error } = await query(SERVICE_DOCUMENT_SUMMARY_SELECT);
+
+  if (error && isMissingRelationColumn(error, "ai_summary")) {
+    ({ data, error } = await query(SERVICE_DOCUMENT_SUMMARY_SELECT_BASE));
+  }
+
+  if (error) {
+    if (
+      options.emptyWhenServiceDocumentRelationMissing &&
+      isMissingRelationColumn(error, "service_documents")
+    ) {
+      return [];
+    }
+    throw new Error(error.message || "Kunne ikke hente tjenestedokumenter.");
+  }
+
+  return (Array.isArray(data) ? data : []) as ServiceDocumentSummaryRow[];
 }
 
 function fromUnknownServiceDocumentSummaryRow(
@@ -1477,7 +1470,8 @@ export async function listProjects(): Promise<ProjectSummary[]> {
         supabase
           .from("projects")
           .select(select)
-          .order("last_activity_at", { ascending: false });
+          .order("last_activity_at", { ascending: false })
+          .limit(PROJECT_LIST_LIMIT);
       const [
         projectsResult,
         documentRows,
@@ -1485,9 +1479,13 @@ export async function listProjects(): Promise<ProjectSummary[]> {
       ] = await Promise.all([
         projectQuery(PROJECT_SELECT_SAFE),
         fetchDocumentSummaryRows((select) =>
-          supabase.from("documents").select(select),
+          supabase.from("documents").select(select).limit(PROJECT_LIST_LIMIT * 10),
         ),
-        supabase.from("generated_artifacts").select("id, project_id"),
+        supabase
+          .from("generated_artifacts")
+          .select("id, project_id")
+          .order("created_at", { ascending: false })
+          .limit(PROJECT_LIST_LIMIT * 20),
       ]);
       let { data: projects, error: projectsError } = projectsResult;
 
@@ -1615,34 +1613,35 @@ export async function listServiceDescriptions(): Promise<ServiceDescription[]> {
   return unstable_cache(
     async () => {
       const supabase = createServiceClient();
-      const [{ data: services, error: servicesError }, { data: documents, error: documentsError }] =
-        await Promise.all([
-          supabase
-            .from("service_descriptions")
-            .select("*")
-            .order("name", { ascending: true }),
-          supabase
-            .from("service_documents")
-            .select(SERVICE_DOCUMENT_SUMMARY_SELECT)
-            .order("created_at", { ascending: false }),
-        ]);
+      const [servicesResult, documents] = await Promise.all([
+        supabase
+          .from("service_descriptions")
+          .select("*")
+          .order("name", { ascending: true }),
+        fetchServiceDocumentSummaryRows(
+          (select) =>
+            supabase
+              .from("service_documents")
+              .select(select)
+              .order("created_at", { ascending: false }),
+          { emptyWhenServiceDocumentRelationMissing: true },
+        ),
+      ]);
+      const { data: services, error: servicesError } = servicesResult;
 
-      if (servicesError || documentsError) {
+      if (servicesError) {
         if (
-          isMissingRelationColumn(servicesError, "service_descriptions") ||
-          isMissingRelationColumn(documentsError, "service_documents")
+          isMissingRelationColumn(servicesError, "service_descriptions")
         ) {
           return [];
         }
         throw new Error(
-          servicesError?.message ||
-            documentsError?.message ||
-            "Kunne ikke hente tjenestebeskrivelser.",
+          servicesError.message || "Kunne ikke hente tjenestebeskrivelser.",
         );
       }
 
       const documentsByService = new Map<string, ServiceDocumentSummaryRow[]>();
-      for (const document of (documents ?? []) as ServiceDocumentSummaryRow[]) {
+      for (const document of documents) {
         const list = documentsByService.get(document.service_id) ?? [];
         list.push(document);
         documentsByService.set(document.service_id, list);
@@ -2082,20 +2081,15 @@ export async function listServiceDocumentSummariesForProject(
     return [];
   }
 
-  const { data, error } = await supabase
-    .from("service_documents")
-    .select(SERVICE_DOCUMENT_SUMMARY_SELECT)
-    .in("service_id", serviceIds)
-    .order("created_at", { ascending: false });
+  const rows = await fetchServiceDocumentSummaryRows((select) =>
+    supabase
+      .from("service_documents")
+      .select(select)
+      .in("service_id", serviceIds)
+      .order("created_at", { ascending: false }),
+  );
 
-  if (error) {
-    if (isMissingRelationColumn(error, "ai_summary")) {
-      return [];
-    }
-    throw new Error(error.message);
-  }
-
-  return ((data ?? []) as ServiceDocumentSummaryRow[]).map(mapServiceDocument);
+  return rows.map(mapServiceDocument);
 }
 
 export async function updateServiceDocumentAiSummary(input: {
@@ -2501,7 +2495,7 @@ export async function getProjectShell(
         ),
         supabase
           .from("generated_artifacts")
-          .select("id")
+          .select("artifact_type")
           .eq("project_id", projectId),
         options.includeCustomerAnalysis
           ? supabase
@@ -2575,6 +2569,9 @@ export async function getProjectShell(
           (document) => document.role === "supporting_document",
         ).length,
         artifact_count: (artifactRows ?? []).length,
+        artifact_counts_by_type: artifactCountsByType(
+          (artifactRows ?? []) as Array<{ artifact_type: unknown }>,
+        ),
         has_chat: false,
         documents: documentRows.map(mapDocumentSummary),
         customer_analysis: analysisRow
@@ -3544,15 +3541,25 @@ export async function deleteGeneratedArtifact(input: {
   revalidateProjectCaches(input.projectId);
 }
 
-export async function listGeneratedArtifacts(projectId: string) {
+export async function listGeneratedArtifacts(
+  projectId: string,
+  options: { artifactType?: GeneratedArtifactType } = {},
+) {
   return unstable_cache(
     async () => {
       const supabase = createServiceClient();
-      const { data, error } = await supabase
+      let query = supabase
         .from("generated_artifacts")
-        .select("*")
+        .select("id, project_id, artifact_type, title, content_markdown, input_snapshot, created_at")
         .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(GENERATED_ARTIFACT_LIST_LIMIT);
+
+      if (options.artifactType) {
+        query = query.eq("artifact_type", options.artifactType);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         throw new Error(error.message || "Kunne ikke hente generatorartefakter.");
@@ -3560,7 +3567,7 @@ export async function listGeneratedArtifacts(projectId: string) {
 
       return ((data ?? []) as ArtifactRow[]).map(mapArtifact);
     },
-    ["project-generated-artifacts", projectId],
+    ["project-generated-artifacts", projectId, options.artifactType ?? "all"],
     {
       tags: [projectTag(projectId)],
       revalidate: 60,
@@ -3624,15 +3631,16 @@ export async function listChatMessages(projectId: string) {
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("chat_messages")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: true });
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(CHAT_MESSAGE_LIST_LIMIT);
 
   if (error) {
     throw new Error(error.message || "Kunne ikke hente chatmeldinger.");
   }
 
-  return ((data ?? []) as ChatRow[]).map(mapChatMessage);
+  return ((data ?? []) as ChatRow[]).reverse().map(mapChatMessage);
 }
 
 export async function listChatSessions(projectId: string) {

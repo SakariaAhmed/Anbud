@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent } from "react";
 import {
   AlertTriangle,
   CalendarClock,
@@ -39,7 +39,6 @@ export function ProjectBilag1Tab({
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const [reviewNotes, setReviewNotes] = useState("");
   const bilag1Artifacts = [...artifacts]
     .filter((artifact) => artifact.artifact_type === "bilag1_rekonstruksjon")
     .sort(
@@ -83,8 +82,6 @@ export function ProjectBilag1Tab({
           <form onSubmit={onSubmit} className="w-full max-w-md space-y-3">
             <Textarea
               name="instructions"
-              value={reviewNotes}
-              onChange={(event) => setReviewNotes(event.target.value)}
               placeholder="Valgfritt: skriv hva som skal godkjennes, rettes eller regenereres i bestemte seksjoner."
               className="min-h-24 rounded-lg text-sm"
             />

@@ -65,6 +65,7 @@ export interface ProjectSummary {
   document_count: number;
   supporting_document_count: number;
   artifact_count: number;
+  artifact_counts_by_type?: Partial<Record<GeneratedArtifactType, number>>;
   has_chat: boolean;
 }
 

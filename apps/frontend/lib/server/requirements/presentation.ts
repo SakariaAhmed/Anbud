@@ -26,7 +26,7 @@ export function requirementLedgerSource(entry: RequirementLedgerEntry) {
   return [
     entry.documentTitle,
     pageLabel,
-    cleanRequirementHeadingLabel(entry.heading),
+    requirementReferenceHeadingLabel(entry),
     entry.tableId,
     entry.service,
     sourceRowReference,
@@ -37,6 +37,10 @@ export function requirementLedgerSource(entry: RequirementLedgerEntry) {
 }
 
 export function requirementHeadingPath(entry: RequirementLedgerEntry) {
+  if (hasCanonicalPdfTableReference(entry)) {
+    return [];
+  }
+
   return entry.heading
     .split(">")
     .map((part) => part.replace(/\s+/g, " ").trim())
@@ -77,7 +81,7 @@ export function requirementFullReference(entry: RequirementLedgerEntry) {
   return [
     entry.documentTitle,
     requirementPageRange(entry),
-    requirementHeadingPath(entry).join(" > "),
+    requirementReferenceHeadingLabel(entry),
     entry.tableId,
     entry.service,
     entry.sourceExcerpt?.match(/\bRad\s+\d{1,4}\b/i)?.[0] ?? "",
@@ -92,30 +96,36 @@ export function sortRequirementLedgerInDocumentOrder(
 ) {
   return sortByRequirementOrder(entries, (entry, index) => {
     const heading = requirementGroupHeading(entry);
-    const stableDocumentOrder =
-      typeof entry.documentOrder === "number" &&
-      Number.isFinite(entry.documentOrder) &&
+    const stableEntryOrder =
       typeof entry.documentEntryOrder === "number" &&
       Number.isFinite(entry.documentEntryOrder)
-        ? entry.documentOrder * 1_000_000 + entry.documentEntryOrder
-        : null;
-    const stableEntryOrder =
-      stableDocumentOrder ??
-      (typeof entry.documentEntryOrder === "number" &&
-      Number.isFinite(entry.documentEntryOrder)
         ? entry.documentEntryOrder
-        : null);
+        : null;
     return {
       reference: requirementDisplayRef(entry, heading),
       sourceReference: requirementDisplaySource(entry, heading),
       group: heading || entry.tableId || entry.heading,
-      orderIndex: stableEntryOrder,
+      documentOrderIndex:
+        typeof entry.documentOrder === "number" &&
+        Number.isFinite(entry.documentOrder)
+          ? entry.documentOrder
+          : null,
+      entryOrderIndex: stableEntryOrder,
+      orderIndex:
+        typeof entry.documentOrder === "number" &&
+        Number.isFinite(entry.documentOrder)
+          ? null
+          : stableEntryOrder,
       fallbackIndex: index,
     };
   });
 }
 
 export function requirementGroupHeading(entry: RequirementLedgerEntry) {
+  if (hasCanonicalPdfTableReference(entry)) {
+    return "";
+  }
+
   const heading = lastHeadingSegment(entry.heading);
   if (
     !heading ||
@@ -150,7 +160,9 @@ function isPdfFooterHeadingArtifact(value: string) {
 function isPdfHeadingArtifact(value: string) {
   return (
     isPdfFooterHeadingArtifact(value) ||
-    isPdfAnswerSubsectionHeadingArtifact(value)
+    isPdfAnswerSubsectionHeadingArtifact(value) ||
+    isPdfTableHeadingArtifact(value) ||
+    isPdfTextFragmentHeadingArtifact(value)
   );
 }
 
@@ -160,6 +172,38 @@ function cleanRequirementHeadingLabel(value: string) {
     .map((part) => part.replace(/\s+/g, " ").trim())
     .filter((part) => part && !isPdfHeadingArtifact(part))
     .join(" > ");
+}
+
+function hasCanonicalPdfTableReference(entry: RequirementLedgerEntry) {
+  return Boolean(
+    entry.service &&
+      /^Tabell\s+ID\s+\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?/i.test(
+        entry.tableId ?? "",
+      ),
+  );
+}
+
+function requirementReferenceHeadingLabel(entry: RequirementLedgerEntry) {
+  return hasCanonicalPdfTableReference(entry)
+    ? ""
+    : cleanRequirementHeadingLabel(entry.heading);
+}
+
+function isPdfTableHeadingArtifact(value: string) {
+  const text = value.replace(/\s+/g, " ").trim();
+  return (
+    /\bTabell\s+ID\s+\d{1,3}\s*[-.]\s*\d{1,3}[A-Z]?\b/i.test(text) &&
+    /\b(?:krav|Petor|sikkerhetskrav|IT\s*Si)\b/i.test(text)
+  );
+}
+
+function isPdfTextFragmentHeadingArtifact(value: string) {
+  const text = value.replace(/\s+/g, " ").trim();
+  return (
+    /^D\s*el$/i.test(text) ||
+    /^24\/7(?:\/365)?\.?$/i.test(text) ||
+    /^30\s+dager\).*/i.test(text)
+  );
 }
 
 function normalizeRequirementLabel(value: string) {
@@ -226,8 +270,8 @@ export function requirementDisplaySource(
 
 export function requirementTableMarkdown(rows: string[][]) {
   return [
-    "| Kravref. | Krav | Svar | Kildegrunnlag |",
-    "|---|---|---|---|",
+    "| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |",
+    "|---|---|---|---|---|",
     ...rows.map(toMarkdownTableRow),
   ];
 }

@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 
 import { prefetchProjectTabData } from "@/lib/client/project-api";
+import type { GeneratedArtifactType } from "@/lib/types";
 
 type PrefetchableProjectWorkspaceTab =
   | "documents"
@@ -31,6 +32,15 @@ const workspaceTabPreloaders: Partial<
     import("@/components/projects/project-executive-summary-tab"),
 };
 
+const artifactTypeByTab: Partial<
+  Record<PrefetchableProjectWorkspaceTab, GeneratedArtifactType>
+> = {
+  bilag1: "bilag1_rekonstruksjon",
+  delivery: "gjennomforing_og_risiko",
+  generator: "losningsutkast",
+  requirements: "forbedret_kravsvar",
+};
+
 export function useProjectWorkspacePrefetch({
   projectId,
   customerAnalysisGenerated,
@@ -39,7 +49,7 @@ export function useProjectWorkspacePrefetch({
   analysisLoaded,
   evaluationLoaded,
   executiveSummaryLoaded,
-  artifactsLoaded,
+  loadedArtifactTypes,
 }: {
   projectId: string;
   customerAnalysisGenerated: boolean;
@@ -48,7 +58,7 @@ export function useProjectWorkspacePrefetch({
   analysisLoaded: boolean;
   evaluationLoaded: boolean;
   executiveSummaryLoaded: boolean;
-  artifactsLoaded: boolean;
+  loadedArtifactTypes: GeneratedArtifactType[];
 }) {
   return useCallback(
     (tab: PrefetchableProjectWorkspaceTab) => {
@@ -56,12 +66,10 @@ export function useProjectWorkspacePrefetch({
       if (tab === "analysis" && analysisLoaded) return;
       if (tab === "evaluation" && evaluationLoaded) return;
       if (tab === "executive-summary" && executiveSummaryLoaded) return;
+      const artifactType = artifactTypeByTab[tab];
       if (
-        (tab === "generator" ||
-          tab === "delivery" ||
-          tab === "requirements" ||
-          tab === "bilag1") &&
-        artifactsLoaded
+        artifactType &&
+        (artifactCount === 0 || loadedArtifactTypes.includes(artifactType))
       ) {
         return;
       }
@@ -70,15 +78,16 @@ export function useProjectWorkspacePrefetch({
         customerAnalysisGenerated,
         solutionEvaluationGenerated,
         artifactCount,
+        artifactType,
       });
     },
     [
       analysisLoaded,
       artifactCount,
-      artifactsLoaded,
       customerAnalysisGenerated,
       evaluationLoaded,
       executiveSummaryLoaded,
+      loadedArtifactTypes,
       projectId,
       solutionEvaluationGenerated,
     ],

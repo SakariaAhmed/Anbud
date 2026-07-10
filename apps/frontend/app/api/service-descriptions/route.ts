@@ -41,6 +41,14 @@ export async function POST(request: Request) {
       return limited;
     }
 
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("multipart/form-data")) {
+      return NextResponse.json(
+        { error: "Opplastingen må sendes som skjemadata med filvedlegg." },
+        { status: 415 },
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     const serviceId = `${formData.get("service_id") || ""}`.trim();

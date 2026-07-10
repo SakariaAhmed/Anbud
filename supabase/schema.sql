@@ -1,6 +1,21 @@
 create extension if not exists pgcrypto;
 create extension if not exists vector with schema extensions;
 
+do $$
+begin
+  if current_setting('anbud.allow_destructive_schema_rebuild', true) is distinct from 'on' then
+    raise exception
+      'supabase/schema.sql is a destructive baseline rebuild. Use migrations for populated databases, or run `set anbud.allow_destructive_schema_rebuild = on;` first for an intentional reset.';
+  end if;
+end $$;
+
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('anbud-documents', 'anbud-documents', false, 41943040)
+on conflict (id) do update
+set
+  public = false,
+  file_size_limit = 41943040;
+
 drop table if exists generated_artifacts cascade;
 drop table if exists project_jobs cascade;
 drop table if exists chat_messages cascade;
@@ -75,6 +90,11 @@ create index documents_project_id_idx on documents(project_id);
 create index documents_project_role_idx on documents(project_id, role, created_at desc);
 create index documents_processing_status_idx on documents(project_id, processing_status, updated_at desc);
 
+comment on column documents.file_base64 is
+  'Plaintext compatibility cache for legacy downloads. Current encrypted object storage is file_storage_bucket/file_storage_path; do not treat chunk encryption as full document-body encryption while this column is populated.';
+comment on column documents.raw_text is
+  'Plaintext extraction cache used by parsers, previews, and reindexing. document_chunks.text_encrypted protects only chunk bodies, not this source text.';
+
 create table service_descriptions (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -109,6 +129,11 @@ create table service_documents (
 );
 
 create index service_documents_service_id_idx on service_documents(service_id, created_at desc);
+
+comment on column service_documents.file_base64 is
+  'Plaintext compatibility cache for legacy downloads. Current encrypted object storage is file_storage_bucket/file_storage_path; do not treat chunk encryption as full document-body encryption while this column is populated.';
+comment on column service_documents.raw_text is
+  'Plaintext extraction cache used by parsers, previews, and reindexing. document_chunks.text_encrypted protects only chunk bodies, not this source text.';
 
 create table document_chunks (
   id uuid primary key default gen_random_uuid(),
@@ -154,6 +179,81 @@ create index document_chunks_service_idx on document_chunks(service_id, source_i
 create index document_chunks_content_hash_idx on document_chunks(source_type, source_id, content_hash);
 create index document_chunks_fts_idx on document_chunks using gin(fts);
 create index document_chunks_embedding_hnsw_idx on document_chunks using hnsw (embedding vector_cosine_ops) where embedding is not null;
+
+comment on column document_chunks.fts is
+  'Plaintext lexical index for hybrid retrieval. This intentionally stores searchable lexemes outside text_encrypted; disable/drop it if full content-at-rest encryption becomes a hard requirement.';
+
+create or replace function delete_document_chunks_for_project_document()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  delete from document_chunks
+  where source_type = 'project_document'
+    and source_id = old.id;
+  return old;
+end;
+$$;
+
+create or replace function delete_document_chunks_for_service_document()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  delete from document_chunks
+  where source_type = 'service_document'
+    and source_id = old.id;
+  return old;
+end;
+$$;
+
+create or replace function validate_document_chunk_source()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.source_type = 'project_document' then
+    if not exists (select 1 from documents where id = new.source_id) then
+      raise foreign_key_violation using message = 'document_chunks.source_id does not reference an existing project document';
+    end if;
+    return new;
+  end if;
+
+  if new.source_type = 'service_document' then
+    if not exists (select 1 from service_documents where id = new.source_id) then
+      raise foreign_key_violation using message = 'document_chunks.source_id does not reference an existing service document';
+    end if;
+    return new;
+  end if;
+
+  raise check_violation using message = 'Invalid document_chunks.source_type';
+end;
+$$;
+
+revoke execute on function delete_document_chunks_for_project_document() from anon;
+revoke execute on function delete_document_chunks_for_project_document() from authenticated;
+revoke execute on function delete_document_chunks_for_service_document() from anon;
+revoke execute on function delete_document_chunks_for_service_document() from authenticated;
+revoke execute on function validate_document_chunk_source() from anon;
+revoke execute on function validate_document_chunk_source() from authenticated;
+
+create trigger document_chunks_validate_source
+  before insert or update of source_type, source_id on document_chunks
+  for each row
+  execute function validate_document_chunk_source();
+
+create trigger documents_delete_chunks
+  after delete on documents
+  for each row
+  execute function delete_document_chunks_for_project_document();
+
+create trigger service_documents_delete_chunks
+  after delete on service_documents
+  for each row
+  execute function delete_document_chunks_for_service_document();
 
 create or replace function match_document_chunks(
   query_embedding extensions.vector(1536),
@@ -400,6 +500,7 @@ create table project_jobs (
   input_json jsonb,
   result_json jsonb,
   locked_at timestamptz,
+  lease_token uuid,
   started_at timestamptz,
   completed_at timestamptz,
   created_at timestamptz not null default now(),
@@ -410,6 +511,7 @@ create index project_jobs_project_id_idx on project_jobs(project_id, created_at 
 create index project_jobs_status_idx on project_jobs(status, updated_at desc);
 create index project_jobs_project_status_idx on project_jobs(project_id, status, updated_at desc);
 create index project_jobs_queue_claim_idx on project_jobs(status, locked_at, created_at) where status in ('queued', 'running');
+create index project_jobs_running_lease_idx on project_jobs(id, lease_token) where status = 'running' and lease_token is not null;
 
 create table chat_sessions (
   id text not null,

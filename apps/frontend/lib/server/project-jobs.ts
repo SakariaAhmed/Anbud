@@ -8,6 +8,7 @@ import {
 } from "@/lib/server/artifact-generation-input";
 import {
   claimQueuedProjectJob,
+  type ClaimedProjectJob,
   findProjectJob,
   getQueuedProjectJobInput,
   insertProjectJob,
@@ -35,6 +36,11 @@ type QueueJobOptions = {
   skipEnqueue?: boolean;
   runNow?: boolean;
   autoRun?: boolean;
+};
+
+type JobRunContext = {
+  persisted: boolean;
+  leaseToken: string | null;
 };
 
 declare global {
@@ -190,14 +196,101 @@ function shouldThrottleProgressWrite(
   return false;
 }
 
-function updateJob(jobId: string, patch: Partial<ProjectJobRecord>) {
+function shouldPersistJobUpdate(context: JobRunContext | undefined) {
+  return context?.persisted !== false;
+}
+
+async function persistJobUpdate(
+  jobId: string,
+  patch: Partial<ProjectJobRecord>,
+  context: JobRunContext | undefined,
+  options: { markStarted?: boolean } = {},
+) {
+  if (!shouldPersistJobUpdate(context)) {
+    return true;
+  }
+
+  return updatePersistedProjectJob(jobId, patch, {
+    expectedStatus: "running",
+    leaseToken: context?.leaseToken ?? null,
+    markStarted: options.markStarted,
+  });
+}
+
+function logPersistedJobUpdateError(
+  jobId: string,
+  patch: Partial<ProjectJobRecord>,
+  error: unknown,
+) {
+  console.warn(
+    JSON.stringify({
+      event: "project_job_persist_update_failed",
+      job_id: jobId,
+      status: patch.status,
+      message: error instanceof Error ? error.message : "Unknown job update error",
+    }),
+  );
+}
+
+function updateJob(
+  jobId: string,
+  patch: Partial<ProjectJobRecord>,
+  context?: JobRunContext,
+  options: { markStarted?: boolean } = {},
+) {
   patchInMemoryJob(jobId, patch);
 
   if (shouldThrottleProgressWrite(jobId, patch)) {
     return;
   }
 
-  void updatePersistedProjectJob(jobId, patch).catch(() => undefined);
+  void persistJobUpdate(jobId, patch, context, options).catch((error: unknown) => {
+    logPersistedJobUpdateError(jobId, patch, error);
+  });
+}
+
+async function finishJob(
+  jobId: string,
+  patch: Partial<ProjectJobRecord>,
+  context?: JobRunContext,
+) {
+  patchInMemoryJob(jobId, patch);
+  getProgressWriteStore().delete(jobId);
+
+  const persisted = await persistJobUpdate(jobId, patch, context);
+  if (!persisted) {
+    console.warn(
+      JSON.stringify({
+        event: "project_job_terminal_update_skipped",
+        job_id: jobId,
+        status: patch.status,
+        reason: "lease_or_status_mismatch",
+      }),
+    );
+  }
+}
+
+function startJobHeartbeat(jobId: string, context?: JobRunContext) {
+  if (!shouldPersistJobUpdate(context) || !context?.leaseToken) {
+    return () => undefined;
+  }
+
+  const heartbeat = setInterval(() => {
+    void updatePersistedProjectJob(
+      jobId,
+      { status: "running" },
+      {
+        expectedStatus: "running",
+        leaseToken: context.leaseToken,
+      },
+    ).catch((error: unknown) => {
+      logPersistedJobUpdateError(jobId, { status: "running" }, error);
+    });
+  }, 30_000);
+
+  return () => {
+    clearInterval(heartbeat);
+  };
 }
 
 async function enqueueProjectJob(
@@ -214,14 +307,20 @@ async function enqueueProjectJob(
       if (persisted) {
         await runQueuedProjectJob(record.id);
       } else {
-        await runProjectJob(record.id, input);
+        await runProjectJob(record.id, input, {
+          persisted: false,
+          leaseToken: null,
+        });
       }
     } else if (shouldAutoRun) {
       setTimeout(() => {
         if (persisted) {
           void runQueuedProjectJob(record.id);
         } else {
-          void runProjectJob(record.id, input);
+          void runProjectJob(record.id, input, {
+            persisted: false,
+            leaseToken: null,
+          });
         }
       }, 0);
     }
@@ -230,10 +329,16 @@ async function enqueueProjectJob(
   }
 
   if (options.runNow) {
-    await runProjectJob(record.id, input);
+    await runProjectJob(record.id, input, {
+      persisted: false,
+      leaseToken: null,
+    });
   } else if (shouldAutoRun) {
     setTimeout(() => {
-      void runProjectJob(record.id, input);
+      void runProjectJob(record.id, input, {
+        persisted: false,
+        leaseToken: null,
+      });
     }, 0);
   }
 
@@ -271,14 +376,20 @@ function shouldQueueDoclingEnhancement(
   );
 }
 
-async function runProjectJob(jobId: string, input: ProjectWorkflowInput) {
+async function runProjectJob(
+  jobId: string,
+  input: ProjectWorkflowInput,
+  context?: JobRunContext,
+) {
   const phaseTimer = createJobPhaseTimer(jobId, input.kind);
-  updateJob(jobId, { status: "running" });
+  const stopHeartbeat = startJobHeartbeat(jobId, context);
+  updateJob(jobId, { status: "running" }, context, { markStarted: true });
+  let terminalPatch: Partial<ProjectJobRecord>;
 
   try {
     const result = await runProjectWorkflow(input, {
       setProgress(message) {
-        updateJob(jobId, { message, status: "running" });
+        updateJob(jobId, { message, status: "running" }, context);
       },
       onPhase(phase) {
         phaseTimer.mark(phase);
@@ -311,19 +422,25 @@ async function runProjectJob(jobId: string, input: ProjectWorkflowInput) {
       durationMs: phaseTimer.total(),
     });
 
-    updateJob(jobId, {
+    terminalPatch = {
       status: "completed",
       message: "Ferdig.",
       result,
       error: null,
-    });
+    };
   } catch (error) {
-    updateJob(jobId, {
+    terminalPatch = {
       status: "failed",
       message: "Jobben feilet.",
       error: error instanceof Error ? error.message : "Ukjent feil.",
       result: null,
-    });
+    };
+  } finally {
+    try {
+      await finishJob(jobId, terminalPatch!, context);
+    } finally {
+      stopHeartbeat();
+    }
   }
 }
 
@@ -455,7 +572,14 @@ async function runQueuedProjectJobInput(jobId: string, queuedInput: unknown) {
     return;
   }
 
-  await runProjectJob(jobId, input);
+  await runProjectJob(jobId, input, jobRunContextFromClaim(claimed));
+}
+
+function jobRunContextFromClaim(claimed: ClaimedProjectJob): JobRunContext {
+  return {
+    persisted: true,
+    leaseToken: claimed.leaseToken,
+  };
 }
 
 async function runQueuedProjectJob(jobId: string) {

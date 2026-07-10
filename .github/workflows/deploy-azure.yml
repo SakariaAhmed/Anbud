@@ -16,6 +16,8 @@ env:
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
   MIN_REPLICAS: "1"
+  FALLOW_VERSION: "2.104.0"
+  NODE_VERSION: "22.14.0"
 
 jobs:
   deploy:
@@ -23,17 +25,49 @@ jobs:
 
     steps:
       # SHAs resolve to Node 24-compatible release tags:
-      # actions/checkout@v5, azure/login@v3, docker/login-action@v4,
+      # actions/checkout@v5, actions/setup-node@v6.4.0,
+      # azure/login@v3, docker/login-action@v4,
       # docker/setup-buildx-action@v4, docker/build-push-action@v7.
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
 
       - name: Validate frontend
         working-directory: apps/frontend
         run: |
           npm ci
+          npm run secrets:scan
+          npm test
           npm run lint
           npm run build
+
+      - name: Fallow static quality gate
+        run: |
+          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" --root . --format json --score --performance > /tmp/fallow-combined.json
+          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" fix --root . --dry-run --yes --no-create-config --format json > /tmp/fallow-fix-preview.json
+          node - <<'NODE'
+          const fs = require("node:fs");
+          function readJson(path) {
+            const raw = fs.readFileSync(path, "utf8");
+            return JSON.parse(raw.slice(raw.indexOf("{")));
+          }
+          const combined = readJson("/tmp/fallow-combined.json");
+          const fixPreview = readJson("/tmp/fallow-fix-preview.json");
+          const totalIssues = combined.check?.total_issues ?? 0;
+          const totalFixes = fixPreview.summary?.total_fixes ?? fixPreview.fixes?.length ?? 0;
+          console.log(JSON.stringify({ fallow_total_issues: totalIssues, fallow_fix_preview_total_fixes: totalFixes }));
+          if (totalIssues > 0 || totalFixes > 0) process.exit(1);
+          NODE
+
+      - name: Docker production image smoke
+        working-directory: apps/frontend
+        run: npm run docker:smoke:docling
 
       - name: Azure login
         uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43
@@ -53,17 +87,32 @@ jobs:
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
 
       - name: Build and push image
+        id: build-and-push
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
         with:
           context: .
           file: apps/frontend/Dockerfile
+          target: runner-docling
           platforms: linux/amd64
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: false
+          provenance: mode=max
+          sbom: true
           tags: |
             ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Scan pushed production image
+        uses: docker/scout-action@2688993af7bafd6ba8c6a74ec652442be91dd82b
+        with:
+          command: cves
+          image: registry://${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          platform: linux/amd64
+          only-severities: critical,high
+          exit-code: true
+          registry-user: ${{ secrets.ACR_USERNAME }}
+          registry-password: ${{ secrets.ACR_PASSWORD }}
+          write-comment: false
 
       - name: Ensure Container Apps extension
         run: |

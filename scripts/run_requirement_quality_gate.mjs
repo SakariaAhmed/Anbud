@@ -29,6 +29,7 @@ loadEnvFile(path.join(frontendRoot, ".env.local"));
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
 const jiti = createJiti(path.join(frontendRoot, "requirement-quality-gate.cjs"), {
+  fsCache: false,
   moduleCache: false,
   interopDefault: true,
   alias: {
@@ -46,6 +47,15 @@ const {
   evaluateSolutionDocument,
   extractRequirementLedgerForDocument,
 } = jiti(path.join(frontendRoot, "lib", "server", "ai.ts"));
+const { analyzeRequirementCoverageIntegrity } = jiti(
+  path.join(
+    frontendRoot,
+    "lib",
+    "server",
+    "requirements",
+    "evaluation-coverage-integrity.ts",
+  ),
+);
 
 const project = {
   id: "11",
@@ -55,6 +65,116 @@ const project = {
   requirements:
     "/Users/sakariaahmed/Downloads/sky_10_unike_ustrukturerte_prosjekter/DOCX/11_Bilag_2_Krav_PolarNett_Feltservice_AS.docx",
 };
+
+const extractionScoreThresholds = {
+  overall: {
+    strictTextRecall: 80,
+    idAccuracy: 68,
+    headingAccuracy: 84,
+  },
+  pdf: {
+    strictTextRecall: 78,
+    idAccuracy: 79,
+    headingAccuracy: 88,
+  },
+};
+
+function percent(numerator, denominator) {
+  return denominator ? Math.round((numerator / denominator) * 1000) / 10 : 0;
+}
+
+function aggregateExtractionDocuments(documents, predicate) {
+  const bucket = {
+    documents: 0,
+    expectedRequirements: 0,
+    strictTextMatches: 0,
+    usableIdCorrect: 0,
+    usableIdExpected: 0,
+    syntheticIdTypeCorrect: 0,
+    syntheticIdExpected: 0,
+    headingCorrect: 0,
+    headingExpected: 0,
+  };
+
+  for (const document of documents) {
+    if (document.error || !predicate(document)) continue;
+    bucket.documents += 1;
+    bucket.expectedRequirements += document.expectedCount;
+    bucket.strictTextMatches += document.strictTextMatches;
+    bucket.usableIdCorrect += document.usableIdCorrect;
+    bucket.usableIdExpected += document.usableIdExpected;
+    bucket.syntheticIdTypeCorrect += document.syntheticIdTypeCorrect;
+    bucket.syntheticIdExpected += document.syntheticIdExpected;
+    bucket.headingCorrect += document.headingCorrect;
+    bucket.headingExpected += document.headingExpected;
+  }
+
+  return {
+    documents: bucket.documents,
+    strictTextRecall: percent(
+      bucket.strictTextMatches,
+      bucket.expectedRequirements,
+    ),
+    idAccuracy: percent(
+      bucket.usableIdCorrect + bucket.syntheticIdTypeCorrect,
+      bucket.usableIdExpected + bucket.syntheticIdExpected,
+    ),
+    headingAccuracy: percent(bucket.headingCorrect, bucket.headingExpected),
+  };
+}
+
+function metricGatePass(label, actual, thresholds) {
+  const failures = Object.entries(thresholds).filter(
+    ([metric, minimum]) => Number(actual[metric] ?? 0) < minimum,
+  );
+  if (!failures.length) {
+    console.log(
+      `EXTRACTION_SCORE ${label} strict=${actual.strictTextRecall} id=${actual.idAccuracy} heading=${actual.headingAccuracy}`,
+    );
+    return true;
+  }
+
+  for (const [metric, minimum] of failures) {
+    console.log(
+      `EXTRACTION_SCORE_FAIL ${label}.${metric}=${actual[metric] ?? 0} min=${minimum}`,
+    );
+  }
+  return false;
+}
+
+function requirementExtractionScoreGate() {
+  const scorePath =
+    process.env.REQUIREMENT_EXTRACTION_SCORE_PATH ||
+    path.join(repoRoot, "reports", "requirement-extraction-fasit-score.json");
+  if (!existsSync(scorePath)) {
+    console.log(`EXTRACTION_SCORE_SKIP missing ${scorePath}`);
+    return true;
+  }
+
+  const summary = JSON.parse(readFileSync(scorePath, "utf8"));
+  const documentCount = Number(summary.metrics?.overall?.documents ?? 0);
+  if (documentCount < 100) {
+    console.log(
+      `EXTRACTION_SCORE_SKIP expected full 100-document score, found ${documentCount}`,
+    );
+    return true;
+  }
+
+  const overall = {
+    strictTextRecall: summary.metrics.overall.strictTextRecall,
+    idAccuracy: summary.metrics.overall.idAccuracy,
+    headingAccuracy: summary.metrics.overall.headingAccuracy,
+  };
+  const pdf = aggregateExtractionDocuments(
+    summary.documents ?? [],
+    (document) => String(document.format ?? "").toLowerCase() === "pdf",
+  );
+
+  return (
+    metricGatePass("overall", overall, extractionScoreThresholds.overall) &&
+    metricGatePass("pdf", pdf, extractionScoreThresholds.pdf)
+  );
+}
 
 function markdownCell(value) {
   return String(value ?? "")
@@ -170,8 +290,8 @@ const cases = [
   {
     expected: "Godt",
     kind: "concrete_good",
-    answer: (entry) =>
-      `Atea dekker kravet gjennom en testbar førsteleveranse for ${entry.text.toLowerCase()}. Leveransen har ansvarlig eier, akseptansekriterier, testprotokoll, produksjonssetting og månedlig oppfølging mot avtalte målepunkt.`,
+    answer: () =>
+      "Atea tar høyde for mindre nedetid i felt ved at brukerflaten støtter lokal mellomlagring, kø av registreringer og automatisk synkronisering med retry når nettet er tilbake. Leveransen har navngitt driftsansvarlig, overvåking av synkfeil, akseptansekriterier, testprotokoll for offline/online-scenarioer og månedlig rapportering på tilgjengelighet.",
   },
   {
     expected: "Dårlig",
@@ -211,8 +331,8 @@ const cases = [
   {
     expected: "Godt",
     kind: "domain_specific_good",
-    answer: (entry) =>
-      `Atea svarer direkte på "${entry.text}" med dataminimering, behandlingsgrunnlag, tilgangsstyring, kryptering, logging, sletterutiner, avvikshåndtering, DPIA-støtte ved behov, test før go-live og navngitt ansvar for drift og personvernoppfølging.`,
+    answer: () =>
+      "Atea ivaretar personvern for posisjonsdata ved dataminimering, tydelig formålsavgrensing, rollebasert tilgang, kryptert lagring og sletting etter avtalt retensjon. Løsningen inkluderer revisjonslogg, DPIA/ROS-bidrag, dokumenterte behandlingsaktiviteter, testbevis for tilgangskontroller og månedlig kontrollrapport etter produksjonssetting.",
   },
   {
     expected: "Uklart",
@@ -250,8 +370,8 @@ function buildAdversarialMarkdown(ledger) {
   const lines = [
     "## Kravbesvarelse",
     "",
-    "| Kravref. | Krav | Svar | Kildegrunnlag |",
-    "|---|---|---|---|",
+    "| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |",
+    "|---|---|---|---|---|",
   ];
 
   ledger.forEach((entry, index) => {
@@ -262,6 +382,7 @@ function buildAdversarialMarkdown(ledger) {
         entry.id,
         entry.text,
         testCase.answer(entry),
+        entry.sourceExcerpt || entry.text,
         `Testkilde, rad ${index + 1}, ${entry.id}`,
       ]),
     );
@@ -318,6 +439,10 @@ const result = await evaluateSolutionDocument({
 });
 
 const items = result.requirement_coverage?.items ?? [];
+const integrity = analyzeRequirementCoverageIntegrity({
+  sourceLedger,
+  coverage: result.requirement_coverage,
+});
 const malformedReferencePatterns = [
   /^ID\s+\d{1,3}-\d{1,3}[A-Z]?$/i,
   /\bTabell\s+ID\s+\d{1,3}-\d{1,3}\s+-\s+(?:Der|Sikker|Konfigurasjons|Dokumentasjo)\b/i,
@@ -375,13 +500,16 @@ for (const item of items) {
 }
 
 const missingItems = cases.length - knownItems;
+const extractionScorePass = requirementExtractionScoreGate();
 const strictPass =
   strictHits >= 9 &&
   missingItems === 0 &&
   malformedReferenceItems.length === 0 &&
-  malformedRequirementItems.length === 0;
+  malformedRequirementItems.length === 0 &&
+  integrity.ok &&
+  extractionScorePass;
 console.log(
-  `SUMMARY strict=${strictHits}/${cases.length}, known_items=${knownItems}/${cases.length}, total_items=${items.length}, missing_items=${missingItems}, malformed_refs=${malformedReferenceItems.length}, malformed_requirements=${malformedRequirementItems.length}`,
+  `SUMMARY strict=${strictHits}/${cases.length}, known_items=${knownItems}/${cases.length}, total_items=${items.length}, missing_items=${missingItems}, malformed_refs=${malformedReferenceItems.length}, malformed_requirements=${malformedRequirementItems.length}, integrity=${integrity.ok ? "OK" : integrity.issueCount}`,
 );
 
 for (const item of malformedReferenceItems.slice(0, 5)) {
@@ -400,6 +528,9 @@ for (const item of malformedRequirementItems.slice(0, 5)) {
       requirement: item.requirement,
     }),
   );
+}
+for (const issue of integrity.issues.slice(0, 10)) {
+  console.log(JSON.stringify({ integrity_issue: issue }));
 }
 
 if (!strictPass) {

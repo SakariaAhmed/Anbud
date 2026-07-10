@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -23,6 +24,7 @@ const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
 const xlsx = require(path.join(frontendRoot, "node_modules", "@e965", "xlsx"));
 
 const jiti = createJiti(path.join(frontendRoot, "requirement-harness.cjs"), {
+  fsCache: false,
   moduleCache: false,
   interopDefault: true,
   alias: {
@@ -411,7 +413,7 @@ function loadStrictFasitRowsByDocument(fasitPath) {
   const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
   const byDocument = new Map();
   for (const row of rows) {
-    const documentName = normalizeInlineText(row.Dok);
+    const documentName = normalizeInlineText(row.Dok ?? row.Dokument);
     if (!documentName) continue;
     byDocument.set(documentName, [...(byDocument.get(documentName) ?? []), row]);
   }
@@ -461,6 +463,56 @@ function compareLedgerWithFasitRows(ledger, expectedRows) {
     mismatches,
     sourceIssues: sourceAnchoringIssues(ledger),
   };
+}
+
+function countUnorderedTextMatches(ledger, expectedRows) {
+  const expectedCounts = new Map();
+  for (const row of expectedRows) {
+    const text = normalizeFasitText(row?.Kravtekst);
+    if (!text) continue;
+    expectedCounts.set(text, (expectedCounts.get(text) ?? 0) + 1);
+  }
+
+  let matched = 0;
+  for (const entry of ledger) {
+    const text = normalizeFasitText(entry?.text);
+    const remaining = expectedCounts.get(text) ?? 0;
+    if (remaining <= 0) continue;
+    matched += 1;
+    if (remaining === 1) {
+      expectedCounts.delete(text);
+    } else {
+      expectedCounts.set(text, remaining - 1);
+    }
+  }
+
+  return matched;
+}
+
+function emptyAggregateBucket() {
+  return {
+    documents: 0,
+    exactDocuments: 0,
+    expectedCount: 0,
+    actualCount: 0,
+    orderedMatched: 0,
+    unorderedMatched: 0,
+  };
+}
+
+function addAggregateResult(bucket, result) {
+  bucket.documents += 1;
+  bucket.exactDocuments += result.exact ? 1 : 0;
+  bucket.expectedCount += result.expectedCount;
+  bucket.actualCount += result.actualCount;
+  bucket.orderedMatched += result.orderedMatched;
+  bucket.unorderedMatched += result.unorderedMatched;
+}
+
+function printAggregateBucket(label, bucket) {
+  console.log(
+    `${label} docs ${bucket.documents} exactDocs ${bucket.exactDocuments} expected ${bucket.expectedCount} actual ${bucket.actualCount} unordered ${bucket.unorderedMatched} ordered ${bucket.orderedMatched}`,
+  );
 }
 
 function sectionDump(rawText) {
@@ -516,9 +568,11 @@ function printLedgerDump(result) {
 }
 
 async function verifyOne(filePath, expectedCount) {
+  const startedAt = performance.now();
   const buffer = await readFile(filePath);
   const fileName = path.basename(filePath);
   const fileFormat = inferUploadFileFormat({ fileName });
+  const parseStartedAt = performance.now();
   const parsed = await extractTextFromBuffer({
     buffer,
     fileName,
@@ -526,8 +580,10 @@ async function verifyOne(filePath, expectedCount) {
     role: "requirement",
     useDocling: false,
   });
+  const parsedAt = performance.now();
   const document = projectDocumentDetailFromParsed(filePath, parsed, buffer);
   const ledger = await extractRequirementLedgerForDocument(document);
+  const completedAt = performance.now();
   const actualCount = ledger.length;
 
   return {
@@ -538,6 +594,11 @@ async function verifyOne(filePath, expectedCount) {
     breakdown: headingBreakdown(ledger),
     ledger,
     sections: sectionDump(parsed.rawText),
+    timingMs: {
+      total: Math.round(completedAt - startedAt),
+      parse: Math.round(parsedAt - parseStartedAt),
+      ledger: Math.round(completedAt - parsedAt),
+    },
   };
 }
 
@@ -592,8 +653,26 @@ const args = process.argv.slice(2);
 const dumpFilter = args[args.indexOf("--dump") + 1] ?? "";
 const dumpAll = args.includes("--dump-all");
 const strictFasit = args.includes("--strict-fasit");
+const aggregateFasit = args.includes("--aggregate-fasit");
 const skipSynthetic = args.includes("--skip-synthetic");
 const requireExternalFixtures = args.includes("--require-external-fixtures");
+const summaryOnly = args.includes("--summary-only");
+const allowTextOutput = args.includes("--allow-text-output");
+const writeSummaryIndex = args.indexOf("--write-summary");
+const writeSummaryPath =
+  writeSummaryIndex >= 0 ? args[writeSummaryIndex + 1] : "";
+const aggregateLimitIndex = args.indexOf("--aggregate-limit");
+const aggregateLimit =
+  aggregateLimitIndex >= 0 && args[aggregateLimitIndex + 1]
+    ? Math.max(0, Number(args[aggregateLimitIndex + 1]))
+    : 8;
+const textOutputAllowed = !summaryOnly || allowTextOutput;
+const runSummary = {
+  generatedAt: new Date().toISOString(),
+  optional: null,
+  strict: null,
+  aggregate: null,
+};
 let passed = 0;
 const failures = [];
 const externalFixtures = availableExternalRequirementFixtures();
@@ -617,9 +696,10 @@ if (externalFixtures.length) {
       console.log(`      ${result.breakdown}`);
     }
     if (
-      dumpAll ||
-      (dumpFilter &&
-        result.fileName.toLowerCase().includes(dumpFilter.toLowerCase()))
+      textOutputAllowed &&
+      (dumpAll ||
+        (dumpFilter &&
+          result.fileName.toLowerCase().includes(dumpFilter.toLowerCase())))
     ) {
       printLedgerDump(result);
     }
@@ -628,6 +708,12 @@ if (externalFixtures.length) {
   console.log(
     `\nOPTIONAL TOTAL ${passed}/${externalFixtures.length} available files`,
   );
+  runSummary.optional = {
+    availableFiles: externalFixtures.length,
+    passed,
+    failed: failures.length,
+    missingFiles: missingExternalFixtureCount,
+  };
   if (missingExternalFixtureCount) {
     console.log(
       `OPTIONAL SKIPPED ${missingExternalFixtureCount} missing files. Set REQUIREMENT_VERIFY_FIXTURE_ROOT to the corpus root to run them.`,
@@ -636,6 +722,18 @@ if (externalFixtures.length) {
 } else {
   console.log(
     "\nOPTIONAL EXTERNAL CORPUS skipped. Set REQUIREMENT_VERIFY_FIXTURE_ROOT to run private fixture files.",
+  );
+  runSummary.optional = {
+    availableFiles: 0,
+    passed: 0,
+    failed: 0,
+    missingFiles: missingExternalFixtureCount,
+  };
+}
+
+if (summaryOnly && (dumpAll || dumpFilter) && !allowTextOutput) {
+  console.log(
+    "summary-only: dump-output er deaktivert. Bruk --allow-text-output for å skrive ledger/source-tekst.",
   );
 }
 
@@ -665,6 +763,7 @@ if (strictFasit) {
   let strictPassed = 0;
   let strictRequirementCount = 0;
   let strictMatchedRequirementCount = 0;
+  const strictDocuments = [];
 
   console.log("\nSTRICT FASIT");
   for (const [documentName, expectedRows] of rowsByDocument.entries()) {
@@ -700,26 +799,150 @@ if (strictFasit) {
     console.log(
       `${ok ? "OK  " : "FAIL"} ${documentName}: tekst ${comparison.expectedCount - comparison.mismatches.length}/${comparison.expectedCount}, kilder uten locator=${comparison.sourceIssues.length}`,
     );
-    for (const mismatch of comparison.mismatches.slice(0, 5)) {
-      console.log(
-        `      ${mismatch.index} ${mismatch.ref ?? ""}: forventet "${normalizeInlineText(mismatch.expected)}"`,
-      );
-      console.log(`         faktisk "${normalizeInlineText(mismatch.actual)}"`);
-    }
-    if (comparison.sourceIssues.length) {
-      console.log(
-        `      mangler kildeforankring: ${comparison.sourceIssues.slice(0, 10).join(", ")}`,
-      );
+    strictDocuments.push({
+      documentName,
+      expectedCount: comparison.expectedCount,
+      actualCount: comparison.actualCount,
+      orderedMatched: comparison.expectedCount - comparison.mismatches.length,
+      sourceIssueCount: comparison.sourceIssues.length,
+      ok,
+      timingMs: result.timingMs,
+    });
+    if (!summaryOnly) {
+      for (const mismatch of comparison.mismatches.slice(0, 5)) {
+        console.log(
+          `      ${mismatch.index} ${mismatch.ref ?? ""}: forventet "${normalizeInlineText(mismatch.expected)}"`,
+        );
+        console.log(`         faktisk "${normalizeInlineText(mismatch.actual)}"`);
+      }
+      if (comparison.sourceIssues.length) {
+        console.log(
+          `      mangler kildeforankring: ${comparison.sourceIssues.slice(0, 10).join(", ")}`,
+        );
+      }
     }
   }
 
   console.log(
     `\nSTRICT TOTAL ${strictPassed}/${rowsByDocument.size} dokumenter, ${strictMatchedRequirementCount}/${strictRequirementCount} krav matchet`,
   );
+  runSummary.strict = {
+    documents: rowsByDocument.size,
+    passed: strictPassed,
+    requirementCount: strictRequirementCount,
+    matchedRequirementCount: strictMatchedRequirementCount,
+    documentsSummary: strictDocuments,
+  };
 
   if (strictFailures.length) {
     process.exitCode = 1;
   }
+}
+
+if (aggregateFasit) {
+  const fasitPath = strictFasitPath();
+  if (!fasitPath) {
+    throw new Error(
+      "Fant ikke fasitfil. Sett REQUIREMENT_VERIFY_FASIT_PATH eller REQUIREMENT_VERIFY_FIXTURE_ROOT.",
+    );
+  }
+
+  const rowsByDocument = loadStrictFasitRowsByDocument(fasitPath);
+  const strictRoots = strictFasitDocumentRoots();
+  const aggregate = {
+    all: emptyAggregateBucket(),
+    docx: emptyAggregateBucket(),
+    pdf: emptyAggregateBucket(),
+  };
+  const lowest = [];
+  let missingFiles = 0;
+  const documentsSummary = [];
+
+  console.log("\nAGGREGATE FASIT");
+  for (const [documentName, expectedRows] of rowsByDocument.entries()) {
+    const filePath = strictFasitFilePath(documentName, strictRoots);
+    if (!filePath) {
+      missingFiles += 1;
+      continue;
+    }
+
+    const result = await verifyOne(filePath, expectedRows.length);
+    const comparison = compareLedgerWithFasitRows(result.ledger, expectedRows);
+    const unorderedMatched = countUnorderedTextMatches(
+      result.ledger,
+      expectedRows,
+    );
+    const aggregateResult = {
+      documentName,
+      expectedCount: comparison.expectedCount,
+      actualCount: comparison.actualCount,
+      countDelta: comparison.actualCount - comparison.expectedCount,
+      missingCount: Math.max(0, comparison.expectedCount - unorderedMatched),
+      extraCount: Math.max(0, comparison.actualCount - unorderedMatched),
+      orderedMatched:
+        comparison.expectedCount - comparison.mismatches.length,
+      unorderedMatched,
+      orderedRatio:
+        (comparison.expectedCount - comparison.mismatches.length) /
+        Math.max(comparison.expectedCount, 1),
+      unorderedRatio: unorderedMatched / Math.max(comparison.expectedCount, 1),
+      exact:
+        comparison.actualCount === comparison.expectedCount &&
+        unorderedMatched === comparison.expectedCount &&
+        comparison.sourceIssues.length === 0,
+      sourceIssueCount: comparison.sourceIssues.length,
+      timingMs: result.timingMs,
+    };
+    const extension = path.extname(documentName).slice(1).toLowerCase();
+
+    addAggregateResult(aggregate.all, aggregateResult);
+    if (extension === "docx" || extension === "pdf") {
+      addAggregateResult(aggregate[extension], aggregateResult);
+    }
+    lowest.push(aggregateResult);
+    documentsSummary.push(aggregateResult);
+  }
+
+  printAggregateBucket("docx", aggregate.docx);
+  printAggregateBucket("pdf ", aggregate.pdf);
+  printAggregateBucket("all ", aggregate.all);
+  if (missingFiles) {
+    console.log(`missing files ${missingFiles}`);
+  }
+  console.log("lowest unordered matches:");
+  lowest
+    .sort(
+      (left, right) =>
+        left.unorderedMatched / Math.max(left.expectedCount, 1) -
+          right.unorderedMatched / Math.max(right.expectedCount, 1) ||
+        left.unorderedMatched - right.unorderedMatched,
+    )
+    .slice(0, aggregateLimit)
+    .forEach((item) => {
+      console.log(
+        `${item.documentName} ${item.unorderedMatched}/${item.expectedCount} actual ${item.actualCount} sourceIssues ${item.sourceIssueCount}`,
+      );
+    });
+  runSummary.aggregate = {
+    buckets: aggregate,
+    missingFiles,
+    documents: documentsSummary,
+    lowest: lowest.slice(0, aggregateLimit),
+    timingMs: {
+      total: documentsSummary.reduce(
+        (sum, item) => sum + (item.timingMs?.total ?? 0),
+        0,
+      ),
+      parse: documentsSummary.reduce(
+        (sum, item) => sum + (item.timingMs?.parse ?? 0),
+        0,
+      ),
+      ledger: documentsSummary.reduce(
+        (sum, item) => sum + (item.timingMs?.ledger ?? 0),
+        0,
+      ),
+    },
+  };
 }
 
 if (!skipSynthetic) {
@@ -731,4 +954,10 @@ if (!skipSynthetic) {
 
 if (failures.length) {
   process.exitCode = 1;
+}
+
+if (writeSummaryPath) {
+  const outputPath = path.resolve(process.cwd(), writeSummaryPath);
+  await writeFile(outputPath, `${JSON.stringify(runSummary, null, 2)}\n`, "utf8");
+  console.log(`summary written ${outputPath}`);
 }

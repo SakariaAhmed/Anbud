@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import { resolveOpenAIModelOverride } from "@/lib/server/ai";
 import { enforceProjectRouteRateLimit } from "@/lib/server/api-responses";
@@ -70,6 +70,19 @@ export async function prepareProjectAiJsonRoute<TBody>(
   const preflight = await prepareProjectAiRoute(request, context, input);
   if (preflight.response) {
     return { ...preflight, body: undefined };
+  }
+
+  const contentType = request.headers.get("content-type") ?? "";
+  if (contentType && !contentType.toLowerCase().includes("application/json")) {
+    return {
+      id: preflight.id,
+      model: undefined,
+      body: undefined,
+      response: NextResponse.json(
+        { error: "Forespørselen må sendes som JSON." },
+        { status: 415 },
+      ),
+    };
   }
 
   const body =

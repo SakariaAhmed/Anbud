@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import OpenAI from "openai";
 
 import { decryptString, encryptString } from "@/lib/server/crypto";
+import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import { createServiceClient } from "@/lib/server/supabase";
 import type {
   DocumentFileFormat,
@@ -128,6 +129,8 @@ const VECTOR_MATCH_THRESHOLD = 0.15;
 const HYBRID_RRF_K = 50;
 const HYBRID_MATCH_MULTIPLIER = 4;
 const MIN_RETRIEVAL_QUALITY_SCORE = 9;
+const EMBEDDING_RETRY_DELAYS_MS = [750, 2000];
+const QUERY_EMBEDDING_CACHE_LIMIT = 128;
 
 const RETRIEVAL_STOP_WORDS = new Set([
   "eller",
@@ -174,6 +177,12 @@ function getEmbeddingClient() {
   return cachedEmbeddingClient;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function normalizeChunkText(value: string) {
   return value
     .replace(/\r\n/g, "\n")
@@ -197,6 +206,42 @@ function estimateTokenCount(value: string) {
 
 function hashText(value: string) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+const queryEmbeddingCache = new Map<string, number[]>();
+
+function queryEmbeddingCacheKey(query: string) {
+  return `${DOCUMENT_EMBEDDING_MODEL}:${hashText(normalizeChunkText(query))}`;
+}
+
+function rememberQueryEmbedding(key: string, embedding: number[]) {
+  if (queryEmbeddingCache.has(key)) {
+    queryEmbeddingCache.delete(key);
+  }
+  queryEmbeddingCache.set(key, embedding);
+  while (queryEmbeddingCache.size > QUERY_EMBEDDING_CACHE_LIMIT) {
+    const oldestKey = queryEmbeddingCache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    queryEmbeddingCache.delete(oldestKey);
+  }
+}
+
+async function createQueryEmbedding(query: string) {
+  const key = queryEmbeddingCacheKey(query);
+  const cached = queryEmbeddingCache.get(key);
+  if (cached) {
+    queryEmbeddingCache.delete(key);
+    queryEmbeddingCache.set(key, cached);
+    return cached;
+  }
+
+  const embedding = (await createEmbeddings([query]))[0] ?? null;
+  if (embedding) {
+    rememberQueryEmbedding(key, embedding);
+  }
+  return embedding;
 }
 
 function comparableText(value: string) {
@@ -225,10 +270,12 @@ function pageRangeFrom(reference: string, text: string) {
   const source = `${reference}\n${text}`;
   const pageNumbers = [
     ...source.matchAll(/\b(?:side|page)\s+(\d{1,5})\b/gi),
-    ...source.matchAll(/\[\[SIDE:(\d{1,5})\]\]/g),
   ]
     .map((match) => Number(match[1]))
     .filter((value) => Number.isFinite(value));
+  for (const marker of findPdfPageMarkers(source)) {
+    pageNumbers.push(marker.startPage, marker.endPage);
+  }
 
   if (!pageNumbers.length) {
     return { pageStart: null, pageEnd: null };
@@ -401,31 +448,28 @@ function splitTextWithOverlap(text: string) {
 }
 
 function entriesFromRawText(document: ChunkableDocument) {
-  const pages = [...document.rawText.matchAll(/\[\[SIDE:(\d{1,5})\]\]/g)];
-  if (!pages.length) {
+  const pageMarkers = findPdfPageMarkers(document.rawText);
+  if (!pageMarkers.length) {
     return [{ reference: document.title, text: document.rawText }];
   }
 
   const entries: ProjectDocumentStructureEntry[] = [];
-  let lastIndex = 0;
-  let lastPage = 1;
-
-  for (const match of pages) {
-    if (match.index > lastIndex) {
+  for (const [index, marker] of pageMarkers.entries()) {
+    const nextMarker = pageMarkers[index + 1];
+    const textStart = marker.index + marker.marker.length;
+    const textEnd = nextMarker?.index ?? document.rawText.length;
+    const text = document.rawText.slice(textStart, textEnd);
+    if (normalizeChunkText(text)) {
+      const reference =
+        marker.startPage === marker.endPage
+          ? `${document.title} side ${marker.startPage}`
+          : `${document.title} side ${marker.startPage}-${marker.endPage}`;
       entries.push({
-        reference: `${document.title} side ${lastPage}`,
-        text: document.rawText.slice(lastIndex, match.index),
+        reference,
+        text,
+        page: marker.startPage,
       });
     }
-    lastPage = Number(match[1]) || lastPage + 1;
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < document.rawText.length) {
-    entries.push({
-      reference: `${document.title} side ${lastPage}`,
-      text: document.rawText.slice(lastIndex),
-    });
   }
 
   return entries;
@@ -536,11 +580,25 @@ async function createEmbeddings(texts: string[]) {
 
   for (let index = 0; index < texts.length; index += EMBEDDING_BATCH_SIZE) {
     const batch = texts.slice(index, index + EMBEDDING_BATCH_SIZE);
-    const response = await client.embeddings.create({
-      model: DOCUMENT_EMBEDDING_MODEL,
-      input: batch,
-      encoding_format: "float",
-    });
+    let response: Awaited<ReturnType<typeof client.embeddings.create>> | null = null;
+    for (let attempt = 0; attempt <= EMBEDDING_RETRY_DELAYS_MS.length; attempt += 1) {
+      try {
+        response = await client.embeddings.create({
+          model: DOCUMENT_EMBEDDING_MODEL,
+          input: batch,
+          encoding_format: "float",
+        });
+        break;
+      } catch (error) {
+        if (attempt >= EMBEDDING_RETRY_DELAYS_MS.length) {
+          throw error;
+        }
+        await sleep(EMBEDDING_RETRY_DELAYS_MS[attempt] ?? 1000);
+      }
+    }
+    if (!response) {
+      throw new Error("Embedding-kall returnerte ikke svar.");
+    }
     for (const item of response.data) {
       embeddings[index + item.index] = item.embedding;
     }
@@ -691,7 +749,7 @@ async function replaceDocumentChunks(input: {
   });
 }
 
-async function hasExistingDocumentChunks(input: {
+async function hasCompleteExistingDocumentChunks(input: {
   sourceType: DocumentChunkSourceType;
   sourceId: string;
 }) {
@@ -711,7 +769,29 @@ async function hasExistingDocumentChunks(input: {
     return true;
   }
 
-  return Boolean(data?.length);
+  if (!data?.length) {
+    return false;
+  }
+
+  if (!getEmbeddingClient()) {
+    return true;
+  }
+
+  const { data: incompleteRows, error: incompleteError } = await supabase
+    .from("document_chunks")
+    .select("id")
+    .eq("source_type", input.sourceType)
+    .eq("source_id", input.sourceId)
+    .or(
+      `embedding_created_at.is.null,embedding_model.is.null,embedding_model.neq.${DOCUMENT_EMBEDDING_MODEL}`,
+    )
+    .limit(1);
+
+  if (incompleteError) {
+    return true;
+  }
+
+  return !incompleteRows?.length;
 }
 
 export async function replaceProjectDocumentChunks(input: {
@@ -747,7 +827,7 @@ export async function ensureProjectDocumentChunks(input: {
   document: ProjectDocumentDetail;
 }) {
   if (
-    await hasExistingDocumentChunks({
+    await hasCompleteExistingDocumentChunks({
       sourceType: "project_document",
       sourceId: input.document.id,
     })
@@ -797,7 +877,7 @@ export async function ensureServiceDocumentChunks(input: {
   document: ServiceDocumentDetail;
 }) {
   if (
-    await hasExistingDocumentChunks({
+    await hasCompleteExistingDocumentChunks({
       sourceType: "service_document",
       sourceId: input.document.id,
     })
@@ -937,7 +1017,7 @@ async function storedVectorCandidates(input: {
     return [];
   }
 
-  const embedding = (await createEmbeddings([input.query]))[0];
+  const embedding = await createQueryEmbedding(input.query);
   if (!embedding) {
     return [];
   }
@@ -1029,7 +1109,7 @@ async function storedHybridCandidates(input: {
     return [];
   }
 
-  const embedding = (await createEmbeddings([input.query]))[0];
+  const embedding = await createQueryEmbedding(input.query);
   if (!embedding) {
     return [];
   }
@@ -1322,26 +1402,29 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
 
   if (!hybridCandidates.length) {
     try {
-    vectorCandidates = await storedVectorCandidates({
-      query,
-      queryTokens,
-      exactTerms,
-      projectId: input.projectId,
-      sourceIds,
-      limit,
-    });
+      vectorCandidates = await storedVectorCandidates({
+        query,
+        queryTokens,
+        exactTerms,
+        projectId: input.projectId,
+        sourceIds,
+        limit,
+      });
       usedVectorSearch = vectorCandidates.length > 0;
     } catch {
       vectorCandidates = [];
     }
   }
 
-  const fallbackCandidates = memoryCandidates({
-    queryTokens,
-    exactTerms,
-    documents,
-    serviceDocuments,
-  });
+  const fallbackCandidates =
+    !hybridCandidates.length && !vectorCandidates.length
+      ? memoryCandidates({
+          queryTokens,
+          exactTerms,
+          documents,
+          serviceDocuments,
+        })
+      : [];
   usedMemoryFallback = fallbackCandidates.length > 0;
 
   const snippets = rerankSnippets({

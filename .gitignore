@@ -24,5 +24,9 @@ test-data/*
 !test-data/requirement-parser-golden/
 !test-data/requirement-parser-golden/norwegian-pdf-requirement-regressions.json
 
+# Generated reports and local scratch artifacts
+tmp/
+reports/
+
 # OS
 .DS_Store

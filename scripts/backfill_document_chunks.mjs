@@ -164,11 +164,23 @@ function detectKind(text, fileFormat) {
   return "paragraph";
 }
 
+function pdfPageMarkers(value) {
+  return [...value.matchAll(/\[\[SIDE:(\d{1,5})(?:-(\d{1,5}))?\]\]/g)]
+    .map((match) => {
+      const startPage = Number(match[1]);
+      const endPage = Number(match[2] ?? match[1]);
+      return { startPage, endPage: Math.max(startPage, endPage) };
+    })
+    .filter((marker) => Number.isFinite(marker.startPage) && Number.isFinite(marker.endPage));
+}
+
 function pageRange(reference, text) {
   const pageNumbers = [
     ...`${reference}\n${text}`.matchAll(/\b(?:side|page)\s+(\d{1,5})\b/gi),
-    ...`${reference}\n${text}`.matchAll(/\[\[SIDE:(\d{1,5})\]\]/g),
   ].map((match) => Number(match[1])).filter(Number.isFinite);
+  for (const marker of pdfPageMarkers(`${reference}\n${text}`)) {
+    pageNumbers.push(marker.startPage, marker.endPage);
+  }
   return {
     page_start: pageNumbers.length ? Math.min(...pageNumbers) : null,
     page_end: pageNumbers.length ? Math.max(...pageNumbers) : null,
