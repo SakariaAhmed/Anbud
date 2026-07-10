@@ -43,6 +43,7 @@ import {
   shouldUseSolutionEvaluationForArtifact,
   solutionEvaluationContextModeForArtifact,
 } from "@/lib/server/workflow-boundaries";
+import { rethrowAuthoritativeLeaseLoss } from "@/lib/server/repositories/lease-fenced-persistence";
 import type {
   GeneratedArtifactType,
   ProjectDocumentDetail,
@@ -415,12 +416,18 @@ export async function generateAndSaveProjectArtifact(
       ...projectDocuments
         .filter((document) => document.raw_text.trim())
         .map((document) =>
-          ensureProjectDocumentChunks({ document }).catch(() => undefined),
+          ensureProjectDocumentChunks({ document }).catch((error) => {
+            rethrowAuthoritativeLeaseLoss(error);
+            return undefined;
+          }),
         ),
       ...serviceDescriptionDocuments
         .filter((document) => document.raw_text.trim())
         .map((document) =>
-          ensureServiceDocumentChunks({ document }).catch(() => undefined),
+          ensureServiceDocumentChunks({ document }).catch((error) => {
+            rethrowAuthoritativeLeaseLoss(error);
+            return undefined;
+          }),
         ),
     ]);
     input.assertActive?.();

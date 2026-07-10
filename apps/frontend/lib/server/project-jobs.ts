@@ -12,6 +12,7 @@ import {
   findProjectJob,
   getQueuedProjectJobInput,
   heartbeatProjectJob,
+  insertFollowUpProjectJob,
   insertProjectJob,
   listQueuedProjectJobIds,
   resetStaleRunningProjectJobs,
@@ -22,7 +23,10 @@ import {
   isProjectJobLeaseLostError,
   startProjectJobHeartbeat,
 } from "@/lib/server/project-job-heartbeat";
-import { runWithProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
+import {
+  getProjectWorkflowLease,
+  runWithProjectWorkflowContext,
+} from "@/lib/server/project-workflow-cancellation";
 import {
   parseProjectWorkflowInput,
   runProjectWorkflow,
@@ -43,6 +47,7 @@ type QueueJobOptions = {
   skipEnqueue?: boolean;
   runNow?: boolean;
   autoRun?: boolean;
+  idempotencyKey?: string;
 };
 
 type JobRunContext =
@@ -316,17 +321,25 @@ async function enqueueProjectJob(
   const shouldAutoRun = options.autoRun !== false;
 
   if (!options.skipEnqueue) {
-    await persistJob(record, input);
-    getStore().set(record.id, record);
+    const parentLease = getProjectWorkflowLease();
+    const persistedRecord = parentLease
+      ? await insertFollowUpProjectJob(
+          record,
+          input,
+          parentLease,
+          options.idempotencyKey ?? `${input.kind}:${record.id}`,
+        )
+      : (await persistJob(record, input), record);
+    getStore().set(persistedRecord.id, persistedRecord);
     if (options.runNow) {
-      await runQueuedProjectJob(record.id);
+      await runQueuedProjectJob(persistedRecord.id);
     } else if (shouldAutoRun) {
       setTimeout(() => {
-        void runQueuedProjectJob(record.id);
+        void runQueuedProjectJob(persistedRecord.id);
       }, 0);
     }
 
-    return record;
+    return persistedRecord;
   }
 
   if (options.runNow) {
@@ -387,41 +400,55 @@ async function runProjectJob(
   let terminalPatch: Partial<ProjectJobRecord> | null = null;
 
   try {
-    const result = await runWithProjectWorkflowAbortSignal(lease.signal, () =>
-      runProjectWorkflow(input, {
-        setProgress(message) {
-          lease.assertActive();
-          updateJob(jobId, { message, status: "running" }, context);
-        },
-        onPhase(phase) {
-          lease.assertActive();
-          phaseTimer.mark(phase);
-        },
-        assertActive: lease.assertActive,
-        timings: () => phaseTimer.timings(),
-        totalDurationMs: () => phaseTimer.total(),
-      }),
+    const result = await runWithProjectWorkflowContext(
+      {
+        signal: lease.signal,
+        lease: context.persisted
+          ? {
+              jobId,
+              leaseToken: context.leaseToken,
+              projectId: input.projectId,
+            }
+          : undefined,
+      },
+      async () => {
+        const workflowResult = await runProjectWorkflow(input, {
+          setProgress(message) {
+            lease.assertActive();
+            updateJob(jobId, { message, status: "running" }, context);
+          },
+          onPhase(phase) {
+            lease.assertActive();
+            phaseTimer.mark(phase);
+          },
+          assertActive: lease.assertActive,
+          timings: () => phaseTimer.timings(),
+          totalDurationMs: () => phaseTimer.total(),
+        });
+        lease.assertActive();
+
+        if (
+          input.kind === "document_ingestion" &&
+          shouldQueueDoclingEnhancement(input, workflowResult)
+        ) {
+          const queuedEnhancement = await enqueueProjectJob(
+            {
+              kind: "document_docling_enhancement",
+              projectId: input.projectId,
+              documentId: input.documentId,
+            },
+            {
+              autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false),
+              idempotencyKey: `document_docling_enhancement:${input.documentId}`,
+            },
+          );
+          workflowResult.docling_enhancement_job_id = queuedEnhancement.id;
+        }
+
+        return workflowResult;
+      },
     );
     lease.assertActive();
-
-    if (
-      input.kind === "document_ingestion" &&
-      shouldQueueDoclingEnhancement(input, result)
-    ) {
-      lease.assertActive();
-      const queuedEnhancement = await enqueueProjectJob(
-        {
-          kind: "document_docling_enhancement",
-          projectId: input.projectId,
-          documentId: input.documentId,
-        },
-        {
-          autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false),
-        },
-      );
-      lease.assertActive();
-      result.docling_enhancement_job_id = queuedEnhancement.id;
-    }
 
     logJobPhase({
       jobId,

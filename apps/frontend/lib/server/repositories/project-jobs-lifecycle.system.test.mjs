@@ -32,7 +32,7 @@ const {
 );
 const {
   getProjectWorkflowAbortSignal,
-  runWithProjectWorkflowAbortSignal,
+  runWithProjectWorkflowContext,
 } = jiti(
   path.join(frontendRoot, "lib/server/project-workflow-cancellation.ts"),
 );
@@ -288,7 +288,7 @@ test("lease takeover aborts the old workflow before its next business side effec
     },
   );
 
-  const workflow = runWithProjectWorkflowAbortSignal(guard.signal, async () => {
+  const workflow = runWithProjectWorkflowContext({ signal: guard.signal }, async () => {
     await new Promise((resolve) => {
       resumeWorkflow = resolve;
     });

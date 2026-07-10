@@ -11,6 +11,7 @@ import {
   runJsonCompletionWithFileInputs,
   type ReasoningEffort,
 } from "@/lib/server/ai/json-completion";
+import { buildVerifiedFoundationControls } from "@/lib/server/ai/verified-foundation-controls";
 import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
 import { buildSolutionEvaluationProvenance } from "@/lib/server/workflow-boundaries";
 import { sortByRequirementOrder } from "@/lib/requirement-order";
@@ -8234,22 +8235,22 @@ function tableRequirementAnswer(entry: RequirementLedgerEntry) {
     /\b(D1|architecture pack|D2|migration plan|D3|controls matrix|D4|cutover report|D5|transition package|22\.?\s*april|20\.?\s*mai|june\s*5|september\s*30|december\s*10)\b/i.test(
       combined,
     )
-      ? "Atea legger leveransen inn i en datostyrt plan med ansvarlig eier, akseptansekriterier og kvalitetssikring for D1-D5 før milepælene lukkes"
+      ? "Atea legger hver dokumenterte leveranse og frist inn i en kildeverifisert plan med ansvarlig eier, akseptansekriterier og kvalitetssikring; manglende datoer behandles som avklaringer"
       : "",
     /\b(EUR\s*2\.?9|2,9|year-one budget|budget ceiling|Net\s*60|payment terms|fixed implementation|monthly managed service fee|accelerated migration|pricing)\b/i.test(
       combined,
     )
-      ? "Atea svarer med prisstruktur som skiller fast implementeringspris, månedlig managed service-fee og opsjon for akselerert migrering, innenfor budsjett- og betalingsvilkårene kunden har oppgitt"
+      ? "Atea svarer mot de pris-, budsjett- og betalingsvilkårene som faktisk er dokumentert i kravet; manglende verdier eller prismodell behandles uttrykkelig som forslag eller avklaring"
       : "",
     /\b(customer-managed|kundestyrt|key|nøk|Entra|conditional access|CIS|hardening|logging|encryption|compliance|vulnerability)\b/i.test(
       combined,
     )
-      ? "Atea oppfyller kravet gjennom kundestyrte nøkler, Entra ID/Conditional Access, CIS-herding, logging og dokumentert sårbarhetsoppfølging med tydelig kontrollansvar"
+      ? "Atea beskriver bare de identitets-, nøkkel-, herding-, logging- og etterlevelseskontrollene som er dokumentert i kravet, med tydelig kontrollansvar og verifikasjon"
       : "",
     /\b(landing zone|hub-spoke|network segmentation|identity federation|Terraform|IaC|log analytics|distributed tracing|proactive alerting)\b/i.test(
       combined,
     )
-      ? "Atea etablerer en segmentert landing zone med identitetsføderering, Terraform-basert IaC, Log Analytics, distribuert tracing og proaktiv varsling som del av målarkitekturen"
+      ? "Atea beskriver en kildeverifisert målarkitektur og skiller eksplisitte plattformkrav fra foreslåtte komponenter som må godkjennes før de gjøres bindende"
       : "",
     /\b(140|wave|bølge|migration|migrering|customer-facing|analytics|archive)\b/i.test(
       combined,
@@ -9963,14 +9964,6 @@ function extractDocumentedContinuityMetric(
   return reverse?.[1]?.replace(/\s+/g, " ").trim() ?? "";
 }
 
-function hasDocumentedContinuityTargets(facts: ArtifactFoundationFact[]) {
-  return Boolean(
-    extractDocumentedContinuityMetric(facts, "RTO") ||
-      extractDocumentedContinuityMetric(facts, "RPO") ||
-      factsInclude(facts, /\bzero unplanned downtime\b/i),
-  );
-}
-
 function hasContinuitySignals(facts: ArtifactFoundationFact[]) {
   return factsInclude(
     facts,
@@ -10007,26 +10000,6 @@ function hasDocumentedCommercialTerms(facts: ArtifactFoundationFact[]) {
   );
 }
 
-function customerDeliverableRequirementText(facts: ArtifactFoundationFact[]) {
-  const deliverableFacts = facts
-    .filter(
-      (fact) =>
-        fact.label === "Leveransefrister" && /\bD[1-5]\b/i.test(fact.text),
-    )
-    .map((fact) => compactText(fact.text, 180))
-    .slice(0, 5);
-
-  if (deliverableFacts.length >= 5) {
-    return `Leveranseplanen må styres mot dokumenterte D1-D5-milepæler: ${deliverableFacts.join(" ")}`;
-  }
-
-  if (deliverableFacts.length) {
-    return `Leveranseplanen må styres mot dokumenterte leveranseføringer: ${deliverableFacts.join(" ")}`;
-  }
-
-  return "Leveranseplanen må bygges med foreslåtte milepæler, eiere og akseptkriterier; konkrete frister må avklares når de ikke er dokumentert i grunnlaget.";
-}
-
 function documentedFactText(facts: ArtifactFoundationFact[], pattern: RegExp) {
   return facts
     .filter((fact) => pattern.test(fact.text))
@@ -10044,28 +10017,6 @@ function documentedDeliverableControlText(facts: ArtifactFoundationFact[]) {
     return "";
   }
 
-  const deliverables = [
-    /\bD1\b/i.test(source)
-      ? "D1 Architecture pack due April 22 2026 (22. april 2026)"
-      : "",
-    /\bD2\b/i.test(source)
-      ? "D2 Migration plan due May 20 2026 (20. mai 2026)"
-      : "",
-    /\bD3\b/i.test(source)
-      ? "D3 security/compliance controls matrix due June 5 2026 (5. juni 2026)"
-      : "",
-    /\bD4\b/i.test(source)
-      ? "D4 Wave 1 production cutover report due September 30 2026 (30. september 2026)"
-      : "",
-    /\bD5\b/i.test(source)
-      ? "D5 managed services transition package due December 10 2026 (10. desember 2026)"
-      : "",
-  ].filter(Boolean);
-
-  if (deliverables.length) {
-    return `Dokumenterte leveransefrister må styre plan og evalueringsbevis: ${deliverables.join("; ")}.`;
-  }
-
   return `Dokumenterte leveransefrister må styre plan og evalueringsbevis: ${source}`;
 }
 
@@ -10074,23 +10025,13 @@ function documentedCommercialControlText(facts: ArtifactFoundationFact[]) {
     return "";
   }
 
-  const controls = [
-    factsInclude(facts, /\b(?:EUR|NOK)\s*\d|(?:\d+[,.]\d+|\d+)\s*(?:million|mill\.|m\b)|budget ceiling|budsjettak/i)
-      ? documentedFactText(facts, /\b(EUR|NOK|budget|budsjett|budget ceiling|budsjettak)\b/i)
-      : "",
-    factsInclude(facts, /\bNet\s*60|payment terms|betalingsvilkår/i)
-      ? documentedFactText(facts, /\b(Net\s*60|payment terms|betalingsvilkår)\b/i)
-      : "",
-    factsInclude(facts, /\bfixed implementation|monthly managed service fee/i)
-      ? "prisstruktur med fixed implementation price og monthly managed service fee"
-      : "",
-    factsInclude(facts, /\baccelerated|minus\s*8|8\s*weeks/i)
-      ? "separat optional pricing for accelerated migration timeline minus 8 weeks"
-      : "",
-  ].filter(Boolean);
+  const controls = documentedFactText(
+    facts,
+    /\b(EUR|NOK|budget|budsjett|Net\s*\d+|payment terms|betalingsvilkår|pricing|pris|fixed implementation|monthly managed service fee|accelerated)\b/i,
+  );
 
-  if (controls.length && hasDocumentedCommercialTerms(facts)) {
-    return `Kommersielt må tilbudet være evaluerbart mot ${controls.join(", ")}.`;
+  if (controls && hasDocumentedCommercialTerms(facts)) {
+    return `Kommersielt må tilbudet være evaluerbart mot dokumenterte kildefakta: ${controls}`;
   }
 
   return "Kommersielle rammer som budsjett, betalingsvilkår, bindende prisstruktur og eventuelle frister er ikke dokumentert presist i grunnlaget og må håndteres som avklaringer/forutsetninger.";
@@ -10106,107 +10047,26 @@ function documentedRiskControlText(facts: ArtifactFoundationFact[]) {
     return "";
   }
 
-  const risks = [
-    factsInclude(facts, /\bSOC responsibility|SOC-ansvar\b/i)
-      ? "SOC responsibility split"
-      : "",
-    factsInclude(facts, /\bOT telemetry|OT-telemetri|OT-logging\b/i)
-      ? "OT telemetry logging"
-      : "",
-    factsInclude(facts, /\bpenalty/i) ? "penalty cap for SLA breach" : "",
-    factsInclude(facts, /\bOracle/i)
-      ? "legacy Oracle workloads requiring refactoring"
-      : "",
-    factsInclude(facts, /\bmerger/i)
-      ? "Q4 2026 merger activities som kan endre priority/scope"
-      : "",
-    factsInclude(facts, /\bblackout|December\s*15|January\s*5/i)
-      ? "critical union blackout period December 15 2026 to January 5 2027"
-      : "",
-    factsInclude(facts, /\bmeter data|API contract|API-fornyelse|renewal/i)
-      ? "third-party meter data provider API contract renewal"
-      : "",
-    factsInclude(facts, /\beldre|legacy|teknisk gjeld|lokal infrastruktur/i)
-      ? "teknisk gjeld og eldre/lokal infrastruktur som må moderniseres uten å flytte dagens problemer til skyen"
-      : "",
-    factsInclude(facts, /\bfilbaserte|integrasjonsbilde|transportører|leverandører|kunder/i)
-      ? "uoversiktlige og filbaserte integrasjoner som må standardiseres og risikostyres i overgangsperioden"
-      : "",
-    factsInclude(facts, /\bnøkkelperson|begrenset intern kapasitet|dokumentasjon/i)
-      ? "begrenset intern kapasitet, nøkkelpersonavhengighet og dokumentasjonsgap som må lukkes med ansvar, kunnskapsoverføring og driftsmodell"
-      : "",
-    factsInclude(facts, /\brehost|replatform|refaktor|beholdes midlertidig|fases ut|erstattes/i)
-      ? "valg mellom rehost, replatform, refaktorering, midlertidig lokal videreføring, utfasing og erstatning"
-      : "",
-    factsInclude(facts, /\bdriftsavbrudd|nedetid|åpningstid|forretningskritisk/i)
-      ? "begrenset toleranse for driftsavbrudd i ordinær åpningstid og forretningskritiske lager-/logistikkprosesser"
-      : "",
-  ].filter(Boolean);
+  const risks = documentedFactText(
+    facts,
+    /\b(SOC|OT telemetry|penalty|Oracle|refactor|refaktor|rehost|replatform|merger|blackout|meter data|API|renewal|eldre|legacy|teknisk gjeld|filbaserte|nøkkelperson|begrenset intern kapasitet|driftsavbrudd|nedetid)\b/i,
+  );
 
-  return risks.length
-    ? `Avklarings- og risikodrivere som må styres eksplisitt: ${risks.join(", ")}.`
+  return risks
+    ? `Avklarings- og risikodrivere fra verifisert kildegrunnlag: ${risks}`
     : "";
 }
 
 function documentedWaveControlText(facts: ArtifactFoundationFact[]) {
-  if (!factsInclude(facts, /\b(140|Wave\s*1|Wave\s*2|Wave\s*3|shared services|customer-facing|analytics|archive)\b/i)) {
+  const source = documentedFactText(
+    facts,
+    /\b(\d+\s+(?:applications?|applikasjoner)|Wave\s*\d+|bølge\s*\d+|shared services|customer-facing|analytics|archive)\b/i,
+  );
+  if (!source) {
     return "";
   }
 
-  return "Migreringen må styres som 140 applikasjoner i tre waves: Wave 1 shared services, Wave 2 customer-facing workloads og Wave 3 analytics/archive.";
-}
-
-function groundedCustomerProfileSummary(
-  fallback: string,
-  facts: ArtifactFoundationFact[],
-) {
-  if (!factsInclude(facts, /\bNordic Utilities\b/i)) {
-    return fallback;
-  }
-
-  const sentences = [
-    "Nordic Utilities er en driftskritisk utility-/forsyningskunde som skal modernisere customer billing, outage management og analytics i en hybrid driftsmodell.",
-    factsInclude(facts, /\bon-?prem|regulatory|latency|latens/i)
-      ? "Kunden må beholde utvalgte on-prem-miljøer der regulatoriske eller latenssensitive hensyn krever det."
-      : "",
-    factsInclude(facts, /\b(EUR|budget|Net\s*60|fixed implementation|monthly managed service fee)\b/i)
-      ? "Anskaffelsen har tydelige kommersielle rammer med budsjettak, Net 60 og separat implementerings-/driftsprising."
-      : "",
-    factsInclude(facts, /\b(SOC|OT|penalty|Oracle|merger|blackout|meter data|API)\b/i)
-      ? "Viktige avklaringer gjelder særlig SOC/OT-ansvar, Oracle-omfang, penalty cap, porteføljeendringer, blackout-vindu og eksterne API-avhengigheter."
-      : "",
-  ].filter(Boolean);
-
-  return compactText(sentences.join(" "), 1200) || fallback;
-}
-
-function groundedCustomerGoalsSummary(
-  fallback: string,
-  facts: ArtifactFoundationFact[],
-) {
-  if (
-    !factsInclude(
-      facts,
-      /\b(Nordic Utilities|140|customer billing|outage management|zero unplanned downtime)\b/i,
-    )
-  ) {
-    return fallback;
-  }
-
-  const sentences = [
-    "Målet er en kontrollert hybrid modernisering i perioden 2026-2028, ikke en generell skyflytting.",
-    factsInclude(facts, /\b140|Wave\s*1|Wave\s*2|Wave\s*3|shared services|customer-facing|analytics|archive/i)
-      ? "Migreringen omfatter 140 applikasjoner i tre waves med shared services først, kundevendte arbeidslaster deretter og analytics/archive til slutt."
-      : "",
-    hasDocumentedContinuityTargets(facts)
-      ? documentedContinuityControlText(facts)
-      : "",
-    factsInclude(facts, /\b24\/7|managed services|incident|patching|performance reporting/i)
-      ? "Sluttbildet må inkludere 24/7 managed services for plattformdrift, hendelser, patching og månedlig rapportering."
-      : "",
-  ].filter(Boolean);
-
-  return compactText(sentences.join(" "), 1200) || fallback;
+  return `Migreringsplanen må styres mot dokumentert kildegrunnlag: ${source}`;
 }
 
 function appendUniqueTextItems(
@@ -10240,7 +10100,6 @@ function appendUniqueTextItems(
   }
   return result.slice(0, options?.max ?? 10);
 }
-
 function appendPrioritizedRequirement(
   items: CustomerAnalysisResult["prioritized_requirements"],
   requirement: string,
@@ -10274,220 +10133,47 @@ function enrichCustomerAnalysisWithFoundationFacts(
     return result;
   }
 
+  const documentedControls = buildVerifiedFoundationControls(facts);
+  if (!documentedControls.length) {
+    return result;
+  }
+
   let prioritizedRequirements = Array.isArray(result.prioritized_requirements)
     ? [...result.prioritized_requirements]
     : [];
-  const expectedSolutionDirection = Array.isArray(
-    result.expected_solution_direction,
-  )
-    ? [...result.expected_solution_direction]
-    : [];
-  const likelyEvaluationCriteria = Array.isArray(
-    result.likely_evaluation_criteria,
-  )
-    ? [...result.likely_evaluation_criteria]
-    : [];
-  const ambiguities = Array.isArray(result.ambiguities)
-    ? [...result.ambiguities]
-    : [];
-  const risksForUs = Array.isArray(result.risks_for_us)
-    ? [...result.risks_for_us]
-    : [];
-  const risksForCustomer = Array.isArray(result.risks_for_customer)
-    ? [...result.risks_for_customer]
-    : [];
-  const positioningRecommendations = Array.isArray(
-    result.positioning_recommendations,
-  )
-    ? [...result.positioning_recommendations]
-    : [];
-  const customerProfile = Array.isArray(result.customer_profile)
-    ? [...result.customer_profile]
-    : [];
-  const customerGoals = Array.isArray(result.customer_goals)
-    ? [...result.customer_goals]
-    : [];
-
-  if (factsInclude(facts, /\b(D1|D2|D3|D4|D5|Architecture pack|Migration plan|controls matrix|cutover report|transition package)\b/i)) {
-    const deliverableRequirement = {
-      requirement: customerDeliverableRequirementText(facts),
-      priority: "Viktig" as const,
-      reason:
-        "D1-D5 er konkrete evaluerings- og styringsbevis som binder arkitektur, migrering, sikkerhet, cutover og driftsovergang sammen.",
-    };
-    const existingText = prioritizedRequirements
-      .map((item) => `${item.requirement} ${item.reason}`)
-      .join("\n");
-    if (
-      !highLevelDesignAdditionRepresented(
-        existingText,
-        deliverableRequirement.requirement,
-      )
-    ) {
-      prioritizedRequirements = [
-        deliverableRequirement,
-        ...prioritizedRequirements,
-      ];
-    }
-  }
-
-  if (factsInclude(facts, /\b(140|waves?|bølger?|billing|outage|analytics|archive|on-?prem|hybrid|ERP|WMS|CRM|lager|logistikk|rehost|replatform|refaktor)\b/i)) {
-    if (prioritizedRequirements.length < 6) {
-      const migrationRequirement = factsInclude(
-        facts,
-        /\b(140|Wave\s*1|Wave\s*2|Wave\s*3|shared services|customer-facing|analytics|archive)\b/i,
-      )
-        ? "Hybrid modernisering av 140 applikasjoner i tre bølger, med beholdt on-prem for regulatoriske eller latenssensitive arbeidslaster."
-        : "Stegvis modernisering av ERP, WMS, CRM, integrasjoner og eldre/lokale komponenter med eksplisitt vurdering av rehost, replatform, refaktorering, midlertidig lokal videreføring, utfasing og erstatning.";
-      prioritizedRequirements = appendPrioritizedRequirement(
-        prioritizedRequirements,
-        migrationRequirement,
-        "Kritisk",
-        "Definerer leveransescope, målarkitektur og migreringsrisiko for tilbudet.",
-      );
-    }
-  }
-  if (hasContinuitySignals(facts)) {
-    if (prioritizedRequirements.length < 6) {
-      prioritizedRequirements = appendPrioritizedRequirement(
-        prioritizedRequirements,
-        documentedContinuityControlText(facts),
-        "Kritisk",
-        "Kontinuitetskravet påvirker arkitekturvalg, testopplegg, cutover og driftsmodell.",
-      );
-    }
-  }
-  if (factsInclude(facts, /\b(customer-managed|kundestyrt|Entra|conditional access|CIS|Terraform|logging|compliance)\b/i)) {
-    if (prioritizedRequirements.length < 6) {
-      prioritizedRequirements = appendPrioritizedRequirement(
-        prioritizedRequirements,
-        "Sikkerhets- og styringskontroller må dekke kundestyrte nøkler, Entra ID Conditional Access, CIS-hardening, logging og Terraform/IaC når dette er dokumentert.",
-        "Kritisk",
-        "Dette er evalueringsnære kontroller som må spores fra design til leveransebevis.",
-      );
-    }
-  }
-  if (hasDocumentedCommercialTerms(facts)) {
-    if (prioritizedRequirements.length < 6) {
-      prioritizedRequirements = appendPrioritizedRequirement(
-        prioritizedRequirements,
-        documentedCommercialControlText(facts),
-        "Viktig",
-        "Kommersiell struktur påvirker evaluerbarhet, forbehold og tilbudsrisiko.",
-      );
-    }
+  for (const control of documentedControls) {
+    prioritizedRequirements = appendPrioritizedRequirement(
+      prioritizedRequirements,
+      control,
+      "Viktig",
+      "Føringen er hentet fra det verifiserte dokumentgrunnlaget og må spores til kilde før den gjøres bindende.",
+    );
   }
 
   return {
     ...result,
-    customer_profile_summary: groundedCustomerProfileSummary(
-      result.customer_profile_summary,
-      facts,
-    ),
-    customer_goals_summary: groundedCustomerGoalsSummary(
-      result.customer_goals_summary,
-      facts,
-    ),
-    customer_profile: customerProfile,
-    customer_goals: customerGoals,
     prioritized_requirements: prioritizedRequirements.slice(0, 6),
     likely_evaluation_criteria: appendUniqueTextItems(
-      likelyEvaluationCriteria,
-      [
-        factsInclude(facts, /\b(D1|D2|D3|D4|D5|Architecture pack|Migration plan|controls matrix|cutover report|transition package)\b/i)
-          ? "Evne til å levere D1-D5 som konkrete bevis på arkitektur, migreringsplan, sikkerhetskontroller, cutover og managed services-overgang."
-          : "",
-        factsInclude(facts, /\b(140|waves?|bølger?|hybrid|on-?prem)\b/i)
-          ? "Evne til å gjennomføre en kontrollert hybrid migrering med tydelig wave-logikk, avhengighetsstyring og beholdt on-prem der kravbildet tilsier det."
-          : "",
-        hasContinuitySignals(facts)
-          ? documentedContinuityControlText(facts)
-          : "",
-        factsInclude(facts, /\b(customer-managed|Entra|conditional access|CIS|Terraform|compliance)\b/i)
-          ? "Sporbare sikkerhets- og styringskontroller med kundestyrte nøkler, identitetskontroll, hardening, IaC og etterlevelsesbevis."
-          : "",
-        hasDocumentedCommercialTerms(facts)
-          ? "Kommersiell transparens rundt budsjettak, betalingsvilkår, fast implementeringspris, månedlig drift og opsjoner."
-          : "",
-      ],
+      Array.isArray(result.likely_evaluation_criteria)
+        ? result.likely_evaluation_criteria
+        : [],
+      documentedControls,
       { max: 6 },
     ),
     expected_solution_direction: appendUniqueTextItems(
-      expectedSolutionDirection,
-      [
-        factsInclude(facts, /\b(D1|D2|D3|D4|D5|Architecture pack|Migration plan|controls matrix|cutover report|transition package)\b/i)
-          ? "Bruk D1-D5 som styrende leveransebevis fra målarkitektur via migreringsplan og compliance-matrise til cutoverrapport og driftsovergang."
-          : "",
-        factsInclude(facts, /\b(hybrid|landing zone|segmentation|identity federation|backup|disaster recovery|Terraform)\b/i)
-          ? "Azure-centrisk hybrid landing zone med nettverkssegmentering, identitetsfederering, backup/DR og Terraform som styringsmekanisme."
-          : "",
-        factsInclude(facts, /\b(140|waves?|bølger?|billing|outage|analytics|archive|ERP|WMS|CRM|rehost|replatform|refaktor)\b/i)
-          ? factsInclude(facts, /\b(140|Wave\s*1|Wave\s*2|Wave\s*3|shared services|customer-facing|analytics|archive)\b/i)
-            ? "Bølgevis migreringsfabrikk for applikasjonsporteføljen, der shared services etableres før kundevendte arbeidslaster og analytics/archive."
-            : "Migreringsfabrikk som kartlegger ERP, WMS, CRM, integrasjoner og eldre komponenter før rehost/replatform/refaktorering eller midlertidig lokal videreføring besluttes."
-          : "",
-        factsInclude(facts, /\b(24\/7|managed services|incident|patching|performance reporting)\b/i)
-          ? "24/7 managed operations med hendelseshåndtering, patching, ytelsesrapportering, observability og klare eskaleringsveier."
-          : "",
-      ],
+      Array.isArray(result.expected_solution_direction)
+        ? result.expected_solution_direction
+        : [],
+      documentedControls,
       { max: 6 },
     ),
-    ambiguities: appendUniqueTextItems(
-      ambiguities,
-      [
-        factsInclude(facts, /\bSOC\b/i)
-          ? "Hvordan skal ansvar deles mellom kundens SOC og leverandørens drift/SOC-funksjon i målmodellen?"
-          : "",
-        factsInclude(facts, /\bOT\b/i)
-          ? "Kan OT-telemetri behandles i delte cloud logging-tjenester, eller krever kunden separat logging og godkjent grenseflate?"
-          : "",
-        factsInclude(facts, /\bpenalty\b/i)
-          ? "Hva er avklart grense for penalty cap ved SLA-brudd, og hvordan skal dette reflekteres i forbehold og driftsmodell?"
-          : "",
-        factsInclude(facts, /\bOracle\b/i)
-          ? "Hvilke legacy Oracle-workloads må refaktoreres før migrering, og hvilke kan rehostes eller beholdes?"
-          : factsInclude(facts, /\brehost|replatform|refaktor|beholdes midlertidig|fases ut|erstattes/i)
-            ? "Hvilke arbeidslaster skal rehostes, replatformes, refaktoreres, beholdes midlertidig lokalt, fases ut eller erstattes?"
-            : "",
-        factsInclude(facts, /\bmerger\b/i)
-          ? "Hvordan kan planlagte merger-aktiviteter påvirke prioritet, scope og wave-plan?"
-          : "",
-        factsInclude(facts, /\bmeter data|API|renewal\b/i)
-          ? "Hva er status for tredjeparts meter data-provider API og kontraktsfornyelse før cutover-planen låses?"
-          : "",
-      ],
-      { max: 8 },
-    ),
     risks_for_us: appendUniqueTextItems(
-      risksForUs,
-      [
-        documentedRiskControlText(facts)
-          ? documentedRiskControlText(facts)
-          : "",
-      ],
-      { max: 5 },
-    ),
-    risks_for_customer: appendUniqueTextItems(
-      risksForCustomer,
-      [
-        hasContinuitySignals(facts)
-          ? "Manglende styring av høy tilgjengelighet, begrenset nedetid, backup/gjenoppretting, cutover og tilbakeføring kan gi driftsavbrudd i forretningskritiske prosesser."
-          : "",
-      ],
-      { max: 5 },
-    ),
-    positioning_recommendations: appendUniqueTextItems(
-      positioningRecommendations,
-      [
-        factsInclude(facts, /\b(hybrid|140|managed services|modernisering|skyplattform|forretningskritisk)\b/i)
-          ? "Posisjoner tilbudet som kontrollert modernisering av en driftskritisk hybrid plattform, ikke som en generell skyreise eller ren migreringsleveranse."
-          : "",
-      ],
+      Array.isArray(result.risks_for_us) ? result.risks_for_us : [],
+      [documentedRiskControlText(facts)].filter(Boolean),
       { max: 5 },
     ),
   };
 }
-
 function normalizeRequirementCoverageAssessment(
   value: unknown,
 ): RequirementCoverageItem["assessment"] {
@@ -12825,87 +12511,21 @@ function enrichHighLevelDesignTextWithFoundationFacts(
   if (!facts.length || !text) {
     return text;
   }
-  const deliverableControlText = documentedDeliverableControlText(facts);
-  const commercialControlText = documentedCommercialControlText(facts);
-  const riskControlText = documentedRiskControlText(facts);
-  const waveControlText = documentedWaveControlText(facts);
-  const initialSignalText = `${factsText(facts)}\n${text}`;
-  const sourceSignalsInclude = (pattern: RegExp) =>
-    factsInclude(facts, pattern) || pattern.test(initialSignalText);
 
   text = appendHighLevelDesignSection(text, "Målarkitektur", [
-    sourceSignalsInclude(/\b(Microsoft|Azure|Entra|M365|Microsoft 365|Active Directory|\bAD\b|landing zone)\b/i)
-      ? "Første tekniske leveranse bør være en Microsoft-nær skyplattform med landing zone, Entra-basert identitet, RBAC/MFA, segmentert nettverk, policy/tagging, kostkontroll og tydelig separasjon av utvikling, test og produksjon."
-      : "",
-    sourceSignalsInclude(/\b(Azure|Microsoft|Entra|landing zone|policy|governance|IaC|Infrastructure as Code|automatisert provisjonering)\b/i)
-      ? "Plattformgrunnmuren bør beskrives som standardiserte guardrails for identitet, nettverk, logging, backup, kost og ressursopprettelse, slik at senere migreringsbølger ikke bygger egne varianter av samme kontrollsett."
-      : "",
-    waveControlText,
-    factsInclude(facts, /\b(140|waves?|bølger?|billing|outage|analytics|archive|ERP|WMS|CRM|rehost|replatform|refaktor)\b/i)
-      ? factsInclude(facts, /\b(140|Wave\s*1|Wave\s*2|Wave\s*3|shared services|customer-facing|analytics|archive)\b/i)
-        ? "Applikasjonsporteføljen bør styres som app-for-app migrering med Wave 1 for shared services, Wave 2 for billing/outage og andre kundevendte arbeidslaster, og Wave 3 for analytics/archive."
-        : "Applikasjonsporteføljen bør styres med eksplisitt kartlegging av ERP, WMS, CRM, integrasjoner og eldre/lokale komponenter før beslutning om rehost, replatform, refaktorering, midlertidig lokal videreføring, utfasing eller erstatning."
-      : "",
-    factsInclude(facts, /\b(on-?prem|OT|regulatory|latency|latens)\b/i)
-      ? "Målarkitekturen bør skille Azure-soner, beholdt on-prem og eventuelle OT-/latenssensitive soner eksplisitt, slik at regulatoriske og operative grenser ikke forsvinner i migreringen."
-      : "",
-    sourceSignalsInclude(/\b(ERP|WMS|CRM|transportører|leverandører|filbaserte|integrasjoner)\b/i)
-      ? "ERP, WMS, CRM og integrasjoner mot transportører, kunder og leverandører bør vises som egne arkitekturdomener, med kontrollert sameksistens mellom sky og lokale løsninger i overgangsperioden."
-      : "",
-    sourceSignalsInclude(/\b(filbaserte|punkt-til-punkt|integrasjoner|API|meldings|dataflyt|transportører|leverandører)\b/i)
-      ? "Integrasjonsmålbildet bør redusere filbaserte og punkt-til-punkt-avhengigheter gradvis gjennom et mer standardisert integrasjonslag, med kontrollert filstøtte bare der det trengs i overgangsfasen."
-      : "",
+    documentedWaveControlText(facts),
   ]);
-
-  text = appendHighLevelDesignSection(text, "Sikkerhet og styring", [
-    sourceSignalsInclude(/\b(MFA|flerfaktor|RBAC|rollebasert|tilgangsstyring|administrative handlinger|sporbarhet|Active Directory|\bAD\b|Entra)\b/i)
-      ? "Identitetslaget bør konkret beskrive MFA for administratorer og relevante brukergrupper, rollebasert tilgang, privilegert tilgangsstyring og sporbarhet for administrative handlinger."
-      : "",
-    factsInclude(facts, /\b(Terraform|repository|repo|IaC|Infrastructure as Code)\b/i)
-      ? "Terraform-moduler og policyer bør leveres til kundens repository med tydelig eierskap, endringskontroll og sporbarhet fra design til drift."
-      : "",
-    sourceSignalsInclude(/\b(IaC|Infrastructure as Code|automatisert provisjonering|policy|governance|utvikling|test|produksjon)\b/i)
-      ? "Infrastruktur som kode bør være standard for landing zone, nettverk, policyer og miljøopprettelse, slik at utvikling, test og produksjon kan etableres repeterbart med revisjonsspor."
-      : "",
-    factsInclude(facts, /\b(customer-managed|kundestyrt|Entra|conditional access|CIS|compliance)\b/i)
-      ? "CMK, Entra ID Conditional Access, CIS-hardening og compliance-matrise bør behandles som plattformkontroller, ikke som ettermonterte sikkerhetstiltak."
-      : "",
-    factsInclude(facts, /\b(personvern|informasjonssikkerhet|revisjon|sårbarhet|herding|logging)\b/i)
-      ? "Sikkerhetsstyringen bør inkludere konfigurasjon/herding, sårbarhetshåndtering, logging for sikkerhetskritiske hendelser og bevis som støtter personvern, informasjonssikkerhet og revisjon."
-      : "",
-  ]);
-
   text = appendHighLevelDesignSection(text, "Drift og gjennomføring", [
-    deliverableControlText,
-    factsInclude(facts, /\b(D3|D4|D5|controls matrix|cutover report|transition package)\b/i)
-      ? "D3 controls matrix, D4 cutover report og D5 managed services transition package bør brukes som aksept- og overleveringsbevis for at arkitektur, migrering og drift henger sammen."
-      : "",
+    documentedDeliverableControlText(facts),
     documentedContinuityControlText(facts),
-    factsInclude(facts, /\b(ERP|WMS|CRM|rehost|replatform|refaktor|beholdes midlertidig|fases ut|erstattes)\b/i)
-      ? "Migreringen bør starte med avhengighetskartlegging av ERP, WMS, CRM og integrasjoner før hver arbeidslast besluttes som rehost, replatform, refaktorering, midlertidig lokal videreføring, utfasing eller erstatning."
-      : "",
-    factsInclude(facts, /\b(lager|logistikk|transport|distribusjon|nedetid|cutover|tilbakeføring|parallelldrift)\b/i)
-      ? "For lager-, transport- og distribusjonskritiske tjenester bør hver migreringsbølge ha testet parallelldrift, tilbakeføringsmekanisme og eksplisitte beslutningspunkter før cutover."
-      : "",
-    factsInclude(facts, /\b(overvåkning|hendelseshåndtering|forvaltning|kunnskapsoverføring|dokumentasjon|ansvar|driftsmodell)\b/i)
-      ? "Target operating model bør skille kundens forretningsprioritering, godkjenninger og overordnet tilgangseierskap fra leverandørens plattformdrift, overvåkning, hendelseshåndtering, standardendringer, dokumentasjon og kunnskapsoverføring."
-      : "",
   ]);
-
   text = appendHighLevelDesignSection(text, "Avklaringer og forutsetninger", [
-    commercialControlText,
-    riskControlText,
-    hasDocumentedCommercialTerms(facts)
-      ? ""
-      : "Eksakte budsjett-, betalings- og fristrammer må bekreftes før de brukes som bindende styringsparametere i tilbudet.",
-    factsInclude(facts, /\b(SOC responsibility|OT telemetry|penalty|Oracle|merger|meter data|API contract|renewal|blackout)\b/i)
-      ? "SOC-ansvar, OT-logging, penalty cap, Oracle-refaktorering, merger-påvirkning, blackout-vindu og meter data API-fornyelse bør lukkes som designavklaringer før wave-plan og kommersielle forbehold låses."
-      : "",
+    documentedCommercialControlText(facts),
+    documentedRiskControlText(facts),
   ]);
 
   return normalizeMarkdownText(text);
 }
-
 function normalizeSignalWords(items: string[]) {
   return normalizeTechnologySignalWords(items);
 }
@@ -13023,132 +12643,6 @@ function includesSignal(signals: string[], pattern: RegExp) {
   return signals.some((signal) => pattern.test(signal));
 }
 
-function buildHybridCloudArchitectureDiagram() {
-  return [
-    "flowchart LR",
-    "  Users[Brukere og drift]",
-    "  Identity[Entra ID og Conditional Access]",
-    "  LandingZone[Azure hybrid landing zone\\nTerraform, CMK og CIS]",
-    "  Network[Nettverkssegmentering\\nog hybrid connectivity]",
-    "  OnPrem[Beholdt on-prem\\nOT/regulatoriske systemer]",
-    "  Portfolio[140 applikasjoner\\nWave 1-3]",
-    "  Integrations[Integrasjoner\\nog meter data API]",
-    "  Observability[24/7 drift\\nLog Analytics, tracing og varsling]",
-    "  Continuity[Backup og multi-region DR\\nRTO 60 / RPO 15]",
-    "",
-    "  Users --> Identity --> LandingZone",
-    "  LandingZone <--> Network <--> OnPrem",
-    "  Portfolio --> LandingZone",
-    "  Portfolio --> OnPrem",
-    "  LandingZone <--> Integrations",
-    "  LandingZone --> Observability",
-    "  LandingZone --> Continuity",
-    "  Observability --> Continuity",
-  ].join("\n");
-}
-
-function buildRetailLogisticsCloudArchitectureDiagram() {
-  return [
-    "flowchart LR",
-    "  Users[Brukere og logistikkdrift]",
-    "  Identity[Microsoft Entra / lokal AD i overgang]",
-    "  Platform[Microsoft-nær landing zone\\npolicy, nettverk og IaC]",
-    "  Apps[ERP, WMS og CRM\\nmigreringsbølger]",
-    "  Integrations[Integrasjonslag\\nAPI, meldinger og fil i overgang]",
-    "  OnPrem[Beholdt lokal infrastruktur\\ni overgang]",
-    "  Ops[Sikkerhet og drift\\nlogging, overvåkning, backup/restore]",
-    "",
-    "  Users --> Identity --> Platform",
-    "  Platform --> Apps",
-    "  Apps <--> Integrations",
-    "  Integrations <--> OnPrem",
-    "  Platform --> Ops",
-    "  Ops --> Apps",
-  ].join("\n");
-}
-
-function shouldUseRetailLogisticsArchitectureDiagram(input: {
-  diagram: string;
-  designText: string;
-  facts: ArtifactFoundationFact[];
-}) {
-  const content = `${input.diagram}\n${input.designText}`;
-  const diagramHasSpecificControls =
-    /\b(Microsoft|Entra|Active Directory|\bAD\b|IaC|Infrastructure as Code|API|meldinger)\b/i.test(
-      input.diagram,
-    );
-  const hasRetailScope =
-    factsInclude(
-      input.facts,
-      /\b(Nordic Retail|Retail Logistics|ERP|WMS|CRM|lager|logistikk|transport|distribusjon)\b/i,
-    ) || /\b(ERP|WMS|CRM|lager|logistikk|transport|distribusjon)\b/i.test(content);
-  const hasHybridCloud =
-    factsInclude(
-      input.facts,
-      /\b(hybrid|skyplattform|landing zone|Microsoft|M365|Microsoft 365|Active Directory|\bAD\b|IaC|Infrastructure as Code)\b/i,
-    ) || /\b(hybrid|skyplattform|landing zone|Microsoft|M365|Active Directory|\bAD\b|IaC)\b/i.test(content);
-  if (!hasRetailScope || !hasHybridCloud) {
-    return false;
-  }
-
-  const expectedSignals = [
-    /\bMicrosoft|Entra|Active Directory|\bAD\b|identitet/i,
-    /\blanding zone|skyplattform|policy|IaC/i,
-    /\bERP|WMS|CRM/i,
-    /\bAPI|meldinger|fil|integrasjon/i,
-    /\blokal|on-?prem|hybrid/i,
-    /\blogging|overvåkning|backup|restore|gjenoppretting/i,
-  ];
-  const signalHits = expectedSignals.filter((pattern) =>
-    pattern.test(content),
-  ).length;
-  const complexity = input.diagram
-    ? countMermaidComplexity(input.diagram)
-    : { nodeCount: 0, edgeCount: 0, lineCount: 0, subgraphCount: 0 };
-
-  return (
-    !input.diagram ||
-    !diagramHasSpecificControls ||
-    signalHits < 5 ||
-    complexity.nodeCount < 7
-  );
-}
-
-function shouldUseHybridCloudArchitectureDiagram(input: {
-  diagram: string;
-  designText: string;
-  facts: ArtifactFoundationFact[];
-}) {
-  if (
-    !factsInclude(
-      input.facts,
-      /\b(Nordic Utilities|140|customer billing|outage management|zero unplanned downtime)\b/i,
-    )
-  ) {
-    return false;
-  }
-
-  const content = `${input.diagram}\n${input.designText}`;
-  const expectedSignals = [
-    /\bEntra|Conditional Access|identitet/i,
-    /\blanding zone|Azure/i,
-    /\bTerraform|IaC|CMK|CIS|kundestyr/i,
-    /\bon-?prem|OT|regulator/i,
-    /\b140|Wave|bølge|billing|outage|analytics|archive/i,
-    /\bLog Analytics|tracing|varsling|observability|overvåking/i,
-    /\bbackup|DR|RTO|RPO|failover/i,
-    /\bAPI|integrasjon|meter data/i,
-  ];
-  const signalHits = expectedSignals.filter((pattern) =>
-    pattern.test(content),
-  ).length;
-  const complexity = input.diagram
-    ? countMermaidComplexity(input.diagram)
-    : { nodeCount: 0, edgeCount: 0, lineCount: 0, subgraphCount: 0 };
-
-  return !input.diagram || signalHits < 6 || complexity.nodeCount < 7;
-}
-
 function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
   const signals = Array.isArray(result.signal_words) ? result.signal_words : [];
 
@@ -13231,30 +12725,8 @@ function normalizeHighLevelDesignDiagram(input: {
   designText: string;
   facts: ArtifactFoundationFact[];
 }) {
-  const normalized = normalizeMermaidDiagram(input.rawDiagram || "");
-  if (
-    shouldUseRetailLogisticsArchitectureDiagram({
-      diagram: normalized,
-      designText: input.designText,
-      facts: input.facts,
-    })
-  ) {
-    return buildRetailLogisticsCloudArchitectureDiagram();
-  }
-
-  if (
-    shouldUseHybridCloudArchitectureDiagram({
-      diagram: normalized,
-      designText: input.designText,
-      facts: input.facts,
-    })
-  ) {
-    return buildHybridCloudArchitectureDiagram();
-  }
-
-  return normalized;
+  return normalizeMermaidDiagram(input.rawDiagram || "");
 }
-
 function normalizeRequirementList(
   requirements: CustomerAnalysisResult["implicit_requirements"],
 ) {
@@ -13848,7 +13320,7 @@ const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
       "Returner nøyaktig de 3 viktigste punktene som gir mest forståelse av hva kunden egentlig vil.",
       "Hvert punkt skal være en rimelig tolkning som er relevant for tilbudsarbeid.",
       "Hver description skal sidestille hva kunden i praksis ber om med hva kunden ikke vil kjøpe eller ikke bør posisjoneres som.",
-      "Bruk konkrete, tilbudsrettede kontraster, for eksempel: selg dette som trygg modernisering av logistikkritisk plattform, ikke som en generell skyreise.",
+      "Bruk konkrete, tilbudsrettede kontraster basert på den aktuelle kundens dokumenterte situasjon. Ikke bruk eksempelnavn, bransjefakta eller løsningsverdier fra andre tilbud.",
       "Ikke inkluder eksplisitte krav som bare hører hjemme i kravlisten.",
     ],
     outputContract: [
@@ -14218,146 +13690,9 @@ function enrichSolutionEvaluationWithFoundationFacts(
     solutionDocument: ProjectDocumentDetail;
   },
 ): SolutionEvaluationResult {
-  const facts = input.facts;
-  if (!facts.length) {
-    return result;
-  }
-
-  const solutionText = solutionDocumentText(input.solutionDocument);
-  const solutionIncludes = (pattern: RegExp) => pattern.test(solutionText);
-  const riskControlText = documentedRiskControlText(facts);
-  const riskControlDetails = riskControlText
-    .replace(
-      /^Avklarings- og risikodrivere som må styres eksplisitt:\s*/i,
-      "",
-    )
-    .replace(/\.$/, "")
-    .trim();
-  const missingElements = [
-    factsInclude(
-      facts,
-      /\b(140|Wave\s*1|Wave\s*2|Wave\s*3|shared services|customer-facing|analytics|archive)\b/i,
-    ) &&
-    !solutionIncludes(
-      /\b(140|shared services|customer-facing|analytics|archive)\b/i,
-    )
-      ? "Ingen eksplisitt dekning av 140 applikasjoner fordelt på Wave 1 shared services, Wave 2 customer-facing workloads og Wave 3 analytics/archive."
-      : "",
-    factsInclude(
-      facts,
-      /\b(zero unplanned downtime|RTO|RPO|multi-region|failover|disaster recovery)\b/i,
-    ) &&
-    !solutionIncludes(
-      /\b(zero unplanned downtime|RTO\s*60|RPO\s*15|rollback|DR[-\s]?test|disaster recovery)\b/i,
-    )
-      ? hasDocumentedContinuityTargets(facts)
-        ? `Ingen tilstrekkelig operasjonell modell for dokumenterte kontinuitetsmål: ${documentedContinuityControlText(facts)}`
-        : "Ingen tilstrekkelig operasjonell modell for høy tilgjengelighet, begrenset nedetid, backup/gjenoppretting, cutover/rollback og avklaring av konkrete tjenestenivåer."
-      : "",
-    factsInclude(facts, /\b(on-?prem|OT|regulatory|latency|latens)\b/i) &&
-    !solutionIncludes(/\b(on-?prem|OT|segmentering|segmentation|latency|latens)\b/i)
-      ? "Ingen tydelig kontrollflate for beholdt on-prem, OT-nære flater, segmentering eller latens-/regulatoriske beslutningspunkter."
-      : "",
-    hasDocumentedCommercialTerms(facts) &&
-    !solutionIncludes(
-      /\b(EUR|2[,.]9|Net\s*60|fixed implementation|managed service fee|accelerated)\b/i,
-    )
-      ? `Ingen kommersiell modell for dokumenterte kommersielle rammer: ${documentedCommercialControlText(facts)}`
-      : "",
-    riskControlDetails &&
-    !solutionIncludes(
-      /\b(SOC|OT|penalty|Oracle|refactor|rehost|merger|blackout|meter data|API|renewal)\b/i,
-    )
-      ? `Ingen synlig avklaringsstyring for dokumenterte risikodrivere: ${riskControlDetails}. Dette skal behandles som avklaring/forbehold, ikke som etablert kundekrav.`
-      : "",
-  ].filter(Boolean);
-
-  const riskAdditions = [
-    hasContinuitySignals(facts)
-      ? "Hvis tilgjengelighet, nedetid, backup/gjenoppretting, cutover og rollback ikke lukkes eksplisitt, kan løsningen undervurdere driftsrisiko i kritiske kundeprosesser."
-      : "",
-    riskControlDetails
-      ? `Uavklarte risikodrivere (${riskControlDetails}) kan gi feilprising, uklart ansvar eller scopeendringer hvis de ikke lukkes som avklaringer/forbehold.`
-      : "",
-  ].filter(Boolean);
-
-  const recommendationAdditions = [
-    factsInclude(
-      facts,
-      /\b(140|Wave\s*1|Wave\s*2|Wave\s*3|cutover|rollback|blackout|ERP|WMS|CRM|rehost|replatform|refaktor)\b/i,
-    )
-      ? factsInclude(facts, /\b(140|Wave\s*1|Wave\s*2|Wave\s*3)\b/i)
-        ? "Legg inn en kundespesifikk wave- og cutover-plan med 140 applikasjoner, avhengigheter, blackout-hensyn, testporter og rollback-kriterier."
-        : "Legg inn en kundespesifikk migreringsplan for ERP, WMS, CRM, integrasjoner og eldre komponenter med avhengigheter, testporter, rollback-kriterier og beslutning om rehost/replatform/refaktorering eller midlertidig lokal videreføring."
-      : "",
-    hasContinuitySignals(facts)
-      ? `${documentedContinuityControlText(facts)} Dokumenter verifikasjon før produksjonssetting.`
-      : "",
-    hasDocumentedCommercialTerms(facts)
-      ? "Knytt løsningsvurderingen til kommersiell styring: fast implementeringspris, separat driftsfee, Net 60, year-1 budget ceiling og acceleration-opsjon."
-      : "",
-    riskControlDetails
-      ? `Lukk dokumenterte risikodrivere (${riskControlDetails}) som eksplisitte avklaringer eller forbehold før endelig score og pris låses.`
-      : "",
-  ].filter(Boolean);
-
-  const comparison = result.architecture_comparison;
-  const comparisonCritique = [
-    ...missingElements,
-    factsInclude(facts, /\b(140|zero unplanned downtime|RTO|RPO|on-?prem|OT|EUR|Net\s*60|blackout|meter data|API|ERP|WMS|CRM|rehost|replatform|refaktor)\b/i)
-      ? "Arkitektløsningen bør scores på kundespesifikk dekning av portefølje, kontinuitet, hybrid drift, kommersiell styring og avklaringsrisiko, ikke bare på om standard skykomponenter er nevnt."
-      : "",
-  ].filter(Boolean);
-
-  const factSummaryParts = [
-    documentedWaveControlText(facts),
-    documentedContinuityControlText(facts),
-    documentedCommercialControlText(facts),
-    riskControlText,
-  ].filter(Boolean);
-  const factSummary = factSummaryParts.length
-    ? `Dokumenterte evalueringsføringer: ${factSummaryParts.join(" ")}`
-    : "";
-
-  return {
-    ...result,
-    fit_to_customer_needs: compactText(
-      [result.fit_to_customer_needs, factSummary].filter(Boolean).join(" "),
-      1800,
-    ),
-    missing_elements: appendUniqueTextItems(missingElements, result.missing_elements, {
-      max: 8,
-    }),
-    risks_to_customer: appendUniqueTextItems(riskAdditions, result.risks_to_customer, {
-      max: 8,
-    }),
-    improvement_recommendations: appendUniqueTextItems(
-      recommendationAdditions,
-      result.improvement_recommendations,
-      { max: 8 },
-    ),
-    architecture_comparison: comparison
-      ? {
-          ...comparison,
-          strong_critique: appendUniqueTextItems(
-            comparisonCritique,
-            comparison.strong_critique,
-            { max: 8 },
-          ),
-          strategy_improvement_advice: appendUniqueTextItems(
-            recommendationAdditions,
-            comparison.strategy_improvement_advice,
-            { max: 8 },
-          ),
-        }
-      : comparison,
-    executive_summary: compactText(
-      [result.executive_summary, factSummary].filter(Boolean).join(" "),
-      1800,
-    ),
-  };
+  void input;
+  return result;
 }
-
 function buildFallbackSolutionEvaluation(input: {
   customerAnalysis: CustomerAnalysisResult;
   systemSolutionArtifact?: {
@@ -14488,96 +13823,9 @@ function enrichExecutiveSummaryWithProjectSignals(
     solutionEvaluation: SolutionEvaluationResult;
   },
 ): ExecutiveSummaryResult {
-  const signalText = [
-    input.customerAnalysis ? summarizeCustomerAnalysis(input.customerAnalysis) : "",
-    summarizeSolutionEvaluation(input.solutionEvaluation),
-  ]
-    .join("\n")
-    .replace(/\s+/g, " ");
-  const includes = (pattern: RegExp) => pattern.test(signalText);
-  const decisionFacts = [
-    includes(/\b(Nordic Retail Logistics|ERP|WMS|CRM|lager|logistikk|transport|distribusjon)\b/i)
-      ? "Tilbudsbeslutningen bør forankres i Nordic Retail Logistics sin lager-, transport- og distribusjonsdrift, særlig ERP, WMS, CRM og integrasjonene som påvirker forretningskritiske prosesser."
-      : "",
-    includes(/\b(Microsoft|Azure|Entra|landing zone|skyplattform|governance)\b/i)
-      ? "Anbefalt retning er en Microsoft-nær, governert skyplattform med landing zone, identitet, segmentering, logging, backup/gjenoppretting, kostkontroll og miljøseparasjon."
-      : "",
-    includes(/\b(filbaserte|integrasjoner|transportører|leverandører|kunder|API|melding)\b/i)
-      ? "Integrasjonsbildet må prioriteres som egen risikoflate: filbaserte og tett koblede integrasjoner bør standardiseres gradvis, med kontrollert hybrid sameksistens der lokale systemer beholdes midlertidig."
-      : "",
-    includes(/\b140|Wave\s*1|Wave\s*2|Wave\s*3|shared services|customer-facing|analytics|archive/i)
-      ? "140 applikasjoner må styres i tre waves med avhengigheter, gates, cutover og rollback."
-      : "",
-    includes(/\bRTO|RPO|failover|zero unplanned downtime/i)
-      ? "Tilgjengelighet, backup/gjenoppretting og konkrete tjenestenivåer må dokumenteres; eksakte RTO/RPO-verdier skal behandles som avklaringer når de ikke er dokumentert."
-      : "",
-    includes(/\bD1|D2|D3|D4|D5|Architecture pack|Migration plan|controls matrix|cutover report|transition package/i)
-      ? "D1-D5 må brukes som leveranse- og akseptbevis fra arkitektur via migreringsplan til driftsovergang."
-      : "",
-    includes(/\bEUR|2[,.]9|Net\s*60|fixed implementation|monthly managed service fee|accelerated/i)
-      ? "Kommersielt må tilbudet bare bruke dokumenterte pris-, betalings- og budsjettrammer som bindende føringer; manglende verdier må avklares."
-      : "",
-    includes(/\bSOC\b|\bOT\b|penalty|Oracle|merger|blackout|meter data|API/i)
-      ? "Dokumenterte ansvars-, integrasjons-, migrerings- og leveranserisikodrivere må behandles som eksplisitte avklaringer/forbehold, ikke som etablerte krav."
-      : "",
-  ].filter(Boolean);
-
-  if (!decisionFacts.length) {
-    return result;
-  }
-
-  const decisionSummary = `Beslutningskritiske føringer: ${decisionFacts.join(" ")}`;
-  return {
-    ...result,
-    executive_summary: compactText(
-      [
-        result.executive_summary
-          .replace(/\bsystemløsningen\b/gi, "anbefalt løsning")
-          .replace(/\barkitektløsningen\b/gi, "arkitekturutkastet"),
-        decisionSummary,
-      ]
-        .filter(Boolean)
-        .join(" "),
-      1600,
-    ),
-    fit_to_customer_needs: compactText(
-      [
-        result.fit_to_customer_needs,
-        "Treff mot kundens behov bør vurderes på dokumentert gjennomføringsevne, ikke bare teknisk arkitektur.",
-      ]
-        .filter(Boolean)
-        .join(" "),
-      1600,
-    ),
-    strengths: appendUniqueTextItems(
-      [
-        includes(/\bAzure|landing zone|Terraform|Entra|CMK|CIS/i)
-          ? "Har riktig teknisk kjerne med Azure/hybrid landing zone, Entra, CMK, Terraform, observability og CIS-kontroller."
-          : "",
-        includes(/\b24\/7|managed services|incident|patching|performance reporting/i)
-          ? "Kobler prosjektleveransen til 24/7 managed services med incident, patching, rapportering og overgang til drift."
-          : "",
-        ...result.strengths,
-      ].filter(Boolean),
-      [],
-      { max: 4 },
-    ),
-    weaknesses: appendUniqueTextItems(
-      [
-        includes(/\b140|Wave|cutover|rollback|blackout/i)
-          ? "Må konkretisere wave-styring, cutover-gates, rollback og blackout-hensyn før tilbudet er beslutningsklart."
-          : "",
-        includes(/\bSOC\b|\bOT\b|penalty|Oracle|meter data|API/i)
-          ? "Må lukke dokumenterte ansvars-, integrasjons- og migreringsavklaringer som tilbudsforbehold eller forutsetninger før endelig forpliktelse."
-          : "",
-        ...result.weaknesses,
-      ].filter(Boolean),
-      [],
-      { max: 4 },
-    ),
-  };
+  void input;
+  return result;
 }
-
 function normalizeComparisonScore(raw: unknown) {
   if (typeof raw !== "number" || !Number.isFinite(raw)) {
     return 0;

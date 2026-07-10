@@ -22,7 +22,7 @@ const {
   runJsonCompletion,
   runJsonCompletionWithFileInputs,
 } = jiti(path.join(frontendRoot, "lib/server/ai/json-completion.ts"));
-const { runWithProjectWorkflowAbortSignal } = jiti(
+const { runWithProjectWorkflowContext } = jiti(
   path.join(frontendRoot, "lib/server/project-workflow-cancellation.ts"),
 );
 
@@ -164,7 +164,7 @@ test("JSON completion forwards the active project workflow abort signal", async 
   const controller = new AbortController();
   let requestSignal;
 
-  const result = await runWithProjectWorkflowAbortSignal(controller.signal, () =>
+  const result = await runWithProjectWorkflowContext({ signal: controller.signal }, () =>
     runJsonCompletion({
       ...chatJsonRuntime('{"ok":true}'),
       async getClient() {
@@ -200,7 +200,7 @@ test("an aborted project workflow does not start another JSON completion", async
   controller.abort(leaseLost);
 
   await assert.rejects(
-    runWithProjectWorkflowAbortSignal(controller.signal, () =>
+    runWithProjectWorkflowContext({ signal: controller.signal }, () =>
       runJsonCompletion({
         ...chatJsonRuntime('{"ok":true}'),
         async getClient() {

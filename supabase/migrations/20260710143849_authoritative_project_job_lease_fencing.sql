@@ -1,13 +1,8 @@
-alter table project_jobs
-  add column if not exists input_json jsonb,
-  add column if not exists locked_at timestamptz,
-  add column if not exists lease_token uuid,
-  add column if not exists started_at timestamptz,
-  add column if not exists completed_at timestamptz,
+alter table public.project_jobs
   add column if not exists parent_job_id uuid,
   add column if not exists idempotency_key text;
 
-alter table solution_evaluations
+alter table public.solution_evaluations
   add column if not exists customer_document_id uuid,
   add column if not exists solution_document_id uuid,
   add column if not exists analysis_id uuid;
@@ -15,42 +10,30 @@ alter table solution_evaluations
 do $$
 begin
   if not exists (
-    select 1 from pg_constraint
+    select 1
+    from pg_constraint
     where conname = 'project_jobs_parent_job_id_fkey'
       and conrelid = 'public.project_jobs'::regclass
   ) then
-    alter table project_jobs
+    alter table public.project_jobs
       add constraint project_jobs_parent_job_id_fkey
-      foreign key (parent_job_id) references project_jobs(id) on delete set null;
+      foreign key (parent_job_id) references public.project_jobs(id) on delete set null;
   end if;
 
   if not exists (
-    select 1 from pg_constraint
+    select 1
+    from pg_constraint
     where conname = 'project_jobs_parent_idempotency_key_key'
       and conrelid = 'public.project_jobs'::regclass
   ) then
-    alter table project_jobs
+    alter table public.project_jobs
       add constraint project_jobs_parent_idempotency_key_key
       unique (parent_job_id, idempotency_key);
   end if;
 end $$;
 
-update project_jobs
-set input_json = result_json -> '__job_input',
-    result_json = null
-where input_json is null
-  and result_json ? '__job_input';
-
-create index if not exists project_jobs_queue_claim_idx
-  on project_jobs(status, locked_at, created_at)
-  where status in ('queued', 'running');
-
-create index if not exists project_jobs_running_lease_idx
-  on project_jobs(id, lease_token)
-  where status = 'running' and lease_token is not null;
-
 create index if not exists project_jobs_parent_job_idx
-  on project_jobs(parent_job_id)
+  on public.project_jobs(parent_job_id)
   where parent_job_id is not null;
 
 create or replace function public.lease_fenced_project_write(

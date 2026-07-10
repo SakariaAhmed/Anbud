@@ -1,6 +1,9 @@
-name: PR CI
+name: Frontend CI
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -36,7 +39,7 @@ jobs:
 
       - name: Deterministic durable-job and schema tests
         run: |
-          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs
+          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs
           node scripts/validate_project_jobs_schema.mjs
 
       - name: Frontend tests

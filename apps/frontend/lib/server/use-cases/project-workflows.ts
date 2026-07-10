@@ -55,6 +55,7 @@ import {
   type ArtifactGenerationTiming,
   generateAndSaveProjectArtifact,
 } from "@/lib/server/use-cases/generate-artifact";
+import { rethrowAuthoritativeLeaseLoss } from "@/lib/server/repositories/lease-fenced-persistence";
 
 export type ProjectWorkflowInput =
   | { kind: "document_ingestion"; projectId: string; documentId: string }
@@ -582,7 +583,10 @@ async function runDocumentIngestionWorkflow(
           role: document.role,
           useDocling: true,
           useDoclingOcr: true,
-        }).catch(() => null);
+        }).catch((error) => {
+          rethrowAuthoritativeLeaseLoss(error);
+          return null;
+        });
 
         if (isUsableDoclingResult(enhanced)) {
           handlers.setProgress("[90%] Bygger Docling-baserte chunks ...");
@@ -680,7 +684,8 @@ async function runDocumentIngestionWorkflow(
           input.projectId,
           inferredMetadata,
         );
-      } catch {
+      } catch (error) {
+        rethrowAuthoritativeLeaseLoss(error);
         assertWorkflowActive(handlers);
         // Metadata inference should not block RAG readiness.
       }
@@ -786,7 +791,10 @@ async function runDocumentIngestionWorkflow(
       status: "failed",
       message: "Dokumentindeksering feilet.",
       error: error instanceof Error ? error.message : "Ukjent feil.",
-    }).catch(() => undefined);
+    }).catch((persistenceError) => {
+      rethrowAuthoritativeLeaseLoss(persistenceError);
+      return undefined;
+    });
     throw error;
   }
 }
@@ -863,7 +871,10 @@ async function runDocumentDoclingEnhancementWorkflow(
       sourceMapLength: document.structure_map.length,
       fileSizeBytes: document.file_size_bytes,
     }),
-  }).catch(() => null);
+  }).catch((error) => {
+    rethrowAuthoritativeLeaseLoss(error);
+    return null;
+  });
   handlers.onPhase?.("docling_parser");
 
   if (

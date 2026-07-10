@@ -7,7 +7,12 @@ import { decryptString, encryptString } from "@/lib/server/crypto";
 import {
   assertProjectWorkflowActive,
   getProjectWorkflowAbortSignal,
+  getProjectWorkflowLease,
 } from "@/lib/server/project-workflow-cancellation";
+import {
+  rethrowAuthoritativeLeaseLoss,
+  runLeaseFencedProjectMutation,
+} from "@/lib/server/repositories/lease-fenced-persistence";
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import { createServiceClient } from "@/lib/server/supabase";
 import type {
@@ -691,28 +696,13 @@ async function replaceDocumentChunks(input: {
   }
 
   const chunks = buildSemanticDocumentChunks(input.document);
-  const supabase = createServiceClient();
-  const deleteResult = await supabase
-    .from("document_chunks")
-    .delete()
-    .eq("source_type", input.sourceType)
-    .eq("source_id", input.sourceId);
-
-  if (deleteResult.error) {
-    if (isChunkStorageUnavailable(deleteResult.error)) {
-      return;
-    }
-    throw new Error(deleteResult.error.message);
-  }
-
-  if (!chunks.length) {
-    return;
-  }
 
   let embeddings: number[][] = [];
   try {
     embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
-  } catch {
+  } catch (error) {
+    rethrowAuthoritativeLeaseLoss(error);
+    assertProjectWorkflowActive();
     embeddings = [];
   }
 
@@ -740,11 +730,63 @@ async function replaceDocumentChunks(input: {
     embedding: embeddings[index] ?? null,
     embedding_model: embeddings[index] ? DOCUMENT_EMBEDDING_MODEL : null,
     embedding_created_at: embeddings[index] ? now : null,
+    search_text: chunkSearchText(input.document, chunk),
   }));
+
+  const lease = getProjectWorkflowLease();
+  if (lease) {
+    const fencedPayload = {
+      source_type: input.sourceType,
+      source_id: input.sourceId,
+      rows,
+    };
+    try {
+      await runLeaseFencedProjectMutation(
+        lease.projectId,
+        "replace_document_chunks",
+        fencedPayload,
+      );
+    } catch (error) {
+      rethrowAuthoritativeLeaseLoss(error);
+      await runLeaseFencedProjectMutation(
+        lease.projectId,
+        "replace_document_chunks",
+        {
+          ...fencedPayload,
+          rows: rows.map(({ embedding: _embedding, ...row }) => ({
+            ...row,
+            embedding: null,
+            embedding_model: null,
+            embedding_created_at: null,
+          })),
+        },
+      );
+    }
+    return;
+  }
+
+  const supabase = createServiceClient();
+  const deleteResult = await supabase
+    .from("document_chunks")
+    .delete()
+    .eq("source_type", input.sourceType)
+    .eq("source_id", input.sourceId);
+
+  if (deleteResult.error) {
+    if (isChunkStorageUnavailable(deleteResult.error)) {
+      return;
+    }
+    throw new Error(deleteResult.error.message);
+  }
+
+  if (!chunks.length) {
+    return;
+  }
 
   try {
     await insertChunkRows(rows);
   } catch (error) {
+    rethrowAuthoritativeLeaseLoss(error);
     if (isChunkStorageUnavailable(error as { message?: string })) {
       return;
     }
@@ -756,7 +798,8 @@ async function replaceDocumentChunks(input: {
     sourceId: input.sourceId,
     chunks,
     document: input.document,
-  }).catch(() => {
+  }).catch((error) => {
+    rethrowAuthoritativeLeaseLoss(error);
     // Full-text vectors improve hybrid retrieval but should not block indexing.
   });
 }

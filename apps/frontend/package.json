@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
-    "test": "node --test lib/password-auth.test.mjs lib/client/project-api.test.mjs lib/server/ai/json-completion.test.mjs lib/server/artifact-validation.test.mjs lib/server/repositories/supabase-compat.test.mjs lib/server/repositories/project-jobs-lifecycle.system.test.mjs lib/server/requirements/corpus-parsers.test.mjs lib/server/requirements/evaluation-coverage-integrity.test.mjs",
+    "test": "node --test lib/password-auth.test.mjs lib/client/project-api.test.mjs lib/server/ai/json-completion.test.mjs lib/server/ai/customer-fact-grounding.test.mjs lib/server/artifact-validation.test.mjs lib/server/repositories/supabase-compat.test.mjs lib/server/repositories/project-jobs-lifecycle.system.test.mjs lib/server/repositories/lease-fenced-persistence.system.test.mjs lib/server/requirements/corpus-parsers.test.mjs lib/server/requirements/evaluation-coverage-integrity.test.mjs",
     "docker:smoke": "node scripts/docker_frontend_smoke.mjs",
     "docker:smoke:docling": "node scripts/docker_frontend_smoke.mjs --target runner-docling --max-bytes 5200000000 --build-timeout-ms 1800000 --health-timeout-ms 180000",
     "smoke:health": "node scripts/smoke_health.mjs",

@@ -2,17 +2,32 @@ import "server-only";
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
-const projectWorkflowAbortSignals = new AsyncLocalStorage<AbortSignal>();
+export type ProjectWorkflowLease = {
+  jobId: string;
+  leaseToken: string;
+  projectId: string;
+};
 
-export function runWithProjectWorkflowAbortSignal<T>(
-  signal: AbortSignal,
+type ProjectWorkflowContext = {
+  signal: AbortSignal;
+  lease?: ProjectWorkflowLease;
+};
+
+const projectWorkflowContexts = new AsyncLocalStorage<ProjectWorkflowContext>();
+
+export function runWithProjectWorkflowContext<T>(
+  context: ProjectWorkflowContext,
   run: () => T,
 ) {
-  return projectWorkflowAbortSignals.run(signal, run);
+  return projectWorkflowContexts.run(context, run);
 }
 
 export function getProjectWorkflowAbortSignal() {
-  return projectWorkflowAbortSignals.getStore();
+  return projectWorkflowContexts.getStore()?.signal;
+}
+
+export function getProjectWorkflowLease() {
+  return projectWorkflowContexts.getStore()?.lease;
 }
 
 export function assertProjectWorkflowActive() {

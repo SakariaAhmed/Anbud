@@ -31,6 +31,10 @@ import {
   appendCustomerAnalysisSectionHistory,
   CUSTOMER_ANALYSIS_SECTIONS,
 } from "@/lib/customer-analysis-history";
+import {
+  rethrowAuthoritativeLeaseLoss,
+  runLeaseFencedProjectMutation,
+} from "@/lib/server/repositories/lease-fenced-persistence";
 import type {
   ChatDomainHint,
   ChatMessage,
@@ -2284,6 +2288,16 @@ export async function updateProjectMetadataFromInference(
     ),
   );
 
+  const fencedUpdate = await runLeaseFencedProjectMutation<Record<string, unknown>>(
+    projectId,
+    "project_metadata",
+    standardPatch,
+  );
+  if (fencedUpdate.fenced) {
+    revalidateProjectCaches(projectId);
+    return fromUnknownProjectRow(fencedUpdate.data);
+  }
+
   let updateResult = await supabase
     .from("projects")
     .update(standardPatch)
@@ -2353,14 +2367,22 @@ async function updateProjectContextKeywords(projectId: string) {
       ),
       analysis?.signal_words ?? [],
     );
-    const { error } = await supabase
-      .from("projects")
-      .update({ context_keywords: keywords })
-      .eq("id", projectId);
-    if (error && !isMissingLegacyProjectColumn(error)) {
-      throw new Error(error.message);
+    const fencedUpdate = await runLeaseFencedProjectMutation(
+      projectId,
+      "project_context_keywords",
+      { context_keywords: keywords },
+    );
+    if (!fencedUpdate.fenced) {
+      const { error } = await supabase
+        .from("projects")
+        .update({ context_keywords: keywords })
+        .eq("id", projectId);
+      if (error && !isMissingLegacyProjectColumn(error)) {
+        throw new Error(error.message);
+      }
     }
-  } catch {
+  } catch (error) {
+    rethrowAuthoritativeLeaseLoss(error);
     // Keyword cache is an optimization; never block the main workflow.
   }
 }
@@ -2822,6 +2844,26 @@ export async function updateDocumentProcessingState(input: {
   if (input.parserUsed !== undefined) payload.parser_used = input.parserUsed;
   if (input.indexedAt !== undefined) payload.indexed_at = input.indexedAt;
 
+  const fencedUpdate = await runLeaseFencedProjectMutation(
+    input.projectId,
+    "document_processing_state",
+    {
+      document_id: input.documentId,
+      status: input.status,
+      ...(input.message !== undefined ? { message: input.message } : {}),
+      ...(input.error !== undefined ? { error: input.error } : {}),
+      ...(input.parserUsed !== undefined
+        ? { parser_used: input.parserUsed }
+        : {}),
+      ...(input.indexedAt !== undefined ? { indexed_at: input.indexedAt } : {}),
+      updated_at: payload.updated_at,
+    },
+  );
+  if (fencedUpdate.fenced) {
+    revalidateProjectCaches(input.projectId);
+    return;
+  }
+
   const supabase = createServiceClient();
   const { error } = await supabase
     .from("documents")
@@ -2881,41 +2923,64 @@ export async function saveDocumentIngestionResult(input: {
     updated_at: updatedAt,
   };
 
+  const fencedUpdate = await runLeaseFencedProjectMutation<Record<string, unknown>>(
+    input.projectId,
+    "document_ingestion_result",
+    {
+      document_id: input.documentId,
+      file_name: input.fileName,
+      file_format: input.fileFormat,
+      content_type: input.contentType,
+      page_count: pageCount,
+      raw_text: encryptedRawText,
+      structure_map: encryptedStructureMap,
+      status: input.status,
+      message: input.message,
+      parser_used: input.parserUsed,
+      indexed_at: shouldIndexChunks ? updatedAt : null,
+      updated_at: updatedAt,
+    },
+  );
+
   let updateResult: {
     data: Record<string, unknown> | null;
     error: { message?: string } | null;
   } | null = null;
-  for (
-    let attempt = 0;
-    attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
-    attempt += 1
-  ) {
-    updateResult = await supabase
-      .from("documents")
-      .update(updatePayload)
-      .eq("project_id", input.projectId)
-      .eq("id", input.documentId)
-      .select("*")
-      .single<Record<string, unknown>>();
-
-    if (
-      !updateResult.error ||
-      !isMissingLegacyDocumentColumn(updateResult.error)
+  if (fencedUpdate.fenced) {
+    updateResult = { data: fencedUpdate.data, error: null };
+  } else {
+    for (
+      let attempt = 0;
+      attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
+      attempt += 1
     ) {
-      break;
-    }
+      updateResult = await supabase
+        .from("documents")
+        .update(updatePayload)
+        .eq("project_id", input.projectId)
+        .eq("id", input.documentId)
+        .select("*")
+        .single<Record<string, unknown>>();
 
-    const missingColumn = missingColumnNameFromError(
-      updateResult.error,
-      PROJECT_DOCUMENT_INSERT_COLUMN_NAMES,
-    );
-    if (!missingColumn || !(missingColumn in updatePayload)) {
-      break;
-    }
+      if (
+        !updateResult.error ||
+        !isMissingLegacyDocumentColumn(updateResult.error)
+      ) {
+        break;
+      }
 
-    delete updatePayload[missingColumn];
-    if (missingColumn === "structure_map") {
-      updatePayload.source_map = encryptedStructureMap;
+      const missingColumn = missingColumnNameFromError(
+        updateResult.error,
+        PROJECT_DOCUMENT_INSERT_COLUMN_NAMES,
+      );
+      if (!missingColumn || !(missingColumn in updatePayload)) {
+        break;
+      }
+
+      delete updatePayload[missingColumn];
+      if (missingColumn === "structure_map") {
+        updatePayload.source_map = encryptedStructureMap;
+      }
     }
   }
 
@@ -2937,7 +3002,8 @@ export async function saveDocumentIngestionResult(input: {
       fileFormat: input.fileFormat,
       rawText: input.rawText,
       structureMap: normalizeStructureMapForChunks(input.structureMap),
-    }).catch(() => {
+    }).catch((error) => {
+      rethrowAuthoritativeLeaseLoss(error);
       // Chunk indexing should improve retrieval, not block ingestion status.
     });
   }
@@ -3203,6 +3269,33 @@ export async function saveCustomerAnalysis(
     source: options?.historySource ?? "full_regeneration",
   });
 
+  const projectKeywords = mergeKeywords(
+    keywordsFromText(
+      [
+        result.customer_profile_summary,
+        result.customer_goals_summary,
+        result.high_level_solution_design,
+        result.executive_summary,
+      ].join(" "),
+    ),
+    result.signal_words ?? [],
+  );
+
+  const fencedSave = await runLeaseFencedProjectMutation<CustomerAnalysisRow>(
+    projectId,
+    "customer_analysis",
+    {
+      source_document_ids: sourceDocumentIds,
+      result_json: encryptJson(resultWithHistory),
+      last_activity_at: new Date().toISOString(),
+      context_keywords: projectKeywords,
+    },
+  );
+  if (fencedSave.fenced) {
+    revalidateProjectCaches(projectId);
+    return decryptJson(fencedSave.data.result_json, CUSTOMER_ANALYSIS_EMPTY);
+  }
+
   await supabase.from("customer_analyses").delete().eq("project_id", projectId);
 
   const { data, error } = await supabase
@@ -3218,18 +3311,6 @@ export async function saveCustomerAnalysis(
   if (error || !data) {
     throw new Error(error?.message || "Kunne ikke lagre kundeanalysen.");
   }
-
-  const projectKeywords = mergeKeywords(
-    keywordsFromText(
-      [
-        result.customer_profile_summary,
-        result.customer_goals_summary,
-        result.high_level_solution_design,
-        result.executive_summary,
-      ].join(" "),
-    ),
-    result.signal_words ?? [],
-  );
 
   const projectUpdate = await supabase
     .from("projects")
@@ -3298,6 +3379,27 @@ export async function saveSolutionEvaluation(
   },
 ) {
   const supabase = createServiceClient();
+  const encryptedResult = encryptJson(input.result);
+  const fencedSave = await runLeaseFencedProjectMutation<SolutionEvaluationRow>(
+    projectId,
+    "solution_evaluation",
+    {
+      customer_document_id: input.customerDocumentId,
+      solution_document_id: input.solutionDocumentId,
+      analysis_id: input.analysisId ?? null,
+      source_document_ids: [
+        input.customerDocumentId,
+        input.solutionDocumentId,
+      ].filter(Boolean),
+      result_json: encryptedResult,
+      last_activity_at: new Date().toISOString(),
+    },
+  );
+  if (fencedSave.fenced) {
+    revalidateProjectCaches(projectId);
+    return mapSolutionEvaluationRow(fencedSave.data);
+  }
+
   await supabase
     .from("solution_evaluations")
     .delete()
@@ -3309,7 +3411,7 @@ export async function saveSolutionEvaluation(
       customer_document_id: input.customerDocumentId,
       solution_document_id: input.solutionDocumentId,
       analysis_id: input.analysisId ?? null,
-      result_json: encryptJson(input.result),
+      result_json: encryptedResult,
     })
     .select("*")
     .single<SolutionEvaluationRow>();
@@ -3323,7 +3425,7 @@ export async function saveSolutionEvaluation(
           input.customerDocumentId,
           input.solutionDocumentId,
         ].filter(Boolean),
-        result_json: encryptJson(input.result),
+        result_json: encryptedResult,
       })
       .select("*")
       .single<SolutionEvaluationRow>();
@@ -3356,6 +3458,20 @@ export async function saveExecutiveSummary(
   inputSnapshot: unknown,
 ) {
   const supabase = createServiceClient();
+  const fencedSave = await runLeaseFencedProjectMutation<ExecutiveSummaryRow>(
+    projectId,
+    "executive_summary",
+    {
+      result_json: encryptJson(result),
+      input_snapshot: encryptJson(inputSnapshot),
+      last_activity_at: new Date().toISOString(),
+    },
+  );
+  if (fencedSave.fenced) {
+    revalidateProjectCaches(projectId);
+    return mapExecutiveSummaryRow(fencedSave.data);
+  }
+
   await supabase.from("executive_summaries").delete().eq("project_id", projectId);
   const { data, error } = await supabase
     .from("executive_summaries")
@@ -3450,6 +3566,22 @@ export async function saveGeneratedArtifact(
   inputSnapshot: unknown,
 ) {
   const supabase = createServiceClient();
+  const fencedSave = await runLeaseFencedProjectMutation<ArtifactRow>(
+    projectId,
+    "generated_artifact",
+    {
+      artifact_type: artifactType,
+      title,
+      content_markdown: contentMarkdown,
+      input_snapshot: encryptJson(inputSnapshot),
+      last_activity_at: new Date().toISOString(),
+    },
+  );
+  if (fencedSave.fenced) {
+    revalidateProjectCaches(projectId);
+    return mapArtifact(fencedSave.data);
+  }
+
   const { data, error } = await supabase
     .from("generated_artifacts")
     .insert({

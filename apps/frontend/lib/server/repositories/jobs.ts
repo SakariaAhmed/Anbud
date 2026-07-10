@@ -3,6 +3,8 @@ import "server-only";
 import { randomUUID as generateRandomUUID } from "node:crypto";
 
 import { createServiceClient } from "@/lib/server/supabase";
+import { authoritativeLeaseError } from "@/lib/server/repositories/lease-fenced-persistence";
+import type { ProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
 import type { ProjectJobRecord, ProjectJobResult } from "@/lib/types";
 
 type JobRow = {
@@ -88,6 +90,44 @@ export async function insertProjectJob(
   if (inserted.error) {
     throw new Error(inserted.error.message);
   }
+}
+
+export async function insertFollowUpProjectJob(
+  record: ProjectJobRecord,
+  queuedInput: unknown,
+  parentLease: ProjectWorkflowLease,
+  idempotencyKey: string,
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  assertLeaseToken(parentLease.leaseToken);
+  if (!idempotencyKey.trim()) {
+    throw new Error("Oppfølgingsjobben mangler idempotency key.");
+  }
+
+  const supabase = serviceClient(runtime);
+  const { data, error } = await supabase.rpc("lease_fenced_enqueue_project_job", {
+    p_parent_job_id: parentLease.jobId,
+    p_parent_lease_token: parentLease.leaseToken,
+    p_project_id: parentLease.projectId,
+    p_idempotency_key: idempotencyKey,
+    p_job: {
+      id: record.id,
+      kind: record.kind,
+      message: record.message,
+      input_json: queuedInput,
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+    },
+  });
+
+  if (error) {
+    throw authoritativeLeaseError(parentLease.jobId, error);
+  }
+  if (!data) {
+    throw new Error("Kunne ikke lagre idempotent oppfølgingsjobb.");
+  }
+
+  return mapJobRow(data as JobRow);
 }
 
 export async function updatePersistedProjectJob(
