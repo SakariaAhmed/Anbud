@@ -21,6 +21,9 @@ param workloadCriticality string = 'mission-critical'
 @description('Fully qualified container image, for example myregistry.azurecr.io/anbud:2026-05-21.')
 param image string
 
+@description('Worker image kept on the last healthy release until web promotion succeeds.')
+param workerImage string
+
 @description('Container registry server, for example myregistry.azurecr.io.')
 param registryServer string
 
@@ -150,7 +153,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     managedEnvironmentId: environment.id
     configuration: {
-      activeRevisionsMode: 'Single'
+      activeRevisionsMode: 'Multiple'
       ingress: {
         external: true
         targetPort: 3000
@@ -379,7 +382,7 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
       containers: [
         {
           name: 'worker'
-          image: image
+          image: workerImage
           command: [
             'node'
           ]
@@ -413,7 +416,7 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
             }
             {
               name: 'APP_VERSION'
-              value: image
+              value: workerImage
             }
             {
               name: 'SUPABASE_URL'
