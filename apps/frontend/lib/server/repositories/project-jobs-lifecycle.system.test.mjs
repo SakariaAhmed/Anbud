@@ -24,10 +24,9 @@ const {
   resetStaleRunningProjectJobs,
   updatePersistedProjectJob,
 } = jiti(path.join(frontendRoot, "lib/server/repositories/jobs.ts"));
-const {
-  PROJECT_JOB_HEARTBEAT_INTERVAL_MS,
-  startProjectJobHeartbeat,
-} = jiti(path.join(frontendRoot, "lib/server/project-job-heartbeat.ts"));
+const { startProjectJobHeartbeat } = jiti(
+  path.join(frontendRoot, "lib/server/project-job-heartbeat.ts"),
+);
 
 function project(fields, selectedColumns) {
   if (!selectedColumns || selectedColumns === "*") {
@@ -246,7 +245,6 @@ test("heartbeat scheduler renews every 30 seconds and can be stopped", async () 
     },
   );
 
-  assert.equal(PROJECT_JOB_HEARTBEAT_INTERVAL_MS, 30_000);
   assert.equal(scheduled.intervalMs, 30_000);
   scheduled.callback();
   await new Promise((resolve) => setImmediate(resolve));

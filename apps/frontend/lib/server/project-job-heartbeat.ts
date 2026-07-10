@@ -1,6 +1,6 @@
 import "server-only";
 
-export const PROJECT_JOB_HEARTBEAT_INTERVAL_MS = 30_000;
+const PROJECT_JOB_HEARTBEAT_INTERVAL_MS = 30_000;
 
 type HeartbeatTimer = ReturnType<typeof setInterval>;
 
