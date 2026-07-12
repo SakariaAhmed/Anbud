@@ -54,6 +54,11 @@ const MALFORMED_REFERENCE_PATTERNS: Array<{ code: string; pattern: RegExp }> = [
 
 const MALFORMED_REQUIREMENT_PATTERNS: Array<{ code: string; pattern: RegExp }> = [
   {
+    code: "flattened_table_header_dump",
+    pattern:
+      /^Tabell\s+\d+\s+Rad\s+1:\s+ID\s*\/\s*markering\s*\|[\s\S]*\|\s*(?:krav(?:tekst)?|spesifiserte\s+krav)\s*\|/i,
+  },
+  {
     code: "truncated_control_requirement",
     pattern: /^Redegjør for kontrollmekanismer ved$/i,
   },
@@ -128,6 +133,31 @@ function findRequirementLedgerQualityIssues(
             field: "text",
             value: requirement,
             code,
+          }),
+        );
+      }
+    }
+
+    const sourceExcerpt = cleanTableRequirement(entry.sourceExcerpt ?? "");
+    const requirementInSourceIndex = sourceExcerpt
+      .toLocaleLowerCase("nb")
+      .indexOf(requirement.toLocaleLowerCase("nb"));
+    if (requirement && requirementInSourceIndex >= 0) {
+      const omittedTail = sourceExcerpt
+        .slice(requirementInSourceIndex + requirement.length)
+        .trimStart();
+      if (
+        /^(?:som|der|at|hvordan|hvorvidt|om|og|eller|samt|med|for|til|av)\b/iu.test(
+          omittedTail,
+        )
+      ) {
+        issues.push(
+          issueForPattern({
+            entry,
+            index,
+            field: "sourceExcerpt",
+            value: omittedTail,
+            code: "requirement_source_tail_omitted",
           }),
         );
       }

@@ -32,6 +32,12 @@ import {
   GenerationProgress,
   documentDropzoneClass,
 } from "@/components/projects/project-workspace-shared";
+import { selectSolutionEvaluationDocumentCandidates } from "@/components/projects/project-evaluation-documents";
+import {
+  isDocumentReadyForEvaluation,
+  isSolutionEvaluationCandidate,
+} from "@/lib/document-processing";
+import { summarizeRequirementCoverageCounters } from "@/lib/requirement-coverage-summary";
 import { sortByRequirementOrder } from "@/lib/requirement-order";
 import type { ProjectDocument, SolutionEvaluationResult } from "@/lib/types";
 
@@ -329,40 +335,37 @@ function RequirementCoveragePanel({
 }: {
   coverage?: RequirementCoverage | null;
 }) {
-  if (!coverage?.items.length) {
+  if (!coverage) {
     return null;
   }
 
-  const total = Math.max(
-    coverage.total_requirements || 0,
-    coverage.items.length,
-  );
-  const assessed = Math.min(total, coverage.assessed_requirements || coverage.items.length);
-  const assessedPercent = total ? Math.round((assessed / total) * 100) : 0;
+  const counterSummary = summarizeRequirementCoverageCounters(coverage);
+  const { total, assessed, assessedPercent } = counterSummary;
+  const coverageItems = Array.isArray(coverage.items) ? coverage.items : [];
   const stats = [
     {
       label: "Godt",
-      value: coverage.good,
+      value: coverage.good ?? 0,
       className: "border-emerald-200 bg-emerald-50 text-emerald-800",
     },
     {
       label: "Dårlig",
-      value: coverage.weak,
+      value: coverage.weak ?? 0,
       className: "border-rose-200 bg-rose-50 text-rose-800",
     },
     {
       label: "Mangler",
-      value: coverage.missing,
+      value: coverage.missing ?? 0,
       className: "border-amber-200 bg-amber-50 text-amber-800",
     },
     {
       label: "Uklart",
-      value: coverage.unclear,
+      value: coverage.unclear ?? 0,
       className: "border-slate-200 bg-slate-50 text-slate-700",
     },
   ];
   const orderedItems = sortByRequirementOrder(
-    coverage.items,
+    coverageItems,
     (item, index) => ({
       reference: item.reference,
       sourceReference: item.full_reference || item.source_reference,
@@ -408,6 +411,37 @@ function RequirementCoveragePanel({
       </div>
 
       <div className="px-5 py-5">
+        {counterSummary.status !== "complete" ? (
+          <div
+            className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+              counterSummary.status === "inconsistent"
+                ? "border-rose-300 bg-rose-50 text-rose-900"
+                : "border-amber-300 bg-amber-50 text-amber-950"
+            }`}
+          >
+            <div className="flex items-center gap-2 font-black">
+              <AlertTriangle className="size-4" />
+              {counterSummary.status === "inconsistent"
+                ? "Kravdekningen har inkonsistente tellere"
+                : "Kravvurderingen er ikke komplett"}
+            </div>
+            {counterSummary.status === "inconsistent" ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
+                {counterSummary.issues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 leading-6">
+                {total > 0
+                  ? `Bare ${assessed} av ${total} krav er markert som vurdert.`
+                  : "Vurderingen mangler et vurderbart kravgrunnlag."} Regenerer
+                vurderingen før resultatet brukes som beslutningsgrunnlag.
+              </p>
+            )}
+          </div>
+        ) : null}
+
         {coverage.coverage_summary ? (
           <MarkdownViewer
             content={coverage.coverage_summary}
@@ -431,16 +465,17 @@ function RequirementCoveragePanel({
           ))}
         </div>
 
-        <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
-          {orderedItems.map((item, index) => {
-            const tone = assessmentTone(item.assessment);
-            const Icon = tone.icon;
+        {orderedItems.length ? (
+          <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
+            {orderedItems.map((item, index) => {
+              const tone = assessmentTone(item.assessment);
+              const Icon = tone.icon;
 
-            return (
-              <article
-                key={`${item.reference}-${index}`}
-                className={`rounded-xl border px-4 py-4 ${tone.shell}`}
-              >
+              return (
+                <article
+                  key={`${item.reference}-${index}`}
+                  className={`rounded-xl border px-4 py-4 ${tone.shell}`}
+                >
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-800 shadow-sm">
@@ -503,10 +538,16 @@ function RequirementCoveragePanel({
                     />
                   </div>
                 </div>
-              </article>
-            );
-          })}
-        </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
+            Vurderingen inneholder ingen kravrader. Regenerer vurderingen før den
+            brukes.
+          </p>
+        )}
       </div>
     </section>
   );
@@ -753,23 +794,28 @@ export function ProjectEvaluationTab({
   busy: boolean;
   busyMessage: string;
   busyProgress: number;
-  onGenerate: (documentId: string) => void;
+  onGenerate: (
+    documentId: string,
+    importedDocument?: ProjectDocument,
+  ) => Promise<void>;
   importBusy: boolean;
   onImportArchitectureDocument: (file: File) => Promise<ProjectDocument | null>;
 }) {
   const candidateDocuments = useMemo(
-    () =>
-      documents.filter(
-        (document) => document.role !== "primary_customer_document",
-      ),
+    () => selectSolutionEvaluationDocumentCandidates(documents),
     [documents],
   );
   const [selectedDocumentId, setSelectedDocumentId] = useState(
-    candidateDocuments[0]?.id ?? "",
+    candidateDocuments.find(isDocumentReadyForEvaluation)?.id ??
+      candidateDocuments[0]?.id ??
+      "",
   );
   const selectedDocument = candidateDocuments.find(
     (document) => document.id === selectedDocumentId,
   );
+  const selectedDocumentReady = isDocumentReadyForEvaluation(selectedDocument);
+  const selectedDocumentRunnable =
+    Boolean(selectedDocument && isSolutionEvaluationCandidate(selectedDocument));
   const evaluatedDocument = solutionEvaluation?.solution_document_id
     ? (documents.find(
         (document) => document.id === solutionEvaluation.solution_document_id,
@@ -777,30 +823,48 @@ export function ProjectEvaluationTab({
     : (selectedDocument ??
       candidateDocuments[0] ??
       null);
+  const evaluatedGeneratedArtifactTitle =
+    solutionEvaluation?.evaluation_context?.system_solution_artifact_title ??
+    null;
+  const evaluatesGeneratedArtifact = Boolean(
+    solutionEvaluation?.evaluated_generated_artifact_id ??
+      solutionEvaluation?.evaluation_context?.system_solution_artifact_id,
+  );
   const actionBusy = busy || importBusy;
   const documentSelectId = "solution-evaluation-document-select";
 
   async function importAndEvaluate(file: File) {
     const document = await onImportArchitectureDocument(file);
-    if (!document) return;
+    if (!document || !isSolutionEvaluationCandidate(document)) return;
     setSelectedDocumentId(document.id);
-    onGenerate(document.id);
+    await onGenerate(document.id, document);
   }
 
   useEffect(() => {
     setSelectedDocumentId((currentId) => {
-      if (candidateDocuments.some((document) => document.id === currentId)) {
+      const currentDocument = candidateDocuments.find(
+        (document) => document.id === currentId,
+      );
+      if (isDocumentReadyForEvaluation(currentDocument)) {
         return currentId;
       }
       if (
         solutionEvaluation?.solution_document_id &&
-        candidateDocuments.some(
-          (document) => document.id === solutionEvaluation.solution_document_id,
+        isDocumentReadyForEvaluation(
+          candidateDocuments.find(
+            (document) =>
+              document.id === solutionEvaluation.solution_document_id,
+          ),
         )
       ) {
         return solutionEvaluation.solution_document_id;
       }
-      return candidateDocuments[0]?.id ?? "";
+      return (
+        candidateDocuments.find(isDocumentReadyForEvaluation)?.id ??
+        currentDocument?.id ??
+        candidateDocuments[0]?.id ??
+        ""
+      );
     });
   }, [candidateDocuments, solutionEvaluation?.solution_document_id]);
 
@@ -826,8 +890,17 @@ export function ProjectEvaluationTab({
                     className="h-11 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-10 text-sm font-semibold text-slate-950 shadow-sm outline-none transition-colors focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                   >
                     {candidateDocuments.map((document) => (
-                      <option key={document.id} value={document.id}>
+                      <option
+                        key={document.id}
+                        value={document.id}
+                        disabled={!isDocumentReadyForEvaluation(document)}
+                      >
                         {document.title}
+                        {isDocumentReadyForEvaluation(document)
+                          ? ""
+                          : document.processing_status === "failed"
+                            ? " — indeksering feilet"
+                            : " — indekseres"}
                       </option>
                     ))}
                   </select>
@@ -839,6 +912,18 @@ export function ProjectEvaluationTab({
                     label="Vurdering gjort fra"
                   />
                 </div>
+                {selectedDocument && !selectedDocumentReady ? (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-medium text-amber-900">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                    <span>
+                      {selectedDocument.processing_status === "failed"
+                        ? selectedDocument.processing_error ||
+                          "Dokumentindekseringen feilet. Last opp dokumentet på nytt før vurdering."
+                        : selectedDocument.processing_message ||
+                          "Dokumentet indekseres fortsatt. Vurderingen kan startes når dokumentet er RAG-klart."}
+                    </span>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-500">
@@ -861,8 +946,10 @@ export function ProjectEvaluationTab({
           </div>
 
           <Button
-            onClick={() => onGenerate(selectedDocumentId)}
-            disabled={actionBusy || !selectedDocumentId}
+            onClick={() => void onGenerate(selectedDocumentId)}
+            disabled={
+              actionBusy || !selectedDocumentId || !selectedDocumentRunnable
+            }
             className="h-10 w-full justify-center rounded-lg bg-blue-900 text-sm font-bold text-white hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
           >
             {busy || importBusy ? (
@@ -906,7 +993,13 @@ export function ProjectEvaluationTab({
                       </div>
                     </div>
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                      Arkitektløsning vurdert
+                      {evaluatesGeneratedArtifact
+                        ? `Systemartefakt vurdert${
+                            evaluatedGeneratedArtifactTitle
+                              ? `: ${evaluatedGeneratedArtifactTitle}`
+                              : ""
+                          }`
+                        : "Arkitektløsning vurdert"}
                     </span>
                   </div>
                   <div className="rounded-lg border-l-4 border-teal-500 bg-slate-50 px-4 py-4">
@@ -951,7 +1044,12 @@ export function ProjectEvaluationTab({
         <AnalysisTabEmptyState>
           {hasSolutionDocument
             ? "Ingen sammenligning ennå. Generer vurderingen for å sammenligne systemstrategien med arkitektløsningen."
-            : "Last opp et dokument og velg det som arkitektløsning før du kjører sammenligningen."}
+            : selectedDocument?.processing_status === "failed"
+              ? selectedDocument.processing_error ||
+                "Dokumentindekseringen feilet. Last opp dokumentet på nytt før vurdering."
+            : candidateDocuments.length
+              ? "Dokumentet indekseres fortsatt. Vurderingen kan startes når det er RAG-klart."
+              : "Last opp et dokument og velg det som arkitektløsning før du kjører sammenligningen."}
         </AnalysisTabEmptyState>
       )}
     </div>

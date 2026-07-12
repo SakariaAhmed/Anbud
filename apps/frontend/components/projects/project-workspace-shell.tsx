@@ -13,12 +13,14 @@ import {
   formatDate,
   GenerationProgress,
 } from "@/components/projects/project-workspace-shared";
+import { isDocumentReadyForEvaluation } from "@/lib/document-processing";
 import type {
   ProjectWorkspaceTab,
   WorkflowStepItem,
   WorkflowStepStatus,
   WorkspaceNavItem,
 } from "@/components/projects/project-workspace-types";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Sidebar,
@@ -250,6 +252,7 @@ export type ProjectWorkspaceTabContentProps = {
   analysisLoading: boolean;
   evaluationLoaded: boolean;
   evaluationLoading: boolean;
+  evaluationLoadError: string;
   executiveSummaryLoaded: boolean;
   executiveSummaryLoading: boolean;
   busy: string | null;
@@ -261,7 +264,6 @@ export type ProjectWorkspaceTabContentProps = {
   uploadRole: ProjectDocumentRole;
   selectedDocumentName: string;
   documentFileInputKey: number;
-  selectedRequirementDocumentId: string;
   requirementArtifacts: GeneratedArtifact[];
   solutionDraftArtifacts: GeneratedArtifact[];
   deliveryArtifacts: GeneratedArtifact[];
@@ -279,7 +281,9 @@ export type ProjectWorkspaceTabContentProps = {
   ) => Promise<void>;
   onGenerateSolutionEvaluation: (
     solutionDocumentId?: string,
+    importedDocument?: ProjectDocument,
   ) => Promise<void>;
+  onRetrySolutionEvaluationLoad: () => void;
   onUploadArchitectureDocument: (file: File) => Promise<ProjectDocument | null>;
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onGenerateBilag1Artifact: (
@@ -289,10 +293,13 @@ export type ProjectWorkspaceTabContentProps = {
     event: FormEvent<HTMLFormElement>,
   ) => Promise<void>;
   onUploadRequirementDocument: (file: File) => Promise<ProjectDocument | null>;
-  onSelectedRequirementDocumentChange: (documentId: string) => void;
   onUpdateRequirementArtifact: (
     artifact: GeneratedArtifact,
-    value: { title: string; content_markdown: string },
+    value: {
+      title: string;
+      content_markdown: string;
+      acknowledge_deterministic_repairs?: boolean;
+    },
   ) => Promise<void>;
   onGenerateRequirementResponse: (
     event: FormEvent<HTMLFormElement>,
@@ -654,6 +661,7 @@ export function ProjectWorkspaceTabContent({
   analysisLoading,
   evaluationLoaded,
   evaluationLoading,
+  evaluationLoadError,
   executiveSummaryLoaded,
   executiveSummaryLoading,
   busy,
@@ -665,7 +673,6 @@ export function ProjectWorkspaceTabContent({
   uploadRole,
   selectedDocumentName,
   documentFileInputKey,
-  selectedRequirementDocumentId,
   requirementArtifacts,
   solutionDraftArtifacts,
   deliveryArtifacts,
@@ -679,12 +686,12 @@ export function ProjectWorkspaceTabContent({
   onGenerateCustomerAnalysis,
   onSaveAnalysis,
   onGenerateSolutionEvaluation,
+  onRetrySolutionEvaluationLoad,
   onUploadArchitectureDocument,
   onDeleteArtifact,
   onGenerateBilag1Artifact,
   onGenerateDeliveryArtifact,
   onUploadRequirementDocument,
-  onSelectedRequirementDocumentChange,
   onUpdateRequirementArtifact,
   onGenerateRequirementResponse,
   onGenerateExecutiveSummary,
@@ -735,13 +742,32 @@ export function ProjectWorkspaceTabContent({
       ) : null}
 
       {activeTab === "evaluation" ? (
-        !evaluationLoaded || evaluationLoading ? (
+        evaluationLoading || (!evaluationLoaded && !evaluationLoadError) ? (
           <DeferredSectionLoader label="Laster vurdering ..." />
+        ) : evaluationLoadError ? (
+          <div className="rounded-xl border border-rose-200 bg-white px-5 py-6 shadow-sm">
+            <p className="text-sm font-semibold text-rose-900">
+              Kunne ikke hente den lagrede vurderingen.
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {evaluationLoadError}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={onRetrySolutionEvaluationLoad}
+            >
+              Prøv å laste vurderingen på nytt
+            </Button>
+          </div>
         ) : (
           <ProjectEvaluationTab
             documents={architectureDocumentCandidates}
             solutionEvaluation={solutionEvaluation}
-            hasSolutionDocument={architectureDocumentCandidates.length > 0}
+            hasSolutionDocument={architectureDocumentCandidates.some(
+              isDocumentReadyForEvaluation,
+            )}
             busy={busy === "solution-evaluation"}
             busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
             busyProgress={busyProgress}
@@ -770,7 +796,9 @@ export function ProjectWorkspaceTabContent({
           busy={busy === "delivery-artifact"}
           busyMessage={busy === "delivery-artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
-          hasCustomerAnalysis={Boolean(customerAnalysis)}
+          hasCustomerAnalysis={
+            Boolean(customerAnalysis) || project.customer_analysis_generated
+          }
           onDeleteArtifact={onDeleteArtifact}
           onSubmit={onGenerateDeliveryArtifact}
         />
@@ -793,8 +821,6 @@ export function ProjectWorkspaceTabContent({
             busy?.startsWith("delete-") ? busy.slice("delete-".length) : null
           }
           onUpload={onUploadRequirementDocument}
-          selectedDocumentId={selectedRequirementDocumentId}
-          onSelectedDocumentChange={onSelectedRequirementDocumentChange}
           onDeleteDocument={onDeleteDocument}
           onUpdateArtifact={onUpdateRequirementArtifact}
           onDeleteArtifact={onDeleteArtifact}
@@ -808,7 +834,9 @@ export function ProjectWorkspaceTabContent({
         ) : (
           <ProjectExecutiveSummaryTab
             executiveSummary={executiveSummary}
-            hasSolutionEvaluation={Boolean(solutionEvaluation)}
+            hasSolutionEvaluation={
+              Boolean(solutionEvaluation) || project.solution_evaluation_generated
+            }
             busy={busy === "executive-summary"}
             busyMessage={busy === "executive-summary" ? busyMessage : ""}
             busyProgress={busyProgress}

@@ -28,6 +28,36 @@ export function cleanHeadingCandidate(value: string) {
     .trim();
 }
 
+const INLINE_NUMBERED_HEADING_REQUIREMENT_START =
+  /\b(?:Leverandøren|Tilbyder|Oppdragstaker|Avtalepart|Leveransen|Leveransene|Løsningen|Løsningene|Tjenesten|Tjenestene|Systemet|Plattformen|Kunden)\s+(?:(?:skal|må|bes|bør|kan)\b|har\s+ansvar\s+for\b)|\b(?:Det|Dette)\s+(?:skal|må|forventes)\b/iu;
+
+export function splitInlineNumberedHeadingRequirement(value: string) {
+  const text = normalizePageText(value);
+  if (!/^\d{1,3}(?:\.\d{1,3})*\.?\s+\S/u.test(text)) {
+    return null;
+  }
+
+  const requirementStart = text.search(INLINE_NUMBERED_HEADING_REQUIREMENT_START);
+  if (requirementStart <= 0) {
+    return null;
+  }
+
+  const heading = text.slice(0, requirementStart).trim();
+  const requirement = text.slice(requirementStart).trim();
+  const headingWords = heading.split(/\s+/).filter(Boolean);
+  if (
+    heading.length < 4 ||
+    heading.length > 90 ||
+    headingWords.length > 10 ||
+    /[!?]/u.test(heading) ||
+    requirement.length < 18
+  ) {
+    return null;
+  }
+
+  return { heading, requirement };
+}
+
 export function isLikelyHeadingLine(line: string) {
   if (/^\s*[•\-–—]/.test(line)) {
     return false;

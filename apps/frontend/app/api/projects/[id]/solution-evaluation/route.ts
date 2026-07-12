@@ -2,25 +2,46 @@ import { NextResponse } from "next/server";
 
 import {
   getFreshCustomerAnalysis,
-  getSolutionEvaluation,
+  getFreshSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
 import { auditEvent } from "@/lib/server/observability";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
-import { runSolutionEvaluationWorkflow } from "@/lib/server/use-cases/project-workflows";
+import {
+  getProjectJob,
+  queueSolutionEvaluationJob,
+  runQueuedProjectJob,
+  scheduleHeavyProjectJobAutorun,
+} from "@/lib/server/project-jobs";
+import { projectWorkflowTimeoutMs } from "@/lib/server/project-workflow-deadline";
+import {
+  DirectSolutionEvaluationWaitTimeoutError,
+  legacySolutionEvaluationPayload,
+  requestPrefersAsyncSolutionEvaluation,
+  waitForDirectSolutionEvaluationJob,
+  waitForDirectSolutionEvaluationTask,
+} from "@/lib/server/direct-solution-evaluation";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const READ_CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+  "Cache-Control": "private, no-store",
 };
+
+export const maxDuration = 2100;
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    const evaluation = await getSolutionEvaluation(id);
+    const evaluation = await getFreshSolutionEvaluation(id);
 
     return NextResponse.json({ evaluation }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke hente løsningsvurderingen." },
+      {
+        error: productionSafeErrorMessage(
+          error,
+          "Kunne ikke hente løsningsvurderingen.",
+        ),
+      },
       { status: 500 },
     );
   }
@@ -51,44 +72,93 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: "Generer kundeanalyse før løsningsvurdering." }, { status: 400 });
     }
 
-    const result = await runSolutionEvaluationWorkflow({
-      kind: "solution_evaluation",
-      projectId: id,
-      solutionDocumentId:
-        typeof body.solution_document_id === "string"
-          ? body.solution_document_id
-          : undefined,
-      model,
-    }, {
-      setProgress: () => undefined,
-    });
+    let queueCoalesced = false;
+    const queuedJob = await queueSolutionEvaluationJob(
+      {
+        projectId: id,
+        solutionDocumentId:
+          typeof body.solution_document_id === "string"
+            ? body.solution_document_id
+            : undefined,
+        model,
+      },
+      {
+        autoRun: false,
+        onDisposition: ({ coalesced }) => {
+          queueCoalesced = coalesced;
+        },
+      },
+    );
     await auditEvent({
-      action: "solution_evaluation_generated",
+      action: "project_job_accepted",
       projectId: id,
-      entityType: "solution_evaluation",
-      entityId: result.evaluation.solution_document_id ?? null,
+      entityType: "project_job",
+      entityId: queuedJob.id,
       metadata: {
         route: "direct",
-        solution_document_id: result.evaluation.solution_document_id ?? null,
-        customer_document_id: result.evaluation.customer_document_id ?? null,
-        requirement_count:
-          result.evaluation.requirement_coverage?.total_requirements ?? 0,
-        coverage_confidence:
-          result.evaluation.requirement_coverage?.confidence ?? null,
+        kind: "solution_evaluation",
+        coalesced: queueCoalesced,
+        solution_document_id:
+          typeof body.solution_document_id === "string"
+            ? body.solution_document_id
+            : null,
         model: model ?? null,
       },
     });
 
-    return NextResponse.json({
-      evaluation: result.evaluation,
-      project: result.project,
-      artifact: result.artifact,
-      used_generated_solution: result.used_generated_solution,
+    if (requestPrefersAsyncSolutionEvaluation(request)) {
+      return NextResponse.json({ job: queuedJob }, { status: 202 });
+    }
+
+    const directTimeoutMs =
+      projectWorkflowTimeoutMs("solution_evaluation") + 60_000;
+    const directDeadline = Date.now() + directTimeoutMs;
+    let directRunFailed = false;
+    let directRunError: unknown;
+    if (!queueCoalesced || queuedJob.status === "queued") {
+      await waitForDirectSolutionEvaluationTask({
+        task: scheduleHeavyProjectJobAutorun(async () => {
+          try {
+            await runQueuedProjectJob(queuedJob.id);
+          } catch (error) {
+            directRunFailed = true;
+            directRunError = error;
+            throw error;
+          }
+        }),
+        signal: request.signal,
+        timeoutMs: directTimeoutMs,
+      });
+    }
+    if (directRunFailed) {
+      throw directRunError;
+    }
+    const currentJob = await waitForDirectSolutionEvaluationTask({
+      task: getProjectJob(id, queuedJob.id),
+      signal: request.signal,
+      timeoutMs: Math.max(0, directDeadline - Date.now()),
     });
+    const terminalJob = await waitForDirectSolutionEvaluationJob({
+      initialJob: currentJob ?? queuedJob,
+      readJob: () => getProjectJob(id, queuedJob.id),
+      signal: request.signal,
+      timeoutMs: Math.max(0, directDeadline - Date.now()),
+    });
+    const result = legacySolutionEvaluationPayload(terminalJob);
+
+    return NextResponse.json(result);
   } catch (error) {
+    const timedOut = error instanceof DirectSolutionEvaluationWaitTimeoutError;
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke generere løsningsvurdering." },
-      { status: 500 },
+      {
+        error: timedOut
+          ? "Løsningsvurderingen fortsetter i bakgrunnen. Prøv å hente resultatet igjen om litt."
+          : productionSafeErrorMessage(
+              error,
+              "Kunne ikke generere løsningsvurdering.",
+            ),
+      },
+      { status: timedOut ? 504 : 500 },
     );
   }
 }

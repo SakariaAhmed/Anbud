@@ -10,8 +10,88 @@ type DownloadElementPdfOptions = {
 };
 
 const A4_MARGIN_MM = 10;
-const EXPORT_WIDTH_PX = 1040;
+const EXPORT_WIDTH_PX = 1120;
 const MAX_CANVAS_HEIGHT_PX = 30000;
+const EXPORT_COLOR_PROPERTIES = [
+  "backgroundColor",
+  "borderBlockEndColor",
+  "borderBlockStartColor",
+  "borderBottomColor",
+  "borderInlineEndColor",
+  "borderInlineStartColor",
+  "borderLeftColor",
+  "borderRightColor",
+  "borderTopColor",
+  "caretColor",
+  "color",
+  "columnRuleColor",
+  "outlineColor",
+  "textDecorationColor",
+] as const;
+const exportColorCache = new Map<string, string>();
+let exportColorContext: CanvasRenderingContext2D | null | undefined;
+
+function canvasCompatibleColor(value: string) {
+  if (!/(?:oklab|oklch|color-mix|\blab\(|\blch\()/i.test(value)) {
+    return value;
+  }
+  const cached = exportColorCache.get(value);
+  if (cached) {
+    return cached;
+  }
+  if (exportColorContext === undefined) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    exportColorContext = canvas.getContext("2d", { willReadFrequently: true });
+  }
+  const context = exportColorContext;
+  if (!context) {
+    return value;
+  }
+
+  context.clearRect(0, 0, 1, 1);
+  context.fillStyle = "#000000";
+  context.fillStyle = value;
+  context.fillRect(0, 0, 1, 1);
+  const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+  const normalized = `rgba(${red}, ${green}, ${blue}, ${Math.round((alpha / 255) * 1000) / 1000})`;
+  exportColorCache.set(value, normalized);
+  return normalized;
+}
+
+function normalizeExportStyles(container: HTMLElement) {
+  const elements = [container, ...Array.from(container.querySelectorAll<HTMLElement>("*"))];
+
+  for (const element of elements) {
+    const computed = window.getComputedStyle(element);
+    for (const property of EXPORT_COLOR_PROPERTIES) {
+      const value = computed[property];
+      if (value) {
+        element.style[property] = canvasCompatibleColor(value);
+      }
+    }
+
+    if (element instanceof SVGElement) {
+      if (computed.fill && computed.fill !== "none") {
+        element.style.fill = canvasCompatibleColor(computed.fill);
+      }
+      if (computed.stroke && computed.stroke !== "none") {
+        element.style.stroke = canvasCompatibleColor(computed.stroke);
+      }
+    }
+
+    if (/oklab|oklch|color-mix/i.test(computed.backgroundImage)) {
+      element.style.backgroundImage = "none";
+    }
+    if (/oklab|oklch|color-mix/i.test(computed.boxShadow)) {
+      element.style.boxShadow = "none";
+    }
+    if (/oklab|oklch|color-mix/i.test(computed.textShadow)) {
+      element.style.textShadow = "none";
+    }
+  }
+}
 
 function waitForFonts() {
   if (!("fonts" in document)) {
@@ -30,6 +110,7 @@ function createExportContainer({
   container.className = "pdf-export-surface";
   Object.assign(container.style, {
     background: "#ffffff",
+    boxSizing: "border-box",
     color: "#0f172a",
     left: "0",
     padding: "40px",
@@ -92,7 +173,25 @@ function createExportContainer({
   return container;
 }
 
-function addCanvasToPdf(canvas: HTMLCanvasElement, fileName: string) {
+function collectSafePageBreaks(container: HTMLElement, scale: number) {
+  const rootTop = container.getBoundingClientRect().top;
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      "tr, h1, h2, h3, h4, p, li, [data-pdf-page-break]",
+    ),
+  )
+    .map((element) =>
+      Math.round((element.getBoundingClientRect().bottom - rootTop) * scale),
+    )
+    .filter((offset) => offset > 0)
+    .sort((left, right) => left - right);
+}
+
+function addCanvasToPdf(
+  canvas: HTMLCanvasElement,
+  fileName: string,
+  safePageBreaks: number[],
+) {
   return import("jspdf").then(({ jsPDF }) => {
     const pdf = new jsPDF({
       compress: true,
@@ -114,8 +213,14 @@ function addCanvasToPdf(canvas: HTMLCanvasElement, fileName: string) {
 
     pageCanvas.width = canvas.width;
 
-    for (let offsetY = 0; offsetY < canvas.height; offsetY += sliceHeight) {
-      const currentSliceHeight = Math.min(sliceHeight, canvas.height - offsetY);
+    for (let offsetY = 0; offsetY < canvas.height; ) {
+      const maximumEnd = Math.min(offsetY + sliceHeight, canvas.height);
+      const minimumUsefulBreak = offsetY + Math.floor(sliceHeight * 0.55);
+      const safeEnd = safePageBreaks
+        .filter((candidate) => candidate >= minimumUsefulBreak && candidate <= maximumEnd)
+        .at(-1);
+      const pageEnd = safeEnd ?? maximumEnd;
+      const currentSliceHeight = Math.max(1, pageEnd - offsetY);
       pageCanvas.height = currentSliceHeight;
       pageContext.fillStyle = "#ffffff";
       pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
@@ -145,6 +250,7 @@ function addCanvasToPdf(canvas: HTMLCanvasElement, fileName: string) {
         undefined,
         "FAST",
       );
+      offsetY = pageEnd;
     }
 
     downloadBrowserBlob(fileName, pdf.output("blob"), { revokeDelayMs: 1000 });
@@ -164,15 +270,17 @@ export async function downloadElementAsPdf({
   const exportContainer = createExportContainer({ element, title, subtitle });
 
   try {
+    normalizeExportStyles(exportContainer);
     const exportHeight = Math.ceil(exportContainer.scrollHeight);
     const preferredScale = Math.max(
       1.5,
       Math.min(window.devicePixelRatio || 1.5, 2),
     );
-    const scale = Math.max(
-      1,
-      Math.min(preferredScale, MAX_CANVAS_HEIGHT_PX / exportHeight),
+    const scale = Math.min(
+      preferredScale,
+      MAX_CANVAS_HEIGHT_PX / Math.max(1, exportHeight),
     );
+    const safePageBreaks = collectSafePageBreaks(exportContainer, scale);
     const canvas = await html2canvas(exportContainer, {
       backgroundColor: "#ffffff",
       height: exportHeight,
@@ -186,7 +294,7 @@ export async function downloadElementAsPdf({
       windowWidth: EXPORT_WIDTH_PX,
     });
 
-    await addCanvasToPdf(canvas, fileName);
+    await addCanvasToPdf(canvas, fileName, safePageBreaks);
   } finally {
     exportContainer.remove();
   }

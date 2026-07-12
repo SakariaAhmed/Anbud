@@ -1,10 +1,13 @@
 "use client";
 
 import { Download, FileDown, Printer, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { downloadTextFile, sanitizeDownloadFileBase } from "@/lib/client/download";
+import { downloadElementAsPdf } from "@/lib/client/pdf-download";
 import type { GeneratedArtifact } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 function escapeHtml(value: string) {
   return value
@@ -55,6 +58,8 @@ function artifactHtml(artifact: GeneratedArtifact) {
 }
 
 export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const fileBase = sanitizeDownloadFileBase(artifact.title, "artefakt");
   const inputSnapshot =
     artifact.input_snapshot && typeof artifact.input_snapshot === "object"
@@ -69,10 +74,84 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
           Boolean(source) && typeof source === "object",
       )
     : [];
+  const authorityLabel = artifact.is_current
+    ? artifact.source_is_current
+      ? "Gjeldende"
+      : "Grunnlaget er endret – regenerer"
+    : "Historikk";
+
+  async function downloadArtifactPdf() {
+    if (downloadingPdf) return;
+
+    const source = document.createElement("article");
+    source.innerHTML = markdownToHtml(artifact.content_markdown);
+    Object.assign(source.style, {
+      background: "#ffffff",
+      color: "#0f172a",
+      fontFamily: 'Arial, "Helvetica Neue", sans-serif',
+      fontSize: "15px",
+      lineHeight: "1.62",
+      padding: "0",
+      pointerEvents: "none",
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "960px",
+      zIndex: "-2",
+    });
+    for (const heading of source.querySelectorAll<HTMLElement>("h1, h2")) {
+      Object.assign(heading.style, {
+        color: "#0f172a",
+        fontFamily: 'Arial, "Helvetica Neue", sans-serif',
+        lineHeight: "1.25",
+        margin: "26px 0 10px",
+      });
+    }
+    for (const paragraph of source.querySelectorAll<HTMLElement>("p, li")) {
+      Object.assign(paragraph.style, {
+        margin: "0 0 10px",
+      });
+    }
+    document.body.appendChild(source);
+
+    setDownloadingPdf(true);
+    setPdfError("");
+    try {
+      await downloadElementAsPdf({
+        element: source,
+        fileName: `${fileBase}.pdf`,
+        title: artifact.title || "Artefakt",
+      });
+    } catch (error) {
+      setPdfError(
+        error instanceof Error ? error.message : "Kunne ikke lage PDF.",
+      );
+    } finally {
+      source.remove();
+      setDownloadingPdf(false);
+    }
+  }
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex h-9 items-center rounded-lg border px-3 text-xs font-bold",
+            artifact.is_current && artifact.source_is_current
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : artifact.is_current
+                ? "border-amber-300 bg-amber-50 text-amber-900"
+                : "border-slate-200 bg-slate-50 text-slate-600",
+          )}
+        >
+          {authorityLabel}
+        </span>
+        {artifact.artifact_version ? (
+          <span className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
+            Versjon {artifact.artifact_version}
+          </span>
+        ) : null}
         {sourceCount ? (
           <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-xs font-medium text-muted-foreground">
             <ShieldCheck className="size-3.5" />
@@ -113,23 +192,16 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => {
-            const printWindow = window.open(
-              "",
-              "_blank",
-              "noopener,noreferrer,width=1024,height=768",
-            );
-            if (!printWindow) return;
-            printWindow.document.write(artifactHtml(artifact));
-            printWindow.document.close();
-            printWindow.focus();
-            printWindow.print();
-          }}
+          disabled={downloadingPdf}
+          onClick={() => void downloadArtifactPdf()}
         >
           <Printer data-icon="inline-start" />
-          PDF
+          {downloadingPdf ? "Lager PDF" : "PDF"}
         </Button>
       </div>
+      {pdfError ? (
+        <p className="text-xs font-medium text-red-700">{pdfError}</p>
+      ) : null}
       {sourceRoles.length ? (
         <details className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
           <summary className="cursor-pointer font-medium text-foreground">

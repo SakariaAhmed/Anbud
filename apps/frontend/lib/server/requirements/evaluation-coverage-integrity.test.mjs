@@ -33,6 +33,8 @@ function sourceLedger() {
       text: "Leverandøren skal levere sentral logging med revisjonsspor.",
       pages: [1],
       heading: "Sikkerhet",
+      answerExcerpt:
+        "Atea leverer sentral logging med navngitt eier, revisjonsspor og månedlig kontroll.",
     },
     {
       id: "K-2",
@@ -57,7 +59,10 @@ function coverageItem(index, overrides = {}) {
     requirement: entry.text,
     assessment: index === 0 ? "Godt" : "Mangler",
     rationale: "Konkret vurdering.",
-    evidence: "Konkret bevis.",
+    evidence:
+      index === 0
+        ? entry.answerExcerpt
+        : "Kravkilden dokumenterer at backup og gjenoppretting kreves.",
     recommendation: "Konkret anbefaling.",
     answer_document_id: index === 0 ? "answer-doc" : null,
     answer_document_title: index === 0 ? "Svar" : null,
@@ -102,6 +107,8 @@ test("truncated long requirement with ascii ellipsis still matches source", () =
       text: longText,
       pages: [41],
       heading: "Informasjons- og IT sikkerhet",
+      answerExcerpt:
+        "Atea leverer segmentering, sterk autentisering, logging og periodisk rettighetsrevisjon.",
     },
   ];
   const report = analyzeRequirementCoverageIntegrity({
@@ -123,7 +130,8 @@ test("truncated long requirement with ascii ellipsis still matches source", () =
           requirement: `${longText.slice(0, 96)}...`,
           assessment: "Godt",
           rationale: "Konkret vurdering.",
-          evidence: "Konkret bevis.",
+          evidence:
+            "Atea leverer segmentering, sterk autentisering, logging og periodisk rettighetsrevisjon.",
           recommendation: "Konkret anbefaling.",
           answer_document_id: "answer-doc",
           answer_document_title: "Svar",
@@ -182,6 +190,45 @@ test("invented references and requirement text are detected", () => {
   );
 });
 
+test("Godt rejects evidence copied only from requirement or source text", () => {
+  for (const evidence of [
+    sourceLedger()[0].text,
+    "Bilag 2, side 99 sier at en oppfunnet kontroll er fullt dokumentert.",
+  ]) {
+    const report = analyzeRequirementCoverageIntegrity({
+      sourceLedger: sourceLedger(),
+      coverage: validCoverage({
+        items: [coverageItem(0, { evidence }), coverageItem(1)],
+      }),
+    });
+
+    assert.equal(report.ok, false);
+    assert.ok(
+      report.issues.some(
+        (issue) => issue.code === "good_evidence_not_answer_bound",
+      ),
+    );
+  }
+});
+
+test("Mangler may retain requirement-source evidence without an answer", () => {
+  const report = analyzeRequirementCoverageIntegrity({
+    sourceLedger: sourceLedger(),
+    coverage: validCoverage({
+      items: [
+        coverageItem(0),
+        coverageItem(1, {
+          evidence: sourceLedger()[1].text,
+          answer_document_id: null,
+          answer_document_title: null,
+        }),
+      ],
+    }),
+  });
+
+  assert.equal(report.ok, true);
+});
+
 test("duplicate and shuffled order indexes fail", () => {
   const report = analyzeRequirementCoverageIntegrity({
     sourceLedger: sourceLedger(),
@@ -208,5 +255,66 @@ test("matched answers cannot remain Mangler", () => {
   assert.equal(report.ok, false);
   assert.ok(
     report.issues.some((issue) => issue.code === "missing_with_matched_answer"),
+  );
+});
+
+function repeatedReferenceLedger(documentIds) {
+  return documentIds.map((documentId, index) => ({
+    id: "K-1",
+    text: `Leverandøren skal levere dokumentert kontroll ${index + 1}.`,
+    pages: [1],
+    heading: "Kontroll",
+    documentId,
+    documentTitle: "Kravspesifikasjon",
+    answerExcerpt: `Atea leverer dokumentert kontroll ${index + 1} med test og revisjonsspor.`,
+  }));
+}
+
+function repeatedReferenceCoverage(ledger, sourceDocumentIds) {
+  return {
+    total_requirements: ledger.length,
+    assessed_requirements: ledger.length,
+    good: ledger.length,
+    weak: 0,
+    missing: 0,
+    unclear: 0,
+    items: ledger.map((entry, index) => ({
+      order_index: index,
+      reference: "K-1",
+      full_reference: "Kravspesifikasjon > Kontroll > K-1",
+      source_reference: "Kravspesifikasjon, side 1",
+      source_document_id: sourceDocumentIds[index],
+      requirement: entry.text,
+      assessment: "Godt",
+      rationale: "Kravet er konkret vurdert.",
+      evidence: entry.answerExcerpt,
+      recommendation: "Behold sporbar dokumentasjon.",
+      answer_document_id: "answer-doc",
+      answer_document_title: "Svar",
+    })),
+  };
+}
+
+test("equal references remain distinct across source documents", () => {
+  const ledger = repeatedReferenceLedger(["doc-a", "doc-b"]);
+  const report = analyzeRequirementCoverageIntegrity({
+    sourceLedger: ledger,
+    coverage: repeatedReferenceCoverage(ledger, ["doc-a", undefined]),
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issueCount, 0);
+});
+
+test("equal references in the same source document still fail", () => {
+  const ledger = repeatedReferenceLedger(["doc-a", "doc-a"]);
+  const report = analyzeRequirementCoverageIntegrity({
+    sourceLedger: ledger,
+    coverage: repeatedReferenceCoverage(ledger, [undefined, undefined]),
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(
+    report.issues.some((issue) => issue.code === "duplicate_reference_identity"),
   );
 });

@@ -3,6 +3,8 @@ import "server-only";
 import { randomUUID as generateRandomUUID } from "node:crypto";
 
 import { createServiceClient } from "@/lib/server/supabase";
+import { decryptJson, encryptJson } from "@/lib/server/crypto";
+import { sanitizeProjectJobTerminalMetadata } from "@/lib/server/project-job-terminal-metadata";
 import { authoritativeLeaseError } from "@/lib/server/repositories/lease-fenced-persistence";
 import type { ProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
 import type { ProjectJobRecord, ProjectJobResult } from "@/lib/types";
@@ -15,7 +17,7 @@ type JobRow = {
   message: string;
   error: string | null;
   input_json: unknown | null;
-  result_json: ProjectJobResult | null;
+  result_json: unknown | null;
   created_at: string;
   updated_at: string;
   locked_at: string | null;
@@ -31,12 +33,15 @@ export type ClaimedProjectJob = {
 type PersistedJobUpdateOptions = {
   leaseToken: string;
   markStarted?: boolean;
+  terminalMetadata?: Record<string, unknown>;
+  signal?: AbortSignal;
 };
 
 type ProjectJobRepositoryRuntime = {
   client?: ReturnType<typeof createServiceClient>;
   now?: () => Date;
   randomUUID?: () => string;
+  signal?: AbortSignal;
 };
 
 function serviceClient(runtime: ProjectJobRepositoryRuntime) {
@@ -63,7 +68,10 @@ function mapJobRow(row: JobRow): ProjectJobRecord {
     created_at: row.created_at,
     updated_at: row.updated_at,
     error: row.error,
-    result: row.status === "completed" ? row.result_json : null,
+    result:
+      row.status === "completed"
+        ? decryptJson<ProjectJobResult | null>(row.result_json, null)
+        : null,
   };
 }
 
@@ -86,10 +94,14 @@ export async function insertProjectJob(
     updated_at: record.updated_at,
   };
 
-  const inserted = await supabase.from("project_jobs").insert(durablePayload);
-  if (inserted.error) {
-    throw new Error(inserted.error.message);
+  const { data, error } = await supabase.rpc("enqueue_project_job_serialized", {
+    p_project_id: record.project_id,
+    p_job: durablePayload,
+  });
+  if (error || !data) {
+    throw new Error(error?.message || "Kunne ikke lagre prosjektjobben.");
   }
+  return mapJobRow(data as JobRow);
 }
 
 export async function insertFollowUpProjectJob(
@@ -154,11 +166,25 @@ export async function updatePersistedProjectJob(
       payload.completed_at = now;
       payload.locked_at = null;
       payload.lease_token = null;
+      if (options.terminalMetadata === undefined) {
+        payload.terminal_metadata = {};
+      } else {
+        const terminalMetadata = sanitizeProjectJobTerminalMetadata(
+          options.terminalMetadata,
+        );
+        if (!terminalMetadata) {
+          throw new Error("Prosjektjobben har ugyldig terminalmetadata.");
+        }
+        payload.terminal_metadata = terminalMetadata;
+      }
     }
   }
   if (patch.message !== undefined) payload.message = patch.message;
   if (patch.error !== undefined) payload.error = patch.error;
-  if (patch.result !== undefined) payload.result_json = patch.result;
+  if (patch.result !== undefined) {
+    payload.result_json =
+      patch.result === null ? null : encryptJson(patch.result);
+  }
 
   const updateQuery = supabase
     .from("project_jobs")
@@ -167,7 +193,11 @@ export async function updatePersistedProjectJob(
     .eq("status", "running")
     .eq("lease_token", options.leaseToken);
 
-  const updated = await updateQuery.select("id").maybeSingle<{ id: string }>();
+  let selectedUpdate = updateQuery.select("id");
+  if (options.signal) {
+    selectedUpdate = selectedUpdate.abortSignal(options.signal);
+  }
+  const updated = await selectedUpdate.maybeSingle<{ id: string }>();
   if (updated.error) {
     throw new Error(updated.error.message);
   }
@@ -182,7 +212,7 @@ export async function heartbeatProjectJob(
   return updatePersistedProjectJob(
     jobId,
     { status: "running" },
-    { leaseToken },
+    { leaseToken, signal: runtime.signal },
     runtime,
   );
 }

@@ -63,6 +63,9 @@ function projectDocumentRoleLabel(document: ProjectDocument) {
   if (document.supporting_subtype === "kravdokument") return "Kravdokument";
   if (document.supporting_subtype === "rfp") return "RFP";
   if (document.supporting_subtype === "vedlegg") return "Vedlegg";
+  if (document.supporting_subtype === "tidligere_losning") {
+    return "Tidligere løsningsdokument";
+  }
   return "Støttedokument";
 }
 
@@ -155,6 +158,7 @@ export function ProjectDocumentsTab({
             className="h-10 rounded-lg text-sm"
           />
           <select
+            aria-label="Dokumentrolle"
             value={uploadRole}
             onChange={(event) =>
               onUploadRoleChange(event.target.value as ProjectDocumentRole)
@@ -244,6 +248,7 @@ export function ProjectDocumentsTab({
                       >
                         <Button
                           type="button"
+                          aria-label={`Slett ${document.title}`}
                           variant="ghost"
                           size="icon-xs"
                           disabled={deletingDocumentId === document.id}

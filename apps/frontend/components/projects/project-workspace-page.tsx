@@ -35,6 +35,7 @@ import {
   fetchCustomerAnalysis,
   fetchExecutiveSummary,
   fetchGeneratedArtifacts,
+  fetchProjectArtifactAuthority,
   fetchProjectServices,
   fetchSolutionEvaluation,
   markClientPerformance,
@@ -47,6 +48,12 @@ import {
 } from "@/lib/client/project-api";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
+import { selectSolutionEvaluationDocumentCandidates } from "@/components/projects/project-evaluation-documents";
+import {
+  isDocumentReadyForEvaluation,
+  isSolutionEvaluationCandidate,
+  requirementDocumentIdsForGeneration,
+} from "@/lib/document-processing";
 import {
   ProjectWorkspaceShell,
   ProjectWorkspaceTabContent,
@@ -57,6 +64,16 @@ import {
   type ProjectWorkspaceTab,
   type WorkflowStepItem,
 } from "@/components/projects/project-workspace-types";
+import {
+  applyProjectSnapshot,
+  createLatestArtifactAuthorityRequestGate,
+  hasAuthoritativeCurrentArtifact,
+  loadedArtifactTypesMissingAuthorityVersion,
+  mergeGeneratedArtifactsForType,
+  prependGeneratedArtifactVersion,
+  reconcileGeneratedArtifactAuthority,
+  solutionProposalWorkflowStatus,
+} from "@/components/projects/project-workflow-status";
 import { deriveProjectStatus } from "@/components/projects/project-workspace-shared";
 import type {
   CustomerAnalysisResult,
@@ -87,13 +104,6 @@ function isAbortError(error: unknown) {
   );
 }
 const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v4";
-
-function patchProjectWithSnapshot(
-  project: ProjectDetail,
-  snapshot: ProjectSnapshotPayload,
-): ProjectDetail {
-  return { ...project, ...snapshot };
-}
 
 function normalizeProjectState(
   project: ProjectDetail,
@@ -140,7 +150,7 @@ function prependGeneratedArtifact(
   artifacts: GeneratedArtifact[],
   artifact: GeneratedArtifact,
 ) {
-  return [artifact, ...artifacts.filter((item) => item.id !== artifact.id)];
+  return prependGeneratedArtifactVersion(artifacts, artifact);
 }
 
 const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
@@ -175,14 +185,7 @@ function mergeArtifactsForType(
   incoming: GeneratedArtifact[],
   artifactType: GeneratedArtifactType,
 ) {
-  const incomingIds = new Set(incoming.map((artifact) => artifact.id));
-  return [
-    ...incoming,
-    ...current.filter(
-      (artifact) =>
-        artifact.artifact_type !== artifactType && !incomingIds.has(artifact.id),
-    ),
-  ];
+  return mergeGeneratedArtifactsForType(current, incoming, artifactType);
 }
 
 function loadedArtifactTypesFromArtifacts(artifacts: GeneratedArtifact[]) {
@@ -349,8 +352,6 @@ export function ProjectWorkspacePage({
   const [file, setFile] = useState<File | null>(null);
   const [uploadRole, setUploadRole] =
     useState<ProjectDocumentRole>("supporting_document");
-  const [selectedRequirementDocumentId, setSelectedRequirementDocumentId] =
-    useState("");
   const [activeTab, setActiveTab] = useState<ProjectWorkspaceTab>(initialTab);
   const [isTabPending, startTabTransition] = useTransition();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -372,12 +373,17 @@ export function ProjectWorkspacePage({
   );
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationLoadError, setEvaluationLoadError] = useState("");
+  const [evaluationLoadRetryToken, setEvaluationLoadRetryToken] = useState(0);
   const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
   const progressIntervalRef = useRef<number | null>(null);
   const progressDriverRef = useRef<ProgressDriverState | null>(null);
   const documentJobAbortControllersRef = useRef<Set<AbortController>>(new Set());
+  const artifactAuthorityRequestGateRef = useRef(
+    createLatestArtifactAuthorityRequestGate(),
+  );
   const sidebarResizeRef = useRef(false);
   const preloadWorkspaceTab = useProjectWorkspacePrefetch({
     projectId: project.id,
@@ -390,10 +396,7 @@ export function ProjectWorkspacePage({
     loadedArtifactTypes,
   });
   const architectureDocumentCandidates = useMemo(
-    () =>
-      project.documents.filter(
-        (document) => document.role !== "primary_customer_document",
-      ),
+    () => selectSolutionEvaluationDocumentCandidates(project.documents),
     [project.documents],
   );
 
@@ -447,6 +450,96 @@ export function ProjectWorkspacePage({
       setServiceDescriptions([]);
     }
   }, [project.id]);
+
+  const refreshArtifactAuthority = useCallback(
+    async (signal?: AbortSignal) => {
+      const requestSequence = artifactAuthorityRequestGateRef.current.start();
+      try {
+        const authority = await fetchProjectArtifactAuthority(
+          project.id,
+          { signal },
+        );
+        if (
+          signal?.aborted ||
+          !artifactAuthorityRequestGateRef.current.isLatest(requestSequence)
+        ) {
+          return;
+        }
+        const missingLoadedTypes = loadedArtifactTypesMissingAuthorityVersion(
+          project.generated_artifacts,
+          authority.artifactAuthority,
+          loadedArtifactTypes,
+        );
+        const refreshedByType = await Promise.all(
+          missingLoadedTypes.map(async (artifactType) => {
+            try {
+              return {
+                artifactType,
+                artifacts: await fetchGeneratedArtifacts(project.id, {
+                  signal,
+                  artifactType,
+                  forceRefresh: true,
+                }),
+              };
+            } catch (error) {
+              if (isAbortError(error) || signal?.aborted) {
+                throw error;
+              }
+              return null;
+            }
+          }),
+        );
+        if (
+          signal?.aborted ||
+          !artifactAuthorityRequestGateRef.current.isLatest(requestSequence)
+        ) {
+          return;
+        }
+        setProject((current) => ({
+          ...current,
+          current_artifact_types: authority.currentArtifactTypes,
+          artifact_authority: authority.artifactAuthority,
+          generated_artifacts: reconcileGeneratedArtifactAuthority(
+            refreshedByType.reduce(
+              (artifacts, refreshed) =>
+                refreshed
+                  ? mergeArtifactsForType(
+                      artifacts,
+                      refreshed.artifacts,
+                      refreshed.artifactType,
+                    )
+                  : artifacts,
+              current.generated_artifacts,
+            ),
+            authority.artifactAuthority,
+          ),
+        }));
+      } catch (err) {
+        if (!isAbortError(err) && !signal?.aborted) {
+          // Authority refresh is a consistency guard. Existing source mutation
+          // responses still reconcile state if this best-effort refresh fails.
+        }
+      }
+    },
+    [loadedArtifactTypes, project.generated_artifacts, project.id],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const refresh = () => void refreshArtifactAuthority(controller.signal);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("project-services-updated", refresh);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      controller.abort();
+      window.removeEventListener("project-services-updated", refresh);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshArtifactAuthority]);
 
   useEffect(() => {
     if (activeTab !== "documents") {
@@ -569,118 +662,132 @@ export function ProjectWorkspacePage({
     },
   });
 
-  function trackDocumentIngestionJob(
+  async function trackDocumentIngestionJob(
     job: ProjectJobRecord | null | undefined,
     documentId: string,
+    options: { propagateFailure?: boolean } = {},
   ) {
     if (!job || job.kind !== "document_ingestion") {
-      return;
+      return null;
     }
 
     const controller = new AbortController();
     documentJobAbortControllersRef.current.add(controller);
 
-    void watchProjectJob({
-      projectId: project.id,
-      jobId: job.id,
-      signal: controller.signal,
-      onStatus(jobStatus) {
-        setProject((current) =>
-          normalizeProjectState(
-            {
-              ...current,
-              documents: current.documents.map((document) => {
-                if (document.id !== documentId) {
-                  return document;
-                }
-
-                if (jobStatus.status === "failed") {
-                  return {
-                    ...document,
-                    processing_status: "failed",
-                    processing_message: "Dokumentindeksering feilet.",
-                    processing_error: jobStatus.error,
-                  };
-                }
-
-                if (jobStatus.status === "completed") {
-                  return document;
-                }
-
-                return {
-                  ...document,
-                  processing_status:
-                    jobStatus.status === "queued" ? "queued" : "processing",
-                  processing_message: progressMessageLabel(jobStatus.message),
-                  processing_error: null,
-                };
-              }),
-            },
-            { preserveArtifactCount: true },
-          ),
-        );
-      },
-    })
-      .then((completedJob) => {
-        const completedDocument = documentFromJobResult(completedJob.result);
-        if (!completedDocument) {
-          return;
-        }
-
-        const projectSnapshot =
-          completedJob.result &&
-          typeof completedJob.result === "object" &&
-          "project" in completedJob.result
-            ? (completedJob.result as { project?: ProjectSnapshotPayload })
-                .project
-            : null;
-
-        setProject((current) =>
-          normalizeProjectState(
-            patchProjectWithSnapshot(
+    try {
+      const completedJob = await watchProjectJob({
+        projectId: project.id,
+        jobId: job.id,
+        signal: controller.signal,
+        onStatus(jobStatus) {
+          if (options.propagateFailure) {
+            setBusyMessage(progressMessageLabel(jobStatus.message));
+            setBusyProgress((current) =>
+              jobStatus.status === "completed" || jobStatus.status === "failed"
+                ? 100
+                : nextDisplayedProgress(
+                    current,
+                    Math.max(current, progressForJobStatus(jobStatus)),
+                  ),
+            );
+          }
+          setProject((current) =>
+            normalizeProjectState(
               {
                 ...current,
-                documents: dedupeDocuments([
-                  completedDocument,
-                  ...current.documents.filter(
-                    (document) => document.id !== completedDocument.id,
-                  ),
-                ]),
-              },
-              projectSnapshot ?? current,
-            ),
-            { preserveArtifactCount: true },
-          ),
-        );
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) {
-          return;
-        }
+                documents: current.documents.map((document) => {
+                  if (document.id !== documentId) {
+                    return document;
+                  }
 
-        setProject((current) =>
-          normalizeProjectState(
-            {
-              ...current,
-              documents: current.documents.map((document) =>
-                document.id === documentId
-                  ? {
+                  if (jobStatus.status === "failed") {
+                    return {
                       ...document,
                       processing_status: "failed",
                       processing_message: "Dokumentindeksering feilet.",
-                      processing_error:
-                        err instanceof Error ? err.message : "Ukjent feil.",
-                    }
-                  : document,
-              ),
-            },
-            { preserveArtifactCount: true },
-          ),
-        );
-      })
-      .finally(() => {
-        documentJobAbortControllersRef.current.delete(controller);
+                      processing_error: jobStatus.error,
+                    };
+                  }
+
+                  if (jobStatus.status === "completed") {
+                    return document;
+                  }
+
+                  return {
+                    ...document,
+                    processing_status:
+                      jobStatus.status === "queued" ? "queued" : "processing",
+                    processing_message: progressMessageLabel(jobStatus.message),
+                    processing_error: null,
+                  };
+                }),
+              },
+              { preserveArtifactCount: true },
+            ),
+          );
+        },
       });
+      const completedDocument = documentFromJobResult(completedJob.result);
+      if (!completedDocument) {
+        return null;
+      }
+
+      const projectSnapshot =
+        completedJob.result &&
+        typeof completedJob.result === "object" &&
+        "project" in completedJob.result
+          ? (completedJob.result as { project?: ProjectSnapshotPayload }).project
+          : null;
+
+      setProject((current) =>
+        normalizeProjectState(
+          applyProjectSnapshot(
+            {
+              ...current,
+              documents: dedupeDocuments([
+                completedDocument,
+                ...current.documents.filter(
+                  (document) => document.id !== completedDocument.id,
+                ),
+              ]),
+            },
+            projectSnapshot ?? current,
+          ),
+          { preserveArtifactCount: true },
+        ),
+      );
+      return completedDocument;
+    } catch (err) {
+      if (controller.signal.aborted) {
+        return null;
+      }
+
+      setProject((current) =>
+        normalizeProjectState(
+          {
+            ...current,
+            documents: current.documents.map((document) =>
+              document.id === documentId
+                ? {
+                    ...document,
+                    processing_status: "failed",
+                    processing_message: "Dokumentindeksering feilet.",
+                    processing_error:
+                      err instanceof Error ? err.message : "Ukjent feil.",
+                  }
+                : document,
+            ),
+          },
+          { preserveArtifactCount: true },
+        ),
+      );
+      if (options.propagateFailure) {
+        throw err;
+      }
+      return null;
+    } finally {
+      documentJobAbortControllersRef.current.delete(controller);
+    }
   }
 
   useEffect(() => {
@@ -800,6 +907,7 @@ export function ProjectWorkspacePage({
 
     const controller = new AbortController();
     setEvaluationLoading(true);
+    setEvaluationLoadError("");
     fetchSolutionEvaluation(project.id, { signal: controller.signal })
       .then((evaluation) => {
         if (!controller.signal.aborted) {
@@ -807,17 +915,18 @@ export function ProjectWorkspacePage({
             ...current,
             solution_evaluation: evaluation,
           }));
+          setEvaluationLoadError("");
           setEvaluationLoaded(true);
         }
       })
       .catch((err) => {
         if (!controller.signal.aborted && !isAbortError(err)) {
-          setError(
+          const message =
             err instanceof Error
               ? err.message
-              : "Kunne ikke hente løsningsvurderingen.",
-          );
-          setEvaluationLoaded(true);
+              : "Kunne ikke hente løsningsvurderingen.";
+          setError(message);
+          setEvaluationLoadError(message);
         }
       })
       .finally(() => {
@@ -832,6 +941,7 @@ export function ProjectWorkspacePage({
   }, [
     activeTab,
     evaluationLoaded,
+    evaluationLoadRetryToken,
     project.id,
     project.solution_evaluation_generated,
   ]);
@@ -882,6 +992,12 @@ export function ProjectWorkspacePage({
     project.id,
     project.solution_evaluation_generated,
   ]);
+
+  function retrySolutionEvaluationLoad() {
+    setError("");
+    setEvaluationLoadError("");
+    setEvaluationLoadRetryToken((current) => current + 1);
+  }
 
   async function runAction(
     label: string,
@@ -967,14 +1083,14 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp dokumentet.",
       });
-      trackDocumentIngestionJob(payload.job, payload.document.id);
+      void trackDocumentIngestionJob(payload.job, payload.document.id);
       setDocTitle("");
       setFile(null);
       setUploadRole("supporting_document");
       setDocumentFileInputKey((current) => current + 1);
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
               documents: dedupeDocuments([
@@ -983,6 +1099,7 @@ export function ProjectWorkspacePage({
               ]),
             },
             payload.project,
+            { invalidateExecutiveSummary: true },
           ),
           {
             preserveArtifactCount: true,
@@ -994,7 +1111,6 @@ export function ProjectWorkspacePage({
 
   async function onUploadRequirementDocument(file: File) {
     let uploadedDocument: ProjectDocument | null = null;
-    let uploadedDocumentId = "";
 
     await runAction("upload-requirement-document", async () => {
       const formData = new FormData();
@@ -1010,12 +1126,9 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp kravdokumentet.",
       });
-      trackDocumentIngestionJob(payload.job, payload.document.id);
-      uploadedDocument = payload.document;
-      uploadedDocumentId = payload.document.id;
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
               documents: dedupeDocuments([
@@ -1024,17 +1137,34 @@ export function ProjectWorkspacePage({
               ]),
             },
             payload.project,
+            { invalidateExecutiveSummary: true },
           ),
           {
             preserveArtifactCount: true,
           },
         ),
       );
-    });
 
-    if (uploadedDocumentId) {
-      setSelectedRequirementDocumentId(uploadedDocumentId);
-    }
+      let completedDocument: ProjectDocument | null = payload.document;
+      if (payload.job?.kind === "document_ingestion") {
+        setBusyMessage(progressMessageLabel(payload.job.message));
+        startEstimatedProgress(payload.job);
+        completedDocument = await trackDocumentIngestionJob(
+          payload.job,
+          payload.document.id,
+          { propagateFailure: true },
+        );
+      }
+      if (!isDocumentReadyForEvaluation(completedDocument)) {
+        throw new Error(
+          completedDocument?.processing_status === "failed"
+            ? completedDocument.processing_error ||
+                "Kravdokumentet kunne ikke indekseres og kan ikke brukes til kravbesvarelse."
+            : "Kravdokumentet indekseres fortsatt. Vent til dokumentet er klart før du genererer kravbesvarelsen.",
+        );
+      }
+      uploadedDocument = completedDocument;
+    });
 
     return uploadedDocument as ProjectDocument | null;
   }
@@ -1055,11 +1185,9 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp Bilag 2.",
       });
-      trackDocumentIngestionJob(payload.job, payload.document.id);
-      uploadedDocument = payload.document;
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
               documents: dedupeDocuments([
@@ -1068,12 +1196,30 @@ export function ProjectWorkspacePage({
               ]),
             },
             payload.project,
+            { invalidateExecutiveSummary: true },
           ),
           {
             preserveArtifactCount: true,
           },
         ),
       );
+
+      let completedDocument: ProjectDocument | null = payload.document;
+      if (payload.job?.kind === "document_ingestion") {
+        setBusyMessage(progressMessageLabel(payload.job.message));
+        startEstimatedProgress(payload.job);
+        completedDocument = await trackDocumentIngestionJob(
+          payload.job,
+          payload.document.id,
+          { propagateFailure: true },
+        );
+      }
+      if (!isDocumentReadyForEvaluation(completedDocument)) {
+        throw new Error(
+          "Bilag 2 er ikke ferdig indeksert ennå. Vent til dokumentet er RAG-klart før du starter vurderingen.",
+        );
+      }
+      uploadedDocument = completedDocument;
     });
 
     return uploadedDocument as ProjectDocument | null;
@@ -1081,7 +1227,11 @@ export function ProjectWorkspacePage({
 
   async function onUpdateRequirementArtifact(
     artifact: GeneratedArtifact,
-    value: { title: string; content_markdown: string },
+    value: {
+      title: string;
+      content_markdown: string;
+      acknowledge_deterministic_repairs?: boolean;
+    },
   ) {
     setError("");
     setNotice("");
@@ -1109,14 +1259,23 @@ export function ProjectWorkspacePage({
         artifactId: artifact.id,
         title: value.title,
         contentMarkdown: value.content_markdown,
+        acknowledgeDeterministicRepairs:
+          value.acknowledge_deterministic_repairs === true,
       });
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
-              generated_artifacts: current.generated_artifacts.map((item) =>
-                item.id === payload.artifact.id ? payload.artifact : item,
+              generated_artifacts: prependGeneratedArtifact(
+                current.generated_artifacts.map((item) =>
+                  item.id === artifact.id
+                    ? previousProject.generated_artifacts.find(
+                        (previous) => previous.id === artifact.id,
+                      ) ?? item
+                    : item,
+                ),
+                payload.artifact,
               ),
             },
             payload.project,
@@ -1146,23 +1305,41 @@ export function ProjectWorkspacePage({
           generated_artifacts: current.generated_artifacts.filter(
             (item) => item.id !== artifact.id,
           ),
+          artifact_count: Math.max(0, current.artifact_count - 1),
         },
         { preserveArtifactCount: true },
       ),
     );
+    let deleteCommitted = false;
     try {
       const payload = await deleteGeneratedArtifact({
         projectId: project.id,
         artifactId: artifact.id,
       });
+      deleteCommitted = true;
+      let refreshedArtifacts: GeneratedArtifact[] | null = null;
+      try {
+        refreshedArtifacts = await fetchGeneratedArtifacts(project.id, {
+          artifactType: artifact.artifact_type,
+        });
+      } catch {
+        // applyProjectSnapshot deterministically promotes the highest loaded
+        // remaining version with the authoritative source-current summary.
+      }
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
-              generated_artifacts: current.generated_artifacts.filter(
-                (item) => item.id !== artifact.id,
-              ),
+              generated_artifacts: refreshedArtifacts
+                ? mergeArtifactsForType(
+                    current.generated_artifacts,
+                    refreshedArtifacts,
+                    artifact.artifact_type,
+                  )
+                : current.generated_artifacts.filter(
+                    (item) => item.id !== artifact.id,
+                  ),
             },
             payload.project,
           ),
@@ -1171,7 +1348,9 @@ export function ProjectWorkspacePage({
       );
       setNotice("Artefakten er slettet.");
     } catch (err) {
-      setProject(previousProject);
+      if (!deleteCommitted) {
+        setProject(previousProject);
+      }
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
       throw err;
     } finally {
@@ -1206,7 +1385,7 @@ export function ProjectWorkspacePage({
         throw err;
       }
       setProject((current) => {
-        const next = patchProjectWithSnapshot(
+        const next = applyProjectSnapshot(
           {
             ...current,
             documents: current.documents.filter(
@@ -1235,6 +1414,7 @@ export function ProjectWorkspacePage({
         setAnalysisLoaded(true);
       }
       if (!payload.project.solution_evaluation_generated) {
+        setEvaluationLoadError("");
         setEvaluationLoaded(true);
         setExecutiveSummaryLoaded(true);
       }
@@ -1269,7 +1449,7 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               { ...current, customer_analysis: result.analysis },
               result.project,
             ),
@@ -1296,7 +1476,7 @@ export function ProjectWorkspacePage({
       });
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             { ...current, customer_analysis: payload.analysis },
             payload.project,
           ),
@@ -1335,7 +1515,7 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 solution_evaluation:
@@ -1383,7 +1563,7 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 generated_artifacts: prependGeneratedArtifact(
@@ -1432,7 +1612,7 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 generated_artifacts: prependGeneratedArtifact(
@@ -1456,6 +1636,15 @@ export function ProjectWorkspacePage({
 
   async function onGenerateRequirementResponse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const sourceDocumentIds = requirementDocumentIdsForGeneration(
+      project.documents,
+    );
+    if (!sourceDocumentIds.length) {
+      setError(
+        "Ingen klassifiserte kravdokumenter er klare. Vent til dokumentbehandlingen er ferdig før du genererer kravbesvarelsen.",
+      );
+      return;
+    }
     await runAction(
       "requirement-response",
       async () => {
@@ -1463,9 +1652,7 @@ export function ProjectWorkspacePage({
           {
             kind: "artifact_generation",
             artifact_type: "forbedret_kravsvar",
-            source_document_ids: selectedRequirementDocumentId
-              ? [selectedRequirementDocumentId]
-              : [],
+            source_document_ids: sourceDocumentIds,
           },
           "Kunne ikke starte jobben for kravbesvarelse.",
         );
@@ -1481,7 +1668,7 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 generated_artifacts: prependGeneratedArtifact(
@@ -1503,14 +1690,36 @@ export function ProjectWorkspacePage({
     );
   }
 
-  async function onGenerateSolutionEvaluation(solutionDocumentId?: string) {
+  async function onGenerateSolutionEvaluation(
+    solutionDocumentId?: string,
+    importedDocument?: ProjectDocument,
+  ) {
+    const selectedDocument =
+      importedDocument && importedDocument.id === solutionDocumentId
+        ? importedDocument
+        : solutionDocumentId
+          ? project.documents.find(
+              (document) => document.id === solutionDocumentId,
+            )
+          : architectureDocumentCandidates[0];
+    if (!selectedDocument || !isSolutionEvaluationCandidate(selectedDocument)) {
+      const message = !isDocumentReadyForEvaluation(selectedDocument)
+        ? selectedDocument?.processing_status === "failed"
+          ? selectedDocument.processing_error ||
+            "Dokumentet kunne ikke indekseres og kan ikke vurderes."
+          : "Dokumentet indekseres fortsatt. Vent til det er RAG-klart før du starter vurderingen."
+        : "Dokumentet er ikke en godkjent primær arkitektløsning.";
+      setError(message);
+      return;
+    }
+
     await runAction(
       "solution-evaluation",
       async () => {
         const job = await startWorkspaceJob(
           {
             kind: "solution_evaluation",
-            solution_document_id: solutionDocumentId,
+            solution_document_id: selectedDocument.id,
           },
           "Kunne ikke starte løsningsvurderingen.",
         );
@@ -1526,11 +1735,12 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 solution_evaluation: result.evaluation,
                 executive_summary: null,
+                has_executive_summary: false,
               },
               result.project,
             ),
@@ -1539,6 +1749,7 @@ export function ProjectWorkspacePage({
             },
           ),
         );
+        setEvaluationLoadError("");
         setEvaluationLoaded(true);
         setExecutiveSummaryLoaded(true);
         setNotice("Sammenligningen er generert og lagret i prosjektet.");
@@ -1567,7 +1778,7 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 executive_summary: result.executive_summary,
@@ -1604,18 +1815,21 @@ export function ProjectWorkspacePage({
   const deliveryArtifacts = project.generated_artifacts.filter(
     (artifact) => artifact.artifact_type === "gjennomforing_og_risiko",
   );
+  const hasArtifactType = (artifactType: GeneratedArtifactType) =>
+    hasAuthoritativeCurrentArtifact(project, artifactType);
   const analysisSectionBusy = parseCustomerAnalysisSectionBusy(busy);
   const hasDocuments = project.documents.length > 0;
   const hasCustomerAnalysis =
     Boolean(customerAnalysis) || project.customer_analysis_generated;
-  const hasRequirementResponse = requirementArtifacts.length > 0;
-  const hasSolutionDraft = solutionDraftArtifacts.length > 0;
+  const hasRequirementResponse = hasArtifactType("forbedret_kravsvar");
+  const hasSolutionDraft = hasArtifactType("losningsutkast");
   const hasEvaluationReadySolutionDocument =
-    architectureDocumentCandidates.length > 0;
+    architectureDocumentCandidates.some(isDocumentReadyForEvaluation);
   const hasSolutionEvaluation =
     Boolean(solutionEvaluation) || project.solution_evaluation_generated;
-  const hasDeliveryPlan = deliveryArtifacts.length > 0;
-  const hasExecutiveSummary = Boolean(executiveSummary);
+  const hasDeliveryPlan = hasArtifactType("gjennomforing_og_risiko");
+  const hasExecutiveSummary =
+    Boolean(executiveSummary) || Boolean(project.has_executive_summary);
   const primaryWorkflowSteps: WorkflowStepItem[] = [
     {
       step: 1,
@@ -1647,11 +1861,11 @@ export function ProjectWorkspacePage({
       value: "generator",
       label: "Løsningsforslag",
       icon: Sparkles,
-      status: hasSolutionDraft || hasEvaluationReadySolutionDocument
-        ? "Generert"
-        : hasCustomerAnalysis
-          ? "Klar"
-          : "Venter",
+      status: solutionProposalWorkflowStatus({
+        hasGeneratedSolutionDescription: hasSolutionDraft,
+        hasReadyEvaluationBasis: hasEvaluationReadySolutionDocument,
+        hasCustomerAnalysis,
+      }),
     },
     {
       step: 5,
@@ -1768,6 +1982,7 @@ export function ProjectWorkspacePage({
         analysisLoading={analysisLoading}
         evaluationLoaded={evaluationLoaded}
         evaluationLoading={evaluationLoading}
+        evaluationLoadError={evaluationLoadError}
         executiveSummaryLoaded={executiveSummaryLoaded}
         executiveSummaryLoading={executiveSummaryLoading}
         busy={busy}
@@ -1779,7 +1994,6 @@ export function ProjectWorkspacePage({
         uploadRole={uploadRole}
         selectedDocumentName={file?.name ?? ""}
         documentFileInputKey={documentFileInputKey}
-        selectedRequirementDocumentId={selectedRequirementDocumentId}
         requirementArtifacts={requirementArtifacts}
         solutionDraftArtifacts={solutionDraftArtifacts}
         deliveryArtifacts={deliveryArtifacts}
@@ -1793,12 +2007,12 @@ export function ProjectWorkspacePage({
         onGenerateCustomerAnalysis={onGenerateCustomerAnalysis}
         onSaveAnalysis={onSaveAnalysis}
         onGenerateSolutionEvaluation={onGenerateSolutionEvaluation}
+        onRetrySolutionEvaluationLoad={retrySolutionEvaluationLoad}
         onUploadArchitectureDocument={onUploadArchitectureDocument}
         onDeleteArtifact={onDeleteArtifact}
         onGenerateBilag1Artifact={onGenerateBilag1Artifact}
         onGenerateDeliveryArtifact={onGenerateDeliveryArtifact}
         onUploadRequirementDocument={onUploadRequirementDocument}
-        onSelectedRequirementDocumentChange={setSelectedRequirementDocumentId}
         onUpdateRequirementArtifact={onUpdateRequirementArtifact}
         onGenerateRequirementResponse={onGenerateRequirementResponse}
         onGenerateExecutiveSummary={onGenerateExecutiveSummary}

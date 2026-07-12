@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
+import { canEditGeneratedArtifact } from "@/components/projects/project-workflow-status";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
   DocumentSourceMeta,
@@ -36,24 +36,27 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { sanitizeDownloadFileBase } from "@/lib/client/download";
 import { downloadElementAsPdf } from "@/lib/client/pdf-download";
+import {
+  canStartRequirementResponseGeneration,
+  isRequirementDocument,
+  isDocumentReadyForEvaluation,
+  isFormalRequirementDocument,
+} from "@/lib/document-processing";
+import { splitMarkdownTableRow } from "@/lib/markdown-table-row";
 import { compareRequirementOrder, sortByRequirementOrder } from "@/lib/requirement-order";
+import { requirementResponseRequirementCount } from "@/lib/requirement-response-count";
+import {
+  deterministicControlPatternLabel,
+  deterministicRepairStageLabel,
+  requirementResponseArtifactMetadata,
+  requirementResponseManualReviewBadgeLabel,
+  shouldShowDeterministicRepairAcknowledgement,
+} from "@/lib/requirement-response-metadata";
 import type { GeneratedArtifact, ProjectDocument } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 function fileTitle(file: File) {
   return `Kravgrunnlag - ${file.name.replace(/\.[^.]+$/, "")}`;
-}
-
-function isRequirementDocument(document: ProjectDocument) {
-  if (document.supporting_subtype === "kravdokument") {
-    return true;
-  }
-
-  const text = `${document.title} ${document.file_name}`.toLowerCase();
-  return (
-    text.includes("kravdokument") ||
-    text.includes("requirement") ||
-    text.includes("requirements")
-  );
 }
 
 type RequirementTableRow = {
@@ -70,24 +73,6 @@ type RequirementContentSegment =
   | { type: "markdown"; content: string }
   | { type: "table"; rows: RequirementTableRow[] };
 
-type RequirementResponseMetadata = {
-  ledgerConfidence?: {
-    level?: string;
-    score?: number;
-    requirement_count?: number;
-  };
-  fallbackAfterHandoff: number;
-  unresolvedFallbackAnswers: Array<{
-    nr: number;
-    ref: string;
-    reason?: string;
-  }>;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function ledgerConfidenceLevelLabel(level: string) {
   switch (level.toLowerCase()) {
     case "high":
@@ -99,86 +84,6 @@ function ledgerConfidenceLevelLabel(level: string) {
     default:
       return level;
   }
-}
-
-function artifactRequirementResponseMetadata(
-  artifact: GeneratedArtifact,
-): RequirementResponseMetadata {
-  const snapshot = isRecord(artifact.input_snapshot) ? artifact.input_snapshot : {};
-  const generationMetadata = isRecord(snapshot.generation_metadata)
-    ? snapshot.generation_metadata
-    : {};
-  const requirementResponse = isRecord(generationMetadata.requirement_response)
-    ? generationMetadata.requirement_response
-    : {};
-  const fallbackAfterHandoff =
-    typeof requirementResponse.deterministic_fallback_answers_after_handoff ===
-      "number" &&
-    Number.isFinite(
-      requirementResponse.deterministic_fallback_answers_after_handoff,
-    )
-      ? Math.max(
-          0,
-          Math.round(
-            requirementResponse.deterministic_fallback_answers_after_handoff,
-          ),
-        )
-      : 0;
-  const unresolvedFallbackAnswers = Array.isArray(
-    requirementResponse.unresolved_fallback_answers,
-  )
-    ? requirementResponse.unresolved_fallback_answers
-        .map((value) => (isRecord(value) ? value : null))
-        .filter((value): value is Record<string, unknown> => Boolean(value))
-        .map((value) => ({
-          nr:
-            typeof value.nr === "number" && Number.isFinite(value.nr)
-              ? Math.round(value.nr)
-              : 0,
-          ref: typeof value.ref === "string" ? value.ref : "",
-          reason: typeof value.reason === "string" ? value.reason : undefined,
-        }))
-        .filter((value) => value.nr > 0 && value.ref)
-    : [];
-  const ledgerConfidence = isRecord(requirementResponse.ledger_confidence)
-    ? {
-        level:
-          typeof requirementResponse.ledger_confidence.level === "string"
-            ? requirementResponse.ledger_confidence.level
-            : undefined,
-        score:
-          typeof requirementResponse.ledger_confidence.score === "number" &&
-          Number.isFinite(requirementResponse.ledger_confidence.score)
-            ? requirementResponse.ledger_confidence.score
-            : undefined,
-        requirement_count:
-          typeof requirementResponse.ledger_confidence.requirement_count ===
-            "number" &&
-          Number.isFinite(
-            requirementResponse.ledger_confidence.requirement_count,
-          )
-            ? requirementResponse.ledger_confidence.requirement_count
-            : undefined,
-      }
-    : undefined;
-
-  return {
-    ledgerConfidence,
-    fallbackAfterHandoff: Math.max(
-      fallbackAfterHandoff,
-      unresolvedFallbackAnswers.length,
-    ),
-    unresolvedFallbackAnswers,
-  };
-}
-
-function splitMarkdownTableRow(line: string) {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((cell) => cell.trim());
 }
 
 function isRequirementTableHeader(line: string) {
@@ -439,10 +344,15 @@ function parseRequirementContent(content: string): RequirementContentSegment[] {
     }
 
     const groupTitle = takeTrailingTableHeading(markdownBuffer);
-    const rows = tableLines.slice(2).map(splitMarkdownTableRow);
+    const rows = tableLines.slice(2).map((raw) => ({
+      cells: splitMarkdownTableRow(raw),
+      raw,
+    }));
     const tableRequirementRows = rows
-      .filter((row) => Boolean((row[columns.requirementIndex] ?? "").trim()))
-      .map((row, rowIndex) => ({
+      .filter(({ cells }) =>
+        Boolean((cells[columns.requirementIndex] ?? "").trim()),
+      )
+      .map(({ cells: row }, rowIndex) => ({
         ref: stripRepeatedGroup(row[columns.refIndex] ?? "", groupTitle),
         group:
           groupTitle ||
@@ -464,14 +374,15 @@ function parseRequirementContent(content: string): RequirementContentSegment[] {
     }
 
     const regularRows = rows.filter(
-      (row) => !Boolean((row[columns.requirementIndex] ?? "").trim()),
+      ({ cells }) =>
+        !Boolean((cells[columns.requirementIndex] ?? "").trim()),
     );
     if (regularRows.length) {
       markdownBuffer.push(
         [
           tableLines[0],
           tableLines[1],
-          ...regularRows.map((row) => `| ${row.join(" | ")} |`),
+          ...regularRows.map(({ raw }) => raw),
         ].join("\n"),
       );
     }
@@ -645,8 +556,6 @@ export function ProjectRequirementResponseTab({
   busyMessage,
   busyProgress,
   onUpload,
-  selectedDocumentId,
-  onSelectedDocumentChange,
   onUpdateArtifact,
   onDeleteArtifact,
   onSubmit,
@@ -660,12 +569,14 @@ export function ProjectRequirementResponseTab({
   busyProgress: number;
   deletingDocumentId: string | null;
   onUpload: (file: File) => Promise<ProjectDocument | null>;
-  selectedDocumentId: string;
-  onSelectedDocumentChange: (documentId: string) => void;
   onDeleteDocument: (document: ProjectDocument) => Promise<void>;
   onUpdateArtifact: (
     artifact: GeneratedArtifact,
-    value: { title: string; content_markdown: string },
+    value: {
+      title: string;
+      content_markdown: string;
+      acknowledge_deterministic_repairs?: boolean;
+    },
   ) => Promise<void>;
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -674,25 +585,30 @@ export function ProjectRequirementResponseTab({
     () => documents.filter(isRequirementDocument),
     [documents],
   );
-  const selectableDocuments = useMemo(
-    () =>
-      [...documents].sort((left, right) => {
-        const leftIsRequirement = isRequirementDocument(left);
-        const rightIsRequirement = isRequirementDocument(right);
-        if (leftIsRequirement !== rightIsRequirement) {
-          return leftIsRequirement ? -1 : 1;
-        }
-
-        return left.title.localeCompare(right.title, "nb");
-      }),
-    [documents],
+  const readyRequirementDocuments = useMemo(
+    () => requirementDocuments.filter(isDocumentReadyForEvaluation),
+    [requirementDocuments],
   );
-  const requirementResponses = artifacts.filter(
-    (artifact) => artifact.artifact_type === "forbedret_kravsvar",
+  const readyFormalRequirementDocuments = useMemo(
+    () => readyRequirementDocuments.filter(isFormalRequirementDocument),
+    [readyRequirementDocuments],
   );
-  const selectedDocument =
-    selectableDocuments.find((document) => document.id === selectedDocumentId) ??
-    null;
+  const unreadyRequirementDocumentCount =
+    requirementDocuments.length - readyRequirementDocuments.length;
+  const requirementResponses = artifacts
+    .filter((artifact) => artifact.artifact_type === "forbedret_kravsvar")
+    .sort(
+      (left, right) =>
+        (right.artifact_version ?? 0) - (left.artifact_version ?? 0) ||
+        right.created_at.localeCompare(left.created_at) ||
+        right.id.localeCompare(left.id),
+    );
+  const canGenerate =
+    readyFormalRequirementDocuments.length > 0 &&
+    canStartRequirementResponseGeneration(requirementDocuments, {
+      uploadBusy,
+      generateBusy,
+    });
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [dragActive, setDragActive] = useState(false);
@@ -701,6 +617,8 @@ export function ProjectRequirementResponseTab({
   );
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
+  const [acknowledgeDeterministicRepairs, setAcknowledgeDeterministicRepairs] =
+    useState(false);
   const [savingArtifactId, setSavingArtifactId] = useState<string | null>(null);
   const [deletingArtifactId, setDeletingArtifactId] = useState<string | null>(
     null,
@@ -711,34 +629,12 @@ export function ProjectRequirementResponseTab({
   const [downloadError, setDownloadError] = useState("");
   const responseContentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  useEffect(() => {
-    if (!selectableDocuments.length) {
-      if (selectedDocumentId) {
-        onSelectedDocumentChange("");
-      }
-      return;
-    }
-
-    if (!selectableDocuments.some((document) => document.id === selectedDocumentId)) {
-      onSelectedDocumentChange(
-        requirementDocuments[0]?.id ?? selectableDocuments[0]?.id ?? "",
-      );
-    }
-  }, [
-    onSelectedDocumentChange,
-    requirementDocuments,
-    selectableDocuments,
-    selectedDocumentId,
-  ]);
-
   async function uploadSelectedFile(nextFile: File | null) {
     if (!nextFile || uploadBusy) return;
 
     setFile(nextFile);
     const uploadedDocument = await onUpload(nextFile);
-    if (uploadedDocument) {
-      onSelectedDocumentChange(uploadedDocument.id);
-    }
+    void uploadedDocument;
     setFile(null);
     setFileInputKey((current) => current + 1);
   }
@@ -747,6 +643,7 @@ export function ProjectRequirementResponseTab({
     setEditingArtifactId(artifact.id);
     setEditTitle(artifact.title || "Kravbesvarelse");
     setEditContent(artifact.content_markdown || "");
+    setAcknowledgeDeterministicRepairs(false);
   }
 
   async function saveEdit(artifact: GeneratedArtifact) {
@@ -755,6 +652,8 @@ export function ProjectRequirementResponseTab({
       await onUpdateArtifact(artifact, {
         title: editTitle,
         content_markdown: editContent,
+        acknowledge_deterministic_repairs:
+          acknowledgeDeterministicRepairs,
       });
       setEditingArtifactId(null);
     } catch {
@@ -834,7 +733,13 @@ export function ProjectRequirementResponseTab({
       ) : (
         <div className="space-y-3">
           {requirementResponses.map((artifact, index) => {
-            const metadata = artifactRequirementResponseMetadata(artifact);
+            const metadata = requirementResponseArtifactMetadata(
+              artifact.input_snapshot,
+            );
+            const requirementCount = requirementResponseRequirementCount(
+              artifact.content_markdown,
+              metadata.ledgerConfidence?.requirement_count,
+            );
             const confidenceLevel = metadata.ledgerConfidence?.level;
             const confidenceScore = metadata.ledgerConfidence?.score;
             const confidenceLabel = confidenceLevel
@@ -844,6 +749,10 @@ export function ProjectRequirementResponseTab({
                     : ""
                 }`
               : "";
+            const artifactIsEditable = canEditGeneratedArtifact(artifact);
+            const editDisabledReason = artifact.is_current
+              ? "Kildegrunnlaget er endret. Regenerer kravbesvarelsen før du redigerer."
+              : "Historiske versjoner kan ikke redigeres. Du kan fortsatt åpne og laste dem ned.";
             return (
             <details
               key={artifact.id}
@@ -861,21 +770,49 @@ export function ProjectRequirementResponseTab({
                     {artifact.title || "Kravbesvarelse uten tittel"}
                   </h4>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {artifact.is_current ? (
+                      <span
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-xs font-bold",
+                          artifact.source_is_current
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : "border-amber-300 bg-amber-50 text-amber-900",
+                        )}
+                      >
+                        {artifact.source_is_current
+                          ? "Gjeldende"
+                          : "Grunnlaget er endret – regenerer"}
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-600">
+                        Historikk
+                      </span>
+                    )}
+                    {artifact.artifact_version ? (
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                        Versjon {artifact.artifact_version}
+                      </span>
+                    ) : null}
                     {confidenceLabel ? (
                       <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
                         {confidenceLabel}
                       </span>
                     ) : null}
-                    {typeof metadata.ledgerConfidence?.requirement_count ===
-                    "number" ? (
+                    {typeof requirementCount === "number" ? (
                       <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
-                        {metadata.ledgerConfidence.requirement_count} krav
+                        {requirementCount} krav
                       </span>
                     ) : null}
                     {metadata.fallbackAfterHandoff > 0 ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">
                         <AlertTriangle className="size-3.5" />
                         {metadata.fallbackAfterHandoff} til kontroll
+                      </span>
+                    ) : null}
+                    {metadata.manualReviewRequired ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950">
+                        <AlertTriangle className="size-3.5" />
+                        {requirementResponseManualReviewBadgeLabel(metadata)}
                       </span>
                     ) : null}
                   </div>
@@ -903,15 +840,21 @@ export function ProjectRequirementResponseTab({
                           ? "Lager PDF"
                           : "Last ned PDF"}
                       </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 rounded-lg"
-                        onClick={() => startEdit(artifact)}
-                      >
-                        <Pencil data-icon="inline-start" />
-                        Rediger
-                      </Button>
+                      <span title={artifactIsEditable ? undefined : editDisabledReason}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 rounded-lg"
+                          disabled={!artifactIsEditable}
+                          aria-label={
+                            artifactIsEditable ? "Rediger" : editDisabledReason
+                          }
+                          onClick={() => startEdit(artifact)}
+                        >
+                          <Pencil data-icon="inline-start" />
+                          Rediger
+                        </Button>
+                      </span>
                       <DeleteConfirmDialog
                         title="Slett kravbesvarelse?"
                         description={`Dette sletter "${artifact.title || "kravbesvarelse uten tittel"}" fra prosjektet. Handlingen kan ikke angres.`}
@@ -972,6 +915,28 @@ export function ProjectRequirementResponseTab({
                         className="min-h-[28rem] resize-y rounded-xl bg-white text-sm leading-6 text-slate-900 shadow-none"
                       />
                     </div>
+                    {shouldShowDeterministicRepairAcknowledgement(
+                      metadata,
+                      editingArtifactId === artifact.id,
+                    ) ? (
+                      <label className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={acknowledgeDeterministicRepairs}
+                          onChange={(event) =>
+                            setAcknowledgeDeterministicRepairs(
+                              event.target.checked,
+                            )
+                          }
+                        />
+                        <span>
+                          Jeg bekrefter at de deterministisk reparerte svarradene
+                          jeg har endret, er manuelt kvalitetssikret. Ved lagring
+                          fjernes kontrollmarkeringen bare fra endrede rader.
+                        </span>
+                      </label>
+                    ) : null}
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <Button
                         type="button"
@@ -1000,6 +965,94 @@ export function ProjectRequirementResponseTab({
                   </div>
                 ) : (
                   <>
+                    {metadata.manualReviewRequired ? (
+                      <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                        <div className="flex items-center gap-2 font-black">
+                          <AlertTriangle className="size-4" />
+                          Manuell gjennomgang påkrevd før innlevering
+                        </div>
+                        <p className="mt-1 leading-6">
+                          {metadata.manualReviewNote ||
+                            `${requirementResponseManualReviewBadgeLabel(metadata)}. Åpne detaljene nedenfor før innlevering.`}
+                        </p>
+                        {metadata.templateRepairRefs.length ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {metadata.templateRepairRefs.map((reference, index) => (
+                              <span
+                                key={`${artifact.id}-manual-review-${index}-${reference}`}
+                                className="rounded-full border border-amber-400 bg-white px-2 py-0.5 text-xs font-bold text-amber-950"
+                              >
+                                {reference}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {metadata.controlRepairRefs.length ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {metadata.controlRepairRefs.map((reference, index) => (
+                              <span
+                                key={`${artifact.id}-control-review-${index}-${reference}`}
+                                className="rounded-full border border-amber-400 bg-white px-2 py-0.5 text-xs font-bold text-amber-950"
+                              >
+                                {reference}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {metadata.controlRepairRows.some(
+                          (row) =>
+                            row.pattern || row.repairStage || row.sourceLocator,
+                        ) ? (
+                          <details className="mt-3 rounded-lg border border-amber-300 bg-white/80 px-3 py-2">
+                            <summary className="cursor-pointer text-xs font-bold text-amber-950">
+                              Vis detaljer om reparerte kontrollsvar
+                            </summary>
+                            <div className="mt-2 space-y-2">
+                              {metadata.controlRepairRows.map((row) => {
+                                const patternLabel =
+                                  deterministicControlPatternLabel(row.pattern);
+                                const stageLabel =
+                                  deterministicRepairStageLabel(row.repairStage);
+                                return (
+                                  <div
+                                    key={`${artifact.id}-control-detail-${row.orderIndex ?? row.ref}-${row.ref}`}
+                                    className="rounded-md border border-amber-200 bg-white px-3 py-2"
+                                  >
+                                    <div className="font-bold">{row.ref}</div>
+                                    {patternLabel || stageLabel ? (
+                                      <div className="mt-0.5 text-xs text-amber-900">
+                                        {[patternLabel, stageLabel]
+                                          .filter(Boolean)
+                                          .join(" · ")}
+                                      </div>
+                                    ) : null}
+                                    {row.sourceLocator ? (
+                                      <div className="mt-0.5 text-xs text-slate-600">
+                                        Kilde: {row.sourceLocator}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </details>
+                        ) : null}
+                        {metadata.proposalInputRequiredRefs.length ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {metadata.proposalInputRequiredRefs.map(
+                              (reference, index) => (
+                                <span
+                                  key={`${artifact.id}-proposal-input-${index}-${reference}`}
+                                  className="rounded-full border border-amber-400 bg-white px-2 py-0.5 text-xs font-bold text-amber-950"
+                                >
+                                  {reference}
+                                </span>
+                              ),
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {metadata.fallbackAfterHandoff > 0 ? (
                       <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                         <div className="flex items-center gap-2 font-bold">
@@ -1052,35 +1105,36 @@ export function ProjectRequirementResponseTab({
               htmlFor="requirement-document-select"
               className="text-xs font-black uppercase tracking-[0.2em] text-slate-500"
             >
-              Dokument som skal besvares
+              Kravdokumenter som skal besvares
             </Label>
-            {selectableDocuments.length ? (
-              <>
-                <div className="relative mt-3">
-                  <select
-                    id="requirement-document-select"
-                    value={selectedDocumentId}
-                    onChange={(event) =>
-                      onSelectedDocumentChange(event.target.value)
-                    }
-                    disabled={generateBusy || uploadBusy}
-                    className="h-11 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-10 text-sm font-semibold text-slate-950 shadow-sm outline-none transition-colors focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+            {requirementDocuments.length ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-sm font-medium leading-6 text-slate-700">
+                  Kundehovedkilden inngår automatisk. Alle {" "}
+                  {readyFormalRequirementDocuments.length} klare formelle
+                  kravdokumenter inngår også; delvis dokumentutvalg er ikke
+                  tillatt.
+                </p>
+                {requirementDocuments.map((document) => (
+                  <div
+                    key={document.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"
                   >
-                    {selectableDocuments.map((document) => (
-                      <option key={document.id} value={document.id}>
-                        {document.title}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-950" />
-                </div>
-                <div className="mt-3">
-                  <DocumentSourceMeta
-                    document={selectedDocument}
-                    label="Kravgrunnlag"
-                  />
-                </div>
-              </>
+                    <DocumentSourceMeta
+                      document={document}
+                      label={
+                        document.role === "primary_customer_document"
+                          ? isDocumentReadyForEvaluation(document)
+                            ? "Kundehovedkilde – inngår automatisk"
+                            : "Kundehovedkilde – venter på dokumentbehandling"
+                          : isDocumentReadyForEvaluation(document)
+                            ? "Inngår i kravgrunnlaget"
+                            : "Venter på dokumentbehandling"
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
             ) : (
               <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-500">
                 Ingen kravdokumenter er lastet opp ennå.
@@ -1142,7 +1196,7 @@ export function ProjectRequirementResponseTab({
             <Button
               type="submit"
               className="h-10 w-full justify-center rounded-lg bg-blue-900 text-sm font-bold text-white hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
-              disabled={generateBusy || !selectedDocumentId}
+              disabled={!canGenerate}
             >
               {generateBusy ? (
                 <Spinner className="size-4" />
@@ -1151,6 +1205,22 @@ export function ProjectRequirementResponseTab({
               )}
               Generer kravbesvarelse
             </Button>
+            {unreadyRequirementDocumentCount > 0 && !generateBusy ? (
+              <p className="mt-2 text-xs font-medium text-amber-700">
+                {unreadyRequirementDocumentCount} kravkilde
+                {unreadyRequirementDocumentCount === 1 ? "" : "r"} er ikke
+                ferdig behandlet. Generering blir tilgjengelig når alle
+                kundekilder og kravdokumenter er klare.
+              </p>
+            ) : null}
+            {!readyFormalRequirementDocuments.length &&
+            unreadyRequirementDocumentCount === 0 &&
+            !generateBusy ? (
+              <p className="mt-2 text-xs font-medium text-amber-700">
+                Last opp minst ett formelt kravdokument før du genererer
+                kravbesvarelsen. Kundehovedkilden inngår deretter automatisk.
+              </p>
+            ) : null}
             {generateBusy && busyMessage ? (
               <div className="mt-3">
                 <GenerationProgress

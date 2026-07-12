@@ -459,6 +459,7 @@ export function ProjectServiceDescriptionTab({
                   key={service.id}
                   type="button"
                   onClick={() => void toggleSelected(service)}
+                  aria-pressed={service.selected}
                   className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-950 shadow-sm"
                 >
                   {service.name} · {service.recommendation_score}%
@@ -484,6 +485,7 @@ export function ProjectServiceDescriptionTab({
                     <button
                       type="button"
                       onClick={() => void toggleSelected(service)}
+                      aria-pressed={service.selected}
                       aria-busy={savingSelectionIds.has(service.id)}
                       className="group flex min-w-0 flex-1 items-start gap-3 text-left transition-opacity"
                     >
@@ -540,6 +542,7 @@ export function ProjectServiceDescriptionTab({
                           onConfirm={() => deleteDocument(service.id, document.id)}
                         >
                           <Button
+                            aria-label={`Slett ${document.title}`}
                             variant="ghost"
                             size="icon-xs"
                             disabled={busy === `delete-document-${document.id}`}

@@ -53,7 +53,9 @@ export function GlobalServiceDescriptionsPanel() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/service-descriptions");
+      const response = await fetch("/api/service-descriptions", {
+        cache: "no-store",
+      });
       const payload = (await response.json()) as {
         services?: ServiceDescription[];
         error?: string;
@@ -167,6 +169,7 @@ export function GlobalServiceDescriptionsPanel() {
 
           <form onSubmit={onSubmit} className="mt-5 space-y-3">
             <select
+              aria-label="Velg tjeneste"
               value={targetServiceId}
               onChange={(event) => {
                 const value = event.target.value;
@@ -319,6 +322,7 @@ export function GlobalServiceDescriptionsPanel() {
                             onConfirm={() => deleteDocument(service.id, document.id)}
                           >
                             <Button
+                              aria-label={`Slett ${document.title}`}
                               variant="ghost"
                               size="icon-xs"
                               disabled={busy === `delete-document-${document.id}`}

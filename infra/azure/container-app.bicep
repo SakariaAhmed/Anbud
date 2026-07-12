@@ -85,8 +85,8 @@ param projectJobWorkerCron string = '*/5 * * * *'
 
 @description('Maximum project jobs processed by one scheduled worker execution.')
 @minValue(1)
-@maxValue(5)
-param projectJobWorkerLimit int = 2
+@maxValue(1)
+param projectJobWorkerLimit int = 1
 
 @description('CPU cores for the web container.')
 param webCpu string = '1.0'
@@ -100,9 +100,9 @@ param projectJobWorkerCpu string = '2.0'
 @description('Memory for the scheduled project job worker.')
 param projectJobWorkerMemory string = '4Gi'
 
-@description('Maximum seconds a scheduled worker replica can run.')
-@minValue(300)
-param projectJobWorkerReplicaTimeout int = 900
+@description('Maximum seconds a scheduled worker replica can run. Covers one 30-minute job plus five minutes of startup and shutdown allowance.')
+@minValue(2100)
+param projectJobWorkerReplicaTimeout int = 2100
 
 @description('Minimum active replicas.')
 @minValue(0)

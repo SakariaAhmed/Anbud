@@ -26,6 +26,7 @@ export async function POST(request: Request) {
     limit: 40,
     windowMs: 60_000,
     identityMode: "global",
+    fallbackLimit: 10,
   });
   if (!globalRateLimit.allowed) {
     return NextResponse.json(
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
   const rateLimit = await checkRateLimit(request, "auth-login", {
     limit: 8,
     windowMs: 60_000,
+    fallbackLimit: 4,
   });
   if (!rateLimit.allowed) {
     return NextResponse.json(

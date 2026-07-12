@@ -18,6 +18,23 @@ jobs:
   validation:
     name: Validation
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: public.ecr.aws/supabase/postgres:17.6.1.132@sha256:e09e93a61ed1560caf4be79c9eb29401875bea74b12aec4657cb08bf34ea3a13
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PRIMARY_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DOCUMENT_CHUNKS_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      SERVICE_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -39,7 +56,7 @@ jobs:
 
       - name: Deterministic durable-job and schema tests
         run: |
-          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs
+          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/project-job-terminal-audit.sql.test.mjs apps/frontend/lib/server/repositories/stable-main-rollback-bridge.sql.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs scripts/async_worker_boundaries.test.mjs
           node scripts/validate_project_jobs_schema.mjs
 
       - name: Frontend tests

@@ -52,6 +52,8 @@
   "tableRepairs": [
     {
       "name": "line-wrapped third-party suppliers row",
+      "canonicalSource": "petoro-requirement-pdf",
+      "tableId": "Tabell ID 2-11",
       "service": "Tredjeparts-",
       "text": "Leverandøren skal koordinere support og drift for all tredjeparts programvare og løsninger som kjøres på servere og arbeidsstasjoner driftet av Leverandøren.",
       "expectedService": "Tredjeparts-leverandører",
@@ -59,6 +61,8 @@
     },
     {
       "name": "license management role casing",
+      "canonicalSource": "petoro-requirement-pdf",
+      "tableId": "Tabell ID 2-11",
       "service": "Lisenshåndtering",
       "text": "Leverandøren skal følge opp og rapportere brukere mot programvaren for å sikre at Kunden til enhver tid er riktig lisensiert.",
       "expectedService": "Lisenshåndtering",
@@ -66,6 +70,8 @@
     },
     {
       "name": "incident handling supplier wording",
+      "canonicalSource": "petoro-requirement-pdf",
+      "tableId": "Tabell ID 2-11",
       "service": "Feilhåndtering",
       "text": "Leverandøren skal håndtere alle typer feil, herunder også koordinere og følge opp mot 3'dje partsleverandører.",
       "expectedService": "Feilhåndtering",
@@ -73,6 +79,8 @@
     },
     {
       "name": "privileged access full row",
+      "canonicalSource": "petoro-requirement-pdf",
+      "tableId": "Tabell ID 2-31",
       "service": "Privilegerte",
       "text": "Redegjør for kontrollmekanismer ved bruk av administratorrettigheter og hvordan dere sikrer at personell kun har tilgang ved tjenstlig behov og beskriv hvilket PAM-verktøy dere bruker.",
       "expectedService": "Privilegerte tilganger",
@@ -80,6 +88,8 @@
     },
     {
       "name": "secure change handling full row",
+      "canonicalSource": "petoro-requirement-pdf",
+      "tableId": "Tabell ID 2-31",
       "service": "Sikker endringshåndtering ering",
       "text": "Leverandøren skal beskrive endringsprosessen som sikrer at alle endringer har gjennomgått en CAB eller forhåndsgodkjenning.",
       "expectedService": "Sikker endringshåndtering",

@@ -40,7 +40,7 @@ export function ProjectNewPage() {
       };
     }
 
-    fetch("/api/service-descriptions")
+    fetch("/api/service-descriptions", { cache: "no-store" })
       .then(async (response) => {
         const payload = (await response.json()) as {
           services?: ServiceDescription[];

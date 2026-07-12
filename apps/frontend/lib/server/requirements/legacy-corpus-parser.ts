@@ -1,4 +1,5 @@
 import { normalizePageText } from "@/lib/server/requirements/pdf-normalization";
+import { splitInlineNumberedHeadingRequirement } from "@/lib/server/requirements/heading-detection";
 import type { RequirementCorpusParserContext } from "@/lib/server/requirements/corpus-parser-context";
 import {
   findRequirementOrderOffset,
@@ -386,6 +387,30 @@ export function buildPrefixedLineRequirementLedger(
       isLegacyCorpusBoilerplateLine(sourceLine)
     ) {
       continue;
+    }
+
+    const inlineHeadingRequirement =
+      splitInlineNumberedHeadingRequirement(sourceLine);
+    if (
+      inlineHeadingRequirement &&
+      context.isLikelyHeadingLine(inlineHeadingRequirement.heading)
+    ) {
+      const text = context.stripAnswerTextFromRequirement(
+        context.stripRequirementChrome(inlineHeadingRequirement.requirement),
+      );
+      if (isMixedRequirementLineCandidate(text, context)) {
+        flushPending();
+        heading = context.cleanHeadingCandidate(
+          inlineHeadingRequirement.heading,
+        );
+        state.pending = {
+          explicitId: "",
+          text,
+          sourceLine,
+          heading,
+        };
+        continue;
+      }
     }
 
     const segments = splitLegacyLinearTableSegments(sourceLine);

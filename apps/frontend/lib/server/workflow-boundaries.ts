@@ -42,6 +42,9 @@ export function buildSolutionEvaluationProvenance(input: {
     title: string;
     created_at?: string;
   } | null;
+  requirementSourceDocumentIds?: string[];
+  requirementSourceManifestSha256?: string | null;
+  sourceRevision?: number | null;
 }): NonNullable<SolutionEvaluationResult["evaluation_context"]> {
   return {
     customer_document_id: input.customerDocument.id,
@@ -53,6 +56,10 @@ export function buildSolutionEvaluationProvenance(input: {
       input.systemSolutionArtifact?.title ?? null,
     system_solution_artifact_created_at:
       input.systemSolutionArtifact?.created_at ?? null,
+    requirement_source_document_ids: input.requirementSourceDocumentIds ?? [],
+    requirement_source_manifest_sha256:
+      input.requirementSourceManifestSha256 ?? null,
+    source_revision: input.sourceRevision ?? null,
     generated_at: new Date().toISOString(),
   };
 }

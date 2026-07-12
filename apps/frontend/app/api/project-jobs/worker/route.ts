@@ -6,7 +6,9 @@ import { checkRateLimit } from "@/lib/server/observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 900;
+// One workflow may use the full 30-minute internal deadline. Keep five minutes
+// for the scheduled container's server startup, queue claim, and shutdown.
+export const maxDuration = 2100;
 
 function safeTokenEquals(candidate: string | null, expected: string) {
   if (!candidate) {
@@ -54,7 +56,9 @@ export async function POST(request: Request) {
       limit?: number;
       stale_after_ms?: number;
     };
-    const limit = Math.min(5, Math.max(1, Number(body.limit) || 1));
+    // A scheduled invocation must never claim a second job after spending most
+    // of its replica lifetime on the first one.
+    const limit = 1;
     const staleAfterMs =
       Number.isFinite(body.stale_after_ms) && body.stale_after_ms
         ? Math.max(60_000, Number(body.stale_after_ms))

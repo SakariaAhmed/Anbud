@@ -1,7 +1,10 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import {
   repairGeneratedArtifactContent,
+  requirementQualityExpectations,
   validateGeneratedArtifact,
 } from "@/lib/server/artifact-validation";
 import {
@@ -18,12 +21,19 @@ import {
   selectProjectDocuments,
   selectRelevantServiceDocumentIds,
 } from "@/lib/server/domain/project-documents";
-import { generateProjectArtifact } from "@/lib/server/ai";
+import {
+  artifactGenerationModel,
+  generateProjectArtifact,
+  selectKnowledgeArtifactsForArtifact,
+} from "@/lib/server/ai";
+import { DOCUMENT_EMBEDDING_MODEL } from "@/lib/server/document-chunks";
 import {
   getFreshCustomerAnalysis,
+  getFreshSolutionEvaluationSnapshot,
 } from "@/lib/server/repositories/analyses";
 import {
-  listGeneratedArtifacts,
+  getArtifactSourceRevisions,
+  listArtifactKnowledgeCandidatesFresh,
   saveGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
 import {
@@ -31,7 +41,6 @@ import {
   listProjectDocumentsForAnalysis,
 } from "@/lib/server/repositories/documents";
 import {
-  getProjectDetail,
   getProjectSnapshot,
 } from "@/lib/server/repositories/projects";
 import {
@@ -39,6 +48,11 @@ import {
   listServiceDocumentSummariesForProject,
 } from "@/lib/server/repositories/services";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
+import {
+  hasReadableRequirementDocumentContent,
+  isFormalRequirementDocument,
+} from "@/lib/document-processing";
+import { canonicalRequirementSourceDocuments } from "@/lib/server/use-cases/solution-evaluation-readiness";
 import {
   shouldUseSolutionEvaluationForArtifact,
   solutionEvaluationContextModeForArtifact,
@@ -87,18 +101,79 @@ export interface GenerateAndSaveArtifactResult {
 }
 
 const ARTIFACT_FILE_LEDGER_FORMATS = new Set(["pdf", "docx", "xlsx", "xls"]);
+const ARTIFACT_INDEXING_CONCURRENCY = 3;
+const ARTIFACT_FILE_HYDRATION_CONCURRENCY = 3;
+const ARTIFACT_GENERATOR_REVISION =
+  process.env.ARTIFACT_GENERATOR_REVISION?.trim() ||
+  process.env.VERCEL_GIT_COMMIT_SHA?.trim() ||
+  process.env.GIT_COMMIT_SHA?.trim() ||
+  "artifact-source-fence-v1";
 
-function isLikelyRequirementDocument(document: ProjectDocumentDetail) {
-  const text = `${document.title} ${document.file_name}`.toLowerCase();
-  return (
-    document.supporting_subtype === "kravdokument" ||
-    text.includes("krav") ||
-    text.includes("requirement") ||
-    text.includes("requirements")
+function sha256(value: string | Buffer) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function artifactDocumentManifest(document: ProjectDocumentDetail) {
+  const originalFileSha256 = document.file_base64
+    ? sha256(Buffer.from(document.file_base64, "base64"))
+    : null;
+
+  return {
+    id: document.id,
+    updated_at: document.updated_at,
+    role: document.role,
+    subtype: document.supporting_subtype,
+    original_file_sha256: originalFileSha256,
+    content_hash: sha256(
+      [
+        document.title,
+        document.file_name,
+        document.file_format,
+        document.raw_text,
+        JSON.stringify(document.structure_map),
+        originalFileSha256 || "",
+      ].join("\u0000"),
+    ),
+  };
+}
+
+export function buildArtifactProjectDocumentManifests(input: {
+  documents: ProjectDocumentDetail[];
+  hydratedRequirementDocuments?: ReadonlyMap<string, ProjectDocumentDetail>;
+}) {
+  return input.documents.map((document) =>
+    artifactDocumentManifest(
+      input.hydratedRequirementDocuments?.get(document.id) ?? document,
+    ),
   );
 }
 
-function selectRequirementDocumentsForArtifact(input: {
+export function artifactSourceSnapshotHash(sourceSnapshot: unknown) {
+  return sha256(JSON.stringify(sourceSnapshot));
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, concurrency), items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+export function selectRequirementDocumentsForArtifact(input: {
   selectedDocumentIds: Set<string>;
   selectedRequirementDocuments: ProjectDocumentDetail[];
   projectDocuments: ProjectDocumentDetail[];
@@ -110,29 +185,97 @@ function selectRequirementDocumentsForArtifact(input: {
     return input.selectedRequirementDocuments;
   }
 
-  const explicitRequirementDocuments = input.projectDocuments.filter(
-    (document) =>
-      document.supporting_subtype === "kravdokument" ||
-      (document.role === "supporting_document" &&
-        isLikelyRequirementDocument(document)),
+  return input.projectDocuments.filter(isFormalRequirementDocument);
+}
+
+export function resolveRequestedSourceDocuments(input: {
+  requestedDocumentIds: string[];
+  projectDocuments: ProjectDocumentDetail[];
+}) {
+  const documentsById = new Map(
+    input.projectDocuments.map((document) => [document.id, document]),
   );
-  if (explicitRequirementDocuments.length) {
-    return explicitRequirementDocuments;
+  const missingIds = input.requestedDocumentIds.filter(
+    (documentId) => !documentsById.has(documentId),
+  );
+  if (missingIds.length) {
+    throw new Error(
+      `Forespørselen inneholder ukjente eller utilgjengelige kildedokumenter: ${missingIds.join(", ")}.`,
+    );
+  }
+  return input.requestedDocumentIds.map(
+    (documentId) => documentsById.get(documentId)!,
+  );
+}
+
+export function assertCompleteRequirementDocumentScope(input: {
+  requestedDocumentIds: string[];
+  requiredFormalDocuments: ProjectDocumentDetail[];
+}) {
+  if (!input.requestedDocumentIds.length) {
+    return;
+  }
+  const requestedIds = new Set(input.requestedDocumentIds);
+  const requiredIds = new Set(
+    input.requiredFormalDocuments.map((document) => document.id),
+  );
+  const missingIds = [...requiredIds].filter((id) => !requestedIds.has(id));
+  const unexpectedIds = [...requestedIds].filter((id) => !requiredIds.has(id));
+  if (missingIds.length || unexpectedIds.length) {
+    throw new Error(
+      [
+        "Kravbesvarelsen må bruke alle klassifiserte kravdokumenter i prosjektet. Vent til alle er ferdigbehandlet før generering.",
+        missingIds.length ? `Mangler: ${missingIds.join(", ")}.` : "",
+        unexpectedIds.length
+          ? `Ikke godkjent som klart kravdokument: ${unexpectedIds.join(", ")}.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  }
+}
+
+export function assertRequirementDocumentsReadyForGeneration(
+  documents: ProjectDocumentDetail[],
+) {
+  if (!documents.length) {
+    throw new Error(
+      "Kravbesvarelsen kan ikke genereres fordi ingen valgte kravdokumenter ble funnet.",
+    );
   }
 
-  return [
-    input.customerDocument,
-    input.solutionDocument,
-    ...input.supportingDocuments,
-  ].filter(
-    (document): document is ProjectDocumentDetail =>
-      document !== null && isLikelyRequirementDocument(document),
-  );
+  for (const document of documents) {
+    if (document.processing_status === "failed") {
+      throw new Error(
+        `Kravdokumentet "${document.title}" kunne ikke indekseres og kan ikke brukes til kravbesvarelse${
+          document.processing_error ? `: ${document.processing_error}` : "."
+        }`,
+      );
+    }
+    if (
+      document.processing_status !== "basic_ready" &&
+      document.processing_status !== "enhanced_ready"
+    ) {
+      throw new Error(
+        `Kravdokumentet "${document.title}" er ikke ferdig indeksert. Vent til dokumentbehandlingen er fullført før kravbesvarelsen startes.`,
+      );
+    }
+    if (!hasReadableRequirementDocumentContent(document)) {
+      throw new Error(
+        `Kravdokumentet "${document.title}" er markert som ferdig, men mangler lesbar tekst eller struktur. Last dokumentet opp på nytt før kravbesvarelsen startes.`,
+      );
+    }
+  }
 }
 
 async function hydrateArtifactFileDocument(
   projectId: string,
   document: ProjectDocumentDetail,
+  loadDocument: (
+    projectId: string,
+    documentId: string,
+  ) => Promise<ProjectDocumentDetail>,
 ) {
   if (
     document.file_base64 ||
@@ -141,11 +284,41 @@ async function hydrateArtifactFileDocument(
     return document;
   }
 
+  let hydrated: ProjectDocumentDetail;
   try {
-    return await getDocumentDetail(projectId, document.id);
-  } catch {
-    return document;
+    hydrated = await loadDocument(projectId, document.id);
+  } catch (error) {
+    throw new Error(
+      `Kravfilen "${document.title}" (${document.id}) kunne ikke hydreres: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
+
+  if (!hydrated.file_base64) {
+    throw new Error(
+      `Kravfilen "${document.title}" (${document.id}) mangler originalt filinnhold etter hydrering.`,
+    );
+  }
+
+  return hydrated;
+}
+
+export async function hydrateRequirementFileDocuments(input: {
+  projectId: string;
+  documents: ProjectDocumentDetail[];
+  loadDocument?: (
+    projectId: string,
+    documentId: string,
+  ) => Promise<ProjectDocumentDetail>;
+}) {
+  const loadDocument = input.loadDocument ?? getDocumentDetail;
+  return mapWithConcurrency(
+    input.documents,
+    ARTIFACT_FILE_HYDRATION_CONCURRENCY,
+    (document) =>
+      hydrateArtifactFileDocument(input.projectId, document, loadDocument),
+  );
 }
 
 const DOCUMENT_LEDGER_CACHE_TTL_MS = 5 * 60_000;
@@ -159,80 +332,51 @@ const documentLedgerCache = new Map<
   }
 >();
 
-function requirementQualityExpectations(
-  metadata: unknown,
-): {
-  expectedRequirementCount?: number;
-  expectedRequirementRefs?: string[];
-  unresolvedFallbackAnswers?: number;
-} {
-  if (!metadata || typeof metadata !== "object") {
-    return {};
+function canonicalizeDocumentLedgerFingerprintValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeDocumentLedgerFingerprintValue);
   }
-
-  const requirementResponse = (
-    metadata as {
-      requirement_response?: {
-        total_requirements?: unknown;
-        requirement_refs?: unknown;
-        deterministic_fallback_answers_after_handoff?: unknown;
-        unresolved_fallback_answers?: unknown;
-      };
-    }
-  ).requirement_response;
-
-  if (!requirementResponse || typeof requirementResponse !== "object") {
-    return {};
-  }
-
-  const totalRequirements =
-    typeof requirementResponse.total_requirements === "number" &&
-    Number.isFinite(requirementResponse.total_requirements)
-      ? Math.max(0, Math.round(requirementResponse.total_requirements))
-      : undefined;
-  const requirementRefs = Array.isArray(requirementResponse.requirement_refs)
-    ? requirementResponse.requirement_refs
-        .filter((value): value is string => typeof value === "string")
-        .map((value) => value.replace(/\s+/g, " ").trim())
-        .filter(Boolean)
-    : undefined;
-  const unresolvedFallbackAnswers =
-    typeof requirementResponse.deterministic_fallback_answers_after_handoff ===
-      "number" &&
-    Number.isFinite(
-      requirementResponse.deterministic_fallback_answers_after_handoff,
-    )
-      ? Math.max(
-          0,
-          Math.round(
-            requirementResponse.deterministic_fallback_answers_after_handoff,
-          ),
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) =>
+          left < right ? -1 : left > right ? 1 : 0,
         )
-      : Array.isArray(requirementResponse.unresolved_fallback_answers)
-        ? requirementResponse.unresolved_fallback_answers.length
-        : undefined;
-
-  return {
-    expectedRequirementCount: totalRequirements,
-    expectedRequirementRefs: requirementRefs,
-    unresolvedFallbackAnswers,
-  };
+        .map(([key, nestedValue]) => [
+          key,
+          canonicalizeDocumentLedgerFingerprintValue(nestedValue),
+        ]),
+    );
+  }
+  return value;
 }
 
-function documentLedgerCacheKey(input: {
+function documentLedgerSourceFingerprint(document: ProjectDocumentDetail) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        id: document.id,
+        title: document.title,
+        file_name: document.file_name,
+        file_format: document.file_format,
+        role: document.role,
+        supporting_subtype: document.supporting_subtype,
+        raw_text: document.raw_text,
+        structure_map: canonicalizeDocumentLedgerFingerprintValue(
+          document.structure_map,
+        ),
+      }),
+    )
+    .digest("hex");
+}
+
+export function documentLedgerCacheKey(input: {
   artifactType: GeneratedArtifactType;
   documents: ProjectDocumentDetail[];
 }) {
   return [
     input.artifactType,
-    ...input.documents.map((document) =>
-      [
-        document.id,
-        document.updated_at,
-        document.raw_text.length,
-        document.title,
-      ].join(":"),
-    ),
+    ...input.documents.map(documentLedgerSourceFingerprint),
   ].join("|");
 }
 
@@ -258,10 +402,18 @@ function getDocumentLedgerBundle(input: {
     }
   }
 
-  const ledgers = input.documents.slice(0, 8).map(buildDocumentLedger);
+  const ledgers = input.documents.map(buildDocumentLedger);
   const context = buildDocumentLedgerContext({
     artifactType: input.artifactType,
     ledgers,
+    maxRequirementsPerLedger: Math.max(
+      2,
+      Math.floor(120 / Math.max(1, ledgers.length)),
+    ),
+    maxSectionsPerLedger: Math.max(
+      2,
+      Math.floor(80 / Math.max(1, ledgers.length)),
+    ),
   });
   documentLedgerCache.set(key, {
     expiresAt: Date.now() + DOCUMENT_LEDGER_CACHE_TTL_MS,
@@ -281,54 +433,89 @@ export async function generateAndSaveProjectArtifact(
 ): Promise<GenerateAndSaveArtifactResult> {
   input.assertActive?.();
   input.onProgress?.("[12%] Laster prosjektkontekst og relevante dokumenter ...");
+  const sourceRevisions = await getArtifactSourceRevisions(input.projectId);
+  const usesSolutionEvaluation = shouldUseSolutionEvaluationForArtifact({
+    artifactType: input.artifactType,
+    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
+  });
   const [
     project,
     customerAnalysis,
     documents,
     generatedArtifacts,
     serviceDocumentSummaries,
+    freshSolutionEvaluationSnapshot,
   ] = await Promise.all([
-    getProjectDetail(input.projectId),
+    getProjectSnapshot(input.projectId),
     getFreshCustomerAnalysis(input.projectId),
     listProjectDocumentsForAnalysis(input.projectId),
-    listGeneratedArtifacts(input.projectId),
+    listArtifactKnowledgeCandidatesFresh(input.projectId, input.artifactType),
     listServiceDocumentSummariesForProject(input.projectId),
+    usesSolutionEvaluation
+      ? getFreshSolutionEvaluationSnapshot(input.projectId)
+      : Promise.resolve(null),
   ]);
+  if (
+    usesSolutionEvaluation &&
+    JSON.stringify(freshSolutionEvaluationSnapshot?.dependency ?? null) !==
+      JSON.stringify(sourceRevisions.solutionEvaluationDependency)
+  ) {
+    throw new Error(
+      "Løsningsvurderingen ble endret under innlesing. Start genereringen på nytt.",
+    );
+  }
   input.assertActive?.();
   input.onPhase?.("dokumenthenting");
 
   const { projectDocuments, serviceDescriptionDocument } =
     splitServiceDescriptionDetails(documents);
   const selectedDocumentIds = new Set(input.sourceDocumentIds ?? []);
-  const selectedRequirementDocuments = selectedDocumentIds.size
-    ? projectDocuments.filter((document) => selectedDocumentIds.has(document.id))
+  const requestedSourceDocuments = selectedDocumentIds.size
+    ? resolveRequestedSourceDocuments({
+        requestedDocumentIds: [...selectedDocumentIds],
+        projectDocuments,
+      })
     : [];
   const { customerDocument, solutionDocument, supportingDocuments } =
     selectProjectDocuments(projectDocuments);
-  const requirementDocumentsForArtifact =
+  const allFormalRequirementDocuments =
     input.artifactType === "forbedret_kravsvar"
       ? selectRequirementDocumentsForArtifact({
-          selectedDocumentIds,
-          selectedRequirementDocuments,
+          selectedDocumentIds: new Set(),
+          selectedRequirementDocuments: [],
           projectDocuments,
           customerDocument,
           solutionDocument,
           supportingDocuments,
         })
       : [];
+  const requirementDocumentsForArtifact =
+    input.artifactType === "forbedret_kravsvar"
+      ? canonicalRequirementSourceDocuments({
+          customerDocument,
+          documents: projectDocuments,
+        })
+      : [];
+  if (input.artifactType === "forbedret_kravsvar") {
+    assertCompleteRequirementDocumentScope({
+      requestedDocumentIds: [...selectedDocumentIds],
+      requiredFormalDocuments: allFormalRequirementDocuments,
+    });
+    assertRequirementDocumentsReadyForGeneration(
+      requirementDocumentsForArtifact,
+    );
+  }
   const requirementFileCandidates =
     input.artifactType === "forbedret_kravsvar"
-      ? requirementDocumentsForArtifact.slice(0, 3)
+      ? requirementDocumentsForArtifact
       : [];
   const hydratedRequirementFiles = new Map(
     (
-      await Promise.all(
-        requirementFileCandidates.map(async (document) => [
-          document.id,
-          await hydrateArtifactFileDocument(input.projectId, document),
-        ] as const),
-      )
-    ),
+      await hydrateRequirementFileDocuments({
+        projectId: input.projectId,
+        documents: requirementFileCandidates,
+      })
+    ).map((document) => [document.id, document] as const),
   );
   input.assertActive?.();
   const getHydratedRequirementFile = (
@@ -412,26 +599,48 @@ export async function generateAndSaveProjectArtifact(
         : "[40%] Klargjør semantiske dokumentutdrag ...",
     );
     input.assertActive?.();
-    await Promise.all([
+    const indexingTasks = [
       ...projectDocuments
         .filter((document) => document.raw_text.trim())
-        .map((document) =>
-          ensureProjectDocumentChunks({ document }).catch((error) => {
-            rethrowAuthoritativeLeaseLoss(error);
-            return undefined;
-          }),
+        .map(
+          (document) => () =>
+            ensureProjectDocumentChunks({ document }).catch((error) => {
+              rethrowAuthoritativeLeaseLoss(error);
+              return undefined;
+            }),
         ),
       ...serviceDescriptionDocuments
         .filter((document) => document.raw_text.trim())
-        .map((document) =>
-          ensureServiceDocumentChunks({ document }).catch((error) => {
-            rethrowAuthoritativeLeaseLoss(error);
-            return undefined;
-          }),
+        .map(
+          (document) => () =>
+            ensureServiceDocumentChunks({ document }).catch((error) => {
+              rethrowAuthoritativeLeaseLoss(error);
+              return undefined;
+            }),
         ),
-    ]);
+    ];
+    await mapWithConcurrency(
+      indexingTasks,
+      ARTIFACT_INDEXING_CONCURRENCY,
+      (run) => run(),
+    );
     input.assertActive?.();
     input.onPhase?.("dokumentindeksering");
+  }
+
+  const revisionsBeforeAi = await getArtifactSourceRevisions(input.projectId);
+  if (
+    revisionsBeforeAi.artifactSourceRevision !==
+      sourceRevisions.artifactSourceRevision ||
+    revisionsBeforeAi.serviceLibraryRevision !==
+      sourceRevisions.serviceLibraryRevision ||
+    (usesSolutionEvaluation &&
+      JSON.stringify(revisionsBeforeAi.solutionEvaluationDependency) !==
+        JSON.stringify(sourceRevisions.solutionEvaluationDependency))
+  ) {
+    throw new Error(
+      "Prosjekt- eller tjenestegrunnlaget ble endret under innlesing. Start genereringen på nytt.",
+    );
   }
 
   input.onProgress?.(
@@ -443,12 +652,46 @@ export async function generateAndSaveProjectArtifact(
     artifactType: input.artifactType,
     useSolutionEvaluationContext: input.useSolutionEvaluationContext,
   });
-  const solutionEvaluationForGeneration = shouldUseSolutionEvaluationForArtifact({
-    artifactType: input.artifactType,
-    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
-  })
-    ? project.solution_evaluation
+  const solutionEvaluationForGeneration = usesSolutionEvaluation
+    ? freshSolutionEvaluationSnapshot?.evaluation ?? null
     : null;
+  const initialKnowledgeArtifacts = selectKnowledgeArtifactsForArtifact(
+    input.artifactType,
+    generatedArtifacts,
+  );
+  const knowledgeManifestFor = (artifacts: GeneratedArtifact[]) =>
+    artifacts.map((artifact) => {
+      if (
+        !Number.isSafeInteger(artifact.artifact_version) ||
+        (artifact.artifact_version ?? 0) <= 0
+      ) {
+        throw new Error(
+          `Kunnskapsartefakten ${artifact.id} mangler en autoritativ versjon. Start genereringen på nytt.`,
+        );
+      }
+      return {
+        id: artifact.id,
+        artifact_type: artifact.artifact_type,
+        artifact_version: artifact.artifact_version as number,
+        updated_at: new Date(
+          artifact.updated_at ?? artifact.created_at,
+        ).toISOString(),
+        content_hash: sha256(artifact.content_markdown),
+      };
+    });
+  const refreshedKnowledgeArtifacts = selectKnowledgeArtifactsForArtifact(
+    input.artifactType,
+    await listArtifactKnowledgeCandidatesFresh(input.projectId, input.artifactType),
+  );
+  if (
+    JSON.stringify(knowledgeManifestFor(initialKnowledgeArtifacts)) !==
+    JSON.stringify(knowledgeManifestFor(refreshedKnowledgeArtifacts))
+  ) {
+    throw new Error(
+      "Tidligere generatorarbeid ble endret under klargjøringen. Start genereringen på nytt.",
+    );
+  }
+  const knowledgeArtifacts = refreshedKnowledgeArtifacts;
   const generated = await generateProjectArtifact({
     artifactType: input.artifactType,
     projectName: project.name,
@@ -465,7 +708,7 @@ export async function generateAndSaveProjectArtifact(
       generationRequirementDocuments.length
         ? generationRequirementDocuments
         : undefined,
-    knowledgeArtifacts: generatedArtifacts,
+    knowledgeArtifacts,
     instructions: input.instructions?.trim(),
     model: input.model,
     onProgress:
@@ -503,12 +746,67 @@ export async function generateAndSaveProjectArtifact(
   input.onPhase?.("validering");
 
   input.onProgress?.("[90%] Lagrer validert generatorresultat i prosjektet ...");
-  const sourceDocuments = selectedDocumentIds.size
-    ? selectedRequirementDocuments
-    : input.artifactType === "forbedret_kravsvar" &&
-        requirementDocumentsForArtifact.length
+  const sourceDocuments =
+    input.artifactType === "forbedret_kravsvar" &&
+    requirementDocumentsForArtifact.length
       ? requirementDocumentsForArtifact
-    : projectDocuments;
+      : selectedDocumentIds.size
+        ? requestedSourceDocuments
+        : projectDocuments;
+  const actualModel = artifactGenerationModel(input.artifactType, input.model);
+  const knowledgeArtifactManifest = knowledgeManifestFor(knowledgeArtifacts);
+  const sourceSnapshot = {
+    artifact_source_revision: sourceRevisions.artifactSourceRevision,
+    service_library_revision: sourceRevisions.serviceLibraryRevision,
+    project: {
+      id: input.projectId,
+      name: project.name,
+    },
+    project_documents: buildArtifactProjectDocumentManifests({
+      documents,
+      hydratedRequirementDocuments: hydratedRequirementFiles,
+    }),
+    requested_source_document_ids: requestedSourceDocuments.map(
+      (document) => document.id,
+    ),
+    declared_source_document_ids: sourceDocuments.map((document) => document.id),
+    service_document_summaries: serviceDocumentSummaries.map((document) => ({
+      id: document.id,
+      service_id: document.service_id,
+      updated_at: document.updated_at,
+      ai_summary_updated_at: document.ai_summary_updated_at ?? null,
+      summary_hash: sha256(document.ai_summary ?? ""),
+    })),
+    service_documents: serviceDescriptionDocuments.map((document) => ({
+      ...artifactDocumentManifest({
+        ...document,
+        project_id: input.projectId,
+        role: "supporting_document",
+        supporting_subtype: null,
+        processing_status: "enhanced_ready",
+        processing_message: null,
+        processing_error: null,
+        parser_used: null,
+        indexed_at: null,
+      }),
+      service_id: document.service_id,
+    })),
+    knowledge_artifacts: knowledgeArtifactManifest,
+    customer_analysis_hash: customerAnalysis
+      ? sha256(JSON.stringify(customerAnalysis))
+      : null,
+    solution_evaluation_hash: solutionEvaluationForGeneration
+      ? sha256(JSON.stringify(solutionEvaluationForGeneration))
+      : null,
+    solution_evaluation_used: Boolean(solutionEvaluationForGeneration),
+    solution_evaluation_dependency: solutionEvaluationForGeneration
+      ? sourceRevisions.solutionEvaluationDependency
+      : null,
+    model: actualModel,
+    embedding_model: DOCUMENT_EMBEDDING_MODEL,
+    generator_revision: ARTIFACT_GENERATOR_REVISION,
+  };
+  const sourceSnapshotHash = artifactSourceSnapshotHash(sourceSnapshot);
   input.assertActive?.();
   const artifact = await saveGeneratedArtifact(
     input.projectId,
@@ -519,11 +817,14 @@ export async function generateAndSaveProjectArtifact(
       instructions: input.instructions?.trim() || "",
       ...(input.inputSnapshotExtra ?? {}),
       customer_analysis_present: Boolean(customerAnalysis),
-      solution_evaluation_present: Boolean(project.solution_evaluation),
+      solution_evaluation_present: Boolean(freshSolutionEvaluationSnapshot),
       solution_evaluation_used_as_context: Boolean(
         solutionEvaluationForGeneration,
       ),
       solution_evaluation_context_mode: solutionEvaluationContextMode,
+      requested_source_document_ids: requestedSourceDocuments.map(
+        (document) => document.id,
+      ),
       source_document_ids: sourceDocuments.map((document) => document.id),
       source_document_roles: sourceDocuments.map((document) => ({
         id: document.id,
@@ -543,6 +844,20 @@ export async function generateAndSaveProjectArtifact(
           ? [{ phase: "total", duration_ms: input.totalDurationMs() }]
           : []),
       ],
+      source_snapshot: sourceSnapshot,
+    },
+    {
+      expectedArtifactSourceRevision:
+        sourceRevisions.artifactSourceRevision,
+      expectedServiceLibraryRevision:
+        sourceRevisions.serviceLibraryRevision,
+      knowledgeArtifactManifest,
+      generatorRevision: ARTIFACT_GENERATOR_REVISION,
+      sourceSnapshotHash,
+      usedSolutionEvaluation: Boolean(solutionEvaluationForGeneration),
+      solutionEvaluationDependency: solutionEvaluationForGeneration
+        ? sourceRevisions.solutionEvaluationDependency
+        : null,
     },
   );
   input.assertActive?.();

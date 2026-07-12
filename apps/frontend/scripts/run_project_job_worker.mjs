@@ -5,15 +5,18 @@ import { existsSync } from "node:fs";
 
 const port = process.env.PORT || "3000";
 const token = process.env.PROJECT_JOB_WORKER_TOKEN || "";
-const limit = Math.min(
-  5,
-  Math.max(1, Number(process.env.PROJECT_JOB_WORKER_LIMIT) || 2),
-);
+const configuredLimit = Number(process.env.PROJECT_JOB_WORKER_LIMIT || "1");
+const limit = 1;
 const healthUrl = `http://127.0.0.1:${port}/api/health/ready`;
 const workerUrl = `http://127.0.0.1:${port}/api/project-jobs/worker`;
 
 if (!token && process.env.NODE_ENV === "production") {
   console.error("PROJECT_JOB_WORKER_TOKEN must be set in production.");
+  process.exit(1);
+}
+
+if (configuredLimit !== limit) {
+  console.error("PROJECT_JOB_WORKER_LIMIT must be 1.");
   process.exit(1);
 }
 

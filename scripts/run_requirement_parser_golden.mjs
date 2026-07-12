@@ -37,6 +37,7 @@ const {
 const {
   cleanTableRequirement,
   cleanTableService,
+  PETORO_REQUIREMENT_PDF_SHA256,
   repairTableRowTextArtifacts,
 } = jiti(
   fileURLToPath(
@@ -102,6 +103,11 @@ for (const testCase of fixture.tableRepairs ?? []) {
   const repaired = repairTableRowTextArtifacts({
     service: testCase.service,
     text: testCase.text,
+    sourceDocumentSha256:
+      testCase.canonicalSource === "petoro-requirement-pdf"
+        ? PETORO_REQUIREMENT_PDF_SHA256
+        : undefined,
+    tableId: testCase.tableId,
   });
   assert.deepEqual(
     repaired,

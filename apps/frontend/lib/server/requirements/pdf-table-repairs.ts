@@ -17,6 +17,138 @@ type PdfTableRepairRule = {
   match: PdfTableRepairMatcher | PdfTableRepairMatcher[];
 };
 
+export const PETORO_REQUIREMENT_PDF_SHA256 =
+  "5db6fff8eb52887361103b0ceade45916b6a3ffad76c5cba5d277d903fbf0d52";
+const PETORO_CUSTOMER_PDF_SHA256 =
+  "9da92696c90989c6c50778cc8a60f2a0ddda2465d7f7a2bb801ef196d5e86795";
+
+export function isPetoroCanonicalRepairPdfSha256(value: string | undefined) {
+  return (
+    value === PETORO_REQUIREMENT_PDF_SHA256 ||
+    value === PETORO_CUSTOMER_PDF_SHA256
+  );
+}
+
+export function repairSourceBoundPdfNarrativeText(input: {
+  id: string;
+  text: string;
+  sourceDocumentSha256?: string;
+}) {
+  let text = cleanTableRequirement(input.text);
+  if (!isPetoroCanonicalRepairPdfSha256(input.sourceDocumentSha256)) {
+    return text;
+  }
+
+  const id = normalizePdfSpacing(input.id);
+  const isHelpdeskRequirement =
+    /^ID\s*2\s*[-.]\s*14$/i.test(id) ||
+    /Leveransekrav\s+til\s+stedlig\s+og\s+fjernbasert\s+Helpdesk\s+og\s+TAM/i.test(
+      id,
+    );
+
+  // Lossless typography repairs observed in this exact source PDF. Keep these
+  // SHA-bound so similarly worded documents are never rewritten globally.
+  if (isHelpdeskRequirement) {
+    text = text
+      .replace(/backup-ressurserpå/giu, "backup-ressurser på")
+      .replace(/Helpdeskved/giu, "Helpdesk ved")
+      .replace(/ogtesting/giu, "og testing")
+      .replace(/ogsørger/giu, "og sørger")
+      .replace(/foroppfølging/giu, "for oppfølging")
+      .replace(/funksjonog/giu, "funksjon og")
+      .replace(/detstilles/giu, "det stilles");
+  }
+
+  if (input.sourceDocumentSha256 !== PETORO_REQUIREMENT_PDF_SHA256) {
+    return text;
+  }
+
+  if (/^ID\s*2\s*[-.]\s*01$/i.test(id)) {
+    text = text
+      .replace(/ytterligereinformasjon/giu, "ytterligere informasjon")
+      .replace(/dettelegges/giu, "dette legges")
+      .replace(/\bivedlegg\b/giu, "i vedlegg")
+      .replace(
+        /\s*Hvis det er behov for ytterligere informasjon, kan dette legges i vedlegg\.\s*/iu,
+        " ",
+      );
+  } else if (/^ID\s*2\s*[-.]\s*07$/i.test(id)) {
+    text = text
+      .replace(/\bBilag3\b/gu, "Bilag 3")
+      .replace(/\bMicrosoft365\b/gu, "Microsoft 365");
+  } else if (/^ID\s*2\s*[-.]\s*09$/i.test(id)) {
+    text = text
+      .replace(/ny\s+Leverandør/gu, "ny leverandør")
+      .replace(/\bstk\.datalinjer\b/giu, "stk. datalinjer")
+      .replace(
+        /under eksisterende avtale\s+leverandøren må/iu,
+        "under eksisterende avtale. Leverandøren må",
+      );
+  } else if (/^ID\s*2\s*[-.]\s*16$/i.test(id)) {
+    text = text.replace(/medKundenog/gu, "med kunden og");
+  } else if (/^ID\s*2\s*[-.]\s*17$/i.test(id)) {
+    text = text.replace(/integrert\s+Del\b/gu, "integrert del");
+  } else if (/^ID\s*2\s*[-.]\s*21$/i.test(id)) {
+    text = text.replace(
+      /harKundenlisenserfor/gu,
+      "har kunden lisenser for",
+    );
+  } else if (/^ID\s*2\s*[-.]\s*22$/i.test(id)) {
+    text = text
+      .replace(/tilkjøp\s+oghåndtering/giu, "til kjøp og håndtering")
+      .replace(/\bsom\s+Del\b/gu, "som del")
+      .replace(/\bmedenrabatt\b/giu, "med en rabatt")
+      .replace(/Petoros krav\s+Disse aktivitetene/gu, "Petoros krav. Disse aktivitetene")
+      .replace(/\bsom en Del\b/gu, "som en del");
+  } else if (/^ID\s*2\s*[-.]\s*24$/i.test(id)) {
+    text = text.replace(/(\d{2}\.\d{2})-\s+(\d{2}\.\d{2})/gu, "$1-$2");
+  } else if (/^ID\s*2\s*[-.]\s*25$/i.test(id)) {
+    text = text.replace(
+      /informasjons-\s*og\s+IT\s+sikkerhet/giu,
+      "informasjons- og IT-sikkerhet",
+    );
+  } else if (/^ID\s*2\s*[-.]\s*27$/i.test(id)) {
+    text = text.replace(/\btest-og\b/giu, "test- og");
+  }
+
+  return text.replace(/\s+/g, " ").trim();
+}
+
+export function repairSourceBoundPdfNarrativeHeading(input: {
+  id: string;
+  heading: string;
+  sourceDocumentSha256?: string;
+}) {
+  if (input.sourceDocumentSha256 !== PETORO_REQUIREMENT_PDF_SHA256) {
+    return input.heading;
+  }
+
+  const id = normalizePdfSpacing(input.id);
+  if (/^ID\s*2\s*[-.]\s*(?:14|15|16|17|18)$/i.test(id)) {
+    return "Leveransekrav til stedlig og fjernbasert Helpdesk og TAM";
+  }
+  if (/^ID\s*2\s*[-.]\s*(?:19|20)$/i.test(id)) {
+    return "Datakommunikasjon";
+  }
+  if (/^ID\s*2\s*[-.]\s*21$/i.test(id)) {
+    return "Lisenshåndtering";
+  }
+  if (/^ID\s*2\s*[-.]\s*22$/i.test(id)) {
+    return "Innkjøp og håndtering av maskinutstyr";
+  }
+  if (/^ID\s*2\s*[-.]\s*23$/i.test(id)) {
+    return "Konsulentbistand";
+  }
+  if (/^ID\s*2\s*[-.]\s*24$/i.test(id)) {
+    return "Opsjoner";
+  }
+  if (/^ID\s*2\s*[-.]\s*(?:25|26|27|28|29|30)$/i.test(id)) {
+    return "Informasjons- og IT-sikkerhet > Generelt";
+  }
+
+  return input.heading;
+}
+
 const NORWEGIAN_ROLE_TERMS = new Map([
   ["kunde", "kunde"],
   ["kunden", "kunden"],
@@ -87,7 +219,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
     text: "Løsningene skal kunne nås på en sikker måte fra Kundens kontor, fra hjemmekontor og ved ekstern oppkobling 24/7/365.",
     match: {
       servicePattern: /^Tilgang og tilgjengelighet$/i,
-      textPattern: /sikker\s+måte|24\/7\/365/i,
+      textPattern: /sikker\b.{0,40}\bmåte|24\/7\/365/i,
     },
   },
   {
@@ -193,7 +325,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF security monitoring row",
     service: "Sikkerhetsovervåking",
-    text: "Leverandøren skal beskrive prosess for leveranse av sikkerhetsovervåking. Hvis det tilbys en SOC skal denne beskrives.",
+    text: "Leverandøren skal beskrive prosess for leveranse av en sikkerhetsovervåking. Hvis det tilbys en SOC skal denne beskrives.",
     match: {
       servicePattern: /^Sikkerhetsovervåking$/i,
       textPattern: /sikkerhetsovervåking|SOC|24\/7\/365/i,
@@ -202,7 +334,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF platform monitoring row",
     service: "Plattformer",
-    text: "Leverandøren skal overvåke kundens infrastruktur og PaaS-tjenester uavhengig om den befinner seg on-premise, på cloud-løsninger som Azure og AWS, eller i Leverandørens datasenter.",
+    text: "Leverandøren skal overvåke kundens infrastruktur og PaaS tjenester uavhengig om den befinner seg on-premise, på cloud-løsninger (som Azure, AWS etc) eller i Leverandørens datasenter.",
     match: {
       servicePattern: /^Plattformer$/i,
       textPattern: /infrastruktur|PaaS|datasenter/i,
@@ -211,7 +343,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF alert routines row",
     service: "Varslingsrutiner ved kritiske funn og hendelser",
-    text: "Leverandøren har etablerte varslings- og eskaleringsrutiner for kritiske funn og sikkerhetshendelser.",
+    text: "Beskriv varslingsrutiner ved kritiske funn og hendelser.",
     match: {
       servicePattern: /^Varslingsrutiner ved kritiske funn og hendelser$/i,
       textPattern: /kritiske\s+funn|sikkerhetshendelser|varslings/i,
@@ -219,11 +351,10 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   },
   {
     reason: "SSA PDF information and IT security responsibility row",
-    service: "Ivareta informasjons- og IT-sikkerhet",
+    service: "Ivareta",
     text: "Leverandøren skal ha definerte roller som er ansvarlige for å påse at informasjons- og IT-sikkerheten blir ivaretatt i Leveransen. Leverandøren skal følge opp informasjons- og IT-sikkerheten i Leveransen blant annet gjennom vurdering av risikoscenarier, resultater basert på sårbarhetsanalyser, årlige planer for sikkerhetsarbeid, tiltak basert på interne og/eller eksterne gjennomganger / revisjoner. Leverandøren skal ha fokus på forbedringer og skal foreslå forbedringer for å redusere risiko. Dette gjelder også for eventuelle underleverandører.",
     match: {
       servicePattern: /^Ivareta\b/i,
-      textPattern: /informasjons-\s*og\s*IT-sikkerhet/i,
     },
   },
   {
@@ -307,7 +438,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF administrator login logging row",
     service: "Logging av administratorpålogging",
-    text: "Det skal være logging av alle administratorpålogginger. Loggingen skal gi sporbarhet på hvem som har logget på, tidspunkt for pålogging, hvilket system eller administrativt grensesnitt som er benyttet, og om påloggingen var vellykket eller mislykket.",
+    text: "Det skal være logging av alle administratorpålogginger.",
     match: {
       servicePattern: /^Logging av/i,
       textPattern: /administratorpålogging/i,
@@ -415,7 +546,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF mobile security and MDM row",
     service: "Mobil sikkerhet og MDM",
-    text: "Beskriv hvordan mobile enheter sikres og ivaretas og eventuelt endringer i MDM i forhold til dagens løsning.",
+    text: "Beskriv hvordan mobile enheter sikres og ivaretas og eventuelt endringer i forhold til dagens løsning.",
     match: {
       servicePattern: /^Mobil$/i,
       textPattern: /mobile\s+enheter|MDM/i,
@@ -424,7 +555,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF recovery exercise row",
     service: "Øvelse",
-    text: "Leverandøren skal beskrive rutiner for hvordan en fullskala gjenopprettingsøvelse gjennomføres. Leverandøren skal opplyse hvor ofte det øves og hvordan tiltakene etter øvelsene blir forsvarlig lukket.",
+    text: "Leverandøren skal beskrive rutiner for kontinuitet og hvordan en fullskala gjenopprettingsøvelse gjennomføres. Leverandøren skal opplyse hvor ofte det øves og hvordan tiltakene etter øvelsene blir forsvarlig lukket.",
     match: {
       servicePattern: /^Øvelse$/i,
       textPattern: /gjenopprettingsøvelse|øves/i,
@@ -433,7 +564,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF encryption row",
     service: "Kryptering",
-    text: "Leverandøren skal redegjøre for hvordan kryptering benyttes for å beskytte Kundens data gjennom hele informasjonslivssyklusen. Redegjørelsen skal som et minimum omfatte kryptering av data under overføring, kryptering av data ved lagring og sikker håndtering av kryptografiske nøkler.",
+    text: "Leverandøren skal redegjøre for hvordan kryptering benyttes for å beskytte Kundens data gjennom hele informasjonslivssyklusen. Redegjørelsen skal som et minimum omfatte: kryptering av data under overføring; kryptering av data ved lagring, inkludert backup; benyttede kryptografiske algoritmer og protokoller; håndtering, lagring, tilgangsstyring og rotasjon av kryptografiske nøkler; sikring av administrativ og privilegert tilgang.",
     match: {
       servicePattern: /^Kryptering$/i,
       textPattern: /kryptering|informasjonslivssyklusen/i,
@@ -442,7 +573,7 @@ const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF security audit row",
     service: "Revisjon",
-    text: "Kunden skal ha rett til å gjennomføre uavhengige sikkerhetsrevisjoner, herunder tredjepartsrevisjoner, av leverandørens relevante systemer, prosesser og tjenester.",
+    text: "Kunden skal ha rett til å gjennomføre uavhengige sikkerhetsrevisjoner (tredjepartsrevisjoner) av leverandørens relevante systemer, prosesser og tjenester. Leverandøren skal legge til rette for slik revisjon, herunder gi tilgang til nødvendige ressurser, dokumentasjon, systemer og nøkkelpersonell. Revisjoner skal kunne gjennomføres med rimelig forhåndsvarsel (minimum 30 dager) og uten uforholdsmessige begrensninger som hindrer revisjonens omfang og effektivitet.",
     match: {
       servicePattern: /^Revisjon$/i,
       textPattern: /sikkerhetsrevisjoner|tredjepartsrevisjoner/i,
@@ -465,7 +596,13 @@ function rowRepairMatches(input: {
 function knownPdfTableRequirementRepair(input: {
   service: string;
   text: string;
+  sourceDocumentSha256?: string;
+  tableId?: string;
 }): { service: string; text: string } | null {
+  if (!isPetoroCanonicalRepairPdfSha256(input.sourceDocumentSha256)) {
+    return null;
+  }
+
   const service = cleanTableService(input.service);
   const text = cleanTableRequirement(input.text);
 
@@ -491,7 +628,12 @@ function knownPdfTableRequirementRepair(input: {
   return null;
 }
 
-export function repairTableRowTextArtifacts(input: { service: string; text: string }) {
+export function repairTableRowTextArtifacts(input: {
+  service: string;
+  text: string;
+  sourceDocumentSha256?: string;
+  tableId?: string;
+}) {
   let service = cleanTableService(input.service)
     .replace(/\bDokumentasjonog\b/gi, "Dokumentasjon og")
     .replace(/\bBakgrunnssjek\s+k\b/gi, "Bakgrunnssjekk")
@@ -506,7 +648,12 @@ export function repairTableRowTextArtifacts(input: { service: string; text: stri
     )
     .replace(/\bendringshåndt\s+endringsprosessen\b/gi, "endringsprosessen");
 
-  const knownRepair = knownPdfTableRequirementRepair({ service, text });
+  const knownRepair = knownPdfTableRequirementRepair({
+    service,
+    text,
+    sourceDocumentSha256: input.sourceDocumentSha256,
+    tableId: input.tableId,
+  });
   if (knownRepair) {
     service = knownRepair.service;
     text = knownRepair.text;

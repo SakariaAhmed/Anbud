@@ -5,6 +5,7 @@ export type RequirementCoverageIntegrityItem = {
   reference?: string | null;
   full_reference?: string | null;
   source_reference?: string | null;
+  source_document_id?: string | null;
   table_id?: string | null;
   requirement_subtitle?: string | null;
   requirement?: string | null;
@@ -127,6 +128,27 @@ function hasMatchedAnswer(item: RequirementCoverageIntegrityItem) {
   return Boolean(item.answer_document_id || item.answer_document_title);
 }
 
+function evidenceMatchesAnswerSource(
+  item: RequirementCoverageIntegrityItem,
+  entry: RequirementLedgerEntry,
+) {
+  const evidence = normalizeComparableText(item.evidence);
+  if (evidence.length < 16) {
+    return false;
+  }
+
+  return [entry.answerExcerpt, entry.answerEvidenceExcerpt]
+    .map(normalizeComparableText)
+    .filter((value) => value.length >= 16)
+    .some(
+      (answerSource) =>
+        answerSource.includes(evidence) ||
+        evidence.includes(
+          answerSource.slice(0, Math.min(answerSource.length, 160)),
+        ),
+    );
+}
+
 function addIssue(
   issues: RequirementCoverageIntegrityIssue[],
   issue: RequirementCoverageIntegrityIssue,
@@ -191,6 +213,7 @@ export function analyzeRequirementCoverageIntegrity(input: {
 
   items.forEach((item, index) => {
     const reference = String(item.reference ?? "").trim();
+    const sourceEntry = input.sourceLedger[index];
     const orderIndex =
       typeof item.order_index === "number" && Number.isFinite(item.order_index)
         ? Math.round(item.order_index)
@@ -217,12 +240,16 @@ export function analyzeRequirementCoverageIntegrity(input: {
       seenOrderIndexes.add(orderIndex);
     }
 
-    const identityKey = [
+    const sourceDocumentScope =
+      normalizeReferenceKey(item.source_document_id) ||
+      normalizeReferenceKey(sourceEntry?.documentId);
+    const referenceIdentity = [
       normalizeReferenceKey(item.reference),
       normalizeReferenceKey(item.full_reference),
       normalizeReferenceKey(item.source_reference),
-    ].join("|");
-    if (identityKey !== "||") {
+    ];
+    const identityKey = [sourceDocumentScope, ...referenceIdentity].join("|");
+    if (referenceIdentity.some(Boolean)) {
       if (seenIdentityKeys.has(identityKey)) {
         addIssue(issues, {
           code: "duplicate_reference_identity",
@@ -272,7 +299,6 @@ export function analyzeRequirementCoverageIntegrity(input: {
       });
     }
 
-    const sourceEntry = input.sourceLedger[index];
     if (!sourceEntry) {
       addIssue(issues, {
         code: "invented_item",
@@ -298,6 +324,20 @@ export function analyzeRequirementCoverageIntegrity(input: {
         index,
         reference,
         message: `Rad ${index + 1} har kravtekst som ikke matcher kildeledgeren.`,
+      });
+    }
+
+    if (
+      item.assessment === "Godt" &&
+      (!hasMatchedAnswer(item) ||
+        !evidenceMatchesAnswerSource(item, sourceEntry))
+    ) {
+      addIssue(issues, {
+        code: "good_evidence_not_answer_bound",
+        index,
+        reference,
+        message:
+          `Rad ${index + 1} er vurdert som Godt, men evidence er ikke bundet til den matchede svarteksten eller Svargrunnlag.`,
       });
     }
   });

@@ -12,6 +12,7 @@ type ProjectAiRouteRateLimit = {
   message: string;
   limit: number;
   windowMs: number;
+  fallbackLimit?: number;
 };
 
 type ProjectAiRoutePreflight =
@@ -48,7 +49,11 @@ export async function prepareProjectAiRoute(
   const { id, response } = await enforceProjectRouteRateLimit(
     request,
     context,
-    rateLimit,
+    {
+      ...rateLimit,
+      fallbackLimit:
+        rateLimit.fallbackLimit ?? Math.max(1, Math.floor(rateLimit.limit / 4)),
+    },
   );
   if (response) {
     return { id, model: undefined, response };

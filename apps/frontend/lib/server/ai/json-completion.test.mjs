@@ -127,7 +127,7 @@ test("file input JSON completion accepts fenced JSON", async () => {
   assert.deepEqual(result, { ok: true });
 });
 
-test("file input JSON completion reports malformed JSON with a short sample", async () => {
+test("file input JSON completion redacts malformed model output", async () => {
   await assert.rejects(
     runJsonCompletionWithFileInputs({
       ...jsonRuntime("Her er svaret: { nope"),
@@ -135,7 +135,17 @@ test("file input JSON completion reports malformed JSON with a short sample", as
       user: "Analyze the file.",
       fileDocuments: [],
     }),
-    /AI returnerte ugyldig JSON:.*Utdrag: Her er svaret/u,
+    (error) => {
+      assert.equal(error.name, "InvalidAiJsonError");
+      assert.match(error.request_id, /^[a-f0-9-]+$/u);
+      assert.match(error.output_sha256, /^[a-f0-9]{24}$/u);
+      assert.match(
+        error.message,
+        /^AI returnerte ugyldig JSON \(request_id=[a-f0-9-]+; output_sha256=[a-f0-9]{24}\)\.$/u,
+      );
+      assert.doesNotMatch(error.message, /Her er svaret|nope/u);
+      return true;
+    },
   );
 });
 
@@ -228,4 +238,137 @@ test("JSON completion forwards max completion tokens", async () => {
 
   assert.deepEqual(result, { ok: true });
   assert.equal(calls[0].max_completion_tokens, 256);
+});
+
+test("JSON completion telemetry correlates starts, successes and failures", async (t) => {
+  const telemetry = [];
+  const capture = (line) => {
+    const event = JSON.parse(line);
+    if (String(event.event).startsWith("ai_json_completion_")) {
+      telemetry.push(event);
+    }
+  };
+  t.mock.method(console, "info", capture);
+  t.mock.method(console, "warn", capture);
+
+  const success = chatJsonRuntime('{"ok":true}');
+  success.getClient = async () => ({
+    chat: {
+      completions: {
+        async create() {
+          return {
+            choices: [{ message: { content: '{"ok":true}' } }],
+            usage: {
+              prompt_tokens: 25,
+              completion_tokens: 10,
+              total_tokens: 35,
+            },
+          };
+        },
+      },
+    },
+    responses: {
+      async create() {
+        throw new Error("responses should not be used");
+      },
+    },
+  });
+  await runJsonCompletion({
+    ...success,
+    system: "Return JSON.",
+    user: "Analyze.",
+  });
+
+  const failure = chatJsonRuntime('{"ok":true}');
+  failure.getClient = async () => ({
+    chat: {
+      completions: {
+        async create() {
+          throw new Error("provider unavailable");
+        },
+      },
+    },
+    responses: {
+      async create() {
+        throw new Error("responses should not be used");
+      },
+    },
+  });
+  await assert.rejects(
+    runJsonCompletion({
+      ...failure,
+      system: "Return JSON.",
+      user: "Analyze.",
+    }),
+    /provider unavailable/u,
+  );
+
+  const starts = telemetry.filter(
+    (event) => event.event === "ai_json_completion_started",
+  );
+  const completed = telemetry.find(
+    (event) => event.event === "ai_json_completion_timing",
+  );
+  const failed = telemetry.find(
+    (event) => event.event === "ai_json_completion_failed",
+  );
+  assert.equal(starts.length, 2);
+  assert.equal(completed.request_id, starts[0].request_id);
+  assert.equal(failed.request_id, starts[1].request_id);
+  assert.equal(completed.total_tokens, 35);
+  assert.equal(failed.failure_type, "Error");
+});
+
+test("JSON completion timeout emits one failed terminal event and no success", async (t) => {
+  const telemetry = [];
+  const capture = (line) => {
+    const event = JSON.parse(line);
+    if (String(event.event).startsWith("ai_json_completion_")) {
+      telemetry.push(event);
+    }
+  };
+  t.mock.method(console, "info", capture);
+  t.mock.method(console, "warn", capture);
+
+  await assert.rejects(
+    runJsonCompletion({
+      ...chatJsonRuntime('{"ok":true}'),
+      async getClient() {
+        return {
+          chat: {
+            completions: {
+              async create() {
+                return new Promise(() => {});
+              },
+            },
+          },
+          responses: {
+            async create() {
+              throw new Error("responses should not be used");
+            },
+          },
+        };
+      },
+      system: "Return JSON.",
+      user: "Analyze.",
+      timeoutMs: 10,
+      maxRetries: 0,
+    }),
+    /AI-kall timeout etter 10 ms/u,
+  );
+
+  const starts = telemetry.filter(
+    (event) => event.event === "ai_json_completion_started",
+  );
+  const failures = telemetry.filter(
+    (event) => event.event === "ai_json_completion_failed",
+  );
+  const successes = telemetry.filter(
+    (event) => event.event === "ai_json_completion_timing",
+  );
+  assert.equal(starts.length, 1);
+  assert.equal(failures.length, 1);
+  assert.equal(successes.length, 0);
+  assert.equal(failures[0].request_id, starts[0].request_id);
+  assert.equal(failures[0].provider_response_received, false);
 });

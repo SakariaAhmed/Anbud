@@ -110,7 +110,7 @@ function stripGeneratedWrapperLabel(value: string) {
       /^(?:Krav\s+uten\s+egen\s+tabellrad|Notater\s+som\s+skal\s+tolkes\s+som\s+krav|Avklaringer\/innspill\s+som\s+inngår\s+i\s+kravbildet)\s*:\s*/i,
       "",
     )
-    .replace(/^:\s*/i, "")
+    .replace(/^(?:[-–—]\s*)?:\s*/u, "")
     .trim();
 }
 
@@ -189,10 +189,13 @@ function isGeneratedInstructionOrRequirementLine(
   return (
     !text ||
     /^Bilag\s+2\b/i.test(text) ||
+    /^Prosjektkode\s*:/i.test(text) ||
     /^Kunde\b/i.test(text) ||
     /^Behovsområde\b/i.test(text) ||
     /^Dagens\s+kilder\b/i.test(text) ||
     /^Viktige\s+integrasjoner\b/i.test(text) ||
+    /^Denne\s+delen\s+kombinerer\s+tabellrader\b/i.test(text) ||
+    /^Denne\s+delen\s+består\s+av\s+rå\s+innspill\b/i.test(text) ||
     /^Kravene\s+(?:under|i\s+denne\s+delen)\b/i.test(text) ||
     /^Dersom\s+et\s+krav\b/i.test(text) ||
     /^Tabell\s+\d{1,4}\b/i.test(text) ||
@@ -251,12 +254,40 @@ function generatedPdfPriorityCommentLine(value: string) {
 }
 
 const GENERATED_PDF_EXPLICIT_ID_START = String.raw`(?:P\d{3}\s*[- ]\s*[A-ZÆØÅ]{1,8}\s*[- ]?\s*\d{1,5}|P\d{3}\s*[- ]\s*\d{1,5}|[A-ZÆØÅ]{1,8}\s*-\s*\d{1,5}\s*[- ]\s*\d{1,5}|\d{2,4}\s*\/\s*\d{1,3}|[A-ZÆØÅ]\d?\s*-\s*\d{1,3}|[A-ZÆØÅ]{2,8}\s*\.\s*\d{1,3}(?:\s*\.\s*\d{1,3}){1,5}|[A-ZÆØÅ]{2,8}\s*-\s*[A-ZÆØÅ]{1,4}\s*[- ]?\s*\d{1,5}|(?:K|R|KR|TEK|REQ|Pkt)\s*[- ]?\s*\d{1,5}|[A-ZÆØÅ]{2,8}\s*-\s*\d{1,5})`;
+const GENERATED_LINE_START_EXPLICIT_ID_PATTERN = new RegExp(
+  String.raw`^(?:[\u2022\uF0B7*]\s*|[-–—]\s+)?(?:\[(` +
+    GENERATED_PDF_EXPLICIT_ID_START +
+    String.raw`)\]|(` +
+    GENERATED_PDF_EXPLICIT_ID_START +
+    String.raw`))(?=\s|[:.)–—-]|$)`,
+  "iu",
+);
+
+function normalizeGeneratedRequirementId(value: string) {
+  return normalizePageText(value)
+    .replace(/\s*([./-])\s*/g, "$1")
+    .trim();
+}
+
+function generatedExplicitRequirementId(
+  value: string,
+  context: RequirementCorpusParserContext,
+) {
+  const text = normalizePageText(value);
+  const lineStartMatch = text.match(GENERATED_LINE_START_EXPLICIT_ID_PATTERN);
+  const lineStartId = lineStartMatch?.[1] ?? lineStartMatch?.[2] ?? "";
+  if (lineStartId) {
+    return normalizeGeneratedRequirementId(lineStartId);
+  }
+
+  return context.detectExplicitRequirementIds(text)[0] ?? "";
+}
 const GENERATED_PDF_REQUIREMENT_START_PATTERN = new RegExp(
   String.raw`^(?:\[` +
     GENERATED_PDF_EXPLICIT_ID_START +
     String.raw`\]|` +
     GENERATED_PDF_EXPLICIT_ID_START +
-    String.raw`(?![A-ZÆØÅ])|se\s+notat\b|mangler\s+ID\b|ikke\s+satt\b|uten\s+nr\.?\b|NB\b|Notat\s*-|Avklaring\s*:|Implisitt\s*:|\[(?:x|\?)\]|\?:|[x?]\s*(?::|\s+(?=\p{Lu})))`,
+    String.raw`(?![A-ZÆØÅ])|se\s+notat\b|mangler\s+ID\b|ikke\s+satt\b|uten\s+nr\.?\b|NB\b|Notat\s*-|Avklaring\s*:|Implisitt\s*:|\[(?:x|\?)\]|\?:|(?:rad\s+i\s+tabell|må\s+avklares)\s*(?::|[-–—]|\s+(?=\p{Lu}))|[x?]\s*(?::|[-–—]|\s+(?=\p{Lu})))`,
   "iu",
 );
 
@@ -349,7 +380,14 @@ function generatedPdfInlineSectionKind(
   if (/^(?:Notat\s+fra\s+behovsarbeidet|Notat)\s*[:\-]/i.test(text)) {
     return "note";
   }
-  if (/^(?:Avklaring|Implisitt)\s*:/i.test(text)) {
+  if (
+    /^(?:rad\s+i\s+tabell|x)\s*[-:]\s*(?:Notat\s+fra\s+behovsarbeidet|Notat)\s*[:\-]/i.test(
+      text,
+    )
+  ) {
+    return "note";
+  }
+  if (/^(?:Avklaring|Implisitt|må\s+avklares)\s*[:\-]/i.test(text)) {
     return "clarification";
   }
 
@@ -567,13 +605,6 @@ function startsGeneratedPdfRequirementRow(
     return false;
   }
 
-  if (
-    currentRawText &&
-    (sectionKind === "note" || sectionKind === "clarification")
-  ) {
-    return false;
-  }
-
   const candidate = cleanGeneratedPdfRequirementText(text, context);
   if (!isMixedRequirementLineCandidate(candidate, context)) {
     return false;
@@ -597,6 +628,10 @@ function generatedPdfHeadingForLine(
   line: string,
   context: RequirementCorpusParserContext,
 ) {
+  const normalizedLine = normalizePageText(line);
+  if (!/\s/u.test(normalizedLine) && /[.!?]$/u.test(normalizedLine)) {
+    return "";
+  }
   const heading = generatedStructureTextHeading(line, context);
   const cleaned = context.cleanHeadingCandidate(heading || line);
   if (
@@ -622,6 +657,7 @@ function generatedPdfHeadingForLine(
     !generatedPdfLineIsIgnorable(cleaned) &&
     !generatedPdfLineIsRequirementBoundary(cleaned) &&
     !generatedPdfPriorityCommentLine(cleaned) &&
+    !/^Kravet\s+gjelder\b/iu.test(cleaned) &&
     !/^(?:Må\??|Bør|Kan|Skal|Opsjon|Avklares)\s+\S/i.test(cleaned) &&
     !context.detectExplicitRequirementIds(cleaned).length &&
     !/^(?:Kunden|Leverandøren|Tilbyder|Oppdragstaker|Avtalepart|Leveransen|Løsningen|Tjenesten|Systemet|Plattformen|Konfigurasjonen)\b.{0,160}\b(?:skal|må|bør|kan|bes)\b/i.test(
@@ -684,7 +720,7 @@ export function buildGeneratedPdfRequirementLedger(
       !isMixedRequirementBoilerplate(text)
     ) {
       sequence += 1;
-      const explicitId = context.detectExplicitRequirementIds(rawText)[0] ?? "";
+      const explicitId = generatedExplicitRequirementId(rawText, context);
       const fallbackId =
         explicitId ||
         generatedPdfFallbackId(current.sectionKind, fallbackCounts) ||
@@ -839,7 +875,7 @@ export function buildMixedTextRequirementLedger(
       }
 
       sequence += 1;
-      const explicitId = context.detectExplicitRequirementIds(line)[0] ?? "";
+      const explicitId = generatedExplicitRequirementId(line, context);
       const sourceOrderOffset =
         findRequirementOrderOffset(
           normalizedRawText,
@@ -930,7 +966,7 @@ export function hasLegacyKravFeringStructuredRows(
 export function isGeneratedFlattenedTableDump(entry: RequirementLedgerEntry) {
   const text = normalizePageText(entry.text);
   return (
-    /^Tabell\s+\d+\s+Rad\s+1:\s+ID\s*\/\s*markering\s*\|\s*krav\s*\|/i.test(
+    /^Tabell\s+\d+\s+Rad\s+1:\s+ID\s*\/\s*markering\s*\|\s*(?:(?:prioritet|kategori|tjeneste)\s*\|\s*)*(?:krav(?:tekst)?|spesifiserte\s+krav)\s*\|/i.test(
       text,
     ) ||
     /^\|\s*.+\|\s*(?:Må|Bør|Kan)\s*\|.+/i.test(text) ||

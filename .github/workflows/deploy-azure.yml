@@ -13,6 +13,8 @@ env:
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
   MIN_REPLICAS: "1"
+  PROJECT_JOB_WORKER_LIMIT: "1"
+  PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"
   NODE_VERSION: "22.14.0"
   FALLOW_VERSION: "2.104.0"
 
@@ -21,6 +23,23 @@ jobs:
     name: Validate exact production commit
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: public.ecr.aws/supabase/postgres:17.6.1.132@sha256:e09e93a61ed1560caf4be79c9eb29401875bea74b12aec4657cb08bf34ea3a13
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PRIMARY_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DOCUMENT_CHUNKS_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      SERVICE_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -42,7 +61,7 @@ jobs:
 
       - name: Deterministic durable-job and schema tests
         run: |
-          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs
+          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/project-job-terminal-audit.sql.test.mjs apps/frontend/lib/server/repositories/stable-main-rollback-bridge.sql.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs scripts/async_worker_boundaries.test.mjs
           node scripts/validate_project_jobs_schema.mjs
 
       - name: Frontend tests
@@ -213,7 +232,6 @@ jobs:
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
           PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
           PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
-          PROJECT_JOB_WORKER_LIMIT: ${{ vars.PROJECT_JOB_WORKER_LIMIT || '2' }}
           DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
           DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
@@ -248,6 +266,7 @@ jobs:
             projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
             projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON"
             projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT"
+            projectJobWorkerReplicaTimeout="$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"
             doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE"
             doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN"
             minReplicas="$MIN_REPLICAS"
@@ -297,10 +316,17 @@ jobs:
           CANDIDATE_IMAGE: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
           REVISION_SUFFIX: sha-${{ github.sha }}
           ROLLOUT_STATE_FILE: ${{ runner.temp }}/anbud-rollout-state.json
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: node scripts/azure_containerapp_rollout.mjs
 
       - name: Fallback rollback
         if: always() && (steps.rollout.outcome == 'failure' || steps.rollout.outcome == 'cancelled')
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
           state_file="${RUNNER_TEMP}/anbud-rollout-state.json"
           if [ -f "$state_file" ]; then

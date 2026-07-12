@@ -11,6 +11,8 @@ const NUMERIC_COMPOUND_REQUIREMENT_ID =
   String.raw`\b[A-ZÆØÅ]{1,8}\s*-\s*\d{1,5}\s*[- ]\s*\d{1,5}[A-Z]?\b`;
 const PREFIXED_REQ_ID =
   String.raw`\b[A-ZÆØÅ0-9]{2,12}\s*[- ]\s*REQ\s*[- ]\s*\d{1,5}[A-Z]?\b`;
+const PROJECT_SCOPED_REQUIREMENT_ID =
+  String.raw`\bP\d{3}\s*[- ]\s*[A-ZÆØÅ]{1,8}\s*[- ]?\s*\d{1,5}[A-Z]?\b`;
 const PROJECT_REQUIREMENT_ID = String.raw`\bP\d{3}\s*[- ]\s*\d{1,5}[A-Z]?\b`;
 const POINT_REQUIREMENT_ID =
   String.raw`\bPkt\s*[- ]?\s*\d{1,5}(?=\s|[A-ZÆØÅ(]|$|[-:.;\]])`;
@@ -36,6 +38,7 @@ function requirementIdPattern() {
       COMPOUND_REQUIREMENT_ID,
       NUMERIC_COMPOUND_REQUIREMENT_ID,
       PREFIXED_REQ_ID,
+      PROJECT_SCOPED_REQUIREMENT_ID,
       PROJECT_REQUIREMENT_ID,
       POINT_REQUIREMENT_ID,
       SHORT_REQUIREMENT_ID,
@@ -58,6 +61,7 @@ export function explicitRequirementIdPattern() {
       COMPOUND_REQUIREMENT_ID,
       NUMERIC_COMPOUND_REQUIREMENT_ID,
       PREFIXED_REQ_ID,
+      PROJECT_SCOPED_REQUIREMENT_ID,
       PROJECT_REQUIREMENT_ID,
       POINT_REQUIREMENT_ID,
       SHORT_REQUIREMENT_ID,
@@ -94,6 +98,13 @@ function isLikelyStandardsReferenceId(value: string) {
   );
 }
 
+export function isNonRequirementExplicitId(value: string) {
+  const id = documentRequirementId(normalizePdfSpacing(value));
+  return /^(?:SSA\s*-\s*D\s*2024?|kl\.?\s*\d{1,2}[.:]\d{2}|24\s*\/\s*7(?:\s*\/\s*365)?)$/i.test(
+    id,
+  );
+}
+
 function detectIds(text: string, pattern: RegExp) {
   const normalized = normalizePageText(text);
   const ids: string[] = [];
@@ -109,7 +120,10 @@ function detectIds(text: string, pattern: RegExp) {
     }
 
     const id = documentRequirementId(match[0]);
-    if (isLikelyStandardsReferenceId(id)) {
+    if (
+      isLikelyStandardsReferenceId(id) ||
+      isNonRequirementExplicitId(id)
+    ) {
       continue;
     }
 

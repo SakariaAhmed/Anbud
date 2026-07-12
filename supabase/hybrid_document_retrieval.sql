@@ -112,7 +112,16 @@ as $$
       row_number() over (order by document_chunks.embedding <=> query_embedding asc)::int as semantic_rank
     from document_chunks
     where document_chunks.embedding is not null
-      and (project_filter is null or document_chunks.project_id = project_filter)
+      and (
+        project_filter is null
+        or document_chunks.project_id = project_filter
+        or (
+          source_id_filter is not null
+          and document_chunks.source_type = 'service_document'
+          and document_chunks.project_id is null
+          and document_chunks.source_id = any(source_id_filter)
+        )
+      )
       and (source_id_filter is null or document_chunks.source_id = any(source_id_filter))
       and 1 - (document_chunks.embedding <=> query_embedding) >= match_threshold
     order by document_chunks.embedding <=> query_embedding asc
@@ -130,7 +139,16 @@ as $$
     cross join settings
     where numnode(settings.keyword_query) > 0
       and document_chunks.fts @@ settings.keyword_query
-      and (project_filter is null or document_chunks.project_id = project_filter)
+      and (
+        project_filter is null
+        or document_chunks.project_id = project_filter
+        or (
+          source_id_filter is not null
+          and document_chunks.source_type = 'service_document'
+          and document_chunks.project_id is null
+          and document_chunks.source_id = any(source_id_filter)
+        )
+      )
       and (source_id_filter is null or document_chunks.source_id = any(source_id_filter))
     order by ts_rank_cd(document_chunks.fts, settings.keyword_query) desc, document_chunks.chunk_index asc
     limit least(greatest(match_count * 4, 12), 200)

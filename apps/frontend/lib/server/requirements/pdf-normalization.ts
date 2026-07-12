@@ -46,7 +46,9 @@ function splitPdfPageBlocks(
     const nextMarker = markers[index + 1];
     const textStart = marker.index + marker.marker.length;
     const textEnd = nextMarker?.index ?? rawText.length;
-    const text = normalize(rawText.slice(textStart, textEnd));
+    const text = normalize(
+      stripPdfFooterOrChromeLines(rawText.slice(textStart, textEnd)),
+    );
 
     if (text) {
       pages.push({
@@ -95,10 +97,13 @@ function repairPdfWordFragments(value: string) {
       "$1 ",
     )
     .replace(
-      /\b(Kunden|Kunde|Leverandøren|Leverandør)(?=(?:har|er|skal|må|kan|bør|forbeholder)\b)/gi,
+      /\b(Kunden|Kunde|Leverandøren)(?=(?:har|er|skal|må|kan|bør|forbeholder)\b)/gi,
       "$1 ",
     )
-    .replace(/\bunderleverandør\s+er\b/gi, "underleverandører")
+    .replace(
+      /\bLeverandør(?=(?:har|skal|må|kan|bør|forbeholder)\b)/gi,
+      "$& ",
+    )
     .replace(
       /\b(alle|aktuelle|diverse|disse|eventuelle|eksisterende|involverte|nye|relevante|øvrige)\s+leverandør\s+er\b/gi,
       "$1 leverandører",
@@ -133,12 +138,22 @@ function repairPdfWordFragments(value: string) {
     .replace(/\bbakgrunns\s+(sjekk|kontroll(?:en)?)\b/gi, "bakgrunns$1")
     .replace(/\bsanksjons\s+(screening|kontroll(?:en)?)\b/gi, "sanksjons$1")
     .replace(/\bunder\s+(leverandør(?:er|ene)?)\b/gi, "under$1")
-    .replace(/\bunderleverandør\s+er\b/gi, "underleverandører")
     .replace(/\bgo-\s+live\b/gi, "go-live");
 }
 
+const PDF_DOCUMENT_CODE_FOOTER_PATTERN =
+  /^(?:BILAG|VEDLEGG|ANNEX)\s+[A-ZÆØÅ]{2,12}(?:\s+[A-ZÆØÅ]{2,12})*(?:\s*[-/]\s*[A-ZÆØÅ0-9]{1,12})+(?:\s+Side\s*\d+\s*av\s*\d+)?$/u;
+
+export function stripPdfFooterOrChromeLines(value: string) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => !isPdfFooterOrChromeHeadingLine(line))
+    .join("\n");
+}
+
 export function normalizePageText(value: string) {
-  return repairPdfWordFragments(value)
+  return repairPdfWordFragments(stripPdfFooterOrChromeLines(value))
     .replace(/[‐‑‒–—]/g, "-")
     .replace(/\bSide\s+\d+\s+av\s+\d+\b/gi, " ")
     .replace(/\bSide\s*\d+\s*av\s*\d+\b/gi, " ")
@@ -162,7 +177,7 @@ export function documentRequirementId(value: string) {
 }
 
 export function normalizePdfSpacing(value: string) {
-  return repairPdfWordFragments(value)
+  return repairPdfWordFragments(stripPdfFooterOrChromeLines(value))
     .replace(/[‐‑‒–—]/g, "-")
     .replace(/\bI\s*D\b/gi, "ID")
     .replace(/\bkr\s*a\s*v\b/gi, "krav")
@@ -215,6 +230,7 @@ export function isPdfFooterOrChromeHeadingLine(value: string) {
   const text = value.replace(/\s+/g, " ").trim();
   return (
     /^Konfidensiell$/i.test(text) ||
+    PDF_DOCUMENT_CODE_FOOTER_PATTERN.test(text) ||
     /^,?\d+\s*TIL\s*SSA-D\s*\d{4}$/i.test(text) ||
     /^RA\s*-\s*\d+\s*B\s*I\s*L\s*A\s*G/i.test(text) ||
     /^Side\s*\d+\s*av\s*\d+$/i.test(text)

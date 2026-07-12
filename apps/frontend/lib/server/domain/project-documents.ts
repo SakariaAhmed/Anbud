@@ -3,6 +3,10 @@ import type {
   ProjectDocumentDetail,
   ServiceDocument,
 } from "@/lib/types";
+import {
+  isFormalRequirementDocument,
+  isHistoricalSolutionDocument,
+} from "@/lib/document-processing";
 
 export function isArtifactType(value: string): value is GeneratedArtifactType {
   return (
@@ -86,7 +90,8 @@ export function selectProjectDocuments(documents: ProjectDocumentDetail[]) {
     documents.find(
       (document) =>
         document.id !== primarySolutionDocument?.id &&
-        document.role !== "primary_solution_document",
+        document.role !== "primary_solution_document" &&
+        !isHistoricalSolutionDocument(document),
     ) ??
     null;
   const solutionDocument =
@@ -94,6 +99,8 @@ export function selectProjectDocuments(documents: ProjectDocumentDetail[]) {
     documents.find(
       (document) =>
         document.id !== customerDocument?.id &&
+        !isHistoricalSolutionDocument(document) &&
+        !isFormalRequirementDocument(document) &&
         /løsn|losn|solution|arkitektur|architecture/i.test(
           `${document.title} ${document.file_name}`,
         ),
@@ -102,7 +109,8 @@ export function selectProjectDocuments(documents: ProjectDocumentDetail[]) {
   const supportingDocuments = documents.filter(
     (document) =>
       document.id !== customerDocument?.id &&
-      document.id !== solutionDocument?.id,
+      document.id !== solutionDocument?.id &&
+      !isHistoricalSolutionDocument(document),
   );
 
   return { customerDocument, solutionDocument, supportingDocuments };

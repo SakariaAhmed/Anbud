@@ -2,6 +2,7 @@ import type {
   CustomerAnalysisResult,
   ExecutiveSummaryResult,
   GeneratedArtifact,
+  GeneratedArtifactAuthorityByType,
   GeneratedArtifactType,
   ProjectDocument,
   ProjectJobRecord,
@@ -34,9 +35,11 @@ type ProjectWorkspaceTabName =
 const PROJECT_READ_CACHE_TTL_MS = 30_000;
 const pendingProjectReads = new Map<string, Promise<unknown>>();
 const projectReadVersions = new Map<string, number>();
+const projectReadRequestSequences = new Map<string, number>();
 
 type ProjectReadOptions = {
   signal?: AbortSignal;
+  forceRefresh?: boolean;
 };
 
 function projectReadCacheKey(projectId: string, resource: string) {
@@ -81,12 +84,16 @@ function cachedProjectRead<T>(
   ttlMs = PROJECT_READ_CACHE_TTL_MS,
   options: ProjectReadOptions = {},
 ) {
-  const cached = getClientCache<{ value: T }>(key);
+  const cached = options.forceRefresh
+    ? null
+    : getClientCache<{ value: T }>(key);
   if (cached) {
     return Promise.resolve(cached.value);
   }
 
-  const pending = pendingProjectReads.get(key) as Promise<T> | undefined;
+  const pending = options.forceRefresh
+    ? undefined
+    : (pendingProjectReads.get(key) as Promise<T> | undefined);
   if (pending) {
     if (!options.signal) {
       return pending;
@@ -95,12 +102,19 @@ function cachedProjectRead<T>(
     return abortablePendingRead(pending, options.signal);
   }
 
+  if (options.forceRefresh) {
+    pendingProjectReads.delete(key);
+  }
+
   const projectId = projectIdFromReadCacheKey(key);
   const version = projectId ? projectReadVersion(projectId) : 0;
+  const requestSequence = (projectReadRequestSequences.get(key) ?? 0) + 1;
+  projectReadRequestSequences.set(key, requestSequence);
   const request = fetcher()
     .then((value) => {
       if (
         !options.signal?.aborted &&
+        projectReadRequestSequences.get(key) === requestSequence &&
         (!projectId || projectReadVersion(projectId) === version)
       ) {
         setClientCache(key, { value }, ttlMs);
@@ -108,7 +122,7 @@ function cachedProjectRead<T>(
       return value;
     })
     .finally(() => {
-      if (!options.signal) {
+      if (!options.signal && pendingProjectReads.get(key) === request) {
         pendingProjectReads.delete(key);
       }
     });
@@ -228,15 +242,15 @@ function sleep(ms: number, signal?: AbortSignal) {
       return;
     }
 
-    const timeout = window.setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        window.clearTimeout(timeout);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
+    const onAbort = () => {
+      window.clearTimeout(timeout);
+      reject(signal?.reason);
+    };
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -253,6 +267,7 @@ async function pollProjectJob({
 }) {
   const delays = [1500, 3000, 5000, 8000, 12000];
   let attempt = 0;
+  let terminalCacheInvalidated = false;
 
   while (true) {
     const baseDelay = delays[Math.min(attempt, delays.length - 1)] ?? 12000;
@@ -274,6 +289,15 @@ async function pollProjectJob({
     }>(statusResponse, "Kunne ikke hente jobbstatus.");
     if (!statusResponse.ok || !statusPayload.job) {
       throw new Error(statusPayload.error || "Kunne ikke hente jobbstatus.");
+    }
+
+    if (
+      !terminalCacheInvalidated &&
+      (statusPayload.job.status === "completed" ||
+        statusPayload.job.status === "failed")
+    ) {
+      terminalCacheInvalidated = true;
+      invalidateProjectReadCache(projectId);
     }
 
     onStatus(statusPayload.job);
@@ -314,6 +338,7 @@ export async function watchProjectJob({
     let settled = false;
     let sawEvent = false;
     let fallbackStarted = false;
+    let terminalCacheInvalidated = false;
     const source = new EventSource(
       `/api/projects/${projectId}/jobs/${jobId}/events`,
     );
@@ -348,6 +373,14 @@ export async function watchProjectJob({
       };
       if (!payload.job || settled) {
         return;
+      }
+
+      if (
+        !terminalCacheInvalidated &&
+        (payload.job.status === "completed" || payload.job.status === "failed")
+      ) {
+        terminalCacheInvalidated = true;
+        invalidateProjectReadCache(projectId);
       }
 
       onStatus(payload.job);
@@ -408,6 +441,7 @@ export async function fetchProjectServices(
     const response = await fetch(
       `/api/projects/${projectId}/service-descriptions`,
       {
+        cache: "no-store",
         signal: options.signal,
       },
     );
@@ -447,6 +481,7 @@ export async function fetchCustomerAnalysis(
     projectReadCacheKey(projectId, "customer-analysis"),
     async () => {
       const response = await fetch(`/api/projects/${projectId}/customer-analysis`, {
+        cache: "no-store",
         signal: options.signal,
       });
       const payload = await readJsonPayload<{
@@ -472,7 +507,7 @@ export async function fetchSolutionEvaluation(
     async () => {
       const response = await fetch(
         `/api/projects/${projectId}/solution-evaluation`,
-        { signal: options.signal },
+        { cache: "no-store", signal: options.signal },
       );
       const payload = await readJsonPayload<{
         error?: string;
@@ -496,6 +531,7 @@ export async function fetchExecutiveSummary(
     projectReadCacheKey(projectId, "executive-summary"),
     async () => {
       const response = await fetch(`/api/projects/${projectId}/executive-summary`, {
+        cache: "no-store",
         signal: options.signal,
       });
       const payload = await readJsonPayload<{
@@ -541,6 +577,32 @@ export async function fetchGeneratedArtifacts(
     PROJECT_READ_CACHE_TTL_MS,
     options,
   );
+}
+
+export async function fetchProjectArtifactAuthority(
+  projectId: string,
+  options: ProjectReadOptions = {},
+) {
+  const response = await fetch(`/api/projects/${projectId}/artifact-authority`, {
+    cache: "no-store",
+    signal: options.signal,
+  });
+  const payload = await readJsonPayload<{
+    error?: string;
+    artifact_authority?: GeneratedArtifactAuthorityByType;
+    current_artifact_types?: GeneratedArtifactType[];
+  }>(response, "Kunne ikke hente artefaktstatus.");
+  if (
+    !response.ok ||
+    !payload.artifact_authority ||
+    !payload.current_artifact_types
+  ) {
+    throw new Error(payload.error || "Kunne ikke hente artefaktstatus.");
+  }
+  return {
+    artifactAuthority: payload.artifact_authority,
+    currentArtifactTypes: payload.current_artifact_types,
+  };
 }
 
 export function prefetchProjectTabData(
@@ -680,6 +742,7 @@ export async function updateGeneratedArtifact(input: {
   artifactId: string;
   title: string;
   contentMarkdown: string;
+  acknowledgeDeterministicRepairs?: boolean;
   headers?: Record<string, string>;
 }) {
   invalidateProjectReadCache(input.projectId);
@@ -690,6 +753,8 @@ export async function updateGeneratedArtifact(input: {
       artifact_id: input.artifactId,
       title: input.title,
       content_markdown: input.contentMarkdown,
+      acknowledge_deterministic_repairs:
+        input.acknowledgeDeterministicRepairs === true,
     }),
   });
   const payload = await readJsonPayload<{

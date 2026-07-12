@@ -46,6 +46,15 @@ function compareNumberList(left: number[], right: number[]) {
   return 0;
 }
 
+function compareSharedRequirementSequence(left: number[], right: number[]) {
+  if (left.length < 2 || right.length < 2) return 0;
+  const sharedPrefixLength = Math.min(left.length, right.length) - 1;
+  for (let index = 0; index < sharedPrefixLength; index += 1) {
+    if (left[index] !== right[index]) return 0;
+  }
+  return compareNumberList(left, right);
+}
+
 function firstMatchedNumber(text: string, pattern: RegExp) {
   const match = pattern.exec(text);
   return match?.[1] ? Number(match[1]) : null;
@@ -140,6 +149,12 @@ export function compareRequirementOrder(
     const pageDelta =
       missingAwareNumber(leftKey.page) - missingAwareNumber(rightKey.page);
     if (pageDelta !== 0) return pageDelta;
+
+    const sequenceDelta = compareSharedRequirementSequence(
+      leftKey.requirement.length ? leftKey.requirement : leftKey.table,
+      rightKey.requirement.length ? rightKey.requirement : rightKey.table,
+    );
+    if (sequenceDelta !== 0) return sequenceDelta;
 
     const entryDelta =
       missingAwareNumber(leftKey.entryOrder) -

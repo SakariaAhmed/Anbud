@@ -20,6 +20,10 @@ import { getProjectDetail } from "@/lib/server/repositories/projects";
 import { checkRateLimit } from "@/lib/server/observability";
 import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
+import {
+  productionSafeErrorMessage,
+  safeErrorTelemetry,
+} from "@/lib/server/safe-errors";
 import type {
   ChatDomainHint,
   ChatMessage,
@@ -538,7 +542,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
             controller.close();
           } catch (error) {
-            controller.error(error);
+            console.warn(
+              JSON.stringify({
+                event: "project_chat_stream_failed",
+                session_id: sessionId,
+                ...safeErrorTelemetry(error),
+              }),
+            );
+            controller.error(
+              new Error(
+                productionSafeErrorMessage(
+                  error,
+                  "Chatstrømmen feilet. Kontakt support med feilreferansen.",
+                ),
+              ),
+            );
           }
         },
       }),
@@ -562,7 +580,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke sende chatmelding." },
+      {
+        error: productionSafeErrorMessage(
+          error,
+          "Kunne ikke sende chatmelding.",
+        ),
+      },
       { status: 500 },
     );
   }

@@ -1,8 +1,9 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
+import { redactedModelOutputError } from "@/lib/server/safe-errors";
 import type { ProjectDocumentDetail } from "@/lib/types";
 
 export type ReasoningEffort = "low" | "medium" | "high";
@@ -57,21 +58,14 @@ type JsonCompletionRuntime = {
   supportsCustomTemperature: (model: string) => boolean;
 };
 
-function parseJson<T>(content: string): T {
+function parseJson<T>(content: string, requestId: string): T {
   const trimmed = content.trim();
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]+?)```/i);
   const candidate = codeBlockMatch?.[1] ?? trimmed;
   try {
     return JSON.parse(candidate) as T;
-  } catch (error) {
-    const sample = candidate
-      .replace(/\s+/g, " ")
-      .slice(0, 280);
-    throw new Error(
-      `AI returnerte ugyldig JSON: ${
-        error instanceof Error ? error.message : "ukjent parsefeil"
-      }. Utdrag: ${sample}`,
-    );
+  } catch {
+    throw redactedModelOutputError(candidate, requestId);
   }
 }
 
@@ -341,76 +335,103 @@ export async function runJsonCompletion<T>(
     override: input.promptCacheKey,
   });
   const startedAt = Date.now();
+  const requestId = randomUUID();
   const abortController = input.timeoutMs ? new AbortController() : null;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-  const completionPromise = client.chat.completions.create(
-    {
-      model,
-      prompt_cache_key: cacheKey,
-      ...promptCacheRetentionPayload(model),
-      reasoning_effort: reasoningEffort,
-      ...(input.maxCompletionTokens
-        ? { max_completion_tokens: input.maxCompletionTokens }
-        : {}),
-      ...temperaturePayload({
-        model,
-        requestedTemperature: input.temperature,
-        fallbackTemperature: 0.1,
-        supportsCustomTemperature: input.supportsCustomTemperature,
-        label: "json_completion",
-      }),
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...userMessages.map((content) => ({ role: "user", content })),
-      ],
-    },
-    requestOptions({
-      timeoutMs: input.timeoutMs,
-      maxRetries: input.maxRetries,
-      abortController,
-    }),
-  );
-  const timeout = timeoutPromise({
-    timeoutMs: input.timeoutMs,
-    abortController,
-    message: "AI-kall timeout",
-    setHandle: (handle) => {
-      timeoutHandle = handle;
-    },
-  });
-  const response = (await (timeout
-    ? Promise.race([completionPromise, timeout])
-    : completionPromise).finally(() => {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-  })) as ChatCompletionResponse;
+  const telemetryFields = {
+    request_id: requestId,
+    model,
+    reasoning_effort: reasoningEffort,
+    prompt_cache_key: cacheKey,
+    prompt_cache_prefix_chars: STABLE_JSON_SYSTEM_PREFIX.length,
+    prompt_cache_prompt_prefix_hash: hashPromptSlice(
+      `${systemPrompt}\n\n${userTextForTelemetry}`,
+    ),
+    prompt_cache_user_prefix_hash: hashPromptSlice(userTextForTelemetry),
+    system_chars: systemPrompt.length,
+    user_chars: userTextForTelemetry.length,
+    user_message_count: userMessages.length,
+  };
   console.info(
     JSON.stringify({
-      event: "ai_json_completion_timing",
-      model,
-      reasoning_effort: reasoningEffort,
-      prompt_cache_key: cacheKey,
-      prompt_cache_prefix_chars: STABLE_JSON_SYSTEM_PREFIX.length,
-      prompt_cache_prompt_prefix_hash: hashPromptSlice(
-        `${systemPrompt}\n\n${userTextForTelemetry}`,
-      ),
-      prompt_cache_user_prefix_hash: hashPromptSlice(userTextForTelemetry),
-      system_chars: systemPrompt.length,
-      user_chars: userTextForTelemetry.length,
-      user_message_count: userMessages.length,
-      duration_ms: Date.now() - startedAt,
-      ...chatCompletionUsageFields(response),
+      event: "ai_json_completion_started",
+      ...telemetryFields,
     }),
   );
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("AI returnerte tomt svar.");
-  }
+  let response: ChatCompletionResponse | undefined;
+  try {
+    const completionPromise = client.chat.completions.create(
+      {
+        model,
+        prompt_cache_key: cacheKey,
+        ...promptCacheRetentionPayload(model),
+        reasoning_effort: reasoningEffort,
+        ...(input.maxCompletionTokens
+          ? { max_completion_tokens: input.maxCompletionTokens }
+          : {}),
+        ...temperaturePayload({
+          model,
+          requestedTemperature: input.temperature,
+          fallbackTemperature: 0.1,
+          supportsCustomTemperature: input.supportsCustomTemperature,
+          label: "json_completion",
+        }),
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...userMessages.map((content) => ({ role: "user", content })),
+        ],
+      },
+      requestOptions({
+        timeoutMs: input.timeoutMs,
+        maxRetries: input.maxRetries,
+        abortController,
+      }),
+    );
+    const timeout = timeoutPromise({
+      timeoutMs: input.timeoutMs,
+      abortController,
+      message: "AI-kall timeout",
+      setHandle: (handle) => {
+        timeoutHandle = handle;
+      },
+    });
+    response = (await (timeout
+      ? Promise.race([completionPromise, timeout])
+      : completionPromise).finally(() => {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    })) as ChatCompletionResponse;
 
-  return parseJson<T>(content);
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error("AI returnerte tomt svar.");
+    }
+    const parsed = parseJson<T>(content, requestId);
+    console.info(
+      JSON.stringify({
+        event: "ai_json_completion_timing",
+        ...telemetryFields,
+        duration_ms: Date.now() - startedAt,
+        ...chatCompletionUsageFields(response),
+      }),
+    );
+    return parsed;
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        event: "ai_json_completion_failed",
+        ...telemetryFields,
+        duration_ms: Date.now() - startedAt,
+        failure_type: error instanceof Error ? error.name : "UnknownError",
+        provider_response_received: Boolean(response),
+        ...(response ? chatCompletionUsageFields(response) : {}),
+      }),
+    );
+    throw error;
+  }
 }
 
 export async function runJsonCompletionWithFileInputs<T>(
@@ -441,6 +462,7 @@ export async function runJsonCompletionWithFileInputs<T>(
     override: input.promptCacheKey,
   });
   const startedAt = Date.now();
+  const requestId = randomUUID();
   const abortController = input.timeoutMs ? new AbortController() : null;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const content = [
@@ -457,67 +479,93 @@ export async function runJsonCompletionWithFileInputs<T>(
       text: input.user,
     },
   ];
-  const responsePromise = client.responses.create(
-    {
-      model,
-      prompt_cache_key: cacheKey,
-      ...promptCacheRetentionPayload(model),
-      instructions: systemPrompt,
-      reasoning: { effort: reasoningEffort },
-      ...temperaturePayload({
-        model,
-        requestedTemperature: input.temperature,
-        fallbackTemperature: 0.1,
-        supportsCustomTemperature: input.supportsCustomTemperature,
-        label: "json_file_input_completion",
-      }),
-      text: { format: { type: "json_object" } },
-      input: [{ role: "user", content }],
-    },
-    requestOptions({
-      timeoutMs: input.timeoutMs,
-      maxRetries: input.maxRetries,
-      abortController,
-    }),
-  );
-  const timeout = timeoutPromise({
-    timeoutMs: input.timeoutMs,
-    abortController,
-    message: "AI-filinput timeout",
-    setHandle: (handle) => {
-      timeoutHandle = handle;
-    },
-  });
-  const response = (await (timeout
-    ? Promise.race([responsePromise, timeout])
-    : responsePromise).finally(() => {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-  })) as ResponsesApiResponse;
+  const telemetryFields = {
+    request_id: requestId,
+    model,
+    reasoning_effort: reasoningEffort,
+    prompt_cache_key: cacheKey,
+    prompt_cache_prefix_chars: STABLE_JSON_SYSTEM_PREFIX.length,
+    prompt_cache_prompt_prefix_hash: hashPromptSlice(
+      `${systemPrompt}\n\n${input.user}`,
+    ),
+    prompt_cache_user_prefix_hash: hashPromptSlice(input.user),
+    system_chars: systemPrompt.length,
+    user_chars: input.user.length,
+    file_count: input.fileDocuments.length,
+  };
   console.info(
     JSON.stringify({
-      event: "ai_json_file_input_completion_timing",
-      model,
-      reasoning_effort: reasoningEffort,
-      prompt_cache_key: cacheKey,
-      prompt_cache_prefix_chars: STABLE_JSON_SYSTEM_PREFIX.length,
-      prompt_cache_prompt_prefix_hash: hashPromptSlice(
-        `${systemPrompt}\n\n${input.user}`,
-      ),
-      prompt_cache_user_prefix_hash: hashPromptSlice(input.user),
-      system_chars: systemPrompt.length,
-      user_chars: input.user.length,
-      file_count: input.fileDocuments.length,
-      duration_ms: Date.now() - startedAt,
-      ...responsesUsageFields(response),
+      event: "ai_json_file_input_completion_started",
+      ...telemetryFields,
     }),
   );
 
-  const outputText = response.output_text?.trim();
-  if (!outputText) {
-    throw new Error("AI returnerte tomt svar.");
-  }
+  let response: ResponsesApiResponse | undefined;
+  try {
+    const responsePromise = client.responses.create(
+      {
+        model,
+        prompt_cache_key: cacheKey,
+        ...promptCacheRetentionPayload(model),
+        instructions: systemPrompt,
+        reasoning: { effort: reasoningEffort },
+        ...temperaturePayload({
+          model,
+          requestedTemperature: input.temperature,
+          fallbackTemperature: 0.1,
+          supportsCustomTemperature: input.supportsCustomTemperature,
+          label: "json_file_input_completion",
+        }),
+        text: { format: { type: "json_object" } },
+        input: [{ role: "user", content }],
+      },
+      requestOptions({
+        timeoutMs: input.timeoutMs,
+        maxRetries: input.maxRetries,
+        abortController,
+      }),
+    );
+    const timeout = timeoutPromise({
+      timeoutMs: input.timeoutMs,
+      abortController,
+      message: "AI-filinput timeout",
+      setHandle: (handle) => {
+        timeoutHandle = handle;
+      },
+    });
+    response = (await (timeout
+      ? Promise.race([responsePromise, timeout])
+      : responsePromise).finally(() => {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    })) as ResponsesApiResponse;
 
-  return parseJson<T>(outputText);
+    const outputText = response.output_text?.trim();
+    if (!outputText) {
+      throw new Error("AI returnerte tomt svar.");
+    }
+    const parsed = parseJson<T>(outputText, requestId);
+    console.info(
+      JSON.stringify({
+        event: "ai_json_file_input_completion_timing",
+        ...telemetryFields,
+        duration_ms: Date.now() - startedAt,
+        ...responsesUsageFields(response),
+      }),
+    );
+    return parsed;
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        event: "ai_json_file_input_completion_failed",
+        ...telemetryFields,
+        duration_ms: Date.now() - startedAt,
+        failure_type: error instanceof Error ? error.name : "UnknownError",
+        provider_response_received: Boolean(response),
+        ...(response ? responsesUsageFields(response) : {}),
+      }),
+    );
+    throw error;
+  }
 }
