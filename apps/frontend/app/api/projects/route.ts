@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
+import { AUTH_OWNER_HEADER } from "@/lib/password-auth";
 
 import { createProject, listProjects } from "@/lib/server/repositories/projects";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
@@ -11,7 +13,9 @@ const READ_CACHE_HEADERS = {
 export async function GET() {
   try {
     return await withTiming("GET /api/projects", {}, async () => {
-      const projects = await listProjects();
+      const ownerId = (await headers()).get(AUTH_OWNER_HEADER);
+      if (!ownerId) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+      const projects = await listProjects(ownerId);
       return NextResponse.json(projects, { headers: READ_CACHE_HEADERS });
     });
   } catch (error) {
@@ -39,9 +43,12 @@ export async function POST(request: Request) {
 
   try {
     return await withTiming("POST /api/projects", {}, async () => {
+      const ownerId = (await headers()).get(AUTH_OWNER_HEADER);
+      if (!ownerId) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
       const body = (await request.json()) as Partial<ProjectCreateInput>;
 
       const project = await createProject({
+        owner_id: ownerId,
         name: body.name?.trim() || null,
         customer_name: body.customer_name?.trim() || null,
         description: body.description?.trim() || null,

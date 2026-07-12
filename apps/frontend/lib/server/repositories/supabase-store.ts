@@ -1934,7 +1934,7 @@ export async function getArtifactAuthoritySummary(
   return authority;
 }
 
-export async function listProjects(): Promise<ProjectSummary[]> {
+export async function listProjects(ownerId: string): Promise<ProjectSummary[]> {
   const getCachedProjects = unstable_cache(
     async () => {
       const supabase = createServiceClient();
@@ -1942,6 +1942,7 @@ export async function listProjects(): Promise<ProjectSummary[]> {
         supabase
           .from("projects")
           .select(select)
+          .eq("owner_id", ownerId)
           .order("last_activity_at", { ascending: false })
           .limit(PROJECT_LIST_LIMIT);
       const [
@@ -1998,7 +1999,7 @@ export async function listProjects(): Promise<ProjectSummary[]> {
         };
       });
     },
-    ["projects-list"],
+    ["projects-list", ownerId],
     {
       tags: [PROJECTS_LIST_TAG],
       revalidate: 60,
@@ -2029,6 +2030,7 @@ export async function createProject(
   const supabase = createServiceClient();
   const normalizedName = input.name?.trim() || "Ny analyse";
   const payload = {
+    owner_id: input.owner_id,
     name: normalizedName,
     customer_name: input.customer_name?.trim() || null,
     description: input.description?.trim() || null,

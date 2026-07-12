@@ -225,6 +225,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
+          MICROSOFT_ENTRA_CLIENT_ID: ${{ vars.MICROSOFT_ENTRA_CLIENT_ID }}
+          MICROSOFT_ENTRA_CLIENT_SECRET: ${{ secrets.MICROSOFT_ENTRA_CLIENT_SECRET }}
+          MICROSOFT_ENTRA_TENANT_SUBDOMAIN: ${{ vars.MICROSOFT_ENTRA_TENANT_SUBDOMAIN }}
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
           APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
@@ -238,10 +242,10 @@ jobs:
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
           missing=0
-          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_ENCRYPTION_KEY APP_ACCESS_PASSWORD APP_SESSION_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN ACR_USERNAME ACR_PASSWORD
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ACCESS_PASSWORD APP_SESSION_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN ACR_USERNAME ACR_PASSWORD
           do
             if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub production secret: $name"
+              echo "::error::Missing GitHub production configuration: $name"
               missing=1
             fi
           done
@@ -258,6 +262,10 @@ jobs:
             registryPassword="$ACR_PASSWORD"
             supabaseUrl="$SUPABASE_URL"
             supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"
+            appPublicOrigin="$APP_PUBLIC_ORIGIN"
+            microsoftEntraClientId="$MICROSOFT_ENTRA_CLIENT_ID"
+            microsoftEntraClientSecret="$MICROSOFT_ENTRA_CLIENT_SECRET"
+            microsoftEntraTenantSubdomain="$MICROSOFT_ENTRA_TENANT_SUBDOMAIN"
             appEncryptionKey="$APP_ENCRYPTION_KEY"
             appAccessPassword="$APP_ACCESS_PASSWORD"
             appSessionSecret="$APP_SESSION_SECRET"
