@@ -22,9 +22,26 @@ function safeRedirectPath(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const globalRateLimit = await checkRateLimit(request, "auth-login-global", {
+    limit: 40,
+    windowMs: 60_000,
+    identityMode: "global",
+    fallbackLimit: 10,
+  });
+  if (!globalRateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many sign-in attempts. Try again shortly." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(globalRateLimit.retryAfterSeconds) },
+      },
+    );
+  }
+
   const rateLimit = await checkRateLimit(request, "auth-login", {
     limit: 8,
     windowMs: 60_000,
+    fallbackLimit: 4,
   });
   if (!rateLimit.allowed) {
     return NextResponse.json(
@@ -38,7 +55,7 @@ export async function POST(request: Request) {
 
   if (!isPasswordAuthConfigured()) {
     return NextResponse.json(
-      { error: "APP_ACCESS_PASSWORD is not configured." },
+      { error: "Password authentication is not configured." },
       { status: 500 },
     );
   }

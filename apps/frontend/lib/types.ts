@@ -13,6 +13,7 @@ export type SupportingDocumentSubtype =
   | "vedlegg"
   | "strategi"
   | "utkast"
+  | "tidligere_losning"
   | "annet";
 
 export type DocumentFileFormat = "pdf" | "docx" | "txt" | "md" | "xlsx" | "xls";
@@ -42,6 +43,16 @@ export type GeneratedArtifactType =
   | "anbefalt_arkitektur"
   | "gjennomforing_og_risiko";
 
+export interface GeneratedArtifactAuthority {
+  id: string;
+  artifact_version: number;
+  source_is_current: boolean;
+}
+
+export type GeneratedArtifactAuthorityByType = Partial<
+  Record<GeneratedArtifactType, GeneratedArtifactAuthority>
+>;
+
 export type ProjectStatus =
   | "Venter på dokument"
   | "Dokument lastet opp"
@@ -65,6 +76,15 @@ export interface ProjectSummary {
   document_count: number;
   supporting_document_count: number;
   artifact_count: number;
+  artifact_counts_by_type?: Partial<Record<GeneratedArtifactType, number>>;
+  /**
+   * Artifact types whose latest saved version still matches every authoritative
+   * source revision. Unlike artifact_counts_by_type, this never counts history
+   * or stale versions as generated workflow output.
+   */
+  current_artifact_types?: GeneratedArtifactType[];
+  artifact_authority?: GeneratedArtifactAuthorityByType;
+  has_executive_summary?: boolean;
   has_chat: boolean;
 }
 
@@ -79,6 +99,8 @@ export interface ProjectSnapshotResult {
   solution_document_uploaded: boolean;
   solution_evaluation_generated: boolean;
   last_activity_at: string;
+  current_artifact_types?: GeneratedArtifactType[];
+  artifact_authority?: GeneratedArtifactAuthorityByType;
 }
 
 export interface ProjectDocument {
@@ -97,6 +119,7 @@ export interface ProjectDocument {
   processing_error?: string | null;
   parser_used?: string | null;
   indexed_at?: string | null;
+  chunk_source_revision: number;
   created_at: string;
   updated_at: string;
 }
@@ -136,6 +159,7 @@ export interface ServiceDocument {
   page_count?: number | null;
   ai_summary?: string;
   ai_summary_updated_at?: string | null;
+  chunk_source_revision: number;
   created_at: string;
   updated_at: string;
 }
@@ -293,6 +317,11 @@ export interface CustomerAnalysisResult {
 export interface SolutionEvaluationResult {
   customer_document_id?: string | null;
   solution_document_id?: string | null;
+  evaluated_generated_artifact_id?: string | null;
+  evaluation_provenance_mode?:
+    | "document_only"
+    | "generated_artifact"
+    | "legacy_unknown";
   evaluation_context?: {
     customer_document_id: string;
     customer_document_title: string;
@@ -301,6 +330,9 @@ export interface SolutionEvaluationResult {
     system_solution_artifact_id?: string | null;
     system_solution_artifact_title?: string | null;
     system_solution_artifact_created_at?: string | null;
+    requirement_source_document_ids?: string[];
+    requirement_source_manifest_sha256?: string | null;
+    source_revision?: number | null;
     generated_at: string;
   };
   fit_to_customer_needs: string;
@@ -326,6 +358,7 @@ export interface SolutionEvaluationResult {
     reference: string;
     reference_match?: "coverage" | "section" | "unmatched";
     matched_requirement_reference?: string | null;
+    evidence_grounding?: "coverage_exact" | "document_exact";
     assessment: "Godt" | "Dårlig" | "Mangler" | "Uklart";
     finding: string;
     evidence: string;
@@ -405,6 +438,22 @@ export interface GeneratedArtifact {
   content_markdown: string;
   input_snapshot: unknown;
   created_at: string;
+  updated_at?: string;
+  artifact_version?: number;
+  generation_job_id?: string | null;
+  generation_submission_sequence?: number | null;
+  input_artifact_source_revision?: number | null;
+  input_service_library_revision?: number | null;
+  used_solution_evaluation?: boolean;
+  input_solution_evaluation_id?: string | null;
+  input_solution_evaluation_updated_at?: string | null;
+  input_solution_evaluation_hash?: string | null;
+  generator_revision?: string | null;
+  origin?: "generated" | "manual_edit" | "legacy";
+  parent_artifact_id?: string | null;
+  source_snapshot_hash?: string | null;
+  is_current?: boolean;
+  source_is_current?: boolean;
 }
 
 export type ChatMessageRole = "user" | "assistant";

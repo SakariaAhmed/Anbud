@@ -1,14 +1,34 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
+    "apps/frontend/**/*.test.mjs",
+    "scripts/*.test.mjs",
+    "apps/frontend/lib/client/project-api.test.mjs",
+    "apps/frontend/lib/password-auth.test.mjs",
+    "apps/frontend/lib/server/ai/json-completion.test.mjs",
+    "apps/frontend/lib/server/requirements/corpus-parsers.test.mjs",
+    "apps/frontend/lib/server/requirements/evaluation-coverage-integrity.ts",
+    "apps/frontend/lib/server/requirements/evaluation-coverage-integrity.test.mjs",
+    "apps/frontend/lib/server/repositories/supabase-store.persistence.test-support.ts",
+    "apps/frontend/lib/server/storage-observability.test-support.ts",
+    "apps/frontend/lib/server/document-chunks.test-support.ts",
+    "apps/frontend/app/api/projects/*/solution-evaluation/route.test-support.ts",
     "apps/frontend/scripts/run_project_job_worker.mjs",
     "scripts/backfill_document_storage.mjs",
+    "scripts/benchmark_workspace_ui.mjs",
     "scripts/llm_quality_eval.mjs",
+    "scripts/run_document_parser_bakeoff.mjs",
     "scripts/run_evaluation_smoke.mjs",
     "scripts/run_requirement_generation_smoke.mjs",
     "scripts/run_requirement_parser_golden.mjs",
     "scripts/run_requirement_quality_gate.mjs",
+    "scripts/run_vurdering_api_full_251.mjs",
+    "scripts/run_vurdering_full_151.mjs",
+    "scripts/generate_vurdering_answer_quality_report.mjs",
     "scripts/verify_workflow_boundaries.mjs"
+  ],
+  "ignorePatterns": [
+    "tmp/docling-bakeoff-venv/**"
   ],
   "ignoreExports": [
     {
@@ -18,6 +38,201 @@
     {
       "file": "apps/frontend/components/ui/*.tsx",
       "exports": ["*"]
+    },
+    {
+      "file": "apps/frontend/lib/client/project-api.ts",
+      "exports": ["readJsonPayload"]
+    },
+    {
+      "file": "apps/frontend/lib/requirement-response-metadata.ts",
+      "exports": ["deterministicRepairCount"]
+    },
+    {
+      "file": "apps/frontend/lib/server/ai.ts",
+      "exports": [
+        "ArtifactKnowledgeItem",
+        "answerFromBatchRows",
+        "applyVerifiedDeterministicControlRepairs",
+        "assertSubstantiveSolutionEvaluationResult",
+        "assertRequirementArtifactSourceLedgersComplete",
+        "assertRequirementCoverageBatchesSucceeded",
+        "assertVerifiedRequirementLedgerGeneration",
+        "buildDeterministicControlRepairMetadata",
+        "buildDeterministicFinalRequirementControlRepair",
+        "buildDeterministicFinalRequirementTemplateRepair",
+        "buildDeterministicTemplateRepairMetadata",
+        "buildProposalInputRequiredMetadata",
+        "buildRequirementCoverageBatchRegistry",
+        "buildRequirementCoverageEvaluationContext",
+        "buildRequirementCoverageEvaluationPayload",
+        "buildRequirementCoverageLedgerFromDocuments",
+        "buildRequirementCoverageRegistry",
+        "buildRequirementFallbackStageMetadata",
+        "buildRequirementRepairDirective",
+        "buildRequirementResponseBatchRegistry",
+        "buildStrictRequirementHandoffUserPrompt",
+        "chunkRequirementCoverage",
+        "collectArtifactFoundationFacts",
+        "correctCoverageAssessmentWithSourceEvidence",
+        "createRequirementResponseHandoffProgressTracker",
+        "createRequirementResponseStrictHandoffGovernor",
+        "coverageBatchHasCompleteExactEvidence",
+        "coverageItemFromBatchRow",
+        "dedupeRequirementLedger",
+        "estimateRequirementCoveragePromptChars",
+        "exactCoverageEvidenceExcerpt",
+        "filterDuplicateLegacyStandaloneNoteLines",
+        "filterPdfTableDuplicateExtractionArtifacts",
+        "formatUnresolvedRequirementResponseSummary",
+        "hasExplicitlyCompleteSmallRequirementLedger",
+        "isDeterministicTemplateRepairAnswer",
+        "isMalformedPdfRequirementReference",
+        "limitRequirementHandoffStyleExamples",
+        "mergeRequirementCoverageLedgerWithSolutionAnswers",
+        "normalizeDocumentFindingsAgainstCoverage",
+        "normalizeMandatoryRequirementCommitment",
+        "normalizeRequirementAnswerResult",
+        "normalizeSolutionEvaluationResult",
+        "proposalEvidenceSupportsReason",
+        "reconcileArchitectureComparisonWinner",
+        "requirementAnswerForRepair",
+        "requirementAnswerQualityIssues",
+        "recoverAvailabilityFractionRequirement",
+        "resolveRequirementResponseStrictHandoffLimits",
+        "resolveRequirementAnswerAfterStrictHandoff",
+        "resolveRequirementAnswerBeforeStrictHandoff",
+        "reuseExactDuplicateRequirementAnswers",
+        "selectDistributedGoodCoverageExamples",
+        "selectDistributedNonGoodCoverageDetails",
+        "selectDocumentStructureEntries",
+        "selectEvidenceGroundedDocumentFindings",
+        "selectRequirementDocumentsForGeneration",
+        "selectRequirementsForSolutionCoverage",
+        "serializeUnresolvedRequirementFallbackAnswers",
+        "solutionDocumentAnswerBearingText",
+        "stripAnswerTextFromRequirement",
+        "suppressDuplicatedDocumentLedgerContext",
+        "validateRequirementCoverageBatchRows",
+        "validateRequirementResponseBatchRows"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/server/ai/json-completion.ts",
+      "exports": ["normalizeFileInputContentType"]
+    },
+    {
+      "file": "apps/frontend/lib/server/distributed-rate-limit-circuit.ts",
+      "exports": ["DEFAULT_DISTRIBUTED_RATE_LIMIT_CIRCUIT_OPTIONS"]
+    },
+    {
+      "file": "apps/frontend/lib/server/document-chunks.ts",
+      "exports": [
+        "assertEmbeddingFallbackAllowed",
+        "documentChunkMetadataMatchesSourceFingerprint",
+        "documentChunkSourceFingerprint",
+        "documentSourceKeysForMemoryFallback",
+        "isDocumentChunkReplacementLockConflict",
+        "projectDocumentChunkSourceFingerprint",
+        "projectDocumentExpectedChunkCount",
+        "serviceDocumentChunkSourceFingerprint",
+        "serviceDocumentExpectedChunkCount",
+        "shouldReuseChunksAfterCompletenessQueryError",
+        "storedChunkMatchesCurrentSourceFingerprint",
+        "withDocumentChunkSourceFingerprint"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/server/documents.ts",
+      "exports": ["loadValidatedOfficeZip"]
+    },
+    {
+      "file": "apps/frontend/lib/server/embedding-request.ts",
+      "exports": ["isEmbeddingRetryDeferred"]
+    },
+    {
+      "file": "apps/frontend/lib/server/file-storage.ts",
+      "exports": ["listStoredFilesUnderPrefix"]
+    },
+    {
+      "file": "apps/frontend/lib/server/project-job-cache.ts",
+      "exports": [
+        "TERMINAL_PROJECT_JOB_CACHE_MAX_ENTRIES",
+        "TERMINAL_PROJECT_JOB_CACHE_TTL_MS"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/server/project-jobs.ts",
+      "exports": [
+        "claimAndScheduleProjectJobAutorun",
+        "scheduleHeavyProjectJobAutorun"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/server/project-workflow-deadline.ts",
+      "exports": [
+        "ProjectWorkflowDeadlineExceededError",
+        "projectWorkflowTimeoutMs"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/server/repositories/analyses.ts",
+      "exports": [
+        "getCustomerAnalysis",
+        "getExecutiveSummary",
+        "getSolutionEvaluation"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/server/repositories/artifacts.ts",
+      "exports": ["listGeneratedArtifactsFresh"]
+    },
+    {
+      "file": "apps/frontend/lib/server/repositories/supabase-store.ts",
+      "exports": [
+        "getCustomerAnalysis",
+        "getExecutiveSummary",
+        "getFreshProjectDerivedSnapshot",
+        "getSolutionEvaluation",
+        "isSolutionEvaluationCurrent",
+        "listGeneratedArtifactsFresh",
+        "sanitizeSolutionEvaluationResult"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/server/requirements/pdf-table-repairs.ts",
+      "exports": ["PETORO_REQUIREMENT_PDF_SHA256"]
+    },
+    {
+      "file": "apps/frontend/lib/server/requirements/pdf-normalization.ts",
+      "exports": ["stripPdfFooterOrChromeLines"]
+    },
+    {
+      "file": "apps/frontend/lib/server/safe-errors.ts",
+      "exports": ["errorHash", "errorRequestId"]
+    },
+    {
+      "file": "apps/frontend/lib/server/use-cases/generate-artifact.ts",
+      "exports": [
+        "artifactSourceSnapshotHash",
+        "assertCompleteRequirementDocumentScope",
+        "assertRequirementDocumentsReadyForGeneration",
+        "buildArtifactProjectDocumentManifests",
+        "documentLedgerCacheKey",
+        "hydrateRequirementFileDocuments",
+        "resolveRequestedSourceDocuments",
+        "selectRequirementDocumentsForArtifact"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/server/use-cases/project-workflows.ts",
+      "exports": ["buildEvaluationLedgerContext", "runSolutionEvaluationWorkflow"]
+    },
+    {
+      "file": "apps/frontend/lib/server/use-cases/solution-evaluation-readiness.ts",
+      "exports": [
+        "hasRequirementSourceDocumentSignal",
+        "requiresNonEmptyRequirementLedger"
+      ]
     }
   ]
 }

@@ -23,6 +23,7 @@ export async function enforceRateLimit(
   options: {
     limit: number;
     windowMs: number;
+    fallbackLimit?: number;
   },
   message: string,
 ) {
@@ -40,6 +41,7 @@ export async function enforceProjectRouteRateLimit(
     message: string;
     limit: number;
     windowMs: number;
+    fallbackLimit?: number;
   },
 ) {
   const { id } = await context.params;
@@ -49,6 +51,7 @@ export async function enforceProjectRouteRateLimit(
     {
       limit: input.limit,
       windowMs: input.windowMs,
+      fallbackLimit: input.fallbackLimit,
     },
     input.message,
   );

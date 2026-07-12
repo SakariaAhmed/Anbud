@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import { resolveOpenAIModelOverride } from "@/lib/server/ai";
 import { enforceProjectRouteRateLimit } from "@/lib/server/api-responses";
@@ -12,6 +12,7 @@ type ProjectAiRouteRateLimit = {
   message: string;
   limit: number;
   windowMs: number;
+  fallbackLimit?: number;
 };
 
 type ProjectAiRoutePreflight =
@@ -48,7 +49,11 @@ export async function prepareProjectAiRoute(
   const { id, response } = await enforceProjectRouteRateLimit(
     request,
     context,
-    rateLimit,
+    {
+      ...rateLimit,
+      fallbackLimit:
+        rateLimit.fallbackLimit ?? Math.max(1, Math.floor(rateLimit.limit / 4)),
+    },
   );
   if (response) {
     return { id, model: undefined, response };
@@ -70,6 +75,19 @@ export async function prepareProjectAiJsonRoute<TBody>(
   const preflight = await prepareProjectAiRoute(request, context, input);
   if (preflight.response) {
     return { ...preflight, body: undefined };
+  }
+
+  const contentType = request.headers.get("content-type") ?? "";
+  if (contentType && !contentType.toLowerCase().includes("application/json")) {
+    return {
+      id: preflight.id,
+      model: undefined,
+      body: undefined,
+      response: NextResponse.json(
+        { error: "Forespørselen må sendes som JSON." },
+        { status: 415 },
+      ),
+    };
   }
 
   const body =

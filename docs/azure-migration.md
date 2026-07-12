@@ -4,7 +4,15 @@
 
 Goal: move the web runtime first without changing the data plane.
 
-- Build with `apps/frontend/Dockerfile`.
+- Build the production image with
+  `docker build --target runner-docling -f apps/frontend/Dockerfile ...` so
+  bundled offline Docling ingestion remains available.
+- Use the default slim target only for deployments where Docling is run
+  out-of-process or fallback parsing is acceptable.
+- Use `npm --prefix apps/frontend run docker:smoke` for CI/local build,
+  image-size, Docker healthcheck, and liveness verification. Use
+  `npm --prefix apps/frontend run docker:smoke:docling` before changing the
+  production Docling runtime.
 - Deploy `infra/azure/container-app.bicep`.
 - Keep these runtime variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_ENCRYPTION_KEY`, `APP_ACCESS_PASSWORD`, `APP_SESSION_SECRET`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
 - Use `/api/health/live` for liveness and `/api/health/ready` for readiness.

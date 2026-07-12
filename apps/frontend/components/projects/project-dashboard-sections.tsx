@@ -29,7 +29,7 @@ export type ProjectSort = "recent" | "name" | "documents" | "artifacts";
 type PrefetchProjectHref = (href: string) => void;
 type DeleteProjectHandler = (project: ProjectSummary) => void;
 
-export function projectActionHref(project: ProjectSummary) {
+function projectActionHref(project: ProjectSummary) {
   return `/projects/${project.id}`;
 }
 

@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { deleteProject, getProjectDetail } from "@/lib/server/repositories/projects";
-import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
+import {
+  AuditEventPersistenceError,
+  auditEvent,
+  checkRateLimit,
+  withTiming,
+} from "@/lib/server/observability";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -53,14 +58,30 @@ export async function DELETE(
         await deleteProject(id);
         await auditEvent({
           action: "project_deleted",
-          projectId: id,
+          projectId: null,
           entityType: "project",
           entityId: id,
+          metadata: {
+            deleted_project_id: id,
+          },
+          required: true,
         });
         return new NextResponse(null, { status: 204 });
       },
     );
   } catch (error) {
+    if (error instanceof AuditEventPersistenceError) {
+      return NextResponse.json(
+        {
+          error:
+            "Prosjektet ble slettet, men den obligatoriske revisjonsloggen kunne ikke lagres.",
+          deletion_completed: true,
+          audit_persisted: false,
+          audit_event_id: error.eventId,
+        },
+        { status: 500 },
+      );
+    }
     return NextResponse.json(
       {
         error:

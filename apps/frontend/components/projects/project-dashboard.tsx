@@ -1,34 +1,38 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   useRef,
   useCallback,
-  useEffect,
   useMemo,
   useState,
   type ChangeEvent,
   type DragEvent,
 } from "react";
 
-import { HomepageRefreshAnimation } from "@/components/projects/homepage-refresh-animation";
 import {
   DashboardHero,
   DashboardIntro,
   ProjectListSection,
   WorkflowSteps,
   normalizeSearch,
-  projectActionHref,
   type ProjectSort,
   type ProjectStatusFilter,
 } from "@/components/projects/project-dashboard-sections";
 import type { ProjectSummary } from "@/lib/types";
 
+const HomepageRefreshAnimation = dynamic(
+  () =>
+    import("@/components/projects/homepage-refresh-animation").then(
+      (module) => module.HomepageRefreshAnimation,
+    ),
+  { ssr: false, loading: () => null },
+);
+
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
 }
-
-const PROJECT_PREFETCH_LIMIT = 12;
 
 async function uploadProjectDocument({
   projectId,
@@ -114,26 +118,6 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
     },
     [router],
   );
-
-  useEffect(() => {
-    if (!filteredProjects.length) return;
-
-    const prefetchVisibleProjects = () => {
-      for (const project of filteredProjects.slice(0, PROJECT_PREFETCH_LIMIT)) {
-        prefetchProjectHref(projectActionHref(project));
-      }
-    };
-
-    if (typeof window.requestIdleCallback === "function") {
-      const idleId = window.requestIdleCallback(prefetchVisibleProjects, {
-        timeout: 1500,
-      });
-      return () => window.cancelIdleCallback(idleId);
-    }
-
-    const timeoutId = setTimeout(prefetchVisibleProjects, 300);
-    return () => clearTimeout(timeoutId);
-  }, [filteredProjects, prefetchProjectHref]);
 
   async function handleSpotlightUpload(file: File | null) {
     if (!file || uploading) return;

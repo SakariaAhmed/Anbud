@@ -136,7 +136,7 @@ async function supabaseComponent(): Promise<HealthComponent> {
     const result = await withAbortTimeout(SUPABASE_TIMEOUT_MS, (signal) =>
       supabase
         .from("projects")
-        .select("id", { head: true, count: "exact" })
+        .select("id")
         .limit(1)
         .abortSignal(signal),
     );

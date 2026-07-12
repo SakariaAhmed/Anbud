@@ -4,6 +4,23 @@ import { createHash } from "node:crypto";
 import OpenAI from "openai";
 
 import { decryptString, encryptString } from "@/lib/server/crypto";
+import { normalizeDocumentChunkStructureMap } from "@/lib/server/document-chunk-structure";
+import {
+  createMemoizedEmbeddingRequest,
+  embeddingFallbackMetadata,
+  EmbeddingRequestTimeoutError,
+  runEmbeddingRequestWithDeadline,
+} from "@/lib/server/embedding-request";
+import {
+  assertProjectWorkflowActive,
+  getProjectWorkflowAbortSignal,
+  getProjectWorkflowLease,
+} from "@/lib/server/project-workflow-cancellation";
+import {
+  rethrowAuthoritativeLeaseLoss,
+  runLeaseFencedProjectMutation,
+} from "@/lib/server/repositories/lease-fenced-persistence";
+import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import { createServiceClient } from "@/lib/server/supabase";
 import type {
   DocumentFileFormat,
@@ -14,7 +31,7 @@ import type {
   SupportingDocumentSubtype,
 } from "@/lib/types";
 
-const DOCUMENT_EMBEDDING_MODEL =
+export const DOCUMENT_EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL?.trim() || "text-embedding-3-small";
 
 type DocumentChunkSourceType = "project_document" | "service_document";
@@ -123,11 +140,17 @@ type StoredChunkRow = {
 const MAX_CHUNK_CHARS = 4800;
 const CHUNK_OVERLAP_CHARS = 550;
 const EMBEDDING_BATCH_SIZE = 32;
-const INSERT_BATCH_SIZE = 80;
 const VECTOR_MATCH_THRESHOLD = 0.15;
 const HYBRID_RRF_K = 50;
 const HYBRID_MATCH_MULTIPLIER = 4;
 const MIN_RETRIEVAL_QUALITY_SCORE = 9;
+const EMBEDDING_RETRY_DELAYS_MS = [500];
+const EMBEDDING_REQUEST_TIMEOUT_MS = 12_000;
+const EMBEDDING_OPERATION_TIMEOUT_MS = 30_000;
+const EMBEDDING_RETRY_BACKOFF_MS = 15 * 60_000;
+const CHUNK_REPLACEMENT_LOCK_RETRY_DELAYS_MS = [25, 75];
+const QUERY_EMBEDDING_CACHE_LIMIT = 128;
+const DOCUMENT_SOURCE_FINGERPRINT_VERSION = 1;
 
 const RETRIEVAL_STOP_WORDS = new Set([
   "eller",
@@ -168,10 +191,79 @@ function getEmbeddingClient() {
   }
 
   if (!cachedEmbeddingClient) {
-    cachedEmbeddingClient = new OpenAI({ apiKey });
+    cachedEmbeddingClient = new OpenAI({
+      apiKey,
+      maxRetries: 0,
+      timeout: EMBEDDING_REQUEST_TIMEOUT_MS,
+    });
   }
 
   return cachedEmbeddingClient;
+}
+
+function sleep(ms: number) {
+  const signal = getProjectWorkflowAbortSignal();
+  signal?.throwIfAborted();
+
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(handle);
+      reject(signal?.reason);
+    };
+    const handle = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function isTransientEmbeddingError(error: unknown) {
+  if (error instanceof EmbeddingRequestTimeoutError) {
+    return true;
+  }
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const status = "status" in error ? Number(error.status) : 0;
+  if (status === 408 || status === 409 || status === 429 || status >= 500) {
+    return true;
+  }
+  const name = "name" in error ? String(error.name) : "";
+  const message = "message" in error ? String(error.message) : "";
+  return /APIConnection|Timeout|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed/i.test(
+    `${name} ${message}`,
+  );
+}
+
+function embeddingFailureReason(error: unknown) {
+  if (getProjectWorkflowAbortSignal()?.aborted) {
+    return "workflow_abort";
+  }
+  if (error instanceof EmbeddingRequestTimeoutError) {
+    return error.scope === "operation"
+      ? "operation_timeout"
+      : "request_timeout";
+  }
+  return isTransientEmbeddingError(error) ? "transient" : "permanent";
+}
+
+function embeddingErrorFields(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return {};
+  }
+  const status = "status" in error ? Number(error.status) : 0;
+  const code = "code" in error ? String(error.code) : "";
+  return {
+    error_name: "name" in error ? String(error.name) : "Error",
+    ...(Number.isFinite(status) && status > 0 ? { status } : {}),
+    ...(code ? { error_code: code.slice(0, 80) } : {}),
+  };
+}
+
+export function assertEmbeddingFallbackAllowed(error: unknown) {
+  rethrowAuthoritativeLeaseLoss(error);
+  assertProjectWorkflowActive();
 }
 
 function normalizeChunkText(value: string) {
@@ -197,6 +289,200 @@ function estimateTokenCount(value: string) {
 
 function hashText(value: string) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function canonicalJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalJsonValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) =>
+          left < right ? -1 : left > right ? 1 : 0,
+        )
+        .map(([key, nestedValue]) => [key, canonicalJsonValue(nestedValue)]),
+    );
+  }
+  return value;
+}
+
+export function documentChunkSourceFingerprint(document: ChunkableDocument) {
+  return hashText(
+    JSON.stringify(
+      canonicalJsonValue({
+        version: DOCUMENT_SOURCE_FINGERPRINT_VERSION,
+        id: document.id,
+        project_id: document.projectId ?? null,
+        service_id: document.serviceId ?? null,
+        role: document.role ?? null,
+        supporting_subtype: document.supportingSubtype ?? null,
+        title: document.title,
+        file_name: document.fileName,
+        file_format: document.fileFormat,
+        raw_text: document.rawText,
+        structure_map: normalizeDocumentChunkStructureMap(
+          document.structureMap,
+        ),
+      }),
+    ),
+  );
+}
+
+export function projectDocumentChunkSourceFingerprint(
+  document: ProjectDocumentDetail,
+) {
+  return documentChunkSourceFingerprint({
+    id: document.id,
+    projectId: document.project_id,
+    role: document.role,
+    supportingSubtype: document.supporting_subtype,
+    title: document.title,
+    fileName: document.file_name,
+    fileFormat: document.file_format,
+    rawText: document.raw_text,
+    structureMap: document.structure_map,
+  });
+}
+
+export function serviceDocumentChunkSourceFingerprint(
+  document: ServiceDocumentDetail,
+) {
+  return documentChunkSourceFingerprint({
+    id: document.id,
+    serviceId: document.service_id,
+    title: document.title,
+    fileName: document.file_name,
+    fileFormat: document.file_format,
+    rawText: document.raw_text,
+    structureMap: document.structure_map,
+  });
+}
+
+export function projectDocumentExpectedChunkCount(
+  document: ProjectDocumentDetail,
+) {
+  return buildSemanticDocumentChunks({
+    id: document.id,
+    projectId: document.project_id,
+    role: document.role,
+    supportingSubtype: document.supporting_subtype,
+    title: document.title,
+    fileName: document.file_name,
+    fileFormat: document.file_format,
+    rawText: document.raw_text,
+    structureMap: document.structure_map,
+  }).length;
+}
+
+export function serviceDocumentExpectedChunkCount(
+  document: ServiceDocumentDetail,
+) {
+  return buildSemanticDocumentChunks({
+    id: document.id,
+    serviceId: document.service_id,
+    title: document.title,
+    fileName: document.file_name,
+    fileFormat: document.file_format,
+    rawText: document.raw_text,
+    structureMap: document.structure_map,
+  }).length;
+}
+
+export function documentChunkMetadataMatchesSourceFingerprint(
+  metadata: unknown,
+  expectedSourceFingerprint: string,
+) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return false;
+  }
+  return (
+    (metadata as Record<string, unknown>).source_fingerprint ===
+      expectedSourceFingerprint &&
+    (metadata as Record<string, unknown>).source_fingerprint_version ===
+      DOCUMENT_SOURCE_FINGERPRINT_VERSION
+  );
+}
+
+export function withDocumentChunkSourceFingerprint(
+  metadata: Record<string, unknown>,
+  sourceFingerprint: string,
+) {
+  return {
+    ...metadata,
+    source_fingerprint: sourceFingerprint,
+    source_fingerprint_version: DOCUMENT_SOURCE_FINGERPRINT_VERSION,
+  };
+}
+
+function documentChunkSourceKey(
+  sourceType: DocumentChunkSourceType,
+  sourceId: string,
+) {
+  return `${sourceType}:${sourceId}`;
+}
+
+export function storedChunkMatchesCurrentSourceFingerprint(
+  row: Pick<StoredChunkRow, "source_type" | "source_id" | "metadata">,
+  expectedSourceFingerprints: ReadonlyMap<string, string>,
+) {
+  const expected = expectedSourceFingerprints.get(
+    documentChunkSourceKey(row.source_type, row.source_id),
+  );
+  return (
+    typeof expected === "string" &&
+    documentChunkMetadataMatchesSourceFingerprint(row.metadata, expected)
+  );
+}
+
+export function documentSourceKeysForMemoryFallback(
+  requestedSourceKeys: readonly string[],
+  storedCandidateCount: number,
+  staleFilteredSourceKeys: ReadonlySet<string>,
+) {
+  return new Set(
+    storedCandidateCount === 0
+      ? requestedSourceKeys
+      : requestedSourceKeys.filter((sourceKey) =>
+          staleFilteredSourceKeys.has(sourceKey),
+        ),
+  );
+}
+
+const queryEmbeddingCache = new Map<string, number[]>();
+
+function queryEmbeddingCacheKey(query: string) {
+  return `${DOCUMENT_EMBEDDING_MODEL}:${hashText(normalizeChunkText(query))}`;
+}
+
+function rememberQueryEmbedding(key: string, embedding: number[]) {
+  if (queryEmbeddingCache.has(key)) {
+    queryEmbeddingCache.delete(key);
+  }
+  queryEmbeddingCache.set(key, embedding);
+  while (queryEmbeddingCache.size > QUERY_EMBEDDING_CACHE_LIMIT) {
+    const oldestKey = queryEmbeddingCache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    queryEmbeddingCache.delete(oldestKey);
+  }
+}
+
+async function createQueryEmbedding(query: string) {
+  const key = queryEmbeddingCacheKey(query);
+  const cached = queryEmbeddingCache.get(key);
+  if (cached) {
+    queryEmbeddingCache.delete(key);
+    queryEmbeddingCache.set(key, cached);
+    return cached;
+  }
+
+  const embedding = (await createEmbeddings([query]))[0] ?? null;
+  if (embedding) {
+    rememberQueryEmbedding(key, embedding);
+  }
+  return embedding;
 }
 
 function comparableText(value: string) {
@@ -225,10 +511,12 @@ function pageRangeFrom(reference: string, text: string) {
   const source = `${reference}\n${text}`;
   const pageNumbers = [
     ...source.matchAll(/\b(?:side|page)\s+(\d{1,5})\b/gi),
-    ...source.matchAll(/\[\[SIDE:(\d{1,5})\]\]/g),
   ]
     .map((match) => Number(match[1]))
     .filter((value) => Number.isFinite(value));
+  for (const marker of findPdfPageMarkers(source)) {
+    pageNumbers.push(marker.startPage, marker.endPage);
+  }
 
   if (!pageNumbers.length) {
     return { pageStart: null, pageEnd: null };
@@ -401,39 +689,66 @@ function splitTextWithOverlap(text: string) {
 }
 
 function entriesFromRawText(document: ChunkableDocument) {
-  const pages = [...document.rawText.matchAll(/\[\[SIDE:(\d{1,5})\]\]/g)];
-  if (!pages.length) {
+  const pageMarkers = findPdfPageMarkers(document.rawText);
+  if (!pageMarkers.length) {
     return [{ reference: document.title, text: document.rawText }];
   }
 
   const entries: ProjectDocumentStructureEntry[] = [];
-  let lastIndex = 0;
-  let lastPage = 1;
-
-  for (const match of pages) {
-    if (match.index > lastIndex) {
+  for (const [index, marker] of pageMarkers.entries()) {
+    const nextMarker = pageMarkers[index + 1];
+    const textStart = marker.index + marker.marker.length;
+    const textEnd = nextMarker?.index ?? document.rawText.length;
+    const text = document.rawText.slice(textStart, textEnd);
+    if (normalizeChunkText(text)) {
+      const reference =
+        marker.startPage === marker.endPage
+          ? `${document.title} side ${marker.startPage}`
+          : `${document.title} side ${marker.startPage}-${marker.endPage}`;
       entries.push({
-        reference: `${document.title} side ${lastPage}`,
-        text: document.rawText.slice(lastIndex, match.index),
+        reference,
+        text,
+        page: marker.startPage,
       });
     }
-    lastPage = Number(match[1]) || lastPage + 1;
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < document.rawText.length) {
-    entries.push({
-      reference: `${document.title} side ${lastPage}`,
-      text: document.rawText.slice(lastIndex),
-    });
   }
 
   return entries;
 }
 
+function structureEntryPageRange(
+  entry: ProjectDocumentStructureEntry,
+  reference: string,
+  text: string,
+) {
+  const detected = pageRangeFrom(reference, text);
+  if (detected.pageStart !== null || entry.page == null) {
+    return detected;
+  }
+  return { pageStart: entry.page, pageEnd: entry.page };
+}
+
+function structureEntryChunkMetadata(entry: ProjectDocumentStructureEntry) {
+  return {
+    ...(entry.kind ? { structure_kind: entry.kind } : {}),
+    ...(entry.parser ? { structure_parser: entry.parser } : {}),
+    ...(entry.page != null ? { structure_page: entry.page } : {}),
+    ...(entry.table_index != null
+      ? { structure_table_index: entry.table_index }
+      : {}),
+    ...(entry.row_index != null
+      ? { structure_row_index: entry.row_index }
+      : {}),
+    ...(entry.docling_ref ? { structure_docling_ref: entry.docling_ref } : {}),
+  };
+}
+
 function buildSemanticDocumentChunks(document: ChunkableDocument) {
-  const entries = Array.isArray(document.structureMap) && document.structureMap.length
-    ? document.structureMap
+  const structureMap = normalizeDocumentChunkStructureMap(
+    document.structureMap,
+  );
+  const entries = structureMap.length
+    ? structureMap
     : entriesFromRawText(document);
   const chunks: SemanticDocumentChunk[] = [];
   let headingPath: string[] = [];
@@ -450,7 +765,11 @@ function buildSemanticDocumentChunks(document: ChunkableDocument) {
       reference: entry.reference,
       text: entryText,
     });
-    const pageRange = pageRangeFrom(entry.reference, entryText);
+    const pageRange = structureEntryPageRange(
+      entry,
+      entry.reference,
+      entryText,
+    );
     const parts = splitTextWithOverlap(entryText);
 
     for (const [partIndex, part] of parts.entries()) {
@@ -471,6 +790,7 @@ function buildSemanticDocumentChunks(document: ChunkableDocument) {
           role: document.role ?? null,
           supporting_subtype: document.supportingSubtype ?? null,
           content_hash: hashText(part),
+          ...structureEntryChunkMetadata(entry),
         },
       });
     }
@@ -488,6 +808,17 @@ function isChunkStorageUnavailable(error: { message?: string } | null | undefine
       message.includes("relation") ||
       message.includes("function"))
   );
+}
+
+export function shouldReuseChunksAfterCompletenessQueryError(error: unknown) {
+  rethrowAuthoritativeLeaseLoss(error);
+  const storageUnavailable = isChunkStorageUnavailable(
+    error as { message?: string } | null | undefined,
+  );
+  if (storageUnavailable) {
+    cachedChunkStorageAvailable = false;
+  }
+  return storageUnavailable;
 }
 
 function isRetrievalStorageUnavailable(error: { message?: string } | null | undefined) {
@@ -533,40 +864,87 @@ async function createEmbeddings(texts: string[]) {
   }
 
   const embeddings: number[][] = [];
+  const operationStartedAt = Date.now();
+  const operationDeadline =
+    operationStartedAt + EMBEDDING_OPERATION_TIMEOUT_MS;
 
   for (let index = 0; index < texts.length; index += EMBEDDING_BATCH_SIZE) {
+    assertProjectWorkflowActive();
     const batch = texts.slice(index, index + EMBEDDING_BATCH_SIZE);
-    const response = await client.embeddings.create({
-      model: DOCUMENT_EMBEDDING_MODEL,
-      input: batch,
-      encoding_format: "float",
-    });
+    let response: Awaited<ReturnType<typeof client.embeddings.create>> | null = null;
+    for (let attempt = 0; attempt <= EMBEDDING_RETRY_DELAYS_MS.length; attempt += 1) {
+      const remainingOperationMs = operationDeadline - Date.now();
+      if (remainingOperationMs <= 0) {
+        throw new EmbeddingRequestTimeoutError(
+          EMBEDDING_OPERATION_TIMEOUT_MS,
+          "operation",
+        );
+      }
+      const attemptTimeoutMs = Math.max(
+        1,
+        Math.min(EMBEDDING_REQUEST_TIMEOUT_MS, remainingOperationMs),
+      );
+      const attemptStartedAt = Date.now();
+      try {
+        assertProjectWorkflowActive();
+        response = await runEmbeddingRequestWithDeadline({
+          timeoutMs: attemptTimeoutMs,
+          timeoutScope:
+            attemptTimeoutMs < EMBEDDING_REQUEST_TIMEOUT_MS
+              ? "operation"
+              : "request",
+          workflowSignal: getProjectWorkflowAbortSignal(),
+          request: (signal) =>
+            client.embeddings.create(
+              {
+                model: DOCUMENT_EMBEDDING_MODEL,
+                input: batch,
+                encoding_format: "float",
+              },
+              {
+                maxRetries: 0,
+                signal,
+                timeout: attemptTimeoutMs,
+              },
+            ),
+        });
+        break;
+      } catch (error) {
+        assertProjectWorkflowActive();
+        const transient = isTransientEmbeddingError(error);
+        const retryDelayMs = EMBEDDING_RETRY_DELAYS_MS[attempt] ?? 0;
+        const willRetry =
+          transient &&
+          attempt < EMBEDDING_RETRY_DELAYS_MS.length &&
+          Date.now() + retryDelayMs < operationDeadline;
+        console.warn(
+          JSON.stringify({
+            event: "embedding_request_failure",
+            model: DOCUMENT_EMBEDDING_MODEL,
+            batch_index: index / EMBEDDING_BATCH_SIZE,
+            batch_size: batch.length,
+            attempt: attempt + 1,
+            reason: embeddingFailureReason(error),
+            duration_ms: Date.now() - attemptStartedAt,
+            will_retry: willRetry,
+            ...embeddingErrorFields(error),
+          }),
+        );
+        if (!willRetry) {
+          throw error;
+        }
+        await sleep(retryDelayMs);
+      }
+    }
+    if (!response) {
+      throw new Error("Embedding-kall returnerte ikke svar.");
+    }
     for (const item of response.data) {
       embeddings[index + item.index] = item.embedding;
     }
   }
 
   return embeddings;
-}
-
-async function insertChunkRows(
-  rows: Array<Record<string, unknown>>,
-  options?: { withoutEmbeddings?: boolean },
-) {
-  const supabase = createServiceClient();
-  for (let index = 0; index < rows.length; index += INSERT_BATCH_SIZE) {
-    const batch = rows.slice(index, index + INSERT_BATCH_SIZE).map((row) => {
-      if (!options?.withoutEmbeddings) {
-        return row;
-      }
-      const { embedding: _embedding, ...rest } = row;
-      return rest;
-    });
-    const { error } = await supabase.from("document_chunks").insert(batch);
-    if (error) {
-      throw error;
-    }
-  }
 }
 
 function chunkSearchText(document: ChunkableDocument, chunk: SemanticDocumentChunk) {
@@ -584,28 +962,72 @@ function chunkSearchText(document: ChunkableDocument, chunk: SemanticDocumentChu
   );
 }
 
-async function updateChunkSearchVectors(input: {
+export function isDocumentChunkReplacementLockConflict(error: unknown) {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String(error.code ?? "")
+      : "";
+  const message =
+    error && typeof error === "object" && "message" in error
+      ? String(error.message ?? "")
+      : String(error ?? "");
+  return (
+    code === "55P03" ||
+    code === "40P01" ||
+    /could not obtain lock|lock not available|deadlock detected/i.test(message)
+  );
+}
+
+async function runDocumentChunkReplacementWithLockRetry<T>(
+  operation: () => Promise<T>,
+) {
+  for (
+    let attempt = 0;
+    attempt <= CHUNK_REPLACEMENT_LOCK_RETRY_DELAYS_MS.length;
+    attempt += 1
+  ) {
+    try {
+      return await operation();
+    } catch (error) {
+      rethrowAuthoritativeLeaseLoss(error);
+      const retryDelay = CHUNK_REPLACEMENT_LOCK_RETRY_DELAYS_MS[attempt];
+      if (
+        retryDelay === undefined ||
+        !isDocumentChunkReplacementLockConflict(error)
+      ) {
+        throw error;
+      }
+      await sleep(retryDelay);
+    }
+  }
+  throw new Error("Chunk-erstatning avsluttet uten resultat.");
+}
+
+async function replaceDocumentChunkRowsAtomically(input: {
   sourceType: DocumentChunkSourceType;
   sourceId: string;
-  chunks: SemanticDocumentChunk[];
-  document: ChunkableDocument;
+  sourceFingerprint: string;
+  sourceRevision: number;
+  rows: Array<Record<string, unknown>>;
 }) {
-  if (!input.chunks.length) {
-    return;
-  }
-
   const supabase = createServiceClient();
-  const { error } = await supabase.rpc("update_document_chunk_search_vectors", {
-    source_type_filter: input.sourceType,
-    source_id_filter: input.sourceId,
-    chunks: input.chunks.map((chunk) => ({
-      chunk_index: chunk.chunkIndex,
-      search_text: chunkSearchText(input.document, chunk),
-    })),
+  const { data, error } = await supabase.rpc("replace_document_chunks_atomic", {
+    p_source_type: input.sourceType,
+    p_source_id: input.sourceId,
+    p_source_fingerprint: input.sourceFingerprint,
+    p_expected_source_revision: input.sourceRevision,
+    p_expected_chunk_count: input.rows.length,
+    p_rows: input.rows,
   });
 
-  if (error && !isRetrievalStorageUnavailable(error)) {
-    throw new Error(error.message);
+  if (error) {
+    throw error;
+  }
+
+  if (Number(data) !== input.rows.length) {
+    throw new Error(
+      `Atomisk chunk-erstatning lagret ${String(data)} av ${input.rows.length} rader.`,
+    );
   }
 }
 
@@ -614,6 +1036,7 @@ async function replaceDocumentChunks(input: {
   sourceId: string;
   projectId?: string | null;
   serviceId?: string | null;
+  sourceRevision: number;
   document: ChunkableDocument;
 }) {
   if (!(await hasChunkStorage())) {
@@ -621,28 +1044,42 @@ async function replaceDocumentChunks(input: {
   }
 
   const chunks = buildSemanticDocumentChunks(input.document);
-  const supabase = createServiceClient();
-  const deleteResult = await supabase
-    .from("document_chunks")
-    .delete()
-    .eq("source_type", input.sourceType)
-    .eq("source_id", input.sourceId);
-
-  if (deleteResult.error) {
-    if (isChunkStorageUnavailable(deleteResult.error)) {
-      return;
-    }
-    throw new Error(deleteResult.error.message);
-  }
-
-  if (!chunks.length) {
-    return;
-  }
+  const sourceFingerprint = documentChunkSourceFingerprint(input.document);
 
   let embeddings: number[][] = [];
+  let embeddingFallback: {
+    failedAtMs: number;
+    reason: string;
+    retryAfterMs: number;
+  } | null = null;
+  const embeddingStartedAt = Date.now();
   try {
     embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
-  } catch {
+  } catch (error) {
+    assertEmbeddingFallbackAllowed(error);
+    const failedAtMs = Date.now();
+    const reason = embeddingFailureReason(error);
+    embeddingFallback = {
+      failedAtMs,
+      reason,
+      retryAfterMs: failedAtMs + EMBEDDING_RETRY_BACKOFF_MS,
+    };
+    console.warn(
+      JSON.stringify({
+        event: "document_embedding_fallback",
+        source_type: input.sourceType,
+        source_id: input.sourceId,
+        model: DOCUMENT_EMBEDDING_MODEL,
+        chunk_count: chunks.length,
+        reason,
+        duration_ms: Date.now() - embeddingStartedAt,
+        fallback: "lexical_chunks",
+        retry_after: new Date(
+          embeddingFallback.retryAfterMs,
+        ).toISOString(),
+        ...embeddingErrorFields(error),
+      }),
+    );
     embeddings = [];
   }
 
@@ -666,52 +1103,169 @@ async function replaceDocumentChunks(input: {
     token_count: chunk.tokenCount,
     text_encrypted: encryptString(chunk.text),
     content_hash: String(chunk.metadata.content_hash ?? hashText(chunk.text)),
-    metadata: chunk.metadata,
+    metadata: embeddingFallback
+      ? embeddingFallbackMetadata({
+          metadata: withDocumentChunkSourceFingerprint(
+            chunk.metadata,
+            sourceFingerprint,
+          ),
+          reason: embeddingFallback.reason,
+          failedAtMs: embeddingFallback.failedAtMs,
+          retryAfterMs: embeddingFallback.retryAfterMs,
+        })
+      : withDocumentChunkSourceFingerprint(chunk.metadata, sourceFingerprint),
     embedding: embeddings[index] ?? null,
     embedding_model: embeddings[index] ? DOCUMENT_EMBEDDING_MODEL : null,
     embedding_created_at: embeddings[index] ? now : null,
+    search_text: chunkSearchText(input.document, chunk),
   }));
-
-  try {
-    await insertChunkRows(rows);
-  } catch (error) {
-    if (isChunkStorageUnavailable(error as { message?: string })) {
-      return;
+  const rowsForPersistenceRetry = (error: unknown) => {
+    const message = String(
+      (error as { message?: string } | null | undefined)?.message ?? "",
+    ).toLowerCase();
+    if (!message.includes("embedding") && !message.includes("vector")) {
+      return null;
     }
-    await insertChunkRows(rows, { withoutEmbeddings: true });
+
+    const failedAtMs = Date.now();
+    const retryAfterMs = failedAtMs + EMBEDDING_RETRY_BACKOFF_MS;
+    return rows.map(({ embedding: _embedding, ...row }) => ({
+      ...row,
+      metadata: embeddingFallbackMetadata({
+        metadata: row.metadata,
+        reason: `embedding_persistence: ${message.slice(0, 240)}`,
+        failedAtMs,
+        retryAfterMs,
+      }),
+      embedding: null,
+      embedding_model: null,
+      embedding_created_at: null,
+    }));
+  };
+
+  const lease = getProjectWorkflowLease();
+  if (lease) {
+    const fencedPayload = {
+      source_type: input.sourceType,
+      source_id: input.sourceId,
+      source_fingerprint: sourceFingerprint,
+      expected_source_revision: input.sourceRevision,
+      expected_chunk_count: rows.length,
+      rows,
+    };
+    const persistFencedRows = async (
+      replacementRows: Array<Record<string, unknown>>,
+    ) => {
+      const result = await runLeaseFencedProjectMutation<{ count?: unknown }>(
+        lease.projectId,
+        "replace_document_chunks",
+        {
+          ...fencedPayload,
+          rows: replacementRows,
+        },
+      );
+      const insertedCount = result.fenced
+        ? Number(result.data?.count)
+        : Number.NaN;
+      if (!result.fenced || insertedCount !== replacementRows.length) {
+        throw new Error(
+          `Lease-fencet chunk-erstatning lagret ${String(insertedCount)} av ${replacementRows.length} rader.`,
+        );
+      }
+    };
+    try {
+      await runDocumentChunkReplacementWithLockRetry(() =>
+        persistFencedRows(rows),
+      );
+    } catch (error) {
+      rethrowAuthoritativeLeaseLoss(error);
+      const retryRows = rowsForPersistenceRetry(error);
+      if (!retryRows) {
+        throw error;
+      }
+      await runDocumentChunkReplacementWithLockRetry(() =>
+        persistFencedRows(retryRows),
+      );
+    }
+    return;
   }
 
-  await updateChunkSearchVectors({
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    chunks,
-    document: input.document,
-  }).catch(() => {
-    // Full-text vectors improve hybrid retrieval but should not block indexing.
-  });
+  try {
+    await runDocumentChunkReplacementWithLockRetry(() =>
+      replaceDocumentChunkRowsAtomically({
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        sourceFingerprint,
+        sourceRevision: input.sourceRevision,
+        rows,
+      }),
+    );
+  } catch (error) {
+    rethrowAuthoritativeLeaseLoss(error);
+    const message = String(
+      (error as { message?: string } | null | undefined)?.message ?? "",
+    ).toLowerCase();
+    const requiredRpcMissing = message.includes(
+      "replace_document_chunks_atomic",
+    );
+    if (
+      isChunkStorageUnavailable(error as { message?: string }) &&
+      !requiredRpcMissing
+    ) {
+      return;
+    }
+    const retryRows = rowsForPersistenceRetry(error);
+    if (!retryRows) {
+      throw error;
+    }
+    await runDocumentChunkReplacementWithLockRetry(() =>
+      replaceDocumentChunkRowsAtomically({
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        sourceFingerprint,
+        sourceRevision: input.sourceRevision,
+        rows: retryRows,
+      }),
+    );
+  }
 }
 
-async function hasExistingDocumentChunks(input: {
+async function hasCompleteExistingDocumentChunks(input: {
   sourceType: DocumentChunkSourceType;
   sourceId: string;
+  sourceFingerprint: string;
+  sourceRevision: number;
+  expectedChunkCount: number;
 }) {
   if (!(await hasChunkStorage())) {
     return true;
   }
 
   const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("document_chunks")
-    .select("id")
-    .eq("source_type", input.sourceType)
-    .eq("source_id", input.sourceId)
-    .limit(1);
+  const { data, error } = await supabase.rpc("document_chunks_are_complete", {
+    p_source_type: input.sourceType,
+    p_source_id: input.sourceId,
+    p_source_fingerprint: input.sourceFingerprint,
+    p_expected_source_revision: input.sourceRevision,
+    p_expected_chunk_count: input.expectedChunkCount,
+    p_embedding_model: getEmbeddingClient()
+      ? DOCUMENT_EMBEDDING_MODEL
+      : null,
+    p_checked_at: new Date().toISOString(),
+  });
 
   if (error) {
-    return true;
+    if (
+      String(error.message ?? "")
+        .toLowerCase()
+        .includes("document_chunks_are_complete")
+    ) {
+      return false;
+    }
+    return shouldReuseChunksAfterCompletenessQueryError(error);
   }
 
-  return Boolean(data?.length);
+  return data === true;
 }
 
 export async function replaceProjectDocumentChunks(input: {
@@ -724,11 +1278,13 @@ export async function replaceProjectDocumentChunks(input: {
   fileFormat: DocumentFileFormat;
   rawText: string;
   structureMap: ProjectDocumentStructureEntry[];
+  sourceRevision: number;
 }) {
   await replaceDocumentChunks({
     sourceType: "project_document",
     sourceId: input.documentId,
     projectId: input.projectId,
+    sourceRevision: input.sourceRevision,
     document: {
       id: input.documentId,
       projectId: input.projectId,
@@ -747,9 +1303,12 @@ export async function ensureProjectDocumentChunks(input: {
   document: ProjectDocumentDetail;
 }) {
   if (
-    await hasExistingDocumentChunks({
+    await hasCompleteExistingDocumentChunks({
       sourceType: "project_document",
       sourceId: input.document.id,
+      sourceFingerprint: projectDocumentChunkSourceFingerprint(input.document),
+      sourceRevision: input.document.chunk_source_revision,
+      expectedChunkCount: projectDocumentExpectedChunkCount(input.document),
     })
   ) {
     return;
@@ -765,6 +1324,7 @@ export async function ensureProjectDocumentChunks(input: {
     fileFormat: input.document.file_format,
     rawText: input.document.raw_text,
     structureMap: input.document.structure_map,
+    sourceRevision: input.document.chunk_source_revision,
   });
 }
 
@@ -776,11 +1336,13 @@ export async function replaceServiceDocumentChunks(input: {
   fileFormat: DocumentFileFormat;
   rawText: string;
   structureMap: ProjectDocumentStructureEntry[];
+  sourceRevision: number;
 }) {
   await replaceDocumentChunks({
     sourceType: "service_document",
     sourceId: input.documentId,
     serviceId: input.serviceId,
+    sourceRevision: input.sourceRevision,
     document: {
       id: input.documentId,
       serviceId: input.serviceId,
@@ -797,9 +1359,12 @@ export async function ensureServiceDocumentChunks(input: {
   document: ServiceDocumentDetail;
 }) {
   if (
-    await hasExistingDocumentChunks({
+    await hasCompleteExistingDocumentChunks({
       sourceType: "service_document",
       sourceId: input.document.id,
+      sourceFingerprint: serviceDocumentChunkSourceFingerprint(input.document),
+      sourceRevision: input.document.chunk_source_revision,
+      expectedChunkCount: serviceDocumentExpectedChunkCount(input.document),
     })
   ) {
     return;
@@ -813,6 +1378,7 @@ export async function ensureServiceDocumentChunks(input: {
     fileFormat: input.document.file_format,
     rawText: input.document.raw_text,
     structureMap: input.document.structure_map,
+    sourceRevision: input.document.chunk_source_revision,
   });
 }
 
@@ -926,18 +1492,20 @@ function memoryCandidates(input: {
 }
 
 async function storedVectorCandidates(input: {
-  query: string;
+  getEmbedding: () => Promise<number[] | null>;
   queryTokens: string[];
   exactTerms: string[];
   projectId?: string | null;
   sourceIds: string[];
+  sourceFingerprints: ReadonlyMap<string, string>;
+  staleFilteredSourceKeys: Set<string>;
   limit: number;
 }) {
   if (!(await hasChunkStorage())) {
     return [];
   }
 
-  const embedding = (await createEmbeddings([input.query]))[0];
+  const embedding = await input.getEmbedding();
   if (!embedding) {
     return [];
   }
@@ -988,48 +1556,64 @@ async function storedVectorCandidates(input: {
     throw new Error(rowsError.message);
   }
 
-  return ((rows ?? []) as StoredChunkRow[]).map((row) => {
-    const text = decryptString(row.text_encrypted);
-    const lexical = lexicalScore({
-      queryTokens: input.queryTokens,
-      exactTerms: input.exactTerms,
-      title: row.document_title,
-      reference: row.reference,
-      text,
+  return ((rows ?? []) as StoredChunkRow[])
+    .filter((row) => {
+      const current = storedChunkMatchesCurrentSourceFingerprint(
+        row,
+        input.sourceFingerprints,
+      );
+      if (!current) {
+        input.staleFilteredSourceKeys.add(
+          documentChunkSourceKey(row.source_type, row.source_id),
+        );
+      }
+      return current;
+    })
+    .map((row) => {
+      const text = decryptString(row.text_encrypted);
+      const lexical = lexicalScore({
+        queryTokens: input.queryTokens,
+        exactTerms: input.exactTerms,
+        title: row.document_title,
+        reference: row.reference,
+        text,
+      });
+      const similarity = similarityById.get(row.id) ?? 0;
+      return {
+        sourceType: row.source_type,
+        sourceId: row.source_id,
+        documentTitle: row.document_title,
+        kind: row.kind,
+        reference: row.reference,
+        text,
+        headingPath: row.heading_path ?? [],
+        pageStart: row.page_start,
+        pageEnd: row.page_end,
+        similarity,
+        lexicalScore: lexical,
+        semanticRank: null,
+        retrievalSource: "vector" as const,
+        score: similarity * 28 + lexical,
+      };
     });
-    const similarity = similarityById.get(row.id) ?? 0;
-    return {
-      sourceType: row.source_type,
-      sourceId: row.source_id,
-      documentTitle: row.document_title,
-      kind: row.kind,
-      reference: row.reference,
-      text,
-      headingPath: row.heading_path ?? [],
-      pageStart: row.page_start,
-      pageEnd: row.page_end,
-      similarity,
-      lexicalScore: lexical,
-      semanticRank: null,
-      retrievalSource: "vector" as const,
-      score: similarity * 28 + lexical,
-    };
-  });
 }
 
 async function storedHybridCandidates(input: {
   query: string;
+  getEmbedding: () => Promise<number[] | null>;
   queryTokens: string[];
   exactTerms: string[];
   projectId?: string | null;
   sourceIds: string[];
+  sourceFingerprints: ReadonlyMap<string, string>;
+  staleFilteredSourceKeys: Set<string>;
   limit: number;
 }) {
   if (!(await hasChunkStorage())) {
     return [];
   }
 
-  const embedding = (await createEmbeddings([input.query]))[0];
+  const embedding = await input.getEmbedding();
   if (!embedding) {
     return [];
   }
@@ -1090,40 +1674,53 @@ async function storedHybridCandidates(input: {
     throw new Error(rowsError.message);
   }
 
-  return ((rows ?? []) as StoredChunkRow[]).map((row) => {
-    const text = decryptString(row.text_encrypted);
-    const match = matchById.get(row.id);
-    const lexical = lexicalScore({
-      queryTokens: input.queryTokens,
-      exactTerms: input.exactTerms,
-      title: row.document_title,
-      reference: row.reference,
-      text,
-    });
-    const similarity =
-      typeof match?.similarity === "number" ? match.similarity : null;
-    const rrfScore =
-      typeof match?.rrf_score === "number" ? match.rrf_score : null;
+  return ((rows ?? []) as StoredChunkRow[])
+    .filter((row) => {
+      const current = storedChunkMatchesCurrentSourceFingerprint(
+        row,
+        input.sourceFingerprints,
+      );
+      if (!current) {
+        input.staleFilteredSourceKeys.add(
+          documentChunkSourceKey(row.source_type, row.source_id),
+        );
+      }
+      return current;
+    })
+    .map((row) => {
+      const text = decryptString(row.text_encrypted);
+      const match = matchById.get(row.id);
+      const lexical = lexicalScore({
+        queryTokens: input.queryTokens,
+        exactTerms: input.exactTerms,
+        title: row.document_title,
+        reference: row.reference,
+        text,
+      });
+      const similarity =
+        typeof match?.similarity === "number" ? match.similarity : null;
+      const rrfScore =
+        typeof match?.rrf_score === "number" ? match.rrf_score : null;
 
-    return {
-      sourceType: row.source_type,
-      sourceId: row.source_id,
-      documentTitle: row.document_title,
-      kind: row.kind,
-      reference: row.reference,
-      text,
-      headingPath: row.heading_path ?? [],
-      pageStart: row.page_start,
-      pageEnd: row.page_end,
-      similarity,
-      lexicalScore: lexical,
-      keywordRank: match?.keyword_rank ?? null,
-      semanticRank: match?.semantic_rank ?? null,
-      rrfScore,
-      retrievalSource: "hybrid" as const,
-      score: (rrfScore ?? 0) * 120 + (similarity ?? 0) * 18 + lexical,
-    };
-  });
+      return {
+        sourceType: row.source_type,
+        sourceId: row.source_id,
+        documentTitle: row.document_title,
+        kind: row.kind,
+        reference: row.reference,
+        text,
+        headingPath: row.heading_path ?? [],
+        pageStart: row.page_start,
+        pageEnd: row.page_end,
+        similarity,
+        lexicalScore: lexical,
+        keywordRank: match?.keyword_rank ?? null,
+        semanticRank: match?.semantic_rank ?? null,
+        rrfScore,
+        retrievalSource: "hybrid" as const,
+        score: (rrfScore ?? 0) * 120 + (similarity ?? 0) * 18 + lexical,
+      };
+    });
 }
 
 function dedupeSnippets(candidates: RetrievedDocumentSnippet[]) {
@@ -1297,6 +1894,22 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const documents = input.documents ?? [];
   const serviceDocuments = input.serviceDocuments ?? [];
   const sourceIds = [...documents, ...serviceDocuments].map((document) => document.id);
+  const sourceFingerprints = new Map<string, string>([
+    ...documents.map(
+      (document) =>
+        [
+          documentChunkSourceKey("project_document", document.id),
+          projectDocumentChunkSourceFingerprint(document),
+        ] as const,
+    ),
+    ...serviceDocuments.map(
+      (document) =>
+        [
+          documentChunkSourceKey("service_document", document.id),
+          serviceDocumentChunkSourceFingerprint(document),
+        ] as const,
+    ),
+  ]);
   const queryTokens = tokenizeForRetrieval(query);
   const exactTerms = (input.exactTerms ?? []).filter(Boolean);
   const limit = Math.min(Math.max(input.limit ?? 8, 1), 16);
@@ -1305,42 +1918,74 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   let usedHybridSearch = false;
   let usedVectorSearch = false;
   let usedMemoryFallback = false;
+  let queryEmbeddingFailed = false;
+  const staleFilteredSourceKeys = new Set<string>();
+  const getQueryEmbedding = createMemoizedEmbeddingRequest(async () => {
+    try {
+      return await createQueryEmbedding(query);
+    } catch (error) {
+      queryEmbeddingFailed = true;
+      throw error;
+    }
+  });
 
   try {
     hybridCandidates = await storedHybridCandidates({
       query,
+      getEmbedding: getQueryEmbedding,
       queryTokens,
       exactTerms,
       projectId: input.projectId,
       sourceIds,
+      sourceFingerprints,
+      staleFilteredSourceKeys,
       limit,
     });
     usedHybridSearch = hybridCandidates.length > 0;
-  } catch {
+  } catch (error) {
+    assertEmbeddingFallbackAllowed(error);
     hybridCandidates = [];
   }
 
-  if (!hybridCandidates.length) {
+  if (!hybridCandidates.length && !queryEmbeddingFailed) {
     try {
-    vectorCandidates = await storedVectorCandidates({
-      query,
-      queryTokens,
-      exactTerms,
-      projectId: input.projectId,
-      sourceIds,
-      limit,
-    });
+      vectorCandidates = await storedVectorCandidates({
+        getEmbedding: getQueryEmbedding,
+        queryTokens,
+        exactTerms,
+        projectId: input.projectId,
+        sourceIds,
+        sourceFingerprints,
+        staleFilteredSourceKeys,
+        limit,
+      });
       usedVectorSearch = vectorCandidates.length > 0;
-    } catch {
+    } catch (error) {
+      assertEmbeddingFallbackAllowed(error);
       vectorCandidates = [];
     }
   }
 
+  const memoryFallbackSourceKeys = documentSourceKeysForMemoryFallback(
+    [...sourceFingerprints.keys()],
+    hybridCandidates.length + vectorCandidates.length,
+    staleFilteredSourceKeys,
+  );
   const fallbackCandidates = memoryCandidates({
     queryTokens,
     exactTerms,
-    documents,
-    serviceDocuments,
+    documents: documents.filter(
+      (document) =>
+        memoryFallbackSourceKeys.has(
+          documentChunkSourceKey("project_document", document.id),
+        ),
+    ),
+    serviceDocuments: serviceDocuments.filter(
+      (document) =>
+        memoryFallbackSourceKeys.has(
+          documentChunkSourceKey("service_document", document.id),
+        ),
+    ),
   });
   usedMemoryFallback = fallbackCandidates.length > 0;
 

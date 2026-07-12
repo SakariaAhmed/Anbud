@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   FormEvent,
   useCallback,
@@ -35,6 +35,7 @@ import {
   fetchCustomerAnalysis,
   fetchExecutiveSummary,
   fetchGeneratedArtifacts,
+  fetchProjectArtifactAuthority,
   fetchProjectServices,
   fetchSolutionEvaluation,
   markClientPerformance,
@@ -47,6 +48,12 @@ import {
 } from "@/lib/client/project-api";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
+import { selectSolutionEvaluationDocumentCandidates } from "@/components/projects/project-evaluation-documents";
+import {
+  isDocumentReadyForEvaluation,
+  isSolutionEvaluationCandidate,
+  requirementDocumentIdsForGeneration,
+} from "@/lib/document-processing";
 import {
   ProjectWorkspaceShell,
   ProjectWorkspaceTabContent,
@@ -57,6 +64,16 @@ import {
   type ProjectWorkspaceTab,
   type WorkflowStepItem,
 } from "@/components/projects/project-workspace-types";
+import {
+  applyProjectSnapshot,
+  createLatestArtifactAuthorityRequestGate,
+  hasAuthoritativeCurrentArtifact,
+  loadedArtifactTypesMissingAuthorityVersion,
+  mergeGeneratedArtifactsForType,
+  prependGeneratedArtifactVersion,
+  reconcileGeneratedArtifactAuthority,
+  solutionProposalWorkflowStatus,
+} from "@/components/projects/project-workflow-status";
 import { deriveProjectStatus } from "@/components/projects/project-workspace-shared";
 import type {
   CustomerAnalysisResult,
@@ -64,6 +81,7 @@ import type {
   CustomerAnalysisSectionSnapshotMap,
   ExecutiveSummaryResult,
   GeneratedArtifact,
+  GeneratedArtifactType,
   ProjectDetail,
   ProjectDocument,
   ProjectDocumentRole,
@@ -74,14 +92,18 @@ import type {
 
 export type { ProjectWorkspaceTab } from "@/components/projects/project-workspace-types";
 
-const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v3";
+const PROJECT_WORKSPACE_UI_SCALE = 0.9;
+const DEFAULT_SIDEBAR_WIDTH = Math.round(285 * PROJECT_WORKSPACE_UI_SCALE);
+const MIN_SIDEBAR_WIDTH = Math.round(270 * PROJECT_WORKSPACE_UI_SCALE);
+const MAX_SIDEBAR_WIDTH = Math.round(440 * PROJECT_WORKSPACE_UI_SCALE);
 
-function patchProjectWithSnapshot(
-  project: ProjectDetail,
-  snapshot: ProjectSnapshotPayload,
-): ProjectDetail {
-  return { ...project, ...snapshot };
+function isAbortError(error: unknown) {
+  return (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
 }
+const SIDEBAR_WIDTH_STORAGE_KEY = "project-workspace-sidebar-width-v4";
 
 function normalizeProjectState(
   project: ProjectDetail,
@@ -128,7 +150,7 @@ function prependGeneratedArtifact(
   artifacts: GeneratedArtifact[],
   artifact: GeneratedArtifact,
 ) {
-  return [artifact, ...artifacts.filter((item) => item.id !== artifact.id)];
+  return prependGeneratedArtifactVersion(artifacts, artifact);
 }
 
 const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
@@ -141,6 +163,64 @@ const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
   "keywords",
   "value",
 ];
+
+const WORKSPACE_ARTIFACT_TYPES: GeneratedArtifactType[] = [
+  "bilag1_rekonstruksjon",
+  "forbedret_kravsvar",
+  "gjennomforing_og_risiko",
+  "losningsutkast",
+];
+
+const ARTIFACT_TYPE_BY_TAB: Partial<
+  Record<ProjectWorkspaceTab, GeneratedArtifactType>
+> = {
+  bilag1: "bilag1_rekonstruksjon",
+  delivery: "gjennomforing_og_risiko",
+  generator: "losningsutkast",
+  requirements: "forbedret_kravsvar",
+};
+
+function mergeArtifactsForType(
+  current: GeneratedArtifact[],
+  incoming: GeneratedArtifact[],
+  artifactType: GeneratedArtifactType,
+) {
+  return mergeGeneratedArtifactsForType(current, incoming, artifactType);
+}
+
+function loadedArtifactTypesFromArtifacts(artifacts: GeneratedArtifact[]) {
+  return Array.from(
+    new Set(
+      artifacts
+        .map((artifact) => artifact.artifact_type)
+        .filter((type) => WORKSPACE_ARTIFACT_TYPES.includes(type)),
+    ),
+  );
+}
+
+function addLoadedArtifactType(
+  current: GeneratedArtifactType[],
+  artifactType: GeneratedArtifactType,
+) {
+  return current.includes(artifactType) ? current : [...current, artifactType];
+}
+
+function initialLoadedArtifactTypes(project: ProjectDetail) {
+  if (project.artifact_count === 0) {
+    return WORKSPACE_ARTIFACT_TYPES;
+  }
+
+  const loaded = new Set(loadedArtifactTypesFromArtifacts(project.generated_artifacts));
+  if (project.artifact_counts_by_type) {
+    for (const artifactType of WORKSPACE_ARTIFACT_TYPES) {
+      if ((project.artifact_counts_by_type[artifactType] ?? 0) === 0) {
+        loaded.add(artifactType);
+      }
+    }
+  }
+
+  return Array.from(loaded);
+}
 
 type ProgressDriverState = {
   startedAt: number;
@@ -197,10 +277,6 @@ function progressCeilingForJobStatus(
   if (message.includes("bygger") || message.includes("kartlegger")) return 66;
 
   return 88;
-}
-
-function hasExplicitProgress(message: string) {
-  return /\[\d{1,3}%\]/.test(message);
 }
 
 function progressMessageLabel(message: string) {
@@ -261,10 +337,6 @@ export function ProjectWorkspacePage({
   initialData: ProjectDetail;
   initialTab?: ProjectWorkspaceTab;
 }) {
-  const DEFAULT_SIDEBAR_WIDTH = 285;
-  const MIN_SIDEBAR_WIDTH = 270;
-  const MAX_SIDEBAR_WIDTH = 440;
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [project, setProject] = useState(initialData);
@@ -280,16 +352,13 @@ export function ProjectWorkspacePage({
   const [file, setFile] = useState<File | null>(null);
   const [uploadRole, setUploadRole] =
     useState<ProjectDocumentRole>("supporting_document");
-  const [selectedRequirementDocumentId, setSelectedRequirementDocumentId] =
-    useState("");
   const [activeTab, setActiveTab] = useState<ProjectWorkspaceTab>(initialTab);
   const [isTabPending, startTabTransition] = useTransition();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
-  const [artifactsLoaded, setArtifactsLoaded] = useState(
-    initialData.generated_artifacts.length > 0 ||
-      initialData.artifact_count === 0,
-  );
+  const [loadedArtifactTypes, setLoadedArtifactTypes] = useState<
+    GeneratedArtifactType[]
+  >(() => initialLoadedArtifactTypes(initialData));
   const [analysisLoaded, setAnalysisLoaded] = useState(
     Boolean(initialData.customer_analysis) ||
       !initialData.customer_analysis_generated,
@@ -304,12 +373,17 @@ export function ProjectWorkspacePage({
   );
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationLoadError, setEvaluationLoadError] = useState("");
+  const [evaluationLoadRetryToken, setEvaluationLoadRetryToken] = useState(0);
   const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
   const progressIntervalRef = useRef<number | null>(null);
   const progressDriverRef = useRef<ProgressDriverState | null>(null);
   const documentJobAbortControllersRef = useRef<Set<AbortController>>(new Set());
+  const artifactAuthorityRequestGateRef = useRef(
+    createLatestArtifactAuthorityRequestGate(),
+  );
   const sidebarResizeRef = useRef(false);
   const preloadWorkspaceTab = useProjectWorkspacePrefetch({
     projectId: project.id,
@@ -319,13 +393,10 @@ export function ProjectWorkspacePage({
     analysisLoaded,
     evaluationLoaded,
     executiveSummaryLoaded,
-    artifactsLoaded,
+    loadedArtifactTypes,
   });
   const architectureDocumentCandidates = useMemo(
-    () =>
-      project.documents.filter(
-        (document) => document.role !== "primary_customer_document",
-      ),
+    () => selectSolutionEvaluationDocumentCandidates(project.documents),
     [project.documents],
   );
 
@@ -356,36 +427,134 @@ export function ProjectWorkspacePage({
       }
       const query = nextParams.toString();
       const nextHref = query ? `${pathname}?${query}` : pathname;
-      router.prefetch(nextHref);
-      router.push(nextHref, { scroll: false });
+      window.history.pushState(null, "", nextHref);
     },
-    [activeTab, pathname, preloadWorkspaceTab, project.id, router, searchParams],
+    [activeTab, pathname, preloadWorkspaceTab, project.id, searchParams],
   );
-  const loadSidebarServiceDescriptions = useCallback(async () => {
+  const loadSidebarServiceDescriptions = useCallback(async (signal?: AbortSignal) => {
     const cacheKey = projectServicesCacheKey(project.id);
     const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
     if (cached) {
+      if (signal?.aborted) return;
       setServiceDescriptions(cached);
       return;
     }
 
     try {
-      const services = await fetchProjectServices(project.id);
+      const services = await fetchProjectServices(project.id, { signal });
+      if (signal?.aborted) return;
       setServiceDescriptions(services);
       setClientCache(cacheKey, services, PROJECT_SERVICES_CACHE_TTL_MS);
-    } catch {
+    } catch (err) {
+      if (isAbortError(err) || signal?.aborted) return;
       setServiceDescriptions([]);
     }
   }, [project.id]);
 
+  const refreshArtifactAuthority = useCallback(
+    async (signal?: AbortSignal) => {
+      const requestSequence = artifactAuthorityRequestGateRef.current.start();
+      try {
+        const authority = await fetchProjectArtifactAuthority(
+          project.id,
+          { signal },
+        );
+        if (
+          signal?.aborted ||
+          !artifactAuthorityRequestGateRef.current.isLatest(requestSequence)
+        ) {
+          return;
+        }
+        const missingLoadedTypes = loadedArtifactTypesMissingAuthorityVersion(
+          project.generated_artifacts,
+          authority.artifactAuthority,
+          loadedArtifactTypes,
+        );
+        const refreshedByType = await Promise.all(
+          missingLoadedTypes.map(async (artifactType) => {
+            try {
+              return {
+                artifactType,
+                artifacts: await fetchGeneratedArtifacts(project.id, {
+                  signal,
+                  artifactType,
+                  forceRefresh: true,
+                }),
+              };
+            } catch (error) {
+              if (isAbortError(error) || signal?.aborted) {
+                throw error;
+              }
+              return null;
+            }
+          }),
+        );
+        if (
+          signal?.aborted ||
+          !artifactAuthorityRequestGateRef.current.isLatest(requestSequence)
+        ) {
+          return;
+        }
+        setProject((current) => ({
+          ...current,
+          current_artifact_types: authority.currentArtifactTypes,
+          artifact_authority: authority.artifactAuthority,
+          generated_artifacts: reconcileGeneratedArtifactAuthority(
+            refreshedByType.reduce(
+              (artifacts, refreshed) =>
+                refreshed
+                  ? mergeArtifactsForType(
+                      artifacts,
+                      refreshed.artifacts,
+                      refreshed.artifactType,
+                    )
+                  : artifacts,
+              current.generated_artifacts,
+            ),
+            authority.artifactAuthority,
+          ),
+        }));
+      } catch (err) {
+        if (!isAbortError(err) && !signal?.aborted) {
+          // Authority refresh is a consistency guard. Existing source mutation
+          // responses still reconcile state if this best-effort refresh fails.
+        }
+      }
+    },
+    [loadedArtifactTypes, project.generated_artifacts, project.id],
+  );
+
   useEffect(() => {
-    void loadSidebarServiceDescriptions();
+    const controller = new AbortController();
+    const refresh = () => void refreshArtifactAuthority(controller.signal);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("project-services-updated", refresh);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      controller.abort();
+      window.removeEventListener("project-services-updated", refresh);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshArtifactAuthority]);
+
+  useEffect(() => {
+    if (activeTab !== "documents") {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadSidebarServiceDescriptions(controller.signal);
     const onServicesUpdated = () => void loadSidebarServiceDescriptions();
     window.addEventListener("project-services-updated", onServicesUpdated);
     return () => {
+      controller.abort();
       window.removeEventListener("project-services-updated", onServicesUpdated);
     };
-  }, [loadSidebarServiceDescriptions]);
+  }, [activeTab, loadSidebarServiceDescriptions]);
 
   const stopSidebarResize = useCallback(() => {
     if (!sidebarResizeRef.current) return;
@@ -486,127 +655,139 @@ export function ProjectWorkspacePage({
               current,
               Math.min(
                 progressCeilingForJobStatus(jobStatus),
-                hasExplicitProgress(jobStatus.message)
-                  ? Math.max(current, nextProgress)
-                  : Math.max(current, nextProgress),
+                Math.max(current, nextProgress),
               ),
             ),
       );
     },
   });
 
-  function trackDocumentIngestionJob(
+  async function trackDocumentIngestionJob(
     job: ProjectJobRecord | null | undefined,
     documentId: string,
+    options: { propagateFailure?: boolean } = {},
   ) {
     if (!job || job.kind !== "document_ingestion") {
-      return;
+      return null;
     }
 
     const controller = new AbortController();
     documentJobAbortControllersRef.current.add(controller);
 
-    void watchProjectJob({
-      projectId: project.id,
-      jobId: job.id,
-      signal: controller.signal,
-      onStatus(jobStatus) {
-        setProject((current) =>
-          normalizeProjectState(
-            {
-              ...current,
-              documents: current.documents.map((document) => {
-                if (document.id !== documentId) {
-                  return document;
-                }
-
-                if (jobStatus.status === "failed") {
-                  return {
-                    ...document,
-                    processing_status: "failed",
-                    processing_message: "Dokumentindeksering feilet.",
-                    processing_error: jobStatus.error,
-                  };
-                }
-
-                if (jobStatus.status === "completed") {
-                  return document;
-                }
-
-                return {
-                  ...document,
-                  processing_status:
-                    jobStatus.status === "queued" ? "queued" : "processing",
-                  processing_message: progressMessageLabel(jobStatus.message),
-                  processing_error: null,
-                };
-              }),
-            },
-            { preserveArtifactCount: !artifactsLoaded },
-          ),
-        );
-      },
-    })
-      .then((completedJob) => {
-        const completedDocument = documentFromJobResult(completedJob.result);
-        if (!completedDocument) {
-          return;
-        }
-
-        const projectSnapshot =
-          completedJob.result &&
-          typeof completedJob.result === "object" &&
-          "project" in completedJob.result
-            ? (completedJob.result as { project?: ProjectSnapshotPayload })
-                .project
-            : null;
-
-        setProject((current) =>
-          normalizeProjectState(
-            patchProjectWithSnapshot(
+    try {
+      const completedJob = await watchProjectJob({
+        projectId: project.id,
+        jobId: job.id,
+        signal: controller.signal,
+        onStatus(jobStatus) {
+          if (options.propagateFailure) {
+            setBusyMessage(progressMessageLabel(jobStatus.message));
+            setBusyProgress((current) =>
+              jobStatus.status === "completed" || jobStatus.status === "failed"
+                ? 100
+                : nextDisplayedProgress(
+                    current,
+                    Math.max(current, progressForJobStatus(jobStatus)),
+                  ),
+            );
+          }
+          setProject((current) =>
+            normalizeProjectState(
               {
                 ...current,
-                documents: dedupeDocuments([
-                  completedDocument,
-                  ...current.documents.filter(
-                    (document) => document.id !== completedDocument.id,
-                  ),
-                ]),
-              },
-              projectSnapshot ?? current,
-            ),
-            { preserveArtifactCount: !artifactsLoaded },
-          ),
-        );
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) {
-          return;
-        }
+                documents: current.documents.map((document) => {
+                  if (document.id !== documentId) {
+                    return document;
+                  }
 
-        setProject((current) =>
-          normalizeProjectState(
-            {
-              ...current,
-              documents: current.documents.map((document) =>
-                document.id === documentId
-                  ? {
+                  if (jobStatus.status === "failed") {
+                    return {
                       ...document,
                       processing_status: "failed",
                       processing_message: "Dokumentindeksering feilet.",
-                      processing_error:
-                        err instanceof Error ? err.message : "Ukjent feil.",
-                    }
-                  : document,
-              ),
-            },
-            { preserveArtifactCount: !artifactsLoaded },
-          ),
-        );
-      })
-      .finally(() => {
-        documentJobAbortControllersRef.current.delete(controller);
+                      processing_error: jobStatus.error,
+                    };
+                  }
+
+                  if (jobStatus.status === "completed") {
+                    return document;
+                  }
+
+                  return {
+                    ...document,
+                    processing_status:
+                      jobStatus.status === "queued" ? "queued" : "processing",
+                    processing_message: progressMessageLabel(jobStatus.message),
+                    processing_error: null,
+                  };
+                }),
+              },
+              { preserveArtifactCount: true },
+            ),
+          );
+        },
       });
+      const completedDocument = documentFromJobResult(completedJob.result);
+      if (!completedDocument) {
+        return null;
+      }
+
+      const projectSnapshot =
+        completedJob.result &&
+        typeof completedJob.result === "object" &&
+        "project" in completedJob.result
+          ? (completedJob.result as { project?: ProjectSnapshotPayload }).project
+          : null;
+
+      setProject((current) =>
+        normalizeProjectState(
+          applyProjectSnapshot(
+            {
+              ...current,
+              documents: dedupeDocuments([
+                completedDocument,
+                ...current.documents.filter(
+                  (document) => document.id !== completedDocument.id,
+                ),
+              ]),
+            },
+            projectSnapshot ?? current,
+          ),
+          { preserveArtifactCount: true },
+        ),
+      );
+      return completedDocument;
+    } catch (err) {
+      if (controller.signal.aborted) {
+        return null;
+      }
+
+      setProject((current) =>
+        normalizeProjectState(
+          {
+            ...current,
+            documents: current.documents.map((document) =>
+              document.id === documentId
+                ? {
+                    ...document,
+                    processing_status: "failed",
+                    processing_message: "Dokumentindeksering feilet.",
+                    processing_error:
+                      err instanceof Error ? err.message : "Ukjent feil.",
+                  }
+                : document,
+            ),
+          },
+          { preserveArtifactCount: true },
+        ),
+      );
+      if (options.propagateFailure) {
+        throw err;
+      }
+      return null;
+    } finally {
+      documentJobAbortControllersRef.current.delete(controller);
+    }
   }
 
   useEffect(() => {
@@ -677,11 +858,11 @@ export function ProjectWorkspacePage({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setAnalysisLoading(true);
-    fetchCustomerAnalysis(project.id)
+    fetchCustomerAnalysis(project.id, { signal: controller.signal })
       .then((analysis) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setProject((current) => ({
             ...current,
             customer_analysis: analysis,
@@ -690,7 +871,7 @@ export function ProjectWorkspacePage({
         }
       })
       .catch((err) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted && !isAbortError(err)) {
           setError(
             err instanceof Error
               ? err.message
@@ -700,13 +881,13 @@ export function ProjectWorkspacePage({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setAnalysisLoading(false);
         }
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     activeTab,
@@ -724,40 +905,43 @@ export function ProjectWorkspacePage({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setEvaluationLoading(true);
-    fetchSolutionEvaluation(project.id)
+    setEvaluationLoadError("");
+    fetchSolutionEvaluation(project.id, { signal: controller.signal })
       .then((evaluation) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setProject((current) => ({
             ...current,
             solution_evaluation: evaluation,
           }));
+          setEvaluationLoadError("");
           setEvaluationLoaded(true);
         }
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError(
+        if (!controller.signal.aborted && !isAbortError(err)) {
+          const message =
             err instanceof Error
               ? err.message
-              : "Kunne ikke hente løsningsvurderingen.",
-          );
-          setEvaluationLoaded(true);
+              : "Kunne ikke hente løsningsvurderingen.";
+          setError(message);
+          setEvaluationLoadError(message);
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setEvaluationLoading(false);
         }
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     activeTab,
     evaluationLoaded,
+    evaluationLoadRetryToken,
     project.id,
     project.solution_evaluation_generated,
   ]);
@@ -771,11 +955,11 @@ export function ProjectWorkspacePage({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setExecutiveSummaryLoading(true);
-    fetchExecutiveSummary(project.id)
+    fetchExecutiveSummary(project.id, { signal: controller.signal })
       .then((executiveSummary) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setProject((current) => ({
             ...current,
             executive_summary: executiveSummary,
@@ -784,7 +968,7 @@ export function ProjectWorkspacePage({
         }
       })
       .catch((err) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted && !isAbortError(err)) {
           setError(
             err instanceof Error
               ? err.message
@@ -794,13 +978,13 @@ export function ProjectWorkspacePage({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setExecutiveSummaryLoading(false);
         }
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     activeTab,
@@ -808,6 +992,12 @@ export function ProjectWorkspacePage({
     project.id,
     project.solution_evaluation_generated,
   ]);
+
+  function retrySolutionEvaluationLoad() {
+    setError("");
+    setEvaluationLoadError("");
+    setEvaluationLoadRetryToken((current) => current + 1);
+  }
 
   async function runAction(
     label: string,
@@ -830,30 +1020,41 @@ export function ProjectWorkspacePage({
   }
 
   useEffect(() => {
+    const artifactType = ARTIFACT_TYPE_BY_TAB[activeTab];
     if (
-	      (activeTab !== "generator" &&
-	        activeTab !== "delivery" &&
-	        activeTab !== "requirements" &&
-	        activeTab !== "bilag1") ||
-	      artifactsLoaded ||
-	      project.artifact_count === 0
-	    )
+      !artifactType ||
+      loadedArtifactTypes.includes(artifactType) ||
+      project.artifact_count === 0
+    ) {
       return;
-    let cancelled = false;
-    fetchGeneratedArtifacts(project.id)
+    }
+    const controller = new AbortController();
+    fetchGeneratedArtifacts(project.id, {
+      signal: controller.signal,
+      artifactType,
+    })
       .then((artifacts) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setProject((current) =>
-            normalizeProjectState({
-              ...current,
-              generated_artifacts: artifacts,
-            }),
+            normalizeProjectState(
+              {
+                ...current,
+                generated_artifacts: mergeArtifactsForType(
+                  current.generated_artifacts,
+                  artifacts,
+                  artifactType,
+                ),
+              },
+              { preserveArtifactCount: true },
+            ),
           );
-          setArtifactsLoaded(true);
+          setLoadedArtifactTypes((current) =>
+            addLoadedArtifactType(current, artifactType),
+          );
         }
       })
       .catch((err) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted && !isAbortError(err)) {
           setError(
             err instanceof Error
               ? err.message
@@ -862,9 +1063,9 @@ export function ProjectWorkspacePage({
         }
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-	  }, [activeTab, artifactsLoaded, project.artifact_count, project.id]);
+  }, [activeTab, loadedArtifactTypes, project.artifact_count, project.id]);
 
   async function onUploadDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -882,14 +1083,14 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp dokumentet.",
       });
-      trackDocumentIngestionJob(payload.job, payload.document.id);
+      void trackDocumentIngestionJob(payload.job, payload.document.id);
       setDocTitle("");
       setFile(null);
       setUploadRole("supporting_document");
       setDocumentFileInputKey((current) => current + 1);
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
               documents: dedupeDocuments([
@@ -898,19 +1099,18 @@ export function ProjectWorkspacePage({
               ]),
             },
             payload.project,
+            { invalidateExecutiveSummary: true },
           ),
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
-      setArtifactsLoaded(true);
     });
   }
 
   async function onUploadRequirementDocument(file: File) {
     let uploadedDocument: ProjectDocument | null = null;
-    let uploadedDocumentId = "";
 
     await runAction("upload-requirement-document", async () => {
       const formData = new FormData();
@@ -926,12 +1126,9 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp kravdokumentet.",
       });
-      trackDocumentIngestionJob(payload.job, payload.document.id);
-      uploadedDocument = payload.document;
-      uploadedDocumentId = payload.document.id;
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
               documents: dedupeDocuments([
@@ -940,18 +1137,34 @@ export function ProjectWorkspacePage({
               ]),
             },
             payload.project,
+            { invalidateExecutiveSummary: true },
           ),
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
-      setArtifactsLoaded(true);
-    });
 
-    if (uploadedDocumentId) {
-      setSelectedRequirementDocumentId(uploadedDocumentId);
-    }
+      let completedDocument: ProjectDocument | null = payload.document;
+      if (payload.job?.kind === "document_ingestion") {
+        setBusyMessage(progressMessageLabel(payload.job.message));
+        startEstimatedProgress(payload.job);
+        completedDocument = await trackDocumentIngestionJob(
+          payload.job,
+          payload.document.id,
+          { propagateFailure: true },
+        );
+      }
+      if (!isDocumentReadyForEvaluation(completedDocument)) {
+        throw new Error(
+          completedDocument?.processing_status === "failed"
+            ? completedDocument.processing_error ||
+                "Kravdokumentet kunne ikke indekseres og kan ikke brukes til kravbesvarelse."
+            : "Kravdokumentet indekseres fortsatt. Vent til dokumentet er klart før du genererer kravbesvarelsen.",
+        );
+      }
+      uploadedDocument = completedDocument;
+    });
 
     return uploadedDocument as ProjectDocument | null;
   }
@@ -972,11 +1185,9 @@ export function ProjectWorkspacePage({
         formData,
         fallbackMessage: "Kunne ikke laste opp Bilag 2.",
       });
-      trackDocumentIngestionJob(payload.job, payload.document.id);
-      uploadedDocument = payload.document;
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
               documents: dedupeDocuments([
@@ -985,13 +1196,30 @@ export function ProjectWorkspacePage({
               ]),
             },
             payload.project,
+            { invalidateExecutiveSummary: true },
           ),
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
-      setArtifactsLoaded(true);
+
+      let completedDocument: ProjectDocument | null = payload.document;
+      if (payload.job?.kind === "document_ingestion") {
+        setBusyMessage(progressMessageLabel(payload.job.message));
+        startEstimatedProgress(payload.job);
+        completedDocument = await trackDocumentIngestionJob(
+          payload.job,
+          payload.document.id,
+          { propagateFailure: true },
+        );
+      }
+      if (!isDocumentReadyForEvaluation(completedDocument)) {
+        throw new Error(
+          "Bilag 2 er ikke ferdig indeksert ennå. Vent til dokumentet er RAG-klart før du starter vurderingen.",
+        );
+      }
+      uploadedDocument = completedDocument;
     });
 
     return uploadedDocument as ProjectDocument | null;
@@ -999,7 +1227,11 @@ export function ProjectWorkspacePage({
 
   async function onUpdateRequirementArtifact(
     artifact: GeneratedArtifact,
-    value: { title: string; content_markdown: string },
+    value: {
+      title: string;
+      content_markdown: string;
+      acknowledge_deterministic_repairs?: boolean;
+    },
   ) {
     setError("");
     setNotice("");
@@ -1011,12 +1243,15 @@ export function ProjectWorkspacePage({
       content_markdown: value.content_markdown,
     };
     setProject((current) =>
-      normalizeProjectState({
-        ...current,
-        generated_artifacts: current.generated_artifacts.map((item) =>
-          item.id === artifact.id ? optimisticArtifact : item,
-        ),
-      }),
+      normalizeProjectState(
+        {
+          ...current,
+          generated_artifacts: current.generated_artifacts.map((item) =>
+            item.id === artifact.id ? optimisticArtifact : item,
+          ),
+        },
+        { preserveArtifactCount: true },
+      ),
     );
     try {
       const payload = await updateGeneratedArtifact({
@@ -1024,18 +1259,28 @@ export function ProjectWorkspacePage({
         artifactId: artifact.id,
         title: value.title,
         contentMarkdown: value.content_markdown,
+        acknowledgeDeterministicRepairs:
+          value.acknowledge_deterministic_repairs === true,
       });
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
-              generated_artifacts: current.generated_artifacts.map((item) =>
-                item.id === payload.artifact.id ? payload.artifact : item,
+              generated_artifacts: prependGeneratedArtifact(
+                current.generated_artifacts.map((item) =>
+                  item.id === artifact.id
+                    ? previousProject.generated_artifacts.find(
+                        (previous) => previous.id === artifact.id,
+                      ) ?? item
+                    : item,
+                ),
+                payload.artifact,
               ),
             },
             payload.project,
           ),
+          { preserveArtifactCount: true },
         ),
       );
       setNotice("Kravbesvarelsen er oppdatert.");
@@ -1054,34 +1299,58 @@ export function ProjectWorkspacePage({
     setBusy(`delete-artifact-${artifact.id}`);
     const previousProject = project;
     setProject((current) =>
-      normalizeProjectState({
-        ...current,
-        generated_artifacts: current.generated_artifacts.filter(
-          (item) => item.id !== artifact.id,
-        ),
-      }),
+      normalizeProjectState(
+        {
+          ...current,
+          generated_artifacts: current.generated_artifacts.filter(
+            (item) => item.id !== artifact.id,
+          ),
+          artifact_count: Math.max(0, current.artifact_count - 1),
+        },
+        { preserveArtifactCount: true },
+      ),
     );
+    let deleteCommitted = false;
     try {
       const payload = await deleteGeneratedArtifact({
         projectId: project.id,
         artifactId: artifact.id,
       });
+      deleteCommitted = true;
+      let refreshedArtifacts: GeneratedArtifact[] | null = null;
+      try {
+        refreshedArtifacts = await fetchGeneratedArtifacts(project.id, {
+          artifactType: artifact.artifact_type,
+        });
+      } catch {
+        // applyProjectSnapshot deterministically promotes the highest loaded
+        // remaining version with the authoritative source-current summary.
+      }
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             {
               ...current,
-              generated_artifacts: current.generated_artifacts.filter(
-                (item) => item.id !== artifact.id,
-              ),
+              generated_artifacts: refreshedArtifacts
+                ? mergeArtifactsForType(
+                    current.generated_artifacts,
+                    refreshedArtifacts,
+                    artifact.artifact_type,
+                  )
+                : current.generated_artifacts.filter(
+                    (item) => item.id !== artifact.id,
+                  ),
             },
             payload.project,
           ),
+          { preserveArtifactCount: true },
         ),
       );
       setNotice("Artefakten er slettet.");
     } catch (err) {
-      setProject(previousProject);
+      if (!deleteCommitted) {
+        setProject(previousProject);
+      }
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
       throw err;
     } finally {
@@ -1101,7 +1370,7 @@ export function ProjectWorkspacePage({
             ),
           },
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
@@ -1116,7 +1385,7 @@ export function ProjectWorkspacePage({
         throw err;
       }
       setProject((current) => {
-        const next = patchProjectWithSnapshot(
+        const next = applyProjectSnapshot(
           {
             ...current,
             documents: current.documents.filter(
@@ -1138,13 +1407,14 @@ export function ProjectWorkspacePage({
           payload.project,
         );
         return normalizeProjectState(next, {
-          preserveArtifactCount: !artifactsLoaded,
+          preserveArtifactCount: true,
         });
       });
       if (!payload.project.customer_analysis_generated) {
         setAnalysisLoaded(true);
       }
       if (!payload.project.solution_evaluation_generated) {
+        setEvaluationLoadError("");
         setEvaluationLoaded(true);
         setExecutiveSummaryLoaded(true);
       }
@@ -1179,12 +1449,12 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               { ...current, customer_analysis: result.analysis },
               result.project,
             ),
             {
-              preserveArtifactCount: !artifactsLoaded,
+              preserveArtifactCount: true,
             },
           ),
         );
@@ -1206,12 +1476,12 @@ export function ProjectWorkspacePage({
       });
       setProject((current) =>
         normalizeProjectState(
-          patchProjectWithSnapshot(
+          applyProjectSnapshot(
             { ...current, customer_analysis: payload.analysis },
             payload.project,
           ),
           {
-            preserveArtifactCount: !artifactsLoaded,
+            preserveArtifactCount: true,
           },
         ),
       );
@@ -1245,7 +1515,7 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 solution_evaluation:
@@ -1258,10 +1528,13 @@ export function ProjectWorkspacePage({
               },
               result.project,
             ),
-	          ),
-	        );
-	        setArtifactsLoaded(true);
-	      },
+            { preserveArtifactCount: true },
+          ),
+        );
+        setLoadedArtifactTypes((current) =>
+          addLoadedArtifactType(current, result.artifact.artifact_type),
+        );
+      },
       ["Starter generatorjobben ..."],
     );
   }
@@ -1288,9 +1561,9 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-	        setProject((current) =>
-	          normalizeProjectState(
-            patchProjectWithSnapshot(
+        setProject((current) =>
+          normalizeProjectState(
+            applyProjectSnapshot(
               {
                 ...current,
                 generated_artifacts: prependGeneratedArtifact(
@@ -1301,10 +1574,13 @@ export function ProjectWorkspacePage({
               },
               result.project,
             ),
-	          ),
-	        );
-	        setArtifactsLoaded(true);
-	      },
+            { preserveArtifactCount: true },
+          ),
+        );
+        setLoadedArtifactTypes((current) =>
+          addLoadedArtifactType(current, result.artifact.artifact_type),
+        );
+      },
       ["Starter jobben for fremdriftsplanen ..."],
     );
   }
@@ -1334,9 +1610,9 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-	        setProject((current) =>
-	          normalizeProjectState(
-            patchProjectWithSnapshot(
+        setProject((current) =>
+          normalizeProjectState(
+            applyProjectSnapshot(
               {
                 ...current,
                 generated_artifacts: prependGeneratedArtifact(
@@ -1347,16 +1623,28 @@ export function ProjectWorkspacePage({
               },
               result.project,
             ),
-	          ),
-	        );
-	        setArtifactsLoaded(true);
-	      },
+            { preserveArtifactCount: true },
+          ),
+        );
+        setLoadedArtifactTypes((current) =>
+          addLoadedArtifactType(current, result.artifact.artifact_type),
+        );
+      },
       ["Starter jobben for Bilag 1 ..."],
     );
   }
 
   async function onGenerateRequirementResponse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const sourceDocumentIds = requirementDocumentIdsForGeneration(
+      project.documents,
+    );
+    if (!sourceDocumentIds.length) {
+      setError(
+        "Ingen klassifiserte kravdokumenter er klare. Vent til dokumentbehandlingen er ferdig før du genererer kravbesvarelsen.",
+      );
+      return;
+    }
     await runAction(
       "requirement-response",
       async () => {
@@ -1364,9 +1652,7 @@ export function ProjectWorkspacePage({
           {
             kind: "artifact_generation",
             artifact_type: "forbedret_kravsvar",
-            source_document_ids: selectedRequirementDocumentId
-              ? [selectedRequirementDocumentId]
-              : [],
+            source_document_ids: sourceDocumentIds,
           },
           "Kunne ikke starte jobben for kravbesvarelse.",
         );
@@ -1380,9 +1666,9 @@ export function ProjectWorkspacePage({
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
         };
-	        setProject((current) =>
-	          normalizeProjectState(
-            patchProjectWithSnapshot(
+        setProject((current) =>
+          normalizeProjectState(
+            applyProjectSnapshot(
               {
                 ...current,
                 generated_artifacts: prependGeneratedArtifact(
@@ -1393,22 +1679,47 @@ export function ProjectWorkspacePage({
               },
               result.project,
             ),
-	          ),
-	        );
-	        setArtifactsLoaded(true);
-	      },
+            { preserveArtifactCount: true },
+          ),
+        );
+        setLoadedArtifactTypes((current) =>
+          addLoadedArtifactType(current, result.artifact.artifact_type),
+        );
+      },
       ["Starter jobben for kravbesvarelse ..."],
     );
   }
 
-  async function onGenerateSolutionEvaluation(solutionDocumentId?: string) {
+  async function onGenerateSolutionEvaluation(
+    solutionDocumentId?: string,
+    importedDocument?: ProjectDocument,
+  ) {
+    const selectedDocument =
+      importedDocument && importedDocument.id === solutionDocumentId
+        ? importedDocument
+        : solutionDocumentId
+          ? project.documents.find(
+              (document) => document.id === solutionDocumentId,
+            )
+          : architectureDocumentCandidates[0];
+    if (!selectedDocument || !isSolutionEvaluationCandidate(selectedDocument)) {
+      const message = !isDocumentReadyForEvaluation(selectedDocument)
+        ? selectedDocument?.processing_status === "failed"
+          ? selectedDocument.processing_error ||
+            "Dokumentet kunne ikke indekseres og kan ikke vurderes."
+          : "Dokumentet indekseres fortsatt. Vent til det er RAG-klart før du starter vurderingen."
+        : "Dokumentet er ikke en godkjent primær arkitektløsning.";
+      setError(message);
+      return;
+    }
+
     await runAction(
       "solution-evaluation",
       async () => {
         const job = await startWorkspaceJob(
           {
             kind: "solution_evaluation",
-            solution_document_id: solutionDocumentId,
+            solution_document_id: selectedDocument.id,
           },
           "Kunne ikke starte løsningsvurderingen.",
         );
@@ -1424,19 +1735,21 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 solution_evaluation: result.evaluation,
                 executive_summary: null,
+                has_executive_summary: false,
               },
               result.project,
             ),
             {
-              preserveArtifactCount: !artifactsLoaded,
+              preserveArtifactCount: true,
             },
           ),
         );
+        setEvaluationLoadError("");
         setEvaluationLoaded(true);
         setExecutiveSummaryLoaded(true);
         setNotice("Sammenligningen er generert og lagret i prosjektet.");
@@ -1465,7 +1778,7 @@ export function ProjectWorkspacePage({
         };
         setProject((current) =>
           normalizeProjectState(
-            patchProjectWithSnapshot(
+            applyProjectSnapshot(
               {
                 ...current,
                 executive_summary: result.executive_summary,
@@ -1473,7 +1786,7 @@ export function ProjectWorkspacePage({
               result.project,
             ),
             {
-              preserveArtifactCount: !artifactsLoaded,
+              preserveArtifactCount: true,
             },
           ),
         );
@@ -1502,18 +1815,21 @@ export function ProjectWorkspacePage({
   const deliveryArtifacts = project.generated_artifacts.filter(
     (artifact) => artifact.artifact_type === "gjennomforing_og_risiko",
   );
+  const hasArtifactType = (artifactType: GeneratedArtifactType) =>
+    hasAuthoritativeCurrentArtifact(project, artifactType);
   const analysisSectionBusy = parseCustomerAnalysisSectionBusy(busy);
   const hasDocuments = project.documents.length > 0;
   const hasCustomerAnalysis =
     Boolean(customerAnalysis) || project.customer_analysis_generated;
-  const hasRequirementResponse = requirementArtifacts.length > 0;
-  const hasSolutionDraft = solutionDraftArtifacts.length > 0;
+  const hasRequirementResponse = hasArtifactType("forbedret_kravsvar");
+  const hasSolutionDraft = hasArtifactType("losningsutkast");
   const hasEvaluationReadySolutionDocument =
-    architectureDocumentCandidates.length > 0;
+    architectureDocumentCandidates.some(isDocumentReadyForEvaluation);
   const hasSolutionEvaluation =
     Boolean(solutionEvaluation) || project.solution_evaluation_generated;
-  const hasDeliveryPlan = deliveryArtifacts.length > 0;
-  const hasExecutiveSummary = Boolean(executiveSummary);
+  const hasDeliveryPlan = hasArtifactType("gjennomforing_og_risiko");
+  const hasExecutiveSummary =
+    Boolean(executiveSummary) || Boolean(project.has_executive_summary);
   const primaryWorkflowSteps: WorkflowStepItem[] = [
     {
       step: 1,
@@ -1545,11 +1861,11 @@ export function ProjectWorkspacePage({
       value: "generator",
       label: "Løsningsforslag",
       icon: Sparkles,
-      status: hasSolutionDraft || hasEvaluationReadySolutionDocument
-        ? "Generert"
-        : hasCustomerAnalysis
-          ? "Klar"
-          : "Venter",
+      status: solutionProposalWorkflowStatus({
+        hasGeneratedSolutionDescription: hasSolutionDraft,
+        hasReadyEvaluationBasis: hasEvaluationReadySolutionDocument,
+        hasCustomerAnalysis,
+      }),
     },
     {
       step: 5,
@@ -1666,6 +1982,7 @@ export function ProjectWorkspacePage({
         analysisLoading={analysisLoading}
         evaluationLoaded={evaluationLoaded}
         evaluationLoading={evaluationLoading}
+        evaluationLoadError={evaluationLoadError}
         executiveSummaryLoaded={executiveSummaryLoaded}
         executiveSummaryLoading={executiveSummaryLoading}
         busy={busy}
@@ -1677,7 +1994,6 @@ export function ProjectWorkspacePage({
         uploadRole={uploadRole}
         selectedDocumentName={file?.name ?? ""}
         documentFileInputKey={documentFileInputKey}
-        selectedRequirementDocumentId={selectedRequirementDocumentId}
         requirementArtifacts={requirementArtifacts}
         solutionDraftArtifacts={solutionDraftArtifacts}
         deliveryArtifacts={deliveryArtifacts}
@@ -1691,12 +2007,12 @@ export function ProjectWorkspacePage({
         onGenerateCustomerAnalysis={onGenerateCustomerAnalysis}
         onSaveAnalysis={onSaveAnalysis}
         onGenerateSolutionEvaluation={onGenerateSolutionEvaluation}
+        onRetrySolutionEvaluationLoad={retrySolutionEvaluationLoad}
         onUploadArchitectureDocument={onUploadArchitectureDocument}
         onDeleteArtifact={onDeleteArtifact}
         onGenerateBilag1Artifact={onGenerateBilag1Artifact}
         onGenerateDeliveryArtifact={onGenerateDeliveryArtifact}
         onUploadRequirementDocument={onUploadRequirementDocument}
-        onSelectedRequirementDocumentChange={setSelectedRequirementDocumentId}
         onUpdateRequirementArtifact={onUpdateRequirementArtifact}
         onGenerateRequirementResponse={onGenerateRequirementResponse}
         onGenerateExecutiveSummary={onGenerateExecutiveSummary}

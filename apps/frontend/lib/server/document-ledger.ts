@@ -378,6 +378,8 @@ function artifactLedgerLabel(artifactType: GeneratedArtifactType) {
 export function buildDocumentLedgerContext(input: {
   artifactType: GeneratedArtifactType;
   ledgers: DocumentLedger[];
+  maxRequirementsPerLedger?: number;
+  maxSectionsPerLedger?: number;
 }) {
   if (!input.ledgers.length) return "";
 
@@ -386,11 +388,11 @@ export function buildDocumentLedgerContext(input: {
     `Tillit: ${ledger.confidence} (${ledger.confidenceScore})`,
     `Krav: ${ledger.requirements.length}`,
     `Seksjoner: ${ledger.sections
-      .slice(0, 12)
+      .slice(0, input.maxSectionsPerLedger ?? 12)
       .map((section) => `${section.ref} ${section.title}`)
       .join(" | ")}`,
     `Kravutdrag: ${ledger.requirements
-      .slice(0, 20)
+      .slice(0, input.maxRequirementsPerLedger ?? 20)
       .map((requirement) => `${requirement.ref}: ${requirement.text}`)
       .join(" | ")}`,
   ]);

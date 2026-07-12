@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getProjectJob } from "@/lib/server/project-jobs";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export async function GET(_: Request, context: { params: Promise<{ id: string; jobId: string }> }) {
   try {
@@ -14,7 +15,12 @@ export async function GET(_: Request, context: { params: Promise<{ id: string; j
     return NextResponse.json({ job });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke hente jobbstatus." },
+      {
+        error: productionSafeErrorMessage(
+          error,
+          "Kunne ikke hente jobbstatus.",
+        ),
+      },
       { status: 500 },
     );
   }

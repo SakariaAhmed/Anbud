@@ -6,14 +6,23 @@ import {
   regenerateCustomerAnalysisSection,
 } from "@/lib/server/ai";
 import {
-  getCustomerAnalysis,
   getFreshCustomerAnalysis,
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
-import { getProjectSnapshot } from "@/lib/server/repositories/projects";
+import {
+  getProjectSnapshot,
+  getProjectSourceRevision,
+} from "@/lib/server/repositories/projects";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/services";
+import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { assertCustomerAnalysisRequirementSourcesReady } from "@/lib/server/use-cases/solution-evaluation-readiness";
+import {
+  readStableProjectSourceSnapshot,
+  readStableSolutionEvaluationSourceSnapshot,
+} from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
   AnalysisRequirement,
@@ -27,7 +36,7 @@ import type {
 export const maxDuration = 60;
 
 const READ_CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+  "Cache-Control": "private, no-store",
 };
 
 function isCustomerAnalysisSection(
@@ -377,15 +386,24 @@ export async function POST(
     const section = isCustomerAnalysisSection(body.section)
       ? body.section
       : null;
-    const [projectDocuments, existingAnalysis, serviceCandidates] =
-      await Promise.all([
-        listProjectDocumentsForAnalysis(id),
-        section ? getFreshCustomerAnalysis(id) : Promise.resolve(null),
-        listProjectServiceDescriptions(id),
-      ]);
+    const sourceSnapshot = await readStableProjectSourceSnapshot({
+      readSourceRevision: () => getProjectSourceRevision(id),
+      readValue: async () => {
+        const [projectDocuments, existingAnalysis, serviceCandidates] =
+          await Promise.all([
+            listProjectDocumentsForAnalysis(id),
+            section ? getFreshCustomerAnalysis(id) : Promise.resolve(null),
+            listProjectServiceDescriptions(id),
+          ]);
+        return { projectDocuments, existingAnalysis, serviceCandidates };
+      },
+    });
+    const { projectDocuments, existingAnalysis, serviceCandidates } =
+      sourceSnapshot.value;
     const { projectDocuments: analysisDocuments } =
       splitServiceDescriptionDetails(projectDocuments);
-    const [customerDocument, ...supportingDocuments] = analysisDocuments;
+    const { customerDocument, supportingDocuments } =
+      selectProjectDocuments(analysisDocuments);
 
     if (!customerDocument) {
       return NextResponse.json(
@@ -394,11 +412,18 @@ export async function POST(
       );
     }
 
-    if (!customerDocument.raw_text.trim()) {
+    try {
+      assertCustomerAnalysisRequirementSourcesReady([
+        customerDocument,
+        ...supportingDocuments,
+      ]);
+    } catch (error) {
       return NextResponse.json(
         {
           error:
-            "Dokumentgrunnlaget har ingen lesbar tekst. Last opp dokumentet på nytt som tekstbasert PDF/DOCX/Excel-fil, eller bruk OCR først.",
+            error instanceof Error
+              ? error.message
+              : "Dokumentgrunnlaget er ikke klart for kundeanalyse.",
         },
         { status: 400 },
       );
@@ -438,6 +463,7 @@ export async function POST(
       ],
       result,
       {
+        expectedSourceRevision: sourceSnapshot.sourceRevision,
         previousAnalysis: existingAnalysis,
         updatedSections: section ? [section] : [...CUSTOMER_ANALYSIS_SECTIONS],
         historySource: section
@@ -451,10 +477,10 @@ export async function POST(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke generere kundeanalyse.",
+        error: productionSafeErrorMessage(
+          error,
+          "Kunne ikke generere kundeanalyse.",
+        ),
       },
       { status: 500 },
     );
@@ -467,7 +493,7 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    const analysis = await getCustomerAnalysis(id);
+    const analysis = await getFreshCustomerAnalysis(id);
 
     return NextResponse.json({ analysis }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
@@ -517,14 +543,17 @@ export async function PUT(
       );
     }
 
-    const [existingAnalysis, projectDocuments] =
-      await Promise.all([
-        getFreshCustomerAnalysis(id),
-        listProjectDocumentsForAnalysis(id),
-      ]);
+    const sourceSnapshot = await readStableSolutionEvaluationSourceSnapshot({
+      readSourceRevision: () => getProjectSourceRevision(id),
+      readDocuments: () => listProjectDocumentsForAnalysis(id),
+      readCustomerAnalysis: () => getFreshCustomerAnalysis(id),
+    });
+    const existingAnalysis = sourceSnapshot.customerAnalysis;
+    const projectDocuments = sourceSnapshot.documents;
     const { projectDocuments: analysisDocuments } =
       splitServiceDescriptionDetails(projectDocuments);
-    const [customerDocument, ...supportingDocuments] = analysisDocuments;
+    const { customerDocument, supportingDocuments } =
+      selectProjectDocuments(analysisDocuments);
 
     if (!existingAnalysis) {
       return NextResponse.json(
@@ -555,6 +584,7 @@ export async function PUT(
       ],
       nextAnalysis,
       {
+        expectedSourceRevision: sourceSnapshot.sourceRevision,
         previousAnalysis: existingAnalysis,
         updatedSections: [section ?? "strategy"],
         historySource: "manual_edit",

@@ -5,7 +5,8 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
-import JSZip from "jszip";
+import JSZip, { type JSZipObject } from "jszip";
+import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
 
@@ -55,6 +56,10 @@ const MAX_SPREADSHEET_SHEETS = 12;
 const MAX_SPREADSHEET_ROWS_PER_SHEET = 2000;
 const MAX_SPREADSHEET_COLUMNS_PER_SHEET = 80;
 const MAX_SPREADSHEET_CELLS = 80_000;
+const MAX_OFFICE_ZIP_ENTRIES = 2_000;
+const MAX_OFFICE_ZIP_EXPANDED_BYTES = 128 * 1024 * 1024;
+const MAX_OFFICE_ZIP_ENTRY_BYTES = 64 * 1024 * 1024;
+const MAX_OFFICE_ZIP_COMPRESSION_RATIO = 200;
 const DEFAULT_DOCLING_TIMEOUT_MS = 600_000;
 const DOCLING_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 const DOCLING_DEFAULT_PDF_CHUNK_PAGES = 40;
@@ -85,6 +90,57 @@ type ExecFileError = Error & {
   signal?: NodeJS.Signals | null;
   code?: string | number | null;
 };
+
+type OfficeZipEntryWithSizes = JSZipObject & {
+  _data?: {
+    compressedSize?: number;
+    uncompressedSize?: number;
+  };
+};
+
+export async function loadValidatedOfficeZip(
+  buffer: Buffer,
+  fileName: string,
+) {
+  const zip = await JSZip.loadAsync(buffer);
+  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  if (entries.length > MAX_OFFICE_ZIP_ENTRIES) {
+    throw new Error(
+      `${fileName} inneholder for mange arkivoppføringer (${entries.length}).`,
+    );
+  }
+
+  let expandedBytes = 0;
+  let compressedBytes = 0;
+  for (const entry of entries as OfficeZipEntryWithSizes[]) {
+    const expanded = Number(entry._data?.uncompressedSize ?? 0);
+    const compressed = Number(entry._data?.compressedSize ?? 0);
+    if (!Number.isSafeInteger(expanded) || expanded < 0) {
+      throw new Error(`${fileName} har ugyldig ZIP-størrelsesmetadata.`);
+    }
+    if (expanded > MAX_OFFICE_ZIP_ENTRY_BYTES) {
+      throw new Error(
+        `${fileName} inneholder en utpakket fil som er for stor (${entry.name}).`,
+      );
+    }
+    expandedBytes += expanded;
+    compressedBytes += Math.max(0, compressed);
+  }
+  if (expandedBytes > MAX_OFFICE_ZIP_EXPANDED_BYTES) {
+    throw new Error(
+      `${fileName} blir for stort ved utpakking (${expandedBytes} byte).`,
+    );
+  }
+  if (
+    compressedBytes > 0 &&
+    expandedBytes / compressedBytes > MAX_OFFICE_ZIP_COMPRESSION_RATIO
+  ) {
+    throw new Error(
+      `${fileName} har en utrygg kompresjonsgrad og kan ikke pakkes ut.`,
+    );
+  }
+  return zip;
+}
 
 async function getPdfParse() {
   if (!pdfParsePromise) {
@@ -810,6 +866,7 @@ async function runDoclingConversion(input: {
     markdown = await readDoclingMarkdown(input.outputDir, result.stdout);
     doclingJson = await readDoclingJson(input.outputDir);
   } catch (error) {
+    assertProjectWorkflowActive();
     lastError = error;
     if (shouldRetryDoclingFallback(error)) {
       console.info(
@@ -825,6 +882,7 @@ async function runDoclingConversion(input: {
         markdown = await readDoclingMarkdown(input.outputDir, result.stdout);
         doclingJson = await readDoclingJson(input.outputDir);
       } catch (fallbackError) {
+        assertProjectWorkflowActive();
         lastError = fallbackError;
       }
     }
@@ -1067,6 +1125,7 @@ async function tryExtractWithDocling(input: {
       parserUsed: "docling",
     };
   } catch (error) {
+    assertProjectWorkflowActive();
     console.info(
       JSON.stringify({
         event: "docling_ingestion_fallback",
@@ -1481,7 +1540,7 @@ async function extractDocxFromWordXml(
   originalError: unknown,
 ): Promise<ParsedUpload> {
   try {
-    const zip = await JSZip.loadAsync(buffer);
+    const zip = await loadValidatedOfficeZip(buffer, fileName);
     const documentXml = zip.file("word/document.xml");
 
     if (!documentXml) {
@@ -1597,6 +1656,7 @@ async function extractDocxFromWordXml(
       parserUsed: "docx-xml",
     };
   } catch (fallbackError) {
+    assertProjectWorkflowActive();
     throw new Error(
       docxParseErrorMessage(
         fileName,
@@ -1737,6 +1797,9 @@ async function extractSpreadsheet(
   fileFormat: "xlsx" | "xls",
   role?: ProjectDocumentRole,
 ): Promise<ParsedUpload> {
+  if (fileFormat === "xlsx") {
+    await loadValidatedOfficeZip(buffer, fileName);
+  }
   const xlsx = await getXlsx();
   const workbook = xlsx.read(buffer, {
     type: "buffer",

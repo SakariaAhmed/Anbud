@@ -1,25 +1,151 @@
 name: Frontend CI
 
 on:
-  pull_request:
   push:
-    branches-ignore:
+    branches:
       - main
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  validate:
-    runs-on: ubuntu-latest
+env:
+  FALLOW_VERSION: "2.104.0"
+  NODE_VERSION: "22.14.0"
 
+jobs:
+  validation:
+    name: Validation
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: public.ecr.aws/supabase/postgres:17.6.1.132@sha256:e09e93a61ed1560caf4be79c9eb29401875bea74b12aec4657cb08bf34ea3a13
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PRIMARY_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DOCUMENT_CHUNKS_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      SERVICE_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
-      - name: Validate frontend
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
         working-directory: apps/frontend
+        run: npm ci
+
+      - name: Secret scan
+        working-directory: apps/frontend
+        run: npm run secrets:scan
+
+      - name: Deterministic durable-job and schema tests
         run: |
-          npm ci
-          npm run lint
-          npm run build
+          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/project-job-terminal-audit.sql.test.mjs apps/frontend/lib/server/repositories/stable-main-rollback-bridge.sql.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs scripts/async_worker_boundaries.test.mjs
+          node scripts/validate_project_jobs_schema.mjs
+
+      - name: Frontend tests
+        working-directory: apps/frontend
+        run: npm test
+
+      - name: Lint
+        working-directory: apps/frontend
+        run: npm run lint
+
+      - name: Production build
+        working-directory: apps/frontend
+        run: npm run build
+
+      - name: Validate workflow release boundaries
+        run: |
+          node scripts/verify_workflow_boundaries.mjs
+          node scripts/validate_release_workflows.mjs
+
+      - name: Parse workflow YAML
+        run: ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].each { |file| YAML.parse_file(file) }'
+
+      - name: Fallow static quality gate
+        run: |
+          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" --root . --format json --score --performance > /tmp/fallow-combined.json
+          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" fix --root . --dry-run --yes --no-create-config --format json > /tmp/fallow-fix-preview.json
+          node - <<'NODE'
+          const fs = require("node:fs");
+          function readJson(path) {
+            const raw = fs.readFileSync(path, "utf8");
+            return JSON.parse(raw.slice(raw.indexOf("{")));
+          }
+          const combined = readJson("/tmp/fallow-combined.json");
+          const fixPreview = readJson("/tmp/fallow-fix-preview.json");
+          const totalIssues = combined.check?.total_issues ?? 0;
+          const totalFixes = fixPreview.summary?.total_fixes ?? fixPreview.fixes?.length ?? 0;
+          console.log(JSON.stringify({ fallow_total_issues: totalIssues, fallow_fix_preview_total_fixes: totalFixes }));
+          if (totalIssues > 0 || totalFixes > 0) process.exit(1);
+          NODE
+
+  infrastructure:
+    name: Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - name: Build Bicep
+        run: az bicep build --file infra/azure/container-app.bicep --stdout > /dev/null
+
+      - name: Lint Bicep
+        run: az bicep lint --file infra/azure/container-app.bicep
+
+  container-smoke:
+    name: Container smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/frontend
+        run: npm ci
+
+      - name: Slim image smoke
+        working-directory: apps/frontend
+        run: npm run docker:smoke
+
+      - name: Production image smoke
+        working-directory: apps/frontend
+        run: npm run docker:smoke:docling -- --tag anbud-frontend-ci:${{ github.sha }} --keep-image
+
+      - name: Production image CVE scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: anbud-frontend-ci:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
+
+      - name: Remove production smoke image
+        if: always()
+        run: docker image rm anbud-frontend-ci:${{ github.sha }} >/dev/null 2>&1 || true

@@ -13,6 +13,29 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const frontendRoot = path.join(repoRoot, "apps", "frontend");
 const outputRoot = path.join(repoRoot, "test-data", "requirement-generation-smoke");
+const telemetryEvents = [];
+const originalConsoleInfo = console.info.bind(console);
+
+console.info = (...args) => {
+  const first = args[0];
+  if (typeof first === "string") {
+    const jsonStart = first.indexOf("{");
+    if (jsonStart >= 0) {
+      try {
+        const event = JSON.parse(first.slice(jsonStart));
+        if (
+          event.event === "ai_json_completion_timing" ||
+          event.event === "ai_json_file_input_completion_timing"
+        ) {
+          telemetryEvents.push(event);
+        }
+      } catch {
+        // Keep normal logging for non-telemetry lines.
+      }
+    }
+  }
+  originalConsoleInfo(...args);
+};
 
 function loadEnvFile(filePath) {
   if (!existsSync(filePath)) return;
@@ -33,6 +56,7 @@ loadEnvFile(path.join(frontendRoot, ".env.local"));
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
 const jiti = createJiti(path.join(frontendRoot, "generation-smoke.cjs"), {
+  fsCache: false,
   moduleCache: false,
   interopDefault: true,
   alias: {
@@ -51,6 +75,9 @@ const {
   extractRequirementLedgerForDocument,
   generateProjectArtifact,
 } = jiti(path.join(frontendRoot, "lib", "server", "ai.ts"));
+const { validateGeneratedArtifact } = jiti(
+  path.join(frontendRoot, "lib", "server", "artifact-validation.ts"),
+);
 
 const PROJECTS = [
   {
@@ -189,6 +216,37 @@ function normalizeInlineText(value) {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
+function normalizeComparableText(value) {
+  return normalizeInlineText(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function rowRefMatchesExpected(rowRef, expectedRef) {
+  const row = normalizeComparableText(rowRef);
+  const expected = normalizeComparableText(expectedRef);
+  if (!row || !expected) return false;
+  return (
+    row === expected ||
+    row.startsWith(`${expected} `) ||
+    row.includes(` ${expected} `)
+  );
+}
+
+function lastHeadingSegment(value) {
+  return normalizeInlineText(value)
+    .split(">")
+    .map((part) => normalizeInlineText(part))
+    .filter(Boolean)
+    .at(-1) ?? "";
+}
+
+function entryGroupHeading(entry) {
+  const heading = lastHeadingSegment(entry.heading ?? "");
+  return /^kravtabell$/i.test(heading) ? "" : heading;
+}
+
 function splitMarkdownTableRow(line) {
   const trimmed = line.trim();
   const body = trimmed
@@ -280,23 +338,37 @@ function extractRequirementRows(markdown) {
   const lines = markdown.split(/\r?\n/);
   const rows = [];
   let inRequirementTable = false;
+  let currentGroup = "";
+  let pendingGroup = "";
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (/^\|\s*Kravref\.?\s*\|\s*Krav\s*\|\s*Svar\s*\|\s*Kildegrunnlag\s*\|/i.test(trimmed)) {
+    const heading = trimmed.match(/^#{3,6}\s+(.+)$/);
+    if (heading) {
+      pendingGroup = normalizeInlineText(heading[1]);
+      if (!inRequirementTable || rows.length) {
+        inRequirementTable = false;
+      }
+      continue;
+    }
+    if (/^\|\s*Kravref\.?\s*\|\s*Krav\s*\|\s*Svar\s*\|(?:\s*Svargrunnlag\s*\|)?\s*Kildegrunnlag\s*\|/i.test(trimmed)) {
       inRequirementTable = true;
+      currentGroup = pendingGroup;
       continue;
     }
     if (!inRequirementTable) continue;
     if (!trimmed.startsWith("|")) {
-      if (rows.length) break;
+      if (rows.length) {
+        inRequirementTable = false;
+        pendingGroup = "";
+      }
       continue;
     }
     if (/^\|\s*:?-{3,}:?\s*\|/.test(trimmed)) continue;
 
     const cells = splitMarkdownTableRow(trimmed);
     if (cells.length >= 4 && cells.some(Boolean)) {
-      rows.push(cells);
+      rows.push({ cells, group: currentGroup });
     }
   }
 
@@ -304,11 +376,209 @@ function extractRequirementRows(markdown) {
 }
 
 function missingRefsFromRows({ ledger, rows }) {
-  const rowText = rows.map((row) => row.join(" ")).join("\n").toLowerCase();
+  const rowRefs = rows.map((row) => row.cells[0] ?? "");
   return ledger
     .map((entry) => normalizeInlineText(entry.id))
     .filter(Boolean)
-    .filter((id) => !rowText.includes(id.toLowerCase()));
+    .filter((id) => !rowRefs.some((rowRef) => rowRefMatchesExpected(rowRef, id)));
+}
+
+function headingMismatchesFromRows({ ledger, rows }) {
+  const ledgerByRef = new Map(
+    ledger.map((entry) => [
+      normalizeComparableText(entry.id),
+      entryGroupHeading(entry),
+    ]),
+  );
+
+  return rows
+    .map((row, index) => {
+      const ref = normalizeComparableText(row.cells[0] ?? "");
+      const expectedGroup = ledgerByRef.get(ref) ?? "";
+      const actualGroup = row.group ?? "";
+      if (!expectedGroup || normalizeComparableText(actualGroup) === normalizeComparableText(expectedGroup)) {
+        return null;
+      }
+
+      return {
+        row: index + 1,
+        ref: row.cells[0] ?? "",
+        expected_group: expectedGroup,
+        actual_group: actualGroup,
+      };
+    })
+    .filter(Boolean);
+}
+
+function unresolvedFallbackAnswersFromMetadata(metadata) {
+  const requirementResponse = metadata?.requirement_response;
+  if (!requirementResponse || typeof requirementResponse !== "object") {
+    return undefined;
+  }
+
+  const fallbackAfterHandoff =
+    requirementResponse.deterministic_fallback_answers_after_handoff;
+  if (typeof fallbackAfterHandoff === "number" && Number.isFinite(fallbackAfterHandoff)) {
+    return Math.max(0, Math.round(fallbackAfterHandoff));
+  }
+
+  const unresolvedFallbackAnswers = requirementResponse.unresolved_fallback_answers;
+  if (Array.isArray(unresolvedFallbackAnswers)) {
+    return unresolvedFallbackAnswers.length;
+  }
+
+  return undefined;
+}
+
+function summarizeTelemetry(events) {
+  const byModel = new Map();
+  const byPromptCacheKey = new Map();
+  let usageEventCount = 0;
+  for (const event of events) {
+    const model = event.model || "unknown";
+    const inputTokens = Number(event.input_tokens ?? 0);
+    const outputTokens = Number(event.output_tokens ?? 0);
+    const totalTokens = Number(event.total_tokens ?? 0);
+    const cachedInputTokens = Number(event.cached_input_tokens ?? 0);
+    const existing =
+      byModel.get(model) ?? {
+        model,
+        requests: 0,
+        systemChars: 0,
+        userChars: 0,
+        durationMs: 0,
+        fileInputRequests: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cachedInputTokens: 0,
+        usageEvents: 0,
+      };
+    existing.requests += 1;
+    existing.systemChars += Number(event.system_chars ?? 0);
+    existing.userChars += Number(event.user_chars ?? 0);
+    existing.durationMs += Number(event.duration_ms ?? 0);
+    if (event.event === "ai_json_file_input_completion_timing") {
+      existing.fileInputRequests += 1;
+    }
+
+    if (inputTokens > 0 || outputTokens > 0 || totalTokens > 0) {
+      usageEventCount += 1;
+      existing.usageEvents += 1;
+      existing.inputTokens += inputTokens;
+      existing.outputTokens += outputTokens;
+      existing.totalTokens += totalTokens;
+      existing.cachedInputTokens += cachedInputTokens;
+    }
+    byModel.set(model, existing);
+
+    const promptCacheKey = event.prompt_cache_key || "none";
+    const promptCache =
+      byPromptCacheKey.get(promptCacheKey) ?? {
+        promptCacheKey,
+        requests: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        durationMs: 0,
+        promptPrefixHashes: new Set(),
+        userPrefixHashes: new Set(),
+      };
+    promptCache.requests += 1;
+    promptCache.inputTokens += inputTokens;
+    promptCache.cachedInputTokens += cachedInputTokens;
+    promptCache.durationMs += Number(event.duration_ms ?? 0);
+    if (event.prompt_cache_prompt_prefix_hash) {
+      promptCache.promptPrefixHashes.add(event.prompt_cache_prompt_prefix_hash);
+    }
+    if (event.prompt_cache_user_prefix_hash) {
+      promptCache.userPrefixHashes.add(event.prompt_cache_user_prefix_hash);
+    }
+    byPromptCacheKey.set(promptCacheKey, promptCache);
+  }
+
+  const models = [...byModel.values()].map((item) => {
+    const estimatedInputTokens = Math.ceil((item.systemChars + item.userChars) / 4);
+    const estimatedOutputTokens = item.requests * 900;
+    return {
+      ...item,
+      estimatedInputTokens,
+      estimatedOutputTokens,
+      billingInputTokens: item.inputTokens || estimatedInputTokens,
+      billingOutputTokens: item.outputTokens || estimatedOutputTokens,
+    };
+  });
+
+  return {
+    exactUsageAvailable: usageEventCount > 0,
+    totalRequests: models.reduce((sum, item) => sum + item.requests, 0),
+    usageEventCount,
+    inputTokens: models.reduce((sum, item) => sum + item.inputTokens, 0),
+    outputTokens: models.reduce((sum, item) => sum + item.outputTokens, 0),
+    totalTokens: models.reduce((sum, item) => sum + item.totalTokens, 0),
+    cachedInputTokens: models.reduce(
+      (sum, item) => sum + item.cachedInputTokens,
+      0,
+    ),
+    estimatedInputTokens: models.reduce(
+      (sum, item) => sum + item.estimatedInputTokens,
+      0,
+    ),
+    estimatedOutputTokens: models.reduce(
+      (sum, item) => sum + item.estimatedOutputTokens,
+      0,
+    ),
+    note:
+      usageEventCount > 0
+        ? "Token totals use SDK usage fields when present; requests without usage fall back to prompt character estimates plus 900 output tokens per JSON call."
+        : "Token totals are estimated from prompt characters plus 900 output tokens per JSON call.",
+    byModel: models,
+    byPromptCacheKey: [...byPromptCacheKey.values()].map((item) => ({
+      promptCacheKey: item.promptCacheKey,
+      requests: item.requests,
+      inputTokens: item.inputTokens,
+      cachedInputTokens: item.cachedInputTokens,
+      cacheHitRate:
+        item.inputTokens > 0
+          ? Number((item.cachedInputTokens / item.inputTokens).toFixed(4))
+          : 0,
+      durationMs: item.durationMs,
+      promptPrefixHashCount: item.promptPrefixHashes.size,
+      userPrefixHashCount: item.userPrefixHashes.size,
+    })),
+  };
+}
+
+function approximateCost(telemetry) {
+  const miniInput = Number(process.env.REQUIREMENT_SMOKE_MINI_INPUT_PER_MTOK_USD ?? 0.5);
+  const miniOutput = Number(process.env.REQUIREMENT_SMOKE_MINI_OUTPUT_PER_MTOK_USD ?? 2);
+  const defaultInput = Number(process.env.REQUIREMENT_SMOKE_INPUT_PER_MTOK_USD ?? 5);
+  const defaultOutput = Number(process.env.REQUIREMENT_SMOKE_OUTPUT_PER_MTOK_USD ?? 15);
+  let total = 0;
+  const byModel = telemetry.byModel.map((item) => {
+    const isMini = /mini|nano/i.test(item.model);
+    const inputRate = isMini ? miniInput : defaultInput;
+    const outputRate = isMini ? miniOutput : defaultOutput;
+    const cost =
+      (item.billingInputTokens / 1_000_000) * inputRate +
+      (item.billingOutputTokens / 1_000_000) * outputRate;
+    total += cost;
+    return {
+      model: item.model,
+      estimatedCostUsd: Number(cost.toFixed(4)),
+      inputTokens: item.billingInputTokens,
+      outputTokens: item.billingOutputTokens,
+      inputRatePerMillion: inputRate,
+      outputRatePerMillion: outputRate,
+    };
+  });
+
+  return {
+    estimatedCostUsd: Number(total.toFixed(4)),
+    currency: "USD",
+    byModel,
+    assumption:
+      "Approximation uses configurable per-million token rates and measured SDK usage where available, otherwise prompt-character estimates.",
+  };
 }
 
 async function writeJson(filePath, value) {
@@ -316,6 +586,7 @@ async function writeJson(filePath, value) {
 }
 
 async function runOne(project, options) {
+  const startedAt = Date.now();
   const projectId = `local-smoke-${project.id}`;
   const outDir = path.join(outputRoot, project.id);
   await mkdir(outDir, { recursive: true });
@@ -365,6 +636,19 @@ async function runOne(project, options) {
 
   const rows = extractRequirementRows(artifact.content_markdown);
   const missingRefs = missingRefsFromRows({ ledger, rows });
+  const headingMismatches = headingMismatchesFromRows({ ledger, rows });
+  const qualityReport = validateGeneratedArtifact({
+    artifactType: "forbedret_kravsvar",
+    title: artifact.title,
+    contentMarkdown: artifact.content_markdown,
+    expectedRequirementCount: ledger.length,
+    expectedRequirementRefs: ledger
+      .map((entry) => normalizeInlineText(entry.id))
+      .filter(Boolean),
+    unresolvedFallbackAnswers: unresolvedFallbackAnswersFromMetadata(
+      artifact.generation_metadata,
+    ),
+  });
   await writeFile(
     path.join(outDir, "requirement-response.md"),
     artifact.content_markdown,
@@ -377,11 +661,19 @@ async function runOne(project, options) {
     table_row_count: rows.length,
     missing_ref_count: missingRefs.length,
     missing_refs: missingRefs.slice(0, 30),
+    heading_mismatch_count: headingMismatches.length,
+    heading_mismatches: headingMismatches.slice(0, 30),
+    artifact_quality_report: qualityReport,
+    duration_ms: Date.now() - startedAt,
   });
 
-  const ok = rows.length === ledger.length && missingRefs.length === 0;
+  const ok =
+    rows.length === ledger.length &&
+    missingRefs.length === 0 &&
+    headingMismatches.length === 0 &&
+    qualityReport.status !== "fail";
   console.log(
-    `  kravbesvarelse: ${rows.length}/${ledger.length} rader, manglende ref=${missingRefs.length}`,
+    `  kravbesvarelse: ${rows.length}/${ledger.length} rader, manglende ref=${missingRefs.length}, heading-mismatch=${headingMismatches.length}, kvalitet=${qualityReport.status}`,
   );
 
   return {
@@ -390,6 +682,9 @@ async function runOne(project, options) {
     ledger_count: ledger.length,
     table_row_count: rows.length,
     missing_ref_count: missingRefs.length,
+    heading_mismatch_count: headingMismatches.length,
+    artifact_quality_status: qualityReport.status,
+    duration_ms: Date.now() - startedAt,
     ok,
   };
 }
@@ -415,10 +710,19 @@ for (const project of projects) {
   results.push(await runOne(project, options));
 }
 
+const telemetry = summarizeTelemetry(telemetryEvents);
+const requestedModel = options.model ?? process.env.OPENAI_MODEL ?? null;
 await writeJson(path.join(outputRoot, "summary.json"), {
   generated_at: new Date().toISOString(),
-  model: options.model ?? process.env.OPENAI_MODEL ?? null,
+  model: requestedModel,
+  requested_model: requestedModel,
+  observed_models: telemetry.byModel.map((item) => ({
+    model: item.model,
+    requests: item.requests,
+  })),
   results,
+  telemetry,
+  cost: approximateCost(telemetry),
 });
 
 const passed = results.filter((result) => result.ok).length;

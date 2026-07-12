@@ -14,6 +14,9 @@ import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observabili
 import type { ProjectDocumentRole, SupportingDocumentSubtype } from "@/lib/types";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+const MAX_PROJECT_DOCUMENTS = 80;
+const MAX_PROJECT_DOCUMENT_BYTES = 200 * 1024 * 1024;
 const uploadAttempts = new Map<string, number[]>();
 
 const documentRoles: ProjectDocumentRole[] = [
@@ -50,17 +53,18 @@ function normalizeSubtype(
     : null;
 }
 
-async function inferUploadRole(
-  projectId: string,
+function inferUploadRole(
   fileName: string,
   title: string,
   explicitRole: ProjectDocumentRole | null,
+  existingDocuments: Awaited<
+    ReturnType<typeof listProjectDocumentSummaries>
+  >,
 ) {
   if (explicitRole) {
     return explicitRole;
   }
 
-  const existingDocuments = await listProjectDocumentSummaries(projectId);
   const text = `${title} ${fileName}`.toLowerCase();
 
   if (
@@ -141,6 +145,28 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       "POST /api/projects/[id]/documents",
       { project_id: id },
       async () => {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("multipart/form-data")) {
+      return NextResponse.json(
+        { error: "Opplastingen må sendes som skjemadata med filvedlegg." },
+        { status: 415 },
+      );
+    }
+
+    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    if (
+      Number.isFinite(contentLength) &&
+      contentLength > MAX_UPLOAD_BYTES + MAX_MULTIPART_OVERHEAD_BYTES
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Opplastingen er for stor. Maksimal størrelse er 25 MB per dokument.",
+        },
+        { status: 413 },
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     const title = `${formData.get("title") || ""}`.trim();
@@ -176,11 +202,29 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     }
 
+    const existingDocuments = await listProjectDocumentSummaries(id);
+    const existingBytes = existingDocuments.reduce(
+      (sum, document) => sum + Math.max(0, document.file_size_bytes ?? 0),
+      0,
+    );
+    if (
+      existingDocuments.length >= MAX_PROJECT_DOCUMENTS ||
+      existingBytes + file.size > MAX_PROJECT_DOCUMENT_BYTES
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Prosjektets dokumentbudsjett er nådd. Fjern utdaterte dokumenter før du laster opp flere (maks 80 dokumenter / 200 MB).",
+        },
+        { status: 413 },
+      );
+    }
+
     const role = await inferUploadRole(
-      id,
       file.name,
       title,
       normalizeRole(formData.get("role")),
+      existingDocuments,
     );
     const supportingSubtype =
       role === "supporting_document"

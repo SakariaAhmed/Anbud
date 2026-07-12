@@ -1,4 +1,5 @@
 import { getProjectJob } from "@/lib/server/project-jobs";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,15 +18,15 @@ function sleep(ms: number, signal: AbortSignal) {
       return;
     }
 
-    const timeout = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timeout);
-        resolve();
-      },
-      { once: true },
-    );
+    const onAbort = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -78,10 +79,10 @@ export async function GET(
         } catch (error) {
           controller.enqueue(
             encodeEvent("error", {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Kunne ikke hente jobbstatus.",
+              error: productionSafeErrorMessage(
+                error,
+                "Kunne ikke hente jobbstatus.",
+              ),
             }),
           );
           break;

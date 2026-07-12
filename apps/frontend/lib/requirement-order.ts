@@ -5,6 +5,8 @@ export type RequirementOrderInput = {
   sourceReference?: string | null;
   group?: string | null;
   orderIndex?: number | null;
+  documentOrderIndex?: number | null;
+  entryOrderIndex?: number | null;
   fallbackIndex?: number;
 };
 
@@ -42,6 +44,15 @@ function compareNumberList(left: number[], right: number[]) {
   }
 
   return 0;
+}
+
+function compareSharedRequirementSequence(left: number[], right: number[]) {
+  if (left.length < 2 || right.length < 2) return 0;
+  const sharedPrefixLength = Math.min(left.length, right.length) - 1;
+  for (let index = 0; index < sharedPrefixLength; index += 1) {
+    if (left[index] !== right[index]) return 0;
+  }
+  return compareNumberList(left, right);
 }
 
 function firstMatchedNumber(text: string, pattern: RegExp) {
@@ -103,6 +114,8 @@ function buildOrderKey(input: RequirementOrderInput) {
     .join(" ");
 
   return {
+    documentOrder: finiteNumber(input.documentOrderIndex),
+    entryOrder: finiteNumber(input.entryOrderIndex),
     explicitOrder: finiteNumber(input.orderIndex),
     page: pageStart(combined),
     table: tableKey(combined),
@@ -120,17 +133,51 @@ export function compareRequirementOrder(
   const leftKey = buildOrderKey(left);
   const rightKey = buildOrderKey(right);
 
-  if (
-    leftKey.explicitOrder !== null &&
-    rightKey.explicitOrder !== null &&
-    leftKey.explicitOrder !== rightKey.explicitOrder
-  ) {
-    return leftKey.explicitOrder - rightKey.explicitOrder;
+  if (leftKey.documentOrder !== null || rightKey.documentOrder !== null) {
+    const documentDelta =
+      missingAwareNumber(leftKey.documentOrder) -
+      missingAwareNumber(rightKey.documentOrder);
+    if (documentDelta !== 0) return documentDelta;
+  }
+
+  if (leftKey.entryOrder !== null && rightKey.entryOrder !== null) {
+    const entryDelta = leftKey.entryOrder - rightKey.entryOrder;
+    if (entryDelta !== 0) return entryDelta;
+  }
+
+  if (leftKey.entryOrder !== null || rightKey.entryOrder !== null) {
+    const pageDelta =
+      missingAwareNumber(leftKey.page) - missingAwareNumber(rightKey.page);
+    if (pageDelta !== 0) return pageDelta;
+
+    const sequenceDelta = compareSharedRequirementSequence(
+      leftKey.requirement.length ? leftKey.requirement : leftKey.table,
+      rightKey.requirement.length ? rightKey.requirement : rightKey.table,
+    );
+    if (sequenceDelta !== 0) return sequenceDelta;
+
+    const entryDelta =
+      missingAwareNumber(leftKey.entryOrder) -
+      missingAwareNumber(rightKey.entryOrder);
+    if (entryDelta !== 0) return entryDelta;
+  }
+
+  if (leftKey.explicitOrder !== null || rightKey.explicitOrder !== null) {
+    const explicitOrderDelta =
+      missingAwareNumber(leftKey.explicitOrder) -
+      missingAwareNumber(rightKey.explicitOrder);
+    if (explicitOrderDelta !== 0) return explicitOrderDelta;
   }
 
   const pageDelta =
     missingAwareNumber(leftKey.page) - missingAwareNumber(rightKey.page);
   if (pageDelta !== 0) return pageDelta;
+
+  const requirementDelta = compareNumberList(
+    leftKey.requirement,
+    rightKey.requirement,
+  );
+  if (requirementDelta !== 0) return requirementDelta;
 
   const tableDelta = compareNumberList(leftKey.table, rightKey.table);
   if (tableDelta !== 0) return tableDelta;
@@ -138,12 +185,6 @@ export function compareRequirementOrder(
   const rowDelta =
     missingAwareNumber(leftKey.row) - missingAwareNumber(rightKey.row);
   if (rowDelta !== 0) return rowDelta;
-
-  const requirementDelta = compareNumberList(
-    leftKey.requirement,
-    rightKey.requirement,
-  );
-  if (requirementDelta !== 0) return requirementDelta;
 
   const fallbackDelta = leftKey.fallbackIndex - rightKey.fallbackIndex;
   if (fallbackDelta !== 0) return fallbackDelta;

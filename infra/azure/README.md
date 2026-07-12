@@ -10,9 +10,40 @@ az group create --name anbud-prod --location norwayeast
 az acr create --resource-group anbud-prod --name <acr-name> --sku Basic
 az acr login --name <acr-name>
 
-docker build -f apps/frontend/Dockerfile -t <acr-name>.azurecr.io/anbud:phase1 .
+docker build --target runner-docling -f apps/frontend/Dockerfile -t <acr-name>.azurecr.io/anbud:phase1 .
 docker push <acr-name>.azurecr.io/anbud:phase1
 ```
+
+Production builds use the `runner-docling` target so bundled Docling ingestion
+keeps the same document parsing behavior as the app had before the image split.
+The default target is a slim web runtime with `DOCLING_INGESTION=off`; use it
+only for deployments where Docling is run out-of-process or fallback parsing is
+acceptable:
+
+```bash
+docker build -f apps/frontend/Dockerfile -t <acr-name>.azurecr.io/anbud:phase1-slim .
+docker push <acr-name>.azurecr.io/anbud:phase1-slim
+```
+
+## Local Docker verification
+
+Run the same lightweight image build, size budget, container healthcheck, and
+liveness smoke that CI runs:
+
+```bash
+npm --prefix apps/frontend run docker:smoke
+```
+
+Run the heavier production Docling target when changing parsing/runtime
+dependencies. This is also the target used by the Azure deployment workflow:
+
+```bash
+npm --prefix apps/frontend run docker:smoke:docling
+```
+
+Production CI also scans the `runner-docling` image for critical and high CVEs
+with Docker Scout before deployment. Base images are pinned by digest in the
+Dockerfile and refreshed through Dependabot Docker updates.
 
 ## Deploy Container Apps
 
@@ -25,6 +56,7 @@ az deployment group create \
   --parameters \
     appName=anbud \
     image=<acr-name>.azurecr.io/anbud:phase1 \
+    workerImage=<acr-name>.azurecr.io/anbud:phase1 \
     registryServer=<acr-name>.azurecr.io \
     registryUsername=<acr-name> \
     registryPassword="$ACR_PASSWORD" \
@@ -39,6 +71,19 @@ az deployment group create \
 ```
 
 The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN` as a repository secret before deploying.
+
+## Controlled production rollout
+
+Production releases are manual and use the protected GitHub `production`
+environment. The workflow first verifies the durable Supabase job schema, then
+reconciles Bicep while keeping both workloads on their current healthy images.
+`scripts/azure_containerapp_rollout.mjs` pins the last healthy revision at
+100% traffic, creates a uniquely suffixed candidate, and smokes the candidate's
+revision-specific FQDN before promotion. The scheduled worker is updated only
+after web promotion. A failed candidate smoke keeps production traffic
+unchanged; a failed post-promotion smoke restores both traffic and the previous
+worker image. The workflow retains an idempotent fallback rollback step using a
+secret-free state file.
 
 Verify:
 

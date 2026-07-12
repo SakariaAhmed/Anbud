@@ -2643,7 +2643,7 @@ export function ProjectAnalysisTab({
         }
         variant="outline"
         size="sm"
-        className="h-10 rounded-md border-slate-200 px-4 text-[0.94rem] text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+        className="h-12 rounded-md border-slate-200 px-4 text-[0.94rem] text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
       >
         <PencilLine data-icon="inline-start" />
         Rediger
@@ -2844,6 +2844,7 @@ export function ProjectAnalysisTab({
                     placeholder="Kategori"
                   />
                   <select
+                    aria-label={`Viktighet for behov ${index + 1}`}
                     value={item.importance}
                     onChange={(event) =>
                       updateItem({
@@ -2860,6 +2861,7 @@ export function ProjectAnalysisTab({
                     ))}
                   </select>
                   <select
+                    aria-label={`Kravtype for behov ${index + 1}`}
                     value={item.kind}
                     onChange={(event) =>
                       updateItem({
@@ -2972,6 +2974,7 @@ export function ProjectAnalysisTab({
                   </Button>
                 </div>
                 <select
+                  aria-label={`Prioritet for behov ${index + 1}`}
                   value={item.priority}
                   onChange={(event) =>
                     updateItem({
@@ -3048,7 +3051,7 @@ export function ProjectAnalysisTab({
         <div className="space-y-2">
           {entries.map(([word, count], index) => (
             <div
-              key={`${word}-${index}`}
+              key={`keyword-count-${index}`}
               className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto]"
             >
               <Input

@@ -11,6 +11,10 @@ import {
 } from "@/lib/server/document-ledger";
 import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import {
+  hasReadableRequirementDocumentContent,
+  isHistoricalSolutionDocument,
+} from "@/lib/document-processing";
+import {
   analyzeCustomerDocuments,
   evaluateSolutionDocument,
   extractRequirementLedgerForDocument,
@@ -26,7 +30,7 @@ import {
 } from "@/lib/server/documents";
 import {
   getFreshCustomerAnalysis,
-  getSolutionEvaluation,
+  getFreshSolutionEvaluationSnapshot,
   saveCustomerAnalysis,
   saveExecutiveSummary,
   saveSolutionEvaluation,
@@ -40,6 +44,7 @@ import {
 import {
   getProjectDetail,
   getProjectSnapshot,
+  getProjectSourceRevision,
   updateProjectMetadataFromInference,
 } from "@/lib/server/repositories/projects";
 import {
@@ -55,6 +60,26 @@ import {
   type ArtifactGenerationTiming,
   generateAndSaveProjectArtifact,
 } from "@/lib/server/use-cases/generate-artifact";
+import { rethrowAuthoritativeLeaseLoss } from "@/lib/server/repositories/lease-fenced-persistence";
+import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
+import {
+  productionSafeErrorMessage,
+  safeErrorTelemetry,
+} from "@/lib/server/safe-errors";
+import {
+  readStableProjectSourceSnapshot,
+  readStableSolutionEvaluationSourceSnapshot,
+} from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
+import {
+  assertCustomerAnalysisRequirementSourcesReady,
+  assertExplicitRequirementLedgersComplete,
+  assertEvaluationRequirementSourcesReady,
+  assertSelectedSolutionDocumentReady,
+  canonicalRequirementSourceDocuments,
+  canonicalizeRequirementSourceLedger,
+  isExplicitRequirementSupportingSubtype,
+  isLikelyRequirementSourceDocument,
+} from "@/lib/server/use-cases/solution-evaluation-readiness";
 
 export type ProjectWorkflowInput =
   | { kind: "document_ingestion"; projectId: string; documentId: string }
@@ -88,14 +113,21 @@ export type ProjectWorkflowPhaseHandler = (phase: string) => void;
 export interface ProjectWorkflowHandlers {
   setProgress: (message: string) => void;
   onPhase?: ProjectWorkflowPhaseHandler;
+  assertActive?: () => void;
   timings?: () => ArtifactGenerationTiming[];
   totalDurationMs?: () => number;
+}
+
+function assertWorkflowActive(handlers: ProjectWorkflowHandlers) {
+  handlers.assertActive?.();
 }
 
 function readableDocument(
   document: ProjectDocumentDetail | null,
 ): document is ProjectDocumentDetail {
-  return Boolean(document?.raw_text.trim());
+  return Boolean(
+    document && hasReadableRequirementDocumentContent(document),
+  );
 }
 
 const EVALUATION_FILE_LEDGER_FORMATS = new Set(["pdf", "docx", "xlsx", "xls"]);
@@ -112,6 +144,27 @@ async function hydrateEvaluationFileDocument(
   }
 
   return getDocumentDetail(projectId, document.id);
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, concurrency), items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 function compactLedgerText(value: string, maxLength = 420) {
@@ -139,12 +192,13 @@ function formatRequirementPages(pages: number[]) {
 function formatEvaluationRequirementLedger(input: {
   document: ProjectDocumentDetail;
   ledger: Awaited<ReturnType<typeof extractRequirementLedgerForDocument>>;
+  maxEntries: number;
 }) {
   if (!input.ledger.length) {
     return "";
   }
 
-  const rows = input.ledger.slice(0, 180).map((entry, index) => {
+  const rows = input.ledger.slice(0, input.maxEntries).map((entry, index) => {
     const source = [
       formatRequirementPages(entry.pages),
       entry.heading,
@@ -166,37 +220,73 @@ function formatEvaluationRequirementLedger(input: {
   ].join("\n");
 }
 
-async function buildEvaluationLedgerContext(input: {
+export async function buildEvaluationLedgerContext(input: {
   artifactType: GeneratedArtifactType;
   documents: ProjectDocumentDetail[];
 }) {
-  const readableDocuments = input.documents.filter(readableDocument).slice(0, 8);
+  const readableDocuments = input.documents.filter(readableDocument);
+  const maxLedgerEntriesPerDocument = Math.max(
+    4,
+    Math.floor(360 / Math.max(1, readableDocuments.length)),
+  );
   const documentLedgerContext = buildDocumentLedgerContext({
     artifactType: input.artifactType,
     ledgers: readableDocuments.map(buildDocumentLedger),
+    maxRequirementsPerLedger: Math.max(
+      2,
+      Math.floor(120 / Math.max(1, readableDocuments.length)),
+    ),
+    maxSectionsPerLedger: Math.max(
+      2,
+      Math.floor(80 / Math.max(1, readableDocuments.length)),
+    ),
   });
-  const requirementLedgerContexts = await Promise.all(
-    readableDocuments.map(async (document) => {
+  const requirementLedgerResults = await mapWithConcurrency(
+    readableDocuments,
+    3,
+    async (document) => {
       try {
         const ledger = await extractRequirementLedgerForDocument(document);
-        return formatEvaluationRequirementLedger({ document, ledger });
+        return {
+          document,
+          ledger,
+          context: formatEvaluationRequirementLedger({
+            document,
+            ledger,
+            maxEntries: maxLedgerEntriesPerDocument,
+          }),
+        };
       } catch (error) {
+        assertProjectWorkflowActive();
         console.info(
           JSON.stringify({
             event: "evaluation_requirement_ledger_failed",
             document_id: document.id,
-            reason: error instanceof Error ? error.message : String(error),
+            ...safeErrorTelemetry(error),
           }),
         );
-        return "";
+        if (isLikelyRequirementSourceDocument(document)) {
+          throw new Error(
+            productionSafeErrorMessage(
+              error,
+              `Kravledger kunne ikke bygges for ${document.title}.`,
+            ),
+          );
+        }
+        return {
+          document,
+          ledger: [] as Awaited<ReturnType<typeof extractRequirementLedgerForDocument>>,
+          context: "",
+        };
       }
-    }),
+    },
   );
-  const preciseRequirementLedgerContext = requirementLedgerContexts
+  const preciseRequirementLedgerContext = requirementLedgerResults
+    .map((result) => result.context)
     .filter(Boolean)
     .join("\n\n");
 
-  return [
+  const context = [
     documentLedgerContext,
     preciseRequirementLedgerContext
       ? [
@@ -208,6 +298,21 @@ async function buildEvaluationLedgerContext(input: {
   ]
     .filter(Boolean)
     .join("\n\n");
+
+  return {
+    context,
+    requirementLedgerResults,
+  };
+}
+
+function sourceRequirementLedgerFromEvaluationBundle(
+  bundle: Awaited<ReturnType<typeof buildEvaluationLedgerContext>>,
+  documents: ProjectDocumentDetail[],
+) {
+  return canonicalizeRequirementSourceLedger({
+    sourceDocuments: documents,
+    requirementLedgerResults: bundle.requirementLedgerResults,
+  });
 }
 
 function workflowInputRecord(value: unknown): Record<string, unknown> {
@@ -417,7 +522,7 @@ function shouldRunDoclingEnhancement(input: {
 
   return (
     input.role === "primary_customer_document" ||
-    input.supportingSubtype === "kravdokument" ||
+    isExplicitRequirementSupportingSubtype(input.supportingSubtype ?? null) ||
     (input.fileFormat === "pdf" && looksLikePoorPdfExtraction(input)) ||
     looksLikePdfWithTablesOrRequirements(input.rawText) ||
     looksLikeComplexDocument(input)
@@ -470,6 +575,7 @@ async function runDocumentIngestionWorkflow(
 ) {
   try {
     handlers.setProgress("[8%] Henter dokumentfil ...");
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -487,6 +593,7 @@ async function runDocumentIngestionWorkflow(
     const buffer = Buffer.from(document.file_base64, "base64");
 
     handlers.setProgress("[22%] Leser dokumentet med rask parser ...");
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -515,6 +622,7 @@ async function runDocumentIngestionWorkflow(
       });
       if (shouldAttemptDocling) {
         handlers.setProgress("[48%] Prøver Docling for tekstuttrekk ...");
+        assertWorkflowActive(handlers);
         await updateDocumentProcessingState({
           projectId: input.projectId,
           documentId: input.documentId,
@@ -531,10 +639,14 @@ async function runDocumentIngestionWorkflow(
           role: document.role,
           useDocling: true,
           useDoclingOcr: true,
-        }).catch(() => null);
+        }).catch((error) => {
+          rethrowAuthoritativeLeaseLoss(error);
+          return null;
+        });
 
         if (isUsableDoclingResult(enhanced)) {
           handlers.setProgress("[90%] Bygger Docling-baserte chunks ...");
+          assertWorkflowActive(handlers);
           const enhancedDocument = await saveDocumentIngestionResult({
             projectId: input.projectId,
             documentId: input.documentId,
@@ -586,6 +698,7 @@ async function runDocumentIngestionWorkflow(
         ? "[48%] Lagrer raskt tekstgrunnlag ..."
         : "[48%] Bygger chunks og embeddings ...",
     );
+    assertWorkflowActive(handlers);
     const basicDocument = await saveDocumentIngestionResult({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -622,11 +735,14 @@ async function runDocumentIngestionWorkflow(
           title: document.title,
           rawText: parsed.rawText,
         });
+        assertWorkflowActive(handlers);
         await updateProjectMetadataFromInference(
           input.projectId,
           inferredMetadata,
         );
-      } catch {
+      } catch (error) {
+        rethrowAuthoritativeLeaseLoss(error);
+        assertWorkflowActive(handlers);
         // Metadata inference should not block RAG readiness.
       }
       handlers.onPhase?.("metadata");
@@ -644,6 +760,7 @@ async function runDocumentIngestionWorkflow(
     }
 
     handlers.setProgress("[78%] Forbedrer struktur med Docling ...");
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -668,6 +785,7 @@ async function runDocumentIngestionWorkflow(
 
     if (isUsableDoclingResult(enhanced)) {
       handlers.setProgress("[90%] Oppdaterer forbedrede chunks ...");
+      assertWorkflowActive(handlers);
       const enhancedDocument = await saveDocumentIngestionResult({
         projectId: input.projectId,
         documentId: input.documentId,
@@ -695,6 +813,7 @@ async function runDocumentIngestionWorkflow(
       };
     }
 
+    assertWorkflowActive(handlers);
     const fallbackDocument = await saveDocumentIngestionResult({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -721,13 +840,17 @@ async function runDocumentIngestionWorkflow(
       project: await getProjectSnapshot(input.projectId),
     };
   } catch (error) {
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
       status: "failed",
       message: "Dokumentindeksering feilet.",
       error: error instanceof Error ? error.message : "Ukjent feil.",
-    }).catch(() => undefined);
+    }).catch((persistenceError) => {
+      rethrowAuthoritativeLeaseLoss(persistenceError);
+      return undefined;
+    });
     throw error;
   }
 }
@@ -781,6 +904,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   }
 
   handlers.setProgress("Forbedrer dokumentstruktur med Docling ...");
+  assertWorkflowActive(handlers);
   await updateDocumentProcessingState({
     projectId: input.projectId,
     documentId: input.documentId,
@@ -803,7 +927,10 @@ async function runDocumentDoclingEnhancementWorkflow(
       sourceMapLength: document.structure_map.length,
       fileSizeBytes: document.file_size_bytes,
     }),
-  }).catch(() => null);
+  }).catch((error) => {
+    rethrowAuthoritativeLeaseLoss(error);
+    return null;
+  });
   handlers.onPhase?.("docling_parser");
 
   if (
@@ -813,6 +940,7 @@ async function runDocumentDoclingEnhancementWorkflow(
       enhancedRawText: enhanced.rawText,
     })
   ) {
+    assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
       documentId: input.documentId,
@@ -834,6 +962,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   }
 
   handlers.setProgress("Erstatter chunks med Docling-forbedret struktur ...");
+  assertWorkflowActive(handlers);
   const enhancedDocument = await saveDocumentIngestionResult({
     projectId: input.projectId,
     documentId: input.documentId,
@@ -867,10 +996,17 @@ async function runCustomerAnalysisWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster dokumentgrunnlag ...");
-  const [projectDocuments, serviceCandidates] = await Promise.all([
-    listProjectDocumentsForAnalysis(input.projectId),
-    listProjectServiceDescriptions(input.projectId),
-  ]);
+  const sourceSnapshot = await readStableProjectSourceSnapshot({
+    readSourceRevision: () => getProjectSourceRevision(input.projectId),
+    readValue: async () => {
+      const [projectDocuments, serviceCandidates] = await Promise.all([
+        listProjectDocumentsForAnalysis(input.projectId),
+        listProjectServiceDescriptions(input.projectId),
+      ]);
+      return { projectDocuments, serviceCandidates };
+    },
+  });
+  const { projectDocuments, serviceCandidates } = sourceSnapshot.value;
   const { projectDocuments: analysisDocuments } =
     splitServiceDescriptionDetails(projectDocuments);
   const { customerDocument, supportingDocuments } =
@@ -881,27 +1017,10 @@ async function runCustomerAnalysisWorkflow(
     throw new Error("Last opp minst ett dokument først.");
   }
 
-  if (
-    customerDocument.processing_status === "queued" ||
-    customerDocument.processing_status === "processing"
-  ) {
-    throw new Error(
-      "Kundedokumentet indekseres fortsatt. Prøv kundeanalysen igjen når dokumentet er RAG-klart.",
-    );
-  }
-
-  if (customerDocument.processing_status === "failed") {
-    throw new Error(
-      customerDocument.processing_error ||
-        "Kundedokumentet kunne ikke indekseres. Last det opp på nytt eller bruk OCR først.",
-    );
-  }
-
-  if (!customerDocument.raw_text.trim()) {
-    throw new Error(
-      "Dokumentgrunnlaget har ingen lesbar tekst. Last opp dokumentet på nytt som tekstbasert PDF/DOCX/Excel-fil, eller bruk OCR først.",
-    );
-  }
+  assertCustomerAnalysisRequirementSourcesReady([
+    customerDocument,
+    ...supportingDocuments,
+  ]);
 
   handlers.setProgress("Analyserer kundedokumentet med AI ...");
   const result = await analyzeCustomerDocuments({
@@ -914,6 +1033,7 @@ async function runCustomerAnalysisWorkflow(
   handlers.onPhase?.("ai_analyse");
 
   handlers.setProgress("Lagrer kundeanalysen ...");
+  assertWorkflowActive(handlers);
   const analysis = await saveCustomerAnalysis(
     input.projectId,
     [
@@ -922,6 +1042,7 @@ async function runCustomerAnalysisWorkflow(
     ],
     result,
     {
+      expectedSourceRevision: sourceSnapshot.sourceRevision,
       previousAnalysis: null,
       updatedSections: [...CUSTOMER_ANALYSIS_SECTIONS],
       historySource: "full_regeneration",
@@ -951,6 +1072,15 @@ async function runArtifactGenerationWorkflow(
     onPhase: handlers.onPhase,
     timings: handlers.timings,
     totalDurationMs: handlers.totalDurationMs,
+    assertActive: handlers.assertActive,
+  });
+}
+
+function readStableEvaluationSources(projectId: string) {
+  return readStableSolutionEvaluationSourceSnapshot({
+    readSourceRevision: () => getProjectSourceRevision(projectId),
+    readDocuments: () => listProjectDocumentsForAnalysis(projectId),
+    readCustomerAnalysis: () => getFreshCustomerAnalysis(projectId),
   });
 }
 
@@ -959,10 +1089,11 @@ export async function runSolutionEvaluationWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster kundedokument, analyse og støttedokumenter ...");
-  const [projectDocuments, customerAnalysis] = await Promise.all([
-    listProjectDocumentsForAnalysis(input.projectId),
-    getFreshCustomerAnalysis(input.projectId),
-  ]);
+  const {
+    documents: projectDocuments,
+    customerAnalysis,
+    sourceRevision,
+  } = await readStableEvaluationSources(input.projectId);
   const { projectDocuments: evaluationDocuments } =
     splitServiceDescriptionDetails(projectDocuments);
   const selectedSolutionDocument = input.solutionDocumentId
@@ -988,7 +1119,8 @@ export async function runSolutionEvaluationWorkflow(
       evaluationDocuments.find(
         (document) =>
           document.id !== input.solutionDocumentId &&
-          document.role !== "primary_solution_document",
+          document.role !== "primary_solution_document" &&
+          !isHistoricalSolutionDocument(document),
       ) ??
       null;
   }
@@ -996,7 +1128,9 @@ export async function runSolutionEvaluationWorkflow(
     selectedSolutionDocument ?? selectedDocuments.solutionDocument ?? null;
   let supportingDocuments = evaluationDocuments.filter(
     (document) =>
-      document.id !== customerDocument?.id && document.id !== solutionDocument?.id,
+      document.id !== customerDocument?.id &&
+      document.id !== solutionDocument?.id &&
+      !isHistoricalSolutionDocument(document),
   );
   handlers.onPhase?.("dokumenthenting");
 
@@ -1012,29 +1146,53 @@ export async function runSolutionEvaluationWorkflow(
     throw new Error("Velg dokumentet som skal vurderes som arkitektløsning.");
   }
 
-  customerDocument = await hydrateEvaluationFileDocument(
-    input.projectId,
+  assertEvaluationRequirementSourcesReady([
     customerDocument,
+    ...supportingDocuments,
+  ]);
+  assertSelectedSolutionDocumentReady(solutionDocument);
+
+  const hydratedEvaluationDocuments = await mapWithConcurrency(
+    [customerDocument, solutionDocument, ...supportingDocuments],
+    3,
+    (document) => hydrateEvaluationFileDocument(input.projectId, document),
   );
-  solutionDocument = await hydrateEvaluationFileDocument(
-    input.projectId,
-    solutionDocument,
+  customerDocument = hydratedEvaluationDocuments[0] ?? customerDocument;
+  solutionDocument = hydratedEvaluationDocuments[1] ?? solutionDocument;
+  supportingDocuments = hydratedEvaluationDocuments.slice(2);
+  assertEvaluationRequirementSourcesReady(
+    [customerDocument, ...supportingDocuments],
+    { requireReadableText: true },
   );
-  supportingDocuments = await Promise.all(
-    supportingDocuments.map((document) =>
-      hydrateEvaluationFileDocument(input.projectId, document),
-    ),
-  );
+  assertSelectedSolutionDocumentReady(solutionDocument, {
+    requireReadableText: true,
+  });
 
   handlers.setProgress(
     "Bygger evalueringsledger fra krav, kriterier og dokumentstruktur ...",
   );
-  const evaluationLedgerContext = await buildEvaluationLedgerContext({
+  const evaluationLedgerBundle = await buildEvaluationLedgerContext({
     artifactType: "gjennomforing_og_risiko",
     documents: [customerDocument, solutionDocument, ...supportingDocuments].filter(
       readableDocument,
     ),
   });
+  const requirementSourceDocuments = canonicalRequirementSourceDocuments({
+    customerDocument,
+    documents: supportingDocuments,
+  });
+  assertExplicitRequirementLedgersComplete(
+    requirementSourceDocuments,
+    evaluationLedgerBundle.requirementLedgerResults,
+  );
+  const sourceRequirementLedger = sourceRequirementLedgerFromEvaluationBundle(
+    evaluationLedgerBundle,
+    requirementSourceDocuments,
+  );
+  const solutionRequirementLedger =
+    evaluationLedgerBundle.requirementLedgerResults.find(
+      (entry) => entry.document.id === solutionDocument.id,
+    )?.ledger ?? [];
   handlers.onPhase?.("ledgerbygging");
 
   handlers.setProgress(
@@ -1048,15 +1206,30 @@ export async function runSolutionEvaluationWorkflow(
     customerAnalysis,
     systemSolutionArtifact: null,
     model: input.model,
-    documentLedgerContext: evaluationLedgerContext,
+    sourceRevision,
+    sourceRequirementLedger: sourceRequirementLedger.length
+      ? sourceRequirementLedger
+      : undefined,
+    solutionRequirementLedger: solutionRequirementLedger.length
+      ? solutionRequirementLedger
+      : undefined,
+    documentLedgerContext: evaluationLedgerBundle.context,
     onProgress: handlers.setProgress,
   });
   handlers.onPhase?.("ai_vurdering");
 
   handlers.setProgress("[96%] Lagrer sammenligning og vurdering ...");
+  assertWorkflowActive(handlers);
   const evaluation = await saveSolutionEvaluation(input.projectId, {
     customerDocumentId: customerDocument.id,
     solutionDocumentId: solutionDocument.id,
+    sourceDocumentIds: [
+      customerDocument.id,
+      ...supportingDocuments.map((document) => document.id),
+      solutionDocument.id,
+    ],
+    expectedSourceRevision: sourceRevision,
+    evaluatedGeneratedArtifactId: null,
     result,
   });
   handlers.onPhase?.("lagring");
@@ -1074,10 +1247,11 @@ async function runHighLevelDesignWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster kundedokument, analyse og støttedokumenter ...");
-  const [documents, customerAnalysis] = await Promise.all([
-    listProjectDocumentsForAnalysis(input.projectId),
-    getFreshCustomerAnalysis(input.projectId),
-  ]);
+  const {
+    documents,
+    customerAnalysis,
+    sourceRevision,
+  } = await readStableEvaluationSources(input.projectId);
   const { projectDocuments } = splitServiceDescriptionDetails(documents);
   const { customerDocument, supportingDocuments } =
     selectProjectDocuments(projectDocuments);
@@ -1106,6 +1280,7 @@ async function runHighLevelDesignWorkflow(
   handlers.onPhase?.("ai_design");
 
   handlers.setProgress("Lagrer oppdatert high-level design i kundeanalysen ...");
+  assertWorkflowActive(handlers);
   const analysis = await saveCustomerAnalysis(
     input.projectId,
     [customerDocument.id, ...supportingDocuments.map((document) => document.id)],
@@ -1116,6 +1291,7 @@ async function runHighLevelDesignWorkflow(
         highLevelDesign.high_level_architecture_mermaid,
     },
     {
+      expectedSourceRevision: sourceRevision,
       previousAnalysis: customerAnalysis,
       updatedSections: ["design"],
       historySource: "high_level_design_update",
@@ -1134,16 +1310,17 @@ async function runExecutiveSummaryWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster prosjekt, kundeanalyse og vurdering ...");
-  const [project, customerAnalysis, solutionEvaluation] = await Promise.all([
+  const [project, customerAnalysis, evaluationSnapshot] = await Promise.all([
     getProjectDetail(input.projectId),
     getFreshCustomerAnalysis(input.projectId),
-    getSolutionEvaluation(input.projectId),
+    getFreshSolutionEvaluationSnapshot(input.projectId),
   ]);
   handlers.onPhase?.("dokumenthenting");
 
-  if (!solutionEvaluation) {
+  if (!evaluationSnapshot) {
     throw new Error("Generer vurdering før lederoppsummering.");
   }
+  const solutionEvaluation = evaluationSnapshot.evaluation;
 
   handlers.setProgress("Genererer lederoppsummering ...");
   const generated = await generateExecutiveSummary({
@@ -1155,6 +1332,7 @@ async function runExecutiveSummaryWorkflow(
   handlers.onPhase?.("ai_oppsummering");
 
   handlers.setProgress("Lagrer lederoppsummeringen ...");
+  assertWorkflowActive(handlers);
   const executiveSummary = await saveExecutiveSummary(input.projectId, generated, {
     source: "solution_evaluation",
     solution_evaluation_present: true,
@@ -1163,7 +1341,7 @@ async function runExecutiveSummaryWorkflow(
       likely_score_assessment: solutionEvaluation.likely_score_assessment,
       architecture_comparison: solutionEvaluation.architecture_comparison,
     },
-  });
+  }, evaluationSnapshot.dependency);
   handlers.onPhase?.("lagring");
 
   return {
@@ -1217,13 +1395,15 @@ async function runPerfectSystemSolutionWorkflow(
     onPhase: handlers.onPhase,
     timings: handlers.timings,
     totalDurationMs: handlers.totalDurationMs,
+    assertActive: handlers.assertActive,
   });
 
   handlers.setProgress("Laster dokumentgrunnlag for ny vurdering ...");
-  const [customerAnalysis, documents] = await Promise.all([
-    getFreshCustomerAnalysis(input.projectId),
-    listProjectDocumentsForAnalysis(input.projectId),
-  ]);
+  const {
+    customerAnalysis,
+    documents,
+    sourceRevision,
+  } = await readStableEvaluationSources(input.projectId);
   const { projectDocuments } = splitServiceDescriptionDetails(documents);
   const { customerDocument, solutionDocument, supportingDocuments } =
     selectProjectDocuments(projectDocuments);
@@ -1236,20 +1416,28 @@ async function runPerfectSystemSolutionWorkflow(
     };
   }
 
-  const hydratedSolutionDocument = await hydrateEvaluationFileDocument(
-    input.projectId,
-    solutionDocument,
-  );
-  const hydratedCustomerDocument = await hydrateEvaluationFileDocument(
-    input.projectId,
+  assertEvaluationRequirementSourcesReady([
     customerDocument,
+    ...supportingDocuments,
+  ]);
+  assertSelectedSolutionDocumentReady(solutionDocument);
+
+  const hydratedEvaluationDocuments = await mapWithConcurrency(
+    [customerDocument, solutionDocument, ...supportingDocuments],
+    3,
+    (document) => hydrateEvaluationFileDocument(input.projectId, document),
   );
-  const hydratedSupportingDocuments = await Promise.all(
-    supportingDocuments.map((document) =>
-      hydrateEvaluationFileDocument(input.projectId, document),
-    ),
+  const hydratedCustomerDocument = hydratedEvaluationDocuments[0] ?? customerDocument;
+  const hydratedSolutionDocument = hydratedEvaluationDocuments[1] ?? solutionDocument;
+  const hydratedSupportingDocuments = hydratedEvaluationDocuments.slice(2);
+  assertEvaluationRequirementSourcesReady(
+    [hydratedCustomerDocument, ...hydratedSupportingDocuments],
+    { requireReadableText: true },
   );
-  const evaluationLedgerContext = await buildEvaluationLedgerContext({
+  assertSelectedSolutionDocumentReady(hydratedSolutionDocument, {
+    requireReadableText: true,
+  });
+  const evaluationLedgerBundle = await buildEvaluationLedgerContext({
     artifactType: "gjennomforing_og_risiko",
     documents: [
       hydratedCustomerDocument,
@@ -1257,6 +1445,22 @@ async function runPerfectSystemSolutionWorkflow(
       ...hydratedSupportingDocuments,
     ],
   });
+  const requirementSourceDocuments = canonicalRequirementSourceDocuments({
+    customerDocument: hydratedCustomerDocument,
+    documents: hydratedSupportingDocuments,
+  });
+  assertExplicitRequirementLedgersComplete(
+    requirementSourceDocuments,
+    evaluationLedgerBundle.requirementLedgerResults,
+  );
+  const sourceRequirementLedger = sourceRequirementLedgerFromEvaluationBundle(
+    evaluationLedgerBundle,
+    requirementSourceDocuments,
+  );
+  const solutionRequirementLedger =
+    evaluationLedgerBundle.requirementLedgerResults.find(
+      (entry) => entry.document.id === hydratedSolutionDocument.id,
+    )?.ledger ?? [];
 
   handlers.setProgress("Kjører ny vurdering av forbedret systemløsning ...");
   const improvedEvaluation = await evaluateSolutionDocument({
@@ -1267,13 +1471,28 @@ async function runPerfectSystemSolutionWorkflow(
     customerAnalysis,
     systemSolutionArtifact: artifact,
     model: input.model,
-    documentLedgerContext: evaluationLedgerContext,
+    sourceRevision,
+    sourceRequirementLedger: sourceRequirementLedger.length
+      ? sourceRequirementLedger
+      : undefined,
+    solutionRequirementLedger: solutionRequirementLedger.length
+      ? solutionRequirementLedger
+      : undefined,
+    documentLedgerContext: evaluationLedgerBundle.context,
   });
   handlers.onPhase?.("ai_revaluering");
 
-  await saveSolutionEvaluation(input.projectId, {
+  assertWorkflowActive(handlers);
+  const evaluation = await saveSolutionEvaluation(input.projectId, {
     customerDocumentId: customerDocument.id,
     solutionDocumentId: hydratedSolutionDocument.id,
+    sourceDocumentIds: [
+      customerDocument.id,
+      ...hydratedSupportingDocuments.map((document) => document.id),
+      hydratedSolutionDocument.id,
+    ],
+    expectedSourceRevision: sourceRevision,
+    evaluatedGeneratedArtifactId: artifact.id,
     result: improvedEvaluation,
   });
   handlers.onPhase?.("vurderingslagring");
@@ -1281,7 +1500,7 @@ async function runPerfectSystemSolutionWorkflow(
   return {
     artifact,
     project: await getProjectSnapshot(input.projectId),
-    evaluation: improvedEvaluation,
+    evaluation,
   };
 }
 

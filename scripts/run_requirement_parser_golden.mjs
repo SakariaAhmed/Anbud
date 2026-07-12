@@ -17,6 +17,7 @@ const { createJiti } = jitiModule;
 const jiti = createJiti(
   fileURLToPath(import.meta.url),
   {
+    fsCache: false,
     moduleCache: false,
     interopDefault: true,
     alias: {
@@ -36,6 +37,7 @@ const {
 const {
   cleanTableRequirement,
   cleanTableService,
+  PETORO_REQUIREMENT_PDF_SHA256,
   repairTableRowTextArtifacts,
 } = jiti(
   fileURLToPath(
@@ -101,6 +103,11 @@ for (const testCase of fixture.tableRepairs ?? []) {
   const repaired = repairTableRowTextArtifacts({
     service: testCase.service,
     text: testCase.text,
+    sourceDocumentSha256:
+      testCase.canonicalSource === "petoro-requirement-pdf"
+        ? PETORO_REQUIREMENT_PDF_SHA256
+        : undefined,
+    tableId: testCase.tableId,
   });
   assert.deepEqual(
     repaired,
@@ -166,6 +173,10 @@ for (const testCase of fixture.ledgerExtraction ?? []) {
     const display = requirementDisplayRef(entry, requirementSubtitle(entry) || "");
     if (expected.display) {
       assert.equal(display, expected.display, `${testCase.name}: ${expected.id} display`);
+    }
+
+    if (expected.heading) {
+      assert.equal(entry.heading, expected.heading, `${testCase.name}: ${expected.id} heading`);
     }
 
     for (const text of expected.textIncludes ?? []) {

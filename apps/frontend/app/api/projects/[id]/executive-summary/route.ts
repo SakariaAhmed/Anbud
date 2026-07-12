@@ -1,20 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { generateExecutiveSummary } from "@/lib/server/ai";
 import {
-  getExecutiveSummary,
-  getFreshCustomerAnalysis,
-  getSolutionEvaluation,
-  saveExecutiveSummary,
+  getFreshExecutiveSummary,
 } from "@/lib/server/repositories/analyses";
-import {
-  getProjectDetail,
-  getProjectSnapshot,
-} from "@/lib/server/repositories/projects";
 import { prepareProjectAiRoute } from "@/lib/server/project-ai-route";
+import { queueExecutiveSummaryJob } from "@/lib/server/project-jobs";
 
 const READ_CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+  "Cache-Control": "private, no-store",
 };
 
 export async function GET(
@@ -23,7 +16,7 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    const executiveSummary = await getExecutiveSummary(id);
+    const executiveSummary = await getFreshExecutiveSummary(id);
     return NextResponse.json(
       { executive_summary: executiveSummary },
       { headers: READ_CACHE_HEADERS },
@@ -61,40 +54,8 @@ export async function POST(
     }
 
     const { id, model } = preflight;
-    const [project, customerAnalysis, solutionEvaluation] = await Promise.all([
-      getProjectDetail(id),
-      getFreshCustomerAnalysis(id),
-      getSolutionEvaluation(id),
-    ]);
-
-    if (!solutionEvaluation) {
-      return NextResponse.json(
-        { error: "Generer vurdering før lederoppsummering." },
-        { status: 400 },
-      );
-    }
-
-    const generated = await generateExecutiveSummary({
-      projectName: project.name,
-      customerAnalysis,
-      solutionEvaluation,
-      model,
-    });
-    const executiveSummary = await saveExecutiveSummary(id, generated, {
-      source: "solution_evaluation",
-      solution_evaluation_present: true,
-      solution_evaluation_snapshot: {
-        fit_to_customer_needs: solutionEvaluation.fit_to_customer_needs,
-        likely_score_assessment: solutionEvaluation.likely_score_assessment,
-        architecture_comparison: solutionEvaluation.architecture_comparison,
-      },
-    });
-    const snapshot = await getProjectSnapshot(id);
-
-    return NextResponse.json({
-      executive_summary: executiveSummary,
-      project: snapshot,
-    });
+    const job = await queueExecutiveSummaryJob({ projectId: id, model });
+    return NextResponse.json({ job }, { status: 202 });
   } catch (error) {
     return NextResponse.json(
       {

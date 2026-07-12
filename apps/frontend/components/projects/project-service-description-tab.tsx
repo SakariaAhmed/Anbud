@@ -31,11 +31,11 @@ import { Input } from "@/components/projects/primitives";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
   clearClientCache,
-  getClientCache,
   PROJECT_SERVICES_CACHE_TTL_MS,
   projectServicesCacheKey,
   setClientCache,
 } from "@/lib/client-cache";
+import { fetchProjectServices } from "@/lib/client/project-api";
 import type { ProjectServiceDescription } from "@/lib/types";
 
 const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
@@ -67,28 +67,10 @@ export function ProjectServiceDescriptionTab({
   const recommendedServices = services.filter((service) => service.recommended);
 
   const loadServices = useCallback(async () => {
-    const cacheKey = projectServicesCacheKey(projectId);
-    const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
-    if (cached) {
-      setServices(cached);
-      setLoading(false);
-      setError("");
-      return;
-    }
-
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/service-descriptions`);
-      const payload = (await response.json()) as {
-        services?: ProjectServiceDescription[];
-        error?: string;
-      };
-      if (!response.ok || !payload.services) {
-        throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
-      }
-      setServices(payload.services);
-      setClientCache(cacheKey, payload.services, PROJECT_SERVICES_CACHE_TTL_MS);
+      setServices(await fetchProjectServices(projectId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke hente tjenestebeskrivelser.");
     } finally {
@@ -477,6 +459,7 @@ export function ProjectServiceDescriptionTab({
                   key={service.id}
                   type="button"
                   onClick={() => void toggleSelected(service)}
+                  aria-pressed={service.selected}
                   className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-950 shadow-sm"
                 >
                   {service.name} · {service.recommendation_score}%
@@ -502,6 +485,7 @@ export function ProjectServiceDescriptionTab({
                     <button
                       type="button"
                       onClick={() => void toggleSelected(service)}
+                      aria-pressed={service.selected}
                       aria-busy={savingSelectionIds.has(service.id)}
                       className="group flex min-w-0 flex-1 items-start gap-3 text-left transition-opacity"
                     >
@@ -558,6 +542,7 @@ export function ProjectServiceDescriptionTab({
                           onConfirm={() => deleteDocument(service.id, document.id)}
                         >
                           <Button
+                            aria-label={`Slett ${document.title}`}
                             variant="ghost"
                             size="icon-xs"
                             disabled={busy === `delete-document-${document.id}`}

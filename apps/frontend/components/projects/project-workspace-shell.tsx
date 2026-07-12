@@ -9,17 +9,18 @@ import type {
 } from "react";
 import { ChevronLeft, ChevronRight, MessageSquareText } from "lucide-react";
 
-import { ProjectDocumentsTab } from "@/components/projects/project-documents-tab";
 import {
   formatDate,
   GenerationProgress,
 } from "@/components/projects/project-workspace-shared";
+import { isDocumentReadyForEvaluation } from "@/lib/document-processing";
 import type {
   ProjectWorkspaceTab,
   WorkflowStepItem,
   WorkflowStepStatus,
   WorkspaceNavItem,
 } from "@/components/projects/project-workspace-types";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Sidebar,
@@ -57,6 +58,20 @@ const ProjectEvaluationTab = dynamic(
     loading: () => (
       <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
         Laster vurdering ...
+      </div>
+    ),
+  },
+);
+
+const ProjectDocumentsTab = dynamic(
+  () =>
+    import("@/components/projects/project-documents-tab").then(
+      (module) => module.ProjectDocumentsTab,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+        Laster dokumenter ...
       </div>
     ),
   },
@@ -237,6 +252,7 @@ export type ProjectWorkspaceTabContentProps = {
   analysisLoading: boolean;
   evaluationLoaded: boolean;
   evaluationLoading: boolean;
+  evaluationLoadError: string;
   executiveSummaryLoaded: boolean;
   executiveSummaryLoading: boolean;
   busy: string | null;
@@ -248,7 +264,6 @@ export type ProjectWorkspaceTabContentProps = {
   uploadRole: ProjectDocumentRole;
   selectedDocumentName: string;
   documentFileInputKey: number;
-  selectedRequirementDocumentId: string;
   requirementArtifacts: GeneratedArtifact[];
   solutionDraftArtifacts: GeneratedArtifact[];
   deliveryArtifacts: GeneratedArtifact[];
@@ -266,7 +281,9 @@ export type ProjectWorkspaceTabContentProps = {
   ) => Promise<void>;
   onGenerateSolutionEvaluation: (
     solutionDocumentId?: string,
+    importedDocument?: ProjectDocument,
   ) => Promise<void>;
+  onRetrySolutionEvaluationLoad: () => void;
   onUploadArchitectureDocument: (file: File) => Promise<ProjectDocument | null>;
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onGenerateBilag1Artifact: (
@@ -276,10 +293,13 @@ export type ProjectWorkspaceTabContentProps = {
     event: FormEvent<HTMLFormElement>,
   ) => Promise<void>;
   onUploadRequirementDocument: (file: File) => Promise<ProjectDocument | null>;
-  onSelectedRequirementDocumentChange: (documentId: string) => void;
   onUpdateRequirementArtifact: (
     artifact: GeneratedArtifact,
-    value: { title: string; content_markdown: string },
+    value: {
+      title: string;
+      content_markdown: string;
+      acknowledge_deterministic_repairs?: boolean;
+    },
   ) => Promise<void>;
   onGenerateRequirementResponse: (
     event: FormEvent<HTMLFormElement>,
@@ -415,7 +435,7 @@ function ProjectWorkspaceSidebar({
         <SidebarTrigger
           aria-label={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
           title={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
-          className="size-8 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+          className="size-12 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
         >
           {sidebarOpen ? (
             <ChevronLeft className="size-4.5" />
@@ -448,9 +468,8 @@ function ProjectWorkspaceSidebar({
                       !sidebarOpen &&
                         "mx-auto size-10 min-h-10 justify-center rounded-md px-0 py-0",
                     )}
-                    onFocus={() => onPreloadWorkspaceTab(item.value)}
-                    onPointerEnter={() => onPreloadWorkspaceTab(item.value)}
                     onPointerDown={() => onPreloadWorkspaceTab(item.value)}
+                    onFocus={() => onPreloadWorkspaceTab(item.value)}
                     onClick={() => onSetWorkspaceTab(item.value)}
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-[0.86rem] font-semibold text-blue-600 shadow-sm group-data-active/menu-button:border-blue-200 group-data-active/menu-button:bg-white group-data-active/menu-button:text-blue-700">
@@ -531,9 +550,8 @@ function ProjectWorkspaceSidebar({
                         !sidebarOpen &&
                           "mx-auto size-10 justify-center rounded-md px-0",
                       )}
-                      onFocus={() => onPreloadWorkspaceTab(item.value)}
-                      onPointerEnter={() => onPreloadWorkspaceTab(item.value)}
                       onPointerDown={() => onPreloadWorkspaceTab(item.value)}
+                      onFocus={() => onPreloadWorkspaceTab(item.value)}
                       onClick={() => onSetWorkspaceTab(item.value)}
                     >
                       <item.icon className="size-4.5 text-slate-500" />
@@ -551,9 +569,9 @@ function ProjectWorkspaceSidebar({
           type="button"
           aria-label="Resize sidebar"
           onPointerDown={onSidebarResizeStart}
-          className="absolute top-0 right-[-3px] bottom-0 hidden w-2 cursor-col-resize touch-none bg-transparent md:block"
+          className="absolute top-0 right-[-6px] bottom-0 hidden w-3 cursor-col-resize touch-none bg-transparent md:block"
         >
-          <span className="absolute top-0 right-[2px] bottom-0 w-px bg-border/70 transition-colors hover:bg-primary/50" />
+          <span className="absolute top-0 right-[5px] bottom-0 w-px bg-border/70 transition-colors hover:bg-primary/50" />
         </button>
       ) : null}
     </Sidebar>
@@ -565,7 +583,7 @@ function WorkspaceHeader({ project, activeTabLabel }: WorkspaceHeaderProps) {
     <section className="mb-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          <SidebarTrigger className="mt-0.5 shrink-0 md:hidden" />
+          <SidebarTrigger className="mt-0.5 size-12 shrink-0 md:hidden" />
           <div className="min-w-0">
             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.26em] text-slate-500">
               {activeTabLabel}
@@ -643,6 +661,7 @@ export function ProjectWorkspaceTabContent({
   analysisLoading,
   evaluationLoaded,
   evaluationLoading,
+  evaluationLoadError,
   executiveSummaryLoaded,
   executiveSummaryLoading,
   busy,
@@ -654,7 +673,6 @@ export function ProjectWorkspaceTabContent({
   uploadRole,
   selectedDocumentName,
   documentFileInputKey,
-  selectedRequirementDocumentId,
   requirementArtifacts,
   solutionDraftArtifacts,
   deliveryArtifacts,
@@ -668,12 +686,12 @@ export function ProjectWorkspaceTabContent({
   onGenerateCustomerAnalysis,
   onSaveAnalysis,
   onGenerateSolutionEvaluation,
+  onRetrySolutionEvaluationLoad,
   onUploadArchitectureDocument,
   onDeleteArtifact,
   onGenerateBilag1Artifact,
   onGenerateDeliveryArtifact,
   onUploadRequirementDocument,
-  onSelectedRequirementDocumentChange,
   onUpdateRequirementArtifact,
   onGenerateRequirementResponse,
   onGenerateExecutiveSummary,
@@ -724,13 +742,32 @@ export function ProjectWorkspaceTabContent({
       ) : null}
 
       {activeTab === "evaluation" ? (
-        !evaluationLoaded || evaluationLoading ? (
+        evaluationLoading || (!evaluationLoaded && !evaluationLoadError) ? (
           <DeferredSectionLoader label="Laster vurdering ..." />
+        ) : evaluationLoadError ? (
+          <div className="rounded-xl border border-rose-200 bg-white px-5 py-6 shadow-sm">
+            <p className="text-sm font-semibold text-rose-900">
+              Kunne ikke hente den lagrede vurderingen.
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {evaluationLoadError}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={onRetrySolutionEvaluationLoad}
+            >
+              Prøv å laste vurderingen på nytt
+            </Button>
+          </div>
         ) : (
           <ProjectEvaluationTab
             documents={architectureDocumentCandidates}
             solutionEvaluation={solutionEvaluation}
-            hasSolutionDocument={architectureDocumentCandidates.length > 0}
+            hasSolutionDocument={architectureDocumentCandidates.some(
+              isDocumentReadyForEvaluation,
+            )}
             busy={busy === "solution-evaluation"}
             busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
             busyProgress={busyProgress}
@@ -759,7 +796,9 @@ export function ProjectWorkspaceTabContent({
           busy={busy === "delivery-artifact"}
           busyMessage={busy === "delivery-artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
-          hasCustomerAnalysis={Boolean(customerAnalysis)}
+          hasCustomerAnalysis={
+            Boolean(customerAnalysis) || project.customer_analysis_generated
+          }
           onDeleteArtifact={onDeleteArtifact}
           onSubmit={onGenerateDeliveryArtifact}
         />
@@ -782,8 +821,6 @@ export function ProjectWorkspaceTabContent({
             busy?.startsWith("delete-") ? busy.slice("delete-".length) : null
           }
           onUpload={onUploadRequirementDocument}
-          selectedDocumentId={selectedRequirementDocumentId}
-          onSelectedDocumentChange={onSelectedRequirementDocumentChange}
           onDeleteDocument={onDeleteDocument}
           onUpdateArtifact={onUpdateRequirementArtifact}
           onDeleteArtifact={onDeleteArtifact}
@@ -797,7 +834,9 @@ export function ProjectWorkspaceTabContent({
         ) : (
           <ProjectExecutiveSummaryTab
             executiveSummary={executiveSummary}
-            hasSolutionEvaluation={Boolean(solutionEvaluation)}
+            hasSolutionEvaluation={
+              Boolean(solutionEvaluation) || project.solution_evaluation_generated
+            }
             busy={busy === "executive-summary"}
             busyMessage={busy === "executive-summary" ? busyMessage : ""}
             busyProgress={busyProgress}

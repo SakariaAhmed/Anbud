@@ -9,19 +9,23 @@ import {
 import { normalizeArtifactInstructions } from "@/lib/server/artifact-generation-input";
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
-import { generateAndSaveProjectArtifact } from "@/lib/server/use-cases/generate-artifact";
+import { queueArtifactGenerationJob } from "@/lib/server/project-jobs";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await context.params;
-    const artifacts = await listGeneratedArtifacts(id);
+    const artifactType = new URL(request.url).searchParams.get("artifact_type");
+    const artifacts =
+      artifactType && isArtifactType(artifactType)
+        ? await listGeneratedArtifacts(id, { artifactType })
+        : await listGeneratedArtifacts(id);
     return NextResponse.json({ artifacts }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     return NextResponse.json(
@@ -69,28 +73,16 @@ export async function POST(
       );
     }
 
-    const startedAt = Date.now();
-    let phaseStartedAt = startedAt;
-    const generationTimings: Array<{ phase: string; duration_ms: number }> = [];
-    function markPhase(phase: string) {
-      const now = Date.now();
-      generationTimings.push({ phase, duration_ms: now - phaseStartedAt });
-      phaseStartedAt = now;
-    }
-
-    const result = await generateAndSaveProjectArtifact({
+    const job = await queueArtifactGenerationJob({
       projectId: id,
       artifactType: body.artifact_type,
       instructions,
       useSolutionEvaluationContext:
         body.use_solution_evaluation_context === true,
       model,
-      onPhase: markPhase,
-      timings: () => generationTimings,
-      totalDurationMs: () => Date.now() - startedAt,
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({ job }, { status: 202 });
   } catch (error) {
     return NextResponse.json(
       {
@@ -114,6 +106,7 @@ export async function PATCH(
       artifact_id?: string;
       title?: string;
       content_markdown?: string;
+      acknowledge_deterministic_repairs?: boolean;
     };
 
     if (!body.artifact_id) {
@@ -129,6 +122,8 @@ export async function PATCH(
       title: typeof body.title === "string" ? body.title : "",
       contentMarkdown:
         typeof body.content_markdown === "string" ? body.content_markdown : "",
+      acknowledgeDeterministicRepairs:
+        body.acknowledge_deterministic_repairs === true,
     });
     const snapshot = await getProjectSnapshot(id);
 

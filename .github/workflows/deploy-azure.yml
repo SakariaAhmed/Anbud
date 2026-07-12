@@ -1,39 +1,204 @@
 name: Deploy Azure Container App
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 env:
   RESOURCE_GROUP: anbud-prod
   CONTAINER_APP: anbud
+  PROJECT_JOB_WORKER_APP: anbud-project-job-worker
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
   MIN_REPLICAS: "1"
+  PROJECT_JOB_WORKER_LIMIT: "1"
+  PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"
+  NODE_VERSION: "22.14.0"
+  FALLOW_VERSION: "2.104.0"
 
 jobs:
-  deploy:
+  validation:
+    name: Validate exact production commit
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
+    services:
+      postgres:
+        image: public.ecr.aws/supabase/postgres:17.6.1.132@sha256:e09e93a61ed1560caf4be79c9eb29401875bea74b12aec4657cb08bf34ea3a13
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PRIMARY_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DOCUMENT_CHUNKS_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      SERVICE_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
-      # SHAs resolve to Node 24-compatible release tags:
-      # actions/checkout@v5, azure/login@v3, docker/login-action@v4,
-      # docker/setup-buildx-action@v4, docker/build-push-action@v7.
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
-      - name: Validate frontend
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
         working-directory: apps/frontend
+        run: npm ci
+
+      - name: Secret scan
+        working-directory: apps/frontend
+        run: npm run secrets:scan
+
+      - name: Deterministic durable-job and schema tests
         run: |
-          npm ci
-          npm run lint
-          npm run build
+          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/project-job-terminal-audit.sql.test.mjs apps/frontend/lib/server/repositories/stable-main-rollback-bridge.sql.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs scripts/async_worker_boundaries.test.mjs
+          node scripts/validate_project_jobs_schema.mjs
+
+      - name: Frontend tests
+        working-directory: apps/frontend
+        run: npm test
+
+      - name: Lint
+        working-directory: apps/frontend
+        run: npm run lint
+
+      - name: Production build
+        working-directory: apps/frontend
+        run: npm run build
+
+      - name: Validate workflow release boundaries
+        run: |
+          node scripts/verify_workflow_boundaries.mjs
+          node scripts/validate_release_workflows.mjs
+
+      - name: Parse workflow YAML
+        run: ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].each { |file| YAML.parse_file(file) }'
+
+      - name: Fallow static quality gate
+        run: |
+          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" --root . --format json --score --performance > /tmp/fallow-combined.json
+          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" fix --root . --dry-run --yes --no-create-config --format json > /tmp/fallow-fix-preview.json
+          node - <<'NODE'
+          const fs = require("node:fs");
+          function readJson(path) {
+            const raw = fs.readFileSync(path, "utf8");
+            return JSON.parse(raw.slice(raw.indexOf("{")));
+          }
+          const combined = readJson("/tmp/fallow-combined.json");
+          const fixPreview = readJson("/tmp/fallow-fix-preview.json");
+          const totalIssues = combined.check?.total_issues ?? 0;
+          const totalFixes = fixPreview.summary?.total_fixes ?? fixPreview.fixes?.length ?? 0;
+          console.log(JSON.stringify({ fallow_total_issues: totalIssues, fallow_fix_preview_total_fixes: totalFixes }));
+          if (totalIssues > 0 || totalFixes > 0) process.exit(1);
+          NODE
+
+  infrastructure-validation:
+    name: Validate production infrastructure
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - name: Build Bicep
+        run: az bicep build --file infra/azure/container-app.bicep --stdout > /dev/null
+
+      - name: Lint Bicep
+        run: az bicep lint --file infra/azure/container-app.bicep
+
+  container-validation:
+    name: Validate production container and CVEs
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/frontend
+        run: npm ci
+
+      - name: Slim image smoke
+        working-directory: apps/frontend
+        run: npm run docker:smoke
+
+      - name: Production image smoke
+        working-directory: apps/frontend
+        run: npm run docker:smoke:docling -- --tag anbud-frontend-deploy-validation:${{ github.sha }} --keep-image
+
+      - name: Production image CVE scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: anbud-frontend-deploy-validation:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
+
+      - name: Remove production validation image
+        if: always()
+        run: docker image rm anbud-frontend-deploy-validation:${{ github.sha }} >/dev/null 2>&1 || true
+
+  deploy:
+    name: Production deployment
+    needs:
+      - validation
+      - infrastructure-validation
+      - container-validation
+    if: >-
+      ${{ always()
+          && github.ref == 'refs/heads/main'
+          && needs.validation.result == 'success'
+          && needs.infrastructure-validation.result == 'success'
+          && needs.container-validation.result == 'success' }}
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-azure
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/frontend
+        run: npm ci
+
+      - name: Validate production durable-job schema
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+        run: node scripts/validate_project_jobs_schema.mjs --remote
 
       - name: Azure login
         uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43
@@ -41,6 +206,75 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure Container Apps extension
+        run: az extension add --name containerapp --upgrade
+
+      - name: Capture last healthy images
+        run: |
+          current_app_image="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.template.containers[?name=='web'].image | [0]" --output tsv)"
+          current_worker_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --query "properties.template.containers[?name=='worker'].image | [0]" --output tsv)"
+          if [ -z "$current_app_image" ] || [ -z "$current_worker_image" ]; then
+            echo "::error::Could not resolve the current healthy application images."
+            exit 1
+          fi
+          echo "CURRENT_APP_IMAGE=$current_app_image" >> "$GITHUB_ENV"
+          echo "CURRENT_WORKER_IMAGE=$current_worker_image" >> "$GITHUB_ENV"
+
+      - name: Reconcile infrastructure without releasing candidate code
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
+          APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
+          APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
+          PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
+          PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
+          DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
+          DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          missing=0
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_ENCRYPTION_KEY APP_ACCESS_PASSWORD APP_SESSION_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN ACR_USERNAME ACR_PASSWORD
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub production secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          common_parameters=(
+            appName="$CONTAINER_APP"
+            image="$CURRENT_APP_IMAGE"
+            workerImage="$CURRENT_WORKER_IMAGE"
+            registryServer="${ACR_NAME}.azurecr.io"
+            registryUsername="$ACR_USERNAME"
+            registryPassword="$ACR_PASSWORD"
+            supabaseUrl="$SUPABASE_URL"
+            supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"
+            appEncryptionKey="$APP_ENCRYPTION_KEY"
+            appAccessPassword="$APP_ACCESS_PASSWORD"
+            appSessionSecret="$APP_SESSION_SECRET"
+            openAiApiKey="$OPENAI_API_KEY"
+            openAiModel="$OPENAI_MODEL"
+            projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
+            projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON"
+            projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT"
+            projectJobWorkerReplicaTimeout="$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"
+            doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE"
+            doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN"
+            minReplicas="$MIN_REPLICAS"
+          )
+
+          az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file infra/azure/container-app.bicep --result-format ResourceIdOnly --parameters "${common_parameters[@]}"
+
+          az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-infra-${GITHUB_SHA}" --template-file infra/azure/container-app.bicep --parameters "${common_parameters[@]}" --output none
 
       - name: Docker login to ACR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0
@@ -52,99 +286,49 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
 
-      - name: Build and push image
+      - name: Build and push candidate image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           file: apps/frontend/Dockerfile
+          target: runner-docling
           platforms: linux/amd64
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: false
-          tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+          tags: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      - name: Ensure Container Apps extension
-        run: |
-          az extension add --name containerapp --upgrade
+      - name: Scan candidate image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
 
-      - name: Deploy Container App and worker
+      - name: Roll out zero-traffic candidate and promote
+        id: rollout
+        env:
+          CANDIDATE_IMAGE: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          REVISION_SUFFIX: sha-${{ github.sha }}
+          ROLLOUT_STATE_FILE: ${{ runner.temp }}/anbud-rollout-state.json
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+        run: node scripts/azure_containerapp_rollout.mjs
+
+      - name: Fallback rollback
+        if: always() && (steps.rollout.outcome == 'failure' || steps.rollout.outcome == 'cancelled')
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
-          APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
-          APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
-          PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
-          PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
-          PROJECT_JOB_WORKER_LIMIT: ${{ vars.PROJECT_JOB_WORKER_LIMIT || '2' }}
-          DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
-          DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
-          missing=0
-          for name in \
-            SUPABASE_URL \
-            SUPABASE_SERVICE_ROLE_KEY \
-            APP_ENCRYPTION_KEY \
-            APP_ACCESS_PASSWORD \
-            APP_SESSION_SECRET \
-            OPENAI_API_KEY \
-            PROJECT_JOB_WORKER_TOKEN \
-            ACR_USERNAME \
-            ACR_PASSWORD
-          do
-            if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub secret: $name"
-              missing=1
-            fi
-          done
-
-          if [ "$missing" -ne 0 ]; then
-            exit 1
+          state_file="${RUNNER_TEMP}/anbud-rollout-state.json"
+          if [ -f "$state_file" ]; then
+            node scripts/azure_containerapp_rollout.mjs --rollback-state "$state_file"
           fi
-
-          az deployment group create \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "anbud-${GITHUB_SHA}" \
-            --template-file infra/azure/container-app.bicep \
-            --parameters \
-              appName="$CONTAINER_APP" \
-              image="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${GITHUB_SHA}" \
-              registryServer="${ACR_NAME}.azurecr.io" \
-              registryUsername="$ACR_USERNAME" \
-              registryPassword="$ACR_PASSWORD" \
-              supabaseUrl="$SUPABASE_URL" \
-              supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
-              appEncryptionKey="$APP_ENCRYPTION_KEY" \
-              appAccessPassword="$APP_ACCESS_PASSWORD" \
-              appSessionSecret="$APP_SESSION_SECRET" \
-              openAiApiKey="$OPENAI_API_KEY" \
-              openAiModel="$OPENAI_MODEL" \
-              projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN" \
-              projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON" \
-              projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT" \
-              doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE" \
-              doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN" \
-              minReplicas="$MIN_REPLICAS"
-
-          app_fqdn="$(az containerapp show \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$CONTAINER_APP" \
-            --query "properties.configuration.ingress.fqdn" \
-            --output tsv)"
-          echo "$app_fqdn"
-          echo "APP_FQDN=$app_fqdn" >> "$GITHUB_ENV"
-
-          az containerapp job show \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "${CONTAINER_APP}-project-job-worker" \
-            --query "properties.configuration.triggerType" \
-            --output tsv
-
-      - name: Smoke test deployed health model
-        run: node apps/frontend/scripts/smoke_health.mjs "https://${APP_FQDN}"

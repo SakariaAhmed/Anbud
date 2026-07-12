@@ -1,7 +1,6 @@
 import "server-only";
 
 const MAX_ARTIFACT_INSTRUCTIONS_CHARS = 4000;
-const MAX_ARTIFACT_SOURCE_DOCUMENT_IDS = 12;
 const MAX_SOURCE_DOCUMENT_ID_CHARS = 200;
 
 export function normalizeArtifactInstructions(value: unknown) {
@@ -14,27 +13,30 @@ export function normalizeArtifactInstructions(value: unknown) {
 }
 
 export function normalizeSourceDocumentIds(value: unknown) {
-  if (!Array.isArray(value)) {
+  if (value === undefined || value === null) {
     return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("source_document_ids må være en liste med dokument-ID-er.");
   }
 
   const seen = new Set<string>();
   const ids: string[] = [];
   for (const candidate of value) {
     if (typeof candidate !== "string") {
-      continue;
+      throw new Error("source_document_ids inneholder en ugyldig dokument-ID.");
     }
 
-    const id = candidate.trim().slice(0, MAX_SOURCE_DOCUMENT_ID_CHARS);
-    if (!id || seen.has(id)) {
-      continue;
+    const id = candidate.trim();
+    if (!id || id.length > MAX_SOURCE_DOCUMENT_ID_CHARS) {
+      throw new Error("source_document_ids inneholder en tom eller for lang dokument-ID.");
+    }
+    if (seen.has(id)) {
+      throw new Error(`source_document_ids inneholder duplikatet ${id}.`);
     }
 
     seen.add(id);
     ids.push(id);
-    if (ids.length >= MAX_ARTIFACT_SOURCE_DOCUMENT_IDS) {
-      break;
-    }
   }
 
   return ids;

@@ -5,8 +5,10 @@ import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 
 import { createServiceClient } from "@/lib/server/supabase";
 import {
+  buildStoredFilePrefix,
   buildStoredFilePath,
   downloadEncryptedBase64File,
+  removeStoredFilePrefixes,
   removeStoredFiles,
   uploadEncryptedBase64File,
 } from "@/lib/server/file-storage";
@@ -21,10 +23,32 @@ import {
   replaceProjectDocumentChunks,
   replaceServiceDocumentChunks,
 } from "@/lib/server/document-chunks";
+import { normalizeDocumentChunkStructureMap } from "@/lib/server/document-chunk-structure";
+import {
+  isMissingRelationColumn,
+  isMissingSchemaColumn,
+  missingColumnNameFromError,
+  removeMissingStorageColumns,
+} from "@/lib/server/repositories/supabase-compat";
 import {
   appendCustomerAnalysisSectionHistory,
   CUSTOMER_ANALYSIS_SECTIONS,
 } from "@/lib/customer-analysis-history";
+import {
+  rethrowAuthoritativeLeaseLoss,
+  runLeaseFencedCustomerAnalysisMutation,
+  runLeaseFencedExecutiveSummaryMutation,
+  runLeaseFencedGeneratedArtifactMutation,
+  runLeaseFencedProjectMutation,
+  runLeaseFencedSolutionEvaluationMutation,
+} from "@/lib/server/repositories/lease-fenced-persistence";
+import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
+import { buildValidatedManualArtifactInputSnapshot } from "@/lib/server/artifact-validation";
+import { isHistoricalSolutionDocument } from "@/lib/document-processing";
+import {
+  fetchStoredFileReferencesPaginated,
+  runStorageFirstDeletion,
+} from "@/lib/server/storage-deletion";
 import type {
   ChatDomainHint,
   ChatMessage,
@@ -38,6 +62,7 @@ import type {
   DocumentProcessingStatus,
   ExecutiveSummaryResult,
   GeneratedArtifact,
+  GeneratedArtifactAuthorityByType,
   GeneratedArtifactType,
   ProjectMetadataInference,
   ProjectCreateInput,
@@ -45,7 +70,6 @@ import type {
   ProjectDocument,
   ProjectDocumentDetail,
   ProjectDocumentRole,
-  ProjectDocumentStructureEntry,
   ProjectServiceDescription,
   ProjectStatus,
   ProjectSummary,
@@ -102,6 +126,7 @@ interface DocumentRow {
   processing_error: string | null;
   parser_used: string | null;
   indexed_at: string | null;
+  chunk_source_revision: number;
   created_at: string;
   updated_at: string;
 }
@@ -127,6 +152,7 @@ interface DocumentSummaryRow {
   processing_error?: string | null;
   parser_used?: string | null;
   indexed_at?: string | null;
+  chunk_source_revision: number;
   created_at: string;
   updated_at: string;
 }
@@ -143,9 +169,15 @@ interface CustomerAnalysisRow {
 interface SolutionEvaluationRow {
   id: string;
   project_id: string;
+  source_document_ids: string[];
   customer_document_id: string | null;
   solution_document_id: string | null;
   analysis_id: string | null;
+  evaluated_generated_artifact_id?: string | null;
+  evaluation_provenance_mode?:
+    | "document_only"
+    | "generated_artifact"
+    | "legacy_unknown";
   result_json: Json;
   created_at: string;
   updated_at: string;
@@ -168,7 +200,50 @@ interface ArtifactRow {
   content_markdown: string;
   input_snapshot: Json;
   created_at: string;
-  updated_at?: string;
+  updated_at: string;
+  artifact_version?: number | string | null;
+  generation_job_id?: string | null;
+  generation_submission_sequence?: number | string | null;
+  input_artifact_source_revision?: number | string | null;
+  input_service_library_revision?: number | string | null;
+  used_solution_evaluation?: boolean | null;
+  input_solution_evaluation_id?: string | null;
+  input_solution_evaluation_updated_at?: string | null;
+  input_solution_evaluation_hash?: string | null;
+  generator_revision?: string | null;
+  origin?: "generated" | "manual_edit" | "legacy" | null;
+  parent_artifact_id?: string | null;
+  source_snapshot_hash?: string | null;
+  current_artifact_version?: number | string | null;
+  current_artifact_source_revision?: number | string | null;
+  current_service_library_revision?: number | string | null;
+}
+
+const GENERATED_ARTIFACT_TYPES: GeneratedArtifactType[] = [
+  "losningsutkast",
+  "bilag1_rekonstruksjon",
+  "forbedret_kravsvar",
+  "tilbudsstrategi",
+  "verdiargumentasjon",
+  "anbefalt_arkitektur",
+  "gjennomforing_og_risiko",
+];
+
+function isGeneratedArtifactType(value: unknown): value is GeneratedArtifactType {
+  return GENERATED_ARTIFACT_TYPES.includes(value as GeneratedArtifactType);
+}
+
+function artifactCountsByType(
+  rows: Array<{ artifact_type: unknown }> | null | undefined,
+) {
+  const counts: Partial<Record<GeneratedArtifactType, number>> = {};
+  for (const row of rows ?? []) {
+    if (!isGeneratedArtifactType(row.artifact_type)) {
+      continue;
+    }
+    counts[row.artifact_type] = (counts[row.artifact_type] ?? 0) + 1;
+  }
+  return counts;
 }
 
 interface ChatRow {
@@ -221,6 +296,7 @@ interface ServiceDocumentRow {
   structure_map: Json;
   ai_summary?: string | null;
   ai_summary_updated_at?: string | null;
+  chunk_source_revision: number;
   created_at: string;
   updated_at: string;
 }
@@ -240,6 +316,7 @@ interface ServiceDocumentSummaryRow {
   structure_map?: Json;
   ai_summary?: string | null;
   ai_summary_updated_at?: string | null;
+  chunk_source_revision: number;
   created_at: string;
   updated_at: string;
 }
@@ -255,15 +332,22 @@ interface ProjectCacheSnapshot {
   solution_document_uploaded: boolean;
   solution_evaluation_generated: boolean;
   last_activity_at: string;
+  current_artifact_types: GeneratedArtifactType[];
+  artifact_authority: GeneratedArtifactAuthorityByType;
 }
 
 const DOCUMENT_SELECT_SAFE =
-  "id, project_id, role, supporting_subtype, title, file_name, file_format, content_type, file_size_bytes, page_count, file_storage_bucket, file_storage_path, file_base64, raw_text, structure_map, processing_status, processing_message, processing_error, parser_used, indexed_at, created_at, updated_at";
+  "id, project_id, role, supporting_subtype, subtype, title, file_name, file_format, content_type, file_size_bytes, page_count, file_storage_bucket, file_storage_path, file_base64, raw_text, structure_map, processing_status, processing_message, processing_error, parser_used, indexed_at, chunk_source_revision, created_at, updated_at";
+const DOCUMENT_ANALYSIS_SELECT_SAFE =
+  "id, project_id, role, supporting_subtype, subtype, title, file_name, file_format, content_type, file_size_bytes, page_count, file_storage_bucket, file_storage_path, raw_text, structure_map, processing_status, processing_message, processing_error, parser_used, indexed_at, chunk_source_revision, created_at, updated_at";
+const ACTIVE_ANALYSIS_DOCUMENT_FILTER =
+  "supporting_subtype.neq.tidligere_losning,and(supporting_subtype.is.null,subtype.neq.tidligere_losning),and(supporting_subtype.is.null,subtype.is.null)";
 const DOCUMENT_SUMMARY_SELECT_COLUMNS = [
   "id",
   "project_id",
   "role",
   "supporting_subtype",
+  "subtype",
   "title",
   "file_name",
   "file_format",
@@ -275,6 +359,7 @@ const DOCUMENT_SUMMARY_SELECT_COLUMNS = [
   "processing_error",
   "parser_used",
   "indexed_at",
+  "chunk_source_revision",
   "created_at",
   "updated_at",
 ] as const;
@@ -285,7 +370,9 @@ const PROJECT_SELECT_SAFE =
 const PROJECT_SELECT_LEGACY =
   "id, title, client_name, description, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
 const SERVICE_DOCUMENT_SUMMARY_SELECT =
-  "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, ai_summary, ai_summary_updated_at, created_at, updated_at";
+  "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, ai_summary, ai_summary_updated_at, chunk_source_revision, created_at, updated_at";
+const SERVICE_DOCUMENT_SUMMARY_SELECT_BASE =
+  "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, chunk_source_revision, created_at, updated_at";
 const PROJECT_DOCUMENT_INSERT_COLUMN_NAMES = [
   "id",
   "project_id",
@@ -311,22 +398,6 @@ const PROJECT_DOCUMENT_INSERT_COLUMN_NAMES = [
   "parser_used",
   "indexed_at",
 ] as const;
-const SERVICE_DOCUMENT_INSERT_COLUMN_NAMES = [
-  "id",
-  "service_id",
-  "title",
-  "file_name",
-  "file_format",
-  "content_type",
-  "file_size_bytes",
-  "page_count",
-  "file_storage_bucket",
-  "file_storage_path",
-  "file_base64",
-  "raw_text",
-  "structure_map",
-] as const;
-
 const CUSTOMER_ANALYSIS_EMPTY: CustomerAnalysisResult = {
   customer_profile_summary: "",
   customer_goals_summary: "",
@@ -393,11 +464,6 @@ const SOLUTION_EVALUATION_EMPTY: SolutionEvaluationResult = {
 };
 
 type RequirementCoverage = NonNullable<SolutionEvaluationResult["requirement_coverage"]>;
-type RequirementCoverageItem = RequirementCoverage["items"][number];
-
-function isSyntheticRequirementReference(reference: string) {
-  return /^side\s+\d{1,5}\s+krav\s+\d{1,5}$/i.test(reference.trim());
-}
 
 function sanitizeRequirementCoverage(
   coverage: RequirementCoverage | undefined,
@@ -406,40 +472,118 @@ function sanitizeRequirementCoverage(
     return coverage;
   }
 
-  const anchoredItems = coverage.items.filter(
-    (item) => !isSyntheticRequirementReference(item.reference),
-  );
-  const items = anchoredItems.length >= 5 ? anchoredItems : coverage.items;
-  if (items.length === coverage.items.length) {
-    return coverage;
-  }
-
-  const counts = items.reduce(
-    (acc, item: RequirementCoverageItem) => {
-      if (item.assessment === "Godt") acc.good += 1;
-      else if (item.assessment === "Dårlig") acc.weak += 1;
-      else if (item.assessment === "Mangler") acc.missing += 1;
-      else acc.unclear += 1;
-      return acc;
-    },
-    { good: 0, weak: 0, missing: 0, unclear: 0 },
-  );
+  // The evaluated array is already in authoritative ledger order. Preserve
+  // every row (including generated fallback references) and rebuild the
+  // persisted position from that array instead of trusting legacy/model
+  // indexes. This keeps read/save round-trips zero-based and gap-free.
+  const items = coverage.items.map((item, orderIndex) => ({
+    ...item,
+    order_index: orderIndex,
+  }));
 
   return {
     ...coverage,
-    total_requirements: items.length,
-    assessed_requirements: items.length,
-    ...counts,
     items,
   };
 }
 
-function sanitizeSolutionEvaluationResult(
+export function sanitizeSolutionEvaluationResult(
   result: SolutionEvaluationResult,
 ): SolutionEvaluationResult {
+  const score = result.likely_score_assessment ??
+    SOLUTION_EVALUATION_EMPTY.likely_score_assessment;
+  const comparison = result.architecture_comparison ??
+    SOLUTION_EVALUATION_EMPTY.architecture_comparison;
+  const coverage = result.requirement_coverage
+    ? {
+        ...SOLUTION_EVALUATION_EMPTY.requirement_coverage,
+        ...result.requirement_coverage,
+        items: Array.isArray(result.requirement_coverage.items)
+          ? result.requirement_coverage.items
+          : [],
+      }
+    : undefined;
   return {
+    ...SOLUTION_EVALUATION_EMPTY,
     ...result,
-    requirement_coverage: sanitizeRequirementCoverage(result.requirement_coverage),
+    strengths: Array.isArray(result.strengths) ? result.strengths : [],
+    weaknesses: Array.isArray(result.weaknesses) ? result.weaknesses : [],
+    generic_sections: Array.isArray(result.generic_sections)
+      ? result.generic_sections
+      : [],
+    missing_elements: Array.isArray(result.missing_elements)
+      ? result.missing_elements
+      : [],
+    risks_to_customer: Array.isArray(result.risks_to_customer)
+      ? result.risks_to_customer
+      : [],
+    trust_signals: Array.isArray(result.trust_signals)
+      ? result.trust_signals
+      : [],
+    likely_score_assessment: {
+      quality: typeof score?.quality === "string" ? score.quality : "",
+      delivery_confidence:
+        typeof score?.delivery_confidence === "string"
+          ? score.delivery_confidence
+          : "",
+      risk: typeof score?.risk === "string" ? score.risk : "",
+      competitiveness:
+        typeof score?.competitiveness === "string"
+          ? score.competitiveness
+          : "",
+    },
+    improvement_recommendations: Array.isArray(
+      result.improvement_recommendations,
+    )
+      ? result.improvement_recommendations
+      : [],
+    value_assessment: Array.isArray(result.value_assessment)
+      ? result.value_assessment.filter(
+          (item) => item && typeof item === "object",
+        )
+      : [],
+    rewrite_suggestions: Array.isArray(result.rewrite_suggestions)
+      ? result.rewrite_suggestions.filter(
+          (item) => item && typeof item === "object",
+        )
+      : [],
+    document_findings: Array.isArray(result.document_findings)
+      ? result.document_findings.filter(
+          (item) => item && typeof item === "object",
+        )
+      : [],
+    requirement_coverage: sanitizeRequirementCoverage(coverage),
+    architecture_comparison: {
+      winner:
+        comparison?.winner === "Systemløsning" ||
+        comparison?.winner === "Arkitektløsning" ||
+        comparison?.winner === "Uavgjort"
+          ? comparison.winner
+          : "Uavgjort",
+      architect_solution_score:
+        typeof comparison?.architect_solution_score === "number" &&
+        Number.isFinite(comparison.architect_solution_score)
+          ? Math.min(100, Math.max(0, comparison.architect_solution_score))
+          : 0,
+      system_solution_score:
+        typeof comparison?.system_solution_score === "number" &&
+        Number.isFinite(comparison.system_solution_score)
+          ? Math.min(100, Math.max(0, comparison.system_solution_score))
+          : 0,
+      verdict:
+        typeof comparison?.verdict === "string" ? comparison.verdict : "",
+      strong_critique: Array.isArray(comparison?.strong_critique)
+        ? comparison.strong_critique
+        : [],
+      pragmatic_reflections: Array.isArray(comparison?.pragmatic_reflections)
+        ? comparison.pragmatic_reflections
+        : [],
+      strategy_improvement_advice: Array.isArray(
+        comparison?.strategy_improvement_advice,
+      )
+        ? comparison.strategy_improvement_advice
+        : [],
+    },
   };
 }
 
@@ -459,6 +603,9 @@ const EXECUTIVE_SUMMARY_EMPTY: ExecutiveSummaryResult = {
 
 const PROJECTS_LIST_TAG = "projects:list";
 const SERVICE_DESCRIPTIONS_TAG = "service-descriptions:list";
+const PROJECT_LIST_LIMIT = 500;
+const GENERATED_ARTIFACT_LIST_LIMIT = 250;
+const CHAT_MESSAGE_LIST_LIMIT = 1200;
 
 function projectTag(projectId: string) {
   return `project:${projectId}`;
@@ -500,73 +647,6 @@ function isMissingLegacyProjectColumn(error: { message?: string } | null) {
     message.includes("client_name") ||
     message.includes("title")
   );
-}
-
-function isMissingSchemaColumn(error: { message?: string } | null) {
-  const message = (error?.message ?? "").toLowerCase();
-  if (!message) {
-    return false;
-  }
-  if (
-    message.includes("violates") ||
-    message.includes("not-null") ||
-    message.includes("not null")
-  ) {
-    return false;
-  }
-
-  return (
-    message.includes("schema cache") ||
-    message.includes("does not exist") ||
-    message.includes("could not find") ||
-    message.includes("column ")
-  );
-}
-
-function isMissingRelationColumn(
-  error: { message?: string } | null,
-  relation: string,
-) {
-  const message = (error?.message ?? "").toLowerCase();
-  if (!message) {
-    return false;
-  }
-
-  return (
-    message.includes(`column ${relation}.`) ||
-    message.includes(`of '${relation}'`) ||
-    (message.includes(relation) && message.includes("schema cache")) ||
-    (message.includes(relation) && message.includes("does not exist"))
-  );
-}
-
-function missingColumnNameFromError<const TColumn extends string>(
-  error: { message?: string } | null,
-  columns: readonly TColumn[],
-): TColumn | null {
-  if (!isMissingSchemaColumn(error)) {
-    return null;
-  }
-
-  const message = (error?.message ?? "").toLowerCase();
-  return (
-    columns.find((column) => {
-      const normalized = column.toLowerCase();
-      return (
-        message.includes(`'${normalized}' column`) ||
-        message.includes(`"${normalized}" column`) ||
-        message.includes(`column '${normalized}'`) ||
-        message.includes(`column "${normalized}"`) ||
-        message.includes(`column ${normalized}`) ||
-        message.includes(`.${normalized}`)
-      );
-    }) ?? null
-  );
-}
-
-function removeMissingStorageColumns(payload: Record<string, unknown>) {
-  delete payload.file_storage_bucket;
-  delete payload.file_storage_path;
 }
 
 const CHAT_DOMAIN_HINTS = new Set<ChatDomainHint>([
@@ -707,6 +787,7 @@ function decryptDocumentRow(row: DocumentRow): ProjectDocumentDetail {
     processing_error: row.processing_error,
     parser_used: row.parser_used,
     indexed_at: row.indexed_at,
+    chunk_source_revision: row.chunk_source_revision,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -792,30 +873,6 @@ function normalizeDocumentProcessingStatus(
   return rawText?.trim() ? "enhanced_ready" : "queued";
 }
 
-function normalizeStructureMapForChunks(
-  value: unknown,
-): ProjectDocumentStructureEntry[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return null;
-      }
-      const record = entry as { reference?: unknown; text?: unknown };
-      return {
-        reference: String(record.reference ?? ""),
-        text: String(record.text ?? ""),
-      };
-    })
-    .filter(
-      (entry): entry is ProjectDocumentStructureEntry =>
-        Boolean(entry?.reference || entry?.text),
-    );
-}
-
 function decryptOptionalString(value: string | undefined) {
   if (!value) {
     return "";
@@ -860,6 +917,7 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
     processing_error: row.processing_error ?? null,
     parser_used: row.parser_used ?? null,
     indexed_at: row.indexed_at ?? null,
+    chunk_source_revision: row.chunk_source_revision,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -880,6 +938,176 @@ async function listProjectDocumentRoleRows(
   return (data ?? []) as Array<{ role: ProjectDocumentRole | null }>;
 }
 
+async function deleteProjectSolutionEvaluations(
+  supabase: ReturnType<typeof createServiceClient>,
+  projectId: string,
+) {
+  const { error } = await supabase
+    .from("solution_evaluations")
+    .delete()
+    .eq("project_id", projectId);
+  if (error) {
+    throw new Error(error.message || "Kunne ikke invalidere løsningsvurderingen.");
+  }
+}
+
+async function deleteProjectCustomerAnalyses(
+  supabase: ReturnType<typeof createServiceClient>,
+  projectId: string,
+) {
+  const { error } = await supabase
+    .from("customer_analyses")
+    .delete()
+    .eq("project_id", projectId);
+  if (error) {
+    throw new Error(error.message || "Kunne ikke invalidere kundeanalysen.");
+  }
+}
+
+async function deleteProjectExecutiveSummaries(
+  supabase: ReturnType<typeof createServiceClient>,
+  projectId: string,
+) {
+  const { error } = await supabase
+    .from("executive_summaries")
+    .delete()
+    .eq("project_id", projectId);
+  if (error && !isMissingRelationColumn(error, "executive_summaries")) {
+    throw new Error(error.message || "Kunne ikke invalidere lederoppsummeringen.");
+  }
+}
+
+type DocumentDeletionSnapshot = {
+  id: string;
+  role: ProjectDocumentRole;
+  supporting_subtype: SupportingDocumentSubtype | null;
+  file_storage_bucket?: string | null;
+  file_storage_path?: string | null;
+};
+
+function storedFileDeletionPrefixes(input: {
+  scope: "projects" | "services";
+  ownerId: string;
+  fileId?: string | null;
+  files: Array<{ file_storage_bucket?: string | null }>;
+}) {
+  const buckets = new Set<string | null>([null]);
+  for (const file of input.files) {
+    if (file.file_storage_bucket) buckets.add(file.file_storage_bucket);
+  }
+  const prefix = buildStoredFilePrefix(input);
+  return [...buckets].map((bucket) => ({ bucket, prefix }));
+}
+
+async function getDocumentDeletionSnapshot(
+  supabase: ReturnType<typeof createServiceClient>,
+  projectId: string,
+  documentId: string,
+): Promise<DocumentDeletionSnapshot | null> {
+  const currentResult = await supabase
+    .from("documents")
+    .select(
+      "id, role, supporting_subtype, file_storage_bucket, file_storage_path",
+    )
+    .eq("project_id", projectId)
+    .eq("id", documentId)
+    .single<DocumentDeletionSnapshot>();
+
+  if (!currentResult.error) {
+    return currentResult.data ?? null;
+  }
+  if (!isMissingLegacyDocumentColumn(currentResult.error)) {
+    throw new Error(
+      currentResult.error.message || "Kunne ikke lese dokumentmetadata.",
+    );
+  }
+
+  const legacyResult = await supabase
+    .from("documents")
+    .select("id, role, subtype, file_storage_bucket, file_storage_path")
+    .eq("project_id", projectId)
+    .eq("id", documentId)
+    .single<{
+      id: string;
+      role: ProjectDocumentRole;
+      subtype?: SupportingDocumentSubtype | null;
+      file_storage_bucket?: string | null;
+      file_storage_path?: string | null;
+    }>();
+
+  if (legacyResult.error || !legacyResult.data) {
+    if (legacyResult.error) {
+      throw new Error(
+        legacyResult.error.message || "Kunne ikke lese dokumentmetadata.",
+      );
+    }
+    return null;
+  }
+
+  return {
+    id: legacyResult.data.id,
+    role: legacyResult.data.role,
+    supporting_subtype: legacyResult.data.subtype ?? null,
+    file_storage_bucket: legacyResult.data.file_storage_bucket,
+    file_storage_path: legacyResult.data.file_storage_path,
+  };
+}
+
+async function getSelectedSolutionDocumentId(
+  supabase: ReturnType<typeof createServiceClient>,
+  projectId: string,
+): Promise<string | null> {
+  const currentResult = await supabase
+    .from("solution_evaluations")
+    .select("solution_document_id, source_document_ids")
+    .eq("project_id", projectId)
+    .limit(1);
+
+  let row = (currentResult.data?.[0] as
+    | {
+        solution_document_id?: unknown;
+        source_document_ids?: unknown;
+      }
+    | undefined) ?? null;
+  let queryError = currentResult.error;
+
+  if (
+    queryError &&
+    isMissingRelationColumn(queryError, "solution_evaluations")
+  ) {
+    const legacyResult = await supabase
+      .from("solution_evaluations")
+      .select("source_document_ids")
+      .eq("project_id", projectId)
+      .limit(1);
+    row = (legacyResult.data?.[0] as
+      | { source_document_ids?: unknown }
+      | undefined) ?? null;
+    queryError = legacyResult.error;
+  }
+
+  if (queryError) {
+    if (isMissingRelationColumn(queryError, "solution_evaluations")) {
+      return null;
+    }
+    throw new Error(
+      queryError.message || "Kunne ikke lese valgt løsningsdokument.",
+    );
+  }
+
+  if (typeof row?.solution_document_id === "string") {
+    return row.solution_document_id;
+  }
+
+  const sourceDocumentIds = Array.isArray(row?.source_document_ids)
+    ? row.source_document_ids
+    : [];
+  // Legacy rows preserve the filtered [customer, solution] order, so the
+  // explicitly evaluated solution is the final available source document.
+  const lastSourceDocumentId = sourceDocumentIds.at(-1);
+  return typeof lastSourceDocumentId === "string" ? lastSourceDocumentId : null;
+}
+
 function projectDocumentStatusPatch(
   rows: Array<{ role: ProjectDocumentRole | null }>,
 ) {
@@ -897,6 +1125,10 @@ function mapSolutionEvaluationRow(row: SolutionEvaluationRow) {
     ...decryptJson(row.result_json, SOLUTION_EVALUATION_EMPTY),
     customer_document_id: row.customer_document_id,
     solution_document_id: row.solution_document_id,
+    evaluated_generated_artifact_id:
+      row.evaluated_generated_artifact_id ?? null,
+    evaluation_provenance_mode:
+      row.evaluation_provenance_mode ?? "legacy_unknown",
   });
 }
 
@@ -905,15 +1137,7 @@ function mapExecutiveSummaryRow(row: ExecutiveSummaryRow) {
 }
 
 function mapArtifact(row: ArtifactRow): GeneratedArtifact {
-  const artifactType = [
-    "losningsutkast",
-    "bilag1_rekonstruksjon",
-    "forbedret_kravsvar",
-    "tilbudsstrategi",
-    "verdiargumentasjon",
-    "anbefalt_arkitektur",
-    "gjennomforing_og_risiko",
-  ].includes(String(row.artifact_type))
+  const artifactType = isGeneratedArtifactType(row.artifact_type)
     ? row.artifact_type
     : "losningsutkast";
   const title =
@@ -933,6 +1157,25 @@ function mapArtifact(row: ArtifactRow): GeneratedArtifact {
         ? legacyContent
         : "Dette generatorutkastet mangler lagret innhold. Generer det på nytt for å få et komplett resultat.";
 
+  const artifactVersion = Number(row.artifact_version ?? 0);
+  const currentVersion = Number(row.current_artifact_version ?? artifactVersion);
+  const inputArtifactRevision =
+    row.input_artifact_source_revision == null
+      ? null
+      : Number(row.input_artifact_source_revision);
+  const currentArtifactRevision =
+    row.current_artifact_source_revision == null
+      ? inputArtifactRevision
+      : Number(row.current_artifact_source_revision);
+  const inputServiceRevision =
+    row.input_service_library_revision == null
+      ? null
+      : Number(row.input_service_library_revision);
+  const currentServiceRevision =
+    row.current_service_library_revision == null
+      ? inputServiceRevision
+      : Number(row.current_service_library_revision);
+
   return {
     id: row.id,
     project_id: row.project_id,
@@ -941,6 +1184,40 @@ function mapArtifact(row: ArtifactRow): GeneratedArtifact {
     content_markdown: contentMarkdown,
     input_snapshot: decryptJson(row.input_snapshot, {}),
     created_at: row.created_at,
+    updated_at: row.updated_at,
+    artifact_version:
+      Number.isSafeInteger(artifactVersion) && artifactVersion > 0
+        ? artifactVersion
+        : undefined,
+    generation_job_id: row.generation_job_id ?? null,
+    generation_submission_sequence:
+      row.generation_submission_sequence == null
+        ? null
+        : Number(row.generation_submission_sequence),
+    input_artifact_source_revision: inputArtifactRevision,
+    input_service_library_revision: inputServiceRevision,
+    used_solution_evaluation: Boolean(row.used_solution_evaluation),
+    input_solution_evaluation_id: row.input_solution_evaluation_id ?? null,
+    input_solution_evaluation_updated_at:
+      row.input_solution_evaluation_updated_at
+        ? new Date(row.input_solution_evaluation_updated_at).toISOString()
+        : null,
+    input_solution_evaluation_hash: row.input_solution_evaluation_hash ?? null,
+    generator_revision: row.generator_revision ?? null,
+    origin: row.origin ?? "legacy",
+    parent_artifact_id: row.parent_artifact_id ?? null,
+    source_snapshot_hash: row.source_snapshot_hash ?? null,
+    is_current:
+      Number.isSafeInteger(artifactVersion) &&
+      Number.isSafeInteger(currentVersion) &&
+      artifactVersion === currentVersion,
+    source_is_current:
+      inputArtifactRevision != null &&
+      currentArtifactRevision != null &&
+      inputServiceRevision != null &&
+      currentServiceRevision != null &&
+      inputArtifactRevision === currentArtifactRevision &&
+      inputServiceRevision === currentServiceRevision,
   };
 }
 
@@ -1011,9 +1288,40 @@ function mapServiceDocument(row: ServiceDocumentSummaryRow): ServiceDocument {
     ai_summary:
       typeof row.ai_summary === "string" ? decryptString(row.ai_summary) : "",
     ai_summary_updated_at: row.ai_summary_updated_at ?? null,
+    chunk_source_revision: row.chunk_source_revision,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+type ServiceDocumentSummaryQuery = (
+  select: string,
+) => PromiseLike<{
+  data: unknown;
+  error: { message?: string } | null;
+}>;
+
+async function fetchServiceDocumentSummaryRows(
+  query: ServiceDocumentSummaryQuery,
+  options: { emptyWhenServiceDocumentRelationMissing?: boolean } = {},
+) {
+  let { data, error } = await query(SERVICE_DOCUMENT_SUMMARY_SELECT);
+
+  if (error && isMissingRelationColumn(error, "ai_summary")) {
+    ({ data, error } = await query(SERVICE_DOCUMENT_SUMMARY_SELECT_BASE));
+  }
+
+  if (error) {
+    if (
+      options.emptyWhenServiceDocumentRelationMissing &&
+      isMissingRelationColumn(error, "service_documents")
+    ) {
+      return [];
+    }
+    throw new Error(error.message || "Kunne ikke hente tjenestedokumenter.");
+  }
+
+  return (Array.isArray(data) ? data : []) as ServiceDocumentSummaryRow[];
 }
 
 function fromUnknownServiceDocumentSummaryRow(
@@ -1058,6 +1366,10 @@ function fromUnknownServiceDocumentSummaryRow(
       row.ai_summary_updated_at == null
         ? null
         : String(row.ai_summary_updated_at),
+    chunk_source_revision: Math.max(
+      0,
+      Number(row.chunk_source_revision ?? 0),
+    ),
     created_at: createdAt,
     updated_at: String(row.updated_at ?? createdAt),
   };
@@ -1097,6 +1409,7 @@ function decryptServiceDocumentRow(
     ai_summary:
       typeof row.ai_summary === "string" ? decryptString(row.ai_summary) : "",
     ai_summary_updated_at: row.ai_summary_updated_at ?? null,
+    chunk_source_revision: row.chunk_source_revision,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -1148,7 +1461,12 @@ function mapProjectSummary(
   };
 }
 
-function mapProjectSnapshot(row: ProjectRow): ProjectCacheSnapshot {
+function mapProjectSnapshot(
+  row: ProjectRow,
+  artifactAuthority: GeneratedArtifactAuthorityByType,
+  solutionEvaluationCurrent: boolean,
+): ProjectCacheSnapshot {
+  const currentArtifactTypes = currentArtifactTypesFromAuthority(artifactAuthority);
   return {
     name: row.name,
     customer_name: row.customer_name,
@@ -1158,8 +1476,10 @@ function mapProjectSnapshot(row: ProjectRow): ProjectCacheSnapshot {
     customer_document_uploaded: row.customer_document_uploaded,
     customer_analysis_generated: row.customer_analysis_generated,
     solution_document_uploaded: row.solution_document_uploaded,
-    solution_evaluation_generated: row.solution_evaluation_generated,
+    solution_evaluation_generated: solutionEvaluationCurrent,
     last_activity_at: row.last_activity_at,
+    current_artifact_types: currentArtifactTypes,
+    artifact_authority: artifactAuthority,
   };
 }
 
@@ -1198,18 +1518,6 @@ function isMissingLegacyDocumentColumn(error: { message?: string } | null) {
   return (
     mentionsMissingColumn &&
     PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.some((columnName) =>
-      message.includes(columnName),
-    )
-  );
-}
-
-function isMissingServiceDocumentColumn(error: { message?: string } | null) {
-  const message = (error?.message ?? "").toLowerCase();
-  const mentionsMissingColumn = isMissingSchemaColumn(error);
-
-  return (
-    mentionsMissingColumn &&
-    SERVICE_DOCUMENT_INSERT_COLUMN_NAMES.some((columnName) =>
       message.includes(columnName),
     )
   );
@@ -1316,6 +1624,10 @@ function fromUnknownDocumentSummaryRow(
       row.processing_error == null ? null : String(row.processing_error),
     parser_used: row.parser_used == null ? null : String(row.parser_used),
     indexed_at: row.indexed_at == null ? null : String(row.indexed_at),
+    chunk_source_revision: Math.max(
+      0,
+      Number(row.chunk_source_revision ?? 0),
+    ),
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(
       row.updated_at ?? row.created_at ?? new Date().toISOString(),
@@ -1346,8 +1658,10 @@ async function fetchDocumentRows(
     data: unknown[] | null;
     error: { message?: string } | null;
   }>,
+  safeSelect = DOCUMENT_SELECT_SAFE,
+  legacyBuild = build,
 ): Promise<DocumentRow[]> {
-  const first = await build(DOCUMENT_SELECT_SAFE);
+  const first = await build(safeSelect);
   if (!first.error) {
     return ((first.data ?? []) as Record<string, unknown>[]).map(
       fromUnknownDocumentRow,
@@ -1355,7 +1669,7 @@ async function fetchDocumentRows(
   }
 
   if (isMissingLegacyDocumentColumn(first.error)) {
-    const retry = await build("*");
+    const retry = await legacyBuild("*");
     if (retry.error) {
       throw new Error(retry.error.message || "Kunne ikke hente dokumentene.");
     }
@@ -1469,15 +1783,167 @@ async function queryProjectRow(projectId: string) {
   throw new Error("Fant ikke prosjektet.");
 }
 
+export async function getProjectSourceRevision(projectId: string) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .select("source_revision")
+    .eq("id", projectId)
+    .single<{ source_revision: number | string | null }>();
+
+  if (error || data?.source_revision == null) {
+    throw new Error(
+      error?.message ||
+        "Prosjektets source_revision mangler. Kjør siste Supabase-migrering før løsningsvurdering.",
+    );
+  }
+
+  const revision = Number(data.source_revision);
+  if (!Number.isSafeInteger(revision) || revision < 0) {
+    throw new Error("Prosjektets source_revision er ugyldig.");
+  }
+  return revision;
+}
+
+export type ArtifactSourceRevisions = {
+  artifactSourceRevision: number;
+  serviceLibraryRevision: number;
+  solutionEvaluationDependency: {
+    id: string;
+    updated_at: string;
+    content_hash: string;
+    evaluated_generated_artifact_id: string | null;
+    provenance_mode:
+      | "document_only"
+      | "generated_artifact"
+      | "legacy_unknown";
+  } | null;
+};
+
+function parseSolutionEvaluationDependency(
+  value: unknown,
+): ArtifactSourceRevisions["solutionEvaluationDependency"] {
+  const dependency =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : null;
+  if (
+    !dependency ||
+    typeof dependency.id !== "string" ||
+    typeof dependency.updated_at !== "string" ||
+    typeof dependency.content_hash !== "string" ||
+    !(
+      dependency.evaluated_generated_artifact_id === null ||
+      typeof dependency.evaluated_generated_artifact_id === "string"
+    ) ||
+    !(
+      dependency.provenance_mode === "document_only" ||
+      dependency.provenance_mode === "generated_artifact" ||
+      dependency.provenance_mode === "legacy_unknown"
+    )
+  ) {
+    return null;
+  }
+  return {
+    id: dependency.id,
+    updated_at: new Date(dependency.updated_at).toISOString(),
+    content_hash: dependency.content_hash,
+    evaluated_generated_artifact_id:
+      dependency.evaluated_generated_artifact_id,
+    provenance_mode: dependency.provenance_mode,
+  };
+}
+
+export async function getArtifactSourceRevisions(
+  projectId: string,
+): Promise<ArtifactSourceRevisions> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.rpc("get_artifact_source_revisions", {
+    p_project_id: projectId,
+  });
+  if (error || !data || typeof data !== "object") {
+    throw new Error(
+      error?.message ||
+        "Artefaktens kilderevisjon mangler. Kjør siste Supabase-migrering før generering.",
+    );
+  }
+
+  const record = data as Record<string, unknown>;
+  const artifactSourceRevision = Number(record.artifact_source_revision);
+  const serviceLibraryRevision = Number(record.service_library_revision);
+  const solutionEvaluationDependency = parseSolutionEvaluationDependency(
+    record.solution_evaluation_dependency,
+  );
+  if (
+    !Number.isSafeInteger(artifactSourceRevision) ||
+    artifactSourceRevision < 0 ||
+    !Number.isSafeInteger(serviceLibraryRevision) ||
+    serviceLibraryRevision < 0
+  ) {
+    throw new Error("Artefaktens kilderevisjoner er ugyldige.");
+  }
+
+  return {
+    artifactSourceRevision,
+    serviceLibraryRevision,
+    solutionEvaluationDependency,
+  };
+}
+
+export function currentArtifactTypesFromAuthority(
+  authority: GeneratedArtifactAuthorityByType,
+) {
+  return GENERATED_ARTIFACT_TYPES.filter(
+    (artifactType) => authority[artifactType]?.source_is_current === true,
+  );
+}
+
+export async function getArtifactAuthoritySummary(
+  projectId: string,
+): Promise<GeneratedArtifactAuthorityByType> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.rpc("get_artifact_authority_summary", {
+    p_project_id: projectId,
+  });
+  if (error || !Array.isArray(data)) {
+    throw new Error(
+      error?.message ||
+        "Kunne ikke hente autoritativ status for generatorartefaktene.",
+    );
+  }
+  const authority: GeneratedArtifactAuthorityByType = {};
+  for (const value of data) {
+    if (!value || typeof value !== "object") continue;
+    const record = value as Record<string, unknown>;
+    const artifactVersion = Number(record.artifact_version);
+    if (
+      !isGeneratedArtifactType(record.artifact_type) ||
+      typeof record.id !== "string" ||
+      !Number.isSafeInteger(artifactVersion) ||
+      artifactVersion < 1 ||
+      typeof record.source_is_current !== "boolean"
+    ) {
+      throw new Error("Databasen returnerte ugyldig autoritetsstatus for en artefakt.");
+    }
+    authority[record.artifact_type] = {
+      id: record.id,
+      artifact_version: artifactVersion,
+      source_is_current: record.source_is_current,
+    };
+  }
+  return authority;
+}
+
 export async function listProjects(): Promise<ProjectSummary[]> {
-  return unstable_cache(
+  const getCachedProjects = unstable_cache(
     async () => {
       const supabase = createServiceClient();
       const projectQuery = async (select: string) =>
         supabase
           .from("projects")
           .select(select)
-          .order("last_activity_at", { ascending: false });
+          .order("last_activity_at", { ascending: false })
+          .limit(PROJECT_LIST_LIMIT);
       const [
         projectsResult,
         documentRows,
@@ -1485,9 +1951,13 @@ export async function listProjects(): Promise<ProjectSummary[]> {
       ] = await Promise.all([
         projectQuery(PROJECT_SELECT_SAFE),
         fetchDocumentSummaryRows((select) =>
-          supabase.from("documents").select(select),
+          supabase.from("documents").select(select).limit(PROJECT_LIST_LIMIT * 10),
         ),
-        supabase.from("generated_artifacts").select("id, project_id"),
+        supabase
+          .from("generated_artifacts")
+          .select("id, project_id")
+          .order("created_at", { ascending: false })
+          .limit(PROJECT_LIST_LIMIT * 20),
       ]);
       let { data: projects, error: projectsError } = projectsResult;
 
@@ -1533,7 +2003,24 @@ export async function listProjects(): Promise<ProjectSummary[]> {
       tags: [PROJECTS_LIST_TAG],
       revalidate: 60,
     },
-  )();
+  );
+  const projects = await getCachedProjects();
+  if (!projects.length) return projects;
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.rpc(
+    "get_solution_evaluation_currentness",
+    { p_project_ids: projects.map((project) => project.id) },
+  );
+  if (error || !data || typeof data !== "object") {
+    throw new Error(
+      error?.message || "Kunne ikke hente gyldig vurderingsstatus for prosjektene.",
+    );
+  }
+  const currentness = data as Record<string, unknown>;
+  return projects.map((project) => ({
+    ...project,
+    solution_evaluation_generated: currentness[project.id] === true,
+  }));
 }
 
 export async function createProject(
@@ -1588,25 +2075,41 @@ export async function createProject(
 
 export async function deleteProject(projectId: string) {
   const supabase = createServiceClient();
-  const { data: storedFiles } = await supabase
-    .from("documents")
-    .select("file_storage_bucket, file_storage_path")
-    .eq("project_id", projectId);
-  const { error } = await supabase.from("projects").delete().eq("id", projectId);
-
-  if (error) {
-    throw new Error(error.message || "Kunne ikke slette prosjektet.");
-  }
-
-  await removeStoredFiles(
-    ((storedFiles ?? []) as Array<{
-      file_storage_bucket?: string | null;
-      file_storage_path?: string | null;
-    }>).map((file) => ({
-      bucket: file.file_storage_bucket,
-      path: file.file_storage_path,
-    })),
+  const storedFiles = await fetchStoredFileReferencesPaginated((from, to) =>
+    supabase
+      .from("documents")
+      .select("file_storage_bucket, file_storage_path")
+      .eq("project_id", projectId)
+      .order("id", { ascending: true })
+      .range(from, to),
   );
+
+  await runStorageFirstDeletion({
+    removeStorage: async () => {
+      await removeStoredFiles(
+        storedFiles.map((file) => ({
+          bucket: file.file_storage_bucket,
+          path: file.file_storage_path,
+        })),
+      );
+      await removeStoredFilePrefixes(
+        storedFileDeletionPrefixes({
+          scope: "projects",
+          ownerId: projectId,
+          files: storedFiles,
+        }),
+      );
+    },
+    deleteDatabaseRows: async () => {
+      const { error } = await supabase
+        .from("projects")
+        .delete()
+        .eq("id", projectId);
+      if (error) {
+        throw new Error(error.message || "Kunne ikke slette prosjektet.");
+      }
+    },
+  });
   revalidateProjectCaches(projectId);
   revalidatePath("/projects/new");
 }
@@ -1615,34 +2118,35 @@ export async function listServiceDescriptions(): Promise<ServiceDescription[]> {
   return unstable_cache(
     async () => {
       const supabase = createServiceClient();
-      const [{ data: services, error: servicesError }, { data: documents, error: documentsError }] =
-        await Promise.all([
-          supabase
-            .from("service_descriptions")
-            .select("*")
-            .order("name", { ascending: true }),
-          supabase
-            .from("service_documents")
-            .select(SERVICE_DOCUMENT_SUMMARY_SELECT)
-            .order("created_at", { ascending: false }),
-        ]);
+      const [servicesResult, documents] = await Promise.all([
+        supabase
+          .from("service_descriptions")
+          .select("*")
+          .order("name", { ascending: true }),
+        fetchServiceDocumentSummaryRows(
+          (select) =>
+            supabase
+              .from("service_documents")
+              .select(select)
+              .order("created_at", { ascending: false }),
+          { emptyWhenServiceDocumentRelationMissing: true },
+        ),
+      ]);
+      const { data: services, error: servicesError } = servicesResult;
 
-      if (servicesError || documentsError) {
+      if (servicesError) {
         if (
-          isMissingRelationColumn(servicesError, "service_descriptions") ||
-          isMissingRelationColumn(documentsError, "service_documents")
+          isMissingRelationColumn(servicesError, "service_descriptions")
         ) {
           return [];
         }
         throw new Error(
-          servicesError?.message ||
-            documentsError?.message ||
-            "Kunne ikke hente tjenestebeskrivelser.",
+          servicesError.message || "Kunne ikke hente tjenestebeskrivelser.",
         );
       }
 
       const documentsByService = new Map<string, ServiceDocumentSummaryRow[]>();
-      for (const document of (documents ?? []) as ServiceDocumentSummaryRow[]) {
+      for (const document of documents) {
         const list = documentsByService.get(document.service_id) ?? [];
         list.push(document);
         documentsByService.set(document.service_id, list);
@@ -1784,97 +2288,33 @@ export async function saveServiceDocument(input: {
     raw_text: encryptedRawText,
     structure_map: encryptedStructureMap,
   };
-
-  let shouldRemoveStoredFileAfterInsert = false;
-  let insertResult: {
-    data: Record<string, unknown> | null;
-    error: { message?: string } | null;
-  } | null = null;
-  for (
-    let attempt = 0;
-    attempt < SERVICE_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
-    attempt += 1
-  ) {
-    const payloadForAttempt = { ...insertPayload };
-    const hasStorageColumns =
-      "file_storage_bucket" in payloadForAttempt &&
-      "file_storage_path" in payloadForAttempt;
-    if (!hasStorageColumns && "file_base64" in payloadForAttempt) {
-      payloadForAttempt.file_base64 = encryptedBase64;
-      shouldRemoveStoredFileAfterInsert = true;
-    }
-
-    insertResult = await supabase
-      .from("service_documents")
-      .insert(payloadForAttempt)
-      .select("*")
-      .single<Record<string, unknown>>();
-
-    if (
-      !insertResult.error ||
-      !isMissingServiceDocumentColumn(insertResult.error)
-    ) {
-      break;
-    }
-
-    const missingColumn = missingColumnNameFromError(
-      insertResult.error,
-      SERVICE_DOCUMENT_INSERT_COLUMN_NAMES,
-    );
-    if (!missingColumn || !(missingColumn in insertPayload)) {
-      break;
-    }
-
-    if (
-      missingColumn === "file_storage_bucket" ||
-      missingColumn === "file_storage_path"
-    ) {
-      removeMissingStorageColumns(insertPayload);
-    } else {
-      delete insertPayload[missingColumn];
-    }
-  }
-
-  if (insertResult?.error || !insertResult?.data) {
-    await removeStoredFiles([storedFile]);
-    throw new Error(
-      insertResult?.error?.message || "Kunne ikke lagre tjenestedokumentet.",
-    );
-  }
-  if (shouldRemoveStoredFileAfterInsert) {
-    await removeStoredFiles([storedFile]);
-  }
-  const data = fromUnknownServiceDocumentSummaryRow(insertResult.data);
-
   const nextKeywords = keywordsFromText(
     `${normalizedTitle} ${input.fileName} ${input.rawText}`,
   );
-  const currentService = await getServiceDescription(input.serviceId).catch(
-    () => null,
+  const insertResult = await supabase.rpc(
+    "insert_service_document_with_keywords",
+    {
+      p_service_id: input.serviceId,
+      p_payload: insertPayload,
+      p_keywords: nextKeywords,
+    },
   );
-  const serviceKeywords = mergeKeywords(
-    currentService?.keywords ?? [],
-    nextKeywords,
+  const insertedRow = Array.isArray(insertResult.data)
+    ? insertResult.data[0]
+    : insertResult.data;
+  if (
+    insertResult.error ||
+    !insertedRow ||
+    typeof insertedRow !== "object"
+  ) {
+    await removeStoredFiles([storedFile]);
+    throw new Error(
+      insertResult.error?.message || "Kunne ikke lagre tjenestedokumentet.",
+    );
+  }
+  const data = fromUnknownServiceDocumentSummaryRow(
+    insertedRow as Record<string, unknown>,
   );
-  const updateResult = await supabase
-    .from("service_descriptions")
-    .update({ updated_at: new Date().toISOString(), keywords: serviceKeywords })
-    .eq("id", input.serviceId);
-  if (
-    updateResult.error &&
-    !isMissingRelationColumn(updateResult.error, "service_descriptions")
-  ) {
-    throw new Error(updateResult.error.message);
-  }
-  if (
-    updateResult.error &&
-    isMissingRelationColumn(updateResult.error, "service_descriptions")
-  ) {
-    await supabase
-      .from("service_descriptions")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", input.serviceId);
-  }
 
   await replaceServiceDocumentChunks({
     documentId,
@@ -1883,7 +2323,8 @@ export async function saveServiceDocument(input: {
     fileName: input.fileName,
     fileFormat: input.fileFormat,
     rawText: input.rawText,
-    structureMap: normalizeStructureMapForChunks(input.structureMap),
+    structureMap: normalizeDocumentChunkStructureMap(input.structureMap),
+    sourceRevision: data.chunk_source_revision,
   }).catch(() => {
     // Chunk indexing should improve retrieval, not block uploads.
   });
@@ -1897,7 +2338,7 @@ export async function deleteServiceDocument(
   documentId: string,
 ) {
   const supabase = createServiceClient();
-  const { data: storedFile } = await supabase
+  const { data: storedFile, error: storedFileError } = await supabase
     .from("service_documents")
     .select("file_storage_bucket, file_storage_path")
     .eq("service_id", serviceId)
@@ -1906,53 +2347,89 @@ export async function deleteServiceDocument(
       file_storage_bucket?: string | null;
       file_storage_path?: string | null;
     }>();
-  const { error } = await supabase
-    .from("service_documents")
-    .delete()
-    .eq("service_id", serviceId)
-    .eq("id", documentId);
-  if (error) {
-    throw new Error(error.message);
+  if (storedFileError) {
+    throw new Error(
+      storedFileError.message ||
+        "Kunne ikke lese tjenestedokumentets lagringsreferanse.",
+    );
   }
+  await runStorageFirstDeletion({
+    removeStorage: async () => {
+      await removeStoredFiles(
+        storedFile
+          ? [
+              {
+                bucket: storedFile.file_storage_bucket,
+                path: storedFile.file_storage_path,
+              },
+            ]
+          : [],
+      );
+      await removeStoredFilePrefixes(
+        storedFileDeletionPrefixes({
+          scope: "services",
+          ownerId: serviceId,
+          fileId: documentId,
+          files: storedFile ? [storedFile] : [],
+        }),
+      );
+    },
+    deleteDatabaseRows: async () => {
+      const { error } = await supabase
+        .from("service_documents")
+        .delete()
+        .eq("service_id", serviceId)
+        .eq("id", documentId);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+  });
   await deleteDocumentChunks({
     sourceType: "service_document",
     sourceId: documentId,
   }).catch(() => {
     // Best-effort cleanup for deployments before the chunk table exists.
   });
-  if (storedFile) {
-    await removeStoredFiles([
-      {
-        bucket: storedFile.file_storage_bucket,
-        path: storedFile.file_storage_path,
-      },
-    ]);
-  }
   revalidateServiceCaches();
 }
 
 export async function deleteServiceDescription(serviceId: string) {
   const supabase = createServiceClient();
-  const { data: storedFiles } = await supabase
-    .from("service_documents")
-    .select("file_storage_bucket, file_storage_path")
-    .eq("service_id", serviceId);
-  const { error } = await supabase
-    .from("service_descriptions")
-    .delete()
-    .eq("id", serviceId);
-  if (error) {
-    throw new Error(error.message);
-  }
-  await removeStoredFiles(
-    ((storedFiles ?? []) as Array<{
-      file_storage_bucket?: string | null;
-      file_storage_path?: string | null;
-    }>).map((file) => ({
-      bucket: file.file_storage_bucket,
-      path: file.file_storage_path,
-    })),
+  const storedFiles = await fetchStoredFileReferencesPaginated((from, to) =>
+    supabase
+      .from("service_documents")
+      .select("file_storage_bucket, file_storage_path")
+      .eq("service_id", serviceId)
+      .order("id", { ascending: true })
+      .range(from, to),
   );
+  await runStorageFirstDeletion({
+    removeStorage: async () => {
+      await removeStoredFiles(
+        storedFiles.map((file) => ({
+          bucket: file.file_storage_bucket,
+          path: file.file_storage_path,
+        })),
+      );
+      await removeStoredFilePrefixes(
+        storedFileDeletionPrefixes({
+          scope: "services",
+          ownerId: serviceId,
+          files: storedFiles,
+        }),
+      );
+    },
+    deleteDatabaseRows: async () => {
+      const { error } = await supabase
+        .from("service_descriptions")
+        .delete()
+        .eq("id", serviceId);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+  });
   revalidateServiceCaches();
 }
 
@@ -2082,20 +2559,15 @@ export async function listServiceDocumentSummariesForProject(
     return [];
   }
 
-  const { data, error } = await supabase
-    .from("service_documents")
-    .select(SERVICE_DOCUMENT_SUMMARY_SELECT)
-    .in("service_id", serviceIds)
-    .order("created_at", { ascending: false });
+  const rows = await fetchServiceDocumentSummaryRows((select) =>
+    supabase
+      .from("service_documents")
+      .select(select)
+      .in("service_id", serviceIds)
+      .order("created_at", { ascending: false }),
+  );
 
-  if (error) {
-    if (isMissingRelationColumn(error, "ai_summary")) {
-      return [];
-    }
-    throw new Error(error.message);
-  }
-
-  return ((data ?? []) as ServiceDocumentSummaryRow[]).map(mapServiceDocument);
+  return rows.map(mapServiceDocument);
 }
 
 export async function updateServiceDocumentAiSummary(input: {
@@ -2206,26 +2678,15 @@ export async function setProjectServiceSelections(
 ) {
   const supabase = createServiceClient();
   const uniqueIds = Array.from(new Set(serviceIds.filter(Boolean)));
-  const services = await listServiceDescriptions();
-  const selectableIds = new Set(services.map((service) => service.id));
+  const { error } = await supabase.rpc("replace_project_service_selections", {
+    p_project_id: projectId,
+    p_service_ids: uniqueIds,
+  });
 
-  await supabase.from("project_service_selections").delete().eq("project_id", projectId);
-
-  const rows = uniqueIds
-    .filter((serviceId) => selectableIds.has(serviceId))
-    .map((serviceId) => ({
-      project_id: projectId,
-      service_id: serviceId,
-      selected: true,
-    }));
-
-  if (rows.length) {
-    const { error } = await supabase
-      .from("project_service_selections")
-      .insert(rows);
-    if (error) {
-      throw new Error(error.message);
-    }
+  if (error) {
+    throw new Error(
+      error.message || "Kunne ikke lagre prosjektets valgte tjenester.",
+    );
   }
 
   revalidateProjectCaches(projectId);
@@ -2290,6 +2751,16 @@ export async function updateProjectMetadataFromInference(
     ),
   );
 
+  const fencedUpdate = await runLeaseFencedProjectMutation<Record<string, unknown>>(
+    projectId,
+    "project_metadata",
+    standardPatch,
+  );
+  if (fencedUpdate.fenced) {
+    revalidateProjectCaches(projectId);
+    return fromUnknownProjectRow(fencedUpdate.data);
+  }
+
   let updateResult = await supabase
     .from("projects")
     .update(standardPatch)
@@ -2351,7 +2822,13 @@ async function updateProjectContextKeywords(projectId: string) {
           project.customer_name ?? "",
           project.description ?? "",
           project.industry ?? "",
-          ...documents.map((document) => `${document.title} ${document.file_name}`),
+          ...documents
+            .filter(
+              (document) =>
+                document.role !== "primary_solution_document" &&
+                !isHistoricalSolutionDocument(document),
+            )
+            .map((document) => `${document.title} ${document.file_name}`),
           analysis?.customer_profile_summary ?? "",
           analysis?.customer_goals_summary ?? "",
           analysis?.high_level_solution_design ?? "",
@@ -2359,14 +2836,23 @@ async function updateProjectContextKeywords(projectId: string) {
       ),
       analysis?.signal_words ?? [],
     );
-    const { error } = await supabase
-      .from("projects")
-      .update({ context_keywords: keywords })
-      .eq("id", projectId);
-    if (error && !isMissingLegacyProjectColumn(error)) {
-      throw new Error(error.message);
+    const fencedUpdate = await runLeaseFencedProjectMutation(
+      projectId,
+      "project_context_keywords",
+      { context_keywords: keywords },
+    );
+    if (!fencedUpdate.fenced) {
+      const { error } = await supabase
+        .from("projects")
+        .update({ context_keywords: keywords })
+        .eq("id", projectId);
+      if (error && !isMissingLegacyProjectColumn(error)) {
+        throw new Error(error.message);
+      }
     }
-  } catch {
+  } catch (error) {
+    rethrowAuthoritativeLeaseLoss(error);
+    assertProjectWorkflowActive();
     // Keyword cache is an optimization; never block the main workflow.
   }
 }
@@ -2380,9 +2866,9 @@ export async function getProjectDetail(
     projectRow,
     documentRows,
     { data: analyses, error: analysesError },
-    { data: evaluations, error: evaluationsError },
-    { data: executiveSummaries, error: executiveSummariesError },
+    derivedSnapshot,
     { data: artifactRows, error: artifactsError },
+    artifactAuthority,
   ] = await Promise.all([
     queryProjectRow(projectId),
     fetchDocumentSummaryRows((select) =>
@@ -2396,34 +2882,23 @@ export async function getProjectDetail(
       .from("customer_analyses")
       .select("*")
       .eq("project_id", projectId)
+      .eq("provenance_verified", true)
       .order("created_at", { ascending: false })
       .limit(1),
+    getFreshProjectDerivedSnapshot(projectId),
     supabase
-      .from("solution_evaluations")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false })
-      .limit(1),
-    supabase
-      .from("executive_summaries")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false })
-      .limit(1),
-    supabase.from("generated_artifacts").select("id").eq("project_id", projectId),
+      .from("generated_artifacts")
+      .select("artifact_type")
+      .eq("project_id", projectId),
+    getArtifactAuthoritySummary(projectId),
   ]);
 
   if (
     analysesError ||
-    evaluationsError ||
-    artifactsError ||
-    (executiveSummariesError &&
-      !isMissingRelationColumn(executiveSummariesError, "executive_summaries"))
+    artifactsError
   ) {
     throw new Error(
       analysesError?.message ||
-        evaluationsError?.message ||
-        executiveSummariesError?.message ||
         artifactsError?.message ||
         "Kunne ikke laste prosjektet.",
     );
@@ -2431,10 +2906,6 @@ export async function getProjectDetail(
 
   const analysisRow =
     ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
-  const evaluationRow =
-    ((evaluations ?? [])[0] as SolutionEvaluationRow | undefined) ?? null;
-  const executiveSummaryRow =
-    ((executiveSummaries ?? [])[0] as ExecutiveSummaryRow | undefined) ?? null;
 
   return {
     id: projectRow.id,
@@ -2444,9 +2915,9 @@ export async function getProjectDetail(
     industry: projectRow.industry,
     status: mapProjectStatus(projectRow),
     customer_document_uploaded: projectRow.customer_document_uploaded,
-    customer_analysis_generated: projectRow.customer_analysis_generated,
+    customer_analysis_generated: Boolean(analysisRow),
     solution_document_uploaded: projectRow.solution_document_uploaded,
-    solution_evaluation_generated: projectRow.solution_evaluation_generated,
+    solution_evaluation_generated: Boolean(derivedSnapshot),
     last_activity_at: projectRow.last_activity_at,
     created_at: projectRow.created_at,
     updated_at: projectRow.updated_at,
@@ -2455,17 +2926,20 @@ export async function getProjectDetail(
       (document) => document.role === "supporting_document",
     ).length,
     artifact_count: (artifactRows ?? []).length,
+    artifact_counts_by_type: artifactCountsByType(
+      (artifactRows ?? []) as Array<{ artifact_type: unknown }>,
+    ),
+    current_artifact_types: currentArtifactTypesFromAuthority(artifactAuthority),
+    artifact_authority: artifactAuthority,
+    has_executive_summary:
+      Boolean(derivedSnapshot?.executiveSummary),
     has_chat: false,
     documents: documentRows.map(mapDocumentSummary),
     customer_analysis: analysisRow
       ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
       : null,
-    solution_evaluation: evaluationRow
-      ? mapSolutionEvaluationRow(evaluationRow)
-      : null,
-    executive_summary: executiveSummaryRow
-      ? mapExecutiveSummaryRow(executiveSummaryRow)
-      : null,
+    solution_evaluation: derivedSnapshot?.evaluation ?? null,
+    executive_summary: derivedSnapshot?.executiveSummary ?? null,
     generated_artifacts: [],
     chat_messages: [],
   };
@@ -2479,19 +2953,16 @@ export async function getProjectShell(
     includeExecutiveSummary?: boolean;
   } = {},
 ): Promise<ProjectDetail> {
-  return unstable_cache(
+  const projectRow = await queryProjectRow(projectId);
+  const getCachedShell = unstable_cache(
     async () => {
       const supabase = createServiceClient();
 
       const [
-        projectRow,
         documentRows,
         { data: artifactRows, error: artifactsError },
         { data: analyses, error: analysesError },
-        { data: evaluations, error: evaluationsError },
-        { data: executiveSummaries, error: executiveSummariesError },
       ] = await Promise.all([
-        queryProjectRow(projectId),
         fetchDocumentSummaryRows((select) =>
           supabase
             .from("documents")
@@ -2501,60 +2972,29 @@ export async function getProjectShell(
         ),
         supabase
           .from("generated_artifacts")
-          .select("id")
+          .select("artifact_type")
           .eq("project_id", projectId),
         options.includeCustomerAnalysis
           ? supabase
               .from("customer_analyses")
               .select("*")
               .eq("project_id", projectId)
-              .order("created_at", { ascending: false })
-              .limit(1)
-          : Promise.resolve({ data: null, error: null }),
-        options.includeSolutionEvaluation
-          ? supabase
-              .from("solution_evaluations")
-              .select("*")
-              .eq("project_id", projectId)
-              .order("created_at", { ascending: false })
-              .limit(1)
-          : Promise.resolve({ data: null, error: null }),
-        options.includeExecutiveSummary
-          ? supabase
-              .from("executive_summaries")
-              .select("*")
-              .eq("project_id", projectId)
+              .eq("provenance_verified", true)
               .order("created_at", { ascending: false })
               .limit(1)
           : Promise.resolve({ data: null, error: null }),
       ]);
 
-      if (
-        artifactsError ||
-        analysesError ||
-        evaluationsError ||
-        (executiveSummariesError &&
-          !isMissingRelationColumn(
-            executiveSummariesError,
-            "executive_summaries",
-          ))
-      ) {
+      if (artifactsError || analysesError) {
         throw new Error(
           artifactsError?.message ||
             analysesError?.message ||
-            evaluationsError?.message ||
-            executiveSummariesError?.message ||
             "Kunne ikke laste prosjektet.",
         );
       }
 
       const analysisRow =
         ((analyses ?? [])[0] as CustomerAnalysisRow | undefined) ?? null;
-      const evaluationRow =
-        ((evaluations ?? [])[0] as SolutionEvaluationRow | undefined) ?? null;
-      const executiveSummaryRow =
-        ((executiveSummaries ?? [])[0] as ExecutiveSummaryRow | undefined) ??
-        null;
 
       return {
         id: projectRow.id,
@@ -2575,24 +3015,26 @@ export async function getProjectShell(
           (document) => document.role === "supporting_document",
         ).length,
         artifact_count: (artifactRows ?? []).length,
+        artifact_counts_by_type: artifactCountsByType(
+          (artifactRows ?? []) as Array<{ artifact_type: unknown }>,
+        ),
+        has_executive_summary: false,
         has_chat: false,
         documents: documentRows.map(mapDocumentSummary),
         customer_analysis: analysisRow
           ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
           : null,
-        solution_evaluation: evaluationRow
-          ? mapSolutionEvaluationRow(evaluationRow)
-          : null,
-        executive_summary: executiveSummaryRow
-          ? mapExecutiveSummaryRow(executiveSummaryRow)
-          : null,
+        solution_evaluation: null,
+        executive_summary: null,
         generated_artifacts: [],
         chat_messages: [],
       };
     },
     [
-      "project-shell",
+      "project-shell-v3",
       projectId,
+      projectRow.last_activity_at,
+      projectRow.updated_at,
       options.includeCustomerAnalysis ? "analysis" : "no-analysis",
       options.includeSolutionEvaluation ? "evaluation" : "no-evaluation",
       options.includeExecutiveSummary ? "executive-summary" : "no-executive-summary",
@@ -2601,7 +3043,31 @@ export async function getProjectShell(
       tags: [projectTag(projectId)],
       revalidate: 60,
     },
-  )();
+  );
+  const [shell, artifactAuthority, derivedSnapshot] = await Promise.all([
+    getCachedShell(),
+    getArtifactAuthoritySummary(projectId),
+    getFreshProjectDerivedSnapshot(projectId),
+  ]);
+  const solutionEvaluationCurrent = Boolean(derivedSnapshot);
+  return {
+    ...shell,
+    customer_analysis_generated: options.includeCustomerAnalysis
+      ? Boolean(shell.customer_analysis)
+      : shell.customer_analysis_generated,
+    solution_evaluation_generated: solutionEvaluationCurrent,
+    solution_evaluation:
+      solutionEvaluationCurrent && options.includeSolutionEvaluation
+      ? derivedSnapshot?.evaluation ?? null
+      : null,
+    executive_summary:
+      solutionEvaluationCurrent && options.includeExecutiveSummary
+        ? derivedSnapshot?.executiveSummary ?? null
+        : null,
+    has_executive_summary: Boolean(derivedSnapshot?.executiveSummary),
+    current_artifact_types: currentArtifactTypesFromAuthority(artifactAuthority),
+    artifact_authority: artifactAuthority,
+  };
 }
 
 export async function savePendingDocument(input: {
@@ -2631,6 +3097,11 @@ export async function savePendingDocument(input: {
     }),
     encryptedBase64,
   });
+  const requestedPrimaryRole =
+    input.role === "primary_customer_document" ||
+    input.role === "primary_solution_document"
+      ? input.role
+      : null;
   const supportingSubtype =
     input.role === "supporting_document"
       ? (input.supportingSubtype ?? null)
@@ -2659,6 +3130,43 @@ export async function savePendingDocument(input: {
     parser_used: null,
     indexed_at: null,
   };
+
+  if (requestedPrimaryRole) {
+    const { data: insertedPrimary, error: insertPrimaryError } =
+      await supabase.rpc("insert_primary_project_document", {
+        p_project_id: input.projectId,
+        p_primary_role: requestedPrimaryRole,
+        p_payload: insertPayload,
+      });
+    if (insertPrimaryError || !insertedPrimary) {
+      let cleanupError: string | null = null;
+      try {
+        await removeStoredFiles([storedFile]);
+      } catch (error) {
+        cleanupError =
+          error instanceof Error ? error.message : "ukjent lagringsfeil";
+      }
+      throw new Error(
+        [
+          insertPrimaryError?.message || "Kunne ikke lagre primærdokumentet.",
+          cleanupError
+            ? `Opprydding av dokumentfilen feilet: ${cleanupError}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
+
+    const inserted = fromUnknownDocumentRow(
+      insertedPrimary as unknown as Record<string, unknown>,
+    );
+    if (requestedPrimaryRole !== "primary_solution_document") {
+      await updateProjectContextKeywords(input.projectId);
+    }
+    revalidateProjectCaches(input.projectId);
+    return mapDocumentSummary(inserted);
+  }
 
   let insertResult: {
     data: Record<string, unknown> | null;
@@ -2727,67 +3235,12 @@ export async function savePendingDocument(input: {
   const projectPatch: Partial<ProjectRow> = {
     last_activity_at: new Date().toISOString(),
   };
-  if (
-    input.role === "primary_customer_document" ||
-    input.role === "primary_solution_document"
-  ) {
-    const demotedSubtype =
-      input.role === "primary_solution_document" ? "utkast" : "rfp";
-    let demoteResult = await supabase
-      .from("documents")
-      .update({
-        role: "supporting_document",
-        supporting_subtype: demotedSubtype,
-      })
-      .eq("project_id", input.projectId)
-      .eq("role", input.role)
-      .neq("id", inserted.id);
+  projectPatch.customer_analysis_generated = false;
+  await deleteProjectCustomerAnalyses(supabase, input.projectId);
+  projectPatch.solution_evaluation_generated = false;
+  await deleteProjectSolutionEvaluations(supabase, input.projectId);
 
-    if (
-      demoteResult.error &&
-      isMissingLegacyDocumentColumn(demoteResult.error)
-    ) {
-      demoteResult = await supabase
-        .from("documents")
-        .update({
-          role: "supporting_document",
-          subtype: demotedSubtype,
-        })
-        .eq("project_id", input.projectId)
-        .eq("role", input.role)
-        .neq("id", inserted.id);
-    }
-
-    if (demoteResult.error) {
-      throw new Error(demoteResult.error.message);
-    }
-
-    if (input.role === "primary_customer_document") {
-      projectPatch.customer_analysis_generated = false;
-      projectPatch.solution_evaluation_generated = false;
-      await supabase
-        .from("customer_analyses")
-        .delete()
-        .eq("project_id", input.projectId);
-      await supabase
-        .from("solution_evaluations")
-        .delete()
-        .eq("project_id", input.projectId);
-    }
-
-    if (input.role === "primary_solution_document") {
-      projectPatch.solution_evaluation_generated = false;
-      await supabase
-        .from("solution_evaluations")
-        .delete()
-        .eq("project_id", input.projectId);
-    }
-  }
-
-  await supabase
-    .from("executive_summaries")
-    .delete()
-    .eq("project_id", input.projectId);
+  await deleteProjectExecutiveSummaries(supabase, input.projectId);
 
   Object.assign(
     projectPatch,
@@ -2796,10 +3249,13 @@ export async function savePendingDocument(input: {
     ),
   );
 
-  await supabase
+  const projectUpdate = await supabase
     .from("projects")
     .update(projectPatch)
     .eq("id", input.projectId);
+  if (projectUpdate.error) {
+    throw new Error(projectUpdate.error.message);
+  }
 
   await updateProjectContextKeywords(input.projectId);
   revalidateProjectCaches(input.projectId);
@@ -2824,6 +3280,26 @@ export async function updateDocumentProcessingState(input: {
   if (input.error !== undefined) payload.processing_error = input.error;
   if (input.parserUsed !== undefined) payload.parser_used = input.parserUsed;
   if (input.indexedAt !== undefined) payload.indexed_at = input.indexedAt;
+
+  const fencedUpdate = await runLeaseFencedProjectMutation(
+    input.projectId,
+    "document_processing_state",
+    {
+      document_id: input.documentId,
+      status: input.status,
+      ...(input.message !== undefined ? { message: input.message } : {}),
+      ...(input.error !== undefined ? { error: input.error } : {}),
+      ...(input.parserUsed !== undefined
+        ? { parser_used: input.parserUsed }
+        : {}),
+      ...(input.indexedAt !== undefined ? { indexed_at: input.indexedAt } : {}),
+      updated_at: payload.updated_at,
+    },
+  );
+  if (fencedUpdate.fenced) {
+    revalidateProjectCaches(input.projectId);
+    return;
+  }
 
   const supabase = createServiceClient();
   const { error } = await supabase
@@ -2884,41 +3360,64 @@ export async function saveDocumentIngestionResult(input: {
     updated_at: updatedAt,
   };
 
+  const fencedUpdate = await runLeaseFencedProjectMutation<Record<string, unknown>>(
+    input.projectId,
+    "document_ingestion_result",
+    {
+      document_id: input.documentId,
+      file_name: input.fileName,
+      file_format: input.fileFormat,
+      content_type: input.contentType,
+      page_count: pageCount,
+      raw_text: encryptedRawText,
+      structure_map: encryptedStructureMap,
+      status: input.status,
+      message: input.message,
+      parser_used: input.parserUsed,
+      indexed_at: shouldIndexChunks ? updatedAt : null,
+      updated_at: updatedAt,
+    },
+  );
+
   let updateResult: {
     data: Record<string, unknown> | null;
     error: { message?: string } | null;
   } | null = null;
-  for (
-    let attempt = 0;
-    attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
-    attempt += 1
-  ) {
-    updateResult = await supabase
-      .from("documents")
-      .update(updatePayload)
-      .eq("project_id", input.projectId)
-      .eq("id", input.documentId)
-      .select("*")
-      .single<Record<string, unknown>>();
-
-    if (
-      !updateResult.error ||
-      !isMissingLegacyDocumentColumn(updateResult.error)
+  if (fencedUpdate.fenced) {
+    updateResult = { data: fencedUpdate.data, error: null };
+  } else {
+    for (
+      let attempt = 0;
+      attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
+      attempt += 1
     ) {
-      break;
-    }
+      updateResult = await supabase
+        .from("documents")
+        .update(updatePayload)
+        .eq("project_id", input.projectId)
+        .eq("id", input.documentId)
+        .select("*")
+        .single<Record<string, unknown>>();
 
-    const missingColumn = missingColumnNameFromError(
-      updateResult.error,
-      PROJECT_DOCUMENT_INSERT_COLUMN_NAMES,
-    );
-    if (!missingColumn || !(missingColumn in updatePayload)) {
-      break;
-    }
+      if (
+        !updateResult.error ||
+        !isMissingLegacyDocumentColumn(updateResult.error)
+      ) {
+        break;
+      }
 
-    delete updatePayload[missingColumn];
-    if (missingColumn === "structure_map") {
-      updatePayload.source_map = encryptedStructureMap;
+      const missingColumn = missingColumnNameFromError(
+        updateResult.error,
+        PROJECT_DOCUMENT_INSERT_COLUMN_NAMES,
+      );
+      if (!missingColumn || !(missingColumn in updatePayload)) {
+        break;
+      }
+
+      delete updatePayload[missingColumn];
+      if (missingColumn === "structure_map") {
+        updatePayload.source_map = encryptedStructureMap;
+      }
     }
   }
 
@@ -2933,19 +3432,37 @@ export async function saveDocumentIngestionResult(input: {
     await replaceProjectDocumentChunks({
       documentId: input.documentId,
       projectId: input.projectId,
-      role: input.role,
-      supportingSubtype: input.supportingSubtype ?? null,
-      title: input.title,
+      role: updated.role,
+      supportingSubtype: updated.supporting_subtype,
+      title: updated.title,
       fileName: input.fileName,
       fileFormat: input.fileFormat,
       rawText: input.rawText,
-      structureMap: normalizeStructureMapForChunks(input.structureMap),
-    }).catch(() => {
-      // Chunk indexing should improve retrieval, not block ingestion status.
+      structureMap: normalizeDocumentChunkStructureMap(input.structureMap),
+      sourceRevision: updated.chunk_source_revision,
+    }).catch(async (error) => {
+      rethrowAuthoritativeLeaseLoss(error);
+      const chunkError =
+        error instanceof Error ? error.message : String(error ?? "Ukjent feil");
+      await updateDocumentProcessingState({
+        projectId: input.projectId,
+        documentId: input.documentId,
+        status: "failed",
+        message: "Dokumentet kunne ikke indekseres sikkert.",
+        error: `Chunk-indeksering feilet: ${chunkError.slice(0, 600)}`,
+        parserUsed: input.parserUsed,
+        indexedAt: null,
+      });
+      throw new Error(`Dokumentindeksering feilet: ${chunkError}`);
     });
   }
 
-  await updateProjectContextKeywords(input.projectId);
+  if (
+    updated.role !== "primary_solution_document" &&
+    !isHistoricalSolutionDocument(updated)
+  ) {
+    await updateProjectContextKeywords(input.projectId);
+  }
   revalidateProjectCaches(input.projectId);
 
   return mapDocumentSummary(updated);
@@ -2974,38 +3491,45 @@ export async function getDocumentDetail(
 
 export async function deleteDocument(projectId: string, documentId: string) {
   const supabase = createServiceClient();
-  const { data: beforeDelete } = await supabase
-    .from("documents")
-    .select("id, role, file_storage_bucket, file_storage_path")
-    .eq("project_id", projectId)
-    .eq("id", documentId)
-    .single<{
-      id: string;
-      role: ProjectDocumentRole;
-      file_storage_bucket?: string | null;
-      file_storage_path?: string | null;
-    }>();
+  const [beforeDelete, selectedSolutionDocumentId] = await Promise.all([
+    getDocumentDeletionSnapshot(supabase, projectId, documentId),
+    getSelectedSolutionDocumentId(supabase, projectId),
+  ]);
 
-  const { error } = await supabase
-    .from("documents")
-    .delete()
-    .eq("project_id", projectId)
-    .eq("id", documentId);
-  if (error) {
-    throw new Error(error.message);
-  }
+  await runStorageFirstDeletion({
+    removeStorage: async () => {
+      await removeStoredFiles([
+        {
+          bucket: beforeDelete?.file_storage_bucket,
+          path: beforeDelete?.file_storage_path,
+        },
+      ]);
+      await removeStoredFilePrefixes(
+        storedFileDeletionPrefixes({
+          scope: "projects",
+          ownerId: projectId,
+          fileId: documentId,
+          files: beforeDelete ? [beforeDelete] : [],
+        }),
+      );
+    },
+    deleteDatabaseRows: async () => {
+      const { error } = await supabase
+        .from("documents")
+        .delete()
+        .eq("project_id", projectId)
+        .eq("id", documentId);
+      if (error) {
+        throw new Error(error.message);
+      }
+    },
+  });
   await deleteDocumentChunks({
     sourceType: "project_document",
     sourceId: documentId,
   }).catch(() => {
     // Best-effort cleanup for deployments before the chunk table exists.
   });
-  await removeStoredFiles([
-    {
-      bucket: beforeDelete?.file_storage_bucket,
-      path: beforeDelete?.file_storage_path,
-    },
-  ]);
 
   const { data: remaining } = await supabase
     .from("documents")
@@ -3015,10 +3539,15 @@ export async function deleteDocument(projectId: string, documentId: string) {
   const statusPatch = projectDocumentStatusPatch(rows);
   const shouldClearCustomerAnalysis =
     !statusPatch.customer_document_uploaded ||
-    beforeDelete?.role === "primary_customer_document";
+    beforeDelete?.role === "primary_customer_document" ||
+    (beforeDelete?.role === "supporting_document" &&
+      !isHistoricalSolutionDocument(beforeDelete));
   const shouldClearSolutionEvaluation =
+    Boolean(beforeDelete) ||
     !statusPatch.solution_document_uploaded ||
     beforeDelete?.role === "primary_solution_document" ||
+    beforeDelete?.supporting_subtype === "kravdokument" ||
+    selectedSolutionDocumentId === documentId ||
     shouldClearCustomerAnalysis;
   const projectPatch: Partial<ProjectRow> = {
     ...statusPatch,
@@ -3026,26 +3555,23 @@ export async function deleteDocument(projectId: string, documentId: string) {
   };
 
   if (shouldClearCustomerAnalysis) {
-    await supabase
-      .from("customer_analyses")
-      .delete()
-      .eq("project_id", projectId);
+    await deleteProjectCustomerAnalyses(supabase, projectId);
     projectPatch.customer_analysis_generated = false;
   }
 
   if (shouldClearSolutionEvaluation) {
-    await supabase
-      .from("solution_evaluations")
-      .delete()
-      .eq("project_id", projectId);
-    await supabase
-      .from("executive_summaries")
-      .delete()
-      .eq("project_id", projectId);
+    await deleteProjectSolutionEvaluations(supabase, projectId);
+    await deleteProjectExecutiveSummaries(supabase, projectId);
     projectPatch.solution_evaluation_generated = false;
   }
 
-  await supabase.from("projects").update(projectPatch).eq("id", projectId);
+  const projectUpdate = await supabase
+    .from("projects")
+    .update(projectPatch)
+    .eq("id", projectId);
+  if (projectUpdate.error) {
+    throw new Error(projectUpdate.error.message);
+  }
 
   revalidateProjectCaches(projectId);
 }
@@ -3073,85 +3599,25 @@ export async function markDocumentAsPrimarySolution(
     throw new Error("Kundedokumentet kan ikke brukes som Bilag 2 / arkitektløsning.");
   }
 
-  let demoteResult = await supabase
-    .from("documents")
-    .update({
-      role: "supporting_document",
-      supporting_subtype: "utkast",
-    })
-    .eq("project_id", projectId)
-    .eq("role", "primary_solution_document")
-    .neq("id", documentId);
-
-  if (demoteResult.error && isMissingLegacyDocumentColumn(demoteResult.error)) {
-    demoteResult = await supabase
-      .from("documents")
-      .update({
-        role: "supporting_document",
-        subtype: "utkast",
-      })
-      .eq("project_id", projectId)
-      .eq("role", "primary_solution_document")
-      .neq("id", documentId);
-  }
-
-  if (demoteResult.error) {
-    throw new Error(demoteResult.error.message);
-  }
-
-  let promoteResult = await supabase
-    .from("documents")
-    .update({
-      role: "primary_solution_document",
-      supporting_subtype: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("project_id", projectId)
-    .eq("id", documentId)
-    .select("*")
-    .single<DocumentRow>();
-
-  if (promoteResult.error && isMissingLegacyDocumentColumn(promoteResult.error)) {
-    promoteResult = await supabase
-      .from("documents")
-      .update({
-        role: "primary_solution_document",
-        subtype: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("project_id", projectId)
-      .eq("id", documentId)
-      .select("*")
-      .single<DocumentRow>();
-  }
-
-  if (promoteResult.error || !promoteResult.data) {
+  const { data: promoted, error: promoteError } = await supabase.rpc(
+    "set_primary_project_document",
+    {
+      p_project_id: projectId,
+      p_document_id: documentId,
+      p_primary_role: "primary_solution_document",
+    },
+  );
+  if (promoteError || !promoted) {
     throw new Error(
-      promoteResult.error?.message || "Kunne ikke velge arkitektløsningen.",
+      promoteError?.message || "Kunne ikke velge arkitektløsningen.",
     );
   }
-
-  await supabase
-    .from("solution_evaluations")
-    .delete()
-    .eq("project_id", projectId);
-
-  await supabase
-    .from("projects")
-    .update({
-      ...projectDocumentStatusPatch(
-        await listProjectDocumentRoleRows(supabase, projectId),
-      ),
-      solution_evaluation_generated: false,
-      last_activity_at: new Date().toISOString(),
-    })
-    .eq("id", projectId);
 
   revalidateProjectCaches(projectId);
 
   return mapDocumentSummary(
     fromUnknownDocumentSummaryRow(
-      promoteResult.data as unknown as Record<string, unknown>,
+      promoted as unknown as Record<string, unknown>,
     ),
   );
 }
@@ -3171,16 +3637,31 @@ export async function listProjectDocumentSummaries(projectId: string) {
 
 export async function listProjectDocumentsForAnalysis(projectId: string) {
   const supabase = createServiceClient();
-  const rows = await fetchDocumentRows((select) =>
-    supabase
-      .from("documents")
-      .select(select)
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false }),
+  const rows = await fetchDocumentRows(
+    (select) =>
+      supabase
+        .from("documents")
+        .select(select)
+        .eq("project_id", projectId)
+        .or(ACTIVE_ANALYSIS_DOCUMENT_FILTER)
+        .order("created_at", { ascending: false }),
+    DOCUMENT_ANALYSIS_SELECT_SAFE,
+    (select) =>
+      supabase
+        .from("documents")
+        .select(select)
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false }),
+  );
+
+  const activeRows = rows.filter(
+    (row) => !isHistoricalSolutionDocument(row),
   );
 
   return Promise.all(
-    rows.map((row) => resolveDocumentRow(row, { includeFileBase64: false })),
+    activeRows.map((row) =>
+      resolveDocumentRow(row, { includeFileBase64: false }),
+    ),
   );
 }
 
@@ -3188,39 +3669,30 @@ export async function saveCustomerAnalysis(
   projectId: string,
   sourceDocumentIds: string[],
   result: CustomerAnalysisResult,
-  options?: {
+  options: {
+    expectedSourceRevision: number;
     previousAnalysis?: CustomerAnalysisResult | null;
     updatedSections?: CustomerAnalysisSection[];
     historySource?: CustomerAnalysisHistorySource;
   },
 ) {
+  if (
+    !Number.isSafeInteger(options.expectedSourceRevision) ||
+    options.expectedSourceRevision < 0
+  ) {
+    throw new Error("Kundeanalysen mangler en gyldig source_revision.");
+  }
   const supabase = createServiceClient();
   const previousAnalysis =
-    options && "previousAnalysis" in options
+    "previousAnalysis" in options
       ? (options.previousAnalysis ?? null)
       : await getFreshCustomerAnalysis(projectId);
   const resultWithHistory = appendCustomerAnalysisSectionHistory({
     previousAnalysis,
     nextAnalysis: result,
-    sections: options?.updatedSections ?? [...CUSTOMER_ANALYSIS_SECTIONS],
-    source: options?.historySource ?? "full_regeneration",
+    sections: options.updatedSections ?? [...CUSTOMER_ANALYSIS_SECTIONS],
+    source: options.historySource ?? "full_regeneration",
   });
-
-  await supabase.from("customer_analyses").delete().eq("project_id", projectId);
-
-  const { data, error } = await supabase
-    .from("customer_analyses")
-    .insert({
-      project_id: projectId,
-      source_document_ids: sourceDocumentIds,
-      result_json: encryptJson(resultWithHistory),
-    })
-    .select("*")
-    .single<CustomerAnalysisRow>();
-
-  if (error || !data) {
-    throw new Error(error?.message || "Kunne ikke lagre kundeanalysen.");
-  }
 
   const projectKeywords = mergeKeywords(
     keywordsFromText(
@@ -3234,33 +3706,41 @@ export async function saveCustomerAnalysis(
     result.signal_words ?? [],
   );
 
-  const projectUpdate = await supabase
-    .from("projects")
-    .update({
-      customer_analysis_generated: true,
-      last_activity_at: new Date().toISOString(),
-      context_keywords: projectKeywords,
-    })
-    .eq("id", projectId);
-  if (
-    projectUpdate.error &&
-    !isMissingLegacyProjectColumn(projectUpdate.error)
-  ) {
-    throw new Error(projectUpdate.error.message);
+  const payload = {
+    source_document_ids: sourceDocumentIds,
+    expected_source_revision: options.expectedSourceRevision,
+    result_json: encryptJson(resultWithHistory),
+    last_activity_at: new Date().toISOString(),
+    context_keywords: projectKeywords,
+  };
+  const fencedSave =
+    await runLeaseFencedCustomerAnalysisMutation<CustomerAnalysisRow>(
+      projectId,
+      payload,
+    );
+  if (fencedSave.fenced) {
+    revalidateProjectCaches(projectId);
+    return decryptJson(fencedSave.data.result_json, CUSTOMER_ANALYSIS_EMPTY);
   }
-  if (projectUpdate.error && isMissingLegacyProjectColumn(projectUpdate.error)) {
-    await supabase
-      .from("projects")
-      .update({
-        customer_analysis_generated: true,
-        last_activity_at: new Date().toISOString(),
-      })
-      .eq("id", projectId);
+
+  const { data, error } = await supabase.rpc(
+    "save_customer_analysis_if_source_revision",
+    {
+      p_project_id: projectId,
+      p_payload: payload,
+    },
+  );
+
+  if (error || !data) {
+    throw new Error(error?.message || "Kunne ikke lagre kundeanalysen.");
   }
 
   revalidateProjectCaches(projectId);
 
-  return decryptJson(data.result_json, CUSTOMER_ANALYSIS_EMPTY);
+  return decryptJson(
+    (data as CustomerAnalysisRow).result_json,
+    CUSTOMER_ANALYSIS_EMPTY,
+  );
 }
 
 export async function getFreshCustomerAnalysis(projectId: string) {
@@ -3269,6 +3749,7 @@ export async function getFreshCustomerAnalysis(projectId: string) {
     .from("customer_analyses")
     .select("*")
     .eq("project_id", projectId)
+    .eq("provenance_verified", true)
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -3296,121 +3777,91 @@ export async function saveSolutionEvaluation(
   input: {
     customerDocumentId: string | null;
     solutionDocumentId: string | null;
+    sourceDocumentIds?: string[];
     analysisId?: string | null;
+    expectedSourceRevision: number;
+    evaluatedGeneratedArtifactId?: string | null;
     result: SolutionEvaluationResult;
   },
 ) {
-  const supabase = createServiceClient();
-  await supabase
-    .from("solution_evaluations")
-    .delete()
-    .eq("project_id", projectId);
-  let insertResult = await supabase
-    .from("solution_evaluations")
-    .insert({
-      project_id: projectId,
-      customer_document_id: input.customerDocumentId,
-      solution_document_id: input.solutionDocumentId,
-      analysis_id: input.analysisId ?? null,
-      result_json: encryptJson(input.result),
-    })
-    .select("*")
-    .single<SolutionEvaluationRow>();
-
-  if (isMissingRelationColumn(insertResult.error, "solution_evaluations")) {
-    insertResult = await supabase
-      .from("solution_evaluations")
-      .insert({
-        project_id: projectId,
-        source_document_ids: [
-          input.customerDocumentId,
-          input.solutionDocumentId,
-        ].filter(Boolean),
-        result_json: encryptJson(input.result),
-      })
-      .select("*")
-      .single<SolutionEvaluationRow>();
+  if (
+    !Number.isSafeInteger(input.expectedSourceRevision) ||
+    input.expectedSourceRevision < 0
+  ) {
+    throw new Error("Løsningsvurderingen mangler en gyldig source_revision.");
   }
-
-  if (insertResult.error || !insertResult.data) {
+  const encryptedResult = encryptJson(
+    sanitizeSolutionEvaluationResult(input.result),
+  );
+  const sourceDocumentIds = [
+    ...new Set(
+      [
+        input.customerDocumentId,
+        ...(input.sourceDocumentIds ?? []).filter(
+          (documentId) => documentId !== input.solutionDocumentId,
+        ),
+        input.solutionDocumentId,
+      ].filter((documentId): documentId is string => Boolean(documentId)),
+    ),
+  ];
+  const fencedSave =
+    await runLeaseFencedSolutionEvaluationMutation<SolutionEvaluationRow>(
+      projectId,
+      {
+        customer_document_id: input.customerDocumentId,
+        solution_document_id: input.solutionDocumentId,
+        analysis_id: input.analysisId ?? null,
+        source_document_ids: sourceDocumentIds,
+        expected_source_revision: input.expectedSourceRevision,
+        evaluated_generated_artifact_id:
+          input.evaluatedGeneratedArtifactId ?? null,
+        result_json: encryptedResult,
+        last_activity_at: new Date().toISOString(),
+      },
+    );
+  if (!fencedSave.fenced) {
     throw new Error(
-      insertResult.error?.message || "Kunne ikke lagre løsningsvurderingen.",
+      "Løsningsvurderingen må lagres gjennom en aktiv, lease-fenced prosjektjobb.",
     );
   }
 
-  await supabase.from("executive_summaries").delete().eq("project_id", projectId);
-
-  await supabase
-    .from("projects")
-    .update({
-      solution_evaluation_generated: true,
-      last_activity_at: new Date().toISOString(),
-    })
-    .eq("id", projectId);
-
   revalidateProjectCaches(projectId);
-
-  return mapSolutionEvaluationRow(insertResult.data);
+  return mapSolutionEvaluationRow(fencedSave.data);
 }
 
 export async function saveExecutiveSummary(
   projectId: string,
   result: ExecutiveSummaryResult,
   inputSnapshot: unknown,
+  solutionEvaluationDependency: NonNullable<
+    ArtifactSourceRevisions["solutionEvaluationDependency"]
+  >,
 ) {
-  const supabase = createServiceClient();
-  await supabase.from("executive_summaries").delete().eq("project_id", projectId);
-  const { data, error } = await supabase
-    .from("executive_summaries")
-    .insert({
-      project_id: projectId,
+  const fencedSave = await runLeaseFencedExecutiveSummaryMutation<ExecutiveSummaryRow>(
+    projectId,
+    {
       result_json: encryptJson(result),
       input_snapshot: encryptJson(inputSnapshot),
-    })
-    .select("*")
-    .single<ExecutiveSummaryRow>();
-
-  if (isMissingRelationColumn(error, "executive_summaries")) {
+      solution_evaluation_dependency: solutionEvaluationDependency,
+      last_activity_at: new Date().toISOString(),
+    },
+  );
+  if (!fencedSave.fenced) {
     throw new Error(
-      "Tabellen executive_summaries mangler. Oppdater Supabase schema før lederoppsummering kan lagres separat.",
+      "Lederoppsummeringen må lagres gjennom en aktiv, evalueringsfencet prosjektjobb.",
     );
   }
-
-  if (error || !data) {
-    throw new Error(error?.message || "Kunne ikke lagre lederoppsummeringen.");
-  }
-
-  await supabase
-    .from("projects")
-    .update({ last_activity_at: new Date().toISOString() })
-    .eq("id", projectId);
-
   revalidateProjectCaches(projectId);
-  return mapExecutiveSummaryRow(data);
+  return mapExecutiveSummaryRow(fencedSave.data);
+}
+
+export async function getFreshExecutiveSummary(projectId: string) {
+  return (await getFreshProjectDerivedSnapshot(projectId))?.executiveSummary ?? null;
 }
 
 export async function getExecutiveSummary(projectId: string) {
   return unstable_cache(
-    async () => {
-      const supabase = createServiceClient();
-      const { data, error } = await supabase
-        .from("executive_summaries")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (isMissingRelationColumn(error, "executive_summaries")) {
-        return null;
-      }
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      const row = (data?.[0] as ExecutiveSummaryRow | undefined) ?? null;
-      return row ? mapExecutiveSummaryRow(row) : null;
-    },
+    () => getFreshExecutiveSummary(projectId),
     ["project-executive-summary", projectId],
     {
       tags: [projectTag(projectId)],
@@ -3419,24 +3870,75 @@ export async function getExecutiveSummary(projectId: string) {
   )();
 }
 
+export async function isSolutionEvaluationCurrent(projectId: string) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.rpc(
+    "solution_evaluation_is_current",
+    { p_project_id: projectId },
+  );
+  if (error || typeof data !== "boolean") {
+    throw new Error(
+      error?.message || "Kunne ikke verifisere vurderingens kildegrunnlag.",
+    );
+  }
+  return data;
+}
+
+export async function getFreshSolutionEvaluationSnapshot(projectId: string) {
+  const snapshot = await getFreshProjectDerivedSnapshot(projectId);
+  return snapshot
+    ? { evaluation: snapshot.evaluation, dependency: snapshot.dependency }
+    : null;
+}
+
+export async function getFreshProjectDerivedSnapshot(projectId: string) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.rpc(
+    "get_current_project_derived_snapshot",
+    { p_project_id: projectId },
+  );
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (data == null) return null;
+  if (typeof data !== "object") {
+    throw new Error("Databasen returnerte ugyldig vurderingsprovenance.");
+  }
+  const snapshot = data as Record<string, unknown>;
+  if (!snapshot.evaluation_row || typeof snapshot.evaluation_row !== "object") {
+    throw new Error("Databasen returnerte en vurdering uten autoritativ rad.");
+  }
+  const dependency = parseSolutionEvaluationDependency(snapshot.dependency);
+  if (!dependency) {
+    throw new Error("Databasen returnerte en vurdering uten autoritativ dependency.");
+  }
+  const row = snapshot.evaluation_row as unknown as SolutionEvaluationRow;
+  if (
+    row.id !== dependency.id ||
+    new Date(row.updated_at).toISOString() !== dependency.updated_at
+  ) {
+    throw new Error("Vurderingsrad og dependency er ikke fra samme snapshot.");
+  }
+  return {
+    evaluation: mapSolutionEvaluationRow(row),
+    dependency,
+    executiveSummary:
+      snapshot.executive_summary_row &&
+      typeof snapshot.executive_summary_row === "object"
+        ? mapExecutiveSummaryRow(
+            snapshot.executive_summary_row as unknown as ExecutiveSummaryRow,
+          )
+        : null,
+  };
+}
+
+export async function getFreshSolutionEvaluation(projectId: string) {
+  return (await getFreshSolutionEvaluationSnapshot(projectId))?.evaluation ?? null;
+}
+
 export async function getSolutionEvaluation(projectId: string) {
   return unstable_cache(
-    async () => {
-      const supabase = createServiceClient();
-      const { data, error } = await supabase
-        .from("solution_evaluations")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      const row = (data?.[0] as SolutionEvaluationRow | undefined) ?? null;
-      return row ? mapSolutionEvaluationRow(row) : null;
-    },
+    () => getFreshSolutionEvaluation(projectId),
     ["project-solution-evaluation", projectId],
     {
       tags: [projectTag(projectId)],
@@ -3451,30 +3953,49 @@ export async function saveGeneratedArtifact(
   title: string,
   contentMarkdown: string,
   inputSnapshot: unknown,
+  authority: {
+    expectedArtifactSourceRevision: number;
+    expectedServiceLibraryRevision: number;
+    knowledgeArtifactManifest: Array<{
+      id: string;
+      artifact_type: GeneratedArtifactType;
+      artifact_version: number;
+      updated_at: string;
+      content_hash: string;
+    }>;
+    generatorRevision: string;
+    sourceSnapshotHash: string;
+    usedSolutionEvaluation: boolean;
+    solutionEvaluationDependency: ArtifactSourceRevisions["solutionEvaluationDependency"];
+  },
 ) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("generated_artifacts")
-    .insert({
-      project_id: projectId,
+  const fencedSave = await runLeaseFencedGeneratedArtifactMutation<ArtifactRow>(
+    projectId,
+    {
       artifact_type: artifactType,
       title,
       content_markdown: contentMarkdown,
       input_snapshot: encryptJson(inputSnapshot),
-    })
-    .select("*")
-    .single<ArtifactRow>();
-
-  if (error || !data) {
-    throw new Error(error?.message || "Kunne ikke lagre generatorresultatet.");
+      expected_artifact_source_revision:
+        authority.expectedArtifactSourceRevision,
+      expected_service_library_revision:
+        authority.expectedServiceLibraryRevision,
+      knowledge_artifact_manifest: authority.knowledgeArtifactManifest,
+      generator_revision: authority.generatorRevision,
+      source_snapshot_hash: authority.sourceSnapshotHash,
+      used_solution_evaluation: authority.usedSolutionEvaluation,
+      solution_evaluation_dependency:
+        authority.solutionEvaluationDependency,
+      last_activity_at: new Date().toISOString(),
+    },
+  );
+  if (!fencedSave.fenced) {
+    throw new Error(
+      "Generatorartefakten må lagres gjennom en aktiv, versjonsfencet prosjektjobb.",
+    );
   }
-
-  await supabase
-    .from("projects")
-    .update({ last_activity_at: new Date().toISOString() })
-    .eq("id", projectId);
   revalidateProjectCaches(projectId);
-  return mapArtifact(data);
+  return mapArtifact(fencedSave.data);
 }
 
 export async function updateGeneratedArtifact(input: {
@@ -3482,6 +4003,7 @@ export async function updateGeneratedArtifact(input: {
   artifactId: string;
   title: string;
   contentMarkdown: string;
+  acknowledgeDeterministicRepairs?: boolean;
 }) {
   const title = input.title.trim();
   const contentMarkdown = input.contentMarkdown.trim();
@@ -3495,31 +4017,48 @@ export async function updateGeneratedArtifact(input: {
   }
 
   const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const { data: parent, error: parentError } = await supabase
     .from("generated_artifacts")
-    .update({
-      title,
-      content_markdown: contentMarkdown,
-      input_snapshot: encryptJson({
-        edited_manually: true,
-        edited_at: new Date().toISOString(),
-      }),
-    })
+    .select("*")
     .eq("id", input.artifactId)
     .eq("project_id", input.projectId)
-    .select("*")
     .single<ArtifactRow>();
+  if (parentError || !parent) {
+    throw new Error(parentError?.message || "Fant ikke kravbesvarelsen.");
+  }
+  const originalSnapshot = decryptJson(parent.input_snapshot, {});
+  const editedAt = new Date().toISOString();
+  const validatedInputSnapshot = buildValidatedManualArtifactInputSnapshot({
+    artifactType: parent.artifact_type,
+    title,
+    contentMarkdown,
+    parentContentMarkdown: parent.content_markdown,
+    parentInputSnapshot: originalSnapshot,
+    parentArtifactId: input.artifactId,
+    editedAt,
+    acknowledgeDeterministicRepairs:
+      input.acknowledgeDeterministicRepairs === true,
+  });
+  const revisions = await getArtifactSourceRevisions(input.projectId);
+  const { data, error } = await supabase.rpc("create_manual_artifact_version", {
+    p_project_id: input.projectId,
+    p_parent_artifact_id: input.artifactId,
+    p_payload: {
+      title,
+      content_markdown: contentMarkdown,
+      input_snapshot: encryptJson(validatedInputSnapshot),
+      expected_artifact_source_revision: revisions.artifactSourceRevision,
+      expected_service_library_revision: revisions.serviceLibraryRevision,
+      generator_revision: "manual-edit-v2",
+    },
+  });
 
   if (error || !data) {
     throw new Error(error?.message || "Kunne ikke lagre kravbesvarelsen.");
   }
 
-  await supabase
-    .from("projects")
-    .update({ last_activity_at: new Date().toISOString() })
-    .eq("id", input.projectId);
   revalidateProjectCaches(input.projectId);
-  return mapArtifact(data);
+  return mapArtifact(data as ArtifactRow);
 }
 
 export async function deleteGeneratedArtifact(input: {
@@ -3527,45 +4066,120 @@ export async function deleteGeneratedArtifact(input: {
   artifactId: string;
 }) {
   const supabase = createServiceClient();
-  const { error } = await supabase
-    .from("generated_artifacts")
-    .delete()
-    .eq("id", input.artifactId)
-    .eq("project_id", input.projectId);
+  const { error } = await supabase.rpc("delete_artifact_version_serialized", {
+    p_project_id: input.projectId,
+    p_artifact_id: input.artifactId,
+  });
 
   if (error) {
     throw new Error(error.message || "Kunne ikke slette artefakten.");
   }
 
-  await supabase
-    .from("projects")
-    .update({ last_activity_at: new Date().toISOString() })
-    .eq("id", input.projectId);
   revalidateProjectCaches(input.projectId);
 }
 
-export async function listGeneratedArtifacts(projectId: string) {
-  return unstable_cache(
-    async () => {
-      const supabase = createServiceClient();
-      const { data, error } = await supabase
-        .from("generated_artifacts")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
+export async function listGeneratedArtifacts(
+  projectId: string,
+  options: { artifactType?: GeneratedArtifactType } = {},
+) {
+  return listGeneratedArtifactsFresh(projectId, options);
+}
 
-      if (error) {
-        throw new Error(error.message || "Kunne ikke hente generatorartefakter.");
-      }
+function decorateArtifactAuthority(
+  artifacts: GeneratedArtifact[],
+  authority: GeneratedArtifactAuthorityByType,
+) {
+  return artifacts.map((artifact) => {
+    const record = authority[artifact.artifact_type];
+    const isCurrent =
+      record?.id === artifact.id &&
+      record.artifact_version === artifact.artifact_version;
+    return {
+      ...artifact,
+      is_current: isCurrent,
+      source_is_current: isCurrent && record.source_is_current,
+    };
+  });
+}
 
-      return ((data ?? []) as ArtifactRow[]).map(mapArtifact);
-    },
-    ["project-generated-artifacts", projectId],
-    {
-      tags: [projectTag(projectId)],
-      revalidate: 60,
-    },
-  )();
+export async function listGeneratedArtifactsFresh(
+  projectId: string,
+  options: { artifactType?: GeneratedArtifactType } = {},
+) {
+  const supabase = createServiceClient();
+  let query = supabase
+    .from("generated_artifacts")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(GENERATED_ARTIFACT_LIST_LIMIT);
+  if (options.artifactType) {
+    query = query.eq("artifact_type", options.artifactType);
+  }
+  const [{ data, error }, authority] = await Promise.all([
+    query,
+    getArtifactAuthoritySummary(projectId),
+  ]);
+  if (error) {
+    throw new Error(error.message || "Kunne ikke hente generatorartefakter.");
+  }
+  return decorateArtifactAuthority(
+    ((data ?? []) as ArtifactRow[]).map(mapArtifact),
+    authority,
+  );
+}
+
+export async function listArtifactKnowledgeCandidatesFresh(
+  projectId: string,
+  artifactType: GeneratedArtifactType,
+) {
+  const supabase = createServiceClient();
+  const { data: manifestData, error: manifestError } = await supabase.rpc(
+    "artifact_knowledge_manifest",
+    { p_project_id: projectId, p_artifact_type: artifactType },
+  );
+  if (manifestError) {
+    throw new Error(
+      manifestError.message || "Kunne ikke verifisere artefaktkunnskap.",
+    );
+  }
+  if (!Array.isArray(manifestData)) {
+    throw new Error("Databasen returnerte et ugyldig kunnskapsmanifest.");
+  }
+  const eligibleIds = manifestData.map((entry) => {
+    if (
+      !entry ||
+      typeof entry !== "object" ||
+      typeof (entry as Record<string, unknown>).id !== "string"
+    ) {
+      throw new Error("Databasen returnerte et ugyldig kunnskapsmanifest.");
+    }
+    return (entry as Record<string, unknown>).id as string;
+  });
+  if (!eligibleIds.length) {
+    return [];
+  }
+  const { data, error } = await supabase
+    .from("generated_artifacts")
+    .select("*")
+    .eq("project_id", projectId)
+    .in("id", eligibleIds);
+  if (error) {
+    throw new Error(error.message || "Kunne ikke hente artefaktkunnskap.");
+  }
+  const artifactsById = new Map(
+    ((data ?? []) as ArtifactRow[]).map((row) => [row.id, mapArtifact(row)]),
+  );
+  return eligibleIds.map((id) => {
+    const artifact = artifactsById.get(id);
+    if (!artifact) {
+      throw new Error(
+        "Kunnskapsartefakten ble endret under innlesing. Start genereringen på nytt.",
+      );
+    }
+    return artifact;
+  });
 }
 
 export async function appendChatMessage(
@@ -3624,15 +4238,16 @@ export async function listChatMessages(projectId: string) {
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("chat_messages")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: true });
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(CHAT_MESSAGE_LIST_LIMIT);
 
   if (error) {
     throw new Error(error.message || "Kunne ikke hente chatmeldinger.");
   }
 
-  return ((data ?? []) as ChatRow[]).map(mapChatMessage);
+  return ((data ?? []) as ChatRow[]).reverse().map(mapChatMessage);
 }
 
 export async function listChatSessions(projectId: string) {
@@ -3713,6 +4328,14 @@ export async function updateChatSessionMemory(input: {
 export async function getProjectSnapshot(
   projectId: string,
 ): Promise<ProjectCacheSnapshot> {
-  const project = await queryProjectRow(projectId);
-  return mapProjectSnapshot(project);
+  const [project, artifactAuthority, evaluationSnapshot] = await Promise.all([
+    queryProjectRow(projectId),
+    getArtifactAuthoritySummary(projectId),
+    getFreshSolutionEvaluationSnapshot(projectId),
+  ]);
+  return mapProjectSnapshot(
+    project,
+    artifactAuthority,
+    Boolean(evaluationSnapshot),
+  );
 }

@@ -38,7 +38,7 @@ alter table documents
 
 alter table documents
   add constraint documents_subtype_check
-  check (subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'notat', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'annet'));
+  check (subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'notat', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'tidligere_losning', 'annet'));
 
 alter table documents
   drop constraint if exists documents_supporting_subtype_check;
@@ -47,7 +47,7 @@ alter table documents
   add constraint documents_supporting_subtype_check
   check (
     supporting_subtype is null
-    or supporting_subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'notat', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'annet')
+    or supporting_subtype in ('rfp', 'kravdokument', 'prosjektbeskrivelse', 'notat', 'motenotat', 'workshop', 'vedlegg', 'strategi', 'utkast', 'tidligere_losning', 'annet')
   );
 
 create index if not exists projects_last_activity_idx

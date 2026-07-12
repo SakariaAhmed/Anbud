@@ -15,6 +15,7 @@ import {
 import { resolveOpenAIModelOverride } from "@/lib/server/ai";
 import { enforceRateLimit } from "@/lib/server/api-responses";
 import { auditEvent, withTiming } from "@/lib/server/observability";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 import type { GeneratedArtifactType, ProjectJobRecord } from "@/lib/types";
 
 function isArtifactType(value: string): value is GeneratedArtifactType {
@@ -128,7 +129,7 @@ async function jobAcceptedResponse(input: {
   queued: QueuedJobResult;
 }) {
   await auditEvent({
-    action: "project_job_started",
+    action: "project_job_accepted",
     projectId: input.projectId,
     entityType: "project_job",
     entityId: input.queued.job.id,
@@ -151,6 +152,7 @@ export async function POST(
     {
       limit: 20,
       windowMs: 60_000,
+      fallbackLimit: 5,
     },
     "For mange jobber startet på kort tid.",
   );
@@ -167,6 +169,17 @@ export async function POST(
         const model = await resolveOpenAIModelOverride(
           request.headers.get("x-openai-model"),
         );
+        const contentType = request.headers.get("content-type") ?? "";
+        if (
+          contentType &&
+          !contentType.toLowerCase().includes("application/json")
+        ) {
+          return NextResponse.json(
+            { error: "Forespørselen må sendes som JSON." },
+            { status: 415 },
+          );
+        }
+
         const body = (await request.json().catch(() => ({}))) as ProjectJobRequestBody;
 
         if (body.kind === "artifact_generation") {
@@ -189,8 +202,7 @@ export async function POST(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Kunne ikke starte jobben.",
+        error: productionSafeErrorMessage(error, "Kunne ikke starte jobben."),
       },
       { status: 500 },
     );
