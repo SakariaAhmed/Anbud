@@ -8,7 +8,12 @@ import {
   rolloutContainerApp,
 } from "./azure_containerapp_rollout.mjs";
 
-function fixtureRuntime({ failCandidate = false, failPromoted = false } = {}) {
+function fixtureRuntime({
+  failCandidate = false,
+  failPromoted = false,
+  staleCandidateVersion = false,
+  staleWorkerVersion = false,
+} = {}) {
   const calls = [];
   const cutoverCalls = [];
   const smokes = [];
@@ -32,7 +37,13 @@ function fixtureRuntime({ failCandidate = false, failPromoted = false } = {}) {
   const worker = {
     properties: {
       template: {
-        containers: [{ name: "worker", image: "registry/app:stable" }],
+        containers: [
+          {
+            name: "worker",
+            image: "registry/app:stable",
+            env: [{ name: "APP_VERSION", value: "registry/app:stable" }],
+          },
+        ],
       },
     },
   };
@@ -53,13 +64,39 @@ function fixtureRuntime({ failCandidate = false, failPromoted = false } = {}) {
         return { properties: { latestRevisionName: "anbud--candidate" } };
       }
       if (command.startsWith("containerapp revision show ")) {
+        const stable = command.includes("--revision anbud--stable");
+        const image =
+          stable || staleCandidateVersion
+            ? "registry/app:stable"
+            : "registry/app:candidate";
         return {
           properties: {
-            fqdn: command.includes("--revision anbud--stable")
+            fqdn: stable
               ? "stable.example.test"
               : "candidate.example.test",
+            template: {
+              containers: [
+                {
+                  name: "web",
+                  image,
+                  env: [{ name: "APP_VERSION", value: image }],
+                },
+              ],
+            },
           },
         };
+      }
+      if (command.startsWith("containerapp job update ")) {
+        const image = args[args.indexOf("--image") + 1];
+        const version = staleWorkerVersion
+          ? worker.properties.template.containers[0].env[0].value
+          : image;
+        worker.properties.template.containers[0] = {
+          name: "worker",
+          image,
+          env: [{ name: "APP_VERSION", value: version }],
+        };
+        return worker;
       }
       return {};
     },
@@ -226,6 +263,37 @@ test("candidate smoke failure keeps the healthy revision at 100 percent", async 
   assert.deepEqual(runtime.cutoverCalls, []);
 });
 
+test("candidate version mismatch fails before traffic or claims change", async () => {
+  const runtime = fixtureRuntime({ staleCandidateVersion: true });
+  await assert.rejects(
+    rolloutContainerApp(config, runtime),
+    /image\/version metadata did not reach/u,
+  );
+  assert.deepEqual(runtime.cutoverCalls, []);
+  assert.equal(runtime.smokes.length, 0);
+  assert.match(
+    matchingCalls(runtime, "containerapp ingress traffic set").at(-1),
+    /anbud--stable=100.*anbud--candidate=0/u,
+  );
+});
+
+test("worker version mismatch rolls back before claims reopen", async () => {
+  const runtime = fixtureRuntime({ staleWorkerVersion: true });
+  await assert.rejects(
+    rolloutContainerApp(config, runtime),
+    /image\/version metadata did not reach/u,
+  );
+  assert.equal(
+    runtime.cutoverCalls.at(-1)?.enabled,
+    true,
+    "stable claims reopen only after rollback completes",
+  );
+  assert.match(
+    matchingCalls(runtime, "containerapp ingress traffic set").at(-1),
+    /anbud--stable=100.*anbud--candidate=0/u,
+  );
+});
+
 test("successful candidate gates claims and retires old writers before promotion", async () => {
   const runtime = fixtureRuntime();
   const result = await rolloutContainerApp(config, runtime);
@@ -349,6 +417,7 @@ test("workflow fallback rollback is idempotent from safe state metadata", async 
       appName: "anbud",
       workerJobName: "anbud-project-job-worker",
       previousRevision: "anbud--stable",
+      previousAppImage: "registry/app:stable",
       previousWorkerImage: "registry/app:stable",
       candidateRevision: "anbud--candidate",
       cutoverStarted: true,
@@ -362,6 +431,10 @@ test("workflow fallback rollback is idempotent from safe state metadata", async 
   assert.match(
     matchingCalls(runtime, "containerapp job update").at(-1),
     /registry\/app:stable/u,
+  );
+  assert.match(
+    matchingCalls(runtime, "containerapp job update").at(-1),
+    /--set-env-vars APP_VERSION=registry\/app:stable/u,
   );
   assert.deepEqual(runtime.cutoverCalls, [
     { operation: "claims", enabled: false },

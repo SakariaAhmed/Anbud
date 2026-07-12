@@ -177,6 +177,22 @@ function containerImage(resource, containerName) {
   return required(container?.image, `${containerName} image`);
 }
 
+function assertContainerVersion(resource, containerName, expectedImage) {
+  const containers = resource?.properties?.template?.containers ?? [];
+  const container =
+    containers.find((item) => item.name === containerName) ?? containers[0];
+  const actualImage = required(container?.image, `${containerName} image`);
+  const appVersion = required(
+    container?.env?.find((item) => item.name === "APP_VERSION")?.value,
+    `${containerName} APP_VERSION`,
+  );
+  if (actualImage !== expectedImage || appVersion !== expectedImage) {
+    throw new Error(
+      `${containerName} image/version metadata did not reach the expected release.`,
+    );
+  }
+}
+
 function resourceFqdn(resource) {
   return required(
     resource?.properties?.configuration?.ingress?.fqdn,
@@ -275,10 +291,11 @@ function stopWorkerExecutionsCommand(resourceGroup, workerJobName) {
   ];
 }
 
-async function revisionFqdn(az, resourceGroup, appName, revisionName) {
-  const revision = await az(
-    revisionCommand("show", resourceGroup, appName, revisionName),
-  );
+async function revisionResource(az, resourceGroup, appName, revisionName) {
+  return az(revisionCommand("show", resourceGroup, appName, revisionName));
+}
+
+function revisionFqdn(revision, revisionName) {
   return required(
     revision?.properties?.fqdn ?? revision?.fqdn,
     `${revisionName} revision FQDN`,
@@ -300,6 +317,10 @@ async function restoreStableDeployment(config, state, runtime = {}) {
     state.previousWorkerImage,
     "state.previousWorkerImage",
   );
+  const previousAppImage = required(
+    state.previousAppImage,
+    "state.previousAppImage",
+  );
   const candidateRevision = state.candidateRevision?.trim();
   const az = runtime.az ?? defaultAz;
   const smoke = runtime.smoke ?? defaultSmoke;
@@ -312,12 +333,14 @@ async function restoreStableDeployment(config, state, runtime = {}) {
   await az(
     revisionCommand("activate", resourceGroup, appName, previousRevision),
   );
-  const stableRevisionFqdn = await revisionFqdn(
+  const stableRevision = await revisionResource(
     az,
     resourceGroup,
     appName,
     previousRevision,
   );
+  assertContainerVersion(stableRevision, "web", previousAppImage);
+  const stableRevisionFqdn = revisionFqdn(stableRevision, previousRevision);
   await smoke(`https://${stableRevisionFqdn}`, "rollback-candidate");
 
   // Put a pre-smoked target behind the public endpoint before retiring the
@@ -340,6 +363,16 @@ async function restoreStableDeployment(config, state, runtime = {}) {
   await az(
     workerImageCommand(resourceGroup, workerJobName, previousWorkerImage),
   );
+  const restoredWorker = await az([
+    "containerapp",
+    "job",
+    "show",
+    "--resource-group",
+    resourceGroup,
+    "--name",
+    workerJobName,
+  ]);
+  assertContainerVersion(restoredWorker, "worker", previousWorkerImage);
   // A schedule tick can create one last retired-image execution between the
   // first stop and the template update. Stop again while claims remain closed.
   await az(stopWorkerExecutionsCommand(resourceGroup, workerJobName));
@@ -405,7 +438,14 @@ export async function rolloutContainerApp(config, runtime = {}) {
   ]);
 
   const previousRevision = selectPreviousHealthyRevision(app, revisions);
-  const previousAppImage = containerImage(app, "web");
+  const previousRevisionResource = await revisionResource(
+    az,
+    resourceGroup,
+    appName,
+    previousRevision,
+  );
+  const previousAppImage = containerImage(previousRevisionResource, "web");
+  assertContainerVersion(previousRevisionResource, "web", previousAppImage);
   const previousWorkerImage = containerImage(worker, "worker");
   const appFqdn = resourceFqdn(app);
   const cutover = runtime.cutover ?? defaultCutoverRuntime();
@@ -416,6 +456,7 @@ export async function rolloutContainerApp(config, runtime = {}) {
     appName,
     workerJobName,
     previousRevision,
+    previousAppImage,
     previousWorkerImage,
     candidateRevision,
     cutoverStarted: false,
@@ -477,6 +518,7 @@ export async function rolloutContainerApp(config, runtime = {}) {
       "--revision",
       candidateRevision,
     ]);
+    assertContainerVersion(candidate, "web", candidateImage);
     const candidateFqdn = required(
       candidate?.properties?.fqdn ?? candidate?.fqdn,
       "candidate revision FQDN",
@@ -509,6 +551,16 @@ export async function rolloutContainerApp(config, runtime = {}) {
     await smoke(`https://${appFqdn}`, "promoted");
 
     await az(workerImageCommand(resourceGroup, workerJobName, candidateImage));
+    const candidateWorker = await az([
+      "containerapp",
+      "job",
+      "show",
+      "--resource-group",
+      resourceGroup,
+      "--name",
+      workerJobName,
+    ]);
+    assertContainerVersion(candidateWorker, "worker", candidateImage);
     state.candidateWorkerActivated = true;
     writeState(state);
     // Close the schedule race: any execution created from the retired worker

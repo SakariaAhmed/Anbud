@@ -467,6 +467,7 @@ class FakeQuery {
     this.selectedColumns = null;
     this.maximum = null;
     this.sort = null;
+    this.requiredProjectionColumns = new Set();
   }
 
   eq(column, value) {
@@ -478,6 +479,11 @@ class FakeQuery {
     const prefix = "locked_at.is.null,locked_at.lt.";
     assert.ok(expression.startsWith(prefix), `unexpected OR filter: ${expression}`);
     const cutoff = expression.slice(prefix.length);
+    if (this.operation === "update") {
+      // Mirrors PostgREST's mutation planner: columns used by an OR filter
+      // must remain available in the response projection.
+      this.requiredProjectionColumns.add("locked_at");
+    }
     this.filters.push(
       (row) => row.locked_at === null || row.locked_at < cutoff,
     );
@@ -522,6 +528,23 @@ class FakeQuery {
   }
 
   execute() {
+    const selectedColumns = new Set(
+      String(this.selectedColumns ?? "")
+        .split(",")
+        .map((column) => column.trim())
+        .filter(Boolean),
+    );
+    if (
+      this.selectedColumns !== "*" &&
+      [...this.requiredProjectionColumns].some(
+        (column) => !selectedColumns.has(column),
+      )
+    ) {
+      return {
+        data: null,
+        error: { message: "column project_jobs.locked_at does not exist" },
+      };
+    }
     const matches = this.matchingRows();
     if (this.operation === "update") {
       for (const row of matches) {

@@ -330,7 +330,10 @@ export async function resetStaleRunningProjectJobs(
     })
     .eq("status", "running")
     .or(`locked_at.is.null,locked_at.lt.${cutoff}`)
-    .select("id");
+    // PostgREST needs every column used by an OR filter in the mutation
+    // projection. Selecting only `id` makes its PATCH plan reference a column
+    // that is no longer exposed by the update CTE (Postgres 42703).
+    .select("id,locked_at");
 
   if (reset.error) {
     throw new Error(reset.error.message);
