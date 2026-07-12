@@ -245,6 +245,14 @@ test("successful candidate gates claims and retires old writers before promotion
     matchingCalls(runtime, "containerapp job update").at(-1),
     /registry\/app:candidate/u,
   );
+  assert.match(
+    matchingCalls(runtime, "containerapp update").at(-1),
+    /--set-env-vars APP_VERSION=registry\/app:candidate/u,
+  );
+  assert.match(
+    matchingCalls(runtime, "containerapp job update").at(-1),
+    /--set-env-vars APP_VERSION=registry\/app:candidate/u,
+  );
   assert.equal(
     matchingCalls(runtime, "containerapp job stop").length,
     2,
@@ -313,6 +321,10 @@ test("post-promotion smoke failure restores traffic and worker image", async () 
     "a failed promoted-web smoke must never activate the candidate worker",
   );
   assert.match(workerUpdates.at(-1), /registry\/app:stable/u);
+  assert.match(
+    workerUpdates.at(-1),
+    /--set-env-vars APP_VERSION=registry\/app:stable/u,
+  );
   assert.equal(matchingCalls(runtime, "containerapp job stop").length, 3);
   assert.deepEqual(runtime.cutoverCalls, [
     { operation: "claims", enabled: false },

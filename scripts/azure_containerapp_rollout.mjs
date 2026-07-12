@@ -233,6 +233,33 @@ function workerImageCommand(resourceGroup, workerJobName, image) {
     workerJobName,
     "--image",
     image,
+    "--set-env-vars",
+    `APP_VERSION=${image}`,
+  ];
+}
+
+function appImageCommand(
+  resourceGroup,
+  appName,
+  image,
+  revisionSuffix,
+  minReplicas,
+) {
+  return [
+    "containerapp",
+    "update",
+    "--resource-group",
+    resourceGroup,
+    "--name",
+    appName,
+    "--image",
+    image,
+    "--revision-suffix",
+    revisionSuffix,
+    "--min-replicas",
+    minReplicas,
+    "--set-env-vars",
+    `APP_VERSION=${image}`,
   ];
 }
 
@@ -420,20 +447,15 @@ export async function rolloutContainerApp(config, runtime = {}) {
   ]);
 
   try {
-    const updated = await az([
-      "containerapp",
-      "update",
-      "--resource-group",
-      resourceGroup,
-      "--name",
-      appName,
-      "--image",
-      candidateImage,
-      "--revision-suffix",
-      revisionSuffix,
-      "--min-replicas",
-      minReplicas,
-    ]);
+    const updated = await az(
+      appImageCommand(
+        resourceGroup,
+        appName,
+        candidateImage,
+        revisionSuffix,
+        minReplicas,
+      ),
+    );
     candidateRevision = required(
       updated?.properties?.latestRevisionName,
       "candidate revision",
