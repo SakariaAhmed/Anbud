@@ -42,6 +42,19 @@ param supabaseUrl string
 @description('Current Supabase service role key. Kept server-side only.')
 param supabaseServiceRoleKey string
 
+@description('Public origin used for OAuth callbacks, for example https://bidsite.example.com.')
+param appPublicOrigin string
+
+@description('Application client ID for the Microsoft Entra External ID app registration.')
+param microsoftEntraClientId string
+
+@secure()
+@description('Client secret for the Microsoft Entra External ID app registration.')
+param microsoftEntraClientSecret string
+
+@description('External ID tenant subdomain, without .ciamlogin.com.')
+param microsoftEntraTenantSubdomain string
+
 @secure()
 @description('Stable app encryption key. Do not rotate during migration unless document data is re-encrypted.')
 param appEncryptionKey string
@@ -170,6 +183,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           value: supabaseServiceRoleKey
         }
         {
+          name: 'microsoft-entra-client-secret'
+          value: microsoftEntraClientSecret
+        }
+        {
           name: 'app-encryption-key'
           value: appEncryptionKey
         }
@@ -243,6 +260,22 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'SUPABASE_SERVICE_ROLE_KEY'
               secretRef: 'supabase-service-role-key'
+            }
+            {
+              name: 'APP_PUBLIC_ORIGIN'
+              value: appPublicOrigin
+            }
+            {
+              name: 'MICROSOFT_ENTRA_CLIENT_ID'
+              value: microsoftEntraClientId
+            }
+            {
+              name: 'MICROSOFT_ENTRA_CLIENT_SECRET'
+              secretRef: 'microsoft-entra-client-secret'
+            }
+            {
+              name: 'MICROSOFT_ENTRA_TENANT_SUBDOMAIN'
+              value: microsoftEntraTenantSubdomain
             }
             {
               name: 'APP_ENCRYPTION_KEY'

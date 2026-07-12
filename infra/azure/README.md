@@ -62,6 +62,10 @@ az deployment group create \
     registryPassword="$ACR_PASSWORD" \
     supabaseUrl="$SUPABASE_URL" \
     supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
+    appPublicOrigin="$APP_PUBLIC_ORIGIN" \
+    microsoftEntraClientId="$MICROSOFT_ENTRA_CLIENT_ID" \
+    microsoftEntraClientSecret="$MICROSOFT_ENTRA_CLIENT_SECRET" \
+    microsoftEntraTenantSubdomain="$MICROSOFT_ENTRA_TENANT_SUBDOMAIN" \
     appEncryptionKey="$APP_ENCRYPTION_KEY" \
     appAccessPassword="$APP_ACCESS_PASSWORD" \
     appSessionSecret="$APP_SESSION_SECRET" \
@@ -70,7 +74,7 @@ az deployment group create \
     projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
 ```
 
-The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN` as a repository secret before deploying.
+The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN` and `MICROSOFT_ENTRA_CLIENT_SECRET` as production secrets. Configure `APP_PUBLIC_ORIGIN`, `MICROSOFT_ENTRA_CLIENT_ID`, and `MICROSOFT_ENTRA_TENANT_SUBDOMAIN` as production variables. See [Microsoft Entra External ID login](../../docs/microsoft-entra-login.md) for the app registration and callback setup.
 
 ## Controlled production rollout
 
@@ -102,7 +106,8 @@ az containerapp job show \
 - Confirm `/api/health/live` returns `status: healthy`.
 - Confirm `/api/health/ready` and `/api/health` do not return `status: unhealthy`.
 - Confirm the health response contains the expected `runtime.region`, `runtime.stamp`, and image-backed `runtime.version`.
-- Log in with the existing app password.
+- Log in with Microsoft Entra ID and confirm the callback returns to the app.
+- Confirm the existing app password still works as fallback.
 - Open an existing project from Supabase.
 - Upload and delete a test document.
 - Run one short OpenAI-backed workflow.

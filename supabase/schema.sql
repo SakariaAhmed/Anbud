@@ -44,6 +44,7 @@ drop table if exists bid_events cascade;
 
 create table projects (
   id uuid primary key default gen_random_uuid(),
+  owner_id text,
   client_name text not null,
   title text not null,
   description text not null default '',
@@ -60,6 +61,7 @@ create table projects (
 );
 
 create index projects_last_activity_idx on projects(last_activity_at desc);
+create index projects_owner_activity_idx on projects(owner_id, last_activity_at desc);
 
 create or replace function public.bump_artifact_revision_from_project_metadata()
 returns trigger language plpgsql security invoker set search_path = '' as $$

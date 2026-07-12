@@ -514,6 +514,7 @@ export interface ProjectDetail extends ProjectSummary {
 }
 
 export interface ProjectCreateInput {
+  owner_id?: string;
   name?: string | null;
   customer_name?: string | null;
   description?: string | null;

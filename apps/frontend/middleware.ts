@@ -2,7 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import {
   AUTH_COOKIE_NAME,
+  AUTH_DISPLAY_NAME_HEADER,
+  AUTH_OWNER_HEADER,
   AUTH_VERIFIED_HEADER,
+  readSessionToken,
   verifySessionToken,
 } from "@/lib/password-auth";
 
@@ -84,6 +87,8 @@ function isPublicPath(pathname: string) {
   return (
     pathname === "/login" ||
     pathname === "/api/auth/login" ||
+    (pathname === "/api/auth/microsoft" ||
+      pathname.startsWith("/api/auth/microsoft/")) ||
     pathname === "/api/health" ||
     pathname.startsWith("/api/health/") ||
     PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
@@ -157,6 +162,29 @@ function forbiddenJson(correlationId: string) {
   );
 }
 
+function projectIdFromPath(pathname: string) {
+  const match = pathname.match(/^\/(?:api\/)?projects\/([0-9a-f-]{36})(?:\/|$)/i);
+  return match?.[1] ?? null;
+}
+
+async function ownsProject(projectId: string, ownerId: string) {
+  const baseUrl = process.env.SUPABASE_URL?.replace(/\/+$/, "");
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!baseUrl || !serviceKey) return false;
+  const url = new URL(`${baseUrl}/rest/v1/projects`);
+  url.searchParams.set("select", "id");
+  url.searchParams.set("id", `eq.${projectId}`);
+  url.searchParams.set("owner_id", `eq.${ownerId}`);
+  url.searchParams.set("limit", "1");
+  const response = await fetch(url, {
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+    cache: "no-store",
+  });
+  if (!response.ok) return false;
+  const rows = await response.json() as Array<{ id: string }>;
+  return rows.length === 1;
+}
+
 function isTrustedOrigin(request: NextRequest) {
   if (SAFE_METHODS.has(request.method) || !request.nextUrl.pathname.startsWith("/api/")) {
     return true;
@@ -194,14 +222,20 @@ function nextWithRequestHeaders(
   request: NextRequest,
   authenticated: boolean,
   correlationId: string,
+  ownerId?: string | null,
+  displayName?: string | null,
 ) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(CURRENT_PATH_HEADER, request.nextUrl.pathname);
   requestHeaders.set(CORRELATION_ID_HEADER, correlationId);
   requestHeaders.delete(AUTH_VERIFIED_HEADER);
+  requestHeaders.delete(AUTH_OWNER_HEADER);
+  requestHeaders.delete(AUTH_DISPLAY_NAME_HEADER);
 
   if (authenticated) {
     requestHeaders.set(AUTH_VERIFIED_HEADER, "1");
+    if (ownerId) requestHeaders.set(AUTH_OWNER_HEADER, ownerId);
+    if (displayName) requestHeaders.set(AUTH_DISPLAY_NAME_HEADER, displayName);
   }
 
   return applyResponseHeaders(
@@ -217,7 +251,9 @@ function nextWithRequestHeaders(
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const correlationId = correlationIdFor(request);
-  const authenticated = await verifySessionToken(request.cookies.get(AUTH_COOKIE_NAME)?.value);
+  const sessionToken = request.cookies.get(AUTH_COOKIE_NAME)?.value;
+  const session = await readSessionToken(sessionToken);
+  const authenticated = Boolean(session) || await verifySessionToken(sessionToken);
   const workerToken = process.env.PROJECT_JOB_WORKER_TOKEN?.trim();
 
   if (!isTrustedOrigin(request)) {
@@ -238,11 +274,18 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPublicPath(pathname)) {
-    return nextWithRequestHeaders(request, authenticated, correlationId);
+    return nextWithRequestHeaders(request, authenticated, correlationId, session?.ownerId, session?.displayName);
   }
 
   if (authenticated) {
-    return nextWithRequestHeaders(request, true, correlationId);
+    if (!session?.ownerId && pathname.startsWith("/api/projects")) return unauthorizedJson(correlationId);
+    const projectId = projectIdFromPath(pathname);
+    if (projectId && (!session?.ownerId || !(await ownsProject(projectId, session.ownerId)))) {
+      return pathname.startsWith("/api/")
+        ? applyResponseHeaders(NextResponse.json({ error: "Project not found." }, { status: 404 }), correlationId)
+        : applyResponseHeaders(NextResponse.redirect(localRedirectUrl(request, "/")), correlationId);
+    }
+    return nextWithRequestHeaders(request, true, correlationId, session?.ownerId, session?.displayName);
   }
 
   if (pathname.startsWith("/api/")) {

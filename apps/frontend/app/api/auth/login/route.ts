@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { safeRedirectPath } from "@/lib/auth-redirect";
 import {
   AUTH_COOKIE_MAX_AGE_SECONDS,
   AUTH_COOKIE_NAME,
@@ -8,18 +9,6 @@ import {
   verifyPassword,
 } from "@/lib/password-auth";
 import { checkRateLimit } from "@/lib/server/observability";
-
-function safeRedirectPath(value: unknown) {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
-    return "/";
-  }
-
-  if (value.startsWith("/api/") || value.startsWith("/login")) {
-    return "/";
-  }
-
-  return value;
-}
 
 export async function POST(request: Request) {
   const globalRateLimit = await checkRateLimit(request, "auth-login-global", {
@@ -30,7 +19,7 @@ export async function POST(request: Request) {
   });
   if (!globalRateLimit.allowed) {
     return NextResponse.json(
-      { error: "Too many sign-in attempts. Try again shortly." },
+      { error: "For mange innloggingsforsøk. Prøv igjen om litt." },
       {
         status: 429,
         headers: { "Retry-After": String(globalRateLimit.retryAfterSeconds) },
@@ -45,7 +34,7 @@ export async function POST(request: Request) {
   });
   if (!rateLimit.allowed) {
     return NextResponse.json(
-      { error: "Too many sign-in attempts. Try again shortly." },
+      { error: "For mange innloggingsforsøk. Prøv igjen om litt." },
       {
         status: 429,
         headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
@@ -55,7 +44,7 @@ export async function POST(request: Request) {
 
   if (!isPasswordAuthConfigured()) {
     return NextResponse.json(
-      { error: "Password authentication is not configured." },
+      { error: "Innlogging med tilgangspassord er ikke konfigurert." },
       { status: 500 },
     );
   }
@@ -66,7 +55,7 @@ export async function POST(request: Request) {
   };
 
   if (typeof body.password !== "string" || !verifyPassword(body.password)) {
-    return NextResponse.json({ error: "Wrong password." }, { status: 401 });
+    return NextResponse.json({ error: "Feil tilgangspassord." }, { status: 401 });
   }
 
   const response = NextResponse.json({ ok: true, redirectTo: safeRedirectPath(body.next) });

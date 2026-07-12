@@ -94,3 +94,14 @@ test("session tokens expire after the configured lifetime", async () => {
     );
   });
 });
+
+test("Microsoft user sessions retain only a pseudonymous owner id", async () => {
+  await withPasswordAuth({ APP_SESSION_SECRET: "session signing secret" }, async (passwordAuth) => {
+    const ownerId = await passwordAuth.deriveOwnerId("entra-object-id");
+    const token = await passwordAuth.createUserSessionToken(ownerId, "Sakaria Ahmed", 1_700_000_000_000);
+    const session = await passwordAuth.readSessionToken(token, 1_700_000_001_000);
+    assert.match(ownerId, /^u_[A-Za-z0-9_-]{43}$/);
+    assert.deepEqual(session, { ownerId, displayName: "Sakaria Ahmed" });
+    assert.equal(token.includes("entra-object-id"), false);
+  });
+});

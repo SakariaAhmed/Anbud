@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AUTH_DISPLAY_NAME_HEADER } from "@/lib/password-auth";
 
 import "./globals.css";
 
@@ -42,6 +43,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const requestHeaders = await headers();
   const pathname = requestHeaders.get(CURRENT_PATH_HEADER) ?? "";
   const isHomeRoute = pathname === "/";
+  const displayName = requestHeaders.get(AUTH_DISPLAY_NAME_HEADER);
 
   return (
     <html
@@ -53,7 +55,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         data-route={isHomeRoute ? "home" : undefined}
       >
         <TooltipProvider>
-          <AppShell>{children}</AppShell>
+          <AppShell displayName={displayName}>{children}</AppShell>
         </TooltipProvider>
       </body>
     </html>
