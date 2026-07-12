@@ -4,7 +4,10 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AUTH_DISPLAY_NAME_HEADER } from "@/lib/password-auth";
+import {
+  AUTH_DISPLAY_NAME_HEADER,
+  AUTH_VERIFIED_HEADER,
+} from "@/lib/password-auth";
 
 import "./globals.css";
 
@@ -44,6 +47,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const pathname = requestHeaders.get(CURRENT_PATH_HEADER) ?? "";
   const isHomeRoute = pathname === "/";
   const displayName = requestHeaders.get(AUTH_DISPLAY_NAME_HEADER);
+  const authenticated = requestHeaders.get(AUTH_VERIFIED_HEADER) === "1";
 
   return (
     <html
@@ -55,7 +59,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         data-route={isHomeRoute ? "home" : undefined}
       >
         <TooltipProvider>
-          <AppShell displayName={displayName}>{children}</AppShell>
+          <AppShell authenticated={authenticated} displayName={displayName}>
+            {children}
+          </AppShell>
         </TooltipProvider>
       </body>
     </html>
