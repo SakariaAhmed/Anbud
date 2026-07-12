@@ -69,7 +69,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "22.14.0",
     "@types/pdf-parse": "1.1.4",
     "@types/react": "19.2.17",
