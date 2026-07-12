@@ -78,7 +78,7 @@
     "eslint-config-next": "^15.5.19",
     "jiti": "^2.7.0",
     "postcss": "^8.5.15",
-    "shadcn": "^4.1.2",
+    "shadcn": "^4.13.0",
     "tailwindcss": "^4.3.1",
     "typescript": "5.8.3"
   }
