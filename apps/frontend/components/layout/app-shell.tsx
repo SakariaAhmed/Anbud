@@ -15,11 +15,20 @@ function shouldShowAppHeader(pathname: string) {
   return pathname !== "/login" && !isIsolatedChatPath(pathname);
 }
 
-export function AppShell({ children, displayName }: { children: ReactNode; displayName?: string | null }) {
+export function AppShell({
+  authenticated,
+  children,
+  displayName,
+}: {
+  authenticated?: boolean;
+  children: ReactNode;
+  displayName?: string | null;
+}) {
   const pathname = usePathname() ?? "";
   const showHeader = shouldShowAppHeader(pathname);
   const isolatedChatWindow = isIsolatedChatPath(pathname);
   const [loggingOut, setLoggingOut] = useState(false);
+  const userLabel = displayName?.trim() || "Bruker";
 
   async function logOut() {
     if (loggingOut) return;
@@ -62,18 +71,18 @@ export function AppShell({ children, displayName }: { children: ReactNode; displ
                 <Layers3 className="size-4" />
                 <span className="hidden sm:inline">Tjenestebeskrivelser</span>
               </Link>
-              {displayName ? (
+              {authenticated ? (
                 <details className="group relative border-l border-white/15 pl-3">
-                  <summary className="flex cursor-pointer list-none items-center gap-2.5 rounded-lg py-1 pr-1 outline-none transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-blue-200 [&::-webkit-details-marker]:hidden" aria-label={`Brukermeny for ${displayName}`}>
+                  <summary className="flex cursor-pointer list-none items-center gap-2.5 rounded-lg py-1 pr-1 outline-none transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-blue-200 [&::-webkit-details-marker]:hidden" aria-label={`Brukermeny for ${userLabel}`}>
                     <span className="grid size-8 place-items-center rounded-full border border-blue-300/30 bg-blue-400/15 text-xs font-bold uppercase text-blue-100 shadow-inner">
-                      {displayName.trim().charAt(0)}
+                      {userLabel.charAt(0)}
                     </span>
-                    <span className="hidden max-w-48 truncate text-sm font-medium text-slate-200 md:block">{displayName}</span>
+                    <span className="hidden max-w-48 truncate text-sm font-medium text-slate-200 md:block">{userLabel}</span>
                     <ChevronDown className="hidden size-3.5 text-slate-400 transition-transform group-open:rotate-180 md:block" />
                   </summary>
                   <div className="absolute right-0 top-[calc(100%+0.55rem)] min-w-48 overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 text-slate-900 shadow-xl shadow-slate-950/20">
                     <div className="border-b border-slate-100 px-2.5 py-2 md:hidden">
-                      <p className="max-w-44 truncate text-xs font-semibold">{displayName}</p>
+                      <p className="max-w-44 truncate text-xs font-semibold">{userLabel}</p>
                     </div>
                     <button
                       type="button"
