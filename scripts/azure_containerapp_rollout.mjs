@@ -295,6 +295,52 @@ async function revisionResource(az, resourceGroup, appName, revisionName) {
   return az(revisionCommand("show", resourceGroup, appName, revisionName));
 }
 
+async function deactivateZeroTrafficRevisions(
+  az,
+  resourceGroup,
+  appName,
+  servingRevision,
+) {
+  const revisions = await az([
+    "containerapp",
+    "revision",
+    "list",
+    "--resource-group",
+    resourceGroup,
+    "--name",
+    appName,
+  ]);
+  const retiredRevisions = [
+    ...new Set(
+      revisions.flatMap((revision) => {
+        const revisionName =
+          typeof revision?.name === "string" ? revision.name.trim() : "";
+        const rawTrafficWeight = revisionValue(revision, "trafficWeight");
+        const trafficWeight =
+          rawTrafficWeight === null ||
+          rawTrafficWeight === undefined ||
+          rawTrafficWeight === ""
+            ? Number.NaN
+            : Number(rawTrafficWeight);
+        return revisionName &&
+          revisionName !== servingRevision &&
+          revisionValue(revision, "active") === true &&
+          Number.isFinite(trafficWeight) &&
+          trafficWeight === 0
+          ? [revisionName]
+          : [];
+      }),
+    ),
+  ];
+
+  for (const revisionName of retiredRevisions) {
+    await az(
+      revisionCommand("deactivate", resourceGroup, appName, revisionName),
+    );
+  }
+  return retiredRevisions;
+}
+
 function revisionFqdn(revision, revisionName) {
   return required(
     revision?.properties?.fqdn ?? revision?.fqdn,
@@ -543,8 +589,15 @@ export async function rolloutContainerApp(config, runtime = {}) {
         previousRevision,
       ),
     );
-    await az(
-      revisionCommand("deactivate", resourceGroup, appName, previousRevision),
+    // Multiple-revision mode leaves a zero-traffic revision running until it
+    // is explicitly deactivated. Sweep every retired active revision, rather
+    // than only the immediately preceding one, so each min replica stops
+    // billing after a successful cutover.
+    const retiredRevisions = await deactivateZeroTrafficRevisions(
+      az,
+      resourceGroup,
+      appName,
+      candidateRevision,
     );
     await az(stopWorkerExecutionsCommand(resourceGroup, workerJobName));
     await cutover.requeueRunningJobs();
@@ -575,6 +628,7 @@ export async function rolloutContainerApp(config, runtime = {}) {
       candidateRevision,
       previousAppImage,
       previousWorkerImage,
+      retiredRevisions,
       promoted: true,
     };
   } catch (error) {

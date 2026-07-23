@@ -13,6 +13,7 @@ function fixtureRuntime({
   failPromoted = false,
   staleCandidateVersion = false,
   staleWorkerVersion = false,
+  staleZeroTrafficRevisions = [],
 } = {}) {
   const calls = [];
   const cutoverCalls = [];
@@ -34,6 +35,7 @@ function fixtureRuntime({
       createdTime: "2026-07-10T07:00:00Z",
     },
   ];
+  let candidateIsServing = false;
   const worker = {
     properties: {
       template: {
@@ -58,7 +60,22 @@ function fixtureRuntime({
       const command = args.join(" ");
       events.push(`az:${command}`);
       if (command.startsWith("containerapp show ")) return app;
-      if (command.startsWith("containerapp revision list ")) return revisions;
+      if (command.startsWith("containerapp revision list ")) {
+        if (!candidateIsServing) return revisions;
+        return [
+          {
+            name: "anbud--candidate",
+            active: true,
+            trafficWeight: 100,
+          },
+          {
+            name: "anbud--stable",
+            active: true,
+            trafficWeight: 0,
+          },
+          ...staleZeroTrafficRevisions,
+        ];
+      }
       if (command.startsWith("containerapp job show ")) return worker;
       if (command.startsWith("containerapp update ")) {
         return { properties: { latestRevisionName: "anbud--candidate" } };
@@ -97,6 +114,12 @@ function fixtureRuntime({
           env: [{ name: "APP_VERSION", value: version }],
         };
         return worker;
+      }
+      if (
+        command.startsWith("containerapp ingress traffic set ") &&
+        command.includes("anbud--candidate=100")
+      ) {
+        candidateIsServing = true;
       }
       return {};
     },
@@ -299,6 +322,7 @@ test("successful candidate gates claims and retires old writers before promotion
   const result = await rolloutContainerApp(config, runtime);
 
   assert.equal(result.promoted, true);
+  assert.deepEqual(result.retiredRevisions, ["anbud--stable"]);
   assert.deepEqual(runtime.smokes, [
     { url: "https://candidate.example.test", phase: "candidate" },
     { url: "https://app.example.test", phase: "promoted" },
@@ -365,6 +389,60 @@ test("successful candidate gates claims and retires old writers before promotion
     eventIndex("az:containerapp job update ") <
       eventIndex("cutover:claims:true"),
     "claims open only after both candidate web and worker are installed",
+  );
+});
+
+test("successful promotion deactivates every active revision without traffic", async () => {
+  const runtime = fixtureRuntime({
+    staleZeroTrafficRevisions: [
+      {
+        name: "anbud--older-candidate",
+        active: true,
+        trafficWeight: 0,
+      },
+      {
+        name: "anbud--inactive",
+        active: false,
+        trafficWeight: 0,
+      },
+      {
+        name: "anbud--canary",
+        active: true,
+        trafficWeight: 5,
+      },
+      {
+        name: "anbud--nested-zero",
+        properties: {
+          active: true,
+          trafficWeight: "0",
+        },
+      },
+      {
+        name: "anbud--unknown-traffic",
+        active: true,
+      },
+      {
+        name: "anbud--invalid-traffic",
+        active: true,
+        trafficWeight: "unknown",
+      },
+    ],
+  });
+
+  const result = await rolloutContainerApp(config, runtime);
+
+  assert.deepEqual(result.retiredRevisions, [
+    "anbud--stable",
+    "anbud--older-candidate",
+    "anbud--nested-zero",
+  ]);
+  assert.deepEqual(
+    matchingCalls(runtime, "containerapp revision deactivate"),
+    [
+      "containerapp revision deactivate --resource-group anbud-prod --name anbud --revision anbud--stable",
+      "containerapp revision deactivate --resource-group anbud-prod --name anbud --revision anbud--older-candidate",
+      "containerapp revision deactivate --resource-group anbud-prod --name anbud --revision anbud--nested-zero",
+    ],
   );
 });
 
