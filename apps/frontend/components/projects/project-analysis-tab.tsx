@@ -2003,7 +2003,6 @@ const SECTION_TABS = [
   { value: "design", label: "Design" },
   { value: "risks", label: "Risiko" },
   { value: "needs", label: "Behov" },
-  { value: "keywords", label: "Nøkkelord" },
   { value: "services", label: "Anbefalt tjeneste" },
   { value: "value", label: "Verdi" },
 ] as const;
