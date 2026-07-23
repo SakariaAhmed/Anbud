@@ -12,10 +12,21 @@ import {
 import {
   runJsonCompletion,
   runJsonCompletionWithFileInputs,
+  runStructuredJsonResponse,
   type ReasoningEffort,
 } from "@/lib/server/ai/json-completion";
 import { buildVerifiedFoundationControls } from "@/lib/server/ai/verified-foundation-controls";
-import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
+import {
+  isDocumentAnalysisEnabled,
+  isDocumentAnalysisV3Enabled,
+} from "@/lib/server/document-intelligence/config";
+import {
+  buildCustomerAnalysisV3SystemPrompt,
+  buildCustomerAnalysisV3UserPrompt,
+  CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
+} from "@/lib/server/document-intelligence/customer-analysis-v3";
+import { isLocalPdfLayoutParser } from "@/lib/server/document-intelligence/local-pdf-layout";
+import { preferTrustedStructuredRequirementText } from "@/lib/server/document-intelligence/requirement-text";
 import {
   isCurrentDocumentIntelligenceContext,
   shouldUseCompiledCustomerAnalysisContext,
@@ -169,7 +180,13 @@ const DEFAULT_OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() || "gpt-5.4";
 const DEFAULT_ANALYSIS_MODEL =
   process.env.OPENAI_ANALYSIS_MODEL?.trim() ||
   (/(?:mini|nano)$/i.test(DEFAULT_OPENAI_MODEL) ? "gpt-5.4" : DEFAULT_OPENAI_MODEL);
+const DOCUMENT_ANALYSIS_MODEL =
+  process.env.OPENAI_DOCUMENT_ANALYSIS_MODEL?.trim() || "gpt-5.6-terra";
 const WORKSPACE_MODEL_IDS = [
+  "gpt-5.6",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.4-nano",
@@ -822,7 +839,14 @@ export async function resolveOpenAIModelOverride(
     return DEFAULT_OPENAI_MODEL;
   }
 
-  if (![...WORKSPACE_MODEL_IDS, DEFAULT_OPENAI_MODEL, ANALYSIS_MODEL].includes(modelId)) {
+  if (
+    ![
+      ...WORKSPACE_MODEL_IDS,
+      DEFAULT_OPENAI_MODEL,
+      ANALYSIS_MODEL,
+      DOCUMENT_ANALYSIS_MODEL,
+    ].includes(modelId)
+  ) {
     throw new Error("Valgt modell er ikke tilgjengelig for denne API-nøkkelen.");
   }
 
@@ -8619,7 +8643,7 @@ async function buildRequirementSourceLedgerWithFiles(
   const hasLocalPdfTableStructure = document.structure_map.some(
     (entry) =>
       entry.kind === "table" &&
-      entry.parser === "pdf-parse-local-layout-v2" &&
+      isLocalPdfLayoutParser(entry.parser) &&
       entry.cells &&
       typeof entry.cells === "object" &&
       !Array.isArray(entry.cells),
@@ -8629,28 +8653,11 @@ async function buildRequirementSourceLedgerWithFiles(
       (entry) => [normalizeRequirementId(entry.id), entry] as const,
     ),
   );
-  const generatedPdfLedgerWithLocalTableText = generatedPdfLedger.map(
-    (entry) => {
-      const local = trustedLocalById.get(normalizeRequirementId(entry.id));
-      const normalizedLocalText = normalizeEvidenceText(local?.text ?? "");
-      const normalizedGeneratedText = normalizeEvidenceText(entry.text);
-      if (
-        !local ||
-        local.text.length < 12 ||
-        !normalizedGeneratedText.includes(normalizedLocalText) ||
-        /\b(?:mangler\s+ID|Punktkrav\s+som\s+skal\s+besvares|krav\s+registrert\s+i\s+tabell|Fra\s+arbeidsnotatet|Avklaringer?\/)\b/iu.test(
-          local.text,
-        )
-      ) {
-        return entry;
-      }
-      return {
-        ...entry,
-        text: local.text,
-        sourceExcerpt: local.sourceExcerpt || entry.sourceExcerpt,
-        pages: local.pages.length ? local.pages : entry.pages,
-      };
-    },
+  const generatedPdfLedgerWithLocalTableText = generatedPdfLedger.map((entry) =>
+    preferTrustedStructuredRequirementText(
+      entry,
+      trustedLocalById.get(normalizeRequirementId(entry.id)),
+    ),
   );
   const generatedRequirementIds = new Set(
     generatedPdfLedger.map((entry) => normalizeRequirementId(entry.id)),
@@ -23365,6 +23372,26 @@ async function createJsonCompletionWithFileInputs<T>(input: {
   });
 }
 
+async function createCustomerAnalysisV3Completion<T>(input: {
+  system: string;
+  user: string;
+  model?: string;
+}) {
+  return runStructuredJsonResponse<T>({
+    ...input,
+    schemaName: "customer_analysis_v3",
+    schema: CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
+    reasoningEffort: FAST_REASONING_EFFORT,
+    verbosity: "medium",
+    maxOutputTokens: 12_000,
+    promptCacheKey: "customer-analysis-v3",
+    getClient,
+    defaultModel: DOCUMENT_ANALYSIS_MODEL,
+    defaultReasoningEffort: FAST_REASONING_EFFORT,
+    supportsCustomTemperature,
+  });
+}
+
 async function createTextCompletion(input: {
   system: string;
   user: string;
@@ -23504,7 +23531,8 @@ export async function analyzeCustomerDocuments(input: {
     input.customerDocument,
     ...input.supportingDocuments,
   ];
-  const intelligenceContexts = isDocumentIntelligenceV2Enabled()
+  const v3Enabled = isDocumentAnalysisV3Enabled();
+  const intelligenceContexts = isDocumentAnalysisEnabled()
     ? await listDocumentIntelligenceContexts({
         projectId: input.customerDocument.project_id,
         documentIds: analysisDocuments.map((document) => document.id),
@@ -23526,7 +23554,7 @@ export async function analyzeCustomerDocuments(input: {
         ) {
           return false;
         }
-        return shouldUseCompiledCustomerAnalysisContext({
+        return v3Enabled || shouldUseCompiledCustomerAnalysisContext({
           rawTextLength: document.raw_text.length,
           analysisContextLength: context.analysisContext.length,
           isPrimaryDocument: document.id === input.customerDocument.id,
@@ -23534,112 +23562,153 @@ export async function analyzeCustomerDocuments(input: {
       })
       .map((context) => [context.documentId, context]),
   );
-  const primaryIntelligenceContext = currentContexts.get(
-    input.customerDocument.id,
-  );
-  const compiledEvidenceContext = [
-    primaryIntelligenceContext
-      ? primaryIntelligenceContext.analysisContext.slice(0, 8_000)
-      : "",
-    ...input.supportingDocuments.slice(0, 2).map((document) =>
-      (currentContexts.get(document.id)?.analysisContext ?? "").slice(0, 3_000),
-    ),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const analysisFoundationFacts = collectArtifactFoundationFacts({
+    documents: analysisDocuments,
+    serviceDocuments: [],
+  });
+  const useCanonicalV3Context =
+    v3Enabled &&
+    analysisDocuments.length > 0 &&
+    analysisDocuments.every((document) => currentContexts.has(document.id));
+  let userPrompt: string;
+  let result: CustomerAnalysisResult;
+  let retrievalUsed = false;
+
+  if (useCanonicalV3Context) {
+    userPrompt = buildCustomerAnalysisV3UserPrompt({
+      projectName: input.projectName,
+      documents: analysisDocuments.map((document) => ({
+        documentId: document.id,
+        title: document.title,
+        role: document.role,
+        context: currentContexts.get(document.id)?.analysisContext ?? "",
+      })),
+      foundationFacts: buildCustomerAnalysisFactsContext(
+        analysisFoundationFacts,
+      ),
+      serviceCandidates: serviceRecommendationContext(input.serviceCandidates),
+    });
+    result = await createCustomerAnalysisV3Completion<CustomerAnalysisResult>({
+      system: buildCustomerAnalysisV3SystemPrompt(),
+      user: userPrompt,
+      model: input.model ?? DOCUMENT_ANALYSIS_MODEL,
+    });
+  } else {
+    const primaryIntelligenceContext = currentContexts.get(
+      input.customerDocument.id,
+    );
+    const compiledEvidenceContext = [
+      primaryIntelligenceContext
+        ? primaryIntelligenceContext.analysisContext.slice(0, 8_000)
+        : "",
+      ...input.supportingDocuments.slice(0, 2).map((document) =>
+        (currentContexts.get(document.id)?.analysisContext ?? "").slice(0, 3_000),
+      ),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const analysisRetrieval = await retrieveDocumentSnippetsWithMetadata({
+      query: [
+        input.projectName,
+        "kundens behov mål krav risiko evalueringskriterier forutsetninger arkitektur løsning verdi",
+      ].join("\n"),
+      projectId: input.customerDocument.project_id,
+      documents: analysisDocuments,
+      exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål"],
+      limit: 10,
+    });
+    retrievalUsed = true;
+    const supportingContexts = input.supportingDocuments
+      .slice(0, 2)
+      .map((document, index) => {
+        if (currentContexts.has(document.id)) return "";
+        return documentContext(`Støttedokument ${index + 1}`, document, {
+          textLimit: 4000,
+          structureLimit: 6,
+          structureTextLimit: 160,
+        });
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    userPrompt = [
+      "Analyser prosjektet og returner kun gyldig JSON.",
+      "Skill tydelig mellom eksplisitte krav og implisitte krav.",
+      "Alle verdiutsagn må knyttes til nøyaktig én av de fire faste verdikategoriene.",
+      "",
+      buildDelimitedContext(
+        "Prosjekt",
+        `Prosjektnavn: ${input.projectName}\nArbeid som et tilbudsteam som skal forstå kunden dypt og bruke funnene i posisjonering, løsningsarbeid og tilbudsbesvarelse.`,
+      ),
+      buildCustomerAnalysisFactsContext(analysisFoundationFacts),
+      documentContext("Primært kundedokument", input.customerDocument, {
+        textLimit: primaryIntelligenceContext ? 800 : 12000,
+        structureLimit: primaryIntelligenceContext ? 4 : 10,
+        structureTextLimit: 180,
+      }),
+      compiledEvidenceContext
+        ? buildDelimitedContext(
+            "Forhåndskompilert dokumentevidens",
+            compiledEvidenceContext,
+          )
+        : "",
+      retrievedSnippetContext(
+        "Semantisk dokumentdekning",
+        analysisRetrieval.snippets,
+        { textLimit: 1200 },
+      ),
+      buildDelimitedContext(
+        "Retrieval-kvalitet",
+        promptJson(analysisRetrieval.telemetry.quality),
+      ),
+      buildDelimitedContext(
+        "Dokumentdekningsregel",
+        "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
+      ),
+      serviceRecommendationContext(input.serviceCandidates),
+      supportingContexts
+        ? buildDelimitedContext(
+            "Tilleggsregel",
+            "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.",
+          )
+        : "",
+      supportingContexts,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    result = await createJsonCompletion<CustomerAnalysisResult>({
+      system: buildCustomerAnalysisPrompt(),
+      user: userPrompt,
+      temperature: 0.1,
+      model: input.model ?? ANALYSIS_MODEL,
+      reasoningEffort: FAST_REASONING_EFFORT,
+      promptCacheKey: promptCacheFamily("customer-analysis"),
+    });
+  }
+
   await recordDocumentIntelligenceEvent({
     projectId: input.customerDocument.project_id,
     eventType: "customer_analysis_used",
     sourceRevision: input.customerDocument.chunk_source_revision,
     metadata: {
+      pipeline_version: useCanonicalV3Context
+        ? "document-analysis.v3"
+        : v3Enabled
+          ? "legacy-fallback"
+          : "legacy",
+      context_mode: useCanonicalV3Context ? "canonical" : "hybrid",
       document_count: analysisDocuments.length,
       compiled_document_count: currentContexts.size,
       legacy_fallback_count: Math.max(
         0,
         analysisDocuments.length - currentContexts.size,
       ),
+      retrieval_used: retrievalUsed,
+      prompt_chars: userPrompt.length,
+      model: input.model ??
+        (useCanonicalV3Context ? DOCUMENT_ANALYSIS_MODEL : ANALYSIS_MODEL),
     },
   }).catch(() => false);
-  const analysisRetrieval = await retrieveDocumentSnippetsWithMetadata({
-    query: [
-      input.projectName,
-      "kundens behov mål krav risiko evalueringskriterier forutsetninger arkitektur løsning verdi",
-    ].join("\n"),
-    projectId: input.customerDocument.project_id,
-    documents: [input.customerDocument, ...input.supportingDocuments],
-    exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål"],
-    limit: 10,
-  });
-  const analysisSnippets = analysisRetrieval.snippets;
-  const supportingContexts = input.supportingDocuments
-    .slice(0, 2)
-    .map((document, index) => {
-      if (currentContexts.has(document.id)) return "";
-      return documentContext(`Støttedokument ${index + 1}`, document, {
-        textLimit: 4000,
-        structureLimit: 6,
-        structureTextLimit: 160,
-      });
-    })
-    .filter(Boolean)
-    .join("\n\n");
-  const analysisFoundationFacts = collectArtifactFoundationFacts({
-    documents: [input.customerDocument, ...input.supportingDocuments],
-    serviceDocuments: [],
-  });
-
-  const userPrompt = [
-    "Analyser prosjektet og returner kun gyldig JSON.",
-    "Skill tydelig mellom eksplisitte krav og implisitte krav.",
-    "Alle verdiutsagn må knyttes til nøyaktig én av de fire faste verdikategoriene.",
-    "",
-    buildDelimitedContext(
-      "Prosjekt",
-      `Prosjektnavn: ${input.projectName}\nArbeid som et tilbudsteam som skal forstå kunden dypt og bruke funnene i posisjonering, løsningsarbeid og tilbudsbesvarelse.`,
-    ),
-    buildCustomerAnalysisFactsContext(analysisFoundationFacts),
-    documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: primaryIntelligenceContext ? 800 : 12000,
-      structureLimit: primaryIntelligenceContext ? 4 : 10,
-      structureTextLimit: 180,
-    }),
-    compiledEvidenceContext
-      ? buildDelimitedContext(
-          "Forhåndskompilert dokumentevidens",
-          compiledEvidenceContext,
-        )
-      : "",
-    retrievedSnippetContext("Semantisk dokumentdekning", analysisSnippets, {
-      textLimit: 1200,
-    }),
-    buildDelimitedContext(
-      "Retrieval-kvalitet",
-      promptJson(analysisRetrieval.telemetry.quality),
-    ),
-    buildDelimitedContext(
-      "Dokumentdekningsregel",
-      "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
-    ),
-    serviceRecommendationContext(input.serviceCandidates),
-    supportingContexts
-      ? buildDelimitedContext(
-          "Tilleggsregel",
-          "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.",
-        )
-      : "",
-    supportingContexts,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const result = await createJsonCompletion<CustomerAnalysisResult>({
-    system: buildCustomerAnalysisPrompt(),
-    user: userPrompt,
-    temperature: 0.1,
-    model: input.model ?? ANALYSIS_MODEL,
-    reasoningEffort: FAST_REASONING_EFFORT,
-    promptCacheKey: promptCacheFamily("customer-analysis"),
-  });
 
   const signalSourceText = [
     input.customerDocument.raw_text,

@@ -1,7 +1,12 @@
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { normalizePdfReferenceTypography } from "@/lib/server/requirements/pdf-normalization";
 
-export const LOCAL_PDF_LAYOUT_PARSER = "pdf-parse-local-layout-v2";
+export const LEGACY_LOCAL_PDF_LAYOUT_PARSER = "pdf-parse-local-layout-v2";
+export const LOCAL_PDF_LAYOUT_PARSER = "pdf-parse-local-layout-v3";
+
+export function isLocalPdfLayoutParser(parser: string | null | undefined) {
+  return parser === LOCAL_PDF_LAYOUT_PARSER || parser === LEGACY_LOCAL_PDF_LAYOUT_PARSER;
+}
 
 export type LocalPdfTextItem = {
   str: string;

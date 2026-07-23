@@ -25,10 +25,41 @@ const { normalizeNorwegianTextForSearch, detectNorwegianParseAnomalies } =
       "lib/server/document-intelligence/norwegian-language.ts",
     ),
   );
-const { isDocumentIntelligenceV2Enabled } = await jiti.import(
+const {
+  documentAnalysisVersion,
+  isDocumentAnalysisEnabled,
+  isDocumentAnalysisV3Enabled,
+} = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/document-intelligence/config.ts",
+  ),
+);
+const {
+  buildCanonicalDocumentProjection,
+  canonicalizeNorwegianDocumentText,
+  diagnoseNorwegianDocumentText,
+} = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/canonical-document.ts",
+  ),
+);
+const { preferTrustedStructuredRequirementText } = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/requirement-text.ts",
+  ),
+);
+const {
+  buildCustomerAnalysisV3SystemPrompt,
+  buildCustomerAnalysisV3UserPrompt,
+  CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
+  CUSTOMER_ANALYSIS_V3_REQUIRED_FIELDS,
+} = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/customer-analysis-v3.ts",
   ),
 );
 const { chooseDocumentParserRoute } = await jiti.import(
@@ -87,7 +118,8 @@ test("Norwegian normalization repairs known PDF artifacts without changing evide
   );
 });
 
-test("document intelligence v2 is opt-in and off restores the legacy PDF parser contract", async () => {
+test("document analysis v3 is opt-in and off restores the legacy PDF parser contract", async () => {
+  const configuredVersion = process.env.DOCUMENT_ANALYSIS_VERSION;
   const previous = process.env.DOCUMENT_INTELLIGENCE_V2;
   const pdfPath = path.join(
     repositoryRoot,
@@ -95,10 +127,12 @@ test("document intelligence v2 is opt-in and off restores the legacy PDF parser 
   );
   const buffer = await readFile(pdfPath);
   try {
+    delete process.env.DOCUMENT_ANALYSIS_VERSION;
     delete process.env.DOCUMENT_INTELLIGENCE_V2;
-    assert.equal(isDocumentIntelligenceV2Enabled(), false);
+    assert.equal(isDocumentAnalysisEnabled(), false);
+    assert.equal(documentAnalysisVersion(), "off");
 
-    process.env.DOCUMENT_INTELLIGENCE_V2 = "off";
+    process.env.DOCUMENT_ANALYSIS_VERSION = "off";
     const legacy = await extractTextFromBuffer({
       buffer,
       fileName: path.basename(pdfPath),
@@ -110,24 +144,166 @@ test("document intelligence v2 is opt-in and off restores the legacy PDF parser 
     assert.ok(legacy.sourceMap.length > 0);
     assert.ok(legacy.sourceMap.every((entry) => entry.kind === undefined));
 
-    process.env.DOCUMENT_INTELLIGENCE_V2 = "on";
-    const v2 = await extractTextFromBuffer({
+    process.env.DOCUMENT_ANALYSIS_VERSION = "v3";
+    const v3 = await extractTextFromBuffer({
       buffer,
       fileName: path.basename(pdfPath),
       contentType: "application/pdf",
       role: "primary_customer_document",
       useDocling: false,
     });
-    assert.equal(v2.parserUsed, LOCAL_PDF_LAYOUT_PARSER);
-    assert.equal(v2.rawText, legacy.rawText);
-    assert.ok(v2.sourceMap.some((entry) => entry.kind));
+    assert.equal(isDocumentAnalysisV3Enabled(), true);
+    assert.equal(v3.parserUsed, LOCAL_PDF_LAYOUT_PARSER);
+    assert.equal(v3.rawText, legacy.rawText);
+    assert.ok(v3.sourceMap.some((entry) => entry.kind));
+
+    delete process.env.DOCUMENT_ANALYSIS_VERSION;
+    process.env.DOCUMENT_INTELLIGENCE_V2 = "on";
+    assert.equal(documentAnalysisVersion(), "v3");
   } finally {
+    if (configuredVersion === undefined) {
+      delete process.env.DOCUMENT_ANALYSIS_VERSION;
+    } else {
+      process.env.DOCUMENT_ANALYSIS_VERSION = configuredVersion;
+    }
     if (previous === undefined) {
       delete process.env.DOCUMENT_INTELLIGENCE_V2;
     } else {
       process.env.DOCUMENT_INTELLIGENCE_V2 = previous;
     }
   }
+});
+
+test("canonical Norwegian projection repairs notation while preserving source evidence", () => {
+  const source = "leverandøren skal støtte Kundenog migrere arbeids-\nstasjon ,uten avvik";
+  assert.deepEqual(diagnoseNorwegianDocumentText(source, { sentenceLike: true }), [
+    "joined_party_word",
+    "space_before_punctuation",
+    "missing_space_after_punctuation",
+    "lowercase_sentence_start",
+    "missing_terminal_punctuation",
+  ]);
+  assert.equal(
+    canonicalizeNorwegianDocumentText(source, { sentenceLike: true }),
+    "Leverandøren skal støtte Kunden og migrere arbeidsstasjon, uten avvik.",
+  );
+
+  const projection = buildCanonicalDocumentProjection({
+    rawText: source,
+    structureMap: [
+      {
+        reference: "Kravtabell 1, rad 1, side 2",
+        text: "KR-1-2 Må leverandøren skal støtte Kundenog migrere arbeids-\nstasjon ,uten avvik",
+        kind: "table",
+        parser: LOCAL_PDF_LAYOUT_PARSER,
+        page: 2,
+        cells: {
+          "Krav-ID": "KR-1-2",
+          Prioritet: "Må",
+          Kravtekst: source,
+        },
+      },
+    ],
+    title: "Kravgrunnlag",
+    parserUsed: LOCAL_PDF_LAYOUT_PARSER,
+  });
+  assert.equal(projection.blocks[0].sourceText.startsWith("KR-1-2 Må"), true);
+  assert.equal(
+    projection.blocks[0].canonicalText,
+    "Krav-ID: KR-1-2 | Prioritet: Må | Kravtekst: Leverandøren skal støtte Kunden og migrere arbeidsstasjon, uten avvik.",
+  );
+  assert.equal(projection.languageQuality.sourcePreserved, true);
+  assert.equal(projection.languageQuality.canonicalDiagnosticCount, 0);
+});
+
+test("trusted local requirement rows replace only matching truncated generated text", () => {
+  const generated = {
+    id: "KR-063-34",
+    text: "Det skal være mulig å følge status på migrering fra sakssystem med begrensede",
+    pages: [7],
+    heading: "Migrering",
+    sourceExcerpt: "kort utdrag",
+  };
+  const trusted = {
+    ...generated,
+    text: "Det skal være mulig å følge status på migrering fra sakssystem med begrensede API-er, e-postmapper og filserver med tellinger, avvik og godkjenningspunkt.",
+    sourceExcerpt: "komplett tabellcelle",
+  };
+  assert.equal(
+    preferTrustedStructuredRequirementText(generated, trusted).text,
+    trusted.text,
+  );
+  assert.equal(
+    preferTrustedStructuredRequirementText(
+      { ...generated, text: `Rad 34 ${trusted.text} Må` },
+      trusted,
+    ).text,
+    trusted.text,
+  );
+  assert.equal(
+    preferTrustedStructuredRequirementText(generated, {
+      ...trusted,
+      text: "Leverandøren skal levere et helt annet krav.",
+    }).text,
+    generated.text,
+  );
+  assert.equal(
+    preferTrustedStructuredRequirementText(
+      { ...generated, text: `${generated.text}.` },
+      {
+        ...trusted,
+        text: `${generated.text}. - se notat: Kunden ønsker en annen arbeidsflyt.`,
+      },
+    ).text,
+    `${generated.text}.`,
+  );
+});
+
+test("customer analysis v3 has one lean strict contract and one context per document", () => {
+  const system = buildCustomerAnalysisV3SystemPrompt();
+  assert.ok(system.length < 5_000);
+  assert.match(system, /korrekt norsk bokmål/u);
+  assert.match(system, /source_reference/u);
+  assert.match(system, /samlet være 100/u);
+
+  assert.equal(CUSTOMER_ANALYSIS_V3_JSON_SCHEMA.additionalProperties, false);
+  assert.deepEqual(
+    CUSTOMER_ANALYSIS_V3_JSON_SCHEMA.required,
+    [...CUSTOMER_ANALYSIS_V3_REQUIRED_FIELDS],
+  );
+  assert.equal(CUSTOMER_ANALYSIS_V3_REQUIRED_FIELDS.length, 19);
+  assert.equal(
+    CUSTOMER_ANALYSIS_V3_JSON_SCHEMA.properties.implicit_requirements.maxItems,
+    3,
+  );
+  assert.equal(
+    "minItems" in
+      CUSTOMER_ANALYSIS_V3_JSON_SCHEMA.properties.implicit_requirements,
+    false,
+  );
+
+  const user = buildCustomerAnalysisV3UserPrompt({
+    projectName: "Norsk anskaffelse",
+    documents: [
+      {
+        documentId: "primary",
+        title: "Kravgrunnlag",
+        role: "primary_customer_document",
+        context: "Krav-ID: KR-1 | Kravtekst: Løsningen skal ha revisjonsspor.",
+      },
+      {
+        documentId: "support",
+        title: "Vedlegg",
+        role: "supporting_document",
+        context: "Tilbudsfrist er 1. august 2026 kl. 12:00.",
+      },
+    ],
+    foundationFacts: "Ingen oppdiktede fakta.",
+  });
+  assert.equal(user.match(/BEGIN_CANONICAL_DOCUMENT_/gu)?.length, 2);
+  assert.equal(user.match(/END_CANONICAL_DOCUMENT_/gu)?.length, 2);
+  assert.equal(user.match(/Krav-ID: KR-1/gu)?.length, 1);
+  assert.doesNotMatch(user, /Semantisk dokumentdekning|Retrieval-kvalitet/u);
 });
 
 test("quality routing keeps clean documents fast and tries local structure before Azure", () => {
@@ -211,7 +387,7 @@ test("customer analysis keeps source-rich local context until compression is nec
 });
 
 test("customer analysis rejects stale source revisions and compiler versions", () => {
-  const compilerVersion = "evidence-compiler.1.1.0";
+  const compilerVersion = "document-analysis.3.0.0";
   assert.equal(
     isCurrentDocumentIntelligenceContext({
       sourceRevision: 4,
@@ -232,7 +408,7 @@ test("customer analysis rejects stale source revisions and compiler versions", (
     isCurrentDocumentIntelligenceContext({
       sourceRevision: 4,
       documentSourceRevision: 4,
-      compilerVersion: "evidence-compiler.1.0.0",
+      compilerVersion: "evidence-compiler.1.1.0",
     }),
     false,
   );
@@ -319,7 +495,8 @@ test("evidence compiler creates stable, exact and source-addressable Norwegian e
     (evidence) => evidence.kind === "requirement",
   );
   assert.ok(requirement);
-  assert.match(requirement.text, /L everandøren/u);
+  assert.match(requirement.text, /Leverandøren/u);
+  assert.match(requirement.sourceText, /L everandøren/u);
   assert.match(requirement.normalizedText, /Leverandøren/u);
   assert.equal(requirement.provenance.page, 6);
   assert.equal(requirement.provenance.sourceId, "table-0-row-1");
@@ -473,13 +650,24 @@ test("document intelligence migration is service-only and stores encrypted paylo
 });
 
 test("document intelligence A/B hard corpus is configured without machine-specific paths", async () => {
-  const source = await readFile(
-    path.join(repositoryRoot, "scripts/document_intelligence_ab_eval.mjs"),
-    "utf8",
-  );
-  assert.doesNotMatch(source, /\/Users\//u);
-  assert.match(source, /--hard-corpus-root/u);
-  assert.match(source, /DOCUMENT_INTELLIGENCE_HARD_CORPUS_ROOT/u);
+  const [v2Source, v3Source] = await Promise.all([
+    readFile(
+      path.join(repositoryRoot, "scripts/document_intelligence_ab_eval.mjs"),
+      "utf8",
+    ),
+    readFile(
+      path.join(repositoryRoot, "scripts/document_analysis_v3_eval.mjs"),
+      "utf8",
+    ),
+  ]);
+  assert.doesNotMatch(v2Source, /\/Users\//u);
+  assert.match(v2Source, /--hard-corpus-root/u);
+  assert.match(v2Source, /DOCUMENT_INTELLIGENCE_HARD_CORPUS_ROOT/u);
+  assert.doesNotMatch(v3Source, /\/Users\//u);
+  assert.match(v3Source, /ABSOLUTE_BUDGET_CAP_USD = 15/u);
+  assert.match(v3Source, /store: false/u);
+  assert.match(v3Source, /"gpt-5\.6-terra"/u);
+  assert.match(v3Source, /"gpt-5\.6-sol"/u);
 });
 
 test("production deployment keeps document intelligence opt-in and password ownership stable", async () => {
@@ -494,9 +682,12 @@ test("production deployment keeps document intelligence opt-in and password owne
       "utf8",
     ),
   ]);
-  assert.match(envExample, /^DOCUMENT_INTELLIGENCE_V2=off$/mu);
-  assert.match(bicep, /param documentIntelligenceV2 string = 'off'/u);
+  assert.match(envExample, /^DOCUMENT_ANALYSIS_VERSION=off$/mu);
+  assert.match(envExample, /^OPENAI_DOCUMENT_ANALYSIS_MODEL=gpt-5\.6-terra$/mu);
+  assert.match(bicep, /param documentAnalysisVersion string = 'off'/u);
+  assert.match(bicep, /param openAiDocumentAnalysisModel string = 'gpt-5\.6-terra'/u);
   assert.match(bicep, /name: 'APP_PASSWORD_OWNER_ID'/u);
-  assert.match(workflow, /DOCUMENT_INTELLIGENCE_V2:.*'off'/u);
+  assert.match(workflow, /DOCUMENT_ANALYSIS_VERSION:.*'off'/u);
+  assert.match(workflow, /OPENAI_DOCUMENT_ANALYSIS_MODEL:.*'gpt-5\.6-terra'/u);
   assert.match(workflow, /sharedAppUserId="\$APP_PASSWORD_OWNER_ID"/u);
 });

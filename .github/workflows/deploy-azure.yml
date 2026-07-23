@@ -235,7 +235,8 @@ jobs:
           APP_PASSWORD_OWNER_ID: ${{ vars.APP_PASSWORD_OWNER_ID || 'u_password_owner_default_000000000000000000000000' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
-          DOCUMENT_INTELLIGENCE_V2: ${{ vars.DOCUMENT_INTELLIGENCE_V2 || 'off' }}
+          OPENAI_DOCUMENT_ANALYSIS_MODEL: ${{ vars.OPENAI_DOCUMENT_ANALYSIS_MODEL || 'gpt-5.6-terra' }}
+          DOCUMENT_ANALYSIS_VERSION: ${{ vars.DOCUMENT_ANALYSIS_VERSION || 'off' }}
           AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT }}
           AZURE_DOCUMENT_INTELLIGENCE_KEY: ${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_KEY }}
           AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION || 'auto' }}
@@ -277,7 +278,8 @@ jobs:
             sharedAppUserId="$APP_PASSWORD_OWNER_ID"
             openAiApiKey="$OPENAI_API_KEY"
             openAiModel="$OPENAI_MODEL"
-            documentIntelligenceV2="$DOCUMENT_INTELLIGENCE_V2"
+            openAiDocumentAnalysisModel="$OPENAI_DOCUMENT_ANALYSIS_MODEL"
+            documentAnalysisVersion="$DOCUMENT_ANALYSIS_VERSION"
             azureDocumentIntelligenceEndpoint="$AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"
             azureDocumentIntelligenceKey="$AZURE_DOCUMENT_INTELLIGENCE_KEY"
             azureDocumentIntelligenceHighResolution="$AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION"

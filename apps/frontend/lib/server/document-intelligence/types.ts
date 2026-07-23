@@ -1,7 +1,11 @@
 import type { ProjectDocumentStructureEntry } from "@/lib/types";
+import type {
+  CanonicalDocumentBlock,
+  CanonicalDocumentProjection,
+} from "@/lib/server/document-intelligence/canonical-document";
 
-export const DOCUMENT_INTELLIGENCE_SCHEMA_VERSION = "evidence-graph.v1";
-export const DOCUMENT_INTELLIGENCE_COMPILER_VERSION = "evidence-compiler.1.1.0";
+export const DOCUMENT_INTELLIGENCE_SCHEMA_VERSION = "document-analysis.v3";
+export const DOCUMENT_INTELLIGENCE_COMPILER_VERSION = "document-analysis.3.0.0";
 
 export type DocumentEvidenceKind =
   | "requirement"
@@ -64,7 +68,10 @@ export interface DocumentEvidenceProvenance {
 export interface DocumentEvidenceUnit {
   id: string;
   kind: DocumentEvidenceKind;
+  /** Canonical Norwegian text used by retrieval and analysis. */
   text: string;
+  /** Immutable parser output retained for citations, audits, and reprocessing. */
+  sourceText: string;
   normalizedText: string;
   provenance: DocumentEvidenceProvenance;
   signals: string[];
@@ -82,6 +89,9 @@ export interface DocumentIntelligenceArtifact {
   compiledAt: string;
   parserUsed: string;
   routing: DocumentRoutingDecision;
+  canonicalText: string;
+  canonicalBlocks: CanonicalDocumentBlock[];
+  languageQuality: CanonicalDocumentProjection["languageQuality"];
   evidence: DocumentEvidenceUnit[];
   evidenceCounts: Partial<Record<DocumentEvidenceKind, number>>;
   analysisContext: string;

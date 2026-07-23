@@ -33,9 +33,14 @@ import {
   selectBestDocumentParse,
   type DocumentParseSelection,
 } from "@/lib/server/document-intelligence/parse-orchestrator";
-import { LOCAL_PDF_LAYOUT_PARSER } from "@/lib/server/document-intelligence/local-pdf-layout";
+import {
+  isLocalPdfLayoutParser,
+} from "@/lib/server/document-intelligence/local-pdf-layout";
 import { recordDocumentIntelligenceEvent } from "@/lib/server/document-intelligence/repository";
-import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
+import {
+  isDocumentAnalysisEnabled,
+  isDocumentAnalysisV3Enabled,
+} from "@/lib/server/document-intelligence/config";
 import {
   getFreshCustomerAnalysis,
   getFreshSolutionEvaluationSnapshot,
@@ -517,6 +522,9 @@ function shouldRunDoclingEnhancement(input: {
   structureMap?: ProjectDocumentDetail["structure_map"];
   fileSizeBytes: number;
 }) {
+  if (isDocumentAnalysisV3Enabled() && input.fileFormat === "pdf") {
+    return false;
+  }
   if (
     !isDoclingEnabled() ||
     input.parserUsed === "docling" ||
@@ -532,7 +540,7 @@ function shouldRunDoclingEnhancement(input: {
 
   const poorPdfExtraction =
     input.fileFormat === "pdf" && looksLikePoorPdfExtraction(input);
-  if (!isDocumentIntelligenceV2Enabled()) {
+  if (!isDocumentAnalysisEnabled()) {
     return (
       input.role === "primary_customer_document" ||
       isExplicitRequirementSupportingSubtype(input.supportingSubtype ?? null) ||
@@ -545,7 +553,7 @@ function shouldRunDoclingEnhancement(input: {
   const localStructuredRows =
     input.structureMap?.filter(
       (entry) =>
-        entry.kind === "table" && entry.parser === LOCAL_PDF_LAYOUT_PARSER,
+        entry.kind === "table" && isLocalPdfLayoutParser(entry.parser),
     ).length ?? 0;
   if (localStructuredRows >= 3 && !poorPdfExtraction) {
     return false;

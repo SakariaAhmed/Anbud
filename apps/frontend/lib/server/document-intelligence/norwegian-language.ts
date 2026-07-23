@@ -1,11 +1,4 @@
-const MOJIBAKE_REPAIRS: ReadonlyArray<readonly [string, string]> = [
-  ["Ã¦", "æ"],
-  ["Ã¸", "ø"],
-  ["Ã¥", "å"],
-  ["Ã†", "Æ"],
-  ["Ã˜", "Ø"],
-  ["Ã…", "Å"],
-];
+import { canonicalizeNorwegianDocumentText } from "@/lib/server/document-intelligence/canonical-document";
 
 export type NorwegianParseAnomalyCode =
   | "mojibake"
@@ -21,23 +14,7 @@ export type NorwegianParseAnomalyCode =
  * citations and audits.
  */
 export function normalizeNorwegianTextForSearch(value: string) {
-  let text = String(value ?? "").normalize("NFKC");
-  for (const [broken, repaired] of MOJIBAKE_REPAIRS) {
-    text = text.replaceAll(broken, repaired);
-  }
-
-  return text
-    .replace(/[\u00AD\u200B\uFEFF]/gu, "")
-    .replace(/([\p{Ll}æøå])[-‐‑]\s*\n\s*([\p{Ll}æøå])/gu, "$1$2")
-    .replace(
-      /\b([LK])\s+(everans(?:e|en|ens)|everandør(?:en|ens)?|unden|undens)\b/gu,
-      "$1$2",
-    )
-    .replace(/\b(Kunden|Leverandøren|Leveransen)(?=(?:og|eller|skal|må|kan|har|er)\b)/giu, "$1 ")
-    .replace(/\bI\s*D\s*(\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/giu, "ID $1-$2")
-    .replace(/[‐‑‒–—]/gu, "-")
-    .replace(/\s+/gu, " ")
-    .trim();
+  return canonicalizeNorwegianDocumentText(value).replace(/[‐‑‒–—]/gu, "-");
 }
 
 export function detectNorwegianParseAnomalies(input: {

@@ -7,6 +7,7 @@ import {
   detectNorwegianParseAnomalies,
   normalizeNorwegianTextForSearch,
 } from "@/lib/server/document-intelligence/norwegian-language";
+import { buildCanonicalDocumentProjection } from "@/lib/server/document-intelligence/canonical-document";
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -32,11 +33,19 @@ function suspiciousCharacterRatio(text: string) {
 
 export function evaluateDocumentParseQuality(input: {
   rawText: string;
+  canonicalText?: string;
   sourceMap: ProjectDocumentStructureEntry[];
   fileFormat: string;
   fileSizeBytes: number;
 }): DocumentParseQuality {
-  const text = input.rawText.trim();
+  const sourceText = input.rawText.trim();
+  const text =
+    input.canonicalText?.trim() ||
+    buildCanonicalDocumentProjection({
+      rawText: input.rawText,
+      structureMap: input.sourceMap,
+    }).canonicalText ||
+    sourceText;
   const pages = new Set(
     input.sourceMap
       .map((entry) => entry.page)
@@ -47,13 +56,25 @@ export function evaluateDocumentParseQuality(input: {
       .filter((entry) => entry.kind?.includes("table") || entry.kind === "table")
       .map((entry, index) => entry.table_index ?? `entry-${index}`),
   ).size;
-  const norwegianAnomalies = detectNorwegianParseAnomalies({
+  const canonicalAnomalies = detectNorwegianParseAnomalies({
     text,
     hasStructuredTables: tableCount > 0,
   });
+  const sourceAnomalies = detectNorwegianParseAnomalies({
+    text: sourceText,
+    hasStructuredTables: tableCount > 0,
+  });
+  const norwegianAnomalies = [
+    ...new Set([
+      ...canonicalAnomalies,
+      ...sourceAnomalies.filter(
+        (anomaly) => anomaly === "unstructured_requirement_table",
+      ),
+    ]),
+  ];
   const suspiciousRatio = suspiciousCharacterRatio(text);
   const textCoverage = clamp(
-    text.length /
+    sourceText.length /
       Math.max(
         input.fileFormat === "pdf" ? 1_200 : 500,
         Math.min(40_000, input.fileSizeBytes * (input.fileFormat === "pdf" ? 0.01 : 0.025)),
@@ -63,7 +84,9 @@ export function evaluateDocumentParseQuality(input: {
   const structureCoverage = clamp(
     input.sourceMap.length / Math.max(6, pages.size * 5 || 6),
   );
-  const searchableText = normalizeNorwegianTextForSearch(text);
+  const searchableText = normalizeNorwegianTextForSearch(
+    `${sourceText}\n${text}`,
+  );
   const hasRequirementSignals =
     /\b(?:krav|skal|må|shall|must|required|requirement)\b/iu.test(searchableText);
   const hasEvaluationSignals =
@@ -99,6 +122,7 @@ export function evaluateDocumentParseQuality(input: {
 
 export function chooseDocumentParserRoute(input: {
   rawText: string;
+  canonicalText?: string;
   sourceMap: ProjectDocumentStructureEntry[];
   fileFormat: string;
   fileSizeBytes: number;

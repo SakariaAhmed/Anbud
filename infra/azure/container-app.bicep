@@ -77,12 +77,15 @@ param openAiApiKey string
 @description('Optional OpenAI model override.')
 param openAiModel string = 'gpt-5.4'
 
-@description('Enables the adaptive evidence compiler and document quality router.')
+@description('OpenAI model used only by the v3 customer-document analysis path.')
+param openAiDocumentAnalysisModel string = 'gpt-5.6-terra'
+
+@description('Selects the versioned document parsing and analysis pipeline.')
 @allowed([
-  'on'
   'off'
+  'v3'
 ])
-param documentIntelligenceV2 string = 'off'
+param documentAnalysisVersion string = 'off'
 
 @description('Optional Azure AI Document Intelligence endpoint. Leave empty to use the local layout parser with Docling fallback.')
 param azureDocumentIntelligenceEndpoint string = ''
@@ -332,6 +335,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               value: openAiModel
             }
             {
+              name: 'OPENAI_DOCUMENT_ANALYSIS_MODEL'
+              value: openAiDocumentAnalysisModel
+            }
+            {
               name: 'PROJECT_JOB_WORKER_TOKEN'
               secretRef: 'project-job-worker-token'
             }
@@ -344,8 +351,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               value: doclingAsyncAutoRun
             }
             {
-              name: 'DOCUMENT_INTELLIGENCE_V2'
-              value: documentIntelligenceV2
+              name: 'DOCUMENT_ANALYSIS_VERSION'
+              value: documentAnalysisVersion
             }
             {
               name: 'AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION'
@@ -540,6 +547,10 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               value: openAiModel
             }
             {
+              name: 'OPENAI_DOCUMENT_ANALYSIS_MODEL'
+              value: openAiDocumentAnalysisModel
+            }
+            {
               name: 'PROJECT_JOB_WORKER_TOKEN'
               secretRef: 'project-job-worker-token'
             }
@@ -556,8 +567,8 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               value: 'off'
             }
             {
-              name: 'DOCUMENT_INTELLIGENCE_V2'
-              value: documentIntelligenceV2
+              name: 'DOCUMENT_ANALYSIS_VERSION'
+              value: documentAnalysisVersion
             }
             {
               name: 'AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION'

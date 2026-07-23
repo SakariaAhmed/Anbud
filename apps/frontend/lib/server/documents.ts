@@ -13,7 +13,7 @@ import {
   type LocalPdfPage,
   type LocalPdfTextItem,
 } from "@/lib/server/document-intelligence/local-pdf-layout";
-import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
+import { isDocumentAnalysisEnabled } from "@/lib/server/document-intelligence/config";
 import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
@@ -1245,11 +1245,11 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
       },
     });
 
-  const useDocumentIntelligenceV2 = isDocumentIntelligenceV2Enabled();
+  const useDocumentAnalysis = isDocumentAnalysisEnabled();
   const orderedPages = [...pages].sort(
     (left, right) => left.pageNumber - right.pageNumber,
   );
-  const locallyStructured = useDocumentIntelligenceV2
+  const locallyStructured = useDocumentAnalysis
     ? buildLocalPdfDocument({ pages: orderedPages, label })
     : null;
   const rawText = normalizeText(locallyStructured?.rawText || parsed.text);

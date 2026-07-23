@@ -15,7 +15,7 @@ import type {
   DocumentRoutingDecision,
 } from "@/lib/server/document-intelligence/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
-import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
+import { isDocumentAnalysisEnabled } from "@/lib/server/document-intelligence/config";
 
 export type DocumentParseSelection = {
   parsed: ParsedUpload;
@@ -54,7 +54,7 @@ export async function selectBestDocumentParse(input: {
     azureAvailable,
     doclingAvailable: input.doclingAvailable,
   });
-  if (!isDocumentIntelligenceV2Enabled()) {
+  if (!isDocumentAnalysisEnabled()) {
     return {
       parsed: input.fastParsed,
       decision,

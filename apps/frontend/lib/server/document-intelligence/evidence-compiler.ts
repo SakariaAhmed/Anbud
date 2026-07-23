@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { normalizeDocumentChunkStructureMap } from "@/lib/server/document-chunk-structure";
+import { buildCanonicalDocumentProjection } from "@/lib/server/document-intelligence/canonical-document";
 import { chooseDocumentParserRoute } from "@/lib/server/document-intelligence/quality-router";
 import {
   DOCUMENT_INTELLIGENCE_COMPILER_VERSION,
@@ -10,7 +11,6 @@ import {
   type DocumentIntelligenceArtifact,
 } from "@/lib/server/document-intelligence/types";
 import { normalizeNorwegianTextForSearch } from "@/lib/server/document-intelligence/norwegian-language";
-import type { ProjectDocumentStructureEntry } from "@/lib/types";
 
 const MAX_EVIDENCE_UNITS = 240;
 const EVIDENCE_CATEGORY_RESERVE = 6;
@@ -100,7 +100,10 @@ function stableHash(value: string) {
 }
 
 function analysisContextLimit() {
-  const configured = Number(process.env.DOCUMENT_INTELLIGENCE_CONTEXT_CHARS);
+  const configured = Number(
+    process.env.DOCUMENT_ANALYSIS_CONTEXT_CHARS ??
+      process.env.DOCUMENT_INTELLIGENCE_CONTEXT_CHARS,
+  );
   return Number.isFinite(configured) && configured >= 4_000
     ? Math.min(40_000, Math.floor(configured))
     : DEFAULT_ANALYSIS_CONTEXT_CHARS;
@@ -172,6 +175,25 @@ function compactCoverageValue(value: string, limit: number) {
     : `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
+function provenancePageSuffix(
+  provenance: DocumentEvidenceUnit["provenance"],
+) {
+  if (!provenance.page) return "";
+  return new RegExp(`\\bside\\s+${provenance.page}\\b`, "iu").test(
+    provenance.reference,
+  )
+    ? ""
+    : `, side ${provenance.page}`;
+}
+
+function boundedAnalysisContext(lines: string[]) {
+  const joined = lines.join("\n");
+  const limit = analysisContextLimit();
+  return joined.length <= limit
+    ? joined
+    : `${joined.slice(0, Math.max(0, limit - 72)).trimEnd()}\n[avkortet evidenskontekst]`;
+}
+
 function buildAnalysisContext(input: {
   title: string;
   fileName: string;
@@ -179,6 +201,7 @@ function buildAnalysisContext(input: {
   qualityScore: number;
   recommendVisionReview: boolean;
   evidence: DocumentEvidenceUnit[];
+  canonicalBlocks: DocumentIntelligenceArtifact["canonicalBlocks"];
 }) {
   const groups = new Map<
     string,
@@ -206,6 +229,33 @@ function buildAnalysisContext(input: {
       ? "VERIFIKASJON: Dokumentet viser til visuelle elementer som bør granskes separat."
       : "VERIFIKASJON: Ingen uløste visuelle referanser ble prioritert.",
   ];
+  const limit = analysisContextLimit();
+  const canonicalChars = input.canonicalBlocks.reduce(
+    (sum, block) => sum + block.canonicalText.length,
+    0,
+  );
+  if (canonicalChars <= Math.max(4_000, Math.floor(limit * 0.72))) {
+    const kindsByReference = new Map<string, Set<DocumentEvidenceKind>>();
+    for (const unit of input.evidence) {
+      const kinds = kindsByReference.get(unit.provenance.reference) ?? new Set();
+      kinds.add(unit.kind);
+      kindsByReference.set(unit.provenance.reference, kinds);
+    }
+    lines.push("KANONISK KILDE I DOKUMENTREKKEFØLGE:");
+    for (const block of input.canonicalBlocks) {
+      const kinds = [...(kindsByReference.get(block.reference) ?? [])]
+        .sort((left, right) => evidencePriority(right) - evidencePriority(left))
+        .map((kind) => kind.toUpperCase());
+      const page =
+        block.page && !new RegExp(`\\bside\\s+${block.page}\\b`, "iu").test(block.reference)
+          ? `, side ${block.page}`
+          : "";
+      lines.push(
+        `- [${kinds.length ? kinds.join(", ") : "KONTEKST"}] ${block.canonicalText} (kilde: ${block.reference}${page})`,
+      );
+    }
+    return boundedAnalysisContext(lines);
+  }
 
   const orderedGroups = [...groups.values()].sort((left, right) => {
     const leftPriority = Math.max(...[...left.kinds].map(evidencePriority));
@@ -225,7 +275,7 @@ function buildAnalysisContext(input: {
   if (uniqueCoverageGroups.length) {
     lines.push("KATEGORIDEKNING:");
     for (const group of uniqueCoverageGroups) {
-      const page = group.provenance.page ? `, side ${group.provenance.page}` : "";
+      const page = provenancePageSuffix(group.provenance);
       const kinds = [...group.kinds]
         .sort((left, right) => evidencePriority(right) - evidencePriority(left))
         .map((kind) => kind.toUpperCase())
@@ -238,7 +288,7 @@ function buildAnalysisContext(input: {
   }
 
   for (const group of orderedGroups) {
-    const page = group.provenance.page ? `, side ${group.provenance.page}` : "";
+    const page = provenancePageSuffix(group.provenance);
     const kinds = [...group.kinds]
       .sort((left, right) => evidencePriority(right) - evidencePriority(left))
       .map((kind) => kind.toUpperCase())
@@ -248,11 +298,7 @@ function buildAnalysisContext(input: {
     );
   }
 
-  const joined = lines.join("\n");
-  const limit = analysisContextLimit();
-  return joined.length <= limit
-    ? joined
-    : `${joined.slice(0, Math.max(0, limit - 72)).trimEnd()}\n[avkortet evidenskontekst]`;
+  return boundedAnalysisContext(lines);
 }
 
 export function compileDocumentIntelligenceArtifact(input: {
@@ -272,8 +318,15 @@ export function compileDocumentIntelligenceArtifact(input: {
   compiledAt?: string;
 }): DocumentIntelligenceArtifact {
   const structureMap = normalizeDocumentChunkStructureMap(input.structureMap);
+  const canonical = buildCanonicalDocumentProjection({
+    rawText: input.rawText,
+    structureMap,
+    title: input.title,
+    parserUsed: input.parserUsed,
+  });
   const routing = chooseDocumentParserRoute({
     rawText: input.rawText,
+    canonicalText: canonical.canonicalText,
     sourceMap: structureMap,
     fileFormat: input.fileFormat,
     fileSizeBytes: input.fileSizeBytes,
@@ -282,22 +335,12 @@ export function compileDocumentIntelligenceArtifact(input: {
     azureAvailable: input.azureAvailable ?? false,
     doclingAvailable: input.doclingAvailable ?? false,
   });
-  const sources: ProjectDocumentStructureEntry[] = structureMap.length
-    ? structureMap
-    : input.rawText
-        .split(/\n{2,}/u)
-        .map((text, index) => ({
-          reference: `${input.title} avsnitt ${index + 1}`,
-          text,
-          kind: "text" as const,
-          parser: input.parserUsed,
-        }));
   const evidenceByFingerprint = new Map<string, DocumentEvidenceUnit>();
 
-  for (const entry of sources) {
+  for (const entry of canonical.blocks) {
     const isTable =
       entry.kind === "table" || entry.kind?.includes("table") === true;
-    for (const text of evidenceSegments(entry.text, isTable)) {
+    for (const text of evidenceSegments(entry.canonicalText, isTable)) {
       if (text.length < 12) continue;
       const normalizedText = normalizeNorwegianTextForSearch(text);
       const classifications = classifyEvidence(normalizedText, isTable);
@@ -311,6 +354,7 @@ export function compileDocumentIntelligenceArtifact(input: {
         id,
         kind: classification.kind,
         text: text.slice(0, 1_800),
+        sourceText: entry.sourceText.slice(0, 1_800),
         normalizedText: normalizedText.slice(0, 1_800),
         provenance: {
           reference: entry.reference || input.title,
@@ -347,6 +391,7 @@ export function compileDocumentIntelligenceArtifact(input: {
     qualityScore: routing.quality.score,
     recommendVisionReview: routing.recommendVisionReview,
     evidence,
+    canonicalBlocks: canonical.blocks,
   });
 
   return {
@@ -363,6 +408,9 @@ export function compileDocumentIntelligenceArtifact(input: {
     compiledAt: input.compiledAt ?? new Date().toISOString(),
     parserUsed: input.parserUsed,
     routing,
+    canonicalText: canonical.canonicalText,
+    canonicalBlocks: canonical.blocks,
+    languageQuality: canonical.languageQuality,
     evidence,
     evidenceCounts,
     analysisContext,

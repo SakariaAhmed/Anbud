@@ -47,6 +47,10 @@ type ResponsesApiResponse = {
     total_tokens?: number;
     input_tokens_details?: {
       cached_tokens?: number;
+      cache_write_tokens?: number;
+    };
+    output_tokens_details?: {
+      reasoning_tokens?: number;
     };
   };
 };
@@ -294,6 +298,12 @@ function responsesUsageFields(response: ResponsesApiResponse) {
   const cachedInputTokens = finiteTokenCount(
     response.usage?.input_tokens_details?.cached_tokens,
   );
+  const cacheWriteTokens = finiteTokenCount(
+    response.usage?.input_tokens_details?.cache_write_tokens,
+  );
+  const reasoningTokens = finiteTokenCount(
+    response.usage?.output_tokens_details?.reasoning_tokens,
+  );
 
   return {
     ...(inputTokens !== undefined ? { input_tokens: inputTokens } : {}),
@@ -302,7 +312,149 @@ function responsesUsageFields(response: ResponsesApiResponse) {
     ...(cachedInputTokens !== undefined
       ? { cached_input_tokens: cachedInputTokens }
       : {}),
+    ...(cacheWriteTokens !== undefined
+      ? { cache_write_tokens: cacheWriteTokens }
+      : {}),
+    ...(reasoningTokens !== undefined
+      ? { reasoning_tokens: reasoningTokens }
+      : {}),
   };
+}
+
+function structuredResponseCacheKey(input: {
+  model: string;
+  schemaName: string;
+  system: string;
+  override?: string;
+}) {
+  return [
+    "anbud",
+    "document-analysis-v3",
+    promptCacheSegment(input.override || input.schemaName),
+    promptCacheSegment(input.model),
+    hashPromptPrefix(input.system),
+  ].join(":");
+}
+
+/**
+ * Lean Responses API path for schema-bound document analysis. It intentionally
+ * avoids the broad legacy system prefix and deprecated explicit cache-retention
+ * settings; the task prompt and strict schema are the complete contract.
+ */
+export async function runStructuredJsonResponse<T>(
+  input: JsonCompletionRuntime & {
+    system: string;
+    user: string;
+    schemaName: string;
+    schema: Record<string, unknown>;
+    model?: string;
+    reasoningEffort?: ReasoningEffort;
+    verbosity?: "low" | "medium" | "high";
+    maxOutputTokens?: number;
+    timeoutMs?: number;
+    maxRetries?: number;
+    promptCacheKey?: string;
+  },
+): Promise<T> {
+  getProjectWorkflowAbortSignal()?.throwIfAborted();
+  const client = await input.getClient();
+  const model = input.model ?? input.defaultModel;
+  const reasoningEffort = input.reasoningEffort ?? input.defaultReasoningEffort;
+  const cacheKey = structuredResponseCacheKey({
+    model,
+    schemaName: input.schemaName,
+    system: input.system,
+    override: input.promptCacheKey,
+  });
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+  const abortController = input.timeoutMs ? new AbortController() : null;
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const telemetryFields = {
+    request_id: requestId,
+    model,
+    reasoning_effort: reasoningEffort,
+    prompt_cache_key: cacheKey,
+    prompt_prefix_hash: hashPromptSlice(`${input.system}\n\n${input.user}`),
+    system_chars: input.system.length,
+    user_chars: input.user.length,
+    schema_name: input.schemaName,
+  };
+  console.info(
+    JSON.stringify({
+      event: "ai_structured_response_started",
+      ...telemetryFields,
+    }),
+  );
+
+  let response: ResponsesApiResponse | undefined;
+  try {
+    const responsePromise = client.responses.create(
+      {
+        model,
+        store: false,
+        prompt_cache_key: cacheKey,
+        instructions: input.system,
+        reasoning: { effort: reasoningEffort },
+        ...(input.maxOutputTokens
+          ? { max_output_tokens: input.maxOutputTokens }
+          : {}),
+        text: {
+          verbosity: input.verbosity ?? "medium",
+          format: {
+            type: "json_schema",
+            name: input.schemaName,
+            strict: true,
+            schema: input.schema,
+          },
+        },
+        input: [{ role: "user", content: input.user }],
+      },
+      requestOptions({
+        timeoutMs: input.timeoutMs,
+        maxRetries: input.maxRetries,
+        abortController,
+      }),
+    );
+    const timeout = timeoutPromise({
+      timeoutMs: input.timeoutMs,
+      abortController,
+      message: "AI-analyse timeout",
+      setHandle: (handle) => {
+        timeoutHandle = handle;
+      },
+    });
+    response = (await (timeout
+      ? Promise.race([responsePromise, timeout])
+      : responsePromise).finally(() => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    })) as ResponsesApiResponse;
+
+    const outputText = response.output_text?.trim();
+    if (!outputText) throw new Error("AI returnerte tomt svar.");
+    const parsed = parseJson<T>(outputText, requestId);
+    console.info(
+      JSON.stringify({
+        event: "ai_structured_response_timing",
+        ...telemetryFields,
+        duration_ms: Date.now() - startedAt,
+        ...responsesUsageFields(response),
+      }),
+    );
+    return parsed;
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        event: "ai_structured_response_failed",
+        ...telemetryFields,
+        duration_ms: Date.now() - startedAt,
+        failure_type: error instanceof Error ? error.name : "UnknownError",
+        provider_response_received: Boolean(response),
+        ...(response ? responsesUsageFields(response) : {}),
+      }),
+    );
+    throw error;
+  }
 }
 
 export async function runJsonCompletion<T>(

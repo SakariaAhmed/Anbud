@@ -25,7 +25,7 @@ import {
 } from "@/lib/server/document-chunks";
 import { normalizeDocumentChunkStructureMap } from "@/lib/server/document-chunk-structure";
 import { compileDocumentIntelligenceArtifact } from "@/lib/server/document-intelligence/evidence-compiler";
-import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
+import { isDocumentAnalysisEnabled } from "@/lib/server/document-intelligence/config";
 import {
   recordDocumentIntelligenceEvent,
   storeDocumentIntelligenceArtifact,
@@ -3470,7 +3470,7 @@ export async function saveDocumentIngestionResult(input: {
     });
   }
 
-  if (shouldIndexChunks && isDocumentIntelligenceV2Enabled()) {
+  if (shouldIndexChunks && isDocumentAnalysisEnabled()) {
     const artifact = compileDocumentIntelligenceArtifact({
       documentId: input.documentId,
       projectId: input.projectId,

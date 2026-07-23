@@ -1,5 +1,8 @@
 # Dokumentintelligens v2: evidence compiler
 
+> Historisk v2-rapport. Den aktive videreføringen er
+> [Document Analysis v3](./document-analysis-v3.md).
+
 ## Resultat
 
 Dokumenter kompileres én gang ved ingest til en kryptert, versjonert

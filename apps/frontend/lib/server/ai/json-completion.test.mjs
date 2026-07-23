@@ -21,6 +21,7 @@ const {
   normalizeFileInputContentType,
   runJsonCompletion,
   runJsonCompletionWithFileInputs,
+  runStructuredJsonResponse,
 } = jiti(path.join(frontendRoot, "lib/server/ai/json-completion.ts"));
 const { runWithProjectWorkflowContext } = jiti(
   path.join(frontendRoot, "lib/server/project-workflow-cancellation.ts"),
@@ -125,6 +126,42 @@ test("file input JSON completion accepts fenced JSON", async () => {
   });
 
   assert.deepEqual(result, { ok: true });
+});
+
+test("document analysis uses a lean, non-persistent strict Responses contract", async () => {
+  const calls = [];
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: { ok: { type: "boolean" } },
+    required: ["ok"],
+  };
+  const result = await runStructuredJsonResponse({
+    ...jsonRuntime('{"ok":true}', calls),
+    system: "Analyser dokumentet.",
+    user: "Kildegrunnlag.",
+    schemaName: "document_analysis_v3",
+    schema,
+    model: "gpt-5.6-terra",
+    reasoningEffort: "low",
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(calls[0].model, "gpt-5.6-terra");
+  assert.equal(calls[0].store, false);
+  assert.deepEqual(calls[0].reasoning, { effort: "low" });
+  assert.deepEqual(calls[0].text, {
+    verbosity: "medium",
+    format: {
+      type: "json_schema",
+      name: "document_analysis_v3",
+      strict: true,
+      schema,
+    },
+  });
+  assert.equal("prompt_cache_retention" in calls[0], false);
+  assert.equal(calls[0].instructions, "Analyser dokumentet.");
+  assert.doesNotMatch(calls[0].instructions, /Stable Anbud JSON Contract/u);
 });
 
 test("file input JSON completion redacts malformed model output", async () => {
