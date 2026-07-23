@@ -12,6 +12,7 @@ const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
 async function withPasswordAuth(env, callback) {
   const previous = {
     APP_ACCESS_PASSWORD: process.env.APP_ACCESS_PASSWORD,
+    APP_PASSWORD_OWNER_ID: process.env.APP_PASSWORD_OWNER_ID,
     APP_SESSION_MAX_AGE_SECONDS: process.env.APP_SESSION_MAX_AGE_SECONDS,
     APP_SESSION_SECRET: process.env.APP_SESSION_SECRET,
   };
@@ -93,6 +94,40 @@ test("session tokens expire after the configured lifetime", async () => {
       false,
     );
   });
+});
+
+test("password owner identity remains stable when the session secret rotates", async () => {
+  const firstOwnerId = await withPasswordAuth(
+    { APP_SESSION_SECRET: "first session signing secret" },
+    (passwordAuth) => passwordAuth.derivePasswordOwnerId(),
+  );
+  const secondOwnerId = await withPasswordAuth(
+    { APP_SESSION_SECRET: "rotated session signing secret" },
+    (passwordAuth) => passwordAuth.derivePasswordOwnerId(),
+  );
+
+  assert.equal(firstOwnerId, secondOwnerId);
+  assert.match(firstOwnerId, /^u_[A-Za-z0-9_-]{18,126}$/u);
+});
+
+test("password owner identity supports an explicit stable deployment value", async () => {
+  await withPasswordAuth(
+    {
+      APP_PASSWORD_OWNER_ID: "u_password_owner_production_00000000000000000000",
+      APP_SESSION_SECRET: "session signing secret",
+    },
+    async (passwordAuth) => {
+      const token = await passwordAuth.createSessionToken(1_700_000_000_000);
+      const session = await passwordAuth.readSessionToken(
+        token,
+        1_700_000_001_000,
+      );
+      assert.equal(
+        session?.ownerId,
+        "u_password_owner_production_00000000000000000000",
+      );
+    },
+  );
 });
 
 test("Microsoft user sessions retain only a pseudonymous owner id", async () => {

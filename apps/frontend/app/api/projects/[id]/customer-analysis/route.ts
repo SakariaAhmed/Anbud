@@ -10,6 +10,7 @@ import {
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
+import { recordDocumentIntelligenceEvent } from "@/lib/server/document-intelligence/repository";
 import {
   getProjectSnapshot,
   getProjectSourceRevision,
@@ -471,6 +472,16 @@ export async function POST(
           : "full_regeneration",
       },
     );
+    await recordDocumentIntelligenceEvent({
+      projectId: id,
+      documentId: customerDocument.id,
+      eventType: "analysis_regenerated",
+      sourceRevision: customerDocument.chunk_source_revision,
+      metadata: {
+        scope: section ?? "full_analysis",
+        supporting_document_count: supportingDocuments.length,
+      },
+    }).catch(() => false);
 
     const project = await getProjectSnapshot(id);
     return NextResponse.json({ analysis: saved, project });
@@ -590,6 +601,15 @@ export async function PUT(
         historySource: "manual_edit",
       },
     );
+    await recordDocumentIntelligenceEvent({
+      projectId: id,
+      documentId: customerDocument.id,
+      eventType: "analysis_manually_edited",
+      sourceRevision: customerDocument.chunk_source_revision,
+      metadata: {
+        scope: section ?? "strategy",
+      },
+    }).catch(() => false);
 
     const project = await getProjectSnapshot(id);
     return NextResponse.json({ analysis: saved, project });

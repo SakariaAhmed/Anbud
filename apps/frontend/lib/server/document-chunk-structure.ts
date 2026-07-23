@@ -8,6 +8,9 @@ const CHUNK_STRUCTURE_ENTRY_KINDS = new Set<
   "docling_text",
   "docling_table_row",
   "docling_markdown",
+  "azure_paragraph",
+  "azure_table_row",
+  "azure_figure",
 ]);
 
 function normalizedStructureInteger(value: unknown, minimum: number) {
@@ -25,6 +28,17 @@ function normalizedStructureInteger(value: unknown, minimum: number) {
 function normalizedStructureString(value: unknown) {
   const text = String(value ?? "").trim();
   return text || undefined;
+}
+
+function normalizedStructureNumber(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= minimum && number <= maximum
+    ? number
+    : undefined;
 }
 
 /**
@@ -76,6 +90,21 @@ export function normalizeDocumentChunkStructureMap(
             )
           : undefined;
       const doclingRef = normalizedStructureString(record.docling_ref);
+      const sourceId = normalizedStructureString(record.source_id);
+      const role = normalizedStructureString(record.role);
+      const confidence = normalizedStructureNumber(record.confidence, 0, 1);
+      const polygon = Array.isArray(record.polygon)
+        ? record.polygon
+            .slice(0, 32)
+            .map((coordinate) => normalizedStructureNumber(coordinate, -1_000_000, 1_000_000))
+            .filter((coordinate): coordinate is number => coordinate !== undefined)
+        : undefined;
+      const headingPath = Array.isArray(record.heading_path)
+        ? record.heading_path
+            .slice(0, 12)
+            .map(normalizedStructureString)
+            .filter((segment): segment is string => Boolean(segment))
+        : undefined;
 
       return {
         reference,
@@ -88,6 +117,11 @@ export function normalizeDocumentChunkStructureMap(
         ...(columns?.length ? { columns } : {}),
         ...(cells && Object.keys(cells).length ? { cells } : {}),
         ...(doclingRef ? { docling_ref: doclingRef } : {}),
+        ...(sourceId ? { source_id: sourceId } : {}),
+        ...(role ? { role } : {}),
+        ...(confidence !== undefined ? { confidence } : {}),
+        ...(polygon && polygon.length >= 4 ? { polygon } : {}),
+        ...(headingPath?.length ? { heading_path: headingPath } : {}),
       };
     })
     .filter(

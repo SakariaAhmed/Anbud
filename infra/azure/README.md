@@ -69,12 +69,29 @@ az deployment group create \
     appEncryptionKey="$APP_ENCRYPTION_KEY" \
     appAccessPassword="$APP_ACCESS_PASSWORD" \
     appSessionSecret="$APP_SESSION_SECRET" \
+    sharedAppUserId="${APP_PASSWORD_OWNER_ID:-u_password_owner_default_000000000000000000000000}" \
     openAiApiKey="$OPENAI_API_KEY" \
     openAiModel="${OPENAI_MODEL:-gpt-5.4}" \
+    documentIntelligenceV2="${DOCUMENT_INTELLIGENCE_V2:-off}" \
+    azureDocumentIntelligenceHighResolution=auto \
+    azureDocumentIntelligenceEndpoint="$AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT" \
+    azureDocumentIntelligenceKey="$AZURE_DOCUMENT_INTELLIGENCE_KEY" \
     projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
 ```
 
-The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN` and `MICROSOFT_ENTRA_CLIENT_SECRET` as production secrets. Configure `APP_PUBLIC_ORIGIN`, `MICROSOFT_ENTRA_CLIENT_ID`, and `MICROSOFT_ENTRA_TENANT_SUBDOMAIN` as production variables. See [Microsoft Entra External ID login](../../docs/microsoft-entra-login.md) for the app registration and callback setup.
+Azure Document Intelligence is optional. When endpoint/key are omitted, the
+quality router keeps the fast local layout parser and can use the existing local
+Docling fallback. Add the two values as protected production secrets/variables
+before enabling the managed last-resort path. `auto` enables high-resolution OCR
+only when the local quality score indicates weak OCR; use `off` to disable that
+paid Azure feature entirely.
+
+`DOCUMENT_INTELLIGENCE_V2` defaults to `off` so a deploy preserves the legacy
+PDF and Docling paths until canary activation. Keep `APP_PASSWORD_OWNER_ID`
+stable across `APP_SESSION_SECRET` rotations; it is an identifier, not a secret,
+and preserves access to projects owned by the shared password user.
+
+The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN`, `MICROSOFT_ENTRA_CLIENT_SECRET`, and optionally `AZURE_DOCUMENT_INTELLIGENCE_KEY` as production secrets. Configure `APP_PUBLIC_ORIGIN`, `MICROSOFT_ENTRA_CLIENT_ID`, `MICROSOFT_ENTRA_TENANT_SUBDOMAIN`, and optionally `APP_PASSWORD_OWNER_ID`, `DOCUMENT_INTELLIGENCE_V2`, `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, and `AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION` as production variables. See [Microsoft Entra External ID login](../../docs/microsoft-entra-login.md) for the app registration and callback setup.
 
 ## Controlled production rollout
 

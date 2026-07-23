@@ -67,12 +67,37 @@ param appAccessPassword string
 @description('Stable session signing secret.')
 param appSessionSecret string
 
+@description('Stable owner ID for the shared password user. Keep unchanged when rotating the session signing secret.')
+param sharedAppUserId string = 'u_password_owner_default_000000000000000000000000'
+
 @secure()
 @description('OpenAI API key.')
 param openAiApiKey string
 
 @description('Optional OpenAI model override.')
 param openAiModel string = 'gpt-5.4'
+
+@description('Enables the adaptive evidence compiler and document quality router.')
+@allowed([
+  'on'
+  'off'
+])
+param documentIntelligenceV2 string = 'off'
+
+@description('Optional Azure AI Document Intelligence endpoint. Leave empty to use the local layout parser with Docling fallback.')
+param azureDocumentIntelligenceEndpoint string = ''
+
+@secure()
+@description('Optional Azure AI Document Intelligence API key.')
+param azureDocumentIntelligenceKey string = ''
+
+@description('Azure OCR high-resolution feature. auto enables it only for PDFs with weak OCR; on forces it and off disables it.')
+@allowed([
+  'auto'
+  'on'
+  'off'
+])
+param azureDocumentIntelligenceHighResolution string = 'auto'
 
 @secure()
 @description('Shared token required by the project job worker endpoint.')
@@ -173,7 +198,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         transport: 'auto'
         allowInsecure: false
       }
-      secrets: [
+      secrets: concat([
         {
           name: 'supabase-url'
           value: supabaseUrl
@@ -210,7 +235,12 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'registry-password'
           value: registryPassword
         }
-      ]
+      ], !empty(azureDocumentIntelligenceKey) ? [
+        {
+          name: 'azure-document-intelligence-key'
+          value: azureDocumentIntelligenceKey
+        }
+      ] : [])
       registries: [
         {
           server: registryServer
@@ -224,7 +254,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'web'
           image: image
-          env: [
+          env: concat([
             {
               name: 'NODE_ENV'
               value: 'production'
@@ -290,6 +320,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               secretRef: 'app-session-secret'
             }
             {
+              name: 'APP_PASSWORD_OWNER_ID'
+              value: sharedAppUserId
+            }
+            {
               name: 'OPENAI_API_KEY'
               secretRef: 'openai-api-key'
             }
@@ -309,7 +343,24 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'DOCLING_ASYNC_AUTO_RUN'
               value: doclingAsyncAutoRun
             }
-          ]
+            {
+              name: 'DOCUMENT_INTELLIGENCE_V2'
+              value: documentIntelligenceV2
+            }
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION'
+              value: azureDocumentIntelligenceHighResolution
+            }
+          ], !empty(azureDocumentIntelligenceEndpoint) && !empty(azureDocumentIntelligenceKey) ? [
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT'
+              value: azureDocumentIntelligenceEndpoint
+            }
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_KEY'
+              secretRef: 'azure-document-intelligence-key'
+            }
+          ] : [])
           probes: [
             {
               type: 'Liveness'
@@ -369,7 +420,7 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
       }
       replicaRetryLimit: 1
       replicaTimeout: projectJobWorkerReplicaTimeout
-      secrets: [
+      secrets: concat([
         {
           name: 'supabase-url'
           value: supabaseUrl
@@ -402,7 +453,12 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
           name: 'registry-password'
           value: registryPassword
         }
-      ]
+      ], !empty(azureDocumentIntelligenceKey) ? [
+        {
+          name: 'azure-document-intelligence-key'
+          value: azureDocumentIntelligenceKey
+        }
+      ] : [])
       registries: [
         {
           server: registryServer
@@ -422,7 +478,7 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
           args: [
             'scripts/run_project_job_worker.mjs'
           ]
-          env: [
+          env: concat([
             {
               name: 'NODE_ENV'
               value: 'production'
@@ -472,6 +528,10 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               secretRef: 'app-session-secret'
             }
             {
+              name: 'APP_PASSWORD_OWNER_ID'
+              value: sharedAppUserId
+            }
+            {
               name: 'OPENAI_API_KEY'
               secretRef: 'openai-api-key'
             }
@@ -495,7 +555,24 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               name: 'DOCLING_ASYNC_AUTO_RUN'
               value: 'off'
             }
-          ]
+            {
+              name: 'DOCUMENT_INTELLIGENCE_V2'
+              value: documentIntelligenceV2
+            }
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION'
+              value: azureDocumentIntelligenceHighResolution
+            }
+          ], !empty(azureDocumentIntelligenceEndpoint) && !empty(azureDocumentIntelligenceKey) ? [
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT'
+              value: azureDocumentIntelligenceEndpoint
+            }
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_KEY'
+              secretRef: 'azure-document-intelligence-key'
+            }
+          ] : [])
           resources: {
             cpu: json(projectJobWorkerCpu)
             memory: projectJobWorkerMemory

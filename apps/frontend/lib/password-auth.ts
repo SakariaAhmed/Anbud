@@ -6,6 +6,9 @@ export const AUTH_DISPLAY_NAME_HEADER = "x-bidsite-display-name";
 const DEFAULT_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
 const MIN_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 15;
 const MAX_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+const DEFAULT_PASSWORD_OWNER_ID =
+  "u_password_owner_default_000000000000000000000000";
+const SESSION_OWNER_ID_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
 
 function configuredSessionMaxAgeSeconds() {
   const configured = Number(process.env.APP_SESSION_MAX_AGE_SECONDS);
@@ -93,10 +96,16 @@ export function verifyPassword(input: string) {
 }
 
 export async function createSessionToken(now = Date.now()) {
-  const issuedAt = String(now);
-  const payload = `v1:${issuedAt}`;
-  const signature = await sign(payload);
-  return `${payload}.${signature}`;
+  return createUserSessionToken(await derivePasswordOwnerId(), "Bruker", now);
+}
+
+export function derivePasswordOwnerId() {
+  const ownerId =
+    process.env.APP_PASSWORD_OWNER_ID?.trim() || DEFAULT_PASSWORD_OWNER_ID;
+  if (!SESSION_OWNER_ID_PATTERN.test(ownerId)) {
+    throw new Error("Invalid APP_PASSWORD_OWNER_ID.");
+  }
+  return ownerId;
 }
 
 function encodeSessionText(value: string) {
@@ -113,7 +122,7 @@ function decodeSessionText(value: string | undefined) {
 }
 
 export async function createUserSessionToken(ownerId: string, displayName: string, now = Date.now()) {
-  if (!/^[A-Za-z0-9_-]{20,128}$/.test(ownerId)) throw new Error("Invalid session owner.");
+  if (!SESSION_OWNER_ID_PATTERN.test(ownerId)) throw new Error("Invalid session owner.");
   const payload = `v3:${now}:${ownerId}:${encodeSessionText(displayName)}`;
   return `${payload}.${await sign(payload)}`;
 }
@@ -136,13 +145,21 @@ export async function readSessionToken(token: string | undefined | null, now = D
   try {
     if (!timingSafeEqual(signature, await sign(payload))) return null;
     return {
-      ownerId: (version === "v2" || version === "v3") && ownerId ? ownerId : null,
-      displayName: version === "v3" ? decodeSessionText(encodedDisplayName) : null,
+      ownerId:
+        version === "v1"
+          ? await derivePasswordOwnerId()
+          : ownerId || null,
+      displayName:
+        version === "v1" ? "Bruker" : version === "v3" ? decodeSessionText(encodedDisplayName) : null,
     };
   } catch { return null; }
 }
 
 export async function verifySessionToken(token: string | undefined | null, now = Date.now()) {
+  if (await readSessionToken(token, now)) {
+    return true;
+  }
+
   if (!token) {
     return false;
   }

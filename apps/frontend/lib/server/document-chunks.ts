@@ -740,6 +740,15 @@ function structureEntryChunkMetadata(entry: ProjectDocumentStructureEntry) {
       ? { structure_row_index: entry.row_index }
       : {}),
     ...(entry.docling_ref ? { structure_docling_ref: entry.docling_ref } : {}),
+    ...(entry.source_id ? { structure_source_id: entry.source_id } : {}),
+    ...(entry.role ? { structure_role: entry.role } : {}),
+    ...(entry.confidence != null
+      ? { structure_confidence: entry.confidence }
+      : {}),
+    ...(entry.polygon?.length ? { structure_polygon: entry.polygon } : {}),
+    ...(entry.heading_path?.length
+      ? { structure_heading_path: entry.heading_path }
+      : {}),
   };
 }
 

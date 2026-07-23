@@ -2189,6 +2189,59 @@ test("trusted structure-map parser preserves row identity for generated kravspes
   assert.ok(ledger[0].documentEntryOrder < 1_000_000);
 });
 
+test("local PDF table text enriches generated rows without duplicating IDs or replacing headings", async () => {
+  const rows = [
+    ["KR-063-01", "Bør", "Løsningen skal støtte sikker innlogging."],
+    ["KR-063-02", "Må", "Leverandøren skal dokumentere logging."],
+    ["KR-063-03", "Opsjon", "Kunden skal kunne eksportere rapporter."],
+  ];
+  const document = projectDocument({
+    fileFormat: "pdf",
+    rawText: [
+      "[[SIDE:1]]",
+      "Bilag 2 - Kravspesifikasjon",
+      "Prosjektkode: P063",
+      "1. Identitet og sikkerhet",
+      "ID/markering Prioritet Kravtekst",
+      ...rows.map(([id, priority, text]) => `${id} ${priority} ${text}`),
+    ].join("\n"),
+    structureMap: [
+      {
+        reference: "Kravgrunnlag - side 1, 1. Identitet og sikkerhet",
+        text: "1. Identitet og sikkerhet",
+        kind: "text",
+        parser: "pdf-parse-local-layout-v2",
+        page: 1,
+      },
+      ...rows.map(([id, priority, text], index) => ({
+        reference: `Kravgrunnlag - lokal tabell 1, rad ${index + 1}, side 1`,
+        text: `${id} ${priority} ${text}`,
+        kind: "table",
+        parser: "pdf-parse-local-layout-v2",
+        page: 1,
+        table_index: 0,
+        row_index: index,
+        cells: {
+          "Krav-ID": id,
+          Prioritet: priority,
+          Kravtekst: text,
+        },
+      })),
+    ],
+  });
+
+  const ledger = await extractRequirementLedgerForDocument(document);
+  assert.equal(ledger.length, 3);
+  assert.deepEqual(
+    ledger.map(({ id, text, heading }) => ({ id, text, heading })),
+    rows.map(([id, , text]) => ({
+      id,
+      text,
+      heading: "1. Identitet og sikkerhet",
+    })),
+  );
+});
+
 test("trusted structure-map parser ignores document metadata when choosing a heading", () => {
   const requirementText = "Leverandøren skal dokumentere beredskap.";
   const document = projectDocument({

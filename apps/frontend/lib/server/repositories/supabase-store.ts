@@ -24,6 +24,17 @@ import {
   replaceServiceDocumentChunks,
 } from "@/lib/server/document-chunks";
 import { normalizeDocumentChunkStructureMap } from "@/lib/server/document-chunk-structure";
+import { compileDocumentIntelligenceArtifact } from "@/lib/server/document-intelligence/evidence-compiler";
+import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
+import {
+  recordDocumentIntelligenceEvent,
+  storeDocumentIntelligenceArtifact,
+} from "@/lib/server/document-intelligence/repository";
+import { isAzureDocumentIntelligenceConfigured } from "@/lib/server/document-intelligence/azure-layout";
+import {
+  canUseDoclingForFormat,
+  isDoclingEnabled,
+} from "@/lib/server/documents";
 import {
   isMissingRelationColumn,
   isMissingSchemaColumn,
@@ -3457,6 +3468,50 @@ export async function saveDocumentIngestionResult(input: {
       });
       throw new Error(`Dokumentindeksering feilet: ${chunkError}`);
     });
+  }
+
+  if (shouldIndexChunks && isDocumentIntelligenceV2Enabled()) {
+    const artifact = compileDocumentIntelligenceArtifact({
+      documentId: input.documentId,
+      projectId: input.projectId,
+      title: updated.title,
+      fileName: input.fileName,
+      fileFormat: input.fileFormat,
+      fileSizeBytes: updated.file_size_bytes,
+      sourceRevision: updated.chunk_source_revision,
+      parserUsed: input.parserUsed ?? "unknown",
+      rawText: input.rawText,
+      structureMap: input.structureMap,
+      isHighImpactDocument:
+        updated.role === "primary_customer_document" ||
+        updated.supporting_subtype === "kravdokument" ||
+        updated.supporting_subtype === "rfp",
+      azureAvailable: isAzureDocumentIntelligenceConfigured(),
+      doclingAvailable:
+        isDoclingEnabled() && canUseDoclingForFormat(input.fileFormat),
+    });
+    await storeDocumentIntelligenceArtifact(artifact)
+      .then(async (stored) => {
+        if (!stored) return;
+        await recordDocumentIntelligenceEvent({
+          projectId: input.projectId,
+          documentId: input.documentId,
+          eventType: "parse_compiled",
+          sourceRevision: updated.chunk_source_revision,
+          metadata: {
+            parser: artifact.parserUsed,
+            quality_score: artifact.routing.quality.score,
+            evidence_count: artifact.evidence.length,
+            norwegian_anomaly_count:
+              artifact.routing.quality.norwegianAnomalies.length,
+            vision_review_recommended: artifact.routing.recommendVisionReview,
+          },
+        });
+      })
+      .catch(() => {
+        // Evidence is a derived acceleration layer. Existing encrypted text and
+        // chunks remain authoritative if this optional rollout layer is down.
+      });
   }
 
   if (

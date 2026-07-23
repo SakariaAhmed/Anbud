@@ -6,6 +6,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
 import JSZip, { type JSZipObject } from "jszip";
+import {
+  analyzeLocalPdfPage,
+  buildLocalPdfDocument,
+  LOCAL_PDF_LAYOUT_PARSER,
+  type LocalPdfPage,
+  type LocalPdfTextItem,
+} from "@/lib/server/document-intelligence/local-pdf-layout";
+import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
 import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
@@ -18,7 +26,10 @@ export interface SourceMapEntry {
     | "table"
     | "docling_text"
     | "docling_table_row"
-    | "docling_markdown";
+    | "docling_markdown"
+    | "azure_paragraph"
+    | "azure_table_row"
+    | "azure_figure";
   parser?: string;
   page?: number | null;
   table_index?: number;
@@ -26,6 +37,11 @@ export interface SourceMapEntry {
   columns?: string[];
   cells?: Record<string, string>;
   docling_ref?: string;
+  source_id?: string;
+  role?: string;
+  confidence?: number;
+  polygon?: number[];
+  heading_path?: string[];
 }
 
 export interface ParsedUpload {
@@ -1197,83 +1213,46 @@ function buildTextSourceMap(text: string, role?: ProjectDocumentRole) {
   return sections.length ? sections : [{ reference: `${label} – tekstblokk 1`, text: normalizeText(text) }];
 }
 
-type PdfTextItem = {
-  str: string;
-  transform: number[];
-  width?: number;
-};
-
-function renderPdfTextItems(items: PdfTextItem[]) {
-  const lines: Array<{ y: number; items: PdfTextItem[] }> = [];
-
-  for (const item of items) {
-    const text = item.str.trim();
-    const y = item.transform[5] ?? 0;
-    if (!text) {
-      continue;
-    }
-
-    const line = lines.find((candidate) => Math.abs(candidate.y - y) <= 2);
-    if (line) {
-      line.items.push(item);
-    } else {
-      lines.push({ y, items: [item] });
-    }
-  }
-
-  return lines
-    .sort((left, right) => right.y - left.y)
-    .map((line) => {
-      let previousEnd: number | null = null;
-      return line.items
-        .sort((left, right) => (left.transform[4] ?? 0) - (right.transform[4] ?? 0))
-        .map((item) => {
-          const x = item.transform[4] ?? 0;
-          const gap = previousEnd == null ? 0 : x - previousEnd;
-          previousEnd = x + (item.width ?? item.str.length * 4);
-          return `${gap > 3 ? " " : ""}${item.str.trim()}`;
-        })
-        .join("")
-        .replace(/[ \t]+/g, " ")
-        .trim();
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
 async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocumentRole): Promise<ParsedUpload> {
   let pageNumber = 0;
-  const pageEntries: SourceMapEntry[] = [];
+  const pages: LocalPdfPage[] = [];
   const label = documentLabel(role);
 
   const pdfParse = await getPdfParse();
   const parsed = await pdfParse(buffer, {
       pagerender: (pageData: {
         getTextContent: (options: { normalizeWhitespace: boolean; disableCombineTextItems: boolean }) => Promise<{
-          items: PdfTextItem[];
+          items: LocalPdfTextItem[];
         }>;
       }) => {
         pageNumber += 1;
+        const currentPageNumber = pageNumber;
         return pageData
           .getTextContent({
             normalizeWhitespace: false,
             disableCombineTextItems: false,
           })
           .then((textContent) => {
-            const normalized = normalizeText(renderPdfTextItems(textContent.items));
-            if (normalized) {
-              pageEntries.push({
-                reference: `${label} – side ${pageNumber}`,
-                text: normalized,
-              });
-            }
-
-            return `[[SIDE:${pageNumber}]]\n${normalized}`;
+            const page = analyzeLocalPdfPage({
+              pageNumber: currentPageNumber,
+              items: textContent.items,
+            });
+            pages.push(page);
+            return `[[SIDE:${currentPageNumber}]]\n${page.lines
+              .map((line) => line.text)
+              .join("\n")}`;
           });
       },
     });
 
-  const rawText = normalizeText(parsed.text);
+  const useDocumentIntelligenceV2 = isDocumentIntelligenceV2Enabled();
+  const orderedPages = [...pages].sort(
+    (left, right) => left.pageNumber - right.pageNumber,
+  );
+  const locallyStructured = useDocumentIntelligenceV2
+    ? buildLocalPdfDocument({ pages: orderedPages, label })
+    : null;
+  const rawText = normalizeText(locallyStructured?.rawText || parsed.text);
   ensureReadableText(rawText, fileName);
 
   return {
@@ -1282,8 +1261,15 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
     fileName,
     fileFormat: "pdf",
     fileBase64: buffer.toString("base64"),
-    sourceMap: pageEntries.filter((entry) => entry.text),
-    parserUsed: "pdf-parse",
+    sourceMap: locallyStructured
+      ? locallyStructured.sourceMap
+      : orderedPages.flatMap((page) => {
+          const text = normalizeText(page.rawText);
+          return text
+            ? [{ reference: `${label} – side ${page.pageNumber}`, text }]
+            : [];
+        }),
+    parserUsed: locallyStructured ? LOCAL_PDF_LAYOUT_PARSER : "pdf-parse",
   };
 }
 

@@ -132,7 +132,10 @@ export interface ProjectDocumentStructureEntry {
     | "table"
     | "docling_text"
     | "docling_table_row"
-    | "docling_markdown";
+    | "docling_markdown"
+    | "azure_paragraph"
+    | "azure_table_row"
+    | "azure_figure";
   parser?: string;
   page?: number | null;
   table_index?: number;
@@ -140,6 +143,11 @@ export interface ProjectDocumentStructureEntry {
   columns?: string[];
   cells?: Record<string, string>;
   docling_ref?: string;
+  source_id?: string;
+  role?: string;
+  confidence?: number;
+  polygon?: number[];
+  heading_path?: string[];
 }
 
 export interface ProjectDocumentDetail extends ProjectDocument {

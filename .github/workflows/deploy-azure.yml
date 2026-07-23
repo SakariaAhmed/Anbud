@@ -232,8 +232,13 @@ jobs:
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
           APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
+          APP_PASSWORD_OWNER_ID: ${{ vars.APP_PASSWORD_OWNER_ID || 'u_password_owner_default_000000000000000000000000' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
+          DOCUMENT_INTELLIGENCE_V2: ${{ vars.DOCUMENT_INTELLIGENCE_V2 || 'off' }}
+          AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT }}
+          AZURE_DOCUMENT_INTELLIGENCE_KEY: ${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_KEY }}
+          AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION || 'auto' }}
           PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
           PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
           DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
@@ -269,8 +274,13 @@ jobs:
             appEncryptionKey="$APP_ENCRYPTION_KEY"
             appAccessPassword="$APP_ACCESS_PASSWORD"
             appSessionSecret="$APP_SESSION_SECRET"
+            sharedAppUserId="$APP_PASSWORD_OWNER_ID"
             openAiApiKey="$OPENAI_API_KEY"
             openAiModel="$OPENAI_MODEL"
+            documentIntelligenceV2="$DOCUMENT_INTELLIGENCE_V2"
+            azureDocumentIntelligenceEndpoint="$AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"
+            azureDocumentIntelligenceKey="$AZURE_DOCUMENT_INTELLIGENCE_KEY"
+            azureDocumentIntelligenceHighResolution="$AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION"
             projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
             projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON"
             projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT"

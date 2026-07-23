@@ -15,6 +15,15 @@ import {
   type ReasoningEffort,
 } from "@/lib/server/ai/json-completion";
 import { buildVerifiedFoundationControls } from "@/lib/server/ai/verified-foundation-controls";
+import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
+import {
+  isCurrentDocumentIntelligenceContext,
+  shouldUseCompiledCustomerAnalysisContext,
+} from "@/lib/server/document-intelligence/customer-analysis-context";
+import {
+  listDocumentIntelligenceContexts,
+  recordDocumentIntelligenceEvent,
+} from "@/lib/server/document-intelligence/repository";
 import {
   assertProjectWorkflowActive,
   bindProjectWorkflowTerminalMetadataReporter,
@@ -8598,7 +8607,7 @@ async function buildRequirementSourceLedgerWithFiles(
   const skipDoclingStructureForLegacyFofinger =
     /Bilag\s+2\s*-\s*Krav\s+og\s+føringer/i.test(document.raw_text) &&
     !hasLegacyKravFeringStructuredRows(document, corpusParserContext);
-  const doclingStructureLedger = trustedStructureMapLedger.length
+  const availableStructureLedger = trustedStructureMapLedger.length
     ? trustedStructureMapLedger
     : skipDoclingStructureForLegacyFofinger
       ? []
@@ -8607,6 +8616,51 @@ async function buildRequirementSourceLedgerWithFiles(
     document,
     corpusParserContext,
   );
+  const hasLocalPdfTableStructure = document.structure_map.some(
+    (entry) =>
+      entry.kind === "table" &&
+      entry.parser === "pdf-parse-local-layout-v2" &&
+      entry.cells &&
+      typeof entry.cells === "object" &&
+      !Array.isArray(entry.cells),
+  );
+  const trustedLocalById = new Map(
+    (hasLocalPdfTableStructure ? trustedStructureMapLedger : []).map(
+      (entry) => [normalizeRequirementId(entry.id), entry] as const,
+    ),
+  );
+  const generatedPdfLedgerWithLocalTableText = generatedPdfLedger.map(
+    (entry) => {
+      const local = trustedLocalById.get(normalizeRequirementId(entry.id));
+      const normalizedLocalText = normalizeEvidenceText(local?.text ?? "");
+      const normalizedGeneratedText = normalizeEvidenceText(entry.text);
+      if (
+        !local ||
+        local.text.length < 12 ||
+        !normalizedGeneratedText.includes(normalizedLocalText) ||
+        /\b(?:mangler\s+ID|Punktkrav\s+som\s+skal\s+besvares|krav\s+registrert\s+i\s+tabell|Fra\s+arbeidsnotatet|Avklaringer?\/)\b/iu.test(
+          local.text,
+        )
+      ) {
+        return entry;
+      }
+      return {
+        ...entry,
+        text: local.text,
+        sourceExcerpt: local.sourceExcerpt || entry.sourceExcerpt,
+        pages: local.pages.length ? local.pages : entry.pages,
+      };
+    },
+  );
+  const generatedRequirementIds = new Set(
+    generatedPdfLedger.map((entry) => normalizeRequirementId(entry.id)),
+  );
+  const doclingStructureLedger = hasLocalPdfTableStructure
+    ? availableStructureLedger.filter(
+        (entry) =>
+          !generatedRequirementIds.has(normalizeRequirementId(entry.id)),
+      )
+    : availableStructureLedger;
   const useGeneratedPdfLedger = generatedPdfLedger.length > 0;
   const mixedTextLedger = useGeneratedPdfLedger
     ? []
@@ -8638,7 +8692,7 @@ async function buildRequirementSourceLedgerWithFiles(
   const ledger = filterSyntheticRequirementFallbacks(
     filterSyntheticRequirementDuplicates([
       ...unstructuredLedger,
-      ...generatedPdfLedger,
+      ...generatedPdfLedgerWithLocalTableText,
       ...mixedTextLedger,
       ...serviceTableLedger,
       ...doclingStructureLedger,
@@ -23446,6 +23500,66 @@ export async function analyzeCustomerDocuments(input: {
   serviceCandidates?: ProjectServiceDescription[];
   model?: string;
 }) {
+  const analysisDocuments = [
+    input.customerDocument,
+    ...input.supportingDocuments,
+  ];
+  const intelligenceContexts = isDocumentIntelligenceV2Enabled()
+    ? await listDocumentIntelligenceContexts({
+        projectId: input.customerDocument.project_id,
+        documentIds: analysisDocuments.map((document) => document.id),
+      }).catch(() => [])
+    : [];
+  const currentContexts = new Map(
+    intelligenceContexts
+      .filter((context) => {
+        const document = analysisDocuments.find(
+          (candidate) => candidate.id === context.documentId,
+        );
+        if (
+          !document ||
+          !isCurrentDocumentIntelligenceContext({
+            sourceRevision: context.sourceRevision,
+            documentSourceRevision: document.chunk_source_revision,
+            compilerVersion: context.compilerVersion,
+          })
+        ) {
+          return false;
+        }
+        return shouldUseCompiledCustomerAnalysisContext({
+          rawTextLength: document.raw_text.length,
+          analysisContextLength: context.analysisContext.length,
+          isPrimaryDocument: document.id === input.customerDocument.id,
+        });
+      })
+      .map((context) => [context.documentId, context]),
+  );
+  const primaryIntelligenceContext = currentContexts.get(
+    input.customerDocument.id,
+  );
+  const compiledEvidenceContext = [
+    primaryIntelligenceContext
+      ? primaryIntelligenceContext.analysisContext.slice(0, 8_000)
+      : "",
+    ...input.supportingDocuments.slice(0, 2).map((document) =>
+      (currentContexts.get(document.id)?.analysisContext ?? "").slice(0, 3_000),
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  await recordDocumentIntelligenceEvent({
+    projectId: input.customerDocument.project_id,
+    eventType: "customer_analysis_used",
+    sourceRevision: input.customerDocument.chunk_source_revision,
+    metadata: {
+      document_count: analysisDocuments.length,
+      compiled_document_count: currentContexts.size,
+      legacy_fallback_count: Math.max(
+        0,
+        analysisDocuments.length - currentContexts.size,
+      ),
+    },
+  }).catch(() => false);
   const analysisRetrieval = await retrieveDocumentSnippetsWithMetadata({
     query: [
       input.projectName,
@@ -23459,13 +23573,15 @@ export async function analyzeCustomerDocuments(input: {
   const analysisSnippets = analysisRetrieval.snippets;
   const supportingContexts = input.supportingDocuments
     .slice(0, 2)
-    .map((document, index) =>
-      documentContext(`Støttedokument ${index + 1}`, document, {
+    .map((document, index) => {
+      if (currentContexts.has(document.id)) return "";
+      return documentContext(`Støttedokument ${index + 1}`, document, {
         textLimit: 4000,
         structureLimit: 6,
         structureTextLimit: 160,
-      }),
-    )
+      });
+    })
+    .filter(Boolean)
     .join("\n\n");
   const analysisFoundationFacts = collectArtifactFoundationFacts({
     documents: [input.customerDocument, ...input.supportingDocuments],
@@ -23483,10 +23599,16 @@ export async function analyzeCustomerDocuments(input: {
     ),
     buildCustomerAnalysisFactsContext(analysisFoundationFacts),
     documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: 12000,
-      structureLimit: 10,
+      textLimit: primaryIntelligenceContext ? 800 : 12000,
+      structureLimit: primaryIntelligenceContext ? 4 : 10,
       structureTextLimit: 180,
     }),
+    compiledEvidenceContext
+      ? buildDelimitedContext(
+          "Forhåndskompilert dokumentevidens",
+          compiledEvidenceContext,
+        )
+      : "",
     retrievedSnippetContext("Semantisk dokumentdekning", analysisSnippets, {
       textLimit: 1200,
     }),

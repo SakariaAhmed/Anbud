@@ -29,6 +29,14 @@ import {
   type ParsedUpload,
 } from "@/lib/server/documents";
 import {
+  buildDocumentParserAttemptEvents,
+  selectBestDocumentParse,
+  type DocumentParseSelection,
+} from "@/lib/server/document-intelligence/parse-orchestrator";
+import { LOCAL_PDF_LAYOUT_PARSER } from "@/lib/server/document-intelligence/local-pdf-layout";
+import { recordDocumentIntelligenceEvent } from "@/lib/server/document-intelligence/repository";
+import { isDocumentIntelligenceV2Enabled } from "@/lib/server/document-intelligence/config";
+import {
   getFreshCustomerAnalysis,
   getFreshSolutionEvaluationSnapshot,
   saveCustomerAnalysis,
@@ -506,11 +514,13 @@ function shouldRunDoclingEnhancement(input: {
   supportingSubtype?: ProjectDocumentDetail["supporting_subtype"];
   rawText: string;
   sourceMapLength: number;
+  structureMap?: ProjectDocumentDetail["structure_map"];
   fileSizeBytes: number;
 }) {
   if (
     !isDoclingEnabled() ||
     input.parserUsed === "docling" ||
+    input.parserUsed.startsWith("azure-layout") ||
     !canUseDoclingForFormat(input.fileFormat)
   ) {
     return false;
@@ -520,12 +530,35 @@ function shouldRunDoclingEnhancement(input: {
     return false;
   }
 
-  return (
+  const poorPdfExtraction =
+    input.fileFormat === "pdf" && looksLikePoorPdfExtraction(input);
+  if (!isDocumentIntelligenceV2Enabled()) {
+    return (
+      input.role === "primary_customer_document" ||
+      isExplicitRequirementSupportingSubtype(input.supportingSubtype ?? null) ||
+      poorPdfExtraction ||
+      looksLikePdfWithTablesOrRequirements(input.rawText) ||
+      looksLikeComplexDocument(input)
+    );
+  }
+
+  const localStructuredRows =
+    input.structureMap?.filter(
+      (entry) =>
+        entry.kind === "table" && entry.parser === LOCAL_PDF_LAYOUT_PARSER,
+    ).length ?? 0;
+  if (localStructuredRows >= 3 && !poorPdfExtraction) {
+    return false;
+  }
+
+  const isHighImpact =
     input.role === "primary_customer_document" ||
-    isExplicitRequirementSupportingSubtype(input.supportingSubtype ?? null) ||
-    (input.fileFormat === "pdf" && looksLikePoorPdfExtraction(input)) ||
-    looksLikePdfWithTablesOrRequirements(input.rawText) ||
-    looksLikeComplexDocument(input)
+    isExplicitRequirementSupportingSubtype(input.supportingSubtype ?? null);
+  return (
+    poorPdfExtraction ||
+    (isHighImpact &&
+      (looksLikePdfWithTablesOrRequirements(input.rawText) ||
+        looksLikeComplexDocument(input)))
   );
 }
 
@@ -569,6 +602,26 @@ function isDoclingResultWorthReplacing(input: {
   return enhancedLength >= currentLength * 0.5;
 }
 
+async function recordParserSelectionEvents(input: {
+  projectId: string;
+  documentId: string;
+  sourceRevision: number;
+  selection: DocumentParseSelection;
+}) {
+  for (const event of buildDocumentParserAttemptEvents({
+    selection: input.selection,
+    sourceRevision: input.sourceRevision,
+  })) {
+    await recordDocumentIntelligenceEvent({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      eventType: event.eventType,
+      sourceRevision: event.sourceRevision,
+      metadata: event.metadata,
+    }).catch(() => false);
+  }
+}
+
 async function runDocumentIngestionWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "document_ingestion" }>,
   handlers: ProjectWorkflowHandlers,
@@ -601,7 +654,7 @@ async function runDocumentIngestionWorkflow(
       message: "Leser dokumentet med rask parser ...",
       error: null,
     });
-    const parsed = await extractTextFromBuffer({
+    const fastParsed = await extractTextFromBuffer({
       buffer,
       fileName: document.file_name,
       contentType: document.content_type,
@@ -609,6 +662,55 @@ async function runDocumentIngestionWorkflow(
       useDocling: false,
     });
     handlers.onPhase?.("rask_parser");
+    const parseSelection = await selectBestDocumentParse({
+      buffer,
+      fastParsed,
+      document,
+      doclingAvailable:
+        isDoclingEnabled() && canUseDoclingForFormat(fastParsed.fileFormat),
+      extractWithLocalStructure: async () =>
+        extractTextFromBuffer({
+          buffer,
+          fileName: document.file_name,
+          contentType: document.content_type,
+          role: document.role,
+          useDocling: true,
+          useDoclingOcr: shouldUseDoclingOcr({
+            fileFormat: fastParsed.fileFormat,
+            rawText: fastParsed.rawText,
+            sourceMapLength: fastParsed.sourceMap.length,
+            fileSizeBytes: document.file_size_bytes,
+          }),
+        }),
+      onLocalStart: async () => {
+        handlers.setProgress("[34%] Prøver lokal strukturforbedring ...");
+        assertWorkflowActive(handlers);
+        await updateDocumentProcessingState({
+          projectId: input.projectId,
+          documentId: input.documentId,
+          status: "processing",
+          message: "Prøver lokal strukturforbedring før skytjenester ...",
+          error: null,
+          parserUsed: fastParsed.parserUsed,
+        });
+      },
+      onAzureStart: async () => {
+        handlers.setProgress("[36%] Forbedrer dokumentlayout og OCR ...");
+        assertWorkflowActive(handlers);
+        await updateDocumentProcessingState({
+          projectId: input.projectId,
+          documentId: input.documentId,
+          status: "processing",
+          message: "Forbedrer layout og OCR med dokumentintelligens ...",
+          error: null,
+          parserUsed: fastParsed.parserUsed,
+        });
+      },
+    });
+    const parsed = parseSelection.parsed;
+    if (parsed.parserUsed === "azure-layout-v4") {
+      handlers.onPhase?.("azure_layout");
+    }
 
     if (!parsed.rawText.trim()) {
       const shouldAttemptDocling = shouldRunDoclingEnhancement({
@@ -618,9 +720,10 @@ async function runDocumentIngestionWorkflow(
           supportingSubtype: document.supporting_subtype,
           rawText: parsed.rawText,
           sourceMapLength: parsed.sourceMap.length,
+          structureMap: parsed.sourceMap,
           fileSizeBytes: document.file_size_bytes,
       });
-      if (shouldAttemptDocling) {
+      if (!parseSelection.localAttempted && shouldAttemptDocling) {
         handlers.setProgress("[48%] Prøver Docling for tekstuttrekk ...");
         assertWorkflowActive(handlers);
         await updateDocumentProcessingState({
@@ -662,6 +765,12 @@ async function runDocumentIngestionWorkflow(
             status: "enhanced_ready",
             message: "Dokumentet er forbedret og klart for RAG.",
           });
+          await recordParserSelectionEvents({
+            projectId: input.projectId,
+            documentId: input.documentId,
+            sourceRevision: enhancedDocument.chunk_source_revision,
+            selection: parseSelection,
+          });
           handlers.onPhase?.("docling_indeksering");
 
           return {
@@ -680,13 +789,14 @@ async function runDocumentIngestionWorkflow(
     }
 
     const doclingMode = doclingEnhancementMode();
-    const hasDoclingEnhancement = shouldRunDoclingEnhancement({
+    const hasDoclingEnhancement = !parseSelection.localAttempted && shouldRunDoclingEnhancement({
       fileFormat: parsed.fileFormat,
       parserUsed: parsed.parserUsed,
       role: document.role,
       supportingSubtype: document.supporting_subtype,
       rawText: parsed.rawText,
       sourceMapLength: parsed.sourceMap.length,
+      structureMap: parsed.sourceMap,
       fileSizeBytes: document.file_size_bytes,
     }) && doclingMode !== "off";
     const shouldRunInlineDocling =
@@ -722,6 +832,12 @@ async function runDocumentIngestionWorkflow(
           ? "Dokumentet er RAG-klart. Docling-forbedring er køet."
         : "Dokumentet er klart for RAG.",
       indexChunks: !shouldRunInlineDocling,
+    });
+    await recordParserSelectionEvents({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      sourceRevision: basicDocument.chunk_source_revision,
+      selection: parseSelection,
     });
     handlers.onPhase?.(
       shouldRunInlineDocling ? "rask_parser_lagring" : "basic_indeksering",
@@ -889,6 +1005,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     supportingSubtype: document.supporting_subtype,
     rawText: document.raw_text,
     sourceMapLength: document.structure_map.length,
+    structureMap: document.structure_map,
     fileSizeBytes: document.file_size_bytes,
   });
 
