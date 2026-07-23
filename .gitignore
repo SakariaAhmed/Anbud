@@ -23,6 +23,8 @@ test-data/
 test-data/*
 !test-data/requirement-parser-golden/
 !test-data/requirement-parser-golden/norwegian-pdf-requirement-regressions.json
+!test-data/document-analysis-stress/
+!test-data/document-analysis-stress/**
 
 # Generated reports and local scratch artifacts
 tmp/

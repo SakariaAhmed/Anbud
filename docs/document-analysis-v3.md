@@ -100,6 +100,10 @@ Samlet OpenAI-forbruk for canary, første funnrunde og endelig A/B var
 `reports/document-analysis-v3-eval.md`; rapportmappen er ignorert fordi den kan
 inneholde evalueringsoutput.
 
+En separat stressmåling med fem komplekse, fiktive klientdokumenter og 90
+manuelt forfattede fasitfakta er dokumentert i
+[`document-analysis-v3-stress-evaluation.md`](document-analysis-v3-stress-evaluation.md).
+
 ## Utrulling og rollback
 
 1. Sett `DOCUMENT_ANALYSIS_VERSION=v3` i en canary-revisjon.

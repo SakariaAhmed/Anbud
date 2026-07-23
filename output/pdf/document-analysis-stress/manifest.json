@@ -1,0 +1,50 @@
+{
+  "version": "document-analysis-stress.v1",
+  "documents": [
+    {
+      "id": "fjordhavn-port-operations",
+      "client": "Fjordhavn Kommunale Havn KF",
+      "path": "output/pdf/document-analysis-stress/fjordhavn-port-operations.pdf",
+      "pages": 3,
+      "bytes": 9417,
+      "sha256": "629d449d6d6e4e103b1051ccdbbc19ca901804ba0b7d0193e136115736760113"
+    },
+    {
+      "id": "niva-health-scheduling",
+      "client": "Niva Helsepartner AS",
+      "path": "output/pdf/document-analysis-stress/niva-health-scheduling.pdf",
+      "pages": 3,
+      "bytes": 9218,
+      "sha256": "abfb42c7cd857e1d4920b96050ad48b7d74feed05459ef32a1d396b70de667c6"
+    },
+    {
+      "id": "frostmat-cold-chain",
+      "client": "FrostMat Distribusjon AS",
+      "path": "output/pdf/document-analysis-stress/frostmat-cold-chain.pdf",
+      "pages": 3,
+      "bytes": 9103,
+      "sha256": "d1b42284336908443c048cc9b6c6ace4be7eab134e661f9a5d17ab3bae204a01"
+    },
+    {
+      "id": "vestbo-building-energy",
+      "client": "Vestbo Eiendom ASA",
+      "path": "output/pdf/document-analysis-stress/vestbo-building-energy.pdf",
+      "pages": 3,
+      "bytes": 9104,
+      "sha256": "005418c5aa8e0eb6d074fb166f831375d0455ce17b9d7986d8beb0c0c7785759"
+    },
+    {
+      "id": "nordkraft-grid-field-operations",
+      "client": "Nordkraft Nettberedskap AS",
+      "path": "output/pdf/document-analysis-stress/nordkraft-grid-field-operations.pdf",
+      "pages": 3,
+      "bytes": 9123,
+      "sha256": "6a3a0b7c618cd7d0f30bf284788ac7c4d8ba19fab0ca72f517df5a6ef29f6353"
+    }
+  ],
+  "answer_key": {
+    "path": "output/pdf/document-analysis-stress/document-analysis-stress-answer-key.pdf",
+    "bytes": 15291,
+    "sha256": "edd8cfc9e3d7b9e0c45dcb264324660bfc9e503c72a588a5386be71415f96231"
+  }
+}
