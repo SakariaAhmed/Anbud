@@ -16,6 +16,8 @@ import {
   tokenizeComparableText,
 } from "@/lib/server/document-intelligence/text-normalization";
 
+// Exported for versioned schema and evaluation contracts.
+// fallow-ignore-next-line unused-export
 export const CUSTOMER_ANALYSIS_V3_REQUIRED_FIELDS =
   CUSTOMER_ANALYSIS_REQUIRED_FIELDS;
 export const CUSTOMER_ANALYSIS_V3_JSON_SCHEMA: Record<string, unknown> =
@@ -548,6 +550,8 @@ function criticalFactScore(value: string) {
   );
 }
 
+// Exported for deterministic critical-fact contract tests.
+// fallow-ignore-next-line unused-export
 export function buildCustomerAnalysisCriticalFactChecklist(
   documents: CustomerAnalysisV3DocumentContext[],
 ) {

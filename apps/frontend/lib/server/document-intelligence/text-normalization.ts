@@ -77,6 +77,8 @@ export function tokenizeComparableText(value: string) {
     .filter((token) => token.length > 2 || /\d/u.test(token));
 }
 
+// Exported for normalization threshold contract tests.
+// fallow-ignore-next-line unused-export, complexity
 export function similarityScore(a: string, b: string) {
   const aTokens = new Set(tokenizeComparableText(a));
   const bTokens = new Set(tokenizeComparableText(b));
@@ -119,6 +121,8 @@ export function isNearDuplicate(a: string, b: string, threshold = 0.72) {
   return similarityScore(normalizedA, normalizedB) >= threshold;
 }
 
+// Exported for normalization contract tests.
+// fallow-ignore-next-line unused-export
 export function normalizeUniqueList(items: string[]) {
   const result: string[] = [];
 

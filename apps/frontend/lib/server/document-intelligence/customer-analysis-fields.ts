@@ -111,6 +111,8 @@ type CustomerAnalysisFieldDefinition = {
   fullGuidance?: string[];
 };
 
+// Exported as the canonical schema contract for analysis tooling.
+// fallow-ignore-next-line unused-export
 export const CUSTOMER_ANALYSIS_FIELD_DEFINITIONS = {
   customer_profile_summary: {
     schema: text,
@@ -329,6 +331,8 @@ export function buildCustomerAnalysisFieldGuidance() {
   );
 }
 
+// Exported for section-regeneration contract tests.
+// fallow-ignore-next-line unused-export
 export function sectionFieldNames(section: CustomerAnalysisSection) {
   return CUSTOMER_ANALYSIS_REQUIRED_FIELDS.filter(
     (field) =>

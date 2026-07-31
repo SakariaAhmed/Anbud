@@ -1,3 +1,4 @@
+// fallow-ignore-file unused-file
 import { buildPromptTemplate } from "../../apps/frontend/lib/server/prompts";
 
 export const CUSTOMER_ANALYSIS_READABILITY_RULES = [

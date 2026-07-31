@@ -2,6 +2,8 @@ export type DocumentAnalysisVersion = "off" | "v3";
 
 const ENABLED_VALUES = new Set(["on", "true", "1"]);
 
+// Exported for rollout-configuration contract tests.
+// fallow-ignore-next-line unused-export, complexity
 export function documentAnalysisVersion(): DocumentAnalysisVersion {
   const configured = process.env.DOCUMENT_ANALYSIS_VERSION?.trim().toLowerCase();
   if (configured === "v3" || configured === "3" || ENABLED_VALUES.has(configured ?? "")) {
@@ -26,6 +28,8 @@ export function customerAnalysisPipeline(): "legacy" | "v3" {
 }
 
 /** @deprecated Use isDocumentAnalysisEnabled. */
+// Retained as a compatibility alias for older integrations.
+// fallow-ignore-next-line unused-export
 export function isDocumentIntelligenceV2Enabled() {
   return isDocumentAnalysisEnabled();
 }

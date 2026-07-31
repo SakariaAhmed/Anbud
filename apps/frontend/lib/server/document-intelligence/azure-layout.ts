@@ -78,6 +78,8 @@ function normalizedConfidence(value: unknown) {
   return boundedNumber(value, 0, 1);
 }
 
+// Exported for Azure layout normalization contract tests.
+// fallow-ignore-next-line unused-export, complexity
 export function normalizeAzureLayoutResult(input: {
   analyzeResult: unknown;
   title: string;

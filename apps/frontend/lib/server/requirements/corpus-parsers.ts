@@ -4,6 +4,8 @@ export type {
 export {
   buildExplicitIdPdfLayoutRequirementLedger,
   buildExplicitIdTableRequirementLedger,
+  // Re-exported for corpus evaluation tooling.
+  // fallow-ignore-next-line unused-export
   explicitIdTableSourceIds,
 } from "@/lib/server/requirements/explicit-id-table-parser";
 export {

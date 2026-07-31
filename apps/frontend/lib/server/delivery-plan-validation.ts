@@ -24,6 +24,8 @@ const DELIVERY_MILESTONES = [
   },
 ] as const;
 
+// Exported for delivery-plan validation contract tests.
+// fallow-ignore-next-line unused-export
 export function sourceContainsDatedGoLive(value: string) {
   const text = value.normalize("NFC").replace(/\s+/gu, " ").trim();
   const termPattern = new RegExp(GO_LIVE_TERM_PATTERN.source, "giu");

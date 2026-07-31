@@ -1,6 +1,8 @@
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { normalizePdfReferenceTypography } from "@/lib/server/requirements/pdf-normalization";
 
+// Retained to recognize documents parsed before the v3 layout rollout.
+// fallow-ignore-next-line unused-export
 export const LEGACY_LOCAL_PDF_LAYOUT_PARSER = "pdf-parse-local-layout-v2";
 export const LOCAL_PDF_LAYOUT_PARSER = "pdf-parse-local-layout-v3";
 
@@ -37,6 +39,8 @@ export type LocalPdfPage = {
   lines: LocalPdfLine[];
 };
 
+// Exported for local parser fixture and migration contracts.
+// fallow-ignore-next-line unused-type
 export type LocalPdfStructureEntry = {
   reference: string;
   text: string;

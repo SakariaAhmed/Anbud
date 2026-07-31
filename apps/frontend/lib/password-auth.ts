@@ -99,6 +99,8 @@ export async function createSessionToken(now = Date.now()) {
   return createUserSessionToken(await derivePasswordOwnerId(), "Bruker", now);
 }
 
+// Exported for authentication contract tests and session-owner migration checks.
+// fallow-ignore-next-line unused-export
 export function derivePasswordOwnerId() {
   const ownerId =
     process.env.APP_PASSWORD_OWNER_ID?.trim() || DEFAULT_PASSWORD_OWNER_ID;

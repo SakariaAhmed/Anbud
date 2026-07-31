@@ -358,6 +358,8 @@ function exactSourceExcerptCandidate(input: {
   } satisfies SourceExcerptCandidate;
 }
 
+// Exported for source-grounding contract tests.
+// fallow-ignore-next-line unused-export
 export function groundImplicitRequirementExcerpts(input: {
   requirements: CustomerAnalysisResult["implicit_requirements"];
   sourceDocuments: CustomerAnalysisSourceDocument[];

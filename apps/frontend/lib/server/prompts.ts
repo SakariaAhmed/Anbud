@@ -37,6 +37,8 @@ export function buildDelimitedContext(label: string, content: string) {
   return `### ${label}\n"""\n${content.trim()}\n"""`;
 }
 
+// Exported for prompt regression fixtures.
+// fallow-ignore-next-line unused-export
 export const CUSTOMER_ANALYSIS_READABILITY_RULES = [
   "Skriv norsk fagspråk som er lett å lese: korte setninger, tydelig prioritering og maks ett hovedpoeng per setning.",
   "Unngå oppramsing av teknologier, tjenester, ansvarsområder eller kvaliteter i samme setning. Gruppér dem i få hovedkategorier og forklar hvorfor de betyr noe.",

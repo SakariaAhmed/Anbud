@@ -18,6 +18,8 @@ function unavailable(message: string): ExecutiveSummaryReadiness {
   };
 }
 
+// Exported for readiness-state contract tests.
+// fallow-ignore-next-line unused-export, complexity
 export function executiveSummaryReadiness(
   evaluation: SolutionEvaluationResult,
 ): ExecutiveSummaryReadiness {

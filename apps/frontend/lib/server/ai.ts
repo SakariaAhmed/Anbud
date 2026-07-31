@@ -20106,6 +20106,8 @@ export function assertRequirementCoverageBatchesSucceeded(
   );
 }
 
+// Exported for deterministic concurrency and lease-loss contract tests.
+// fallow-ignore-next-line unused-export
 export async function retryRequirementCoverageBatchesSequentially<TBatch, TValue>(
   batches: TBatch[],
   retry: (batch: TBatch) => Promise<TValue>,

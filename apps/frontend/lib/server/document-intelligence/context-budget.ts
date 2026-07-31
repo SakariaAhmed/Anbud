@@ -1,9 +1,15 @@
 import type { ProjectDocumentRole } from "@/lib/types";
 
+// Exported budget constants form part of the analysis test contract.
+// fallow-ignore-next-line unused-export
 export const DEFAULT_COMPILED_CONTEXT_CHARS = 18_000;
+// fallow-ignore-next-line unused-export
 export const MAX_COMPILED_CONTEXT_CHARS = 40_000;
+// fallow-ignore-next-line unused-export
 export const PRIMARY_PROMPT_CONTEXT_CHARS = 18_000;
+// fallow-ignore-next-line unused-export
 export const SUPPORTING_PROMPT_CONTEXT_TOTAL_CHARS = 16_000;
+// fallow-ignore-next-line unused-export
 export const MAX_SUPPORTING_PROMPT_CONTEXT_CHARS = 4_000;
 export const CANONICAL_CONTEXT_RATIO = 0.72;
 
@@ -17,6 +23,8 @@ export function compiledAnalysisContextLimit() {
     : DEFAULT_COMPILED_CONTEXT_CHARS;
 }
 
+// Exported for context-budget boundary tests.
+// fallow-ignore-next-line unused-export
 export function supportingPromptContextLimit(supportingDocumentCount: number) {
   const count =
     Number.isFinite(supportingDocumentCount) && supportingDocumentCount > 0

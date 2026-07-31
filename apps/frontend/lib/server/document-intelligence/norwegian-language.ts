@@ -22,6 +22,8 @@ export type NorwegianLanguageDiagnostic =
   | "missing_terminal_punctuation"
   | "unstructured_requirement_table";
 
+// Exported for parser diagnostics consumed by evaluation tooling.
+// fallow-ignore-next-line unused-type
 export type NorwegianParseAnomalyCode = Extract<
   NorwegianLanguageDiagnostic,
   | "mojibake"
