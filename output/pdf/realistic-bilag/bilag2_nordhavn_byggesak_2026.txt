@@ -1,0 +1,211 @@
+BILAG 2 - LEVERANDØRENS BESKRIVELSE AV TJENESTEN
+
+Tilbud fra KystSky AS | Nordhavn kommune | Anskaffelse 26/1847
+
+1. Leverandørens beskrivelse av tjenesten
+
+KystSky AS tilbyr Saksløft Cloud 4.2 som standardisert SaaS-tjeneste. Tjenesten samler saksbehandling, innbyggerdialog, dokumentflyt, integrasjoner og styringsinformasjon i én forvaltet plattform. Tilbudet omfatter abonnement, konfigurering, migrering, integrasjoner, opplæring og løpende tjenesteforvaltning.
+
+Produksjonsmiljøet etableres i Microsoft Azure i Norge med separate miljøer for test og produksjon. Identitet kobles til Nordhavn kommunes Microsoft Entra ID for ansatte og ID-porten for eksterne brukere. Nasjonale fellesløsninger og arkivkjernen kobles gjennom versjonerte integrasjoner.
+
+KystSky tar ansvar for egen tjeneste, integrasjonskomponenter og underleverandører. Nordhavn beholder ansvar for faglige beslutninger, bestilling og tilgang til nasjonale grensesnitt, kvaliteten i kildedata utover avtalt datarens og lokal endringsledelse.
+
+2. Forutsetninger og avklaringer
+
+Tilbudet inneholder ingen avvik fra A-kravene. Planen forutsetter at dagens leverandør leverer første komplette kildeuttrekk senest 5. oktober 2026 og at Nordhavn stiller med beslutningsdyktige fagrepresentanter i ukentlige arbeidsmøter fra kontraktsignering til pilot.
+
+Nordhavn må velge Altinn eller KS Fiks/SvarUt som første meldingskanal innen 1. desember 2026. Den andre kanalen kan innføres senere som endring eller opsjon uten at datamodellen må bygges om.
+
+Standardgrensen for API-trafikk er 300 kall per minutt per integrasjonsklient. Dersom kommunens dataplattform krever høyere varig volum, dimensjoneres og prises dette etter måling i etableringsfasen.
+
+3. Løsningsoversikt
+
+Tjeneste: Saksløft Cloud 4.2, standardisert SaaS
+
+Driftsregion: Microsoft Azure i Norge, med behandlingssteder innenfor EØS
+
+Identitet: Microsoft Entra ID for ansatte og ID-porten for eksterne brukere
+
+Integrasjon: REST, OpenAPI 3.1, webhooks, SCIM og avtalte nasjonale fellesløsninger
+
+Tilgjengelighet: 99,95 prosent per måned, RPO 1 time og RTO 4 timer
+
+Produksjonsstart: 1. april 2027
+
+3.1 Besvarelse av Kundens krav
+
+FUN-A01 | A | Saksbehandling
+
+Kundens krav: Tjenesten skal støtte mottak, fordeling, behandling, vedtak og avslutning av byggesaker i én sammenhengende arbeidsflate. Alle statusendringer skal tidsstemples og knyttes til ansvarlig rolle.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Saksløft leverer én rollebasert arbeidsflate fra mottak til avslutning. Hver overgang lagres med tidspunkt, bruker, tidligere status og ny status. Fagansvarlig kan konfigurere arbeidsflyter uten kode, mens endringer i produksjonsoppsettet krever totrinnsgodkjenning.
+
+FUN-A02 | A | Innbyggerdialog
+
+Kundens krav: Eksterne brukere skal autentiseres med ID-porten. Tjenesten skal vise egne søknader, dokumenter, frister og saksstatus uten at brukeren får innsyn i andre saker.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Innbyggerportalen bruker ID-porten via OpenID Connect. Tilgang opprettes først når fødselsnummer eller organisasjonsnummer er koblet til en partsrolle i den aktuelle saken. Autorisasjon kontrolleres ved hvert kall, og direkte dokumentlenker kan ikke gjenbrukes uten en aktiv, gyldig sesjon.
+
+FUN-B01 | B | Innbyggerdialog
+
+Kundens krav: Leverandøren skal følge fremgangsmåten beskrevet i Bilag 2 for å gi søker og ansvarlig foretak forståelig status, neste forventede aktivitet og varsling ved manglende dokumentasjon.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Portalen viser status i klart språk, ansvarlig enhet og neste forventede hendelse. Varsling kan sendes via e-post, SMS eller Altinn når kommunen har valgt kanal. Superbruker kan redigere meldingstekster og fristregler i et versjonert administrasjonsgrensesnitt. Utsendelser logges på saken.
+
+FUN-B02 | B | Datakvalitet
+
+Kundens krav: Tjenesten skal gi kontekstavhengig veiledning og kontrollere obligatoriske opplysninger før innsending, slik at andelen mangelfulle søknader reduseres.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Skjemaet tilpasser spørsmål etter tiltakstype og tidligere svar. Obligatoriske felt, vedlegg og enkle krysskontroller valideres før innsending. Kommunen får en månedlig rapport over stoppede feil, ettersendt dokumentasjon og saker som fortsatt må kompletteres. Referanseverdien fastsettes i pilotfasen.
+
+DOK-A03 | A | Dokument og journal
+
+Kundens krav: Alle inn- og utgående saksdokumenter skal kunne journalføres med fullstendige metadata og overføres til kommunens Noark 5-godkjente arkivkjerne uten manuell dobbeltregistrering.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Dokument og metadata sendes til arkivkjernen gjennom en versjonert integrasjon. Kvittering lagres på saken. Feil plasseres i en egen arbeidskø med årsak, teknisk korrelasjons-ID og forslag til retting. Ny sending kan utføres uten at dokumentet journalføres to ganger.
+
+IAM-A04 | A | Identitet og roller
+
+Kundens krav: Ansatte skal autentiseres med kommunens Microsoft Entra ID. Tilgang skal styres etter minste privilegium og kunne avgrenses etter enhet, rolle, sakstype og skjermingsbehov.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Ansatte bruker kommunens Entra ID med OpenID Connect og kommunens egne krav til flerfaktorautentisering og betinget tilgang. Grupper kan synkroniseres med SCIM. Roller kan avgrenses etter organisatorisk enhet, sakstype og skjermingskode. Kvartalsvis tilgangsrapport inngår.
+
+INT-A05 | A | Nasjonale fellesløsninger
+
+Kundens krav: Tjenesten skal kunne integreres med ID-porten, Matrikkelen, Folkeregisteret og én meldingskanal valgt av Kunden: Altinn eller KS Fiks/SvarUt.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: ID-porten, Matrikkelen og Folkeregisteret leveres som standardkoblinger. Altinn og KS Fiks/SvarUt støttes begge, men Nordhavn velger én kanal for første produksjonssetting. Oppsett av sertifikater, tilganger, meldingsprofiler og testmiljø inngår i etableringen.
+
+INT-B03 | B | Integrasjoner
+
+Kundens krav: Leverandøren skal beskrive hvordan åpne, dokumenterte grensesnitt og hendelser kan brukes av kommunens dataplattform og fremtidige fagsystemer uten leverandørspesifikk låsing.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Saksløft tilbyr REST-API dokumentert med OpenAPI 3.1 og webhooks for opprettelse, statusendring, dokumentmottak og vedtak. Versjoner støttes parallelt i minst 18 måneder. Standardgrensen er 300 kall per minutt per integrasjonsklient; høyere volum dimensjoneres etter måling i etableringsfasen.
+
+MIG-A06 | A | Datamigrering
+
+Kundens krav: Leverandøren skal migrere om lag 220 000 saker, 1,15 millioner dokumentfiler og tilhørende metadata fra 2008 og fremover. Ingen journalførte dokumenter eller rettighetsmarkeringer skal gå tapt.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Leverandøren gjennomfører profilering, prøvemigrering og to komplette testmigreringer før produksjonsflytting. Antall saker og filer, kontrollsummer for filer, metadatafelter, partsroller og skjermingskoder avstemmes mot kildeuttrekket. Avvik dokumenteres per feilkategori og må lukkes eller godkjennes av Nordhavn før produksjonssetting.
+
+MIG-B04 | B | Overgang
+
+Kundens krav: Leverandøren skal følge en trinnvis migrerings- og innføringsmetode som begrenser driftsavbrudd og gjør det mulig å verifisere de mest risikoutsatte sakstypene tidlig.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Et representativt testutvalg etableres for delingssaker, dispensasjoner, saker med skjerming og saker med mange dokumentversjoner. Pilot gjennomføres med Plan og byggesak før de øvrige enhetene. Produksjonssetting skjer over en helg med lesetilgang til gammel løsning. Tilbakefall besluttes dersom avstemmingen viser kritiske avvik.
+
+SIK-A07 | A | Datalokasjon
+
+Kundens krav: Kundedata, sikkerhetskopier og driftslogger som kan inneholde personopplysninger, skal behandles innenfor EØS. Leverandøren skal føre oppdatert oversikt over underleverandører og behandlingssteder.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Kundedata og sikkerhetskopier lagres i Microsoft Azure i Norge. Sekundær beredskapskopi og personidentifiserbar applikasjonslogg forblir i Norge. Driftstelemetri uten saksinnhold behandles i Sverige. Alle behandlingssteder ligger i EØS og fremgår av underleverandørlisten. Endringer varsles 60 dager før ikrafttredelse.
+
+SIK-A08 | A | Informasjonssikkerhet
+
+Kundens krav: Tjenesten skal kryptere data under overføring og lagring, logge administrative handlinger og støtte eksport av sikkerhetshendelser til Kundens sikkerhetsovervåking. Kritiske sårbarheter skal håndteres etter dokumenterte frister.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Trafikk krypteres med TLS 1.2 eller nyere, og data lagres kryptert med plattformstyrte nøkler. Administrative handlinger, tilgang til skjermede saker og endringer i roller logges. Hendelser kan sendes til kommunens sikkerhetsovervåking i CEF- eller JSON-format. Kritiske sårbarheter risikovurderes innen fire timer og får korrigerende tiltak innen 72 timer.
+
+SIK-B05 | B | Styringsinformasjon
+
+Kundens krav: Kunden skal kunne følge saksbehandlingstid, restanser, kompletteringsbehov, integrasjonsfeil og tilgangsavvik uten at Leverandøren må utvikle nye rapporter for hver måling.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Standardpakken inneholder dashbord for saksalder, fristbrudd, restanser, kompletteringer, integrasjonskø og tilgangskontroll. Data kan filtreres på enhet, sakstype og periode, og eksporteres som CSV eller hentes gjennom rapport-API. Hvert dashbord følger samme rollemodell som saksdataene.
+
+UU-A09 | A | Universell utforming
+
+Kundens krav: Innbyggerrettede flater skal oppfylle WCAG 2.2 nivå AA. Leverandøren skal dokumentere testresultater og rette kritiske tilgjengelighetsfeil før produksjonssetting.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Portalen er utviklet mot WCAG 2.2 nivå AA. Før produksjonssetting utføres automatiserte tester, tastaturnavigasjon, skjermlesertest og manuell kontroll av de avtalte brukerreisene. Kritiske feil blokkerer godkjenning. Testrapport og avvikslogg leveres til Nordhavn.
+
+DRI-A10 | A | Tilgjengelighet
+
+Kundens krav: Tjenesten skal ha månedlig tilgjengelighet på minst 99,9 prosent, eksklusive varslet vedlikehold innenfor avtalt vedlikeholdsvindu. RPO skal være høyst 4 timer og RTO høyst 8 timer.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Tilbudt tilgjengelighet er 99,95 prosent per kalendermåned, målt ved innlogget syntetisk transaksjon i både saksbehandlerflate og innbyggerportal. Tilbudt RPO er 1 time og RTO er 4 timer. Resultatene rapporteres månedlig sammen med hendelser og kompenserende tiltak.
+
+DRI-B06 | B | Driftsinnsikt
+
+Kundens krav: Leverandøren skal beskrive proaktiv overvåking, hendelseshåndtering, varsling og hvordan gjentakende feil blir fulgt opp.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Overvåkingen dekker brukerreiser, API-er, meldingskøer, arkivoverføring og databasetjenester. Kritiske hendelser varsles til Nordhavns beredskapskontakt innen 15 minutter. Foreløpig status gis hvert 30. minutt. Rotårsaksanalyse leveres innen fem arbeidsdager for alvorlige eller gjentakende hendelser.
+
+OPL-B07 | B | Opplæring og innføring
+
+Kundens krav: Leverandøren skal beskrive et rollebasert opplæringsopplegg for 127 ansatte, herunder saksbehandlere, ledere, superbrukere, arkivpersonell og tjenesteforvalter.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Opplæringen kombinerer digitale forkurs, scenarioverksteder og øving i testmiljø. Femten superbrukere får to hele dager, mens øvrige roller får målrettede økter på to til fire timer. Materiell leveres på norsk og oppdateres ved endringer. Digitale spørretimer tilbys ukentlig de første seks ukene.
+
+DATA-A11 | A | Data og avslutning
+
+Kundens krav: Kunden skal på forespørsel og ved avtalens opphør kunne hente ut saksdata, dokumenter, metadata, tilgangsmarkeringer og revisjonslogger i dokumenterte, maskinlesbare formater.
+
+Status: Oppfylt
+
+Leverandørens besvarelse: Data leveres som JSON eller CSV for strukturert informasjon og i originalt filformat for dokumenter. Manifestet knytter filer til sak, journalpost, versjon og tilgangsmarkering. Et komplett prøveuttrekk kan bestilles årlig uten tillegg i abonnementsprisen. Endelig uttrekk leveres senest 30 kalenderdager etter avtalt skjæringsdato.
+
+4. Gjennomføringsplan
+
+15. oktober til 30. november 2026: etablering av styring, løsningsdesign, dataprofilering, integrasjonsavklaringer og referanseverdier for gevinstmåling. Leveranser er beslutningslogg, datakvalitetsrapport og godkjent detaljplan.
+
+1. desember 2026 til 22. januar 2027: konfigurasjon, integrasjoner, første komplette testmigrering og teknisk sikkerhetstest. Kritiske migreringsavvik skal være kategorisert og ha avtalt eier før fasen godkjennes.
+
+23. januar til 14. februar 2027: andre testmigrering, test av hele kjeden for prioriterte brukerreiser, opplæring av superbrukere og beredskapsøvelse. Pilotbeslutningen tas av styringsgruppen på dokumentert testgrunnlag.
+
+15. februar til 31. mars 2027: pilot i Plan og byggesak, opplæring av øvrige brukergrupper og produksjonsforberedelse. Produksjonssetting planlegges helgen 27. til 28. mars, med ordinær drift fra 1. april 2027.
+
+1. april til 12. mai 2027: seks ukers forsterket oppfølging med daglig prioriteringsmøte den første uken, ukentlig gevinstmåling og digitale spørretimer. Overgang til ordinær forvaltning skjer når åpne feil og avvik er innenfor godkjente terskler.
+
+5. Sikkerhet, personvern og data
+
+Saksløft benytter rollebasert tilgang, separat administrasjonstilgang, kryptering under overføring og lagring, og uforanderlig sikkerhetslogg for privilegerte handlinger. Kundedata behandles innenfor EØS. Behandlingssteder og underleverandører dokumenteres i databehandleravtalen.
+
+KystSky gjennomfører årlig uavhengig penetrasjonstest og løpende sårbarhetsskanning. Kritiske funn risikovurderes innen fire timer. Korrigerende tiltak gjennomføres innen 72 timer. En annen frist kan benyttes dersom Nordhavn skriftlig godkjenner et midlertidig risikoreduserende tiltak.
+
+Nordhavn eier egne data. Årlig prøveuttrekk inngår i abonnementet. Ved avslutning leveres et uttrekk med manifest over saksdata, dokumenter, metadata, rettighetsmarkeringer og revisjonslogger i dokumenterte, maskinlesbare formater.
+
+6. Operativ forvaltning
+
+KystSky overvåker innlogging, sentrale brukerreiser, integrasjoner, meldingskøer og databasetjenester hele døgnet. Nordhavns tjenesteforvalter får månedlig rapport om tilgjengelighet, hendelser, kapasitet, sårbarheter, endringer og avtalte gevinstindikatorer.
+
+Endringer varsles gjennom en rullerende 90-dagers plan. Endringer med mulig påvirkning på integrasjoner eller brukerflyt tilbys i testmiljø minst 20 arbeidsdager før produksjonssetting. Kritiske sikkerhetsoppdateringer kan følge kortere løp, men varsles og dokumenteres.
+
+Alvorlige hendelser håndteres av vaktleder, teknisk hendelsesleder og kommunikasjonsansvarlig. Nordhavn mottar første varsel innen 15 minutter, løpende status og rotårsaksanalyse innen fem arbeidsdager.
+
+7. Erklæring
+
+KystSky AS bekrefter at tilbudt tjeneste oppfyller alle A-krav. B-kravene oppfylles som beskrevet i dette bilaget. Det er ikke tatt forbehold som endrer Kundens kravtekst.

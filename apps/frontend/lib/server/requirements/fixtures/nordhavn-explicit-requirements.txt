@@ -1,0 +1,133 @@
+BILAG 1 - KUNDENS BEHOVS- OG KRAVSPESIFIKASJON
+
+Nordhavn kommune | Anskaffelse 26/1847 | SSA-L 2026
+
+1. Formål og anskaffelsesramme
+
+Nordhavn kommune skal anskaffe en standardisert programvaretjeneste. Tjenesten skal leveres som SaaS under SSA-L 2026.
+
+6. Kravtabell
+
+FUN-A01 | A | Saksbehandling
+
+Tjenesten skal støtte mottak, fordeling, behandling, vedtak og avslutning av byggesaker i én sammenhengende arbeidsflate.
+
+Svarinstruks: Bekreft oppfyllelse og beskriv arbeidsflyten.
+
+FUN-A02 | A | Innbyggerdialog
+
+Eksterne brukere skal autentiseres med ID-porten og bare få innsyn i egne saker.
+
+Svarinstruks: Bekreft autentiserings- og tilgangsmekanismen.
+
+FUN-B01 | B | Innbyggerdialog
+
+Leverandøren skal gi søker og ansvarlig foretak forståelig status og neste forventede aktivitet.
+
+Svarinstruks: Beskriv brukerreisen og varslingskanalene.
+
+FUN-B02 | B | Datakvalitet
+
+Tjenesten skal kontrollere obligatoriske opplysninger før innsending og gi kontekstavhengig veiledning.
+
+Svarinstruks: Beskriv validering og veiledning.
+
+DOK-A03 | A | Dokument og journal
+
+Alle saksdokumenter skal kunne journalføres med fullstendige metadata uten manuell dobbeltregistrering.
+
+Svarinstruks: Bekreft oppfyllelse og beskriv sporbarheten.
+
+IAM-A04 | A | Identitet og roller
+
+Ansatte skal autentiseres med kommunens Microsoft Entra ID og tilgang skal følge minste privilegium.
+
+Svarinstruks: Bekreft oppfyllelse og angi kontrollnivåene.
+
+INT-A05 | A | Nasjonale fellesløsninger
+
+Tjenesten skal kunne integreres med ID-porten, Matrikkelen, Folkeregisteret og kommunens meldingskanal.
+
+Svarinstruks: Skill standardkoblinger fra tilpasning.
+
+INT-B03 | B | Integrasjoner
+
+Leverandøren skal beskrive åpne og dokumenterte grensesnitt uten leverandørspesifikk låsing.
+
+Svarinstruks: Beskriv API-er, hendelser og versjonering.
+
+MIG-A06 | A | Datamigrering
+
+Leverandøren skal migrere saker, dokumentfiler og metadata uten at journalførte dokumenter går tapt.
+
+Svarinstruks: Beskriv hvordan fullstendighet dokumenteres.
+
+MIG-B04 | B | Overgang
+
+Leverandøren skal følge en trinnvis migreringsmetode som begrenser driftsavbrudd.
+
+Svarinstruks: Beskriv faser, testutvalg og tilbakefallsplan.
+
+SIK-A07 | A | Datalokasjon
+
+Kundedata, sikkerhetskopier og driftslogger skal behandles innenfor EØS.
+
+Svarinstruks: Oppgi behandlingsregioner og underleverandørstyring.
+
+SIK-A08 | A | Informasjonssikkerhet
+
+Tjenesten skal kryptere data under overføring og lagring og logge administrative handlinger.
+
+Svarinstruks: Beskriv kontroller, logger og sårbarhetshåndtering.
+
+SIK-B05 | B | Styringsinformasjon
+
+Kunden skal kunne følge saksbehandlingstid, restanser, integrasjonsfeil og tilgangsavvik.
+
+Svarinstruks: Beskriv rapporter, filtrering og eksport.
+
+UU-A09 | A | Universell utforming
+
+Innbyggerrettede flater skal oppfylle WCAG 2.2 nivå AA og dokumenteres med testresultater.
+
+Svarinstruks: Beskriv test- og rettingsprosessen.
+
+DRI-A10 | A | Tilgjengelighet
+
+Tjenesten skal ha månedlig tilgjengelighet på minst 99,9 prosent og dokumenterte gjenopprettingstider.
+
+Svarinstruks: Oppgi tilbudt nivå og målepunkt.
+
+DRI-B06 | B | Driftsinnsikt
+
+Leverandøren skal beskrive proaktiv overvåking, hendelseshåndtering og varsling.
+
+Svarinstruks: Beskriv responstider og forbedringssløyfen.
+
+OPL-B07 | B | Opplæring og innføring
+
+Leverandøren skal beskrive et rollebasert opplæringsopplegg for kommunens ansatte.
+
+Svarinstruks: Beskriv format, omfang og støtte etter produksjonssetting.
+
+DATA-A11 | A | Data og avslutning
+
+Kunden skal kunne hente ut saksdata, dokumenter, metadata og revisjonslogger i maskinlesbare formater.
+
+Svarinstruks: Beskriv formater, frister og verifikasjon.
+
+7. Gjennomføring og milepæler
+
+Leverandørens fremdriftsplan skal vise avhengigheter, beslutningspunkter, testansvar og bemanning.
+
+8. Tildelingskriterier
+
+Kvalitet vektes 45 prosent. Vurderingen bygger særlig på FUN-B01, FUN-B02, INT-B03, SIK-B05 og DRI-B06.
+
+Gjennomføring vektes 30 prosent. Vurderingen bygger særlig på MIG-B04, OPL-B07 og realismen i fremdriftsplanen.
+
+Pris vektes 25 prosent og skal inkludere etablering, abonnement, integrasjoner og opsjoner.
+
+9. Åpne avklaringer før endelig tilbud
+
+Kunden velger meldingskanal etter teknisk verifikasjon. Leverandøren skal prise begge alternativer.

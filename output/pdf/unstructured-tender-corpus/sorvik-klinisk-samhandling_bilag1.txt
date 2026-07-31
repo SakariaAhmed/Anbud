@@ -1,0 +1,83 @@
+BILAG 1 - USTRUKTURERTE KUNDEKRAV
+Sørvik Helsepartner HF - klinisk samhandlingsplattform
+Kunde: Sørvik Helsepartner HF
+Anskaffelse: Integrasjons- og samhandlingsplattform for pasientforløp og hjemmeoppfølging
+Kontrakt: SSA-T 2026 med påfølgende SSA-V
+Dokumentmønster: narrative-memo
+
+VIRKSOMHET OG BEHOV
+Sørvik Helsepartner HF driver to sykehus og elleve poliklinikker med 7 800 ansatte. Årlig håndteres omtrent 410 000 polikliniske konsultasjoner og 36 000 innleggelser. Kliniske data utveksles i dag gjennom 74 punkt-til-punkt-integrasjoner, og feilretting krever ofte manuell sammenstilling av logger fra flere leverandører.
+Foretaket skal etablere én styrt integrasjons- og samhandlingsplattform for pasientforløp, medisinske målinger fra hjemmet og varsling til kliniske team. Første produksjonsforløp er hjertesvikt og KOLS. Pilot skal starte 15. februar 2027, og begge forløp skal være i ordinær drift senest 1. september 2027.
+Plattformen skal samhandle med elektronisk pasientjournal, kurvesystem, laboratorieløsning, nasjonal kjernejournal og kommunale mottak. Helseforetaket er behandlingsansvarlig og krever at kliniske beslutninger alltid kan spores til kilde, tidspunkt, regelversjon og ansvarlig helsepersonell.
+
+MÅL OG EFFEKTER
+Redusere uplanlagte reinnleggelser for pilotgruppene med 12 prosent innen atten måneder.
+Redusere gjennomsnittlig tid fra kritisk hjemmemåling til klinisk vurdering fra 95 til 30 minutter.
+Avvikle minst 30 av 74 punkt-til-punkt-integrasjoner i første avtaleår.
+Oppnå 99,95 prosent tilgjengelighet for kritisk meldingsformidling.
+Gi pasienten forståelig innsyn i hvilke målinger som er mottatt og hvordan de følges opp.
+
+FØRINGER OG AVGRENSNINGER
+Pasientdata og identifiserbare logger skal lagres og behandles i Norge.
+Integrasjoner skal bruke HL7 FHIR R4 der mottakende system støtter standarden.
+Kritiske meldinger skal ikke gå tapt ved nettverksbrudd eller planlagt vedlikehold.
+Tilgang skal baseres på tjenstlig behov, klinisk rolle og aktiv behandlingsrelasjon.
+RPO skal være null for bekreftede kliniske meldinger, og RTO skal være høyst 60 minutter.
+
+TILDELING
+Pasientsikkerhet, arkitektur og funksjonell kvalitet: 50 prosent.
+Gjennomføring, integrasjonsmigrering og klinisk innføring: 30 prosent.
+Pris: 20 prosent.
+
+KRAVENE ER USTRUKTURERTE - DET FINNES INGEN KRAVTABELL
+Dokumentet viser til SSA-T 2026 med påfølgende SSA-V, ISO 27001, TLS 1.3 og eventuelle domenestandarder som FHIR R4. Disse betegnelsene er ikke krav-ID-er. Krysshenvisninger til SOR-PAS-01 og SOR-INN-12 senere i teksten skal heller ikke opprette nye kravrader.
+
+Krav SOR-PAS-01: Meldingssikkerhet (prioritet A)
+Bekreftede kliniske meldinger skal formidles nøyaktig én gang eller håndteres idempotent, med kø, kvittering, korrelasjons-ID og synlig avvikskø.
+
+Krav SOR-FHIR-02: Standarder (prioritet A)
+Plattformen skal støtte HL7 FHIR R4 og bevare originalmelding og transformasjonsversjon for revisjon.
+
+Krav SOR-IAM-03: Tilgang (prioritet A)
+Tilgang til pasientdata skal kreve tjenstlig behov, klinisk rolle og aktiv behandlingsrelasjon. Nødtilgang skal begrunnes og etterkontrolleres.
+
+Krav SOR-VAR-04: Klinisk varsling (prioritet A)
+Kritiske hjemmemålinger skal vurderes mot versjonerte regler og varsles til riktig klinisk team med eskalering når varselet ikke kvitteres.
+
+Mellomnotat - ikke et nytt krav
+Prosjektgruppen skal kontrollere sammenhengen mellom SOR-VAR-04 og SOR-PAS-05. Notatet endrer ikke kravregisteret og skal ikke gi en ekstra rad.
+
+Krav SOR-PAS-05: Pasientinnsyn (prioritet B)
+Pasienten bør kunne se mottatte målinger, status og kontaktinstruks uten å få presentert automatiske vurderinger som medisinsk diagnose.
+
+Krav SOR-LOG-06: Sporbarhet (prioritet A)
+En klinisk beslutningskjede skal kunne spores til kilde, tidspunkt, regelversjon, transformasjon og ansvarlig helsepersonell.
+
+Krav SOR-DRI-07: Kontinuitet (prioritet A)
+Kritisk meldingsformidling skal ha 99,95 prosent tilgjengelighet, RPO null for bekreftede meldinger og RTO høyst 60 minutter.
+
+Krav SOR-DAT-08: Datalokasjon (prioritet A)
+Pasientdata, sikkerhetskopier og identifiserbare driftslogger skal behandles i Norge.
+
+Mellomnotat - ikke et nytt krav
+Prosjektgruppen skal kontrollere sammenhengen mellom SOR-DAT-08 og SOR-MIG-09. Notatet endrer ikke kravregisteret og skal ikke gi en ekstra rad.
+
+Krav SOR-MIG-09: Integrasjonsmigrering (prioritet A)
+Minst 30 av 74 punkt-til-punkt-integrasjoner skal avvikles i første avtaleår uten å redusere klinisk meldingskvalitet.
+
+Krav SOR-OBS-10: Observabilitet (prioritet B)
+Drift og klinisk forvaltning bør ha separate, rollebeskyttede oversikter over flyt, forsinkelse, avvik og pasientsikkerhetskritiske hendelser.
+
+Krav SOR-TEST-11: Verifikasjon (prioritet A)
+Akseptansetesten skal dekke bortfall av nettverk, duplikate meldinger, forsinket kvittering, feil regelversjon, nødtilgang og full gjenoppretting.
+
+Krav SOR-INN-12: Innføring (prioritet B)
+Leverandøren bør beskrive klinisk innføring for hjertesvikt og KOLS uten å øke uavklarte alarmer i vaktteamene.
+
+KRYSSHENVISNINGER OG DOKUMENTKONTROLL
+Ved samlet vurdering må SOR-PAS-01, SOR-LOG-06 og SOR-INN-12 ses i sammenheng. Dette avsnittet er forklarende og inneholder ingen nye krav.
+
+ÅPNE FORHOLD
+Endelig leverandørgrensesnitt mot elektronisk pasientjournal publiseres etter dialogfasen.
+Volumet av samtidige hjemmeoppfølgingspasienter forventes mellom 8 000 og 14 000, men er ikke bindende.
+Det er ikke avklart hvilke kliniske regler som skal være sentrale og hvilke som skal forvaltes i kildesystemene.

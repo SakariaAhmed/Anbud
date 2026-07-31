@@ -1,0 +1,216 @@
+{
+  "scenario_id": "sorvik-klinisk-samhandling",
+  "project_name": "Sørvik Helsepartner HF - klinisk samhandlingsplattform",
+  "good_solution": {
+    "summary": "En norsk, hendelsesdrevet klinisk integrasjonsplattform med FHIR R4, varig meldingsformidling, behandlingsrelasjonsbasert tilgang og et eksplisitt revisjonsspor fra hjemmemåling til journalført handling.",
+    "architecture": [
+      "FHIR-gateway og adapterlag mot EPJ, kurve, laboratorium, kjernejournal og kommune.",
+      "Varig meldingskø med idempotens, kvittering og klinisk avvikskø.",
+      "Versjonert regelmotor for klinisk varsling og eskalering.",
+      "Policybasert tilgang med behandlingsrelasjon og kontrollert nødtilgang.",
+      "Separate observabilitetsflater for teknisk drift og klinisk forvaltning."
+    ],
+    "delivery": [
+      "Prioritert integrasjonskartlegging og kontrakttester.",
+      "Parallellkjøring og avstemming før hver gammel kobling stenges.",
+      "Stille pilot, begrenset klinisk pilot og gradvis skalering per forløp.",
+      "Feilscenarioer og full gjenoppretting som obligatorisk akseptanse."
+    ],
+    "win_themes": [
+      "Pasientsikkerhet gjennom rekonstruerbar beslutningskjede.",
+      "Ingen tap av bekreftede kliniske meldinger.",
+      "Kontrollert reduksjon av punkt-til-punkt-kompleksitet.",
+      "Klinisk innføring som måler alarmbelastning, ikke bare teknisk tilgjengelighet."
+    ],
+    "key_risks": [
+      "Ukjent EPJ-grensesnitt kan påvirke plan og estimat.",
+      "Uavklart plassering av kliniske regler kan skape dobbelt forvaltningsansvar.",
+      "Spennet i pasientvolum kan påvirke kapasitet og bemanning."
+    ]
+  },
+  "answer_key": {
+    "must_cover": [
+      {
+        "id": "scale",
+        "required_term_groups": [
+          [
+            "7 800"
+          ],
+          [
+            "410 000"
+          ],
+          [
+            "36 000"
+          ],
+          [
+            "74"
+          ]
+        ]
+      },
+      {
+        "id": "timeline",
+        "required_term_groups": [
+          [
+            "15. februar 2027"
+          ],
+          [
+            "1. september 2027"
+          ]
+        ]
+      },
+      {
+        "id": "clinical_targets",
+        "required_term_groups": [
+          [
+            "12 prosent"
+          ],
+          [
+            "95"
+          ],
+          [
+            "30 minutter"
+          ],
+          [
+            "30 av 74"
+          ]
+        ]
+      },
+      {
+        "id": "continuity",
+        "required_term_groups": [
+          [
+            "99,95"
+          ],
+          [
+            "RPO null",
+            "RPO på null"
+          ],
+          [
+            "60 minutter"
+          ]
+        ]
+      },
+      {
+        "id": "technology",
+        "required_term_groups": [
+          [
+            "HL7 FHIR R4",
+            "FHIR R4"
+          ],
+          [
+            "idempotent",
+            "idempotens"
+          ],
+          [
+            "behandlingsrelasjon"
+          ]
+        ]
+      },
+      {
+        "id": "evaluation",
+        "required_term_groups": [
+          [
+            "50 prosent"
+          ],
+          [
+            "30 prosent"
+          ],
+          [
+            "20 prosent"
+          ]
+        ]
+      }
+    ],
+    "must_not_claim": [
+      "At valgt EPJ-grensesnitt er kjent og ferdig dokumentert.",
+      "At alle kliniske regler skal ligge i den nye plattformen.",
+      "At 14 000 samtidige pasienter er et bindende dimensjoneringskrav."
+    ]
+  },
+  "requirements": [
+    {
+      "id": "SOR-PAS-01",
+      "priority": "A",
+      "topic": "Meldingssikkerhet",
+      "text": "Bekreftede kliniske meldinger skal formidles nøyaktig én gang eller håndteres idempotent, med kø, kvittering, korrelasjons-ID og synlig avvikskø.",
+      "answer": "CareFlow Nexus bruker varig meldingskø, idempotensnøkkel og ende-til-ende-kvittering. Hver melding får korrelasjons-ID og tilstandslogg. Meldinger som ikke kan leveres går til en klinisk avvikskø med eier, prioritet og kontrollert ny behandling."
+    },
+    {
+      "id": "SOR-FHIR-02",
+      "priority": "A",
+      "topic": "Standarder",
+      "text": "Plattformen skal støtte HL7 FHIR R4 og bevare originalmelding og transformasjonsversjon for revisjon.",
+      "answer": "FHIR R4 støttes gjennom profilerte ressurser og validering mot avtalte implementasjonsguider. Originalmelding, transformert nyttelast, mappingversjon og valideringsresultat lagres som ett revisjonsspor."
+    },
+    {
+      "id": "SOR-IAM-03",
+      "priority": "A",
+      "topic": "Tilgang",
+      "text": "Tilgang til pasientdata skal kreve tjenstlig behov, klinisk rolle og aktiv behandlingsrelasjon. Nødtilgang skal begrunnes og etterkontrolleres.",
+      "answer": "Policykontrollen kombinerer rolle, organisasjonsenhet, aktiv behandlingsrelasjon og formål. Nødtilgang krever oppgitt begrunnelse, gir sanntidsvarsel og sendes til etterkontroll. Alle oppslag inngår i en uforanderlig revisjonslogg."
+    },
+    {
+      "id": "SOR-VAR-04",
+      "priority": "A",
+      "topic": "Klinisk varsling",
+      "text": "Kritiske hjemmemålinger skal vurderes mot versjonerte regler og varsles til riktig klinisk team med eskalering når varselet ikke kvitteres.",
+      "answer": "Målinger valideres før en versjonert regelmotor klassifiserer dem. Varselet rutes etter pasient, forløp og vaktplan, med kvitteringsfrist og trinnvis eskalering. Regelversjon, måling, mottaker og handling kan rekonstrueres."
+    },
+    {
+      "id": "SOR-PAS-05",
+      "priority": "B",
+      "topic": "Pasientinnsyn",
+      "text": "Pasienten bør kunne se mottatte målinger, status og kontaktinstruks uten å få presentert automatiske vurderinger som medisinsk diagnose.",
+      "answer": "Pasientflaten viser måling, mottakstid, status og godkjent kontakttekst. Kliniske regler og interne risikoscorer vises ikke som diagnose. Tekster forvaltes av helseforetaket og versjoneres."
+    },
+    {
+      "id": "SOR-LOG-06",
+      "priority": "A",
+      "topic": "Sporbarhet",
+      "text": "En klinisk beslutningskjede skal kunne spores til kilde, tidspunkt, regelversjon, transformasjon og ansvarlig helsepersonell.",
+      "answer": "En sammenhengende sporingsmodell kobler originalmåling, transformasjon, regelkjøring, varsel, kvittering, klinisk vurdering og journaloppdatering med samme korrelasjons-ID. Revisjonsvisningen kan eksporteres til tilsyn og hendelsesanalyse."
+    },
+    {
+      "id": "SOR-DRI-07",
+      "priority": "A",
+      "topic": "Kontinuitet",
+      "text": "Kritisk meldingsformidling skal ha 99,95 prosent tilgjengelighet, RPO null for bekreftede meldinger og RTO høyst 60 minutter.",
+      "answer": "Tjenesten tilbys aktivt fordelt mellom to norske tilgjengelighetssoner. Bekreftede meldinger replikeres synkront før kvittering, som gir RPO null. Automatisert gjenoppretting og kvartalsvis øvelse dokumenterer RTO under 60 minutter."
+    },
+    {
+      "id": "SOR-DAT-08",
+      "priority": "A",
+      "topic": "Datalokasjon",
+      "text": "Pasientdata, sikkerhetskopier og identifiserbare driftslogger skal behandles i Norge.",
+      "answer": "Alle tre datakategoriene lagres og behandles i norske regioner. Leverandørtilgang er tidsbegrenset, godkjent og logget. Underleverandørregisteret viser tjeneste, dataart og behandlingssted."
+    },
+    {
+      "id": "SOR-MIG-09",
+      "priority": "A",
+      "topic": "Integrasjonsmigrering",
+      "text": "Minst 30 av 74 punkt-til-punkt-integrasjoner skal avvikles i første avtaleår uten å redusere klinisk meldingskvalitet.",
+      "answer": "Integrasjonene grupperes etter risiko og volum. Hver migrering har kontrakttest, parallellkjøring, meldingsavstemming og godkjent tilbakefallsplan. Kilde og mål sammenlignes på antall, innhold, rekkefølge og kvitteringsstatus før gammel kobling stenges."
+    },
+    {
+      "id": "SOR-OBS-10",
+      "priority": "B",
+      "topic": "Observabilitet",
+      "text": "Drift og klinisk forvaltning bør ha separate, rollebeskyttede oversikter over flyt, forsinkelse, avvik og pasientsikkerhetskritiske hendelser.",
+      "answer": "Teknisk drift ser kødybde, feilrate og latenstid uten pasientinnhold. Klinisk forvaltning ser berørte forløp, prioritet og oppfølgingsstatus med nødvendig pasientkontekst. Varslingsgrenser og ansvar følger en avtalt driftsmatrise."
+    },
+    {
+      "id": "SOR-TEST-11",
+      "priority": "A",
+      "topic": "Verifikasjon",
+      "text": "Akseptansetesten skal dekke bortfall av nettverk, duplikate meldinger, forsinket kvittering, feil regelversjon, nødtilgang og full gjenoppretting.",
+      "answer": "Alle seks scenarioene kjøres i et produksjonslikt miljø med syntetiske pasienter. Forventet resultat, faktisk resultat, loggbevis og klinisk godkjenner registreres. Kritiske avvik blokkerer pilot."
+    },
+    {
+      "id": "SOR-INN-12",
+      "priority": "B",
+      "topic": "Innføring",
+      "text": "Leverandøren bør beskrive klinisk innføring for hjertesvikt og KOLS uten å øke uavklarte alarmer i vaktteamene.",
+      "answer": "Hvert forløp starter med regelverksted, simulering og stille pilot der varsler sammenlignes uten å styre behandling. Deretter åpnes et begrenset pasientutvalg med daglig sikkerhetsmøte før skalering. Alarmmengde, responstid og falske positive følges."
+    }
+  ]
+}

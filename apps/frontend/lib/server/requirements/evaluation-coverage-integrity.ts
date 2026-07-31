@@ -159,6 +159,142 @@ function addIssue(
   });
 }
 
+export function analyzeRequirementCoverageSelfConsistency(
+  coverage: RequirementCoverageIntegrityCoverage | null | undefined,
+): RequirementCoverageIntegrityReport {
+  const issues: RequirementCoverageIntegrityIssue[] = [];
+  const items = Array.isArray(coverage?.items) ? coverage.items : [];
+
+  if (!coverage) {
+    addIssue(issues, {
+      code: "missing_coverage",
+      message: "Vurderingen mangler requirement_coverage.",
+    });
+  }
+
+  if ((coverage?.total_requirements ?? 0) !== items.length) {
+    addIssue(issues, {
+      code: "total_mismatch",
+      message: `total_requirements=${coverage?.total_requirements ?? "mangler"}, men items=${items.length}.`,
+    });
+  }
+  if ((coverage?.assessed_requirements ?? 0) !== items.length) {
+    addIssue(issues, {
+      code: "assessed_mismatch",
+      message: `assessed_requirements=${coverage?.assessed_requirements ?? "mangler"}, men items=${items.length}.`,
+    });
+  }
+
+  const countSum =
+    (coverage?.good ?? 0) +
+    (coverage?.weak ?? 0) +
+    (coverage?.missing ?? 0) +
+    (coverage?.unclear ?? 0);
+  if (countSum !== items.length) {
+    addIssue(issues, {
+      code: "assessment_count_mismatch",
+      message: `Godt/Dårlig/Mangler/Uklart summerer til ${countSum}, men items=${items.length}.`,
+    });
+  }
+
+  const seenOrderIndexes = new Set<number>();
+  const seenIdentityKeys = new Set<string>();
+  const validAssessments = new Set(["Godt", "Dårlig", "Mangler", "Uklart"]);
+
+  items.forEach((item, index) => {
+    const reference = String(item.reference ?? "").trim();
+    const orderIndex =
+      typeof item.order_index === "number" && Number.isFinite(item.order_index)
+        ? Math.round(item.order_index)
+        : null;
+
+    if (orderIndex !== index) {
+      addIssue(issues, {
+        code: "order_index_mismatch",
+        index,
+        reference,
+        message: `Rad ${index + 1} har order_index=${item.order_index ?? "mangler"}, forventet ${index}.`,
+      });
+    }
+    if (orderIndex !== null) {
+      if (seenOrderIndexes.has(orderIndex)) {
+        addIssue(issues, {
+          code: "duplicate_order_index",
+          index,
+          reference,
+          message: `order_index=${orderIndex} forekommer flere ganger.`,
+        });
+      }
+      seenOrderIndexes.add(orderIndex);
+    }
+
+    const referenceIdentity = [
+      normalizeReferenceKey(item.reference),
+      normalizeReferenceKey(item.full_reference),
+      normalizeReferenceKey(item.source_reference),
+    ];
+    const identityKey = [
+      normalizeReferenceKey(item.source_document_id),
+      ...referenceIdentity,
+    ].join("|");
+    if (referenceIdentity.some(Boolean)) {
+      if (seenIdentityKeys.has(identityKey)) {
+        addIssue(issues, {
+          code: "duplicate_reference_identity",
+          index,
+          reference,
+          message:
+            "Samme reference/full_reference/source_reference forekommer flere ganger.",
+        });
+      }
+      seenIdentityKeys.add(identityKey);
+    }
+
+    if (!reference) {
+      addIssue(issues, {
+        code: "missing_reference",
+        index,
+        message: `Rad ${index + 1} mangler reference.`,
+      });
+    }
+    if (!validAssessments.has(String(item.assessment ?? ""))) {
+      addIssue(issues, {
+        code: "invalid_assessment",
+        index,
+        reference,
+        message: `Rad ${index + 1} har ugyldig assessment=${item.assessment ?? "mangler"}.`,
+      });
+    }
+    for (const field of ["rationale", "evidence", "recommendation"] as const) {
+      if (!String(item[field] ?? "").trim()) {
+        addIssue(issues, {
+          code: `missing_${field}`,
+          index,
+          reference,
+          message: `Rad ${index + 1} mangler ${field}.`,
+        });
+      }
+    }
+    if (item.assessment === "Mangler" && hasMatchedAnswer(item)) {
+      addIssue(issues, {
+        code: "missing_with_matched_answer",
+        index,
+        reference,
+        message:
+          "Rad er vurdert som Mangler selv om den er koblet til et svardokument.",
+      });
+    }
+  });
+
+  return {
+    ok: issues.length === 0,
+    sourceCount: items.length,
+    itemCount: items.length,
+    issueCount: issues.length,
+    issues,
+  };
+}
+
 export function analyzeRequirementCoverageIntegrity(input: {
   sourceLedger: RequirementLedgerEntry[];
   coverage: RequirementCoverageIntegrityCoverage | null | undefined;
@@ -359,6 +495,21 @@ export function assertRequirementCoverageIntegrity(input: {
   if (!report.ok) {
     throw new Error(
       `Kravdekning feilet integritetssjekk: ${report.issues
+        .slice(0, 6)
+        .map((issue) => `${issue.code}: ${issue.message}`)
+        .join(" | ")}`,
+    );
+  }
+  return report;
+}
+
+export function assertRequirementCoverageSelfConsistency(
+  coverage: RequirementCoverageIntegrityCoverage | null | undefined,
+) {
+  const report = analyzeRequirementCoverageSelfConsistency(coverage);
+  if (!report.ok) {
+    throw new Error(
+      `Kravdekning er internt inkonsistent: ${report.issues
         .slice(0, 6)
         .map((issue) => `${issue.code}: ${issue.message}`)
         .join(" | ")}`,

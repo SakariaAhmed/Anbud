@@ -7,7 +7,6 @@ import {
   detectNorwegianParseAnomalies,
   normalizeNorwegianTextForSearch,
 } from "@/lib/server/document-intelligence/norwegian-language";
-import { buildCanonicalDocumentProjection } from "@/lib/server/document-intelligence/canonical-document";
 
 function clamp(value: number, minimum = 0, maximum = 1) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -33,19 +32,13 @@ function suspiciousCharacterRatio(text: string) {
 
 export function evaluateDocumentParseQuality(input: {
   rawText: string;
-  canonicalText?: string;
+  canonicalText: string;
   sourceMap: ProjectDocumentStructureEntry[];
   fileFormat: string;
   fileSizeBytes: number;
 }): DocumentParseQuality {
   const sourceText = input.rawText.trim();
-  const text =
-    input.canonicalText?.trim() ||
-    buildCanonicalDocumentProjection({
-      rawText: input.rawText,
-      structureMap: input.sourceMap,
-    }).canonicalText ||
-    sourceText;
+  const text = input.canonicalText.trim() || sourceText;
   const pages = new Set(
     input.sourceMap
       .map((entry) => entry.page)
@@ -122,7 +115,7 @@ export function evaluateDocumentParseQuality(input: {
 
 export function chooseDocumentParserRoute(input: {
   rawText: string;
-  canonicalText?: string;
+  canonicalText: string;
   sourceMap: ProjectDocumentStructureEntry[];
   fileFormat: string;
   fileSizeBytes: number;
@@ -130,8 +123,9 @@ export function chooseDocumentParserRoute(input: {
   isHighImpactDocument: boolean;
   azureAvailable: boolean;
   doclingAvailable: boolean;
+  quality?: DocumentParseQuality;
 }): DocumentRoutingDecision {
-  const quality = evaluateDocumentParseQuality(input);
+  const quality = input.quality ?? evaluateDocumentParseQuality(input);
   const isPdf = input.fileFormat === "pdf";
   const alreadyExternallyStructured = input.parserUsed.startsWith("azure-layout");
   const canTryLocalStructure =

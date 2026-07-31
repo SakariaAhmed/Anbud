@@ -528,9 +528,11 @@ const { compileDocumentIntelligenceArtifact } = jiti(
   ),
 );
 const {
+  buildCustomerAnalysisCriticalFactChecklist,
   buildCustomerAnalysisV3SystemPrompt,
   buildCustomerAnalysisV3UserPrompt,
   CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
+  enrichCustomerAnalysisWithCriticalFacts,
 } = jiti(
   path.join(
     frontendRoot,
@@ -538,6 +540,15 @@ const {
     "server",
     "document-intelligence",
     "customer-analysis-v3.ts",
+  ),
+);
+const { normalizeCustomerAnalysisResult } = jiti(
+  path.join(
+    frontendRoot,
+    "lib",
+    "server",
+    "document-intelligence",
+    "customer-analysis-postprocess.ts",
   ),
 );
 
@@ -624,7 +635,7 @@ async function structuredCall(input) {
         reasoning: { effort: "low" },
         max_output_tokens: input.maxOutputTokens,
         text: {
-          verbosity: "medium",
+          verbosity: input.verbosity ?? "medium",
           format: {
             type: "json_schema",
             name: input.schemaName,
@@ -698,16 +709,21 @@ for (const [index, document] of corpus.documents.entries()) {
     artifact.analysisContext,
   );
   const system = buildCustomerAnalysisV3SystemPrompt();
+  const promptDocuments = [
+    {
+      documentId: `stress-document-${index + 1}`,
+      title: document.title,
+      role: "primary_customer_document",
+      context: artifact.analysisContext,
+      sourceText: parsed.rawText,
+    },
+  ];
+  const criticalFacts = buildCustomerAnalysisCriticalFactChecklist(
+    promptDocuments,
+  );
   const user = buildCustomerAnalysisV3UserPrompt({
     projectName: document.client,
-    documents: [
-      {
-        documentId: `stress-document-${index + 1}`,
-        title: document.title,
-        role: "primary_customer_document",
-        context: artifact.analysisContext,
-      },
-    ],
+    documents: promptDocuments,
   });
 
   if (options.dryRun) {
@@ -723,6 +739,7 @@ for (const [index, document] of corpus.documents.entries()) {
       authoredSupport: authoredSupport[index],
       extractedSupport,
       promptChars: system.length + user.length,
+      criticalFacts,
       deterministic: null,
       automatic: null,
       analysisCall: null,
@@ -748,11 +765,29 @@ for (const [index, document] of corpus.documents.entries()) {
         user,
         schemaName: "customer_analysis_v3",
         schema: CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
-        maxOutputTokens: 9_000,
+        maxOutputTokens: 8_000,
+        verbosity: "low",
       });
-  const deterministic = scoreAnswer(analysis.output, document.answer_key);
+  const normalizedAnalysisOutput = normalizeCustomerAnalysisResult(
+    enrichCustomerAnalysisWithCriticalFacts(analysis.output, promptDocuments),
+    {
+      signalSourceText: parsed.rawText,
+      serviceCandidates: [],
+      sourceDocuments: [
+        {
+          title: document.title,
+          rawText: parsed.rawText,
+          structureMap: parsed.sourceMap,
+        },
+      ],
+    },
+  );
+  const deterministic = scoreAnswer(
+    normalizedAnalysisOutput,
+    document.answer_key,
+  );
   const automatic = automaticQuality(
-    analysis.output,
+    normalizedAnalysisOutput,
     artifact.analysisContext,
   );
   let judge = null;
@@ -767,7 +802,7 @@ for (const [index, document] of corpus.documents.entries()) {
         `DOKUMENT: ${document.client}`,
         `MANUELL FASIT\n${JSON.stringify(document.answer_key, null, 2)}`,
         `KANONISK KILDE\n${artifact.analysisContext}`,
-        `SYSTEMSVAR\n${JSON.stringify(analysis.output, null, 2)}`,
+        `SYSTEMSVAR\n${JSON.stringify(normalizedAnalysisOutput, null, 2)}`,
       ].join("\n\n"),
       schemaName: "document_analysis_stress_judge",
       schema: buildJudgeSchema(facts),
@@ -793,12 +828,13 @@ for (const [index, document] of corpus.documents.entries()) {
     authoredSupport: authoredSupport[index],
     extractedSupport,
     promptChars: system.length + user.length,
+    criticalFacts,
     deterministic,
     automatic,
     analysisCall: analysis.call,
     analysisReused: Boolean(reusedDocument),
     judge,
-    systemOutput: analysis.output,
+    systemOutput: normalizedAnalysisOutput,
   });
 }
 

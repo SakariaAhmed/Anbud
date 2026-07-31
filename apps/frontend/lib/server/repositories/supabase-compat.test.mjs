@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import path from "node:path";
@@ -8,6 +9,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, "../../..");
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
+const supabaseStoreSource = fs.readFileSync(
+  path.join(frontendRoot, "lib/server/repositories/supabase-store.ts"),
+  "utf8",
+);
 
 const jiti = createJiti(path.join(frontendRoot, "supabase-compat-tests.cjs"), {
   interopDefault: true,
@@ -55,4 +60,11 @@ test("storage column removal drops only storage references", () => {
   removeMissingStorageColumns(payload);
 
   assert.deepEqual(payload, { file_base64: "encrypted" });
+});
+
+test("legacy project creation preserves the authenticated owner", () => {
+  assert.match(
+    supabaseStoreSource,
+    /if \(insertResult\.error && isMissingLegacyProjectColumn\(insertResult\.error\)\)[\s\S]*?\.insert\(\{\s*owner_id: input\.owner_id,/u,
+  );
 });

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -18,14 +20,20 @@ const jiti = createJiti(
     interopDefault: true,
   },
 );
-const { normalizeNorwegianTextForSearch, detectNorwegianParseAnomalies } =
-  await jiti.import(
+const {
+  normalizeNorwegianTextForSearch,
+  normalizeGeneratedNorwegianProse,
+  detectNorwegianParseAnomalies,
+  canonicalizeNorwegianDocumentText,
+  diagnoseNorwegianDocumentText,
+} = await jiti.import(
     path.join(
       frontendRoot,
       "lib/server/document-intelligence/norwegian-language.ts",
     ),
   );
 const {
+  customerAnalysisPipeline,
   documentAnalysisVersion,
   isDocumentAnalysisEnabled,
   isDocumentAnalysisV3Enabled,
@@ -35,11 +43,7 @@ const {
     "lib/server/document-intelligence/config.ts",
   ),
 );
-const {
-  buildCanonicalDocumentProjection,
-  canonicalizeNorwegianDocumentText,
-  diagnoseNorwegianDocumentText,
-} = await jiti.import(
+const { buildCanonicalDocumentProjection } = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/document-intelligence/canonical-document.ts",
@@ -54,12 +58,44 @@ const { preferTrustedStructuredRequirementText } = await jiti.import(
 const {
   buildCustomerAnalysisV3SystemPrompt,
   buildCustomerAnalysisV3UserPrompt,
+  buildCustomerAnalysisCriticalFactChecklist,
+  customerAnalysisV3ContextUsage,
   CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
   CUSTOMER_ANALYSIS_V3_REQUIRED_FIELDS,
+  enrichCustomerAnalysisWithCriticalFacts,
 } = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/document-intelligence/customer-analysis-v3.ts",
+  ),
+);
+const { normalizeCustomerAnalysisNorwegianProse } = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/customer-analysis-language.ts",
+  ),
+);
+const { normalizeCustomerAnalysisResult } = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/customer-analysis-postprocess.ts",
+  ),
+);
+const { isNearDuplicate, splitIntoSentences } = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/text-normalization.ts",
+  ),
+);
+const {
+  customerAnalysisRegenerationContract,
+  MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
+  mergeCustomerAnalysisSectionPatch,
+  sectionFieldNames,
+} = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/customer-analysis-fields.ts",
   ),
 );
 const { chooseDocumentParserRoute } = await jiti.import(
@@ -72,6 +108,28 @@ const { compileDocumentIntelligenceArtifact } = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/document-intelligence/evidence-compiler.ts",
+  ),
+);
+const { documentSourceContentHash } = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/content-hash.ts",
+  ),
+);
+const {
+  customerAnalysisPromptContextLimit,
+  SUPPORTING_PROMPT_CONTEXT_TOTAL_CHARS,
+  supportingPromptContextLimit,
+} = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/context-budget.ts",
+  ),
+);
+const { resolveCustomerAnalysisContexts } = await jiti.import(
+  path.join(
+    frontendRoot,
+    "lib/server/document-intelligence/customer-analysis-contexts.ts",
   ),
 );
 const { normalizeAzureLayoutResult } = await jiti.import(
@@ -87,10 +145,7 @@ const { analyzeLocalPdfPage, buildLocalPdfDocument, LOCAL_PDF_LAYOUT_PARSER } =
       "lib/server/document-intelligence/local-pdf-layout.ts",
     ),
   );
-const {
-  isCurrentDocumentIntelligenceContext,
-  shouldUseCompiledCustomerAnalysisContext,
-} = await jiti.import(
+const { isCurrentDocumentIntelligenceContext } = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/document-intelligence/customer-analysis-context.ts",
@@ -131,6 +186,7 @@ test("document analysis v3 is opt-in and off restores the legacy PDF parser cont
     delete process.env.DOCUMENT_INTELLIGENCE_V2;
     assert.equal(isDocumentAnalysisEnabled(), false);
     assert.equal(documentAnalysisVersion(), "off");
+    assert.equal(customerAnalysisPipeline(), "legacy");
 
     process.env.DOCUMENT_ANALYSIS_VERSION = "off";
     const legacy = await extractTextFromBuffer({
@@ -153,6 +209,7 @@ test("document analysis v3 is opt-in and off restores the legacy PDF parser cont
       useDocling: false,
     });
     assert.equal(isDocumentAnalysisV3Enabled(), true);
+    assert.equal(customerAnalysisPipeline(), "v3");
     assert.equal(v3.parserUsed, LOCAL_PDF_LAYOUT_PARSER);
     assert.equal(v3.rawText, legacy.rawText);
     assert.ok(v3.sourceMap.some((entry) => entry.kind));
@@ -216,6 +273,485 @@ test("canonical Norwegian projection repairs notation while preserving source ev
   assert.equal(projection.languageQuality.canonicalDiagnosticCount, 0);
 });
 
+test("Norwegian punctuation normalization preserves decimal commas", () => {
+  const source =
+    "Tilgjengeligheten er 99,9 prosent og volumet er 1,15 millioner.Hei,verden";
+  assert.deepEqual(diagnoseNorwegianDocumentText(source), [
+    "missing_space_after_punctuation",
+  ]);
+  assert.equal(
+    canonicalizeNorwegianDocumentText(source),
+    "Tilgjengeligheten er 99,9 prosent og volumet er 1,15 millioner. Hei, verden",
+  );
+  assert.equal(
+    normalizeGeneratedNorwegianProse(
+      "Tilgjengeligheten er 99, 9 prosent ,og volumet er 1, 15 millioner.Mål:kvalitet!Neste kontroll er kl. 12:00 og målt nivå er 100%.",
+    ),
+    "Tilgjengeligheten er 99,9 prosent, og volumet er 1,15 millioner. Mål: kvalitet! Neste kontroll er kl. 12.00 og målt nivå er 100 prosent.",
+  );
+  assert.equal(
+    normalizeGeneratedNorwegianProse(
+      "Utløser: Kritiske tilgjengelighetsfeil ikke rettes før produksjonssetting. Utløser: Dersom feil ikke rettes, kan kravet brytes.",
+    ),
+    "Utløser: Kritiske tilgjengelighetsfeil rettes ikke før produksjonssetting. Utløser: Dersom feil ikke rettes, kan kravet brytes.",
+  );
+  assert.equal(
+    normalizeGeneratedNorwegianProse(
+      "Redusere andelen nye søknader som må kompletteres fra 18 prosent til 10 prosent eller lavere.",
+    ),
+    "Redusere andelen nye søknader som må kompletteres, fra 18 prosent til 10 prosent eller lavere.",
+  );
+  assert.equal(
+    normalizeGeneratedNorwegianProse(
+      "Hva blir eksakt antall skjermede saker og hvilke kodeverk skal gjelde?",
+    ),
+    "Hva blir eksakt antall skjermede saker, og hvilke kodeverk skal gjelde?",
+  );
+  assert.equal(
+    normalizeGeneratedNorwegianProse(
+      "Hvilke fem kilder er kritiske, og hvilke kriterier gjelder?",
+    ),
+    "Hvilke fem kilder er kritiske, og hvilke kriterier gjelder?",
+  );
+});
+
+test("sentence splitting preserves Norwegian dates and clock abbreviations", () => {
+  assert.deepEqual(
+    splitIntoSentences(
+      "Tildeling er forventet 20. juli 2026. Tilbudsfristen er kl. 12.00.",
+    ),
+    [
+      "Tildeling er forventet 20. juli 2026.",
+      "Tilbudsfristen er kl. 12.00.",
+    ],
+  );
+  assert.equal(
+    normalizeGeneratedNorwegianProse(
+      "Rammen er EUR 2.9 million, og fristen er kl. 15:00.",
+    ),
+    "Rammen er EUR 2,9 millioner, og fristen er kl. 15.00.",
+  );
+});
+
+test("near-duplicate detection preserves numeric, unit, and negation differences", () => {
+  for (const [left, right] of [
+    ["RTO 2 timer", "RTO 4 timer"],
+    ["Varsle innen 5 minutter", "Varsle innen 15 minutter"],
+    ["Kravet gjelder 7 bygg", "Kravet gjelder 12 bygg"],
+    ["Løsningen skal støtte kamera", "Løsningen skal ikke støtte kamera"],
+    ["Gjenoppretting skal skje innen 5 minutter", "Gjenoppretting skal skje innen 5 timer"],
+    ["RTO 4 timer og RPO 2 timer", "RTO 2 timer og RPO 4 timer"],
+  ]) {
+    assert.equal(isNearDuplicate(left, right), false, `${left} <> ${right}`);
+  }
+  assert.equal(
+    isNearDuplicate("RTO er 4 timer.", "  rto 4 timer  "),
+    true,
+  );
+});
+
+test("customer analysis language cleanup fixes prose and preserves exact evidence", () => {
+  const normalized = normalizeCustomerAnalysisNorwegianProse({
+    customer_profile_summary: "Volumet er 1, 15 millioner.Mål:kvalitet.",
+    customer_goals_summary: "Tilgjengeligheten er 99, 9 prosent.",
+    high_level_solution_design: "Fase 1:kartlegging.",
+    high_level_architecture_mermaid: "flowchart LR\n  A[99, 9] --> B",
+    customer_profile: ["Kunden har 100% dekning."],
+    customer_goals: [],
+    implicit_requirements: [
+      {
+        title: "Trygg overgang",
+        description: "Migrering!Kontroll.",
+        category: "Risiko",
+        importance: "Kritisk",
+        kind: "Implisitt",
+        source_reference: "Side 2 ,rad 1",
+        source_excerpt: "Kilden sier 1, 15 millioner.",
+      },
+    ],
+    prioritized_requirements: [],
+    ambiguities: [],
+    risks: [],
+    risks_for_us: [],
+    risks_for_customer: [],
+    likely_evaluation_criteria: [],
+    signal_words: ["WCAG 2.2"],
+    expected_solution_direction: [],
+    recommended_services: [],
+    value_opportunities: [],
+    positioning_recommendations: [],
+    executive_summary: "Konklusjon:klar.",
+  });
+  assert.equal(
+    normalized.customer_profile_summary,
+    "Volumet er 1,15 millioner. Mål: kvalitet.",
+  );
+  assert.equal(normalized.customer_profile[0], "Kunden har 100 prosent dekning.");
+  assert.equal(
+    normalized.implicit_requirements[0].description,
+    "Migrering! Kontroll.",
+  );
+  assert.equal(
+    normalized.implicit_requirements[0].source_reference,
+    "Side 2 ,rad 1",
+  );
+  assert.equal(
+    normalized.implicit_requirements[0].source_excerpt,
+    "Kilden sier 1, 15 millioner.",
+  );
+  assert.equal(
+    normalized.high_level_architecture_mermaid,
+    "flowchart LR\n  A[99, 9] --> B",
+  );
+});
+
+test("customer analysis postprocessing preserves the established output rules", () => {
+  const analysis = {
+    customer_profile_summary: "Kunden trenger kontroll.",
+    customer_goals_summary: "Målet er sikker drift.",
+    high_level_solution_design: "Bruk en styrt plattform.",
+    high_level_architecture_mermaid: "ikke et diagram",
+    customer_profile: ["Offentlig kunde", "Offentlig   kunde"],
+    customer_goals: ["Sikker drift"],
+    implicit_requirements: [
+      {
+        title: "  Revisjonsspor  ",
+        description: "  Alle endringer skal kunne spores.  ",
+        category: "Sikkerhet",
+        importance: "Kritisk",
+        kind: "Implisitt",
+        source_reference: "  Side 2, tabell 1  ",
+        source_excerpt: "  Nøyaktig   kildetekst  ",
+      },
+    ],
+    prioritized_requirements: [],
+    ambiguities: [
+      "Hvilke lokasjoner inngår i leveranseomfanget?",
+      "Hvilke krav gjelder for tjenestens oppetid?",
+      "Hvem har ansvar for eksisterende integrasjoner?",
+      "Når skal migreringen være ferdig gjennomført?",
+      "Hvilke regulatoriske krav må løsningen oppfylle?",
+      "Hvordan skal beredskap utenfor åpningstid håndteres?",
+      "Hvilken prismodell forventer kunden i tilbudet?",
+    ],
+    risks: [
+      "Leveranseteamet mangler kapasitet.",
+      "Kunden kan få driftsavbrudd.",
+    ],
+    risks_for_us: [],
+    risks_for_customer: [],
+    likely_evaluation_criteria: [],
+    signal_words: ["Azure Monitor", "azure monitor"],
+    signal_word_counts: {},
+    expected_solution_direction: [],
+    recommended_services: [
+      {
+        service_id: "service-1",
+        service_name: "Sikker drift",
+        usefulness_percent: 85,
+        customer_need: "Kontroll",
+        recommendation_reason: "Reduserer risiko.",
+        evidence: "Krav om revisjonsspor.",
+        risk_or_caveat: "Må avklares.",
+      },
+    ],
+    value_opportunities: [
+      {
+        title: "Mer effektiv saksflyt",
+        description: "Automatisering reduserer tidsbruk.",
+        value_categories: ["Høyere produktivitet"],
+        profit_share_percent: 20,
+      },
+      {
+        title: "Sikrere drift",
+        description: "Kontroller reduserer risiko.",
+        value_categories: ["Redusert risiko"],
+        profit_share_percent: 80,
+      },
+    ],
+    positioning_recommendations: [],
+    executive_summary: "Prioriter kontroll og sikker drift.",
+  };
+
+  const normalized = normalizeCustomerAnalysisResult(analysis, {
+    signalSourceText: "Azure Monitor brukes her. Azure   Monitor brukes igjen.",
+  });
+  assert.deepEqual(normalized.customer_profile, ["Offentlig kunde"]);
+  assert.equal(
+    normalized.implicit_requirements[0].source_reference,
+    "Side 2, tabell 1",
+  );
+  assert.equal(
+    normalized.implicit_requirements[0].source_excerpt,
+    "Nøyaktig kildetekst",
+  );
+  assert.deepEqual(normalized.risks_for_us, [
+    "Leveranseteamet mangler kapasitet.",
+  ]);
+  assert.deepEqual(normalized.risks_for_customer, [
+    "Kunden kan få driftsavbrudd.",
+  ]);
+  assert.deepEqual(normalized.signal_words, ["Azure Monitor"]);
+  assert.deepEqual(normalized.ambiguities, [
+    "Hvilke lokasjoner inngår i leveranseomfanget?",
+    "Hvilke krav gjelder for tjenestens oppetid?",
+    "Hvem har ansvar for eksisterende integrasjoner?",
+    "Når skal migreringen være ferdig gjennomført?",
+    "Hvilke regulatoriske krav må løsningen oppfylle?",
+  ]);
+  assert.equal(normalized.signal_word_counts["Azure Monitor"], 2);
+  assert.equal(
+    normalized.value_opportunities.reduce(
+      (total, item) => total + item.profit_share_percent,
+      0,
+    ),
+    100,
+  );
+  assert.match(normalized.high_level_architecture_mermaid, /^flowchart LR/u);
+  assert.equal(normalized.recommended_services.length, 1);
+
+  const enriched = enrichCustomerAnalysisWithCriticalFacts(analysis, [
+    {
+      documentId: "primary",
+      title: "Kravgrunnlag",
+      role: "primary_customer_document",
+      context: "",
+      sourceText: [
+        "Niva har 12 klinikker og omtrent 210 000 konsultasjoner per år.",
+        "RTO er 4 timer og RPO er 30 minutter.",
+        "Tilbudsfrist 23.10.2026 kl. 12.00.",
+      ].join("\n"),
+    },
+  ]);
+  assert.match(enriched.customer_profile[0], /12 klinikker/u);
+  assert.match(
+    enriched.prioritized_requirements[0].requirement,
+    /RTO 4 timer/u,
+  );
+  assert.match(
+    enriched.positioning_recommendations[0],
+    /Tilbudsfrist 23.10.2026/u,
+  );
+
+  const withoutCatalog = normalizeCustomerAnalysisResult(analysis, {
+    serviceCandidates: [],
+  });
+  assert.deepEqual(withoutCatalog.recommended_services, []);
+
+  const grounded = normalizeCustomerAnalysisResult(
+    {
+      ...analysis,
+      implicit_requirements: [
+        {
+          title: "Logging av endringer",
+          description:
+            "Systemet må logge alle endringer med bruker og tidspunkt.",
+          category: "Sikkerhet",
+          importance: "Kritisk",
+          kind: "Implisitt",
+          source_reference: "Feil referanse",
+          source_excerpt: "Et omskrevet og ikke ordrett sitat.",
+        },
+        {
+          title: "Oppdiktet behov",
+          description: "Flyvende biler må støttes.",
+          category: "Omfang",
+          importance: "Viktig",
+          kind: "Implisitt",
+          source_reference: "Ukjent",
+          source_excerpt: "Ingen slik tekst finnes.",
+        },
+      ],
+    },
+    {
+      sourceDocuments: [
+        {
+          title: "Kravgrunnlag",
+          rawText:
+            "Systemet skal logge alle endringer med bruker og tidspunkt.\nAndre krav gjelder sikker drift.",
+          structureMap: [
+            {
+              reference: "Side 4, krav SIK-7",
+              text: "Systemet skal logge alle endringer med bruker og tidspunkt.",
+            },
+          ],
+        },
+      ],
+    },
+  );
+  assert.equal(grounded.implicit_requirements.length, 1);
+  assert.equal(
+    grounded.implicit_requirements[0].source_reference,
+    "Side 4, krav SIK-7",
+  );
+  assert.equal(
+    grounded.implicit_requirements[0].source_excerpt,
+    "Systemet skal logge alle endringer med bruker og tidspunkt.",
+  );
+
+  const exactQuote = "Kunden krever sporbar godkjenning av alle endringer.";
+  const exactRequirement = {
+    title: "Sporbar godkjenning",
+    description: "Alle endringer må godkjennes og kunne spores.",
+    category: "Sikkerhet",
+    importance: "Kritisk",
+    kind: "Implisitt",
+    source_reference: "Dokument B",
+    source_excerpt: exactQuote,
+  };
+  const correctedExact = normalizeCustomerAnalysisResult(
+    {
+      ...analysis,
+      implicit_requirements: [exactRequirement],
+    },
+    {
+      sourceDocuments: [
+        { title: "Dokument A", rawText: exactQuote },
+        { title: "Dokument B", rawText: "Et annet dokumentinnhold." },
+      ],
+    },
+  );
+  assert.equal(
+    correctedExact.implicit_requirements[0].source_reference,
+    "Dokument A",
+  );
+
+  const ambiguousExact = normalizeCustomerAnalysisResult(
+    {
+      ...analysis,
+      implicit_requirements: [
+        { ...exactRequirement, source_reference: "Ukjent dokument" },
+      ],
+    },
+    {
+      sourceDocuments: [
+        { title: "Dokument A", rawText: exactQuote },
+        { title: "Dokument B", rawText: exactQuote },
+      ],
+    },
+  );
+  assert.deepEqual(ambiguousExact.implicit_requirements, []);
+
+  const resolvedExact = normalizeCustomerAnalysisResult(
+    {
+      ...analysis,
+      implicit_requirements: [exactRequirement],
+    },
+    {
+      sourceDocuments: [
+        { title: "Dokument A", rawText: exactQuote },
+        { title: "Dokument B", rawText: exactQuote },
+      ],
+    },
+  );
+  assert.equal(
+    resolvedExact.implicit_requirements[0].source_reference,
+    "Dokument B",
+  );
+
+  const completedExactExcerpt = normalizeCustomerAnalysisResult(
+    {
+      ...analysis,
+      implicit_requirements: [
+        {
+          ...exactRequirement,
+          source_reference: "Kundedokument – side 3, tekstblokk 11",
+          source_excerpt:
+            "Behovsområde 12: Styring Universitetet bør se etableringstid, kostnad, kapasitet, policyavvik, eksport og avslutningsstatus per fakultet og",
+        },
+      ],
+    },
+    {
+      sourceDocuments: [
+        {
+          title: "Kravgrunnlag",
+          rawText:
+            "Behovsområde 12: Styring\nUniversitetet bør se etableringstid, kostnad, kapasitet, policyavvik, eksport og avslutningsstatus per fakultet og prosjekt.",
+        },
+      ],
+    },
+  );
+  assert.equal(
+    completedExactExcerpt.implicit_requirements[0].source_excerpt,
+    "Behovsområde 12: Styring Universitetet bør se etableringstid, kostnad, kapasitet, policyavvik, eksport og avslutningsstatus per fakultet og prosjekt.",
+  );
+  assert.equal(
+    completedExactExcerpt.implicit_requirements[0].source_reference,
+    "Kravgrunnlag",
+  );
+
+  const withoutFixtureMetadata = normalizeCustomerAnalysisResult({
+    ...analysis,
+    customer_profile_summary:
+      "Nordhavn kommune er et fiktivt testgrunnlag som anskaffer en programvaretjeneste for byggesak.",
+    customer_profile: [
+      "Dokumentet opplyser at alle virksomheter, leverandører, tall og avtaler er fiktive.",
+      "Kommunen har 38 400 innbyggere.",
+    ],
+  });
+  assert.equal(
+    withoutFixtureMetadata.customer_profile_summary,
+    "Nordhavn kommune anskaffer en programvaretjeneste for byggesak.",
+  );
+  assert.deepEqual(withoutFixtureMetadata.customer_profile, [
+    "Kommunen har 38 400 innbyggere.",
+  ]);
+
+  const distinctRequirements = normalizeCustomerAnalysisResult({
+    ...analysis,
+    implicit_requirements: [],
+    prioritized_requirements: [
+      {
+        requirement: "RTO skal være 2 timer.",
+        priority: "Kritisk",
+        reason: "Kravet styrer beredskapen.",
+      },
+      {
+        requirement: "RTO skal være 4 timer.",
+        priority: "Kritisk",
+        reason: "Kravet styrer beredskapen.",
+      },
+    ],
+  });
+  assert.equal(distinctRequirements.prioritized_requirements.length, 2);
+
+  const fiveModelRequirements = Array.from({ length: 5 }, (_, index) => ({
+    requirement: `Krav ${index + 1} skal oppfylles.`,
+    priority: "Viktig",
+    reason: `Dokumentert prioritet ${index + 1}.`,
+  }));
+  const enrichedAndCapped = enrichCustomerAnalysisWithCriticalFacts(
+    {
+      ...analysis,
+      implicit_requirements: [],
+      prioritized_requirements: fiveModelRequirements,
+    },
+    [
+      {
+        documentId: "primary",
+        title: "Kravgrunnlag",
+        role: "primary_customer_document",
+        context: "",
+        sourceText:
+          "Operativ kjerne skal ha RTO 2 timer og RPO 15 minutter.",
+      },
+    ],
+  );
+  assert.equal(
+    enrichedAndCapped.prioritized_requirements.length,
+    MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
+  );
+  assert.match(
+    enrichedAndCapped.prioritized_requirements[0].requirement,
+    /RTO 2 timer/u,
+  );
+  assert.equal(
+    normalizeCustomerAnalysisResult(enrichedAndCapped).prioritized_requirements
+      .length,
+    MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
+  );
+});
+
 test("trusted local requirement rows replace only matching truncated generated text", () => {
   const generated = {
     id: "KR-063-34",
@@ -265,6 +801,9 @@ test("customer analysis v3 has one lean strict contract and one context per docu
   assert.match(system, /korrekt norsk bokmål/u);
   assert.match(system, /source_reference/u);
   assert.match(system, /samlet være 100/u);
+  assert.match(system, /menneskelige beslutningskontroller/u);
+  assert.match(system, /Utelat dokumentmetadata/u);
+  assert.match(system, /faktisk slutter grammatisk ufullstendig/u);
 
   assert.equal(CUSTOMER_ANALYSIS_V3_JSON_SCHEMA.additionalProperties, false);
   assert.deepEqual(
@@ -272,9 +811,213 @@ test("customer analysis v3 has one lean strict contract and one context per docu
     [...CUSTOMER_ANALYSIS_V3_REQUIRED_FIELDS],
   );
   assert.equal(CUSTOMER_ANALYSIS_V3_REQUIRED_FIELDS.length, 19);
+  assert.deepEqual(
+    buildCustomerAnalysisCriticalFactChecklist([
+      {
+        documentId: "primary",
+        title: "Kravgrunnlag",
+        role: "primary_customer_document",
+        context: [
+          "- [KONTEKST] Niva har 12 klinikker, 480 ansatte og omtrent 210 000 konsultasjoner per år.",
+          "- [KRAV] Operativ kjerne skal ha RTO 2 timer og RPO 15 minutter.",
+          "- [KONTEKST] Dette er en generell setning uten verdi.",
+        ].join("\n"),
+      },
+    ]).map((item) => item.fact),
+    [
+      "Dokumenterte skala- og volumtall: 12 klinikker; 480 ansatte; omtrent 210 000 konsultasjoner per år.",
+      "Dokumenterte kontinuitetsmål: RTO 2 timer; RPO 15 minutter.",
+    ],
+  );
+  assert.deepEqual(
+    buildCustomerAnalysisCriticalFactChecklist([
+      {
+        documentId: "scenario",
+        title: "Prisgrunnlag",
+        role: "primary_customer_document",
+        context: "",
+        sourceText: [
+          "Kommunen har 127 ansatte og behandler 3 200 byggesaker per år.",
+          "Tilbudet skal forklare lisenskonsekvensen av 50, 100 og 200 eksterne brukere.",
+        ].join("\n"),
+      },
+    ]).map((item) => item.fact),
+    [
+      "Dokumenterte skala- og volumtall: 127 ansatte; 3 200 byggesaker per år.",
+    ],
+  );
+  assert.deepEqual(
+    buildCustomerAnalysisCriticalFactChecklist([
+      {
+        documentId: "english",
+        title: "RFP",
+        role: "primary_customer_document",
+        context: "",
+        sourceText: [
+          "Intent to Bid deadline: March 12, 2026 17:00 CET.",
+          "The platform must support failover with an RTO of 60 minutes and an RPO of 15 minutes.",
+          "Root cause analysis must be completed within five business days.",
+        ].join("\n"),
+      },
+    ]).map((item) => item.fact),
+    [
+      "Dokumenterte kontinuitetsmål: RTO 60 minutter; RPO 15 minutter.",
+      "Dokumenterte tekniske grenseverdier: Rotårsaksanalyse skal fullføres innen fem virkedager.",
+      "Dokumenterte nøkkelfrister: Frist for å melde tilbudsintensjon 12. mars 2026 kl. 17.00 CET.",
+    ],
+  );
+  const unstructuredCriticalFacts = buildCustomerAnalysisCriticalFactChecklist([
+    {
+      documentId: "unstructured",
+      title: "Møtereferat med krav",
+      role: "primary_customer_document",
+      context: "",
+      sourceText: [
+        "Oppnå 98 prosent synkronisering av komplette arbeidsordrer innen fem minutter etter at dekning er gjenopprettet.",
+        "Datainnsamling skal bruke lesende OPC UA eller godkjent mellomvare i industriell DMZ.",
+        "Prediktive modeller skal ikke erstatte sikkerhetsalarmer, sperrer eller operatørens godkjente prosedyrer.",
+        "Kritisk operativ funksjon skal være tilgjengelig 24x7 med 99,9 prosent månedlig tilgjengelighet og vakt for prioritet 1.",
+        "Sikre at 100 prosent av prosjektene har navngitt dataeier, klassifisering, formål og sluttdato.",
+        "Pilot starter 15. februar 2027, og ordinær drift åpner 1. september 2027.",
+        "Generative modeller skal ikke trenes på eller beholde prosjektdata uten eksplisitt, dokumentert godkjenning.",
+      ].join("\n"),
+    },
+  ]).map((item) => item.fact);
+  assert.ok(
+    unstructuredCriticalFacts.some(
+      (fact) =>
+        fact ===
+        "Dokumenterte tekniske grenseverdier: Oppnå 98 prosent synkronisering av komplette arbeidsordrer innen fem minutter etter at dekning er gjenopprettet.",
+    ),
+  );
+  assert.ok(
+    unstructuredCriticalFacts.some(
+      (fact) =>
+        fact ===
+        "Dokumenterte milepæler: Pilot starter 15. februar 2027, og ordinær drift åpner 1. september 2027.",
+    ),
+  );
+  assert.ok(
+    unstructuredCriticalFacts.some(
+      (fact) =>
+        fact ===
+        "Dokumenterte effektmål: Oppnå 98 prosent synkronisering av komplette arbeidsordrer innen fem minutter etter at dekning er gjenopprettet | Sikre at 100 prosent av prosjektene har navngitt dataeier, klassifisering, formål og sluttdato.",
+    ),
+  );
+  const enrichedUnstructuredFacts = enrichCustomerAnalysisWithCriticalFacts(
+    {
+      customer_profile_summary: "",
+      customer_goals_summary: "",
+      high_level_solution_design:
+        "Prediktive modeller skal støtte, men aldri erstatte, sikkerhetsalarmer, sperrer eller operatørens godkjente prosedyrer.",
+      high_level_architecture_mermaid: "",
+      customer_profile: [],
+      customer_goals: [],
+      implicit_requirements: [],
+      prioritized_requirements: [],
+      ambiguities: [],
+      risks: [],
+      risks_for_us: [],
+      risks_for_customer: [],
+      likely_evaluation_criteria: [],
+      signal_words: [],
+      expected_solution_direction: [],
+      recommended_services: [],
+      value_opportunities: [],
+      positioning_recommendations: [],
+      executive_summary: "",
+    },
+    [
+      {
+        documentId: "unstructured",
+        title: "Møtereferat med krav",
+        role: "primary_customer_document",
+        context: "",
+        sourceText: [
+          "Oppnå 98 prosent synkronisering av komplette arbeidsordrer innen fem minutter etter at dekning er gjenopprettet.",
+          "Synkroniser komplette arbeidsordrer innen fem minutter etter gjenopprettet dekning.",
+          "Lesemerknad Dokumentet viser til ISO 27001 og eventuelle domenestandarder som FHIR R4. Disse er ikke nye krav.",
+          "Datainnsamling skal bruke lesende OPC UA eller godkjent mellomvare i industriell DMZ.",
+          "Kritiske sikkerhetsalarmer skal ikke erstattes av prediktive modeller.",
+          "Prediktive modeller skal ikke erstatte sikkerhetsalarmer, sperrer eller operatørens godkjente prosedyrer.",
+          "Sikre at 100 prosent av prosjektene har navngitt dataeier, klassifisering, formål og sluttdato.",
+          "Pilot starter 15. februar 2027, og ordinær drift åpner 1. september 2027.",
+          "Generative modeller skal ikke trenes på eller beholde prosjektdata uten eksplisitt, dokumentert godkjenning.",
+        ].join("\n"),
+      },
+    ],
+  );
+  const enrichedRequirementText =
+    enrichedUnstructuredFacts.prioritized_requirements
+      .map((item) => item.requirement)
+      .join("\n");
+  assert.match(
+    enrichedRequirementText,
+    /Oppnå 98 prosent synkronisering.+innen fem minutter/u,
+  );
+  assert.doesNotMatch(
+    enrichedRequirementText,
+    /Dokumenterte tekniske grenseverdier|Lesemerknad|FHIR R4|Kritiske sikkerhetsalarmer/u,
+  );
+  assert.equal(
+    enrichedUnstructuredFacts.prioritized_requirements.filter((item) =>
+      /innen fem minutter/u.test(item.requirement),
+    ).length,
+    1,
+  );
+  assert.deepEqual(enrichedUnstructuredFacts.customer_goals, [
+    "Oppnå 98 prosent synkronisering av komplette arbeidsordrer innen fem minutter etter at dekning er gjenopprettet. Sikre at 100 prosent av prosjektene har navngitt dataeier, klassifisering, formål og sluttdato.",
+  ]);
+  assert.match(
+    enrichedUnstructuredFacts.positioning_recommendations.join("\n"),
+    /Pilot starter 15. februar 2027.+1. september 2027/u,
+  );
+  assert.match(
+    enrichedRequirementText,
+    /Generative modeller skal ikke trenes på eller beholde prosjektdata/u,
+  );
+  assert.ok(
+    unstructuredCriticalFacts.some(
+      (fact) =>
+        fact.includes("OPC UA") &&
+        fact.includes("operatørens godkjente prosedyrer"),
+    ),
+  );
+  assert.ok(
+    unstructuredCriticalFacts.some(
+      (fact) =>
+        fact.includes("24x7") &&
+        fact.includes("99,9 prosent månedlig tilgjengelighet"),
+    ),
+  );
+  assert.deepEqual(
+    buildCustomerAnalysisCriticalFactChecklist([
+      {
+        documentId: "primary",
+        title: "Kravgrunnlag",
+        role: "primary_customer_document",
+        context:
+          "- [KONTEKST] Kolonnestøy med RTO 20 budsjett 30 og en ufullstendig setning",
+        sourceText:
+          "Niva har 12 klinikker, 480 ansatte og omtrent 210 000 konsultasjoner per år.",
+      },
+    ]).map((item) => item.fact),
+    [
+      "Dokumenterte skala- og volumtall: 12 klinikker; 480 ansatte; omtrent 210 000 konsultasjoner per år.",
+    ],
+  );
   assert.equal(
     CUSTOMER_ANALYSIS_V3_JSON_SCHEMA.properties.implicit_requirements.maxItems,
     3,
+  );
+  assert.equal(
+    CUSTOMER_ANALYSIS_V3_JSON_SCHEMA.properties.ambiguities.maxItems,
+    5,
+  );
+  assert.equal(
+    CUSTOMER_ANALYSIS_V3_JSON_SCHEMA.properties.prioritized_requirements
+      .maxItems,
+    MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
   );
   assert.equal(
     "minItems" in
@@ -304,12 +1047,144 @@ test("customer analysis v3 has one lean strict contract and one context per docu
   assert.equal(user.match(/END_CANONICAL_DOCUMENT_/gu)?.length, 2);
   assert.equal(user.match(/Krav-ID: KR-1/gu)?.length, 1);
   assert.doesNotMatch(user, /Semantisk dokumentdekning|Retrieval-kvalitet/u);
+
+  const primaryTail = "KVALITET VEKTES 45 PROSENT";
+  const longPrimary = buildCustomerAnalysisV3UserPrompt({
+    projectName: "Langt norsk bilag",
+    documents: [
+      {
+        documentId: "long-primary",
+        title: "Bilag 1",
+        role: "primary_customer_document",
+        context: `${"Krav og kundekontekst. ".repeat(650)}${primaryTail}`,
+      },
+    ],
+  });
+  assert.match(longPrimary, new RegExp(primaryTail, "u"));
+  assert.doesNotMatch(longPrimary, /\[avkortet\]/u);
+  assert.deepEqual(
+    customerAnalysisV3ContextUsage([
+      {
+        documentId: "large",
+        title: "Stort dokument",
+        role: "primary_customer_document",
+        context: "x".repeat(18_001),
+      },
+    ]),
+    [
+      {
+        documentId: "large",
+        inputChars: 18_001,
+        limitChars: 18_000,
+        truncated: true,
+      },
+    ],
+  );
+});
+
+test("customer analysis context budgets preserve the explicit primary and supporting policy", () => {
+  assert.equal(
+    customerAnalysisPromptContextLimit({
+      role: "primary_customer_document",
+      supportingDocumentCount: 20,
+    }),
+    18_000,
+  );
+  assert.equal(supportingPromptContextLimit(4), 4_000);
+  assert.equal(supportingPromptContextLimit(8), 2_000);
+  assert.equal(supportingPromptContextLimit(14), 1_142);
+  assert.equal(supportingPromptContextLimit(79), 202);
+  assert.equal(supportingPromptContextLimit(100), 160);
+
+  for (const count of [1, 4, 8, 14, 79, 100]) {
+    const limit = supportingPromptContextLimit(count);
+    assert.ok(limit > 0);
+    assert.ok(
+      limit * count <= SUPPORTING_PROMPT_CONTEXT_TOTAL_CHARS,
+      `${count} supporting documents exceeded the aggregate budget`,
+    );
+  }
+
+  const manyDocuments = [
+    {
+      documentId: "primary",
+      title: "Primærdokument",
+      role: "primary_customer_document",
+      context: "Primær kontekst",
+    },
+    ...Array.from({ length: 79 }, (_, index) => ({
+      documentId: `support-${index + 1}`,
+      title: `Støttedokument ${index + 1}`,
+      role: "supporting_document",
+      context: "x".repeat(5_000),
+    })),
+  ];
+  const usage = customerAnalysisV3ContextUsage(manyDocuments);
+  assert.ok(
+    usage
+      .filter((item) => item.documentId !== "primary")
+      .reduce((total, item) => total + item.limitChars, 0) <=
+      SUPPORTING_PROMPT_CONTEXT_TOTAL_CHARS,
+  );
+  const prompt = buildCustomerAnalysisV3UserPrompt({
+    projectName: "Mange støttedokumenter",
+    documents: manyDocuments,
+  });
+  assert.equal(prompt.match(/BEGIN_CANONICAL_DOCUMENT_/gu)?.length, 80);
+});
+
+test("section regeneration derives a strict subset schema and cannot mutate other fields", () => {
+  const contract = customerAnalysisRegenerationContract("risks");
+  assert.deepEqual(contract.fields, [
+    "risks",
+    "risks_for_us",
+    "risks_for_customer",
+  ]);
+  assert.deepEqual(contract.schema.required, contract.fields);
+  assert.equal(contract.schema.additionalProperties, false);
+  assert.deepEqual(sectionFieldNames("needs"), ["implicit_requirements"]);
+
+  const analysis = {
+    customer_profile_summary: "Uendret kundeprofil",
+    customer_goals_summary: "Uendret mål",
+    high_level_solution_design: "Uendret design",
+    high_level_architecture_mermaid: "flowchart LR\nA --> B",
+    customer_profile: [],
+    customer_goals: [],
+    implicit_requirements: [],
+    prioritized_requirements: [],
+    ambiguities: [],
+    risks: ["Gammel samlet risiko"],
+    risks_for_us: [],
+    risks_for_customer: [],
+    likely_evaluation_criteria: [],
+    signal_words: [],
+    expected_solution_direction: [],
+    recommended_services: [],
+    value_opportunities: [],
+    positioning_recommendations: [],
+    executive_summary: "Uendret strategi",
+  };
+  const merged = mergeCustomerAnalysisSectionPatch({
+    analysis,
+    section: "risks",
+    patch: {
+      risks: ["Ny samlet risiko"],
+      risks_for_us: ["Ny tilbudsrisiko"],
+      customer_profile_summary: "Skal ignoreres",
+    },
+  });
+  assert.equal(merged.customer_profile_summary, "Uendret kundeprofil");
+  assert.deepEqual(merged.risks, ["Ny samlet risiko"]);
+  assert.deepEqual(merged.risks_for_us, ["Ny tilbudsrisiko"]);
+  assert.deepEqual(analysis.risks, ["Gammel samlet risiko"]);
 });
 
 test("quality routing keeps clean documents fast and tries local structure before Azure", () => {
   const cleanText = "Leverandøren skal beskrive sikker drift. ".repeat(160);
   const clean = chooseDocumentParserRoute({
     rawText: cleanText,
+    canonicalText: cleanText,
     sourceMap: Array.from({ length: 12 }, (_, index) => ({
       reference: `Side ${Math.floor(index / 6) + 1}`,
       page: Math.floor(index / 6) + 1,
@@ -329,6 +1204,7 @@ test("quality routing keeps clean documents fast and tries local structure befor
   const brokenTable = chooseDocumentParserRoute({
     rawText:
       `${cleanText}\nID 2-01 Krav én\nID 2-02 Krav to\nID 2-03 Krav tre\nID 2-04 Krav fire`,
+    canonicalText: cleanText,
     sourceMap: [{ reference: "Side 1", page: 1, text: cleanText }],
     fileFormat: "pdf",
     fileSizeBytes: 120_000,
@@ -348,6 +1224,7 @@ test("quality routing keeps clean documents fast and tries local structure befor
     rawText: brokenTable.quality.hasRequirementSignals
       ? `${cleanText}\nID 2-01 Krav én\nID 2-02 Krav to\nID 2-03 Krav tre\nID 2-04 Krav fire`
       : cleanText,
+    canonicalText: cleanText,
     sourceMap: [{ reference: "Side 1", page: 1, text: cleanText }],
     fileFormat: "pdf",
     fileSizeBytes: 120_000,
@@ -357,33 +1234,6 @@ test("quality routing keeps clean documents fast and tries local structure befor
     doclingAvailable: false,
   });
   assert.equal(cloudFallback.route, "azure_layout");
-});
-
-test("customer analysis keeps source-rich local context until compression is necessary", () => {
-  assert.equal(
-    shouldUseCompiledCustomerAnalysisContext({
-      rawTextLength: 16_920,
-      analysisContextLength: 8_000,
-      isPrimaryDocument: true,
-    }),
-    false,
-  );
-  assert.equal(
-    shouldUseCompiledCustomerAnalysisContext({
-      rawTextLength: 32_000,
-      analysisContextLength: 8_000,
-      isPrimaryDocument: true,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldUseCompiledCustomerAnalysisContext({
-      rawTextLength: 7_500,
-      analysisContextLength: 3_000,
-      isPrimaryDocument: false,
-    }),
-    false,
-  );
 });
 
 test("customer analysis rejects stale source revisions and compiler versions", () => {
@@ -412,6 +1262,112 @@ test("customer analysis rejects stale source revisions and compiler versions", (
     }),
     false,
   );
+});
+
+test("customer analysis compiles stale contexts on demand and tolerates persistence failures", async () => {
+  const document = {
+    id: "document-1",
+    project_id: "project-1",
+    role: "primary_customer_document",
+    supporting_subtype: null,
+    title: "Kundekrav",
+    file_name: "kundekrav.txt",
+    file_format: "txt",
+    content_type: "text/plain",
+    file_size_bytes: 120,
+    processing_status: "enhanced_ready",
+    parser_used: "plain-text",
+    chunk_source_revision: 2,
+    created_at: "2026-07-24T00:00:00.000Z",
+    updated_at: "2026-07-24T00:00:00.000Z",
+    raw_text: "Kunden skal ha oppstart senest 1. oktober 2026.",
+    file_base64: "",
+    structure_map: [],
+  };
+  const warnings = [];
+  const result = await resolveCustomerAnalysisContexts({
+    projectId: document.project_id,
+    documents: [document],
+    dependencies: {
+      listContexts: async () => [
+        {
+          documentId: document.id,
+          sourceRevision: 1,
+          compilerVersion: "stale",
+          parserUsed: "plain-text",
+          quality: {},
+          evidenceCounts: {},
+          analysisContext: "utdatert",
+        },
+      ],
+      storeArtifact: async () => false,
+      now: () => "2026-07-24T00:00:00.000Z",
+      warn: (fields) => warnings.push(fields),
+    },
+  });
+
+  assert.equal(result.compiledOnDemandCount, 1);
+  assert.equal(result.persistenceFailureCount, 1);
+  assert.match(
+    result.contexts.get(document.id).analysisContext,
+    /oppstart senest 1\. oktober 2026/u,
+  );
+  assert.equal(warnings[0].event, "compiled_on_demand_persist_failed");
+
+  const rejected = await resolveCustomerAnalysisContexts({
+    projectId: document.project_id,
+    documents: [document],
+    dependencies: {
+      listContexts: async () => [],
+      storeArtifact: async () => {
+        throw new Error("database unavailable");
+      },
+      now: () => "2026-07-24T00:00:00.000Z",
+      warn: () => {},
+    },
+  });
+  assert.equal(rejected.persistenceFailureCount, 1);
+  assert.equal(rejected.contexts.has(document.id), true);
+});
+
+test("on-demand compilation handles 500 KB raw text within two seconds", async () => {
+  const rawText =
+    "Kunden skal dokumentere sikkerhet, frister og evalueringskriterier.\n\n".repeat(
+      8_000,
+    );
+  const startedAt = performance.now();
+  const result = await resolveCustomerAnalysisContexts({
+    projectId: "large-project",
+    documents: [
+      {
+        id: "large-document",
+        project_id: "large-project",
+        role: "primary_customer_document",
+        supporting_subtype: null,
+        title: "Stort dokument",
+        file_name: "large.txt",
+        file_format: "txt",
+        content_type: "text/plain",
+        file_size_bytes: Buffer.byteLength(rawText),
+        processing_status: "enhanced_ready",
+        parser_used: "plain-text",
+        chunk_source_revision: 1,
+        created_at: "2026-07-24T00:00:00.000Z",
+        updated_at: "2026-07-24T00:00:00.000Z",
+        raw_text: rawText,
+        file_base64: "",
+        structure_map: [],
+      },
+    ],
+    dependencies: {
+      listContexts: async () => [],
+      storeArtifact: async () => true,
+      now: () => "2026-07-24T00:00:00.000Z",
+      warn: () => {},
+    },
+  });
+  assert.equal(result.compiledOnDemandCount, 1);
+  assert.ok(performance.now() - startedAt < 2_000);
 });
 
 test("local PDF layout compiles flat Norwegian requirement rows without changing fast-path text", () => {
@@ -502,8 +1458,74 @@ test("evidence compiler creates stable, exact and source-addressable Norwegian e
   assert.equal(requirement.provenance.sourceId, "table-0-row-1");
   assert.equal(requirement.id, second.evidence[0].id);
   assert.equal(first.contentHash, second.contentHash);
+  assert.equal(
+    createHash("sha256").update(first.analysisContext).digest("hex"),
+    "45c0e8918e3da179a924aacbc15a4b41085440450d14649762775133f83101f0",
+  );
   assert.match(first.analysisContext, /Bilag 2 tabell 1, rad 2, side 6/u);
   assert.doesNotMatch(first.analysisContext, /evidence_ids/u);
+});
+
+test("evidence compiler reuses quality only when parser, revision and content hash match", () => {
+  const rawText = "Leverandøren skal levere sikker drift innen 1. oktober 2026.";
+  const structureMap = [
+    {
+      reference: "Side 1",
+      text: rawText,
+      kind: "text",
+      parser: "plain-text",
+    },
+  ];
+  const quality = {
+    score: 0.123,
+    textCoverage: 0.123,
+    readability: 0.123,
+    structureCoverage: 0.123,
+    sourceEntryCount: 1,
+    pageCount: 1,
+    tableCount: 0,
+    suspiciousCharacterRatio: 0,
+    hasRequirementSignals: true,
+    hasEvaluationSignals: false,
+    hasUnresolvedVisualReferences: false,
+    norwegianAnomalies: [],
+  };
+  const shared = {
+    documentId: "quality-document",
+    projectId: "quality-project",
+    title: "Krav",
+    fileName: "krav.txt",
+    fileFormat: "txt",
+    fileSizeBytes: 100,
+    sourceRevision: 4,
+    parserUsed: "plain-text",
+    rawText,
+    structureMap,
+    isHighImpactDocument: true,
+    compiledAt: "2026-07-24T00:00:00.000Z",
+  };
+  const contentHash = documentSourceContentHash({ rawText, structureMap });
+  const reused = compileDocumentIntelligenceArtifact({
+    ...shared,
+    precomputedQuality: {
+      quality,
+      parserUsed: "plain-text",
+      sourceRevision: 4,
+      contentHash,
+    },
+  });
+  assert.equal(reused.routing.quality.score, 0.123);
+
+  const recomputed = compileDocumentIntelligenceArtifact({
+    ...shared,
+    precomputedQuality: {
+      quality,
+      parserUsed: "plain-text",
+      sourceRevision: 4,
+      contentHash: "mismatch",
+    },
+  });
+  assert.notEqual(recomputed.routing.quality.score, 0.123);
 });
 
 test("evidence compiler reserves coverage for deadlines in requirement-heavy documents", () => {
@@ -548,6 +1570,8 @@ test("evidence compiler reserves coverage for deadlines in requirement-heavy doc
 test("parser attempt events use the persisted source revision supplied after ingestion", () => {
   const quality = chooseDocumentParserRoute({
     rawText: "ID 2-01 Krav én\nID 2-02 Krav to\nID 2-03 Krav tre\nID 2-04 Krav fire",
+    canonicalText:
+      "ID 2-01 Krav én\nID 2-02 Krav to\nID 2-03 Krav tre\nID 2-04 Krav fire",
     sourceMap: [],
     fileFormat: "pdf",
     fileSizeBytes: 120_000,
@@ -571,6 +1595,7 @@ test("parser attempt events use the persisted source revision supplied after ing
       parsed,
       decision: quality,
       selectedQuality: quality.quality,
+      selectedContentHash: "test-content-hash",
       localAttempted: true,
       azureAttempted: true,
     },

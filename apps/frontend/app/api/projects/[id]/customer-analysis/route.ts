@@ -25,13 +25,14 @@ import {
   readStableSolutionEvaluationSourceSnapshot,
 } from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
-import type {
-  AnalysisRequirement,
-  CustomerAnalysisResult,
-  CustomerAnalysisSection,
-  RecommendedService,
-  RequirementImportance,
-  ValueOpportunity,
+import {
+  MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
+  type AnalysisRequirement,
+  type CustomerAnalysisResult,
+  type CustomerAnalysisSection,
+  type RecommendedService,
+  type RequirementImportance,
+  type ValueOpportunity,
 } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -162,7 +163,10 @@ function applyClarificationsSnapshot(
 
   return {
     ...analysis,
-    ambiguities: snapshot.ambiguities,
+    ambiguities: snapshot.ambiguities.slice(
+      0,
+      MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
+    ),
     expected_solution_direction: snapshot.expected_solution_direction,
     likely_evaluation_criteria: snapshot.likely_evaluation_criteria,
   };

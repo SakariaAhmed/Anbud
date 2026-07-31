@@ -48,6 +48,7 @@ import {
   saveExecutiveSummary,
   saveSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
+import { assertExecutiveSummaryEvaluationReady } from "@/lib/server/executive-summary-readiness";
 import {
   getDocumentDetail,
   listProjectDocumentsForAnalysis,
@@ -829,6 +830,11 @@ async function runDocumentIngestionWorkflow(
       rawText: parsed.rawText,
       structureMap: parsed.sourceMap,
       parserUsed: parsed.parserUsed,
+      precomputedQuality: {
+        quality: parseSelection.selectedQuality,
+        parserUsed: parsed.parserUsed,
+        contentHash: parseSelection.selectedContentHash,
+      },
       status: shouldRunInlineDocling
         ? "processing"
         : shouldQueueDoclingEnhancement
@@ -1446,6 +1452,7 @@ async function runExecutiveSummaryWorkflow(
     throw new Error("Generer vurdering før lederoppsummering.");
   }
   const solutionEvaluation = evaluationSnapshot.evaluation;
+  assertExecutiveSummaryEvaluationReady(solutionEvaluation);
 
   handlers.setProgress("Genererer lederoppsummering ...");
   const generated = await generateExecutiveSummary({

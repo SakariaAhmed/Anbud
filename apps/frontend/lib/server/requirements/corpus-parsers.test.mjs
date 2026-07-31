@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import test from "node:test";
 import path from "node:path";
@@ -123,6 +124,29 @@ const { normalizePageText, splitPdfPages, splitPdfPagesPreservingLines } = jiti(
 const {
   detectExplicitRequirementIds: productionDetectExplicitRequirementIds,
 } = jiti(path.join(frontendRoot, "lib/server/requirements/id-detection.ts"));
+
+test("requirement IDs exclude SSA agreement names and contextual FHIR releases", () => {
+  const requirement =
+    "NORD-FUN-01 Plattformen skal støtte HL7 FHIR R4 under kontraktsmønstrene SSA-L 2026 og SSA-T 2026.";
+
+  assert.deepEqual(productionDetectExplicitRequirementIds(requirement), [
+    "NORD-FUN-01",
+  ]);
+  assert.equal(
+    productionStripAnswerTextFromRequirement(
+      "Plattformen skal støtte HL7 FHIR R4 og bevare originalmelding og transformasjonsversjon for revisjon.",
+    ),
+    "Plattformen skal støtte HL7 FHIR R4 og bevare originalmelding og transformasjonsversjon for revisjon.",
+  );
+  assert.deepEqual(
+    productionDetectExplicitRequirementIds(
+      "R4 Leverandøren skal dokumentere den fjerde kravraden.",
+    ),
+    ["R4"],
+    "R4 remains a valid explicit requirement ID outside FHIR context",
+  );
+});
+
 const {
   PETORO_REQUIREMENT_PDF_SHA256,
   repairSourceBoundPdfNarrativeHeading,
@@ -172,6 +196,426 @@ function projectDocument({ rawText, fileFormat = "docx", structureMap = [] }) {
     structure_map: structureMap,
   };
 }
+
+test("Nordhavn explicit requirement table yields exactly 18 source-ordered rows", async () => {
+  const rawText = await readFile(
+    path.join(
+      __dirname,
+      "fixtures",
+      "nordhavn-explicit-requirements.txt",
+    ),
+    "utf8",
+  );
+  const ledger = await extractRequirementLedgerForDocument(
+    projectDocument({ rawText, fileFormat: "txt" }),
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => entry.id),
+    [
+      "FUN-A01",
+      "FUN-A02",
+      "FUN-B01",
+      "FUN-B02",
+      "DOK-A03",
+      "IAM-A04",
+      "INT-A05",
+      "INT-B03",
+      "MIG-A06",
+      "MIG-B04",
+      "SIK-A07",
+      "SIK-A08",
+      "SIK-B05",
+      "UU-A09",
+      "DRI-A10",
+      "DRI-B06",
+      "OPL-B07",
+      "DATA-A11",
+    ],
+  );
+  assert.equal(ledger.length, 18);
+  assert.equal(ledger[0]?.heading, "6. Kravtabell");
+  assert.match(ledger[0]?.text ?? "", /^Tjenesten skal støtte mottak/u);
+  assert.doesNotMatch(ledger[0]?.text ?? "", /Svarinstruks/u);
+  assert.ok(
+    ledger.every((entry) => entry.tableId === "Eksplisitt kravtabell"),
+  );
+});
+
+test("flattened explicit-ID rows retain the authoritative 18-row inventory", async () => {
+  const rawText = await readFile(
+    path.join(
+      __dirname,
+      "fixtures",
+      "nordhavn-explicit-requirements.txt",
+    ),
+    "utf8",
+  );
+  const flattened = rawText
+    .replace(
+      /^([A-ZÆØÅ]{2,8}-[A-ZÆØÅ]{1,4}\d{1,5})\s*\|\s*([AB])\s*\|\s*(.+)$/gmu,
+      "$1$2$3",
+    )
+    .replace(/^Svarinstruks:\s*/gmu, "");
+  const ledger = await extractRequirementLedgerForDocument(
+    projectDocument({ rawText: flattened, fileFormat: "txt" }),
+  );
+
+  assert.equal(ledger.length, 18);
+  assert.deepEqual(
+    ledger.map((entry) => entry.id),
+    [
+      "FUN-A01",
+      "FUN-A02",
+      "FUN-B01",
+      "FUN-B02",
+      "DOK-A03",
+      "IAM-A04",
+      "INT-A05",
+      "INT-B03",
+      "MIG-A06",
+      "MIG-B04",
+      "SIK-A07",
+      "SIK-A08",
+      "SIK-B05",
+      "UU-A09",
+      "DRI-A10",
+      "DRI-B06",
+      "OPL-B07",
+      "DATA-A11",
+    ],
+  );
+  assert.equal(ledger[0]?.service, "Saksbehandling");
+  assert.match(ledger[0]?.text ?? "", /^Tjenesten skal støtte mottak/u);
+  assert.doesNotMatch(
+    ledger[0]?.text ?? "",
+    /Bekreft oppfyllelse|arbeidsflyt og historikk ivaretas/u,
+  );
+});
+
+test("explicit-ID PDF layout parser keeps requirement and supplier-answer columns separate", () => {
+  function line(y, values) {
+    const items = values.map(([x, str]) => ({
+      str,
+      x,
+      y,
+      width: str.length * 5,
+    }));
+    return {
+      y,
+      items,
+      text: items.map((item) => item.str).join(" "),
+    };
+  }
+
+  const context = {
+    cleanHeadingCandidate: (value) => value.trim(),
+    hasRequirementSignal: (value) =>
+      /\b(?:skal|må|beskrive)\b/iu.test(value),
+    hasStandaloneRequirementLanguage: (value) =>
+      /\b(?:skal|må|beskrive)\b/iu.test(value),
+    isLikelyHeadingLine: (value) => /^\d+\.\s+\S/u.test(value),
+    splitDocumentPagesForRequirementScan: () => [],
+    stripAnswerTextFromRequirement: (value) => value.trim(),
+    stripRequirementChrome: (value) => value.trim(),
+  };
+  const ledger = parsers.buildExplicitIdPdfLayoutRequirementLedger(
+    [
+      {
+        page: 3,
+        lines: [
+          line(625, [[57, "6. Kravtabell"]]),
+          line(565, [
+            [63, "Krav-ID"],
+            [120, "Type"],
+            [154, "Kundens krav"],
+            [372, "Status og leverandørens besvarelse"],
+          ]),
+          line(543, [
+            [63, "FUN-A01"],
+            [120, "A"],
+            [154, "Saksbehandling"],
+            [372, "Bekreft oppfyllelse og beskriv arbeidsflyten."],
+          ]),
+          line(533, [
+            [154, "Tjenesten skal støtte mottak og behandling av saker"],
+            [372, "Oppgi også eventuelle avgrensninger."],
+          ]),
+          line(523, [[154, "i én sammenhengende arbeidsflate."]]),
+          line(510, [[523, "Side 3"]]),
+          line(480, [
+            [63, "FUN-B01"],
+            [120, "B"],
+            [154, "Innbyggerdialog"],
+            [372, "Beskriv brukerreisen."],
+          ]),
+          line(470, [
+            [154, "Leverandøren skal beskrive status og varsling."],
+          ]),
+          line(427, [
+            [63, "DRI-B06"],
+            [120, "B"],
+            [154, "Driftsinnsikt"],
+            [372, "Beskriv målepunktene."],
+          ]),
+          line(417, [
+            [154, "Leverandøren skal beskrive proaktiv overvåking."],
+          ]),
+          line(390, [[57, "7. Gjennomføring"]]),
+          line(380, [
+            [57, "Vurderingen viser til DRI-B06, men dette er ikke en ny rad."],
+          ]),
+        ],
+      },
+    ],
+    context,
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => entry.id),
+    ["FUN-A01", "FUN-B01", "DRI-B06"],
+  );
+  assert.equal(ledger[0]?.service, "Saksbehandling");
+  assert.equal(
+    ledger[0]?.text,
+    "Tjenesten skal støtte mottak og behandling av saker i én sammenhengende arbeidsflate.",
+  );
+  assert.doesNotMatch(ledger[0]?.text ?? "", /Bekreft|Oppgi/u);
+  assert.match(ledger[0]?.sourceExcerpt ?? "", /Leverandørens svar:/u);
+  assert.match(
+    ledger[0]?.answerExcerpt ?? "",
+    /Bekreft oppfyllelse og beskriv arbeidsflyten/u,
+  );
+  assert.doesNotMatch(ledger[0]?.answerExcerpt ?? "", /Side 3/u);
+});
+
+test("explicit-ID PDF layout parser supports Pri., Tema and two-hyphen IDs", () => {
+  function line(y, values) {
+    const items = values.map(([x, str]) => ({
+      str,
+      x,
+      y,
+      width: str.length * 5,
+    }));
+    return {
+      y,
+      items,
+      text: items.map((item) => item.str).join(" "),
+    };
+  }
+
+  const context = {
+    cleanHeadingCandidate: (value) => value.trim(),
+    hasRequirementSignal: (value) =>
+      /\b(?:skal|må|bør|beskrive)\b/iu.test(value),
+    hasStandaloneRequirementLanguage: (value) =>
+      /\b(?:skal|må|bør|beskrive)\b/iu.test(value),
+    isLikelyHeadingLine: (value) => /^\d+\.\s+\S/u.test(value),
+    splitDocumentPagesForRequirementScan: () => [],
+    stripAnswerTextFromRequirement: (value) => value.trim(),
+    stripRequirementChrome: (value) => value.trim(),
+  };
+  const header = line(565, [
+    [62, "Krav-ID"],
+    [139, "Pri."],
+    [173, "Tema"],
+    [275, "Krav som Leverandøren skal besvare"],
+  ]);
+  const ledger = parsers.buildExplicitIdPdfLayoutRequirementLedger(
+    [
+      {
+        page: 2,
+        lines: [
+          line(625, [[57, "Kontraktsmønster SSA-L 2026"]]),
+          line(585, [[57, "6. Kravtabell"]]),
+          header,
+          line(543, [
+            [62, "NORD-FUN-01"],
+            [139, "A"],
+            [173, "Saksflyt"],
+            [275, "Tjenesten skal støtte komplett saksbehandling"],
+          ]),
+          line(533, [[275, "i én sammenhengende arbeidsflate."]]),
+          line(480, [
+            [62, "NORD-API-11"],
+            [139, "B"],
+            [173, "API"],
+            [275, "Leverandøren bør beskrive dokumenterte API-er."],
+          ]),
+        ],
+      },
+      {
+        page: 3,
+        lines: [
+          header,
+          line(543, [
+            [62, "NORD-OPL-12"],
+            [139, "B"],
+            [173, "Opplæring"],
+            [275, "Leverandøren bør beskrive rollebasert opplæring."],
+          ]),
+          line(500, [[57, "FHIR R4 er omtalt i bakgrunnsteksten."]]),
+          line(470, [[57, "7. Tildelingskriterier"]]),
+        ],
+      },
+    ],
+    context,
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => entry.id),
+    ["NORD-FUN-01", "NORD-API-11", "NORD-OPL-12"],
+  );
+  assert.deepEqual(
+    ledger.map((entry) => entry.service),
+    ["Saksflyt", "API", "Opplæring"],
+  );
+  assert.equal(
+    ledger[0]?.text,
+    "Tjenesten skal støtte komplett saksbehandling i én sammenhengende arbeidsflate.",
+  );
+  assert.ok(ledger.every((entry) => !entry.answerExcerpt));
+  assert.equal(ledger.some((entry) => entry.id === "SSA-L 2026"), false);
+  assert.equal(ledger.some((entry) => entry.id === "R4"), false);
+});
+
+test("explicit-ID narrative parser handles five unstructured block patterns", () => {
+  const narrativeLine = (y, text) => ({
+    y,
+    text,
+    items: [{ str: text, x: 57, y, width: text.length * 4 }],
+  });
+  const context = {
+    detectExplicitRequirementIds: productionDetectExplicitRequirementIds,
+    hasRequirementSignal: (value) =>
+      /\b(?:skal|må|bør|beskrive)\b/iu.test(value),
+    hasStandaloneRequirementLanguage: (value) =>
+      /\b(?:skal|må|bør|beskrive)\b/iu.test(value),
+    stripAnswerTextFromRequirement: productionStripAnswerTextFromRequirement,
+    stripRequirementChrome: (value) => value.trim(),
+  };
+  const ledger = parsers.buildExplicitIdPdfNarrativeRequirementLedger(
+    [
+      {
+        page: 2,
+        lines: [
+          narrativeLine(700, "4. Ustrukturert krav-for-krav-besvarelse"),
+          narrativeLine(
+            690,
+            "SSA-L 2026 og FHIR R4 er ikke krav-ID-er. TEST-FUN-01 og TEST-OPS-05 omtales senere.",
+          ),
+          narrativeLine(
+            670,
+            "Arbeidsnotat 1: Saksflyt [TEST-FUN-01] - prioritet A",
+          ),
+          narrativeLine(
+            660,
+            "Tjenesten skal støtte komplett og sporbar saksflyt.",
+          ),
+          narrativeLine(
+            650,
+            "Leverandørens bindende svar til TEST-FUN-01",
+          ),
+          narrativeLine(
+            640,
+            "Løsningen leverer komplett og sporbar saksflyt.",
+          ),
+          narrativeLine(
+            620,
+            "Krav TEST-IAM-02: Identitet (prioritet A)",
+          ),
+          narrativeLine(
+            610,
+            "Ansatte skal autentiseres med kundens identitetsplattform.",
+          ),
+          narrativeLine(600, "Svar på krav TEST-IAM-02"),
+          narrativeLine(
+            590,
+            "Identitetsplattformen kobles til med standard protokoll.",
+          ),
+          narrativeLine(
+            570,
+            "3) Logging - referanse TEST-LOG-03, prioritet A",
+          ),
+          narrativeLine(
+            560,
+            "Administrative handlinger skal logges med tidspunkt og aktør.",
+          ),
+          narrativeLine(550, "Respons TEST-LOG-03"),
+          narrativeLine(
+            540,
+            "Revisjonsloggen lagrer tidspunkt, aktør og handling.",
+          ),
+          narrativeLine(520, "Behovsområde 4: Datalokasjon"),
+          narrativeLine(
+            510,
+            "Kundedata skal behandles i Norge. Kravreferanse:",
+          ),
+          narrativeLine(
+            500,
+            "TEST-DAT-04. Klassifisering: prioritet A.",
+          ),
+          narrativeLine(
+            490,
+            "Bindende svar - kravreferanse TEST-DAT-04",
+          ),
+          narrativeLine(480, "Alle kundedata behandles i Norge."),
+          narrativeLine(
+            460,
+            "Referatpunkt 5 - Opsjon (TEST-OPS-05, prioritet C)",
+          ),
+          narrativeLine(
+            450,
+            "Opsjonen bør kunne kjøpes uten å påvirke basisleveransen.",
+          ),
+          narrativeLine(440, "Beslutning og svar (TEST-OPS-05)"),
+          narrativeLine(
+            430,
+            "Opsjonen prises separat og basisleveransen er uavhengig.",
+          ),
+          narrativeLine(410, "Mellomnotat - ikke et nytt krav"),
+          narrativeLine(
+            400,
+            "TEST-FUN-01 og TEST-OPS-05 skal ses i sammenheng.",
+          ),
+          narrativeLine(380, "Krysshenvisninger og dokumentkontroll"),
+        ],
+      },
+    ],
+    context,
+  );
+
+  assert.deepEqual(
+    ledger.map((entry) => entry.id),
+    [
+      "TEST-FUN-01",
+      "TEST-IAM-02",
+      "TEST-LOG-03",
+      "TEST-DAT-04",
+      "TEST-OPS-05",
+    ],
+  );
+  assert.deepEqual(
+    ledger.map((entry) => entry.text),
+    [
+      "Tjenesten skal støtte komplett og sporbar saksflyt.",
+      "Ansatte skal autentiseres med kundens identitetsplattform.",
+      "Administrative handlinger skal logges med tidspunkt og aktør.",
+      "Kundedata skal behandles i Norge.",
+      "Opsjonen bør kunne kjøpes uten å påvirke basisleveransen.",
+    ],
+  );
+  assert.deepEqual(
+    ledger.map((entry) => entry.answerExcerpt),
+    [
+      "Løsningen leverer komplett og sporbar saksflyt.",
+      "Identitetsplattformen kobles til med standard protokoll.",
+      "Revisjonsloggen lagrer tidspunkt, aktør og handling.",
+      "Alle kundedata behandles i Norge.",
+      "Opsjonen prises separat og basisleveransen er uavhengig.",
+    ],
+  );
+});
 
 test("extracts markdown kravsvar rows across repeated heading tables", async () => {
   const rawText = [

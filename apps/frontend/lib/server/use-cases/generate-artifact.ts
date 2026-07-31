@@ -736,6 +736,9 @@ export async function generateAndSaveProjectArtifact(
     artifactType: input.artifactType,
     title: generated.title,
     contentMarkdown: repaired.contentMarkdown,
+    sourceText: projectDocuments
+      .map((document) => `${document.title}\n${document.raw_text}`)
+      .join("\n\n"),
     ...requirementQualityExpectations(generationMetadata),
   });
   if (qualityReport.status === "fail") {

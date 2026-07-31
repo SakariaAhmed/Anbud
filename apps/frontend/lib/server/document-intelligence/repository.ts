@@ -1,7 +1,11 @@
 import "server-only";
 
 import { decryptString, encryptJson, encryptString } from "@/lib/server/crypto";
-import type { DocumentIntelligenceArtifact } from "@/lib/server/document-intelligence/types";
+import type {
+  DocumentEvidenceKind,
+  DocumentIntelligenceArtifact,
+  DocumentParseQuality,
+} from "@/lib/server/document-intelligence/types";
 import { isMissingRelationColumn } from "@/lib/server/repositories/supabase-compat";
 import { createServiceClient } from "@/lib/server/supabase";
 
@@ -49,10 +53,20 @@ export async function storeDocumentIntelligenceArtifact(
   return data === true;
 }
 
+export type DocumentIntelligenceContext = {
+  documentId: string;
+  sourceRevision: number;
+  compilerVersion: string;
+  parserUsed: string;
+  quality: DocumentParseQuality | Record<string, never>;
+  evidenceCounts: Partial<Record<DocumentEvidenceKind, number>>;
+  analysisContext: string;
+};
+
 export async function listDocumentIntelligenceContexts(input: {
   projectId: string;
   documentIds: string[];
-}) {
+}): Promise<DocumentIntelligenceContext[]> {
   const documentIds = [...new Set(input.documentIds.filter(Boolean))];
   if (!documentIds.length) return [];
   const supabase = createServiceClient();
@@ -81,11 +95,13 @@ export async function listDocumentIntelligenceContexts(input: {
         parserUsed: String(row.parser_used ?? ""),
         quality:
           row.quality && typeof row.quality === "object"
-            ? (row.quality as Record<string, unknown>)
+            ? (row.quality as DocumentParseQuality)
             : {},
         evidenceCounts:
           row.evidence_counts && typeof row.evidence_counts === "object"
-            ? (row.evidence_counts as Record<string, unknown>)
+            ? (row.evidence_counts as Partial<
+                Record<DocumentEvidenceKind, number>
+              >)
             : {},
         analysisContext: decryptString(encryptedContext),
       },

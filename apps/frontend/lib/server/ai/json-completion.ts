@@ -327,13 +327,19 @@ function structuredResponseCacheKey(input: {
   system: string;
   override?: string;
 }) {
-  return [
-    "anbud",
-    "document-analysis-v3",
-    promptCacheSegment(input.override || input.schemaName),
-    promptCacheSegment(input.model),
-    hashPromptPrefix(input.system),
-  ].join(":");
+  const familySource = input.override || input.schemaName;
+  const family = promptCacheSegment(familySource).slice(0, 20);
+  const model = promptCacheSegment(input.model).slice(0, 14);
+  const fingerprint = hashPromptPrefix(
+    `${familySource}\n${input.system}`,
+  ).slice(0, 16);
+  const key = `anbud:da3:${family}:${model}:${fingerprint}`;
+
+  if (key.length > 64) {
+    throw new Error("prompt_cache_key exceeds 64 characters");
+  }
+
+  return key;
 }
 
 /**

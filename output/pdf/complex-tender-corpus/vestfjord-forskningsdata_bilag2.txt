@@ -1,0 +1,111 @@
+BILAG 2 - LEVERANDØRENS LØSNING
+Vestfjord universitet - sikker forskningsdata- og AI-plattform
+Kunde: Vestfjord universitet
+Anskaffelse: Selvbetjent plattform for forskningsdata, analyse og kontrollert kunstig intelligens
+Kontrakt: SSA-L 2026
+Fiktivt testgrunnlag: Alle virksomheter, leverandører, tall og avtaler i dokumentet er fiktive.
+
+VIRKSOMHET OG ANSKAFFELSESBEHOV
+Vestfjord universitet har 18 600 studenter, 2 900 ansatte og rundt 1 250 aktive forskningsprosjekter. Data ligger i 43 instituttvise lagringsområder med ulike tilgangsprosesser. Universitetet forvalter omtrent 4 petabyte forskningsdata, hvorav 18 prosent er klassifisert som særlig beskyttelsesverdig.
+Universitetet skal anskaffe en selvbetjent plattform for prosjektopprettelse, datalagring, analyse, GPU-beregning og avslutning. Plattformen skal støtte åpne data, personopplysninger og prosjekter med strenge avtalevilkår uten at alle behandles på samme sikkerhetsnivå.
+Pilot med helsevitenskap og marin teknologi starter 1. januar 2027. Ordinær tjeneste skal åpnes 15. august 2027. Dagens forskningsdata skal migreres trinnvis over tre år, og universitetet vil unngå en stor engangsflytting uten verifisert bruk og arkivbehov.
+
+MÅL OG FORVENTEDE EFFEKTER
+Redusere median etableringstid for et standard forskningsmiljø fra 21 dager til 2 timer.
+Sikre at 100 prosent av prosjektene har navngitt dataeier, klassifisering, formål og sluttdato.
+Redusere overprovisjonert lagring og GPU-kapasitet med 25 prosent.
+Gjøre reproduserbare analyseoppsett til standard for de to pilotfakultetene.
+Automatisere arkivering eller dokumentert sletting når prosjektet avsluttes.
+
+FØRINGER OG AVGRENSNINGER
+Feide skal brukes for primær innlogging, med sterkere autentisering for beskyttede datasett.
+Data skal plasseres etter klassifisering; særlig beskyttelsesverdige data skal behandles i Norge.
+Generative modeller skal ikke trenes på prosjektdata uten eksplisitt godkjenning.
+Hver GPU-jobb skal være knyttet til prosjekt, koststed og godkjent bruker.
+Eksport fra høyeste dataklasse skal gå gjennom dokumentert kontroll og godkjenning.
+
+TILDELINGSMODELL
+Sikkerhet, forskerstøtte og funksjonell kvalitet: 45 prosent.
+Arkitektur, portabilitet og gjennomføring: 35 prosent.
+Pris: 20 prosent.
+
+TILBUDT LØSNING: Research Harbor
+En klassifiseringsstyrt, selvbetjent forskningsplattform med Feide, tidsavgrenset prosjekttilgang, kontrollerte GPU-jobber, reproduserbare miljøer og automatisert arkivering eller sletting.
+
+MÅLARKITEKTUR
+Selvbetjeningsportal og katalog av godkjente prosjektmaler.
+Feide, flerfaktor og prosjektbasert tilgang med dataeier.
+Policy-as-code som styrer region, nettverk, logging og eksport per dataklasse.
+Lagrings- og analyseplan med GPU-kvoter, koststed og automatisk stopp.
+Livssyklusmotor for sluttdato, arkivpakke, kontrollsummer og sletting.
+
+GJENNOMFØRING
+Pilot med helsevitenskap og marin teknologi.
+Klassifiseringsmodell oversettes til testbare tekniske policyer.
+Migrering prioriteres etter bruk og bevaringsbehov, ikke som blind masseflytting.
+Forskerstøtte, sikkerhetsvakt og måling av etableringstid og kostnad.
+
+KRAVMATRISE
+VES-SEL-01 | Prioritet A | Selvbetjening
+En standard prosjektarbeidsflate skal kunne etableres innen 2 timer etter komplett og godkjent bestilling.
+Leverandørens svar: Research Harbor bruker en godkjent katalog av miljømaler. Etter Feide-innlogging og komplett metadata registrerer policyflyten dataeier, klassifisering, koststed og sluttdato før automatisert etablering. Leveransetiden måles fra godkjenning til aktivt miljø.
+
+VES-IAM-02 | Prioritet A | Identitet
+Primær innlogging skal bruke Feide. Beskyttede datasett skal kreve sterkere autentisering og eksplisitt prosjektmedlemskap.
+Leverandørens svar: Feide brukes til føderert innlogging. For beskyttede datasett kreves flerfaktorautentisering og aktivt medlemskap godkjent av dataeier. Tilgang har utløpsdato og resertifiseres hvert halvår.
+
+VES-KLA-03 | Prioritet A | Klassifisering
+Lagring, nettverk, logging og eksportkontroll skal bestemmes av prosjektets dataklasse og kunne oppdateres kontrollert.
+Leverandørens svar: Policy-as-code oversetter godkjent dataklasse til region, kryptering, nettverksgrenser, loggnivå og eksportflyt. Endring av klasse krever konsekvenskontroll og dataeiers godkjenning. Historikken viser gammel og ny policy.
+
+VES-DAT-04 | Prioritet A | Datalokasjon
+Særlig beskyttelsesverdige data skal behandles i Norge, inkludert sikkerhetskopier og identifiserbare logger.
+Leverandørens svar: Høyeste klasse bindes til norske behandlingsregioner for primærdata, sikkerhetskopi og identifiserbar logg. Automatisert policy hindrer opprettelse av ressurser utenfor godkjent lokasjon og rapporterer avvik.
+
+VES-GPU-05 | Prioritet A | GPU-styring
+GPU-jobber skal knyttes til prosjekt, koststed og bruker, med kvote, automatisk stopp og synlig kostnadsestimat.
+Leverandørens svar: Jobbplanleggeren krever gyldig prosjekt, koststed og bruker. Prosjektet får kvote og maksimal kjøretid. Forventet kostnad vises før start, og tomme eller inaktive ressurser stanses etter policy.
+
+VES-AI-06 | Prioritet A | Ansvarlig AI
+Generative modeller skal ikke trenes på eller beholde prosjektdata uten eksplisitt, dokumentert godkjenning.
+Leverandørens svar: Kun godkjente modellendepunkter kan brukes. Standardpolicy deaktiverer trening og leverandørbevaring. Eventuelle unntak krever dataeier, personvern og informasjonssikkerhet, og lagres med modell, formål, datasett og utløpsdato.
+
+VES-REP-07 | Prioritet B | Reproduserbarhet
+Forskere bør kunne versjonere kode, miljø, avhengigheter og datasettpekere slik at en analyse kan reproduseres.
+Leverandørens svar: Prosjektet kan lagre Git-revisjon, containerbilde med digest, avhengighetslås og uforanderlig datasettversjon. En manifestfil kobler disse til jobb, resultat og ansvarlig bruker.
+
+VES-EKS-08 | Prioritet A | Eksportkontroll
+Eksport fra høyeste dataklasse skal skannes, begrunnes og godkjennes før data kan forlate miljøet.
+Leverandørens svar: Brukeren legger eksport i en karantenesone med formål og mottaker. Automatisk skanning kontrollerer filtype, skadevare og sensitive mønstre. Dataeier eller delegert kontrollør godkjenner, og kontrollbevis følger eksporten.
+
+VES-LIV-09 | Prioritet A | Livssyklus
+Alle prosjekter skal ha sluttdato og arbeidsflyt for forlengelse, arkivering eller verifisert sletting.
+Leverandørens svar: Varsling starter 90 dager før sluttdato. Dataeier velger begrunnet forlengelse, arkivpakke eller sletting. Arkivering gir manifest og kontrollsummer. Sletting dokumenteres for aktive data og sikkerhetskopier etter avtalt retensjon.
+
+VES-MIG-10 | Prioritet B | Migrering
+Migreringen av omtrent 4 petabyte skal prioriteres etter aktiv bruk, dataklasse og bevaringsbehov over tre år.
+Leverandørens svar: Hvert lagringsområde profileres før flytting. Aktive pilotprosjekter tas først, mens inaktive data vurderes for arkiv eller sletting. Objektantall, størrelse og kontrollsummer avstemmes, og gamle områder stenges først etter dataeiers godkjenning.
+
+VES-UTR-11 | Prioritet A | Portabilitet
+Kunden skal kunne eksportere data, metadata, policy, miljømanifest og revisjonslogger i dokumenterte formater.
+Leverandørens svar: Data leveres i opprinnelig eller åpent avtalt format, metadata og policy som JSON, tabeller som CSV eller Parquet og miljøer som OCI-kompatible bilder og deklarativ konfigurasjon. Manifest og kontrollsummer følger uttrekket.
+
+VES-OBS-12 | Prioritet B | Styringsinformasjon
+Universitetet bør se etableringstid, kostnad, kapasitet, policyavvik, eksport og avslutningsstatus per fakultet og prosjekt.
+Leverandørens svar: Rollebeskyttede oversikter viser alle seks måleområdene med sporbarhet til prosjekt og koststed. Personopplysninger minimeres i økonomirapporter. Data kan eksporteres og kobles til universitetets økonomi- og styringsplattform.
+
+FORHOLD SOM SKAL AVKLARES
+Endelig klassifiseringsmodell vedtas av universitetets styre høsten 2026.
+Det er ikke avklart hvilke utenlandske samarbeidspartnere som skal få føderert tilgang i pilot.
+Omfang og format for langtidsbevaring varierer mellom fagområdene og må kartlegges.
+
+POSISJONERING OG VERDI
+To timer fra godkjent bestilling til standardmiljø.
+Sikkerhetsnivå som følger dataklasse fremfor én dyr standard.
+Reproduserbar forskning og portabelt dataeierskap.
+Kostnadskontroll uten å blokkere forskerens selvbetjening.
+
+FORUTSETNINGER OG RISIKO
+Uferdig klassifiseringsmodell kan endre tekniske kontrollkrav.
+Uavklart føderert tilgang kan forsinke internasjonalt samarbeid.
+Varierende arkivkrav kan gjøre migrerings- og avslutningsplanen usikker.

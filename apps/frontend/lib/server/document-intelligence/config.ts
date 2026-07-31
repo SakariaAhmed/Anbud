@@ -21,6 +21,10 @@ export function isDocumentAnalysisV3Enabled() {
   return documentAnalysisVersion() === "v3";
 }
 
+export function customerAnalysisPipeline(): "legacy" | "v3" {
+  return isDocumentAnalysisV3Enabled() ? "v3" : "legacy";
+}
+
 /** @deprecated Use isDocumentAnalysisEnabled. */
 export function isDocumentIntelligenceV2Enabled() {
   return isDocumentAnalysisEnabled();

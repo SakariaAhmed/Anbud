@@ -1,0 +1,235 @@
+{
+  "scenario_id": "polarfrakt-kjolekjede",
+  "project_name": "PolarFrakt Logistikk SA - digital kjølekjede og terminalstyring",
+  "good_solution": {
+    "summary": "En offline robust kjølekjedeplattform som lar transportsystemet være ordre-master, normaliserer fire sensorleverandører og gir et rekonstruerbart bevis fra måling og skanning til avvik og godkjenning.",
+    "architecture": [
+      "Integrasjonslag mot eksisterende transportstyringssystem.",
+      "Adaptere for MQTT, HTTPS og fil med kanonisk målemodell og originalbevaring.",
+      "Offline håndterminalapp med kryptert lokal kø og idempotent synkronisering.",
+      "Versjonert varslingsmotor med vaktplan, kvittering og eskalering.",
+      "Femårig hendelseslager og eksport av kjølekjedebevis."
+    ],
+    "delivery": [
+      "Pilot på Tromvik terminal med reelle sensorer og ruter.",
+      "Klimakammertest ved minus 30 grader og tolv timers offline-test.",
+      "Datakvalitetsprofilering per sensorleverandør.",
+      "Terminalvis utrulling med måling av skannedekning og avviksbehandling."
+    ],
+    "win_themes": [
+      "Komplett og eksportbart kjølekjedebevis.",
+      "Operativ drift som tåler kulde og manglende dekning.",
+      "Rask varsling uten å skjule datakvalitetsproblemer.",
+      "Basisleveranse uavhengig av opsjon for ruteoptimalisering."
+    ],
+    "key_risks": [
+      "Ukjent datakvalitet fra eldste sensorleverandør kan gi falske avvik.",
+      "Uvalgt sekundær varslingskanal kan forsinke beredskapstest.",
+      "Ustabil transportintegrasjon kan kreve større lokal arbeidskopi."
+    ]
+  },
+  "answer_key": {
+    "must_cover": [
+      {
+        "id": "scale",
+        "required_term_groups": [
+          [
+            "åtte terminaler",
+            "8 terminaler"
+          ],
+          [
+            "520"
+          ],
+          [
+            "240"
+          ],
+          [
+            "1 800"
+          ]
+        ]
+      },
+      {
+        "id": "quality_targets",
+        "required_term_groups": [
+          [
+            "2,7"
+          ],
+          [
+            "0,5"
+          ],
+          [
+            "50 prosent"
+          ],
+          [
+            "2 minutter"
+          ],
+          [
+            "99 prosent"
+          ]
+        ]
+      },
+      {
+        "id": "timeline",
+        "required_term_groups": [
+          [
+            "1. desember 2026"
+          ],
+          [
+            "1. juni 2027"
+          ]
+        ]
+      },
+      {
+        "id": "offline",
+        "required_term_groups": [
+          [
+            "tolv timer",
+            "12 timer"
+          ],
+          [
+            "minus 30",
+            "-30"
+          ],
+          [
+            "offline"
+          ]
+        ]
+      },
+      {
+        "id": "integrations",
+        "required_term_groups": [
+          [
+            "MQTT"
+          ],
+          [
+            "HTTPS"
+          ],
+          [
+            "filbasert"
+          ],
+          [
+            "transportstyringssystem"
+          ]
+        ]
+      },
+      {
+        "id": "retention",
+        "required_term_groups": [
+          [
+            "fem år",
+            "5 år"
+          ],
+          [
+            "24x7",
+            "24 timer"
+          ]
+        ]
+      },
+      {
+        "id": "evaluation",
+        "required_term_groups": [
+          [
+            "45 prosent"
+          ],
+          [
+            "30 prosent"
+          ],
+          [
+            "25 prosent"
+          ]
+        ]
+      }
+    ],
+    "must_not_claim": [
+      "At SMS er valgt som sekundærkanal.",
+      "At ruteoptimalisering er nødvendig for basisløsningen.",
+      "At data fra alle sensorleverandører har dokumentert høy kvalitet."
+    ]
+  },
+  "requirements": [
+    {
+      "id": "POL-TMS-01",
+      "priority": "A",
+      "topic": "Ordremaster",
+      "text": "Eksisterende transportstyringssystem skal være autoritativ kilde for ordre, rute, stopp og sending i første avtaleperiode.",
+      "answer": "ColdChain Control leser ordre og rute gjennom et versjonert integrasjonslag og lagrer bare nødvendig operativ kopi. Statushendelser sendes tilbake med idempotensnøkkel og kvittering. Masterdata kan ikke endres i den nye plattformen."
+    },
+    {
+      "id": "POL-IOT-02",
+      "priority": "A",
+      "topic": "Sensorintegrasjon",
+      "text": "Løsningen skal motta temperaturdata fra fire produsenter gjennom MQTT, HTTPS og filbasert utveksling og bevare kilde, enhet, kvalitet og tidsstempel.",
+      "answer": "Adapterlaget normaliserer alle tre mønstrene til én kanonisk måling uten å forkaste originalen. Kilde, sensor-ID, enhet, kvalitetsflagg, måletid og mottakstid bevares. Ugyldige målinger går til egen datakvalitetskø."
+    },
+    {
+      "id": "POL-OFF-03",
+      "priority": "A",
+      "topic": "Offline drift",
+      "text": "Håndterminalen skal fungere uten nett i minst tolv timer og støtte skanning, lastestatus, avvik og bildevedlegg.",
+      "answer": "Tildelt arbeidsliste og nødvendige sendinger lagres kryptert på enheten. Skanning, status, avvik og bilder køes lokalt med sekvensnummer. Ved gjenkobling synkroniseres hendelser idempotent, og konflikter vises til terminalleder."
+    },
+    {
+      "id": "POL-KUL-04",
+      "priority": "A",
+      "topic": "Robust utstyr",
+      "text": "Løsningen skal støtte godkjente håndterminaler i temperaturer ned til minus 30 grader uten tap av registreringer.",
+      "answer": "Appen leveres for kundens valgte rugged-enheter og testes i klimakammer ved minus 30 grader. Lokal database, batteriprofil, skanner og hanskemodus inngår i akseptansetesten. Registreringer avstemmes etter testen."
+    },
+    {
+      "id": "POL-VAR-05",
+      "priority": "A",
+      "topic": "Varsling",
+      "text": "Kritisk temperaturavvik skal varsles til operativ vakt innen 2 minutter etter at målingen er mottatt.",
+      "answer": "En versjonert regelmotor klassifiserer målingen ved inntak. Primærkanal og vaktplan bestemmer mottaker. Systemet måler mottak til utsendt varsel og eskalerer ved manglende kvittering. Sekundær kanal konfigureres når Kunden har valgt SMS eller tale."
+    },
+    {
+      "id": "POL-SPOR-06",
+      "priority": "A",
+      "topic": "Kjølekjedebevis",
+      "text": "Kunden skal kunne rekonstruere sendingens rute, terminaloverganger, skanninger, temperaturserie, avvik, tiltak og godkjenninger.",
+      "answer": "Et uforanderlig hendelsesforløp kobler alle bevis til sending og kolli. Rapporten viser kilde og tidspunkt, hull i dataserien, avviksterskel, ansvarlig tiltak og godkjenning. Beviset kan eksporteres som PDF og maskinlesbar JSON."
+    },
+    {
+      "id": "POL-RET-07",
+      "priority": "A",
+      "topic": "Oppbevaring",
+      "text": "Temperaturmålinger og avviksbehandling skal kunne dokumenteres i minst fem år.",
+      "answer": "Råmålinger, normaliserte målinger og avvikshendelser lagres etter en femårig policy med integritetskontroll. Juridisk hold kan stanse sletting for valgt sending. Uttrekk har manifest og kontrollsummer."
+    },
+    {
+      "id": "POL-DRI-08",
+      "priority": "A",
+      "topic": "24x7 drift",
+      "text": "Kritisk operativ funksjon skal være tilgjengelig 24x7 med 99,9 prosent månedlig tilgjengelighet og vakt for prioritet 1.",
+      "answer": "Tjenesten overvåkes hele døgnet med syntetisk inntak, skanning og varsling. Prioritet 1 mottas av bemannet vakt, med første respons innen 15 minutter. Tilgjengelighet måles på hele kritisk kjede."
+    },
+    {
+      "id": "POL-IAM-09",
+      "priority": "A",
+      "topic": "Tilgang",
+      "text": "Tilgang skal avgrenses etter terminal, rolle og skift. Tapte enheter skal kunne sperres og lokale data fjernslettes.",
+      "answer": "Entra ID styrer brukeridentitet, mens rolle, terminal og skift inngår i autorisasjonen. Enheter registreres i kundens MDM. Sperring blokkerer ny innlogging, tilbakekaller tokens og starter fjernsletting av den krypterte arbeidskopien."
+    },
+    {
+      "id": "POL-TEST-10",
+      "priority": "A",
+      "topic": "Akseptanse",
+      "text": "Akseptansen skal dekke tolv timer offline, duplikatmåling, forsinket fil, feil enhet, minus 30 grader, varslingseskalering og bortfall av transportintegrasjon.",
+      "answer": "Alle syv scenarioene kjøres med kjent testdatasett. Resultatet dokumenterer fullstendighet, rekkefølge, latenstid og korrekt brukerrespons. Kritiske avvik blokkerer utrulling til neste terminal."
+    },
+    {
+      "id": "POL-RAP-11",
+      "priority": "B",
+      "topic": "Kvalitetsstyring",
+      "text": "Kvalitetsansvarlig bør kunne følge dokumentasjonsgrad, sensorfeil, varslingstid, åpne avvik og rotårsak per terminal og transportør.",
+      "answer": "Standarddashbord viser alle fem måleområdene og gjør det mulig å bore ned til sending og kilde. Tilgang til kundedata følger rolle. Målinger kan eksporteres til kvalitetsmøte og revisjon."
+    },
+    {
+      "id": "POL-OPS-12",
+      "priority": "C",
+      "topic": "Ruteoptimalisering",
+      "text": "Ruteoptimalisering kan tilbys som separat opsjon, men basisløsningen skal fungere uten opsjonen.",
+      "answer": "Ruteoptimalisering tilbys som en separat priset opsjon med eget datagrunnlag og akseptanse. Ingen basisfunksjon, integrasjon eller kjølekjedebevis avhenger av at opsjonen kjøpes."
+    }
+  ]
+}

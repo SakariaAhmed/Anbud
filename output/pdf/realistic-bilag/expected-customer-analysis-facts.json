@@ -1,0 +1,86 @@
+{
+  "project_name": "Nordhavn kommune - digital byggesaksbehandling",
+  "customer_document": "bilag1_nordhavn_byggesak_2026.pdf",
+  "must_cover": [
+    {
+      "id": "customer_and_scale",
+      "signals": [
+        "Nordhavn kommune",
+        "38 400",
+        "127 ansatte",
+        "3 200 byggesaker"
+      ]
+    },
+    {
+      "id": "buying_trigger",
+      "signals": [
+        "30. juni 2027",
+        "1. april 2027",
+        "eksisterende avtale"
+      ]
+    },
+    {
+      "id": "migration_scope",
+      "signals": [
+        "220 000 saker",
+        "1,15 millioner",
+        "2008"
+      ]
+    },
+    {
+      "id": "baseline_and_outcomes",
+      "signals": [
+        "28 prosent",
+        "18 prosent",
+        "40 prosent",
+        "85 prosent",
+        "10 prosent"
+      ]
+    },
+    {
+      "id": "evaluation",
+      "signals": [
+        "45 prosent",
+        "30 prosent",
+        "25 prosent"
+      ]
+    },
+    {
+      "id": "service_levels",
+      "signals": [
+        "99,9 prosent",
+        "RPO",
+        "4 timer",
+        "RTO",
+        "8 timer"
+      ]
+    },
+    {
+      "id": "technical_context",
+      "signals": [
+        "ID-porten",
+        "Microsoft Entra ID",
+        "Matrikkelen",
+        "Folkeregisteret",
+        "Noark 5"
+      ]
+    },
+    {
+      "id": "open_questions",
+      "signals": [
+        "Altinn",
+        "KS Fiks/SvarUt",
+        "kontrollsummer",
+        "3 500",
+        "eksterne brukere"
+      ]
+    }
+  ],
+  "forbidden_generic_phrases": [
+    "moderne og skalerbar løsning",
+    "helhetlig digital transformasjon",
+    "beste praksis",
+    "sømløs brukeropplevelse",
+    "fremtidsrettet plattform"
+  ]
+}

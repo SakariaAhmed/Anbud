@@ -1,0 +1,225 @@
+{
+  "scenario_id": "vestfjord-forskningsdata",
+  "project_name": "Vestfjord universitet - sikker forskningsdata- og AI-plattform",
+  "good_solution": {
+    "summary": "En klassifiseringsstyrt, selvbetjent forskningsplattform med Feide, tidsavgrenset prosjekttilgang, kontrollerte GPU-jobber, reproduserbare miljøer og automatisert arkivering eller sletting.",
+    "architecture": [
+      "Selvbetjeningsportal og katalog av godkjente prosjektmaler.",
+      "Feide, flerfaktor og prosjektbasert tilgang med dataeier.",
+      "Policy-as-code som styrer region, nettverk, logging og eksport per dataklasse.",
+      "Lagrings- og analyseplan med GPU-kvoter, koststed og automatisk stopp.",
+      "Livssyklusmotor for sluttdato, arkivpakke, kontrollsummer og sletting."
+    ],
+    "delivery": [
+      "Pilot med helsevitenskap og marin teknologi.",
+      "Klassifiseringsmodell oversettes til testbare tekniske policyer.",
+      "Migrering prioriteres etter bruk og bevaringsbehov, ikke som blind masseflytting.",
+      "Forskerstøtte, sikkerhetsvakt og måling av etableringstid og kostnad."
+    ],
+    "win_themes": [
+      "To timer fra godkjent bestilling til standardmiljø.",
+      "Sikkerhetsnivå som følger dataklasse fremfor én dyr standard.",
+      "Reproduserbar forskning og portabelt dataeierskap.",
+      "Kostnadskontroll uten å blokkere forskerens selvbetjening."
+    ],
+    "key_risks": [
+      "Uferdig klassifiseringsmodell kan endre tekniske kontrollkrav.",
+      "Uavklart føderert tilgang kan forsinke internasjonalt samarbeid.",
+      "Varierende arkivkrav kan gjøre migrerings- og avslutningsplanen usikker."
+    ]
+  },
+  "answer_key": {
+    "must_cover": [
+      {
+        "id": "scale",
+        "required_term_groups": [
+          [
+            "18 600"
+          ],
+          [
+            "2 900"
+          ],
+          [
+            "1 250"
+          ],
+          [
+            "4 petabyte"
+          ],
+          [
+            "18 prosent"
+          ]
+        ]
+      },
+      {
+        "id": "timeline",
+        "required_term_groups": [
+          [
+            "1. januar 2027"
+          ],
+          [
+            "15. august 2027"
+          ],
+          [
+            "tre år",
+            "3 år"
+          ]
+        ]
+      },
+      {
+        "id": "outcomes",
+        "required_term_groups": [
+          [
+            "21 dager"
+          ],
+          [
+            "2 timer"
+          ],
+          [
+            "100 prosent"
+          ],
+          [
+            "25 prosent"
+          ]
+        ]
+      },
+      {
+        "id": "controls",
+        "required_term_groups": [
+          [
+            "Feide"
+          ],
+          [
+            "GPU"
+          ],
+          [
+            "koststed"
+          ],
+          [
+            "Norge"
+          ],
+          [
+            "eksport"
+          ]
+        ]
+      },
+      {
+        "id": "ai_policy",
+        "required_term_groups": [
+          [
+            "ikke trenes",
+            "ikke trening"
+          ],
+          [
+            "eksplisitt",
+            "godkjenning"
+          ]
+        ]
+      },
+      {
+        "id": "evaluation",
+        "required_term_groups": [
+          [
+            "45 prosent"
+          ],
+          [
+            "35 prosent"
+          ],
+          [
+            "20 prosent"
+          ]
+        ]
+      }
+    ],
+    "must_not_claim": [
+      "At endelig klassifiseringsmodell allerede er vedtatt.",
+      "At alle utenlandske samarbeidspartnere kan få føderert tilgang.",
+      "At hele datamengden skal masseflyttes i én operasjon."
+    ]
+  },
+  "requirements": [
+    {
+      "id": "VES-SEL-01",
+      "priority": "A",
+      "topic": "Selvbetjening",
+      "text": "En standard prosjektarbeidsflate skal kunne etableres innen 2 timer etter komplett og godkjent bestilling.",
+      "answer": "Research Harbor bruker en godkjent katalog av miljømaler. Etter Feide-innlogging og komplett metadata registrerer policyflyten dataeier, klassifisering, koststed og sluttdato før automatisert etablering. Leveransetiden måles fra godkjenning til aktivt miljø."
+    },
+    {
+      "id": "VES-IAM-02",
+      "priority": "A",
+      "topic": "Identitet",
+      "text": "Primær innlogging skal bruke Feide. Beskyttede datasett skal kreve sterkere autentisering og eksplisitt prosjektmedlemskap.",
+      "answer": "Feide brukes til føderert innlogging. For beskyttede datasett kreves flerfaktorautentisering og aktivt medlemskap godkjent av dataeier. Tilgang har utløpsdato og resertifiseres hvert halvår."
+    },
+    {
+      "id": "VES-KLA-03",
+      "priority": "A",
+      "topic": "Klassifisering",
+      "text": "Lagring, nettverk, logging og eksportkontroll skal bestemmes av prosjektets dataklasse og kunne oppdateres kontrollert.",
+      "answer": "Policy-as-code oversetter godkjent dataklasse til region, kryptering, nettverksgrenser, loggnivå og eksportflyt. Endring av klasse krever konsekvenskontroll og dataeiers godkjenning. Historikken viser gammel og ny policy."
+    },
+    {
+      "id": "VES-DAT-04",
+      "priority": "A",
+      "topic": "Datalokasjon",
+      "text": "Særlig beskyttelsesverdige data skal behandles i Norge, inkludert sikkerhetskopier og identifiserbare logger.",
+      "answer": "Høyeste klasse bindes til norske behandlingsregioner for primærdata, sikkerhetskopi og identifiserbar logg. Automatisert policy hindrer opprettelse av ressurser utenfor godkjent lokasjon og rapporterer avvik."
+    },
+    {
+      "id": "VES-GPU-05",
+      "priority": "A",
+      "topic": "GPU-styring",
+      "text": "GPU-jobber skal knyttes til prosjekt, koststed og bruker, med kvote, automatisk stopp og synlig kostnadsestimat.",
+      "answer": "Jobbplanleggeren krever gyldig prosjekt, koststed og bruker. Prosjektet får kvote og maksimal kjøretid. Forventet kostnad vises før start, og tomme eller inaktive ressurser stanses etter policy."
+    },
+    {
+      "id": "VES-AI-06",
+      "priority": "A",
+      "topic": "Ansvarlig AI",
+      "text": "Generative modeller skal ikke trenes på eller beholde prosjektdata uten eksplisitt, dokumentert godkjenning.",
+      "answer": "Kun godkjente modellendepunkter kan brukes. Standardpolicy deaktiverer trening og leverandørbevaring. Eventuelle unntak krever dataeier, personvern og informasjonssikkerhet, og lagres med modell, formål, datasett og utløpsdato."
+    },
+    {
+      "id": "VES-REP-07",
+      "priority": "B",
+      "topic": "Reproduserbarhet",
+      "text": "Forskere bør kunne versjonere kode, miljø, avhengigheter og datasettpekere slik at en analyse kan reproduseres.",
+      "answer": "Prosjektet kan lagre Git-revisjon, containerbilde med digest, avhengighetslås og uforanderlig datasettversjon. En manifestfil kobler disse til jobb, resultat og ansvarlig bruker."
+    },
+    {
+      "id": "VES-EKS-08",
+      "priority": "A",
+      "topic": "Eksportkontroll",
+      "text": "Eksport fra høyeste dataklasse skal skannes, begrunnes og godkjennes før data kan forlate miljøet.",
+      "answer": "Brukeren legger eksport i en karantenesone med formål og mottaker. Automatisk skanning kontrollerer filtype, skadevare og sensitive mønstre. Dataeier eller delegert kontrollør godkjenner, og kontrollbevis følger eksporten."
+    },
+    {
+      "id": "VES-LIV-09",
+      "priority": "A",
+      "topic": "Livssyklus",
+      "text": "Alle prosjekter skal ha sluttdato og arbeidsflyt for forlengelse, arkivering eller verifisert sletting.",
+      "answer": "Varsling starter 90 dager før sluttdato. Dataeier velger begrunnet forlengelse, arkivpakke eller sletting. Arkivering gir manifest og kontrollsummer. Sletting dokumenteres for aktive data og sikkerhetskopier etter avtalt retensjon."
+    },
+    {
+      "id": "VES-MIG-10",
+      "priority": "B",
+      "topic": "Migrering",
+      "text": "Migreringen av omtrent 4 petabyte skal prioriteres etter aktiv bruk, dataklasse og bevaringsbehov over tre år.",
+      "answer": "Hvert lagringsområde profileres før flytting. Aktive pilotprosjekter tas først, mens inaktive data vurderes for arkiv eller sletting. Objektantall, størrelse og kontrollsummer avstemmes, og gamle områder stenges først etter dataeiers godkjenning."
+    },
+    {
+      "id": "VES-UTR-11",
+      "priority": "A",
+      "topic": "Portabilitet",
+      "text": "Kunden skal kunne eksportere data, metadata, policy, miljømanifest og revisjonslogger i dokumenterte formater.",
+      "answer": "Data leveres i opprinnelig eller åpent avtalt format, metadata og policy som JSON, tabeller som CSV eller Parquet og miljøer som OCI-kompatible bilder og deklarativ konfigurasjon. Manifest og kontrollsummer følger uttrekket."
+    },
+    {
+      "id": "VES-OBS-12",
+      "priority": "B",
+      "topic": "Styringsinformasjon",
+      "text": "Universitetet bør se etableringstid, kostnad, kapasitet, policyavvik, eksport og avslutningsstatus per fakultet og prosjekt.",
+      "answer": "Rollebeskyttede oversikter viser alle seks måleområdene med sporbarhet til prosjekt og koststed. Personopplysninger minimeres i økonomirapporter. Data kan eksporteres og kobles til universitetets økonomi- og styringsplattform."
+    }
+  ]
+}

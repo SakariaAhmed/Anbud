@@ -1,0 +1,72 @@
+BILAG 1 - KUNDENS BEHOV OG KRAV
+Malmhavn Industri AS - prediktivt vedlikehold og feltarbeid
+Kunde: Malmhavn Industri AS
+Anskaffelse: Industriell vedlikeholdsplattform med OT-integrasjon og offline feltarbeid
+Kontrakt: SSA-T 2026
+Fiktivt testgrunnlag: Alle virksomheter, leverandører, tall og avtaler i dokumentet er fiktive.
+
+VIRKSOMHET OG ANSKAFFELSESBEHOV
+Malmhavn Industri AS driver fire prosessanlegg med 1 460 ansatte og omtrent 18 000 vedlikeholdsobjekter. Uplanlagt stans kostet virksomheten 84 millioner kroner i 2025. Arbeidsordrer ligger i SAP S/4HANA, mens tilstandssignaler samles i tre forskjellige historikere og lokale regneark.
+Selskapet skal etablere en felles vedlikeholdsplattform som samler tilstand, risiko, arbeidsordre og feltutførelse. Omtrent 12 millioner sensorverdier mottas per døgn. Feltarbeidere må kunne registrere kontroll, bilder og måleverdier i områder uten dekning i opptil åtte timer.
+Første leveranse gjelder smelteverk Nord og kritiske pumper, vifter og transportbånd. Pilot skal være i drift 1. mars 2027. Resterende tre anlegg skal innføres innen 31. desember 2027 dersom pilotens sikkerhets- og effektmål nås.
+
+MÅL OG FORVENTEDE EFFEKTER
+Redusere uplanlagt stans for pilotutstyret med 20 prosent i løpet av tolv måneder.
+Øke andelen planlagt vedlikehold fra 62 til 78 prosent.
+Redusere tiden feltarbeidere bruker på etterregistrering med 35 prosent.
+Oppnå 98 prosent synkronisering av komplette arbeidsordrer innen fem minutter etter at dekning er gjenopprettet.
+Gi vedlikeholdsleder én risikobasert prioriteringsliste med sporbar forklaring.
+
+FØRINGER OG AVGRENSNINGER
+Ingen skykomponent skal kunne skrive direkte til styringssystemer eller sikkerhetskritiske OT-soner.
+Datainnsamling skal bruke lesende OPC UA eller godkjent mellomvare i industriell DMZ.
+Feltappen skal fungere offline i minst åtte timer og håndtere konflikt ved synkronisering.
+Arbeidsordre og reservedelsdata forvaltes fortsatt i SAP S/4HANA.
+Kritiske sikkerhetsalarmer skal ikke erstattes av prediktive modeller.
+
+TILDELINGSMODELL
+Teknisk løsning, OT-sikkerhet og funksjonell kvalitet: 40 prosent.
+Dokumentert effekt og gjennomføringsevne: 35 prosent.
+Pris: 25 prosent.
+
+KRAVMATRISE
+MAL-OT-01 | Prioritet A | OT-separasjon
+Løsningen skal hente tilstandsdata gjennom lesende grensesnitt i industriell DMZ og skal ikke kunne skrive direkte til styringssystem eller sikkerhetskritisk OT-sone.
+
+MAL-DAT-02 | Prioritet A | Datavolum
+Plattformen skal motta omtrent 12 millioner sensorverdier per døgn og bevare kvalitet, tidsstempel, enhet og kildeidentitet.
+
+MAL-OFF-03 | Prioritet A | Offline feltarbeid
+Feltappen skal støtte minst åtte timer uten dekning og synkronisere arbeidsordre, bilder og måleverdier med kontrollert konflikthåndtering.
+
+MAL-SAP-04 | Prioritet A | SAP-integrasjon
+SAP S/4HANA skal forbli autoritativ kilde for arbeidsordre, tekniske objekter og reservedeler.
+
+MAL-RIS-05 | Prioritet B | Risikoprioritering
+Vedlikeholdsleder bør få en prioritert liste der kritikalitet, tilstand, arbeidsordre og modellbidrag kan forklares.
+
+MAL-SIK-06 | Prioritet A | Sikkerhet
+Tilgang skal bruke Entra ID, flerfaktorautentisering og rolleavgrensning per anlegg. Privilegert leverandørtilgang skal være tidsbegrenset og godkjent.
+
+MAL-SAF-07 | Prioritet A | Sikker drift
+Prediktive modeller skal ikke erstatte sikkerhetsalarmer, sperrer eller operatørens godkjente prosedyrer.
+
+MAL-MOD-08 | Prioritet B | Modellstyring
+Kunden bør kunne kontrollere treningsgrunnlag, modellversjon, terskler, ytelse og tilbakeføring til forrige godkjente versjon.
+
+MAL-DRI-09 | Prioritet A | Drift
+Kritisk datainnsamling skal ha 99,9 prosent månedlig tilgjengelighet. Lokal buffer skal hindre tap ved 24 timers brudd mot skyplattformen.
+
+MAL-TEST-10 | Prioritet A | Akseptanse
+Akseptansetesten skal omfatte nettverksbrudd, full lokal buffer, duplikater, feil enhet, feltkonflikt, SAP-feil og tilbakeføring av modell.
+
+MAL-EFF-11 | Prioritet B | Effektmåling
+Løsningen bør dokumentere om pilotens reduksjon i stans og økning i planlagt vedlikehold kan tilskrives tiltakene.
+
+MAL-UTR-12 | Prioritet A | Datauttrekk
+Kunden skal kunne hente ut råmålinger, kvalitetsflagg, modellmetadata, anbefalinger, overstyringer og revisjonslogger i dokumenterte formater.
+
+FORHOLD SOM SKAL AVKLARES
+Datakvaliteten i to av de tre historikerne er ikke kartlagt.
+Kunden har ikke fastsatt hvilke prediktive modeller som kan gi automatisk prioriteringsforslag.
+Endelig MDM-løsning for robuste feltterminaler velges i et parallelt prosjekt.

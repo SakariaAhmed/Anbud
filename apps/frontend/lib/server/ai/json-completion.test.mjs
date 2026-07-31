@@ -162,6 +162,57 @@ test("document analysis uses a lean, non-persistent strict Responses contract", 
   assert.equal("prompt_cache_retention" in calls[0], false);
   assert.equal(calls[0].instructions, "Analyser dokumentet.");
   assert.doesNotMatch(calls[0].instructions, /Stable Anbud JSON Contract/u);
+  assert.ok(calls[0].prompt_cache_key.length <= 64);
+  assert.match(
+    calls[0].prompt_cache_key,
+    /^anbud:da3:document_analysis_v3:gpt-5\.6-terra:[a-f0-9]{16}$/u,
+  );
+});
+
+test("document analysis cache keys stay compact, stable, and distinct", async () => {
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: { ok: { type: "boolean" } },
+    required: ["ok"],
+  };
+  const firstCalls = [];
+  const repeatedCalls = [];
+  const distinctCalls = [];
+  const commonInput = {
+    system: "Analyser dokumentet.",
+    user: "Kildegrunnlag.",
+    schema,
+    model: "gpt-5.6-terra",
+    reasoningEffort: "low",
+  };
+
+  await runStructuredJsonResponse({
+    ...jsonRuntime('{"ok":true}', firstCalls),
+    ...commonInput,
+    schemaName:
+      "customer_analysis_v3_with_a_name_that_used_to_make_the_cache_key_too_long",
+  });
+  await runStructuredJsonResponse({
+    ...jsonRuntime('{"ok":true}', repeatedCalls),
+    ...commonInput,
+    schemaName:
+      "customer_analysis_v3_with_a_name_that_used_to_make_the_cache_key_too_long",
+  });
+  await runStructuredJsonResponse({
+    ...jsonRuntime('{"ok":true}', distinctCalls),
+    ...commonInput,
+    schemaName:
+      "customer_analysis_v3_with_a_name_that_has_the_same_first_twenty_chars",
+  });
+
+  const firstKey = firstCalls[0].prompt_cache_key;
+  const repeatedKey = repeatedCalls[0].prompt_cache_key;
+  const distinctKey = distinctCalls[0].prompt_cache_key;
+
+  assert.ok(firstKey.length <= 64);
+  assert.equal(firstKey, repeatedKey);
+  assert.notEqual(firstKey, distinctKey);
 });
 
 test("file input JSON completion redacts malformed model output", async () => {

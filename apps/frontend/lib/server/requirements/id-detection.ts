@@ -100,9 +100,22 @@ function isLikelyStandardsReferenceId(value: string) {
 
 export function isNonRequirementExplicitId(value: string) {
   const id = documentRequirementId(normalizePdfSpacing(value));
-  return /^(?:SSA\s*-\s*D\s*2024?|kl\.?\s*\d{1,2}[.:]\d{2}|24\s*\/\s*7(?:\s*\/\s*365)?)$/i.test(
+  return /^(?:SSA\s*-\s*[A-ZÆØÅ]{1,3}\s*[- ]?\s*20\d{2}|SSA\s*-\s*D\s*202|kl\.?\s*\d{1,2}[.:]\d{2}|24\s*\/\s*7(?:\s*\/\s*365)?)$/i.test(
     id,
   );
+}
+
+export function isContextualNonRequirementExplicitId(
+  value: string,
+  markerPrefix: string,
+) {
+  if (isNonRequirementExplicitId(value)) {
+    return true;
+  }
+
+  const id = documentRequirementId(normalizePdfSpacing(value));
+  const prefix = normalizePdfSpacing(markerPrefix);
+  return /^R\d+$/i.test(id) && /\b(?:HL7\s+)?FHIR\s*$/i.test(prefix);
 }
 
 function detectIds(text: string, pattern: RegExp) {
@@ -122,7 +135,7 @@ function detectIds(text: string, pattern: RegExp) {
     const id = documentRequirementId(match[0]);
     if (
       isLikelyStandardsReferenceId(id) ||
-      isNonRequirementExplicitId(id)
+      isContextualNonRequirementExplicitId(id, markerPrefix)
     ) {
       continue;
     }

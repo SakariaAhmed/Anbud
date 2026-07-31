@@ -55,6 +55,7 @@ const {
   requirementAnswerQualityIssues,
   requirementAnswerForRepair,
   resolveRequirementResponseStrictHandoffLimits,
+  retryRequirementCoverageBatchesSequentially,
   reuseExactDuplicateRequirementAnswers,
   resolveRequirementAnswerAfterStrictHandoff,
   resolveRequirementAnswerBeforeStrictHandoff,
@@ -2850,6 +2851,50 @@ test("coverage batch failure fails closed", () => {
         4,
       ),
     /1 av 4 AI-batcher feilet.*rate limit/,
+  );
+});
+
+test("coverage batch retry is sequential and recovers only successful batches", async () => {
+  const batches = [{ startIndex: 0 }, { startIndex: 18 }];
+  let active = 0;
+  let maximumActive = 0;
+  const results = await retryRequirementCoverageBatchesSequentially(
+    batches,
+    async (batch) => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await Promise.resolve();
+      active -= 1;
+      if (batch.startIndex === 18) {
+        throw new Error("fortsatt timeout");
+      }
+      return [`recovered-${batch.startIndex}`];
+    },
+  );
+
+  assert.equal(maximumActive, 1);
+  assert.deepEqual(results[0], {
+    batch: batches[0],
+    ok: true,
+    value: ["recovered-0"],
+  });
+  assert.equal(results[1]?.ok, false);
+  assert.match(String(results[1]?.error), /fortsatt timeout/u);
+});
+
+test("coverage batch retry propagates an active workflow abort", async () => {
+  const abort = new Error("lease lost");
+  await assert.rejects(
+    retryRequirementCoverageBatchesSequentially(
+      [{ startIndex: 0 }],
+      async () => {
+        throw new Error("timeout");
+      },
+      () => {
+        throw abort;
+      },
+    ),
+    abort,
   );
 });
 

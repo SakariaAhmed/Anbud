@@ -229,6 +229,8 @@ export type CustomerAnalysisHistorySource =
   | "manual_edit"
   | "high_level_design_update";
 
+export const MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS = 5;
+
 export type CustomerAnalysisSection =
   | "summary"
   | "strategy"

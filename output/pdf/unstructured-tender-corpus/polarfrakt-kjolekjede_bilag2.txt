@@ -1,0 +1,134 @@
+BILAG 2 - USTRUKTURERT LEVERANDØRSVAR
+PolarFrakt Logistikk SA - digital kjølekjede og terminalstyring
+Kunde: PolarFrakt Logistikk SA
+Anskaffelse: Plattform for transportplanlegging, temperatursporbarhet og terminaloperasjon
+Kontrakt: SSA-L 2026
+Dokumentmønster: mixed-minutes
+
+VIRKSOMHET OG BEHOV
+PolarFrakt Logistikk SA driver åtte terminaler og en kjøletransportkjede langs norskekysten. Virksomheten har 520 ansatte, 240 kjøretøy og håndterer omtrent 1 800 sendinger per døgn. I 2025 ble 2,7 prosent av temperatursensitive sendinger registrert med mangelfull eller forsinket temperaturdokumentasjon.
+Planlegging skjer i ett transportsystem, temperaturdata i fire leverandørportaler og terminalavvik i e-post og regneark. Dekningen er ustabil på to terminaler og deler av rutenettet. Håndterminalene må fungere i temperaturer ned til minus 30 grader og uten nett i minst tolv timer.
+Ny løsning skal være i pilot på Tromvik terminal 1. desember 2026 og dekke alle terminaler senest 1. juni 2027. Eksisterende transportstyringssystem beholdes som ordre-master i første avtaleperiode.
+
+MÅL OG EFFEKTER
+Redusere sendinger med mangelfull temperaturdokumentasjon fra 2,7 til under 0,5 prosent.
+Redusere manuell avviksbehandling med 50 prosent.
+Varsle kritisk temperaturavvik til operativ vakt innen 2 minutter etter mottatt måling.
+Oppnå digital skanning ved 99 prosent av planlagte terminaloverganger.
+Gi kunde og kvalitetsansvarlig et komplett, eksportbart bevis for kjølekjeden.
+
+FØRINGER OG AVGRENSNINGER
+Transportstyringssystemet skal forbli autoritativ kilde for ordre og rute i første avtaleperiode.
+Felt- og terminalfunksjoner skal støtte minst tolv timer offline.
+Sensorer leveres av fire produsenter og bruker både MQTT, HTTPS og filbasert utveksling.
+Temperaturmålinger og avviksbehandling skal kunne dokumenteres i minst fem år.
+Kritisk operativ funksjon skal være tilgjengelig 24 timer i døgnet hele året.
+
+TILDELING
+Funksjonell kvalitet og dokumentert kjølekjedesporbarhet: 45 prosent.
+Gjennomføring, integrasjon og operativ robusthet: 30 prosent.
+Pris: 25 prosent.
+
+TILBUDT LØSNING: ColdChain Control
+En offline robust kjølekjedeplattform som lar transportsystemet være ordre-master, normaliserer fire sensorleverandører og gir et rekonstruerbart bevis fra måling og skanning til avvik og godkjenning.
+
+MÅLARKITEKTUR
+Integrasjonslag mot eksisterende transportstyringssystem.
+Adaptere for MQTT, HTTPS og fil med kanonisk målemodell og originalbevaring.
+Offline håndterminalapp med kryptert lokal kø og idempotent synkronisering.
+Versjonert varslingsmotor med vaktplan, kvittering og eskalering.
+Femårig hendelseslager og eksport av kjølekjedebevis.
+
+GJENNOMFØRING
+Pilot på Tromvik terminal med reelle sensorer og ruter.
+Klimakammertest ved minus 30 grader og tolv timers offline-test.
+Datakvalitetsprofilering per sensorleverandør.
+Terminalvis utrulling med måling av skannedekning og avviksbehandling.
+
+KRAVENE ER USTRUKTURERTE - DET FINNES INGEN KRAVTABELL
+Dokumentet viser til SSA-L 2026, ISO 27001, TLS 1.3 og eventuelle domenestandarder som FHIR R4. Disse betegnelsene er ikke krav-ID-er. Krysshenvisninger til POL-TMS-01 og POL-OPS-12 senere i teksten skal heller ikke opprette nye kravrader.
+
+Referatpunkt 1 - Ordremaster (POL-TMS-01, prioritet A)
+Eksisterende transportstyringssystem skal være autoritativ kilde for ordre, rute, stopp og sending i første avtaleperiode.
+Beslutning og svar (POL-TMS-01)
+ColdChain Control leser ordre og rute gjennom et versjonert integrasjonslag og lagrer bare nødvendig operativ kopi. Statushendelser sendes tilbake med idempotensnøkkel og kvittering. Masterdata kan ikke endres i den nye plattformen.
+
+Referatpunkt 2 - Sensorintegrasjon (POL-IOT-02, prioritet A)
+Løsningen skal motta temperaturdata fra fire produsenter gjennom MQTT, HTTPS og filbasert utveksling og bevare kilde, enhet, kvalitet og tidsstempel.
+Beslutning og svar (POL-IOT-02)
+Adapterlaget normaliserer alle tre mønstrene til én kanonisk måling uten å forkaste originalen. Kilde, sensor-ID, enhet, kvalitetsflagg, måletid og mottakstid bevares. Ugyldige målinger går til egen datakvalitetskø.
+
+Referatpunkt 3 - Offline drift (POL-OFF-03, prioritet A)
+Håndterminalen skal fungere uten nett i minst tolv timer og støtte skanning, lastestatus, avvik og bildevedlegg.
+Beslutning og svar (POL-OFF-03)
+Tildelt arbeidsliste og nødvendige sendinger lagres kryptert på enheten. Skanning, status, avvik og bilder køes lokalt med sekvensnummer. Ved gjenkobling synkroniseres hendelser idempotent, og konflikter vises til terminalleder.
+
+Referatpunkt 4 - Robust utstyr (POL-KUL-04, prioritet A)
+Løsningen skal støtte godkjente håndterminaler i temperaturer ned til minus 30 grader uten tap av registreringer.
+Beslutning og svar (POL-KUL-04)
+Appen leveres for kundens valgte rugged-enheter og testes i klimakammer ved minus 30 grader. Lokal database, batteriprofil, skanner og hanskemodus inngår i akseptansetesten. Registreringer avstemmes etter testen.
+
+Mellomnotat - ikke et nytt krav
+Prosjektgruppen skal kontrollere sammenhengen mellom POL-KUL-04 og POL-VAR-05. Notatet endrer ikke kravregisteret og skal ikke gi en ekstra rad.
+
+Referatpunkt 5 - Varsling (POL-VAR-05, prioritet A)
+Kritisk temperaturavvik skal varsles til operativ vakt innen 2 minutter etter at målingen er mottatt.
+Beslutning og svar (POL-VAR-05)
+En versjonert regelmotor klassifiserer målingen ved inntak. Primærkanal og vaktplan bestemmer mottaker. Systemet måler mottak til utsendt varsel og eskalerer ved manglende kvittering. Sekundær kanal konfigureres når Kunden har valgt SMS eller tale.
+
+Referatpunkt 6 - Kjølekjedebevis (POL-SPOR-06, prioritet A)
+Kunden skal kunne rekonstruere sendingens rute, terminaloverganger, skanninger, temperaturserie, avvik, tiltak og godkjenninger.
+Beslutning og svar (POL-SPOR-06)
+Et uforanderlig hendelsesforløp kobler alle bevis til sending og kolli. Rapporten viser kilde og tidspunkt, hull i dataserien, avviksterskel, ansvarlig tiltak og godkjenning. Beviset kan eksporteres som PDF og maskinlesbar JSON.
+
+Referatpunkt 7 - Oppbevaring (POL-RET-07, prioritet A)
+Temperaturmålinger og avviksbehandling skal kunne dokumenteres i minst fem år.
+Beslutning og svar (POL-RET-07)
+Råmålinger, normaliserte målinger og avvikshendelser lagres etter en femårig policy med integritetskontroll. Juridisk hold kan stanse sletting for valgt sending. Uttrekk har manifest og kontrollsummer.
+
+Referatpunkt 8 - 24x7 drift (POL-DRI-08, prioritet A)
+Kritisk operativ funksjon skal være tilgjengelig 24x7 med 99,9 prosent månedlig tilgjengelighet og vakt for prioritet 1.
+Beslutning og svar (POL-DRI-08)
+Tjenesten overvåkes hele døgnet med syntetisk inntak, skanning og varsling. Prioritet 1 mottas av bemannet vakt, med første respons innen 15 minutter. Tilgjengelighet måles på hele kritisk kjede.
+
+Mellomnotat - ikke et nytt krav
+Prosjektgruppen skal kontrollere sammenhengen mellom POL-DRI-08 og POL-IAM-09. Notatet endrer ikke kravregisteret og skal ikke gi en ekstra rad.
+
+Referatpunkt 9 - Tilgang (POL-IAM-09, prioritet A)
+Tilgang skal avgrenses etter terminal, rolle og skift. Tapte enheter skal kunne sperres og lokale data fjernslettes.
+Beslutning og svar (POL-IAM-09)
+Entra ID styrer brukeridentitet, mens rolle, terminal og skift inngår i autorisasjonen. Enheter registreres i kundens MDM. Sperring blokkerer ny innlogging, tilbakekaller tokens og starter fjernsletting av den krypterte arbeidskopien.
+
+Referatpunkt 10 - Akseptanse (POL-TEST-10, prioritet A)
+Akseptansen skal dekke tolv timer offline, duplikatmåling, forsinket fil, feil enhet, minus 30 grader, varslingseskalering og bortfall av transportintegrasjon.
+Beslutning og svar (POL-TEST-10)
+Alle syv scenarioene kjøres med kjent testdatasett. Resultatet dokumenterer fullstendighet, rekkefølge, latenstid og korrekt brukerrespons. Kritiske avvik blokkerer utrulling til neste terminal.
+
+Referatpunkt 11 - Kvalitetsstyring (POL-RAP-11, prioritet B)
+Kvalitetsansvarlig bør kunne følge dokumentasjonsgrad, sensorfeil, varslingstid, åpne avvik og rotårsak per terminal og transportør.
+Beslutning og svar (POL-RAP-11)
+Standarddashbord viser alle fem måleområdene og gjør det mulig å bore ned til sending og kilde. Tilgang til kundedata følger rolle. Målinger kan eksporteres til kvalitetsmøte og revisjon.
+
+Referatpunkt 12 - Ruteoptimalisering (POL-OPS-12, prioritet C)
+Ruteoptimalisering kan tilbys som separat opsjon, men basisløsningen skal fungere uten opsjonen.
+Beslutning og svar (POL-OPS-12)
+Ruteoptimalisering tilbys som en separat priset opsjon med eget datagrunnlag og akseptanse. Ingen basisfunksjon, integrasjon eller kjølekjedebevis avhenger av at opsjonen kjøpes.
+
+KRYSSHENVISNINGER OG DOKUMENTKONTROLL
+Ved samlet vurdering må POL-TMS-01, POL-SPOR-06 og POL-OPS-12 ses i sammenheng. Dette avsnittet er forklarende og inneholder ingen nye krav.
+
+ÅPNE FORHOLD
+Kunden har ikke valgt om SMS eller taleanrop skal være sekundær varslingskanal.
+Datakvaliteten fra den eldste sensorleverandøren er ikke dokumentert.
+Ruteoptimalisering er en opsjon og skal ikke inngå som avhengighet i basisløsningen.
+
+DOKUMENTERT VERDI
+Komplett og eksportbart kjølekjedebevis.
+Operativ drift som tåler kulde og manglende dekning.
+Rask varsling uten å skjule datakvalitetsproblemer.
+Basisleveranse uavhengig av opsjon for ruteoptimalisering.
+
+FORUTSETNINGER OG RISIKO
+Ukjent datakvalitet fra eldste sensorleverandør kan gi falske avvik.
+Uvalgt sekundær varslingskanal kan forsinke beredskapstest.
+Ustabil transportintegrasjon kan kreve større lokal arbeidskopi.

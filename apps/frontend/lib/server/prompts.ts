@@ -442,6 +442,8 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Hver fase skal starte med et kort avsnitt som forklarer hvorfor fasen finnes i akkurat dette prosjektet.",
         "Hver fase skal ha 3 til 5 presise punkter. Minst to punkter per fase skal nevne et konkret krav, system, mål, risiko, avhengighet, dokumentert leveranse eller kundebidrag fra prosjektgrunnlaget.",
         "Vær eksplisitt om rekkefølge, leveranser, ansvar, kundens bidrag, beslutningspunkter, bevis/akseptansekriterier og hva som må være sant før neste fase.",
+        "Når prosjektgrunnlaget oppgir en eksplisitt dato for produksjonssetting eller go-live, skal planen bevare datoen og eksplisitt dekke produksjonsutrulling/go-live, overlevering til drift eller forvaltning og hypercare, stabilisering eller formell avslutning etter produksjonssetting.",
+        "Ved datert go-live skal planen ha en egen siste fase etter produksjonssetting. Fasen skal eksplisitt beskrive overlevering eller kunnskapsoverføring til drift/forvaltning, en tidsavgrenset hypercare- eller stabiliseringsperiode og kriterier for formell avslutning. En plan som stopper ved go-live er ugyldig.",
         "Hvis grunnlaget er for tynt for en sikker anbefaling, skriv en fase for målrettet avklaring med konkrete spørsmål. Ikke fyll tomrommet med generisk metode.",
         "content_markdown skal kun inneholde fase-undertitler på formatet ## Fase N: Prosjektspesifikk fasetittel. Ikke legg inn innledning, oppsummering eller egne seksjoner utenfor fasene.",
         "Bruk profesjonell markdown med ryddige avsnitt og punktlister som passer som intern arbeidstekst.",

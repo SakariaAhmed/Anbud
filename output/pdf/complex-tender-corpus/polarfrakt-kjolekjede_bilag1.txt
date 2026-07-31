@@ -1,0 +1,72 @@
+BILAG 1 - KUNDENS BEHOV OG KRAV
+PolarFrakt Logistikk SA - digital kjølekjede og terminalstyring
+Kunde: PolarFrakt Logistikk SA
+Anskaffelse: Plattform for transportplanlegging, temperatursporbarhet og terminaloperasjon
+Kontrakt: SSA-L 2026
+Fiktivt testgrunnlag: Alle virksomheter, leverandører, tall og avtaler i dokumentet er fiktive.
+
+VIRKSOMHET OG ANSKAFFELSESBEHOV
+PolarFrakt Logistikk SA driver åtte terminaler og en kjøletransportkjede langs norskekysten. Virksomheten har 520 ansatte, 240 kjøretøy og håndterer omtrent 1 800 sendinger per døgn. I 2025 ble 2,7 prosent av temperatursensitive sendinger registrert med mangelfull eller forsinket temperaturdokumentasjon.
+Planlegging skjer i ett transportsystem, temperaturdata i fire leverandørportaler og terminalavvik i e-post og regneark. Dekningen er ustabil på to terminaler og deler av rutenettet. Håndterminalene må fungere i temperaturer ned til minus 30 grader og uten nett i minst tolv timer.
+Ny løsning skal være i pilot på Tromvik terminal 1. desember 2026 og dekke alle terminaler senest 1. juni 2027. Eksisterende transportstyringssystem beholdes som ordre-master i første avtaleperiode.
+
+MÅL OG FORVENTEDE EFFEKTER
+Redusere sendinger med mangelfull temperaturdokumentasjon fra 2,7 til under 0,5 prosent.
+Redusere manuell avviksbehandling med 50 prosent.
+Varsle kritisk temperaturavvik til operativ vakt innen 2 minutter etter mottatt måling.
+Oppnå digital skanning ved 99 prosent av planlagte terminaloverganger.
+Gi kunde og kvalitetsansvarlig et komplett, eksportbart bevis for kjølekjeden.
+
+FØRINGER OG AVGRENSNINGER
+Transportstyringssystemet skal forbli autoritativ kilde for ordre og rute i første avtaleperiode.
+Felt- og terminalfunksjoner skal støtte minst tolv timer offline.
+Sensorer leveres av fire produsenter og bruker både MQTT, HTTPS og filbasert utveksling.
+Temperaturmålinger og avviksbehandling skal kunne dokumenteres i minst fem år.
+Kritisk operativ funksjon skal være tilgjengelig 24 timer i døgnet hele året.
+
+TILDELINGSMODELL
+Funksjonell kvalitet og dokumentert kjølekjedesporbarhet: 45 prosent.
+Gjennomføring, integrasjon og operativ robusthet: 30 prosent.
+Pris: 25 prosent.
+
+KRAVMATRISE
+POL-TMS-01 | Prioritet A | Ordremaster
+Eksisterende transportstyringssystem skal være autoritativ kilde for ordre, rute, stopp og sending i første avtaleperiode.
+
+POL-IOT-02 | Prioritet A | Sensorintegrasjon
+Løsningen skal motta temperaturdata fra fire produsenter gjennom MQTT, HTTPS og filbasert utveksling og bevare kilde, enhet, kvalitet og tidsstempel.
+
+POL-OFF-03 | Prioritet A | Offline drift
+Håndterminalen skal fungere uten nett i minst tolv timer og støtte skanning, lastestatus, avvik og bildevedlegg.
+
+POL-KUL-04 | Prioritet A | Robust utstyr
+Løsningen skal støtte godkjente håndterminaler i temperaturer ned til minus 30 grader uten tap av registreringer.
+
+POL-VAR-05 | Prioritet A | Varsling
+Kritisk temperaturavvik skal varsles til operativ vakt innen 2 minutter etter at målingen er mottatt.
+
+POL-SPOR-06 | Prioritet A | Kjølekjedebevis
+Kunden skal kunne rekonstruere sendingens rute, terminaloverganger, skanninger, temperaturserie, avvik, tiltak og godkjenninger.
+
+POL-RET-07 | Prioritet A | Oppbevaring
+Temperaturmålinger og avviksbehandling skal kunne dokumenteres i minst fem år.
+
+POL-DRI-08 | Prioritet A | 24x7 drift
+Kritisk operativ funksjon skal være tilgjengelig 24x7 med 99,9 prosent månedlig tilgjengelighet og vakt for prioritet 1.
+
+POL-IAM-09 | Prioritet A | Tilgang
+Tilgang skal avgrenses etter terminal, rolle og skift. Tapte enheter skal kunne sperres og lokale data fjernslettes.
+
+POL-TEST-10 | Prioritet A | Akseptanse
+Akseptansen skal dekke tolv timer offline, duplikatmåling, forsinket fil, feil enhet, minus 30 grader, varslingseskalering og bortfall av transportintegrasjon.
+
+POL-RAP-11 | Prioritet B | Kvalitetsstyring
+Kvalitetsansvarlig bør kunne følge dokumentasjonsgrad, sensorfeil, varslingstid, åpne avvik og rotårsak per terminal og transportør.
+
+POL-OPS-12 | Prioritet C | Ruteoptimalisering
+Ruteoptimalisering kan tilbys som separat opsjon, men basisløsningen skal fungere uten opsjonen.
+
+FORHOLD SOM SKAL AVKLARES
+Kunden har ikke valgt om SMS eller taleanrop skal være sekundær varslingskanal.
+Datakvaliteten fra den eldste sensorleverandøren er ikke dokumentert.
+Ruteoptimalisering er en opsjon og skal ikke inngå som avhengighet i basisløsningen.

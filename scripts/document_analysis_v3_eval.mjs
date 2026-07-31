@@ -25,6 +25,7 @@ const DEFAULT_MARKDOWN_PATH = path.join(
   "reports",
   "document-analysis-v3-eval.md",
 );
+const DEFAULT_FIXTURE_ROOT = path.join(repositoryRoot, "test-data", "tenders");
 const DEFAULT_DOCUMENTS = [
   "tender_city_smart_mobility_data_platform",
   "tender_helio_erp_finops_managed_services",
@@ -60,6 +61,9 @@ function parseArgs() {
     outputPath: path.resolve(valueAfter("--output", DEFAULT_OUTPUT_PATH)),
     markdownPath: path.resolve(
       valueAfter("--markdown", DEFAULT_MARKDOWN_PATH),
+    ),
+    fixtureRoot: path.resolve(
+      valueAfter("--fixture-root", DEFAULT_FIXTURE_ROOT),
     ),
     documents: valueAfter("--documents", DEFAULT_DOCUMENTS.join(","))
       .split(",")
@@ -179,13 +183,19 @@ function automaticQuality(output, sourceText) {
     mojibakeCount: prose.match(/Ã[¦¸¥†˜…]|�/gu)?.length ?? 0,
     spaceBeforePunctuationCount: prose.match(/\s+[,.;:!?]/gu)?.length ?? 0,
     missingSpaceAfterPunctuationCount:
-      prose.match(/[;,!?](?=[\p{L}\p{N}])|\.(?=[\p{Lu}ÆØÅ])/gu)?.length ?? 0,
+      prose.match(
+        /[;!?](?=[\p{L}\p{N}])|[:,](?=\p{L})|\.(?=[\p{Lu}ÆØÅ])/gu,
+      )?.length ?? 0,
     implicitRequirementCount: implicit.length,
     groundedImplicitExcerptCount: groundedExcerpts,
     valueShareTotal: values.reduce(
       (sum, item) => sum + Number(item?.profit_share_percent ?? 0),
       0,
     ),
+    flatValueShare:
+      values.length > 1 &&
+      new Set(values.map((item) => Number(item?.profit_share_percent ?? 0)))
+        .size === 1,
     recommendedServiceCount: Array.isArray(output.recommended_services)
       ? output.recommended_services.length
       : 0,
@@ -232,9 +242,11 @@ const { compileDocumentIntelligenceArtifact } = jiti(
   ),
 );
 const {
+  buildCustomerAnalysisCriticalFactChecklist,
   buildCustomerAnalysisV3SystemPrompt,
   buildCustomerAnalysisV3UserPrompt,
   CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
+  enrichCustomerAnalysisWithCriticalFacts,
 } = jiti(
   path.join(
     frontendRoot,
@@ -242,6 +254,15 @@ const {
     "server",
     "document-intelligence",
     "customer-analysis-v3.ts",
+  ),
+);
+const { normalizeCustomerAnalysisResult } = jiti(
+  path.join(
+    frontendRoot,
+    "lib",
+    "server",
+    "document-intelligence",
+    "customer-analysis-postprocess.ts",
   ),
 );
 const { buildCustomerAnalysisPrompt } = jiti(
@@ -272,8 +293,8 @@ async function structuredCall(input) {
       instructions: input.system,
       reasoning: { effort: "low" },
       max_output_tokens: input.maxOutputTokens,
-      text: {
-        verbosity: "medium",
+        text: {
+          verbosity: input.verbosity ?? "medium",
         format: {
           type: "json_schema",
           name: input.schemaName,
@@ -337,13 +358,8 @@ const candidateDefinitions = [
 
 const documentResults = [];
 for (const [documentIndex, baseName] of options.documents.entries()) {
-  const pdfPath = path.join(repositoryRoot, "test-data", "tenders", `${baseName}.pdf`);
-  const referencePath = path.join(
-    repositoryRoot,
-    "test-data",
-    "tenders",
-    `${baseName}.txt`,
-  );
+  const pdfPath = path.join(options.fixtureRoot, `${baseName}.pdf`);
+  const referencePath = path.join(options.fixtureRoot, `${baseName}.txt`);
   const [buffer, referenceText] = await Promise.all([
     readFile(pdfPath),
     readFile(referencePath, "utf8"),
@@ -381,16 +397,20 @@ for (const [documentIndex, baseName] of options.documents.entries()) {
     "Ingen tjenestekandidater er oppgitt; recommended_services skal være [].",
   ].join("\n\n");
   const v3System = buildCustomerAnalysisV3SystemPrompt();
+  const v3Documents = [
+    {
+      documentId: artifact.documentId,
+      title: baseName,
+      role: "primary_customer_document",
+      context: artifact.analysisContext,
+      sourceText: parsed.rawText,
+    },
+  ];
+  const criticalFacts =
+    buildCustomerAnalysisCriticalFactChecklist(v3Documents);
   const v3User = buildCustomerAnalysisV3UserPrompt({
     projectName: baseName,
-    documents: [
-      {
-        documentId: artifact.documentId,
-        title: baseName,
-        role: "primary_customer_document",
-        context: artifact.analysisContext,
-      },
-    ],
+    documents: v3Documents,
   });
   const candidates = [];
   for (const candidate of candidateDefinitions) {
@@ -404,15 +424,35 @@ for (const [documentIndex, baseName] of options.documents.entries()) {
       schema: CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
       schemaName: "customer_analysis_eval",
       maxOutputTokens: 8_000,
+      verbosity: candidate.mode === "v3" ? "low" : "medium",
     });
+    const normalizedOutput = normalizeCustomerAnalysisResult(
+      candidate.mode === "v3"
+        ? enrichCustomerAnalysisWithCriticalFacts(
+            generated.output,
+            v3Documents,
+          )
+        : generated.output,
+      {
+        signalSourceText: referenceText,
+        serviceCandidates: [],
+        sourceDocuments: [
+          {
+            title: baseName,
+            rawText: referenceText,
+            structureMap: parsed.sourceMap,
+          },
+        ],
+      },
+    );
     candidates.push({
       id: candidate.id,
       label: candidate.label,
       model: candidate.model,
       contextChars: user.length,
       systemChars: system.length,
-      output: generated.output,
-      automatic: automaticQuality(generated.output, referenceText),
+      output: normalizedOutput,
+      automatic: automaticQuality(normalizedOutput, referenceText),
       call: generated.call,
     });
   }
@@ -529,6 +569,7 @@ for (const [documentIndex, baseName] of options.documents.entries()) {
     parseLatencyMs,
     evidenceCount: artifact.evidence.length,
     languageQuality: artifact.languageQuality,
+    criticalFacts,
     candidates,
     judge,
   });
@@ -592,6 +633,9 @@ const aggregate = Object.fromEntries(
           ),
           valueShareValidDocuments: rows.filter(
             (row) => row.automatic.valueShareTotal === 100,
+          ).length,
+          flatValueShareDocuments: rows.filter(
+            (row) => row.automatic.flatValueShare,
           ).length,
           unexpectedServiceDocuments: rows.filter(
             (row) => row.automatic.recommendedServiceCount > 0,
@@ -673,6 +717,7 @@ ${dimensionRows}
 - Candidate v3 grounded implicit excerpt rate: ${aggregate.candidate_v3.automatic.groundedImplicitExcerptRate}.
 - Candidate v3 punctuation diagnostics: ${aggregate.candidate_v3.automatic.punctuationIssueCount}.
 - Candidate v3 valid 100% value allocations: ${aggregate.candidate_v3.automatic.valueShareValidDocuments}/${documentResults.length} documents.
+- Candidate v3 flat value allocations: ${aggregate.candidate_v3.automatic.flatValueShareDocuments}/${documentResults.length} documents.
 - Candidate v3 unexpected service recommendations without candidates: ${aggregate.candidate_v3.automatic.unexpectedServiceDocuments}/${documentResults.length} documents.
 
 ## Method

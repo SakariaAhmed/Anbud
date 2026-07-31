@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 
 import { normalizeDocumentChunkStructureMap } from "@/lib/server/document-chunk-structure";
 import { buildCanonicalDocumentProjection } from "@/lib/server/document-intelligence/canonical-document";
+import { documentSourceContentHash } from "@/lib/server/document-intelligence/content-hash";
+import {
+  boundedContext,
+  CANONICAL_CONTEXT_RATIO,
+  compiledAnalysisContextLimit,
+} from "@/lib/server/document-intelligence/context-budget";
 import { chooseDocumentParserRoute } from "@/lib/server/document-intelligence/quality-router";
 import {
   DOCUMENT_INTELLIGENCE_COMPILER_VERSION,
@@ -9,6 +15,7 @@ import {
   type DocumentEvidenceKind,
   type DocumentEvidenceUnit,
   type DocumentIntelligenceArtifact,
+  type PrecomputedDocumentQuality,
 } from "@/lib/server/document-intelligence/types";
 import { normalizeNorwegianTextForSearch } from "@/lib/server/document-intelligence/norwegian-language";
 
@@ -16,7 +23,6 @@ const MAX_EVIDENCE_UNITS = 240;
 const EVIDENCE_CATEGORY_RESERVE = 6;
 const COVERAGE_TEXT_CHARS = 140;
 const COVERAGE_REFERENCE_CHARS = 80;
-const DEFAULT_ANALYSIS_CONTEXT_CHARS = 18_000;
 
 const EVIDENCE_RULES: Array<{
   kind: DocumentEvidenceKind;
@@ -99,16 +105,6 @@ function stableHash(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function analysisContextLimit() {
-  const configured = Number(
-    process.env.DOCUMENT_ANALYSIS_CONTEXT_CHARS ??
-      process.env.DOCUMENT_INTELLIGENCE_CONTEXT_CHARS,
-  );
-  return Number.isFinite(configured) && configured >= 4_000
-    ? Math.min(40_000, Math.floor(configured))
-    : DEFAULT_ANALYSIS_CONTEXT_CHARS;
-}
-
 function classifyEvidence(text: string, isTable: boolean) {
   const matches = EVIDENCE_RULES.filter((rule) => rule.pattern.test(text));
   if (!matches.length && isTable) {
@@ -187,11 +183,11 @@ function provenancePageSuffix(
 }
 
 function boundedAnalysisContext(lines: string[]) {
-  const joined = lines.join("\n");
-  const limit = analysisContextLimit();
-  return joined.length <= limit
-    ? joined
-    : `${joined.slice(0, Math.max(0, limit - 72)).trimEnd()}\n[avkortet evidenskontekst]`;
+  return boundedContext(
+    lines.join("\n"),
+    compiledAnalysisContextLimit(),
+    "[avkortet evidenskontekst]",
+  );
 }
 
 function buildAnalysisContext(input: {
@@ -203,25 +199,6 @@ function buildAnalysisContext(input: {
   evidence: DocumentEvidenceUnit[];
   canonicalBlocks: DocumentIntelligenceArtifact["canonicalBlocks"];
 }) {
-  const groups = new Map<
-    string,
-    {
-      text: string;
-      provenance: DocumentEvidenceUnit["provenance"];
-      kinds: Set<DocumentEvidenceKind>;
-    }
-  >();
-  for (const unit of input.evidence) {
-    const key = `${unit.normalizedText}\n${unit.provenance.reference}\n${unit.provenance.page ?? ""}`;
-    const group = groups.get(key) ?? {
-      text: unit.text,
-      provenance: unit.provenance,
-      kinds: new Set<DocumentEvidenceKind>(),
-    };
-    group.kinds.add(unit.kind);
-    groups.set(key, group);
-  }
-
   const lines = [
     `DOKUMENT: ${input.title} (${input.fileName})`,
     `PARSER: ${input.parserUsed}; KVALITET: ${input.qualityScore.toFixed(3)}`,
@@ -229,12 +206,15 @@ function buildAnalysisContext(input: {
       ? "VERIFIKASJON: Dokumentet viser til visuelle elementer som bør granskes separat."
       : "VERIFIKASJON: Ingen uløste visuelle referanser ble prioritert.",
   ];
-  const limit = analysisContextLimit();
+  const limit = compiledAnalysisContextLimit();
   const canonicalChars = input.canonicalBlocks.reduce(
     (sum, block) => sum + block.canonicalText.length,
     0,
   );
-  if (canonicalChars <= Math.max(4_000, Math.floor(limit * 0.72))) {
+  if (
+    canonicalChars <=
+    Math.max(4_000, Math.floor(limit * CANONICAL_CONTEXT_RATIO))
+  ) {
     const kindsByReference = new Map<string, Set<DocumentEvidenceKind>>();
     for (const unit of input.evidence) {
       const kinds = kindsByReference.get(unit.provenance.reference) ?? new Set();
@@ -257,6 +237,24 @@ function buildAnalysisContext(input: {
     return boundedAnalysisContext(lines);
   }
 
+  const groups = new Map<
+    string,
+    {
+      text: string;
+      provenance: DocumentEvidenceUnit["provenance"];
+      kinds: Set<DocumentEvidenceKind>;
+    }
+  >();
+  for (const unit of input.evidence) {
+    const key = `${unit.normalizedText}\n${unit.provenance.reference}\n${unit.provenance.page ?? ""}`;
+    const group = groups.get(key) ?? {
+      text: unit.text,
+      provenance: unit.provenance,
+      kinds: new Set<DocumentEvidenceKind>(),
+    };
+    group.kinds.add(unit.kind);
+    groups.set(key, group);
+  }
   const orderedGroups = [...groups.values()].sort((left, right) => {
     const leftPriority = Math.max(...[...left.kinds].map(evidencePriority));
     const rightPriority = Math.max(...[...right.kinds].map(evidencePriority));
@@ -316,14 +314,25 @@ export function compileDocumentIntelligenceArtifact(input: {
   azureAvailable?: boolean;
   doclingAvailable?: boolean;
   compiledAt?: string;
+  precomputedQuality?: PrecomputedDocumentQuality;
 }): DocumentIntelligenceArtifact {
   const structureMap = normalizeDocumentChunkStructureMap(input.structureMap);
+  const sourceContentHash = documentSourceContentHash({
+    rawText: input.rawText,
+    structureMap,
+  });
   const canonical = buildCanonicalDocumentProjection({
     rawText: input.rawText,
     structureMap,
     title: input.title,
     parserUsed: input.parserUsed,
   });
+  const reusableQuality =
+    input.precomputedQuality?.parserUsed === input.parserUsed &&
+    input.precomputedQuality.sourceRevision === input.sourceRevision &&
+    input.precomputedQuality.contentHash === sourceContentHash
+      ? input.precomputedQuality.quality
+      : undefined;
   const routing = chooseDocumentParserRoute({
     rawText: input.rawText,
     canonicalText: canonical.canonicalText,
@@ -334,6 +343,7 @@ export function compileDocumentIntelligenceArtifact(input: {
     isHighImpactDocument: input.isHighImpactDocument,
     azureAvailable: input.azureAvailable ?? false,
     doclingAvailable: input.doclingAvailable ?? false,
+    quality: reusableQuality,
   });
   const evidenceByFingerprint = new Map<string, DocumentEvidenceUnit>();
 
@@ -403,7 +413,7 @@ export function compileDocumentIntelligenceArtifact(input: {
     fileName: input.fileName,
     sourceRevision: input.sourceRevision,
     contentHash: stableHash(
-      `${input.rawText}\n${JSON.stringify(structureMap)}\n${DOCUMENT_INTELLIGENCE_COMPILER_VERSION}`,
+      `${sourceContentHash}\n${DOCUMENT_INTELLIGENCE_COMPILER_VERSION}`,
     ),
     compiledAt: input.compiledAt ?? new Date().toISOString(),
     parserUsed: input.parserUsed,

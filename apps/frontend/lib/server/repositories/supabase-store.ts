@@ -25,6 +25,8 @@ import {
 } from "@/lib/server/document-chunks";
 import { normalizeDocumentChunkStructureMap } from "@/lib/server/document-chunk-structure";
 import { compileDocumentIntelligenceArtifact } from "@/lib/server/document-intelligence/evidence-compiler";
+import { isHighImpactDocument } from "@/lib/server/document-intelligence/document-policy";
+import type { PrecomputedDocumentQuality } from "@/lib/server/document-intelligence/types";
 import { isDocumentAnalysisEnabled } from "@/lib/server/document-intelligence/config";
 import {
   recordDocumentIntelligenceEvent,
@@ -2057,6 +2059,7 @@ export async function createProject(
     insertResult = await supabase
       .from("projects")
       .insert({
+        owner_id: input.owner_id,
         title: normalizedName,
         client_name: input.customer_name?.trim() || "Kunde ikke satt",
         description: input.description?.trim() || "",
@@ -3347,6 +3350,7 @@ export async function saveDocumentIngestionResult(input: {
   >;
   message: string;
   indexChunks?: boolean;
+  precomputedQuality?: Omit<PrecomputedDocumentQuality, "sourceRevision">;
 }) {
   const supabase = createServiceClient();
   const shouldIndexChunks = input.indexChunks !== false;
@@ -3482,13 +3486,16 @@ export async function saveDocumentIngestionResult(input: {
       parserUsed: input.parserUsed ?? "unknown",
       rawText: input.rawText,
       structureMap: input.structureMap,
-      isHighImpactDocument:
-        updated.role === "primary_customer_document" ||
-        updated.supporting_subtype === "kravdokument" ||
-        updated.supporting_subtype === "rfp",
+      isHighImpactDocument: isHighImpactDocument(updated),
       azureAvailable: isAzureDocumentIntelligenceConfigured(),
       doclingAvailable:
         isDoclingEnabled() && canUseDoclingForFormat(input.fileFormat),
+      precomputedQuality: input.precomputedQuality
+        ? {
+            ...input.precomputedQuality,
+            sourceRevision: updated.chunk_source_revision,
+          }
+        : undefined,
     });
     await storeDocumentIntelligenceArtifact(artifact)
       .then(async (stored) => {
@@ -3717,7 +3724,13 @@ export async function listProjectDocumentsForAnalysis(projectId: string) {
 
   return Promise.all(
     activeRows.map((row) =>
-      resolveDocumentRow(row, { includeFileBase64: false }),
+      resolveDocumentRow(row, {
+        includeFileBase64:
+          row.file_format === "pdf" &&
+          (row.role === "primary_customer_document" ||
+            row.role === "primary_solution_document" ||
+            row.supporting_subtype === "kravdokument"),
+      }),
     ),
   );
 }

@@ -1,0 +1,179 @@
+BILAG 1 - KUNDENS BEHOVS- OG KRAVSPESIFIKASJON
+
+Nordhavn kommune | Anskaffelse 26/1847 | SSA-L 2026
+
+1. Formål og anskaffelsesramme
+
+Nordhavn kommune skal anskaffe en standardisert programvaretjeneste for byggesaksbehandling, dokumentflyt og digital dialog med innbyggere og ansvarlige foretak. Tjenesten skal leveres som SaaS under SSA-L 2026. Bilag 1 beskriver Kundens behov og krav. Leverandørens bindende beskrivelse av tjenesten skal stå i Bilag 2.
+
+Kunden har 38 400 innbyggere og 127 ansatte som skal bruke tjenesten på tvers av Plan og byggesak, Eiendom, Oppmåling, Dokumentsenteret og Innbyggertorget. Kommunen behandler om lag 3 200 byggesaker årlig. Eksisterende avtale utløper 30. juni 2027, og ny tjeneste skal være i ordinær drift senest 1. april 2027.
+
+Dokumentet er et fiktivt, men realistisk testdokument. Navn, tall og tilbud er laget for kvalitetssikring av dokumentanalyse og skal ikke brukes som juridisk mal eller som grunnlag for en reell konkurranse.
+
+2. Dagens situasjon og kjøpsdriver
+
+Dagens arbeidsflyt er fordelt på et eldre fagsystem, en separat innbyggerportal, kommunens Noark 5-godkjente arkivkjerne og manuelle oversikter i e-post og regneark. Saksbehandlere registrerer de samme opplysningene flere steder, mens innbyggere ofte må kontakte Innbyggertorget for å forstå status eller ettersende dokumentasjon.
+
+En intern måling fra andre kvartal 2026 viser at 28 prosent av henvendelsene til Innbyggertorget gjelder saksstatus. Omtrent 18 prosent av nye søknader må kompletteres før ordinær behandling kan starte. Tallene er Kundens referanseverdier for gevinstoppfølging, ikke garanterte effekter av ny tjeneste.
+
+Kommunen skal migrere om lag 220 000 saker, 1,15 millioner dokumentfiler og tilhørende metadata fra 2008 og fremover. Datagrunnlaget inneholder flere historiske kodeverk, skjermede saker og dokumentversjoner. Migrering, rettighetsmarkering og avstemming er derfor en sentral leveranserisiko.
+
+3. Mål og målbare utfall
+
+Innen seks måneder etter produksjonssetting skal manuell dobbeltregistrering mellom fagsystem og arkiv være redusert med minst 40 prosent sammenlignet med referanseverdien fra andre kvartal 2026.
+
+Innen tolv måneder skal minst 85 prosent av søkerne kunne finne saksstatus og neste forventede aktivitet uten å kontakte Innbyggertorget. Andelen nye søknader som må kompletteres, skal reduseres fra 18 til 10 prosent eller lavere.
+
+Kommunen skal kunne følge saksalder, restanser, kompletteringsbehov, integrasjonsfeil og tilgangsavvik fra samme styringsflate. Måloppnåelse skal kunne dokumenteres per enhet og sakstype uten manuell sammenstilling i regneark.
+
+4. Omfang og avgrensning
+
+Leveransen omfatter abonnement, konfigurering, integrasjoner, migrering, test, rollebasert opplæring, produksjonssetting, brukerstøtte, vedlikehold og løpende sikkerhetsoppfølging. Leverandøren har helhetlig ansvar for egen tjeneste og egne integrasjonskomponenter.
+
+Kommunen beholder ansvar for faglige vedtak, behandlingsgrunnlag, tilgang til nasjonale fellesløsninger, intern endringsledelse og kvaliteten i kildedata utover avtalte renseaktiviteter.
+
+Anskaffelsen omfatter ikke utskifting av kommunens arkivkjerne, generell dataplattform, økonomisystem eller sikkerhetsovervåking. Eventuell integrasjon mot eByggesak-sjekklister utover grensesnittene i kravtabellen er en opsjon som må prises separat.
+
+5. Kravtyper og besvarelse
+
+A-krav er absolutte minimumskrav. Leverandøren skal bekrefte oppfyllelse og gi etterspurt dokumentasjon. Manglende oppfyllelse kan medføre avvisning. A-krav evalueres ikke utover kontroll av oppfyllelse.
+
+B-krav er evalueringskrav. Leverandøren skal beskrive hvordan kravet oppfylles i Bilag 2. Besvarelsene vurderes under tildelingskriteriene kvalitet eller gjennomføring. Kundens kravtekst og krav-ID skal ikke endres i Bilag 2.
+
+Henvisning til standard produktdokumentasjon er tillatt som tillegg, men Bilag 2 skal inneholde hovedsvaret. Leverandøren skal tydelig oppgi forutsetninger, avgrensninger og avvik ved den enkelte krav-ID.
+
+6. Kravtabell
+
+FUN-A01 | A | Saksbehandling
+
+Tjenesten skal støtte mottak, fordeling, behandling, vedtak og avslutning av byggesaker i én sammenhengende arbeidsflate. Alle statusendringer skal tidsstemples og knyttes til ansvarlig rolle.
+
+Svarinstruks: Bekreft oppfyllelse og beskriv kort hvordan arbeidsflyt og historikk ivaretas.
+
+FUN-A02 | A | Innbyggerdialog
+
+Eksterne brukere skal autentiseres med ID-porten. Tjenesten skal vise egne søknader, dokumenter, frister og saksstatus uten at brukeren får innsyn i andre saker.
+
+Svarinstruks: Bekreft oppfyllelse og angi autentiserings- og tilgangsmekanisme.
+
+FUN-B01 | B | Innbyggerdialog
+
+Leverandøren skal følge fremgangsmåten beskrevet i Bilag 2 for å gi søker og ansvarlig foretak forståelig status, neste forventede aktivitet og varsling ved manglende dokumentasjon.
+
+Svarinstruks: Beskriv brukerreisen, varslingskanaler og hvordan kommunen kan endre tekster og regler.
+
+FUN-B02 | B | Datakvalitet
+
+Tjenesten skal gi kontekstavhengig veiledning og kontrollere obligatoriske opplysninger før innsending, slik at andelen mangelfulle søknader reduseres.
+
+Svarinstruks: Beskriv validering, veiledning og hvordan effekten kan måles.
+
+DOK-A03 | A | Dokument og journal
+
+Alle inn- og utgående saksdokumenter skal kunne journalføres med fullstendige metadata og overføres til kommunens Noark 5-godkjente arkivkjerne uten manuell dobbeltregistrering.
+
+Svarinstruks: Bekreft oppfyllelse og beskriv integrasjon, feilhåndtering og sporbarhet.
+
+IAM-A04 | A | Identitet og roller
+
+Ansatte skal autentiseres med kommunens Microsoft Entra ID. Tilgang skal styres etter minste privilegium og kunne avgrenses etter enhet, rolle, sakstype og skjermingsbehov.
+
+Svarinstruks: Bekreft oppfyllelse og angi støttede standarder og kontrollnivåer.
+
+INT-A05 | A | Nasjonale fellesløsninger
+
+Tjenesten skal kunne integreres med ID-porten, Matrikkelen, Folkeregisteret og én meldingskanal valgt av Kunden: Altinn eller KS Fiks/SvarUt.
+
+Svarinstruks: Bekreft oppfyllelse. Skill standardkoblinger fra konfigurasjon eller tilpasning.
+
+INT-B03 | B | Integrasjoner
+
+Leverandøren skal beskrive hvordan åpne, dokumenterte grensesnitt og hendelser kan brukes av kommunens dataplattform og fremtidige fagsystemer uten leverandørspesifikk låsing.
+
+Svarinstruks: Beskriv API-er, hendelser, versjonering, begrensninger og dokumentasjon.
+
+MIG-A06 | A | Datamigrering
+
+Leverandøren skal migrere om lag 220 000 saker, 1,15 millioner dokumentfiler og tilhørende metadata fra 2008 og fremover. Ingen journalførte dokumenter eller rettighetsmarkeringer skal gå tapt.
+
+Svarinstruks: Bekreft oppfyllelse og beskriv hvordan fullstendighet dokumenteres.
+
+MIG-B04 | B | Overgang
+
+Leverandøren skal følge en trinnvis migrerings- og innføringsmetode som begrenser driftsavbrudd og gjør det mulig å verifisere de mest risikoutsatte sakstypene tidlig.
+
+Svarinstruks: Beskriv faser, testutvalg, tilbakefallsplan og kommunens medvirkning.
+
+SIK-A07 | A | Datalokasjon
+
+Kundedata, sikkerhetskopier og driftslogger som kan inneholde personopplysninger, skal behandles innenfor EØS. Leverandøren skal føre oppdatert oversikt over underleverandører og behandlingssteder.
+
+Svarinstruks: Bekreft oppfyllelse og oppgi behandlingsregioner og underleverandørstyring.
+
+SIK-A08 | A | Informasjonssikkerhet
+
+Tjenesten skal kryptere data under overføring og lagring, logge administrative handlinger og støtte eksport av sikkerhetshendelser til Kundens sikkerhetsovervåking. Kritiske sårbarheter skal håndteres etter dokumenterte frister.
+
+Svarinstruks: Bekreft oppfyllelse og beskriv kontroller, logger og sårbarhetshåndtering.
+
+SIK-B05 | B | Styringsinformasjon
+
+Kunden skal kunne følge saksbehandlingstid, restanser, kompletteringsbehov, integrasjonsfeil og tilgangsavvik uten at Leverandøren må utvikle nye rapporter for hver måling.
+
+Svarinstruks: Beskriv standardrapporter, filtrering, eksport og tilgangsstyring.
+
+UU-A09 | A | Universell utforming
+
+Innbyggerrettede flater skal oppfylle WCAG 2.2 nivå AA. Leverandøren skal dokumentere testresultater og rette kritiske tilgjengelighetsfeil før produksjonssetting.
+
+Svarinstruks: Bekreft oppfyllelse og beskriv test- og rettingsprosessen.
+
+DRI-A10 | A | Tilgjengelighet
+
+Tjenesten skal ha månedlig tilgjengelighet på minst 99,9 prosent, eksklusive varslet vedlikehold innenfor avtalt vedlikeholdsvindu. RPO skal være høyst 4 timer og RTO høyst 8 timer.
+
+Svarinstruks: Bekreft oppfyllelse og oppgi tilbudt nivå og målepunkt.
+
+DRI-B06 | B | Driftsinnsikt
+
+Leverandøren skal beskrive proaktiv overvåking, hendelseshåndtering, varsling og hvordan gjentakende feil blir fulgt opp.
+
+Svarinstruks: Beskriv målepunkt, responstider, rotårsaksanalyse og forbedringssløyfe.
+
+OPL-B07 | B | Opplæring og innføring
+
+Leverandøren skal beskrive et rollebasert opplæringsopplegg for 127 ansatte, herunder saksbehandlere, ledere, superbrukere, arkivpersonell og tjenesteforvalter.
+
+Svarinstruks: Beskriv format, omfang, materiell, evaluering og støtte etter produksjonssetting.
+
+DATA-A11 | A | Data og avslutning
+
+Kunden skal på forespørsel og ved avtalens opphør kunne hente ut saksdata, dokumenter, metadata, tilgangsmarkeringer og revisjonslogger i dokumenterte, maskinlesbare formater.
+
+Svarinstruks: Bekreft oppfyllelse og beskriv formater, frister og verifikasjon.
+
+7. Gjennomføring og milepæler
+
+Kontraktsignering er planlagt 15. oktober 2026. Kartlegging og dataprofilering skal være ferdig 30. november 2026. Første komplette testmigrering skal være ferdig 22. januar 2027, pilot skal starte 15. februar 2027, og ordinær drift skal starte senest 1. april 2027.
+
+Kunden planlegger en kontrollert parallellperiode frem til 30. april 2027. Eksisterende løsning skal deretter være tilgjengelig i lesemodus frem til avtalen utløper 30. juni 2027.
+
+Leverandørens fremdriftsplan skal vise avhengigheter, Kundens medvirkning, beslutningspunkter, testansvar, tilbakefallsplan og bemanning i perioden fra testmigrering til ordinær drift.
+
+8. Tildelingskriterier
+
+Kvalitet i tilbudt tjeneste vektes 45 prosent. Vurderingen bygger særlig på FUN-B01, FUN-B02, INT-B03, SIK-B05 og DRI-B06.
+
+Gjennomføring og overgang vektes 30 prosent. Vurderingen bygger særlig på MIG-B04, OPL-B07, realismen i fremdriftsplanen og håndtering av avhengigheter.
+
+Pris vektes 25 prosent. Prisen vurderes fra samlet estimert kontraktsverdi for fire år, inkludert etablering, abonnement, avtalte integrasjoner og opsjoner som fremgår av prisskjemaet.
+
+9. Åpne avklaringer før endelig tilbud
+
+Kunden avklarer med dagens leverandør om historiske dokumentversjoner kan leveres med stabile identifikatorer og kontrollsummer. Endelig uttrekksformat blir publisert senest 28. august 2026.
+
+Kunden velger Altinn eller KS Fiks/SvarUt som første meldingskanal etter en teknisk verifikasjon. Leverandøren skal prise standardkoblingen likt for begge alternativer.
+
+Omfanget av saker med særskilt skjerming er foreløpig estimert til 3 500. Eksakt antall og kodeverk bekreftes etter dataprofilering.
+
+Kunden har ikke fastsatt endelig grense for hvor mange eksterne konsulentselskaper som skal ha delegert tilgang. Tilbudet skal forklare lisens- og sikkerhetskonsekvensen av 50, 100 og 200 eksterne brukere.

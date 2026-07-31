@@ -50,19 +50,20 @@ import {
 } from "@/components/projects/project-workspace-shared";
 import { getCustomerAnalysisSectionSnapshot } from "@/lib/customer-analysis-history";
 import { normalizeTechnologySignalWords } from "@/lib/signal-words";
-import type {
-  CustomerAnalysisHistorySource,
-  CustomerAnalysisResult,
-  CustomerAnalysisSection,
-  CustomerAnalysisSectionHistoryEntry,
-  CustomerAnalysisSectionSnapshotMap,
-  AnalysisRequirement,
-  ProjectDocument,
-  RecommendedService,
-  RequirementImportance,
-  RequirementKind,
-  ValueCategory,
-  ValueOpportunity,
+import {
+  MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
+  type CustomerAnalysisHistorySource,
+  type CustomerAnalysisResult,
+  type CustomerAnalysisSection,
+  type CustomerAnalysisSectionHistoryEntry,
+  type CustomerAnalysisSectionSnapshotMap,
+  type AnalysisRequirement,
+  type ProjectDocument,
+  type RecommendedService,
+  type RequirementImportance,
+  type RequirementKind,
+  type ValueCategory,
+  type ValueOpportunity,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -2700,12 +2701,14 @@ export function ProjectAnalysisTab({
     items,
     onChange,
     placeholder,
+    maxItems,
   }: {
     id: string;
     label: string;
     items: string[];
     onChange: (items: string[]) => void;
     placeholder: string;
+    maxItems?: number;
   }) {
     return (
       <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
@@ -2717,6 +2720,7 @@ export function ProjectAnalysisTab({
             type="button"
             variant="outline"
             size="sm"
+            disabled={typeof maxItems === "number" && items.length >= maxItems}
             onClick={() => onChange([...items, ""])}
           >
             <Plus data-icon="inline-start" />
@@ -3401,6 +3405,7 @@ export function ProjectAnalysisTab({
               items: draft.ambiguities,
               onChange: (items) => updateDraft({ ...draft, ambiguities: items }),
               placeholder: "Skriv avklaring eller usikkerhet.",
+              maxItems: MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
             })}
           </div>
         );
@@ -3809,20 +3814,22 @@ export function ProjectAnalysisTab({
                   </div>
                   {customerAnalysis.ambiguities.length ? (
                     <div className="grid gap-4 lg:grid-cols-2">
-                      {customerAnalysis.ambiguities.map((item, index) => (
-                        <div
-                          key={`ambiguity-${index}`}
-                          className="rounded-xl border border-white/85 bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
-                        >
-                          <p className="mb-3 text-sm font-bold uppercase tracking-[0.22em] text-amber-700">
-                            Avklaring {index + 1}
-                          </p>
-                          <MarkdownViewer
-                            content={item}
-                            className="analysis-prose max-w-none text-[1.02rem] leading-8 text-slate-700"
-                          />
-                        </div>
-                      ))}
+                      {customerAnalysis.ambiguities
+                        .slice(0, MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS)
+                        .map((item, index) => (
+                          <div
+                            key={`ambiguity-${index}`}
+                            className="rounded-xl border border-white/85 bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+                          >
+                            <p className="mb-3 text-sm font-bold uppercase tracking-[0.22em] text-amber-700">
+                              Avklaring {index + 1}
+                            </p>
+                            <MarkdownViewer
+                              content={item}
+                              className="analysis-prose max-w-none text-[1.02rem] leading-8 text-slate-700"
+                            />
+                          </div>
+                        ))}
                     </div>
                   ) : (
                     <p className="rounded-lg border border-dashed border-amber-300 bg-white/55 px-4 py-4 text-sm leading-6 text-amber-900/70">

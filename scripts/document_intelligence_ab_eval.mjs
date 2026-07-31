@@ -66,13 +66,22 @@ const { compileDocumentIntelligenceArtifact } = jiti(
     "lib/server/document-intelligence/evidence-compiler.ts",
   ),
 );
-const { shouldUseCompiledCustomerAnalysisContext } = jiti(
-  path.join(
-    frontendRoot,
-    "lib/server/document-intelligence/customer-analysis-context.ts",
-  ),
-);
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+function shouldUseCompiledCustomerAnalysisContext(input) {
+  const nativeSourceCeiling = input.isPrimaryDocument ? 18_000 : 8_000;
+  if (input.rawTextLength <= nativeSourceCeiling) return false;
+  const rawBudget = input.isPrimaryDocument ? 12_000 : 4_000;
+  const evidenceBudget = input.isPrimaryDocument ? 8_000 : 3_000;
+  const legacyContextChars = Math.min(rawBudget, input.rawTextLength);
+  const compiledContextChars = Math.min(
+    evidenceBudget,
+    input.analysisContextLength,
+  );
+  return (
+    compiledContextChars + 800 <= Math.max(1_600, legacyContextChars * 0.95)
+  );
+}
 
 function cliArgument(name) {
   const inline = process.argv.find((argument) => argument.startsWith(`${name}=`));

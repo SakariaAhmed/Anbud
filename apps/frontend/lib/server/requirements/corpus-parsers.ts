@@ -2,6 +2,14 @@ export type {
   RequirementCorpusParserContext,
 } from "@/lib/server/requirements/corpus-parser-context";
 export {
+  buildExplicitIdPdfLayoutRequirementLedger,
+  buildExplicitIdTableRequirementLedger,
+  explicitIdTableSourceIds,
+} from "@/lib/server/requirements/explicit-id-table-parser";
+export {
+  buildExplicitIdPdfNarrativeRequirementLedger,
+} from "@/lib/server/requirements/explicit-id-narrative-parser";
+export {
   buildPrefixedLineRequirementLedger,
   isLegacyMixedFofingerCorpus,
   repairLegacyFofingerTextArtifacts,

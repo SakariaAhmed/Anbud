@@ -2,6 +2,9 @@ import "server-only";
 
 import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
 import type { ParsedUpload } from "@/lib/server/documents";
+import { buildCanonicalDocumentProjection } from "@/lib/server/document-intelligence/canonical-document";
+import { documentSourceContentHash } from "@/lib/server/document-intelligence/content-hash";
+import { isHighImpactDocument } from "@/lib/server/document-intelligence/document-policy";
 import {
   extractWithAzureLayout,
   isAzureDocumentIntelligenceConfigured,
@@ -21,6 +24,7 @@ export type DocumentParseSelection = {
   parsed: ParsedUpload;
   decision: DocumentRoutingDecision;
   selectedQuality: DocumentParseQuality;
+  selectedContentHash: string;
   localAttempted: boolean;
   azureAttempted: boolean;
 };
@@ -41,24 +45,28 @@ export async function selectBestDocumentParse(input: {
   onAzureStart?: () => void | Promise<void>;
 }): Promise<DocumentParseSelection> {
   const azureAvailable = isAzureDocumentIntelligenceConfigured();
+  const fastAssessment = assessParsedUpload(
+    input.fastParsed,
+    input.document.file_size_bytes,
+  );
   const decision = chooseDocumentParserRoute({
     rawText: input.fastParsed.rawText,
+    canonicalText: fastAssessment.canonicalText,
     sourceMap: input.fastParsed.sourceMap,
     fileFormat: input.fastParsed.fileFormat,
     fileSizeBytes: input.document.file_size_bytes,
     parserUsed: input.fastParsed.parserUsed,
-    isHighImpactDocument:
-      input.document.role === "primary_customer_document" ||
-      input.document.supporting_subtype === "kravdokument" ||
-      input.document.supporting_subtype === "rfp",
+    isHighImpactDocument: isHighImpactDocument(input.document),
     azureAvailable,
     doclingAvailable: input.doclingAvailable,
+    quality: fastAssessment.quality,
   });
   if (!isDocumentAnalysisEnabled()) {
     return {
       parsed: input.fastParsed,
       decision,
       selectedQuality: decision.quality,
+      selectedContentHash: fastAssessment.contentHash,
       localAttempted: false,
       azureAttempted: false,
     };
@@ -67,6 +75,8 @@ export async function selectBestDocumentParse(input: {
   const workflowSignal = getProjectWorkflowAbortSignal();
   let selected = input.fastParsed;
   let selectedQuality = decision.quality;
+  let selectedCanonicalText = fastAssessment.canonicalText;
+  let selectedContentHash = fastAssessment.contentHash;
   let localAttempted = false;
 
   if (decision.route === "docling" && input.extractWithLocalStructure) {
@@ -77,39 +87,44 @@ export async function selectBestDocumentParse(input: {
       return null;
     });
     if (localCandidate?.rawText.trim()) {
-      const localQuality = parseQuality(localCandidate, input.document.file_size_bytes);
+      const localAssessment = assessParsedUpload(
+        localCandidate,
+        input.document.file_size_bytes,
+      );
       if (
         candidateImprovesParse({
           current: selected,
           currentQuality: selectedQuality,
           candidate: localCandidate,
-          candidateQuality: localQuality,
+          candidateQuality: localAssessment.quality,
         })
       ) {
         selected = localCandidate;
-        selectedQuality = localQuality;
+        selectedQuality = localAssessment.quality;
+        selectedCanonicalText = localAssessment.canonicalText;
+        selectedContentHash = localAssessment.contentHash;
       }
     }
   }
 
   const postLocalDecision = chooseDocumentParserRoute({
     rawText: selected.rawText,
+    canonicalText: selectedCanonicalText,
     sourceMap: selected.sourceMap,
     fileFormat: selected.fileFormat,
     fileSizeBytes: input.document.file_size_bytes,
     parserUsed: selected.parserUsed,
-    isHighImpactDocument:
-      input.document.role === "primary_customer_document" ||
-      input.document.supporting_subtype === "kravdokument" ||
-      input.document.supporting_subtype === "rfp",
+    isHighImpactDocument: isHighImpactDocument(input.document),
     azureAvailable,
     doclingAvailable: localAttempted ? false : input.doclingAvailable,
+    quality: selectedQuality,
   });
   if (postLocalDecision.route !== "azure_layout" || !azureAvailable) {
     return {
       parsed: selected,
       decision,
       selectedQuality,
+      selectedContentHash,
       localAttempted,
       azureAttempted: false,
     };
@@ -133,22 +148,31 @@ export async function selectBestDocumentParse(input: {
       parsed: selected,
       decision,
       selectedQuality,
+      selectedContentHash,
       localAttempted,
       azureAttempted: true,
     };
   }
 
-  const enhancedQuality = parseQuality(enhanced, input.document.file_size_bytes);
+  const enhancedAssessment = assessParsedUpload(
+    enhanced,
+    input.document.file_size_bytes,
+  );
   const enhancedIsUseful = candidateImprovesParse({
     current: selected,
     currentQuality: selectedQuality,
     candidate: enhanced,
-    candidateQuality: enhancedQuality,
+    candidateQuality: enhancedAssessment.quality,
   });
   return {
     parsed: enhancedIsUseful ? enhanced : selected,
     decision,
-    selectedQuality: enhancedIsUseful ? enhancedQuality : selectedQuality,
+    selectedQuality: enhancedIsUseful
+      ? enhancedAssessment.quality
+      : selectedQuality,
+    selectedContentHash: enhancedIsUseful
+      ? enhancedAssessment.contentHash
+      : selectedContentHash,
     localAttempted,
     azureAttempted: true,
   };
@@ -191,13 +215,26 @@ export function buildDocumentParserAttemptEvents(input: {
   return events;
 }
 
-function parseQuality(parsed: ParsedUpload, fileSizeBytes: number) {
-  return evaluateDocumentParseQuality({
+function assessParsedUpload(parsed: ParsedUpload, fileSizeBytes: number) {
+  const canonicalText = buildCanonicalDocumentProjection({
     rawText: parsed.rawText,
-    sourceMap: parsed.sourceMap,
-    fileFormat: parsed.fileFormat,
-    fileSizeBytes,
-  });
+    structureMap: parsed.sourceMap,
+    parserUsed: parsed.parserUsed,
+  }).canonicalText;
+  return {
+    canonicalText,
+    contentHash: documentSourceContentHash({
+      rawText: parsed.rawText,
+      structureMap: parsed.sourceMap,
+    }),
+    quality: evaluateDocumentParseQuality({
+      rawText: parsed.rawText,
+      canonicalText,
+      sourceMap: parsed.sourceMap,
+      fileFormat: parsed.fileFormat,
+      fileSizeBytes,
+    }),
+  };
 }
 
 function candidateImprovesParse(input: {

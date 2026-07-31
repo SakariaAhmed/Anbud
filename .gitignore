@@ -25,6 +25,9 @@ test-data/*
 !test-data/requirement-parser-golden/norwegian-pdf-requirement-regressions.json
 !test-data/document-analysis-stress/
 !test-data/document-analysis-stress/**
+!test-data/tenders/
+test-data/tenders/*
+!test-data/tenders/tender_nordic_hybrid_cloud_2026.pdf
 
 # Generated reports and local scratch artifacts
 tmp/

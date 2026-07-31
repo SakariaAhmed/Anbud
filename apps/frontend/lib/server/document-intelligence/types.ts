@@ -53,6 +53,13 @@ export interface DocumentRoutingDecision {
   recommendVisionReview: boolean;
 }
 
+export interface PrecomputedDocumentQuality {
+  quality: DocumentParseQuality;
+  parserUsed: string;
+  sourceRevision: number;
+  contentHash: string;
+}
+
 export interface DocumentEvidenceProvenance {
   reference: string;
   page: number | null;

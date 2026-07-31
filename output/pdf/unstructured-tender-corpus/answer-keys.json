@@ -1,0 +1,1144 @@
+[
+  {
+    "scenario_id": "nordhavn-byggesak",
+    "project_name": "Nordhavn kommune - digital byggesaksbehandling",
+    "document_pattern": "workshop-notes",
+    "good_solution": {
+      "summary": "En standardisert og konfigurerbar byggesaks-SaaS med sikker innbyggerdialog, Noark-integrasjon og en kontrollert migrering der datakvalitet og sporbarhet er akseptansekriterier.",
+      "architecture": [
+        "Responsiv saksbehandlerflate og separat innbyggerportal.",
+        "Entra ID for ansatte og ID-porten for eksterne brukere.",
+        "API- og hendelseslag mot Noark 5, Matrikkelen, Folkeregisteret og valgt meldingskanal.",
+        "Kryptert dataplattform i EØS med revisjonslogg, sikkerhetseksport og rapportering.",
+        "Eksportmekanisme for saker, dokumenter, metadata, roller og logger."
+      ],
+      "delivery": [
+        "Dataprofilering, prøvemigrering, to testmigreringer og kontrollert produksjonsflytting.",
+        "Pilot med Plan og byggesak før øvrige enheter.",
+        "Akseptansetester for brukerreiser, integrasjoner, tilgang, ytelse, universell utforming og gjenoppretting.",
+        "Rollebasert opplæring, superbrukernettverk og seks ukers stabilisering."
+      ],
+      "win_themes": [
+        "Trygg overgang før eksisterende avtale utløper.",
+        "Målbar reduksjon i komplettering og dobbeltregistrering.",
+        "Åpne grensesnitt og verifiserbart dataeierskap.",
+        "Konfigurasjon fremfor kostbar spesialutvikling."
+      ],
+      "key_risks": [
+        "Uavklart meldingskanal kan forsinke ende-til-ende-test.",
+        "Motstridende historiske metadata kan øke migreringsomfang og kostnad.",
+        "Ukjent sesongtopp for eksterne brukere kan gi feil kapasitetsbaseline."
+      ]
+    },
+    "answer_key": {
+      "must_cover": [
+        {
+          "id": "scale",
+          "required_term_groups": [
+            [
+              "38 400"
+            ],
+            [
+              "127"
+            ],
+            [
+              "3 200"
+            ]
+          ]
+        },
+        {
+          "id": "deadline",
+          "required_term_groups": [
+            [
+              "1. april 2027"
+            ],
+            [
+              "30. juni 2027"
+            ]
+          ]
+        },
+        {
+          "id": "migration",
+          "required_term_groups": [
+            [
+              "220 000"
+            ],
+            [
+              "1,15 millioner"
+            ],
+            [
+              "2008"
+            ]
+          ]
+        },
+        {
+          "id": "service_levels",
+          "required_term_groups": [
+            [
+              "99,9"
+            ],
+            [
+              "RPO",
+              "gjenopprettingspunkt"
+            ],
+            [
+              "4 timer"
+            ],
+            [
+              "RTO",
+              "gjenopprettingstid"
+            ],
+            [
+              "8 timer"
+            ]
+          ]
+        },
+        {
+          "id": "integrations",
+          "required_term_groups": [
+            [
+              "Noark 5"
+            ],
+            [
+              "Matrikkelen"
+            ],
+            [
+              "Folkeregisteret"
+            ],
+            [
+              "ID-porten"
+            ]
+          ]
+        },
+        {
+          "id": "outcomes",
+          "required_term_groups": [
+            [
+              "28"
+            ],
+            [
+              "18"
+            ],
+            [
+              "40 prosent"
+            ],
+            [
+              "85 prosent"
+            ]
+          ]
+        },
+        {
+          "id": "evaluation",
+          "required_term_groups": [
+            [
+              "45 prosent"
+            ],
+            [
+              "30 prosent"
+            ],
+            [
+              "25 prosent"
+            ]
+          ]
+        }
+      ],
+      "must_not_claim": [
+        "At Altinn er valgt fremfor KS Fiks/SvarUt.",
+        "At det finnes et kundekrav om 200 samtidige brukere.",
+        "At historiske metadata kan kastes dersom dokumentfilen finnes."
+      ]
+    },
+    "requirements": [
+      {
+        "id": "NORD-FUN-01",
+        "priority": "A",
+        "topic": "Saksflyt",
+        "text": "Tjenesten skal støtte mottak, fordeling, behandling, vedtak og avslutning i én rollebasert arbeidsflate. Alle statusendringer skal tidsstemples og knyttes til ansvarlig rolle.",
+        "answer": "Saksløft leverer en konfigurerbar arbeidsflyt fra mottak til avslutning. Hver overgang lagrer tidspunkt, bruker, tidligere status, ny status og begrunnelse. Produksjonsendringer krever totrinnsgodkjenning, og hele historikken kan eksporteres."
+      },
+      {
+        "id": "NORD-IAM-02",
+        "priority": "A",
+        "topic": "Identitet",
+        "text": "Ansatte skal autentiseres med Microsoft Entra ID. Tilgang skal kunne avgrenses etter enhet, rolle, sakstype og skjermingsbehov etter prinsippet om minste privilegium.",
+        "answer": "Løsningen bruker OpenID Connect mot Entra ID og støtter gruppeprovisjonering med SCIM. Autorisasjon kontrolleres ved hvert kall mot en policy som kombinerer enhet, rolle, sakstype og skjermingskode. Kvartalsvis tilgangsrapport og periodisk resertifisering inngår."
+      },
+      {
+        "id": "NORD-DIA-03",
+        "priority": "A",
+        "topic": "Innbyggerdialog",
+        "text": "Eksterne brukere skal autentiseres med ID-porten og bare se saker, dokumenter og frister der de har en verifisert partsrolle.",
+        "answer": "Innbyggerportalen bruker ID-porten via OpenID Connect. Partsrollen valideres mot saken før data returneres, og signerte dokumentlenker er kortlivede og bundet til aktiv sesjon. Hendelser med avvist tilgang logges for sikkerhetsoppfølging."
+      },
+      {
+        "id": "NORD-ARK-04",
+        "priority": "A",
+        "topic": "Arkiv",
+        "text": "Inn- og utgående dokumenter skal journalføres med fullstendige metadata i kommunens Noark 5-godkjente arkivkjerne uten manuell dobbeltregistrering.",
+        "answer": "Dokument og metadata overføres gjennom et versjonert integrasjonslag. Arkivkvittering lagres på saken. Feil går til en arbeidskø med korrelasjons-ID, årsak og sikker gjentakelse som hindrer dobbel journalføring."
+      },
+      {
+        "id": "NORD-INT-05",
+        "priority": "A",
+        "topic": "Fellesløsninger",
+        "text": "Standardleveransen skal integreres med ID-porten, Matrikkelen, Folkeregisteret og én meldingskanal valgt av Kunden: Altinn eller KS Fiks/SvarUt.",
+        "answer": "ID-porten, Matrikkelen og Folkeregisteret leveres som standardkoblinger. Begge meldingskanalene støttes, mens konfigurasjon, sertifikater og ende-til-ende-test for én valgt kanal inngår i grunnleveransen."
+      },
+      {
+        "id": "NORD-MIG-06",
+        "priority": "A",
+        "topic": "Migrering",
+        "text": "Leverandøren skal migrere omtrent 220 000 saker og 1,15 millioner dokumentfiler fra 2008 og fremover uten tap av journalposter, partsroller eller skjermingsmarkeringer.",
+        "answer": "Migreringen gjennomføres som profilering, prøvemigrering, to komplette testmigreringer og produksjonsflytting. Fullstendighet dokumenteres med objekttelling, kontrollsummer, feltavstemming og separat kontroll av partsroller og skjerming. Kritiske avvik blokkerer produksjonssetting."
+      },
+      {
+        "id": "NORD-SIK-07",
+        "priority": "A",
+        "topic": "Sikkerhet",
+        "text": "Data skal krypteres under overføring og lagring. Administrative handlinger og tilgang til skjermede saker skal logges, og sikkerhetshendelser skal kunne eksporteres til Kundens overvåking.",
+        "answer": "TLS 1.2 eller nyere brukes under overføring, og data krypteres ved lagring. Administrative handlinger, rolleendringer og oppslag i skjermede saker gir strukturerte revisjonshendelser. Hendelser eksporteres som CEF eller JSON med korrelasjons-ID."
+      },
+      {
+        "id": "NORD-DRI-08",
+        "priority": "A",
+        "topic": "Tilgjengelighet",
+        "text": "Tilbudt tjeneste skal ha minst 99,9 prosent månedlig tilgjengelighet, RPO høyst 4 timer og RTO høyst 8 timer.",
+        "answer": "KystSky tilbyr 99,95 prosent månedlig tilgjengelighet målt med innloggede syntetiske brukerreiser. Tilbudt RPO er 1 time og RTO er 4 timer. Gjenoppretting testes halvårlig, og resultat, avvik og retest rapporteres."
+      },
+      {
+        "id": "NORD-UU-09",
+        "priority": "A",
+        "topic": "Universell utforming",
+        "text": "Innbyggerrettede flater skal oppfylle WCAG 2.2 nivå AA, og kritiske tilgjengelighetsfeil skal være rettet før produksjonssetting.",
+        "answer": "Portalen testes automatisk og manuelt med tastaturnavigasjon, skjermleser og de avtalte brukerreisene. Kritiske feil blokkerer godkjenning. Testrapport, avvikslogg og dokumentert retest leveres til Kunden."
+      },
+      {
+        "id": "NORD-RAP-10",
+        "priority": "B",
+        "topic": "Styringsinformasjon",
+        "text": "Kunden bør kunne følge saksbehandlingstid, restanser, kompletteringsbehov, integrasjonsfeil og tilgangsavvik uten nyutvikling per måling.",
+        "answer": "Standardpakken inneholder rollebeskyttede dashbord for alle fem måleområdene. Data filtreres på enhet, sakstype og periode, og kan eksporteres som CSV eller hentes gjennom et dokumentert rapport-API."
+      },
+      {
+        "id": "NORD-API-11",
+        "priority": "B",
+        "topic": "Åpne grensesnitt",
+        "text": "Løsningen bør tilby åpne og dokumenterte grensesnitt og hendelser som reduserer leverandørbinding.",
+        "answer": "Saksløft tilbyr REST-API dokumentert med OpenAPI 3.1 og webhooks for sak, status, dokument og vedtak. API-versjoner støttes parallelt i minst 18 måneder, og komplette datauttrekk leveres som JSON, CSV og originalfiler."
+      },
+      {
+        "id": "NORD-OPL-12",
+        "priority": "B",
+        "topic": "Opplæring",
+        "text": "Leverandøren bør levere rollebasert opplæring for 127 ansatte, inkludert saksbehandlere, ledere, superbrukere, arkiv og tjenesteforvalter.",
+        "answer": "Femten superbrukere får to hele dager med scenarioøvelser. Øvrige roller får målrettede økter på to til fire timer, digitale forkurs og tilgang til norsk materiell. Ukentlige spørretimer gjennomføres de første seks ukene."
+      }
+    ]
+  },
+  {
+    "scenario_id": "sorvik-klinisk-samhandling",
+    "project_name": "Sørvik Helsepartner HF - klinisk samhandlingsplattform",
+    "document_pattern": "narrative-memo",
+    "good_solution": {
+      "summary": "En norsk, hendelsesdrevet klinisk integrasjonsplattform med FHIR R4, varig meldingsformidling, behandlingsrelasjonsbasert tilgang og et eksplisitt revisjonsspor fra hjemmemåling til journalført handling.",
+      "architecture": [
+        "FHIR-gateway og adapterlag mot EPJ, kurve, laboratorium, kjernejournal og kommune.",
+        "Varig meldingskø med idempotens, kvittering og klinisk avvikskø.",
+        "Versjonert regelmotor for klinisk varsling og eskalering.",
+        "Policybasert tilgang med behandlingsrelasjon og kontrollert nødtilgang.",
+        "Separate observabilitetsflater for teknisk drift og klinisk forvaltning."
+      ],
+      "delivery": [
+        "Prioritert integrasjonskartlegging og kontrakttester.",
+        "Parallellkjøring og avstemming før hver gammel kobling stenges.",
+        "Stille pilot, begrenset klinisk pilot og gradvis skalering per forløp.",
+        "Feilscenarioer og full gjenoppretting som obligatorisk akseptanse."
+      ],
+      "win_themes": [
+        "Pasientsikkerhet gjennom rekonstruerbar beslutningskjede.",
+        "Ingen tap av bekreftede kliniske meldinger.",
+        "Kontrollert reduksjon av punkt-til-punkt-kompleksitet.",
+        "Klinisk innføring som måler alarmbelastning, ikke bare teknisk tilgjengelighet."
+      ],
+      "key_risks": [
+        "Ukjent EPJ-grensesnitt kan påvirke plan og estimat.",
+        "Uavklart plassering av kliniske regler kan skape dobbelt forvaltningsansvar.",
+        "Spennet i pasientvolum kan påvirke kapasitet og bemanning."
+      ]
+    },
+    "answer_key": {
+      "must_cover": [
+        {
+          "id": "scale",
+          "required_term_groups": [
+            [
+              "7 800"
+            ],
+            [
+              "410 000"
+            ],
+            [
+              "36 000"
+            ],
+            [
+              "74"
+            ]
+          ]
+        },
+        {
+          "id": "timeline",
+          "required_term_groups": [
+            [
+              "15. februar 2027"
+            ],
+            [
+              "1. september 2027"
+            ]
+          ]
+        },
+        {
+          "id": "clinical_targets",
+          "required_term_groups": [
+            [
+              "12 prosent"
+            ],
+            [
+              "95"
+            ],
+            [
+              "30 minutter"
+            ],
+            [
+              "30 av 74"
+            ]
+          ]
+        },
+        {
+          "id": "continuity",
+          "required_term_groups": [
+            [
+              "99,95"
+            ],
+            [
+              "RPO null",
+              "RPO på null"
+            ],
+            [
+              "60 minutter"
+            ]
+          ]
+        },
+        {
+          "id": "technology",
+          "required_term_groups": [
+            [
+              "HL7 FHIR R4",
+              "FHIR R4"
+            ],
+            [
+              "idempotent",
+              "idempotens"
+            ],
+            [
+              "behandlingsrelasjon"
+            ]
+          ]
+        },
+        {
+          "id": "evaluation",
+          "required_term_groups": [
+            [
+              "50 prosent"
+            ],
+            [
+              "30 prosent"
+            ],
+            [
+              "20 prosent"
+            ]
+          ]
+        }
+      ],
+      "must_not_claim": [
+        "At valgt EPJ-grensesnitt er kjent og ferdig dokumentert.",
+        "At alle kliniske regler skal ligge i den nye plattformen.",
+        "At 14 000 samtidige pasienter er et bindende dimensjoneringskrav."
+      ]
+    },
+    "requirements": [
+      {
+        "id": "SOR-PAS-01",
+        "priority": "A",
+        "topic": "Meldingssikkerhet",
+        "text": "Bekreftede kliniske meldinger skal formidles nøyaktig én gang eller håndteres idempotent, med kø, kvittering, korrelasjons-ID og synlig avvikskø.",
+        "answer": "CareFlow Nexus bruker varig meldingskø, idempotensnøkkel og ende-til-ende-kvittering. Hver melding får korrelasjons-ID og tilstandslogg. Meldinger som ikke kan leveres går til en klinisk avvikskø med eier, prioritet og kontrollert ny behandling."
+      },
+      {
+        "id": "SOR-FHIR-02",
+        "priority": "A",
+        "topic": "Standarder",
+        "text": "Plattformen skal støtte HL7 FHIR R4 og bevare originalmelding og transformasjonsversjon for revisjon.",
+        "answer": "FHIR R4 støttes gjennom profilerte ressurser og validering mot avtalte implementasjonsguider. Originalmelding, transformert nyttelast, mappingversjon og valideringsresultat lagres som ett revisjonsspor."
+      },
+      {
+        "id": "SOR-IAM-03",
+        "priority": "A",
+        "topic": "Tilgang",
+        "text": "Tilgang til pasientdata skal kreve tjenstlig behov, klinisk rolle og aktiv behandlingsrelasjon. Nødtilgang skal begrunnes og etterkontrolleres.",
+        "answer": "Policykontrollen kombinerer rolle, organisasjonsenhet, aktiv behandlingsrelasjon og formål. Nødtilgang krever oppgitt begrunnelse, gir sanntidsvarsel og sendes til etterkontroll. Alle oppslag inngår i en uforanderlig revisjonslogg."
+      },
+      {
+        "id": "SOR-VAR-04",
+        "priority": "A",
+        "topic": "Klinisk varsling",
+        "text": "Kritiske hjemmemålinger skal vurderes mot versjonerte regler og varsles til riktig klinisk team med eskalering når varselet ikke kvitteres.",
+        "answer": "Målinger valideres før en versjonert regelmotor klassifiserer dem. Varselet rutes etter pasient, forløp og vaktplan, med kvitteringsfrist og trinnvis eskalering. Regelversjon, måling, mottaker og handling kan rekonstrueres."
+      },
+      {
+        "id": "SOR-PAS-05",
+        "priority": "B",
+        "topic": "Pasientinnsyn",
+        "text": "Pasienten bør kunne se mottatte målinger, status og kontaktinstruks uten å få presentert automatiske vurderinger som medisinsk diagnose.",
+        "answer": "Pasientflaten viser måling, mottakstid, status og godkjent kontakttekst. Kliniske regler og interne risikoscorer vises ikke som diagnose. Tekster forvaltes av helseforetaket og versjoneres."
+      },
+      {
+        "id": "SOR-LOG-06",
+        "priority": "A",
+        "topic": "Sporbarhet",
+        "text": "En klinisk beslutningskjede skal kunne spores til kilde, tidspunkt, regelversjon, transformasjon og ansvarlig helsepersonell.",
+        "answer": "En sammenhengende sporingsmodell kobler originalmåling, transformasjon, regelkjøring, varsel, kvittering, klinisk vurdering og journaloppdatering med samme korrelasjons-ID. Revisjonsvisningen kan eksporteres til tilsyn og hendelsesanalyse."
+      },
+      {
+        "id": "SOR-DRI-07",
+        "priority": "A",
+        "topic": "Kontinuitet",
+        "text": "Kritisk meldingsformidling skal ha 99,95 prosent tilgjengelighet, RPO null for bekreftede meldinger og RTO høyst 60 minutter.",
+        "answer": "Tjenesten tilbys aktivt fordelt mellom to norske tilgjengelighetssoner. Bekreftede meldinger replikeres synkront før kvittering, som gir RPO null. Automatisert gjenoppretting og kvartalsvis øvelse dokumenterer RTO under 60 minutter."
+      },
+      {
+        "id": "SOR-DAT-08",
+        "priority": "A",
+        "topic": "Datalokasjon",
+        "text": "Pasientdata, sikkerhetskopier og identifiserbare driftslogger skal behandles i Norge.",
+        "answer": "Alle tre datakategoriene lagres og behandles i norske regioner. Leverandørtilgang er tidsbegrenset, godkjent og logget. Underleverandørregisteret viser tjeneste, dataart og behandlingssted."
+      },
+      {
+        "id": "SOR-MIG-09",
+        "priority": "A",
+        "topic": "Integrasjonsmigrering",
+        "text": "Minst 30 av 74 punkt-til-punkt-integrasjoner skal avvikles i første avtaleår uten å redusere klinisk meldingskvalitet.",
+        "answer": "Integrasjonene grupperes etter risiko og volum. Hver migrering har kontrakttest, parallellkjøring, meldingsavstemming og godkjent tilbakefallsplan. Kilde og mål sammenlignes på antall, innhold, rekkefølge og kvitteringsstatus før gammel kobling stenges."
+      },
+      {
+        "id": "SOR-OBS-10",
+        "priority": "B",
+        "topic": "Observabilitet",
+        "text": "Drift og klinisk forvaltning bør ha separate, rollebeskyttede oversikter over flyt, forsinkelse, avvik og pasientsikkerhetskritiske hendelser.",
+        "answer": "Teknisk drift ser kødybde, feilrate og latenstid uten pasientinnhold. Klinisk forvaltning ser berørte forløp, prioritet og oppfølgingsstatus med nødvendig pasientkontekst. Varslingsgrenser og ansvar følger en avtalt driftsmatrise."
+      },
+      {
+        "id": "SOR-TEST-11",
+        "priority": "A",
+        "topic": "Verifikasjon",
+        "text": "Akseptansetesten skal dekke bortfall av nettverk, duplikate meldinger, forsinket kvittering, feil regelversjon, nødtilgang og full gjenoppretting.",
+        "answer": "Alle seks scenarioene kjøres i et produksjonslikt miljø med syntetiske pasienter. Forventet resultat, faktisk resultat, loggbevis og klinisk godkjenner registreres. Kritiske avvik blokkerer pilot."
+      },
+      {
+        "id": "SOR-INN-12",
+        "priority": "B",
+        "topic": "Innføring",
+        "text": "Leverandøren bør beskrive klinisk innføring for hjertesvikt og KOLS uten å øke uavklarte alarmer i vaktteamene.",
+        "answer": "Hvert forløp starter med regelverksted, simulering og stille pilot der varsler sammenlignes uten å styre behandling. Deretter åpnes et begrenset pasientutvalg med daglig sikkerhetsmøte før skalering. Alarmmengde, responstid og falske positive følges."
+      }
+    ]
+  },
+  {
+    "scenario_id": "malmhavn-prediktivt-vedlikehold",
+    "project_name": "Malmhavn Industri AS - prediktivt vedlikehold og feltarbeid",
+    "document_pattern": "numbered-brief",
+    "good_solution": {
+      "summary": "En sikker industriell dataplattform med lesende OT-innsamling, SAP som master, robust offline feltapp og forklarbar risikoprioritering der modeller aldri overstyrer sikkerhetsfunksjoner.",
+      "architecture": [
+        "Lokal innsamlingsnode i industriell DMZ med lesende OPC UA.",
+        "Buffer og kontrollert utgående overføring til skalerbart tidsserielager.",
+        "SAP S/4HANA-integrasjon med idempotens og masterdataeierskap.",
+        "Kryptert offline feltapp med versjonert synkronisering.",
+        "Modellregister, forklaringsdata og rollebeskyttet vedlikeholdsflate."
+      ],
+      "delivery": [
+        "Datakvalitetsprofilering før modellutvikling.",
+        "Pilot på kritisk utstyr med skyggekjøring og tydelig baseline.",
+        "Feilscenarioer på OT, nett, feltapp, SAP og modell som akseptansegate.",
+        "Utrulling til øvrige anlegg først etter dokumentert sikkerhet og effekt."
+      ],
+      "win_themes": [
+        "Sikker OT-separasjon uten skjult skriverettighet.",
+        "Feltarbeid som faktisk fungerer åtte timer uten dekning.",
+        "Forklarbare anbefalinger og reverserbar modellforvaltning.",
+        "Målbar effekt koblet til utførte tiltak."
+      ],
+      "key_risks": [
+        "Ukjent historikerdatakvalitet kan redusere modellverdi.",
+        "Parallelt valg av MDM kan påvirke feltutrulling.",
+        "Uavklarte regler for automatisk prioritering kan forsinke gevinstrealisering."
+      ]
+    },
+    "answer_key": {
+      "must_cover": [
+        {
+          "id": "scale",
+          "required_term_groups": [
+            [
+              "fire prosessanlegg",
+              "4 prosessanlegg"
+            ],
+            [
+              "1 460"
+            ],
+            [
+              "18 000"
+            ],
+            [
+              "12 millioner"
+            ]
+          ]
+        },
+        {
+          "id": "business_case",
+          "required_term_groups": [
+            [
+              "84 millioner"
+            ],
+            [
+              "20 prosent"
+            ],
+            [
+              "62"
+            ],
+            [
+              "78"
+            ],
+            [
+              "35 prosent"
+            ]
+          ]
+        },
+        {
+          "id": "timeline",
+          "required_term_groups": [
+            [
+              "1. mars 2027"
+            ],
+            [
+              "31. desember 2027"
+            ]
+          ]
+        },
+        {
+          "id": "architecture",
+          "required_term_groups": [
+            [
+              "OPC UA"
+            ],
+            [
+              "industriell DMZ"
+            ],
+            [
+              "SAP S/4HANA"
+            ],
+            [
+              "offline"
+            ],
+            [
+              "åtte timer",
+              "8 timer"
+            ]
+          ]
+        },
+        {
+          "id": "safety",
+          "required_term_groups": [
+            [
+              "ikke skrive",
+              "lesende"
+            ],
+            [
+              "sikkerhetsalarmer"
+            ],
+            [
+              "menneskelig",
+              "operatør"
+            ]
+          ]
+        },
+        {
+          "id": "evaluation",
+          "required_term_groups": [
+            [
+              "40 prosent"
+            ],
+            [
+              "35 prosent"
+            ],
+            [
+              "25 prosent"
+            ]
+          ]
+        }
+      ],
+      "must_not_claim": [
+        "At skyplattformen kan styre eller skrive direkte til OT.",
+        "At modellen kan erstatte sikkerhetsalarmer.",
+        "At datakvaliteten i alle tre historikere er dokumentert som god."
+      ]
+    },
+    "requirements": [
+      {
+        "id": "MAL-OT-01",
+        "priority": "A",
+        "topic": "OT-separasjon",
+        "text": "Løsningen skal hente tilstandsdata gjennom lesende grensesnitt i industriell DMZ og skal ikke kunne skrive direkte til styringssystem eller sikkerhetskritisk OT-sone.",
+        "answer": "AssetPulse bruker en lokalt plassert innsamlingsnode som leser fra godkjente OPC UA-endepunkter. Data sendes ut gjennom en enveiskontrollert forbindelse. Det finnes ingen rute eller legitimasjon for skriving tilbake til styringssystemene."
+      },
+      {
+        "id": "MAL-DAT-02",
+        "priority": "A",
+        "topic": "Datavolum",
+        "text": "Plattformen skal motta omtrent 12 millioner sensorverdier per døgn og bevare kvalitet, tidsstempel, enhet og kildeidentitet.",
+        "answer": "Inntaket validerer tidsstempel, enhet, kvalitet og kilde før lagring. Avviste eller forsinkede målinger telles separat. Kapasitetstesten bruker 1,5 ganger oppgitt døgnvolum og dokumenterer kø, latenstid og tap."
+      },
+      {
+        "id": "MAL-OFF-03",
+        "priority": "A",
+        "topic": "Offline feltarbeid",
+        "text": "Feltappen skal støtte minst åtte timer uten dekning og synkronisere arbeidsordre, bilder og måleverdier med kontrollert konflikthåndtering.",
+        "answer": "Kryptert lokal lagring holder tildelte arbeidsordrer, sjekklister og vedlegg tilgjengelig offline. Endringer journalføres lokalt. Ved gjenkobling brukes versjonsnummer og feltregler til å slå sammen sikre endringer, mens reelle konflikter sendes til ansvarlig arbeidsleder."
+      },
+      {
+        "id": "MAL-SAP-04",
+        "priority": "A",
+        "topic": "SAP-integrasjon",
+        "text": "SAP S/4HANA skal forbli autoritativ kilde for arbeidsordre, tekniske objekter og reservedeler.",
+        "answer": "Integrasjonen bruker SAPs dokumenterte API-er. AssetPulse oppretter ikke parallelle masterdata. Endringer i status og utførelse sendes med idempotensnøkkel, og SAP-kvittering bestemmer om arbeidsordren er fullført i feltflaten."
+      },
+      {
+        "id": "MAL-RIS-05",
+        "priority": "B",
+        "topic": "Risikoprioritering",
+        "text": "Vedlikeholdsleder bør få en prioritert liste der kritikalitet, tilstand, arbeidsordre og modellbidrag kan forklares.",
+        "answer": "Prioriteringen viser utstyrskritikalitet, siste tilstandsendring, åpen arbeidsordre og hvilke signaler som påvirket anbefalingen. Modellversjon og terskel lagres. Leder kan overstyre med begrunnelse uten å endre rådata."
+      },
+      {
+        "id": "MAL-SIK-06",
+        "priority": "A",
+        "topic": "Sikkerhet",
+        "text": "Tilgang skal bruke Entra ID, flerfaktorautentisering og rolleavgrensning per anlegg. Privilegert leverandørtilgang skal være tidsbegrenset og godkjent.",
+        "answer": "Entra ID og kundens betingede tilgang brukes. Roller begrenses per anlegg og funksjon. Leverandørtilgang aktiveres som just-in-time-tilgang med navngitt godkjenner, utløpstid og opptaks- og hendelseslogg."
+      },
+      {
+        "id": "MAL-SAF-07",
+        "priority": "A",
+        "topic": "Sikker drift",
+        "text": "Prediktive modeller skal ikke erstatte sikkerhetsalarmer, sperrer eller operatørens godkjente prosedyrer.",
+        "answer": "Modellresultater presenteres bare som vedlikeholdsanbefalinger. Sikkerhetsalarmer og sperrer kommer fra eksisterende systemer og kan ikke undertrykkes. Brukerflaten merker tydelig forskjellen og krever menneskelig beslutning før arbeidsordre prioriteres om."
+      },
+      {
+        "id": "MAL-MOD-08",
+        "priority": "B",
+        "topic": "Modellstyring",
+        "text": "Kunden bør kunne kontrollere treningsgrunnlag, modellversjon, terskler, ytelse og tilbakeføring til forrige godkjente versjon.",
+        "answer": "Et modellregister lagrer datasettversjon, egenskaper, godkjenning, terskler og mål per utstyrstype. Nye modeller kjøres i skygge før aktivering. Godkjent tidligere versjon kan gjeninnføres uten å miste hendelseshistorikk."
+      },
+      {
+        "id": "MAL-DRI-09",
+        "priority": "A",
+        "topic": "Drift",
+        "text": "Kritisk datainnsamling skal ha 99,9 prosent månedlig tilgjengelighet. Lokal buffer skal hindre tap ved 24 timers brudd mot skyplattformen.",
+        "answer": "Innsamlingsnoden overvåkes lokalt og bufferlagrer minst 48 timers pilotvolum. Etter gjenkobling sendes data i tidsrekkefølge med duplikatkontroll. Tilgjengelighet måles ved mottak av en avtalt testverdi gjennom hele kjeden."
+      },
+      {
+        "id": "MAL-TEST-10",
+        "priority": "A",
+        "topic": "Akseptanse",
+        "text": "Akseptansetesten skal omfatte nettverksbrudd, full lokal buffer, duplikater, feil enhet, feltkonflikt, SAP-feil og tilbakeføring av modell.",
+        "answer": "Testpakken dekker alle syv scenarioene med forventet resultat, teknisk bevis og navngitt godkjenner. Kritiske avvik retestes. Produksjonssetting krever både OT-sikkerhetsgodkjenning og prosesseiers signatur."
+      },
+      {
+        "id": "MAL-EFF-11",
+        "priority": "B",
+        "topic": "Effektmåling",
+        "text": "Løsningen bør dokumentere om pilotens reduksjon i stans og økning i planlagt vedlikehold kan tilskrives tiltakene.",
+        "answer": "Før pilot fastsettes baseline per utstyrsklasse for stanstid, arbeidsordretype og etterregistrering. Rapporten skiller anbefaling, faktisk tiltak og resultat. Endringer i produksjonsvolum og planlagt revisjonsstans merkes som forklaringsfaktorer."
+      },
+      {
+        "id": "MAL-UTR-12",
+        "priority": "A",
+        "topic": "Datauttrekk",
+        "text": "Kunden skal kunne hente ut råmålinger, kvalitetsflagg, modellmetadata, anbefalinger, overstyringer og revisjonslogger i dokumenterte formater.",
+        "answer": "Råmålinger og metadata eksporteres som Parquet eller CSV, mens konfigurasjon og revisjonsdata kan leveres som JSON. Uttrekket har manifest, skjema, kontrollsummer og relasjon mellom anbefaling, modellversjon og beslutning."
+      }
+    ]
+  },
+  {
+    "scenario_id": "vestfjord-forskningsdata",
+    "project_name": "Vestfjord universitet - sikker forskningsdata- og AI-plattform",
+    "document_pattern": "trailing-references",
+    "good_solution": {
+      "summary": "En klassifiseringsstyrt, selvbetjent forskningsplattform med Feide, tidsavgrenset prosjekttilgang, kontrollerte GPU-jobber, reproduserbare miljøer og automatisert arkivering eller sletting.",
+      "architecture": [
+        "Selvbetjeningsportal og katalog av godkjente prosjektmaler.",
+        "Feide, flerfaktor og prosjektbasert tilgang med dataeier.",
+        "Policy-as-code som styrer region, nettverk, logging og eksport per dataklasse.",
+        "Lagrings- og analyseplan med GPU-kvoter, koststed og automatisk stopp.",
+        "Livssyklusmotor for sluttdato, arkivpakke, kontrollsummer og sletting."
+      ],
+      "delivery": [
+        "Pilot med helsevitenskap og marin teknologi.",
+        "Klassifiseringsmodell oversettes til testbare tekniske policyer.",
+        "Migrering prioriteres etter bruk og bevaringsbehov, ikke som blind masseflytting.",
+        "Forskerstøtte, sikkerhetsvakt og måling av etableringstid og kostnad."
+      ],
+      "win_themes": [
+        "To timer fra godkjent bestilling til standardmiljø.",
+        "Sikkerhetsnivå som følger dataklasse fremfor én dyr standard.",
+        "Reproduserbar forskning og portabelt dataeierskap.",
+        "Kostnadskontroll uten å blokkere forskerens selvbetjening."
+      ],
+      "key_risks": [
+        "Uferdig klassifiseringsmodell kan endre tekniske kontrollkrav.",
+        "Uavklart føderert tilgang kan forsinke internasjonalt samarbeid.",
+        "Varierende arkivkrav kan gjøre migrerings- og avslutningsplanen usikker."
+      ]
+    },
+    "answer_key": {
+      "must_cover": [
+        {
+          "id": "scale",
+          "required_term_groups": [
+            [
+              "18 600"
+            ],
+            [
+              "2 900"
+            ],
+            [
+              "1 250"
+            ],
+            [
+              "4 petabyte"
+            ],
+            [
+              "18 prosent"
+            ]
+          ]
+        },
+        {
+          "id": "timeline",
+          "required_term_groups": [
+            [
+              "1. januar 2027"
+            ],
+            [
+              "15. august 2027"
+            ],
+            [
+              "tre år",
+              "3 år"
+            ]
+          ]
+        },
+        {
+          "id": "outcomes",
+          "required_term_groups": [
+            [
+              "21 dager"
+            ],
+            [
+              "2 timer"
+            ],
+            [
+              "100 prosent"
+            ],
+            [
+              "25 prosent"
+            ]
+          ]
+        },
+        {
+          "id": "controls",
+          "required_term_groups": [
+            [
+              "Feide"
+            ],
+            [
+              "GPU"
+            ],
+            [
+              "koststed"
+            ],
+            [
+              "Norge"
+            ],
+            [
+              "eksport"
+            ]
+          ]
+        },
+        {
+          "id": "ai_policy",
+          "required_term_groups": [
+            [
+              "ikke trenes",
+              "ikke trening"
+            ],
+            [
+              "eksplisitt",
+              "godkjenning"
+            ]
+          ]
+        },
+        {
+          "id": "evaluation",
+          "required_term_groups": [
+            [
+              "45 prosent"
+            ],
+            [
+              "35 prosent"
+            ],
+            [
+              "20 prosent"
+            ]
+          ]
+        }
+      ],
+      "must_not_claim": [
+        "At endelig klassifiseringsmodell allerede er vedtatt.",
+        "At alle utenlandske samarbeidspartnere kan få føderert tilgang.",
+        "At hele datamengden skal masseflyttes i én operasjon."
+      ]
+    },
+    "requirements": [
+      {
+        "id": "VES-SEL-01",
+        "priority": "A",
+        "topic": "Selvbetjening",
+        "text": "En standard prosjektarbeidsflate skal kunne etableres innen 2 timer etter komplett og godkjent bestilling.",
+        "answer": "Research Harbor bruker en godkjent katalog av miljømaler. Etter Feide-innlogging og komplett metadata registrerer policyflyten dataeier, klassifisering, koststed og sluttdato før automatisert etablering. Leveransetiden måles fra godkjenning til aktivt miljø."
+      },
+      {
+        "id": "VES-IAM-02",
+        "priority": "A",
+        "topic": "Identitet",
+        "text": "Primær innlogging skal bruke Feide. Beskyttede datasett skal kreve sterkere autentisering og eksplisitt prosjektmedlemskap.",
+        "answer": "Feide brukes til føderert innlogging. For beskyttede datasett kreves flerfaktorautentisering og aktivt medlemskap godkjent av dataeier. Tilgang har utløpsdato og resertifiseres hvert halvår."
+      },
+      {
+        "id": "VES-KLA-03",
+        "priority": "A",
+        "topic": "Klassifisering",
+        "text": "Lagring, nettverk, logging og eksportkontroll skal bestemmes av prosjektets dataklasse og kunne oppdateres kontrollert.",
+        "answer": "Policy-as-code oversetter godkjent dataklasse til region, kryptering, nettverksgrenser, loggnivå og eksportflyt. Endring av klasse krever konsekvenskontroll og dataeiers godkjenning. Historikken viser gammel og ny policy."
+      },
+      {
+        "id": "VES-DAT-04",
+        "priority": "A",
+        "topic": "Datalokasjon",
+        "text": "Særlig beskyttelsesverdige data skal behandles i Norge, inkludert sikkerhetskopier og identifiserbare logger.",
+        "answer": "Høyeste klasse bindes til norske behandlingsregioner for primærdata, sikkerhetskopi og identifiserbar logg. Automatisert policy hindrer opprettelse av ressurser utenfor godkjent lokasjon og rapporterer avvik."
+      },
+      {
+        "id": "VES-GPU-05",
+        "priority": "A",
+        "topic": "GPU-styring",
+        "text": "GPU-jobber skal knyttes til prosjekt, koststed og bruker, med kvote, automatisk stopp og synlig kostnadsestimat.",
+        "answer": "Jobbplanleggeren krever gyldig prosjekt, koststed og bruker. Prosjektet får kvote og maksimal kjøretid. Forventet kostnad vises før start, og tomme eller inaktive ressurser stanses etter policy."
+      },
+      {
+        "id": "VES-AI-06",
+        "priority": "A",
+        "topic": "Ansvarlig AI",
+        "text": "Generative modeller skal ikke trenes på eller beholde prosjektdata uten eksplisitt, dokumentert godkjenning.",
+        "answer": "Kun godkjente modellendepunkter kan brukes. Standardpolicy deaktiverer trening og leverandørbevaring. Eventuelle unntak krever dataeier, personvern og informasjonssikkerhet, og lagres med modell, formål, datasett og utløpsdato."
+      },
+      {
+        "id": "VES-REP-07",
+        "priority": "B",
+        "topic": "Reproduserbarhet",
+        "text": "Forskere bør kunne versjonere kode, miljø, avhengigheter og datasettpekere slik at en analyse kan reproduseres.",
+        "answer": "Prosjektet kan lagre Git-revisjon, containerbilde med digest, avhengighetslås og uforanderlig datasettversjon. En manifestfil kobler disse til jobb, resultat og ansvarlig bruker."
+      },
+      {
+        "id": "VES-EKS-08",
+        "priority": "A",
+        "topic": "Eksportkontroll",
+        "text": "Eksport fra høyeste dataklasse skal skannes, begrunnes og godkjennes før data kan forlate miljøet.",
+        "answer": "Brukeren legger eksport i en karantenesone med formål og mottaker. Automatisk skanning kontrollerer filtype, skadevare og sensitive mønstre. Dataeier eller delegert kontrollør godkjenner, og kontrollbevis følger eksporten."
+      },
+      {
+        "id": "VES-LIV-09",
+        "priority": "A",
+        "topic": "Livssyklus",
+        "text": "Alle prosjekter skal ha sluttdato og arbeidsflyt for forlengelse, arkivering eller verifisert sletting.",
+        "answer": "Varsling starter 90 dager før sluttdato. Dataeier velger begrunnet forlengelse, arkivpakke eller sletting. Arkivering gir manifest og kontrollsummer. Sletting dokumenteres for aktive data og sikkerhetskopier etter avtalt retensjon."
+      },
+      {
+        "id": "VES-MIG-10",
+        "priority": "B",
+        "topic": "Migrering",
+        "text": "Migreringen av omtrent 4 petabyte skal prioriteres etter aktiv bruk, dataklasse og bevaringsbehov over tre år.",
+        "answer": "Hvert lagringsområde profileres før flytting. Aktive pilotprosjekter tas først, mens inaktive data vurderes for arkiv eller sletting. Objektantall, størrelse og kontrollsummer avstemmes, og gamle områder stenges først etter dataeiers godkjenning."
+      },
+      {
+        "id": "VES-UTR-11",
+        "priority": "A",
+        "topic": "Portabilitet",
+        "text": "Kunden skal kunne eksportere data, metadata, policy, miljømanifest og revisjonslogger i dokumenterte formater.",
+        "answer": "Data leveres i opprinnelig eller åpent avtalt format, metadata og policy som JSON, tabeller som CSV eller Parquet og miljøer som OCI-kompatible bilder og deklarativ konfigurasjon. Manifest og kontrollsummer følger uttrekket."
+      },
+      {
+        "id": "VES-OBS-12",
+        "priority": "B",
+        "topic": "Styringsinformasjon",
+        "text": "Universitetet bør se etableringstid, kostnad, kapasitet, policyavvik, eksport og avslutningsstatus per fakultet og prosjekt.",
+        "answer": "Rollebeskyttede oversikter viser alle seks måleområdene med sporbarhet til prosjekt og koststed. Personopplysninger minimeres i økonomirapporter. Data kan eksporteres og kobles til universitetets økonomi- og styringsplattform."
+      }
+    ]
+  },
+  {
+    "scenario_id": "polarfrakt-kjolekjede",
+    "project_name": "PolarFrakt Logistikk SA - digital kjølekjede og terminalstyring",
+    "document_pattern": "mixed-minutes",
+    "good_solution": {
+      "summary": "En offline robust kjølekjedeplattform som lar transportsystemet være ordre-master, normaliserer fire sensorleverandører og gir et rekonstruerbart bevis fra måling og skanning til avvik og godkjenning.",
+      "architecture": [
+        "Integrasjonslag mot eksisterende transportstyringssystem.",
+        "Adaptere for MQTT, HTTPS og fil med kanonisk målemodell og originalbevaring.",
+        "Offline håndterminalapp med kryptert lokal kø og idempotent synkronisering.",
+        "Versjonert varslingsmotor med vaktplan, kvittering og eskalering.",
+        "Femårig hendelseslager og eksport av kjølekjedebevis."
+      ],
+      "delivery": [
+        "Pilot på Tromvik terminal med reelle sensorer og ruter.",
+        "Klimakammertest ved minus 30 grader og tolv timers offline-test.",
+        "Datakvalitetsprofilering per sensorleverandør.",
+        "Terminalvis utrulling med måling av skannedekning og avviksbehandling."
+      ],
+      "win_themes": [
+        "Komplett og eksportbart kjølekjedebevis.",
+        "Operativ drift som tåler kulde og manglende dekning.",
+        "Rask varsling uten å skjule datakvalitetsproblemer.",
+        "Basisleveranse uavhengig av opsjon for ruteoptimalisering."
+      ],
+      "key_risks": [
+        "Ukjent datakvalitet fra eldste sensorleverandør kan gi falske avvik.",
+        "Uvalgt sekundær varslingskanal kan forsinke beredskapstest.",
+        "Ustabil transportintegrasjon kan kreve større lokal arbeidskopi."
+      ]
+    },
+    "answer_key": {
+      "must_cover": [
+        {
+          "id": "scale",
+          "required_term_groups": [
+            [
+              "åtte terminaler",
+              "8 terminaler"
+            ],
+            [
+              "520"
+            ],
+            [
+              "240"
+            ],
+            [
+              "1 800"
+            ]
+          ]
+        },
+        {
+          "id": "quality_targets",
+          "required_term_groups": [
+            [
+              "2,7"
+            ],
+            [
+              "0,5"
+            ],
+            [
+              "50 prosent"
+            ],
+            [
+              "2 minutter"
+            ],
+            [
+              "99 prosent"
+            ]
+          ]
+        },
+        {
+          "id": "timeline",
+          "required_term_groups": [
+            [
+              "1. desember 2026"
+            ],
+            [
+              "1. juni 2027"
+            ]
+          ]
+        },
+        {
+          "id": "offline",
+          "required_term_groups": [
+            [
+              "tolv timer",
+              "12 timer"
+            ],
+            [
+              "minus 30",
+              "-30"
+            ],
+            [
+              "offline"
+            ]
+          ]
+        },
+        {
+          "id": "integrations",
+          "required_term_groups": [
+            [
+              "MQTT"
+            ],
+            [
+              "HTTPS"
+            ],
+            [
+              "filbasert"
+            ],
+            [
+              "transportstyringssystem"
+            ]
+          ]
+        },
+        {
+          "id": "retention",
+          "required_term_groups": [
+            [
+              "fem år",
+              "5 år"
+            ],
+            [
+              "24x7",
+              "24 timer"
+            ]
+          ]
+        },
+        {
+          "id": "evaluation",
+          "required_term_groups": [
+            [
+              "45 prosent"
+            ],
+            [
+              "30 prosent"
+            ],
+            [
+              "25 prosent"
+            ]
+          ]
+        }
+      ],
+      "must_not_claim": [
+        "At SMS er valgt som sekundærkanal.",
+        "At ruteoptimalisering er nødvendig for basisløsningen.",
+        "At data fra alle sensorleverandører har dokumentert høy kvalitet."
+      ]
+    },
+    "requirements": [
+      {
+        "id": "POL-TMS-01",
+        "priority": "A",
+        "topic": "Ordremaster",
+        "text": "Eksisterende transportstyringssystem skal være autoritativ kilde for ordre, rute, stopp og sending i første avtaleperiode.",
+        "answer": "ColdChain Control leser ordre og rute gjennom et versjonert integrasjonslag og lagrer bare nødvendig operativ kopi. Statushendelser sendes tilbake med idempotensnøkkel og kvittering. Masterdata kan ikke endres i den nye plattformen."
+      },
+      {
+        "id": "POL-IOT-02",
+        "priority": "A",
+        "topic": "Sensorintegrasjon",
+        "text": "Løsningen skal motta temperaturdata fra fire produsenter gjennom MQTT, HTTPS og filbasert utveksling og bevare kilde, enhet, kvalitet og tidsstempel.",
+        "answer": "Adapterlaget normaliserer alle tre mønstrene til én kanonisk måling uten å forkaste originalen. Kilde, sensor-ID, enhet, kvalitetsflagg, måletid og mottakstid bevares. Ugyldige målinger går til egen datakvalitetskø."
+      },
+      {
+        "id": "POL-OFF-03",
+        "priority": "A",
+        "topic": "Offline drift",
+        "text": "Håndterminalen skal fungere uten nett i minst tolv timer og støtte skanning, lastestatus, avvik og bildevedlegg.",
+        "answer": "Tildelt arbeidsliste og nødvendige sendinger lagres kryptert på enheten. Skanning, status, avvik og bilder køes lokalt med sekvensnummer. Ved gjenkobling synkroniseres hendelser idempotent, og konflikter vises til terminalleder."
+      },
+      {
+        "id": "POL-KUL-04",
+        "priority": "A",
+        "topic": "Robust utstyr",
+        "text": "Løsningen skal støtte godkjente håndterminaler i temperaturer ned til minus 30 grader uten tap av registreringer.",
+        "answer": "Appen leveres for kundens valgte rugged-enheter og testes i klimakammer ved minus 30 grader. Lokal database, batteriprofil, skanner og hanskemodus inngår i akseptansetesten. Registreringer avstemmes etter testen."
+      },
+      {
+        "id": "POL-VAR-05",
+        "priority": "A",
+        "topic": "Varsling",
+        "text": "Kritisk temperaturavvik skal varsles til operativ vakt innen 2 minutter etter at målingen er mottatt.",
+        "answer": "En versjonert regelmotor klassifiserer målingen ved inntak. Primærkanal og vaktplan bestemmer mottaker. Systemet måler mottak til utsendt varsel og eskalerer ved manglende kvittering. Sekundær kanal konfigureres når Kunden har valgt SMS eller tale."
+      },
+      {
+        "id": "POL-SPOR-06",
+        "priority": "A",
+        "topic": "Kjølekjedebevis",
+        "text": "Kunden skal kunne rekonstruere sendingens rute, terminaloverganger, skanninger, temperaturserie, avvik, tiltak og godkjenninger.",
+        "answer": "Et uforanderlig hendelsesforløp kobler alle bevis til sending og kolli. Rapporten viser kilde og tidspunkt, hull i dataserien, avviksterskel, ansvarlig tiltak og godkjenning. Beviset kan eksporteres som PDF og maskinlesbar JSON."
+      },
+      {
+        "id": "POL-RET-07",
+        "priority": "A",
+        "topic": "Oppbevaring",
+        "text": "Temperaturmålinger og avviksbehandling skal kunne dokumenteres i minst fem år.",
+        "answer": "Råmålinger, normaliserte målinger og avvikshendelser lagres etter en femårig policy med integritetskontroll. Juridisk hold kan stanse sletting for valgt sending. Uttrekk har manifest og kontrollsummer."
+      },
+      {
+        "id": "POL-DRI-08",
+        "priority": "A",
+        "topic": "24x7 drift",
+        "text": "Kritisk operativ funksjon skal være tilgjengelig 24x7 med 99,9 prosent månedlig tilgjengelighet og vakt for prioritet 1.",
+        "answer": "Tjenesten overvåkes hele døgnet med syntetisk inntak, skanning og varsling. Prioritet 1 mottas av bemannet vakt, med første respons innen 15 minutter. Tilgjengelighet måles på hele kritisk kjede."
+      },
+      {
+        "id": "POL-IAM-09",
+        "priority": "A",
+        "topic": "Tilgang",
+        "text": "Tilgang skal avgrenses etter terminal, rolle og skift. Tapte enheter skal kunne sperres og lokale data fjernslettes.",
+        "answer": "Entra ID styrer brukeridentitet, mens rolle, terminal og skift inngår i autorisasjonen. Enheter registreres i kundens MDM. Sperring blokkerer ny innlogging, tilbakekaller tokens og starter fjernsletting av den krypterte arbeidskopien."
+      },
+      {
+        "id": "POL-TEST-10",
+        "priority": "A",
+        "topic": "Akseptanse",
+        "text": "Akseptansen skal dekke tolv timer offline, duplikatmåling, forsinket fil, feil enhet, minus 30 grader, varslingseskalering og bortfall av transportintegrasjon.",
+        "answer": "Alle syv scenarioene kjøres med kjent testdatasett. Resultatet dokumenterer fullstendighet, rekkefølge, latenstid og korrekt brukerrespons. Kritiske avvik blokkerer utrulling til neste terminal."
+      },
+      {
+        "id": "POL-RAP-11",
+        "priority": "B",
+        "topic": "Kvalitetsstyring",
+        "text": "Kvalitetsansvarlig bør kunne følge dokumentasjonsgrad, sensorfeil, varslingstid, åpne avvik og rotårsak per terminal og transportør.",
+        "answer": "Standarddashbord viser alle fem måleområdene og gjør det mulig å bore ned til sending og kilde. Tilgang til kundedata følger rolle. Målinger kan eksporteres til kvalitetsmøte og revisjon."
+      },
+      {
+        "id": "POL-OPS-12",
+        "priority": "C",
+        "topic": "Ruteoptimalisering",
+        "text": "Ruteoptimalisering kan tilbys som separat opsjon, men basisløsningen skal fungere uten opsjonen.",
+        "answer": "Ruteoptimalisering tilbys som en separat priset opsjon med eget datagrunnlag og akseptanse. Ingen basisfunksjon, integrasjon eller kjølekjedebevis avhenger av at opsjonen kjøpes."
+      }
+    ]
+  }
+]
