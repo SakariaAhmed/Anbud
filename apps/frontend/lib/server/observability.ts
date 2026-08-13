@@ -1,6 +1,9 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
+import { isIP } from "node:net";
+
+import { AUTH_PRINCIPAL_HEADER } from "@/lib/password-auth";
 
 import {
   beginDistributedRateLimitAttempt,
@@ -146,8 +149,9 @@ function cleanupRateLimitStore(store: Map<string, RateLimitBucket>, now: number)
   }
 }
 
-function firstHeaderValue(value: string | null) {
-  return value?.split(",")[0]?.trim() || "";
+function rightmostForwardedIp(value: string | null) {
+  const candidate = value?.split(",").at(-1)?.trim() || "";
+  return isIP(candidate) ? candidate : "";
 }
 
 function shouldTrustForwardedRateLimitHeaders() {
@@ -166,20 +170,15 @@ function requestIdentity(request: Request, mode: "request" | "global") {
     return createHash("sha256").update("global").digest("hex").slice(0, 24);
   }
 
-  const trustedForwardedHeaders = shouldTrustForwardedRateLimitHeaders();
-  const forwardedFor = trustedForwardedHeaders
-    ? firstHeaderValue(request.headers.get("x-forwarded-for"))
+  const principalId = request.headers.get(AUTH_PRINCIPAL_HEADER)?.trim();
+  const forwardedFor = shouldTrustForwardedRateLimitHeaders()
+    ? rightmostForwardedIp(request.headers.get("x-forwarded-for"))
     : "";
-  const realIp = trustedForwardedHeaders
-    ? firstHeaderValue(request.headers.get("x-real-ip"))
-    : "";
-  const cloudflareIp = trustedForwardedHeaders
-    ? firstHeaderValue(request.headers.get("cf-connecting-ip"))
-    : "";
-  const clientIp = trustedForwardedHeaders
-    ? firstHeaderValue(request.headers.get("x-client-ip"))
-    : "";
-  const source = cloudflareIp || realIp || forwardedFor || clientIp || "direct";
+  const source = principalId
+    ? `principal:${principalId}`
+    : forwardedFor
+      ? `ip:${forwardedFor}`
+      : "direct";
   return createHash("sha256").update(source).digest("hex").slice(0, 24);
 }
 

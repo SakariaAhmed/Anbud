@@ -5,6 +5,7 @@ import {
 } from "@/lib/server/repositories/analyses";
 import { prepareProjectAiRoute } from "@/lib/server/project-ai-route";
 import { queueExecutiveSummaryJob } from "@/lib/server/project-jobs";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -24,10 +25,7 @@ export async function GET(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke hente lederoppsummeringen.",
+        error: productionSafeErrorMessage(error, "Kunne ikke hente lederoppsummeringen."),
       },
       { status: 500 },
     );
@@ -59,10 +57,7 @@ export async function POST(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke generere lederoppsummering.",
+        error: productionSafeErrorMessage(error, "Kunne ikke generere lederoppsummering."),
       },
       { status: 500 },
     );

@@ -14,7 +14,11 @@ const jiti = createJiti(path.join(frontendRoot, "documents-security-tests.cjs"),
   alias: { "@": frontendRoot, "server-only": "/dev/null" },
   interopDefault: true,
 });
-const { loadValidatedOfficeZip } = await jiti.import(
+const {
+  contentTypeForUploadFormat,
+  loadValidatedOfficeZip,
+  validateUploadFileSignature,
+} = await jiti.import(
   path.join(frontendRoot, "lib/server/documents.ts"),
 );
 
@@ -40,4 +44,15 @@ test("office ZIP preflight accepts a small archive and rejects extreme expansion
     () => loadValidatedOfficeZip(bombBuffer, "bomb.docx"),
     /utrygg kompresjonsgrad/u,
   );
+});
+
+test("upload signatures reject executable content disguised as documents", () => {
+  assert.throws(
+    () => validateUploadFileSignature(Buffer.from("<script>alert(1)</script>"), "pdf"),
+    /samsvarer ikke/u,
+  );
+  assert.doesNotThrow(() =>
+    validateUploadFileSignature(Buffer.from("%PDF-1.7\n"), "pdf"),
+  );
+  assert.equal(contentTypeForUploadFormat("pdf"), "application/pdf");
 });

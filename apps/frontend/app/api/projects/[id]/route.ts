@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 
 import { deleteProject, getProjectDetail } from "@/lib/server/repositories/projects";
 import {
+  authorizationErrorResponse,
+  requireProjectPermission,
+} from "@/lib/server/authorization";
+import {
   AuditEventPersistenceError,
   auditEvent,
   checkRateLimit,
   withTiming,
 } from "@/lib/server/observability";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -15,6 +20,7 @@ const READ_CACHE_HEADERS = {
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "project.read");
     return await withTiming(
       "GET /api/projects/[id]",
       { project_id: id },
@@ -24,8 +30,8 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       },
     );
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke hente prosjektet." },
+    return authorizationErrorResponse(error) ?? NextResponse.json(
+      { error: productionSafeErrorMessage(error, "Kunne ikke hente prosjektet.") },
       { status: 404 },
     );
   }
@@ -51,6 +57,7 @@ export async function DELETE(
 
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "project.delete");
     return await withTiming(
       "DELETE /api/projects/[id]",
       { project_id: id },
@@ -70,6 +77,8 @@ export async function DELETE(
       },
     );
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     if (error instanceof AuditEventPersistenceError) {
       return NextResponse.json(
         {
@@ -84,8 +93,7 @@ export async function DELETE(
     }
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Kunne ikke slette prosjektet.",
+        error: productionSafeErrorMessage(error, "Kunne ikke slette prosjektet."),
       },
       { status: 500 },
     );

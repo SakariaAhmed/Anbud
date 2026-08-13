@@ -1,4 +1,5 @@
 import { LoginForm } from "@/components/auth/login-form";
+import { isAdminPasswordAuthConfigured } from "@/lib/server/admin-password-auth";
 import { isMicrosoftAuthConfigured } from "@/lib/server/microsoft-auth";
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -24,6 +25,7 @@ export default async function LoginPage({
     <LoginForm
       initialError={authError ? AUTH_ERROR_MESSAGES[authError] : undefined}
       microsoftEnabled={isMicrosoftAuthConfigured()}
+      adminPasswordEnabled={isAdminPasswordAuthConfigured()}
       nextPath={next ?? "/"}
     />
   );

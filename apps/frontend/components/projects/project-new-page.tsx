@@ -10,12 +10,9 @@ import { markNextHomeNavigationWithoutAnimation } from "@/components/layout/app-
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { fetchServiceDescriptions } from "@/lib/client/service-descriptions-api";
 import { cn } from "@/lib/utils";
-import { getClientCache, setClientCache } from "@/lib/client-cache";
 import type { ServiceDescription } from "@/lib/types";
-
-const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
-const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export function ProjectNewPage() {
   const router = useRouter();
@@ -29,39 +26,16 @@ export function ProjectNewPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    let cancelled = false;
-    const cached = getClientCache<ServiceDescription[]>(
-      SERVICE_DESCRIPTIONS_CACHE_KEY,
-    );
-    if (cached) {
-      setServices(cached);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    fetch("/api/service-descriptions", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          services?: ServiceDescription[];
-        };
-        if (!cancelled && response.ok) {
-          const nextServices = payload.services ?? [];
-          setServices(nextServices);
-          setClientCache(
-            SERVICE_DESCRIPTIONS_CACHE_KEY,
-            nextServices,
-            SERVICE_DESCRIPTIONS_CACHE_TTL_MS,
-          );
-        }
-      })
+    const controller = new AbortController();
+    fetchServiceDescriptions({ signal: controller.signal })
+      .then((nextServices) => setServices(nextServices))
       .catch(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setServices([]);
         }
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 

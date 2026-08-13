@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { runAvailableProjectJobs } from "@/lib/server/project-jobs";
 import { checkRateLimit } from "@/lib/server/observability";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -73,8 +74,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Kunne ikke kjøre jobbkøen.",
+        error: productionSafeErrorMessage(error, "Kunne ikke kjøre jobbkøen."),
       },
       { status: 500 },
     );

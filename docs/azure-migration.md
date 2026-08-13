@@ -14,9 +14,9 @@ Goal: move the web runtime first without changing the data plane.
   `npm --prefix apps/frontend run docker:smoke:docling` before changing the
   production Docling runtime.
 - Deploy `infra/azure/container-app.bicep`.
-- Keep these runtime variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_ENCRYPTION_KEY`, `APP_ACCESS_PASSWORD`, `APP_SESSION_SECRET`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
-- Use `/api/health/live` for liveness and `/api/health/ready` for readiness.
-- Use `/api/health` for the detailed workload health model.
+- Keep these runtime variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_ENCRYPTION_KEY`, `APP_ADMIN_ACCESS_PASSWORD_HASH`, `APP_ADMIN_PRINCIPAL_ID`, `APP_SESSION_SECRET`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
+- Use the public `/api/health/live` endpoint for platform probes and rollout smoke tests.
+- Keep `/api/health` and `/api/health/ready` administrator-only because they expose dependency and configuration details.
 - Run `node apps/frontend/scripts/smoke_health.mjs "https://<fqdn>"` after each deployment before DNS or traffic cutover.
 
 ## Phase 2: isolate data adapters

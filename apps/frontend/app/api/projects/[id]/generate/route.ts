@@ -10,6 +10,7 @@ import { normalizeArtifactInstructions } from "@/lib/server/artifact-generation-
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
 import { queueArtifactGenerationJob } from "@/lib/server/project-jobs";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "no-store",
@@ -30,10 +31,7 @@ export async function GET(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke hente generatorresultatene.",
+        error: productionSafeErrorMessage(error, "Kunne ikke hente generatorresultatene."),
       },
       { status: 500 },
     );
@@ -86,10 +84,7 @@ export async function POST(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke generere artefakt.",
+        error: productionSafeErrorMessage(error, "Kunne ikke generere artefakt."),
       },
       { status: 500 },
     );
@@ -131,10 +126,7 @@ export async function PATCH(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke oppdatere kravbesvarelsen.",
+        error: productionSafeErrorMessage(error, "Kunne ikke oppdatere kravbesvarelsen."),
       },
       { status: 500 },
     );
@@ -168,10 +160,7 @@ export async function DELETE(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke slette artefakten.",
+        error: productionSafeErrorMessage(error, "Kunne ikke slette artefakten."),
       },
       { status: 500 },
     );

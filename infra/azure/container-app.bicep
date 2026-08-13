@@ -24,15 +24,8 @@ param image string
 @description('Worker image kept on the last healthy release until web promotion succeeds.')
 param workerImage string
 
-@description('Container registry server, for example myregistry.azurecr.io.')
-param registryServer string
-
-@description('Container registry username.')
-param registryUsername string
-
-@secure()
-@description('Container registry password.')
-param registryPassword string
+@description('Azure Container Registry resource name in this resource group.')
+param registryName string
 
 @secure()
 @description('Current Supabase project URL. Kept for phase 1 Azure hosting migration.')
@@ -60,15 +53,39 @@ param microsoftEntraTenantSubdomain string
 param appEncryptionKey string
 
 @secure()
-@description('Shared password for the current app-level login.')
-param appAccessPassword string
+@description('Encoded scrypt hash for the dedicated administrator password.')
+param appAdminAccessPasswordHash string
 
 @secure()
 @description('Stable session signing secret.')
 param appSessionSecret string
 
-@description('Stable owner ID for the shared password user. Keep unchanged when rotating the session signing secret.')
-param sharedAppUserId string = 'u_password_owner_default_000000000000000000000000'
+@secure()
+@description('Dedicated HMAC pepper for guest access codes. Generate independently from the session secret.')
+param appGuestCodePepper string = ''
+
+@secure()
+@description('Dedicated HMAC secret used for deterministic email identity lookup.')
+param appIdentityLookupSecret string = ''
+
+@secure()
+@description('Dedicated HMAC secret used for privacy-preserving request context logging.')
+param appActivityHashSecret string = ''
+
+@description('Comma-separated internal emails bootstrapped with the administrator role.')
+param appAdminEmails string = ''
+
+@description('Optional Azure Communication Services endpoint used with the Container App managed identity.')
+param azureCommunicationEmailEndpoint string = ''
+
+@description('Verified MailFrom sender address in Azure Communication Services Email.')
+param azureCommunicationEmailSender string = ''
+
+@description('Stable pseudonymous ID for the dedicated administrator identity.')
+param adminPrincipalId string
+
+@description('Display name for the dedicated administrator identity.')
+param adminDisplayName string = 'Administrator'
 
 @secure()
 @description('OpenAI API key.')
@@ -160,6 +177,31 @@ var missionCriticalTags = {
   deploymentStamp: appName
 }
 
+var acrPullRoleDefinitionId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+)
+
+resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: registryName
+}
+
+resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${appName}-acr-pull'
+  location: location
+  tags: missionCriticalTags
+}
+
+resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registry.id, acrPullIdentity.id, 'AcrPull')
+  scope: registry
+  properties: {
+    roleDefinitionId: acrPullRoleDefinitionId
+    principalId: acrPullIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
@@ -191,6 +233,12 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
   tags: missionCriticalTags
+  identity: {
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acrPullIdentity.id}': {}
+    }
+  }
   properties: {
     managedEnvironmentId: environment.id
     configuration: {
@@ -219,8 +267,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           value: appEncryptionKey
         }
         {
-          name: 'app-access-password'
-          value: appAccessPassword
+          name: 'app-admin-access-password-hash'
+          value: appAdminAccessPasswordHash
         }
         {
           name: 'app-session-secret'
@@ -234,21 +282,31 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'project-job-worker-token'
           value: projectJobWorkerToken
         }
-        {
-          name: 'registry-password'
-          value: registryPassword
-        }
       ], !empty(azureDocumentIntelligenceKey) ? [
         {
           name: 'azure-document-intelligence-key'
           value: azureDocumentIntelligenceKey
         }
+      ] : [], !empty(appGuestCodePepper) ? [
+        {
+          name: 'app-guest-code-pepper'
+          value: appGuestCodePepper
+        }
+      ] : [], !empty(appIdentityLookupSecret) ? [
+        {
+          name: 'app-identity-lookup-secret'
+          value: appIdentityLookupSecret
+        }
+      ] : [], !empty(appActivityHashSecret) ? [
+        {
+          name: 'app-activity-hash-secret'
+          value: appActivityHashSecret
+        }
       ] : [])
       registries: [
         {
-          server: registryServer
-          username: registryUsername
-          passwordSecretRef: 'registry-password'
+          server: registry.properties.loginServer
+          identity: acrPullIdentity.id
         }
       ]
     }
@@ -287,6 +345,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               value: image
             }
             {
+              name: 'TRUST_FORWARDED_RATE_LIMIT_HEADERS'
+              value: 'true'
+            }
+            {
               name: 'SUPABASE_URL'
               secretRef: 'supabase-url'
             }
@@ -315,16 +377,20 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               secretRef: 'app-encryption-key'
             }
             {
-              name: 'APP_ACCESS_PASSWORD'
-              secretRef: 'app-access-password'
+              name: 'APP_ADMIN_ACCESS_PASSWORD_HASH'
+              secretRef: 'app-admin-access-password-hash'
             }
             {
               name: 'APP_SESSION_SECRET'
               secretRef: 'app-session-secret'
             }
             {
-              name: 'APP_PASSWORD_OWNER_ID'
-              value: sharedAppUserId
+              name: 'APP_ADMIN_PRINCIPAL_ID'
+              value: adminPrincipalId
+            }
+            {
+              name: 'APP_ADMIN_DISPLAY_NAME'
+              value: adminDisplayName
             }
             {
               name: 'OPENAI_API_KEY'
@@ -367,6 +433,35 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_DOCUMENT_INTELLIGENCE_KEY'
               secretRef: 'azure-document-intelligence-key'
             }
+          ] : [], !empty(appGuestCodePepper) ? [
+            {
+              name: 'APP_GUEST_CODE_PEPPER'
+              secretRef: 'app-guest-code-pepper'
+            }
+          ] : [], !empty(appIdentityLookupSecret) ? [
+            {
+              name: 'APP_IDENTITY_LOOKUP_SECRET'
+              secretRef: 'app-identity-lookup-secret'
+            }
+          ] : [], !empty(appActivityHashSecret) ? [
+            {
+              name: 'APP_ACTIVITY_HASH_SECRET'
+              secretRef: 'app-activity-hash-secret'
+            }
+          ] : [], !empty(appAdminEmails) ? [
+            {
+              name: 'APP_ADMIN_EMAILS'
+              value: appAdminEmails
+            }
+          ] : [], !empty(azureCommunicationEmailEndpoint) && !empty(azureCommunicationEmailSender) ? [
+            {
+              name: 'AZURE_COMMUNICATION_EMAIL_ENDPOINT'
+              value: azureCommunicationEmailEndpoint
+            }
+            {
+              name: 'AZURE_COMMUNICATION_EMAIL_SENDER'
+              value: azureCommunicationEmailSender
+            }
           ] : [])
           probes: [
             {
@@ -377,15 +472,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               }
               initialDelaySeconds: 20
               periodSeconds: 30
-            }
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/api/health/ready'
-                port: 3000
-              }
-              initialDelaySeconds: 10
-              periodSeconds: 15
             }
           ]
           resources: {
@@ -410,12 +496,21 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       }
     }
   }
+  dependsOn: [
+    acrPullRoleAssignment
+  ]
 }
 
 resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
   name: '${appName}-project-job-worker'
   location: location
   tags: missionCriticalTags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${acrPullIdentity.id}': {}
+    }
+  }
   properties: {
     environmentId: environment.id
     configuration: {
@@ -441,10 +536,6 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
           value: appEncryptionKey
         }
         {
-          name: 'app-access-password'
-          value: appAccessPassword
-        }
-        {
           name: 'app-session-secret'
           value: appSessionSecret
         }
@@ -456,10 +547,6 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
           name: 'project-job-worker-token'
           value: projectJobWorkerToken
         }
-        {
-          name: 'registry-password'
-          value: registryPassword
-        }
       ], !empty(azureDocumentIntelligenceKey) ? [
         {
           name: 'azure-document-intelligence-key'
@@ -468,9 +555,8 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
       ] : [])
       registries: [
         {
-          server: registryServer
-          username: registryUsername
-          passwordSecretRef: 'registry-password'
+          server: registry.properties.loginServer
+          identity: acrPullIdentity.id
         }
       ]
     }
@@ -527,16 +613,8 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               secretRef: 'app-encryption-key'
             }
             {
-              name: 'APP_ACCESS_PASSWORD'
-              secretRef: 'app-access-password'
-            }
-            {
               name: 'APP_SESSION_SECRET'
               secretRef: 'app-session-secret'
-            }
-            {
-              name: 'APP_PASSWORD_OWNER_ID'
-              value: sharedAppUserId
             }
             {
               name: 'OPENAI_API_KEY'
@@ -592,6 +670,9 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
       ]
     }
   }
+  dependsOn: [
+    acrPullRoleAssignment
+  ]
 }
 
 output fqdn string = app.properties.configuration.ingress.fqdn

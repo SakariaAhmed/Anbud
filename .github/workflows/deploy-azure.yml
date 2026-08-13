@@ -230,9 +230,16 @@ jobs:
           MICROSOFT_ENTRA_CLIENT_SECRET: ${{ secrets.MICROSOFT_ENTRA_CLIENT_SECRET }}
           MICROSOFT_ENTRA_TENANT_SUBDOMAIN: ${{ vars.MICROSOFT_ENTRA_TENANT_SUBDOMAIN }}
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
-          APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
+          APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
-          APP_PASSWORD_OWNER_ID: ${{ vars.APP_PASSWORD_OWNER_ID || 'u_password_owner_default_000000000000000000000000' }}
+          APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
+          APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
+          APP_ACTIVITY_HASH_SECRET: ${{ secrets.APP_ACTIVITY_HASH_SECRET }}
+          APP_ADMIN_PRINCIPAL_ID: ${{ vars.APP_ADMIN_PRINCIPAL_ID }}
+          APP_ADMIN_DISPLAY_NAME: ${{ vars.APP_ADMIN_DISPLAY_NAME || 'Administrator' }}
+          APP_ADMIN_EMAILS: ${{ vars.APP_ADMIN_EMAILS }}
+          AZURE_COMMUNICATION_EMAIL_ENDPOINT: ${{ vars.AZURE_COMMUNICATION_EMAIL_ENDPOINT }}
+          AZURE_COMMUNICATION_EMAIL_SENDER: ${{ vars.AZURE_COMMUNICATION_EMAIL_SENDER }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
           OPENAI_DOCUMENT_ANALYSIS_MODEL: ${{ vars.OPENAI_DOCUMENT_ANALYSIS_MODEL || 'gpt-5.6-terra' }}
@@ -244,11 +251,9 @@ jobs:
           PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
           DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
           DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
           missing=0
-          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ACCESS_PASSWORD APP_SESSION_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN ACR_USERNAME ACR_PASSWORD
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ADMIN_ACCESS_PASSWORD_HASH APP_ADMIN_PRINCIPAL_ID APP_SESSION_SECRET APP_GUEST_CODE_PEPPER APP_IDENTITY_LOOKUP_SECRET APP_ACTIVITY_HASH_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN
           do
             if [ -z "${!name}" ]; then
               echo "::error::Missing GitHub production configuration: $name"
@@ -263,9 +268,7 @@ jobs:
             appName="$CONTAINER_APP"
             image="$CURRENT_APP_IMAGE"
             workerImage="$CURRENT_WORKER_IMAGE"
-            registryServer="${ACR_NAME}.azurecr.io"
-            registryUsername="$ACR_USERNAME"
-            registryPassword="$ACR_PASSWORD"
+            registryName="$ACR_NAME"
             supabaseUrl="$SUPABASE_URL"
             supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"
             appPublicOrigin="$APP_PUBLIC_ORIGIN"
@@ -273,9 +276,16 @@ jobs:
             microsoftEntraClientSecret="$MICROSOFT_ENTRA_CLIENT_SECRET"
             microsoftEntraTenantSubdomain="$MICROSOFT_ENTRA_TENANT_SUBDOMAIN"
             appEncryptionKey="$APP_ENCRYPTION_KEY"
-            appAccessPassword="$APP_ACCESS_PASSWORD"
+            appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH"
             appSessionSecret="$APP_SESSION_SECRET"
-            sharedAppUserId="$APP_PASSWORD_OWNER_ID"
+            appGuestCodePepper="$APP_GUEST_CODE_PEPPER"
+            appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET"
+            appActivityHashSecret="$APP_ACTIVITY_HASH_SECRET"
+            adminPrincipalId="$APP_ADMIN_PRINCIPAL_ID"
+            adminDisplayName="$APP_ADMIN_DISPLAY_NAME"
+            appAdminEmails="$APP_ADMIN_EMAILS"
+            azureCommunicationEmailEndpoint="$AZURE_COMMUNICATION_EMAIL_ENDPOINT"
+            azureCommunicationEmailSender="$AZURE_COMMUNICATION_EMAIL_SENDER"
             openAiApiKey="$OPENAI_API_KEY"
             openAiModel="$OPENAI_MODEL"
             openAiDocumentAnalysisModel="$OPENAI_DOCUMENT_ANALYSIS_MODEL"
@@ -296,12 +306,8 @@ jobs:
 
           az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-infra-${GITHUB_SHA}" --template-file infra/azure/container-app.bicep --parameters "${common_parameters[@]}" --output none
 
-      - name: Docker login to ACR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0
-        with:
-          registry: ${{ env.ACR_NAME }}.azurecr.io
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+      - name: Docker login to ACR with Azure identity
+        run: az acr login --name "$ACR_NAME"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c

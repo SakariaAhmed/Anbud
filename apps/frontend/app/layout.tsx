@@ -6,6 +6,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AUTH_DISPLAY_NAME_HEADER,
+  AUTH_IS_ADMIN_HEADER,
+  AUTH_IDENTITY_TYPE_HEADER,
   AUTH_VERIFIED_HEADER,
 } from "@/lib/password-auth";
 
@@ -48,6 +50,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const isHomeRoute = pathname === "/";
   const displayName = requestHeaders.get(AUTH_DISPLAY_NAME_HEADER);
   const authenticated = requestHeaders.get(AUTH_VERIFIED_HEADER) === "1";
+  const identityType = requestHeaders.get(AUTH_IDENTITY_TYPE_HEADER);
+  const isAdmin = requestHeaders.get(AUTH_IS_ADMIN_HEADER) === "1";
 
   return (
     <html
@@ -59,7 +63,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         data-route={isHomeRoute ? "home" : undefined}
       >
         <TooltipProvider>
-          <AppShell authenticated={authenticated} displayName={displayName}>
+          <AppShell
+            authenticated={authenticated}
+            displayName={displayName}
+            isAdmin={isAdmin}
+            identityType={identityType === "guest" ? "guest" : "internal"}
+          >
             {children}
           </AppShell>
         </TooltipProvider>

@@ -57,9 +57,7 @@ az deployment group create \
     appName=anbud \
     image=<acr-name>.azurecr.io/anbud:phase1 \
     workerImage=<acr-name>.azurecr.io/anbud:phase1 \
-    registryServer=<acr-name>.azurecr.io \
-    registryUsername=<acr-name> \
-    registryPassword="$ACR_PASSWORD" \
+    registryName=<acr-name> \
     supabaseUrl="$SUPABASE_URL" \
     supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
     appPublicOrigin="$APP_PUBLIC_ORIGIN" \
@@ -67,9 +65,16 @@ az deployment group create \
     microsoftEntraClientSecret="$MICROSOFT_ENTRA_CLIENT_SECRET" \
     microsoftEntraTenantSubdomain="$MICROSOFT_ENTRA_TENANT_SUBDOMAIN" \
     appEncryptionKey="$APP_ENCRYPTION_KEY" \
-    appAccessPassword="$APP_ACCESS_PASSWORD" \
+    appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH" \
     appSessionSecret="$APP_SESSION_SECRET" \
-    sharedAppUserId="${APP_PASSWORD_OWNER_ID:-u_password_owner_default_000000000000000000000000}" \
+    appGuestCodePepper="$APP_GUEST_CODE_PEPPER" \
+    appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET" \
+    appActivityHashSecret="$APP_ACTIVITY_HASH_SECRET" \
+    appAdminEmails="$APP_ADMIN_EMAILS" \
+    azureCommunicationEmailEndpoint="$AZURE_COMMUNICATION_EMAIL_ENDPOINT" \
+    azureCommunicationEmailSender="$AZURE_COMMUNICATION_EMAIL_SENDER" \
+    adminPrincipalId="$APP_ADMIN_PRINCIPAL_ID" \
+    adminDisplayName="${APP_ADMIN_DISPLAY_NAME:-Administrator}" \
     openAiApiKey="$OPENAI_API_KEY" \
     openAiModel="${OPENAI_MODEL:-gpt-5.4}" \
     openAiDocumentAnalysisModel="${OPENAI_DOCUMENT_ANALYSIS_MODEL:-gpt-5.6-terra}" \
@@ -80,6 +85,15 @@ az deployment group create \
     projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
 ```
 
+The template creates a user-assigned identity with `AcrPull` and uses it for
+both web and worker image pulls; no ACR username or password is stored. The
+deployment principal must be allowed to create role assignments on the ACR.
+It also enables a system-assigned managed identity on the web Container App.
+To send guest invitations, assign that identity email-send access on the
+Azure Communication Services resource after the first deployment. The exact
+steps and the least-privilege/connection-string alternatives are documented in
+[Guest access, RBAC and insights](../../docs/guest-access-rbac-and-insights.md).
+
 Azure Document Intelligence is optional. When endpoint/key are omitted, the
 quality router keeps the fast local layout parser and can use the existing local
 Docling fallback. Add the two values as protected production secrets/variables
@@ -89,11 +103,11 @@ paid Azure feature entirely.
 
 `DOCUMENT_ANALYSIS_VERSION` defaults to `off` so a deploy preserves the legacy
 PDF and Docling paths until canary activation. Set it to `v3` together with
-`OPENAI_DOCUMENT_ANALYSIS_MODEL=gpt-5.6-terra` for the versioned pipeline. Keep `APP_PASSWORD_OWNER_ID`
-stable across `APP_SESSION_SECRET` rotations; it is an identifier, not a secret,
-and preserves access to projects owned by the shared password user.
+`OPENAI_DOCUMENT_ANALYSIS_MODEL=gpt-5.6-terra` for the versioned pipeline. Keep
+`APP_ADMIN_PRINCIPAL_ID` stable across password and session-secret rotations;
+it is a pseudonymous identifier, not a secret.
 
-The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN`, `MICROSOFT_ENTRA_CLIENT_SECRET`, and optionally `AZURE_DOCUMENT_INTELLIGENCE_KEY` as production secrets. Configure `APP_PUBLIC_ORIGIN`, `MICROSOFT_ENTRA_CLIENT_ID`, `MICROSOFT_ENTRA_TENANT_SUBDOMAIN`, and optionally `APP_PASSWORD_OWNER_ID`, `DOCUMENT_ANALYSIS_VERSION`, `OPENAI_DOCUMENT_ANALYSIS_MODEL`, `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, and `AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION` as production variables. See [Microsoft Entra External ID login](../../docs/microsoft-entra-login.md) for the app registration and callback setup.
+The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN`, `MICROSOFT_ENTRA_CLIENT_SECRET`, `APP_ADMIN_ACCESS_PASSWORD_HASH`, and optionally `AZURE_DOCUMENT_INTELLIGENCE_KEY` as production secrets. Configure `APP_PUBLIC_ORIGIN`, `MICROSOFT_ENTRA_CLIENT_ID`, `MICROSOFT_ENTRA_TENANT_SUBDOMAIN`, `APP_ADMIN_PRINCIPAL_ID`, and optionally `APP_ADMIN_DISPLAY_NAME`, `DOCUMENT_ANALYSIS_VERSION`, `OPENAI_DOCUMENT_ANALYSIS_MODEL`, `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, and `AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION` as production variables. See [Microsoft Entra External ID login](../../docs/microsoft-entra-login.md) for the app registration and callback setup.
 
 ## Controlled production rollout
 
@@ -112,7 +126,6 @@ Verify:
 
 ```bash
 curl "https://<fqdn>/api/health/live"
-curl "https://<fqdn>/api/health/ready"
 node apps/frontend/scripts/smoke_health.mjs "https://<fqdn>"
 az containerapp job show \
   --resource-group anbud-prod \
@@ -123,10 +136,10 @@ az containerapp job show \
 ## Cutover checklist
 
 - Confirm `/api/health/live` returns `status: healthy`.
-- Confirm `/api/health/ready` and `/api/health` do not return `status: unhealthy`.
+- With an authenticated administrator session, confirm `/api/health/ready` and `/api/health` do not return `status: unhealthy` (anonymous requests should return `401`).
 - Confirm the health response contains the expected `runtime.region`, `runtime.stamp`, and image-backed `runtime.version`.
 - Log in with Microsoft Entra ID and confirm the callback returns to the app.
-- Confirm the existing app password still works as fallback.
+- Confirm the dedicated administrator password still works as the fallback login.
 - Open an existing project from Supabase.
 - Upload and delete a test document.
 - Run one short OpenAI-backed workflow.
