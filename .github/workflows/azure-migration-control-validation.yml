@@ -18,6 +18,8 @@ on:
       - scripts/azure_cutover_evidence_test_fixtures.mjs
       - scripts/azure_database_compare.mjs
       - scripts/azure_database_compare.test.mjs
+      - scripts/azure_pg_restore_toc_sanitize.mjs
+      - scripts/azure_pg_restore_toc_sanitize.test.mjs
   push:
     branches:
       - main
@@ -37,6 +39,8 @@ on:
       - scripts/azure_cutover_evidence_test_fixtures.mjs
       - scripts/azure_database_compare.mjs
       - scripts/azure_database_compare.test.mjs
+      - scripts/azure_pg_restore_toc_sanitize.mjs
+      - scripts/azure_pg_restore_toc_sanitize.test.mjs
   workflow_dispatch:
 
 permissions:
@@ -70,7 +74,8 @@ jobs:
             apps/frontend/scripts/azure_blob_migrate_verify.test.mjs \
             apps/frontend/scripts/run_azure_migration_control.test.mjs \
             scripts/azure_cutover_evidence.test.mjs \
-            scripts/azure_database_compare.test.mjs
+            scripts/azure_database_compare.test.mjs \
+            scripts/azure_pg_restore_toc_sanitize.test.mjs
 
       - name: Build and lint control infrastructure
         run: |

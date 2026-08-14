@@ -215,16 +215,35 @@ are `NOLOGIN`.
 
 ## Phase 4: validation restore and blob pre-copy
 
-Take a PostgreSQL 17 custom dump of only the live `public` schema:
+Take a PostgreSQL 17 custom dump of only the live `public` schema. Use a new
+mode-`0700` work directory for every attempt; none of the commands below may
+overwrite an earlier artifact:
 
 ```bash
+set -euo pipefail
+umask 077
 : "${PGHOST:?load the direct source host from the protected secret store}"
 : "${PGPORT:?load the direct source port}"
 : "${PGUSER:?load the temporary read-only export role}"
 : "${PGPASSWORD:?load its short-lived password without printing it}"
 : "${PGDATABASE:?load the source database name}"
 : "${PGSSLROOTCERT:?load the pinned source CA path}"
+: "${AZURE_CUTOVER_PREFLIGHT_FILE:?fresh preflight JSON from this source}"
+: "${AZURE_CUTOVER_WORK_DIR:?new private work directory for this attempt}"
 test "${PGSSLMODE:?}" = verify-full
+test -s "$AZURE_CUTOVER_PREFLIGHT_FILE"
+install -d -m 700 "$AZURE_CUTOVER_WORK_DIR"
+
+export AZURE_CUTOVER_DATABASE_DUMP_FILE="$AZURE_CUTOVER_WORK_DIR/database.dump"
+export AZURE_CUTOVER_ORIGINAL_TOC_FILE="$AZURE_CUTOVER_WORK_DIR/database-toc-original.list"
+export AZURE_CUTOVER_SANITIZED_TOC_FILE="$AZURE_CUTOVER_WORK_DIR/database-toc-sanitized.list"
+export AZURE_CUTOVER_RESTORE_LOG_FILE="$AZURE_CUTOVER_WORK_DIR/restore.log"
+export AZURE_CUTOVER_VERIFY_LOG_FILE="$AZURE_CUTOVER_WORK_DIR/verify.log"
+test ! -e "$AZURE_CUTOVER_DATABASE_DUMP_FILE"
+test ! -e "$AZURE_CUTOVER_ORIGINAL_TOC_FILE"
+test ! -e "$AZURE_CUTOVER_SANITIZED_TOC_FILE"
+test ! -e "$AZURE_CUTOVER_RESTORE_LOG_FILE"
+test ! -e "$AZURE_CUTOVER_VERIFY_LOG_FILE"
 
 pg_dump \
   --format=custom \
@@ -235,23 +254,96 @@ pg_dump \
   --no-owner \
   --no-privileges \
   --schema=public \
-  --file="$DUMP_PATH"
+  --file="$AZURE_CUTOVER_DATABASE_DUMP_FILE"
+
+pg_restore \
+  --list \
+  "$AZURE_CUTOVER_DATABASE_DUMP_FILE" \
+  > "$AZURE_CUTOVER_ORIGINAL_TOC_FILE"
+
+AZURE_TOC_INPUT_FILE="$AZURE_CUTOVER_ORIGINAL_TOC_FILE" \
+AZURE_TOC_PREFLIGHT_FILE="$AZURE_CUTOVER_PREFLIGHT_FILE" \
+AZURE_TOC_OUTPUT_FILE="$AZURE_CUTOVER_SANITIZED_TOC_FILE" \
+  node scripts/azure_pg_restore_toc_sanitize.mjs
 ```
 
-Inspect `pg_restore --list`. Reject unexpected ACL grantees, owners or
-`SECURITY DEFINER` functions. Remove the TOC entries for the already-existing
-`public` schema and Supabase's exact platform-only `rls_auto_enable()` function;
-the preflight and database comparator pin that function's full catalog
-fingerprint before allowing the exclusion. Dump with
-`--no-owner --no-privileges` so Supabase platform ownership/ACLs cannot enter
-Azure. Bootstrap default privileges grant only `service_role`. Restore to `anbud_validation` with
-`--single-transaction --exit-on-error --role=anbud_owner`, re-run
-`bootstrap.sql` to apply deterministic existing-object ACLs, then run
-`verify.sql` with `expected_collation=en_US.utf8`,
-`expected_ctype=en_US.utf8`, `expected_locale_provider=i`,
-`expected_locale=en-US` and `expected_collation_version=153.120`, followed by
-`ANALYZE`. The verifier exits nonzero if encoding, provider, locale, ICU rules,
-stored ICU version or actual ICU version differs.
+The sanitizer accepts only a PostgreSQL 17 custom-archive TOC, rejects ACL,
+default-ACL, event-trigger and unknown Supabase-platform entries, and atomically
+comments exactly the existing `public` schema plus the one source-only
+`rls_auto_enable()` function. It refuses to do so unless the fresh preflight
+contains the pinned function owner, signature, ACL, `search_path` and body
+SHA-256. Never hand-edit either TOC file. `--no-owner --no-privileges` is
+repeated during restore as defense in depth.
+
+Load the Azure bootstrap administrator connection into the separate
+`TARGET_PG*` variables below. For validation use
+`TARGET_PGDATABASE=anbud_validation`; for the final cutover use
+`TARGET_PGDATABASE=anbud`. Do not put its URL or password in an argument:
+
+```bash
+set -euo pipefail
+: "${TARGET_PGHOST:?load the Azure PostgreSQL host}"
+: "${TARGET_PGPORT:?load the Azure PostgreSQL port}"
+: "${TARGET_PGUSER:?load the Azure bootstrap administrator}"
+: "${TARGET_PGPASSWORD:?load its password without printing it}"
+: "${TARGET_PGDATABASE:?use anbud_validation or anbud as directed}"
+: "${TARGET_PGSSLROOTCERT:?load the pinned Azure PostgreSQL CA path}"
+
+(
+  export PGHOST="$TARGET_PGHOST"
+  export PGPORT="$TARGET_PGPORT"
+  export PGUSER="$TARGET_PGUSER"
+  export PGPASSWORD="$TARGET_PGPASSWORD"
+  export PGDATABASE="$TARGET_PGDATABASE"
+  export PGSSLROOTCERT="$TARGET_PGSSLROOTCERT"
+  export PGSSLMODE=verify-full
+  unset SOURCE_DATABASE_URL TARGET_DATABASE_URL
+
+  test "$(psql -X --no-psqlrc --tuples-only --no-align --command \
+    "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','S','f');")" = 0
+
+  {
+    psql -X --no-psqlrc --set=ON_ERROR_STOP=on \
+      --file=infra/azure/postgres/bootstrap.sql
+    pg_restore \
+      --dbname="$PGDATABASE" \
+      --use-list="$AZURE_CUTOVER_SANITIZED_TOC_FILE" \
+      --single-transaction \
+      --exit-on-error \
+      --verbose \
+      --no-owner \
+      --no-privileges \
+      --role=anbud_owner \
+      "$AZURE_CUTOVER_DATABASE_DUMP_FILE"
+    psql -X --no-psqlrc --set=ON_ERROR_STOP=on \
+      --file=infra/azure/postgres/bootstrap.sql
+  } > "$AZURE_CUTOVER_RESTORE_LOG_FILE" 2>&1
+
+  {
+    psql -X --no-psqlrc --set=ON_ERROR_STOP=on \
+      --set=expected_collation=en_US.utf8 \
+      --set=expected_ctype=en_US.utf8 \
+      --set=expected_locale_provider=i \
+      --set=expected_locale=en-US \
+      --set=expected_collation_version=153.120 \
+      --file=infra/azure/postgres/verify.sql
+    psql -X --no-psqlrc --set=ON_ERROR_STOP=on --command=ANALYZE
+  } > "$AZURE_CUTOVER_VERIFY_LOG_FILE" 2>&1
+)
+test -s "$AZURE_CUTOVER_RESTORE_LOG_FILE"
+test -s "$AZURE_CUTOVER_VERIFY_LOG_FILE"
+if grep --extended-regexp --ignore-case --quiet \
+  '(^|[[:space:]])(warning|error|fatal|panic):' \
+  "$AZURE_CUTOVER_RESTORE_LOG_FILE" "$AZURE_CUTOVER_VERIFY_LOG_FILE"; then
+  echo "STOP: restore or verification log contains a warning/error" >&2
+  exit 2
+fi
+```
+
+Any restore error aborts and rolls back the transaction. The explicit log scan
+also prevents progression after a warning. The verifier exits nonzero if
+encoding, provider, locale, ICU rules, stored ICU version, actual ICU version,
+ownership or ACLs differ.
 
 Copy every Storage object, including orphans, byte-for-byte. Do not decrypt or
 re-encrypt. Keep the container name and paths unchanged. Compare source and
@@ -259,11 +351,13 @@ target manifests by path, size and downloaded SHA-256; provider ETags are not a
 cross-provider content hash. Azure may contain a superseded pre-copy, but the
 final source manifest must never be missing at the target.
 
-For a small linked project, prefer `SOURCE_STORAGE_MODE=supabase-linked-cli` so
-no long-lived S3 key is created. Pin Supabase CLI 2.105 or newer, bind the local
-link to the expected project ref, and in final mode download every source object
-a second time before accepting its size/SHA-256. For larger buckets, use the
-short-lived `supabase-s3` fallback and rotate its S3 credentials immediately.
+Use `SOURCE_STORAGE_MODE=supabase-linked-cli` for the final delta: evidence-v2
+rejects every other final source mode. Pin Supabase CLI 2.105 or newer, bind the
+local link to the expected project ref, and download every source object a
+second time before accepting its size/SHA-256. A larger pre-copy may use the
+short-lived `supabase-s3` mode, but the source must still be read again through
+the linked CLI after the write freeze; rotate the temporary S3 credentials
+immediately after the pre-copy.
 The linked CLI cannot expose original provider HTTP/user metadata. That is an
 accepted application-level contract here: documents are encrypted UTF-8
 payloads, MIME/download behavior comes from the database, and the Azure adapter
@@ -567,8 +661,25 @@ as a performance experiment because it cannot be reduced later.
 2. Stop the scheduled worker and call `set_project_job_claims_enabled(false)`.
 3. Drain running jobs or use the controlled requeue RPC; prove zero running jobs
    and no other writers.
-4. Re-run `azure_migration_preflight.mjs` against the now-frozen source and stop
-   on any schema, migration, function, locale, job or size drift.
+4. Create a new private evidence directory and re-run the database preflight
+   against the now-frozen source. The freeze timestamp must be the UTC instant
+   at which ingress, claims and all other writers were proven closed.
+
+   ```bash
+   set -euo pipefail
+   umask 077
+   : "${AZURE_CUTOVER_SOURCE_FROZEN_AT:?exact UTC freeze timestamp is required}"
+   : "${AZURE_CUTOVER_WORK_DIR:?new private work directory is required}"
+   install -d -m 700 "$AZURE_CUTOVER_WORK_DIR"
+   export AZURE_CUTOVER_PREFLIGHT_FILE="$AZURE_CUTOVER_WORK_DIR/frozen-preflight.json"
+   test ! -e "$AZURE_CUTOVER_PREFLIGHT_FILE"
+   node scripts/azure_migration_preflight.mjs > "$AZURE_CUTOVER_PREFLIGHT_FILE"
+   test -s "$AZURE_CUTOVER_PREFLIGHT_FILE"
+   ```
+
+   Stop on any schema, migration, function, locale, job or size drift. A failed
+   command may leave a partial file; abandon the entire work directory rather
+   than reusing it.
 5. Generate the reference inventory from the already-frozen linked database,
    then run the final Blob delta with the same exact freeze timestamp. Never
    hand-edit or reuse this file: the Blob manifest pins its bytes, mtime,
@@ -580,6 +691,7 @@ as a performance experiment because it cannot be reduced later.
    ```bash
    umask 077
    test -n "$AZURE_CUTOVER_SOURCE_FROZEN_AT"
+   export SOURCE_STORAGE_MODE=supabase-linked-cli
    supabase db query \
      --linked \
      --output json \
@@ -606,14 +718,151 @@ as a performance experiment because it cannot be reduced later.
    downloaded and re-hashed successfully.
 6. Drop the stale `anbud_validation` database after retaining its acceptance
    evidence. Never keep two full restores on the 32 GiB server during cutover.
-7. Take a new consistent database dump and restore it into the empty production
-   target.
-8. Re-run `bootstrap.sql` in production to lock down restored existing-object
-   ACLs, then run `verify.sql`, database counts/hashes/sequences/triggers and all
-   Blob integrity/decryption checks again.
-9. Deploy `DATA_API_*` and `FILE_STORAGE_BACKEND=azure` together from the
+7. With `TARGET_PGDATABASE=anbud`, run both exact Phase 4 code blocks again.
+   This creates the final dump, original and sanitized TOCs, restore log and
+   verify log after the freeze, restores only through the sanitized TOC, and
+   proves the production target was empty. Do not reuse validation artifacts.
+8. Run the full comparator last so its report postdates the verified restore.
+   Source reads use only the frozen linked Supabase project; target credentials
+   stay in the protected URL environment variable and are never arguments:
+
+   ```bash
+   set -euo pipefail
+   export AZURE_CUTOVER_DATABASE_COMPARISON_FILE="$AZURE_CUTOVER_WORK_DIR/database-comparison.json"
+   test ! -e "$AZURE_CUTOVER_DATABASE_COMPARISON_FILE"
+   unset SOURCE_DATABASE_URL
+   SOURCE_DATABASE_MODE=supabase-linked \
+   SOURCE_DATABASE_FROZEN=1 \
+   SUPABASE_PROJECT_REF="$MIGRATION_EXPECTED_SUPABASE_PROJECT_REF" \
+   SUPABASE_WORKDIR="$MIGRATION_SUPABASE_WORKDIR" \
+   TARGET_DATABASE_URL="$TARGET_DATABASE_URL" \
+     node scripts/azure_database_compare.mjs \
+       > "$AZURE_CUTOVER_DATABASE_COMPARISON_FILE"
+   test -s "$AZURE_CUTOVER_DATABASE_COMPARISON_FILE"
+   ```
+
+9. Compose evidence-v2 only after all eight artifacts exist. The ID below is
+   random and unique; never reuse it after any failed upload or validation:
+
+   ```bash
+   set -euo pipefail
+   umask 077
+   export CUTOVER_ID="$(node --eval 'const {randomBytes}=require("node:crypto"); const stamp=new Date().toISOString().replace(/[-:.]/g, ""); process.stdout.write(`final-${stamp}-${randomBytes(8).toString("hex")}`);')"
+   export AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX="cutovers/$CUTOVER_ID/artifacts"
+   export AZURE_CUTOVER_BLOB_MANIFEST_FILE="$MIGRATION_MANIFEST_FILE"
+   export AZURE_CUTOVER_EVIDENCE_OUTPUT_FILE="$AZURE_CUTOVER_WORK_DIR/evidence-v2.json"
+   test ! -e "$AZURE_CUTOVER_EVIDENCE_OUTPUT_FILE"
+   test "$MIGRATION_SOURCE_FROZEN_AT" = "$AZURE_CUTOVER_SOURCE_FROZEN_AT"
+
+   node scripts/azure_cutover_evidence.mjs
+   test -s "$AZURE_CUTOVER_EVIDENCE_OUTPUT_FILE"
+   export EVIDENCE_SHA256="$(node --eval 'const {createHash}=require("node:crypto"); const {readFileSync}=require("node:fs"); process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"));' "$AZURE_CUTOVER_EVIDENCE_OUTPUT_FILE")"
+   test "${#EVIDENCE_SHA256}" = 64
+   ```
+
+   Upload with a short-lived human or workload identity that has Blob Data
+   Contributor only on the separate evidence container. The application
+   identities must not have access. `--overwrite false` and the unique prefix
+   make every path immutable for this attempt; upload the envelope last:
+
+   ```bash
+   set -euo pipefail
+   : "${MIGRATION_EVIDENCE_STORAGE_ACCOUNT:?evidence storage account is required}"
+   : "${MIGRATION_EVIDENCE_CONTAINER:?private evidence container is required}"
+   : "${MIGRATION_EXPECTED_AZURE_STORAGE_ACCOUNT:?expected target account is required}"
+   test "$MIGRATION_EVIDENCE_STORAGE_ACCOUNT" = "$MIGRATION_EXPECTED_AZURE_STORAGE_ACCOUNT"
+   test "$MIGRATION_EVIDENCE_CONTAINER" != "$AZURE_STORAGE_CONTAINER"
+   public_access="$(az storage container show \
+     --auth-mode login \
+     --account-name "$MIGRATION_EVIDENCE_STORAGE_ACCOUNT" \
+     --name "$MIGRATION_EVIDENCE_CONTAINER" \
+     --query properties.publicAccess \
+     --output tsv \
+     --only-show-errors)"
+   test -z "$public_access" || test "$public_access" = None
+
+   upload_evidence_artifact() {
+     test "$#" = 2
+     az storage blob upload \
+       --auth-mode login \
+       --account-name "$MIGRATION_EVIDENCE_STORAGE_ACCOUNT" \
+       --container-name "$MIGRATION_EVIDENCE_CONTAINER" \
+       --name "$1" \
+       --file "$2" \
+       --overwrite false \
+       --content-cache-control no-store \
+       --output none \
+       --only-show-errors
+   }
+
+   upload_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/frozen-preflight.json" "$AZURE_CUTOVER_PREFLIGHT_FILE"
+   upload_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/database-comparison.json" "$AZURE_CUTOVER_DATABASE_COMPARISON_FILE"
+   upload_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/blob-final-manifest.json" "$AZURE_CUTOVER_BLOB_MANIFEST_FILE"
+   upload_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/database.dump" "$AZURE_CUTOVER_DATABASE_DUMP_FILE"
+   upload_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/database-toc-original.list" "$AZURE_CUTOVER_ORIGINAL_TOC_FILE"
+   upload_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/database-toc-sanitized.list" "$AZURE_CUTOVER_SANITIZED_TOC_FILE"
+   upload_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/restore.log" "$AZURE_CUTOVER_RESTORE_LOG_FILE"
+   upload_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/verify.log" "$AZURE_CUTOVER_VERIFY_LOG_FILE"
+   export EVIDENCE_BLOB="cutovers/$CUTOVER_ID/evidence-v2.json"
+   upload_evidence_artifact "$EVIDENCE_BLOB" "$AZURE_CUTOVER_EVIDENCE_OUTPUT_FILE"
+   ```
+
+   Download and compare every private blob before passing the envelope path and
+   hash to deployment. Keep these local files until the internal control job has
+   independently downloaded and re-hashed the same descriptors:
+
+   ```bash
+   set -euo pipefail
+   export EVIDENCE_DOWNLOAD_DIR="$AZURE_CUTOVER_WORK_DIR/downloaded"
+   install -d -m 700 "$EVIDENCE_DOWNLOAD_DIR"
+
+   verify_evidence_artifact() {
+     test "$#" = 2
+     destination="$EVIDENCE_DOWNLOAD_DIR/${1##*/}"
+     test ! -e "$destination"
+     az storage blob download \
+       --auth-mode login \
+       --account-name "$MIGRATION_EVIDENCE_STORAGE_ACCOUNT" \
+       --container-name "$MIGRATION_EVIDENCE_CONTAINER" \
+       --name "$1" \
+       --file "$destination" \
+       --overwrite false \
+       --output none \
+       --only-show-errors
+     cmp -s "$2" "$destination"
+   }
+
+   verify_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/frozen-preflight.json" "$AZURE_CUTOVER_PREFLIGHT_FILE"
+   verify_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/database-comparison.json" "$AZURE_CUTOVER_DATABASE_COMPARISON_FILE"
+   verify_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/blob-final-manifest.json" "$AZURE_CUTOVER_BLOB_MANIFEST_FILE"
+   verify_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/database.dump" "$AZURE_CUTOVER_DATABASE_DUMP_FILE"
+   verify_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/database-toc-original.list" "$AZURE_CUTOVER_ORIGINAL_TOC_FILE"
+   verify_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/database-toc-sanitized.list" "$AZURE_CUTOVER_SANITIZED_TOC_FILE"
+   verify_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/restore.log" "$AZURE_CUTOVER_RESTORE_LOG_FILE"
+   verify_evidence_artifact "$AZURE_CUTOVER_ARTIFACT_BLOB_PREFIX/verify.log" "$AZURE_CUTOVER_VERIFY_LOG_FILE"
+   verify_evidence_artifact "$EVIDENCE_BLOB" "$AZURE_CUTOVER_EVIDENCE_OUTPUT_FILE"
+   ```
+
+   Dispatch `deploy-azure.yml` from `main` with
+   `confirm_azure_backend_cutover=true`,
+   `final_cutover_evidence_blob=$EVIDENCE_BLOB` and
+   `final_cutover_evidence_sha256=$EVIDENCE_SHA256`:
+
+   ```bash
+   gh workflow run deploy-azure.yml \
+     --ref main \
+     --raw-field confirm_azure_backend_cutover=true \
+     --raw-field final_cutover_evidence_blob="$EVIDENCE_BLOB" \
+     --raw-field final_cutover_evidence_sha256="$EVIDENCE_SHA256"
+   ```
+
+   The internal managed-identity control job re-downloads the envelope and all
+   eight descriptors, enforces size and SHA-256, validates the complete reports,
+   and checks the restored database's live Blob-reference binding before it
+   enables claims.
+10. Deploy `DATA_API_*` and `FILE_STORAGE_BACKEND=azure` together from the
    internal deployment control plane.
-10. Keep Azure read-only until acceptance tests pass, then enable claims/writes.
+11. Keep Azure read-only until acceptance tests pass, then enable claims/writes.
 
 Stop immediately on any restore warning/error, count/hash/sequence mismatch,
 missing referenced blob, decryption failure, unexpected ACL/definer, broadly
