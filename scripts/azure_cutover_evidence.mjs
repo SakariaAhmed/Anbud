@@ -186,7 +186,11 @@ export async function composeCutoverEvidence({
     } else if (artifactKey === "databaseComparison") {
       validateDatabaseComparisonReport(parseJson(inspected.bytes));
     } else if (artifactKey === "blobManifest") {
-      const manifest = validateBlobFinalManifest(parseJson(inspected.bytes));
+      const manifest = validateBlobFinalManifest(
+        parseJson(inspected.bytes),
+        undefined,
+        sourceFrozenAt,
+      );
       const manifestTimestamp = validateFresh(
         manifest.generatedAt,
         now,

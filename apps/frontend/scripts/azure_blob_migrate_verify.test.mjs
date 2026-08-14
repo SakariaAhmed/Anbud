@@ -263,7 +263,7 @@ function baseSourceObjects() {
 }
 
 function migrationInput(overrides = {}) {
-  return {
+  const input = {
     sourceBucket: BUCKET,
     targetContainer: BUCKET,
     allowedBuckets: new Set([BUCKET]),
@@ -277,6 +277,17 @@ function migrationInput(overrides = {}) {
     clock: () => new Date("2026-08-14T12:00:00.000Z"),
     ...overrides,
   };
+  input.dbReferenceFile ??= {
+    status: "sha256-verified",
+    size: 128,
+    sha256: "4".repeat(64),
+    modifiedAt: "2026-08-14T11:55:00.000Z",
+  };
+  input.sourceProjectRef ??= PROJECT_REF;
+  input.sourceFrozenAttested ??= input.mode === "final";
+  input.sourceFrozenAt ??=
+    input.mode === "final" ? "2026-08-14T11:50:00.000Z" : null;
+  return input;
 }
 
 test("pre-copy paginates all source objects, preserves bytes and metadata, and reports orphans/extras", async () => {
@@ -425,6 +436,24 @@ test("bucket allowlist and one-bucket DB input fail closed", () => {
         new Set([BUCKET, "other-documents"]),
       ),
     (error) => error instanceof MigrationError && error.code === "MULTI_BUCKET_REFERENCE",
+  );
+});
+
+test("DB references accept the Supabase linked CLI JSON envelope", () => {
+  assert.deepEqual(
+    parseDatabaseReferences(
+      JSON.stringify({
+        boundary: "synthetic-boundary",
+        rows: [
+          { bucket: BUCKET, path: "folder/referenced.enc" },
+          { bucket: BUCKET, path: "folder/referenced.enc" },
+        ],
+        warning: "untrusted database rows",
+      }),
+      BUCKET,
+      new Set([BUCKET]),
+    ),
+    ["folder/referenced.enc"],
   );
 });
 
@@ -644,7 +673,7 @@ test("preferred linked CLI adapter lists and downloads without S3 credentials an
 });
 
 test("linked CLI mode is configurable without full-access S3 keys", () => {
-  const configuration = configurationFromEnvironment({
+  const environment = {
     SOURCE_STORAGE_MODE: "supabase-linked-cli",
     SOURCE_STORAGE_BUCKET: BUCKET,
     MIGRATION_EXPECTED_SUPABASE_PROJECT_REF: PROJECT_REF,
@@ -658,10 +687,30 @@ test("linked CLI mode is configurable without full-access S3 keys", () => {
     MIGRATION_MANIFEST_FILE: "/secure/manifest.json",
     MIGRATION_DECRYPTION_SMOKE_PATH: SMOKE_PATH,
     APP_ENCRYPTION_KEY: SECRET,
-  });
+  };
+  const configuration = configurationFromEnvironment(environment);
   assert.equal(configuration.source.mode, "supabase-linked-cli");
   assert.equal(configuration.source.accessKeyId, undefined);
   assert.equal(configuration.source.secretAccessKey, undefined);
+  assert.throws(
+    () =>
+      configurationFromEnvironment({
+        ...environment,
+        MIGRATION_MODE: "final",
+      }),
+    (error) => error.code === "SOURCE_NOT_FROZEN",
+  );
+  const finalConfiguration = configurationFromEnvironment({
+    ...environment,
+    MIGRATION_MODE: "final",
+    MIGRATION_SOURCE_FROZEN: "1",
+    MIGRATION_SOURCE_FROZEN_AT: "2026-08-14T11:50:00.000Z",
+  });
+  assert.equal(finalConfiguration.sourceFrozenAttested, true);
+  assert.equal(
+    finalConfiguration.sourceFrozenAt,
+    "2026-08-14T11:50:00.000Z",
+  );
 });
 
 test("linked CLI final mode rejects source bytes that change during the second download", async () => {

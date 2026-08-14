@@ -4,6 +4,7 @@ import {
   CUTOVER_ARTIFACTS,
   CUTOVER_EVIDENCE_VERSION,
   EXPECTED_PUBLIC_TABLES,
+  createDatabaseReferenceBinding,
 } from "../apps/frontend/scripts/run_azure_migration_control.mjs";
 
 export const FIXTURE_TIME = "2026-08-14T12:00:00.000Z";
@@ -106,6 +107,10 @@ export function validDatabaseComparisonReport(overrides = {}) {
 }
 
 export function validBlobManifest(overrides = {}) {
+  const referenceBinding = createDatabaseReferenceBinding(
+    [{ bucket: "anbud-documents", path: "documents/encrypted.bin" }],
+    "anbud-documents",
+  );
   return {
     version: 1,
     status: "verified",
@@ -120,10 +125,21 @@ export function validBlobManifest(overrides = {}) {
     resumedObjectCount: 0,
     finalSourceBodyRecheck: true,
     databaseReferenceReport: {
+      bindingVersion: referenceBinding.version,
+      referenceInventorySha256: referenceBinding.sha256,
       referencedObjectCount: 1,
       missingSourcePaths: [],
       orphanObjectCount: 0,
       orphanPaths: [],
+      sourceReferenceFile: {
+        status: "sha256-verified",
+        size: 128,
+        sha256: "4".repeat(64),
+        modifiedAt: FIXTURE_ARTIFACT_TIME,
+        sourceFrozenAttested: true,
+        sourceFrozenAt: FIXTURE_FROZEN_AT,
+        sourceProjectRef: "abcdefghijklmnopqrst",
+      },
     },
     targetInventoryReport: {
       missingObjectCount: 0,
@@ -138,7 +154,7 @@ export function validBlobManifest(overrides = {}) {
         size: 12,
         sha256: "2".repeat(64),
         contentType: "application/octet-stream",
-        cacheControl: null,
+        cacheControl: "max-age=31536000",
         contentDisposition: null,
         contentEncoding: null,
         contentLanguage: null,

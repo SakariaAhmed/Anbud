@@ -35,6 +35,10 @@ const DEFAULT_EVIDENCE_MAX_AGE_SECONDS = 7_200;
 const MAX_EVIDENCE_BYTES = 256 * 1024;
 export const CUTOVER_EVIDENCE_VERSION = "azure-final-cutover-evidence-v2";
 const PROJECT_JOB_CUTOVER_VERSION = "project-job-cutover-v1";
+const DATABASE_REFERENCE_BINDING_VERSION =
+  "anbud-database-storage-references-v1";
+const DATABASE_REFERENCE_PAGE_SIZE = 1_000;
+const MAX_DATABASE_REFERENCE_ROWS = 1_000_000;
 
 export const EXPECTED_PUBLIC_TABLES = Object.freeze([
   "activity_events",
@@ -177,6 +181,47 @@ function validManifestObjectPath(value) {
     !/%(?:00|2e|2f|5c)/iu.test(value) &&
     !value.split("/").some((part) => part === "." || part === "..")
   );
+}
+
+function updateLengthPrefixed(hash, value) {
+  const bytes = Buffer.from(value, "utf8");
+  const length = Buffer.allocUnsafe(4);
+  length.writeUInt32BE(bytes.byteLength);
+  hash.update(length);
+  hash.update(bytes);
+}
+
+export function createDatabaseReferenceBinding(entries, expectedContainer) {
+  if (!Array.isArray(entries)) fail("database_reference_inventory_invalid");
+  const unique = new Map();
+  for (const entry of entries) {
+    if (
+      !exactKeys(entry, ["bucket", "path"]) ||
+      typeof entry.bucket !== "string" ||
+      !/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$/u.test(entry.bucket) ||
+      (expectedContainer && entry.bucket !== expectedContainer) ||
+      !validManifestObjectPath(entry.path)
+    ) {
+      fail("database_reference_inventory_invalid");
+    }
+    unique.set(`${entry.bucket}\u0000${entry.path}`, entry);
+  }
+  const sorted = [...unique.values()].sort((left, right) => {
+    const leftKey = `${left.bucket}\u0000${left.path}`;
+    const rightKey = `${right.bucket}\u0000${right.path}`;
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
+  const hash = createHash("sha256");
+  updateLengthPrefixed(hash, DATABASE_REFERENCE_BINDING_VERSION);
+  for (const entry of sorted) {
+    updateLengthPrefixed(hash, entry.bucket);
+    updateLengthPrefixed(hash, entry.path);
+  }
+  return {
+    version: DATABASE_REFERENCE_BINDING_VERSION,
+    count: sorted.length,
+    sha256: hash.digest("hex"),
+  };
 }
 
 function validArtifactPrefix(value) {
@@ -471,6 +516,73 @@ async function probeInternalDataApi(config, fetchImpl = fetch) {
   }
 }
 
+export async function queryTargetDatabaseReferenceBinding(
+  config,
+  fetchImpl = fetch,
+) {
+  const entries = [];
+  const headers = {
+    accept: "application/json",
+    apikey: config.dataApiServiceRoleKey,
+    authorization: `Bearer ${config.dataApiServiceRoleKey}`,
+  };
+  let rowCount = 0;
+  for (const table of ["documents", "service_documents"]) {
+    let offset = 0;
+    while (true) {
+      const url = new URL(`${config.dataApiRoot}/${table}`);
+      url.searchParams.set("select", "file_storage_bucket,file_storage_path");
+      url.searchParams.set("file_storage_path", "not.is.null");
+      url.searchParams.set(
+        "order",
+        "file_storage_bucket.asc,file_storage_path.asc,id.asc",
+      );
+      url.searchParams.set("limit", String(DATABASE_REFERENCE_PAGE_SIZE));
+      url.searchParams.set("offset", String(offset));
+      const response = await checkedFetch(
+        fetchImpl,
+        url,
+        {
+          method: "GET",
+          headers,
+          redirect: "error",
+          signal: requestSignal(config.timeoutMs),
+        },
+        "data_api_database_reference_query_failed",
+      );
+      let page;
+      try {
+        page = await response.json();
+      } catch {
+        fail("data_api_database_reference_inventory_invalid");
+      }
+      if (!Array.isArray(page) || page.length > DATABASE_REFERENCE_PAGE_SIZE) {
+        fail("data_api_database_reference_inventory_invalid");
+      }
+      rowCount += page.length;
+      if (rowCount > MAX_DATABASE_REFERENCE_ROWS) {
+        fail("data_api_database_reference_inventory_too_large");
+      }
+      for (const row of page) {
+        if (
+          !exactKeys(row, ["file_storage_bucket", "file_storage_path"]) ||
+          typeof row.file_storage_bucket !== "string" ||
+          typeof row.file_storage_path !== "string"
+        ) {
+          fail("data_api_database_reference_inventory_invalid");
+        }
+        entries.push({
+          bucket: row.file_storage_bucket,
+          path: row.file_storage_path,
+        });
+      }
+      if (page.length < DATABASE_REFERENCE_PAGE_SIZE) break;
+      offset += page.length;
+    }
+  }
+  return createDatabaseReferenceBinding(entries, config.storageContainer);
+}
+
 function plainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -721,7 +833,11 @@ function validateBlobMetadata(value) {
   );
 }
 
-export function validateBlobFinalManifest(manifest, expectedTargetContainer) {
+export function validateBlobFinalManifest(
+  manifest,
+  expectedTargetContainer,
+  expectedSourceFrozenAt,
+) {
   const rootKeys = [
     "version",
     "status",
@@ -759,11 +875,17 @@ export function validateBlobFinalManifest(manifest, expectedTargetContainer) {
     manifest.uploadedObjectCount + manifest.resumedObjectCount !== manifest.sourceObjectCount ||
     manifest.finalSourceBodyRecheck !== true ||
     !exactKeys(manifest.databaseReferenceReport, [
+      "bindingVersion",
+      "referenceInventorySha256",
       "referencedObjectCount",
       "missingSourcePaths",
       "orphanObjectCount",
       "orphanPaths",
+      "sourceReferenceFile",
     ]) ||
+    manifest.databaseReferenceReport.bindingVersion !==
+      DATABASE_REFERENCE_BINDING_VERSION ||
+    !lowercaseSha256(manifest.databaseReferenceReport.referenceInventorySha256) ||
     !nonNegativeSafeInteger(manifest.databaseReferenceReport.referencedObjectCount) ||
     manifest.databaseReferenceReport.referencedObjectCount === 0 ||
     !exactArray(manifest.databaseReferenceReport.missingSourcePaths, []) ||
@@ -774,6 +896,24 @@ export function validateBlobFinalManifest(manifest, expectedTargetContainer) {
     manifest.databaseReferenceReport.referencedObjectCount +
       manifest.databaseReferenceReport.orphanObjectCount !==
       manifest.sourceObjectCount ||
+    !exactKeys(manifest.databaseReferenceReport.sourceReferenceFile, [
+      "status",
+      "size",
+      "sha256",
+      "modifiedAt",
+      "sourceFrozenAttested",
+      "sourceFrozenAt",
+      "sourceProjectRef",
+    ]) ||
+    manifest.databaseReferenceReport.sourceReferenceFile.status !== "sha256-verified" ||
+    !Number.isSafeInteger(manifest.databaseReferenceReport.sourceReferenceFile.size) ||
+    manifest.databaseReferenceReport.sourceReferenceFile.size <= 0 ||
+    manifest.databaseReferenceReport.sourceReferenceFile.size > 64 * 1024 * 1024 ||
+    !lowercaseSha256(manifest.databaseReferenceReport.sourceReferenceFile.sha256) ||
+    manifest.databaseReferenceReport.sourceReferenceFile.sourceFrozenAttested !== true ||
+    !/^[a-z0-9]{20}$/u.test(
+      manifest.databaseReferenceReport.sourceReferenceFile.sourceProjectRef,
+    ) ||
     !exactKeys(manifest.targetInventoryReport, [
       "missingObjectCount",
       "extraObjectCount",
@@ -791,7 +931,27 @@ export function validateBlobFinalManifest(manifest, expectedTargetContainer) {
   ) {
     fail("cutover_blob_manifest_unverified");
   }
-  parseEvidenceTimestamp(manifest.generatedAt, "cutover_blob_manifest_timestamp_invalid");
+  const manifestGeneratedAt = parseEvidenceTimestamp(
+    manifest.generatedAt,
+    "cutover_blob_manifest_timestamp_invalid",
+  );
+  const referenceModifiedAt = parseEvidenceTimestamp(
+    manifest.databaseReferenceReport.sourceReferenceFile.modifiedAt,
+    "cutover_blob_reference_timestamp_invalid",
+  );
+  const sourceFrozenAt = parseEvidenceTimestamp(
+    manifest.databaseReferenceReport.sourceReferenceFile.sourceFrozenAt,
+    "cutover_blob_reference_freeze_invalid",
+  );
+  if (
+    (expectedSourceFrozenAt &&
+      manifest.databaseReferenceReport.sourceReferenceFile.sourceFrozenAt !==
+        expectedSourceFrozenAt) ||
+    referenceModifiedAt < sourceFrozenAt ||
+    referenceModifiedAt > manifestGeneratedAt
+  ) {
+    fail("cutover_blob_reference_provenance_invalid");
+  }
   const seenPaths = new Set();
   let sourceBytes = 0;
   for (const object of manifest.objects) {
@@ -813,7 +973,7 @@ export function validateBlobFinalManifest(manifest, expectedTargetContainer) {
       !nonNegativeSafeInteger(object.size) ||
       !lowercaseSha256(object.sha256) ||
       object.contentType !== "application/octet-stream" ||
-      object.cacheControl !== null ||
+      object.cacheControl !== "max-age=31536000" ||
       object.contentDisposition !== null ||
       object.contentEncoding !== null ||
       object.contentLanguage !== null ||
@@ -839,6 +999,20 @@ export function validateBlobFinalManifest(manifest, expectedTargetContainer) {
     manifest.databaseReferenceReport.orphanPaths.some((path) => !seenPaths.has(path))
   ) {
     fail("cutover_blob_inventory_mismatch");
+  }
+  const orphanSet = new Set(manifest.databaseReferenceReport.orphanPaths);
+  const referenceBinding = createDatabaseReferenceBinding(
+    manifest.objects
+      .filter((object) => !orphanSet.has(object.path))
+      .map((object) => ({ bucket: manifest.sourceBucket, path: object.path })),
+    manifest.targetContainer,
+  );
+  if (
+    referenceBinding.count !== manifest.databaseReferenceReport.referencedObjectCount ||
+    referenceBinding.sha256 !==
+      manifest.databaseReferenceReport.referenceInventorySha256
+  ) {
+    fail("cutover_blob_reference_binding_mismatch");
   }
   return manifest;
 }
@@ -1097,6 +1271,7 @@ export async function probeAzureBlobWithManagedIdentity(
   validateFinalCutoverEvidence(evidence, config, clock);
 
   const verifiedArtifacts = [];
+  let verifiedBlobManifest;
   for (const artifactKey of CUTOVER_ARTIFACT_KEYS) {
     const descriptor = evidence.artifacts[artifactKey];
     const response = await readBlob(
@@ -1129,10 +1304,15 @@ export async function probeAzureBlobWithManagedIdentity(
       if (artifactKey === "preflight") validateFrozenPreflightReport(report);
       if (artifactKey === "databaseComparison") validateDatabaseComparisonReport(report);
       if (artifactKey === "blobManifest") {
-        validateBlobFinalManifest(report, config.storageContainer);
+        validateBlobFinalManifest(
+          report,
+          config.storageContainer,
+          evidence.source.frozenAt,
+        );
         if (report.generatedAt !== descriptor.generatedAt) {
           fail("cutover_blob_manifest_timestamp_mismatch");
         }
+        verifiedBlobManifest = report;
       }
     }
     verifiedArtifacts.push({
@@ -1140,6 +1320,21 @@ export async function probeAzureBlobWithManagedIdentity(
       size: descriptor.size,
       sha256: descriptor.sha256,
     });
+  }
+  if (!verifiedBlobManifest) fail("cutover_blob_manifest_unverified");
+  const targetReferenceBinding = await queryTargetDatabaseReferenceBinding(
+    config,
+    fetchImpl,
+  );
+  if (
+    targetReferenceBinding.version !==
+      verifiedBlobManifest.databaseReferenceReport.bindingVersion ||
+    targetReferenceBinding.count !==
+      verifiedBlobManifest.databaseReferenceReport.referencedObjectCount ||
+    targetReferenceBinding.sha256 !==
+      verifiedBlobManifest.databaseReferenceReport.referenceInventorySha256
+  ) {
+    fail("target_database_reference_binding_mismatch");
   }
   return {
     version: evidence.version,

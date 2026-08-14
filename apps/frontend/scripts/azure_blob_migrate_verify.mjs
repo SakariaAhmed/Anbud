@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import {
   mkdtemp,
+  lstat,
   readFile,
   rename,
   rm,
@@ -46,6 +47,9 @@ const SAFE_HTTP_HEADER_VALUE = /^[\x20-\x7e]*$/u;
 const CONTROL_CHARACTERS = /[\p{Cc}\p{Cf}]/u;
 const ENCODED_PATH_SPECIAL = /%(?:00|2e|2f|5c)/iu;
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
+export const DATABASE_REFERENCE_BINDING_VERSION =
+  "anbud-database-storage-references-v1";
+const MAX_REFERENCE_FILE_BYTES = 64 * 1024 * 1024;
 
 let awsS3ModulePromise;
 
@@ -110,6 +114,43 @@ export function validateObjectPath(value) {
     stop("UNSAFE_OBJECT_PATH", "Storage inventory contains an unsafe object path.");
   }
   return path;
+}
+
+function exactIsoTimestamp(value, code) {
+  const parsed = Date.parse(value);
+  if (
+    typeof value !== "string" ||
+    !Number.isFinite(parsed) ||
+    new Date(parsed).toISOString() !== value
+  ) {
+    stop(code, "The frozen source timestamp is invalid.");
+  }
+  return parsed;
+}
+
+function updateLengthPrefixed(hash, value) {
+  const bytes = Buffer.from(value, "utf8");
+  const length = Buffer.allocUnsafe(4);
+  length.writeUInt32BE(bytes.byteLength);
+  hash.update(length);
+  hash.update(bytes);
+}
+
+export function createDatabaseReferenceBinding(sourceBucket, paths) {
+  const bucket = validateBucketName(sourceBucket);
+  const uniquePaths = [...new Set(paths.map(validateObjectPath))].sort();
+  const hash = createHash("sha256");
+  updateLengthPrefixed(hash, DATABASE_REFERENCE_BINDING_VERSION);
+  for (const path of uniquePaths) {
+    updateLengthPrefixed(hash, bucket);
+    updateLengthPrefixed(hash, path);
+  }
+  return {
+    version: DATABASE_REFERENCE_BINDING_VERSION,
+    count: uniquePaths.length,
+    sha256: hash.digest("hex"),
+    paths: uniquePaths,
+  };
 }
 
 function validateBucketName(value) {
@@ -288,6 +329,23 @@ export function configurationFromEnvironment(environment = process.env, argv = [
     }
     stop("INVALID_ARGUMENT", "Only --mode=pre-copy, --mode=final and --help are accepted.");
   }
+  const mode = parseMode(cliMode || environment.MIGRATION_MODE);
+  const sourceFrozenAttested = environment.MIGRATION_SOURCE_FROZEN === "1";
+  let sourceFrozenAt = null;
+  if (mode === MODE_FINAL) {
+    if (!sourceFrozenAttested) {
+      stop(
+        "SOURCE_NOT_FROZEN",
+        "Final mode requires MIGRATION_SOURCE_FROZEN=1 after the technical write freeze.",
+      );
+    }
+    sourceFrozenAt = required(
+      environment.MIGRATION_SOURCE_FROZEN_AT,
+      "SOURCE_NOT_FROZEN",
+      "Final mode requires the exact frozen-source timestamp.",
+    );
+    exactIsoTimestamp(sourceFrozenAt, "SOURCE_NOT_FROZEN");
+  }
 
   const sourceBucket = validateBucketName(
     environment.SOURCE_STORAGE_BUCKET || environment.SUPABASE_S3_BUCKET,
@@ -405,7 +463,9 @@ export function configurationFromEnvironment(environment = process.env, argv = [
 
   return {
     help: false,
-    mode: parseMode(cliMode || environment.MIGRATION_MODE),
+    mode,
+    sourceFrozenAttested,
+    sourceFrozenAt,
     source,
     azure,
     allowedBuckets,
@@ -447,6 +507,9 @@ export function configurationFromEnvironment(environment = process.env, argv = [
 
 function referenceEntries(document) {
   if (Array.isArray(document)) return document;
+  if (document && typeof document === "object" && Array.isArray(document.rows)) {
+    return document.rows;
+  }
   if (document && typeof document === "object" && Array.isArray(document.references)) {
     return document.references;
   }
@@ -502,13 +565,54 @@ export function parseDatabaseReferences(raw, sourceBucket, allowedBuckets) {
   return [...paths].sort();
 }
 
-async function readDatabaseReferences(file, sourceBucket, allowedBuckets) {
+export async function readDatabaseReferences(file, sourceBucket, allowedBuckets) {
+  const before = await externalOperation(
+    "REFERENCE_FILE_READ_FAILED",
+    "Could not inspect the DB reference input.",
+    () => lstat(file),
+  );
+  if (
+    before.isSymbolicLink() ||
+    !before.isFile() ||
+    before.size <= 0 ||
+    before.size > MAX_REFERENCE_FILE_BYTES
+  ) {
+    stop("INVALID_REFERENCE_FILE", "The DB reference input has an invalid bounded size.");
+  }
   const raw = await externalOperation(
     "REFERENCE_FILE_READ_FAILED",
     "Could not read the DB reference input.",
-    () => readFile(file, "utf8"),
+    () => readFile(file),
   );
-  return parseDatabaseReferences(raw, sourceBucket, allowedBuckets);
+  const after = await externalOperation(
+    "REFERENCE_FILE_READ_FAILED",
+    "Could not re-inspect the DB reference input.",
+    () => lstat(file),
+  );
+  if (
+    raw.byteLength !== before.size ||
+    after.size !== before.size ||
+    after.mtimeMs !== before.mtimeMs ||
+    after.ino !== before.ino ||
+    after.dev !== before.dev
+  ) {
+    stop("REFERENCE_FILE_CHANGED", "The DB reference input changed while it was read.");
+  }
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+  } catch {
+    stop("INVALID_REFERENCE_FILE", "The DB reference input is not valid UTF-8.");
+  }
+  return {
+    paths: parseDatabaseReferences(text, sourceBucket, allowedBuckets),
+    file: {
+      status: "sha256-verified",
+      size: raw.byteLength,
+      sha256: createHash("sha256").update(raw).digest("hex"),
+      modifiedAt: new Date(before.mtimeMs).toISOString(),
+    },
+  };
 }
 
 function sourceEntryFromList(entry) {
@@ -1191,6 +1295,10 @@ export async function migrateAndVerify({
   targetContainer,
   allowedBuckets = new Set([sourceBucket]),
   dbReferences,
+  dbReferenceFile,
+  sourceProjectRef,
+  sourceFrozenAttested = false,
+  sourceFrozenAt = null,
   mode,
   decryptionSmokePath,
   encryptionSecret,
@@ -1210,7 +1318,48 @@ export async function migrateAndVerify({
   if (checkedSourceBucket !== checkedTargetContainer) {
     stop("BUCKET_CONTAINER_MISMATCH", "The target container must preserve the source bucket name.");
   }
-  const references = [...new Set(dbReferences.map(validateObjectPath))].sort();
+  const referenceBinding = createDatabaseReferenceBinding(
+    checkedSourceBucket,
+    dbReferences,
+  );
+  const references = referenceBinding.paths;
+  const checkedProjectRef = validateProjectRef(sourceProjectRef);
+  if (
+    !dbReferenceFile ||
+    dbReferenceFile.status !== "sha256-verified" ||
+    !Number.isSafeInteger(dbReferenceFile.size) ||
+    dbReferenceFile.size <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(dbReferenceFile.sha256) ||
+    typeof dbReferenceFile.modifiedAt !== "string"
+  ) {
+    stop(
+      "INVALID_REFERENCE_PROVENANCE",
+      "The DB reference file must have verified size, timestamp, and SHA-256 provenance.",
+    );
+  }
+  const referenceModifiedAt = exactIsoTimestamp(
+    dbReferenceFile.modifiedAt,
+    "INVALID_REFERENCE_PROVENANCE",
+  );
+  const now = clock().getTime();
+  if (!Number.isFinite(now) || referenceModifiedAt > now + 60_000) {
+    stop(
+      "INVALID_REFERENCE_PROVENANCE",
+      "The DB reference file timestamp is invalid.",
+    );
+  }
+  if (checkedMode === MODE_FINAL) {
+    if (sourceFrozenAttested !== true || typeof sourceFrozenAt !== "string") {
+      stop("SOURCE_NOT_FROZEN", "Final Blob verification requires a frozen source.");
+    }
+    const frozenAt = exactIsoTimestamp(sourceFrozenAt, "SOURCE_NOT_FROZEN");
+    if (frozenAt > now + 60_000 || referenceModifiedAt < frozenAt) {
+      stop(
+        "STALE_REFERENCE_FILE",
+        "The final DB reference file must be generated after the source freeze.",
+      );
+    }
+  }
   const smokePath = validateObjectPath(decryptionSmokePath);
   if (!references.includes(smokePath)) {
     stop("DECRYPTION_SMOKE_FAILED", "The decryption smoke object must be DB-referenced.");
@@ -1345,10 +1494,21 @@ export async function migrateAndVerify({
       finalSourceBodyRecheck:
         checkedMode === MODE_FINAL && sourceAdapter.requiresFinalBodyVerification,
       databaseReferenceReport: {
+        bindingVersion: referenceBinding.version,
+        referenceInventorySha256: referenceBinding.sha256,
         referencedObjectCount: references.length,
         missingSourcePaths: [],
         orphanObjectCount: orphanPaths.length,
         orphanPaths,
+        sourceReferenceFile: {
+          status: dbReferenceFile.status,
+          size: dbReferenceFile.size,
+          sha256: dbReferenceFile.sha256,
+          modifiedAt: dbReferenceFile.modifiedAt,
+          sourceFrozenAttested: checkedMode === MODE_FINAL && sourceFrozenAttested === true,
+          sourceFrozenAt: checkedMode === MODE_FINAL ? sourceFrozenAt : null,
+          sourceProjectRef: checkedProjectRef,
+        },
       },
       targetInventoryReport: {
         missingObjectCount: 0,
@@ -1411,7 +1571,7 @@ function helpText() {
 export async function runCli(environment = process.env, argv = process.argv.slice(2)) {
   const configuration = configurationFromEnvironment(environment, argv);
   if (configuration.help) return { help: helpText() };
-  const dbReferences = await readDatabaseReferences(
+  const dbReferenceInventory = await readDatabaseReferences(
     configuration.referencesFile,
     configuration.source.bucket,
     configuration.allowedBuckets,
@@ -1424,7 +1584,11 @@ export async function runCli(environment = process.env, argv = process.argv.slic
       sourceBucket: configuration.source.bucket,
       targetContainer: configuration.azure.containerName,
       allowedBuckets: configuration.allowedBuckets,
-      dbReferences,
+      dbReferences: dbReferenceInventory.paths,
+      dbReferenceFile: dbReferenceInventory.file,
+      sourceProjectRef: configuration.source.expectedProjectRef,
+      sourceFrozenAttested: configuration.sourceFrozenAttested,
+      sourceFrozenAt: configuration.sourceFrozenAt,
       mode: configuration.mode,
       decryptionSmokePath: configuration.decryptionSmokePath,
       encryptionSecret: configuration.encryptionSecret,

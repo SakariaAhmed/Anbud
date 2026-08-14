@@ -9,7 +9,9 @@ import {
   CUTOVER_ARTIFACTS,
   MigrationControlError,
   activateTargetProjectJobClaims,
+  createDatabaseReferenceBinding,
   probeAzureBlobWithManagedIdentity,
+  queryTargetDatabaseReferenceBinding,
   runAzureMigrationControl,
   validateFinalCutoverEvidence,
   validateMigrationControlConfiguration,
@@ -114,6 +116,21 @@ function managedIdentityFetch(config, evidenceBundle, calls = []) {
             access_token: `synthetic.${"a".repeat(120)}.token`,
             client_id: config.managedIdentityClientId,
           };
+        },
+      };
+    }
+    if (url.hostname === new URL(config.dataApiRoot).hostname) {
+      return {
+        ok: true,
+        async json() {
+          return url.pathname.endsWith("/documents")
+            ? [
+                {
+                  file_storage_bucket: "anbud-documents",
+                  file_storage_path: "documents/encrypted.bin",
+                },
+              ]
+            : [];
         },
       };
     }
@@ -237,7 +254,7 @@ test("Blob probe uses the local identity endpoint and a read-only container requ
     clock,
   );
 
-  assert.equal(calls.length, 12);
+  assert.equal(calls.length, 14);
   assert.equal(calls[0].url.protocol, "http:");
   assert.equal(calls[0].url.hostname, "localhost");
   assert.equal(
@@ -266,8 +283,64 @@ test("Blob probe uses the local identity endpoint and a read-only container requ
   assert.match(calls[3].options.headers.authorization, /^Bearer synthetic\./u);
   assert.equal(result.version, "azure-final-cutover-evidence-v2");
   assert.equal(result.verifiedArtifacts.length, 8);
-  assert.ok(
-    calls.slice(3).every(({ options }) => options.method === "GET"),
+  assert.ok(calls.slice(3).every(({ options }) => options.method === "GET"));
+  assert.deepEqual(
+    calls.slice(-2).map(({ url }) => url.pathname),
+    ["/documents", "/service_documents"],
+  );
+});
+
+test("target DB reference binding is paginated, deduplicated, and container-bound", async () => {
+  const config = validateMigrationControlConfiguration(validEnvironment());
+  const calls = [];
+  const binding = await queryTargetDatabaseReferenceBinding(
+    config,
+    async (url) => {
+      calls.push(url);
+      const offset = Number(url.searchParams.get("offset"));
+      const isDocuments = url.pathname.endsWith("/documents");
+      const page =
+        isDocuments && offset === 0
+          ? Array.from({ length: 1_000 }, () => ({
+              file_storage_bucket: "anbud-documents",
+              file_storage_path: "documents/encrypted.bin",
+            }))
+          : [];
+      return { ok: true, async json() { return page; } };
+    },
+  );
+  assert.deepEqual(
+    binding,
+    createDatabaseReferenceBinding(
+      [{ bucket: "anbud-documents", path: "documents/encrypted.bin" }],
+      "anbud-documents",
+    ),
+  );
+  assert.deepEqual(
+    calls.map((url) => [url.pathname, url.searchParams.get("offset")]),
+    [
+      ["/documents", "0"],
+      ["/documents", "1000"],
+      ["/service_documents", "0"],
+    ],
+  );
+});
+
+test("Blob probe rejects a manifest whose source reference binding differs from restored Azure DB", async () => {
+  const config = validateMigrationControlConfiguration(validEnvironment());
+  const baseFetch = managedIdentityFetch(config, bundle);
+  await assert.rejects(
+    probeAzureBlobWithManagedIdentity(
+      config,
+      async (url, options) => {
+        if (url.hostname === new URL(config.dataApiRoot).hostname) {
+          return { ok: true, async json() { return []; } };
+        }
+        return baseFetch(url, options);
+      },
+      clock,
+    ),
+    /target_database_reference_binding_mismatch/u,
   );
 });
 

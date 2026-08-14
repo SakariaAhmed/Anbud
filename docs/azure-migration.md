@@ -569,7 +569,41 @@ as a performance experiment because it cannot be reduced later.
    and no other writers.
 4. Re-run `azure_migration_preflight.mjs` against the now-frozen source and stop
    on any schema, migration, function, locale, job or size drift.
-5. Run the final Blob delta and freeze the source manifest.
+5. Generate the reference inventory from the already-frozen linked database,
+   then run the final Blob delta with the same exact freeze timestamp. Never
+   hand-edit or reuse this file: the Blob manifest pins its bytes, mtime,
+   project ref, unique reference count and deterministic reference SHA-256.
+   During activation the internal control job queries `documents` and
+   `service_documents` from the restored Azure database and requires the same
+   count/SHA-256, so an omitted database reference fails closed.
+
+   ```bash
+   umask 077
+   test -n "$AZURE_CUTOVER_SOURCE_FROZEN_AT"
+   supabase db query \
+     --linked \
+     --output json \
+     --log-level error \
+     --workdir "$MIGRATION_SUPABASE_WORKDIR" \
+     "SELECT file_storage_bucket AS bucket, file_storage_path AS path
+        FROM public.documents
+       WHERE file_storage_path IS NOT NULL
+       UNION ALL
+      SELECT file_storage_bucket AS bucket, file_storage_path AS path
+        FROM public.service_documents
+       WHERE file_storage_path IS NOT NULL
+       ORDER BY 1, 2" \
+     > "$MIGRATION_DB_REFERENCES_FILE"
+   test -s "$MIGRATION_DB_REFERENCES_FILE"
+
+   export MIGRATION_SOURCE_FROZEN=1
+   export MIGRATION_SOURCE_FROZEN_AT="$AZURE_CUTOVER_SOURCE_FROZEN_AT"
+   npm --prefix apps/frontend run storage:migrate:azure -- --mode=final
+   ```
+
+   Keep the reference file on mode-`0600` temporary storage, and delete it with
+   the other local evidence only after the private evidence upload has been
+   downloaded and re-hashed successfully.
 6. Drop the stale `anbud_validation` database after retaining its acceptance
    evidence. Never keep two full restores on the 32 GiB server during cutover.
 7. Take a new consistent database dump and restore it into the empty production
