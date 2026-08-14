@@ -36,36 +36,41 @@ export function ProjectGeneratorTab({
   return (
     <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(18rem,22.5rem)_minmax(0,1fr)]">
       {/* Form */}
-      <div className="min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="border-b bg-muted/50 px-4 py-4">
-          <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            Løsningsbeskrivelse
-          </p>
-          <h2 className="mt-1.5 text-lg font-bold text-foreground">
-            Bygg neste versjon av utkastet
-          </h2>
-          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-            Generatoren bruker dokumentbanken, tjenestebeskrivelsen, lagret
-            analyse og tidligere løsningsbeskrivelser som kunnskapsbase.
-          </p>
-        </div>
-
-        <form onSubmit={onSubmit} className="p-4">
-          <Button type="submit" className="h-10 w-full rounded-lg text-sm" disabled={busy}>
-            {busy ? (
-              <Spinner className="size-4" />
-            ) : (
-              <Sparkles data-icon="inline-start" />
-            )}
-            Generer ny løsningsbeskrivelse
-          </Button>
-        </form>
-
-        {busy && busyMessage ? (
-          <div className="px-4 pb-4">
-            <GenerationProgress message={busyMessage} progress={busyProgress} />
+      <div className="min-w-0 self-start overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="space-y-5 px-6 py-6">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Løsningsbeskrivelse
+            </p>
+            <h2 className="mt-1.5 font-serif text-base font-semibold tracking-tight text-slate-900">
+              Bygg neste versjon av utkastet
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Generatoren bruker dokumentbanken, tjenestebeskrivelsen, lagret
+              analyse og tidligere løsningsbeskrivelser som kunnskapsbase.
+            </p>
           </div>
-        ) : null}
+
+          <form onSubmit={onSubmit} className="border-t border-slate-100 pt-5">
+            <Button
+              type="submit"
+              className="h-11 w-full justify-center rounded-xl bg-blue-900 text-sm font-semibold text-white shadow-sm transition-colors duration-[180ms] hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
+              disabled={busy}
+            >
+              {busy ? (
+                <Spinner className="size-4" />
+              ) : (
+                <Sparkles data-icon="inline-start" />
+              )}
+              Generer ny løsningsbeskrivelse
+            </Button>
+            {busy && busyMessage ? (
+              <div className="mt-3">
+                <GenerationProgress message={busyMessage} progress={busyProgress} />
+              </div>
+            ) : null}
+          </form>
+        </div>
       </div>
 
       {/* Artifacts list */}

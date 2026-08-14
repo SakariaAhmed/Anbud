@@ -19,6 +19,8 @@ test("parses every supported access command", () => {
   assert.deepEqual(
     parseProjectAccessCommand("POST", {
       email: "guest@example.no",
+      displayName: "Gjest Arkitekt",
+      guestDescription: "Ekstern arkitekt fra samarbeidspartner",
       role: "viewer",
     }),
     {
@@ -26,7 +28,8 @@ test("parses every supported access command", () => {
       command: {
         action: "invite",
         email: "guest@example.no",
-        displayName: null,
+        displayName: "Gjest Arkitekt",
+        guestDescription: "Ekstern arkitekt fra samarbeidspartner",
         role: "viewer",
         expiresAt: null,
       },
@@ -64,6 +67,8 @@ test("rejects owner grants, ambiguous targets, oversized values, and unknown act
   for (const result of [
     parseProjectAccessCommand("POST", {
       email: "guest@example.no",
+      displayName: "Gjest Arkitekt",
+      guestDescription: "Ekstern arkitekt",
       role: "owner",
     }),
     parseProjectAccessCommand("PATCH", {
@@ -74,6 +79,14 @@ test("rejects owner grants, ambiguous targets, oversized values, and unknown act
     parseProjectAccessCommand("POST", {
       action: "invite",
       email: "x".repeat(321),
+      displayName: "Gjest Arkitekt",
+      guestDescription: "Ekstern arkitekt",
+      role: "viewer",
+    }),
+    parseProjectAccessCommand("POST", {
+      action: "invite",
+      email: "guest@example.no",
+      displayName: "Gjest Arkitekt",
       role: "viewer",
     }),
     parseProjectAccessCommand("POST", { action: "make_admin" }),

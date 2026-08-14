@@ -5591,3 +5591,334 @@ revoke execute on function public.stable_main_rollback_bridge_preflight()
   from public, anon, authenticated;
 grant execute on function public.stable_main_rollback_bridge_preflight()
   to service_role;
+
+-- Singleton administrator and atomic group-project access management.
+with ranked_admins as (
+  select
+    principal_id,
+    row_number() over (
+      order by (principal_id = granted_by) desc, granted_at desc, principal_id
+    ) as position
+  from public.app_principal_roles
+  where role = 'admin'
+), removed_admins as (
+  delete from public.app_principal_roles roles
+  using ranked_admins ranked
+  where roles.principal_id = ranked.principal_id
+    and roles.role = 'admin'
+    and ranked.position > 1
+  returning roles.principal_id
+)
+update public.app_sessions session
+set revoked_at = coalesce(session.revoked_at, now())
+where session.principal_id in (
+  select principal_id from removed_admins
+)
+  and session.revoked_at is null;
+
+create unique index if not exists app_principal_roles_single_admin_idx
+  on public.app_principal_roles ((role))
+  where role = 'admin';
+
+create or replace function public.set_principal_admin(
+  p_principal_id text,
+  p_is_admin boolean,
+  p_granted_by text
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if not p_is_admin then
+    raise exception 'The administrator role is locked';
+  end if;
+  if not exists (
+    select 1
+    from public.app_principals principal
+    where principal.id = p_principal_id
+      and principal.identity_type = 'internal'
+      and principal.disabled_at is null
+  ) then
+    raise exception 'Administrator status requires an active internal principal';
+  end if;
+
+  update public.app_sessions session
+  set revoked_at = coalesce(session.revoked_at, now())
+  where session.principal_id in (
+    select roles.principal_id
+    from public.app_principal_roles roles
+    where roles.role = 'admin'
+      and roles.principal_id <> p_principal_id
+  )
+    and session.revoked_at is null;
+
+  delete from public.app_principal_roles
+  where role = 'admin'
+    and principal_id <> p_principal_id;
+
+  insert into public.app_principal_roles (
+    principal_id,
+    role,
+    granted_by
+  )
+  values (p_principal_id, 'admin', p_granted_by)
+  on conflict (principal_id, role) do update
+  set
+    granted_by = excluded.granted_by,
+    granted_at = now();
+end;
+$$;
+
+create or replace function public.replace_group_project_access(
+  p_group_id uuid,
+  p_project_ids uuid[],
+  p_roles text[],
+  p_granted_by text
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1 from public.app_groups app_group where app_group.id = p_group_id
+  ) then
+    raise exception 'Group does not exist';
+  end if;
+  if cardinality(coalesce(p_project_ids, array[]::uuid[]))
+      <> cardinality(coalesce(p_roles, array[]::text[])) then
+    raise exception 'Project and role counts must match';
+  end if;
+  if exists (
+    select 1
+    from unnest(
+      coalesce(p_project_ids, array[]::uuid[]),
+      coalesce(p_roles, array[]::text[])
+    ) requested(project_id, role)
+    where requested.role not in ('editor', 'viewer', 'restricted_viewer')
+  ) then
+    raise exception 'Invalid group role';
+  end if;
+  if (
+    select count(*)
+    from unnest(coalesce(p_project_ids, array[]::uuid[])) project_id
+  ) <> (
+    select count(distinct project_id)
+    from unnest(coalesce(p_project_ids, array[]::uuid[])) project_id
+  ) then
+    raise exception 'Duplicate project grant';
+  end if;
+
+  update public.project_group_grants
+  set revoked_at = coalesce(revoked_at, now())
+  where group_id = p_group_id
+    and revoked_at is null;
+
+  insert into public.project_group_grants (
+    project_id,
+    group_id,
+    role,
+    granted_by,
+    revoked_at
+  )
+  select
+    requested.project_id,
+    p_group_id,
+    requested.role,
+    p_granted_by,
+    null
+  from unnest(
+    coalesce(p_project_ids, array[]::uuid[]),
+    coalesce(p_roles, array[]::text[])
+  ) requested(project_id, role)
+  on conflict (project_id, group_id) do update
+  set
+    role = excluded.role,
+    granted_by = excluded.granted_by,
+    expires_at = null,
+    revoked_at = null,
+    updated_at = now();
+end;
+$$;
+
+revoke execute on function public.set_principal_admin(text, boolean, text)
+  from public, anon, authenticated;
+grant execute on function public.set_principal_admin(text, boolean, text)
+  to service_role;
+
+revoke execute on function public.replace_group_project_access(uuid, uuid[], text[], text)
+  from public, anon, authenticated;
+grant execute on function public.replace_group_project_access(uuid, uuid[], text[], text)
+  to service_role;
+
+-- Persist a short, administrator-supplied description for every guest. Existing
+-- guests receive an explicit legacy marker so the invariant can be enforced
+-- without making the migration unsafe on populated environments.
+
+alter table public.app_principals
+  add column if not exists guest_description text;
+
+update public.app_principals
+set guest_description = 'Eksisterende gjest uten registrert beskrivelse.'
+where identity_type = 'guest'
+  and nullif(btrim(guest_description), '') is null;
+
+alter table public.app_principals
+  drop constraint if exists app_principals_guest_description_length;
+
+alter table public.app_principals
+  add constraint app_principals_guest_description_length
+  check (
+    identity_type <> 'guest'
+    or (
+      guest_description is not null
+      and char_length(btrim(guest_description)) between 3 and 240
+    )
+  );
+
+drop function if exists public.grant_guest_project_access(
+  text, text, text, text, text, uuid, text, timestamptz, text, text, text
+);
+
+create function public.grant_guest_project_access(
+  p_candidate_principal_id text,
+  p_email_hmac text,
+  p_email_encrypted text,
+  p_email_masked text,
+  p_display_name text,
+  p_guest_description text,
+  p_project_id uuid,
+  p_role text,
+  p_expires_at timestamptz,
+  p_created_by text,
+  p_code_hmac text,
+  p_code_last_four text
+)
+returns table (
+  principal_id text,
+  identity_type text,
+  credential_created boolean
+)
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_principal public.app_principals%rowtype;
+  v_credential_created boolean := false;
+  v_credential_rows bigint := 0;
+begin
+  if char_length(btrim(coalesce(p_display_name, ''))) not between 2 and 120 then
+    raise exception 'Guest name must be between 2 and 120 characters';
+  end if;
+  if char_length(btrim(coalesce(p_guest_description, ''))) not between 3 and 240 then
+    raise exception 'Guest description must be between 3 and 240 characters';
+  end if;
+  if p_role not in ('editor', 'viewer', 'restricted_viewer') then
+    raise exception 'Guests cannot receive project role %', p_role;
+  end if;
+
+  insert into public.app_principals (
+    id,
+    identity_type,
+    display_name,
+    guest_description,
+    email_hmac,
+    email_encrypted,
+    email_masked
+  )
+  values (
+    p_candidate_principal_id,
+    'guest',
+    btrim(p_display_name),
+    btrim(p_guest_description),
+    p_email_hmac,
+    p_email_encrypted,
+    p_email_masked
+  )
+  on conflict (email_hmac) do update
+  set
+    display_name = case
+      when public.app_principals.identity_type = 'guest'
+        then excluded.display_name
+      else public.app_principals.display_name
+    end,
+    guest_description = case
+      when public.app_principals.identity_type = 'guest'
+        then excluded.guest_description
+      else public.app_principals.guest_description
+    end,
+    email_encrypted = coalesce(
+      public.app_principals.email_encrypted,
+      excluded.email_encrypted
+    ),
+    email_masked = coalesce(
+      public.app_principals.email_masked,
+      excluded.email_masked
+    ),
+    updated_at = now()
+  returning * into v_principal;
+
+  if v_principal.identity_type = 'guest' then
+    insert into public.guest_credentials (
+      principal_id,
+      code_hmac,
+      code_last_four,
+      created_by
+    )
+    values (
+      v_principal.id,
+      p_code_hmac,
+      p_code_last_four,
+      p_created_by
+    )
+    on conflict on constraint guest_credentials_pkey do nothing;
+    get diagnostics v_credential_rows = row_count;
+    v_credential_created := v_credential_rows = 1;
+  end if;
+
+  insert into public.project_memberships (
+    project_id,
+    principal_id,
+    role,
+    invited_by,
+    invitation_sent_at,
+    expires_at,
+    revoked_at
+  )
+  values (
+    p_project_id,
+    v_principal.id,
+    p_role,
+    p_created_by,
+    now(),
+    p_expires_at,
+    null
+  )
+  on conflict on constraint project_memberships_pkey do update
+  set
+    role = excluded.role,
+    invited_by = excluded.invited_by,
+    invitation_sent_at = excluded.invitation_sent_at,
+    expires_at = excluded.expires_at,
+    revoked_at = null,
+    updated_at = now();
+
+  return query
+  select
+    v_principal.id,
+    v_principal.identity_type,
+    v_credential_created;
+end;
+$$;
+
+revoke execute on function public.grant_guest_project_access(
+  text, text, text, text, text, text, uuid, text, timestamptz, text, text, text
+) from public, anon, authenticated;
+
+grant execute on function public.grant_guest_project_access(
+  text, text, text, text, text, text, uuid, text, timestamptz, text, text, text
+) to service_role;

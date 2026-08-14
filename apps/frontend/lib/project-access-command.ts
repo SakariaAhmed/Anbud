@@ -6,7 +6,8 @@ export type ProjectAccessPostCommand =
   | {
       action: "invite";
       email: string;
-      displayName: string | null;
+      displayName: string;
+      guestDescription: string;
       role: ShareableProjectRole;
       expiresAt: string | null;
     }
@@ -81,14 +82,32 @@ export function parseProjectAccessCommand(
     const action = body.action === undefined ? "invite" : body.action;
     if (action === "invite") {
       const email = boundedString(body.email, 320);
+      const displayName = boundedString(body.displayName, 120)?.trim();
+      const guestDescription = boundedString(
+        body.guestDescription,
+        240,
+      )?.trim();
       const role = shareableRole(body.role);
-      if (!email || !role) return { ok: false, error: "Ugyldig invitasjon." };
+      if (
+        !email ||
+        !displayName ||
+        displayName.length < 2 ||
+        !guestDescription ||
+        guestDescription.length < 3 ||
+        !role
+      ) {
+        return {
+          ok: false,
+          error: "Navn og en kort gjestebeskrivelse er obligatorisk.",
+        };
+      }
       return {
         ok: true,
         command: {
           action,
           email,
-          displayName: optionalString(body.displayName, 120),
+          displayName,
+          guestDescription,
           role,
           expiresAt: optionalString(body.expiresAt, 64),
         },

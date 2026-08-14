@@ -59,6 +59,25 @@ function fileTitle(file: File) {
   return `Kravgrunnlag - ${file.name.replace(/\.[^.]+$/, "")}`;
 }
 
+const requirementTabMotionStyles = `
+@keyframes reqtab-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.reqtab-rise {
+  animation: reqtab-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.reqtab-rise-delay-1 { animation-delay: 80ms; }
+.reqtab-rise-delay-2 { animation-delay: 160ms; }
+@media (prefers-reduced-motion: reduce) {
+  .reqtab-rise,
+  .reqtab-rise-delay-1,
+  .reqtab-rise-delay-2 {
+    animation: none;
+  }
+}
+`;
+
 type RequirementTableRow = {
   ref: string;
   group: string;
@@ -278,11 +297,11 @@ function RequirementIdCell({
       title={label}
       className="min-w-0 space-y-1"
     >
-      <span className="block whitespace-nowrap text-sm font-bold leading-5 tabular-nums text-slate-950">
+      <span className="inline-flex items-center rounded-md border border-blue-100 bg-blue-50/70 px-2 py-0.5 text-[0.8rem] font-semibold leading-5 tracking-tight tabular-nums text-blue-950">
         {sourceId || "-"}
       </span>
       {requirementType ? (
-        <span className="block max-w-[12rem] truncate whitespace-nowrap text-xs font-medium leading-5 text-slate-500">
+        <span className="block max-w-[12rem] truncate whitespace-nowrap text-[0.7rem] font-medium leading-5 text-slate-500">
           {requirementType}
         </span>
       ) : null}
@@ -452,92 +471,98 @@ function RequirementResponseContent({
             {orderedGroups.map(({ tableId, rows }) => (
               <section
                 key={tableId}
-                className="rounded-xl border border-slate-200 bg-slate-50/70 p-4"
+                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
               >
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <h5 className="text-sm font-bold text-slate-950">{tableId}</h5>
-                  <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/80 px-5 py-3.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="h-4 w-1 shrink-0 rounded-full bg-blue-900"
+                    />
+                    <h5 className="min-w-0 truncate font-serif text-sm font-semibold tracking-tight text-slate-900">
+                      {tableId}
+                    </h5>
+                  </div>
+                  <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-blue-900">
                     {rows.length} krav
                   </span>
                 </div>
-                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-[1040px] w-full border-collapse text-left">
-                      <thead className="bg-slate-50 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
-                        <tr>
-                          <th className="w-40 border-b border-slate-200 px-4 py-3">
-                            ID
-                          </th>
-                          <th className="w-[30%] border-b border-slate-200 px-4 py-3">
-                            Krav
-                          </th>
-                          <th className="w-[34%] border-b border-slate-200 px-4 py-3">
-                            Atea svar
-                          </th>
-                          <th className="w-[15rem] border-b border-slate-200 px-4 py-3">
-                            Svargrunnlag
-                          </th>
-                          <th className="w-[15rem] border-b border-slate-200 px-4 py-3">
-                            Kildegrunnlag
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-sm text-slate-900">
-                        {rows.map((row, rowIndex) => {
-                          const source = sourceWithRequirementReference(
-                            row.source,
-                            row.ref,
-                            tableId,
-                          );
-                          return (
-                            <tr
-                              key={`${row.ref}-${rowIndex}`}
-                              className="align-top transition-colors hover:bg-slate-50/80"
-                            >
-                              <td className="px-4 py-4">
-                                {row.ref ? (
-                                  <RequirementIdCell
-                                    section={tableId}
-                                    reference={row.ref}
-                                  />
-                                ) : (
-                                  <span className="text-slate-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-4">
-                                <p className="max-w-[38rem] whitespace-pre-wrap text-sm leading-6 text-slate-900">
-                                  {row.requirement}
+                <div className="overflow-x-auto">
+                  <table className="min-w-[1040px] w-full border-collapse text-left">
+                    <thead className="bg-white text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <tr>
+                        <th className="w-40 border-b border-slate-200 px-5 py-3">
+                          ID
+                        </th>
+                        <th className="w-[30%] border-b border-slate-200 px-5 py-3">
+                          Krav
+                        </th>
+                        <th className="w-[34%] border-b border-slate-200 px-5 py-3">
+                          Atea svar
+                        </th>
+                        <th className="w-[15rem] border-b border-slate-200 px-5 py-3">
+                          Svargrunnlag
+                        </th>
+                        <th className="w-[15rem] border-b border-slate-200 px-5 py-3">
+                          Kildegrunnlag
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-sm text-slate-900">
+                      {rows.map((row, rowIndex) => {
+                        const source = sourceWithRequirementReference(
+                          row.source,
+                          row.ref,
+                          tableId,
+                        );
+                        return (
+                          <tr
+                            key={`${row.ref}-${rowIndex}`}
+                            className="align-top transition-colors duration-[180ms] odd:bg-white even:bg-slate-50/50 hover:bg-blue-50/40"
+                          >
+                            <td className="px-5 py-4">
+                              {row.ref ? (
+                                <RequirementIdCell
+                                  section={tableId}
+                                  reference={row.ref}
+                                />
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-4">
+                              <p className="max-w-[38rem] whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                {row.requirement}
+                              </p>
+                            </td>
+                            <td className="px-5 py-4">
+                              <p className="max-w-[46rem] whitespace-pre-wrap text-sm leading-6 text-slate-900">
+                                {row.answer}
+                              </p>
+                            </td>
+                            <td className="px-5 py-4">
+                              {row.evidence ? (
+                                <p className="max-w-[17rem] whitespace-pre-wrap text-[0.78rem] leading-5 text-slate-600">
+                                  {row.evidence}
                                 </p>
-                              </td>
-                              <td className="px-4 py-4">
-                                <p className="max-w-[46rem] whitespace-pre-wrap text-sm leading-6 text-slate-900">
-                                  {row.answer}
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-4">
+                              {source ? (
+                                <p className="max-w-[17rem] break-words text-[0.78rem] font-medium leading-5 text-slate-500">
+                                  {source}
                                 </p>
-                              </td>
-                              <td className="px-4 py-4">
-                                {row.evidence ? (
-                                  <p className="max-w-[17rem] whitespace-pre-wrap text-[0.78rem] leading-5 text-slate-700">
-                                    {row.evidence}
-                                  </p>
-                                ) : (
-                                  <span className="text-slate-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-4">
-                                {source ? (
-                                  <p className="max-w-[17rem] break-words text-[0.78rem] font-medium leading-5 text-slate-600">
-                                    {source}
-                                  </p>
-                                ) : (
-                                  <span className="text-slate-400">-</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </section>
             ))}
@@ -717,19 +742,31 @@ export function ProjectRequirementResponseTab({
   }
 
   const savedRequirementResponses = (
-    <section className="min-w-0">
-      <h3 className="mb-3 text-sm font-bold uppercase tracking-[0.12em] text-muted-foreground">
-        Lagrede kravbesvarelser
-      </h3>
+    <section className="reqtab-rise reqtab-rise-delay-1 min-w-0">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Lagrede kravbesvarelser
+        </h3>
+        {requirementResponses.length > 0 ? (
+          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-semibold tabular-nums text-slate-600">
+            {requirementResponses.length}
+          </span>
+        ) : null}
+      </div>
       {downloadError ? (
         <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
           {downloadError}
         </p>
       ) : null}
       {requirementResponses.length === 0 ? (
-        <p className="rounded-xl border py-10 text-center text-sm text-muted-foreground shadow-sm">
-          Ingen kravbesvarelse ennå.
-        </p>
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+          <span className="flex size-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400">
+            <CheckSquare className="size-4.5" />
+          </span>
+          <p className="text-sm font-medium text-slate-500">
+            Ingen kravbesvarelse ennå.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
           {requirementResponses.map((artifact, index) => {
@@ -757,60 +794,75 @@ export function ProjectRequirementResponseTab({
             <details
               key={artifact.id}
               open={index === 0}
-              className="group min-w-0 rounded-2xl border bg-card"
+              className="group min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:shadow-md"
             >
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-muted/30 [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 px-6 py-5 text-left transition-colors duration-[180ms] hover:bg-slate-50/60 [&::-webkit-details-marker]:hidden">
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-700">
                     <span>Kravbesvarelse</span>
-                    <span>·</span>
-                    <span>{formatDate(artifact.created_at)}</span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-slate-500">
+                      {formatDate(artifact.created_at)}
+                    </span>
                   </div>
-                  <h4 className="mt-2 text-xl font-semibold leading-8 text-foreground">
+                  <h4 className="mt-2 font-serif text-xl font-semibold leading-8 tracking-tight text-slate-900">
                     {artifact.title || "Kravbesvarelse uten tittel"}
                   </h4>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
                     {artifact.is_current ? (
                       <span
                         className={cn(
-                          "rounded-full border px-2.5 py-1 text-xs font-bold",
+                          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
                           artifact.source_is_current
                             ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                             : "border-amber-300 bg-amber-50 text-amber-900",
                         )}
                       >
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "size-1.5 rounded-full",
+                            artifact.source_is_current
+                              ? "bg-emerald-500"
+                              : "bg-amber-500",
+                          )}
+                        />
                         {artifact.source_is_current
                           ? "Gjeldende"
                           : "Grunnlaget er endret – regenerer"}
                       </span>
                     ) : (
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-600">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                        <span
+                          aria-hidden="true"
+                          className="size-1.5 rounded-full bg-slate-400"
+                        />
                         Historikk
                       </span>
                     )}
                     {artifact.artifact_version ? (
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">
                         Versjon {artifact.artifact_version}
                       </span>
                     ) : null}
                     {confidenceLabel ? (
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">
                         {confidenceLabel}
                       </span>
                     ) : null}
                     {typeof requirementCount === "number" ? (
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">
                         {requirementCount} krav
                       </span>
                     ) : null}
                     {metadata.fallbackAfterHandoff > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
                         <AlertTriangle className="size-3.5" />
                         {metadata.fallbackAfterHandoff} til kontroll
                       </span>
                     ) : null}
                     {metadata.manualReviewRequired ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400 bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-950">
                         <AlertTriangle className="size-3.5" />
                         {requirementResponseManualReviewBadgeLabel(metadata)}
                       </span>
@@ -884,14 +936,20 @@ export function ProjectRequirementResponseTab({
                 ref={(node) => {
                   responseContentRefs.current[artifact.id] = node;
                 }}
-                className="space-y-4 rounded-b-2xl border-t bg-card px-7 py-7"
+                className="space-y-5 rounded-b-2xl border-t border-slate-200 bg-white px-7 py-7"
               >
                 {editingArtifactId === artifact.id ? (
-                  <div className="space-y-4">
+                  <form
+                    className="space-y-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveEdit(artifact);
+                    }}
+                  >
                     <div className="space-y-2">
                       <Label
                         htmlFor={`requirement-title-${artifact.id}`}
-                        className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground"
+                        className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500"
                       >
                         Tittel
                       </Label>
@@ -904,7 +962,7 @@ export function ProjectRequirementResponseTab({
                     <div className="space-y-2">
                       <Label
                         htmlFor={`requirement-content-${artifact.id}`}
-                        className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground"
+                        className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500"
                       >
                         Kravbesvarelse
                       </Label>
@@ -949,9 +1007,8 @@ export function ProjectRequirementResponseTab({
                         Avbryt
                       </Button>
                       <Button
-                        type="button"
-                        className="h-9 rounded-lg"
-                        onClick={() => void saveEdit(artifact)}
+                        type="submit"
+                        className="h-9 rounded-lg bg-blue-900 text-white hover:bg-blue-800"
                         disabled={savingArtifactId === artifact.id}
                       >
                         {savingArtifactId === artifact.id ? (
@@ -962,12 +1019,12 @@ export function ProjectRequirementResponseTab({
                         Lagre endringer
                       </Button>
                     </div>
-                  </div>
+                  </form>
                 ) : (
                   <>
                     {metadata.manualReviewRequired ? (
-                      <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                        <div className="flex items-center gap-2 font-black">
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-sm text-amber-950">
+                        <div className="flex items-center gap-2 font-semibold">
                           <AlertTriangle className="size-4" />
                           Manuell gjennomgang påkrevd før innlevering
                         </div>
@@ -1054,8 +1111,8 @@ export function ProjectRequirementResponseTab({
                       </div>
                     ) : null}
                     {metadata.fallbackAfterHandoff > 0 ? (
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                        <div className="flex items-center gap-2 font-bold">
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-sm text-amber-900">
+                        <div className="flex items-center gap-2 font-semibold">
                           <AlertTriangle className="size-4" />
                           Manuell kontroll anbefales
                         </div>
@@ -1097,53 +1154,63 @@ export function ProjectRequirementResponseTab({
   );
 
   return (
-    <div className="min-w-0 space-y-6">
-      <section className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-        <div className="space-y-4">
+    <div className="min-w-0 space-y-8">
+      <style>{requirementTabMotionStyles}</style>
+      <section className="reqtab-rise overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="space-y-6 px-6 py-6">
+          <div className="grid gap-6 lg:grid-cols-2">
           <div>
             <Label
               htmlFor="requirement-document-select"
-              className="text-xs font-black uppercase tracking-[0.2em] text-slate-500"
+              className="block font-serif text-base font-semibold tracking-tight text-slate-900"
             >
               Kravdokumenter som skal besvares
             </Label>
             {requirementDocuments.length ? (
               <div className="mt-3 space-y-2">
-                <p className="text-sm font-medium leading-6 text-slate-700">
-                  Kundehovedkilden inngår automatisk. Alle {" "}
-                  {readyFormalRequirementDocuments.length} klare formelle
-                  kravdokumenter inngår også; delvis dokumentutvalg er ikke
-                  tillatt.
-                </p>
-                {requirementDocuments.map((document) => (
-                  <div
-                    key={document.id}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"
-                  >
-                    <DocumentSourceMeta
-                      document={document}
-                      label={
-                        document.role === "primary_customer_document"
-                          ? isDocumentReadyForEvaluation(document)
-                            ? "Kundehovedkilde – inngår automatisk"
-                            : "Kundehovedkilde – venter på dokumentbehandling"
-                          : isDocumentReadyForEvaluation(document)
-                            ? "Inngår i kravgrunnlaget"
-                            : "Venter på dokumentbehandling"
-                      }
-                    />
-                  </div>
-                ))}
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  {requirementDocuments.map((document) => {
+                    const documentReady = isDocumentReadyForEvaluation(document);
+                    return (
+                      <div
+                        key={document.id}
+                        className="flex items-center gap-3 border-b border-slate-100 bg-white px-4 py-3 transition-colors duration-[180ms] last:border-b-0 hover:bg-slate-50/70"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "size-2 shrink-0 rounded-full",
+                            documentReady ? "bg-emerald-500" : "bg-amber-400",
+                          )}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <DocumentSourceMeta
+                            document={document}
+                            label={
+                              document.role === "primary_customer_document"
+                                ? documentReady
+                                  ? "Kundehovedkilde – inngår automatisk"
+                                  : "Kundehovedkilde – venter på dokumentbehandling"
+                                : documentReady
+                                  ? "Inngår i kravgrunnlaget"
+                                  : "Venter på dokumentbehandling"
+                            }
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
-              <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-500">
+              <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-6 text-center text-sm font-medium text-slate-500">
                 Ingen kravdokumenter er lastet opp ennå.
               </div>
             )}
           </div>
 
-          <div>
-            <p className="text-sm font-semibold text-slate-700">
+          <div className="flex flex-col border-t border-slate-100 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
               Last inn dokument
             </p>
             <label
@@ -1161,7 +1228,7 @@ export function ProjectRequirementResponseTab({
               }}
               onDragLeave={() => setDragActive(false)}
               onDrop={onDrop}
-              className={`mt-3 ${documentDropzoneClass({
+              className={`mt-3 flex-1 ${documentDropzoneClass({
                 active: dragActive,
                 disabled: uploadBusy,
               })}`}
@@ -1191,11 +1258,12 @@ export function ProjectRequirementResponseTab({
               }
             />
           </div>
+          </div>
 
-          <form onSubmit={onSubmit}>
+          <form onSubmit={onSubmit} className="border-t border-slate-100 pt-5">
             <Button
               type="submit"
-              className="h-10 w-full justify-center rounded-lg bg-blue-900 text-sm font-bold text-white hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
+              className="h-11 w-full justify-center rounded-xl bg-blue-900 text-sm font-semibold text-white shadow-sm transition-colors duration-[180ms] hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
               disabled={!canGenerate}
             >
               {generateBusy ? (

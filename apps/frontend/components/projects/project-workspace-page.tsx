@@ -405,6 +405,17 @@ export function ProjectWorkspacePage({
     setActiveTab(isProjectWorkspaceTab(tabFromUrl) ? tabFromUrl : "analysis");
   }, [searchParams]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`/api/projects/${project.id}/page-view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: activeTab }),
+      signal: controller.signal,
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [activeTab, project.id]);
+
   const setWorkspaceTab = useCallback(
     (tab: ProjectWorkspaceTab) => {
       preloadWorkspaceTab(tab);

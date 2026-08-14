@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { FormEvent, useState } from "react";
 import {
-  ArrowRight,
   ChevronDown,
   FileCheck2,
   KeyRound,
@@ -121,8 +120,8 @@ export function LoginForm({
   return (
     <div className="login-stage relative min-h-screen overflow-hidden bg-[#071326] text-white">
       <div className="pointer-events-none absolute inset-0 opacity-70" aria-hidden="true">
-        <div className="absolute -left-32 top-[-18rem] size-[38rem] rounded-full bg-blue-500/15 blur-3xl" />
-        <div className="absolute bottom-[-20rem] left-[32%] size-[42rem] rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="login-orb absolute -left-32 top-[-18rem] size-[38rem] rounded-full bg-blue-500/15 blur-3xl" />
+        <div className="login-orb login-orb--slow absolute bottom-[-20rem] left-[32%] size-[42rem] rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="login-grid absolute inset-0" />
       </div>
 
@@ -136,22 +135,19 @@ export function LoginForm({
               height={38}
               aria-hidden="true"
               priority
-              className="h-8 w-auto drop-shadow-[0_5px_16px_rgba(59,130,246,0.45)]"
+              className="h-11 w-auto drop-shadow-[0_5px_16px_rgba(59,130,246,0.45)]"
             />
-            <span className="text-[1.35rem] font-semibold tracking-[-0.045em]">
+            <span className="text-[1.85rem] font-semibold tracking-[-0.045em]">
               bidsite
-            </span>
-            <span className="ml-1 hidden rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 font-mono text-[0.62rem] uppercase tracking-[0.16em] text-slate-300 sm:inline-flex">
-              Sikkert arbeidsområde
             </span>
           </div>
 
           <div className="my-auto max-w-[46rem] py-14 lg:py-20">
             <p className="login-enter login-enter-delay-1 mb-5 flex items-center gap-2 font-mono text-[0.68rem] font-medium uppercase tracking-[0.2em] text-blue-300">
-              <span className="h-px w-8 bg-blue-400/70" />
+              <span className="login-eyebrow-line h-px w-8 bg-blue-400/70" />
               Tilbudsarbeid, samlet
             </p>
-            <h1 className="login-enter login-enter-delay-2 max-w-[12ch] font-serif text-[clamp(2.6rem,5.6vw,5.8rem)] font-medium leading-[0.96] tracking-[-0.045em] text-white">
+            <h1 className="login-enter login-enter-delay-2 max-w-[13ch] font-serif text-[clamp(2.5rem,5.2vw,5.2rem)] font-bold leading-[1.02] tracking-[-0.03em] text-white">
               Fra kundekrav til et skarpere tilbud.
             </h1>
             <p className="login-enter login-enter-delay-3 mt-7 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
@@ -165,29 +161,43 @@ export function LoginForm({
                   <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-slate-400">
                     Kundegrunnlag
                   </span>
-                  <FileCheck2 className="size-4 text-blue-300" />
+                  <FileCheck2 className="login-doc-icon size-4 text-blue-300" />
                 </div>
-                <div className="space-y-2">
-                  <span className="block h-1.5 w-full rounded-full bg-white/12" />
-                  <span className="block h-1.5 w-4/5 rounded-full bg-white/10" />
-                  <span className="block h-1.5 w-2/3 rounded-full bg-white/10" />
+                <div className="space-y-1.5 text-[0.72rem] leading-snug text-slate-300">
+                  <span className="login-skel block rounded-md px-2 py-1">
+                    «Leverandøren skal beskrive sin leveransemodell …»
+                  </span>
+                  <span className="login-skel login-skel--2 block rounded-md px-2 py-1">
+                    «K-12: Responstid skal ikke overstige 200 ms.»
+                  </span>
+                  <span className="login-skel login-skel--3 block rounded-md px-2 py-1">
+                    «Bilag 2 fylles ut per delkrav.»
+                  </span>
                 </div>
               </div>
-              <div className="login-flow-line flex items-center text-blue-300" aria-hidden="true">
-                <Sparkles className="size-4" />
-                <ArrowRight className="size-5" />
+              <div className="login-flow-track relative flex min-w-14 items-center justify-center text-blue-300" aria-hidden="true">
+                <span className="login-flow-dot" />
+                <span className="login-flow-dot login-flow-dot--2" />
+                <span className="login-flow-dot login-flow-dot--3" />
+                <Sparkles className="login-flow-spark relative z-10 size-4 bg-transparent" />
               </div>
               <div className="rounded-xl border border-blue-300/20 bg-blue-400/[0.09] p-4 backdrop-blur-sm">
                 <div className="mb-4 flex items-center justify-between">
                   <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-blue-200">
                     Tilbudsrom
                   </span>
-                  <ShieldCheck className="size-4 text-cyan-300" />
+                  <ShieldCheck className="login-shield size-4 text-cyan-300" />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <span className="h-8 rounded-md border border-white/10 bg-white/[0.06]" />
-                  <span className="h-8 rounded-md border border-blue-300/20 bg-blue-300/10" />
-                  <span className="h-8 rounded-md border border-white/10 bg-white/[0.06]" />
+                <div className="grid grid-cols-3 gap-2 text-[0.62rem] font-medium text-slate-200">
+                  <span className="login-cell flex h-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.06] px-1 text-center">
+                    Analyse
+                  </span>
+                  <span className="login-cell login-cell--2 flex h-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.06] px-1 text-center">
+                    Krav og svar
+                  </span>
+                  <span className="login-cell login-cell--3 flex h-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.06] px-1 text-center">
+                    Tilbudsutkast
+                  </span>
                 </div>
               </div>
             </div>
@@ -200,16 +210,16 @@ export function LoginForm({
 
         <section className="login-auth-panel flex items-center justify-center bg-[#f4f6f8] px-5 py-10 text-slate-950 sm:px-10 lg:min-h-screen lg:px-[clamp(2.5rem,5vw,6.5rem)]">
           <div className="login-card-enter w-full max-w-[27rem]">
-            <div className="mb-9 flex size-11 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="login-card-item login-card-item--1 mb-9 flex size-11 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm">
               <LockKeyhole className="size-5 text-blue-700" />
             </div>
-            <p className="mb-3 font-mono text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-blue-700">
+            <p className="login-card-item login-card-item--2 mb-3 font-mono text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-blue-700">
               Velkommen tilbake
             </p>
-            <h2 className="font-serif text-[2.35rem] font-semibold leading-none tracking-[-0.035em] text-slate-950">
+            <h2 className="login-card-item login-card-item--2 font-serif text-[2.35rem] font-bold leading-none tracking-[-0.025em] text-slate-950">
               Logg inn
             </h2>
-            <p className="mt-4 max-w-sm text-[0.94rem] leading-6 text-slate-600">
+            <p className="login-card-item login-card-item--3 mt-4 max-w-sm text-[0.94rem] leading-6 text-slate-600">
               Bruk Microsoft-kontoen din, eller en personlig gjestekode du har
               fått fra en prosjektansvarlig.
             </p>
@@ -217,7 +227,7 @@ export function LoginForm({
             {error ? (
               <div
                 role="alert"
-                className="mt-6 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm leading-5 text-rose-800"
+                className="login-error-in mt-6 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm leading-5 text-rose-800"
               >
                 {error}
               </div>
@@ -239,7 +249,7 @@ export function LoginForm({
                 setMicrosoftLoading(true);
                 window.location.assign(microsoftHref);
               }}
-              className="mt-7 flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 transition-colors hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-blue-500/30 disabled:cursor-wait"
+              className="login-card-item login-card-item--4 login-lift mt-7 flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-blue-500/30 disabled:cursor-wait"
             >
               {microsoftLoading ? (
                 <LoaderCircle className="size-[18px] animate-spin text-blue-700" />
@@ -251,7 +261,7 @@ export function LoginForm({
                 : "Fortsett med Microsoft"}
             </button>
 
-            <div className="my-7 flex items-center gap-4" aria-hidden="true">
+            <div className="login-card-item login-card-item--5 my-7 flex items-center gap-4" aria-hidden="true">
               <span className="h-px flex-1 bg-slate-200" />
               <span className="font-mono text-[0.62rem] uppercase tracking-[0.15em] text-slate-400">
                 Alternativ tilgang
@@ -259,7 +269,7 @@ export function LoginForm({
               <span className="h-px flex-1 bg-slate-200" />
             </div>
 
-            <form onSubmit={onGuestSubmit}>
+            <form onSubmit={onGuestSubmit} className="login-card-item login-card-item--6">
               <div className="space-y-2">
                 <Label htmlFor="guest-code" className="text-slate-700">
                   Personlig gjestekode
@@ -279,7 +289,7 @@ export function LoginForm({
               <Button
                 type="submit"
                 variant="outline"
-                className="mt-4 h-11 w-full border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100"
+                className="login-lift mt-4 h-11 w-full border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100"
                 disabled={guestLoading}
               >
                 {guestLoading ? (
@@ -331,7 +341,7 @@ export function LoginForm({
 
                 <Button
                   type="submit"
-                  className="mt-4 h-11 w-full bg-slate-950 text-white hover:bg-blue-800"
+                  className="login-lift mt-4 h-11 w-full bg-slate-950 text-white hover:bg-blue-800"
                   disabled={loading}
                 >
                   {loading ? (
@@ -344,7 +354,7 @@ export function LoginForm({
               </form>
             ) : null}
 
-            <p className="mt-10 border-t border-slate-200 pt-5 text-xs leading-5 text-slate-500">
+            <p className="login-card-item login-card-item--7 mt-10 border-t border-slate-200 pt-5 text-xs leading-5 text-slate-500">
               Ved problemer med tilgang, kontakt administratoren for
               arbeidsområdet.
             </p>

@@ -12,7 +12,7 @@
     "test:service-descriptions": "node --test lib/client/service-descriptions-api.test.mjs lib/service-description.test.mjs",
     "test:data-adapters": "node --test lib/data-api-config.test.mjs lib/server/azure-blob-storage.test.mjs scripts/azure_blob_migrate_verify.test.mjs",
     "pretest": "npm run test:access && npm run test:service-descriptions && npm run test:data-adapters",
-    "test:access": "node --test lib/access-control.test.mjs lib/middleware-project-authorization.test.mjs lib/project-access-command.test.mjs lib/error-pages-security.test.mjs lib/identity-crypto.test.mjs lib/server/admin-password-auth.test.mjs lib/guest-rbac-migration.sql.test.mjs lib/security-hardening-regressions.test.mjs lib/document-chunk-rpc-privileges.sql.test.mjs",
+    "test:access": "node --test lib/access-control.test.mjs lib/middleware-project-authorization.test.mjs lib/project-access-command.test.mjs lib/admin-access-hardening.test.mjs lib/error-pages-security.test.mjs lib/identity-crypto.test.mjs lib/server/admin-password-auth.test.mjs lib/guest-rbac-migration.sql.test.mjs lib/single-admin-group-access.sql.test.mjs lib/security-hardening-regressions.test.mjs lib/document-chunk-rpc-privileges.sql.test.mjs",
     "test:harness": "node --test ../../scripts/run_vurdering_api_full_251.test.mjs",
     "test:petoro:preflight": "PETORO_PREFLIGHT_REQUIRED=1 node --test ../../scripts/petoro_canonical_preflight.test.mjs",
     "docker:smoke": "node scripts/docker_frontend_smoke.mjs",

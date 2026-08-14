@@ -6,8 +6,8 @@ import { useLayoutEffect, useState, type ReactNode } from "react";
 import {
   BriefcaseBusiness,
   ChevronDown,
+  CircleUserRound,
   KeyRound,
-  Layers3,
   LogOut,
   ShieldCheck,
 } from "lucide-react";
@@ -85,15 +85,6 @@ export function AppShell({
                   <span className="hidden sm:inline">Styring og innsikt</span>
                 </Link>
               ) : null}
-              {identityType === "internal" ? (
-                <Link
-                  href="/service-descriptions"
-                  className="inline-flex h-8 items-center gap-2 rounded-md border border-white/15 bg-white/[0.06] px-3 text-sm font-semibold text-slate-100 transition-colors hover:border-white/30 hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                >
-                  <Layers3 className="size-4" />
-                  <span className="hidden sm:inline">Tjenestebeskrivelser</span>
-                </Link>
-              ) : null}
               {authenticated ? (
                 <details className="group relative border-l border-white/15 pl-3">
                   <summary className="flex cursor-pointer list-none items-center gap-2.5 rounded-lg py-1 pr-1 outline-none transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-blue-200 [&::-webkit-details-marker]:hidden" aria-label={`Brukermeny for ${userLabel}`}>
@@ -125,6 +116,13 @@ export function AppShell({
                       </p>
                     </div>
                     <nav className="border-t border-slate-100 p-1.5" aria-label="Brukernavigasjon">
+                      <Link
+                        href="/profile"
+                        className="flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        <CircleUserRound className="size-4 text-slate-500" />
+                        Min profil
+                      </Link>
                       <Link
                         href="/"
                         className="flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"

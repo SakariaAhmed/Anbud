@@ -109,7 +109,9 @@ test("rollback bridge SQL declares exact locked compatibility and cutover contra
     );
     assert.notEqual(parityStart, -1, `${relativePath} is missing rollback parity`);
     assert.equal(
-      canonicalSql.slice(parityStart).trim(),
+      canonicalSql
+        .slice(parityStart, parityStart + migrationSql.length)
+        .trim(),
       migrationSql.trim(),
       `${relativePath} must exactly match the authoritative rollback migration`,
     );

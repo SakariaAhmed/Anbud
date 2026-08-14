@@ -29,16 +29,6 @@ function normalizedName(value: string) {
   return value.trim().normalize("NFKC").toLocaleLowerCase("nb-NO");
 }
 
-function defaultDisplayName(email: string) {
-  const localPart = validateEmail(email).split("@")[0] ?? "Gjest";
-  return localPart
-    .split(/[._+-]+/u)
-    .filter(Boolean)
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(" ")
-    .slice(0, 120) || "Gjest";
-}
-
 function configuredEmailSet(name: string) {
   return new Set(
     (process.env[name] ?? "")
@@ -100,7 +90,8 @@ export async function inviteEmailToProject(input: {
   projectId: string;
   projectName: string;
   email: string;
-  displayName?: string | null;
+  displayName: string;
+  guestDescription: string;
   role: Exclude<ProjectRole, "owner">;
   expiresAt?: string | null;
   createdBy: string;
@@ -109,8 +100,14 @@ export async function inviteEmailToProject(input: {
   if (!isProjectRole(input.role)) {
     throw new Error("Ugyldig rolle for invitert bruker.");
   }
-  const displayName =
-    input.displayName?.trim().slice(0, 120) || defaultDisplayName(email);
+  const displayName = input.displayName.trim();
+  const guestDescription = input.guestDescription.trim();
+  if (displayName.length < 2 || displayName.length > 120) {
+    throw new Error("Navnet må være mellom 2 og 120 tegn.");
+  }
+  if (guestDescription.length < 3 || guestDescription.length > 240) {
+    throw new Error("Gjestebeskrivelsen må være mellom 3 og 240 tegn.");
+  }
   const code = generateGuestCode();
   const supabase = createServiceClient();
   const { data, error } = await supabase.rpc("grant_guest_project_access", {
@@ -119,6 +116,7 @@ export async function inviteEmailToProject(input: {
     p_email_encrypted: encryptEmail(email),
     p_email_masked: maskEmail(email),
     p_display_name: displayName,
+    p_guest_description: guestDescription,
     p_project_id: input.projectId,
     p_role: input.role,
     p_expires_at: input.expiresAt ?? null,
@@ -166,8 +164,19 @@ export async function rotateGuestCode(input: {
   rotatedBy: string;
   projectName?: string;
 }) {
-  const code = generateGuestCode();
   const supabase = createServiceClient();
+  const { data: principal, error: principalError } = await supabase
+    .from("app_principals")
+    .select("display_name, email_encrypted")
+    .eq("id", input.principalId)
+    .eq("identity_type", "guest")
+    .is("disabled_at", null)
+    .single<{ display_name: string; email_encrypted: string }>();
+  if (principalError || !principal) {
+    throw new Error(principalError?.message || "Fant ikke en aktiv gjestebruker.");
+  }
+
+  const code = generateGuestCode();
   const { data, error } = await supabase.rpc("rotate_guest_credential", {
     p_principal_id: input.principalId,
     p_code_hmac: guestCodeHmac(code),
@@ -175,15 +184,6 @@ export async function rotateGuestCode(input: {
     p_rotated_by: input.rotatedBy,
   });
   if (error) throw new Error(error.message);
-  const { data: principal, error: principalError } = await supabase
-    .from("app_principals")
-    .select("display_name, email_encrypted")
-    .eq("id", input.principalId)
-    .eq("identity_type", "guest")
-    .single<{ display_name: string; email_encrypted: string }>();
-  if (principalError || !principal) {
-    throw new Error(principalError?.message || "Fant ikke gjestebrukeren.");
-  }
   const result = {
     code,
     version: Number(data),
@@ -207,6 +207,43 @@ export async function rotateGuestCode(input: {
       }))
     : null;
   return { ...result, emailDelivery };
+}
+
+export async function guestLoginProjectName(principalId: string) {
+  const supabase = createServiceClient();
+  const { data: memberships, error } = await supabase
+    .from("project_memberships")
+    .select("project_id, expires_at, revoked_at, created_at")
+    .eq("principal_id", principalId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  const now = Date.now();
+  const projectId = (memberships ?? []).find(
+    (membership) =>
+      !membership.revoked_at &&
+      (!membership.expires_at ||
+        new Date(membership.expires_at).getTime() > now),
+  )?.project_id;
+  if (!projectId) {
+    throw new Error("Gjestebrukeren har ingen aktiv prosjekttilgang.");
+  }
+  const modern = await supabase
+    .from("projects")
+    .select("name")
+    .eq("id", projectId)
+    .single<{ name: string | null }>();
+  if (!modern.error && modern.data) {
+    return modern.data.name?.trim() || "Bidsite-prosjekt";
+  }
+  const legacy = await supabase
+    .from("projects")
+    .select("title")
+    .eq("id", projectId)
+    .single<{ title: string | null }>();
+  if (legacy.error || !legacy.data) {
+    throw new Error(legacy.error?.message || "Fant ikke prosjektet.");
+  }
+  return legacy.data.title?.trim() || "Bidsite-prosjekt";
 }
 
 export async function authenticateGuestCode(code: string) {
@@ -297,7 +334,9 @@ export async function listProjectAccess(projectId: string) {
     principalIds.length
       ? supabase
           .from("app_principals")
-          .select("id, identity_type, display_name, email_masked, disabled_at")
+          .select(
+            "id, identity_type, display_name, guest_description, email_masked, disabled_at",
+          )
           .in("id", principalIds)
       : Promise.resolve({ data: [], error: null }),
     groupIds.length
@@ -413,6 +452,20 @@ export async function listGroups() {
   }));
 }
 
+export async function deleteGroup(groupId: string) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("app_groups")
+    .delete()
+    .eq("id", groupId)
+    .select("id, name")
+    .single<{ id: string; name: string }>();
+  if (error || !data) {
+    throw new Error(error?.message || "Fant ikke gruppen.");
+  }
+  return data;
+}
+
 export async function getGroup(groupId: string) {
   const supabase = createServiceClient();
   const [
@@ -513,6 +566,108 @@ export async function setGroupMembers(input: {
   if (error) throw new Error(error.message);
 }
 
+export async function addPrincipalToGroups(input: {
+  principalId: string;
+  groupIds: string[];
+  addedBy: string;
+}) {
+  const uniqueGroupIds = [...new Set(input.groupIds)].slice(0, 100);
+  if (!uniqueGroupIds.length) return;
+  const supabase = createServiceClient();
+  const { data: groups, error: groupError } = await supabase
+    .from("app_groups")
+    .select("id")
+    .in("id", uniqueGroupIds);
+  if (groupError || (groups ?? []).length !== uniqueGroupIds.length) {
+    throw new Error(groupError?.message || "En eller flere grupper finnes ikke.");
+  }
+  const { error } = await supabase.from("app_group_members").upsert(
+    uniqueGroupIds.map((groupId) => ({
+      group_id: groupId,
+      principal_id: input.principalId,
+      added_by: input.addedBy,
+    })),
+    { onConflict: "group_id,principal_id" },
+  );
+  if (error) throw new Error(error.message);
+}
+
+export async function replaceGroupProjectAccess(input: {
+  groupId: string;
+  grants: Array<{
+    projectId: string;
+    role: ProjectRole;
+  }>;
+  grantedBy: string;
+}) {
+  const projectIds: string[] = [];
+  const roles: string[] = [];
+  const seen = new Set<string>();
+  for (const grant of input.grants.slice(0, 500)) {
+    if (
+      seen.has(grant.projectId) ||
+      !isProjectRole(grant.role) ||
+      grant.role === "owner"
+    ) {
+      throw new Error("Ugyldig prosjekttilgang for gruppen.");
+    }
+    seen.add(grant.projectId);
+    projectIds.push(grant.projectId);
+    roles.push(grant.role);
+  }
+  const supabase = createServiceClient();
+  const { error } = await supabase.rpc("replace_group_project_access", {
+    p_group_id: input.groupId,
+    p_project_ids: projectIds,
+    p_roles: roles,
+    p_granted_by: input.grantedBy,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function grantPrincipalProjectAccess(input: {
+  principalId: string;
+  projectId: string;
+  role: ProjectRole;
+  grantedBy: string;
+}) {
+  if (!isProjectRole(input.role) || input.role === "owner") {
+    throw new Error("Ugyldig prosjekttilgang.");
+  }
+  const supabase = createServiceClient();
+  const { data: principal, error: principalError } = await supabase
+    .from("app_principals")
+    .select("id, disabled_at")
+    .eq("id", input.principalId)
+    .single<{ id: string; disabled_at: string | null }>();
+  if (principalError || !principal || principal.disabled_at) {
+    throw new Error(principalError?.message || "Brukeren er ikke aktiv.");
+  }
+  const { data: existingMembership, error: membershipError } = await supabase
+    .from("project_memberships")
+    .select("role")
+    .eq("project_id", input.projectId)
+    .eq("principal_id", input.principalId)
+    .is("revoked_at", null)
+    .maybeSingle<{ role: string }>();
+  if (membershipError) throw new Error(membershipError.message);
+  if (existingMembership?.role === "owner") {
+    throw new Error("Eierrollen kan ikke endres fra tilgangsstyringen.");
+  }
+  const { error } = await supabase.from("project_memberships").upsert(
+    {
+      project_id: input.projectId,
+      principal_id: input.principalId,
+      role: input.role,
+      invited_by: input.grantedBy,
+      invitation_sent_at: new Date().toISOString(),
+      revoked_at: null,
+    },
+    { onConflict: "project_id,principal_id" },
+  );
+  if (error) throw new Error(error.message);
+}
+
 export async function grantGroupProjectAccess(input: {
   projectId: string;
   groupId: string;
@@ -544,35 +699,122 @@ export async function listPrincipals() {
     { data: principals, error },
     { data: roles },
     { data: memberships },
+    { data: groupMemberships },
+    { data: groups },
+    { data: groupGrants },
+    { data: guestCredentials },
   ] = await Promise.all([
     supabase
       .from("app_principals")
       .select(
-        "id, identity_type, display_name, email_masked, disabled_at, last_login_at, created_at",
+        "id, identity_type, display_name, guest_description, email_masked, disabled_at, last_login_at, created_at",
       )
       .order("display_name"),
     supabase.from("app_principal_roles").select("principal_id, role"),
     supabase
       .from("project_memberships")
-      .select("principal_id")
+      .select("principal_id, project_id, role")
       .is("revoked_at", null),
+    supabase.from("app_group_members").select("principal_id, group_id"),
+    supabase.from("app_groups").select("id, name"),
+    supabase
+      .from("project_group_grants")
+      .select("group_id, project_id, role")
+      .is("revoked_at", null),
+    supabase
+      .from("guest_credentials")
+      .select(
+        "principal_id, code_last_four, credential_version, rotated_at, last_used_at, revoked_at",
+      ),
   ]);
   if (error) throw new Error(error.message);
   const adminIds = new Set<string>();
-  const projectCounts = new Map<string, number>();
   for (const row of roles ?? []) {
     if (row.role === "admin") adminIds.add(row.principal_id);
   }
-  for (const row of memberships ?? []) {
-    projectCounts.set(
-      row.principal_id,
-      (projectCounts.get(row.principal_id) ?? 0) + 1,
-    );
+
+  const projectIds = [
+    ...new Set([
+      ...(memberships ?? []).map((row) => row.project_id),
+      ...(groupGrants ?? []).map((row) => row.project_id),
+    ]),
+  ];
+  const projectResult = projectIds.length
+    ? await supabase.from("projects").select("id, name").in("id", projectIds)
+    : { data: [], error: null };
+  let projects = projectResult.data as
+    | Array<{ id: string; name?: string | null; title?: string | null }>
+    | null;
+  if (projectIds.length && projectResult.error) {
+    const legacy = await supabase
+      .from("projects")
+      .select("id, title")
+      .in("id", projectIds);
+    if (legacy.error) throw new Error(legacy.error.message);
+    projects = legacy.data;
+  }
+  const projectNames = new Map(
+    (projects ?? []).map((project) => [
+      project.id,
+      project.name ?? project.title ?? "Prosjekt",
+    ]),
+  );
+  const groupNames = new Map(
+    (groups ?? []).map((group) => [group.id, group.name]),
+  );
+  const guestLoginByPrincipal = new Map(
+    (guestCredentials ?? []).map((credential) => [
+      credential.principal_id,
+      credential,
+    ]),
+  );
+  const grantsByGroup = new Map<string, typeof groupGrants>();
+  for (const grant of groupGrants ?? []) {
+    const current = grantsByGroup.get(grant.group_id) ?? [];
+    current.push(grant);
+    grantsByGroup.set(grant.group_id, current);
   }
   return (principals ?? []).map((principal) => ({
     ...principal,
     isAdmin: adminIds.has(principal.id),
-    projectCount: projectCounts.get(principal.id) ?? 0,
+    guestLogin:
+      principal.identity_type === "guest"
+        ? (() => {
+            const credential = guestLoginByPrincipal.get(principal.id);
+            return credential
+              ? {
+                  active: !credential.revoked_at,
+                  lastFour: credential.code_last_four,
+                  version: credential.credential_version,
+                  rotatedAt: credential.rotated_at,
+                  lastUsedAt: credential.last_used_at,
+                }
+              : null;
+          })()
+        : null,
+    projects: (memberships ?? [])
+      .filter((membership) => membership.principal_id === principal.id)
+      .map((membership) => ({
+        id: membership.project_id,
+        name: projectNames.get(membership.project_id) ?? "Prosjekt",
+        role: membership.role,
+        source: "direct" as const,
+      })),
+    groups: (groupMemberships ?? [])
+      .filter((membership) => membership.principal_id === principal.id)
+      .map((membership) => ({
+        id: membership.group_id,
+        name: groupNames.get(membership.group_id) ?? "Gruppe",
+      })),
+    projectCount: new Set([
+      ...(memberships ?? [])
+        .filter((membership) => membership.principal_id === principal.id)
+        .map((membership) => membership.project_id),
+      ...(groupMemberships ?? [])
+        .filter((membership) => membership.principal_id === principal.id)
+        .flatMap((membership) => grantsByGroup.get(membership.group_id) ?? [])
+        .map((grant) => grant.project_id),
+    ]).size,
   }));
 }
 
@@ -599,4 +841,156 @@ export async function setAdminStatus(input: {
     p_granted_by: input.grantedBy,
   });
   if (error) throw new Error(error.message);
+}
+
+export type PrincipalProfile = {
+  id: string;
+  identityType: "internal" | "guest";
+  displayName: string;
+  emailMasked: string | null;
+  isAdmin: boolean;
+  createdAt: string | null;
+  lastLoginAt: string | null;
+  authMethod: "entra" | "guest_code" | "admin_password" | null;
+  groups: Array<{ id: string; name: string }>;
+  projects: Array<{
+    id: string;
+    name: string;
+    role: string;
+    source: "direct" | "group";
+    groupName?: string;
+  }>;
+};
+
+export async function getPrincipalProfile(input: {
+  principalId: string;
+  sessionId?: string | null;
+}): Promise<PrincipalProfile | null> {
+  const supabase = createServiceClient();
+  const [
+    { data: principal, error },
+    { data: roles },
+    { data: memberships },
+    { data: groupMemberships },
+    sessionResult,
+  ] = await Promise.all([
+    supabase
+      .from("app_principals")
+      .select(
+        "id, identity_type, display_name, email_masked, last_login_at, created_at",
+      )
+      .eq("id", input.principalId)
+      .maybeSingle<{
+        id: string;
+        identity_type: "internal" | "guest";
+        display_name: string | null;
+        email_masked: string | null;
+        last_login_at: string | null;
+        created_at: string | null;
+      }>(),
+    supabase
+      .from("app_principal_roles")
+      .select("role")
+      .eq("principal_id", input.principalId),
+    supabase
+      .from("project_memberships")
+      .select("project_id, role")
+      .eq("principal_id", input.principalId)
+      .is("revoked_at", null),
+    supabase
+      .from("app_group_members")
+      .select("group_id")
+      .eq("principal_id", input.principalId),
+    input.sessionId
+      ? supabase
+          .from("app_sessions")
+          .select("auth_method")
+          .eq("id", input.sessionId)
+          .maybeSingle<{ auth_method: string | null }>()
+      : Promise.resolve({ data: null }),
+  ]);
+  if (error) throw new Error(error.message);
+  if (!principal) return null;
+
+  const groupIds = (groupMemberships ?? []).map((row) => row.group_id);
+  const [{ data: groups }, { data: groupGrants }] = groupIds.length
+    ? await Promise.all([
+        supabase.from("app_groups").select("id, name").in("id", groupIds),
+        supabase
+          .from("project_group_grants")
+          .select("group_id, project_id, role")
+          .in("group_id", groupIds)
+          .is("revoked_at", null),
+      ])
+    : [{ data: [] }, { data: [] }];
+
+  const projectIds = [
+    ...new Set([
+      ...(memberships ?? []).map((row) => row.project_id),
+      ...(groupGrants ?? []).map((row) => row.project_id),
+    ]),
+  ];
+  let projectNames = new Map<string, string>();
+  if (projectIds.length) {
+    const projectResult = await supabase
+      .from("projects")
+      .select("id, name")
+      .in("id", projectIds);
+    let projects = projectResult.data as
+      | Array<{ id: string; name?: string | null; title?: string | null }>
+      | null;
+    if (projectResult.error) {
+      const legacy = await supabase
+        .from("projects")
+        .select("id, title")
+        .in("id", projectIds);
+      if (legacy.error) throw new Error(legacy.error.message);
+      projects = legacy.data;
+    }
+    projectNames = new Map(
+      (projects ?? []).map((project) => [
+        project.id,
+        project.name ?? project.title ?? "Prosjekt",
+      ]),
+    );
+  }
+
+  const groupNames = new Map((groups ?? []).map((group) => [group.id, group.name]));
+  const projects: PrincipalProfile["projects"] = [
+    ...(memberships ?? []).map((membership) => ({
+      id: membership.project_id,
+      name: projectNames.get(membership.project_id) ?? "Prosjekt",
+      role: membership.role as string,
+      source: "direct" as const,
+    })),
+    ...(groupGrants ?? []).map((grant) => ({
+      id: grant.project_id,
+      name: projectNames.get(grant.project_id) ?? "Prosjekt",
+      role: grant.role as string,
+      source: "group" as const,
+      groupName: groupNames.get(grant.group_id) ?? "Gruppe",
+    })),
+  ].sort((a, b) => a.name.localeCompare(b.name, "no"));
+
+  const sessionAuthMethod =
+    (sessionResult && "data" in sessionResult ? sessionResult.data : null)
+      ?.auth_method ?? null;
+
+  return {
+    id: principal.id,
+    identityType: principal.identity_type,
+    displayName: principal.display_name?.trim() || "Bruker",
+    emailMasked: principal.email_masked,
+    isAdmin: (roles ?? []).some((row) => row.role === "admin"),
+    createdAt: principal.created_at,
+    lastLoginAt: principal.last_login_at,
+    authMethod:
+      sessionAuthMethod === "entra" ||
+      sessionAuthMethod === "guest_code" ||
+      sessionAuthMethod === "admin_password"
+        ? sessionAuthMethod
+        : null,
+    groups: groupIds.map((id) => ({ id, name: groupNames.get(id) ?? "Gruppe" })),
+    projects,
+  };
 }

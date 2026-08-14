@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, Schibsted_Grotesk } from "next/font/google";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
@@ -21,10 +21,10 @@ const ibmPlexSans = IBM_Plex_Sans({
   variable: "--font-ibm-plex-sans",
 });
 
-const ibmPlexSerif = IBM_Plex_Serif({
+const schibstedGrotesk = Schibsted_Grotesk({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-ibm-plex-serif",
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-schibsted-grotesk",
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
@@ -56,7 +56,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html
       lang="no"
-      className={`${ibmPlexSans.variable} ${ibmPlexSerif.variable} ${ibmPlexMono.variable}`}
+      className={`${ibmPlexSans.variable} ${schibstedGrotesk.variable} ${ibmPlexMono.variable}`}
     >
       <body
         className="min-h-screen bg-background text-foreground antialiased"
