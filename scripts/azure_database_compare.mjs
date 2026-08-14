@@ -44,7 +44,7 @@ const DATABASE_INVENTORY_KEYS = Object.freeze([
   "postgres_major",
 ]);
 
-export const EXPECTED_PUBLIC_TABLES = Object.freeze([
+const EXPECTED_PUBLIC_TABLES = Object.freeze([
   "activity_events",
   "app_group_members",
   "app_groups",
@@ -244,7 +244,7 @@ function supabaseCliEnvironment(baseEnvironment = {}) {
   return environment;
 }
 
-export function checkPsqlVersion(command = "psql") {
+function checkPsqlVersion(command = "psql") {
   const result = spawnSync(command, ["--version"], {
     encoding: "utf8",
     timeout: 10_000,
@@ -878,7 +878,7 @@ export function createRowDigestAccumulator() {
   };
 }
 
-export class PostgresSnapshot {
+class PostgresSnapshot {
   constructor(session, label) {
     this.session = session;
     this.label = label;
@@ -950,7 +950,7 @@ export class PostgresSnapshot {
   }
 }
 
-export function defaultCommandRunner(command, args, options = {}) {
+function defaultCommandRunner(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     env: options.environment,
@@ -990,7 +990,7 @@ export function checkSupabaseCliVersion(commandRunner = defaultCommandRunner, op
   return version;
 }
 
-export function readLinkedProjectRef(workdir) {
+function readLinkedProjectRef(workdir) {
   try {
     const plainRef = readFileSync(resolve(workdir, "supabase/.temp/project-ref"), "utf8").trim();
     const linkedProject = JSON.parse(
@@ -1159,6 +1159,7 @@ export class SupabaseLinkedSnapshot {
     return new SupabaseLinkedSnapshot(client, label);
   }
 
+  // fallow-ignore-next-line unused-class-member -- invoked through the snapshot interface.
   async collectInventory() {
     this.inventory = await collectInventoryWithQueryClient(this.client, this.label);
     return this.inventory;
@@ -1190,6 +1191,7 @@ export class SupabaseLinkedSnapshot {
     return accumulator.finish();
   }
 
+  // fallow-ignore-next-line unused-class-member -- invoked through the snapshot interface.
   async sequenceStates(sequenceNames) {
     const states = [];
     for (const sequenceName of sequenceNames) {
@@ -1212,11 +1214,13 @@ export class SupabaseLinkedSnapshot {
     return states;
   }
 
+  // fallow-ignore-next-line unused-class-member -- invoked through the snapshot interface.
   async verifyStableInventory(baseline) {
     const finalInventory = await collectInventoryWithQueryClient(this.client, this.label);
     return sameValues(baseline, finalInventory);
   }
 
+  // fallow-ignore-next-line unused-class-member -- invoked through the snapshot interface.
   async close() {}
 }
 
@@ -1417,7 +1421,7 @@ export async function compareDatabaseSnapshots(sourceSnapshot, targetSnapshot, o
   return report;
 }
 
-export async function runDatabaseComparison(options) {
+async function runDatabaseComparison(options) {
   const snapshotFactory = options.snapshotFactory || PostgresSnapshot.open;
   const sourceSnapshotFactory = options.sourceSnapshotFactory || snapshotFactory;
   const targetSnapshotFactory = options.targetSnapshotFactory || snapshotFactory;

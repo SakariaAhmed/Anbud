@@ -350,7 +350,7 @@ async function checkedFetch(fetchImpl, url, options, failureCode) {
   return response;
 }
 
-export async function probeInternalDataApi(config, fetchImpl = fetch) {
+async function probeInternalDataApi(config, fetchImpl = fetch) {
   const headers = {
     accept: "application/json",
     apikey: config.dataApiServiceRoleKey,
