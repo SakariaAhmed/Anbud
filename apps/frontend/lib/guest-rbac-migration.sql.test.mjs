@@ -27,6 +27,13 @@ const simplifiedSessionSql = await readFile(
   ),
   "utf8",
 );
+const guestDescriptionSql = await readFile(
+  path.resolve(
+    frontendRoot,
+    "../../supabase/migrations/20260814183208_require_guest_name_description.sql",
+  ),
+  "utf8",
+);
 
 test("access migration contains the complete authorization model", () => {
   for (const relation of [
@@ -85,4 +92,27 @@ test("guest rotation revokes sessions and project ownership is synchronized", ()
   assert.match(sql, /create or replace function public\.replace_group_members/iu);
   assert.match(sql, /create or replace function public\.replace_principal_roles/iu);
   assert.match(sql, /create or replace function public\.upsert_internal_principal/iu);
+});
+
+test("guest creation requires and persists a bounded name and description", () => {
+  assert.match(
+    guestDescriptionSql,
+    /add column if not exists guest_description text/iu,
+  );
+  assert.match(
+    guestDescriptionSql,
+    /guest_description is not null[\s\S]+between 3 and 240/iu,
+  );
+  assert.match(
+    guestDescriptionSql,
+    /p_display_name[\s\S]+p_guest_description[\s\S]+btrim\(p_guest_description\)/iu,
+  );
+  assert.match(
+    guestDescriptionSql,
+    /drop function if exists public\.grant_guest_project_access/iu,
+  );
+  assert.match(
+    guestDescriptionSql,
+    /revoke execute[\s\S]+from public, anon, authenticated/iu,
+  );
 });

@@ -41,7 +41,7 @@ export function documentDropzoneClass(input: {
   disabled?: boolean;
 }) {
   const base =
-    "group relative flex min-h-[6rem] w-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed px-3 py-3 text-center transition-colors md:min-h-[6.25rem]";
+    "group relative flex h-full min-h-[6rem] w-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed px-3 py-3 text-center transition-colors md:min-h-[6.25rem]";
 
   if (input.disabled) {
     return `${base} cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400`;

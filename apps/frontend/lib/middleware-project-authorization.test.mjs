@@ -105,3 +105,29 @@ test("administrator can read and share globally but cannot mutate project conten
     );
   }
 });
+
+test("page-view telemetry requires project read access without granting writes", () => {
+  const pathname = `/api/projects/${projectId}/page-view`;
+  assert.equal(
+    authorization.requiredProjectPermission("POST", pathname),
+    "project.read",
+  );
+  assert.equal(
+    authorization.projectRoleAllowsAuthorizationPath({
+      method: "POST",
+      pathname,
+      role: "restricted_viewer",
+      isAdmin: false,
+    }),
+    true,
+  );
+  assert.equal(
+    authorization.projectRoleAllowsAuthorizationPath({
+      method: "POST",
+      pathname,
+      role: null,
+      isAdmin: false,
+    }),
+    false,
+  );
+});

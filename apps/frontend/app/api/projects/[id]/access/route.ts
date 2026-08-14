@@ -129,6 +129,7 @@ export async function POST(
         projectName: await projectName(id),
         email: command.email,
         displayName: command.displayName,
+        guestDescription: command.guestDescription,
         role: command.role,
         expiresAt: command.expiresAt,
         createdBy: authorization.principal.id,

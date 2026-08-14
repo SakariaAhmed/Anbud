@@ -1663,24 +1663,373 @@ function compactDeliverySignal(value: string | undefined, fallback: string) {
     : normalized;
 }
 
-function summarizePhaseContext(analysis: CustomerAnalysisResult) {
-  const topRequirement = analysis.prioritized_requirements[0]?.requirement;
-  const primaryDirection = analysis.expected_solution_direction[0];
-  const topSignals = analysis.signal_words.slice(0, 3).join(", ");
+type DeliveryProfileKey =
+  | "takeover"
+  | "transformation"
+  | "newbuild"
+  | "partnership"
+  | "balanced";
 
-  const signal = compactDeliverySignal(
-    primaryDirection ||
-      topRequirement ||
-      (topSignals
-        ? `signalene ${topSignals}`
-        : undefined),
-    "hvilke premisser som faktisk skal styre leveransen",
-  );
+type DeliveryStrategy = {
+  profileKey: DeliveryProfileKey;
+  profileLabel: string;
+  rationale: string;
+  tempo: string;
+  governance: string;
+  firstProof: string;
+  phases: DeliveryPhase[];
+};
 
-  return `Før dette kan bli en endelig leveranseplan, bør teamet avklare hva som fortsatt er usikkert. Det viktigste nå er ${signal}.`;
+const DELIVERY_PROFILE_KEYWORDS: Record<
+  Exclude<DeliveryProfileKey, "balanced">,
+  string[]
+> = {
+  takeover: [
+    "overta",
+    "overtakelse",
+    "transisjon",
+    "kontinuitet",
+    "drift",
+    "forvaltning",
+    "sla",
+    "videreføre",
+    "eksisterende",
+    "stabil",
+    "underleverandør",
+  ],
+  transformation: [
+    "moderniser",
+    "migrer",
+    "sky",
+    "azure",
+    "plattform",
+    "transformasjon",
+    "utfas",
+    "konsolider",
+    "oppgrader",
+    "arkitektur",
+  ],
+  newbuild: [
+    "etabler",
+    "nyutvikling",
+    "innfør",
+    "implementer",
+    "ny løsning",
+    "nytt system",
+    "anskaff",
+    "utvikle",
+  ],
+  partnership: [
+    "rammeavtale",
+    "avrop",
+    "videreutvikling",
+    "kapasitet",
+    "team",
+    "smidig",
+    "kontinuerlig forbedring",
+    "bistand",
+    "konsulent",
+  ],
+};
+
+function detectDeliveryProfile(analysis: CustomerAnalysisResult): {
+  key: DeliveryProfileKey;
+  matched: string[];
+} {
+  const haystack = [
+    analysis.signal_words.join(" "),
+    analysis.expected_solution_direction.join(" "),
+    analysis.customer_profile_summary,
+    analysis.customer_goals_summary,
+    analysis.high_level_solution_design,
+    analysis.customer_goals.join(" "),
+  ]
+    .join(" ")
+    .toLocaleLowerCase("nb-NO");
+
+  let bestKey: DeliveryProfileKey = "balanced";
+  let bestMatches: string[] = [];
+  for (const [key, keywords] of Object.entries(DELIVERY_PROFILE_KEYWORDS)) {
+    const matched = keywords.filter((keyword) => haystack.includes(keyword));
+    if (matched.length > bestMatches.length) {
+      bestKey = key as DeliveryProfileKey;
+      bestMatches = matched;
+    }
+  }
+
+  if (bestMatches.length < 2) {
+    return { key: "balanced", matched: bestMatches };
+  }
+  return { key: bestKey, matched: bestMatches };
 }
 
-function buildDeliveryPhases(analysis: CustomerAnalysisResult): DeliveryPhase[] {
+function buildDeliveryStrategy(
+  analysis: CustomerAnalysisResult,
+): DeliveryStrategy {
+  const { key, matched } = detectDeliveryProfile(analysis);
+
+  const req1 = compactDeliverySignal(
+    analysis.prioritized_requirements[0]?.requirement ||
+      analysis.implicit_requirements[0]?.title,
+    "det viktigste formelle kravet",
+  );
+  const req2 = compactDeliverySignal(
+    analysis.prioritized_requirements[1]?.requirement ||
+      analysis.implicit_requirements[1]?.title,
+    "de neste prioriterte kravene",
+  );
+  const goal1 = compactDeliverySignal(
+    analysis.customer_goals[0] || analysis.customer_goals_summary,
+    "den forretningseffekten kunden må se først",
+  );
+  const crit1 = compactDeliverySignal(
+    analysis.likely_evaluation_criteria[0],
+    "kundens viktigste akseptkriterium",
+  );
+  const riskUs = compactDeliverySignal(
+    analysis.risks_for_us?.[0] || analysis.risks[0],
+    "den største leveranserisikoen",
+  );
+  const riskCust = compactDeliverySignal(
+    analysis.risks_for_customer?.[0] || analysis.risks[1] || analysis.risks[0],
+    "den risikoen kunden selv er mest utsatt for",
+  );
+  const direction = compactDeliverySignal(
+    analysis.expected_solution_direction[0] ||
+      analysis.high_level_solution_design,
+    "den leveransemodellen kunden forventer",
+  );
+  const signalText = analysis.signal_words.slice(0, 3).join(", ");
+  const matchedText = matched.slice(0, 3).join(", ");
+
+  if (key === "takeover") {
+    return {
+      profileKey: key,
+      profileLabel: "Kontrollert overtakelse",
+      rationale: `Analysen peker mot en transisjonstung leveranse (signaler: ${matchedText}). Kunden vil ha kontinuitet foran endring — planen prioriterer trygg overtakelse før forbedring.`,
+      tempo: "Lavt endringstempo i overgang, forbedringer som opsjoner i driftsfasen.",
+      governance: "Tett transisjonsstyring med eksplisitt ansvarsdeling per tjeneste.",
+      firstProof: `Stabil drift uten avvik, målt mot ${crit1}`,
+      phases: [
+        {
+          title: "Fase 1",
+          label: "Mobilisering og innsikt",
+          bullets: [
+            `Gjennomfør due diligence av dagens miljø før ansvar flyttes. Avklar først ${req1}.`,
+            "Kartlegg avhengigheter til eksisterende underleverandører og avtaler som skal videreføres, og hvem som eier hvert grensesnitt.",
+            `Etabler målbar baseline for dagens tjenestenivå, slik at ${crit1} kan dokumenteres fra dag én.`,
+          ],
+        },
+        {
+          title: "Fase 2",
+          label: "Transisjonsplan og ansvarsdeling",
+          bullets: [
+            `${riskUs} må eies eksplisitt i transisjonsplanen, med fallback per overtakelsestrinn.`,
+            "Definer kundens bidrag i hvert trinn: tilganger, nøkkelpersoner og beslutningspunkter med frister.",
+            "Avtal exit- og reverseringskriterier per tjeneste før overtakelsen starter.",
+          ],
+        },
+        {
+          title: "Fase 3",
+          label: "Overtakelse i kontrollerte trinn",
+          bullets: [
+            "Overta tjeneste for tjeneste med parallellkjøring der konsekvensen av avvik er høy.",
+            `Verifiser hvert trinn mot ${req2} før neste tjeneste flyttes.`,
+            "Hold endringer utenfor overtakelsesvinduet — logg forbedringsidéer som opsjoner i stedet.",
+          ],
+        },
+        {
+          title: "Fase 4",
+          label: "Stabilisering og normalisering",
+          bullets: [
+            `Mål tjenestenivå mot ${crit1} og lukk restanser fra transisjonen med tydelige eiere.`,
+            `${riskCust} følges opp med konkrete tiltak i de første driftsmånedene.`,
+            "Normaliser styringen fra transisjonsregime til ordinær driftsgovernance.",
+          ],
+        },
+        {
+          title: "Fase 5",
+          label: "Forbedring som opsjoner",
+          bullets: [
+            `Først når driften er stabil: foreslå forbedringer som støtter ${goal1} — som prisede opsjoner, ikke som premiss.`,
+            "Prioriter opsjonene sammen med kunden basert på gevinst, risiko og modenhet.",
+            "Dokumenter gevinstuttak slik at forbedringene kan spores tilbake til kundens mål.",
+          ],
+        },
+      ],
+    };
+  }
+
+  if (key === "transformation") {
+    return {
+      profileKey: key,
+      profileLabel: "Transformasjon i etapper",
+      rationale: `Analysen peker mot modernisering og plattformendring (signaler: ${matchedText}). Planen balanserer endringstakt mot kontinuitet i eksisterende tjenester.`,
+      tempo: "Etappevis migrering med verdiuttak per etappe — ingen «big bang».",
+      governance: "Arkitekturstyring med tydelige beslutningsporter mellom etappene.",
+      firstProof: `Første migrerte område i produksjon, verifisert mot ${crit1}`,
+      phases: [
+        {
+          title: "Fase 1",
+          label: "Forankring av målbildet",
+          bullets: [
+            `Konkretiser målbildet: ${goal1}. Avklar hva som er i og utenfor transformasjonen.`,
+            `Avklar først ${req1} — det styrer rekkefølgen på etappene.`,
+            "Etabler beslutningsporter: hvem godkjenner overgang til neste etappe, og på hvilket grunnlag.",
+          ],
+        },
+        {
+          title: "Fase 2",
+          label: "Fundament og arkitektur",
+          bullets: [
+            `${direction} brytes ned i en måldrevet arkitektur med navngitte byggeklosser og avhengigheter.`,
+            `${riskUs} adresseres i fundamentet — ikke som en oppdagelse midt i migreringen.`,
+            "Etabler landingssone, sikkerhetsmodell og integrasjonsmønstre før første flytting.",
+          ],
+        },
+        {
+          title: "Fase 3",
+          label: "Migrering i etapper",
+          bullets: [
+            "Velg første etappe der gevinsten er synlig og risikoen håndterbar — bruk den som referanse for resten.",
+            `Verifiser hver etappe mot ${req2} før neste startes.`,
+            "Hold gammel og ny løsning styrt parallelt med tydelige kriterier for utfasing.",
+          ],
+        },
+        {
+          title: "Fase 4",
+          label: "Verifisering og gevinstuttak",
+          bullets: [
+            `Dokumenter effekt per etappe mot ${crit1} — ikke bare teknisk ferdigstillelse.`,
+            `${riskCust} følges med målinger som kunden selv kan lese.`,
+            "Juster rekkefølge og omfang basert på faktiske funn fra gjennomførte etapper.",
+          ],
+        },
+        {
+          title: "Fase 5",
+          label: "Skalering og videreutvikling",
+          bullets: [
+            "Industrialiser mønstrene fra de første etappene: automatiser, standardiser og dokumenter.",
+            `Koble videre utvikling til ${goal1}, slik at porteføljen styres av effekt, ikke aktivitet.`,
+            "Overfør kompetanse og eierskap til kundens organisasjon underveis, ikke til slutt.",
+          ],
+        },
+      ],
+    };
+  }
+
+  if (key === "newbuild") {
+    return {
+      profileKey: key,
+      profileLabel: "Etablering av ny løsning",
+      rationale: `Analysen peker mot etablering av noe nytt (signaler: ${matchedText}). Planen prioriterer tidlig verifisering av behov før full utbygging.`,
+      tempo: "Inkrementell bygging med pilot før bred innføring.",
+      governance: "Produktstyring med prioritert backlog og hyppige demonstrasjoner.",
+      firstProof: `En pilot i reell bruk, akseptert mot ${crit1}`,
+      phases: [
+        {
+          title: "Fase 1",
+          label: "Behovspresisering og design",
+          bullets: [
+            `Avklar først ${req1} sammen med de som faktisk skal bruke løsningen.`,
+            "Lukk de viktigste åpne avklaringene før design låses — antakelser merkes eksplisitt.",
+            `Design mot målbildet: ${goal1}.`,
+          ],
+        },
+        {
+          title: "Fase 2",
+          label: "Inkrementell bygging",
+          bullets: [
+            "Bygg det minste som kan verifisere kjerneverdien først, og demonstrer jevnlig for kunden.",
+            `${req2} planlegges inn i tidlige inkrementer slik at kritiske krav ikke skyves til slutten.`,
+            `${riskUs} overvåkes per inkrement med tydelige stopp-kriterier.`,
+          ],
+        },
+        {
+          title: "Fase 3",
+          label: "Pilot og aksept",
+          bullets: [
+            `Kjør pilot med reelle brukere og reelle data, målt mot ${crit1}.`,
+            "Bruk pilotfunnene til å justere omfang og rekkefølge før bred utrulling.",
+            "Formaliser akseptbeviset: hvem godkjenner, hva godkjennes, på hvilket grunnlag.",
+          ],
+        },
+        {
+          title: "Fase 4",
+          label: "Innføring og opplæring",
+          bullets: [
+            `${riskCust} håndteres med en innføringsplan som dekker opplæring, støtte og gevinstoppfølging.`,
+            "Etabler forvaltningsmodell og eierskap hos kunden før prosjektorganisasjonen trappes ned.",
+            `Mål effekt mot ${goal1} etter innføring — ikke bare leveransefullførelse.`,
+          ],
+        },
+      ],
+    };
+  }
+
+  if (key === "partnership") {
+    return {
+      profileKey: key,
+      profileLabel: "Kontinuerlig partnerskap",
+      rationale: `Analysen peker mot et løpende samarbeid (signaler: ${matchedText}). Planen etablerer samhandlingsmodellen først og lar leveransene bevise verdien syklus for syklus.`,
+      tempo: "Faste leveransesykluser med prioritering per syklus.",
+      governance: "Felles prioriteringsforum med målbar verdi per leveranse.",
+      firstProof: `Første leveransesyklus fullført med målbar effekt mot ${crit1}`,
+      phases: [
+        {
+          title: "Fase 1",
+          label: "Etablering av team og samhandling",
+          bullets: [
+            "Sett teamet med kompetanseprofilene kunden faktisk etterspør, og avtal samhandlingsrytme og roller.",
+            `Avklar først ${req1} — det definerer teamets første oppdrag.`,
+            "Etabler felles definisjoner av «klar» og «ferdig», og hvordan avrop/endringer håndteres.",
+          ],
+        },
+        {
+          title: "Fase 2",
+          label: "Første leveransesyklus",
+          bullets: [
+            "Velg et avgrenset, verdifullt første oppdrag som beviser samhandlingen i praksis.",
+            `${riskUs} testes bevisst i første syklus mens konsekvensen fortsatt er lav.`,
+            `Demonstrer resultatet mot ${crit1} og juster arbeidsform basert på erfaringen.`,
+          ],
+        },
+        {
+          title: "Fase 3",
+          label: "Styring og prioritering",
+          bullets: [
+            `Etabler backlog-styring der kunden prioriterer mot ${goal1}, ikke mot aktivitetslister.`,
+            "Rapporter verdi og fremdrift per syklus i et format kunden kan bruke i egen styring.",
+            `${riskCust} har fast plass i prioriteringsmøtene til den er lukket.`,
+          ],
+        },
+        {
+          title: "Fase 4",
+          label: "Skalering og forbedring",
+          bullets: [
+            "Skaler kapasitet basert på dokumentert verdi, ikke på plan alene.",
+            `Utvid omfanget mot ${req2} når samhandlingsmodellen har bevist seg.`,
+            "Gjennomfør jevnlige forbedringspunkter på selve samarbeidet — ikke bare på leveransene.",
+          ],
+        },
+      ],
+    };
+  }
+
+  return {
+    profileKey: "balanced",
+    profileLabel: "Balansert leveranse",
+    rationale: `Analysen gir ikke ett entydig leveransemønster${signalText ? ` (sterkeste signaler: ${signalText})` : ""}. Planen holder derfor avklaring, styring og kontrollert gjennomføring i balanse til retningen er tydeligere.`,
+    tempo: "Kontrollert fremdrift med avgrenset første spor.",
+    governance: "Tydelige beslutningspunkter med dokumentert akseptbevis.",
+    firstProof: `Første avgrensede spor levert og akseptert mot ${crit1}`,
+    phases: buildBalancedDeliveryPhases(analysis),
+  };
+}
+
+function buildBalancedDeliveryPhases(
+  analysis: CustomerAnalysisResult,
+): DeliveryPhase[] {
   const topRequirement = compactDeliverySignal(
     analysis.prioritized_requirements[0]?.requirement ||
       analysis.implicit_requirements[0]?.title,
@@ -1751,31 +2100,49 @@ function buildDeliveryPhases(analysis: CustomerAnalysisResult): DeliveryPhase[] 
 }
 
 function DeliveryBlueprint({
-  analysis,
-  phases,
+  strategy,
 }: {
-  analysis: CustomerAnalysisResult;
-  phases: DeliveryPhase[];
+  strategy: DeliveryStrategy;
 }) {
+  const phases = strategy.phases;
   return (
     <article className="overflow-hidden rounded-xl border border-cyan-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(236,254,255,0.82))] shadow-[0_16px_38px_rgba(8,145,178,0.10)]">
       <div className="border-b border-cyan-100/90 px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-cyan-700/75">
-              Løsningsfaser for gjennomføring
+              Leveransestrategi for denne kunden
             </p>
             <h6 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-cyan-950">
-              Det som må avklares før leveranseplanen låses
+              {strategy.profileLabel}
             </h6>
           </div>
           <span className="rounded-md bg-cyan-700 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white">
-            {phases.length} steg
+            {phases.length} faser
           </span>
         </div>
         <p className="mt-3 text-sm leading-6 text-slate-700">
-          {summarizePhaseContext(analysis)}
+          {strategy.rationale}
         </p>
+        <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
+          {[
+            { label: "Tempo", value: strategy.tempo },
+            { label: "Styring", value: strategy.governance },
+            { label: "Første bevis", value: strategy.firstProof },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-lg border border-cyan-100 bg-white/85 px-3.5 py-3"
+            >
+              <p className="text-[0.64rem] font-bold uppercase tracking-[0.16em] text-cyan-800/75">
+                {item.label}
+              </p>
+              <p className="mt-1 text-[0.85rem] leading-5 text-slate-700">
+                {item.value}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-3 px-5 py-5 lg:grid-cols-2">
@@ -1813,19 +2180,36 @@ function DeliveryBlueprint({
 function PositioningKanban({
   items,
   analysis,
+  worktext,
 }: {
   items: string[];
   analysis: CustomerAnalysisResult;
+  worktext?: string;
 }) {
-  const deliveryPhases = buildDeliveryPhases(analysis);
-  const lanes = POSITIONING_LANES.map((lane, laneIndex) => ({
-    ...lane,
-    items: items
-      .map((content, index) => ({ content, index }))
-      .filter(({ index }) => index % POSITIONING_LANES.length === laneIndex),
-  })).filter(
-    (lane) => lane.items.length > 0 || lane.title === "Leveranse",
-  );
+  const deliveryStrategy = buildDeliveryStrategy(analysis);
+  const hasWorktext = Boolean(worktext?.trim());
+  const lanes = useMemo(() => {
+    const worktextLane = {
+      title: "Arbeidstekst",
+      eyebrow: "Tilbudsfortelling",
+      icon: FilePenLine,
+      className: "border-indigo-200/80 bg-indigo-50/70 text-indigo-950",
+      iconClassName: "bg-indigo-600 text-white",
+      badgeClassName: "bg-indigo-600/10 text-indigo-800",
+      items: [] as Array<{ content: string; index: number }>,
+    };
+    return [
+      ...(hasWorktext ? [worktextLane] : []),
+      ...POSITIONING_LANES.map((lane, laneIndex) => ({
+        ...lane,
+        items: items
+          .map((content, index) => ({ content, index }))
+          .filter(({ index }) => index % POSITIONING_LANES.length === laneIndex),
+      })).filter(
+        (lane) => lane.items.length > 0 || lane.title === "Leveranse",
+      ),
+    ];
+  }, [hasWorktext, items]);
   const [activeLaneTitle, setActiveLaneTitle] = useState<string>(
     () => lanes[0]?.title ?? "Leveranse",
   );
@@ -1845,16 +2229,20 @@ function PositioningKanban({
 
   const ActiveLaneIcon = activeLane.icon;
   const hasDeliveryBlueprint = activeLane.title === "Leveranse";
+  const isWorktextLane = activeLane.title === "Arbeidstekst";
 
   return (
     <div className="min-w-0 space-y-4">
-      <div className="-mx-1 overflow-x-auto pb-1">
-        <div className="flex min-w-max gap-2 px-1">
+      <div className="pb-1">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {lanes.map((lane) => {
             const Icon = lane.icon;
             const isActive = lane.title === activeLane.title;
             const itemCount =
-              lane.items.length + (lane.title === "Leveranse" ? 1 : 0);
+              lane.items.length +
+              (lane.title === "Leveranse" || lane.title === "Arbeidstekst"
+                ? 1
+                : 0);
 
             return (
               <button
@@ -1862,7 +2250,7 @@ function PositioningKanban({
                 type="button"
                 onClick={() => setActiveLaneTitle(lane.title)}
                 className={cn(
-                  "group flex min-w-[12.5rem] items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60",
+                  "group flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60",
                   lane.className,
                   isActive
                     ? "ring-2 ring-current/20 shadow-[0_14px_34px_rgba(15,23,42,0.10)]"
@@ -1928,14 +2316,35 @@ function PositioningKanban({
             </div>
           </div>
           <span className="min-w-0 max-w-xl text-sm leading-6 text-slate-600">
-            Ett spor om gangen, slik at teamet kan lese og jobbe med innholdet
-            uten å miste oversikten.
+            {isWorktextLane
+              ? "Bruk teksten som grunnrytme for tilbudet, og konkretiser retningen i sporene ved siden av."
+              : "Ett spor om gangen, slik at teamet kan lese og jobbe med innholdet uten å miste oversikten."}
           </span>
         </div>
 
         <div className="flex flex-1 flex-col gap-4">
+          {isWorktextLane && worktext ? (
+            <article className="rounded-xl border border-white/70 bg-white/88 px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <span className="rounded-md bg-blue-600/10 px-2.5 py-1 text-xs font-semibold text-blue-800">
+                  Kundestyrt
+                </span>
+                <span className="rounded-md bg-emerald-600/10 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                  Bevisbar
+                </span>
+                <span className="rounded-md bg-amber-500/12 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                  Handlingsnær
+                </span>
+              </div>
+              <MarkdownViewer
+                content={worktext}
+                className="artifact-markdown max-w-none text-slate-900"
+              />
+            </article>
+          ) : null}
+
           {hasDeliveryBlueprint ? (
-            <DeliveryBlueprint analysis={analysis} phases={deliveryPhases} />
+            <DeliveryBlueprint strategy={deliveryStrategy} />
           ) : null}
 
           {activeLane.items.map(({ content, index }) => (
@@ -1950,7 +2359,7 @@ function PositioningKanban({
             </article>
           ))}
 
-          {activeLane.items.length === 0 && !hasDeliveryBlueprint ? (
+          {activeLane.items.length === 0 && !hasDeliveryBlueprint && !isWorktextLane ? (
             <div className="rounded-xl border border-dashed border-white/80 bg-white/70 px-5 py-5 text-sm leading-6 text-slate-600">
               Ingen prosjektspesifikke anbefalinger er generert for dette sporet
               ennå. Lag fremdriftsplan i egen fane for en konkret
@@ -3747,43 +4156,12 @@ export function ProjectAnalysisTab({
               action={renderSectionActions("strategy")}
             >
               {renderSectionEditor("strategy")}
-              <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(239,246,255,0.88)_54%,rgba(236,254,255,0.72))] shadow-sm">
-                <div className="space-y-5 px-5 py-5">
-                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-white/75 bg-white/62 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="rounded-md bg-slate-950 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white">
-                        Arbeidstekst og posisjoneringsspor
-                      </span>
-                      <span className="rounded-md bg-blue-600/10 px-2.5 py-1 text-xs font-semibold text-blue-800">
-                        Kundestyrt
-                      </span>
-                      <span className="rounded-md bg-emerald-600/10 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                        Bevisbar
-                      </span>
-                      <span className="rounded-md bg-amber-500/12 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                        Handlingsnær
-                      </span>
-                    </div>
-                    <span className="min-w-0 text-sm text-slate-500">
-                      Bruk teksten som grunnrytme, og konkretiser retningen i
-                      sporene under.
-                    </span>
-                  </div>
-
-                  <div className="rounded-lg border border-white/80 bg-white/72 px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                    <MarkdownViewer
-                      content={customerAnalysis.executive_summary}
-                      className="artifact-markdown max-w-none text-slate-900"
-                    />
-                  </div>
-
-                  <div className="rounded-lg border border-slate-200/80 bg-white/45 p-4">
-                    <PositioningKanban
-                      items={customerAnalysis.positioning_recommendations}
-                      analysis={customerAnalysis}
-                    />
-                  </div>
-                </div>
+              <div className="min-w-0">
+                <PositioningKanban
+                  items={customerAnalysis.positioning_recommendations}
+                  analysis={customerAnalysis}
+                  worktext={customerAnalysis.executive_summary}
+                />
               </div>
               <SectionHistoryPanel analysis={customerAnalysis} section="strategy" />
             </SectionSurface>

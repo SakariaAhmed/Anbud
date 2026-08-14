@@ -36,6 +36,15 @@ export function requiredProjectPermission(
   pathname: string,
 ): ProjectPermission {
   if (!pathname.startsWith("/api/")) return "project.read";
+  if (
+    method === "POST" &&
+    new RegExp(
+      `^/api/projects/${PROJECT_ID_PATH}/page-view/?$`,
+      "iu",
+    ).test(pathname)
+  ) {
+    return "project.read";
+  }
   if (SAFE_METHODS.has(method)) {
     if (
       new RegExp(`/documents/${PROJECT_ID_PATH}$`, "iu").test(pathname)

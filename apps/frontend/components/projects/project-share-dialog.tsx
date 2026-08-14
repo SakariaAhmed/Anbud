@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 type AccessMember = {
   principal_id: string;
@@ -34,6 +35,7 @@ type AccessMember = {
     id: string;
     identity_type: "internal" | "guest";
     display_name: string;
+    guest_description: string | null;
     email_masked: string | null;
     disabled_at: string | null;
   } | null;
@@ -94,6 +96,8 @@ export function ProjectShareDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [access, setAccess] = useState<AccessPayload | null>(null);
+  const [guestName, setGuestName] = useState("");
+  const [guestDescription, setGuestDescription] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] =
     useState<Exclude<ProjectRole, "owner">>("restricted_viewer");
@@ -123,18 +127,31 @@ export function ProjectShareDialog({
   }, [loadAccess, open]);
 
   async function invite() {
-    if (!email.trim() || busy) return;
+    if (
+      guestName.trim().length < 2 ||
+      guestDescription.trim().length < 3 ||
+      !email.trim() ||
+      busy
+    ) return;
     setBusy("invite");
     setError("");
     setGuestCode("");
     try {
       const payload = await accessRequest(projectId, {
         method: "POST",
-        body: JSON.stringify({ action: "invite", email, role }),
+        body: JSON.stringify({
+          action: "invite",
+          email,
+          displayName: guestName,
+          guestDescription,
+          role,
+        }),
       });
       if (typeof payload.guestCode === "string") {
         setGuestCode(payload.guestCode);
       }
+      setGuestName("");
+      setGuestDescription("");
       setEmail("");
       await loadAccess();
     } catch (inviteError) {
@@ -303,21 +320,75 @@ export function ProjectShareDialog({
           ) : null}
 
           <section>
-            <Label htmlFor="share-email">Inviter med e-post</Label>
-            <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_12rem_auto]">
-              <Input
-                id="share-email"
-                type="email"
-                value={email}
-                placeholder="navn@eksempel.no"
-                onChange={(event) => setEmail(event.target.value)}
-              />
-              <RoleSelect value={role} onChange={setRole} />
-              <Button onClick={() => void invite()} disabled={!email || Boolean(busy)}>
-                {busy === "invite" ? <LoaderCircle className="animate-spin" /> : <Share2 />}
-                Inviter
-              </Button>
-            </div>
+            <Label htmlFor="share-name">Inviter gjest</Label>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Navn og en kort beskrivelse er obligatorisk og blir synlig for de som administrerer tilgangen.
+            </p>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void invite();
+              }}
+              className="mt-3 grid gap-3"
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="share-name" className="sr-only">Navn</Label>
+                  <Input
+                    id="share-name"
+                    value={guestName}
+                    placeholder="Navn på gjesten"
+                    minLength={2}
+                    maxLength={120}
+                    required
+                    onChange={(event) => setGuestName(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="share-email" className="sr-only">E-post</Label>
+                  <Input
+                    id="share-email"
+                    type="email"
+                    value={email}
+                    placeholder="navn@eksempel.no"
+                    maxLength={320}
+                    required
+                    onChange={(event) => setEmail(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="share-description" className="sr-only">Kort beskrivelse av gjesten</Label>
+                <Textarea
+                  id="share-description"
+                  value={guestDescription}
+                  placeholder="Kort beskrivelse, for eksempel rolle og organisasjon"
+                  minLength={3}
+                  maxLength={240}
+                  rows={2}
+                  required
+                  onChange={(event) => setGuestDescription(event.target.value)}
+                />
+                <p className="mt-1 text-right text-[0.68rem] text-slate-400">
+                  {guestDescription.length}/240 tegn
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[12rem_auto] sm:justify-end">
+                <RoleSelect value={role} onChange={setRole} />
+                <Button
+                  type="submit"
+                  disabled={
+                    guestName.trim().length < 2 ||
+                    guestDescription.trim().length < 3 ||
+                    !email.trim() ||
+                    Boolean(busy)
+                  }
+                >
+                  {busy === "invite" ? <LoaderCircle className="animate-spin" /> : <Share2 />}
+                  Inviter
+                </Button>
+              </div>
+            </form>
           </section>
 
           {ungrantedGroups.length ? (
@@ -326,7 +397,13 @@ export function ProjectShareDialog({
                 <Users className="size-4" />
                 Del med gruppe
               </Label>
-              <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_12rem_auto]">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void grantGroup();
+                }}
+                className="mt-2 grid gap-2 sm:grid-cols-[1fr_12rem_auto]"
+              >
                 <select
                   id="share-group"
                   value={groupId}
@@ -341,10 +418,10 @@ export function ProjectShareDialog({
                   ))}
                 </select>
                 <RoleSelect value={role} onChange={setRole} />
-                <Button variant="outline" onClick={() => void grantGroup()} disabled={!groupId || Boolean(busy)}>
+                <Button type="submit" variant="outline" disabled={!groupId || Boolean(busy)}>
                   Legg til
                 </Button>
-              </div>
+              </form>
             </section>
           ) : null}
 
@@ -379,6 +456,12 @@ export function ProjectShareDialog({
                           {member.principal?.email_masked ??
                             (member.accepted_at ? "Aktiv" : "Invitert")}
                         </p>
+                        {isGuest ? (
+                          <p className="mt-1 text-xs leading-5 text-slate-600">
+                            {member.principal?.guest_description ??
+                              "Ingen gjestebeskrivelse registrert."}
+                          </p>
+                        ) : null}
                       </div>
                       {isOwner ? (
                         <span className="text-sm text-slate-600">
