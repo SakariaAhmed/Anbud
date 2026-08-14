@@ -581,9 +581,15 @@ jobs:
             echo "::error::The dedicated control identity lacks its exact Key Vault, document-container, or evidence-container read role. Run the one-time privileged bootstrap before routine deployment."
             exit 1
           fi
+          activation_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
           activation_command="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'join(` `, properties.template.containers[0].command)' --output tsv --only-show-errors)"
           activation_args="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'join(` `, properties.template.containers[0].args)' --output tsv --only-show-errors)"
-          if [ "$activation_command" != "node" ] || [ "$activation_args" != "scripts/run_azure_migration_control.mjs activate-target" ]; then
+          activation_trigger="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.configuration.triggerType' --output tsv --only-show-errors)"
+          activation_retry_limit="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.configuration.replicaRetryLimit' --output tsv --only-show-errors)"
+          activation_secret_ref="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_SERVICE_ROLE_KEY'].secretRef | [0]" --output tsv --only-show-errors)"
+          activation_data_api_url="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_URL'].value | [0]" --output tsv --only-show-errors)"
+          activation_control_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='MIGRATION_CONTROL_IMAGE'].value | [0]" --output tsv --only-show-errors)"
+          if [ "${#MIGRATION_ACTIVATION_JOB}" -ge 32 ] || [ "$activation_image" != "$CANDIDATE_IMAGE" ] || [ "$activation_command" != "node" ] || [ "$activation_args" != "scripts/run_azure_migration_control.mjs activate-target" ] || [ "$activation_trigger" != "Manual" ] || [ "$activation_retry_limit" != "0" ] || [ "$activation_secret_ref" != "data-api-service-role-key" ] || [ "$activation_data_api_url" != "$DATA_API_URL" ] || [ "$activation_control_image" != "$CANDIDATE_IMAGE" ]; then
             echo "::error::The dedicated activation job does not have the immutable fail-closed command contract."
             exit 1
           fi

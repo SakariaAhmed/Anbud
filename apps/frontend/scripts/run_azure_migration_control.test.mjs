@@ -619,6 +619,10 @@ test("Bicep, image, and workflow preserve the internal management-plane boundary
     workflow,
     /job start[^\n]*MIGRATION_ACTIVATION_JOB[^\n]*(?:--command|--args|--env-vars|--image)/u,
   );
+  assert.match(workflow, /activation_image[^\n]*CANDIDATE_IMAGE/u);
+  assert.match(workflow, /activation_secret_ref[^\n]*data-api-service-role-key/u);
+  assert.match(workflow, /activation_data_api_url[^\n]*DATA_API_URL/u);
+  assert.match(workflow, /MIGRATION_ACTIVATION_JOB\}" -ge 32/u);
   assert.match(workflow, /Restore scheduled worker after completed release/u);
   assert.match(
     workflow,
