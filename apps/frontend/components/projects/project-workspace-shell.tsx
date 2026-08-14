@@ -493,7 +493,7 @@ function ProjectWorkspaceSidebar({
                     {sidebarOpen ? (
                       <span className="flex min-w-0 flex-1 items-center gap-3">
                         <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                          <span className="min-w-0 text-left leading-5">
+                          <span className="min-w-0 break-words text-left leading-5 hyphens-auto">
                             {item.label}
                           </span>
                           <span

@@ -247,7 +247,14 @@ function buildSimplePrefixedLineRequirementLedger(
       inStandaloneNoteSection = false;
       continue;
     }
-    if (context.isLikelyHeadingLine(sourceLine)) {
+    const startsWithExplicitRequirementId = new RegExp(
+      `^\\s*${legacyExplicitIdPattern()}(?:\\s+${legacyRequirementTypePattern()})?\\s*(?:[-–—:]\\s*)?.+`,
+      "iu",
+    ).test(sourceLine);
+    if (
+      context.isLikelyHeadingLine(sourceLine) &&
+      !startsWithExplicitRequirementId
+    ) {
       heading = context.cleanHeadingCandidate(sourceLine);
       inStandaloneNoteSection = false;
       continue;
@@ -317,12 +324,24 @@ export function buildPrefixedLineRequirementLedger(
   document: ProjectDocumentDetail,
   context: RequirementCorpusParserContext,
 ) {
-  if (!isLegacyMixedFofingerCorpus(document)) {
-    return [];
+  if (document.file_format !== "pdf") {
+    if (isLegacyMixedFofingerCorpus(document)) {
+      return buildSimplePrefixedLineRequirementLedger(document, context);
+    }
+    const explicitLinePattern = new RegExp(
+      `^\\s*(?:[•*]\\s*)?${legacyExplicitIdPattern()}(?:\\s+${legacyRequirementTypePattern()})?\\s*(?:[-–—:]\\s*)?.+`,
+      "gimu",
+    );
+    const explicitLineCount = [
+      ...document.raw_text.matchAll(explicitLinePattern),
+    ].length;
+    return explicitLineCount >= 2
+      ? buildSimplePrefixedLineRequirementLedger(document, context)
+      : [];
   }
 
-  if (document.file_format !== "pdf") {
-    return buildSimplePrefixedLineRequirementLedger(document, context);
+  if (!isLegacyMixedFofingerCorpus(document)) {
+    return [];
   }
 
   const requirements: RequirementLedgerEntry[] = [];

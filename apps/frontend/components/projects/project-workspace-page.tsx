@@ -1905,7 +1905,7 @@ export function ProjectWorkspacePage({
     {
       step: 8,
       value: "executive-summary",
-      label: "Leder oppsummering",
+      label: "Lederoppsummering",
       icon: ClipboardCheck,
       status: hasExecutiveSummary
         ? "Generert"

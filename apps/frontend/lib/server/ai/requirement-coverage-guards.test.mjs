@@ -1752,6 +1752,52 @@ test("solution coverage fallback canonicalizes customer and formal source ledger
   assert.equal(ledger[0].documentId, formal.id);
 });
 
+test("plain explicit requirement lists preserve every requirement row", async () => {
+  const formal = {
+    ...document("plain-list"),
+    file_name: "plain-list.txt",
+    file_format: "txt",
+    raw_text: [
+      "Fiktivt kravdokument.",
+      "K-01 Kun autoriserte brukere skal få tilgang til prosjektet.",
+      "K-02 Gjestebrukere skal kunne logge inn med personlig kode.",
+      "K-03 Lesebrukere skal ikke kunne endre dokumenter.",
+      "K-04 Begrenset leser skal ikke kunne laste ned dokumenter.",
+      "K-05 Administratorhandlinger skal være sporbare.",
+      "K-06 Tilgang skal kunne tilbakekalles umiddelbart.",
+      "K-07 Løsningen skal støtte gruppebasert prosjekttilgang.",
+      "K-08 Dokumenter skal leveres med sikre nedlastingshoder.",
+    ].join("\n"),
+  };
+
+  const ledger = await buildRequirementCoverageLedgerFromDocuments([formal]);
+
+  assert.deepEqual(
+    ledger.map((entry) => entry.id),
+    ["K-01", "K-02", "K-03", "K-04", "K-05", "K-06", "K-07", "K-08"],
+  );
+});
+
+test("markdown requirement tables accept descriptive Norwegian headers", async () => {
+  const formal = {
+    ...document("descriptive-headers"),
+    raw_text: [
+      "| Krav-ID | Kravtekst | Prioritet | Leverandørens svar |",
+      "|---|---|---|---|",
+      "| K-01 | Kun autoriserte brukere skal få tilgang. | Må | Fylles ut. |",
+      "| K-02 | Gjestebrukere skal kunne logge inn med kode. | Må | Fylles ut. |",
+    ].join("\n"),
+  };
+
+  const ledger = await buildRequirementCoverageLedgerFromDocuments([formal]);
+
+  assert.deepEqual(ledger.map((entry) => entry.id), ["K-01", "K-02"]);
+  assert.deepEqual(
+    ledger.map((entry) => entry.answerExcerpt),
+    ["Fylles ut.", "Fylles ut."],
+  );
+});
+
 test("equal requirement IDs remain distinct across documents", () => {
   const entries = [
     requirement({ documentId: "document-a", documentTitle: "A" }),
