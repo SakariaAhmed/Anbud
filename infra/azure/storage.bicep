@@ -15,7 +15,16 @@ param appName string = 'anbud'
 param workerName string = '${appName}-project-job-worker'
 
 @description('Private container name. It must match existing database bucket values.')
+@allowed([
+  'anbud-documents'
+])
 param containerName string = 'anbud-documents'
+
+@description('Separate private container for digest-pinned final cutover evidence. It must never share the application object inventory.')
+@allowed([
+  'anbud-migration-evidence'
+])
+param migrationEvidenceContainerName string = 'anbud-migration-evidence'
 
 @description('Soft-delete retention for blobs and containers.')
 @minValue(7)
@@ -93,6 +102,18 @@ resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   parent: blobService
   name: containerName
   properties: {
+    defaultEncryptionScope: '$account-encryption-key'
+    denyEncryptionScopeOverride: false
+    publicAccess: 'None'
+  }
+}
+
+resource migrationEvidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: migrationEvidenceContainerName
+  properties: {
+    defaultEncryptionScope: '$account-encryption-key'
+    denyEncryptionScopeOverride: false
     publicAccess: 'None'
   }
 }
@@ -117,6 +138,9 @@ resource workerBlobAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   }
 }
 
-output accountUrl string = storage.properties.primaryEndpoints.blob
+// Azure reports the primary endpoint with a trailing slash. Runtime and
+// workflow host-binding checks use this canonical origin without one.
+output accountUrl string = 'https://${storage.name}.blob.${environment().suffixes.storage}'
 output privateContainer string = documentsContainer.name
+output privateMigrationEvidenceContainer string = migrationEvidenceContainer.name
 output sharedKeyAccessEnabled bool = storage.properties.allowSharedKeyAccess

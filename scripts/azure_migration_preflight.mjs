@@ -8,10 +8,13 @@ import { fileURLToPath } from "node:url";
 const EXPECTED_POSTGRES_MAJOR = 17;
 const DEFAULT_TARGET_STORAGE_GIB = 32;
 const MAX_SOURCE_STORAGE_RATIO = 0.7;
-const EXPECTED_SECURITY_DEFINERS = new Set([
+const EXPECTED_APPLICATION_SECURITY_DEFINERS = new Set([
   "audit_project_job_terminal_state",
   "sync_project_owner_membership",
 ]);
+const SUPABASE_PLATFORM_SECURITY_DEFINER = "rls_auto_enable";
+const SUPABASE_PLATFORM_SECURITY_DEFINER_SHA256 =
+  "2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1";
 const EXPECTED_PUBLIC_TABLES = [
   "activity_events",
   "app_group_members",
@@ -94,6 +97,27 @@ function validateSourceUrl(raw) {
   if (parsed.searchParams.get("sslmode") !== "verify-full") {
     stop("SOURCE_DATABASE_URL must require TLS and hostname verification with sslmode=verify-full.");
   }
+  if (!parsed.hostname || !parsed.username || !parsed.pathname.slice(1)) {
+    stop("SOURCE_DATABASE_URL must include a host, user, and database name.");
+  }
+  return parsed;
+}
+
+function databaseEnvironment(raw) {
+  const parsed = new URL(raw);
+  const environment = { ...process.env };
+  delete environment.SOURCE_DATABASE_URL;
+  delete environment.TARGET_DATABASE_URL;
+  environment.PGHOST = parsed.hostname;
+  environment.PGPORT = parsed.port || "5432";
+  environment.PGUSER = decodeURIComponent(parsed.username);
+  environment.PGPASSWORD = decodeURIComponent(parsed.password);
+  environment.PGDATABASE = decodeURIComponent(parsed.pathname.slice(1));
+  environment.PGSSLMODE = "verify-full";
+  environment.PGCONNECT_TIMEOUT = environment.PGCONNECT_TIMEOUT || "15";
+  const sslRootCert = parsed.searchParams.get("sslrootcert");
+  if (sslRootCert) environment.PGSSLROOTCERT = sslRootCert;
+  return environment;
 }
 
 function query(databaseUrl, sql) {
@@ -102,7 +126,10 @@ function query(databaseUrl, sql) {
     ["--no-psqlrc", "--tuples-only", "--no-align", "--set", "ON_ERROR_STOP=1", "--command", sql],
     {
       encoding: "utf8",
-      env: { ...process.env, PGDATABASE: databaseUrl },
+      // libpq treats PGDATABASE as a database name, not as a connection URI.
+      // Parse the protected URI into environment fields so credentials never
+      // enter the process argument list and psql cannot fall back to a local socket.
+      env: databaseEnvironment(databaseUrl),
       maxBuffer: 8 * 1024 * 1024,
     },
   );
@@ -142,10 +169,18 @@ function sourceInventory(databaseUrl) {
     ),
   );
   const databaseBytes = Number(query(databaseUrl, "SELECT pg_database_size(current_database());"));
-  const databaseLocale = query(
+  const databaseLocale = JSON.parse(query(
     databaseUrl,
-    "SELECT datcollate || '|' || datctype || '|' || pg_encoding_to_char(encoding) FROM pg_database WHERE datname=current_database();",
-  ).split("|");
+    `SELECT json_build_object(
+      'collation', datcollate,
+      'ctype', datctype,
+      'encoding', pg_encoding_to_char(encoding),
+      'provider', datlocprovider::text,
+      'locale', datlocale,
+      'icu_rules', daticurules,
+      'collation_version', datcollversion
+    )::text FROM pg_database WHERE datname=current_database();`,
+  ));
   const runningJobs = Number(
     query(
       databaseUrl,
@@ -159,6 +194,9 @@ function sourceInventory(databaseUrl) {
         'name', p.proname,
         'arguments', pg_get_function_identity_arguments(p.oid),
         'owner', owner.rolname,
+        'language', language_state.lanname,
+        'result', pg_get_function_result(p.oid),
+        'source_sha256', encode(sha256(convert_to(COALESCE(p.prosrc, ''), 'UTF8')), 'hex'),
         'settings', COALESCE(p.proconfig, ARRAY[]::text[]),
         'public_execute', EXISTS (
           SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
@@ -171,33 +209,51 @@ function sourceInventory(databaseUrl) {
       FROM pg_proc p
       JOIN pg_namespace n ON n.oid=p.pronamespace
       JOIN pg_roles owner ON owner.oid=p.proowner
+      JOIN pg_language language_state ON language_state.oid=p.prolang
       WHERE n.nspname='public' AND p.prosecdef
       ORDER BY p.proname, p.oid;`,
     ),
   ).map((row) => JSON.parse(row));
   const securityDefinersValid =
-    securityDefiners.length === EXPECTED_SECURITY_DEFINERS.size &&
+    securityDefiners.length === EXPECTED_APPLICATION_SECURITY_DEFINERS.size + 1 &&
     securityDefiners.every(
-      (definition) =>
-        EXPECTED_SECURITY_DEFINERS.has(definition.name) &&
-        definition.arguments === "" &&
-        definition.settings.includes('search_path=""') &&
-        !definition.public_execute &&
-        !definition.anon_execute &&
-        !definition.authenticated_execute &&
-        definition.service_execute,
+      (definition) => {
+        const isApplicationDefiner = EXPECTED_APPLICATION_SECURITY_DEFINERS.has(
+          definition.name,
+        );
+        const isSupabasePlatformDefiner =
+          definition.name === SUPABASE_PLATFORM_SECURITY_DEFINER;
+        return (
+          definition.arguments === "" &&
+          definition.owner === "postgres" &&
+          !definition.public_execute &&
+          !definition.anon_execute &&
+          !definition.authenticated_execute &&
+          definition.service_execute &&
+          ((isApplicationDefiner && definition.settings.includes('search_path=""')) ||
+            (isSupabasePlatformDefiner &&
+              definition.language === "plpgsql" &&
+              definition.result === "event_trigger" &&
+              definition.source_sha256 === SUPABASE_PLATFORM_SECURITY_DEFINER_SHA256 &&
+              definition.settings.includes("search_path=pg_catalog")))
+        );
+      },
     ) &&
     new Set(securityDefiners.map((definition) => definition.name)).size ===
-      EXPECTED_SECURITY_DEFINERS.size;
+      EXPECTED_APPLICATION_SECURITY_DEFINERS.size + 1;
   return {
     postgresMajor,
     publicTables,
     rlsDisabledTables,
     migrations,
     databaseBytes,
-    databaseCollation: databaseLocale[0] || "",
-    databaseCtype: databaseLocale[1] || "",
-    databaseEncoding: databaseLocale[2] || "",
+    databaseCollation: databaseLocale.collation || "",
+    databaseCtype: databaseLocale.ctype || "",
+    databaseEncoding: databaseLocale.encoding || "",
+    databaseLocaleProvider: databaseLocale.provider || "",
+    databaseLocale: databaseLocale.locale || "",
+    databaseIcuRules: databaseLocale.icu_rules ?? null,
+    databaseCollationVersion: databaseLocale.collation_version || "",
     runningJobs,
     securityDefiners,
     securityDefinersValid,
@@ -222,6 +278,14 @@ if (source.rlsDisabledTables.length) failures.push("one or more public tables do
 if (!sameOrderedValues(source.migrations, expectedMigrations)) failures.push("source migration history differs from the complete repository migration set");
 if (source.databaseEncoding !== "UTF8") failures.push("source database encoding is not UTF8");
 if (source.databaseCollation !== source.databaseCtype) failures.push("source collation and ctype differ; the Azure database template cannot preserve them independently");
+if (
+  source.databaseLocaleProvider !== "i" ||
+  source.databaseLocale !== "en-US" ||
+  source.databaseIcuRules !== null ||
+  source.databaseCollationVersion !== "153.120"
+) {
+  failures.push("source ICU provider, locale, rules, or collation version differs from the validated Azure target contract");
+}
 if (source.runningJobs !== 0) failures.push(`${source.runningJobs} project job(s) are running`);
 if (source.databaseBytes > maximumSourceBytes) failures.push("source size exceeds the 70% storage safety margin");
 if (!source.securityDefinersValid) failures.push("SECURITY DEFINER inventory, settings, or ACLs are unexpected");
@@ -236,6 +300,10 @@ const report = {
     database_collation: source.databaseCollation,
     database_ctype: source.databaseCtype,
     database_encoding: source.databaseEncoding,
+    database_locale_provider: source.databaseLocaleProvider,
+    database_locale: source.databaseLocale,
+    database_icu_rules: source.databaseIcuRules,
+    database_collation_version: source.databaseCollationVersion,
     migrations: source.migrations,
     running_jobs: source.runningJobs,
     security_definers: source.securityDefiners,

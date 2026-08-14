@@ -182,6 +182,9 @@ param projectJobWorkerMemory string = '4Gi'
 @minValue(2100)
 param projectJobWorkerReplicaTimeout int = 2100
 
+@description('Public ingress is disabled during the Azure backend cutover and enabled only after target activation and smoke.')
+param externalIngressEnabled bool = true
+
 @description('Minimum active replicas.')
 @minValue(0)
 param minReplicas int = 0
@@ -249,7 +252,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Multiple'
       ingress: {
-        external: true
+        external: externalIngressEnabled
         targetPort: 3000
         transport: 'auto'
         allowInsecure: false

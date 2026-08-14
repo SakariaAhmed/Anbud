@@ -40,15 +40,6 @@ param storageSizeGiB int = 32
 @maxValue(35)
 param backupRetentionDays int = 7
 
-@description('Source database collation reported by the read-only migration preflight. Azure must accept it unchanged.')
-param databaseCollation string
-
-@description('Source encoding. This application is verified only with UTF8.')
-@allowed([
-  'UTF8'
-])
-param databaseCharacterSet string = 'UTF8'
-
 var tags = {
   workload: 'anbud'
   environment: 'prod'
@@ -90,6 +81,7 @@ resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   }
 }
 
+@batchSize(1)
 resource firewallRules 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = [for address in allowedIpv4Addresses: {
   parent: server
   name: 'allow-${uniqueString(address)}'
@@ -106,6 +98,9 @@ resource allowedExtensions 'Microsoft.DBforPostgreSQL/flexibleServers/configurat
     source: 'user-override'
     value: 'pgcrypto,vector'
   }
+  dependsOn: [
+    firewallRules
+  ]
 }
 
 resource idleTransactionTimeout 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
@@ -115,26 +110,15 @@ resource idleTransactionTimeout 'Microsoft.DBforPostgreSQL/flexibleServers/confi
     source: 'user-override'
     value: '30000'
   }
-}
-
-resource productionDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
-  parent: server
-  name: 'anbud'
-  properties: {
-    charset: databaseCharacterSet
-    collation: databaseCollation
-  }
-}
-
-resource validationDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
-  parent: server
-  name: 'anbud_validation'
-  properties: {
-    charset: databaseCharacterSet
-    collation: databaseCollation
-  }
+  dependsOn: [
+    allowedExtensions
+  ]
 }
 
 output fqdn string = server.properties.fullyQualifiedDomainName
-output validationDatabaseName string = validationDatabase.name
-output productionDatabaseName string = productionDatabase.name
+// ARM's database child resource creates a libc-locale database and cannot
+// preserve the source's ICU provider/locale contract. The runbook therefore
+// creates these two databases explicitly with PostgreSQL CREATE DATABASE after
+// verifying the server's ICU version.
+output validationDatabaseName string = 'anbud_validation'
+output productionDatabaseName string = 'anbud'

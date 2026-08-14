@@ -159,11 +159,12 @@ These templates are intentionally separate so an ordinary app deployment cannot
 create paid data resources or trigger a cutover:
 
 - `postgres.bicep`: PostgreSQL 17, B1ms/32 GiB by default, no HA, exact IP
-  firewall rules, source-provided collation, 7-day PITR, `pgcrypto` and `vector`,
-  plus a validation database.
-- `storage.bicep`: private Hot LRS container, Shared Key/public access disabled,
-  identity-only access on a public same-region endpoint, 14-day soft delete and
-  container-scoped managed identity roles.
+  firewall rules, 7-day PITR and allowlisted `pgcrypto`/`vector`. ICU production
+  and validation databases are created explicitly by the migration runbook.
+- `storage.bicep`: separate private document and migration-evidence containers,
+  Shared Key/public access disabled, identity-only access on a public
+  same-region endpoint, 14-day soft delete and document-container-scoped runtime
+  roles. Its `accountUrl` output is canonicalized without a trailing slash.
 - `postgrest.bicep`: temporary internal compatibility bridge, pool size 5,
   `maxReplicas=1` and scale-to-zero by default.
 - `budget.bicep`: 50/80/100% actual and 100% forecast notifications in the
@@ -173,5 +174,39 @@ create paid data resources or trigger a cutover:
 Never deploy these from an unreviewed parameter file. Store parameter files
 outside git, run `az deployment group what-if` first, and follow the stop gates
 in the migration runbook. `storage.bicep` creates role assignments, so its
-one-time bootstrap requires Owner or User Access Administrator; routine CI
-should retain Contributor only.
+one-time bootstrap requires Owner, or Contributor plus User Access
+Administrator; routine CI should retain Contributor only.
+
+## Migration-control bootstrap and retirement
+
+Before the production write freeze, follow the exact
+[one-time migration-control bootstrap](../../docs/azure-migration.md#one-time-migration-control-bootstrap--hard-gate-before-freeze).
+It creates or reconciles an RBAC/purge-protected Key Vault with the current
+ARM secret-reference flag enabled, verifies the distinct private evidence
+container created by `storage.bicep`, and deploys
+`migration-control.bicep` once with `bootstrapRoleAssignments=true`. That
+privileged deployment grants only:
+
+- `Key Vault Secrets User` on the migration Key Vault;
+- `Storage Blob Data Reader` on `anbud-documents`; and
+- `Storage Blob Data Reader` on `anbud-migration-evidence`.
+
+The initial job configuration uses an intentionally absent bootstrap evidence
+path and all-zero digest, so it must never be started. The final protected
+workflow replaces those inputs with fresh digest-pinned evidence and always
+uses `bootstrapRoleAssignments=false`.
+
+After Azure acceptance, return PostgREST to `minReplicas=0`, remove only the
+migration-host PostgreSQL firewall rule, and revoke temporary human Blob/Key
+Vault roles after their last required operation. Keep the Container Apps
+outbound rule, web/worker Blob roles and ACR pull identity while production
+still needs them.
+
+Supabase URL/service-role credentials are allowed only during the explicit
+14-day rollback window. After restore tests and formal rollback closure, first
+change Azure-mode deployment so it no longer requires or passes the Supabase
+pair, deploy revisions with no Supabase references, remove the Container Apps
+secrets, then revoke the upstream Supabase credentials. Do not delete secrets
+that a live revision still references. The full ordered commands,
+migration-control role cleanup and Key Vault flag rollback are in
+[Rollback and cleanup](../../docs/azure-migration.md#rollback-and-cleanup).

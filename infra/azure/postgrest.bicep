@@ -9,6 +9,12 @@ param environmentName string = 'anbud-env'
 @description('Internal bridge name.')
 param appName string = 'anbud-postgrest'
 
+@description('Existing Azure Container Registry containing the pinned PostgREST image.')
+param registryName string
+
+@description('Existing pull-only identity with AcrPull on the registry.')
+param acrPullIdentityName string = 'anbud-acr-pull'
+
 @description('PostgREST image pinned by immutable digest; mutable tags are not accepted operationally.')
 param image string
 
@@ -34,6 +40,14 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: environmentName
 }
 
+resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: registryName
+}
+
+resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+  name: acrPullIdentityName
+}
+
 resource bridge 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
@@ -43,7 +57,10 @@ resource bridge 'Microsoft.App/containerApps@2024-03-01' = {
     migrationStage: 'temporary-compatibility-bridge'
   }
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${acrPullIdentity.id}': {}
+    }
   }
   properties: {
     managedEnvironmentId: environment.id
@@ -63,6 +80,12 @@ resource bridge 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'jwt-secret'
           value: jwtSecret
+        }
+      ]
+      registries: [
+        {
+          server: registry.properties.loginServer
+          identity: acrPullIdentity.id
         }
       ]
     }

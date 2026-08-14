@@ -10,9 +10,27 @@
   \echo 'expected_ctype must be supplied from the source preflight'
   \quit 2
 \endif
+\if :{?expected_locale_provider}
+\else
+  \echo 'expected_locale_provider must be supplied from the source preflight'
+  \quit 2
+\endif
+\if :{?expected_locale}
+\else
+  \echo 'expected_locale must be supplied from the source preflight'
+  \quit 2
+\endif
+\if :{?expected_collation_version}
+\else
+  \echo 'expected_collation_version must be supplied from the source preflight'
+  \quit 2
+\endif
 
 SELECT set_config('anbud.expected_collation', :'expected_collation', false);
 SELECT set_config('anbud.expected_ctype', :'expected_ctype', false);
+SELECT set_config('anbud.expected_locale_provider', :'expected_locale_provider', false);
+SELECT set_config('anbud.expected_locale', :'expected_locale', false);
+SELECT set_config('anbud.expected_collation_version', :'expected_collation_version', false);
 
 DO $verify$
 DECLARE
@@ -65,9 +83,14 @@ BEGIN
         datcollate <> current_setting('anbud.expected_collation')
         OR datctype <> current_setting('anbud.expected_ctype')
         OR pg_encoding_to_char(encoding) <> 'UTF8'
+        OR datlocprovider::text <> current_setting('anbud.expected_locale_provider')
+        OR datlocale IS DISTINCT FROM current_setting('anbud.expected_locale')
+        OR daticurules IS NOT NULL
+        OR datcollversion IS DISTINCT FROM current_setting('anbud.expected_collation_version')
+        OR datcollversion IS DISTINCT FROM pg_database_collation_actual_version(oid)
       )
   ) THEN
-    RAISE EXCEPTION 'Target collation, ctype, or encoding differs from source';
+    RAISE EXCEPTION 'Target encoding or ICU locale contract differs from the validated source';
   END IF;
 
   IF NOT EXISTS (

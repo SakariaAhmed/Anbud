@@ -363,6 +363,55 @@ async function revisionResource(az, resourceGroup, appName, revisionName) {
   return az(revisionCommand("show", resourceGroup, appName, revisionName));
 }
 
+function revisionIsReady(revision) {
+  const provisioningState = revisionValue(revision, "provisioningState");
+  const healthState = revisionValue(revision, "healthState");
+  const runningState = revisionValue(revision, "runningState");
+  const replicas = Number(revisionValue(revision, "replicas"));
+  const provisioned =
+    provisioningState === "Provisioned" || provisioningState === "Succeeded";
+  const replicaStateReady =
+    (Number.isFinite(replicas) && replicas > 0) ||
+    (replicas === 0 && runningState === "ScaledToZero");
+  return provisioned && healthState === "Healthy" && replicaStateReady;
+}
+
+async function waitForRevisionReady(
+  az,
+  resourceGroup,
+  appName,
+  revisionName,
+  runtime = {},
+) {
+  const attempts = Number(runtime.revisionReadyAttempts ?? 60);
+  const wait =
+    runtime.wait ??
+    ((milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  if (!Number.isInteger(attempts) || attempts < 1 || attempts > 120) {
+    throw new Error(
+      "revisionReadyAttempts must be an integer from 1 through 120.",
+    );
+  }
+
+  let latest;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    latest = await revisionResource(az, resourceGroup, appName, revisionName);
+    if (revisionIsReady(latest)) return latest;
+    const provisioningState = revisionValue(latest, "provisioningState");
+    const healthState = revisionValue(latest, "healthState");
+    if (provisioningState === "Failed" || healthState === "Unhealthy") {
+      throw new Error(
+        `${revisionName} failed management-plane readiness (${provisioningState ?? "unknown"}/${healthState ?? "unknown"}).`,
+      );
+    }
+    if (attempt + 1 < attempts) await wait(5_000);
+  }
+  throw new Error(
+    `${revisionName} did not reach healthy provisioned replica readiness.`,
+  );
+}
+
 async function deactivateZeroTrafficRevisions(
   az,
   resourceGroup,
@@ -436,29 +485,37 @@ async function restoreStableDeployment(config, state, runtime = {}) {
     "state.previousAppImage",
   );
   const candidateRevision = state.candidateRevision?.trim();
+  const frozenIngressMode = state.frozenIngressMode === true;
   const az = runtime.az ?? defaultAz;
   const smoke = runtime.smoke ?? defaultSmoke;
   const cutover = runtime.cutover ?? defaultCutoverRuntime();
 
   // Fail closed: no writer may claim work while either application generation
-  // can still be alive. The gate is opened only after the stable web and worker
-  // have both been restored and smoked.
+  // can still be alive. A normal same-backend rollback reopens only after the
+  // stable web and worker are restored and smoked. Frozen Azure rollback keeps
+  // the source gate closed until a later Supabase backend reconcile.
   await cutover.setClaimsEnabled(false);
   await az(
     revisionCommand("activate", resourceGroup, appName, previousRevision),
   );
-  const stableRevision = await revisionResource(
-    az,
-    resourceGroup,
-    appName,
-    previousRevision,
-  );
+  const stableRevision = frozenIngressMode
+    ? await waitForRevisionReady(
+        az,
+        resourceGroup,
+        appName,
+        previousRevision,
+        runtime,
+      )
+    : await revisionResource(az, resourceGroup, appName, previousRevision);
   assertContainerVersion(stableRevision, "web", previousAppImage);
-  const stableRevisionFqdn = revisionFqdn(stableRevision, previousRevision);
-  await smoke(`https://${stableRevisionFqdn}`, "rollback-candidate");
+  if (!frozenIngressMode) {
+    const stableRevisionFqdn = revisionFqdn(stableRevision, previousRevision);
+    await smoke(`https://${stableRevisionFqdn}`, "rollback-candidate");
+  }
 
-  // Put a pre-smoked target behind the public endpoint before retiring the
-  // only serving revision. Claims remain closed throughout the short overlap.
+  // Put the validated target behind ingress before retiring the only serving
+  // revision. Claims remain closed throughout the short overlap. Frozen mode
+  // keeps that ingress internal; normal mode uses the pre-smoked revision.
   await az(
     trafficCommand(
       resourceGroup,
@@ -500,6 +557,17 @@ async function restoreStableDeployment(config, state, runtime = {}) {
       "--name",
       appName,
     ]));
+  if (frozenIngressMode) {
+    if (app?.properties?.configuration?.ingress?.external !== false) {
+      throw new Error(
+        "Frozen rollback requires internal-only Container App ingress.",
+      );
+    }
+    // The application and worker templates still contain Azure backend
+    // configuration. Keep source claims and the worker schedule closed until
+    // a separate Supabase reconcile has completed and been verified.
+    return;
+  }
   await smoke(`https://${resourceFqdn(app)}`, "rollback-promoted");
   await cutover.setClaimsEnabled(true);
 }
@@ -511,6 +579,9 @@ export async function rolloutContainerApp(config, runtime = {}) {
   const candidateImage = required(config.candidateImage, "candidateImage");
   const revisionSuffix = required(config.revisionSuffix, "revisionSuffix");
   const minReplicas = String(config.minReplicas ?? 1);
+  const frozenIngressMode = config.frozenIngressMode === true;
+  const keepSourceClaimsClosedOnSuccess =
+    frozenIngressMode || config.keepSourceClaimsClosedOnSuccess === true;
   const az = runtime.az ?? defaultAz;
   const smoke = runtime.smoke ?? defaultSmoke;
   const writeState =
@@ -550,6 +621,14 @@ export async function rolloutContainerApp(config, runtime = {}) {
     "--name",
     workerJobName,
   ]);
+  if (
+    frozenIngressMode &&
+    app?.properties?.configuration?.ingress?.external !== false
+  ) {
+    throw new Error(
+      "Frozen Azure rollout requires internal-only Container App ingress.",
+    );
+  }
 
   const previousRevision = selectPreviousHealthyRevision(app, revisions);
   const previousRevisionResource = await revisionResource(
@@ -574,6 +653,7 @@ export async function rolloutContainerApp(config, runtime = {}) {
     previousWorkerImage,
     candidateRevision,
     cutoverStarted: false,
+    frozenIngressMode,
   };
   writeState(state);
 
@@ -621,23 +701,23 @@ export async function rolloutContainerApp(config, runtime = {}) {
       throw new Error("Azure did not create a distinct candidate revision.");
     }
 
-    const candidate = await az([
-      "containerapp",
-      "revision",
-      "show",
-      "--resource-group",
-      resourceGroup,
-      "--name",
-      appName,
-      "--revision",
-      candidateRevision,
-    ]);
+    const candidate = frozenIngressMode
+      ? await waitForRevisionReady(
+          az,
+          resourceGroup,
+          appName,
+          candidateRevision,
+          runtime,
+        )
+      : await revisionResource(az, resourceGroup, appName, candidateRevision);
     assertContainerVersion(candidate, "web", candidateImage);
-    const candidateFqdn = required(
-      candidate?.properties?.fqdn ?? candidate?.fqdn,
-      "candidate revision FQDN",
-    );
-    await smoke(`https://${candidateFqdn}`, "candidate");
+    if (!frozenIngressMode) {
+      const candidateFqdn = required(
+        candidate?.properties?.fqdn ?? candidate?.fqdn,
+        "candidate revision FQDN",
+      );
+      await smoke(`https://${candidateFqdn}`, "candidate");
+    }
 
     // From this point on, fail closed. The shared database gate blocks both
     // the stable direct UPDATE claim path and the lease-aware candidate path.
@@ -669,7 +749,9 @@ export async function rolloutContainerApp(config, runtime = {}) {
     );
     await az(stopWorkerExecutionsCommand(resourceGroup, workerJobName));
     await cutover.requeueRunningJobs();
-    await smoke(`https://${appFqdn}`, "promoted");
+    if (!frozenIngressMode) {
+      await smoke(`https://${appFqdn}`, "promoted");
+    }
 
     await az(workerImageCommand(resourceGroup, workerJobName, candidateImage));
     const candidateWorker = await az([
@@ -685,10 +767,17 @@ export async function rolloutContainerApp(config, runtime = {}) {
     state.candidateWorkerActivated = true;
     writeState(state);
     // Close the schedule race: any execution created from the retired worker
-    // template before the update is stopped before claims are reopened.
+    // template before the update is stopped before either the same-backend
+    // gate is reopened or the external Azure activation control takes over.
     await az(stopWorkerExecutionsCommand(resourceGroup, workerJobName));
-    await cutover.setClaimsEnabled(true);
-    state.claimsEnabled = true;
+    if (keepSourceClaimsClosedOnSuccess) {
+      state.claimsEnabled = false;
+      state.sourceClaimsKeptClosed = true;
+    } else {
+      await cutover.setClaimsEnabled(true);
+      state.claimsEnabled = true;
+      state.sourceClaimsKeptClosed = false;
+    }
     writeState(state);
 
     return {
@@ -771,6 +860,18 @@ async function main() {
     console.log(JSON.stringify({ rollout: "rolled_back" }));
     return;
   }
+  const keepSourceClaimsClosed =
+    process.env.KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS?.trim() ?? "0";
+  if (!["0", "1"].includes(keepSourceClaimsClosed)) {
+    throw new Error(
+      "KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS must be exactly 0 or 1.",
+    );
+  }
+  const frozenIngressMode =
+    process.env.FROZEN_INGRESS_ROLLOUT?.trim() ?? "0";
+  if (!["0", "1"].includes(frozenIngressMode)) {
+    throw new Error("FROZEN_INGRESS_ROLLOUT must be exactly 0 or 1.");
+  }
   const result = await rolloutContainerApp({
     resourceGroup: process.env.RESOURCE_GROUP,
     appName: process.env.CONTAINER_APP,
@@ -781,6 +882,8 @@ async function main() {
     revisionSuffix: process.env.REVISION_SUFFIX,
     minReplicas: process.env.MIN_REPLICAS,
     stateFile: process.env.ROLLOUT_STATE_FILE,
+    keepSourceClaimsClosedOnSuccess: keepSourceClaimsClosed === "1",
+    frozenIngressMode: frozenIngressMode === "1",
   });
   console.log(
     JSON.stringify({
