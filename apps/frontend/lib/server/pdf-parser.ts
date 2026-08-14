@@ -3,7 +3,7 @@ import "server-only";
 import { createRequire } from "node:module";
 import { Worker } from "node:worker_threads";
 
-export type PdfTextItem = {
+type PdfTextItem = {
   str: string;
   transform: number[];
   width?: number;
