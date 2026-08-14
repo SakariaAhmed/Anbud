@@ -349,9 +349,11 @@ jobs:
               case "$AZURE_BACKEND_RELEASE_MODE" in
                 cutover)
                   echo "migration_control_mode=verify" >> "$GITHUB_OUTPUT"
+                  echo "azure_backend_release_mode=cutover" >> "$GITHUB_OUTPUT"
                   ;;
                 routine)
                   echo "migration_control_mode=validate-target" >> "$GITHUB_OUTPUT"
+                  echo "azure_backend_release_mode=routine" >> "$GITHUB_OUTPUT"
                   ;;
                 *)
                   echo "::error::AZURE_BACKEND_RELEASE_MODE must be cutover or routine."
@@ -453,7 +455,9 @@ jobs:
           vuln-type: os,library
 
       - name: Prove public web ingress is frozen
-        if: ${{ steps.deployment_config.outputs.azure_backend == 'true' }}
+        if: >-
+          ${{ steps.deployment_config.outputs.azure_backend == 'true'
+              && steps.deployment_config.outputs.azure_backend_release_mode == 'cutover' }}
         env:
           APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
         run: |
@@ -480,7 +484,9 @@ jobs:
           echo "Public ingress freeze proved by external=false and a negative external probe."
 
       - name: Prove frozen Supabase source has zero running jobs
-        if: ${{ steps.deployment_config.outputs.azure_backend == 'true' }}
+        if: >-
+          ${{ steps.deployment_config.outputs.azure_backend == 'true'
+              && steps.deployment_config.outputs.azure_backend_release_mode == 'cutover' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -755,18 +761,33 @@ jobs:
           MIGRATION_CONTROL_KEY_VAULT_NAME: ${{ vars.MIGRATION_CONTROL_KEY_VAULT_NAME }}
           MIGRATION_CONTROL_DATA_API_SECRET_NAME: ${{ vars.MIGRATION_CONTROL_DATA_API_SECRET_NAME || 'postgrest-service-role-key' }}
           MIGRATION_CONTROL_DATA_API_SECRET_VERSION: ${{ vars.MIGRATION_CONTROL_DATA_API_SECRET_VERSION }}
+          AZURE_BACKEND_RELEASE_MODE: ${{ steps.deployment_config.outputs.azure_backend_release_mode }}
         run: |
           effective_worker_cron="$PROJECT_JOB_WORKER_CRON"
           external_ingress_enabled=true
           if [ "$FILE_STORAGE_BACKEND" = "azure" ]; then
             ingress_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors)"
-            if [ "$ingress_external" != "false" ]; then
-              echo "::error::The public write freeze was lost before Azure backend reconcile."
-              exit 1
-            fi
-            az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none
-            effective_worker_cron="$MIGRATION_DISABLED_WORKER_CRON"
-            external_ingress_enabled=false
+            case "$AZURE_BACKEND_RELEASE_MODE" in
+              cutover)
+                if [ "$ingress_external" != "false" ]; then
+                  echo "::error::The public write freeze was lost before Azure backend reconcile."
+                  exit 1
+                fi
+                az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none
+                effective_worker_cron="$MIGRATION_DISABLED_WORKER_CRON"
+                external_ingress_enabled=false
+                ;;
+              routine)
+                if [ "$ingress_external" != "true" ]; then
+                  echo "::error::A routine Azure release requires the healthy production ingress to remain external."
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "::error::The validated Azure backend release mode is unavailable."
+                exit 1
+                ;;
+            esac
           fi
           legacy_revision="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && length(properties.template.containers[0].env[?secretRef=='app-access-password']) > \`0\`].name | [0]" --output tsv --only-show-errors)"
           if [ -n "$legacy_revision" ] && [ -z "$LEGACY_APP_ACCESS_PASSWORD" ]; then
@@ -857,12 +878,17 @@ jobs:
           az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-infra-${GITHUB_SHA}" --template-file infra/azure/container-app.bicep --parameters "${common_parameters[@]}" "${data_api_secret_parameters[@]}" --output none
           if [ "$FILE_STORAGE_BACKEND" = "azure" ]; then
             ingress_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors)"
-            if [ "$ingress_external" != "false" ]; then
-              az containerapp ingress enable --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --type internal --target-port 3000 --transport auto --allow-insecure false --output none --only-show-errors || true
-              echo "::error::Azure reconcile did not preserve the internal-only web ingress."
+            expected_ingress_external=true
+            if [ "$AZURE_BACKEND_RELEASE_MODE" = "cutover" ]; then
+              expected_ingress_external=false
+            fi
+            if [ "$ingress_external" != "$expected_ingress_external" ]; then
+              echo "::error::Azure reconcile did not preserve the validated ingress boundary."
               exit 1
             fi
-            az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none
+            if [ "$AZURE_BACKEND_RELEASE_MODE" = "cutover" ]; then
+              az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none
+            fi
           fi
 
       - name: Roll out zero-traffic candidate and promote
@@ -871,7 +897,7 @@ jobs:
           CANDIDATE_IMAGE: ${{ steps.immutable_image.outputs.candidate_image }}
           REVISION_SUFFIX: sha-${{ github.sha }}
           ROLLOUT_STATE_FILE: ${{ runner.temp }}/anbud-rollout-state.json
-          FROZEN_INGRESS_ROLLOUT: ${{ steps.deployment_config.outputs.azure_backend == 'true' && '1' || '0' }}
+          FROZEN_INGRESS_ROLLOUT: ${{ steps.deployment_config.outputs.azure_backend == 'true' && steps.deployment_config.outputs.azure_backend_release_mode == 'cutover' && '1' || '0' }}
           KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS: ${{ steps.deployment_config.outputs.azure_backend == 'true' && '1' || '0' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -976,6 +1002,7 @@ jobs:
                   || steps.rollout.outcome == 'cancelled') }}
         env:
           AZURE_BACKEND: ${{ steps.deployment_config.outputs.azure_backend }}
+          AZURE_BACKEND_RELEASE_MODE: ${{ steps.deployment_config.outputs.azure_backend_release_mode }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
@@ -984,9 +1011,11 @@ jobs:
           if [ -f "$state_file" ]; then
             node scripts/azure_containerapp_rollout.mjs --rollback-state "$state_file"
           fi
-          if [ "$AZURE_BACKEND" = "true" ]; then
+          if [ "$AZURE_BACKEND" = "true" ] && [ "$AZURE_BACKEND_RELEASE_MODE" = "cutover" ]; then
             az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none --only-show-errors || true
             echo "Azure rollout fallback remains internal-only with source claims and the worker closed. Reconcile and verify the Supabase backend before reopening either."
+          elif [ "$AZURE_BACKEND" = "true" ]; then
+            echo "Routine Azure rollback restored the previous serving revision without changing the public ingress boundary."
           fi
 
       - name: Restore scheduled worker after completed release

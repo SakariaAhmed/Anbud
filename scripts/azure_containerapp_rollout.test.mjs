@@ -704,7 +704,7 @@ test("pre-cutover fallback never requeues work owned by the serving stable revis
   );
 });
 
-test("Azure workflow preserves frozen fail-closed activation", () => {
+test("Azure workflow separates cutover freeze from routine releases", () => {
   const workflow = readFileSync(
     new URL("../.github/workflows/deploy-azure.yml", import.meta.url),
     "utf8",
@@ -727,9 +727,46 @@ test("Azure workflow preserves frozen fail-closed activation", () => {
   );
   assert.ok(ingressProof > 0 && ingressProof < sourceProof);
   const ingressProofStep = workflow.slice(ingressProof, sourceProof);
+  assert.match(
+    ingressProofStep,
+    /azure_backend_release_mode == 'cutover'/u,
+  );
   assert.match(ingressProofStep, /ingress\.external/u);
   assert.match(ingressProofStep, /probe_status/u);
   assert.match(ingressProofStep, /negative external probe/u);
+  const suspendStart = workflow.indexOf(
+    "name: Suspend scheduled worker for Azure cutover",
+  );
+  const sourceProofStep = workflow.slice(sourceProof, suspendStart);
+  assert.match(
+    sourceProofStep,
+    /azure_backend_release_mode == 'cutover'/u,
+  );
+
+  const reconcileStart = workflow.indexOf(
+    "name: Reconcile infrastructure without releasing candidate code",
+  );
+  const rolloutStart = workflow.indexOf(
+    "name: Roll out zero-traffic candidate and promote",
+  );
+  assert.ok(reconcileStart > sourceProof && rolloutStart > reconcileStart);
+  const reconcileStep = workflow.slice(reconcileStart, rolloutStart);
+  assert.match(reconcileStep, /AZURE_BACKEND_RELEASE_MODE:/u);
+  assert.match(reconcileStep, /routine\)/u);
+  assert.match(reconcileStep, /remain external/u);
+
+  const activateStart = workflow.indexOf(
+    "name: Activate internal Azure worker claims after smoke-ready frozen candidate",
+  );
+  const rolloutStep = workflow.slice(rolloutStart, activateStart);
+  assert.match(
+    rolloutStep,
+    /FROZEN_INGRESS_ROLLOUT:[^\n]*azure_backend_release_mode == 'cutover'/u,
+  );
+  assert.match(
+    rolloutStep,
+    /KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS:[^\n]*azure_backend == 'true'/u,
+  );
 
   const uncertainStart = workflow.indexOf(
     "name: Stop on uncertain target activation",
