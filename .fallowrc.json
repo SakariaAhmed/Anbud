@@ -15,6 +15,7 @@
     "apps/frontend/app/api/projects/*/solution-evaluation/route.test-support.ts",
     "apps/frontend/scripts/run_project_job_worker.mjs",
     "scripts/backfill_document_storage.mjs",
+    "scripts/azure_migration_preflight.mjs",
     "scripts/benchmark_workspace_ui.mjs",
     "scripts/llm_quality_eval.mjs",
     "scripts/run_document_parser_bakeoff.mjs",
@@ -31,6 +32,56 @@
     "tmp/docling-bakeoff-venv/**"
   ],
   "ignoreExports": [
+    {
+      "file": "apps/frontend/app/forbidden.tsx",
+      "exports": ["metadata"]
+    },
+    {
+      "file": "apps/frontend/app/not-found.tsx",
+      "exports": ["metadata"]
+    },
+    {
+      "file": "apps/frontend/app/unauthorized.tsx",
+      "exports": ["metadata"]
+    },
+    {
+      "file": "apps/frontend/lib/access-control.ts",
+      "exports": [
+        "IDENTITY_TYPES",
+        "ADMIN_ROLE",
+        "PROJECT_ROLES",
+        "PROJECT_PERMISSIONS",
+        "isAdminRole"
+      ]
+    },
+    {
+      "file": "apps/frontend/lib/middleware-project-authorization.ts",
+      "exports": ["requiredProjectPermission"]
+    },
+    {
+      "file": "apps/frontend/lib/server/app-sessions.ts",
+      "exports": ["revokePrincipalSessions"]
+    },
+    {
+      "file": "apps/frontend/lib/server/authorization.ts",
+      "exports": ["AuthorizationError", "getEffectiveProjectRole"]
+    },
+    {
+      "file": "apps/frontend/lib/server/azure-blob-storage.ts",
+      "exports": ["createAzureBlobStorageBackend"]
+    },
+    {
+      "file": "apps/frontend/lib/server/guest-email.ts",
+      "exports": ["isGuestEmailConfigured"]
+    },
+    {
+      "file": "apps/frontend/lib/server/identity-crypto.ts",
+      "exports": ["normalizeGuestCode", "safeHmacEqual"]
+    },
+    {
+      "file": "apps/frontend/lib/server/repositories/artifacts.ts",
+      "exports": ["GENERATED_ARTIFACT_TYPES"]
+    },
     {
       "file": "apps/frontend/components/projects/primitives.tsx",
       "exports": ["*"]
@@ -189,13 +240,24 @@
     {
       "file": "apps/frontend/lib/server/repositories/supabase-store.ts",
       "exports": [
+        "appendChatMessage",
+        "deleteGeneratedArtifact",
+        "getArtifactSourceRevisions",
         "getCustomerAnalysis",
         "getExecutiveSummary",
         "getFreshProjectDerivedSnapshot",
         "getSolutionEvaluation",
         "isSolutionEvaluationCurrent",
+        "listArtifactKnowledgeCandidatesFresh",
+        "listChatMessages",
+        "listChatSessions",
+        "listGeneratedArtifacts",
         "listGeneratedArtifactsFresh",
-        "sanitizeSolutionEvaluationResult"
+        "saveGeneratedArtifact",
+        "sanitizeSolutionEvaluationResult",
+        "updateChatSessionMemory",
+        "updateGeneratedArtifact",
+        "upsertChatSession"
       ]
     },
     {

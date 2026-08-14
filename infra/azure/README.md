@@ -1,6 +1,12 @@
 # Azure phase 1 hosting
 
-This deploys the existing Next.js container to Azure Container Apps while keeping Supabase as the live database and storage backend.
+This deploys the existing Next.js container to Azure Container Apps. Supabase
+remains the live database and storage backend until the separately gated data
+cutover in [the migration runbook](../../docs/azure-migration.md).
+
+The web app defaults to `minReplicas=0` to minimize idle cost. Expect a cold
+first request, especially with the large Docling image. This is not a maintenance
+or write-freeze mechanism.
 
 ## Build and push an image
 
@@ -55,8 +61,8 @@ az deployment group create \
   --template-file infra/azure/container-app.bicep \
   --parameters \
     appName=anbud \
-    image=<acr-name>.azurecr.io/anbud:phase1 \
-    workerImage=<acr-name>.azurecr.io/anbud:phase1 \
+    image=<acr-name>.azurecr.io/anbud@sha256:<digest> \
+    workerImage=<acr-name>.azurecr.io/anbud@sha256:<digest> \
     registryName=<acr-name> \
     supabaseUrl="$SUPABASE_URL" \
     supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
@@ -85,9 +91,10 @@ az deployment group create \
     projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
 ```
 
-The template creates a user-assigned identity with `AcrPull` and uses it for
-both web and worker image pulls; no ACR username or password is stored. The
-deployment principal must be allowed to create role assignments on the ACR.
+An Owner/User Access Administrator first deploys `acr-pull-bootstrap.bicep`.
+That one-time template creates a user-assigned identity and its ACR-scoped
+`AcrPull` role. The routine `container-app.bicep` deployment only references
+the existing identity, so CI keeps Contributor and stores no ACR password.
 It also enables a system-assigned managed identity on the web Container App.
 To send guest invitations, assign that identity email-send access on the
 Azure Communication Services resource after the first deployment. The exact
@@ -145,3 +152,26 @@ az containerapp job show \
 - Run one short OpenAI-backed workflow.
 - Confirm the scheduled project job worker exists and has recent executions.
 - Only then move DNS from the current host to Azure.
+
+## Data-plane templates
+
+These templates are intentionally separate so an ordinary app deployment cannot
+create paid data resources or trigger a cutover:
+
+- `postgres.bicep`: PostgreSQL 17, B1ms/32 GiB by default, no HA, exact IP
+  firewall rules, source-provided collation, 7-day PITR, `pgcrypto` and `vector`,
+  plus a validation database.
+- `storage.bicep`: private Hot LRS container, Shared Key/public access disabled,
+  identity-only access on a public same-region endpoint, 14-day soft delete and
+  container-scoped managed identity roles.
+- `postgrest.bicep`: temporary internal compatibility bridge, pool size 5,
+  `maxReplicas=1` and scale-to-zero by default.
+- `budget.bicep`: 50/80/100% actual and 100% forecast notifications in the
+  subscription billing currency. A budget
+  warns but never stops or deletes resources.
+
+Never deploy these from an unreviewed parameter file. Store parameter files
+outside git, run `az deployment group what-if` first, and follow the stop gates
+in the migration runbook. `storage.bicep` creates role assignments, so its
+one-time bootstrap requires Owner or User Access Administrator; routine CI
+should retain Contributor only.

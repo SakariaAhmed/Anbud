@@ -5,6 +5,11 @@ import {
 } from "next/server";
 
 import {
+  dataApiConfiguration,
+  dataApiHeaders,
+} from "@/lib/data-api-config";
+
+import {
   AUTH_COOKIE_NAME,
   AUTH_DISPLAY_NAME_HEADER,
   AUTH_IS_ADMIN_HEADER,
@@ -199,31 +204,17 @@ type MiddlewareIdentity = {
   sessionId: string | null;
 };
 
-function supabaseConfiguration() {
-  const baseUrl = process.env.SUPABASE_URL?.replace(/\/+$/, "");
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return baseUrl && serviceKey ? { baseUrl, serviceKey } : null;
-}
-
-function supabaseHeaders(serviceKey: string) {
-  return {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
-    "Content-Type": "application/json",
-  };
-}
-
 async function resolveDatabaseSession(
   sessionToken: string | undefined,
 ): Promise<MiddlewareIdentity | null> {
   const parsed = parseDatabaseSessionToken(sessionToken);
-  const configuration = supabaseConfiguration();
+  const configuration = dataApiConfiguration();
   if (!parsed || !configuration) return null;
   const response = await fetch(
-    `${configuration.baseUrl}/rest/v1/rpc/resolve_app_session`,
+    `${configuration.baseUrl}/rpc/resolve_app_session`,
     {
       method: "POST",
-      headers: supabaseHeaders(configuration.serviceKey),
+      headers: dataApiHeaders(configuration.serviceKey),
       body: JSON.stringify({
         p_session_id: parsed.sessionId,
         p_token_hmac: await databaseSessionTokenHmac(
@@ -257,13 +248,13 @@ async function resolveProjectRole(
   projectId: string,
   identity: MiddlewareIdentity,
 ) {
-  const configuration = supabaseConfiguration();
+  const configuration = dataApiConfiguration();
   if (!configuration) return null;
   const response = await fetch(
-    `${configuration.baseUrl}/rest/v1/rpc/resolve_project_role`,
+    `${configuration.baseUrl}/rpc/resolve_project_role`,
     {
       method: "POST",
-      headers: supabaseHeaders(configuration.serviceKey),
+      headers: dataApiHeaders(configuration.serviceKey),
       body: JSON.stringify({
         p_principal_id: identity.principalId,
         p_project_id: projectId,
@@ -283,7 +274,7 @@ async function recordRequestActivity(
   pathname: string,
   result: "ok" | "denied" = "ok",
 ) {
-  const configuration = supabaseConfiguration();
+  const configuration = dataApiConfiguration();
   if (!configuration) return;
   if (
     pathname.startsWith("/_next") ||
@@ -299,10 +290,10 @@ async function recordRequestActivity(
     /^[0-9a-f-]{36}$/iu.test(segments[documentIndex + 1] ?? "")
       ? segments[documentIndex + 1]
       : null;
-  await fetch(`${configuration.baseUrl}/rest/v1/activity_events`, {
+  await fetch(`${configuration.baseUrl}/activity_events`, {
     method: "POST",
     headers: {
-      ...supabaseHeaders(configuration.serviceKey),
+      ...dataApiHeaders(configuration.serviceKey),
       Prefer: "return=minimal",
     },
     body: JSON.stringify({

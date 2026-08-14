@@ -2,6 +2,8 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 
+import { dataApiConfiguration } from "@/lib/data-api-config";
+import { defaultAzureBlobStorageBackend } from "@/lib/server/azure-blob-storage";
 import { createServiceClient } from "@/lib/server/supabase";
 
 export type HealthStatus = "healthy" | "degraded" | "unhealthy";
@@ -36,15 +38,14 @@ export type HealthModel = {
 };
 
 const PROCESS_STARTED_AT = Date.now();
-const SUPABASE_DEGRADED_AFTER_MS = 750;
-const SUPABASE_TIMEOUT_MS = 1_500;
+const DATA_API_DEGRADED_AFTER_MS = 750;
+const DATA_API_TIMEOUT_MS = 1_500;
+const STORAGE_TIMEOUT_MS = 1_500;
 const HEALTH_CACHE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
 const REQUIRED_ENV = [
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
   "APP_ENCRYPTION_KEY",
   "APP_ADMIN_ACCESS_PASSWORD_HASH",
   "APP_ADMIN_PRINCIPAL_ID",
@@ -90,7 +91,23 @@ function runtimeComponent(): HealthComponent {
 }
 
 function configurationComponent(): HealthComponent {
-  const missingCount = REQUIRED_ENV.filter((name) => !process.env[name]?.trim()).length;
+  const fileStorageBackend =
+    process.env.FILE_STORAGE_BACKEND?.trim().toLowerCase() || "supabase";
+  const storageBackendValid =
+    fileStorageBackend === "azure" || fileStorageBackend === "supabase";
+  const storageConfigured =
+    !storageBackendValid
+      ? false
+      : fileStorageBackend === "azure"
+      ? Boolean(process.env.AZURE_STORAGE_ACCOUNT_URL?.trim())
+      : Boolean(
+          process.env.SUPABASE_URL?.trim() &&
+            process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
+        );
+  const missingCount =
+    REQUIRED_ENV.filter((name) => !process.env[name]?.trim()).length +
+    (dataApiConfiguration() ? 0 : 1) +
+    (storageConfigured ? 0 : 1);
 
   return {
     name: "configuration",
@@ -103,6 +120,8 @@ function configurationComponent(): HealthComponent {
       missing_required_count: missingCount,
       docling_mode: process.env.DOCLING_ENHANCEMENT_MODE?.trim() || "async",
       docling_auto_run: process.env.DOCLING_ASYNC_AUTO_RUN?.trim() || "off",
+      data_backend: dataApiConfiguration()?.backend || "unconfigured",
+      file_storage_backend: fileStorageBackend,
     },
   };
 }
@@ -121,21 +140,22 @@ async function withAbortTimeout<T>(
   }
 }
 
-async function supabaseComponent(): Promise<HealthComponent> {
-  if (!process.env.SUPABASE_URL?.trim() || !process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+async function dataApiComponent(): Promise<HealthComponent> {
+  const configuration = dataApiConfiguration();
+  if (!configuration) {
     return {
-      name: "supabase",
+      name: "data_api",
       status: "unhealthy",
-      description: "Supabase is not configured.",
+      description: "The data API is not configured.",
     };
   }
 
   const start = performance.now();
 
   try {
-    const supabase = createServiceClient();
-    const result = await withAbortTimeout(SUPABASE_TIMEOUT_MS, (signal) =>
-      supabase
+    const dataApi = createServiceClient();
+    const result = await withAbortTimeout(DATA_API_TIMEOUT_MS, (signal) =>
+      dataApi
         .from("projects")
         .select("id")
         .limit(1)
@@ -145,9 +165,9 @@ async function supabaseComponent(): Promise<HealthComponent> {
 
     if (result.error) {
       return {
-        name: "supabase",
+        name: "data_api",
         status: "unhealthy",
-        description: "Supabase did not accept a lightweight projects query.",
+        description: "The data API did not accept a lightweight projects query.",
         latency_ms: latencyMs,
         metadata: {
           error_code: result.error.code || null,
@@ -156,24 +176,75 @@ async function supabaseComponent(): Promise<HealthComponent> {
     }
 
     return {
-      name: "supabase",
-      status: latencyMs > SUPABASE_DEGRADED_AFTER_MS ? "degraded" : "healthy",
+      name: "data_api",
+      status: latencyMs > DATA_API_DEGRADED_AFTER_MS ? "degraded" : "healthy",
       description:
-        latencyMs > SUPABASE_DEGRADED_AFTER_MS
-          ? "Supabase is reachable but responding slowly."
-          : "Supabase is reachable.",
+        latencyMs > DATA_API_DEGRADED_AFTER_MS
+          ? "The data API is reachable but responding slowly."
+          : "The data API is reachable.",
       latency_ms: latencyMs,
+      metadata: { backend: configuration.backend },
     };
   } catch (error) {
     const latencyMs = Math.round(performance.now() - start);
     return {
-      name: "supabase",
+      name: "data_api",
       status: "unhealthy",
       description:
         error instanceof Error && error.name === "AbortError"
-          ? "Supabase health query timed out."
-          : "Supabase health query failed.",
+          ? "The data API health query timed out."
+          : "The data API health query failed.",
       latency_ms: latencyMs,
+    };
+  }
+}
+
+async function fileStorageComponent(): Promise<HealthComponent> {
+  const backend = process.env.FILE_STORAGE_BACKEND?.trim().toLowerCase() || "supabase";
+  if (backend === "supabase") {
+    const configured = Boolean(
+      process.env.SUPABASE_URL?.trim() &&
+        process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
+    );
+    return {
+      name: "file_storage",
+      status: configured ? "healthy" : "unhealthy",
+      description: configured
+        ? "Supabase file storage configuration is present."
+        : "Supabase file storage configuration is missing.",
+      metadata: { backend },
+    };
+  }
+  if (backend !== "azure") {
+    return {
+      name: "file_storage",
+      status: "unhealthy",
+      description: "The file storage backend is invalid.",
+    };
+  }
+
+  const start = performance.now();
+  try {
+    await withAbortTimeout(STORAGE_TIMEOUT_MS, (signal) =>
+      defaultAzureBlobStorageBackend().probeAccess(signal),
+    );
+    return {
+      name: "file_storage",
+      status: "healthy",
+      description: "The private Azure Blob container is reachable with managed identity.",
+      latency_ms: Math.round(performance.now() - start),
+      metadata: { backend },
+    };
+  } catch (error) {
+    return {
+      name: "file_storage",
+      status: "unhealthy",
+      description:
+        error instanceof Error && error.name === "AbortError"
+          ? "The Azure Blob container probe timed out."
+          : "The Azure Blob container probe failed.",
+      latency_ms: Math.round(performance.now() - start),
+      metadata: { backend },
     };
   }
 }
@@ -209,18 +280,19 @@ function flowsFromComponents(components: HealthComponent[]): HealthFlow[] {
   const flows: Array<Omit<HealthFlow, "status">> = [
     {
       name: "interactive_project_workspace",
-      depends_on: ["runtime", "configuration", "supabase"],
+      depends_on: ["runtime", "configuration", "data_api", "file_storage"],
     },
     {
       name: "ai_generation",
-      depends_on: ["runtime", "configuration", "supabase", "openai"],
+      depends_on: ["runtime", "configuration", "data_api", "file_storage", "openai"],
     },
     {
       name: "async_project_jobs",
       depends_on: [
         "runtime",
         "configuration",
-        "supabase",
+        "data_api",
+        "file_storage",
         "openai",
         "project_job_worker",
       ],
@@ -257,7 +329,8 @@ export async function createReadinessModel(): Promise<HealthModel> {
   const components = [
     runtimeComponent(),
     configurationComponent(),
-    await supabaseComponent(),
+    await dataApiComponent(),
+    await fileStorageComponent(),
     openAiComponent(),
     workerComponent(),
   ];

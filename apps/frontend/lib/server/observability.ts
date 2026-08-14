@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 
 import { AUTH_PRINCIPAL_HEADER } from "@/lib/password-auth";
+import { dataApiConfiguration } from "@/lib/data-api-config";
 
 import {
   beginDistributedRateLimitAttempt,
@@ -227,7 +228,7 @@ async function checkDatabaseRateLimit(input: {
     return null;
   }
 
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (!dataApiConfiguration()) {
     recordDatabaseRateLimitFailure(now);
     return null;
   }

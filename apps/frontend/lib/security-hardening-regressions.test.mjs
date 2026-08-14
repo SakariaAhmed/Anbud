@@ -47,10 +47,13 @@ test("only liveness is public and detailed health endpoints require admin", () =
 
 test("Azure image pulls use managed identity and no static ACR password", () => {
   const bicep = read("infra/azure/container-app.bicep", repositoryRoot);
+  const bootstrap = read("infra/azure/acr-pull-bootstrap.bicep", repositoryRoot);
   const workflow = read(".github/workflows/deploy-azure.yml", repositoryRoot);
 
   assert.match(bicep, /userAssignedIdentities/u);
-  assert.match(bicep, /AcrPull/u);
+  assert.match(bootstrap, /AcrPull/u);
+  assert.match(bootstrap, /Microsoft\.Authorization\/roleAssignments/u);
+  assert.doesNotMatch(bicep, /Microsoft\.Authorization\/roleAssignments/u);
   assert.doesNotMatch(bicep, /registryPassword|registryUsername/u);
   assert.doesNotMatch(workflow, /ACR_PASSWORD|ACR_USERNAME/u);
   assert.match(workflow, /az acr login/u);

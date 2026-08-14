@@ -117,7 +117,75 @@ export function createSupabaseCutoverRuntime({
   };
 }
 
+export function createDataApiCutoverRuntime({
+  dataApiUrl,
+  serviceRoleKey,
+  fetchImpl = fetch,
+}) {
+  const checkedUrl = new URL(required(dataApiUrl, "DATA_API_URL"));
+  if (
+    checkedUrl.protocol !== "https:" ||
+    checkedUrl.username ||
+    checkedUrl.password ||
+    checkedUrl.search ||
+    checkedUrl.hash
+  ) {
+    throw new Error("DATA_API_URL must be a credential-free HTTPS URL.");
+  }
+  const baseUrl = `${checkedUrl.origin}${checkedUrl.pathname}`.replace(/\/+$/u, "");
+  const credential = required(serviceRoleKey, "DATA_API_SERVICE_ROLE_KEY");
+  const rpc = async (functionName, body) => {
+    const response = await fetchImpl(`${baseUrl}/rpc/${functionName}`, {
+      method: "POST",
+      headers: {
+        apikey: credential,
+        authorization: `Bearer ${credential}`,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Project-job cutover RPC ${functionName} failed with HTTP ${response.status}.`,
+      );
+    }
+    return response.json();
+  };
+
+  return {
+    async setClaimsEnabled(enabled) {
+      const result = validateCutoverResult(
+        await rpc("set_project_job_claims_enabled", { p_claims_enabled: enabled }),
+        "Project-job claim gate",
+      );
+      if (result.claims_enabled !== enabled) {
+        throw new Error("Project-job claim gate did not reach the requested state.");
+      }
+      return result;
+    },
+    async requeueRunningJobs() {
+      return validateCutoverResult(
+        await rpc("requeue_project_jobs_for_cutover", {}),
+        "Project-job cutover requeue",
+      );
+    },
+    async prepareStableRollback() {
+      return validateCutoverResult(
+        await rpc("prepare_stable_main_rollback", {}),
+        "Stable-main rollback preparation",
+      );
+    },
+  };
+}
+
 function defaultCutoverRuntime() {
+  if (process.env.DATA_API_URL?.trim() || process.env.DATA_API_SERVICE_ROLE_KEY?.trim()) {
+    return createDataApiCutoverRuntime({
+      dataApiUrl: process.env.DATA_API_URL,
+      serviceRoleKey: process.env.DATA_API_SERVICE_ROLE_KEY,
+    });
+  }
   return createSupabaseCutoverRuntime({
     supabaseUrl: process.env.SUPABASE_URL,
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
