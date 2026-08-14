@@ -10,3 +10,5 @@ export function createServiceClient() {
   }
   return activeClient;
 }
+
+export const createSupabaseStorageClient = createServiceClient;

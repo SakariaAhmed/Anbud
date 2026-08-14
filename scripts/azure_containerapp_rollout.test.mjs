@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  createDataApiCutoverRuntime,
   createSupabaseCutoverRuntime,
   rollbackContainerAppFromState,
   rolloutContainerApp,
@@ -263,6 +264,37 @@ test("Supabase cutover client is project-bound, versioned, and fail-closed", asy
   await assert.rejects(
     wrongVersion.setClaimsEnabled(false),
     /unexpected cutover version/u,
+  );
+});
+
+test("Azure cutover client uses the explicit PostgREST root without Supabase paths", async () => {
+  const calls = [];
+  const cutover = createDataApiCutoverRuntime({
+    dataApiUrl: "https://anbud-postgrest.internal/",
+    serviceRoleKey: "synthetic-azure-key",
+    async fetchImpl(url, options) {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            version: "project-job-cutover-v1",
+            claims_enabled: false,
+          };
+        },
+      };
+    },
+  });
+
+  await cutover.setClaimsEnabled(false);
+  assert.equal(
+    calls[0].url,
+    "https://anbud-postgrest.internal/rpc/set_project_job_claims_enabled",
+  );
+  assert.equal(
+    calls[0].options.headers.authorization,
+    "Bearer synthetic-azure-key",
   );
 });
 

@@ -12,7 +12,7 @@ env:
   PROJECT_JOB_WORKER_APP: anbud-project-job-worker
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
-  MIN_REPLICAS: "1"
+  MIN_REPLICAS: "0"
   PROJECT_JOB_WORKER_LIMIT: "1"
   PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"
   NODE_VERSION: "22.14.0"
@@ -61,7 +61,7 @@ jobs:
 
       - name: Deterministic durable-job and schema tests
         run: |
-          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/project-job-terminal-audit.sql.test.mjs apps/frontend/lib/server/repositories/stable-main-rollback-bridge.sql.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs scripts/async_worker_boundaries.test.mjs
+          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/project-job-terminal-audit.sql.test.mjs apps/frontend/lib/server/repositories/stable-main-rollback-bridge.sql.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs scripts/async_worker_boundaries.test.mjs scripts/azure_migration_guardrails.test.mjs
           node scripts/validate_project_jobs_schema.mjs
 
       - name: Frontend tests
@@ -111,10 +111,18 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Build Bicep
-        run: az bicep build --file infra/azure/container-app.bicep --stdout > /dev/null
+        run: |
+          for template in infra/azure/*.bicep
+          do
+            az bicep build --file "$template" --stdout > /dev/null
+          done
 
       - name: Lint Bicep
-        run: az bicep lint --file infra/azure/container-app.bicep
+        run: |
+          for template in infra/azure/*.bicep
+          do
+            az bicep lint --file "$template"
+          done
 
   container-validation:
     name: Validate production container and CVEs
@@ -195,10 +203,17 @@ jobs:
 
       - name: Validate production durable-job schema
         env:
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-        run: node scripts/validate_project_jobs_schema.mjs --remote
+        run: |
+          if [ -n "$DATA_API_URL" ] || [ -n "$DATA_API_SERVICE_ROLE_KEY" ]; then
+            echo "::error::The GitHub-hosted runner cannot reach the internal Azure data API. Keep DATA_API_* unset until deployment controls run inside the Container Apps network."
+            exit 1
+          fi
+          node scripts/validate_project_jobs_schema.mjs --remote
 
       - name: Azure login
         uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43
@@ -230,9 +245,16 @@ jobs:
           MICROSOFT_ENTRA_CLIENT_SECRET: ${{ secrets.MICROSOFT_ENTRA_CLIENT_SECRET }}
           MICROSOFT_ENTRA_TENANT_SUBDOMAIN: ${{ vars.MICROSOFT_ENTRA_TENANT_SUBDOMAIN }}
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
-          APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
+          APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
-          APP_PASSWORD_OWNER_ID: ${{ vars.APP_PASSWORD_OWNER_ID || 'u_password_owner_default_000000000000000000000000' }}
+          APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
+          APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
+          APP_ACTIVITY_HASH_SECRET: ${{ secrets.APP_ACTIVITY_HASH_SECRET }}
+          APP_ADMIN_PRINCIPAL_ID: ${{ vars.APP_ADMIN_PRINCIPAL_ID }}
+          APP_ADMIN_DISPLAY_NAME: ${{ vars.APP_ADMIN_DISPLAY_NAME || 'Administrator' }}
+          APP_ADMIN_EMAILS: ${{ vars.APP_ADMIN_EMAILS }}
+          AZURE_COMMUNICATION_EMAIL_ENDPOINT: ${{ vars.AZURE_COMMUNICATION_EMAIL_ENDPOINT }}
+          AZURE_COMMUNICATION_EMAIL_SENDER: ${{ vars.AZURE_COMMUNICATION_EMAIL_SENDER }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
           OPENAI_DOCUMENT_ANALYSIS_MODEL: ${{ vars.OPENAI_DOCUMENT_ANALYSIS_MODEL || 'gpt-5.6-terra' }}
@@ -244,17 +266,48 @@ jobs:
           PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
           DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
           DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
+          FILE_STORAGE_BACKEND: ${{ vars.FILE_STORAGE_BACKEND || 'supabase' }}
+          AZURE_STORAGE_ACCOUNT_URL: ${{ vars.AZURE_STORAGE_ACCOUNT_URL }}
+          AZURE_STORAGE_CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'anbud-documents' }}
         run: |
           missing=0
-          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ACCESS_PASSWORD APP_SESSION_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN ACR_USERNAME ACR_PASSWORD
+          for name in APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ADMIN_ACCESS_PASSWORD_HASH APP_ADMIN_PRINCIPAL_ID APP_SESSION_SECRET APP_GUEST_CODE_PEPPER APP_IDENTITY_LOOKUP_SECRET APP_ACTIVITY_HASH_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN
           do
             if [ -z "${!name}" ]; then
               echo "::error::Missing GitHub production configuration: $name"
               missing=1
             fi
           done
+          if { [ -n "$DATA_API_URL" ] && [ -z "$DATA_API_SERVICE_ROLE_KEY" ]; } || { [ -z "$DATA_API_URL" ] && [ -n "$DATA_API_SERVICE_ROLE_KEY" ]; }; then
+            echo "::error::DATA_API_URL and DATA_API_SERVICE_ROLE_KEY must be configured together."
+            missing=1
+          fi
+          if [ -n "$DATA_API_URL" ]; then
+            echo "::error::The GitHub-hosted runner cannot reach the internal Azure data API. Keep DATA_API_* unset until deployment controls run inside the Container Apps network."
+            missing=1
+          fi
+          if [ -z "$DATA_API_URL" ] && { [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; }; then
+            echo "::error::Configure either the Azure data API pair or the Supabase pair."
+            missing=1
+          fi
+          case "$FILE_STORAGE_BACKEND" in
+            supabase)
+              if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+                echo "::error::Supabase file storage requires the Supabase pair."
+                missing=1
+              fi
+              ;;
+            azure)
+              echo "::error::The GitHub-hosted phase-1 workflow must keep FILE_STORAGE_BACKEND=supabase until the paired internal data-and-blob cutover."
+              missing=1
+              ;;
+            *)
+              echo "::error::FILE_STORAGE_BACKEND must be supabase or azure."
+              missing=1
+              ;;
+          esac
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
@@ -263,19 +316,29 @@ jobs:
             appName="$CONTAINER_APP"
             image="$CURRENT_APP_IMAGE"
             workerImage="$CURRENT_WORKER_IMAGE"
-            registryServer="${ACR_NAME}.azurecr.io"
-            registryUsername="$ACR_USERNAME"
-            registryPassword="$ACR_PASSWORD"
+            registryName="$ACR_NAME"
             supabaseUrl="$SUPABASE_URL"
             supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"
+            dataApiUrl="$DATA_API_URL"
+            dataApiServiceRoleKey="$DATA_API_SERVICE_ROLE_KEY"
+            fileStorageBackend="$FILE_STORAGE_BACKEND"
+            azureStorageAccountUrl="$AZURE_STORAGE_ACCOUNT_URL"
+            azureStorageContainer="$AZURE_STORAGE_CONTAINER"
             appPublicOrigin="$APP_PUBLIC_ORIGIN"
             microsoftEntraClientId="$MICROSOFT_ENTRA_CLIENT_ID"
             microsoftEntraClientSecret="$MICROSOFT_ENTRA_CLIENT_SECRET"
             microsoftEntraTenantSubdomain="$MICROSOFT_ENTRA_TENANT_SUBDOMAIN"
             appEncryptionKey="$APP_ENCRYPTION_KEY"
-            appAccessPassword="$APP_ACCESS_PASSWORD"
+            appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH"
             appSessionSecret="$APP_SESSION_SECRET"
-            sharedAppUserId="$APP_PASSWORD_OWNER_ID"
+            appGuestCodePepper="$APP_GUEST_CODE_PEPPER"
+            appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET"
+            appActivityHashSecret="$APP_ACTIVITY_HASH_SECRET"
+            adminPrincipalId="$APP_ADMIN_PRINCIPAL_ID"
+            adminDisplayName="$APP_ADMIN_DISPLAY_NAME"
+            appAdminEmails="$APP_ADMIN_EMAILS"
+            azureCommunicationEmailEndpoint="$AZURE_COMMUNICATION_EMAIL_ENDPOINT"
+            azureCommunicationEmailSender="$AZURE_COMMUNICATION_EMAIL_SENDER"
             openAiApiKey="$OPENAI_API_KEY"
             openAiModel="$OPENAI_MODEL"
             openAiDocumentAnalysisModel="$OPENAI_DOCUMENT_ANALYSIS_MODEL"
@@ -296,17 +359,14 @@ jobs:
 
           az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-infra-${GITHUB_SHA}" --template-file infra/azure/container-app.bicep --parameters "${common_parameters[@]}" --output none
 
-      - name: Docker login to ACR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0
-        with:
-          registry: ${{ env.ACR_NAME }}.azurecr.io
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+      - name: Docker login to ACR with Azure identity
+        run: az acr login --name "$ACR_NAME"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
 
       - name: Build and push candidate image
+        id: build_image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
@@ -320,10 +380,28 @@ jobs:
           sbom: true
           tags: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+      - name: Resolve immutable candidate image
+        id: immutable_image
+        env:
+          BUILT_DIGEST: ${{ steps.build_image.outputs.digest }}
+        run: |
+          if [[ ! "$BUILT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The image build did not return a valid immutable digest."
+            exit 1
+          fi
+          tag_digest="$(az acr repository show --name "$ACR_NAME" --image "$IMAGE_NAME:$GITHUB_SHA" --query digest -o tsv)"
+          if [ "$tag_digest" != "$BUILT_DIGEST" ]; then
+            echo "::error::The pushed SHA tag no longer identifies the image produced by this build."
+            exit 1
+          fi
+          candidate_image="$ACR_NAME.azurecr.io/$IMAGE_NAME@$BUILT_DIGEST"
+          echo "CANDIDATE_IMAGE=$candidate_image" >> "$GITHUB_ENV"
+          echo "candidate_image=$candidate_image" >> "$GITHUB_OUTPUT"
+
       - name: Scan candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          image-ref: ${{ steps.immutable_image.outputs.candidate_image }}
           format: table
           exit-code: "1"
           ignore-unfixed: true
@@ -333,12 +411,14 @@ jobs:
       - name: Roll out zero-traffic candidate and promote
         id: rollout
         env:
-          CANDIDATE_IMAGE: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          CANDIDATE_IMAGE: ${{ steps.immutable_image.outputs.candidate_image }}
           REVISION_SUFFIX: sha-${{ github.sha }}
           ROLLOUT_STATE_FILE: ${{ runner.temp }}/anbud-rollout-state.json
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: node scripts/azure_containerapp_rollout.mjs
 
       - name: Fallback rollback
@@ -347,6 +427,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: |
           state_file="${RUNNER_TEMP}/anbud-rollout-state.json"
           if [ -f "$state_file" ]; then

@@ -11,8 +11,6 @@ const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
 
 async function withPasswordAuth(env, callback) {
   const previous = {
-    APP_ACCESS_PASSWORD: process.env.APP_ACCESS_PASSWORD,
-    APP_PASSWORD_OWNER_ID: process.env.APP_PASSWORD_OWNER_ID,
     APP_SESSION_MAX_AGE_SECONDS: process.env.APP_SESSION_MAX_AGE_SECONDS,
     APP_SESSION_SECRET: process.env.APP_SESSION_SECRET,
   };
@@ -49,17 +47,8 @@ async function withPasswordAuth(env, callback) {
   }
 }
 
-test("password auth requires a distinct session signing secret", async () => {
-  await withPasswordAuth({
-    APP_ACCESS_PASSWORD: "correct horse battery staple",
-  }, (passwordAuth) => {
-    assert.equal(passwordAuth.isPasswordAuthConfigured(), false);
-  });
-});
-
 test("session lifetime defaults to twelve hours", async () => {
   await withPasswordAuth({
-    APP_ACCESS_PASSWORD: "correct horse battery staple",
     APP_SESSION_SECRET: "session signing secret",
   }, (passwordAuth) => {
     assert.equal(passwordAuth.AUTH_COOKIE_MAX_AGE_SECONDS, 60 * 60 * 12);
@@ -68,7 +57,6 @@ test("session lifetime defaults to twelve hours", async () => {
 
 test("configured session lifetime is capped at seven days", async () => {
   await withPasswordAuth({
-    APP_ACCESS_PASSWORD: "correct horse battery staple",
     APP_SESSION_MAX_AGE_SECONDS: String(60 * 60 * 24 * 30),
     APP_SESSION_SECRET: "session signing secret",
   }, (passwordAuth) => {
@@ -76,67 +64,27 @@ test("configured session lifetime is capped at seven days", async () => {
   });
 });
 
-test("session tokens expire after the configured lifetime", async () => {
-  await withPasswordAuth({
-    APP_ACCESS_PASSWORD: "correct horse battery staple",
-    APP_SESSION_MAX_AGE_SECONDS: String(60 * 60),
-    APP_SESSION_SECRET: "session signing secret",
-  }, async (passwordAuth) => {
-    const issuedAt = 1_700_000_000_000;
-    const token = await passwordAuth.createSessionToken(issuedAt);
-
-    assert.equal(
-      await passwordAuth.verifySessionToken(token, issuedAt + 60 * 60 * 1_000),
-      true,
-    );
-    assert.equal(
-      await passwordAuth.verifySessionToken(token, issuedAt + (60 * 60 + 1) * 1_000),
-      false,
-    );
+test("Microsoft identities remain pseudonymous", async () => {
+  await withPasswordAuth({ APP_SESSION_SECRET: "session signing secret" }, async (passwordAuth) => {
+    const ownerId = await passwordAuth.deriveOwnerId("entra-object-id");
+    assert.match(ownerId, /^u_[A-Za-z0-9_-]{43}$/);
+    assert.equal(ownerId.includes("entra-object-id"), false);
   });
 });
 
-test("password owner identity remains stable when the session secret rotates", async () => {
-  const firstOwnerId = await withPasswordAuth(
-    { APP_SESSION_SECRET: "first session signing secret" },
-    (passwordAuth) => passwordAuth.derivePasswordOwnerId(),
-  );
-  const secondOwnerId = await withPasswordAuth(
-    { APP_SESSION_SECRET: "rotated session signing secret" },
-    (passwordAuth) => passwordAuth.derivePasswordOwnerId(),
-  );
-
-  assert.equal(firstOwnerId, secondOwnerId);
-  assert.match(firstOwnerId, /^u_[A-Za-z0-9_-]{18,126}$/u);
-});
-
-test("password owner identity supports an explicit stable deployment value", async () => {
-  await withPasswordAuth(
-    {
-      APP_PASSWORD_OWNER_ID: "u_password_owner_production_00000000000000000000",
-      APP_SESSION_SECRET: "session signing secret",
-    },
-    async (passwordAuth) => {
-      const token = await passwordAuth.createSessionToken(1_700_000_000_000);
-      const session = await passwordAuth.readSessionToken(
-        token,
-        1_700_000_001_000,
-      );
-      assert.equal(
-        session?.ownerId,
-        "u_password_owner_production_00000000000000000000",
-      );
-    },
-  );
-});
-
-test("Microsoft user sessions retain only a pseudonymous owner id", async () => {
+test("database session tokens are strict and signed independently", async () => {
   await withPasswordAuth({ APP_SESSION_SECRET: "session signing secret" }, async (passwordAuth) => {
-    const ownerId = await passwordAuth.deriveOwnerId("entra-object-id");
-    const token = await passwordAuth.createUserSessionToken(ownerId, "Sakaria Ahmed", 1_700_000_000_000);
-    const session = await passwordAuth.readSessionToken(token, 1_700_000_001_000);
-    assert.match(ownerId, /^u_[A-Za-z0-9_-]{43}$/);
-    assert.deepEqual(session, { ownerId, displayName: "Sakaria Ahmed" });
-    assert.equal(token.includes("entra-object-id"), false);
+    const sessionId = "123e4567-e89b-42d3-a456-426614174000";
+    const secret = "A".repeat(43);
+    const token = passwordAuth.encodeDatabaseSessionToken(sessionId, secret);
+    assert.deepEqual(passwordAuth.parseDatabaseSessionToken(token), {
+      sessionId,
+      secret,
+    });
+    assert.equal(passwordAuth.parseDatabaseSessionToken(`v3.${sessionId}.${secret}`), null);
+    assert.match(
+      await passwordAuth.databaseSessionTokenHmac(sessionId, secret),
+      /^[A-Za-z0-9_-]{43}$/u,
+    );
   });
 });

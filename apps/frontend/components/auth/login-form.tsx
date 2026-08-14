@@ -35,19 +35,25 @@ function MicrosoftMark() {
 type LoginFormProps = {
   initialError?: string;
   microsoftEnabled: boolean;
+  adminPasswordEnabled: boolean;
   nextPath: string;
 };
 
 export function LoginForm({
   initialError,
   microsoftEnabled,
+  adminPasswordEnabled,
   nextPath,
 }: LoginFormProps) {
   const [password, setPassword] = useState("");
+  const [guestCode, setGuestCode] = useState("");
   const [error, setError] = useState(initialError ?? "");
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [microsoftLoading, setMicrosoftLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(!microsoftEnabled);
+  const [showPassword, setShowPassword] = useState(
+    !microsoftEnabled && adminPasswordEnabled,
+  );
   const normalizedNextPath = safeRedirectPath(nextPath);
   const microsoftHref = `/api/auth/microsoft?next=${encodeURIComponent(normalizedNextPath)}`;
 
@@ -80,6 +86,35 @@ export function LoginForm({
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onGuestSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setGuestLoading(true);
+    try {
+      const response = await fetch("/api/auth/guest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: guestCode,
+          next: normalizedNextPath,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        redirectTo?: string;
+      };
+      if (!response.ok) {
+        setError(payload.error || "Kunne ikke logge inn med gjestekoden.");
+        return;
+      }
+      window.location.replace(
+        safeRedirectPath(payload.redirectTo || normalizedNextPath),
+      );
+    } finally {
+      setGuestLoading(false);
     }
   }
 
@@ -175,8 +210,8 @@ export function LoginForm({
               Logg inn
             </h2>
             <p className="mt-4 max-w-sm text-[0.94rem] leading-6 text-slate-600">
-              Bruk Microsoft-kontoen fra virksomheten din for sikker tilgang
-              til arbeidsområdet.
+              Bruk Microsoft-kontoen din, eller en personlig gjestekode du har
+              fått fra en prosjektansvarlig.
             </p>
 
             {error ? (
@@ -224,22 +259,59 @@ export function LoginForm({
               <span className="h-px flex-1 bg-slate-200" />
             </div>
 
-            <button
-              type="button"
-              aria-expanded={showPassword}
-              onClick={() => setShowPassword((visible) => !visible)}
-              className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-left text-sm font-semibold text-slate-700 outline-none transition-colors hover:text-slate-950 focus-visible:ring-3 focus-visible:ring-blue-500/25"
-            >
-              <span className="flex items-center gap-2">
-                <KeyRound className="size-4 text-slate-500" />
-                Bruk tilgangspassord
-              </span>
-              <ChevronDown
-                className={`size-4 text-slate-400 transition-transform ${showPassword ? "rotate-180" : ""}`}
-              />
-            </button>
+            <form onSubmit={onGuestSubmit}>
+              <div className="space-y-2">
+                <Label htmlFor="guest-code" className="text-slate-700">
+                  Personlig gjestekode
+                </Label>
+                <Input
+                  id="guest-code"
+                  value={guestCode}
+                  autoComplete="one-time-code"
+                  inputMode="text"
+                  spellCheck={false}
+                  required
+                  placeholder="gst_XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+                  onChange={(event) => setGuestCode(event.target.value)}
+                  className="h-11 border-slate-300 bg-white px-3 font-mono text-sm uppercase tracking-wide text-slate-950 shadow-sm placeholder:text-[0.68rem] placeholder:tracking-normal placeholder:text-slate-400 focus-visible:border-blue-600 focus-visible:ring-blue-600/20"
+                />
+              </div>
+              <Button
+                type="submit"
+                variant="outline"
+                className="mt-4 h-11 w-full border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100"
+                disabled={guestLoading}
+              >
+                {guestLoading ? (
+                  <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <KeyRound data-icon="inline-start" />
+                )}
+                {guestLoading ? "Kontrollerer kode …" : "Logg inn som gjest"}
+              </Button>
+            </form>
 
-            {showPassword ? (
+            {adminPasswordEnabled ? (
+              <>
+                <div className="my-6 h-px bg-slate-200" />
+                <button
+                  type="button"
+                  aria-expanded={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-left text-sm font-semibold text-slate-700 outline-none transition-colors hover:text-slate-950 focus-visible:ring-3 focus-visible:ring-blue-500/25"
+                >
+                  <span className="flex items-center gap-2">
+                    <KeyRound className="size-4 text-slate-500" />
+                    Administratorinnlogging
+                  </span>
+                  <ChevronDown
+                    className={`size-4 text-slate-400 transition-transform ${showPassword ? "rotate-180" : ""}`}
+                  />
+                </button>
+              </>
+            ) : null}
+
+            {adminPasswordEnabled && showPassword ? (
               <form onSubmit={onSubmit} className="mt-4">
                 <div className="space-y-2">
                   <Label htmlFor="access-password" className="text-slate-700">
@@ -267,7 +339,7 @@ export function LoginForm({
                   ) : (
                     <LockKeyhole data-icon="inline-start" />
                   )}
-                  {loading ? "Logger inn …" : "Logg inn med passord"}
+                    {loading ? "Logger inn …" : "Logg inn som administrator"}
                 </Button>
               </form>
             ) : null}

@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { safeRedirectPath } from "@/lib/auth-redirect";
 import {
-  AUTH_COOKIE_MAX_AGE_SECONDS,
   AUTH_COOKIE_NAME,
-  createUserSessionToken,
   deriveOwnerId,
 } from "@/lib/password-auth";
+import { upsertInternalPrincipal } from "@/lib/server/access-control-repository";
+import { recordActivity } from "@/lib/server/activity";
+import { createAppSession } from "@/lib/server/app-sessions";
 import {
   MICROSOFT_AUTH_COOKIE_PATH,
+  MICROSOFT_NONCE_COOKIE_NAME,
   MICROSOFT_PKCE_COOKIE_NAME,
   MICROSOFT_STATE_COOKIE_NAME,
   createMicrosoftAuthClient,
@@ -22,6 +24,7 @@ function clearMicrosoftFlowCookies(response: NextResponse) {
   for (const name of [
     MICROSOFT_PKCE_COOKIE_NAME,
     MICROSOFT_STATE_COOKIE_NAME,
+    MICROSOFT_NONCE_COOKIE_NAME,
   ]) {
     response.cookies.set({
       name,
@@ -69,44 +72,79 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const codeVerifier = request.cookies.get(MICROSOFT_PKCE_COOKIE_NAME)?.value;
   const expectedCsrf = request.cookies.get(MICROSOFT_STATE_COOKIE_NAME)?.value;
+  const expectedNonce = request.cookies.get(MICROSOFT_NONCE_COOKIE_NAME)?.value;
   if (
     !isMicrosoftAuthConfigured() ||
     !flowState ||
     !timingSafeEqual(expectedCsrf, flowState.csrf) ||
     !code ||
-    !codeVerifier
+    !codeVerifier ||
+    !expectedNonce
   ) {
     return redirectToLogin(request, "microsoft_callback_invalid", nextPath);
   }
 
   try {
     const microsoft = await createMicrosoftAuthClient();
-    const result = await microsoft.acquireTokenByCode({
-      code,
-      codeVerifier,
-      redirectUri: microsoftCallbackUrl(request),
-      scopes: [],
-    });
+    const result = await microsoft.acquireTokenByCode(
+      {
+        code,
+        codeVerifier,
+        redirectUri: microsoftCallbackUrl(request),
+        scopes: [],
+      },
+      {
+        code,
+        state: stateValue ?? "",
+        nonce: expectedNonce,
+      },
+    );
 
     if (!result?.account || !result.idToken) {
       return redirectToLogin(request, "microsoft_callback_failed", nextPath);
     }
 
+    const claims = (result.idTokenClaims ?? {}) as Record<string, unknown>;
+    const emailCandidate = [
+      claims.email,
+      claims.preferred_username,
+      result.account.username,
+    ].find(
+      (value): value is string =>
+        typeof value === "string" && value.includes("@"),
+    );
+    const principal = await upsertInternalPrincipal({
+      candidateId: await deriveOwnerId(
+        result.account.localAccountId || result.account.homeAccountId,
+      ),
+      displayName: result.account.name || "Bidsite-bruker",
+      email: emailCandidate ?? null,
+    });
+    const session = await createAppSession({
+      principalId: principal.id,
+      authMethod: "entra",
+    });
+    await recordActivity({
+      principal: {
+        id: principal.id,
+        identityType: "internal",
+        isAdmin: false,
+        sessionId: session.sessionId,
+      },
+      action: "auth.entra.login",
+    });
     const response = NextResponse.redirect(
       new URL(nextPath, publicAppOrigin(request)),
       302,
     );
     response.cookies.set({
       name: AUTH_COOKIE_NAME,
-      value: await createUserSessionToken(
-        await deriveOwnerId(result.account.localAccountId || result.account.homeAccountId),
-        result.account.name || "Bidsite-bruker",
-      ),
+      value: session.token,
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
+      maxAge: session.maxAgeSeconds,
     });
     clearMicrosoftFlowCookies(response);
     response.headers.set("Cache-Control", "no-store");

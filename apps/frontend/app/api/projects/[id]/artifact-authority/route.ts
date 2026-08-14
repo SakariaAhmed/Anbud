@@ -4,6 +4,7 @@ import {
   currentArtifactTypesFromAuthority,
   getArtifactAuthoritySummary,
 } from "@/lib/server/repositories/projects";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export async function GET(
   _: Request,
@@ -23,10 +24,7 @@ export async function GET(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke hente artefaktstatus.",
+        error: productionSafeErrorMessage(error, "Kunne ikke hente artefaktstatus."),
       },
       { status: 500 },
     );

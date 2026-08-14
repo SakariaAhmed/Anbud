@@ -4,6 +4,7 @@ import { safeRedirectPath } from "@/lib/auth-redirect";
 import {
   MICROSOFT_AUTH_COOKIE_MAX_AGE_SECONDS,
   MICROSOFT_AUTH_COOKIE_PATH,
+  MICROSOFT_NONCE_COOKIE_NAME,
   MICROSOFT_PKCE_COOKIE_NAME,
   MICROSOFT_STATE_COOKIE_NAME,
   createMicrosoftAuthClient,
@@ -64,6 +65,11 @@ export async function GET(request: NextRequest) {
     response.cookies.set({
       name: MICROSOFT_STATE_COOKIE_NAME,
       value: csrf,
+      ...cookieOptions,
+    });
+    response.cookies.set({
+      name: MICROSOFT_NONCE_COOKIE_NAME,
+      value: nonce,
       ...cookieOptions,
     });
     response.headers.set("Cache-Control", "no-store");

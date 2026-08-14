@@ -52,7 +52,7 @@ test("remote preflight makes a metadata-only HEAD request", async () => {
   const calls = [];
   const result = await preflightRemoteProjectJobSchema({
     supabaseUrl: "https://example.supabase.co",
-    serviceRoleKey: "synthetic-test-key",
+    supabaseServiceRoleKey: "synthetic-test-key",
     expectedProjectRef: "example",
     async fetchImpl(url, options) {
       calls.push({ url, options });
@@ -143,7 +143,7 @@ test("remote preflight rejects a mismatched project identity before fetching", a
   await assert.rejects(
     preflightRemoteProjectJobSchema({
       supabaseUrl: "https://unexpected.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
+      supabaseServiceRoleKey: "synthetic-test-key",
       expectedProjectRef: "intended",
       async fetchImpl() {
         fetched = true;
@@ -155,11 +155,77 @@ test("remote preflight rejects a mismatched project identity before fetching", a
   assert.equal(fetched, false);
 });
 
+test("remote preflight accepts an explicit internal PostgREST root", async () => {
+  const paths = [];
+  const result = await preflightRemoteProjectJobSchema({
+    dataApiUrl:
+      "https://anbud-postgrest.internal.example.norwayeast.azurecontainerapps.io",
+    dataApiServiceRoleKey: "synthetic-azure-key",
+    dataApiAllowedHostSuffix:
+      ".internal.example.norwayeast.azurecontainerapps.io",
+    expectedProjectRef: "ignored-for-explicit-data-api",
+    async fetchImpl(url) {
+      paths.push(url.pathname);
+      const values = new Map([
+        ["project_job_fencing_preflight", "authoritative-lease-fencing-v1"],
+        ["project_job_terminal_audit_preflight", "transactional-project-job-terminal-audit-v2"],
+        ["stable_main_rollback_bridge_preflight", "stable-main-rollback-bridge-v1"],
+        ["atomic_service_document_write_preflight", "atomic-service-document-write-v1"],
+      ]);
+      const value = [...values].find(([name]) => url.pathname.endsWith(name))?.[1];
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return value;
+        },
+      };
+    },
+  });
+
+  assert.equal(
+    result.host,
+    "anbud-postgrest.internal.example.norwayeast.azurecontainerapps.io",
+  );
+  assert.equal(paths[0], "/project_jobs");
+  assert.ok(paths.every((value) => !value.includes("/rest/v1/")));
+});
+
+test("remote preflight never forwards a Supabase key to an explicit data API", async () => {
+  let fetched = false;
+  await assert.rejects(
+    preflightRemoteProjectJobSchema({
+      dataApiUrl:
+        "https://credential-capture.internal.example.norwayeast.azurecontainerapps.io",
+      supabaseUrl: "https://example.supabase.co",
+      supabaseServiceRoleKey: "must-not-be-forwarded",
+      dataApiAllowedHostSuffix:
+        ".internal.example.norwayeast.azurecontainerapps.io",
+      async fetchImpl() {
+        fetched = true;
+        return { ok: true, status: 200 };
+      },
+    }),
+    /required together/u,
+  );
+  assert.equal(fetched, false);
+
+  await assert.rejects(
+    preflightRemoteProjectJobSchema({
+      dataApiUrl: "https://credential-capture.example",
+      dataApiServiceRoleKey: "azure-key",
+      dataApiAllowedHostSuffix:
+        ".internal.example.norwayeast.azurecontainerapps.io",
+    }),
+    /expected internal ACA host suffix/u,
+  );
+});
+
 test("remote preflight fails closed on an absent schema", async () => {
   await assert.rejects(
     preflightRemoteProjectJobSchema({
       supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
+      supabaseServiceRoleKey: "synthetic-test-key",
       async fetchImpl() {
         return { ok: false, status: 400 };
       },
@@ -172,7 +238,7 @@ test("remote preflight fails closed when authoritative fencing is absent", async
   await assert.rejects(
     preflightRemoteProjectJobSchema({
       supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
+      supabaseServiceRoleKey: "synthetic-test-key",
       async fetchImpl(url) {
         return url.pathname.includes("project_job_fencing_preflight")
           ? { ok: false, status: 404 }
@@ -187,7 +253,7 @@ test("remote preflight fails closed when transactional terminal audit is absent"
   await assert.rejects(
     preflightRemoteProjectJobSchema({
       supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
+      supabaseServiceRoleKey: "synthetic-test-key",
       async fetchImpl(url) {
         if (url.pathname.includes("project_job_fencing_preflight")) {
           return {
@@ -211,7 +277,7 @@ test("remote preflight fails closed when audit subject schema is absent", async 
   await assert.rejects(
     preflightRemoteProjectJobSchema({
       supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
+      supabaseServiceRoleKey: "synthetic-test-key",
       async fetchImpl(url) {
         return url.pathname === "/rest/v1/audit_events"
           ? { ok: false, status: 400 }
@@ -226,7 +292,7 @@ test("remote preflight fails closed when stable rollback bridge is absent", asyn
   await assert.rejects(
     preflightRemoteProjectJobSchema({
       supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
+      supabaseServiceRoleKey: "synthetic-test-key",
       async fetchImpl(url) {
         if (url.pathname.includes("project_job_fencing_preflight")) {
           return {
@@ -259,7 +325,7 @@ test("remote preflight fails closed when atomic service-document writing is abse
   await assert.rejects(
     preflightRemoteProjectJobSchema({
       supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
+      supabaseServiceRoleKey: "synthetic-test-key",
       async fetchImpl(url) {
         if (url.pathname.includes("project_job_fencing_preflight")) {
           return {

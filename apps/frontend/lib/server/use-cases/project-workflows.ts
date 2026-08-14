@@ -1132,7 +1132,9 @@ async function runCustomerAnalysisWorkflow(
     readValue: async () => {
       const [projectDocuments, serviceCandidates] = await Promise.all([
         listProjectDocumentsForAnalysis(input.projectId),
-        listProjectServiceDescriptions(input.projectId),
+        listProjectServiceDescriptions(input.projectId, {
+          includeDocumentAiSummaries: true,
+        }),
       ]);
       return { projectDocuments, serviceCandidates };
     },

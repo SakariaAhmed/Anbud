@@ -1,12 +1,22 @@
 import "server-only";
 
-import { createServiceClient } from "@/lib/server/supabase";
+import { defaultAzureBlobStorageBackend } from "@/lib/server/azure-blob-storage";
+import { createSupabaseStorageClient } from "@/lib/server/supabase";
 
 const DOCUMENT_FILE_BUCKET = "anbud-documents";
 const STORAGE_DELETE_BATCH_SIZE = 1_000;
 const STORAGE_LIST_PAGE_SIZE = 1_000;
 
 let bucketReadyPromise: Promise<void> | null = null;
+
+function isAzureBlobStorageSelected() {
+  const backend =
+    process.env.FILE_STORAGE_BACKEND?.trim().toLowerCase() || "supabase";
+  if (backend !== "supabase" && backend !== "azure") {
+    throw new Error(`Ugyldig FILE_STORAGE_BACKEND: ${backend}.`);
+  }
+  return backend === "azure";
+}
 
 function safePathSegment(value: string) {
   return value
@@ -48,7 +58,7 @@ export function buildStoredFilePrefix(input: {
 async function ensureBucket() {
   if (!bucketReadyPromise) {
     bucketReadyPromise = (async () => {
-      const supabase = createServiceClient();
+      const supabase = createSupabaseStorageClient();
       const existing = await supabase.storage.getBucket(DOCUMENT_FILE_BUCKET);
       if (!existing.error) {
         return;
@@ -77,8 +87,11 @@ export async function uploadEncryptedBase64File(input: {
   path: string;
   encryptedBase64: string;
 }) {
+  if (isAzureBlobStorageSelected()) {
+    return defaultAzureBlobStorageBackend().uploadEncryptedBase64File(input);
+  }
   await ensureBucket();
-  const supabase = createServiceClient();
+  const supabase = createSupabaseStorageClient();
   const { error } = await supabase.storage
     .from(DOCUMENT_FILE_BUCKET)
     .upload(input.path, Buffer.from(input.encryptedBase64, "utf8"), {
@@ -101,11 +114,14 @@ export async function downloadEncryptedBase64File(input: {
   bucket?: string | null;
   path?: string | null;
 }) {
+  if (isAzureBlobStorageSelected()) {
+    return defaultAzureBlobStorageBackend().downloadEncryptedBase64File(input);
+  }
   if (!input.path) {
     return "";
   }
 
-  const supabase = createServiceClient();
+  const supabase = createSupabaseStorageClient();
   const { data, error } = await supabase.storage
     .from(input.bucket || DOCUMENT_FILE_BUCKET)
     .download(input.path);
@@ -120,6 +136,9 @@ export async function downloadEncryptedBase64File(input: {
 export async function removeStoredFiles(
   files: Array<{ bucket?: string | null; path?: string | null }>,
 ) {
+  if (isAzureBlobStorageSelected()) {
+    return defaultAzureBlobStorageBackend().removeStoredFiles(files);
+  }
   const pathsByBucket = new Map<string, Set<string>>();
   for (const file of files) {
     if (!file.path) {
@@ -133,7 +152,7 @@ export async function removeStoredFiles(
 
   for (const [bucket, pathSet] of pathsByBucket) {
     const paths = [...pathSet];
-    const supabase = createServiceClient();
+    const supabase = createSupabaseStorageClient();
     for (
       let offset = 0;
       offset < paths.length;
@@ -164,6 +183,9 @@ export async function listStoredFilesUnderPrefix(input: {
   bucket?: string | null;
   prefix: string;
 }) {
+  if (isAzureBlobStorageSelected()) {
+    return defaultAzureBlobStorageBackend().listStoredFilesUnderPrefix(input);
+  }
   const bucket = input.bucket || DOCUMENT_FILE_BUCKET;
   const normalizedPrefix = input.prefix.replace(/^\/+|\/+$/gu, "").trim();
   if (!normalizedPrefix) {
@@ -173,7 +195,7 @@ export async function listStoredFilesUnderPrefix(input: {
   const pendingPrefixes = [normalizedPrefix];
   const visitedPrefixes = new Set<string>();
   const paths: string[] = [];
-  const supabase = createServiceClient();
+  const supabase = createSupabaseStorageClient();
   while (pendingPrefixes.length) {
     const currentPrefix = pendingPrefixes.shift();
     if (!currentPrefix || visitedPrefixes.has(currentPrefix)) continue;

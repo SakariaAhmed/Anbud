@@ -3610,7 +3610,7 @@ async function waitForHealth(baseUrl, timeoutMs = 120_000) {
   while (Date.now() - started < timeoutMs) {
     const remainingMs = timeoutMs - (Date.now() - started);
     try {
-      const response = await fetch(`${baseUrl}/api/health`, {
+      const response = await fetch(`${baseUrl}/api/health/live`, {
         headers: { "x-client-ip": "127.251.0.1" },
         signal: AbortSignal.timeout(Math.max(1, Math.min(5_000, remainingMs))),
       });

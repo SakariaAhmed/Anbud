@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLayoutEffect, useState, type ReactNode } from "react";
-import { ChevronDown, Layers3, LogOut } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  ChevronDown,
+  KeyRound,
+  Layers3,
+  LogOut,
+  ShieldCheck,
+} from "lucide-react";
 
 import { AppHeaderLogo } from "@/components/layout/app-header-logo";
 
@@ -19,16 +26,21 @@ export function AppShell({
   authenticated,
   children,
   displayName,
+  isAdmin = false,
+  identityType = "internal",
 }: {
   authenticated?: boolean;
   children: ReactNode;
   displayName?: string | null;
+  isAdmin?: boolean;
+  identityType?: "internal" | "guest";
 }) {
   const pathname = usePathname() ?? "";
   const showHeader = shouldShowAppHeader(pathname);
   const isolatedChatWindow = isIsolatedChatPath(pathname);
   const [loggingOut, setLoggingOut] = useState(false);
   const userLabel = displayName?.trim() || "Bruker";
+  const visibleRoleLabels = isAdmin ? ["Administrator"] : [];
 
   async function logOut() {
     if (loggingOut) return;
@@ -64,13 +76,24 @@ export function AppShell({
               <AppHeaderLogo />
             </div>
             <div className="flex items-center gap-3">
-              <Link
-                href="/service-descriptions"
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-white/15 bg-white/[0.06] px-3 text-sm font-semibold text-slate-100 transition-colors hover:border-white/30 hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-              >
-                <Layers3 className="size-4" />
-                <span className="hidden sm:inline">Tjenestebeskrivelser</span>
-              </Link>
+              {isAdmin ? (
+                <Link
+                  href="/admin"
+                  className="inline-flex h-8 items-center gap-2 rounded-md border border-cyan-300/25 bg-cyan-300/[0.08] px-3 text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-300/[0.15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+                >
+                  <ShieldCheck className="size-4" />
+                  <span className="hidden sm:inline">Styring og innsikt</span>
+                </Link>
+              ) : null}
+              {identityType === "internal" ? (
+                <Link
+                  href="/service-descriptions"
+                  className="inline-flex h-8 items-center gap-2 rounded-md border border-white/15 bg-white/[0.06] px-3 text-sm font-semibold text-slate-100 transition-colors hover:border-white/30 hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  <Layers3 className="size-4" />
+                  <span className="hidden sm:inline">Tjenestebeskrivelser</span>
+                </Link>
+              ) : null}
               {authenticated ? (
                 <details className="group relative border-l border-white/15 pl-3">
                   <summary className="flex cursor-pointer list-none items-center gap-2.5 rounded-lg py-1 pr-1 outline-none transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-blue-200 [&::-webkit-details-marker]:hidden" aria-label={`Brukermeny for ${userLabel}`}>
@@ -80,19 +103,56 @@ export function AppShell({
                     <span className="hidden max-w-48 truncate text-sm font-medium text-slate-200 md:block">{userLabel}</span>
                     <ChevronDown className="hidden size-3.5 text-slate-400 transition-transform group-open:rotate-180 md:block" />
                   </summary>
-                  <div className="absolute right-0 top-[calc(100%+0.55rem)] min-w-48 overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 text-slate-900 shadow-xl shadow-slate-950/20">
-                    <div className="border-b border-slate-100 px-2.5 py-2 md:hidden">
-                      <p className="max-w-44 truncate text-xs font-semibold">{userLabel}</p>
+                  <div className="absolute right-0 top-[calc(100%+0.5rem)] w-60 overflow-hidden rounded-lg border border-slate-200 bg-white text-slate-900 shadow-xl shadow-slate-950/20">
+                    <div className="px-3 py-2.5">
+                      <p className="truncate text-sm font-semibold text-slate-950">
+                        {userLabel}
+                      </p>
+                      <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-slate-500">
+                        {identityType === "guest" ? (
+                          <KeyRound className="size-3 shrink-0" />
+                        ) : (
+                          <ShieldCheck className="size-3 shrink-0" />
+                        )}
+                        <span>
+                          {identityType === "guest"
+                            ? "Gjestekonto"
+                            : "Microsoft-konto"}
+                          {visibleRoleLabels.length
+                            ? ` · ${visibleRoleLabels.join(" · ")}`
+                            : ""}
+                        </span>
+                      </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void logOut()}
-                      disabled={loggingOut}
-                      className="flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-wait disabled:opacity-60"
-                    >
-                      <LogOut className="size-4 text-slate-500" />
-                      {loggingOut ? "Logger ut …" : "Logg ut"}
-                    </button>
+                    <nav className="border-t border-slate-100 p-1.5" aria-label="Brukernavigasjon">
+                      <Link
+                        href="/"
+                        className="flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        <BriefcaseBusiness className="size-4 text-slate-500" />
+                        Mine prosjekter
+                      </Link>
+                      {isAdmin ? (
+                        <Link
+                          href="/admin"
+                          className="flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        >
+                          <ShieldCheck className="size-4 text-slate-500" />
+                          Styring og innsikt
+                        </Link>
+                      ) : null}
+                    </nav>
+                    <div className="border-t border-slate-100 p-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void logOut()}
+                        disabled={loggingOut}
+                        className="flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <LogOut className="size-4 text-slate-500" />
+                        {loggingOut ? "Logger ut …" : "Logg ut"}
+                      </button>
+                    </div>
                   </div>
                 </details>
               ) : null}

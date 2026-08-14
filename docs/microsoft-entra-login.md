@@ -11,7 +11,10 @@ The implementation deliberately minimizes stored identity data:
 - No Supabase `auth.users` record is created.
 - No Microsoft Graph scopes are requested.
 - The validated ID token and account object exist only in memory during the callback and are discarded immediately.
-- The app session cookie contains only an issued-at timestamp and an HMAC signature. It contains no name, email address, tenant ID, or Microsoft user ID.
+- The app session cookie contains an opaque random database-session credential.
+  It contains no name, email address, tenant ID, or Microsoft user ID. Only a
+  hash of the credential is persisted, and a logout or role-driven revocation
+  can invalidate it server-side.
 - The PKCE verifier and CSRF state are stored in short-lived, HttpOnly cookies for a maximum of ten minutes and are deleted after the callback.
 
 Microsoft Entra External ID still stores the user identity in the External ID tenant because it is the identity provider.
@@ -38,7 +41,8 @@ MICROSOFT_ENTRA_CLIENT_SECRET=
 MICROSOFT_ENTRA_TENANT_SUBDOMAIN=
 ```
 
-`APP_SESSION_SECRET` remains required because the app issues its own anonymous session cookie after Microsoft validates the login.
+`APP_SESSION_SECRET` remains required to protect the opaque session
+credential after Microsoft validates the login.
 
 This integration intentionally accepts only the standard `<tenant-subdomain>.ciamlogin.com` External ID authority. Supporting a workforce tenant or custom authority should be a separate, reviewed configuration change.
 
@@ -47,5 +51,6 @@ This integration intentionally accepts only the standard `<tenant-subdomain>.cia
 - Store `MICROSOFT_ENTRA_CLIENT_SECRET` as a secret, never a regular variable or client-side value.
 - Set `APP_PUBLIC_ORIGIN` to the canonical HTTPS origin without a path or trailing callback segment.
 - Keep the production redirect URI list short and remove retired domains.
-- Verify one successful login, one cancelled login, an expired callback, and fallback password login.
+- Verify one successful login, one cancelled login, an expired callback, and
+  (in development only) the explicitly enabled local password login.
 - Confirm no new row appears in Supabase Auth after Microsoft login.
