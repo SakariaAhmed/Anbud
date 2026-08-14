@@ -718,26 +718,26 @@ jobs:
               exit 1
             fi
             data_api_reference_file="$RUNNER_TEMP/anbud-data-api-reference.json"
-            KEY_VAULT_ID="$key_vault_id" DATA_API_SECRET_NAME="$MIGRATION_CONTROL_DATA_API_SECRET_NAME" DATA_API_SECRET_VERSION="$MIGRATION_CONTROL_DATA_API_SECRET_VERSION" DATA_API_REFERENCE_FILE="$data_api_reference_file" node --input-type=module - <<'NODE'
-            import { writeFileSync } from "node:fs";
-            writeFileSync(
-              process.env.DATA_API_REFERENCE_FILE,
-              JSON.stringify({
-                $schema: "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-                contentVersion: "1.0.0.0",
-                parameters: {
-                  dataApiServiceRoleKey: {
-                    reference: {
-                      keyVault: { id: process.env.KEY_VAULT_ID },
-                      secretName: process.env.DATA_API_SECRET_NAME,
-                      secretVersion: process.env.DATA_API_SECRET_VERSION,
+            KEY_VAULT_ID="$key_vault_id" DATA_API_SECRET_NAME="$MIGRATION_CONTROL_DATA_API_SECRET_NAME" DATA_API_SECRET_VERSION="$MIGRATION_CONTROL_DATA_API_SECRET_VERSION" DATA_API_REFERENCE_FILE="$data_api_reference_file" node --input-type=module --eval '
+              import { writeFileSync } from "node:fs";
+              writeFileSync(
+                process.env.DATA_API_REFERENCE_FILE,
+                JSON.stringify({
+                  $schema: "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+                  contentVersion: "1.0.0.0",
+                  parameters: {
+                    dataApiServiceRoleKey: {
+                      reference: {
+                        keyVault: { id: process.env.KEY_VAULT_ID },
+                        secretName: process.env.DATA_API_SECRET_NAME,
+                        secretVersion: process.env.DATA_API_SECRET_VERSION,
+                      },
                     },
                   },
-                },
-              }),
-              { mode: 0o600 },
-            );
-            NODE
+                }),
+                { mode: 0o600 },
+              );
+            '
             data_api_secret_parameters=("@$data_api_reference_file")
           fi
 
