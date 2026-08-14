@@ -8,6 +8,14 @@ on:
         required: true
         default: false
         type: boolean
+      azure_backend_release_mode:
+        description: Use cutover only for a fresh final migration; use routine after Azure has already been activated successfully.
+        required: true
+        default: cutover
+        type: choice
+        options:
+          - cutover
+          - routine
       final_cutover_evidence_blob:
         description: Relative path of the final cutover evidence envelope in the private migration-evidence container (Azure backend only).
         required: false
@@ -26,6 +34,7 @@ env:
   PROJECT_JOB_WORKER_APP: anbud-project-job-worker
   MIGRATION_CONTROL_JOB: anbud-migration-control
   MIGRATION_ACTIVATION_JOB: anbud-migration-activate
+  MIGRATION_DEACTIVATION_JOB: anbud-migration-deactivate
   POSTGREST_APP: anbud-postgrest
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
@@ -291,6 +300,7 @@ jobs:
           MIGRATION_CONTROL_EVIDENCE_BLOB: ${{ inputs.final_cutover_evidence_blob }}
           MIGRATION_CONTROL_EVIDENCE_SHA256: ${{ inputs.final_cutover_evidence_sha256 }}
           CONFIRM_AZURE_BACKEND_CUTOVER: ${{ inputs.confirm_azure_backend_cutover || false }}
+          AZURE_BACKEND_RELEASE_MODE: ${{ inputs.azure_backend_release_mode || 'cutover' }}
         run: |
           missing=0
           for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ADMIN_ACCESS_PASSWORD_HASH APP_ADMIN_PRINCIPAL_ID APP_SESSION_SECRET APP_GUEST_CODE_PEPPER APP_IDENTITY_LOOKUP_SECRET APP_ACTIVITY_HASH_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN
@@ -336,6 +346,18 @@ jobs:
                 echo "::error::Azure backends require explicit confirmation that the external freeze, final sync, and rollback gates are complete."
                 missing=1
               fi
+              case "$AZURE_BACKEND_RELEASE_MODE" in
+                cutover)
+                  echo "migration_control_mode=verify" >> "$GITHUB_OUTPUT"
+                  ;;
+                routine)
+                  echo "migration_control_mode=validate-target" >> "$GITHUB_OUTPUT"
+                  ;;
+                *)
+                  echo "::error::AZURE_BACKEND_RELEASE_MODE must be cutover or routine."
+                  missing=1
+                  ;;
+              esac
               key_vault_rbac="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query properties.enableRbacAuthorization --output tsv --only-show-errors 2>/dev/null || true)"
               key_vault_template_deployment="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query properties.enabledForTemplateDeployment --output tsv --only-show-errors 2>/dev/null || true)"
               if [ "$key_vault_rbac" != "true" ] || [ "$key_vault_template_deployment" != "true" ]; then
@@ -537,6 +559,7 @@ jobs:
           MIGRATION_CONTROL_EVIDENCE_BLOB: ${{ inputs.final_cutover_evidence_blob }}
           MIGRATION_CONTROL_EVIDENCE_SHA256: ${{ inputs.final_cutover_evidence_sha256 }}
           CANDIDATE_IMAGE: ${{ steps.immutable_image.outputs.candidate_image }}
+          MIGRATION_CONTROL_MODE: ${{ steps.deployment_config.outputs.migration_control_mode }}
         run: |
           if [[ ! "$CANDIDATE_IMAGE" =~ ^[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::The migration control job requires the verified candidate digest."
@@ -551,6 +574,7 @@ jobs:
             environmentName="$CONTAINER_APP-env"
             jobName="$MIGRATION_CONTROL_JOB"
             activationJobName="$MIGRATION_ACTIVATION_JOB"
+            deactivationJobName="$MIGRATION_DEACTIVATION_JOB"
             registryName="$ACR_NAME"
             acrPullIdentityName="$CONTAINER_APP-acr-pull"
             keyVaultName="$MIGRATION_CONTROL_KEY_VAULT_NAME"
@@ -564,6 +588,7 @@ jobs:
             dataApiUrl="$DATA_API_URL"
             azureStorageAccountUrl="$AZURE_STORAGE_ACCOUNT_URL"
             image="$CANDIDATE_IMAGE"
+            controlMode="$MIGRATION_CONTROL_MODE"
             bootstrapRoleAssignments=false
           )
           az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file infra/azure/migration-control.bicep --result-format ResourceIdOnly --parameters "${control_parameters[@]}"
@@ -581,6 +606,22 @@ jobs:
             echo "::error::The dedicated control identity lacks its exact Key Vault, document-container, or evidence-container read role. Run the one-time privileged bootstrap before routine deployment."
             exit 1
           fi
+
+          control_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
+          control_command_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'length(properties.template.containers[0].command)' --output tsv --only-show-errors)"
+          control_command="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.template.containers[0].command[0]' --output tsv --only-show-errors)"
+          control_arg_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'length(properties.template.containers[0].args)' --output tsv --only-show-errors)"
+          control_script_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.template.containers[0].args[0]' --output tsv --only-show-errors)"
+          control_mode_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.template.containers[0].args[1]' --output tsv --only-show-errors)"
+          control_trigger="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.configuration.triggerType' --output tsv --only-show-errors)"
+          control_retry_limit="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.configuration.replicaRetryLimit' --output tsv --only-show-errors)"
+          control_secret_ref="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_SERVICE_ROLE_KEY'].secretRef | [0]" --output tsv --only-show-errors)"
+          control_data_api_url="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_URL'].value | [0]" --output tsv --only-show-errors)"
+          control_bound_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query "properties.template.containers[0].env[?name=='MIGRATION_CONTROL_IMAGE'].value | [0]" --output tsv --only-show-errors)"
+          if [ "${#MIGRATION_CONTROL_JOB}" -ge 32 ] || [ "$control_image" != "$CANDIDATE_IMAGE" ] || [ "$control_command_count" != "1" ] || [ "$control_command" != "node" ] || [ "$control_arg_count" != "2" ] || [ "$control_script_arg" != "scripts/run_azure_migration_control.mjs" ] || [ "$control_mode_arg" != "$MIGRATION_CONTROL_MODE" ] || [ "$control_trigger" != "Manual" ] || [ "$control_retry_limit" != "0" ] || [ "$control_secret_ref" != "data-api-service-role-key" ] || [ "$control_data_api_url" != "$DATA_API_URL" ] || [ "$control_bound_image" != "$CANDIDATE_IMAGE" ]; then
+            echo "::error::The migration control job does not have the immutable fail-closed command contract."
+            exit 1
+          fi
           activation_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
           activation_command_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'length(properties.template.containers[0].command)' --output tsv --only-show-errors)"
           activation_command="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.template.containers[0].command[0]' --output tsv --only-show-errors)"
@@ -596,6 +637,53 @@ jobs:
             echo "::error::The dedicated activation job does not have the immutable fail-closed command contract."
             exit 1
           fi
+
+          deactivation_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
+          deactivation_command_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'length(properties.template.containers[0].command)' --output tsv --only-show-errors)"
+          deactivation_command="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.template.containers[0].command[0]' --output tsv --only-show-errors)"
+          deactivation_arg_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'length(properties.template.containers[0].args)' --output tsv --only-show-errors)"
+          deactivation_script_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.template.containers[0].args[0]' --output tsv --only-show-errors)"
+          deactivation_mode_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.template.containers[0].args[1]' --output tsv --only-show-errors)"
+          deactivation_trigger="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.configuration.triggerType' --output tsv --only-show-errors)"
+          deactivation_retry_limit="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.configuration.replicaRetryLimit' --output tsv --only-show-errors)"
+          deactivation_secret_ref="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_SERVICE_ROLE_KEY'].secretRef | [0]" --output tsv --only-show-errors)"
+          deactivation_data_api_url="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_URL'].value | [0]" --output tsv --only-show-errors)"
+          deactivation_control_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='MIGRATION_CONTROL_IMAGE'].value | [0]" --output tsv --only-show-errors)"
+          if [ "${#MIGRATION_DEACTIVATION_JOB}" -ge 32 ] || [ "$deactivation_image" != "$CANDIDATE_IMAGE" ] || [ "$deactivation_command_count" != "1" ] || [ "$deactivation_command" != "node" ] || [ "$deactivation_arg_count" != "2" ] || [ "$deactivation_script_arg" != "scripts/run_azure_migration_control.mjs" ] || [ "$deactivation_mode_arg" != "deactivate-target" ] || [ "$deactivation_trigger" != "Manual" ] || [ "$deactivation_retry_limit" != "0" ] || [ "$deactivation_secret_ref" != "data-api-service-role-key" ] || [ "$deactivation_data_api_url" != "$DATA_API_URL" ] || [ "$deactivation_control_image" != "$CANDIDATE_IMAGE" ]; then
+            echo "::error::The dedicated deactivation job does not have the immutable fail-closed command contract."
+            exit 1
+          fi
+
+      - name: Freeze internal Azure worker claims before control
+        id: deactivate_target
+        if: ${{ steps.deployment_config.outputs.azure_backend == 'true' }}
+        run: |
+          execution_name="$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query name --output tsv --only-show-errors)"
+          if [[ ! "$execution_name" =~ ^[a-z0-9-]+$ ]]; then
+            echo "::error::Azure did not return a valid target-deactivation execution."
+            exit 1
+          fi
+
+          deadline=$((SECONDS + 600))
+          while [ "$SECONDS" -lt "$deadline" ]
+          do
+            status="$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --job-execution-name "$execution_name" --query properties.status --output tsv --only-show-errors)"
+            case "$status" in
+              Succeeded)
+                echo "Internal Azure project-job claims are closed and running jobs are requeued."
+                exit 0
+                ;;
+              Pending|Running|Processing)
+                sleep 10
+                ;;
+              *)
+                echo "::error::Internal Azure target deactivation failed closed with status ${status:-unknown}."
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::Internal Azure target deactivation exceeded its management-plane deadline."
+          exit 1
 
       - name: Run internal Azure migration control
         id: migration_control
