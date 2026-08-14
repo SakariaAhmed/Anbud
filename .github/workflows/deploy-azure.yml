@@ -622,6 +622,7 @@ jobs:
           MICROSOFT_ENTRA_TENANT_SUBDOMAIN: ${{ vars.MICROSOFT_ENTRA_TENANT_SUBDOMAIN }}
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
           APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
+          LEGACY_APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
           APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
           APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
@@ -662,6 +663,11 @@ jobs:
             effective_worker_cron="$MIGRATION_DISABLED_WORKER_CRON"
             external_ingress_enabled=false
           fi
+          legacy_revision="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && length(properties.template.containers[0].env[?secretRef=='app-access-password']) > \`0\`].name | [0]" --output tsv --only-show-errors)"
+          if [ -n "$legacy_revision" ] && [ -z "$LEGACY_APP_ACCESS_PASSWORD" ]; then
+            echo "::error::An active legacy revision still requires app-access-password, but the transitional GitHub secret is unavailable."
+            exit 1
+          fi
           common_parameters=(
             appName="$CONTAINER_APP"
             image="$CURRENT_APP_IMAGE"
@@ -679,6 +685,7 @@ jobs:
             microsoftEntraTenantSubdomain="$MICROSOFT_ENTRA_TENANT_SUBDOMAIN"
             appEncryptionKey="$APP_ENCRYPTION_KEY"
             appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH"
+            legacyAppAccessPassword="$LEGACY_APP_ACCESS_PASSWORD"
             appSessionSecret="$APP_SESSION_SECRET"
             appGuestCodePepper="$APP_GUEST_CODE_PEPPER"
             appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET"
