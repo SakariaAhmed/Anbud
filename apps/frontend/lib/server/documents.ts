@@ -15,6 +15,7 @@ import {
 } from "@/lib/server/document-intelligence/local-pdf-layout";
 import { isDocumentAnalysisEnabled } from "@/lib/server/document-intelligence/config";
 import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
+import { parsePdf } from "@/lib/server/pdf-parser";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
 
@@ -54,14 +55,6 @@ export interface ParsedUpload {
   parserUsed: string;
 }
 
-type PdfParseFn = (
-  buffer: Buffer,
-  options: Record<string, unknown>,
-) => Promise<{
-  text: string;
-}>;
-
-let pdfParsePromise: Promise<PdfParseFn> | null = null;
 let mammothPromise: Promise<{
   extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 }> | null = null;
@@ -156,15 +149,6 @@ export async function loadValidatedOfficeZip(
     );
   }
   return zip;
-}
-
-async function getPdfParse() {
-  if (!pdfParsePromise) {
-    pdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then(
-      (module) => module.default as unknown as PdfParseFn,
-    );
-  }
-  return pdfParsePromise;
 }
 
 async function getMammoth() {
@@ -1214,36 +1198,19 @@ function buildTextSourceMap(text: string, role?: ProjectDocumentRole) {
 }
 
 async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocumentRole): Promise<ParsedUpload> {
-  let pageNumber = 0;
   const pages: LocalPdfPage[] = [];
   const label = documentLabel(role);
 
-  const pdfParse = await getPdfParse();
-  const parsed = await pdfParse(buffer, {
-      pagerender: (pageData: {
-        getTextContent: (options: { normalizeWhitespace: boolean; disableCombineTextItems: boolean }) => Promise<{
-          items: LocalPdfTextItem[];
-        }>;
-      }) => {
-        pageNumber += 1;
-        const currentPageNumber = pageNumber;
-        return pageData
-          .getTextContent({
-            normalizeWhitespace: false,
-            disableCombineTextItems: false,
-          })
-          .then((textContent) => {
-            const page = analyzeLocalPdfPage({
-              pageNumber: currentPageNumber,
-              items: textContent.items,
-            });
-            pages.push(page);
-            return `[[SIDE:${currentPageNumber}]]\n${page.lines
-              .map((line) => line.text)
-              .join("\n")}`;
-          });
-      },
+  const parsed = await parsePdf(buffer, (pageNumber, items) => {
+    const page = analyzeLocalPdfPage({
+      pageNumber,
+      items: items as LocalPdfTextItem[],
     });
+    pages.push(page);
+    return `[[SIDE:${pageNumber}]]\n${page.lines
+      .map((line) => line.text)
+      .join("\n")}`;
+  });
 
   const useDocumentAnalysis = isDocumentAnalysisEnabled();
   const orderedPages = [...pages].sort(

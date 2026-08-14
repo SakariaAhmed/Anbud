@@ -58,6 +58,7 @@ import {
   safeErrorTelemetry,
 } from "@/lib/server/safe-errors";
 import { ProjectWorkflowTerminalMetadataError } from "@/lib/server/project-job-terminal-metadata";
+import { parsePdf } from "@/lib/server/pdf-parser";
 import { buildSolutionEvaluationProvenance } from "@/lib/server/workflow-boundaries";
 import { sortByRequirementOrder } from "@/lib/requirement-order";
 import {
@@ -415,10 +416,6 @@ type RetrievalPlan = {
 type MammothHtmlModule = {
   convertToHtml: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 };
-type PdfParseFn = (
-  buffer: Buffer,
-  options: Record<string, unknown>,
-) => Promise<{ text: string; numpages?: number }>;
 type PdfLayoutTextItem = {
   str: string;
   transform: number[];
@@ -436,7 +433,6 @@ type PdfLayoutPage = {
 
 let cachedClientPromise: Promise<OpenAIClient> | null = null;
 let cachedMammothHtmlPromise: Promise<MammothHtmlModule> | null = null;
-let cachedPdfParsePromise: Promise<PdfParseFn> | null = null;
 declare global {
   var __anbudDocumentInsightCache: DocumentInsightCache | undefined;
 }
@@ -799,16 +795,6 @@ async function getMammothHtml() {
   }
 
   return cachedMammothHtmlPromise;
-}
-
-async function getPdfParse() {
-  if (!cachedPdfParsePromise) {
-    cachedPdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then(
-      (module) => module.default as unknown as PdfParseFn,
-    );
-  }
-
-  return cachedPdfParsePromise;
 }
 
 function normalizeModelId(value: string | null | undefined) {
@@ -1945,38 +1931,20 @@ async function readPdfSourceExtraction(
   const extraction = (async () => {
     const layoutPages: PdfLayoutPage[] = [];
     const textPages: Array<{ page: number; text: string }> = [];
-    let pageNumber = 0;
-
     try {
-      const pdfParse = await getPdfParse();
-      await pdfParse(Buffer.from(document.file_base64, "base64"), {
-        pagerender: (pageData: {
-          getTextContent: (options: {
-            normalizeWhitespace: boolean;
-            disableCombineTextItems: boolean;
-          }) => Promise<{ items: PdfLayoutTextItem[] }>;
-        }) => {
-          pageNumber += 1;
-          const currentPage = pageNumber;
-          return pageData
-            .getTextContent({
-              normalizeWhitespace: false,
-              disableCombineTextItems: false,
-            })
-            .then((textContent) => {
-              layoutPages.push({
-                page: currentPage,
-                lines: renderPdfLayoutLines(textContent.items),
-              });
-              const text = normalizePdfReferenceTypography(
-                textContent.items.map((item) => item.str).join(" "),
-              );
-              if (text) {
-                textPages.push({ page: currentPage, text });
-              }
-              return "";
-            });
-        },
+      await parsePdf(Buffer.from(document.file_base64, "base64"), (page, items) => {
+        const textItems = items as PdfLayoutTextItem[];
+        layoutPages.push({
+          page,
+          lines: renderPdfLayoutLines(textItems),
+        });
+        const text = normalizePdfReferenceTypography(
+          textItems.map((item) => item.str).join(" "),
+        );
+        if (text) {
+          textPages.push({ page, text });
+        }
+        return "";
       });
     } catch {
       return { layoutPages: [], rawText: "" };
@@ -7018,8 +6986,12 @@ function markdownRequirementTableColumns(cells: string[]) {
       cell,
     ),
   );
-  const requirementIndex = normalized.findIndex((cell) => cell === "krav");
-  const answerIndex = normalized.findIndex((cell) => cell === "svar");
+  const requirementIndex = normalized.findIndex((cell) =>
+    /^(?:krav(?:tekst)?|requirement(?: text)?)$/.test(cell),
+  );
+  const answerIndex = normalized.findIndex((cell) =>
+    /^(?:svar|leverandørens svar|answer|response|supplier response)$/.test(cell),
+  );
   const evidenceIndex = normalized.findIndex((cell) =>
     /^(?:svargrunnlag|answer evidence|evidence|bevis)$/.test(cell),
   );
