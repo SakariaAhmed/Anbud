@@ -1695,7 +1695,7 @@ test("document intelligence A/B hard corpus is configured without machine-specif
   assert.match(v3Source, /"gpt-5\.6-sol"/u);
 });
 
-test("production deployment keeps document intelligence opt-in and password ownership stable", async () => {
+test("production deployment keeps document intelligence opt-in and admin identity stable", async () => {
   const [envExample, bicep, workflow] = await Promise.all([
     readFile(path.join(repositoryRoot, ".env.example"), "utf8"),
     readFile(
@@ -1711,8 +1711,9 @@ test("production deployment keeps document intelligence opt-in and password owne
   assert.match(envExample, /^OPENAI_DOCUMENT_ANALYSIS_MODEL=gpt-5\.6-terra$/mu);
   assert.match(bicep, /param documentAnalysisVersion string = 'off'/u);
   assert.match(bicep, /param openAiDocumentAnalysisModel string = 'gpt-5\.6-terra'/u);
-  assert.match(bicep, /name: 'APP_PASSWORD_OWNER_ID'/u);
+  assert.match(bicep, /name: 'APP_ADMIN_PRINCIPAL_ID'/u);
+  assert.match(bicep, /name: 'APP_ADMIN_ACCESS_PASSWORD_HASH'/u);
   assert.match(workflow, /DOCUMENT_ANALYSIS_VERSION:.*'off'/u);
   assert.match(workflow, /OPENAI_DOCUMENT_ANALYSIS_MODEL:.*'gpt-5\.6-terra'/u);
-  assert.match(workflow, /sharedAppUserId="\$APP_PASSWORD_OWNER_ID"/u);
+  assert.match(workflow, /adminPrincipalId="\$APP_ADMIN_PRINCIPAL_ID"/u);
 });

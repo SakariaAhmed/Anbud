@@ -398,7 +398,9 @@ export async function POST(
           await Promise.all([
             listProjectDocumentsForAnalysis(id),
             section ? getFreshCustomerAnalysis(id) : Promise.resolve(null),
-            listProjectServiceDescriptions(id),
+            listProjectServiceDescriptions(id, {
+              includeDocumentAiSummaries: true,
+            }),
           ]);
         return { projectDocuments, existingAnalysis, serviceCandidates };
       },
@@ -514,10 +516,7 @@ export async function GET(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke hente kundeanalysen.",
+        error: productionSafeErrorMessage(error, "Kunne ikke hente kundeanalysen."),
       },
       { status: 500 },
     );
@@ -620,8 +619,7 @@ export async function PUT(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Kunne ikke lagre analysen.",
+        error: productionSafeErrorMessage(error, "Kunne ikke lagre analysen."),
       },
       { status: 500 },
     );

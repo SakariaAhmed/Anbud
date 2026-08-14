@@ -28,7 +28,7 @@ No API routes were removed. Each current route is referenced by the UI or by ser
 - `/api/service-descriptions/[serviceId]/documents/[documentId]`
 - `/api/openai-models`
 
-`/api/health/live` and `/api/health/ready` are used for Azure liveness and readiness probes. `/api/health` exposes the detailed health model.
+`/api/health/live` is the public Azure liveness probe. `/api/health/ready` and `/api/health` expose the detailed health model to authenticated administrators and are intended for manual or authenticated operational checks.
 
 ## Index cleanup candidates
 

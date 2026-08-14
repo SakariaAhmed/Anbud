@@ -1814,37 +1814,26 @@ export function inferUploadFileFormat(input: {
   contentType?: string | null;
 }): ParsedUpload["fileFormat"] {
   const suffix = input.fileName.toLowerCase();
-  const contentType = input.contentType || "application/octet-stream";
 
-  if (contentType === "application/pdf" || suffix.endsWith(".pdf")) {
+  if (suffix.endsWith(".pdf")) {
     return "pdf";
   }
-  if (
-    contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    suffix.endsWith(".docx")
-  ) {
+  if (suffix.endsWith(".docx")) {
     return "docx";
   }
-  if (contentType === "application/msword" || suffix.endsWith(".doc")) {
+  if (suffix.endsWith(".doc")) {
     throw new Error("`.doc` støttes ikke direkte. Lagre dokumentet som `.docx` og last opp på nytt.");
   }
-  if (contentType === "text/plain" || suffix.endsWith(".txt")) {
+  if (suffix.endsWith(".txt")) {
     return "txt";
   }
-  if (contentType === "text/markdown" || suffix.endsWith(".md")) {
+  if (suffix.endsWith(".md")) {
     return "md";
   }
-  if (
-    contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-    suffix.endsWith(".xlsx")
-  ) {
+  if (suffix.endsWith(".xlsx")) {
     return "xlsx";
   }
-  if (
-    contentType === "application/vnd.ms-excel" ||
-    contentType === "application/xls" ||
-    suffix.endsWith(".xls")
-  ) {
+  if (suffix.endsWith(".xls")) {
     return "xls";
   }
 
@@ -1853,12 +1842,7 @@ export function inferUploadFileFormat(input: {
 
 export function contentTypeForUploadFormat(
   fileFormat: ParsedUpload["fileFormat"],
-  fallback?: string | null,
 ) {
-  if (fallback && fallback !== "application/octet-stream") {
-    return fallback;
-  }
-
   switch (fileFormat) {
     case "pdf":
       return "application/pdf";
@@ -1872,6 +1856,38 @@ export function contentTypeForUploadFormat(
       return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     case "xls":
       return "application/vnd.ms-excel";
+  }
+}
+
+export function validateUploadFileSignature(
+  buffer: Buffer,
+  fileFormat: ParsedUpload["fileFormat"],
+) {
+  const startsWith = (...bytes: number[]) =>
+    bytes.every((byte, index) => buffer[index] === byte);
+  const invalid = () => {
+    throw new Error("Filinnholdet samsvarer ikke med filtypen.");
+  };
+
+  if (fileFormat === "pdf" && !buffer.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+    invalid();
+  }
+  if (
+    (fileFormat === "docx" || fileFormat === "xlsx") &&
+    !startsWith(0x50, 0x4b, 0x03, 0x04) &&
+    !startsWith(0x50, 0x4b, 0x05, 0x06) &&
+    !startsWith(0x50, 0x4b, 0x07, 0x08)
+  ) {
+    invalid();
+  }
+  if (
+    fileFormat === "xls" &&
+    !startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1)
+  ) {
+    invalid();
+  }
+  if ((fileFormat === "txt" || fileFormat === "md") && buffer.includes(0)) {
+    invalid();
   }
 }
 
@@ -1889,8 +1905,9 @@ export async function extractTextFromBuffer(input: {
     fileName,
     contentType: input.contentType,
   });
-  const contentType = contentTypeForUploadFormat(fileFormat, input.contentType);
+  const contentType = contentTypeForUploadFormat(fileFormat);
   const buffer = input.buffer;
+  validateUploadFileSignature(buffer, fileFormat);
   const role = input.role;
 
   if (input.useDocling !== false && canUseDoclingForFormat(fileFormat)) {

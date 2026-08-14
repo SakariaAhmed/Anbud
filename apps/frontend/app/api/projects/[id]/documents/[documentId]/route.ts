@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { contentTypeForUploadFormat } from "@/lib/server/documents";
 import {
   deleteDocument,
   getDocumentDetail,
@@ -7,37 +8,43 @@ import {
 } from "@/lib/server/repositories/documents";
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
+import {
+  authorizationErrorResponse,
+  requireProjectPermission,
+} from "@/lib/server/authorization";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export async function GET(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ id: string; documentId: string }> },
 ) {
   try {
     const { id, documentId } = await context.params;
+    await requireProjectPermission(id, "document.download");
     return await withTiming(
       "GET /api/projects/[id]/documents/[documentId]",
       { project_id: id, document_id: documentId },
       async () => {
         const document = await getDocumentDetail(id, documentId);
         const buffer = Buffer.from(document.file_base64, "base64");
-        const requestUrl = new URL(request.url);
-        const disposition = requestUrl.searchParams.get("disposition");
+        const encodedFileName = encodeURIComponent(document.file_name);
         const contentDisposition =
-          disposition === "inline"
-            ? `inline; filename="${encodeURIComponent(document.file_name)}"`
-            : `attachment; filename="${encodeURIComponent(document.file_name)}"`;
+          `attachment; filename="download"; filename*=UTF-8''${encodedFileName}`;
 
         return new NextResponse(buffer, {
           headers: {
-            "Content-Type": document.content_type,
+            "Content-Type": contentTypeForUploadFormat(document.file_format),
             "Content-Disposition": contentDisposition,
+            "Cache-Control": "private, no-store",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "X-Content-Type-Options": "nosniff",
           },
         });
       },
     );
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke hente dokumentet." },
+    return authorizationErrorResponse(error) ?? NextResponse.json(
+      { error: productionSafeErrorMessage(error, "Kunne ikke hente dokumentet.") },
       { status: 404 },
     );
   }
@@ -60,6 +67,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
 
   try {
     const { id, documentId } = await context.params;
+    await requireProjectPermission(id, "document.delete");
     return await withTiming(
       "DELETE /api/projects/[id]/documents/[documentId]",
       { project_id: id, document_id: documentId },
@@ -76,8 +84,8 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
       },
     );
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke slette dokumentet." },
+    return authorizationErrorResponse(error) ?? NextResponse.json(
+      { error: productionSafeErrorMessage(error, "Kunne ikke slette dokumentet.") },
       { status: 500 },
     );
   }
@@ -89,6 +97,7 @@ export async function PATCH(
 ) {
   try {
     const { id, documentId } = await context.params;
+    await requireProjectPermission(id, "document.upload");
     const body = (await request.json().catch(() => ({}))) as {
       action?: string;
     };
@@ -114,8 +123,8 @@ export async function PATCH(
       },
     );
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke oppdatere dokumentet." },
+    return authorizationErrorResponse(error) ?? NextResponse.json(
+      { error: productionSafeErrorMessage(error, "Kunne ikke oppdatere dokumentet.") },
       { status: 500 },
     );
   }

@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 
 import { enforceServiceDescriptionWriteRateLimit } from "@/lib/server/api-responses";
+import {
+  authorizationErrorResponse,
+  requireAdmin,
+} from "@/lib/server/authorization";
 import { deleteServiceDocument } from "@/lib/server/repositories/services";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export async function DELETE(
   request: Request,
   context: { params: Promise<{ serviceId: string; documentId: string }> },
 ) {
   try {
+    await requireAdmin();
     const limited = await enforceServiceDescriptionWriteRateLimit(request);
     if (limited) {
       return limited;
@@ -17,12 +23,14 @@ export async function DELETE(
     await deleteServiceDocument(serviceId, documentId);
     return NextResponse.json({ ok: true });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke slette tjenestedokumentet.",
+        error: productionSafeErrorMessage(
+          error,
+          "Kunne ikke slette tjenestedokumentet.",
+        ),
       },
       { status: 500 },
     );

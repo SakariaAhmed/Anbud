@@ -9,6 +9,10 @@ import {
 } from "@/lib/server/ai";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
+  MultipartRequestError,
+  parseBoundedMultipartFormData,
+} from "@/lib/server/multipart";
+import {
   appendChatMessage,
   listChatSessions,
   listChatMessages,
@@ -31,6 +35,7 @@ import type {
 } from "@/lib/types";
 
 const MAX_CHAT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_CHAT_MULTIPART_BYTES = MAX_CHAT_ATTACHMENT_BYTES + 1024 * 1024;
 const MAX_CHAT_ATTACHMENTS = 1;
 
 class ChatRequestError extends Error {
@@ -84,7 +89,11 @@ async function parseChatRequest(request: Request): Promise<{
     };
   }
 
-  const formData = await request.formData();
+  const formData = await parseBoundedMultipartFormData(request, {
+    maxBodyBytes: MAX_CHAT_MULTIPART_BYTES,
+    maxFileBytes: MAX_CHAT_ATTACHMENT_BYTES,
+    maxFiles: MAX_CHAT_ATTACHMENTS,
+  });
   const message = `${formData.get("message") || ""}`.trim();
   const sessionId = `${formData.get("session_id") || ""}`.trim() || null;
   const sessionTitle = `${formData.get("session_title") || ""}`.trim() || null;
@@ -365,7 +374,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke hente chatten." },
+      { error: productionSafeErrorMessage(error, "Kunne ikke hente chatten.") },
       { status: 500 },
     );
   }
@@ -577,6 +586,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
   } catch (error) {
     if (error instanceof ChatRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error instanceof MultipartRequestError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     return NextResponse.json(

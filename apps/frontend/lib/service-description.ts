@@ -1,4 +1,8 @@
-import type { ProjectDocument, ProjectDocumentDetail } from "@/lib/types";
+import type {
+  ProjectDocument,
+  ProjectDocumentDetail,
+  ProjectServiceDescription,
+} from "@/lib/types";
 
 function isServiceDescriptionDocument(
   document: Pick<ProjectDocument, "title" | "file_name">,
@@ -24,4 +28,14 @@ export function splitServiceDescriptionDetails<
     serviceDescriptionDocuments: serviceDocuments,
     projectDocuments,
   };
+}
+
+export function listSelectedServiceDocuments(
+  services: ProjectServiceDescription[],
+) {
+  return services
+    .filter((service) => service.selected)
+    .flatMap((service) =>
+      service.documents.map((document) => ({ service, document })),
+    );
 }

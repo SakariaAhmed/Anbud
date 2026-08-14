@@ -1,14 +1,17 @@
 export const AUTH_COOKIE_NAME = "bidsite_session";
 export const AUTH_VERIFIED_HEADER = "x-bidsite-auth-verified";
-export const AUTH_OWNER_HEADER = "x-bidsite-owner-id";
 export const AUTH_DISPLAY_NAME_HEADER = "x-bidsite-display-name";
+export const AUTH_PRINCIPAL_HEADER = "x-bidsite-principal-id";
+export const AUTH_IDENTITY_TYPE_HEADER = "x-bidsite-identity-type";
+export const AUTH_IS_ADMIN_HEADER = "x-bidsite-is-admin";
+export const AUTH_SESSION_HEADER = "x-bidsite-session-id";
 
 const DEFAULT_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
 const MIN_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 15;
 const MAX_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
-const DEFAULT_PASSWORD_OWNER_ID =
-  "u_password_owner_default_000000000000000000000000";
-const SESSION_OWNER_ID_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
+const DATABASE_SESSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const DATABASE_SESSION_SECRET_PATTERN = /^[A-Za-z0-9_-]{40,80}$/u;
 
 function configuredSessionMaxAgeSeconds() {
   const configured = Number(process.env.APP_SESSION_MAX_AGE_SECONDS);
@@ -32,10 +35,6 @@ let signingKeyCache:
     }
   | null = null;
 
-function getPassword() {
-  return process.env.APP_ACCESS_PASSWORD?.trim() ?? "";
-}
-
 function getSigningSecret() {
   return process.env.APP_SESSION_SECRET?.trim() ?? "";
 }
@@ -43,19 +42,6 @@ function getSigningSecret() {
 function toBase64Url(bytes: ArrayBuffer) {
   const binary = String.fromCharCode(...new Uint8Array(bytes));
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function timingSafeEqual(left: string, right: string) {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  let diff = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-
-  return diff === 0;
 }
 
 async function sign(value: string) {
@@ -82,109 +68,51 @@ async function sign(value: string) {
   return toBase64Url(signature);
 }
 
-export function isPasswordAuthConfigured() {
-  return Boolean(getPassword() && getSigningSecret());
-}
-
-export function verifyPassword(input: string) {
-  const password = getPassword();
-  if (!password) {
-    return false;
+export function encodeDatabaseSessionToken(
+  sessionId: string,
+  secret: string,
+) {
+  if (
+    !DATABASE_SESSION_ID_PATTERN.test(sessionId) ||
+    !DATABASE_SESSION_SECRET_PATTERN.test(secret)
+  ) {
+    throw new Error("Invalid database session token.");
   }
-
-  return timingSafeEqual(input, password);
+  return `s4.${sessionId}.${secret}`;
 }
 
-export async function createSessionToken(now = Date.now()) {
-  return createUserSessionToken(await derivePasswordOwnerId(), "Bruker", now);
-}
-
-// Exported for authentication contract tests and session-owner migration checks.
-// fallow-ignore-next-line unused-export
-export function derivePasswordOwnerId() {
-  const ownerId =
-    process.env.APP_PASSWORD_OWNER_ID?.trim() || DEFAULT_PASSWORD_OWNER_ID;
-  if (!SESSION_OWNER_ID_PATTERN.test(ownerId)) {
-    throw new Error("Invalid APP_PASSWORD_OWNER_ID.");
+export function parseDatabaseSessionToken(
+  token: string | undefined | null,
+) {
+  if (!token || token.length > 256) return null;
+  const [version, sessionId, secret, extra] = token.split(".");
+  if (
+    version !== "s4" ||
+    extra !== undefined ||
+    !sessionId ||
+    !secret ||
+    !DATABASE_SESSION_ID_PATTERN.test(sessionId) ||
+    !DATABASE_SESSION_SECRET_PATTERN.test(secret)
+  ) {
+    return null;
   }
-  return ownerId;
+  return { sessionId, secret };
 }
 
-function encodeSessionText(value: string) {
-  return toBase64Url(encoder.encode(value.trim().slice(0, 120)).buffer);
-}
-
-function decodeSessionText(value: string | undefined) {
-  if (!value) return null;
-  try {
-    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    return new TextDecoder().decode(Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))) || null;
-  } catch { return null; }
-}
-
-export async function createUserSessionToken(ownerId: string, displayName: string, now = Date.now()) {
-  if (!SESSION_OWNER_ID_PATTERN.test(ownerId)) throw new Error("Invalid session owner.");
-  const payload = `v3:${now}:${ownerId}:${encodeSessionText(displayName)}`;
-  return `${payload}.${await sign(payload)}`;
+export function databaseSessionTokenHmac(
+  sessionId: string,
+  secret: string,
+) {
+  if (
+    !DATABASE_SESSION_ID_PATTERN.test(sessionId) ||
+    !DATABASE_SESSION_SECRET_PATTERN.test(secret)
+  ) {
+    throw new Error("Invalid database session token.");
+  }
+  return sign(`database-session:${sessionId}:${secret}`);
 }
 
 export async function deriveOwnerId(subject: string) {
   if (!subject.trim()) throw new Error("Missing Microsoft account subject.");
   return `u_${(await sign(`entra:${subject}`)).slice(0, 43)}`;
-}
-
-export async function readSessionToken(token: string | undefined | null, now = Date.now()) {
-  if (!token) return null;
-  const separator = token.lastIndexOf(".");
-  if (separator < 0) return null;
-  const payload = token.slice(0, separator);
-  const signature = token.slice(separator + 1);
-  const [version, issuedAtValue, ownerId, encodedDisplayName] = payload.split(":");
-  const issuedAt = Number(issuedAtValue);
-  const ageSeconds = Math.floor((now - issuedAt) / 1000);
-  if (!["v1", "v2", "v3"].includes(version) || !Number.isFinite(issuedAt) || ageSeconds < 0 || ageSeconds > AUTH_COOKIE_MAX_AGE_SECONDS) return null;
-  try {
-    if (!timingSafeEqual(signature, await sign(payload))) return null;
-    return {
-      ownerId:
-        version === "v1"
-          ? await derivePasswordOwnerId()
-          : ownerId || null,
-      displayName:
-        version === "v1" ? "Bruker" : version === "v3" ? decodeSessionText(encodedDisplayName) : null,
-    };
-  } catch { return null; }
-}
-
-export async function verifySessionToken(token: string | undefined | null, now = Date.now()) {
-  if (await readSessionToken(token, now)) {
-    return true;
-  }
-
-  if (!token) {
-    return false;
-  }
-
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature) {
-    return false;
-  }
-
-  const [version, issuedAtValue] = payload.split(":");
-  const issuedAt = Number(issuedAtValue);
-  if (version !== "v1" || !Number.isFinite(issuedAt)) {
-    return false;
-  }
-
-  const ageSeconds = Math.floor((now - issuedAt) / 1000);
-  if (ageSeconds < 0 || ageSeconds > AUTH_COOKIE_MAX_AGE_SECONDS) {
-    return false;
-  }
-
-  try {
-    return timingSafeEqual(signature, await sign(payload));
-  } catch {
-    return false;
-  }
 }

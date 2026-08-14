@@ -3,7 +3,7 @@ import "server-only";
 export {
   deleteServiceDescription,
   deleteServiceDocument,
-  getServiceDescription,
+  getServiceDescriptionMetadata,
   listProjectServiceDescriptions,
   listServiceDescriptions,
   listServiceDocumentDetailsForProject,

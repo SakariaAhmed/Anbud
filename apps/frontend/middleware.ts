@@ -1,21 +1,44 @@
-import { NextResponse, type NextRequest } from "next/server";
+import {
+  NextResponse,
+  type NextFetchEvent,
+  type NextRequest,
+} from "next/server";
+
+import {
+  dataApiConfiguration,
+  dataApiHeaders,
+} from "@/lib/data-api-config";
 
 import {
   AUTH_COOKIE_NAME,
   AUTH_DISPLAY_NAME_HEADER,
-  AUTH_OWNER_HEADER,
+  AUTH_IS_ADMIN_HEADER,
+  AUTH_IDENTITY_TYPE_HEADER,
+  AUTH_PRINCIPAL_HEADER,
+  AUTH_SESSION_HEADER,
   AUTH_VERIFIED_HEADER,
-  readSessionToken,
-  verifySessionToken,
+  databaseSessionTokenHmac,
+  parseDatabaseSessionToken,
 } from "@/lib/password-auth";
+import {
+  normalizeAuthorizationPathname,
+  projectIdFromAuthorizationPath,
+  projectRoleAllowsAuthorizationPath,
+} from "@/lib/middleware-project-authorization";
 
 const CURRENT_PATH_HEADER = "x-current-pathname";
 const CORRELATION_ID_HEADER = "x-correlation-id";
-function contentSecurityPolicy() {
+const NONCE_HEADER = "x-nonce";
+
+function createNonce() {
+  return btoa(crypto.randomUUID());
+}
+
+function contentSecurityPolicy(nonce: string) {
   const scriptSrc =
     process.env.NODE_ENV === "production"
-      ? "script-src 'self' 'unsafe-inline' blob:"
-      : "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:";
+      ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' blob:`
+      : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval' blob:`;
 
   return [
     "default-src 'self'",
@@ -87,10 +110,10 @@ function isPublicPath(pathname: string) {
   return (
     pathname === "/login" ||
     pathname === "/api/auth/login" ||
+    pathname === "/api/auth/guest" ||
     (pathname === "/api/auth/microsoft" ||
       pathname.startsWith("/api/auth/microsoft/")) ||
-    pathname === "/api/health" ||
-    pathname.startsWith("/api/health/") ||
+    pathname === "/api/health/live" ||
     PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
   );
 }
@@ -108,11 +131,15 @@ function correlationIdFor(request: NextRequest) {
   return crypto.randomUUID();
 }
 
-function applyResponseHeaders(response: NextResponse, correlationId: string) {
+function applyResponseHeaders(
+  response: NextResponse,
+  correlationId: string,
+  nonce = createNonce(),
+) {
   response.headers.set(CORRELATION_ID_HEADER, correlationId);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("Content-Security-Policy", contentSecurityPolicy());
+  response.headers.set("Content-Security-Policy", contentSecurityPolicy(nonce));
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set(
     "Permissions-Policy",
@@ -162,31 +189,153 @@ function forbiddenJson(correlationId: string) {
   );
 }
 
-function projectIdFromPath(pathname: string) {
-  const match = pathname.match(/^\/(?:api\/)?projects\/([0-9a-f-]{36})(?:\/|$)/i);
-  return match?.[1] ?? null;
+function invalidPathJson(correlationId: string) {
+  return applyResponseHeaders(
+    NextResponse.json({ error: "Invalid request path." }, { status: 400 }),
+    correlationId,
+  );
 }
 
-async function ownsProject(projectId: string, ownerId: string) {
-  const baseUrl = process.env.SUPABASE_URL?.replace(/\/+$/, "");
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!baseUrl || !serviceKey) return false;
-  const url = new URL(`${baseUrl}/rest/v1/projects`);
-  url.searchParams.set("select", "id");
-  url.searchParams.set("id", `eq.${projectId}`);
-  url.searchParams.set("owner_id", `eq.${ownerId}`);
-  url.searchParams.set("limit", "1");
-  const response = await fetch(url, {
-    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+type MiddlewareIdentity = {
+  principalId: string;
+  identityType: "internal" | "guest";
+  displayName: string | null;
+  isAdmin: boolean;
+  sessionId: string | null;
+};
+
+async function resolveDatabaseSession(
+  sessionToken: string | undefined,
+): Promise<MiddlewareIdentity | null> {
+  const parsed = parseDatabaseSessionToken(sessionToken);
+  const configuration = dataApiConfiguration();
+  if (!parsed || !configuration) return null;
+  const response = await fetch(
+    `${configuration.baseUrl}/rpc/resolve_app_session`,
+    {
+      method: "POST",
+      headers: dataApiHeaders(configuration.serviceKey),
+      body: JSON.stringify({
+        p_session_id: parsed.sessionId,
+        p_token_hmac: await databaseSessionTokenHmac(
+          parsed.sessionId,
+          parsed.secret,
+        ),
+      }),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) return null;
+  const rows = (await response.json()) as Array<{
+    session_id: string;
+    principal_id: string;
+    identity_type: "internal" | "guest";
+    display_name: string | null;
+    global_roles: string[] | null;
+  }>;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    principalId: row.principal_id,
+    identityType: row.identity_type,
+    displayName: row.display_name,
+    isAdmin: row.global_roles?.includes("admin") ?? false,
+    sessionId: row.session_id,
+  };
+}
+
+async function resolveProjectRole(
+  projectId: string,
+  identity: MiddlewareIdentity,
+) {
+  const configuration = dataApiConfiguration();
+  if (!configuration) return null;
+  const response = await fetch(
+    `${configuration.baseUrl}/rpc/resolve_project_role`,
+    {
+      method: "POST",
+      headers: dataApiHeaders(configuration.serviceKey),
+      body: JSON.stringify({
+        p_principal_id: identity.principalId,
+        p_project_id: projectId,
+      }),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) return null;
+  return (await response.json()) as string | null;
+}
+
+async function recordRequestActivity(
+  request: NextRequest,
+  identity: MiddlewareIdentity,
+  correlationId: string,
+  projectId: string | null,
+  pathname: string,
+  result: "ok" | "denied" = "ok",
+) {
+  const configuration = dataApiConfiguration();
+  if (!configuration) return;
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api/health") ||
+    pathname === "/favicon.ico"
+  ) {
+    return;
+  }
+  const segments = pathname.split("/").filter(Boolean);
+  const documentIndex = segments.indexOf("documents");
+  const entityId =
+    documentIndex >= 0 &&
+    /^[0-9a-f-]{36}$/iu.test(segments[documentIndex + 1] ?? "")
+      ? segments[documentIndex + 1]
+      : null;
+  await fetch(`${configuration.baseUrl}/activity_events`, {
+    method: "POST",
+    headers: {
+      ...dataApiHeaders(configuration.serviceKey),
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify({
+      actor_principal_id: identity.principalId,
+      actor_session_id: identity.sessionId,
+      action: `request.${request.method.toLocaleLowerCase("en-US")}`,
+      result,
+      project_id: projectId,
+      entity_type: entityId ? "document" : projectId ? "project" : "route",
+      entity_id: entityId ?? projectId,
+      request_id: correlationId,
+      metadata: {
+        path: pathname.slice(0, 500),
+        method: request.method,
+      },
+    }),
     cache: "no-store",
-  });
-  if (!response.ok) return false;
-  const rows = await response.json() as Array<{ id: string }>;
-  return rows.length === 1;
+  }).catch(() => undefined);
 }
 
-function isTrustedOrigin(request: NextRequest) {
-  if (SAFE_METHODS.has(request.method) || !request.nextUrl.pathname.startsWith("/api/")) {
+async function resolveIdentity(sessionToken: string | undefined) {
+  return resolveDatabaseSession(sessionToken);
+}
+
+function projectNotFoundResponse(
+  request: NextRequest,
+  correlationId: string,
+  pathname: string,
+) {
+  return pathname.startsWith("/api/")
+    ? applyResponseHeaders(
+        NextResponse.json({ error: "Project not found." }, { status: 404 }),
+        correlationId,
+      )
+    : applyResponseHeaders(
+        NextResponse.redirect(localRedirectUrl(request, "/")),
+        correlationId,
+      );
+}
+
+function isTrustedOrigin(request: NextRequest, pathname: string) {
+  if (SAFE_METHODS.has(request.method) || !pathname.startsWith("/api/")) {
     return true;
   }
 
@@ -222,20 +371,33 @@ function nextWithRequestHeaders(
   request: NextRequest,
   authenticated: boolean,
   correlationId: string,
-  ownerId?: string | null,
-  displayName?: string | null,
+  pathname: string,
+  identity?: MiddlewareIdentity | null,
 ) {
+  const nonce = createNonce();
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set(CURRENT_PATH_HEADER, request.nextUrl.pathname);
+  requestHeaders.set(CURRENT_PATH_HEADER, pathname);
   requestHeaders.set(CORRELATION_ID_HEADER, correlationId);
+  requestHeaders.set(NONCE_HEADER, nonce);
+  requestHeaders.set("Content-Security-Policy", contentSecurityPolicy(nonce));
   requestHeaders.delete(AUTH_VERIFIED_HEADER);
-  requestHeaders.delete(AUTH_OWNER_HEADER);
   requestHeaders.delete(AUTH_DISPLAY_NAME_HEADER);
+  requestHeaders.delete(AUTH_PRINCIPAL_HEADER);
+  requestHeaders.delete(AUTH_IDENTITY_TYPE_HEADER);
+  requestHeaders.delete(AUTH_IS_ADMIN_HEADER);
+  requestHeaders.delete(AUTH_SESSION_HEADER);
 
-  if (authenticated) {
+  if (authenticated && identity) {
     requestHeaders.set(AUTH_VERIFIED_HEADER, "1");
-    if (ownerId) requestHeaders.set(AUTH_OWNER_HEADER, ownerId);
-    if (displayName) requestHeaders.set(AUTH_DISPLAY_NAME_HEADER, displayName);
+    requestHeaders.set(AUTH_PRINCIPAL_HEADER, identity.principalId);
+    requestHeaders.set(AUTH_IDENTITY_TYPE_HEADER, identity.identityType);
+    requestHeaders.set(AUTH_IS_ADMIN_HEADER, identity.isAdmin ? "1" : "0");
+    if (identity.sessionId) {
+      requestHeaders.set(AUTH_SESSION_HEADER, identity.sessionId);
+    }
+    if (identity.displayName) {
+      requestHeaders.set(AUTH_DISPLAY_NAME_HEADER, identity.displayName);
+    }
   }
 
   return applyResponseHeaders(
@@ -245,18 +407,22 @@ function nextWithRequestHeaders(
       },
     }),
     correlationId,
+    nonce,
   );
 }
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+export async function middleware(request: NextRequest, event: NextFetchEvent) {
   const correlationId = correlationIdFor(request);
+  const pathname = normalizeAuthorizationPathname(request.nextUrl.pathname);
+  if (!pathname) {
+    return invalidPathJson(correlationId);
+  }
   const sessionToken = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-  const session = await readSessionToken(sessionToken);
-  const authenticated = Boolean(session) || await verifySessionToken(sessionToken);
+  const identity = await resolveIdentity(sessionToken);
+  const authenticated = Boolean(identity);
   const workerToken = process.env.PROJECT_JOB_WORKER_TOKEN?.trim();
 
-  if (!isTrustedOrigin(request)) {
+  if (!isTrustedOrigin(request, pathname)) {
     return forbiddenJson(correlationId);
   }
 
@@ -265,7 +431,7 @@ export async function middleware(request: NextRequest) {
     workerToken &&
     timingSafeTokenEqual(request.headers.get("x-worker-token"), workerToken)
   ) {
-    return nextWithRequestHeaders(request, true, correlationId);
+    return nextWithRequestHeaders(request, true, correlationId, pathname);
   }
 
   if (pathname === "/login" && authenticated) {
@@ -274,18 +440,77 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPublicPath(pathname)) {
-    return nextWithRequestHeaders(request, authenticated, correlationId, session?.ownerId, session?.displayName);
+    return nextWithRequestHeaders(
+      request,
+      authenticated,
+      correlationId,
+      pathname,
+      identity,
+    );
   }
 
   if (authenticated) {
-    if (!session?.ownerId && pathname.startsWith("/api/projects")) return unauthorizedJson(correlationId);
-    const projectId = projectIdFromPath(pathname);
-    if (projectId && (!session?.ownerId || !(await ownsProject(projectId, session.ownerId)))) {
+    if (
+      identity?.identityType === "guest" &&
+      (pathname === "/projects/new" ||
+        pathname.startsWith("/service-descriptions") ||
+        pathname.startsWith("/api/service-descriptions"))
+    ) {
+      await recordRequestActivity(
+        request,
+        identity,
+        correlationId,
+        projectIdFromAuthorizationPath(pathname),
+        pathname,
+        "denied",
+      );
       return pathname.startsWith("/api/")
-        ? applyResponseHeaders(NextResponse.json({ error: "Project not found." }, { status: 404 }), correlationId)
-        : applyResponseHeaders(NextResponse.redirect(localRedirectUrl(request, "/")), correlationId);
+        ? projectNotFoundResponse(request, correlationId, pathname)
+        : applyResponseHeaders(
+            NextResponse.redirect(localRedirectUrl(request, "/")),
+            correlationId,
+          );
     }
-    return nextWithRequestHeaders(request, true, correlationId, session?.ownerId, session?.displayName);
+    const projectId = projectIdFromAuthorizationPath(pathname);
+    if (projectId && identity) {
+      const role = await resolveProjectRole(projectId, identity);
+      if (
+        !projectRoleAllowsAuthorizationPath({
+          method: request.method,
+          pathname,
+          role,
+          isAdmin: identity.isAdmin,
+        })
+      ) {
+        await recordRequestActivity(
+          request,
+          identity,
+          correlationId,
+          projectId,
+          pathname,
+          "denied",
+        );
+        return projectNotFoundResponse(request, correlationId, pathname);
+      }
+    }
+    if (identity) {
+      event.waitUntil(
+        recordRequestActivity(
+          request,
+          identity,
+          correlationId,
+          projectId,
+          pathname,
+        ),
+      );
+    }
+    return nextWithRequestHeaders(
+      request,
+      true,
+      correlationId,
+      pathname,
+      identity,
+    );
   }
 
   if (pathname.startsWith("/api/")) {

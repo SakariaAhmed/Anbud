@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  createDataApiCutoverRuntime,
   createSupabaseCutoverRuntime,
   rollbackContainerAppFromState,
   rolloutContainerApp,
@@ -11,6 +12,8 @@ import {
 function fixtureRuntime({
   failCandidate = false,
   failPromoted = false,
+  frozenIngress = false,
+  unhealthyCandidate = false,
   staleCandidateVersion = false,
   staleWorkerVersion = false,
   staleZeroTrafficRevisions = [],
@@ -19,10 +22,18 @@ function fixtureRuntime({
   const cutoverCalls = [];
   const smokes = [];
   const events = [];
+  const states = [];
   const app = {
     properties: {
       latestReadyRevisionName: "anbud--stable",
-      configuration: { ingress: { fqdn: "app.example.test" } },
+      configuration: {
+        ingress: {
+          external: !frozenIngress,
+          fqdn: frozenIngress
+            ? "app.internal.example.test"
+            : "app.example.test",
+        },
+      },
       template: { containers: [{ name: "web", image: "registry/app:stable" }] },
     },
   };
@@ -55,6 +66,11 @@ function fixtureRuntime({
     cutoverCalls,
     smokes,
     events,
+    states,
+    writeState(state) {
+      states.push(structuredClone(state));
+    },
+    async wait() {},
     async az(args) {
       calls.push(args);
       const command = args.join(" ");
@@ -88,6 +104,11 @@ function fixtureRuntime({
             : "registry/app:candidate";
         return {
           properties: {
+            healthState:
+              !stable && unhealthyCandidate ? "Unhealthy" : "Healthy",
+            provisioningState: "Provisioned",
+            replicas: 0,
+            runningState: "ScaledToZero",
             fqdn: stable
               ? "stable.example.test"
               : "candidate.example.test",
@@ -266,6 +287,37 @@ test("Supabase cutover client is project-bound, versioned, and fail-closed", asy
   );
 });
 
+test("Azure cutover client uses the explicit PostgREST root without Supabase paths", async () => {
+  const calls = [];
+  const cutover = createDataApiCutoverRuntime({
+    dataApiUrl: "https://anbud-postgrest.internal/",
+    serviceRoleKey: "synthetic-azure-key",
+    async fetchImpl(url, options) {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            version: "project-job-cutover-v1",
+            claims_enabled: false,
+          };
+        },
+      };
+    },
+  });
+
+  await cutover.setClaimsEnabled(false);
+  assert.equal(
+    calls[0].url,
+    "https://anbud-postgrest.internal/rpc/set_project_job_claims_enabled",
+  );
+  assert.equal(
+    calls[0].options.headers.authorization,
+    "Bearer synthetic-azure-key",
+  );
+});
+
 test("candidate smoke failure keeps the healthy revision at 100 percent", async () => {
   const runtime = fixtureRuntime({ failCandidate: true });
   await assert.rejects(
@@ -391,6 +443,93 @@ test("successful candidate gates claims and retires old writers before promotion
     "claims open only after both candidate web and worker are installed",
   );
 });
+
+test("frozen Azure promotion keeps public ingress and source claims closed", async () => {
+  const runtime = fixtureRuntime({ frozenIngress: true });
+  const result = await rolloutContainerApp(
+    { ...config, minReplicas: 0, frozenIngressMode: true },
+    runtime,
+  );
+
+  assert.equal(result.promoted, true);
+  assert.deepEqual(runtime.smokes, []);
+  assert.deepEqual(runtime.cutoverCalls, [
+    { operation: "claims", enabled: false },
+    { operation: "requeue" },
+  ]);
+  assert.equal(runtime.states.at(-1)?.claimsEnabled, false);
+  assert.equal(runtime.states.at(-1)?.sourceClaimsKeptClosed, true);
+  assert.equal(runtime.states.at(-1)?.frozenIngressMode, true);
+  assert.match(
+    matchingCalls(runtime, "containerapp update").at(-1),
+    /--min-replicas 0/u,
+  );
+  assert.equal(
+    matchingCalls(runtime, "containerapp ingress enable").length,
+    0,
+  );
+});
+
+test("frozen Azure promotion fails before cutover on unhealthy revision state", async () => {
+  const runtime = fixtureRuntime({
+    frozenIngress: true,
+    unhealthyCandidate: true,
+  });
+  await assert.rejects(
+    rolloutContainerApp({ ...config, frozenIngressMode: true }, runtime),
+    /failed management-plane readiness/u,
+  );
+  assert.deepEqual(runtime.cutoverCalls, []);
+  assert.deepEqual(runtime.smokes, []);
+  assert.match(
+    matchingCalls(runtime, "containerapp ingress traffic set").at(-1),
+    /anbud--stable=100.*anbud--candidate=0/u,
+  );
+});
+
+test(
+  "frozen Azure rollout rejects any externally reachable web ingress",
+  async () => {
+    const runtime = fixtureRuntime();
+    await assert.rejects(
+      rolloutContainerApp({ ...config, frozenIngressMode: true }, runtime),
+      /requires internal-only Container App ingress/u,
+    );
+    assert.deepEqual(runtime.cutoverCalls, []);
+    assert.equal(matchingCalls(runtime, "containerapp update").length, 0);
+  },
+);
+
+test(
+  "frozen Azure rollback leaves source claims and worker closed for backend reconcile",
+  async () => {
+    const runtime = fixtureRuntime({
+      frozenIngress: true,
+      staleWorkerVersion: true,
+    });
+    await assert.rejects(
+      rolloutContainerApp(
+        { ...config, frozenIngressMode: true },
+        runtime,
+      ),
+      /image\/version metadata did not reach/u,
+    );
+
+    assert.deepEqual(runtime.smokes, []);
+    assert.deepEqual(runtime.cutoverCalls, [
+      { operation: "claims", enabled: false },
+      { operation: "requeue" },
+      { operation: "claims", enabled: false },
+      { operation: "prepare-stable" },
+    ]);
+    assert.equal(
+      runtime.cutoverCalls.some(
+        (call) => call.operation === "claims" && call.enabled === true,
+      ),
+      false,
+    );
+  },
+);
 
 test("successful promotion deactivates every active revision without traffic", async () => {
   const runtime = fixtureRuntime({
@@ -563,4 +702,59 @@ test("pre-cutover fallback never requeues work owned by the serving stable revis
     matchingCalls(runtime, "containerapp revision deactivate").length,
     1,
   );
+});
+
+test("Azure workflow preserves frozen fail-closed activation", () => {
+  const workflow = readFileSync(
+    new URL("../.github/workflows/deploy-azure.yml", import.meta.url),
+    "utf8",
+  );
+  const bicep = readFileSync(
+    new URL("../infra/azure/container-app.bicep", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(bicep, /param externalIngressEnabled bool = true/u);
+  assert.match(bicep, /external:\s*externalIngressEnabled/u);
+  assert.match(workflow, /externalIngressEnabled="\$external_ingress_enabled"/u);
+  assert.match(workflow, /FROZEN_INGRESS_ROLLOUT:/u);
+  assert.match(workflow, /KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS:/u);
+  const ingressProof = workflow.indexOf(
+    "name: Prove public web ingress is frozen",
+  );
+  const sourceProof = workflow.indexOf(
+    "name: Prove frozen Supabase source has zero running jobs",
+  );
+  assert.ok(ingressProof > 0 && ingressProof < sourceProof);
+  const ingressProofStep = workflow.slice(ingressProof, sourceProof);
+  assert.match(ingressProofStep, /ingress\.external/u);
+  assert.match(ingressProofStep, /probe_status/u);
+  assert.match(ingressProofStep, /negative external probe/u);
+
+  const uncertainStart = workflow.indexOf(
+    "name: Stop on uncertain target activation",
+  );
+  const publicStart = workflow.indexOf(
+    "name: Open public ingress and smoke Azure candidate",
+  );
+  assert.ok(uncertainStart > 0 && publicStart > uncertainStart);
+  const uncertainStep = workflow.slice(uncertainStart, publicStart);
+  assert.match(uncertainStep, /steps\.activate_target\.outcome != 'success'/u);
+  assert.match(uncertainStep, /--type internal/u);
+  assert.doesNotMatch(uncertainStep, /--rollback-state/u);
+  assert.doesNotMatch(uncertainStep, /SUPABASE_SERVICE_ROLE_KEY/u);
+
+  const fallbackStart = workflow.indexOf("name: Fallback rollback");
+  const restoreStart = workflow.indexOf(
+    "name: Restore scheduled worker after completed release",
+  );
+  const fallbackStep = workflow.slice(fallbackStart, restoreStart);
+  assert.match(fallbackStep, /steps\.rollout\.outcome == 'failure'/u);
+  assert.doesNotMatch(fallbackStep, /steps\.activate_target\.outcome/u);
+  assert.doesNotMatch(fallbackStep, /--cron-expression/u);
+  assert.match(fallbackStep, /Reconcile and verify the Supabase backend/u);
+
+  const restoreStep = workflow.slice(restoreStart);
+  assert.match(restoreStep, /steps\.public_smoke\.outcome == 'success'/u);
+  assert.match(restoreStep, /--cron-expression/u);
 });

@@ -8,8 +8,6 @@ const baseUrl = (
 
 const checks = [
   { path: "/api/health/live", requiredStatus: "healthy" },
-  { path: "/api/health/ready", rejectStatus: "unhealthy" },
-  { path: "/api/health", rejectStatus: "unhealthy" },
 ];
 
 async function readHealth(path) {

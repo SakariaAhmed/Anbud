@@ -489,7 +489,7 @@ async function runScenario(label, baseUrl) {
   let serviceId = null;
 
   try {
-    await client.json("GET", "/api/health");
+    await client.json("GET", "/api/health/live");
     await client.json("POST", "/api/auth/login", { password });
     const created = await client.json("POST", "/api/projects", {
       name: `LLM kvalitets-eval ${label} ${runId}`,

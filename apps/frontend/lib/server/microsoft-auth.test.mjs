@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import fs from "node:fs";
 import test from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,4 +50,19 @@ test("Microsoft flow state rejects malformed input", () => {
     ),
     null,
   );
+});
+
+test("Microsoft callback persists and validates an OIDC nonce", () => {
+  const callback = fs.readFileSync(
+    path.join(frontendRoot, "app/api/auth/microsoft/callback/route.ts"),
+    "utf8",
+  );
+  const start = fs.readFileSync(
+    path.join(frontendRoot, "app/api/auth/microsoft/route.ts"),
+    "utf8",
+  );
+
+  assert.match(start, /MICROSOFT_NONCE_COOKIE_NAME/u);
+  assert.match(callback, /nonce:\s*expectedNonce/u);
+  assert.match(callback, /!expectedNonce/u);
 });

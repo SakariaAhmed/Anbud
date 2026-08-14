@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { ProjectChatPopoutPage } from "@/components/projects/project-chat-popout-page";
-import { AUTH_OWNER_HEADER } from "@/lib/password-auth";
+import { AUTH_PRINCIPAL_HEADER } from "@/lib/password-auth";
 import {
   getProjectShell,
   listProjects,
@@ -24,7 +24,7 @@ export default async function ProjectChatPage({
 }) {
   try {
     const [{ id }, query] = await Promise.all([params, searchParams]);
-    const ownerId = (await headers()).get(AUTH_OWNER_HEADER);
+    const ownerId = (await headers()).get(AUTH_PRINCIPAL_HEADER);
     const [project, projects] = await Promise.all([
       getProjectShell(id),
       ownerId ? listProjects(ownerId) : Promise.resolve([]),

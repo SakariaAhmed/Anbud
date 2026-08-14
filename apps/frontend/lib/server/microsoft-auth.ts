@@ -8,6 +8,7 @@ import {
 
 export const MICROSOFT_PKCE_COOKIE_NAME = "bidsite_microsoft_pkce";
 export const MICROSOFT_STATE_COOKIE_NAME = "bidsite_microsoft_state";
+export const MICROSOFT_NONCE_COOKIE_NAME = "bidsite_microsoft_nonce";
 export const MICROSOFT_AUTH_COOKIE_PATH = "/api/auth/microsoft";
 export const MICROSOFT_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 10;
 

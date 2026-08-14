@@ -7,6 +7,8 @@ interface ClientCacheEntry<T> {
 
 const clientCache = new Map<string, ClientCacheEntry<unknown>>();
 
+export const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
+export const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
 export const PROJECT_SERVICES_CACHE_TTL_MS = 2 * 60 * 1000;
 
 export function projectServicesCacheKey(projectId: string) {

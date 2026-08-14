@@ -497,11 +497,11 @@ test("customer-analysis SQL writes atomically invalidate downstream outputs", ()
   assert.match(crossCurrentnessBody, /is distinct from artifact\.artifact_type/u);
   assert.match(crossCurrentnessBody, /\) = \(/u);
   const storeSource = readFileSync(
-    path.join(frontendRoot, "lib/server/repositories/supabase-store.ts"),
+    path.join(frontendRoot, "lib/server/repositories/artifacts.ts"),
     "utf8",
   );
   const knowledgeQueryBody = storeSource.match(
-    /export async function listArtifactKnowledgeCandidatesFresh\((?<body>[\s\S]*?)export async function appendChatMessage/u,
+    /export async function listArtifactKnowledgeCandidatesFresh\((?<body>[\s\S]*)$/u,
   )?.groups?.body;
   assert.ok(knowledgeQueryBody, "fresh artifact knowledge query mangler");
   assert.match(knowledgeQueryBody, /"artifact_knowledge_manifest"/u);
@@ -587,7 +587,7 @@ test("artifact RPC authority rejects malformed direct persistence payloads", () 
 
 test("manual artifact persistence validates acknowledgement against the parent version", () => {
   const storeSource = readFileSync(
-    path.join(frontendRoot, "lib/server/repositories/supabase-store.ts"),
+    path.join(frontendRoot, "lib/server/repositories/artifacts.ts"),
     "utf8",
   );
   const updateBody = storeSource.match(
