@@ -59,6 +59,7 @@ $bootstrap$;
 
 GRANT anbud_owner TO CURRENT_USER;
 GRANT service_role TO anbud_authenticator;
+ALTER SCHEMA public OWNER TO anbud_owner;
 REVOKE ALL ON SCHEMA public FROM PUBLIC, anon, authenticated;
 GRANT USAGE, CREATE ON SCHEMA public TO anbud_owner;
 

@@ -343,7 +343,9 @@ fi
 Any restore error aborts and rolls back the transaction. The explicit log scan
 also prevents progression after a warning. The verifier exits nonzero if
 encoding, provider, locale, ICU rules, stored ICU version, actual ICU version,
-ownership or ACLs differ.
+ownership or ACLs differ. Bootstrap makes both `public` and `extensions`
+explicitly owned by the `NOLOGIN` `anbud_owner`; a mere `CREATE` grant is not
+enough because the archive also restores the standard `public` schema comment.
 
 Copy every Storage object, including orphans, byte-for-byte. Do not decrypt or
 re-encrypt. Keep the container name and paths unchanged. Compare source and
@@ -740,6 +742,13 @@ as a performance experiment because it cannot be reduced later.
        > "$AZURE_CUTOVER_DATABASE_COMPARISON_FILE"
    test -s "$AZURE_CUTOVER_DATABASE_COMPARISON_FILE"
    ```
+
+   The comparator permits only the validated provider patch transition from
+   Supabase `vector` 0.8.0 to Azure `vector` 0.8.2, both in `extensions`. Every
+   other extension name, version or schema difference stops. Its target
+   snapshot uses the same `"$user", public, extensions` catalog visibility as
+   the frozen linked Supabase query so `pg_get_*def` hashes are comparable;
+   catalog queries themselves remain fully `pg_catalog`-qualified.
 
 9. Compose evidence-v2 only after all eight artifacts exist. The ID below is
    random and unique; never reuse it after any failed upload or validation:

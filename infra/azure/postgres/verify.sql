@@ -130,6 +130,15 @@ BEGIN
     RAISE EXCEPTION 'Unprivileged roles must not inherit service_role';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM pg_namespace namespace_state
+    WHERE namespace_state.nspname IN ('public', 'extensions')
+      AND pg_get_userbyid(namespace_state.nspowner) <> 'anbud_owner'
+  ) THEN
+    RAISE EXCEPTION 'Application schemas must be owned by anbud_owner';
+  END IF;
+
   IF NOT has_schema_privilege('anbud_owner', 'public', 'USAGE')
      OR NOT has_schema_privilege('anbud_owner', 'public', 'CREATE')
      OR NOT has_schema_privilege('service_role', 'public', 'USAGE')

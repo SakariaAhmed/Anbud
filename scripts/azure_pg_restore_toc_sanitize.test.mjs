@@ -114,6 +114,23 @@ test("sanitizer rejects non-custom or non-PostgreSQL-17 list files", () => {
   );
 });
 
+test("bootstrap owns restored schemas and verification enforces that owner", async () => {
+  const bootstrap = await readFile(
+    new URL("../infra/azure/postgres/bootstrap.sql", import.meta.url),
+    "utf8",
+  );
+  const verification = await readFile(
+    new URL("../infra/azure/postgres/verify.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(bootstrap, /ALTER SCHEMA public OWNER TO anbud_owner;/u);
+  assert.match(bootstrap, /ALTER SCHEMA extensions OWNER TO anbud_owner;/u);
+  assert.match(
+    verification,
+    /namespace_state\.nspname IN \('public', 'extensions'\)[\s\S]*pg_get_userbyid\(namespace_state\.nspowner\) <> 'anbud_owner'/u,
+  );
+});
+
 test("file sanitizer creates a mode-0600 output once and never clobbers it", async () => {
   const directory = await mkdtemp(join(tmpdir(), "anbud-toc-sanitize-test-"));
   try {
