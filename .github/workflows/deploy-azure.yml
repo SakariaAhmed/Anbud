@@ -25,6 +25,7 @@ env:
   CONTAINER_APP: anbud
   PROJECT_JOB_WORKER_APP: anbud-project-job-worker
   MIGRATION_CONTROL_JOB: anbud-migration-control
+  MIGRATION_ACTIVATION_JOB: anbud-migration-activate
   POSTGREST_APP: anbud-postgrest
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
@@ -549,6 +550,7 @@ jobs:
           control_parameters=(
             environmentName="$CONTAINER_APP-env"
             jobName="$MIGRATION_CONTROL_JOB"
+            activationJobName="$MIGRATION_ACTIVATION_JOB"
             registryName="$ACR_NAME"
             acrPullIdentityName="$CONTAINER_APP-acr-pull"
             keyVaultName="$MIGRATION_CONTROL_KEY_VAULT_NAME"
@@ -577,6 +579,18 @@ jobs:
           evidence_role_count="$(az role assignment list --assignee-object-id "$control_principal_id" --scope "$evidence_container_id" --query "[?ends_with(roleDefinitionId, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')] | length(@)" --output tsv --only-show-errors)"
           if [ "$key_vault_role_count" != "1" ] || [ "$storage_role_count" != "1" ] || [ "$evidence_role_count" != "1" ]; then
             echo "::error::The dedicated control identity lacks its exact Key Vault, document-container, or evidence-container read role. Run the one-time privileged bootstrap before routine deployment."
+            exit 1
+          fi
+          activation_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
+          activation_command="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'join(` `, properties.template.containers[0].command)' --output tsv --only-show-errors)"
+          activation_args="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'join(` `, properties.template.containers[0].args)' --output tsv --only-show-errors)"
+          activation_trigger="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.configuration.triggerType' --output tsv --only-show-errors)"
+          activation_retry_limit="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.configuration.replicaRetryLimit' --output tsv --only-show-errors)"
+          activation_secret_ref="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_SERVICE_ROLE_KEY'].secretRef | [0]" --output tsv --only-show-errors)"
+          activation_data_api_url="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_URL'].value | [0]" --output tsv --only-show-errors)"
+          activation_control_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='MIGRATION_CONTROL_IMAGE'].value | [0]" --output tsv --only-show-errors)"
+          if [ "${#MIGRATION_ACTIVATION_JOB}" -ge 32 ] || [ "$activation_image" != "$CANDIDATE_IMAGE" ] || [ "$activation_command" != "node" ] || [ "$activation_args" != "scripts/run_azure_migration_control.mjs activate-target" ] || [ "$activation_trigger" != "Manual" ] || [ "$activation_retry_limit" != "0" ] || [ "$activation_secret_ref" != "data-api-service-role-key" ] || [ "$activation_data_api_url" != "$DATA_API_URL" ] || [ "$activation_control_image" != "$CANDIDATE_IMAGE" ]; then
+            echo "::error::The dedicated activation job does not have the immutable fail-closed command contract."
             exit 1
           fi
 
@@ -777,7 +791,7 @@ jobs:
         id: activate_target
         if: ${{ steps.deployment_config.outputs.azure_backend == 'true' && steps.rollout.outcome == 'success' }}
         run: |
-          execution_name="$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --container-name migration-control --image "$CANDIDATE_IMAGE" --args scripts/run_azure_migration_control.mjs activate-target --query name --output tsv --only-show-errors)"
+          execution_name="$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query name --output tsv --only-show-errors)"
           if [[ ! "$execution_name" =~ ^[a-z0-9-]+$ ]]; then
             echo "::error::Azure did not return a valid target-activation execution."
             exit 1
@@ -786,7 +800,7 @@ jobs:
           deadline=$((SECONDS + 600))
           while [ "$SECONDS" -lt "$deadline" ]
           do
-            status="$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --job-execution-name "$execution_name" --query properties.status --output tsv --only-show-errors)"
+            status="$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --job-execution-name "$execution_name" --query properties.status --output tsv --only-show-errors)"
             case "$status" in
               Succeeded)
                 echo "Internal Azure project-job claims activated after smoke."
@@ -812,6 +826,7 @@ jobs:
               && steps.activate_target.outcome != 'success' }}
         run: |
           az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none --only-show-errors || true
+          az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --output none --only-show-errors || true
           ingress_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors 2>/dev/null || true)"
           if [ "$ingress_external" != "false" ]; then
             az containerapp ingress enable --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --type internal --target-port 3000 --transport auto --allow-insecure false --output none --only-show-errors || true
