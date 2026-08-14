@@ -9,6 +9,9 @@ param environmentName string = 'anbud-env'
 @description('Manual Container Apps Job name.')
 param jobName string = 'anbud-migration-control'
 
+@description('Separate manual job whose immutable template can only activate the already-validated Azure target.')
+param activationJobName string = 'anbud-migration-activate'
+
 @description('Azure Container Registry resource name.')
 param registryName string
 
@@ -278,6 +281,129 @@ resource migrationControl 'Microsoft.App/jobs@2024-03-01' = if (imageDigestPinne
   ]
 }
 
+// Do not pass container overrides to `az containerapp job start`: Azure treats
+// an overridden container as a replacement and drops the template environment,
+// including the Key Vault-backed service-role secret. A separate immutable
+// manual job keeps activation fail-closed without exposing secrets to the CLI.
+resource migrationActivation 'Microsoft.App/jobs@2024-03-01' = if (imageDigestPinned) {
+  name: activationJobName
+  location: location
+  tags: union(tags, {
+    migrationStage: 'internal-target-activation'
+  })
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${acrPullIdentity.id}': {}
+      '${controlIdentity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: environment.id
+    configuration: {
+      triggerType: 'Manual'
+      manualTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      replicaRetryLimit: 0
+      replicaTimeout: replicaTimeout
+      secrets: [
+        {
+          name: 'data-api-service-role-key'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${dataApiServiceRoleSecretName}/${dataApiServiceRoleSecretVersion}'
+          identity: controlIdentity.id
+        }
+      ]
+      registries: [
+        {
+          server: registry.properties.loginServer
+          identity: acrPullIdentity.id
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'migration-activation'
+          image: image
+          command: [
+            'node'
+          ]
+          args: [
+            'scripts/run_azure_migration_control.mjs'
+            'activate-target'
+          ]
+          env: [
+            {
+              name: 'NODE_ENV'
+              value: 'production'
+            }
+            {
+              name: 'DATA_API_URL'
+              value: dataApiUrl
+            }
+            {
+              name: 'DATA_API_ALLOWED_HOST_SUFFIX'
+              value: '.internal.${environment.properties.defaultDomain}'
+            }
+            {
+              name: 'DATA_API_SERVICE_ROLE_KEY'
+              secretRef: 'data-api-service-role-key'
+            }
+            {
+              name: 'AZURE_STORAGE_ACCOUNT_URL'
+              value: azureStorageAccountUrl
+            }
+            {
+              name: 'AZURE_STORAGE_CONTAINER'
+              value: storageContainerName
+            }
+            {
+              name: 'AZURE_MIGRATION_EVIDENCE_CONTAINER'
+              value: migrationEvidenceContainerName
+            }
+            {
+              name: 'MIGRATION_CONTROL_EVIDENCE_BLOB'
+              value: migrationEvidenceBlobName
+            }
+            {
+              name: 'MIGRATION_CONTROL_EVIDENCE_SHA256'
+              value: migrationEvidenceSha256
+            }
+            {
+              name: 'MIGRATION_CONTROL_EVIDENCE_MAX_AGE_SECONDS'
+              value: '7200'
+            }
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: controlIdentity.properties.clientId
+            }
+            {
+              name: 'MIGRATION_CONTROL_IMAGE'
+              value: image
+            }
+            {
+              name: 'MIGRATION_CONTROL_TIMEOUT_MS'
+              value: '90000'
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    keyVaultSecretsUser
+    storageBlobReader
+    migrationEvidenceBlobReader
+  ]
+}
+
 output migrationControlJobName string = migrationControl.name
+output migrationActivationJobName string = migrationActivation.name
 output dedicatedControlIdentityResourceId string = controlIdentity.id
 output idleReplicaCount int = 0

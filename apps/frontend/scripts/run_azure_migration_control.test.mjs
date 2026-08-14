@@ -571,6 +571,8 @@ test("Bicep, image, and workflow preserve the internal management-plane boundary
 
   assert.match(bicep, /triggerType:\s*'Manual'/u);
   assert.match(bicep, /replicaRetryLimit:\s*0/u);
+  assert.match(bicep, /resource migrationActivation/u);
+  assert.match(bicep, /'activate-target'/u);
   assert.match(bicep, /keyVaultUrl:/u);
   assert.match(bicep, /identity:\s*controlIdentity\.id/u);
   assert.match(bicep, /Storage Blob Data Reader/u);
@@ -611,7 +613,11 @@ test("Bicep, image, and workflow preserve the internal management-plane boundary
   assert.match(workflow, /Activate internal Azure worker claims after smoke/u);
   assert.match(
     workflow,
-    /--args scripts\/run_azure_migration_control\.mjs activate-target/u,
+    /az containerapp job start --resource-group "\$RESOURCE_GROUP" --name "\$MIGRATION_ACTIVATION_JOB" --query name/u,
+  );
+  assert.doesNotMatch(
+    workflow,
+    /job start[^\n]*MIGRATION_ACTIVATION_JOB[^\n]*(?:--command|--args|--env-vars|--image)/u,
   );
   assert.match(workflow, /Restore scheduled worker after completed release/u);
   assert.match(
