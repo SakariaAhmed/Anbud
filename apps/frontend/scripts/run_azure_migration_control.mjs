@@ -1421,9 +1421,7 @@ export async function deactivateTargetProjectJobClaims(
   if (
     result?.version !== PROJECT_JOB_CUTOVER_VERSION ||
     !Number.isInteger(result?.requeued_jobs) ||
-    result.requeued_jobs < 0 ||
-    !Number.isInteger(result?.cleared_encrypted_results) ||
-    result.cleared_encrypted_results < 0
+    result.requeued_jobs < 0
   ) {
     fail("data_api_running_jobs_requeue_invalid");
   }

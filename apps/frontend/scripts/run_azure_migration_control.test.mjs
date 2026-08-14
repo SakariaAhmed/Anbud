@@ -538,7 +538,6 @@ test("target claim deactivation closes claims and requeues interrupted work inte
         return {
           version: "project-job-cutover-v1",
           requeued_jobs: 2,
-          cleared_encrypted_results: 1,
         };
       },
     };
@@ -625,7 +624,6 @@ test("deactivation mode accepts an active target, freezes it, and proves zero ru
             return {
               version: "project-job-cutover-v1",
               requeued_jobs: 1,
-              cleared_encrypted_results: 1,
             };
           },
         };
