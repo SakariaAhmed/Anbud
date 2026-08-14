@@ -77,6 +77,10 @@ param appEncryptionKey string
 param appAdminAccessPasswordHash string
 
 @secure()
+@description('Temporary legacy plaintext password retained only while an older active revision still references it. Leave empty after that revision is retired.')
+param legacyAppAccessPassword string = ''
+
+@secure()
 @description('Stable session signing secret.')
 param appSessionSecret string
 
@@ -282,7 +286,12 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'project-job-worker-token'
           value: projectJobWorkerToken
         }
-      ], !empty(supabaseUrl) && !empty(supabaseServiceRoleKey) ? [
+      ], !empty(legacyAppAccessPassword) ? [
+        {
+          name: 'app-access-password'
+          value: legacyAppAccessPassword
+        }
+      ] : [], !empty(supabaseUrl) && !empty(supabaseServiceRoleKey) ? [
         {
           name: 'supabase-url'
           value: supabaseUrl
