@@ -894,10 +894,16 @@ Immediately after Azure acceptance:
 2. Remove only the migration-host PostgreSQL firewall rule. Keep the exact
    Container Apps outbound IP rule while PostgREST still uses the public
    PostgreSQL endpoint.
-3. Remove temporary human Blob roles after the final evidence upload and remove
-   the human Key Vault role after the coordinated credential rotation. Keep the
-   web/worker container-scoped Blob Contributor roles and the shared
-   `anbud-acr-pull` ACR role.
+3. Remove temporary human Blob roles after the final evidence upload. Remove
+   the human Key Vault role as soon as secret provisioning is complete; this
+   prevents further reads but does not replace the coordinated credential
+   rotation required before rollback closure. Keep the web/worker
+   container-scoped Blob Contributor roles and the shared `anbud-acr-pull` ACR
+   role.
+4. After a successful target activation, public smoke test and worker restore,
+   delete the one-shot `anbud-migration-activate` job. The evidence-bound
+   workflow recreates it before any later controlled activation; do not delete
+   the shared migration-control identity or its three read roles yet.
 
 Resolve and inspect every target before deletion:
 
@@ -945,6 +951,10 @@ test "$(az role assignment list --assignee-object-id "$MIGRATION_OPERATOR_OBJECT
 az role assignment delete --assignee-object-id "$MIGRATION_OPERATOR_OBJECT_ID" --role 'Storage Blob Data Contributor' --scope "$DOCUMENTS_SCOPE"
 az role assignment delete --assignee-object-id "$MIGRATION_OPERATOR_OBJECT_ID" --role 'Storage Blob Data Contributor' --scope "$EVIDENCE_SCOPE"
 az role assignment delete --assignee-object-id "$MIGRATION_OPERATOR_OBJECT_ID" --role 'Key Vault Secrets Officer' --scope "$KEY_VAULT_ID"
+
+test "$(az containerapp job execution list --resource-group anbud-prod --name anbud-migration-activate --query "[?properties.status=='Running'] | length(@)" --output tsv)" = 0
+test "$(az containerapp job execution list --resource-group anbud-prod --name anbud-migration-activate --query "[?properties.status=='Succeeded'] | length(@)" --output tsv)" -ge 1
+az containerapp job delete --resource-group anbud-prod --name anbud-migration-activate --yes
 ```
 
 At day 14, freeze any remaining Azure writes long enough to decide rollback or
@@ -957,8 +967,9 @@ final retirement. After restore tests pass and rollback is formally closed:
   longer reference `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY`, remove the
   obsolete Container Apps secrets and verify they are absent;
 - rotate the PostgREST service JWT and database bootstrap/runtime passwords;
-- remove the migration-control job/identity and its three read roles only after
-  the release workflow no longer recreates or invokes it; and
+- remove the migration-control job, any recreated migration-activation job,
+  the shared identity and its three read roles only after the release workflow
+  no longer recreates or invokes them; and
 - turn off Key Vault template deployment only after no deployment uses an ARM
   Key Vault parameter reference.
 
@@ -995,6 +1006,9 @@ az role assignment delete --assignee-object-id "$CONTROL_PRINCIPAL_ID" --role 'K
 az role assignment delete --assignee-object-id "$CONTROL_PRINCIPAL_ID" --role 'Storage Blob Data Reader' --scope "$DOCUMENTS_SCOPE"
 az role assignment delete --assignee-object-id "$CONTROL_PRINCIPAL_ID" --role 'Storage Blob Data Reader' --scope "$EVIDENCE_SCOPE"
 az containerapp job delete --resource-group anbud-prod --name anbud-migration-control --yes
+if az containerapp job show --resource-group anbud-prod --name anbud-migration-activate --output none 2>/dev/null; then
+  az containerapp job delete --resource-group anbud-prod --name anbud-migration-activate --yes
+fi
 az identity delete --resource-group anbud-prod --name anbud-migration-control
 
 az keyvault update \
