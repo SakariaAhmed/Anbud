@@ -395,7 +395,11 @@ async function checkedFetch(fetchImpl, url, options, failureCode) {
   return response;
 }
 
-async function probeInternalDataApi(config, fetchImpl = fetch) {
+async function probeInternalDataApi(
+  config,
+  fetchImpl = fetch,
+  { requireFrozenState = true } = {},
+) {
   const headers = {
     accept: "application/json",
     apikey: config.dataApiServiceRoleKey,
@@ -485,8 +489,9 @@ async function probeInternalDataApi(config, fetchImpl = fetch) {
   if (
     !Array.isArray(claimControl) ||
     claimControl.length !== 1 ||
-    claimControl[0]?.claims_enabled !== false
-  ) {
+    typeof claimControl[0]?.claims_enabled !== "boolean"
+  ) fail("data_api_claim_gate_invalid");
+  if (requireFrozenState && claimControl[0].claims_enabled !== false) {
     fail("data_api_claim_gate_not_closed");
   }
 
@@ -511,7 +516,8 @@ async function probeInternalDataApi(config, fetchImpl = fetch) {
   } catch {
     fail("data_api_running_jobs_invalid");
   }
-  if (!Array.isArray(runningJobs) || runningJobs.length !== 0) {
+  if (!Array.isArray(runningJobs)) fail("data_api_running_jobs_invalid");
+  if (requireFrozenState && runningJobs.length !== 0) {
     fail("data_api_running_jobs_present");
   }
 }
@@ -1343,7 +1349,12 @@ export async function probeAzureBlobWithManagedIdentity(
   };
 }
 
-export async function activateTargetProjectJobClaims(config, fetchImpl = fetch) {
+async function setTargetProjectJobClaims(
+  config,
+  claimsEnabled,
+  fetchImpl = fetch,
+) {
+  const operation = claimsEnabled ? "activation" : "deactivation";
   const response = await checkedFetch(
     fetchImpl,
     new URL(`${config.dataApiRoot}/rpc/set_project_job_claims_enabled`),
@@ -1355,23 +1366,66 @@ export async function activateTargetProjectJobClaims(config, fetchImpl = fetch) 
         authorization: `Bearer ${config.dataApiServiceRoleKey}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ p_claims_enabled: true }),
+      body: JSON.stringify({ p_claims_enabled: claimsEnabled }),
       redirect: "error",
       signal: requestSignal(config.timeoutMs),
     },
-    "data_api_claim_gate_activation_failed",
+    `data_api_claim_gate_${operation}_failed`,
   );
   let result;
   try {
     result = await response.json();
   } catch {
-    fail("data_api_claim_gate_activation_invalid");
+    fail(`data_api_claim_gate_${operation}_invalid`);
   }
   if (
     result?.version !== PROJECT_JOB_CUTOVER_VERSION ||
-    result?.claims_enabled !== true
+    result?.claims_enabled !== claimsEnabled
   ) {
-    fail("data_api_claim_gate_activation_invalid");
+    fail(`data_api_claim_gate_${operation}_invalid`);
+  }
+}
+
+export async function activateTargetProjectJobClaims(config, fetchImpl = fetch) {
+  await setTargetProjectJobClaims(config, true, fetchImpl);
+}
+
+export async function deactivateTargetProjectJobClaims(
+  config,
+  fetchImpl = fetch,
+) {
+  await setTargetProjectJobClaims(config, false, fetchImpl);
+  const response = await checkedFetch(
+    fetchImpl,
+    new URL(`${config.dataApiRoot}/rpc/requeue_project_jobs_for_cutover`),
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        apikey: config.dataApiServiceRoleKey,
+        authorization: `Bearer ${config.dataApiServiceRoleKey}`,
+        "content-type": "application/json",
+      },
+      body: "{}",
+      redirect: "error",
+      signal: requestSignal(config.timeoutMs),
+    },
+    "data_api_running_jobs_requeue_failed",
+  );
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    fail("data_api_running_jobs_requeue_invalid");
+  }
+  if (
+    result?.version !== PROJECT_JOB_CUTOVER_VERSION ||
+    !Number.isInteger(result?.requeued_jobs) ||
+    result.requeued_jobs < 0 ||
+    !Number.isInteger(result?.cleared_encrypted_results) ||
+    result.cleared_encrypted_results < 0
+  ) {
+    fail("data_api_running_jobs_requeue_invalid");
   }
 }
 
@@ -1396,6 +1450,21 @@ export async function runAzureMigrationControl({
     return {
       migration_control: "target_claims_activated",
       checks: ["digest_pinned_image", "internal_target_claim_gate_opened"],
+    };
+  }
+  if (mode === "deactivate-target") {
+    await probeInternalDataApi(config, fetchImpl, {
+      requireFrozenState: false,
+    });
+    await deactivateTargetProjectJobClaims(config, fetchImpl);
+    await probeInternalDataApi(config, fetchImpl);
+    return {
+      migration_control: "target_claims_deactivated",
+      checks: [
+        "digest_pinned_image",
+        "internal_target_claim_gate_closed",
+        "internal_target_running_jobs_zero",
+      ],
     };
   }
   if (mode !== "verify") fail("control_mode_invalid");

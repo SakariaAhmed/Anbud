@@ -12,6 +12,9 @@ param jobName string = 'anbud-migration-control'
 @description('Separate manual job whose immutable template can only activate the already-validated Azure target.')
 param activationJobName string = 'anbud-migration-activate'
 
+@description('Separate manual job whose immutable template freezes Azure target claims before repeat deployment control.')
+param deactivationJobName string = 'anbud-migration-deactivate'
+
 @description('Azure Container Registry resource name.')
 param registryName string
 
@@ -403,7 +406,130 @@ resource migrationActivation 'Microsoft.App/jobs@2024-03-01' = if (imageDigestPi
   ]
 }
 
+// Repeat deployments begin with an already-active Azure target. Keep the
+// service-role secret inside the private Container Apps environment and use a
+// separate immutable job to close claims and requeue any interrupted work
+// before the read-only migration control runs.
+resource migrationDeactivation 'Microsoft.App/jobs@2024-03-01' = if (imageDigestPinned) {
+  name: deactivationJobName
+  location: location
+  tags: union(tags, {
+    migrationStage: 'internal-target-deactivation'
+  })
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${acrPullIdentity.id}': {}
+      '${controlIdentity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: environment.id
+    configuration: {
+      triggerType: 'Manual'
+      manualTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      replicaRetryLimit: 0
+      replicaTimeout: replicaTimeout
+      secrets: [
+        {
+          name: 'data-api-service-role-key'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${dataApiServiceRoleSecretName}/${dataApiServiceRoleSecretVersion}'
+          identity: controlIdentity.id
+        }
+      ]
+      registries: [
+        {
+          server: registry.properties.loginServer
+          identity: acrPullIdentity.id
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'migration-deactivation'
+          image: image
+          command: [
+            'node'
+          ]
+          args: [
+            'scripts/run_azure_migration_control.mjs'
+            'deactivate-target'
+          ]
+          env: [
+            {
+              name: 'NODE_ENV'
+              value: 'production'
+            }
+            {
+              name: 'DATA_API_URL'
+              value: dataApiUrl
+            }
+            {
+              name: 'DATA_API_ALLOWED_HOST_SUFFIX'
+              value: '.internal.${environment.properties.defaultDomain}'
+            }
+            {
+              name: 'DATA_API_SERVICE_ROLE_KEY'
+              secretRef: 'data-api-service-role-key'
+            }
+            {
+              name: 'AZURE_STORAGE_ACCOUNT_URL'
+              value: azureStorageAccountUrl
+            }
+            {
+              name: 'AZURE_STORAGE_CONTAINER'
+              value: storageContainerName
+            }
+            {
+              name: 'AZURE_MIGRATION_EVIDENCE_CONTAINER'
+              value: migrationEvidenceContainerName
+            }
+            {
+              name: 'MIGRATION_CONTROL_EVIDENCE_BLOB'
+              value: migrationEvidenceBlobName
+            }
+            {
+              name: 'MIGRATION_CONTROL_EVIDENCE_SHA256'
+              value: migrationEvidenceSha256
+            }
+            {
+              name: 'MIGRATION_CONTROL_EVIDENCE_MAX_AGE_SECONDS'
+              value: '7200'
+            }
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: controlIdentity.properties.clientId
+            }
+            {
+              name: 'MIGRATION_CONTROL_IMAGE'
+              value: image
+            }
+            {
+              name: 'MIGRATION_CONTROL_TIMEOUT_MS'
+              value: '90000'
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    keyVaultSecretsUser
+    storageBlobReader
+    migrationEvidenceBlobReader
+  ]
+}
+
 output migrationControlJobName string = migrationControl.name
 output migrationActivationJobName string = migrationActivation.name
+output migrationDeactivationJobName string = migrationDeactivation.name
 output dedicatedControlIdentityResourceId string = controlIdentity.id
 output idleReplicaCount int = 0

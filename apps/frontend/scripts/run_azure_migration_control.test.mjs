@@ -10,6 +10,7 @@ import {
   MigrationControlError,
   activateTargetProjectJobClaims,
   createDatabaseReferenceBinding,
+  deactivateTargetProjectJobClaims,
   probeAzureBlobWithManagedIdentity,
   queryTargetDatabaseReferenceBinding,
   runAzureMigrationControl,
@@ -520,6 +521,36 @@ test("target claim activation uses only the validated internal PostgREST RPC", a
   assert.equal(calls[0].options.redirect, "error");
 });
 
+test("target claim deactivation closes claims and requeues interrupted work internally", async () => {
+  const config = validateMigrationControlConfiguration(validEnvironment());
+  const calls = [];
+  await deactivateTargetProjectJobClaims(config, async (url, options) => {
+    calls.push({ url, options });
+    return {
+      ok: true,
+      async json() {
+        if (url.pathname.endsWith("set_project_job_claims_enabled")) {
+          return {
+            version: "project-job-cutover-v1",
+            claims_enabled: false,
+          };
+        }
+        return {
+          version: "project-job-cutover-v1",
+          requeued_jobs: 2,
+          cleared_encrypted_results: 1,
+        };
+      },
+    };
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url.pathname, "/rpc/set_project_job_claims_enabled");
+  assert.equal(calls[0].options.body, '{"p_claims_enabled":false}');
+  assert.equal(calls[1].url.pathname, "/rpc/requeue_project_jobs_for_cutover");
+  assert.equal(calls[1].options.body, "{}");
+  assert.ok(calls.every((call) => call.options.redirect === "error"));
+});
+
 test("activation mode rechecks the closed target and zero running state before opening claims", async () => {
   const calls = [];
   let blobProbed = false;
@@ -555,6 +586,70 @@ test("activation mode rechecks the closed target and zero running state before o
   );
 });
 
+test("deactivation mode accepts an active target, freezes it, and proves zero running jobs", async () => {
+  const calls = [];
+  let claimsEnabled = true;
+  let blobProbed = false;
+  const baseFetch = successfulFetch(calls);
+  const result = await runAzureMigrationControl({
+    environment: validEnvironment(),
+    mode: "deactivate-target",
+    async fetchImpl(url, options) {
+      if (url.pathname.endsWith("project_job_claim_control")) {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          async json() {
+            return [{ claims_enabled: claimsEnabled }];
+          },
+        };
+      }
+      if (url.pathname.endsWith("set_project_job_claims_enabled")) {
+        calls.push({ url, options });
+        claimsEnabled = false;
+        return {
+          ok: true,
+          async json() {
+            return {
+              version: "project-job-cutover-v1",
+              claims_enabled: false,
+            };
+          },
+        };
+      }
+      if (url.pathname.endsWith("requeue_project_jobs_for_cutover")) {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          async json() {
+            return {
+              version: "project-job-cutover-v1",
+              requeued_jobs: 1,
+              cleared_encrypted_results: 1,
+            };
+          },
+        };
+      }
+      return baseFetch(url, options);
+    },
+    async blobProbe() {
+      blobProbed = true;
+    },
+  });
+  assert.equal(calls.length, 18);
+  assert.equal(blobProbed, false);
+  assert.equal(result.migration_control, "target_claims_deactivated");
+  assert.ok(
+    calls.some((call) =>
+      call.url.pathname.endsWith("requeue_project_jobs_for_cutover"),
+    ),
+  );
+  assert.ok(
+    calls.at(-2).url.pathname.endsWith("project_job_claim_control") &&
+      calls.at(-1).url.pathname.endsWith("project_jobs"),
+  );
+});
+
 test("Bicep, image, and workflow preserve the internal management-plane boundary", () => {
   const bicep = readFileSync(
     path.join(repositoryRoot, "infra/azure/migration-control.bicep"),
@@ -573,6 +668,8 @@ test("Bicep, image, and workflow preserve the internal management-plane boundary
   assert.match(bicep, /replicaRetryLimit:\s*0/u);
   assert.match(bicep, /resource migrationActivation/u);
   assert.match(bicep, /'activate-target'/u);
+  assert.match(bicep, /resource migrationDeactivation/u);
+  assert.match(bicep, /'deactivate-target'/u);
   assert.match(bicep, /keyVaultUrl:/u);
   assert.match(bicep, /identity:\s*controlIdentity\.id/u);
   assert.match(bicep, /Storage Blob Data Reader/u);
@@ -605,11 +702,16 @@ test("Bicep, image, and workflow preserve the internal management-plane boundary
   assert.match(workflow, /dataApiServiceRoleKey:\s*\{\s*reference:/u);
   assert.match(workflow, /secretVersion: process\.env\.DATA_API_SECRET_VERSION/u);
   assert.match(workflow, /confirm_azure_backend_cutover/u);
+  assert.match(workflow, /azure_backend_release_mode/u);
+  assert.match(workflow, /migration_control_mode=verify/u);
+  assert.match(workflow, /migration_control_mode=validate-target/u);
+  assert.match(workflow, /controlMode="\$MIGRATION_CONTROL_MODE"/u);
   assert.match(workflow, /final_cutover_evidence_sha256/u);
   assert.match(workflow, /Prove frozen Supabase source has zero running jobs/u);
   assert.match(workflow, /source_claim_gate_not_closed/u);
   assert.match(workflow, /MIGRATION_DISABLED_WORKER_CRON/u);
   assert.match(workflow, /Suspend scheduled worker for Azure cutover/u);
+  assert.match(workflow, /Freeze internal Azure worker claims before control/u);
   assert.match(workflow, /Activate internal Azure worker claims after smoke/u);
   assert.match(
     workflow,
@@ -627,6 +729,20 @@ test("Bicep, image, and workflow preserve the internal management-plane boundary
   assert.match(workflow, /activation_secret_ref[^\n]*data-api-service-role-key/u);
   assert.match(workflow, /activation_data_api_url[^\n]*DATA_API_URL/u);
   assert.match(workflow, /MIGRATION_ACTIVATION_JOB\}" -ge 32/u);
+  assert.match(
+    workflow,
+    /az containerapp job start --resource-group "\$RESOURCE_GROUP" --name "\$MIGRATION_DEACTIVATION_JOB" --query name/u,
+  );
+  assert.doesNotMatch(
+    workflow,
+    /job start[^\n]*MIGRATION_DEACTIVATION_JOB[^\n]*(?:--command|--args|--env-vars|--image)/u,
+  );
+  assert.match(workflow, /deactivation_image[^\n]*CANDIDATE_IMAGE/u);
+  assert.match(workflow, /deactivation_mode_arg[^\n]*deactivate-target/u);
+  assert.match(workflow, /deactivation_secret_ref[^\n]*data-api-service-role-key/u);
+  assert.match(workflow, /MIGRATION_DEACTIVATION_JOB\}" -ge 32/u);
+  assert.match(workflow, /control_mode_arg[^\n]*MIGRATION_CONTROL_MODE/u);
+  assert.match(workflow, /control_bound_image[^\n]*CANDIDATE_IMAGE/u);
   assert.match(workflow, /Restore scheduled worker after completed release/u);
   assert.match(
     workflow,
