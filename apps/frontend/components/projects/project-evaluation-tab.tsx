@@ -49,27 +49,6 @@ type RequirementCoverage = NonNullable<
 >;
 type RequirementCoverageItem = RequirementCoverage["items"][number];
 
-const EVALUATION_MOTION_STYLES = `
-@keyframes evaluation-rise {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.evaluation-rise {
-  animation: evaluation-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .evaluation-rise {
-    animation: none;
-  }
-}
-`;
-
 const eyebrowClass =
   "text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500";
 const eyebrowAccentClass =
@@ -122,13 +101,11 @@ function ArchitectScoreCard({ score }: { score: number }) {
         : { text: "text-amber-700", bar: "bg-amber-500" };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-transform duration-[180ms] ease-out hover:-translate-y-0.5">
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-900 via-blue-700 to-cyan-500" />
-      <div className="px-5 py-5 md:px-7 md:py-6">
+    <section className="border border-slate-200 bg-white px-5 py-5 md:px-7 md:py-6">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
           <div className="min-w-0">
             <p className={eyebrowClass}>Arkitektløsning</p>
-            <h4 className="mt-2 font-serif text-2xl font-semibold leading-tight tracking-tight text-slate-900">
+            <h4 className="mt-2 text-2xl font-semibold leading-tight tracking-tight text-slate-900">
               Løsningsscore
             </h4>
             <p className="mt-2 max-w-[38rem] text-sm leading-6 text-slate-600">
@@ -138,7 +115,7 @@ function ArchitectScoreCard({ score }: { score: number }) {
           </div>
           <div className="shrink-0 text-left md:text-right">
             <div
-              className={`font-serif text-5xl font-bold leading-none tracking-tight tabular-nums md:text-6xl ${scoreTone.text}`}
+              className={`text-5xl font-semibold leading-none tracking-tight tabular-nums md:text-6xl ${scoreTone.text}`}
             >
               {safeScore}%
             </div>
@@ -158,8 +135,7 @@ function ArchitectScoreCard({ score }: { score: number }) {
             <span className="text-right">100%</span>
           </div>
         </div>
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -251,7 +227,7 @@ function FindingPanel({
               {title}
             </h3>
           </div>
-          <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-semibold tabular-nums text-slate-600">
+          <span className="shrink-0 text-xs font-medium tabular-nums text-slate-500">
             {count}
           </span>
         </div>
@@ -428,7 +404,7 @@ function RequirementCoveragePanel({
               </h3>
             </div>
           </div>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold tabular-nums text-slate-600">
+          <span className="text-xs font-medium tabular-nums text-slate-500">
             {assessed} av {total} krav
           </span>
         </div>
@@ -609,7 +585,7 @@ function DocumentFindingsPanel({
               Funn i arkitektens svar
             </h3>
           </div>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold tabular-nums text-slate-600">
+          <span className="text-xs font-medium tabular-nums text-slate-500">
             {findings.length} funn
           </span>
         </div>
@@ -909,11 +885,8 @@ export function ProjectEvaluationTab({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <style dangerouslySetInnerHTML={{ __html: EVALUATION_MOTION_STYLES }} />
-
       <section
-        className="evaluation-rise mb-5 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm"
-        style={{ animationDelay: "0ms" }}
+        className="mb-5 border border-slate-200 bg-white px-5 py-5"
       >
         <form className="space-y-5" onSubmit={handleGenerateSubmit}>
           <div className="grid gap-6 lg:grid-cols-2">
@@ -1017,10 +990,7 @@ export function ProjectEvaluationTab({
             const comparison = getArchitectureComparison(solutionEvaluation);
 
             return (
-              <section
-                className="evaluation-rise space-y-4"
-                style={{ animationDelay: "60ms" }}
-              >
+              <section className="space-y-4">
                 <ArchitectScoreCard score={comparison.architect_solution_score} />
 
                 <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-sm md:px-7 md:py-7">
@@ -1036,7 +1006,7 @@ export function ProjectEvaluationTab({
                         </h3>
                       </div>
                     </div>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                    <span className="max-w-sm text-right text-xs font-medium leading-5 text-slate-500">
                       {evaluatesGeneratedArtifact
                         ? `Systemartefakt vurdert${
                             evaluatedGeneratedArtifactTitle
@@ -1057,22 +1027,19 @@ export function ProjectEvaluationTab({
             );
           })()}
 
-          <div className="evaluation-rise" style={{ animationDelay: "120ms" }}>
+          <div>
             <RequirementCoveragePanel
               coverage={solutionEvaluation.requirement_coverage}
             />
           </div>
 
-          <div className="evaluation-rise" style={{ animationDelay: "180ms" }}>
+          <div>
             <DocumentFindingsPanel
               findings={solutionEvaluation.document_findings}
             />
           </div>
 
-          <div
-            className="evaluation-rise grid gap-5 lg:grid-cols-2"
-            style={{ animationDelay: "240ms" }}
-          >
+          <div className="grid gap-5 lg:grid-cols-2">
             <FindingPanel
               title="Styrker"
               count={solutionEvaluation.strengths.length}
@@ -1089,7 +1056,7 @@ export function ProjectEvaluationTab({
             />
           </div>
 
-          <div className="evaluation-rise" style={{ animationDelay: "300ms" }}>
+          <div>
             <ArchitectureCallToAction evaluation={solutionEvaluation} />
           </div>
         </div>

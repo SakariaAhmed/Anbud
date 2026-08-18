@@ -6,7 +6,11 @@ import {
   listGroups,
   listPrincipals,
 } from "@/lib/server/access-control-repository";
-import { isProjectRole, PROJECT_ROLE_LABELS } from "@/lib/access-control";
+import {
+  isProjectRole,
+  PROJECT_ROLE_LABELS,
+  type ProjectRole,
+} from "@/lib/access-control";
 import { recordActivity } from "@/lib/server/activity";
 import {
   authorizationErrorResponse,
@@ -73,14 +77,33 @@ export async function POST(request: Request) {
       guestDescription?: unknown;
       projectId?: unknown;
       role?: unknown;
+      projectGrants?: unknown;
       groupIds?: unknown;
     };
+    const rawProjectGrants = Array.isArray(body.projectGrants)
+      ? body.projectGrants
+      : typeof body.projectId === "string" &&
+          isProjectRole(body.role) &&
+          body.role !== "owner"
+        ? [{ projectId: body.projectId, role: body.role }]
+        : [];
     if (
       typeof body.email !== "string" ||
       body.email.length > 320 ||
-      typeof body.projectId !== "string" ||
-      !isProjectRole(body.role) ||
-      body.role === "owner" ||
+      rawProjectGrants.length < 1 ||
+      rawProjectGrants.length > 100 ||
+      !rawProjectGrants.every(
+        (grant) =>
+          typeof grant === "object" &&
+          grant !== null &&
+          "projectId" in grant &&
+          typeof grant.projectId === "string" &&
+          grant.projectId.length > 0 &&
+          grant.projectId.length <= 128 &&
+          "role" in grant &&
+          isProjectRole(grant.role) &&
+          grant.role !== "owner",
+      ) ||
       typeof body.displayName !== "string" ||
       body.displayName.trim().length < 2 ||
       body.displayName.trim().length > 120 ||
@@ -93,6 +116,16 @@ export async function POST(request: Request) {
           !body.groupIds.every((id) => typeof id === "string")))
     ) {
       return NextResponse.json({ error: "Ugyldig brukerinvitasjon." }, { status: 400 });
+    }
+    const projectGrants = rawProjectGrants.map((grant) => {
+      const value = grant as { projectId: string; role: Exclude<ProjectRole, "owner"> };
+      return { projectId: value.projectId, role: value.role };
+    });
+    if (new Set(projectGrants.map((grant) => grant.projectId)).size !== projectGrants.length) {
+      return NextResponse.json(
+        { error: "Hvert prosjekt kan bare legges til én gang." },
+        { status: 400 },
+      );
     }
     const groupIds = Array.isArray(body.groupIds)
       ? [...new Set(body.groupIds)]
@@ -108,13 +141,21 @@ export async function POST(request: Request) {
         );
       }
     }
+    const namedProjectGrants = await Promise.all(
+      projectGrants.map(async (grant) => ({
+        ...grant,
+        projectName: await projectName(grant.projectId),
+      })),
+    );
+    const [firstProjectGrant, ...additionalProjectGrants] = namedProjectGrants;
     const invited = await inviteEmailToProject({
-      projectId: body.projectId,
-      projectName: await projectName(body.projectId),
+      projectId: firstProjectGrant.projectId,
+      projectName: firstProjectGrant.projectName,
       email: body.email,
       displayName: body.displayName,
       guestDescription: body.guestDescription,
-      role: body.role,
+      role: firstProjectGrant.role,
+      additionalProjectGrants,
       createdBy: principal.id,
     });
     await addPrincipalToGroups({
@@ -125,15 +166,19 @@ export async function POST(request: Request) {
     await recordActivity({
       principal,
       action: "admin.user.invite",
-      projectId: body.projectId,
+      projectId: firstProjectGrant.projectId,
       entityType: "principal",
       entityId: invited.principalId,
       metadata: {
-        role: PROJECT_ROLE_LABELS[body.role],
+        projectCount: projectGrants.length,
+        projectRoles: projectGrants.map((grant) => ({
+          projectId: grant.projectId,
+          role: PROJECT_ROLE_LABELS[grant.role],
+        })),
         groupCount: groupIds.length,
       },
     });
-    return NextResponse.json(invited, {
+    return NextResponse.json({ ...invited, projectCount: projectGrants.length }, {
       status: 201,
       headers: { "Cache-Control": "private, no-store" },
     });

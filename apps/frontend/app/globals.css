@@ -175,211 +175,6 @@
     animation-delay: -8s;
   }
 
-  @keyframes login-orb-drift {
-    from { transform: translate3d(0, 0, 0) scale(1); }
-    to { transform: translate3d(3rem, -2.25rem, 0) scale(1.08); }
-  }
-
-  @keyframes login-fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .login-eyebrow-line {
-    transform-origin: left center;
-    animation: login-line-grow 700ms 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  @keyframes login-line-grow {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-
-  .login-flow-track {
-    position: relative;
-  }
-
-  .login-flow-track::before {
-    position: absolute;
-    top: 50%;
-    right: -0.4rem;
-    left: -0.4rem;
-    height: 1px;
-    content: "";
-    background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.4), transparent);
-  }
-
-  /* Flow choreography: one shared 4.2s cycle — scan lines, three particles cross, cells light on arrival. */
-  .login-flow-dot {
-    position: absolute;
-    top: 50%;
-    left: -0.4rem;
-    width: 0.32rem;
-    height: 0.32rem;
-    margin-top: -0.16rem;
-    border-radius: 9999px;
-    background: rgb(147 197 253);
-    box-shadow: 0 0 10px rgba(147, 197, 253, 0.9), 0 0 22px rgba(96, 165, 250, 0.5);
-    opacity: 0;
-    animation: login-flow-travel 4.2s cubic-bezier(0.5, 0, 0.3, 1) infinite;
-    animation-delay: 1000ms;
-  }
-
-  .login-flow-dot::after {
-    position: absolute;
-    top: 50%;
-    right: 60%;
-    width: 1.5rem;
-    height: 1px;
-    content: "";
-    transform: translateY(-50%);
-    background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.65));
-    border-radius: 9999px;
-  }
-
-  .login-flow-dot--2 {
-    width: 0.26rem;
-    height: 0.26rem;
-    animation-delay: 1600ms;
-    opacity: 0;
-  }
-
-  .login-flow-dot--3 {
-    width: 0.2rem;
-    height: 0.2rem;
-    animation-delay: 2200ms;
-    opacity: 0;
-  }
-
-  @keyframes login-flow-travel {
-    0% { left: -0.4rem; opacity: 0; }
-    3% { opacity: 1; }
-    24% { opacity: 1; }
-    28% { left: calc(100% + 0.1rem); opacity: 0; }
-    100% { left: calc(100% + 0.1rem); opacity: 0; }
-  }
-
-  .login-flow-spark {
-    animation: login-spark-pulse 4.2s ease-in-out infinite;
-  }
-
-  @keyframes login-spark-pulse {
-    0%, 30%, 78%, 100% {
-      transform: scale(1) rotate(0deg);
-      filter: drop-shadow(0 0 0 rgba(147, 197, 253, 0));
-    }
-    38% {
-      transform: scale(1.35) rotate(12deg);
-      filter: drop-shadow(0 0 8px rgba(147, 197, 253, 0.9));
-    }
-    52% {
-      transform: scale(1.1) rotate(-6deg);
-      filter: drop-shadow(0 0 5px rgba(147, 197, 253, 0.55));
-    }
-    64% {
-      transform: scale(1.28) rotate(8deg);
-      filter: drop-shadow(0 0 7px rgba(147, 197, 253, 0.8));
-    }
-  }
-
-  .login-skel {
-    position: relative;
-    overflow: hidden;
-    animation: login-skel-scan 4.2s ease-in-out infinite;
-  }
-
-  .login-skel::after {
-    position: absolute;
-    inset: 0;
-    content: "";
-    background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.28), transparent);
-    transform: translateX(-100%);
-    animation: login-skel-sheen 4.2s ease-in-out infinite;
-  }
-
-  .login-skel--2, .login-skel--2::after { animation-delay: 300ms; }
-  .login-skel--3, .login-skel--3::after { animation-delay: 600ms; }
-
-  @keyframes login-skel-sheen {
-    0% { transform: translateX(-100%); }
-    22%, 100% { transform: translateX(100%); }
-  }
-
-  @keyframes login-skel-scan {
-    0%, 26%, 100% { background-color: rgba(255, 255, 255, 0.04); color: rgb(203 213 225); }
-    10% { background-color: rgba(147, 197, 253, 0.22); color: rgb(226 232 240); }
-  }
-
-  .login-doc-icon {
-    animation: login-doc-blink 4.2s ease-in-out infinite;
-  }
-
-  @keyframes login-doc-blink {
-    0%, 20%, 100% { opacity: 0.85; filter: drop-shadow(0 0 0 rgba(147, 197, 253, 0)); }
-    8% { opacity: 1; filter: drop-shadow(0 0 6px rgba(147, 197, 253, 0.8)); }
-  }
-
-  .login-cell {
-    animation: login-cell-pulse 4.2s ease-in-out infinite;
-    animation-delay: 2050ms;
-  }
-
-  .login-cell--2 { animation-delay: 2650ms; }
-  .login-cell--3 { animation-delay: 3250ms; }
-
-  @keyframes login-cell-pulse {
-    0%, 100% { border-color: rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.06); box-shadow: none; }
-    5% { border-color: rgba(147, 197, 253, 0.6); background: rgba(147, 197, 253, 0.22); box-shadow: 0 0 18px rgba(96, 165, 250, 0.3); }
-    14% { border-color: rgba(147, 197, 253, 0.32); background: rgba(147, 197, 253, 0.12); box-shadow: 0 0 10px rgba(96, 165, 250, 0.14); }
-    30% { border-color: rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.06); box-shadow: none; }
-  }
-
-  .login-shield {
-    animation: login-shield-glow 4.2s ease-in-out infinite;
-  }
-
-  @keyframes login-shield-glow {
-    0%, 74%, 100% { filter: drop-shadow(0 0 0 rgba(103, 232, 249, 0)); transform: scale(1); }
-    82% { filter: drop-shadow(0 0 8px rgba(103, 232, 249, 0.85)); transform: scale(1.12); }
-    92% { filter: drop-shadow(0 0 3px rgba(103, 232, 249, 0.35)); transform: scale(1.02); }
-  }
-
-  .login-card-item {
-    animation: login-enter 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  .login-card-item--1 { animation-delay: 120ms; }
-  .login-card-item--2 { animation-delay: 190ms; }
-  .login-card-item--3 { animation-delay: 260ms; }
-  .login-card-item--4 { animation-delay: 330ms; }
-  .login-card-item--5 { animation-delay: 400ms; }
-  .login-card-item--6 { animation-delay: 470ms; }
-  .login-card-item--7 { animation-delay: 540ms; }
-
-  .login-error-in {
-    animation: login-error-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  @keyframes login-error-in {
-    0% { opacity: 0; transform: translateY(-6px); }
-    60% { transform: translateY(1px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-
-  .login-lift {
-    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease,
-      background-color 180ms ease, border-color 180ms ease, color 180ms ease;
-  }
-
-  .login-lift:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
-  }
-
-  .login-lift:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
   .login-brand-panel {
     position: relative;
     isolation: isolate;
@@ -399,9 +194,9 @@
     );
   }
 
-  .login-flow-line {
-    gap: 0.35rem;
-    animation: login-flow-pulse 3.2s ease-in-out infinite;
+  .login-eyebrow-line {
+    transform-origin: left center;
+    animation: login-line-grow 700ms 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .login-enter,
@@ -413,16 +208,122 @@
     animation-delay: 140ms;
   }
 
-  .login-enter-delay-1 {
-    animation-delay: 80ms;
+  .login-enter-delay-1 { animation-delay: 80ms; }
+  .login-enter-delay-2 { animation-delay: 150ms; }
+  .login-enter-delay-3 { animation-delay: 240ms; }
+
+  .login-card-item {
+    animation: login-enter 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
-  .login-enter-delay-2 {
-    animation-delay: 150ms;
+  .login-card-item--1 { animation-delay: 120ms; }
+  .login-card-item--2 { animation-delay: 190ms; }
+  .login-card-item--3 { animation-delay: 260ms; }
+  .login-card-item--4 { animation-delay: 330ms; }
+  .login-card-item--5 { animation-delay: 400ms; }
+  .login-card-item--6 { animation-delay: 470ms; }
+  .login-card-item--7 { animation-delay: 540ms; }
+
+  .login-error-in {
+    animation: login-error-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
-  .login-enter-delay-3 {
-    animation-delay: 240ms;
+  .login-lift {
+    transition:
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 180ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      color 180ms ease;
+  }
+
+  .login-lift:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+  }
+
+  .login-lift:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .login-workflow {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .login-workflow-rail {
+    position: absolute;
+    z-index: -1;
+    top: 2rem;
+    right: 10%;
+    left: 10%;
+    display: none;
+    height: 1px;
+    overflow: visible;
+    background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.32) 12%, rgba(147, 197, 253, 0.32) 88%, transparent);
+  }
+
+  .login-workflow-runner {
+    position: absolute;
+    top: -0.18rem;
+    left: 0;
+    width: 0.36rem;
+    height: 0.36rem;
+    border-radius: 9999px;
+    background: rgb(103 232 249);
+    box-shadow: 0 0 10px rgba(103, 232, 249, 0.9), 0 0 24px rgba(96, 165, 250, 0.62);
+    opacity: 0;
+    animation: login-workflow-travel 6.6s cubic-bezier(0.45, 0, 0.25, 1) 900ms infinite;
+  }
+
+  .login-workflow-runner::after {
+    position: absolute;
+    top: 50%;
+    right: 50%;
+    width: 2.4rem;
+    height: 1px;
+    content: "";
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.75));
+  }
+
+  .login-workflow-card {
+    position: relative;
+    overflow: hidden;
+    animation: login-workflow-card-pulse 6.6s ease-in-out infinite;
+  }
+
+  .login-workflow-card::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    background: linear-gradient(115deg, transparent 20%, rgba(147, 197, 253, 0.12), transparent 80%);
+    opacity: 0;
+    transform: translateX(-65%);
+    animation: login-workflow-sheen 6.6s ease-in-out infinite;
+  }
+
+  .login-workflow-card--1,
+  .login-workflow-card--1::after,
+  .login-workflow-icon--1 { animation-delay: 900ms; }
+
+  .login-workflow-card--2,
+  .login-workflow-card--2::after,
+  .login-workflow-icon--2 { animation-delay: 2550ms; }
+
+  .login-workflow-card--3,
+  .login-workflow-card--3::after,
+  .login-workflow-icon--3 { animation-delay: 4200ms; }
+
+  .login-workflow-icon {
+    animation: login-workflow-icon-pulse 6.6s ease-in-out infinite;
+  }
+
+  @media (min-width: 640px) {
+    .login-workflow-rail {
+      display: block;
+    }
   }
 
   @media (max-width: 1023px) {
@@ -439,24 +340,19 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .login-enter,
-    .login-card-enter,
-    .login-flow-line,
-    .login-grid,
-    .login-orb,
-    .login-eyebrow-line,
-    .login-flow-dot,
-    .login-flow-spark,
-    .login-doc-icon,
-    .login-shield,
-    .login-skel,
-    .login-skel::after,
-    .login-cell,
-    .login-card-item,
-    .login-error-in {
-      animation: none;
-    }
+  @keyframes login-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes login-orb-drift {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to { transform: translate3d(3rem, -2.25rem, 0) scale(1.08); }
+  }
+
+  @keyframes login-line-grow {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
   }
 
   @keyframes login-enter {
@@ -470,15 +366,73 @@
     }
   }
 
-  @keyframes login-flow-pulse {
-    0%,
-    100% {
-      opacity: 0.58;
-      transform: translateX(-2px);
+  @keyframes login-error-in {
+    0% { opacity: 0; transform: translateY(-6px); }
+    60% { transform: translateY(1px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes login-workflow-travel {
+    0% { left: 0; opacity: 0; }
+    5% { opacity: 1; }
+    70% { left: 100%; opacity: 1; }
+    76%, 100% { left: 100%; opacity: 0; }
+  }
+
+  @keyframes login-workflow-card-pulse {
+    0%, 28%, 100% {
+      border-color: rgba(255, 255, 255, 0.1);
+      background-color: rgba(255, 255, 255, 0.055);
+      box-shadow: none;
+      transform: translateY(0);
     }
-    50% {
-      opacity: 1;
-      transform: translateX(2px);
+    8% {
+      border-color: rgba(147, 197, 253, 0.45);
+      background-color: rgba(96, 165, 250, 0.12);
+      box-shadow: 0 12px 34px rgba(30, 64, 175, 0.2);
+      transform: translateY(-2px);
+    }
+    18% {
+      border-color: rgba(147, 197, 253, 0.2);
+      background-color: rgba(96, 165, 250, 0.07);
+      box-shadow: 0 6px 20px rgba(30, 64, 175, 0.1);
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes login-workflow-sheen {
+    0%, 2% { opacity: 0; transform: translateX(-65%); }
+    8% { opacity: 1; }
+    20% { opacity: 0; transform: translateX(65%); }
+    100% { opacity: 0; transform: translateX(65%); }
+  }
+
+  @keyframes login-workflow-icon-pulse {
+    0%, 28%, 100% {
+      color: rgb(103 232 249);
+      filter: drop-shadow(0 0 0 rgba(103, 232, 249, 0));
+      transform: scale(1);
+    }
+    8% {
+      color: rgb(207 250 254);
+      filter: drop-shadow(0 0 8px rgba(103, 232, 249, 0.9));
+      transform: scale(1.08);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .login-enter,
+    .login-card-enter,
+    .login-card-item,
+    .login-error-in,
+    .login-grid,
+    .login-orb,
+    .login-eyebrow-line,
+    .login-workflow-runner,
+    .login-workflow-card,
+    .login-workflow-card::after,
+    .login-workflow-icon {
+      animation: none;
     }
   }
 

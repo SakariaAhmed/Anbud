@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { parseProjectAccessCommand } from "@/lib/project-access-command";
 import {
   grantGroupProjectAccess,
+  grantPrincipalProjectAccess,
   inviteEmailToProject,
   listGroups,
   listProjectAccess,
@@ -141,6 +142,14 @@ export async function POST(
         role: command.role,
         grantedBy: authorization.principal.id,
         expiresAt: command.expiresAt,
+      });
+      result = { ok: true };
+    } else if (command.action === "grant_member") {
+      await grantPrincipalProjectAccess({
+        projectId: id,
+        principalId: command.principalId,
+        role: command.role,
+        grantedBy: authorization.principal.id,
       });
       result = { ok: true };
     } else {

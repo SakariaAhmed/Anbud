@@ -651,8 +651,8 @@ function SectionHistoryPanel({
           <History className="size-4" />
           Tidligere seksjoner
         </span>
-        <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-500 shadow-sm">
-          {entries.length}
+        <span className="text-xs font-medium tabular-nums text-slate-500">
+          ({entries.length})
         </span>
       </summary>
       <div className="border-t border-border/70 px-4 py-4">
@@ -1464,7 +1464,7 @@ function ValuePieModule({
             Profitteffekt per verdi
           </h4>
         </div>
-        <span className="rounded-md border border-border/70 bg-card px-2.5 py-1 text-[0.72rem] font-semibold text-muted-foreground">
+        <span className="text-[0.72rem] font-medium text-muted-foreground">
           Klikk på en verdi for detaljer
         </span>
       </div>
@@ -1571,7 +1571,7 @@ function KeywordPieModule({
             Nøkkelord etter antall nevnt
           </h4>
         </div>
-        <span className="rounded-md border border-border/70 bg-card px-2.5 py-1 text-[0.72rem] font-semibold text-muted-foreground">
+        <span className="text-[0.72rem] font-medium text-muted-foreground">
           Topp 5 signalord
         </span>
       </div>
@@ -1658,9 +1658,13 @@ function compactDeliverySignal(value: string | undefined, fallback: string) {
     return fallback;
   }
 
-  return normalized.length > 130
-    ? `${normalized.slice(0, 127).trim()}...`
-    : normalized;
+  if (normalized.length <= 130) {
+    return normalized;
+  }
+
+  const shortened = normalized.slice(0, 127);
+  const lastWordBoundary = shortened.lastIndexOf(" ");
+  return `${shortened.slice(0, lastWordBoundary > 95 ? lastWordBoundary : 127).trim()}…`;
 }
 
 type DeliveryProfileKey =
@@ -2106,20 +2110,17 @@ function DeliveryBlueprint({
 }) {
   const phases = strategy.phases;
   return (
-    <article className="overflow-hidden rounded-xl border border-cyan-100 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(236,254,255,0.82))] shadow-[0_16px_38px_rgba(8,145,178,0.10)]">
-      <div className="border-b border-cyan-100/90 px-5 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <article className="border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 px-5 py-5">
+        <div>
           <div className="min-w-0">
-            <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-cyan-700/75">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Leveransestrategi for denne kunden
             </p>
-            <h6 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-cyan-950">
+            <h6 className="mt-1 text-base font-semibold tracking-tight text-slate-950">
               {strategy.profileLabel}
             </h6>
           </div>
-          <span className="rounded-md bg-cyan-700 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white">
-            {phases.length} faser
-          </span>
         </div>
         <p className="mt-3 text-sm leading-6 text-slate-700">
           {strategy.rationale}
@@ -2132,9 +2133,9 @@ function DeliveryBlueprint({
           ].map((item) => (
             <div
               key={item.label}
-              className="rounded-lg border border-cyan-100 bg-white/85 px-3.5 py-3"
+              className="border-l-2 border-blue-800 bg-slate-50 px-3.5 py-3"
             >
-              <p className="text-[0.64rem] font-bold uppercase tracking-[0.16em] text-cyan-800/75">
+              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {item.label}
               </p>
               <p className="mt-1 text-[0.85rem] leading-5 text-slate-700">
@@ -2145,15 +2146,15 @@ function DeliveryBlueprint({
         </div>
       </div>
 
-      <div className="grid gap-3 px-5 py-5 lg:grid-cols-2">
-        {phases.map((phase) => (
-          <div
+      <ol className="grid gap-px bg-slate-200 lg:grid-cols-2">
+        {phases.map((phase, phaseIndex) => (
+          <li
             key={phase.title}
-            className="rounded-lg border border-cyan-100 bg-white/92 px-4 py-4 shadow-[0_10px_24px_rgba(14,116,144,0.06)]"
+            className="bg-white px-5 py-5"
           >
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="rounded-md bg-cyan-700/10 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-cyan-800">
-                {phase.title}
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-800">
+                {String(phaseIndex + 1).padStart(2, "0")} · {phase.title}
               </span>
               <span className="text-sm font-semibold text-slate-900">
                 {phase.label}
@@ -2165,14 +2166,14 @@ function DeliveryBlueprint({
                   key={`${phase.title}-${bulletIndex}`}
                   className="flex items-start gap-2.5"
                 >
-                  <span className="mt-2 size-1.5 shrink-0 rounded-full bg-cyan-600" />
+                  <span className="mt-2 size-1.5 shrink-0 bg-blue-800" />
                   <span>{bullet}</span>
                 </li>
               ))}
             </ul>
-          </div>
+          </li>
         ))}
-      </div>
+      </ol>
     </article>
   );
 }
@@ -2325,17 +2326,6 @@ function PositioningKanban({
         <div className="flex flex-1 flex-col gap-4">
           {isWorktextLane && worktext ? (
             <article className="rounded-xl border border-white/70 bg-white/88 px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-sm">
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <span className="rounded-md bg-blue-600/10 px-2.5 py-1 text-xs font-semibold text-blue-800">
-                  Kundestyrt
-                </span>
-                <span className="rounded-md bg-emerald-600/10 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                  Bevisbar
-                </span>
-                <span className="rounded-md bg-amber-500/12 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                  Handlingsnær
-                </span>
-              </div>
               <MarkdownViewer
                 content={worktext}
                 className="artifact-markdown max-w-none text-slate-900"
@@ -4363,7 +4353,7 @@ export function ProjectAnalysisTab({
                             <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium text-foreground">
                               {item}
                             </span>
-                            <span className="shrink-0 rounded-full border border-primary/15 bg-primary/6 px-2.5 py-1 text-xs font-semibold text-primary">
+                            <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
                               {getKeywordMentionCount(customerAnalysis, item)}x
                               nevnt
                             </span>

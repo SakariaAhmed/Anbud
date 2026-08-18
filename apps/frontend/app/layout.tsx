@@ -21,7 +21,7 @@ const ibmPlexSans = IBM_Plex_Sans({
   variable: "--font-ibm-plex-sans",
 });
 
-const schibstedGrotesk = Schibsted_Grotesk({
+const displayFont = Schibsted_Grotesk({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
   variable: "--font-schibsted-grotesk",
@@ -32,6 +32,12 @@ const ibmPlexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
   variable: "--font-ibm-plex-mono",
 });
+
+const documentFontVariables = [
+  ibmPlexSans.variable,
+  displayFont.variable,
+  ibmPlexMono.variable,
+].join(" ");
 
 export const metadata: Metadata = {
   title: "bidsite",
@@ -54,10 +60,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const isAdmin = requestHeaders.get(AUTH_IS_ADMIN_HEADER) === "1";
 
   return (
-    <html
-      lang="no"
-      className={`${ibmPlexSans.variable} ${schibstedGrotesk.variable} ${ibmPlexMono.variable}`}
-    >
+    <html lang="no" className={documentFontVariables}>
       <body
         className="min-h-screen bg-background text-foreground antialiased"
         data-route={isHomeRoute ? "home" : undefined}

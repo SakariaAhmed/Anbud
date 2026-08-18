@@ -113,54 +113,27 @@ export function AdminConsole() {
 
   return (
     <div className="min-h-[calc(100dvh-var(--app-header-height))] bg-slate-50 text-slate-950">
-      <style>{`
-        @keyframes admin-rise {
-          from { opacity: 0; transform: translateY(14px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes admin-fade {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        .admin-rise { animation: admin-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-        .admin-fade { animation: admin-fade 400ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-        @keyframes admin-orb-drift {
-          from { transform: translate3d(0, 0, 0) scale(1); }
-          to { transform: translate3d(-2.5rem, 1.75rem, 0) scale(1.12); }
-        }
-        .admin-orb { animation: admin-orb-drift 18s ease-in-out infinite alternate; }
-        .admin-orb--slow { animation-duration: 26s; animation-delay: -9s; }
-        @media (prefers-reduced-motion: reduce) {
-          .admin-rise, .admin-fade, .admin-orb { animation: none; }
-        }
-      `}</style>
-
-      <header className="border-b border-slate-200 bg-[#08172d] text-white">
-        <div className="mx-auto max-w-[1480px] px-5 py-10 lg:px-10">
-          <p className="admin-rise font-mono text-[0.68rem] uppercase tracking-[0.2em] text-cyan-300">
+      <header className="border-b border-slate-300 bg-white">
+        <div className="mx-auto max-w-[1480px] px-5 py-7 lg:px-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
             Global styring
           </p>
-          <div className="mt-3 flex flex-wrap items-end justify-between gap-5">
-            <div className="admin-rise" style={{ animationDelay: "60ms" }}>
-              <h1 className="font-serif text-4xl font-semibold tracking-tight">
+          <div className="mt-3">
+            <div>
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
                 Tilgang og innsikt
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                Administrer roller og grupper, les alle prosjekter og følg hvem
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Administrer personer, grupper og prosjekttilgang, og følg hvem
                 som åpner, endrer, laster opp og laster ned.
               </p>
-            </div>
-            <div className="admin-rise flex gap-2" style={{ animationDelay: "120ms" }}>
-              <span className="rounded-full border border-blue-300/25 bg-blue-300/10 px-3 py-1.5 text-xs font-semibold text-blue-100">
-                Administrator
-              </span>
             </div>
           </div>
         </div>
       </header>
 
       <div className="mx-auto grid max-w-[1480px] gap-8 px-5 py-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:px-10 lg:py-10">
-        <aside className="admin-fade" style={{ animationDelay: "120ms" }}>
+        <aside>
           <nav className="grid gap-1.5 sm:grid-cols-4 lg:sticky lg:top-[calc(var(--app-header-height)+1.5rem)] lg:grid-cols-1">
             <NavButton
               active={section === "overview"}
@@ -172,7 +145,7 @@ export function AdminConsole() {
             <NavButton
               active={section === "people"}
               icon={<CircleUserRound />}
-              label="Brukere og roller"
+              label="Personer og tilgang"
               detail={people.length === 1 ? "1 bruker" : `${people.length} brukere`}
               onClick={() => setSection("people")}
             />
@@ -265,14 +238,14 @@ function OverviewSection({ admin, users, groups, projects, activity, onNavigate 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Administratorer" value="1" detail="Fast og låst rolle" icon={LockKeyhole} tone="cyan" delay={0} />
-        <Metric label="Brukere" value={users.length} detail={`${users.filter((user) => user.identity_type === "guest").length} gjester`} icon={CircleUserRound} delay={60} />
-        <Metric label="Prosjekter" value={projects.length} detail={`${groups.length} tilgangsgrupper`} icon={FolderKanban} delay={120} />
-        <Metric label="Aktive lesere" value={readers.size} detail={`${pageViews.length} registrerte sidevisninger`} icon={Eye} delay={180} />
+        <Metric label="Administratorer" value="1" detail="Fast og låst rolle" icon={LockKeyhole} tone="cyan" />
+        <Metric label="Brukere" value={users.length} detail={`${users.filter((user) => user.identity_type === "guest").length} gjester`} icon={CircleUserRound} />
+        <Metric label="Prosjekter" value={projects.length} detail={`${groups.length} tilgangsgrupper`} icon={FolderKanban} />
+        <Metric label="Aktive lesere" value={readers.size} detail={`${pageViews.length} registrerte sidevisninger`} icon={Eye} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,.8fr)]">
-        <section className="admin-rise self-start overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" style={{ animationDelay: "160ms" }}>
+        <section className="self-start overflow-hidden border border-slate-200 bg-white">
           <SectionHeader
             eyebrow="Lesemønster"
             title="Sist leste sider"
@@ -310,16 +283,13 @@ function OverviewSection({ admin, users, groups, projects, activity, onNavigate 
         </section>
 
         <div className="space-y-4">
-          <section className="admin-rise rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" style={{ animationDelay: "220ms" }}>
-            <div className="flex items-start justify-between gap-4">
+          <section className="border border-slate-200 bg-white p-6">
+            <div className="flex items-start gap-4">
               <span className="grid size-11 place-items-center rounded-xl bg-slate-950 text-cyan-300">
                 <ShieldCheck className="size-5" />
               </span>
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-emerald-700">
-                Beskyttet
-              </span>
             </div>
-            <h2 className="mt-5 font-serif text-xl font-semibold tracking-tight">Én administrator</h2>
+            <h2 className="mt-5 text-xl font-semibold tracking-tight">Én administrator</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
               Rollen tilhører bare {admin?.display_name ?? "Administrator"} og kan ikke tildeles fra brukerlisten. Andre får avgrenset prosjekttilgang.
             </p>
@@ -335,12 +305,11 @@ function OverviewSection({ admin, users, groups, projects, activity, onNavigate 
           <button
             type="button"
             onClick={() => onNavigate("people")}
-            className="admin-rise group flex w-full items-center justify-between rounded-2xl border border-blue-900 bg-blue-900 p-6 text-left text-white shadow-sm transition-all duration-180 hover:-translate-y-0.5 hover:bg-blue-800 hover:shadow-md"
-            style={{ animationDelay: "280ms" }}
+            className="group flex w-full items-center justify-between border border-blue-900 bg-blue-900 p-6 text-left text-white transition-colors duration-180 hover:bg-blue-800"
           >
             <span>
               <span className={`block ${EYEBROW_CLASS} text-cyan-300`}>Neste handling</span>
-              <span className="mt-1.5 block font-serif text-lg font-semibold tracking-tight">Inviter en bruker</span>
+              <span className="mt-1.5 block text-lg font-semibold tracking-tight">Inviter en bruker</span>
               <span className="mt-1 block text-xs text-blue-100">Velg prosjekt, rolle og gruppe i samme flyt.</span>
             </span>
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10">
@@ -353,14 +322,11 @@ function OverviewSection({ admin, users, groups, projects, activity, onNavigate 
   );
 }
 
-function Metric({ label, value, detail, icon: Icon, tone = "blue", delay = 0 }: {
-  label: string; value: string | number; detail: string; icon: typeof Activity; tone?: "blue" | "cyan"; delay?: number;
+function Metric({ label, value, detail, icon: Icon, tone = "blue" }: {
+  label: string; value: string | number; detail: string; icon: typeof Activity; tone?: "blue" | "cyan";
 }) {
   return (
-    <div
-      className="admin-rise rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-180 hover:-translate-y-0.5 hover:shadow-md"
-      style={{ animationDelay: `${delay}ms` }}
-    >
+    <div className="border border-slate-200 bg-white p-5">
       <div className="flex items-center justify-between">
         <p className={`${EYEBROW_CLASS} text-slate-500`}>{label}</p>
         <span className={`grid size-8 place-items-center rounded-lg ${tone === "cyan" ? "bg-cyan-50 text-cyan-800" : "bg-blue-50 text-blue-900"}`}>
@@ -390,15 +356,15 @@ function PeopleSection({ admin, users, groups, projects, onReload }: {
   }, [query, users]);
 
   return (
-    <div className="admin-fade space-y-6">
+    <div className="space-y-6">
       <PageHeading
         eyebrow="Mennesker og tilgang"
-        title="Brukere"
-        description="Inviter, plasser i grupper og gi konkrete prosjektroller."
+        title="Personer"
+        description="Inviter nye personer og se eller endre tilgangen deres direkte."
         action={
           <Button className={PRIMARY_BUTTON_CLASS} onClick={() => setShowInvite((value) => !value)}>
             {showInvite ? <X /> : <UserPlus />}
-            {showInvite ? "Lukk" : "Ny bruker"}
+            {showInvite ? "Lukk" : "Gi tilgang"}
           </Button>
         }
       />
@@ -415,12 +381,7 @@ function PeopleSection({ admin, users, groups, projects, onReload }: {
           <div className="flex items-center gap-3">
             <Avatar name={admin?.display_name ?? "Administrator"} admin />
             <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold">{admin?.display_name ?? "Administrator"}</p>
-                <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-white">
-                  Låst
-                </span>
-              </div>
+              <p className="text-sm font-semibold">{admin?.display_name ?? "Administrator"}</p>
               <p className="text-xs text-slate-500">Systemets eneste administrator</p>
             </div>
           </div>
@@ -456,13 +417,15 @@ function InviteUserPanel({ groups, projects, onCreated }: {
   const [name, setName] = useState("");
   const [guestDescription, setGuestDescription] = useState("");
   const [email, setEmail] = useState("");
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
-  const [role, setRole] = useState<ShareableRole>("viewer");
+  const [projectGrants, setProjectGrants] = useState<Record<string, ShareableRole | "">>({});
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [guestCode, setGuestCode] = useState<GuestCodeReveal | null>(null);
+  const selectedProjects = projects.filter((project) => project.id in projectGrants);
+  const availableProjects = projects.filter((project) => !(project.id in projectGrants));
+  const hasProjectWithoutRole = Object.values(projectGrants).some((role) => !role);
 
   async function submit() {
     setBusy(true);
@@ -481,8 +444,9 @@ function InviteUserPanel({ groups, projects, onCreated }: {
           email,
           displayName: name,
           guestDescription,
-          projectId,
-          role,
+          projectGrants: Object.entries(projectGrants).flatMap(([projectId, role]) =>
+            role ? [{ projectId, role }] : [],
+          ),
           groupIds,
         }),
       });
@@ -504,6 +468,7 @@ function InviteUserPanel({ groups, projects, onCreated }: {
       setGuestDescription("");
       setEmail("");
       setGroupIds([]);
+      setProjectGrants({});
       await onCreated();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Kunne ikke invitere brukeren.");
@@ -521,20 +486,21 @@ function InviteUserPanel({ groups, projects, onCreated }: {
           name.trim().length >= 2 &&
           guestDescription.trim().length >= 3 &&
           email.trim() &&
-          projectId
+          Object.keys(projectGrants).length > 0 &&
+          !hasProjectWithoutRole
         ) {
           void submit();
         }
       }}
-      className="admin-rise rounded-2xl border border-blue-200 bg-white p-6 shadow-sm"
+      className="border border-blue-200 bg-white p-6"
     >
       <div className="flex items-start gap-4">
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-900 text-white">
           <UserPlus className="size-5" />
         </span>
         <div>
-          <h3 className="font-serif text-xl font-semibold tracking-tight">Inviter bruker med tilgang</h3>
-          <p className="mt-1 text-sm text-slate-500">Navn og gjestebeskrivelse lagres sammen med tilgangen.</p>
+          <h3 className="text-xl font-semibold tracking-tight">Inviter og gi tilgang</h3>
+          <p className="mt-1 text-sm text-slate-500">Velg person, ett eller flere prosjekter og tilgangsnivå per prosjekt. Alt sendes i én invitasjon.</p>
         </div>
       </div>
 
@@ -546,7 +512,7 @@ function InviteUserPanel({ groups, projects, onCreated }: {
         </p>
       ) : null}
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
         <Field label="Navn" htmlFor="invite-name">
           <Input
             id="invite-name"
@@ -561,22 +527,88 @@ function InviteUserPanel({ groups, projects, onCreated }: {
         <Field label="E-post" htmlFor="invite-email">
           <Input id="invite-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="ola@firma.no" maxLength={320} required />
         </Field>
-        <Field label="Startprosjekt" htmlFor="invite-project">
-          <NativeSelect
-            id="invite-project"
-            value={projectId}
-            onChange={setProjectId}
-            options={projects.map((project) => ({ value: project.id, label: project.name }))}
-            placeholder="Velg prosjekt"
-          />
-        </Field>
-        <Field label="Rolle" htmlFor="invite-role">
-          <RoleSelect id="invite-role" value={role} onChange={setRole} />
-        </Field>
       </div>
 
-      <div className="mt-4 max-w-3xl">
-        <Field label="Kort beskrivelse av gjesten" htmlFor="invite-description">
+      <div className="mt-6 border-t border-slate-200 pt-5">
+        <div>
+          <Label htmlFor="invite-add-project">Prosjekter og tilgang</Label>
+          <p className="mt-1 text-xs text-slate-500">Legg til ett prosjekt om gangen. Tilgangen aktiveres først når du velger en rolle.</p>
+        </div>
+        <div className="mt-3 max-w-3xl">
+          <NativeSelect
+            id="invite-add-project"
+            value=""
+            disabled={!availableProjects.length}
+            onChange={(projectId) => {
+              if (!projectId) return;
+              setProjectGrants((current) => ({ ...current, [projectId]: "" }));
+            }}
+            options={availableProjects.map((project) => ({
+              value: project.id,
+              label: project.name,
+            }))}
+            placeholder={availableProjects.length ? "Velg et prosjekt som skal legges til" : "Ingen flere prosjekter tilgjengelig"}
+          />
+        </div>
+
+        {selectedProjects.length ? (
+          <div className="mt-3 space-y-2">
+            {selectedProjects.map((project) => {
+              const selectedRole = projectGrants[project.id];
+              return (
+                <div
+                  key={project.id}
+                  className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border px-3 py-3 transition-colors sm:grid-cols-[minmax(0,1fr)_12rem_auto] ${
+                    selectedRole ? "border-blue-200 bg-blue-50" : "border-amber-300 bg-amber-50"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-slate-800">{project.name}</span>
+                    {project.customer_name ? (
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">{project.customer_name}</span>
+                    ) : null}
+                    {!selectedRole ? (
+                      <span className="mt-1 block text-[0.68rem] font-semibold text-amber-800">Velg rolle for å aktivere tilgangen</span>
+                    ) : null}
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <RoleSelect
+                      id={`invite-project-role-${project.id}`}
+                      value={selectedRole ?? ""}
+                      placeholder="Velg rolle"
+                      compact
+                      onChange={(nextRole) => setProjectGrants((current) => ({
+                        ...current,
+                        [project.id]: nextRole,
+                      }))}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Fjern ${project.name}`}
+                    title="Fjern prosjekt"
+                    onClick={() => setProjectGrants((current) => {
+                      const next = { ...current };
+                      delete next[project.id];
+                      return next;
+                    })}
+                    className="col-start-2 row-start-1 grid size-8 place-items-center text-slate-400 transition-colors hover:bg-white hover:text-rose-700 sm:col-start-auto sm:row-start-auto"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="mt-3 border border-dashed border-slate-300 px-4 py-5 text-center text-sm text-slate-500">
+            Ingen prosjekttilgang lagt til ennå.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-5 max-w-3xl">
+        <Field label="Hvorfor trenger personen tilgang?" htmlFor="invite-description">
           <Textarea
             id="invite-description"
             value={guestDescription}
@@ -630,11 +662,12 @@ function InviteUserPanel({ groups, projects, onCreated }: {
             name.trim().length < 2 ||
             guestDescription.trim().length < 3 ||
             !email.trim() ||
-            !projectId
+            Object.keys(projectGrants).length === 0 ||
+            hasProjectWithoutRole
           }
         >
           {busy ? <LoaderCircle className="animate-spin" /> : <UserPlus />}
-          Send invitasjon
+          Inviter og gi tilgang
         </Button>
       </div>
     </form>
@@ -645,20 +678,29 @@ function UserAccessRow({ user, projects, onReload }: {
   user: AdminUser; projects: ProjectSummary[]; onReload: () => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  const [draftProjectRoles, setDraftProjectRoles] = useState<Record<string, ShareableRole>>({});
   const [projectId, setProjectId] = useState("");
   const [role, setRole] = useState<ShareableRole>("viewer");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [guestCode, setGuestCode] = useState<GuestCodeReveal | null>(null);
 
-  async function saveAccess() {
-    if (!projectId) return;
+  async function saveAccess(targetProjectId = projectId, targetRole = role) {
+    if (!targetProjectId) return;
+    const currentProject = user.projects.find((project) => project.id === targetProjectId);
+    if (
+      currentProject?.role === "owner" &&
+      !window.confirm(
+        `Endre ${user.display_name} fra prosjekteier til «${ROLE_LABELS[targetRole]}» i ${currentProject.name}? Prosjektet blir uten prosjekteier.`,
+      )
+    ) return;
     setBusy(true);
     setError("");
     try {
       await readJson(`/api/admin/users/${user.id}/access`, {
         method: "PATCH",
-        body: JSON.stringify({ projectId, role }),
+        body: JSON.stringify({ projectId: targetProjectId, role: targetRole }),
       });
       setProjectId("");
       await onReload();
@@ -670,7 +712,10 @@ function UserAccessRow({ user, projects, onReload }: {
   }
 
   async function revoke(project: UserProject) {
-    if (!window.confirm(`Fjerne ${user.display_name} fra ${project.name}?`)) return;
+    const ownerWarning = project.role === "owner"
+      ? " Personen er prosjekteier, og prosjektet blir uten prosjekteier."
+      : "";
+    if (!window.confirm(`Fjerne ${user.display_name} fra ${project.name}?${ownerWarning}`)) return;
     setBusy(true);
     setError("");
     try {
@@ -712,6 +757,14 @@ function UserAccessRow({ user, projects, onReload }: {
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleProjectAccess(project: UserProject) {
+    setExpandedProjectId((current) => current === project.id ? null : project.id);
+    setDraftProjectRoles((current) => ({
+      ...current,
+      [project.id]: current[project.id] ?? (project.role === "owner" ? "editor" : project.role),
+    }));
   }
 
   return (
@@ -806,24 +859,99 @@ function UserAccessRow({ user, projects, onReload }: {
             <div>
               <p className={`${EYEBROW_CLASS} text-slate-500`}>Direkte prosjekttilgang</p>
               <div className="mt-2 space-y-2">
-                {user.projects.map((project) => (
-                  <div key={project.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                    <FolderKanban className="size-4 shrink-0 text-blue-900" />
-                    <span className="min-w-0 flex-1 truncate text-xs font-semibold">{project.name}</span>
-                    <span className="text-[0.65rem] text-slate-500">{ROLE_LABELS[project.role]}</span>
-                    {project.role !== "owner" ? (
+                {user.projects.map((project) => {
+                  const projectExpanded = expandedProjectId === project.id;
+                  const draftRole = draftProjectRoles[project.id] ?? (project.role === "owner" ? "editor" : project.role);
+                  return (
+                    <div
+                      key={project.id}
+                      className={`overflow-hidden rounded-xl border transition-colors duration-180 ${
+                        projectExpanded
+                          ? "border-blue-300 bg-white shadow-sm"
+                          : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"
+                      }`}
+                    >
                       <button
                         type="button"
-                        disabled={busy}
-                        onClick={() => void revoke(project)}
-                        className="rounded p-1 text-slate-400 transition-colors duration-180 hover:bg-rose-50 hover:text-rose-700"
-                        aria-label={`Fjern tilgang til ${project.name}`}
+                        onClick={() => toggleProjectAccess(project)}
+                        aria-expanded={projectExpanded}
+                        aria-controls={`project-access-${user.id}-${project.id}`}
+                        className="flex w-full items-center gap-3 px-3 py-3 text-left sm:px-4"
                       >
-                        <X className="size-3.5" />
+                        <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${projectExpanded ? "bg-blue-900 text-white" : "bg-blue-50 text-blue-900"}`}>
+                          <FolderKanban className="size-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-blue-900">
+                            {ROLE_LABELS[project.role]}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs font-semibold text-slate-900 sm:text-sm">
+                            {project.name}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-[0.68rem] font-semibold text-slate-500 sm:text-xs">
+                          Rediger
+                        </span>
+                        <ChevronDown className={`size-4 shrink-0 text-slate-400 transition-transform duration-180 ${projectExpanded ? "rotate-180" : ""}`} />
                       </button>
-                    ) : null}
-                  </div>
-                ))}
+
+                      {projectExpanded ? (
+                        <div
+                          id={`project-access-${user.id}-${project.id}`}
+                          className="border-t border-slate-200 bg-white px-4 py-4 sm:px-5"
+                        >
+                          {project.role === "owner" ? (
+                            <div className="mb-4 flex items-start gap-3 border border-amber-200 bg-amber-50 p-3 text-amber-950">
+                              <LockKeyhole className="mt-0.5 size-4 shrink-0 text-amber-700" />
+                              <div>
+                                <p className="text-xs font-semibold">Denne personen er prosjekteier</p>
+                                <p className="mt-1 text-xs leading-5 text-amber-800">
+                                  Ved endring eller fjerning blir prosjektet uten prosjekteier. Administrator kan fortsatt styre tilgangen.
+                                </p>
+                              </div>
+                            </div>
+                          ) : null}
+                          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                            <div>
+                              <Label htmlFor={`project-role-${user.id}-${project.id}`}>Tilgangsnivå</Label>
+                              <div className="mt-2 max-w-sm">
+                                <RoleSelect
+                                  id={`project-role-${user.id}-${project.id}`}
+                                  value={draftRole}
+                                  disabled={busy}
+                                  onChange={(nextRole) => setDraftProjectRoles((current) => ({ ...current, [project.id]: nextRole }))}
+                                />
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-slate-500">{roleDescription(draftRole)}</p>
+                            </div>
+                            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={busy}
+                                onClick={() => void revoke(project)}
+                                className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                              >
+                                <Trash2 /> Fjern tilgang
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={busy || (project.role !== "owner" && draftRole === project.role)}
+                                onClick={() => void saveAccess(project.id, draftRole)}
+                                className={PRIMARY_BUTTON_CLASS}
+                              >
+                                {busy ? <LoaderCircle className="animate-spin" /> : <Check />}
+                                Lagre endring
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
                 {!user.projects.length ? (
                   <p className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-slate-500">
                     Ingen direkte prosjektroller. Tilgang kan fortsatt komme fra en gruppe.
@@ -866,6 +994,8 @@ function GroupsSection({ groups, users, projects, onReload }: {
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [projectGrants, setProjectGrants] = useState<Record<string, ShareableRole>>({});
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -874,9 +1004,19 @@ function GroupsSection({ groups, users, projects, onReload }: {
     setBusy(true);
     setError("");
     try {
-      await readJson("/api/admin/groups", { method: "POST", body: JSON.stringify({ name, description }) });
+      await readJson("/api/admin/groups", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          description,
+          principalIds: selectedMembers,
+          projectGrants: Object.entries(projectGrants).map(([projectId, role]) => ({ projectId, role })),
+        }),
+      });
       setName("");
       setDescription("");
+      setSelectedMembers([]);
+      setProjectGrants({});
       setShowCreate(false);
       await onReload();
     } catch (createError) {
@@ -887,11 +1027,11 @@ function GroupsSection({ groups, users, projects, onReload }: {
   }
 
   return (
-    <div className="admin-fade space-y-6">
+    <div className="space-y-6">
       <PageHeading
         eyebrow="Samlet tilgang"
         title="Grupper"
-        description="Velg både medlemmer og prosjektroller inne i hver gruppe."
+        description="Opprett gruppen med medlemmer og prosjekttilgang i samme flyt."
         action={
           <Button className={PRIMARY_BUTTON_CLASS} onClick={() => setShowCreate((value) => !value)}>
             {showCreate ? <X /> : <Plus />}
@@ -903,7 +1043,7 @@ function GroupsSection({ groups, users, projects, onReload }: {
       {showCreate ? (
         <form
           onSubmit={(event) => { event.preventDefault(); if (!busy && name.trim().length >= 2) void create(); }}
-          className="admin-rise rounded-2xl border border-blue-200 bg-white p-6 shadow-sm"
+          className="border border-blue-200 bg-white p-6"
         >
           <div className="grid gap-4 md:grid-cols-[1fr_1.5fr_auto] md:items-end">
             <Field label="Gruppenavn" htmlFor="group-name">
@@ -916,6 +1056,72 @@ function GroupsSection({ groups, users, projects, onReload }: {
               {busy ? <LoaderCircle className="animate-spin" /> : <Plus />}
               Opprett gruppe
             </Button>
+          </div>
+          <div className="mt-6 grid gap-6 border-t border-slate-200 pt-6 xl:grid-cols-2">
+            <div>
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className={`${EYEBROW_CLASS} text-slate-500`}>1. Medlemmer</p>
+                  <p className="mt-1 text-xs text-slate-500">Velg hvem som skal være med i gruppen.</p>
+                </div>
+                <span className="text-xs font-semibold text-blue-900">{selectedMembers.length} valgt</span>
+              </div>
+              <div className="mt-3 grid max-h-56 gap-1 overflow-y-auto border border-slate-200 p-2 sm:grid-cols-2">
+                {users.map((user) => {
+                  const checked = selectedMembers.includes(user.id);
+                  return (
+                    <label key={user.id} className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-xs ${checked ? "bg-blue-50 text-blue-950" : "hover:bg-slate-50"}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => setSelectedMembers((current) => event.target.checked ? [...current, user.id] : current.filter((id) => id !== user.id))}
+                        className="size-3.5 rounded border-slate-300 accent-blue-900"
+                      />
+                      <span className="min-w-0 flex-1 truncate font-medium">{user.display_name}</span>
+                      {user.identity_type === "guest" ? <span className="text-[0.6rem] uppercase text-amber-700">Gjest</span> : null}
+                    </label>
+                  );
+                })}
+                {!users.length ? <p className="col-span-full p-3 text-center text-xs text-slate-500">Ingen personer er tilgjengelige ennå.</p> : null}
+              </div>
+            </div>
+            <div>
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className={`${EYEBROW_CLASS} text-slate-500`}>2. Prosjekttilgang</p>
+                  <p className="mt-1 text-xs text-slate-500">Velg prosjekter og hva gruppen skal kunne gjøre.</p>
+                </div>
+                <span className="text-xs font-semibold text-blue-900">{Object.keys(projectGrants).length} valgt</span>
+              </div>
+              <div className="mt-3 max-h-56 space-y-1 overflow-y-auto border border-slate-200 p-2">
+                {projects.map((project) => {
+                  const selectedRole = projectGrants[project.id];
+                  return (
+                    <div key={project.id} className={`grid grid-cols-[auto_minmax(0,1fr)_9.5rem] items-center gap-2 rounded-md px-2.5 py-2 ${selectedRole ? "bg-blue-50" : "hover:bg-slate-50"}`}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedRole)}
+                        onChange={(event) => setProjectGrants((current) => {
+                          const next = { ...current };
+                          if (event.target.checked) next[project.id] = "viewer";
+                          else delete next[project.id];
+                          return next;
+                        })}
+                        className="size-3.5 rounded border-slate-300 accent-blue-900"
+                      />
+                      <span className="truncate text-xs font-medium text-slate-700">{project.name}</span>
+                      <RoleSelect
+                        value={selectedRole ?? "viewer"}
+                        disabled={!selectedRole}
+                        compact
+                        onChange={(nextRole) => setProjectGrants((current) => ({ ...current, [project.id]: nextRole }))}
+                      />
+                    </div>
+                  );
+                })}
+                {!projects.length ? <p className="p-3 text-center text-xs text-slate-500">Ingen prosjekter er tilgjengelige.</p> : null}
+              </div>
+            </div>
           </div>
           {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
         </form>
@@ -1136,11 +1342,11 @@ function ActivitySection({ payload }: { payload: ActivityPayload }) {
   const uniqueProjects = new Set(pageViews.map((event) => event.project_id).filter(Boolean));
 
   return (
-    <div className="admin-fade space-y-6">
+    <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-3">
-        <Metric label="Sidevisninger" value={pageViews.length} detail="Navngitte prosjektfaner" icon={Eye} tone="cyan" delay={0} />
-        <Metric label="Leste prosjekter" value={uniqueProjects.size} detail="I de nyeste 300 hendelsene" icon={FolderKanban} delay={60} />
-        <Metric label="Aktive brukere" value={payload.summary.uniqueUsers} detail="Administratoroppslag inkludert" icon={Users} delay={120} />
+        <Metric label="Sidevisninger" value={pageViews.length} detail="Navngitte prosjektfaner" icon={Eye} tone="cyan" />
+        <Metric label="Leste prosjekter" value={uniqueProjects.size} detail="I de nyeste 300 hendelsene" icon={FolderKanban} />
+        <Metric label="Aktive brukere" value={payload.summary.uniqueUsers} detail="Administratoroppslag inkludert" icon={Users} />
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1209,7 +1415,7 @@ function ActivitySection({ payload }: { payload: ActivityPayload }) {
 function GuestCodePanel({ value }: { value: GuestCodeReveal }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="admin-rise mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+    <div className="mb-4 border border-amber-300 bg-amber-50 p-4">
       <div className="flex items-start gap-3">
         <KeyRound className="mt-0.5 size-5 shrink-0 text-amber-800" />
         <div className="min-w-0 flex-1">
@@ -1256,7 +1462,7 @@ function PageHeading({ eyebrow, title, description, action }: {
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className={`${EYEBROW_CLASS} text-blue-900`}>{eyebrow}</p>
-        <h2 className="mt-1.5 font-serif text-2xl font-semibold tracking-tight">{title}</h2>
+        <h2 className="mt-1.5 text-2xl font-semibold tracking-tight">{title}</h2>
         <p className="mt-1 text-sm text-slate-500">{description}</p>
       </div>
       {action}
@@ -1271,7 +1477,7 @@ function SectionHeader({ eyebrow, title, description, action }: {
     <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
       <div>
         <p className={`${EYEBROW_CLASS} text-blue-900`}>{eyebrow}</p>
-        <h2 className="mt-1 font-serif text-xl font-semibold tracking-tight">{title}</h2>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight">{title}</h2>
         <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
       </div>
       {action}
@@ -1305,8 +1511,9 @@ function NativeSelect({ id, value, onChange, options, placeholder, disabled }: {
   );
 }
 
-function RoleSelect({ id, value, onChange, disabled, compact }: {
-  id?: string; value: ShareableRole; onChange: (value: ShareableRole) => void; disabled?: boolean; compact?: boolean;
+function RoleSelect({ id, value, onChange, disabled, compact, placeholder }: {
+  id?: string; value: ShareableRole | ""; onChange: (value: ShareableRole) => void;
+  disabled?: boolean; compact?: boolean; placeholder?: string;
 }) {
   return (
     <div className="relative">
@@ -1317,6 +1524,7 @@ function RoleSelect({ id, value, onChange, disabled, compact }: {
         onChange={(event) => onChange(event.target.value as ShareableRole)}
         className={`${SELECT_CLASS} ${compact ? "h-8 py-0 text-xs" : ""}`}
       >
+        {placeholder ? <option value="" disabled>{placeholder}</option> : null}
         <option value="restricted_viewer">Kun lese</option>
         <option value="viewer">Lese og laste ned</option>
         <option value="editor">Kan redigere</option>
@@ -1324,6 +1532,17 @@ function RoleSelect({ id, value, onChange, disabled, compact }: {
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
     </div>
   );
+}
+
+function roleDescription(role: ShareableRole) {
+  switch (role) {
+    case "editor":
+      return "Kan laste opp dokumenter, endre innhold og kjøre analyser.";
+    case "viewer":
+      return "Kan lese prosjektet og laste ned dokumenter og artefakter.";
+    case "restricted_viewer":
+      return "Kan lese innholdet i appen, men kan ikke laste ned dokumenter.";
+  }
 }
 
 function Avatar({ name, admin = false, guest = false, small = false }: {

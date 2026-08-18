@@ -140,7 +140,7 @@ export function ProjectDocumentsTab({
             </span>
           </span>
         </span>
-        <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-bold text-blue-700">
+        <span className="text-sm font-medium tabular-nums text-slate-500">
           {documents.length} dokumenter
         </span>
       </button>

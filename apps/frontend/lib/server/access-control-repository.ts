@@ -93,6 +93,11 @@ export async function inviteEmailToProject(input: {
   displayName: string;
   guestDescription: string;
   role: Exclude<ProjectRole, "owner">;
+  additionalProjectGrants?: Array<{
+    projectId: string;
+    projectName: string;
+    role: Exclude<ProjectRole, "owner">;
+  }>;
   expiresAt?: string | null;
   createdBy: string;
 }) {
@@ -134,11 +139,30 @@ export async function inviteEmailToProject(input: {
   };
   const guestCode =
     row.identity_type === "guest" && row.credential_created ? code : null;
+  for (const grant of input.additionalProjectGrants ?? []) {
+    await grantPrincipalProjectAccess({
+      principalId: row.principal_id,
+      projectId: grant.projectId,
+      role: grant.role,
+      grantedBy: input.createdBy,
+    });
+  }
+  const projectAccesses = [
+    {
+      projectName: input.projectName,
+      roleLabel: PROJECT_ROLE_LABELS[input.role],
+    },
+    ...(input.additionalProjectGrants ?? []).map((grant) => ({
+      projectName: grant.projectName,
+      roleLabel: PROJECT_ROLE_LABELS[grant.role],
+    })),
+  ];
   const emailResult = await sendGuestAccessEmail({
     email,
     displayName,
     projectName: input.projectName,
     roleLabel: PROJECT_ROLE_LABELS[input.role],
+    projectAccesses,
     identityType: row.identity_type,
     guestCode,
     expiresAt: input.expiresAt ?? null,
@@ -330,35 +354,87 @@ export async function listProjectAccess(projectId: string) {
   }
   const principalIds = (memberships ?? []).map((row) => row.principal_id);
   const groupIds = (groupGrants ?? []).map((row) => row.group_id);
-  const [{ data: principals }, { data: groups }] = await Promise.all([
-    principalIds.length
-      ? supabase
-          .from("app_principals")
-          .select(
-            "id, identity_type, display_name, guest_description, email_masked, disabled_at",
-          )
-          .in("id", principalIds)
-      : Promise.resolve({ data: [], error: null }),
+  const [
+    { data: principals, error: principalError },
+    { data: groups, error: groupError },
+    { data: groupMembers, error: groupMemberError },
+    { data: principalRoles, error: roleError },
+  ] = await Promise.all([
+    supabase
+      .from("app_principals")
+      .select(
+        "id, identity_type, display_name, guest_description, email_masked, disabled_at",
+      )
+      .is("disabled_at", null)
+      .order("display_name")
+      .limit(500),
     groupIds.length
       ? supabase
           .from("app_groups")
           .select("id, name")
           .in("id", groupIds)
       : Promise.resolve({ data: [], error: null }),
+    groupIds.length
+      ? supabase
+          .from("app_group_members")
+          .select("group_id, principal_id")
+          .in("group_id", groupIds)
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("app_principal_roles").select("principal_id, role"),
   ]);
+  if (principalError || groupError || groupMemberError || roleError) {
+    throw new Error(
+      principalError?.message ||
+        groupError?.message ||
+        groupMemberError?.message ||
+        roleError?.message,
+    );
+  }
   const principalMap = new Map(
     (principals ?? []).map((principal) => [principal.id, principal]),
   );
   const groupMap = new Map((groups ?? []).map((group) => [group.id, group]));
+  const adminIds = new Set(
+    (principalRoles ?? [])
+      .filter((role) => role.role === "admin")
+      .map((role) => role.principal_id),
+  );
+  const inheritedGroupsFor = (principalId: string) =>
+    (groupMembers ?? [])
+      .filter((member) => member.principal_id === principalId)
+      .map((member) => {
+        const grant = (groupGrants ?? []).find(
+          (candidate) => candidate.group_id === member.group_id,
+        );
+        return {
+          id: member.group_id,
+          name: groupMap.get(member.group_id)?.name ?? "Gruppe",
+          role: grant?.role ?? "restricted_viewer",
+        };
+      });
+  const directPrincipalIds = new Set(principalIds);
   return {
     members: (memberships ?? []).map((membership) => ({
       ...membership,
       principal: principalMap.get(membership.principal_id) ?? null,
+      inheritedGroups: inheritedGroupsFor(membership.principal_id),
     })),
     groups: (groupGrants ?? []).map((grant) => ({
       ...grant,
       group: groupMap.get(grant.group_id) ?? null,
+      memberCount: (groupMembers ?? []).filter(
+        (member) => member.group_id === grant.group_id,
+      ).length,
     })),
+    availablePrincipals: (principals ?? [])
+      .filter(
+        (principal) =>
+          !directPrincipalIds.has(principal.id) && !adminIds.has(principal.id),
+      )
+      .map((principal) => ({
+        ...principal,
+        inheritedGroups: inheritedGroupsFor(principal.id),
+      })),
   };
 }
 
@@ -390,6 +466,47 @@ export async function revokeProjectMember(input: {
     p_principal_id: input.principalId,
   });
   if (error) throw new Error(error.message);
+}
+
+async function releaseProjectOwnership(input: {
+  projectId: string;
+  principalId: string;
+}) {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("projects")
+    .update({ owner_id: null })
+    .eq("id", input.projectId)
+    .eq("owner_id", input.principalId);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateAdminManagedProjectMemberRole(input: {
+  projectId: string;
+  principalId: string;
+  role: Exclude<ProjectRole, "owner">;
+  grantedBy: string;
+}) {
+  await releaseProjectOwnership(input);
+  await updateProjectMemberRole(input);
+  await grantPrincipalProjectAccess(input);
+}
+
+export async function revokeAdminManagedProjectMember(input: {
+  projectId: string;
+  principalId: string;
+}) {
+  await releaseProjectOwnership(input);
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("project_memberships")
+    .update({ role: "restricted_viewer" })
+    .eq("project_id", input.projectId)
+    .eq("principal_id", input.principalId)
+    .eq("role", "owner")
+    .is("revoked_at", null);
+  if (error) throw new Error(error.message);
+  await revokeProjectMember(input);
 }
 
 export async function updateProjectGroupRole(input: {

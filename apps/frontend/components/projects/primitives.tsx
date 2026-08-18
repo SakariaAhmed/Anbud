@@ -3,7 +3,6 @@ import {
   cloneElement,
   type HTMLAttributes,
   type ReactElement,
-  type ReactNode,
   type SelectHTMLAttributes,
 } from "react";
 import { ChevronDown } from "lucide-react";
@@ -69,30 +68,6 @@ export function CardDescription({ className, ...props }: HTMLAttributes<HTMLDivE
 
 export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("px-5 pb-5", className)} {...props} />;
-}
-
-export function Badge({
-  className,
-  variant = "outline",
-  children,
-}: {
-  className?: string;
-  variant?: "default" | "outline" | "secondary";
-  children: ReactNode;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-sm border px-2 py-0.5 text-[11px] font-semibold",
-        variant === "default" && "border-blue-900 bg-blue-900 text-white",
-        variant === "secondary" && "border-emerald-200 bg-emerald-50 text-emerald-800",
-        variant === "outline" && "border-slate-200 bg-white text-slate-700",
-        className,
-      )}
-    >
-      {children}
-    </span>
-  );
 }
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {

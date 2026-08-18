@@ -43,6 +43,21 @@ test("parses every supported access command", () => {
     }).command?.action,
     "grant_group",
   );
+  assert.deepEqual(
+    parseProjectAccessCommand("POST", {
+      action: "grant_member",
+      principalId: "person-1",
+      role: "viewer",
+    }),
+    {
+      ok: true,
+      command: {
+        action: "grant_member",
+        principalId: "person-1",
+        role: "viewer",
+      },
+    },
+  );
   assert.equal(
     parseProjectAccessCommand("POST", {
       action: "rotate_guest",
@@ -82,6 +97,11 @@ test("rejects owner grants, ambiguous targets, oversized values, and unknown act
       displayName: "Gjest Arkitekt",
       guestDescription: "Ekstern arkitekt",
       role: "viewer",
+    }),
+    parseProjectAccessCommand("POST", {
+      action: "grant_member",
+      principalId: "person-1",
+      role: "owner",
     }),
     parseProjectAccessCommand("POST", {
       action: "invite",

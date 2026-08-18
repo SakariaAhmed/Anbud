@@ -7,7 +7,12 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import { ChevronLeft, ChevronRight, MessageSquareText } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  LockKeyhole,
+  MessageSquareText,
+} from "lucide-react";
 
 import {
   formatDate,
@@ -629,7 +634,8 @@ function WorkspaceHeader({
         </div>
         <div className="flex items-center gap-3">
           {readOnly ? (
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+              <LockKeyhole className="size-3.5" />
               Lesetilgang
             </span>
           ) : null}

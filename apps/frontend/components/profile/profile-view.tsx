@@ -1,10 +1,8 @@
 import Link from "next/link";
 import {
+  ArrowUpRight,
   BriefcaseBusiness,
-  ExternalLink,
-  KeyRound,
   LockKeyhole,
-  ShieldCheck,
   UserRound,
   Users,
 } from "lucide-react";
@@ -17,89 +15,90 @@ import {
 } from "@/lib/access-control";
 import type { PrincipalProfile } from "@/lib/server/access-control-repository";
 
-const EYEBROW_CLASS =
-  "text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-800";
-
-function formatDate(value: string | null, withTime = false) {
-  if (!value) return "–";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "–";
-  return new Intl.DateTimeFormat("nb-NO", {
-    dateStyle: "medium",
-    ...(withTime ? { timeStyle: "short" } : {}),
-  }).format(date);
-}
-
-type MergedProjectAccess = {
+type ProjectAccess = {
   id: string;
   name: string;
   role: ProjectRole | null;
   sources: string[];
 };
 
-function mergeProjectAccess(
-  projects: PrincipalProfile["projects"],
-): MergedProjectAccess[] {
-  const byProject = new Map<string, MergedProjectAccess & { roles: ProjectRole[] }>();
-  for (const entry of projects) {
-    const current =
-      byProject.get(entry.id) ??
-      ({ id: entry.id, name: entry.name, roles: [], role: null, sources: [] } as
-        MergedProjectAccess & { roles: ProjectRole[] });
-    if (isProjectRole(entry.role)) current.roles.push(entry.role);
+function formatDate(value: string | null, includeTime = false) {
+  if (!value) return "Ikke registrert";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Ikke registrert";
+  return new Intl.DateTimeFormat("nb-NO", {
+    dateStyle: "medium",
+    ...(includeTime ? { timeStyle: "short" } : {}),
+  }).format(date);
+}
+
+function collectProjectAccess(
+  entries: PrincipalProfile["projects"],
+): ProjectAccess[] {
+  const projects = new Map<
+    string,
+    Omit<ProjectAccess, "role"> & { roles: ProjectRole[] }
+  >();
+
+  for (const entry of entries) {
+    const project = projects.get(entry.id) ?? {
+      id: entry.id,
+      name: entry.name,
+      roles: [],
+      sources: [],
+    };
+    if (isProjectRole(entry.role)) project.roles.push(entry.role);
     const source =
-      entry.source === "direct" ? "Direkte" : `Gruppe: ${entry.groupName ?? "Gruppe"}`;
-    if (!current.sources.includes(source)) current.sources.push(source);
-    byProject.set(entry.id, current);
+      entry.source === "direct"
+        ? "Direkte tilgang"
+        : `Via ${entry.groupName ?? "gruppe"}`;
+    if (!project.sources.includes(source)) project.sources.push(source);
+    projects.set(entry.id, project);
   }
-  return [...byProject.values()].map(({ roles, ...rest }) => ({
-    ...rest,
-    role: strongestProjectRole(roles),
-  }));
+
+  return [...projects.values()]
+    .map(({ roles, ...project }) => ({
+      ...project,
+      role: strongestProjectRole(roles),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, "nb"));
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-6 py-3">
-      <dt className="shrink-0 text-sm text-slate-500">{label}</dt>
-      <dd className="truncate text-right text-sm font-semibold text-slate-900">
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-function SectionCard({
-  eyebrow,
+function Section({
   title,
+  description,
   icon,
   children,
-  delay,
 }: {
-  eyebrow: string;
   title: string;
+  description: string;
   icon: React.ReactNode;
   children: React.ReactNode;
-  delay: number;
 }) {
   return (
-    <section
-      className="profile-rise rounded-2xl border border-slate-200 bg-white shadow-sm"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-800">
+    <section className="border-t border-slate-200 pt-5">
+      <header className="flex items-start gap-3">
+        <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-700">
           {icon}
         </span>
         <div>
-          <p className={EYEBROW_CLASS}>{eyebrow}</p>
-          <h2 className="font-serif text-lg font-semibold tracking-tight text-slate-900">
-            {title}
-          </h2>
+          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+          <p className="mt-0.5 text-sm leading-5 text-slate-500">
+            {description}
+          </p>
         </div>
-      </div>
-      <div className="px-6 py-5">{children}</div>
+      </header>
+      <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1 border-b border-slate-100 py-3 last:border-0 sm:grid-cols-[10rem_minmax(0,1fr)]">
+      <dt className="text-sm text-slate-500">{label}</dt>
+      <dd className="break-words text-sm font-medium text-slate-900">{value}</dd>
+    </div>
   );
 }
 
@@ -113,175 +112,142 @@ export function ProfileView({
   isAdmin: boolean;
 }) {
   const identityType = profile?.identityType ?? fallbackIdentityType;
-  const displayName = profile?.displayName ?? "Bruker";
+  const displayName = profile?.displayName?.trim() || "Bruker";
   const authMethod =
     profile?.authMethod ?? (identityType === "guest" ? "guest_code" : "entra");
-  const accountTypeLabel =
+  const accountLabel =
     identityType === "guest"
       ? "Gjestekonto"
       : authMethod === "admin_password"
-        ? "Administratorkonto (passord)"
+        ? "Administratorkonto"
         : "Microsoft-konto";
-  const projects = mergeProjectAccess(profile?.projects ?? []);
+  const projects = collectProjectAccess(profile?.projects ?? []);
 
   return (
-    <div className="min-h-[calc(100vh-var(--app-header-height))] bg-background">
-      <style>{`
-        @keyframes profile-rise {
-          from { opacity: 0; transform: translateY(14px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .profile-rise { animation: profile-rise 440ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-        @media (prefers-reduced-motion: reduce) { .profile-rise { animation: none; } }
-      `}</style>
-
-      <div className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8">
-        <header className="profile-rise flex flex-wrap items-center gap-5">
-          <span className="grid size-16 shrink-0 place-items-center rounded-2xl border border-blue-200 bg-blue-50 font-serif text-2xl font-bold uppercase text-blue-900">
-            {displayName.charAt(0)}
-          </span>
-          <div className="min-w-0">
-            <p className={EYEBROW_CLASS}>Min profil</p>
-            <h1 className="truncate font-serif text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
-              {displayName}
-            </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
-                {identityType === "guest" ? (
-                  <KeyRound className="size-3.5 text-slate-500" />
-                ) : (
-                  <ShieldCheck className="size-3.5 text-slate-500" />
-                )}
-                {accountTypeLabel}
+    <div className="min-h-[calc(100vh-var(--app-header-height))] bg-slate-50">
+      <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
+        <header className="border-b border-slate-300 pb-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Konto og tilgang
+          </p>
+          <div className="mt-3">
+            <div className="flex min-w-0 items-center gap-4">
+              <span className="grid size-12 shrink-0 place-items-center rounded-lg bg-slate-900 text-lg font-semibold uppercase text-white">
+                {displayName.charAt(0)}
               </span>
-              {isAdmin ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-900">
-                  <ShieldCheck className="size-3.5" />
-                  Administrator
-                </span>
-              ) : null}
+              <div className="min-w-0">
+                <h1 className="truncate text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+                  {displayName}
+                </h1>
+                <p className="mt-1 text-sm text-slate-600">
+                  {profile?.emailMasked ?? accountLabel}
+                </p>
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <div className="flex flex-col gap-6">
-            <SectionCard
-              eyebrow="Konto"
+        <div className="mt-7 grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <div className="space-y-8">
+            <Section
               title="Kontodetaljer"
+              description="Identiteten som brukes i bidsite."
               icon={<UserRound className="size-4" />}
-              delay={60}
             >
-              <dl className="divide-y divide-slate-100">
-                <InfoRow label="Visningsnavn" value={displayName} />
-                <InfoRow
-                  label="Brukernavn (e-post)"
-                  value={profile?.emailMasked ?? "–"}
+              <dl>
+                <Detail label="Visningsnavn" value={displayName} />
+                <Detail
+                  label="Brukernavn"
+                  value={profile?.emailMasked ?? "Ikke registrert"}
                 />
-                <InfoRow label="Kontotype" value={accountTypeLabel} />
-                <InfoRow
+                <Detail label="Kontotype" value={accountLabel} />
+                <Detail
                   label="Sist innlogget"
                   value={formatDate(profile?.lastLoginAt ?? null, true)}
                 />
-                <InfoRow
-                  label="Medlem siden"
+                <Detail
+                  label="Opprettet"
                   value={formatDate(profile?.createdAt ?? null)}
                 />
               </dl>
-              <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
-                Av personvernhensyn lagrer bidsite bare en maskert utgave av
-                e-postadressen din.
-              </p>
-            </SectionCard>
+            </Section>
 
-            <SectionCard
-              eyebrow="Sikkerhet"
-              title="Passord og pålogging"
+            <Section
+              title="Pålogging og sikkerhet"
+              description="Hvor legitimasjonen din administreres."
               icon={<LockKeyhole className="size-4" />}
-              delay={140}
             >
               {authMethod === "guest_code" ? (
-                <div className="space-y-3 text-sm leading-6 text-slate-600">
-                  <p>
-                    Du er logget inn med en personlig gjestekode. Gjestekontoer
-                    har ikke passord.
-                  </p>
-                  <p>
-                    Trenger du en ny kode, kontakter du prosjektansvarlig — den
-                    gamle koden slutter da å virke.
-                  </p>
-                </div>
+                <p className="text-sm leading-6 text-slate-600">
+                  Du logger inn med en personlig gjestekode. Kontakt
+                  prosjektansvarlig dersom koden må erstattes; den gamle koden
+                  blir da ugyldig.
+                </p>
               ) : authMethod === "admin_password" ? (
-                <div className="space-y-3 text-sm leading-6 text-slate-600">
-                  <p>
-                    Du er logget inn med det dedikerte administratorpassordet.
-                    Det forvaltes utenfor applikasjonen og roteres av
-                    driftsansvarlig.
-                  </p>
-                </div>
+                <p className="text-sm leading-6 text-slate-600">
+                  Administratorpassordet forvaltes og roteres av
+                  driftsansvarlig utenfor applikasjonen.
+                </p>
               ) : (
-                <div className="space-y-4 text-sm leading-6 text-slate-600">
-                  <p>
-                    Kontoen din administreres av Microsoft. Passordbytte og
-                    totrinnsbekreftelse gjør du hos Microsoft — endringene
-                    gjelder umiddelbart i bidsite.
+                <div className="space-y-4">
+                  <p className="text-sm leading-6 text-slate-600">
+                    Microsoft administrerer passord og flerfaktorautentisering
+                    for kontoen din.
                   </p>
-                  <div className="flex flex-wrap gap-2.5">
+                  <div className="flex flex-wrap gap-2">
                     <a
                       href="https://mysignins.microsoft.com/security-info/password/change"
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-900 px-4 text-sm font-semibold text-white transition-all duration-[180ms] hover:-translate-y-0.5 hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     >
-                      <LockKeyhole className="size-4" />
-                      Bytt passord hos Microsoft
-                      <ExternalLink className="size-3.5 opacity-70" />
+                      Bytt passord
+                      <ArrowUpRight className="size-3.5" />
                     </a>
                     <a
                       href="https://myaccount.microsoft.com"
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 transition-all duration-[180ms] hover:-translate-y-0.5 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     >
-                      Administrer Microsoft-kontoen
-                      <ExternalLink className="size-3.5 opacity-70" />
+                      Microsoft-konto
+                      <ArrowUpRight className="size-3.5" />
                     </a>
                   </div>
                 </div>
               )}
-            </SectionCard>
+            </Section>
           </div>
 
-          <div className="flex flex-col gap-6">
-            <SectionCard
-              eyebrow="Tilganger"
-              title="Prosjekttilganger"
+          <div className="space-y-8">
+            <Section
+              title="Prosjekter"
+              description="Din sterkeste rolle og hvordan tilgangen er gitt."
               icon={<BriefcaseBusiness className="size-4" />}
-              delay={220}
             >
               {isAdmin ? (
-                <p className="mb-4 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2.5 text-xs leading-5 text-cyan-900">
-                  Som administrator har du i tillegg global lesetilgang og
-                  tilgangsstyring for hele arbeidsområdet.
+                <p className="mb-3 border-l-2 border-cyan-700 bg-cyan-50 px-3 py-2 text-xs leading-5 text-cyan-950">
+                  Administratorrollen gir global lesetilgang og tilgang til
+                  styringsfunksjoner.
                 </p>
               ) : null}
               {projects.length ? (
-                <ul className="divide-y divide-slate-100">
+                <ul className="divide-y divide-slate-200 border-y border-slate-200">
                   {projects.map((project) => (
                     <li key={project.id}>
                       <Link
                         href={`/projects/${project.id}`}
-                        className="group flex items-center justify-between gap-4 rounded-lg px-2 py-3 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="group grid gap-1 px-1 py-3.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4"
                       >
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold text-slate-900 group-hover:text-blue-900">
+                          <span className="block truncate text-sm font-medium text-slate-950 group-hover:text-blue-800">
                             {project.name}
                           </span>
                           <span className="mt-0.5 block text-xs text-slate-500">
                             {project.sources.join(" · ")}
                           </span>
                         </span>
-                        <span className="shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-900">
+                        <span className="w-fit rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
                           {project.role
                             ? PROJECT_ROLE_LABELS[project.role]
                             : "Tilgang"}
@@ -291,37 +257,36 @@ export function ProfileView({
                   ))}
                 </ul>
               ) : (
-                <p className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">
-                  Ingen prosjekttilganger registrert
-                  {isAdmin ? " — du ser prosjekter via administratorrollen." : "."}
+                <p className="border-y border-dashed border-slate-300 py-5 text-sm text-slate-500">
+                  Ingen direkte eller gruppebaserte prosjekttilganger er
+                  registrert.
                 </p>
               )}
-            </SectionCard>
+            </Section>
 
-            <SectionCard
-              eyebrow="Grupper"
-              title="Gruppemedlemskap"
+            <Section
+              title="Grupper"
+              description="Gruppene som gir deg delte tilganger."
               icon={<Users className="size-4" />}
-              delay={300}
             >
               {profile?.groups.length ? (
-                <div className="flex flex-wrap gap-2">
+                <ul className="flex flex-wrap gap-2">
                   {profile.groups.map((group) => (
-                    <span
+                    <li
                       key={group.id}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700"
                     >
                       <Users className="size-3.5 text-slate-500" />
                       {group.name}
-                    </span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               ) : (
                 <p className="text-sm text-slate-500">
                   Du er ikke medlem av noen grupper.
                 </p>
               )}
-            </SectionCard>
+            </Section>
           </div>
         </div>
       </div>
