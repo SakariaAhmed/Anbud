@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileDown, Printer, ShieldCheck } from "lucide-react";
+import { Download, FileDown, Printer } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -147,15 +147,15 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
         >
           {authorityLabel}
         </span>
-        {artifact.artifact_version ? (
-          <span className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
-            Versjon {artifact.artifact_version}
-          </span>
-        ) : null}
-        {sourceCount ? (
-          <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-xs font-medium text-muted-foreground">
-            <ShieldCheck className="size-3.5" />
-            {sourceCount} kilde{sourceCount === 1 ? "" : "r"}
+        {artifact.artifact_version || sourceCount ? (
+          <span className="text-xs font-medium tabular-nums text-muted-foreground">
+            {artifact.artifact_version
+              ? `Versjon ${artifact.artifact_version}`
+              : ""}
+            {artifact.artifact_version && sourceCount ? " · " : ""}
+            {sourceCount
+              ? `${sourceCount} kilde${sourceCount === 1 ? "" : "r"}`
+              : ""}
           </span>
         ) : null}
         <Button

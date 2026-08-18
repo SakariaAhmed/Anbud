@@ -41,7 +41,7 @@ export function documentDropzoneClass(input: {
   disabled?: boolean;
 }) {
   const base =
-    "group relative flex h-full min-h-[6rem] w-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed px-3 py-3 text-center transition-colors md:min-h-[6.25rem]";
+    "group relative flex h-full min-h-24 w-full flex-col items-center justify-center overflow-hidden rounded-md border border-dashed px-3 py-3 text-center transition-colors";
 
   if (input.disabled) {
     return `${base} cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400`;
@@ -64,10 +64,10 @@ export function DocumentSourceMeta({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
       <FileText className="size-3.5 shrink-0 text-teal-700" />
-      <span className="font-black uppercase tracking-[0.16em] text-slate-500">
+      <span className="font-semibold uppercase tracking-[0.12em] text-slate-500">
         {label}
       </span>
-      <span className="min-w-0 truncate font-semibold text-slate-700">
+      <span className="min-w-0 truncate font-medium text-slate-700">
         {document?.title ?? "Ukjent dokumentgrunnlag"}
       </span>
       {document ? (
@@ -93,10 +93,10 @@ export function DocumentUploadDropzoneContent({
 }) {
   return (
     <>
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-100 bg-white text-blue-800 shadow-sm transition-colors group-hover:text-blue-700">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-blue-800 transition-colors group-hover:text-blue-700">
         {busy ? <Spinner className="size-3.5" /> : <UploadCloud className="size-3.5" />}
       </span>
-      <span className="mt-2 text-xs font-black text-slate-950">
+      <span className="mt-2 text-xs font-semibold text-slate-950">
         {busy ? busyLabel : "Dra og slipp dokumentet her"}
       </span>
       <span className="mt-0.5 text-[0.7rem] leading-4 text-slate-500">
@@ -165,27 +165,22 @@ export function GenerationProgress({
   const safeProgress = Math.min(100, Math.max(3, Math.round(progress)));
 
   return (
-    <div
-      className="min-w-0 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3"
-      aria-live="polite"
-    >
+    <div className="min-w-0 border-l-2 border-primary bg-primary/5 px-3 py-3" aria-live="polite">
       <div className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold text-primary">
         <span className="min-w-0 truncate">{message}</span>
         <span className="shrink-0 tabular-nums">{safeProgress}%</span>
       </div>
       <div
-        className="h-2 overflow-hidden rounded-full bg-primary/15"
+        className="h-1.5 overflow-hidden bg-primary/15"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={safeProgress}
       >
         <div
-          className="relative h-full overflow-hidden rounded-full bg-primary transition-[width] duration-500 ease-out"
+          className="h-full bg-primary transition-[width] duration-500 ease-out"
           style={{ width: `${safeProgress}%` }}
-        >
-          <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-70 motion-safe:animate-pulse" />
-        </div>
+        />
       </div>
     </div>
   );

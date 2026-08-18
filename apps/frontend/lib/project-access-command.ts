@@ -17,6 +17,11 @@ export type ProjectAccessPostCommand =
       role: ShareableProjectRole;
       expiresAt: string | null;
     }
+  | {
+      action: "grant_member";
+      principalId: string;
+      role: ShareableProjectRole;
+    }
   | { action: "rotate_guest"; principalId: string };
 
 export type ProjectAccessPatchCommand =
@@ -127,6 +132,17 @@ export function parseProjectAccessCommand(
           role,
           expiresAt: optionalString(body.expiresAt, 64),
         },
+      };
+    }
+    if (action === "grant_member") {
+      const principalId = boundedString(body.principalId, 128);
+      const role = shareableRole(body.role);
+      if (!principalId || !role) {
+        return { ok: false, error: "Ugyldig persontilgang." };
+      }
+      return {
+        ok: true,
+        command: { action, principalId, role },
       };
     }
     if (action === "rotate_guest") {

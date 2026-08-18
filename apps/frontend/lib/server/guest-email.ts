@@ -38,6 +38,10 @@ export async function sendGuestAccessEmail(input: {
   displayName: string;
   projectName: string;
   roleLabel: string;
+  projectAccesses?: Array<{
+    projectName: string;
+    roleLabel: string;
+  }>;
   identityType?: "internal" | "guest";
   guestCode?: string | null;
   expiresAt?: string | null;
@@ -79,6 +83,31 @@ export async function sendGuestAccessEmail(input: {
         dateStyle: "long",
       }).format(new Date(input.expiresAt))}.`
     : "Tilgangen gjelder til den trekkes tilbake.";
+  const projectAccesses = input.projectAccesses?.length
+    ? input.projectAccesses
+    : [{ projectName: input.projectName, roleLabel: input.roleLabel }];
+  const hasMultipleProjects = projectAccesses.length > 1;
+  const accessPlainText = hasMultipleProjects
+    ? [
+        "Du har fått følgende prosjekttilganger:",
+        ...projectAccesses.map(
+          (access) => `- ${access.projectName}: ${access.roleLabel}`,
+        ),
+      ].join("\n")
+    : `Du har fått rollen ${projectAccesses[0].roleLabel} i prosjektet ${projectAccesses[0].projectName}.`;
+  const accessHtml = hasMultipleProjects
+    ? `
+      <p style="color:#475569;line-height:1.6">Du har fått følgende prosjekttilganger:</p>
+      <ul style="margin:0 0 20px;padding-left:22px;color:#475569;line-height:1.8">
+        ${projectAccesses
+          .map(
+            (access) =>
+              `<li><strong>${escapeHtml(access.projectName)}</strong>: ${escapeHtml(access.roleLabel)}</li>`,
+          )
+          .join("")}
+      </ul>
+    `
+    : `<p style="color:#475569;line-height:1.6">Du har fått rollen <strong>${escapeHtml(projectAccesses[0].roleLabel)}</strong> i prosjektet <strong>${escapeHtml(projectAccesses[0].projectName)}</strong>.</p>`;
 
   const poller = await client.beginSend({
     senderAddress,
@@ -91,11 +120,13 @@ export async function sendGuestAccessEmail(input: {
       ],
     },
     content: {
-      subject: `Du har fått tilgang til ${input.projectName} i Bidsite`,
+      subject: hasMultipleProjects
+        ? `Du har fått tilgang til ${projectAccesses.length} prosjekter i Bidsite`
+        : `Du har fått tilgang til ${input.projectName} i Bidsite`,
       plainText: [
         `Hei ${input.displayName},`,
         "",
-        `Du har fått rollen ${input.roleLabel} i prosjektet ${input.projectName}.`,
+        accessPlainText,
         input.guestCode
           ? `Din personlige gjestekode er: ${input.guestCode}`
           : input.identityType === "internal"
@@ -108,7 +139,7 @@ export async function sendGuestAccessEmail(input: {
         <div style="max-width:560px;margin:0 auto;padding:32px;font-family:Arial,sans-serif;color:#0f172a">
           <p style="margin:0 0 8px;color:#2563eb;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase">Bidsite · Prosjekttilgang</p>
           <h1 style="margin:0 0 18px;font-size:28px;line-height:1.2">Hei ${escapeHtml(input.displayName)}</h1>
-          <p style="color:#475569;line-height:1.6">Du har fått rollen <strong>${escapeHtml(input.roleLabel)}</strong> i prosjektet <strong>${escapeHtml(input.projectName)}</strong>.</p>
+          ${accessHtml}
           ${codeSection}
           <p style="color:#475569">${escapeHtml(expiryText)}</p>
           <p style="margin:28px 0">

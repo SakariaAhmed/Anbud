@@ -59,25 +59,6 @@ function fileTitle(file: File) {
   return `Kravgrunnlag - ${file.name.replace(/\.[^.]+$/, "")}`;
 }
 
-const requirementTabMotionStyles = `
-@keyframes reqtab-rise {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.reqtab-rise {
-  animation: reqtab-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.reqtab-rise-delay-1 { animation-delay: 80ms; }
-.reqtab-rise-delay-2 { animation-delay: 160ms; }
-@media (prefers-reduced-motion: reduce) {
-  .reqtab-rise,
-  .reqtab-rise-delay-1,
-  .reqtab-rise-delay-2 {
-    animation: none;
-  }
-}
-`;
-
 type RequirementTableRow = {
   ref: string;
   group: string;
@@ -483,7 +464,7 @@ function RequirementResponseContent({
                       {tableId}
                     </h5>
                   </div>
-                  <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-blue-900">
+                  <span className="text-xs font-medium tabular-nums text-slate-500">
                     {rows.length} krav
                   </span>
                 </div>
@@ -742,14 +723,14 @@ export function ProjectRequirementResponseTab({
   }
 
   const savedRequirementResponses = (
-    <section className="reqtab-rise reqtab-rise-delay-1 min-w-0">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+    <section className="min-w-0">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <h3 className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
           Lagrede kravbesvarelser
         </h3>
         {requirementResponses.length > 0 ? (
-          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-semibold tabular-nums text-slate-600">
-            {requirementResponses.length}
+          <span className="text-xs font-medium tabular-nums text-slate-500">
+            ({requirementResponses.length})
           </span>
         ) : null}
       </div>
@@ -787,6 +768,15 @@ export function ProjectRequirementResponseTab({
                 }`
               : "";
             const artifactIsEditable = canEditGeneratedArtifact(artifact);
+            const neutralMetadata = [
+              artifact.artifact_version
+                ? `Versjon ${artifact.artifact_version}`
+                : null,
+              confidenceLabel || null,
+              typeof requirementCount === "number"
+                ? `${requirementCount} krav`
+                : null,
+            ].filter((value): value is string => Boolean(value));
             const editDisabledReason = artifact.is_current
               ? "Kildegrunnlaget er endret. Regenerer kravbesvarelsen før du redigerer."
               : "Historiske versjoner kan ikke redigeres. Du kan fortsatt åpne og laste dem ned.";
@@ -840,19 +830,9 @@ export function ProjectRequirementResponseTab({
                         Historikk
                       </span>
                     )}
-                    {artifact.artifact_version ? (
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">
-                        Versjon {artifact.artifact_version}
-                      </span>
-                    ) : null}
-                    {confidenceLabel ? (
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">
-                        {confidenceLabel}
-                      </span>
-                    ) : null}
-                    {typeof requirementCount === "number" ? (
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">
-                        {requirementCount} krav
+                    {neutralMetadata.length ? (
+                      <span className="text-xs font-medium tabular-nums text-slate-500">
+                        {neutralMetadata.join(" · ")}
                       </span>
                     ) : null}
                     {metadata.fallbackAfterHandoff > 0 ? (
@@ -1155,8 +1135,7 @@ export function ProjectRequirementResponseTab({
 
   return (
     <div className="min-w-0 space-y-8">
-      <style>{requirementTabMotionStyles}</style>
-      <section className="reqtab-rise overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="overflow-hidden border border-slate-200 bg-white">
         <div className="space-y-6 px-6 py-6">
           <div className="grid gap-6 lg:grid-cols-2">
           <div>

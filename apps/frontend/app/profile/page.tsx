@@ -14,11 +14,13 @@ export default async function ProfilePage() {
     principalId: principal.id,
     sessionId: principal.sessionId,
   });
+  const isAdmin = principal.isAdmin || profile?.isAdmin === true;
+
   return (
     <ProfileView
       profile={profile}
       fallbackIdentityType={principal.identityType}
-      isAdmin={principal.isAdmin || Boolean(profile?.isAdmin)}
+      isAdmin={isAdmin}
     />
   );
 }

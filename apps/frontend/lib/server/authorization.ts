@@ -213,13 +213,14 @@ export async function requireProjectPermission(
   const principal = await requireRequestPrincipal();
   if (globalAccessAllows(principal.isAdmin, permission)) {
     const readOnly = isReadPermission(permission);
+    const globalPermissions = PROJECT_ROLE_PERMISSIONS.owner.filter(
+      (candidate) => globalAccessAllows(principal.isAdmin, candidate),
+    );
     return {
       principal,
       projectId,
       effectiveRole: readOnly ? "admin_read" : "owner",
-      permissions: readOnly
-        ? PROJECT_ROLE_PERMISSIONS.owner.filter(isReadPermission)
-        : PROJECT_ROLE_PERMISSIONS.owner,
+      permissions: globalPermissions,
     };
   }
 

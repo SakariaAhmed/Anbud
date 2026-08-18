@@ -20,27 +20,6 @@ import { fetchProjectServices } from "@/lib/client/project-api";
 import type { ProjectServiceDescription } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const SERVICES_TAB_STYLES = `
-@keyframes svc-tab-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.svc-tab-rise {
-  animation: svc-tab-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .svc-tab-rise {
-    animation: none;
-  }
-}
-`;
-
 export function ProjectServiceDescriptionTab({
   projectId,
   onServicesChange,
@@ -162,7 +141,7 @@ export function ProjectServiceDescriptionTab({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-5 py-6 text-sm text-slate-500 shadow-sm">
+      <div className="flex items-center gap-2.5 border-y border-slate-200 bg-white px-5 py-6 text-sm text-slate-500">
         <Spinner className="size-4 text-blue-700" />
         Laster tjenestekatalog ...
       </div>
@@ -171,22 +150,17 @@ export function ProjectServiceDescriptionTab({
 
   return (
     <div className="min-w-0 space-y-5">
-      <style dangerouslySetInnerHTML={{ __html: SERVICES_TAB_STYLES }} />
-
-      <section
-        className="svc-tab-rise overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-        style={{ animationDelay: "0ms" }}
-      >
+      <section className="overflow-hidden border-y border-slate-200 bg-white">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-6">
           <div className="flex min-w-0 items-start gap-4">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[rgb(30,58,138)] text-white shadow-sm">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white">
               <Layers3 className="size-5" />
             </span>
             <div className="min-w-0">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-700">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Prosjektgrunnlag
               </p>
-              <h2 className="font-serif mt-1.5 text-xl font-semibold tracking-tight text-slate-900">
+              <h2 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-900">
                 Velg tjenester
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
@@ -196,8 +170,8 @@ export function ProjectServiceDescriptionTab({
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-              <span className="text-slate-900">{selectedCount}</span>
+            <span className="text-xs font-medium tabular-nums text-slate-500">
+              <span className="text-slate-700">{selectedCount}</span>
               av {services.length} valgt
             </span>
             <Link
@@ -223,17 +197,14 @@ export function ProjectServiceDescriptionTab({
       {error ? (
         <div
           role="alert"
-          className="svc-tab-rise rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800"
         >
           {error}
         </div>
       ) : null}
 
       {recommendedServices.length ? (
-        <section
-          className="svc-tab-rise rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-amber-50/40 px-6 py-5 shadow-sm"
-          style={{ animationDelay: "80ms" }}
-        >
+        <section className="border-l-2 border-amber-500 bg-amber-50/70 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
               <Lightbulb className="size-4" />
@@ -253,7 +224,7 @@ export function ProjectServiceDescriptionTab({
                 aria-pressed={service.selected}
                 disabled={selectionSaving}
                 className={cn(
-                  "rounded-full border-amber-300/80 bg-white text-amber-950 shadow-sm transition-all duration-[180ms] hover:-translate-y-0.5 hover:bg-amber-100",
+                  "rounded-md border-amber-300/80 bg-white text-amber-950 hover:bg-amber-100",
                   service.selected &&
                     "border-[rgb(30,58,138)] bg-blue-50/60 text-[rgb(30,58,138)] hover:bg-blue-50",
                 )}
@@ -270,13 +241,10 @@ export function ProjectServiceDescriptionTab({
         </section>
       ) : null}
 
-      <section
-        className="svc-tab-rise overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-        style={{ animationDelay: "160ms" }}
-      >
+      <section className="overflow-hidden border-y border-slate-200 bg-white">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 bg-slate-50/70 px-6 py-4">
           <div>
-            <h3 className="font-serif text-base font-semibold tracking-tight text-slate-900">
+            <h3 className="text-base font-semibold tracking-tight text-slate-900">
               Tjenester i katalogen
             </h3>
             <p className="mt-0.5 text-sm text-slate-500">
@@ -291,7 +259,7 @@ export function ProjectServiceDescriptionTab({
               <div
                 key={service.id}
                 className={cn(
-                  "px-6 py-4 transition-colors duration-[180ms]",
+                  "px-6 py-4 transition-colors",
                   service.selected
                     ? "bg-blue-50/40"
                     : "bg-white hover:bg-slate-50/60",
@@ -307,7 +275,7 @@ export function ProjectServiceDescriptionTab({
                 >
                   <span
                     className={cn(
-                      "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors duration-[180ms]",
+                      "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-sm border transition-colors",
                       service.selected
                         ? "border-[rgb(30,58,138)] bg-[rgb(30,58,138)] text-white"
                         : "border-slate-300 bg-white group-hover:border-[rgb(30,58,138)]",
@@ -325,11 +293,11 @@ export function ProjectServiceDescriptionTab({
                         {service.name}
                       </span>
                       {service.recommended ? (
-                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-amber-800">
+                        <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-amber-800">
                           Anbefalt
                         </span>
                       ) : null}
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[0.68rem] font-semibold text-slate-500">
+                      <span className="text-[0.68rem] font-medium tabular-nums text-slate-500">
                         {service.documents.length} dokument
                       </span>
                     </span>
@@ -349,7 +317,7 @@ export function ProjectServiceDescriptionTab({
                     {service.documents.map((document) => (
                       <span
                         key={document.id}
-                        className="inline-flex min-w-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm"
+                        className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600"
                       >
                         <FileText className="size-3.5 shrink-0 text-cyan-700" />
                         <span className="max-w-72 truncate">{document.title}</span>

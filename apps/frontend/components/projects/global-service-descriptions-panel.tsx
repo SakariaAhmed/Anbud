@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import {
-  CheckCircle2,
   FileText,
   Layers3,
   Plus,
@@ -289,13 +288,7 @@ export function GlobalServiceDescriptionsPanel() {
                 <div key={service.id} className="p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-sm font-bold text-slate-950">{service.name}</h4>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
-                          <CheckCircle2 className="size-3" />
-                          Global
-                        </span>
-                      </div>
+                      <h4 className="text-sm font-bold text-slate-950">{service.name}</h4>
                       {service.description ? (
                         <p className="mt-1 text-sm leading-6 text-slate-500">
                           {service.description}

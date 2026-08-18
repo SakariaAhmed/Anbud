@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import { isProjectRole } from "@/lib/access-control";
 import {
-  grantPrincipalProjectAccess,
-  revokeProjectMember,
+  revokeAdminManagedProjectMember,
+  updateAdminManagedProjectMemberRole,
 } from "@/lib/server/access-control-repository";
 import { recordActivity } from "@/lib/server/activity";
 import {
@@ -35,7 +35,7 @@ export async function PATCH(
     ) {
       return NextResponse.json({ error: "Ugyldig prosjekttilgang." }, { status: 400 });
     }
-    await grantPrincipalProjectAccess({
+    await updateAdminManagedProjectMemberRole({
       principalId,
       projectId: body.projectId,
       role: body.role,
@@ -78,7 +78,10 @@ export async function DELETE(
     ) {
       return NextResponse.json({ error: "Ugyldig prosjekt." }, { status: 400 });
     }
-    await revokeProjectMember({ projectId: body.projectId, principalId });
+    await revokeAdminManagedProjectMember({
+      projectId: body.projectId,
+      principalId,
+    });
     await recordActivity({
       principal,
       action: "admin.user.project_access_revoke",
