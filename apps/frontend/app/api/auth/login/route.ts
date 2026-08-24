@@ -1,25 +1,22 @@
 import { NextResponse } from "next/server";
 
+import { safeRedirectPath } from "@/lib/auth-redirect";
 import {
-  AUTH_COOKIE_MAX_AGE_SECONDS,
   AUTH_COOKIE_NAME,
-  createSessionToken,
-  isPasswordAuthConfigured,
-  verifyPassword,
 } from "@/lib/password-auth";
+import {
+  setAdminStatus,
+  upsertInternalPrincipal,
+} from "@/lib/server/access-control-repository";
+import {
+  adminDisplayName,
+  adminPrincipalId,
+  isAdminPasswordAuthConfigured,
+  verifyAdminPassword,
+} from "@/lib/server/admin-password-auth";
+import { recordActivity } from "@/lib/server/activity";
+import { createAppSession } from "@/lib/server/app-sessions";
 import { checkRateLimit } from "@/lib/server/observability";
-
-function safeRedirectPath(value: unknown) {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
-    return "/";
-  }
-
-  if (value.startsWith("/api/") || value.startsWith("/login")) {
-    return "/";
-  }
-
-  return value;
-}
 
 export async function POST(request: Request) {
   const globalRateLimit = await checkRateLimit(request, "auth-login-global", {
@@ -30,7 +27,7 @@ export async function POST(request: Request) {
   });
   if (!globalRateLimit.allowed) {
     return NextResponse.json(
-      { error: "Too many sign-in attempts. Try again shortly." },
+      { error: "For mange innloggingsforsøk. Prøv igjen om litt." },
       {
         status: 429,
         headers: { "Retry-After": String(globalRateLimit.retryAfterSeconds) },
@@ -45,7 +42,7 @@ export async function POST(request: Request) {
   });
   if (!rateLimit.allowed) {
     return NextResponse.json(
-      { error: "Too many sign-in attempts. Try again shortly." },
+      { error: "For mange innloggingsforsøk. Prøv igjen om litt." },
       {
         status: 429,
         headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
@@ -53,9 +50,9 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!isPasswordAuthConfigured()) {
+  if (!isAdminPasswordAuthConfigured()) {
     return NextResponse.json(
-      { error: "Password authentication is not configured." },
+      { error: "Innlogging med tilgangspassord er ikke konfigurert." },
       { status: 500 },
     );
   }
@@ -65,19 +62,48 @@ export async function POST(request: Request) {
     next?: unknown;
   };
 
-  if (typeof body.password !== "string" || !verifyPassword(body.password)) {
-    return NextResponse.json({ error: "Wrong password." }, { status: 401 });
+  if (
+    typeof body.password !== "string" ||
+    !(await verifyAdminPassword(body.password))
+  ) {
+    return NextResponse.json({ error: "Feil tilgangspassord." }, { status: 401 });
   }
 
-  const response = NextResponse.json({ ok: true, redirectTo: safeRedirectPath(body.next) });
+  const principal = await upsertInternalPrincipal({
+    candidateId: adminPrincipalId(),
+    displayName: adminDisplayName(),
+    email: null,
+  });
+  await setAdminStatus({
+    principalId: principal.id,
+    isAdmin: true,
+    grantedBy: principal.id,
+  });
+  const session = await createAppSession({
+    principalId: principal.id,
+    authMethod: "admin_password",
+  });
+  await recordActivity({
+    principal: {
+      id: principal.id,
+      identityType: "internal",
+      isAdmin: true,
+      sessionId: session.sessionId,
+    },
+    action: "auth.admin_password.login",
+  });
+  const response = NextResponse.json({
+    ok: true,
+    redirectTo: safeRedirectPath(body.next),
+  });
   response.cookies.set({
     name: AUTH_COOKIE_NAME,
-    value: await createSessionToken(),
+    value: session.token,
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
+    maxAge: session.maxAgeSeconds,
   });
 
   return response;

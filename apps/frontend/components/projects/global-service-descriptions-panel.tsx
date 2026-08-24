@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import {
-  CheckCircle2,
   FileText,
   Layers3,
   Plus,
@@ -14,14 +13,11 @@ import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
-  clearClientCache,
-  getClientCache,
-  setClientCache,
-} from "@/lib/client-cache";
+  cacheServiceDescriptions,
+  fetchServiceDescriptions,
+  invalidateProjectServiceDescriptionCaches,
+} from "@/lib/client/service-descriptions-api";
 import type { ServiceDescription } from "@/lib/types";
-
-const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
-const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
@@ -40,37 +36,16 @@ export function GlobalServiceDescriptionsPanel() {
   const [dragActive, setDragActive] = useState(false);
 
   async function loadServices() {
-    const cached = getClientCache<ServiceDescription[]>(
-      SERVICE_DESCRIPTIONS_CACHE_KEY,
-    );
-    if (cached) {
-      setServices(cached);
-      setLoading(false);
-      setError("");
-      return;
-    }
-
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/service-descriptions", {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as {
-        services?: ServiceDescription[];
-        error?: string;
-      };
-      if (!response.ok || !payload.services) {
-        throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
-      }
-      setServices(payload.services);
-      setClientCache(
-        SERVICE_DESCRIPTIONS_CACHE_KEY,
-        payload.services,
-        SERVICE_DESCRIPTIONS_CACHE_TTL_MS,
-      );
+      setServices(await fetchServiceDescriptions());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke hente tjenestebeskrivelser.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Kunne ikke hente tjenestebeskrivelser.",
+      );
     } finally {
       setLoading(false);
     }
@@ -92,10 +67,25 @@ export function GlobalServiceDescriptionsPanel() {
       if (!response.ok) {
         throw new Error(payload.error || "Kunne ikke slette dokumentet.");
       }
-      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
-      await loadServices();
+      setServices((current) => {
+        const next = current.map((service) =>
+          service.id === serviceId
+            ? {
+                ...service,
+                documents: service.documents.filter(
+                  (document) => document.id !== documentId,
+                ),
+              }
+            : service,
+        );
+        cacheServiceDescriptions(next);
+        return next;
+      });
+      invalidateProjectServiceDescriptionCaches();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke slette dokumentet.");
+      setError(
+        err instanceof Error ? err.message : "Kunne ikke slette dokumentet.",
+      );
     } finally {
       setBusy("");
     }
@@ -117,7 +107,8 @@ export function GlobalServiceDescriptionsPanel() {
       formData.append(
         "name",
         targetServiceId
-          ? services.find((service) => service.id === targetServiceId)?.name ?? serviceName
+          ? services.find((service) => service.id === targetServiceId)?.name ??
+              serviceName
           : serviceName,
       );
       formData.append("description", description);
@@ -126,19 +117,29 @@ export function GlobalServiceDescriptionsPanel() {
         method: "POST",
         body: formData,
       });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Kunne ikke lagre tjenestebeskrivelsen.");
+      const payload = (await response.json()) as {
+        services?: ServiceDescription[];
+        error?: string;
+      };
+      if (!response.ok || !payload.services) {
+        throw new Error(
+          payload.error || "Kunne ikke lagre tjenestebeskrivelsen.",
+        );
       }
-      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
+      setServices(payload.services);
+      cacheServiceDescriptions(payload.services);
+      invalidateProjectServiceDescriptionCaches();
       setTargetServiceId("");
       setServiceName("");
       setDescription("");
       setFile(null);
       setFileInputKey((current) => current + 1);
-      await loadServices();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke lagre tjenestebeskrivelsen.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Kunne ikke lagre tjenestebeskrivelsen.",
+      );
     } finally {
       setBusy("");
     }
@@ -287,13 +288,7 @@ export function GlobalServiceDescriptionsPanel() {
                 <div key={service.id} className="p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-sm font-bold text-slate-950">{service.name}</h4>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-slate-500">
-                          <CheckCircle2 className="size-3" />
-                          Global
-                        </span>
-                      </div>
+                      <h4 className="text-sm font-bold text-slate-950">{service.name}</h4>
                       {service.description ? (
                         <p className="mt-1 text-sm leading-6 text-slate-500">
                           {service.description}

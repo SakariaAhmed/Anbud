@@ -3,7 +3,7 @@ import "server-only";
 export {
   deleteServiceDescription,
   deleteServiceDocument,
-  getServiceDescription,
+  getServiceDescriptionMetadata,
   listProjectServiceDescriptions,
   listServiceDescriptions,
   listServiceDocumentDetailsForProject,
@@ -12,4 +12,4 @@ export {
   setProjectServiceSelections,
   updateServiceDocumentAiSummary,
   upsertServiceDescription,
-} from "@/lib/server/repositories/supabase-store";
+} from "@/lib/server/repositories/data-store";

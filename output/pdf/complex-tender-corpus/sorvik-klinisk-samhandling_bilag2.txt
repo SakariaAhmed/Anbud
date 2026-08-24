@@ -1,0 +1,111 @@
+BILAG 2 - LEVERANDØRENS LØSNING
+Sørvik Helsepartner HF - klinisk samhandlingsplattform
+Kunde: Sørvik Helsepartner HF
+Anskaffelse: Integrasjons- og samhandlingsplattform for pasientforløp og hjemmeoppfølging
+Kontrakt: SSA-T 2026 med påfølgende SSA-V
+Fiktivt testgrunnlag: Alle virksomheter, leverandører, tall og avtaler i dokumentet er fiktive.
+
+VIRKSOMHET OG ANSKAFFELSESBEHOV
+Sørvik Helsepartner HF driver to sykehus og elleve poliklinikker med 7 800 ansatte. Årlig håndteres omtrent 410 000 polikliniske konsultasjoner og 36 000 innleggelser. Kliniske data utveksles i dag gjennom 74 punkt-til-punkt-integrasjoner, og feilretting krever ofte manuell sammenstilling av logger fra flere leverandører.
+Foretaket skal etablere én styrt integrasjons- og samhandlingsplattform for pasientforløp, medisinske målinger fra hjemmet og varsling til kliniske team. Første produksjonsforløp er hjertesvikt og KOLS. Pilot skal starte 15. februar 2027, og begge forløp skal være i ordinær drift senest 1. september 2027.
+Plattformen skal samhandle med elektronisk pasientjournal, kurvesystem, laboratorieløsning, nasjonal kjernejournal og kommunale mottak. Helseforetaket er behandlingsansvarlig og krever at kliniske beslutninger alltid kan spores til kilde, tidspunkt, regelversjon og ansvarlig helsepersonell.
+
+MÅL OG FORVENTEDE EFFEKTER
+Redusere uplanlagte reinnleggelser for pilotgruppene med 12 prosent innen atten måneder.
+Redusere gjennomsnittlig tid fra kritisk hjemmemåling til klinisk vurdering fra 95 til 30 minutter.
+Avvikle minst 30 av 74 punkt-til-punkt-integrasjoner i første avtaleår.
+Oppnå 99,95 prosent tilgjengelighet for kritisk meldingsformidling.
+Gi pasienten forståelig innsyn i hvilke målinger som er mottatt og hvordan de følges opp.
+
+FØRINGER OG AVGRENSNINGER
+Pasientdata og identifiserbare logger skal lagres og behandles i Norge.
+Integrasjoner skal bruke HL7 FHIR R4 der mottakende system støtter standarden.
+Kritiske meldinger skal ikke gå tapt ved nettverksbrudd eller planlagt vedlikehold.
+Tilgang skal baseres på tjenstlig behov, klinisk rolle og aktiv behandlingsrelasjon.
+RPO skal være null for bekreftede kliniske meldinger, og RTO skal være høyst 60 minutter.
+
+TILDELINGSMODELL
+Pasientsikkerhet, arkitektur og funksjonell kvalitet: 50 prosent.
+Gjennomføring, integrasjonsmigrering og klinisk innføring: 30 prosent.
+Pris: 20 prosent.
+
+TILBUDT LØSNING: CareFlow Nexus
+En norsk, hendelsesdrevet klinisk integrasjonsplattform med FHIR R4, varig meldingsformidling, behandlingsrelasjonsbasert tilgang og et eksplisitt revisjonsspor fra hjemmemåling til journalført handling.
+
+MÅLARKITEKTUR
+FHIR-gateway og adapterlag mot EPJ, kurve, laboratorium, kjernejournal og kommune.
+Varig meldingskø med idempotens, kvittering og klinisk avvikskø.
+Versjonert regelmotor for klinisk varsling og eskalering.
+Policybasert tilgang med behandlingsrelasjon og kontrollert nødtilgang.
+Separate observabilitetsflater for teknisk drift og klinisk forvaltning.
+
+GJENNOMFØRING
+Prioritert integrasjonskartlegging og kontrakttester.
+Parallellkjøring og avstemming før hver gammel kobling stenges.
+Stille pilot, begrenset klinisk pilot og gradvis skalering per forløp.
+Feilscenarioer og full gjenoppretting som obligatorisk akseptanse.
+
+KRAVMATRISE
+SOR-PAS-01 | Prioritet A | Meldingssikkerhet
+Bekreftede kliniske meldinger skal formidles nøyaktig én gang eller håndteres idempotent, med kø, kvittering, korrelasjons-ID og synlig avvikskø.
+Leverandørens svar: CareFlow Nexus bruker varig meldingskø, idempotensnøkkel og ende-til-ende-kvittering. Hver melding får korrelasjons-ID og tilstandslogg. Meldinger som ikke kan leveres går til en klinisk avvikskø med eier, prioritet og kontrollert ny behandling.
+
+SOR-FHIR-02 | Prioritet A | Standarder
+Plattformen skal støtte HL7 FHIR R4 og bevare originalmelding og transformasjonsversjon for revisjon.
+Leverandørens svar: FHIR R4 støttes gjennom profilerte ressurser og validering mot avtalte implementasjonsguider. Originalmelding, transformert nyttelast, mappingversjon og valideringsresultat lagres som ett revisjonsspor.
+
+SOR-IAM-03 | Prioritet A | Tilgang
+Tilgang til pasientdata skal kreve tjenstlig behov, klinisk rolle og aktiv behandlingsrelasjon. Nødtilgang skal begrunnes og etterkontrolleres.
+Leverandørens svar: Policykontrollen kombinerer rolle, organisasjonsenhet, aktiv behandlingsrelasjon og formål. Nødtilgang krever oppgitt begrunnelse, gir sanntidsvarsel og sendes til etterkontroll. Alle oppslag inngår i en uforanderlig revisjonslogg.
+
+SOR-VAR-04 | Prioritet A | Klinisk varsling
+Kritiske hjemmemålinger skal vurderes mot versjonerte regler og varsles til riktig klinisk team med eskalering når varselet ikke kvitteres.
+Leverandørens svar: Målinger valideres før en versjonert regelmotor klassifiserer dem. Varselet rutes etter pasient, forløp og vaktplan, med kvitteringsfrist og trinnvis eskalering. Regelversjon, måling, mottaker og handling kan rekonstrueres.
+
+SOR-PAS-05 | Prioritet B | Pasientinnsyn
+Pasienten bør kunne se mottatte målinger, status og kontaktinstruks uten å få presentert automatiske vurderinger som medisinsk diagnose.
+Leverandørens svar: Pasientflaten viser måling, mottakstid, status og godkjent kontakttekst. Kliniske regler og interne risikoscorer vises ikke som diagnose. Tekster forvaltes av helseforetaket og versjoneres.
+
+SOR-LOG-06 | Prioritet A | Sporbarhet
+En klinisk beslutningskjede skal kunne spores til kilde, tidspunkt, regelversjon, transformasjon og ansvarlig helsepersonell.
+Leverandørens svar: En sammenhengende sporingsmodell kobler originalmåling, transformasjon, regelkjøring, varsel, kvittering, klinisk vurdering og journaloppdatering med samme korrelasjons-ID. Revisjonsvisningen kan eksporteres til tilsyn og hendelsesanalyse.
+
+SOR-DRI-07 | Prioritet A | Kontinuitet
+Kritisk meldingsformidling skal ha 99,95 prosent tilgjengelighet, RPO null for bekreftede meldinger og RTO høyst 60 minutter.
+Leverandørens svar: Tjenesten tilbys aktivt fordelt mellom to norske tilgjengelighetssoner. Bekreftede meldinger replikeres synkront før kvittering, som gir RPO null. Automatisert gjenoppretting og kvartalsvis øvelse dokumenterer RTO under 60 minutter.
+
+SOR-DAT-08 | Prioritet A | Datalokasjon
+Pasientdata, sikkerhetskopier og identifiserbare driftslogger skal behandles i Norge.
+Leverandørens svar: Alle tre datakategoriene lagres og behandles i norske regioner. Leverandørtilgang er tidsbegrenset, godkjent og logget. Underleverandørregisteret viser tjeneste, dataart og behandlingssted.
+
+SOR-MIG-09 | Prioritet A | Integrasjonsmigrering
+Minst 30 av 74 punkt-til-punkt-integrasjoner skal avvikles i første avtaleår uten å redusere klinisk meldingskvalitet.
+Leverandørens svar: Integrasjonene grupperes etter risiko og volum. Hver migrering har kontrakttest, parallellkjøring, meldingsavstemming og godkjent tilbakefallsplan. Kilde og mål sammenlignes på antall, innhold, rekkefølge og kvitteringsstatus før gammel kobling stenges.
+
+SOR-OBS-10 | Prioritet B | Observabilitet
+Drift og klinisk forvaltning bør ha separate, rollebeskyttede oversikter over flyt, forsinkelse, avvik og pasientsikkerhetskritiske hendelser.
+Leverandørens svar: Teknisk drift ser kødybde, feilrate og latenstid uten pasientinnhold. Klinisk forvaltning ser berørte forløp, prioritet og oppfølgingsstatus med nødvendig pasientkontekst. Varslingsgrenser og ansvar følger en avtalt driftsmatrise.
+
+SOR-TEST-11 | Prioritet A | Verifikasjon
+Akseptansetesten skal dekke bortfall av nettverk, duplikate meldinger, forsinket kvittering, feil regelversjon, nødtilgang og full gjenoppretting.
+Leverandørens svar: Alle seks scenarioene kjøres i et produksjonslikt miljø med syntetiske pasienter. Forventet resultat, faktisk resultat, loggbevis og klinisk godkjenner registreres. Kritiske avvik blokkerer pilot.
+
+SOR-INN-12 | Prioritet B | Innføring
+Leverandøren bør beskrive klinisk innføring for hjertesvikt og KOLS uten å øke uavklarte alarmer i vaktteamene.
+Leverandørens svar: Hvert forløp starter med regelverksted, simulering og stille pilot der varsler sammenlignes uten å styre behandling. Deretter åpnes et begrenset pasientutvalg med daglig sikkerhetsmøte før skalering. Alarmmengde, responstid og falske positive følges.
+
+FORHOLD SOM SKAL AVKLARES
+Endelig leverandørgrensesnitt mot elektronisk pasientjournal publiseres etter dialogfasen.
+Volumet av samtidige hjemmeoppfølgingspasienter forventes mellom 8 000 og 14 000, men er ikke bindende.
+Det er ikke avklart hvilke kliniske regler som skal være sentrale og hvilke som skal forvaltes i kildesystemene.
+
+POSISJONERING OG VERDI
+Pasientsikkerhet gjennom rekonstruerbar beslutningskjede.
+Ingen tap av bekreftede kliniske meldinger.
+Kontrollert reduksjon av punkt-til-punkt-kompleksitet.
+Klinisk innføring som måler alarmbelastning, ikke bare teknisk tilgjengelighet.
+
+FORUTSETNINGER OG RISIKO
+Ukjent EPJ-grensesnitt kan påvirke plan og estimat.
+Uavklart plassering av kliniske regler kan skape dobbelt forvaltningsansvar.
+Spennet i pasientvolum kan påvirke kapasitet og bemanning.

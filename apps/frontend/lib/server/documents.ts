@@ -6,7 +6,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
 import JSZip, { type JSZipObject } from "jszip";
+import {
+  analyzeLocalPdfPage,
+  buildLocalPdfDocument,
+  LOCAL_PDF_LAYOUT_PARSER,
+  type LocalPdfPage,
+  type LocalPdfTextItem,
+} from "@/lib/server/document-intelligence/local-pdf-layout";
+import { isDocumentAnalysisEnabled } from "@/lib/server/document-intelligence/config";
 import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
+import { parsePdf } from "@/lib/server/pdf-parser";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
 
@@ -18,7 +27,10 @@ export interface SourceMapEntry {
     | "table"
     | "docling_text"
     | "docling_table_row"
-    | "docling_markdown";
+    | "docling_markdown"
+    | "azure_paragraph"
+    | "azure_table_row"
+    | "azure_figure";
   parser?: string;
   page?: number | null;
   table_index?: number;
@@ -26,6 +38,11 @@ export interface SourceMapEntry {
   columns?: string[];
   cells?: Record<string, string>;
   docling_ref?: string;
+  source_id?: string;
+  role?: string;
+  confidence?: number;
+  polygon?: number[];
+  heading_path?: string[];
 }
 
 export interface ParsedUpload {
@@ -38,14 +55,6 @@ export interface ParsedUpload {
   parserUsed: string;
 }
 
-type PdfParseFn = (
-  buffer: Buffer,
-  options: Record<string, unknown>,
-) => Promise<{
-  text: string;
-}>;
-
-let pdfParsePromise: Promise<PdfParseFn> | null = null;
 let mammothPromise: Promise<{
   extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 }> | null = null;
@@ -140,15 +149,6 @@ export async function loadValidatedOfficeZip(
     );
   }
   return zip;
-}
-
-async function getPdfParse() {
-  if (!pdfParsePromise) {
-    pdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then(
-      (module) => module.default as unknown as PdfParseFn,
-    );
-  }
-  return pdfParsePromise;
 }
 
 async function getMammoth() {
@@ -1197,83 +1197,29 @@ function buildTextSourceMap(text: string, role?: ProjectDocumentRole) {
   return sections.length ? sections : [{ reference: `${label} – tekstblokk 1`, text: normalizeText(text) }];
 }
 
-type PdfTextItem = {
-  str: string;
-  transform: number[];
-  width?: number;
-};
-
-function renderPdfTextItems(items: PdfTextItem[]) {
-  const lines: Array<{ y: number; items: PdfTextItem[] }> = [];
-
-  for (const item of items) {
-    const text = item.str.trim();
-    const y = item.transform[5] ?? 0;
-    if (!text) {
-      continue;
-    }
-
-    const line = lines.find((candidate) => Math.abs(candidate.y - y) <= 2);
-    if (line) {
-      line.items.push(item);
-    } else {
-      lines.push({ y, items: [item] });
-    }
-  }
-
-  return lines
-    .sort((left, right) => right.y - left.y)
-    .map((line) => {
-      let previousEnd: number | null = null;
-      return line.items
-        .sort((left, right) => (left.transform[4] ?? 0) - (right.transform[4] ?? 0))
-        .map((item) => {
-          const x = item.transform[4] ?? 0;
-          const gap = previousEnd == null ? 0 : x - previousEnd;
-          previousEnd = x + (item.width ?? item.str.length * 4);
-          return `${gap > 3 ? " " : ""}${item.str.trim()}`;
-        })
-        .join("")
-        .replace(/[ \t]+/g, " ")
-        .trim();
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
 async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocumentRole): Promise<ParsedUpload> {
-  let pageNumber = 0;
-  const pageEntries: SourceMapEntry[] = [];
+  const pages: LocalPdfPage[] = [];
   const label = documentLabel(role);
 
-  const pdfParse = await getPdfParse();
-  const parsed = await pdfParse(buffer, {
-      pagerender: (pageData: {
-        getTextContent: (options: { normalizeWhitespace: boolean; disableCombineTextItems: boolean }) => Promise<{
-          items: PdfTextItem[];
-        }>;
-      }) => {
-        pageNumber += 1;
-        return pageData
-          .getTextContent({
-            normalizeWhitespace: false,
-            disableCombineTextItems: false,
-          })
-          .then((textContent) => {
-            const normalized = normalizeText(renderPdfTextItems(textContent.items));
-            if (normalized) {
-              pageEntries.push({
-                reference: `${label} – side ${pageNumber}`,
-                text: normalized,
-              });
-            }
-
-            return `[[SIDE:${pageNumber}]]\n${normalized}`;
-          });
-      },
+  const parsed = await parsePdf(buffer, (pageNumber, items) => {
+    const page = analyzeLocalPdfPage({
+      pageNumber,
+      items: items as LocalPdfTextItem[],
     });
+    pages.push(page);
+    return `[[SIDE:${pageNumber}]]\n${page.lines
+      .map((line) => line.text)
+      .join("\n")}`;
+  });
 
-  const rawText = normalizeText(parsed.text);
+  const useDocumentAnalysis = isDocumentAnalysisEnabled();
+  const orderedPages = [...pages].sort(
+    (left, right) => left.pageNumber - right.pageNumber,
+  );
+  const locallyStructured = useDocumentAnalysis
+    ? buildLocalPdfDocument({ pages: orderedPages, label })
+    : null;
+  const rawText = normalizeText(locallyStructured?.rawText || parsed.text);
   ensureReadableText(rawText, fileName);
 
   return {
@@ -1282,8 +1228,15 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
     fileName,
     fileFormat: "pdf",
     fileBase64: buffer.toString("base64"),
-    sourceMap: pageEntries.filter((entry) => entry.text),
-    parserUsed: "pdf-parse",
+    sourceMap: locallyStructured
+      ? locallyStructured.sourceMap
+      : orderedPages.flatMap((page) => {
+          const text = normalizeText(page.rawText);
+          return text
+            ? [{ reference: `${label} – side ${page.pageNumber}`, text }]
+            : [];
+        }),
+    parserUsed: locallyStructured ? LOCAL_PDF_LAYOUT_PARSER : "pdf-parse",
   };
 }
 
@@ -1828,37 +1781,26 @@ export function inferUploadFileFormat(input: {
   contentType?: string | null;
 }): ParsedUpload["fileFormat"] {
   const suffix = input.fileName.toLowerCase();
-  const contentType = input.contentType || "application/octet-stream";
 
-  if (contentType === "application/pdf" || suffix.endsWith(".pdf")) {
+  if (suffix.endsWith(".pdf")) {
     return "pdf";
   }
-  if (
-    contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    suffix.endsWith(".docx")
-  ) {
+  if (suffix.endsWith(".docx")) {
     return "docx";
   }
-  if (contentType === "application/msword" || suffix.endsWith(".doc")) {
+  if (suffix.endsWith(".doc")) {
     throw new Error("`.doc` støttes ikke direkte. Lagre dokumentet som `.docx` og last opp på nytt.");
   }
-  if (contentType === "text/plain" || suffix.endsWith(".txt")) {
+  if (suffix.endsWith(".txt")) {
     return "txt";
   }
-  if (contentType === "text/markdown" || suffix.endsWith(".md")) {
+  if (suffix.endsWith(".md")) {
     return "md";
   }
-  if (
-    contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-    suffix.endsWith(".xlsx")
-  ) {
+  if (suffix.endsWith(".xlsx")) {
     return "xlsx";
   }
-  if (
-    contentType === "application/vnd.ms-excel" ||
-    contentType === "application/xls" ||
-    suffix.endsWith(".xls")
-  ) {
+  if (suffix.endsWith(".xls")) {
     return "xls";
   }
 
@@ -1867,12 +1809,7 @@ export function inferUploadFileFormat(input: {
 
 export function contentTypeForUploadFormat(
   fileFormat: ParsedUpload["fileFormat"],
-  fallback?: string | null,
 ) {
-  if (fallback && fallback !== "application/octet-stream") {
-    return fallback;
-  }
-
   switch (fileFormat) {
     case "pdf":
       return "application/pdf";
@@ -1886,6 +1823,38 @@ export function contentTypeForUploadFormat(
       return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     case "xls":
       return "application/vnd.ms-excel";
+  }
+}
+
+export function validateUploadFileSignature(
+  buffer: Buffer,
+  fileFormat: ParsedUpload["fileFormat"],
+) {
+  const startsWith = (...bytes: number[]) =>
+    bytes.every((byte, index) => buffer[index] === byte);
+  const invalid = () => {
+    throw new Error("Filinnholdet samsvarer ikke med filtypen.");
+  };
+
+  if (fileFormat === "pdf" && !buffer.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+    invalid();
+  }
+  if (
+    (fileFormat === "docx" || fileFormat === "xlsx") &&
+    !startsWith(0x50, 0x4b, 0x03, 0x04) &&
+    !startsWith(0x50, 0x4b, 0x05, 0x06) &&
+    !startsWith(0x50, 0x4b, 0x07, 0x08)
+  ) {
+    invalid();
+  }
+  if (
+    fileFormat === "xls" &&
+    !startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1)
+  ) {
+    invalid();
+  }
+  if ((fileFormat === "txt" || fileFormat === "md") && buffer.includes(0)) {
+    invalid();
   }
 }
 
@@ -1903,8 +1872,9 @@ export async function extractTextFromBuffer(input: {
     fileName,
     contentType: input.contentType,
   });
-  const contentType = contentTypeForUploadFormat(fileFormat, input.contentType);
+  const contentType = contentTypeForUploadFormat(fileFormat);
   const buffer = input.buffer;
+  validateUploadFileSignature(buffer, fileFormat);
   const role = input.role;
 
   if (input.useDocling !== false && canUseDoclingForFormat(fileFormat)) {

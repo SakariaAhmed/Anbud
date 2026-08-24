@@ -305,10 +305,12 @@ test("one worker invocation has a 30-minute job plus startup allowance", () => {
   );
 });
 
-test("release workflows execute the async worker boundary test", () => {
-  for (const workflow of [ciWorkflow, deployWorkflow]) {
-    assert.match(workflow, /scripts\/async_worker_boundaries\.test\.mjs/u);
-  }
+test("CI executes the async worker boundary test once before deployment", () => {
+  assert.match(ciWorkflow, /scripts\/async_worker_boundaries\.test\.mjs/u);
+  assert.doesNotMatch(
+    deployWorkflow,
+    /scripts\/async_worker_boundaries\.test\.mjs/u,
+  );
 });
 
 test("job polling routes redact failures and polling delays release abort listeners", () => {

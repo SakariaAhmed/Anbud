@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import {
   contentTypeForUploadFormat,
   inferUploadFileFormat,
+  validateUploadFileSignature,
 } from "@/lib/server/documents";
+import {
+  MultipartRequestError,
+  parseBoundedMultipartFormData,
+} from "@/lib/server/multipart";
 import { queueDocumentIngestionJob } from "@/lib/server/project-jobs";
 import {
   listProjectDocumentSummaries,
@@ -11,6 +16,7 @@ import {
 } from "@/lib/server/repositories/documents";
 import { getProjectSnapshot } from "@/lib/server/repositories/projects";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 import type { ProjectDocumentRole, SupportingDocumentSubtype } from "@/lib/types";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -167,7 +173,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     }
 
-    const formData = await request.formData();
+    const formData = await parseBoundedMultipartFormData(request, {
+      maxBodyBytes: MAX_UPLOAD_BYTES + MAX_MULTIPART_OVERHEAD_BYTES,
+      maxFileBytes: MAX_UPLOAD_BYTES,
+      maxFiles: 1,
+    });
     const file = formData.get("file");
     const title = `${formData.get("title") || ""}`.trim();
 
@@ -239,6 +249,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       fileName: file.name || "document.txt",
       contentType: file.type || "application/octet-stream",
     });
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    validateUploadFileSignature(fileBuffer, fileFormat);
     const document = await savePendingDocument({
       projectId: id,
       title: title || file.name.replace(/\.[^.]+$/, ""),
@@ -246,12 +258,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       supportingSubtype,
       fileName: file.name || "document.txt",
       fileFormat,
-      contentType: contentTypeForUploadFormat(
-        fileFormat,
-        file.type || "application/octet-stream",
-      ),
+      contentType: contentTypeForUploadFormat(fileFormat),
       fileSizeBytes: file.size,
-      fileBase64: Buffer.from(await file.arrayBuffer()).toString("base64"),
+      fileBase64: fileBuffer.toString("base64"),
     });
 
     const job = await queueDocumentIngestionJob({
@@ -276,8 +285,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     );
   } catch (error) {
+    if (error instanceof MultipartRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke lagre dokumentet." },
+      { error: productionSafeErrorMessage(error, "Kunne ikke lagre dokumentet.") },
       { status: 500 },
     );
   }

@@ -4,6 +4,9 @@ const path = require("node:path");
 const nextConfig = {
   typedRoutes: true,
   output: "standalone",
+  experimental: {
+    authInterrupts: true,
+  },
   outputFileTracingRoot: process.env.NEXT_OUTPUT_FILE_TRACING_ROOT
     ? path.resolve(process.env.NEXT_OUTPUT_FILE_TRACING_ROOT)
     : path.join(__dirname, "../.."),

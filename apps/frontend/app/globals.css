@@ -38,7 +38,9 @@
   --sidebar-border: rgb(51, 65, 85);
   --sidebar-ring: rgb(96, 165, 250);
   --font-sans: var(--font-ibm-plex-sans), system-ui, sans-serif;
-  --font-serif: var(--font-ibm-plex-serif), Georgia, serif;
+  /* Display headings render in Schibsted Grotesk; the `font-serif` utility is kept as the display alias so existing headings pick it up. */
+  --font-display: var(--font-schibsted-grotesk), var(--font-ibm-plex-sans), system-ui, sans-serif;
+  --font-serif: var(--font-schibsted-grotesk), var(--font-ibm-plex-sans), system-ui, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), "JetBrains Mono", monospace;
   --app-header-height: 3rem;
   --app-header-sidebar-offset: 0px;
@@ -122,6 +124,7 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
+  --font-display: var(--font-display);
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
@@ -154,6 +157,285 @@
 }
 
 @layer components {
+  .login-grid {
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
+    background-size: 4rem 4rem;
+    mask-image: linear-gradient(to right, black, transparent 82%);
+    animation: login-fade-in 1200ms ease-out both;
+  }
+
+  .login-orb {
+    animation: login-orb-drift 22s ease-in-out infinite alternate;
+  }
+
+  .login-orb--slow {
+    animation-duration: 30s;
+    animation-delay: -8s;
+  }
+
+  .login-brand-panel {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .login-brand-panel::after {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 1px;
+    content: "";
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      rgba(148, 163, 184, 0.28) 24%,
+      rgba(148, 163, 184, 0.15) 76%,
+      transparent
+    );
+  }
+
+  .login-eyebrow-line {
+    transform-origin: left center;
+    animation: login-line-grow 700ms 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .login-enter,
+  .login-card-enter {
+    animation: login-enter 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .login-card-enter {
+    animation-delay: 140ms;
+  }
+
+  .login-enter-delay-1 { animation-delay: 80ms; }
+  .login-enter-delay-2 { animation-delay: 150ms; }
+  .login-enter-delay-3 { animation-delay: 240ms; }
+
+  .login-card-item {
+    animation: login-enter 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .login-card-item--1 { animation-delay: 120ms; }
+  .login-card-item--2 { animation-delay: 190ms; }
+  .login-card-item--3 { animation-delay: 260ms; }
+  .login-card-item--4 { animation-delay: 330ms; }
+  .login-card-item--5 { animation-delay: 400ms; }
+  .login-card-item--6 { animation-delay: 470ms; }
+  .login-card-item--7 { animation-delay: 540ms; }
+
+  .login-error-in {
+    animation: login-error-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .login-lift {
+    transition:
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 180ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      color 180ms ease;
+  }
+
+  .login-lift:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+  }
+
+  .login-lift:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .login-workflow {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .login-workflow-rail {
+    position: absolute;
+    z-index: -1;
+    top: 2rem;
+    right: 10%;
+    left: 10%;
+    display: none;
+    height: 1px;
+    overflow: visible;
+    background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.32) 12%, rgba(147, 197, 253, 0.32) 88%, transparent);
+  }
+
+  .login-workflow-runner {
+    position: absolute;
+    top: -0.18rem;
+    left: 0;
+    width: 0.36rem;
+    height: 0.36rem;
+    border-radius: 9999px;
+    background: rgb(103 232 249);
+    box-shadow: 0 0 10px rgba(103, 232, 249, 0.9), 0 0 24px rgba(96, 165, 250, 0.62);
+    opacity: 0;
+    animation: login-workflow-travel 6.6s cubic-bezier(0.45, 0, 0.25, 1) 900ms infinite;
+  }
+
+  .login-workflow-runner::after {
+    position: absolute;
+    top: 50%;
+    right: 50%;
+    width: 2.4rem;
+    height: 1px;
+    content: "";
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.75));
+  }
+
+  .login-workflow-card {
+    position: relative;
+    overflow: hidden;
+    animation: login-workflow-card-pulse 6.6s ease-in-out infinite;
+  }
+
+  .login-workflow-card::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    background: linear-gradient(115deg, transparent 20%, rgba(147, 197, 253, 0.12), transparent 80%);
+    opacity: 0;
+    transform: translateX(-65%);
+    animation: login-workflow-sheen 6.6s ease-in-out infinite;
+  }
+
+  .login-workflow-card--1,
+  .login-workflow-card--1::after,
+  .login-workflow-icon--1 { animation-delay: 900ms; }
+
+  .login-workflow-card--2,
+  .login-workflow-card--2::after,
+  .login-workflow-icon--2 { animation-delay: 2550ms; }
+
+  .login-workflow-card--3,
+  .login-workflow-card--3::after,
+  .login-workflow-icon--3 { animation-delay: 4200ms; }
+
+  .login-workflow-icon {
+    animation: login-workflow-icon-pulse 6.6s ease-in-out infinite;
+  }
+
+  @media (min-width: 640px) {
+    .login-workflow-rail {
+      display: block;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .login-brand-panel::after {
+      inset: auto 0 0;
+      width: auto;
+      height: 1px;
+      background: linear-gradient(
+        to right,
+        transparent,
+        rgba(148, 163, 184, 0.24),
+        transparent
+      );
+    }
+  }
+
+  @keyframes login-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes login-orb-drift {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to { transform: translate3d(3rem, -2.25rem, 0) scale(1.08); }
+  }
+
+  @keyframes login-line-grow {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+
+  @keyframes login-enter {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes login-error-in {
+    0% { opacity: 0; transform: translateY(-6px); }
+    60% { transform: translateY(1px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes login-workflow-travel {
+    0% { left: 0; opacity: 0; }
+    5% { opacity: 1; }
+    70% { left: 100%; opacity: 1; }
+    76%, 100% { left: 100%; opacity: 0; }
+  }
+
+  @keyframes login-workflow-card-pulse {
+    0%, 28%, 100% {
+      border-color: rgba(255, 255, 255, 0.1);
+      background-color: rgba(255, 255, 255, 0.055);
+      box-shadow: none;
+      transform: translateY(0);
+    }
+    8% {
+      border-color: rgba(147, 197, 253, 0.45);
+      background-color: rgba(96, 165, 250, 0.12);
+      box-shadow: 0 12px 34px rgba(30, 64, 175, 0.2);
+      transform: translateY(-2px);
+    }
+    18% {
+      border-color: rgba(147, 197, 253, 0.2);
+      background-color: rgba(96, 165, 250, 0.07);
+      box-shadow: 0 6px 20px rgba(30, 64, 175, 0.1);
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes login-workflow-sheen {
+    0%, 2% { opacity: 0; transform: translateX(-65%); }
+    8% { opacity: 1; }
+    20% { opacity: 0; transform: translateX(65%); }
+    100% { opacity: 0; transform: translateX(65%); }
+  }
+
+  @keyframes login-workflow-icon-pulse {
+    0%, 28%, 100% {
+      color: rgb(103 232 249);
+      filter: drop-shadow(0 0 0 rgba(103, 232, 249, 0));
+      transform: scale(1);
+    }
+    8% {
+      color: rgb(207 250 254);
+      filter: drop-shadow(0 0 8px rgba(103, 232, 249, 0.9));
+      transform: scale(1.08);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .login-enter,
+    .login-card-enter,
+    .login-card-item,
+    .login-error-in,
+    .login-grid,
+    .login-orb,
+    .login-eyebrow-line,
+    .login-workflow-runner,
+    .login-workflow-card,
+    .login-workflow-card::after,
+    .login-workflow-icon {
+      animation: none;
+    }
+  }
+
   .brand-logo {
     display: inline-flex;
     align-items: center;
@@ -506,6 +788,173 @@
   .markdown-viewer-inverse pre { background: rgba(0, 0, 0, 0.4); color: rgb(226 232 240); }
   .markdown-viewer-inverse table, .markdown-viewer-inverse th, .markdown-viewer-inverse td { border-color: rgba(255, 255, 255, 0.1); }
   .markdown-viewer-inverse th { background: rgba(255, 255, 255, 0.05); }
+
+  .error-stage {
+    position: relative;
+    isolation: isolate;
+    min-height: calc(100vh - var(--app-header-height));
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 72% 28%, rgba(37, 99, 235, 0.16), transparent 30rem),
+      radial-gradient(circle at 18% 82%, rgba(8, 145, 178, 0.1), transparent 26rem),
+      linear-gradient(145deg, rgb(2, 6, 23) 0%, rgb(5, 12, 31) 54%, rgb(8, 20, 43) 100%);
+    color: rgb(226 232 240);
+  }
+
+  .error-stage__grid {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+    background-size: 4.5rem 4.5rem;
+    mask-image: radial-gradient(circle at 62% 42%, black 0%, transparent 72%);
+  }
+
+  .error-stage__glow {
+    position: absolute;
+    top: 18%;
+    right: 10%;
+    z-index: -1;
+    width: min(32rem, 68vw);
+    aspect-ratio: 1;
+    border: 1px solid rgba(125, 211, 252, 0.08);
+    border-radius: 9999px;
+    box-shadow:
+      0 0 0 4rem rgba(59, 130, 246, 0.025),
+      0 0 0 9rem rgba(14, 165, 233, 0.018);
+    animation: error-orbit 14s ease-in-out infinite;
+  }
+
+  .error-stage__frame {
+    width: min(100%, 92rem);
+    min-height: calc(100vh - var(--app-header-height));
+    margin-inline: auto;
+    padding: clamp(2rem, 5vw, 5rem) clamp(1.25rem, 5vw, 5rem);
+  }
+
+  .error-stage__rail {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    color: rgb(100 116 139);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .error-stage__rail-line {
+    width: min(8rem, 20vw);
+    height: 1px;
+    background: linear-gradient(90deg, rgba(148, 163, 184, 0.6), transparent);
+  }
+
+  .error-stage__content {
+    display: grid;
+    grid-template-columns: minmax(16rem, 0.72fr) minmax(20rem, 1fr);
+    align-items: center;
+    min-height: min(42rem, calc(100vh - 11rem));
+    gap: clamp(2rem, 7vw, 8rem);
+  }
+
+  .error-stage__code {
+    color: transparent;
+    font-family: var(--font-mono);
+    font-size: clamp(8rem, 21vw, 20rem);
+    font-weight: 600;
+    line-height: 0.72;
+    letter-spacing: -0.11em;
+    -webkit-text-stroke: 1px rgba(148, 163, 184, 0.24);
+    text-shadow: 0 0 5rem rgba(59, 130, 246, 0.12);
+    user-select: none;
+    animation: error-code-enter 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .error-stage__copy {
+    animation: error-copy-enter 760ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .error-stage__primary-action,
+  .error-stage__secondary-action {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    border-radius: 0.5rem;
+    padding: 0.68rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease;
+  }
+
+  .error-stage__primary-action {
+    border: 1px solid rgba(186, 230, 253, 0.38);
+    background: rgb(224 242 254);
+    color: rgb(8 47 73);
+    box-shadow: 0 12px 34px rgba(14, 165, 233, 0.14);
+  }
+
+  .error-stage__secondary-action {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.055);
+    color: rgb(226 232 240);
+  }
+
+  .error-stage__primary-action:hover,
+  .error-stage__secondary-action:hover {
+    transform: translateY(-1px);
+  }
+
+  .error-stage__primary-action:hover { background: white; }
+  .error-stage__secondary-action:hover {
+    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .error-stage__primary-action:focus-visible,
+  .error-stage__secondary-action:focus-visible {
+    outline: 2px solid rgb(125 211 252);
+    outline-offset: 3px;
+  }
+
+  @media (max-width: 800px) {
+    .error-stage__content {
+      grid-template-columns: 1fr;
+      align-content: center;
+      gap: 2.5rem;
+      padding-block: 3rem;
+    }
+
+    .error-stage__code {
+      font-size: clamp(7rem, 38vw, 12rem);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .error-stage__glow,
+    .error-stage__code,
+    .error-stage__copy {
+      animation: none;
+    }
+  }
+
+  @keyframes error-code-enter {
+    from { opacity: 0; transform: translateX(-1.5rem); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes error-copy-enter {
+    from { opacity: 0; transform: translateY(1.25rem); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes error-orbit {
+    0%, 100% { opacity: 0.7; transform: scale(0.96); }
+    50% { opacity: 1; transform: scale(1.03); }
+  }
 }
 
 @media print {

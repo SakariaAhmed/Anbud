@@ -1,0 +1,110 @@
+{
+  "corpus": "complex-tender-corpus",
+  "fictional": true,
+  "scenario_count": 5,
+  "document_count": 10,
+  "generated_at": "2026-07-30",
+  "source": "test-data/complex-tender-corpus/scenarios.json",
+  "documents": [
+    {
+      "scenario_id": "nordhavn-byggesak",
+      "project_name": "Nordhavn kommune - digital byggesaksbehandling",
+      "role": "primary_customer_document",
+      "filename": "nordhavn-byggesak_bilag1.pdf",
+      "text_filename": "nordhavn-byggesak_bilag1.txt",
+      "pages": 3,
+      "bytes": 73485,
+      "sha256": "8320b81e016789d85f3ddf6b34af5fff07873d7513d5077adffa567bc57d2a19"
+    },
+    {
+      "scenario_id": "nordhavn-byggesak",
+      "project_name": "Nordhavn kommune - digital byggesaksbehandling",
+      "role": "primary_solution_document",
+      "filename": "nordhavn-byggesak_bilag2.pdf",
+      "text_filename": "nordhavn-byggesak_bilag2.txt",
+      "pages": 3,
+      "bytes": 75677,
+      "sha256": "dd20c23e6007b6e1e86a952e90575751000f684b451b460c4a9aa3c599b89ce3"
+    },
+    {
+      "scenario_id": "sorvik-klinisk-samhandling",
+      "project_name": "Sørvik Helsepartner HF - klinisk samhandlingsplattform",
+      "role": "primary_customer_document",
+      "filename": "sorvik-klinisk-samhandling_bilag1.pdf",
+      "text_filename": "sorvik-klinisk-samhandling_bilag1.txt",
+      "pages": 3,
+      "bytes": 72921,
+      "sha256": "039f444e66c47a41660726d9e3e6196709add421ebebeee879c7e1589cf0d9eb"
+    },
+    {
+      "scenario_id": "sorvik-klinisk-samhandling",
+      "project_name": "Sørvik Helsepartner HF - klinisk samhandlingsplattform",
+      "role": "primary_solution_document",
+      "filename": "sorvik-klinisk-samhandling_bilag2.pdf",
+      "text_filename": "sorvik-klinisk-samhandling_bilag2.txt",
+      "pages": 3,
+      "bytes": 73967,
+      "sha256": "c689aa17fc438672f2610c472c0b3c6c14d4d9f1318bd06e997f25d6915901bb"
+    },
+    {
+      "scenario_id": "malmhavn-prediktivt-vedlikehold",
+      "project_name": "Malmhavn Industri AS - prediktivt vedlikehold og feltarbeid",
+      "role": "primary_customer_document",
+      "filename": "malmhavn-prediktivt-vedlikehold_bilag1.pdf",
+      "text_filename": "malmhavn-prediktivt-vedlikehold_bilag1.txt",
+      "pages": 3,
+      "bytes": 73266,
+      "sha256": "18b25c0f0f1ed531f58c55c8427724753c72bc8296e84e9641a4cb5cb96a3a4f"
+    },
+    {
+      "scenario_id": "malmhavn-prediktivt-vedlikehold",
+      "project_name": "Malmhavn Industri AS - prediktivt vedlikehold og feltarbeid",
+      "role": "primary_solution_document",
+      "filename": "malmhavn-prediktivt-vedlikehold_bilag2.pdf",
+      "text_filename": "malmhavn-prediktivt-vedlikehold_bilag2.txt",
+      "pages": 3,
+      "bytes": 74291,
+      "sha256": "bdf699afa39e1d2e10a7304bafce0a57ea981b63a42947b0f97fed3c247fa67b"
+    },
+    {
+      "scenario_id": "vestfjord-forskningsdata",
+      "project_name": "Vestfjord universitet - sikker forskningsdata- og AI-plattform",
+      "role": "primary_customer_document",
+      "filename": "vestfjord-forskningsdata_bilag1.pdf",
+      "text_filename": "vestfjord-forskningsdata_bilag1.txt",
+      "pages": 3,
+      "bytes": 72521,
+      "sha256": "6ace2840ebbc1a38c4f9d704c1a2d1a0dc2ab34eebd09aacde6485ab6325fba0"
+    },
+    {
+      "scenario_id": "vestfjord-forskningsdata",
+      "project_name": "Vestfjord universitet - sikker forskningsdata- og AI-plattform",
+      "role": "primary_solution_document",
+      "filename": "vestfjord-forskningsdata_bilag2.pdf",
+      "text_filename": "vestfjord-forskningsdata_bilag2.txt",
+      "pages": 3,
+      "bytes": 74184,
+      "sha256": "0328d680f80f0cfea50eb2f7986e6969790b41edcc748aa7ab64f3084674dcc8"
+    },
+    {
+      "scenario_id": "polarfrakt-kjolekjede",
+      "project_name": "PolarFrakt Logistikk SA - digital kjølekjede og terminalstyring",
+      "role": "primary_customer_document",
+      "filename": "polarfrakt-kjolekjede_bilag1.pdf",
+      "text_filename": "polarfrakt-kjolekjede_bilag1.txt",
+      "pages": 3,
+      "bytes": 72704,
+      "sha256": "61eaaf01a1b18c3f808790f7aa0f13e5efd811821d1c176b53da5db246d2dde6"
+    },
+    {
+      "scenario_id": "polarfrakt-kjolekjede",
+      "project_name": "PolarFrakt Logistikk SA - digital kjølekjede og terminalstyring",
+      "role": "primary_solution_document",
+      "filename": "polarfrakt-kjolekjede_bilag2.pdf",
+      "text_filename": "polarfrakt-kjolekjede_bilag2.txt",
+      "pages": 3,
+      "bytes": 74286,
+      "sha256": "caf104082d018dc25866b2ae169e98182ce72d03bbfc861cb5848f78c56f3605"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ import test from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import "./supabase-store.persistence.system-cases.mjs";
+import "./data-store.persistence.system-cases.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, "../../..");
@@ -53,16 +53,16 @@ const solutionDocumentId = "00000000-0000-4000-8000-000000000041";
 const artifactMigrationSql = readFileSync(
   path.join(
     repositoryRoot,
-    "supabase/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
+    "database/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
   ),
   "utf8",
 );
 const canonicalSchemaSql = readFileSync(
-  path.join(repositoryRoot, "supabase/schema.sql"),
+  path.join(repositoryRoot, "database/schema.sql"),
   "utf8",
 );
 const durableExecutionSql = readFileSync(
-  path.join(repositoryRoot, "supabase/project_jobs_durable_execution.sql"),
+  path.join(repositoryRoot, "database/project_jobs_durable_execution.sql"),
   "utf8",
 );
 
@@ -370,8 +370,8 @@ function customerAnalysisPayload(marker, expectedSourceRevision = 0) {
 
 test("customer-analysis SQL writes atomically invalidate downstream outputs", () => {
   for (const relativePath of [
-    "supabase/project_jobs_durable_execution.sql",
-    "supabase/schema.sql",
+    "database/project_jobs_durable_execution.sql",
+    "database/schema.sql",
   ]) {
     const sql = readFileSync(path.join(repositoryRoot, relativePath), "utf8");
     const customerAnalysisBranch = sql.match(
@@ -385,7 +385,7 @@ test("customer-analysis SQL writes atomically invalidate downstream outputs", ()
   const migration = readFileSync(
     path.join(
       repositoryRoot,
-      "supabase/migrations/20260711121500_customer_analysis_invalidates_derived_outputs.sql",
+      "database/migrations/20260711121500_customer_analysis_invalidates_derived_outputs.sql",
     ),
     "utf8",
   );
@@ -399,7 +399,7 @@ test("customer-analysis SQL writes atomically invalidate downstream outputs", ()
   const revisionMigration = readFileSync(
     path.join(
       repositoryRoot,
-      "supabase/migrations/20260711123000_solution_evaluation_source_revision_fence.sql",
+      "database/migrations/20260711123000_solution_evaluation_source_revision_fence.sql",
     ),
     "utf8",
   );
@@ -448,7 +448,7 @@ test("customer-analysis SQL writes atomically invalidate downstream outputs", ()
   const artifactMigration = readFileSync(
     path.join(
       repositoryRoot,
-      "supabase/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
+      "database/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
     ),
     "utf8",
   );
@@ -497,11 +497,11 @@ test("customer-analysis SQL writes atomically invalidate downstream outputs", ()
   assert.match(crossCurrentnessBody, /is distinct from artifact\.artifact_type/u);
   assert.match(crossCurrentnessBody, /\) = \(/u);
   const storeSource = readFileSync(
-    path.join(frontendRoot, "lib/server/repositories/supabase-store.ts"),
+    path.join(frontendRoot, "lib/server/repositories/artifacts.ts"),
     "utf8",
   );
   const knowledgeQueryBody = storeSource.match(
-    /export async function listArtifactKnowledgeCandidatesFresh\((?<body>[\s\S]*?)export async function appendChatMessage/u,
+    /export async function listArtifactKnowledgeCandidatesFresh\((?<body>[\s\S]*)$/u,
   )?.groups?.body;
   assert.ok(knowledgeQueryBody, "fresh artifact knowledge query mangler");
   assert.match(knowledgeQueryBody, /"artifact_knowledge_manifest"/u);
@@ -540,7 +540,7 @@ test("artifact RPC authority rejects malformed direct persistence payloads", () 
   const artifactMigration = readFileSync(
     path.join(
       repositoryRoot,
-      "supabase/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
+      "database/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
     ),
     "utf8",
   );
@@ -587,7 +587,7 @@ test("artifact RPC authority rejects malformed direct persistence payloads", () 
 
 test("manual artifact persistence validates acknowledgement against the parent version", () => {
   const storeSource = readFileSync(
-    path.join(frontendRoot, "lib/server/repositories/supabase-store.ts"),
+    path.join(frontendRoot, "lib/server/repositories/artifacts.ts"),
     "utf8",
   );
   const updateBody = storeSource.match(
@@ -601,16 +601,16 @@ test("manual artifact persistence validates acknowledgement against the parent v
   );
   assert.ok(
     updateBody.indexOf("buildValidatedManualArtifactInputSnapshot") <
-      updateBody.indexOf('supabase.rpc("create_manual_artifact_version"'),
+      updateBody.indexOf('dataApi.rpc("create_manual_artifact_version"'),
     "manuell validering må fullføres før en ny artefaktversjon lagres",
   );
 });
 
 test("same-job artifact retries validate current and stored authority before idempotent return", () => {
   for (const relativePath of [
-    "supabase/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
-    "supabase/project_jobs_durable_execution.sql",
-    "supabase/schema.sql",
+    "database/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
+    "database/project_jobs_durable_execution.sql",
+    "database/schema.sql",
   ]) {
     const sql = readFileSync(path.join(repositoryRoot, relativePath), "utf8");
     const body = sql.match(
@@ -645,9 +645,9 @@ test("same-job artifact retries validate current and stored authority before ide
 
 test("every SQL bootstrap atomically reuses an identical active project job", () => {
   for (const relativePath of [
-    "supabase/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
-    "supabase/project_jobs_durable_execution.sql",
-    "supabase/schema.sql",
+    "database/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
+    "database/project_jobs_durable_execution.sql",
+    "database/schema.sql",
   ]) {
     const sql = readFileSync(path.join(repositoryRoot, relativePath), "utf8");
     const body = sql.match(
@@ -666,9 +666,9 @@ test("every SQL bootstrap atomically reuses an identical active project job", ()
 
 test("every SQL bootstrap preserves evaluation and summary provenance fences", () => {
   for (const relativePath of [
-    "supabase/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
-    "supabase/project_jobs_durable_execution.sql",
-    "supabase/schema.sql",
+    "database/migrations/20260711130000_generated_artifact_source_revision_fence.sql",
+    "database/project_jobs_durable_execution.sql",
+    "database/schema.sql",
   ]) {
     const sql = readFileSync(path.join(repositoryRoot, relativePath), "utf8");
     const evaluationSaveBody = sql.match(

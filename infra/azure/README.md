@@ -1,53 +1,35 @@
-# Azure phase 1 hosting
+# Azure hosting
 
-This deploys the existing Next.js container to Azure Container Apps while keeping Supabase as the live database and storage backend.
+The production application runs in Azure Container Apps. Its data plane is an
+internal PostgREST Container App backed by Azure Database for PostgreSQL, while
+encrypted document objects are stored in private Azure Blob Storage.
 
-## Build and push an image
+## Build and verify the image
+
+Production uses the `runner-docling` target so document parsing behavior is
+included in the deployed image.
 
 ```bash
 az login
-az group create --name anbud-prod --location norwayeast
-az acr create --resource-group anbud-prod --name <acr-name> --sku Basic
 az acr login --name <acr-name>
-
-docker build --target runner-docling -f apps/frontend/Dockerfile -t <acr-name>.azurecr.io/anbud:phase1 .
-docker push <acr-name>.azurecr.io/anbud:phase1
+docker build --target runner-docling -f apps/frontend/Dockerfile -t <acr-name>.azurecr.io/anbud:<tag> .
+docker push <acr-name>.azurecr.io/anbud:<tag>
 ```
 
-Production builds use the `runner-docling` target so bundled Docling ingestion
-keeps the same document parsing behavior as the app had before the image split.
-The default target is a slim web runtime with `DOCLING_INGESTION=off`; use it
-only for deployments where Docling is run out-of-process or fallback parsing is
-acceptable:
-
-```bash
-docker build -f apps/frontend/Dockerfile -t <acr-name>.azurecr.io/anbud:phase1-slim .
-docker push <acr-name>.azurecr.io/anbud:phase1-slim
-```
-
-## Local Docker verification
-
-Run the same lightweight image build, size budget, container healthcheck, and
-liveness smoke that CI runs:
+Run the same image checks as CI:
 
 ```bash
 npm --prefix apps/frontend run docker:smoke
-```
-
-Run the heavier production Docling target when changing parsing/runtime
-dependencies. This is also the target used by the Azure deployment workflow:
-
-```bash
 npm --prefix apps/frontend run docker:smoke:docling
 ```
 
-Production CI also scans the `runner-docling` image for critical and high CVEs
-with Docker Scout before deployment. Base images are pinned by digest in the
-Dockerfile and refreshed through Dependabot Docker updates.
+CI scans the production image before deployment. Base images are pinned by
+digest and refreshed through Dependabot.
 
 ## Deploy Container Apps
 
-Create a local parameters file outside git, for example `infra/azure/prod.bicepparam`, or pass the secure values from your CI/CD secret store.
+Create parameter files outside git, or pass secure values from the CI/CD secret
+store. The core data-plane parameters are required:
 
 ```bash
 az deployment group create \
@@ -55,41 +37,56 @@ az deployment group create \
   --template-file infra/azure/container-app.bicep \
   --parameters \
     appName=anbud \
-    image=<acr-name>.azurecr.io/anbud:phase1 \
-    workerImage=<acr-name>.azurecr.io/anbud:phase1 \
-    registryServer=<acr-name>.azurecr.io \
-    registryUsername=<acr-name> \
-    registryPassword="$ACR_PASSWORD" \
-    supabaseUrl="$SUPABASE_URL" \
-    supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
+    image=<acr-name>.azurecr.io/anbud@sha256:<digest> \
+    workerImage=<acr-name>.azurecr.io/anbud@sha256:<digest> \
+    registryName=<acr-name> \
+    dataApiUrl="$DATA_API_URL" \
+    dataApiServiceRoleKey="$DATA_API_SERVICE_ROLE_KEY" \
+    azureStorageAccountUrl="$AZURE_STORAGE_ACCOUNT_URL" \
+    azureStorageContainer="${AZURE_STORAGE_CONTAINER:-anbud-documents}" \
+    appPublicOrigin="$APP_PUBLIC_ORIGIN" \
+    microsoftEntraClientId="$MICROSOFT_ENTRA_CLIENT_ID" \
+    microsoftEntraClientSecret="$MICROSOFT_ENTRA_CLIENT_SECRET" \
+    microsoftEntraTenantSubdomain="$MICROSOFT_ENTRA_TENANT_SUBDOMAIN" \
     appEncryptionKey="$APP_ENCRYPTION_KEY" \
-    appAccessPassword="$APP_ACCESS_PASSWORD" \
+    appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH" \
     appSessionSecret="$APP_SESSION_SECRET" \
+    appGuestCodePepper="$APP_GUEST_CODE_PEPPER" \
+    appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET" \
+    appActivityHashSecret="$APP_ACTIVITY_HASH_SECRET" \
+    appAdminEmails="$APP_ADMIN_EMAILS" \
+    adminPrincipalId="$APP_ADMIN_PRINCIPAL_ID" \
     openAiApiKey="$OPENAI_API_KEY" \
-    openAiModel="${OPENAI_MODEL:-gpt-5.4}" \
     projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
 ```
 
-The deployment output includes the Container App FQDN and creates a scheduled Container Apps job named `<appName>-project-job-worker`. In GitHub Actions, configure `PROJECT_JOB_WORKER_TOKEN` as a repository secret before deploying.
+An Owner or User Access Administrator first deploys
+`acr-pull-bootstrap.bicep`. It creates the ACR pull identity and scoped role.
+Routine deployment then needs no registry password. Web and worker use managed
+identity for Blob Storage.
 
-## Controlled production rollout
+The registry itself is declared in `registry.bicep`. Its public endpoint stays
+enabled for GitHub-hosted builders, while anonymous access and the registry
+administrator account stay disabled. Image pulls by Azure workloads use only
+the scoped managed identity.
+
+Azure Document Intelligence and Azure Communication Services Email are
+optional. Leave their parameters empty to retain local parsing and out-of-band
+guest-code delivery.
+
+## Production rollout
 
 Production releases are manual and use the protected GitHub `production`
-environment. The workflow first verifies the durable Supabase job schema, then
-reconciles Bicep while keeping both workloads on their current healthy images.
-`scripts/azure_containerapp_rollout.mjs` pins the last healthy revision at
-100% traffic, creates a uniquely suffixed candidate, and smokes the candidate's
-revision-specific FQDN before promotion. The scheduled worker is updated only
-after web promotion. A failed candidate smoke keeps production traffic
-unchanged; a failed post-promotion smoke restores both traffic and the previous
-worker image. The workflow retains an idempotent fallback rollback step using a
-secret-free state file.
+environment. The workflow validates the PostgreSQL job schema and internal
+PostgREST endpoint, builds and scans the image, reconciles Bicep, then creates a
+candidate web revision. The candidate is smoke-tested before traffic moves, and
+the scheduled worker is updated only after promotion. A failed rollout restores
+the last healthy web revision and worker image.
 
-Verify:
+Verify after deployment:
 
 ```bash
 curl "https://<fqdn>/api/health/live"
-curl "https://<fqdn>/api/health/ready"
 node apps/frontend/scripts/smoke_health.mjs "https://<fqdn>"
 az containerapp job show \
   --resource-group anbud-prod \
@@ -97,14 +94,26 @@ az containerapp job show \
   --query "properties.configuration.triggerType"
 ```
 
-## Cutover checklist
+Also confirm administrator and Microsoft Entra login, open an existing project,
+upload and delete a test document, run a short AI workflow, and inspect recent
+worker executions.
 
-- Confirm `/api/health/live` returns `status: healthy`.
-- Confirm `/api/health/ready` and `/api/health` do not return `status: unhealthy`.
-- Confirm the health response contains the expected `runtime.region`, `runtime.stamp`, and image-backed `runtime.version`.
-- Log in with the existing app password.
-- Open an existing project from Supabase.
-- Upload and delete a test document.
-- Run one short OpenAI-backed workflow.
-- Confirm the scheduled project job worker exists and has recent executions.
-- Only then move DNS from the current host to Azure.
+## Data-plane templates
+
+- `resource-group.bicep`: production resource-group location and ownership tags.
+- `registry.bicep`: ACR configuration, immutable deployment target, and tags.
+- `postgres.bicep`: PostgreSQL 17 with `pgcrypto` and `vector` support.
+- `postgrest.bicep`: internal PostgREST data API.
+- `storage.bicep`: private document storage and managed-identity roles.
+- `budget.bicep`: subscription cost notifications.
+
+Steady-state resources use the same `workload`, `environment`, `criticality`,
+`deploymentStamp`, `component`, and `managedBy` tag vocabulary. Confidential
+data resources additionally carry `dataClassification=confidential`. Migration
+evidence may remain in its private Blob container as an audit record, but
+migration jobs, identities, secrets, and lifecycle tags are not steady-state
+infrastructure.
+
+Run `az deployment group what-if` before provisioning data-plane resources.
+Schema changes live in `database/migrations` and should be validated against a
+disposable PostgreSQL database before production deployment.

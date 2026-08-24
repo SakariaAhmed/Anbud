@@ -17,19 +17,22 @@ assert.doesNotMatch(
   /pull_request_target:/u,
   "PR CI must not expose privileged pull_request_target context.",
 );
+assert.match(
+  ci,
+  /concurrency:[\s\S]*cancel-in-progress:\s*true/u,
+  "CI must cancel obsolete runs on the same ref.",
+);
 for (const required of [
   "secrets:scan",
   "npm test",
   "npm run lint",
   "npm run build",
   "validate_project_jobs_schema",
-  "project-job-terminal-audit.sql.test",
-  "PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL",
-  "public.ecr.aws/supabase/postgres:17.6.1.132@sha256:",
   "azure_containerapp_rollout.test",
+  "PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL",
+  "pgvector/pgvector:pg17@sha256:",
   "az bicep build",
   "az bicep lint",
-  "docker:smoke",
 ]) {
   assert.ok(ci.includes(required), `PR CI is missing: ${required}`);
 }
@@ -47,7 +50,12 @@ const topLevelPermissions = deploy.slice(
 assert.match(
   topLevelPermissions,
   /contents:\s*read/u,
-  "Deployment workflow default permissions must be read-only.",
+  "Deployment workflow default contents permission must be read-only.",
+);
+assert.match(
+  topLevelPermissions,
+  /actions:\s*read/u,
+  "Deployment workflow must be able to verify the exact commit's CI run.",
 );
 assert.doesNotMatch(
   topLevelPermissions,
@@ -56,40 +64,19 @@ assert.doesNotMatch(
 );
 assert.match(
   deploy,
-  /deploy:[\s\S]*permissions:[\s\S]*id-token:\s*write/u,
-  "Only the final production job should receive OIDC permission.",
+  /deploy:[\s\S]*permissions:[\s\S]*actions:\s*read[\s\S]*id-token:\s*write/u,
+  "The production job must receive CI-read and OIDC permissions.",
 );
 assert.match(
   deploy,
-  /needs:[\s\S]*- validation[\s\S]*- infrastructure-validation[\s\S]*- container-validation/u,
-  "Production deployment must depend on every exact-commit validation job.",
+  /actions\/workflows\/ci\.yml\/runs[\s\S]*head_sha="\$GITHUB_SHA"[\s\S]*status=success/u,
+  "Deployment must require successful CI for the exact production commit.",
 );
-for (const required of [
-  "secrets:scan",
-  "project-jobs-lifecycle.system.test",
-  "lease-fenced-persistence.system.test",
-  "validate_project_jobs_schema",
-  "project-job-terminal-audit.sql.test",
-  "PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL",
-  "public.ecr.aws/supabase/postgres:17.6.1.132@sha256:",
-  "azure_containerapp_rollout.test",
-  "npm test",
-  "npm run lint",
-  "npm run build",
-  "verify_workflow_boundaries",
-  "validate_release_workflows",
-  "YAML.parse_file",
-  "fallow@$FALLOW_VERSION",
-  "az bicep build",
-  "az bicep lint",
-  "docker:smoke",
-  "trivy-action",
-]) {
-  assert.ok(
-    deploy.includes(required),
-    `Production deploy validation is missing: ${required}`,
-  );
-}
+assert.doesNotMatch(
+  deploy,
+  /npm ci|npm test|npm run lint|npm run build|docker:smoke|fallow@/u,
+  "Deployment must reuse CI results instead of repeating CI work.",
+);
 assert.doesNotMatch(
   deploy,
   /push:\s*[\s\S]*branches:\s*[\s\S]*- main/u,
@@ -100,15 +87,15 @@ assert.match(
   /environment:\s*production/u,
   "Deploy must use the protected production environment.",
 );
-assert.match(
-  deploy,
-  /validate_project_jobs_schema\.mjs --remote/u,
-  "Schema preflight must run before release.",
-);
-assert.match(
-  deploy,
-  /Fallback rollback/u,
-  "Deploy must retain an always-available fallback rollback step.",
-);
+for (const required of [
+  "Validate production database contract from the Azure network",
+  "REMOTE_SCHEMA_PREFLIGHT=1",
+  "docker/build-push-action",
+  "trivy-action",
+  "azure_containerapp_rollout.mjs",
+  "Roll back to the previous Azure revision",
+]) {
+  assert.ok(deploy.includes(required), `Production deploy is missing: ${required}`);
+}
 
 console.log(JSON.stringify({ workflows: "release-boundaries-valid" }));

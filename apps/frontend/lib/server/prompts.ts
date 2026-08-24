@@ -37,6 +37,8 @@ export function buildDelimitedContext(label: string, content: string) {
   return `### ${label}\n"""\n${content.trim()}\n"""`;
 }
 
+// Exported for prompt regression fixtures.
+// fallow-ignore-next-line unused-export
 export const CUSTOMER_ANALYSIS_READABILITY_RULES = [
   "Skriv norsk fagspråk som er lett å lese: korte setninger, tydelig prioritering og maks ett hovedpoeng per setning.",
   "Unngå oppramsing av teknologier, tjenester, ansvarsområder eller kvaliteter i samme setning. Gruppér dem i få hovedkategorier og forklar hvorfor de betyr noe.",
@@ -442,6 +444,8 @@ export function buildGeneratorPrompt(artifactType: GeneratedArtifactType) {
         "Hver fase skal starte med et kort avsnitt som forklarer hvorfor fasen finnes i akkurat dette prosjektet.",
         "Hver fase skal ha 3 til 5 presise punkter. Minst to punkter per fase skal nevne et konkret krav, system, mål, risiko, avhengighet, dokumentert leveranse eller kundebidrag fra prosjektgrunnlaget.",
         "Vær eksplisitt om rekkefølge, leveranser, ansvar, kundens bidrag, beslutningspunkter, bevis/akseptansekriterier og hva som må være sant før neste fase.",
+        "Når prosjektgrunnlaget oppgir en eksplisitt dato for produksjonssetting eller go-live, skal planen bevare datoen og eksplisitt dekke produksjonsutrulling/go-live, overlevering til drift eller forvaltning og hypercare, stabilisering eller formell avslutning etter produksjonssetting.",
+        "Ved datert go-live skal planen ha en egen siste fase etter produksjonssetting. Fasen skal eksplisitt beskrive overlevering eller kunnskapsoverføring til drift/forvaltning, en tidsavgrenset hypercare- eller stabiliseringsperiode og kriterier for formell avslutning. En plan som stopper ved go-live er ugyldig.",
         "Hvis grunnlaget er for tynt for en sikker anbefaling, skriv en fase for målrettet avklaring med konkrete spørsmål. Ikke fyll tomrommet med generisk metode.",
         "content_markdown skal kun inneholde fase-undertitler på formatet ## Fase N: Prosjektspesifikk fasetittel. Ikke legg inn innledning, oppsummering eller egne seksjoner utenfor fasene.",
         "Bruk profesjonell markdown med ryddige avsnitt og punktlister som passer som intern arbeidstekst.",

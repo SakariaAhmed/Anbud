@@ -7,12 +7,18 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import { ChevronLeft, ChevronRight, MessageSquareText } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  LockKeyhole,
+  MessageSquareText,
+} from "lucide-react";
 
 import {
   formatDate,
   GenerationProgress,
 } from "@/components/projects/project-workspace-shared";
+import { ProjectShareDialog } from "@/components/projects/project-share-dialog";
 import { isDocumentReadyForEvaluation } from "@/lib/document-processing";
 import type {
   ProjectWorkspaceTab,
@@ -211,6 +217,8 @@ type ProjectWorkspaceShellProps = {
   onPreloadWorkspaceTab: (tab: ProjectWorkspaceTab) => void;
   onSetWorkspaceTab: (tab: ProjectWorkspaceTab) => void;
   onOpenChatPopout: () => Window | null;
+  canShare: boolean;
+  readOnly: boolean;
   children: ReactNode;
 };
 
@@ -230,6 +238,8 @@ type ProjectWorkspaceSidebarProps = Pick<
 type WorkspaceHeaderProps = {
   project: ProjectDetail;
   activeTabLabel: string;
+  canShare: boolean;
+  readOnly: boolean;
 };
 
 type WorkspaceStatusMessagesProps = {
@@ -269,6 +279,9 @@ export type ProjectWorkspaceTabContentProps = {
   deliveryArtifacts: GeneratedArtifact[];
   bilag1Artifacts: GeneratedArtifact[];
   onToggleUploadOpen: () => void;
+  onServiceDescriptionsChange: (
+    services: ProjectServiceDescription[],
+  ) => void;
   onDocTitleChange: (value: string) => void;
   onUploadRoleChange: (value: ProjectDocumentRole) => void;
   onFileChange: (file: File | null) => void;
@@ -327,6 +340,8 @@ export function ProjectWorkspaceShell({
   onPreloadWorkspaceTab,
   onSetWorkspaceTab,
   onOpenChatPopout,
+  canShare,
+  readOnly,
   children,
 }: ProjectWorkspaceShellProps) {
   return (
@@ -371,7 +386,12 @@ export function ProjectWorkspaceShell({
               !sidebarOpen && "mx-auto",
             )}
           >
-            <WorkspaceHeader project={project} activeTabLabel={activeTabLabel} />
+            <WorkspaceHeader
+              project={project}
+              activeTabLabel={activeTabLabel}
+              canShare={canShare}
+              readOnly={readOnly}
+            />
             <WorkspaceStatusMessages
               error={error}
               notice={notice}
@@ -478,7 +498,7 @@ function ProjectWorkspaceSidebar({
                     {sidebarOpen ? (
                       <span className="flex min-w-0 flex-1 items-center gap-3">
                         <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                          <span className="min-w-0 text-left leading-5">
+                          <span className="min-w-0 break-words text-left leading-5 hyphens-auto">
                             {item.label}
                           </span>
                           <span
@@ -578,7 +598,12 @@ function ProjectWorkspaceSidebar({
   );
 }
 
-function WorkspaceHeader({ project, activeTabLabel }: WorkspaceHeaderProps) {
+function WorkspaceHeader({
+  project,
+  activeTabLabel,
+  canShare,
+  readOnly,
+}: WorkspaceHeaderProps) {
   return (
     <section className="mb-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -606,6 +631,17 @@ function WorkspaceHeader({ project, activeTabLabel }: WorkspaceHeaderProps) {
               </div>
             ) : null}
           </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {readOnly ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+              <LockKeyhole className="size-3.5" />
+              Lesetilgang
+            </span>
+          ) : null}
+          {canShare ? (
+            <ProjectShareDialog projectId={project.id} projectName={project.name} />
+          ) : null}
         </div>
       </div>
     </section>
@@ -678,6 +714,7 @@ export function ProjectWorkspaceTabContent({
   deliveryArtifacts,
   bilag1Artifacts,
   onToggleUploadOpen,
+  onServiceDescriptionsChange,
   onDocTitleChange,
   onUploadRoleChange,
   onFileChange,
@@ -805,7 +842,10 @@ export function ProjectWorkspaceTabContent({
       ) : null}
 
       {activeTab === "service-description" ? (
-        <ProjectServiceDescriptionTab projectId={project.id} />
+        <ProjectServiceDescriptionTab
+          projectId={project.id}
+          onServicesChange={onServiceDescriptionsChange}
+        />
       ) : null}
 
       {activeTab === "requirements" ? (

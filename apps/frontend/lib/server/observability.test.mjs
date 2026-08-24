@@ -15,7 +15,7 @@ const testSupportPath = path.join(
 const jiti = createJiti(path.join(frontendRoot, "observability-tests.cjs"), {
   interopDefault: true,
   alias: {
-    "@/lib/server/supabase": testSupportPath,
+    "@/lib/server/data-api": testSupportPath,
     "@": frontendRoot,
     "server-only": "/dev/null",
   },

@@ -1,0 +1,72 @@
+BILAG 1 - KUNDENS BEHOV OG KRAV
+Nordhavn kommune - digital byggesaksbehandling
+Kunde: Nordhavn kommune
+Anskaffelse: Programvaretjeneste for byggesak, dokumentflyt og innbyggerdialog
+Kontrakt: SSA-L 2026
+Fiktivt testgrunnlag: Alle virksomheter, leverandører, tall og avtaler i dokumentet er fiktive.
+
+VIRKSOMHET OG ANSKAFFELSESBEHOV
+Nordhavn kommune har 38 400 innbyggere, 127 ansatte i berørte fagmiljøer og behandler om lag 3 200 byggesaker i året. Dagens løsning består av et eldre fagsystem, manuelle kontrollister og separate innsynsflater. 28 prosent av søknadene må kompletteres minst én gang, og saksbehandlerne registrerer deler av samme informasjon i både fagsystem og arkiv.
+Eksisterende avtale utløper 30. juni 2027. Ny løsning skal være i kontrollert produksjon senest 1. april 2027, slik at kommunen har tre måneder til stabilisering og avvikling. Historikken omfatter omtrent 220 000 saker og 1,15 millioner dokumentfiler fra 2008 og fremover.
+Kommunen vil kjøpe en standardisert SaaS-tjeneste, men beholde kontroll over arbeidsflyter, tilgangsmodeller, datauttrekk og integrasjoner. Plan og byggesak er prosesseier. Arkiv, informasjonssikkerhet, innbyggerservice og kommunens integrasjonsteam er obligatoriske godkjennere.
+
+MÅL OG FORVENTEDE EFFEKTER
+Redusere andelen søknader som må kompletteres fra 28 til 18 prosent innen tolv måneder.
+Redusere median behandlingstid for komplette standardsaker med 40 prosent.
+Oppnå minst 85 prosent digital dialog med søkere og ansvarlige foretak.
+Redusere manuell dobbeltregistrering med minst 10 prosent i pilotperioden.
+Gi ledelsen løpende innsikt i frister, restanser, integrasjonsfeil og tilgangsavvik.
+
+FØRINGER OG AVGRENSNINGER
+Kundedata, sikkerhetskopier og personidentifiserbare logger skal behandles innenfor EØS.
+Ansatte autentiseres med Microsoft Entra ID, mens eksterne brukere bruker ID-porten.
+Journalføring skal skje mot kommunens Noark 5-godkjente arkivkjerne.
+Innbyggerrettede flater skal oppfylle WCAG 2.2 nivå AA.
+Månedlig tilgjengelighet skal være minst 99,9 prosent, RPO høyst 4 timer og RTO høyst 8 timer.
+
+TILDELINGSMODELL
+Kvalitet og behovsoppfyllelse: 45 prosent.
+Gjennomføring, migrering og kompetanseoverføring: 30 prosent.
+Pris og totale livsløpskostnader: 25 prosent.
+
+KRAVMATRISE
+NORD-FUN-01 | Prioritet A | Saksflyt
+Tjenesten skal støtte mottak, fordeling, behandling, vedtak og avslutning i én rollebasert arbeidsflate. Alle statusendringer skal tidsstemples og knyttes til ansvarlig rolle.
+
+NORD-IAM-02 | Prioritet A | Identitet
+Ansatte skal autentiseres med Microsoft Entra ID. Tilgang skal kunne avgrenses etter enhet, rolle, sakstype og skjermingsbehov etter prinsippet om minste privilegium.
+
+NORD-DIA-03 | Prioritet A | Innbyggerdialog
+Eksterne brukere skal autentiseres med ID-porten og bare se saker, dokumenter og frister der de har en verifisert partsrolle.
+
+NORD-ARK-04 | Prioritet A | Arkiv
+Inn- og utgående dokumenter skal journalføres med fullstendige metadata i kommunens Noark 5-godkjente arkivkjerne uten manuell dobbeltregistrering.
+
+NORD-INT-05 | Prioritet A | Fellesløsninger
+Standardleveransen skal integreres med ID-porten, Matrikkelen, Folkeregisteret og én meldingskanal valgt av Kunden: Altinn eller KS Fiks/SvarUt.
+
+NORD-MIG-06 | Prioritet A | Migrering
+Leverandøren skal migrere omtrent 220 000 saker og 1,15 millioner dokumentfiler fra 2008 og fremover uten tap av journalposter, partsroller eller skjermingsmarkeringer.
+
+NORD-SIK-07 | Prioritet A | Sikkerhet
+Data skal krypteres under overføring og lagring. Administrative handlinger og tilgang til skjermede saker skal logges, og sikkerhetshendelser skal kunne eksporteres til Kundens overvåking.
+
+NORD-DRI-08 | Prioritet A | Tilgjengelighet
+Tilbudt tjeneste skal ha minst 99,9 prosent månedlig tilgjengelighet, RPO høyst 4 timer og RTO høyst 8 timer.
+
+NORD-UU-09 | Prioritet A | Universell utforming
+Innbyggerrettede flater skal oppfylle WCAG 2.2 nivå AA, og kritiske tilgjengelighetsfeil skal være rettet før produksjonssetting.
+
+NORD-RAP-10 | Prioritet B | Styringsinformasjon
+Kunden bør kunne følge saksbehandlingstid, restanser, kompletteringsbehov, integrasjonsfeil og tilgangsavvik uten nyutvikling per måling.
+
+NORD-API-11 | Prioritet B | Åpne grensesnitt
+Løsningen bør tilby åpne og dokumenterte grensesnitt og hendelser som reduserer leverandørbinding.
+
+NORD-OPL-12 | Prioritet B | Opplæring
+Leverandøren bør levere rollebasert opplæring for 127 ansatte, inkludert saksbehandlere, ledere, superbrukere, arkiv og tjenesteforvalter.
+
+FORHOLD SOM SKAL AVKLARES
+Kunden velger enten Altinn eller KS Fiks/SvarUt som første meldingskanal etter kontraktsinngåelse.
+Endelig volum for eksterne samtidige brukere og sesongtopper er ikke fastsatt.
+Kunden og Leverandøren må fordele ansvar for datavask når kilde og arkiv har motstridende metadata.

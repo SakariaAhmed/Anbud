@@ -1123,6 +1123,73 @@ test("large explicit requirement inventories fail closed when extraction is part
   );
 });
 
+test("authoritative explicit tables fail closed on extra or reordered ledger rows", () => {
+  const ids = [
+    "FUN-A01",
+    "FUN-A02",
+    "FUN-B01",
+    "MIG-B04",
+  ];
+  const formal = document({
+    title: "Bilag 1 Nordhavn",
+    raw_text: [
+      "6. Kravtabell",
+      ...ids.flatMap((id) => [
+        `${id} | ${id.includes("-A") ? "A" : "B"} | Fagområde`,
+        "Leverandøren skal dokumentere kontroll og sporbarhet.",
+        "Svarinstruks: Bekreft og beskriv.",
+      ]),
+      "8. Tildelingskriterier",
+      "Vurderingen bygger særlig på FUN-B01 og MIG-B04.",
+    ].join("\n"),
+  });
+  const completeLedger = ids.map((id, index) =>
+    ledgerEntry({
+      id,
+      text: "Leverandøren skal dokumentere kontroll og sporbarhet.",
+      documentId: formal.id,
+      documentEntryOrder: index,
+    }),
+  );
+
+  assert.doesNotThrow(() =>
+    assertExplicitRequirementLedgersComplete([formal], [
+      { document: formal, ledger: completeLedger },
+    ]),
+  );
+  assert.throws(
+    () =>
+      assertExplicitRequirementLedgersComplete([formal], [
+        {
+          document: formal,
+          ledger: [
+            ...completeLedger,
+            ledgerEntry({
+              id: "SSA-L 2026",
+              text: "Tildelingskriterium skal vurderes.",
+              documentId: formal.id,
+            }),
+          ],
+        },
+      ]),
+    /avviker fra den eksplisitte kravtabellen.*fikk 5.*1 rader uten entydig krav-ID/iu,
+  );
+  assert.throws(
+    () =>
+      assertExplicitRequirementLedgersComplete([formal], [
+        {
+          document: formal,
+          ledger: [
+            completeLedger[1],
+            completeLedger[0],
+            ...completeLedger.slice(2),
+          ],
+        },
+      ]),
+    /avviker fra den eksplisitte kravtabellen/iu,
+  );
+});
+
 test("a TOC occurrence plus the real unstructured requirement counts as one expected row", () => {
   const formal = document({
     raw_text: [

@@ -1,0 +1,21 @@
+{
+  "fixture": "Nordhavn kommune - digital byggesaksbehandling",
+  "generated_at": "2026-07-24",
+  "contract_pattern": "SSA-L 2026",
+  "fictional": true,
+  "requirement_count": 18,
+  "documents": [
+    {
+      "filename": "bilag1_nordhavn_byggesak_2026.pdf",
+      "text_filename": "bilag1_nordhavn_byggesak_2026.txt",
+      "pages": 5,
+      "bytes": 79710
+    },
+    {
+      "filename": "bilag2_nordhavn_byggesak_2026.pdf",
+      "text_filename": "bilag2_nordhavn_byggesak_2026.txt",
+      "pages": 6,
+      "bytes": 83426
+    }
+  ]
+}

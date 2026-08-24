@@ -12,9 +12,42 @@ import {
 import {
   runJsonCompletion,
   runJsonCompletionWithFileInputs,
+  runStructuredJsonResponse,
   type ReasoningEffort,
 } from "@/lib/server/ai/json-completion";
 import { buildVerifiedFoundationControls } from "@/lib/server/ai/verified-foundation-controls";
+import { resolveCustomerAnalysisContexts } from "@/lib/server/document-intelligence/customer-analysis-contexts";
+import {
+  customerAnalysisRegenerationContract,
+  MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
+  mergeCustomerAnalysisSectionPatch,
+} from "@/lib/server/document-intelligence/customer-analysis-fields";
+import {
+  normalizeCustomerAnalysisResult,
+  normalizeMermaidDiagram,
+  selectServiceRecommendationCandidates,
+} from "@/lib/server/document-intelligence/customer-analysis-postprocess";
+import {
+  buildCustomerAnalysisV3SystemPrompt,
+  buildCustomerAnalysisV3UserPrompt,
+  customerAnalysisV3ContextUsage,
+  CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
+  enrichCustomerAnalysisWithCriticalFacts,
+} from "@/lib/server/document-intelligence/customer-analysis-v3";
+import { customerAnalysisPipeline } from "@/lib/server/document-intelligence/config";
+import { isLocalPdfLayoutParser } from "@/lib/server/document-intelligence/local-pdf-layout";
+import { preferTrustedStructuredRequirementText } from "@/lib/server/document-intelligence/requirement-text";
+import { recordDocumentIntelligenceEvent } from "@/lib/server/document-intelligence/repository";
+import {
+  capNormalizedList,
+  dedupeSummary,
+  escapeRegExp,
+  isNearDuplicate,
+  normalizeComparableText,
+  splitIntoSentences,
+  tokenizeComparableText,
+} from "@/lib/server/document-intelligence/text-normalization";
+import { normalizeValueOpportunities } from "@/lib/server/document-intelligence/value-normalization";
 import {
   assertProjectWorkflowActive,
   bindProjectWorkflowTerminalMetadataReporter,
@@ -25,6 +58,7 @@ import {
   safeErrorTelemetry,
 } from "@/lib/server/safe-errors";
 import { ProjectWorkflowTerminalMetadataError } from "@/lib/server/project-job-terminal-metadata";
+import { parsePdf } from "@/lib/server/pdf-parser";
 import { buildSolutionEvaluationProvenance } from "@/lib/server/workflow-boundaries";
 import { sortByRequirementOrder } from "@/lib/requirement-order";
 import {
@@ -34,7 +68,6 @@ import {
 } from "@/lib/server/offer-coverage";
 import {
   buildChatPrompt,
-  CUSTOMER_ANALYSIS_READABILITY_RULES,
   buildCustomerAnalysisPrompt,
   buildDelimitedContext,
   buildExecutiveSummaryPrompt,
@@ -80,6 +113,7 @@ import {
   detectExplicitRequirementIds,
   detectRequirementIds,
   explicitRequirementIdPattern,
+  isContextualNonRequirementExplicitId,
   isNonRequirementExplicitId,
   isTableOrColumnHeaderRequirementMarker,
 } from "@/lib/server/requirements/id-detection";
@@ -112,6 +146,9 @@ import {
   repairTableRowTextArtifacts,
 } from "@/lib/server/requirements/pdf-table-repairs";
 import {
+  buildExplicitIdPdfLayoutRequirementLedger,
+  buildExplicitIdPdfNarrativeRequirementLedger,
+  buildExplicitIdTableRequirementLedger,
   buildGeneratedPdfRequirementLedger,
   buildMixedTextRequirementLedger,
   buildPrefixedLineRequirementLedger,
@@ -135,7 +172,6 @@ import {
   canonicalizeRequirementSourceLedger,
   isLikelyRequirementSourceDocument,
 } from "@/lib/server/use-cases/solution-evaluation-readiness";
-import { normalizeTechnologySignalWords } from "@/lib/signal-words";
 import type {
   ChatDomainHint,
   ChatMessage,
@@ -148,19 +184,22 @@ import type {
   ProjectServiceDescription,
   ProjectMetadataInference,
   ProjectDocumentDetail,
-  RecommendedService,
   ServiceDocument,
   ServiceDocumentDetail,
   SolutionEvaluationResult,
-  ValueCategory,
-  ValueOpportunity,
 } from "@/lib/types";
 
 const DEFAULT_OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() || "gpt-5.4";
 const DEFAULT_ANALYSIS_MODEL =
   process.env.OPENAI_ANALYSIS_MODEL?.trim() ||
   (/(?:mini|nano)$/i.test(DEFAULT_OPENAI_MODEL) ? "gpt-5.4" : DEFAULT_OPENAI_MODEL);
+const DOCUMENT_ANALYSIS_MODEL =
+  process.env.OPENAI_DOCUMENT_ANALYSIS_MODEL?.trim() || "gpt-5.6-terra";
 const WORKSPACE_MODEL_IDS = [
+  "gpt-5.6",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.4-nano",
@@ -173,13 +212,6 @@ const ANALYSIS_REASONING_EFFORT: ReasoningEffort = "medium";
 const EVALUATION_REASONING_EFFORT: ReasoningEffort = "medium";
 const FAST_REASONING_EFFORT: ReasoningEffort = "low";
 const GPT_MODELS_USE_DEFAULT_TEMPERATURE = /^gpt-5/i;
-const VALUE_CATEGORIES: ValueCategory[] = [
-  "Høyere produktivitet",
-  "Lavere kostnader",
-  "Redusert risiko",
-  "Bedre brukeropplevelse",
-];
-
 type OpenAIClient = {
   chat: {
     completions: {
@@ -384,10 +416,6 @@ type RetrievalPlan = {
 type MammothHtmlModule = {
   convertToHtml: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 };
-type PdfParseFn = (
-  buffer: Buffer,
-  options: Record<string, unknown>,
-) => Promise<{ text: string; numpages?: number }>;
 type PdfLayoutTextItem = {
   str: string;
   transform: number[];
@@ -405,7 +433,6 @@ type PdfLayoutPage = {
 
 let cachedClientPromise: Promise<OpenAIClient> | null = null;
 let cachedMammothHtmlPromise: Promise<MammothHtmlModule> | null = null;
-let cachedPdfParsePromise: Promise<PdfParseFn> | null = null;
 declare global {
   var __anbudDocumentInsightCache: DocumentInsightCache | undefined;
 }
@@ -449,6 +476,7 @@ const REQUIREMENT_RESPONSE_HANDOFF_CONCURRENCY = parsePositiveIntegerEnv(
 );
 const REQUIREMENT_RESPONSE_PROGRESS_HEARTBEAT_MS = 35_000;
 const REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS = 60_000;
+const REQUIREMENT_COVERAGE_BATCH_RETRY_TIMEOUT_MS = 90_000;
 const SOLUTION_EVALUATION_TIMEOUT_MS = 150_000;
 const REQUIREMENT_COVERAGE_BATCH_SIZE = parsePositiveIntegerEnv(
   "REQUIREMENT_COVERAGE_BATCH_SIZE",
@@ -477,7 +505,6 @@ const REQUIREMENT_COVERAGE_EVALUATION_REGISTRY_MAX_ROWS =
     500,
   );
 const REQUIREMENT_COVERAGE_RETRIEVAL_LIMIT = 4;
-const MAX_DYNAMIC_KEYWORD_REGEX_CHARS = 160;
 const REQUIREMENT_RETRIEVAL_STOP_WORDS = new Set([
   "atea",
   "eller",
@@ -770,16 +797,6 @@ async function getMammothHtml() {
   return cachedMammothHtmlPromise;
 }
 
-async function getPdfParse() {
-  if (!cachedPdfParsePromise) {
-    cachedPdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then(
-      (module) => module.default as unknown as PdfParseFn,
-    );
-  }
-
-  return cachedPdfParsePromise;
-}
-
 function normalizeModelId(value: string | null | undefined) {
   const normalized = value?.trim();
   if (!normalized) {
@@ -813,7 +830,14 @@ export async function resolveOpenAIModelOverride(
     return DEFAULT_OPENAI_MODEL;
   }
 
-  if (![...WORKSPACE_MODEL_IDS, DEFAULT_OPENAI_MODEL, ANALYSIS_MODEL].includes(modelId)) {
+  if (
+    ![
+      ...WORKSPACE_MODEL_IDS,
+      DEFAULT_OPENAI_MODEL,
+      ANALYSIS_MODEL,
+      DOCUMENT_ANALYSIS_MODEL,
+    ].includes(modelId)
+  ) {
     throw new Error("Valgt modell er ikke tilgjengelig for denne API-nøkkelen.");
   }
 
@@ -1063,44 +1087,6 @@ function retrievedSnippetContext(
           .join("\n"),
       )
       .join("\n\n"),
-  );
-}
-
-function selectServiceRecommendationCandidates(
-  services: ProjectServiceDescription[] | undefined,
-) {
-  return [...(services ?? [])]
-    .filter(
-      (service) =>
-        service.name.trim() && !isTransientEvaluationServiceCandidate(service),
-    )
-    .map((service, index) => ({
-      service,
-      index,
-      hasDocumentContext:
-        service.description.trim().length > 0 ||
-        service.documents.some((document) => document.ai_summary?.trim()),
-    }))
-    .sort(
-      (left, right) =>
-        Number(right.service.selected) - Number(left.service.selected) ||
-        Number(right.service.recommended) - Number(left.service.recommended) ||
-        right.service.recommendation_score - left.service.recommendation_score ||
-        Number(right.hasDocumentContext) - Number(left.hasDocumentContext) ||
-        left.index - right.index,
-    )
-    .slice(0, 12)
-    .map(({ service }) => service);
-}
-
-function isTransientEvaluationServiceCandidate(
-  service: ProjectServiceDescription,
-) {
-  return (
-    /^LLM eval service\b/i.test(service.name.trim()) ||
-    /Temporary service description for LLM-as-judge evaluation/i.test(
-      service.description,
-    )
   );
 }
 
@@ -1771,7 +1757,13 @@ export function stripAnswerTextFromRequirement(value: string) {
   }
 
   const embeddedId = [...text.matchAll(explicitRequirementIdPattern())].find(
-    (match) => !isNonRequirementExplicitId(match[0]),
+    (match) => {
+      const markerStart = match.index ?? 0;
+      return !isContextualNonRequirementExplicitId(
+        match[0],
+        text.slice(Math.max(0, markerStart - 24), markerStart),
+      );
+    },
   );
   const embeddedIdIndex = embeddedId?.index ?? -1;
   if (embeddedId?.[0] && embeddedIdIndex > 0) {
@@ -1939,38 +1931,20 @@ async function readPdfSourceExtraction(
   const extraction = (async () => {
     const layoutPages: PdfLayoutPage[] = [];
     const textPages: Array<{ page: number; text: string }> = [];
-    let pageNumber = 0;
-
     try {
-      const pdfParse = await getPdfParse();
-      await pdfParse(Buffer.from(document.file_base64, "base64"), {
-        pagerender: (pageData: {
-          getTextContent: (options: {
-            normalizeWhitespace: boolean;
-            disableCombineTextItems: boolean;
-          }) => Promise<{ items: PdfLayoutTextItem[] }>;
-        }) => {
-          pageNumber += 1;
-          const currentPage = pageNumber;
-          return pageData
-            .getTextContent({
-              normalizeWhitespace: false,
-              disableCombineTextItems: false,
-            })
-            .then((textContent) => {
-              layoutPages.push({
-                page: currentPage,
-                lines: renderPdfLayoutLines(textContent.items),
-              });
-              const text = normalizePdfReferenceTypography(
-                textContent.items.map((item) => item.str).join(" "),
-              );
-              if (text) {
-                textPages.push({ page: currentPage, text });
-              }
-              return "";
-            });
-        },
+      await parsePdf(Buffer.from(document.file_base64, "base64"), (page, items) => {
+        const textItems = items as PdfLayoutTextItem[];
+        layoutPages.push({
+          page,
+          lines: renderPdfLayoutLines(textItems),
+        });
+        const text = normalizePdfReferenceTypography(
+          textItems.map((item) => item.str).join(" "),
+        );
+        if (text) {
+          textPages.push({ page, text });
+        }
+        return "";
       });
     } catch {
       return { layoutPages: [], rawText: "" };
@@ -4379,6 +4353,14 @@ function serviceFromTableRequirementId(entry: RequirementLedgerEntry) {
   return cleanTableService(entry.id.slice(entry.tableId.length).replace(/^\s*-\s*/, ""));
 }
 
+function hasStableExplicitRequirementId(entry: RequirementLedgerEntry) {
+  const normalizedEntryId = normalizeRequirementId(entry.id).replace(/\s+/g, "");
+  return detectExplicitRequirementIds(entry.id).some(
+    (id) =>
+      normalizeRequirementId(id).replace(/\s+/g, "") === normalizedEntryId,
+  );
+}
+
 function repairRequirementLedgerEntryArtifacts(
   entry: RequirementLedgerEntry,
   sourceDocumentSha256 = "",
@@ -4517,7 +4499,7 @@ function repairRequirementLedgerEntryArtifacts(
 
   if (repaired.service) {
     next.service = repaired.service;
-    if (entry.tableId) {
+    if (entry.tableId && !hasStableExplicitRequirementId(entry)) {
       next.id = `${entry.tableId} - ${repaired.service}`;
     }
   }
@@ -4582,7 +4564,12 @@ function trimAtForeignExplicitRequirementId(
     }
 
     const id = documentRequirementId(match[0]);
-    if (isNonRequirementExplicitId(id)) {
+    if (
+      isContextualNonRequirementExplicitId(
+        id,
+        normalized.slice(Math.max(0, index - 24), index),
+      )
+    ) {
       continue;
     }
     if (normalizeRequirementId(id).replace(/\s+/g, "") === own) {
@@ -6999,8 +6986,12 @@ function markdownRequirementTableColumns(cells: string[]) {
       cell,
     ),
   );
-  const requirementIndex = normalized.findIndex((cell) => cell === "krav");
-  const answerIndex = normalized.findIndex((cell) => cell === "svar");
+  const requirementIndex = normalized.findIndex((cell) =>
+    /^(?:krav(?:tekst)?|requirement(?: text)?)$/.test(cell),
+  );
+  const answerIndex = normalized.findIndex((cell) =>
+    /^(?:svar|leverandørens svar|answer|response|supplier response)$/.test(cell),
+  );
   const evidenceIndex = normalized.findIndex((cell) =>
     /^(?:svargrunnlag|answer evidence|evidence|bevis)$/.test(cell),
   );
@@ -8425,9 +8416,13 @@ function buildRequirementSourceLedger(document: ProjectDocumentDetail) {
       currentHeading = pageHeading;
     }
 
-    const matches = [...page.text.matchAll(markerPattern)].filter(
-      (match) => !isNonRequirementExplicitId(match[0]),
-    );
+    const matches = [...page.text.matchAll(markerPattern)].filter((match) => {
+      const markerStart = match.index ?? 0;
+      return !isContextualNonRequirementExplicitId(
+        match[0],
+        page.text.slice(Math.max(0, markerStart - 24), markerStart),
+      );
+    });
     if (!matches.length) {
       if (current && pageHeading) {
         current.heading = pageHeading;
@@ -8545,6 +8540,60 @@ async function buildRequirementSourceLedgerWithFiles(
 ) {
   const corpusParserContext = requirementCorpusParserContext();
   const sourceDocumentSha256 = knownCanonicalPdfSourceSha256(document);
+  const explicitIdPdfLayoutLedger =
+    document.file_format === "pdf"
+      ? buildExplicitIdPdfLayoutRequirementLedger(
+          await readPdfLayoutPages(document),
+          corpusParserContext,
+        )
+      : [];
+  if (explicitIdPdfLayoutLedger.length > 0) {
+    return sortRequirementLedgerInDocumentOrder(
+      finalizeRequirementLedgerEntries(
+        explicitIdPdfLayoutLedger,
+        sourceDocumentSha256,
+      ).map((entry) => ({
+        ...entry,
+        documentId: document.id,
+        documentTitle: document.title,
+      })),
+    );
+  }
+  const explicitIdPdfNarrativeLedger =
+    document.file_format === "pdf"
+      ? buildExplicitIdPdfNarrativeRequirementLedger(
+          await readPdfLayoutPages(document),
+          corpusParserContext,
+        )
+      : [];
+  if (explicitIdPdfNarrativeLedger.length > 0) {
+    return sortRequirementLedgerInDocumentOrder(
+      finalizeRequirementLedgerEntries(
+        explicitIdPdfNarrativeLedger,
+        sourceDocumentSha256,
+      ).map((entry) => ({
+        ...entry,
+        documentId: document.id,
+        documentTitle: document.title,
+      })),
+    );
+  }
+  const explicitIdTableLedger = buildExplicitIdTableRequirementLedger(
+    document,
+    corpusParserContext,
+  );
+  if (explicitIdTableLedger.length > 0) {
+    return sortRequirementLedgerInDocumentOrder(
+      finalizeRequirementLedgerEntries(
+        explicitIdTableLedger,
+        sourceDocumentSha256,
+      ).map((entry) => ({
+        ...entry,
+        documentId: document.id,
+        documentTitle: document.title,
+      })),
+    );
+  }
   const legacyPdfLedger =
     document.file_format === "pdf" && isLegacyMixedFofingerCorpus(document)
       ? buildPrefixedLineRequirementLedger(document, corpusParserContext)
@@ -8598,7 +8647,7 @@ async function buildRequirementSourceLedgerWithFiles(
   const skipDoclingStructureForLegacyFofinger =
     /Bilag\s+2\s*-\s*Krav\s+og\s+føringer/i.test(document.raw_text) &&
     !hasLegacyKravFeringStructuredRows(document, corpusParserContext);
-  const doclingStructureLedger = trustedStructureMapLedger.length
+  const availableStructureLedger = trustedStructureMapLedger.length
     ? trustedStructureMapLedger
     : skipDoclingStructureForLegacyFofinger
       ? []
@@ -8607,6 +8656,34 @@ async function buildRequirementSourceLedgerWithFiles(
     document,
     corpusParserContext,
   );
+  const hasLocalPdfTableStructure = document.structure_map.some(
+    (entry) =>
+      entry.kind === "table" &&
+      isLocalPdfLayoutParser(entry.parser) &&
+      entry.cells &&
+      typeof entry.cells === "object" &&
+      !Array.isArray(entry.cells),
+  );
+  const trustedLocalById = new Map(
+    (hasLocalPdfTableStructure ? trustedStructureMapLedger : []).map(
+      (entry) => [normalizeRequirementId(entry.id), entry] as const,
+    ),
+  );
+  const generatedPdfLedgerWithLocalTableText = generatedPdfLedger.map((entry) =>
+    preferTrustedStructuredRequirementText(
+      entry,
+      trustedLocalById.get(normalizeRequirementId(entry.id)),
+    ),
+  );
+  const generatedRequirementIds = new Set(
+    generatedPdfLedger.map((entry) => normalizeRequirementId(entry.id)),
+  );
+  const doclingStructureLedger = hasLocalPdfTableStructure
+    ? availableStructureLedger.filter(
+        (entry) =>
+          !generatedRequirementIds.has(normalizeRequirementId(entry.id)),
+      )
+    : availableStructureLedger;
   const useGeneratedPdfLedger = generatedPdfLedger.length > 0;
   const mixedTextLedger = useGeneratedPdfLedger
     ? []
@@ -8638,7 +8715,7 @@ async function buildRequirementSourceLedgerWithFiles(
   const ledger = filterSyntheticRequirementFallbacks(
     filterSyntheticRequirementDuplicates([
       ...unstructuredLedger,
-      ...generatedPdfLedger,
+      ...generatedPdfLedgerWithLocalTableText,
       ...mixedTextLedger,
       ...serviceTableLedger,
       ...doclingStructureLedger,
@@ -8792,7 +8869,10 @@ function applySourceBoundPdfTableCanonicalRepair(
 
   return {
     ...entry,
-    id: repaired.service ? `${entry.tableId} - ${repaired.service}` : entry.id,
+    id:
+      repaired.service && !hasStableExplicitRequirementId(entry)
+        ? `${entry.tableId} - ${repaired.service}`
+        : entry.id,
     service: repaired.service || entry.service,
     text: repaired.text,
   };
@@ -16189,7 +16269,10 @@ function enrichCustomerAnalysisWithFoundationFacts(
 
   return {
     ...result,
-    prioritized_requirements: prioritizedRequirements.slice(0, 6),
+    prioritized_requirements: prioritizedRequirements.slice(
+      0,
+      MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
+    ),
     likely_evaluation_criteria: appendUniqueTextItems(
       Array.isArray(result.likely_evaluation_criteria)
         ? result.likely_evaluation_criteria
@@ -18939,36 +19022,6 @@ function deterministicCoverageEvidence(input: {
   );
 }
 
-function deterministicCoverageFallbackRow(
-  entry: RequirementLedgerEntry,
-): RequirementCoverageBatchAnswer {
-  const answerEvidence = substantiveRequirementAnswerExcerpt(entry);
-  const sourceEvidence = compactText(
-    entry.sourceExcerpt || entry.text,
-    420,
-  );
-
-  if (answerEvidence) {
-    return {
-      assessment: "Uklart",
-      rationale:
-        "Batchvurderingen feilet, men kildegrunnlaget inneholder et svarutdrag. Raden må derfor vurderes manuelt fremfor å klassifiseres som manglende.",
-      evidence: compactText(answerEvidence, 420),
-      recommendation:
-        "Kontroller svarutdraget mot kravet og styrk besvarelsen med konkret leveranse, ansvar, kontroll og dokumentasjon der svaret er uklart.",
-    };
-  }
-
-  return {
-    assessment: "Mangler",
-    rationale:
-      "Batchvurderingen feilet, og det finnes ingen matchet svarrad eller svarutdrag for dette kravet i løsningsdokumentet.",
-    evidence: sourceEvidence,
-    recommendation:
-      "Legg inn en egen kravrad med konkret svar, ansvar, kontroll og dokumentasjon for dette kravet.",
-  };
-}
-
 function assertRequirementCoverageItemsAreReviewable(items: RequirementCoverageItem[]) {
   const broken = items.filter(
     (item) =>
@@ -20025,6 +20078,30 @@ export function assertRequirementCoverageBatchesSucceeded(
   );
 }
 
+// Exported for deterministic concurrency and lease-loss contract tests.
+// fallow-ignore-next-line unused-export
+export async function retryRequirementCoverageBatchesSequentially<TBatch, TValue>(
+  batches: TBatch[],
+  retry: (batch: TBatch) => Promise<TValue>,
+  assertActive: () => void = () => {},
+) {
+  const results: Array<
+    | { batch: TBatch; ok: true; value: TValue }
+    | { batch: TBatch; ok: false; error: unknown }
+  > = [];
+
+  for (const batch of batches) {
+    try {
+      results.push({ batch, ok: true, value: await retry(batch) });
+    } catch (error) {
+      assertActive();
+      results.push({ batch, ok: false, error });
+    }
+  }
+
+  return results;
+}
+
 export function selectRequirementsForSolutionCoverage(input: {
   ledger: RequirementLedgerEntry[];
   hasExplicitSourceLedger: boolean;
@@ -20156,52 +20233,71 @@ async function buildSolutionRequirementCoverage(input: {
     `[18%] Fant ${requirements.length} krav. Vurderer kravdekning i ${chunks.length} batcher ...`,
   );
 
+  const evaluateCoverageChunk = async (
+    chunk: (typeof chunks)[number],
+    options: { timeoutMs: number; maxRetries: number },
+  ) => {
+    const krav = buildRequirementCoverageBatchRegistry(
+      chunk.entries,
+      chunk.startIndex,
+    );
+    const excerpts = await buildRequirementCoverageRetrievalContext({
+      entries: chunk.entries,
+      solutionDocument: input.solutionDocument,
+      startIndex: chunk.startIndex,
+    });
+    const generated = await createJsonCompletion<{
+      rows?: RequirementCoverageBatchAnswer[];
+    }>({
+      system: coverageSystemPrompt,
+      user: [
+        coverageSharedPromptPrefix,
+        excerpts,
+        buildDelimitedContext("Krav som skal vurderes", promptJson(krav)),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+      userMessages: [
+        coverageSharedPromptPrefix,
+        [
+          excerpts,
+          buildDelimitedContext("Krav som skal vurderes", promptJson(krav)),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      ].filter(Boolean),
+      temperature: 0,
+      model: coverageModel,
+      reasoningEffort: EVALUATION_REASONING_EFFORT,
+      timeoutMs: options.timeoutMs,
+      maxRetries: options.maxRetries,
+      promptCacheKey: promptCacheFamily("requirement-coverage-batch"),
+    });
+    const rows = validateRequirementCoverageBatchRows({
+      rows: Array.isArray(generated.rows) ? generated.rows : [],
+      entries: chunk.entries,
+      startIndex: chunk.startIndex,
+    });
+    const items = chunk.entries.map((entry, localIndex) =>
+      coverageItemFromBatchRow({
+        row: rows[localIndex],
+        entry,
+        orderIndex: chunk.startIndex + localIndex,
+      }),
+    );
+    assertRequirementCoverageItemsAreReviewable(items);
+    return items;
+  };
+
   const batches = await mapWithConcurrency(
     chunks,
     REQUIREMENT_COVERAGE_BATCH_CONCURRENCY,
     async (chunk) => {
-      const krav = buildRequirementCoverageBatchRegistry(
-        chunk.entries,
-        chunk.startIndex,
-      );
-      const excerpts = await buildRequirementCoverageRetrievalContext({
-        entries: chunk.entries,
-        solutionDocument: input.solutionDocument,
-        startIndex: chunk.startIndex,
-      });
-      let rows: RequirementCoverageBatchAnswer[] = [];
+      let items: Awaited<ReturnType<typeof evaluateCoverageChunk>> = [];
       try {
-        const generated = await createJsonCompletion<{
-          rows?: RequirementCoverageBatchAnswer[];
-        }>({
-          system: coverageSystemPrompt,
-          user: [
-            coverageSharedPromptPrefix,
-            excerpts,
-            buildDelimitedContext("Krav som skal vurderes", promptJson(krav)),
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
-          userMessages: [
-            coverageSharedPromptPrefix,
-            [
-              excerpts,
-              buildDelimitedContext("Krav som skal vurderes", promptJson(krav)),
-            ]
-              .filter(Boolean)
-              .join("\n\n"),
-          ].filter(Boolean),
-          temperature: 0,
-          model: coverageModel,
-          reasoningEffort: EVALUATION_REASONING_EFFORT,
+        items = await evaluateCoverageChunk(chunk, {
           timeoutMs: REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS,
           maxRetries: 2,
-          promptCacheKey: promptCacheFamily("requirement-coverage-batch"),
-        });
-        rows = validateRequirementCoverageBatchRows({
-          rows: Array.isArray(generated.rows) ? generated.rows : [],
-          entries: chunk.entries,
-          startIndex: chunk.startIndex,
         });
       } catch (error) {
         assertProjectWorkflowActive();
@@ -20222,13 +20318,6 @@ async function buildSolutionRequirementCoverage(input: {
             count: chunk.entries.length,
           }),
         );
-        rows = chunk.entries.map((entry, localIndex) =>
-          ({
-            nr: chunk.startIndex + localIndex + 1,
-            ref: requirementCoverageIdentityRef(entry),
-            ...deterministicCoverageFallbackRow(entry),
-          }),
-        );
       }
       completedBatches += 1;
       completedCoverageRequirements += chunk.entries.length;
@@ -20242,20 +20331,80 @@ async function buildSolutionRequirementCoverage(input: {
         )} av ${requirements.length} krav ...`,
       );
 
-      const items = chunk.entries.map((entry, localIndex) =>
-        coverageItemFromBatchRow({
-          row: rows[localIndex],
-          entry,
-          orderIndex: chunk.startIndex + localIndex,
-        }),
-      );
-      assertRequirementCoverageItemsAreReviewable(items);
       return items;
     },
   );
 
-  const items = batches.flat();
-  assertRequirementCoverageBatchesSucceeded(failedCoverageBatches, chunks.length);
+  const recoveredBatches = new Map<
+    number,
+    Awaited<ReturnType<typeof evaluateCoverageChunk>>
+  >();
+  const retryFailures: typeof failedCoverageBatches = [];
+  const retryChunks = failedCoverageBatches.flatMap((failedBatch) => {
+    const chunk = chunks.find(
+      (candidate) => candidate.startIndex === failedBatch.startIndex,
+    );
+    if (!chunk) {
+      retryFailures.push(failedBatch);
+      return [];
+    }
+    return [chunk];
+  });
+  const retryResults = await retryRequirementCoverageBatchesSequentially(
+    retryChunks,
+    async (chunk) => {
+      input.onProgress?.(
+        `[57%] Prøver én feilet kravbatch på nytt (${chunk.entries.length} krav) ...`,
+      );
+      return evaluateCoverageChunk(chunk, {
+        timeoutMs: REQUIREMENT_COVERAGE_BATCH_RETRY_TIMEOUT_MS,
+        maxRetries: 0,
+      });
+    },
+    assertProjectWorkflowActive,
+  );
+  for (const result of retryResults) {
+    const chunk = result.batch;
+    if (result.ok) {
+      recoveredBatches.set(
+        chunk.startIndex,
+        result.value,
+      );
+      console.info(
+        JSON.stringify({
+          event: "requirement_coverage_batch_retry_succeeded",
+          start_index: chunk.startIndex,
+          count: chunk.entries.length,
+        }),
+      );
+    } else {
+      const safeCoverageError = productionSafeErrorMessage(
+        result.error,
+        "Coverage-batch feilet også ved kontrollert nytt forsøk.",
+      );
+      retryFailures.push({
+        startIndex: chunk.startIndex,
+        count: chunk.entries.length,
+        reason: safeCoverageError,
+      });
+      console.info(
+        JSON.stringify({
+          event: "requirement_coverage_batch_retry_failed",
+          ...safeErrorTelemetry(result.error),
+          start_index: chunk.startIndex,
+          count: chunk.entries.length,
+        }),
+      );
+    }
+  }
+
+  assertRequirementCoverageBatchesSucceeded(retryFailures, chunks.length);
+  const items = batches.flatMap((batch, index) => {
+    const chunk = chunks[index];
+    return chunk
+      ? recoveredBatches.get(chunk.startIndex) ?? batch
+      : batch;
+  });
   assertRequirementCoverageItemsAreReviewable(items);
   const coverage = normalizeSolutionRequirementCoverage({
     total_requirements: requirements.length,
@@ -21182,125 +21331,6 @@ function summarizeSolutionEvaluation(evaluation: SolutionEvaluationResult) {
   });
 }
 
-function normalizeComparableText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[`*#>_[\](){},.:;!?'"“”‘’/\\|-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenizeComparableText(value: string) {
-  return normalizeComparableText(value)
-    .split(" ")
-    .filter((token) => token.length > 2);
-}
-
-function similarityScore(a: string, b: string) {
-  const aTokens = new Set(tokenizeComparableText(a));
-  const bTokens = new Set(tokenizeComparableText(b));
-
-  if (!aTokens.size || !bTokens.size) {
-    return 0;
-  }
-
-  let overlap = 0;
-  for (const token of aTokens) {
-    if (bTokens.has(token)) {
-      overlap += 1;
-    }
-  }
-
-  return overlap / Math.min(aTokens.size, bTokens.size);
-}
-
-function isNearDuplicate(a: string, b: string, threshold = 0.72) {
-  const normalizedA = normalizeComparableText(a);
-  const normalizedB = normalizeComparableText(b);
-
-  if (!normalizedA || !normalizedB) {
-    return false;
-  }
-
-  if (normalizedA === normalizedB) {
-    return true;
-  }
-
-  return similarityScore(normalizedA, normalizedB) >= threshold;
-}
-
-function normalizeUniqueList(items: string[]) {
-  const result: string[] = [];
-
-  for (const rawItem of items) {
-    const item = rawItem.replace(/\s+/g, " ").trim();
-    if (!item) {
-      continue;
-    }
-
-    if (result.some((existing) => isNearDuplicate(existing, item))) {
-      continue;
-    }
-
-    result.push(item);
-  }
-
-  return result;
-}
-
-function capNormalizedList(items: string[], options?: { max?: number }) {
-  const max = options?.max ?? 10;
-  return normalizeUniqueList(items).slice(0, max);
-}
-
-function splitIntoSentences(value: string) {
-  const abbreviationDot = "__ANBUD_ABBR_DOT__";
-  const protectedValue = value.replace(
-    /\b(?:f\.eks|dvs|bl\.a|m\.m|o\.l)\./gi,
-    (match) => match.replace(/\./g, abbreviationDot),
-  );
-
-  return protectedValue
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.replaceAll(abbreviationDot, "."))
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
-
-function dedupeSummary(value: string, references: string[]) {
-  const paragraphs = value
-    .split(/\n\s*\n+/)
-    .map((paragraph) =>
-      paragraph.replace(/[ \t]+/g, " ").replace(/\n+/g, " ").trim(),
-    )
-    .filter(Boolean);
-
-  if (!paragraphs.length) {
-    return value.replace(/\s+/g, " ").trim();
-  }
-
-  const keptParagraphs = paragraphs
-    .map((paragraph) => {
-      const sentences = splitIntoSentences(paragraph);
-      if (!sentences.length) {
-        return paragraph;
-      }
-
-      const keptSentences = sentences.filter((sentence) => {
-        return !references.some((reference) =>
-          isNearDuplicate(sentence, reference, 0.76),
-        );
-      });
-
-      return keptSentences.join(" ").replace(/\s+/g, " ").trim();
-    })
-    .filter(Boolean);
-
-  return (keptParagraphs.length ? keptParagraphs : paragraphs)
-    .join("\n\n")
-    .trim();
-}
-
 function normalizeMarkdownText(value: string) {
   return value
     .replace(/\r\n/g, "\n")
@@ -21467,200 +21497,6 @@ function enrichHighLevelDesignTextWithFoundationFacts(
 
   return normalizeMarkdownText(text);
 }
-function normalizeSignalWords(items: string[]) {
-  return normalizeTechnologySignalWords(items);
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function countSignalWordMentions(keyword: string, sourceText: string) {
-  const trimmedKeyword = keyword.replace(/\s+/g, " ").trim();
-  const normalizedSource = sourceText.replace(/\s+/g, " ").trim();
-
-  if (!trimmedKeyword || !normalizedSource) {
-    return 1;
-  }
-
-  if (trimmedKeyword.length > MAX_DYNAMIC_KEYWORD_REGEX_CHARS) {
-    return countPlainTextMentions(trimmedKeyword, normalizedSource);
-  }
-
-  const flexibleKeyword = escapeRegExp(trimmedKeyword)
-    .replace(/\\ /g, "\\s+")
-    .replace(/\\-/g, "[-\\s]?");
-
-  try {
-    const matcher = new RegExp(
-      `(^|[^\\p{L}\\p{N}])(${flexibleKeyword})(?=$|[^\\p{L}\\p{N}])`,
-      "giu",
-    );
-    return Math.max(1, Array.from(normalizedSource.matchAll(matcher)).length);
-  } catch {
-    return countPlainTextMentions(trimmedKeyword, normalizedSource);
-  }
-}
-
-function countPlainTextMentions(keyword: string, sourceText: string) {
-  const lowerSource = sourceText.toLowerCase();
-  const lowerKeyword = keyword.toLowerCase();
-  let count = 0;
-  let cursor = 0;
-
-  while (cursor < lowerSource.length) {
-    const nextIndex = lowerSource.indexOf(lowerKeyword, cursor);
-    if (nextIndex === -1) {
-      break;
-    }
-    count += 1;
-    cursor = nextIndex + lowerKeyword.length;
-  }
-
-  return Math.max(1, count);
-}
-
-function normalizeSignalWordCounts(
-  signalWords: string[],
-  input?: {
-    sourceText?: string;
-    existingCounts?: Record<string, unknown>;
-  },
-) {
-  return signalWords.reduce<Record<string, number>>((counts, keyword) => {
-    const existingCount = input?.existingCounts?.[keyword];
-    counts[keyword] =
-      typeof existingCount === "number" && Number.isFinite(existingCount)
-        ? Math.max(1, Math.round(existingCount))
-        : countSignalWordMentions(keyword, input?.sourceText ?? "");
-    return counts;
-  }, {});
-}
-
-function normalizeMermaidDiagram(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
-  }
-
-  const candidate = trimmed
-    .replace(/^```mermaid\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
-  if (!/^(flowchart|graph)\s+(TB|TD|BT|RL|LR)\b/i.test(candidate)) {
-    return "";
-  }
-
-  return candidate;
-}
-
-function countMermaidComplexity(diagram: string) {
-  const lines = diagram
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const edgeCount = lines.filter((line) => /-->|---|-.->/.test(line)).length;
-  const subgraphCount = lines.filter((line) =>
-    /^subgraph\b/i.test(line),
-  ).length;
-  const nodeIds = new Set<string>();
-  for (const line of lines) {
-    const matches = line.matchAll(/\b([A-Za-z][A-Za-z0-9_]*)\s*[\[\(\{]/g);
-    for (const match of matches) {
-      nodeIds.add(match[1] || "");
-    }
-  }
-  return {
-    lineCount: lines.length,
-    edgeCount,
-    subgraphCount,
-    nodeCount: nodeIds.size,
-  };
-}
-
-function includesSignal(signals: string[], pattern: RegExp) {
-  return signals.some((signal) => pattern.test(signal));
-}
-
-function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
-  const signals = Array.isArray(result.signal_words) ? result.signal_words : [];
-
-  const hasMicrosoftIdentity = includesSignal(
-    signals,
-    /\bentra\b|active directory|microsoft 365/i,
-  );
-  const hasAzure = includesSignal(signals, /\bazure\b/i);
-  const hasNamedIntegration = includesSignal(
-    signals,
-    /\bid-?porten\b|noark|api/i,
-  );
-  const hasNamedData = includesSignal(signals, /\bpower bi\b|data|database/i);
-  const hasNamedOps = includesSignal(
-    signals,
-    /\bci\/?cd\b|monitor|logging|backup/i,
-  );
-
-  return [
-    "flowchart LR",
-    '  subgraph Business["Brukere og forretning"]',
-    "    Users[Forretningsbrukere og fagmiljø]",
-    "    Apps[Applikasjoner og arbeidsflater]",
-    "  end",
-    '  subgraph Identity["Identitet"]',
-    hasMicrosoftIdentity
-      ? "    Identity[Microsoft Entra ID]"
-      : "    Identity[Identitet og tilgang]",
-    "  end",
-    '  subgraph PlatformLayer["Plattform"]',
-    hasAzure ? "    Platform[Azure-plattform]" : "    Platform[Plattform]",
-    "  end",
-    '  subgraph IntegrationLayer["Integrasjon og data"]',
-    hasNamedIntegration
-      ? "    Integration[API og integrasjoner]"
-      : "    Integration[Integrasjonslag]",
-    hasNamedData ? "    Data[Data og lagring]" : "    Data[Data og tjenester]",
-    "  end",
-    '  subgraph Operations["Sikkerhet og drift"]',
-    hasNamedOps
-      ? "    Ops[Overvåking, logging og backup]"
-      : "    Ops[Drift og sikkerhet]",
-    "  end",
-    "",
-    "  Users --> Apps",
-    "  Apps --> Platform",
-    "  Apps --> Integration",
-    "  Identity --> Platform",
-    "  Platform --> Integration",
-    "  Integration --> Data",
-    "  Platform --> Ops",
-    "  Data --> Ops",
-  ].join("\n");
-}
-
-function preferSimpleArchitectureDiagram(
-  rawDiagram: string,
-  result: CustomerAnalysisResult,
-) {
-  const normalized = normalizeMermaidDiagram(rawDiagram);
-  if (!normalized) {
-    return buildSimpleArchitectureDiagram(result);
-  }
-
-  const complexity = countMermaidComplexity(normalized);
-  if (
-    complexity.nodeCount > 10 ||
-    complexity.edgeCount > 12 ||
-    complexity.subgraphCount > 5 ||
-    complexity.lineCount > 28
-  ) {
-    return buildSimpleArchitectureDiagram(result);
-  }
-
-  return normalized;
-}
-
 function normalizeHighLevelDesignDiagram(input: {
   rawDiagram: string;
   designText: string;
@@ -21668,666 +21504,6 @@ function normalizeHighLevelDesignDiagram(input: {
 }) {
   return normalizeMermaidDiagram(input.rawDiagram || "");
 }
-function normalizeRequirementList(
-  requirements: CustomerAnalysisResult["implicit_requirements"],
-) {
-  const result: CustomerAnalysisResult["implicit_requirements"] = [];
-
-  for (const requirement of requirements) {
-    const title = requirement.title.replace(/\s+/g, " ").trim();
-    const description = requirement.description.replace(/\s+/g, " ").trim();
-
-    if (!title || !description) {
-      continue;
-    }
-
-    if (
-      result.some(
-        (existing) =>
-          isNearDuplicate(existing.title, title, 0.8) &&
-          isNearDuplicate(existing.description, description, 0.72),
-      )
-    ) {
-      continue;
-    }
-
-    result.push({
-      ...requirement,
-      title,
-      description,
-      source_reference: requirement.source_reference
-        .replace(/\s+/g, " ")
-        .trim(),
-      source_excerpt: requirement.source_excerpt.replace(/\s+/g, " ").trim(),
-    });
-  }
-
-  return result;
-}
-
-function normalizePercentShare(raw: unknown) {
-  if (typeof raw !== "number" || !Number.isFinite(raw)) {
-    return null;
-  }
-  return Math.min(100, Math.max(1, Math.round(raw)));
-}
-
-function serviceLookupKey(value: string) {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function normalizeTextField(value: unknown) {
-  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
-}
-
-function normalizeRecommendedServices(
-  items: RecommendedService[],
-  serviceCandidates?: ProjectServiceDescription[],
-): RecommendedService[] {
-  const hasCandidateInput = Array.isArray(serviceCandidates);
-  const candidateList = serviceCandidates?.length
-    ? selectServiceRecommendationCandidates(serviceCandidates)
-    : [];
-  if (hasCandidateInput && !candidateList.length) {
-    return [];
-  }
-  const candidatesById = new Map(
-    candidateList.map((service) => [service.id, service]),
-  );
-  const candidatesByName = new Map(
-    candidateList.map((service) => [serviceLookupKey(service.name), service]),
-  );
-  const constrainToCandidates = hasCandidateInput && candidateList.length > 0;
-  const seen = new Set<string>();
-
-  return (Array.isArray(items) ? items : [])
-    .filter(
-      (item) =>
-        item &&
-        typeof item.service_name === "string" &&
-        typeof item.recommendation_reason === "string",
-    )
-    .flatMap((item): RecommendedService[] => {
-      const serviceId =
-        typeof item.service_id === "string" ? item.service_id.trim() : "";
-      const serviceName = item.service_name.replace(/\s+/g, " ").trim();
-      const candidate =
-        (serviceId ? candidatesById.get(serviceId) : undefined) ??
-        candidatesByName.get(serviceLookupKey(serviceName));
-
-      if (constrainToCandidates && !candidate) {
-        return [];
-      }
-
-      return [
-        {
-          service_id: candidate?.id ?? (serviceId || null),
-          service_name: candidate?.name ?? serviceName,
-          usefulness_percent:
-            normalizePercentShare(item.usefulness_percent) ?? 1,
-          customer_need: normalizeTextField(item.customer_need),
-          recommendation_reason: normalizeTextField(item.recommendation_reason),
-          evidence: normalizeTextField(item.evidence),
-          risk_or_caveat: normalizeTextField(item.risk_or_caveat),
-        },
-      ];
-    })
-    .filter((item) => {
-      const key = item.service_id ?? serviceLookupKey(item.service_name);
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    })
-    .filter((item) => item.usefulness_percent >= 40)
-    .sort(
-      (left, right) =>
-        right.usefulness_percent - left.usefulness_percent ||
-        left.service_name.localeCompare(right.service_name, "nb"),
-    )
-    .slice(0, 5);
-}
-
-function isValueCategory(value: unknown): value is ValueCategory {
-  return (
-    typeof value === "string" &&
-    VALUE_CATEGORIES.includes(value as ValueCategory)
-  );
-}
-
-function inferValueCategory(
-  item: Pick<ValueOpportunity, "title" | "description">,
-): ValueCategory {
-  const text = `${item.title} ${item.description}`.toLowerCase();
-
-  if (
-    /risiko|sikkerhet|avbrudd|nedetid|kontroll|compliance|etterlevelse|robust|sårbar/.test(
-      text,
-    )
-  ) {
-    return "Redusert risiko";
-  }
-
-  if (
-    /kost|kostnad|besparelse|økonomi|lisens|driftskost|finops|forbruk|reduser|reducer/.test(
-      text,
-    )
-  ) {
-    return "Lavere kostnader";
-  }
-
-  if (
-    /bruker|opplevelse|selvbetjening|tilgjengelighet|adopsjon|respons|kundeopplevelse/.test(
-      text,
-    )
-  ) {
-    return "Bedre brukeropplevelse";
-  }
-
-  if (
-    /produktiv|effektiv|automatis|arbeidsflyt|prosess|kapasitet|tidsbruk|standardiser/.test(
-      text,
-    )
-  ) {
-    return "Høyere produktivitet";
-  }
-
-  return "Redusert risiko";
-}
-
-function normalizeSingleValueCategory(item: ValueOpportunity): ValueCategory {
-  const firstValidCategory = Array.isArray(item.value_categories)
-    ? item.value_categories.find(isValueCategory)
-    : null;
-
-  return firstValidCategory ?? inferValueCategory(item);
-}
-
-function mergeValueOpportunityDescriptions(descriptions: string[]) {
-  const mergedSentences: string[] = [];
-
-  for (const description of descriptions) {
-    const normalizedDescription = description.replace(/\s+/g, " ").trim();
-    const sentences = splitIntoSentences(normalizedDescription);
-    const candidates = sentences.length ? sentences : [normalizedDescription];
-
-    for (const candidate of candidates) {
-      if (!candidate) {
-        continue;
-      }
-
-      if (
-        mergedSentences.some((existing) =>
-          isNearDuplicate(existing, candidate, 0.76),
-        )
-      ) {
-        continue;
-      }
-
-      mergedSentences.push(candidate);
-    }
-  }
-
-  return mergedSentences.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function normalizeValueOpportunities(
-  items: ValueOpportunity[],
-): ValueOpportunity[] {
-  const normalizedItems = (Array.isArray(items) ? items : [])
-    .filter((item) => item && item.title && item.description)
-    .filter((item, index, array) => {
-      return !array.some(
-        (existing, existingIndex) =>
-          existingIndex < index &&
-          isNearDuplicate(existing.title, item.title, 0.8) &&
-          isNearDuplicate(existing.description, item.description, 0.72),
-      );
-    })
-    .map((item) => ({
-      title: item.title.replace(/\s+/g, " ").trim(),
-      description: item.description.replace(/\s+/g, " ").trim(),
-      value_categories: [normalizeSingleValueCategory(item)],
-      profit_share_percent:
-        normalizePercentShare(
-          (item as ValueOpportunity & { profit_share_percent?: unknown })
-            .profit_share_percent,
-        ) ?? 0,
-    }));
-
-  if (!normalizedItems.length) {
-    return [];
-  }
-
-  const mergedByCategory = new Map<ValueCategory, ValueOpportunity>();
-
-  for (const item of normalizedItems) {
-    const category = item.value_categories[0];
-    const existing = mergedByCategory.get(category);
-
-    if (!existing) {
-      mergedByCategory.set(category, item);
-      continue;
-    }
-
-    mergedByCategory.set(category, {
-      ...existing,
-      description: mergeValueOpportunityDescriptions([
-        existing.description,
-        item.description,
-      ]),
-      value_categories: [category],
-      profit_share_percent:
-        existing.profit_share_percent + item.profit_share_percent,
-    });
-  }
-
-  const filtered = VALUE_CATEGORIES.map((category) =>
-    mergedByCategory.get(category),
-  )
-    .filter((item): item is ValueOpportunity => Boolean(item))
-    .slice(0, 4);
-
-  const providedTotal = filtered.reduce(
-    (sum, item) => sum + (item.profit_share_percent || 0),
-    0,
-  );
-
-  const normalizedPercents =
-    providedTotal > 0
-      ? filtered.map((item) =>
-          Math.max(
-            1,
-            Math.round((item.profit_share_percent / providedTotal) * 100),
-          ),
-        )
-      : filtered.map(() => Math.floor(100 / filtered.length));
-
-  let currentTotal = normalizedPercents.reduce((sum, value) => sum + value, 0);
-  let index = 0;
-  while (currentTotal !== 100 && filtered.length > 0) {
-    const direction = currentTotal < 100 ? 1 : -1;
-    const targetIndex = index % filtered.length;
-    if (direction > 0 || normalizedPercents[targetIndex] > 1) {
-      normalizedPercents[targetIndex] += direction;
-      currentTotal += direction;
-    }
-    index += 1;
-  }
-
-  return filtered.map((item, itemIndex) => ({
-    ...item,
-    profit_share_percent: normalizedPercents[itemIndex] || 1,
-  }));
-}
-
-function inferRiskAudience(item: string): "us" | "customer" {
-  const text = item.toLowerCase();
-
-  if (
-    /tilbud|leverandør|leveranse|team|ressurs|kompetanse|kapasitet|scope|omfang|pris|margin|kontrakt|avklaring|posisjonering|forplikt|ansvar/.test(
-      text,
-    )
-  ) {
-    return "us";
-  }
-
-  return "customer";
-}
-
-function normalizeRiskGroups(result: CustomerAnalysisResult) {
-  const explicitForUs = capNormalizedList(
-    Array.isArray(result.risks_for_us) ? result.risks_for_us : [],
-  );
-  const explicitForCustomer = capNormalizedList(
-    Array.isArray(result.risks_for_customer) ? result.risks_for_customer : [],
-  );
-  const legacyRisks = capNormalizedList(
-    Array.isArray(result.risks) ? result.risks : [],
-  );
-
-  if (explicitForUs.length || explicitForCustomer.length) {
-    const risks = capNormalizedList([...explicitForCustomer, ...explicitForUs]);
-    return {
-      risks,
-      risksForUs: explicitForUs,
-      risksForCustomer: explicitForCustomer,
-    };
-  }
-
-  const risksForUs: string[] = [];
-  const risksForCustomer: string[] = [];
-
-  for (const risk of legacyRisks) {
-    if (inferRiskAudience(risk) === "us") {
-      risksForUs.push(risk);
-    } else {
-      risksForCustomer.push(risk);
-    }
-  }
-
-  return {
-    risks: legacyRisks,
-    risksForUs: capNormalizedList(risksForUs),
-    risksForCustomer: capNormalizedList(risksForCustomer),
-  };
-}
-
-function normalizeCustomerAnalysisResult(
-  result: CustomerAnalysisResult,
-  options?: {
-    signalSourceText?: string;
-    serviceCandidates?: ProjectServiceDescription[];
-  },
-): CustomerAnalysisResult {
-  const customerProfile = capNormalizedList(
-    Array.isArray(result.customer_profile) ? result.customer_profile : [],
-  );
-  const customerGoals = capNormalizedList(
-    Array.isArray(result.customer_goals) ? result.customer_goals : [],
-  );
-  const { risks, risksForUs, risksForCustomer } = normalizeRiskGroups(result);
-  const likelyEvaluationCriteria = capNormalizedList(
-    Array.isArray(result.likely_evaluation_criteria)
-      ? result.likely_evaluation_criteria
-      : [],
-  );
-  const signalWords = normalizeSignalWords(
-    Array.isArray(result.signal_words) ? result.signal_words : [],
-  );
-  const signalWordCounts = normalizeSignalWordCounts(signalWords, {
-    sourceText: options?.signalSourceText,
-    existingCounts: result.signal_word_counts,
-  });
-  const expectedSolutionDirection = capNormalizedList(
-    Array.isArray(result.expected_solution_direction)
-      ? result.expected_solution_direction
-      : [],
-  );
-  const positioningRecommendations = capNormalizedList(
-    Array.isArray(result.positioning_recommendations)
-      ? result.positioning_recommendations
-      : [],
-  );
-  const ambiguities = capNormalizedList(
-    Array.isArray(result.ambiguities) ? result.ambiguities : [],
-    { max: 12 },
-  );
-  const prioritizedRequirements = (
-    Array.isArray(result.prioritized_requirements)
-      ? result.prioritized_requirements
-      : []
-  )
-    .filter((item) => item && item.requirement && item.priority && item.reason)
-    .filter((item, index, array) => {
-      return !array.some(
-        (existing, existingIndex) =>
-          existingIndex < index &&
-          isNearDuplicate(existing.requirement, item.requirement, 0.8) &&
-          isNearDuplicate(existing.reason, item.reason, 0.72),
-      );
-    })
-    .slice(0, 10);
-  const valueOpportunities = normalizeValueOpportunities(
-    Array.isArray(result.value_opportunities) ? result.value_opportunities : [],
-  );
-  const recommendedServices = normalizeRecommendedServices(
-    Array.isArray(result.recommended_services)
-      ? result.recommended_services
-      : [],
-    options?.serviceCandidates,
-  );
-
-  const customerProfileSummary = dedupeSummary(
-    result.customer_profile_summary || customerProfile.slice(0, 2).join(" "),
-    [
-      ...customerGoals,
-      result.customer_goals_summary || "",
-      ...positioningRecommendations,
-    ],
-  );
-
-  const customerGoalsSummary = dedupeSummary(
-    result.customer_goals_summary || customerGoals.slice(0, 2).join(" "),
-    [customerProfileSummary, ...customerProfile, ...positioningRecommendations],
-  );
-
-  const highLevelSolutionDesign = dedupeSummary(
-    result.high_level_solution_design ||
-      expectedSolutionDirection.slice(0, 2).join(" "),
-    [
-      customerProfileSummary,
-      customerGoalsSummary,
-      ...customerProfile,
-      ...customerGoals,
-      ...positioningRecommendations,
-      ...expectedSolutionDirection,
-    ],
-  );
-  const highLevelArchitectureMermaid = preferSimpleArchitectureDiagram(
-    result.high_level_architecture_mermaid || "",
-    result,
-  );
-
-  const executiveSummary = dedupeSummary(result.executive_summary || "", [
-    customerProfileSummary,
-    customerGoalsSummary,
-    highLevelSolutionDesign,
-    ...customerProfile,
-    ...customerGoals,
-    ...risks,
-    ...positioningRecommendations,
-  ]);
-
-  return {
-    ...result,
-    customer_profile_summary: customerProfileSummary,
-    customer_goals_summary: customerGoalsSummary,
-    high_level_solution_design: highLevelSolutionDesign,
-    high_level_architecture_mermaid: highLevelArchitectureMermaid,
-    customer_profile: customerProfile,
-    customer_goals: customerGoals,
-    implicit_requirements: normalizeRequirementList(
-      Array.isArray(result.implicit_requirements)
-        ? result.implicit_requirements
-        : [],
-    ),
-    prioritized_requirements: prioritizedRequirements,
-    ambiguities,
-    risks,
-    risks_for_us: risksForUs,
-    risks_for_customer: risksForCustomer,
-    likely_evaluation_criteria: likelyEvaluationCriteria,
-    signal_words: signalWords,
-    signal_word_counts: signalWordCounts,
-    expected_solution_direction: expectedSolutionDirection,
-    recommended_services: recommendedServices,
-    value_opportunities: valueOpportunities,
-    positioning_recommendations: positioningRecommendations,
-    executive_summary: executiveSummary,
-  };
-}
-
-type CustomerAnalysisSectionPatch = Partial<
-  Pick<
-    CustomerAnalysisResult,
-    | "customer_profile_summary"
-    | "customer_goals_summary"
-    | "high_level_solution_design"
-    | "high_level_architecture_mermaid"
-    | "implicit_requirements"
-    | "risks"
-    | "risks_for_us"
-    | "risks_for_customer"
-    | "signal_words"
-    | "recommended_services"
-    | "value_opportunities"
-    | "ambiguities"
-    | "expected_solution_direction"
-    | "likely_evaluation_criteria"
-    | "positioning_recommendations"
-    | "executive_summary"
-  >
->;
-
-const CUSTOMER_ANALYSIS_SECTION_CONFIG: Record<
-  CustomerAnalysisSection,
-  {
-    label: string;
-    fields: string;
-    guidance: string[];
-    outputContract: string[];
-  }
-> = {
-  summary: {
-    label: "Oppsummering",
-    fields: "customer_profile_summary og customer_goals_summary",
-    guidance: [
-      "Rediger kun lederoppsummeringen av kunden.",
-      "customer_profile_summary skal forklare kundesituasjonen, modenhet, rammer og relevant kontekst.",
-      "customer_goals_summary skal forklare kundens mål, ønsket effekt, utviklingsretning og hvilken løsningsretning dette peker mot.",
-    ],
-    outputContract: [
-      "Returner kun JSON med customer_profile_summary og customer_goals_summary.",
-      "Begge verdier skal være presise, konkrete tekststrenger.",
-    ],
-  },
-  strategy: {
-    label: "Strategi",
-    fields: "executive_summary og positioning_recommendations",
-    guidance: [
-      "Rediger kun tilbudsteamets operative strategi og anbefalte posisjonering.",
-      "executive_summary skal være arbeidsteksten som brukes videre i tilbudet.",
-      "positioning_recommendations skal være konkrete anbefalinger til hvordan tilbudet bør spisses.",
-    ],
-    outputContract: [
-      "Returner kun JSON med executive_summary og positioning_recommendations.",
-      "positioning_recommendations skal være en liste med 3 til 5 konkrete tekstpunkter.",
-    ],
-  },
-  clarifications: {
-    label: "Avklaringer",
-    fields:
-      "ambiguities, expected_solution_direction og likely_evaluation_criteria",
-    guidance: [
-      "Rediger kun avklaringer og foreløpig retning mellom strategi og design.",
-      "ambiguities skal være konkrete åpne spørsmål som må tas med kunden eller tilbudsteamet før design låses. Formuler dem som spørsmål.",
-      "Punktene skal opplyse hvilke behov, prioriteringer, rammer, ansvar, kontraktsføringer eller retningsvalg kunden faktisk har.",
-      "Se spesielt etter avklaringer om Annex 01B-01G, krav-ID-er, omfang, multisourcing-ansvar, eksisterende avtaler, onsite support, lokasjoner, brukergrupper, åpningstid, beredskap/24x7, servicedesk, overvåkning, sikkerhetsoperasjon, applikasjonsforvaltning, RPO/RTO, backup/restore, Azure/on-prem-miljøer, modernisering, migrering, KPI-er, governance, bærekraft, språkkrav, sikkerhet, regulatoriske føringer og samfunnskritisk rolle.",
-      "expected_solution_direction skal beskrive hvilken løsningsretning kildene peker mot før endelig high-level design.",
-      "likely_evaluation_criteria skal forklare hva kunden sannsynligvis vil vurdere leverandører og løsning på.",
-    ],
-    outputContract: [
-      "Returner kun JSON med ambiguities, expected_solution_direction og likely_evaluation_criteria.",
-      "Alle tre feltene skal være lister med konkrete tekstpunkter.",
-      "ambiguities skal normalt ha 8 til 12 spørsmål når dokumentgrunnlaget gir nok usikkerhet. De to andre listene skal normalt ha 3 til 5 punkter.",
-    ],
-  },
-  design: {
-    label: "Design",
-    fields: "high_level_solution_design og high_level_architecture_mermaid",
-    guidance: [
-      "Rediger kun anbefalt high-level design og arkitekturdiagram.",
-      "high_level_solution_design skal være en konkret, erfaren skyarkitekt-anbefaling.",
-      "high_level_architecture_mermaid skal være et enkelt high-level diagram med få hovednoder.",
-    ],
-    outputContract: [
-      "Returner kun JSON med high_level_solution_design og high_level_architecture_mermaid.",
-      "high_level_architecture_mermaid skal være ren Mermaid-kode som starter med flowchart eller graph.",
-    ],
-  },
-  risks: {
-    label: "Risiko",
-    fields: "risks_for_us, risks_for_customer og risks",
-    guidance: [
-      "Rediger kun risiko og usikkerhet.",
-      "risks_for_us skal beskrive leverandørens/tilbudsteamets risiko: leveranserisiko, tilbudsrisiko, kommersiell risiko, ressurs-/kompetanserisiko, avklaringsbehov og risiko for feil posisjonering.",
-      "risks_for_customer skal beskrive kundens risiko: driftsavbrudd, sikkerhet, overgang, kostnadskontroll, brukeradopsjon, forvaltning, etterlevelse og forretningsmessig konsekvens.",
-      "risks skal være en kort samlet kompatibilitetsliste basert på de to delte feltene.",
-      "Ikke gjenta krav, mål eller posisjonering som risiko hvis det ikke faktisk er en usikkerhet.",
-    ],
-    outputContract: [
-      "Returner kun JSON med risks_for_us, risks_for_customer og risks.",
-      "risks_for_us og risks_for_customer skal være lister med 0 til 5 konkrete tekstpunkter hver. Ikke finn opp risiko uten støtte i dokument eller eksisterende analyse.",
-      "risks skal være en samlet liste med korte tekstpunkter fra begge kategorier.",
-    ],
-  },
-  needs: {
-    label: "Behov",
-    fields: "implicit_requirements",
-    guidance: [
-      "Rediger kun underliggende behov og implisitte krav.",
-      "Returner nøyaktig de 3 viktigste punktene som gir mest forståelse av hva kunden egentlig vil.",
-      "Hvert punkt skal være en rimelig tolkning som er relevant for tilbudsarbeid.",
-      "Hver description skal sidestille hva kunden i praksis ber om med hva kunden ikke vil kjøpe eller ikke bør posisjoneres som.",
-      "Bruk konkrete, tilbudsrettede kontraster basert på den aktuelle kundens dokumenterte situasjon. Ikke bruk eksempelnavn, bransjefakta eller løsningsverdier fra andre tilbud.",
-      "Ikke inkluder eksplisitte krav som bare hører hjemme i kravlisten.",
-    ],
-    outputContract: [
-      "Returner kun JSON med implicit_requirements.",
-      "implicit_requirements skal være en liste av objekter med title, description, category, importance, kind, source_reference og source_excerpt.",
-      "implicit_requirements skal inneholde nøyaktig 3 objekter.",
-      "importance skal være Kritisk, Viktig eller Mindre viktig. kind skal være Implisitt.",
-    ],
-  },
-  keywords: {
-    label: "Nøkkelord",
-    fields: "signal_words",
-    guidance: [
-      "Rediger kun gjenbrukte nøkkelord.",
-      "signal_words skal være konkrete teknologier, tekniske tjenester, kontrollflater, integrasjonsteknologier eller arkitekturkomponenter med en tydelig funksjon i løsningen.",
-      "Ikke inkluder brede plattformnavn alene, som Azure, Microsoft 365, M365, cloud, sikkerhet, nettverk eller compliance. Bruk presise tjenester eller funksjoner, for eksempel Azure Monitor, Azure Backup, Azure Policy, Azure Landing Zone, Microsoft Defender for Endpoint, Intune MDM, SharePoint Online, Exchange Online, Entra ID Conditional Access, OAuth 2.0 eller OpenAPI.",
-      "Ikke inkluder kontrakts-, dokument- eller vedleggstitler som SSA-D, Annex 01B-01G, Bilag, Vedlegg, kravnummer eller kapittelnavn.",
-      "Ikke inkluder generiske ord som moderne, effektivitet, brukeropplevelse, robust eller skalerbar.",
-      "Hvis kildene bare nevner en bred plattform uten konkret tjeneste eller teknisk funksjon, utelat den fremfor å gjette.",
-    ],
-    outputContract: [
-      "Returner kun JSON med signal_words.",
-      "signal_words skal være en liste med maksimalt 8 konkrete teknologi-/funksjonsnavn.",
-    ],
-  },
-  services: {
-    label: "Anbefalte tjenester",
-    fields: "recommended_services",
-    guidance: [
-      "Rediger kun anbefalte tjenester.",
-      "Anbefal bare tjenester som finnes i tjenestekandidatene i prompten. Ikke finn opp tjenestenavn eller interne kapabiliteter.",
-      "Vurder tjenestene mot kundens mål, implisitte behov, risiko, evalueringssignaler, forventet løsningsretning og dokumenterte tjenesteinnhold.",
-      "recommended_services skal sorteres etter usefulness_percent synkende og ha maksimalt 5 tjenester.",
-      "usefulness_percent skal være en fit-score fra 1 til 100 og skal ikke summeres til 100. Ikke anbefal tjenester under 40 prosent.",
-      "recommendation_reason skal forklare hvorfor tjenesten er nyttig for akkurat denne kunden.",
-      "customer_need skal beskrive behovet tjenesten treffer, evidence skal vise tekstnært grunnlag, og risk_or_caveat skal angi viktigste forutsetning eller avklaring.",
-    ],
-    outputContract: [
-      "Returner kun JSON med recommended_services.",
-      "recommended_services skal være en liste av objekter med service_id, service_name, usefulness_percent, customer_need, recommendation_reason, evidence og risk_or_caveat.",
-      "service_id og service_name skal komme fra tjenestekandidatene i prompten.",
-      "usefulness_percent skal være et heltall mellom 1 og 100.",
-    ],
-  },
-  value: {
-    label: "Verdi",
-    fields: "value_opportunities",
-    guidance: [
-      "Rediger kun verdimuligheter.",
-      "value_opportunities skal ha maksimalt 4 punkter.",
-      "Hvert punkt skal ha nøyaktig én value_category: Høyere produktivitet, Lavere kostnader, Redusert risiko eller Bedre brukeropplevelse.",
-      "Bruk hver value_category maksimalt én gang i hele listen. Ikke returner duplikater av samme kategori.",
-      "Ikke kombiner flere verdikategorier i samme punkt. Forklar hvordan verdien skapes og hvorfor den er viktig.",
-      "profit_share_percent skal være dokument- og signalbasert: vekt etter eksplisitthet, forretningskritikalitet, driftskonsekvens, repetisjon og tydelig kobling til anskaffelsens mål.",
-      "Ikke bruk jevn eller pen prosentfordeling uten dokumentgrunnlag. Bruk presise, konservative heltall.",
-    ],
-    outputContract: [
-      "Returner kun JSON med value_opportunities.",
-      "value_opportunities skal være objekter med title, description, value_categories og profit_share_percent.",
-      "value_categories skal alltid være en array med nøyaktig ett element.",
-      "Ingen value_category kan gjentas i value_opportunities.",
-      "profit_share_percent skal være heltall mellom 1 og 100, samlet fordelt til 100 prosent.",
-    ],
-  },
-};
-
 function coverageItemReferenceLabels(item: RequirementCoverageItem): string[] {
   const labels = [
     item.reference,
@@ -23311,6 +22487,28 @@ async function createJsonCompletionWithFileInputs<T>(input: {
   });
 }
 
+async function createCustomerAnalysisV3Completion<T>(input: {
+  system: string;
+  user: string;
+  model?: string;
+}) {
+  return runStructuredJsonResponse<T>({
+    ...input,
+    schemaName: "customer_analysis_v3",
+    schema: CUSTOMER_ANALYSIS_V3_JSON_SCHEMA,
+    reasoningEffort: FAST_REASONING_EFFORT,
+    verbosity: "low",
+    maxOutputTokens: 8_000,
+    timeoutMs: 180_000,
+    maxRetries: 2,
+    promptCacheKey: "customer-analysis-v3",
+    getClient,
+    defaultModel: DOCUMENT_ANALYSIS_MODEL,
+    defaultReasoningEffort: FAST_REASONING_EFFORT,
+    supportsCustomTemperature,
+  });
+}
+
 async function createTextCompletion(input: {
   system: string;
   user: string;
@@ -23439,24 +22637,35 @@ async function* normalizeChatSourceReferencesFromStream(
   }
 }
 
-export async function analyzeCustomerDocuments(input: {
+type AnalyzeCustomerDocumentsInput = {
   projectName: string;
   customerDocument: ProjectDocumentDetail;
   supportingDocuments: ProjectDocumentDetail[];
   serviceCandidates?: ProjectServiceDescription[];
   model?: string;
-}) {
+};
+
+async function analyzeCustomerDocumentsLegacy(
+  input: AnalyzeCustomerDocumentsInput,
+) {
+  const analysisDocuments = [
+    input.customerDocument,
+    ...input.supportingDocuments,
+  ];
+  const analysisFoundationFacts = collectArtifactFoundationFacts({
+    documents: analysisDocuments,
+    serviceDocuments: [],
+  });
   const analysisRetrieval = await retrieveDocumentSnippetsWithMetadata({
     query: [
       input.projectName,
       "kundens behov mål krav risiko evalueringskriterier forutsetninger arkitektur løsning verdi",
     ].join("\n"),
     projectId: input.customerDocument.project_id,
-    documents: [input.customerDocument, ...input.supportingDocuments],
+    documents: analysisDocuments,
     exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål"],
     limit: 10,
   });
-  const analysisSnippets = analysisRetrieval.snippets;
   const supportingContexts = input.supportingDocuments
     .slice(0, 2)
     .map((document, index) =>
@@ -23467,11 +22676,6 @@ export async function analyzeCustomerDocuments(input: {
       }),
     )
     .join("\n\n");
-  const analysisFoundationFacts = collectArtifactFoundationFacts({
-    documents: [input.customerDocument, ...input.supportingDocuments],
-    serviceDocuments: [],
-  });
-
   const userPrompt = [
     "Analyser prosjektet og returner kun gyldig JSON.",
     "Skill tydelig mellom eksplisitte krav og implisitte krav.",
@@ -23487,9 +22691,11 @@ export async function analyzeCustomerDocuments(input: {
       structureLimit: 10,
       structureTextLimit: 180,
     }),
-    retrievedSnippetContext("Semantisk dokumentdekning", analysisSnippets, {
-      textLimit: 1200,
-    }),
+    retrievedSnippetContext(
+      "Semantisk dokumentdekning",
+      analysisRetrieval.snippets,
+      { textLimit: 1200 },
+    ),
     buildDelimitedContext(
       "Retrieval-kvalitet",
       promptJson(analysisRetrieval.telemetry.quality),
@@ -23519,16 +22725,119 @@ export async function analyzeCustomerDocuments(input: {
     promptCacheKey: promptCacheFamily("customer-analysis"),
   });
 
-  const signalSourceText = [
-    input.customerDocument.raw_text,
-    ...input.supportingDocuments.map((document) => document.raw_text),
-  ].join("\n\n");
+  await recordDocumentIntelligenceEvent({
+    projectId: input.customerDocument.project_id,
+    eventType: "customer_analysis_used",
+    sourceRevision: input.customerDocument.chunk_source_revision,
+    metadata: {
+      pipeline_version: "legacy",
+      context_mode: "raw",
+      document_count: analysisDocuments.length,
+      compiled_document_count: 0,
+      legacy_fallback_count: analysisDocuments.length,
+      retrieval_used: true,
+      prompt_chars: userPrompt.length,
+      model: input.model ?? ANALYSIS_MODEL,
+    },
+  }).catch(() => false);
+
+  const signalSourceText = analysisDocuments
+    .map((document) => document.raw_text)
+    .join("\n\n");
 
   return normalizeCustomerAnalysisResult(
     enrichCustomerAnalysisWithFoundationFacts(result, analysisFoundationFacts),
     {
       signalSourceText,
       serviceCandidates: input.serviceCandidates,
+      sourceDocuments: analysisDocuments.map((document) => ({
+        title: document.title,
+        rawText: document.raw_text,
+        structureMap: document.structure_map,
+      })),
+    },
+  );
+}
+
+export async function analyzeCustomerDocuments(
+  input: AnalyzeCustomerDocumentsInput,
+) {
+  if (customerAnalysisPipeline() === "legacy") {
+    return analyzeCustomerDocumentsLegacy(input);
+  }
+
+  const analysisDocuments = [
+    input.customerDocument,
+    ...input.supportingDocuments,
+  ];
+  const {
+    contexts: currentContexts,
+    compiledOnDemandCount,
+    persistenceFailureCount,
+  } = await resolveCustomerAnalysisContexts({
+    projectId: input.customerDocument.project_id,
+    documents: analysisDocuments,
+  });
+  const analysisFoundationFacts = collectArtifactFoundationFacts({
+    documents: analysisDocuments,
+    serviceDocuments: [],
+  });
+  const promptDocuments = analysisDocuments.map((document) => ({
+    documentId: document.id,
+    title: document.title,
+    role: document.role,
+    context: currentContexts.get(document.id)?.analysisContext ?? "",
+    sourceText: document.raw_text,
+  }));
+  const userPrompt = buildCustomerAnalysisV3UserPrompt({
+    projectName: input.projectName,
+    documents: promptDocuments,
+    foundationFacts: buildCustomerAnalysisFactsContext(analysisFoundationFacts),
+    serviceCandidates: serviceRecommendationContext(input.serviceCandidates),
+  });
+  const result =
+    await createCustomerAnalysisV3Completion<CustomerAnalysisResult>({
+      system: buildCustomerAnalysisV3SystemPrompt(),
+      user: userPrompt,
+      model: input.model ?? DOCUMENT_ANALYSIS_MODEL,
+    });
+
+  void recordDocumentIntelligenceEvent({
+    projectId: input.customerDocument.project_id,
+    eventType: "customer_analysis_used",
+    sourceRevision: input.customerDocument.chunk_source_revision,
+    metadata: {
+      pipeline_version: "document-analysis.v3",
+      document_count: analysisDocuments.length,
+      compiled_document_count: currentContexts.size,
+      compiled_on_demand_count: compiledOnDemandCount,
+      compiled_on_demand_persist_failed_count: persistenceFailureCount,
+      prompt_chars: userPrompt.length,
+      document_context_usage: JSON.stringify(
+        customerAnalysisV3ContextUsage(promptDocuments),
+      ),
+      model: input.model ?? DOCUMENT_ANALYSIS_MODEL,
+    },
+  }).catch(() => false);
+
+  const signalSourceText = [
+    input.customerDocument.raw_text,
+    ...input.supportingDocuments.map((document) => document.raw_text),
+  ].join("\n\n");
+
+  return normalizeCustomerAnalysisResult(
+    enrichCustomerAnalysisWithCriticalFacts(
+      enrichCustomerAnalysisWithFoundationFacts(result, analysisFoundationFacts),
+      promptDocuments,
+    ),
+    {
+      signalSourceText,
+      serviceCandidates: input.serviceCandidates,
+      sourceDocuments: analysisDocuments.map((document) => ({
+        title: document.title,
+        rawText: document.raw_text,
+        structureMap: document.structure_map,
+      })),
     },
   );
 }
@@ -23542,64 +22851,47 @@ export async function regenerateCustomerAnalysisSection(input: {
   customerAnalysis: CustomerAnalysisResult;
   model?: string;
 }) {
-  const config = CUSTOMER_ANALYSIS_SECTION_CONFIG[input.section];
+  const contract = customerAnalysisRegenerationContract(input.section);
   const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
-  const customerDocumentDigest = await buildDocumentInsightDigest(
-    "Primært kundedokument",
+  const analysisDocuments = [
     input.customerDocument,
-    { maxChunks: 6 },
-  );
-  const supportingContexts = input.supportingDocuments
-    .slice(0, 6)
-    .map((document, index) =>
-      documentContext(`Støttedokument ${index + 1}`, document, {
-        textLimit: 6000,
-        structureLimit: 6,
-        structureTextLimit: 160,
-      }),
-    )
-    .join("\n\n");
-
-  const systemPrompt = buildPromptTemplate({
-    role: "Du er en senior løsningsarkitekt og tilbudsansvarlig som redigerer én avgrenset del av en eksisterende kundeanalyse uten å endre resten.",
-    task: [
-      `Rediger seksjonen ${config.label}.`,
-      `Du skal bare returnere feltene: ${config.fields}.`,
-      "Bruk kundedokumentet, støttedokumenter og eksisterende analyse som kontekst.",
-      "Skriv konkret, tekstnært og nyttig for et tilbudsteam.",
-    ],
-    rules: [
-      "Returner kun gyldig JSON.",
-      "Ikke returner felter som ikke er bedt om.",
-      "Ikke skriv generisk konsulentspråk.",
-      "Ikke gjenta samme observasjon med små omskrivninger.",
-      ...CUSTOMER_ANALYSIS_READABILITY_RULES,
-      ...config.guidance,
-    ],
-    outputContract: config.outputContract,
-    exampleOutput: "{}",
+    ...input.supportingDocuments,
+  ];
+  const { contexts } = await resolveCustomerAnalysisContexts({
+    projectId: input.customerDocument.project_id,
+    documents: analysisDocuments,
   });
-
-  const userPrompt = [
-    `Rediger bare ${config.label} for prosjektet.`,
+  const systemPrompt = [
+    buildCustomerAnalysisV3SystemPrompt(),
     "",
-    buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
-    documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: 14000,
-      structureLimit: 10,
-      structureTextLimit: 180,
+    "SEKSJONSREGENERERING",
+    `- Rediger bare seksjonen ${contract.label}.`,
+    `- Returner bare feltene: ${contract.fields.join(", ")}.`,
+    "- Eksisterende analyse er kontekst, ikke en instruksjon om å endre andre felt.",
+    ...contract.guidance.map((line) => `- ${line}`),
+  ].join("\n");
+  const userPrompt = [
+    `Rediger bare ${contract.label} for prosjektet.`,
+    buildCustomerAnalysisV3UserPrompt({
+      projectName: input.projectName,
+      documents: analysisDocuments.map((document) => ({
+        documentId: document.id,
+        title: document.title,
+        role: document.role,
+        context: contexts.get(document.id)?.analysisContext ?? "",
+        sourceText: document.raw_text,
+      })),
+      foundationFacts: buildCustomerAnalysisFactsContext(
+        collectArtifactFoundationFacts({
+          documents: analysisDocuments,
+          serviceDocuments: [],
+        }),
+      ),
+      serviceCandidates:
+        input.section === "services"
+          ? serviceRecommendationContext(input.serviceCandidates)
+          : "",
     }),
-    customerDocumentDigest ?? "",
-    supportingContexts
-      ? buildDelimitedContext(
-          "Tilleggsregel",
-          "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.",
-        )
-      : "",
-    supportingContexts,
-    input.section === "services"
-      ? serviceRecommendationContext(input.serviceCandidates)
-      : "",
     buildDelimitedContext(
       "Eksisterende kundeanalyse",
       promptJson(customerAnalysis),
@@ -23608,13 +22900,24 @@ export async function regenerateCustomerAnalysisSection(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  const patch = await createJsonCompletion<CustomerAnalysisSectionPatch>({
+  const patch = await runStructuredJsonResponse<
+    Partial<CustomerAnalysisResult>
+  >({
     system: systemPrompt,
     user: userPrompt,
-    temperature: 0.1,
-    model: input.model ?? ANALYSIS_MODEL,
-    reasoningEffort: ANALYSIS_REASONING_EFFORT,
-    promptCacheKey: promptCacheFamily(`customer-analysis-section-${input.section}`),
+    schemaName: `customer_analysis_${input.section}`,
+    schema: contract.schema,
+    model: input.model ?? DOCUMENT_ANALYSIS_MODEL,
+    reasoningEffort: FAST_REASONING_EFFORT,
+    verbosity: "low",
+    maxOutputTokens: 4_000,
+    timeoutMs: 180_000,
+    maxRetries: 2,
+    promptCacheKey: `customer-analysis-section-${input.section}`,
+    getClient,
+    defaultModel: DOCUMENT_ANALYSIS_MODEL,
+    defaultReasoningEffort: FAST_REASONING_EFFORT,
+    supportsCustomTemperature,
   });
 
   const signalSourceText = [
@@ -23623,13 +22926,19 @@ export async function regenerateCustomerAnalysisSection(input: {
   ].join("\n\n");
 
   return normalizeCustomerAnalysisResult(
-    {
-      ...customerAnalysis,
-      ...patch,
-    },
+    mergeCustomerAnalysisSectionPatch({
+      analysis: customerAnalysis,
+      section: input.section,
+      patch,
+    }),
     {
       signalSourceText,
       serviceCandidates: input.serviceCandidates,
+      sourceDocuments: analysisDocuments.map((document) => ({
+        title: document.title,
+        rawText: document.raw_text,
+        structureMap: document.structure_map,
+      })),
     },
   );
 }

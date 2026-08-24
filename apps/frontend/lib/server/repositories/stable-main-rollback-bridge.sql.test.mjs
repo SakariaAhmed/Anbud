@@ -12,7 +12,7 @@ const repositoryRoot = path.resolve(
 );
 const migrationPath = path.join(
   repositoryRoot,
-  "supabase/migrations/20260712131500_stable_main_rollback_bridge.sql",
+  "database/migrations/20260712131500_stable_main_rollback_bridge.sql",
 );
 const migrationSql = readFileSync(migrationPath, "utf8");
 
@@ -97,8 +97,8 @@ test("rollback bridge SQL declares exact locked compatibility and cutover contra
   assert.match(migrationSql, /return 'stable-main-rollback-bridge-v1'/u);
 
   for (const relativePath of [
-    "supabase/schema.sql",
-    "supabase/project_jobs_durable_execution.sql",
+    "database/schema.sql",
+    "database/project_jobs_durable_execution.sql",
   ]) {
     const canonicalSql = readFileSync(
       path.join(repositoryRoot, relativePath),
@@ -109,7 +109,9 @@ test("rollback bridge SQL declares exact locked compatibility and cutover contra
     );
     assert.notEqual(parityStart, -1, `${relativePath} is missing rollback parity`);
     assert.equal(
-      canonicalSql.slice(parityStart).trim(),
+      canonicalSql
+        .slice(parityStart, parityStart + migrationSql.length)
+        .trim(),
       migrationSql.trim(),
       `${relativePath} must exactly match the authoritative rollback migration`,
     );

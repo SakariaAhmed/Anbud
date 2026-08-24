@@ -2,23 +2,29 @@ import { NextResponse } from "next/server";
 
 import { enforceServiceDescriptionWriteRateLimit } from "@/lib/server/api-responses";
 import {
+  authorizationErrorResponse,
+  requireAdmin,
+} from "@/lib/server/authorization";
+import {
   deleteServiceDescription,
-  getServiceDescription,
+  getServiceDescriptionMetadata,
   upsertServiceDescription,
 } from "@/lib/server/repositories/services";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ serviceId: string }> },
 ) {
   try {
+    await requireAdmin();
     const limited = await enforceServiceDescriptionWriteRateLimit(request);
     if (limited) {
       return limited;
     }
 
     const { serviceId } = await context.params;
-    const current = await getServiceDescription(serviceId);
+    const current = await getServiceDescriptionMetadata(serviceId);
     const body = (await request.json().catch(() => ({}))) as {
       name?: string;
       description?: string;
@@ -30,8 +36,10 @@ export async function PATCH(
     });
     return NextResponse.json({ service });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke oppdatere tjenesten." },
+      { error: productionSafeErrorMessage(error, "Kunne ikke oppdatere tjenesten.") },
       { status: 500 },
     );
   }
@@ -42,6 +50,7 @@ export async function DELETE(
   context: { params: Promise<{ serviceId: string }> },
 ) {
   try {
+    await requireAdmin();
     const limited = await enforceServiceDescriptionWriteRateLimit(request);
     if (limited) {
       return limited;
@@ -51,8 +60,10 @@ export async function DELETE(
     await deleteServiceDescription(serviceId);
     return NextResponse.json({ ok: true });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke slette tjenesten." },
+      { error: productionSafeErrorMessage(error, "Kunne ikke slette tjenesten.") },
       { status: 500 },
     );
   }

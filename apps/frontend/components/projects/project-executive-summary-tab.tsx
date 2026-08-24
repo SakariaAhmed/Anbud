@@ -176,7 +176,7 @@ export function ProjectExecutiveSummaryTab({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[0.72rem] font-black uppercase tracking-[0.2em] text-slate-500">
-                Leder oppsummering
+                Lederoppsummering
               </p>
               <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
                 Beslutningsbildet på ett blikk

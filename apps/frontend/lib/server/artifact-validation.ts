@@ -6,6 +6,7 @@ import {
   isMarkdownSeparatorRow,
   splitMarkdownTableRow,
 } from "@/lib/server/requirements/markdown-table";
+import { deliveryPlanMilestoneCoverage } from "@/lib/server/delivery-plan-validation";
 import type { GeneratedArtifactType } from "@/lib/types";
 
 export type ArtifactQualityStatus = "pass" | "warning" | "fail";
@@ -720,6 +721,7 @@ export function validateGeneratedArtifact(input: {
   artifactType: GeneratedArtifactType;
   title: string;
   contentMarkdown: string;
+  sourceText?: string;
   expectedRequirementCount?: number;
   expectedRequirementRefs?: string[];
   unresolvedFallbackAnswers?: number;
@@ -971,6 +973,32 @@ export function validateGeneratedArtifact(input: {
       status: duplicateRequirementTexts === 0 ? "pass" : "warning",
       severity: "warning",
     });
+  }
+
+  if (input.artifactType === "gjennomforing_og_risiko") {
+    const milestoneCoverage = deliveryPlanMilestoneCoverage({
+      sourceText: input.sourceText,
+      contentMarkdown: input.contentMarkdown,
+    });
+    for (const milestone of milestoneCoverage.missing) {
+      addCheck(
+        {
+          label: `Fremdriftsmilepæl: ${milestone.label}`,
+          value: false,
+          status: "fail",
+          severity: "high",
+        },
+        `Fremdriftsplanen mangler ${milestone.label}, selv om kilden oppgir en eksplisitt go-live-dato.`,
+      );
+    }
+    if (milestoneCoverage.required && milestoneCoverage.complete) {
+      addCheck({
+        label: "Fremdriftsmilepæler ved datert go-live",
+        value: true,
+        status: "pass",
+        severity: "high",
+      });
+    }
   }
 
   addCheck({

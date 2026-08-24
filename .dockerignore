@@ -1,6 +1,6 @@
 # Keep frontend container builds small and deterministic. The Dockerfile only
 # needs frontend package manifests, build source, public assets, and the
-# runtime worker script from the repository root build context.
+# two explicitly allowlisted runtime scripts from the repository root context.
 *
 !.dockerignore
 !apps/
@@ -30,6 +30,14 @@
 # worker entrypoint below.
 apps/frontend/scripts/*
 !apps/frontend/scripts/run_project_job_worker.mjs
+!apps/frontend/scripts/run_project_job_cutover_rpc.mjs
+!scripts/
+scripts/*
+!scripts/validate_project_jobs_schema.mjs
+!infra/
+!infra/azure/
+!infra/azure/certs/
+!infra/azure/certs/azure-postgres-roots.pem
 apps/frontend/**/*.test.*
 apps/frontend/**/__tests__
 apps/frontend/**/__tests__/**

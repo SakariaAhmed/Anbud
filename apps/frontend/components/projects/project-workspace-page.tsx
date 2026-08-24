@@ -18,17 +18,11 @@ import {
   FileCheck2,
   FileText,
   FolderOpen,
+  Layers3,
   Scale,
   Sparkles,
-  Wrench,
 } from "lucide-react";
 
-import {
-  getClientCache,
-  PROJECT_SERVICES_CACHE_TTL_MS,
-  projectServicesCacheKey,
-  setClientCache,
-} from "@/lib/client-cache";
 import {
   deleteGeneratedArtifact,
   deleteProjectDocument,
@@ -333,9 +327,13 @@ function parseCustomerAnalysisSectionBusy(
 export function ProjectWorkspacePage({
   initialData,
   initialTab = "analysis",
+  canShare = false,
+  readOnly = false,
 }: {
   initialData: ProjectDetail;
   initialTab?: ProjectWorkspaceTab;
+  canShare?: boolean;
+  readOnly?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -343,6 +341,8 @@ export function ProjectWorkspacePage({
   const [serviceDescriptions, setServiceDescriptions] = useState<
     ProjectServiceDescription[]
   >([]);
+  const [serviceDescriptionsLoaded, setServiceDescriptionsLoaded] =
+    useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [busyMessage, setBusyMessage] = useState("");
   const [busyProgress, setBusyProgress] = useState(0);
@@ -405,6 +405,17 @@ export function ProjectWorkspacePage({
     setActiveTab(isProjectWorkspaceTab(tabFromUrl) ? tabFromUrl : "analysis");
   }, [searchParams]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`/api/projects/${project.id}/page-view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: activeTab }),
+      signal: controller.signal,
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [activeTab, project.id]);
+
   const setWorkspaceTab = useCallback(
     (tab: ProjectWorkspaceTab) => {
       preloadWorkspaceTab(tab);
@@ -432,24 +443,23 @@ export function ProjectWorkspacePage({
     [activeTab, pathname, preloadWorkspaceTab, project.id, searchParams],
   );
   const loadSidebarServiceDescriptions = useCallback(async (signal?: AbortSignal) => {
-    const cacheKey = projectServicesCacheKey(project.id);
-    const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
-    if (cached) {
-      if (signal?.aborted) return;
-      setServiceDescriptions(cached);
-      return;
-    }
-
     try {
       const services = await fetchProjectServices(project.id, { signal });
       if (signal?.aborted) return;
       setServiceDescriptions(services);
-      setClientCache(cacheKey, services, PROJECT_SERVICES_CACHE_TTL_MS);
+      setServiceDescriptionsLoaded(true);
     } catch (err) {
       if (isAbortError(err) || signal?.aborted) return;
       setServiceDescriptions([]);
     }
   }, [project.id]);
+  const updateServiceDescriptions = useCallback(
+    (services: ProjectServiceDescription[]) => {
+      setServiceDescriptions(services);
+      setServiceDescriptionsLoaded(true);
+    },
+    [],
+  );
 
   const refreshArtifactAuthority = useCallback(
     async (signal?: AbortSignal) => {
@@ -1819,6 +1829,9 @@ export function ProjectWorkspacePage({
     hasAuthoritativeCurrentArtifact(project, artifactType);
   const analysisSectionBusy = parseCustomerAnalysisSectionBusy(busy);
   const hasDocuments = project.documents.length > 0;
+  const hasSelectedServices = serviceDescriptions.some(
+    (service) => service.selected,
+  );
   const hasCustomerAnalysis =
     Boolean(customerAnalysis) || project.customer_analysis_generated;
   const hasRequirementResponse = hasArtifactType("forbedret_kravsvar");
@@ -1840,13 +1853,24 @@ export function ProjectWorkspacePage({
     },
     {
       step: 2,
+      value: "service-description",
+      label: "Tjenester",
+      icon: Layers3,
+      status: hasSelectedServices
+        ? "Ferdig"
+        : serviceDescriptionsLoaded
+          ? "Må sjekkes"
+          : "Klar",
+    },
+    {
+      step: 3,
       value: "analysis",
       label: "Kundeanalyse",
       icon: Brain,
       status: hasCustomerAnalysis ? "Generert" : hasDocuments ? "Klar" : "Venter",
     },
     {
-      step: 3,
+      step: 4,
       value: "requirements",
       label: "Krav og svar",
       icon: FileCheck2,
@@ -1857,7 +1881,7 @@ export function ProjectWorkspacePage({
           : "Venter",
     },
     {
-      step: 4,
+      step: 5,
       value: "generator",
       label: "Løsningsforslag",
       icon: Sparkles,
@@ -1868,7 +1892,7 @@ export function ProjectWorkspacePage({
       }),
     },
     {
-      step: 5,
+      step: 6,
       value: "evaluation",
       label: "Vurdering",
       icon: Scale,
@@ -1879,7 +1903,7 @@ export function ProjectWorkspacePage({
           : "Venter",
     },
     {
-      step: 6,
+      step: 7,
       value: "delivery",
       label: "Fremdriftsplan",
       icon: ArrowRight,
@@ -1890,9 +1914,9 @@ export function ProjectWorkspacePage({
           : "Venter",
     },
     {
-      step: 7,
+      step: 8,
       value: "executive-summary",
-      label: "Leder oppsummering",
+      label: "Lederoppsummering",
       icon: ClipboardCheck,
       status: hasExecutiveSummary
         ? "Generert"
@@ -1905,7 +1929,6 @@ export function ProjectWorkspacePage({
     {
       label: "Verktøy",
       items: [
-        { value: "service-description", label: "Velg tjenester", icon: Wrench },
         { value: "bilag1", label: "Bilag 1-utkast", icon: FileText },
       ],
     },
@@ -1969,6 +1992,8 @@ export function ProjectWorkspacePage({
       onPreloadWorkspaceTab={preloadWorkspaceTab}
       onSetWorkspaceTab={setWorkspaceTab}
       onOpenChatPopout={openChatPopout}
+      canShare={canShare}
+      readOnly={readOnly}
     >
       <ProjectWorkspaceTabContent
         activeTab={activeTab}
@@ -1999,6 +2024,7 @@ export function ProjectWorkspacePage({
         deliveryArtifacts={deliveryArtifacts}
         bilag1Artifacts={bilag1Artifacts}
         onToggleUploadOpen={() => setUploadOpen((open) => !open)}
+        onServiceDescriptionsChange={updateServiceDescriptions}
         onDocTitleChange={setDocTitle}
         onUploadRoleChange={setUploadRole}
         onFileChange={setFile}

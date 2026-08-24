@@ -4,6 +4,7 @@ import {
   ProjectWorkspacePage,
   type ProjectWorkspaceTab,
 } from "@/components/projects/project-workspace-page";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { getProjectShell } from "@/lib/server/repositories/projects";
 
 const validTabs = new Set<string>([
@@ -32,6 +33,7 @@ export default async function ProjectPage({
 }) {
   try {
     const [{ id }, query] = await Promise.all([params, searchParams]);
+    const access = await requireProjectPermission(id, "project.read");
     const initialTab = parseInitialTab(query.tab);
     const project = await getProjectShell(id, {
       includeCustomerAnalysis: initialTab === "analysis",
@@ -42,6 +44,8 @@ export default async function ProjectPage({
       <ProjectWorkspacePage
         initialData={project}
         initialTab={initialTab}
+        canShare={access.permissions.includes("project.share")}
+        readOnly={!access.permissions.includes("project.update")}
       />
     );
   } catch {

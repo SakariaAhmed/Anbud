@@ -280,7 +280,7 @@ function ProjectFilters({
             Sorter etter aktivitet, filtrer på status, og åpne anbefalt neste steg.
           </p>
         </div>
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-semibold text-slate-600 shadow-sm">
+        <span className="text-sm font-medium tabular-nums text-slate-500">
           {filteredCount} av {projectCount}
         </span>
       </div>

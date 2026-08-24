@@ -1,82 +1,76 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type DragEvent,
-  type FormEvent,
-} from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   FileText,
   Layers3,
   Lightbulb,
-  Plus,
-  Trash2,
-  Upload,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Input } from "@/components/projects/primitives";
-import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
-  clearClientCache,
   PROJECT_SERVICES_CACHE_TTL_MS,
   projectServicesCacheKey,
   setClientCache,
 } from "@/lib/client-cache";
 import { fetchProjectServices } from "@/lib/client/project-api";
 import type { ProjectServiceDescription } from "@/lib/types";
-
-const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
-
-function fileTitle(file: File) {
-  return file.name.replace(/\.[^.]+$/, "");
-}
+import { cn } from "@/lib/utils";
 
 export function ProjectServiceDescriptionTab({
   projectId,
+  onServicesChange,
 }: {
   projectId: string;
+  onServicesChange?: (services: ProjectServiceDescription[]) => void;
 }) {
   const [services, setServices] = useState<ProjectServiceDescription[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [uploadError, setUploadError] = useState("");
-  const [serviceName, setServiceName] = useState("");
-  const [targetServiceId, setTargetServiceId] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [fileInputKey, setFileInputKey] = useState(0);
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const [savingSelectionIds, setSavingSelectionIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const selectionSaving = savingSelectionIds.size > 0;
+  const recommendedServices = useMemo(
+    () => services.filter((service) => service.recommended),
+    [services],
+  );
+  const selectedCount = useMemo(
+    () => services.filter((service) => service.selected).length,
+    [services],
+  );
 
-  const recommendedServices = services.filter((service) => service.recommended);
+  const applyServices = useCallback(
+    (nextServices: ProjectServiceDescription[]) => {
+      setServices(nextServices);
+      setClientCache(
+        projectServicesCacheKey(projectId),
+        nextServices,
+        PROJECT_SERVICES_CACHE_TTL_MS,
+      );
+      onServicesChange?.(nextServices);
+    },
+    [onServicesChange, projectId],
+  );
 
   const loadServices = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      setServices(await fetchProjectServices(projectId));
+      applyServices(await fetchProjectServices(projectId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke hente tjenestebeskrivelser.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Kunne ikke hente tjenestebeskrivelser.",
+      );
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [applyServices, projectId]);
 
   useEffect(() => {
     void loadServices();
@@ -84,49 +78,50 @@ export function ProjectServiceDescriptionTab({
 
   async function saveSelections(
     nextIds: string[],
+    previousServices: ProjectServiceDescription[],
     optimisticServices: ProjectServiceDescription[],
     changedServiceId: string,
   ) {
-    setSavingSelectionIds((current) => new Set(current).add(changedServiceId));
+    setSavingSelectionIds(new Set([changedServiceId]));
     setError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/service-descriptions`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selected_service_ids: nextIds }),
-      });
+      const response = await fetch(
+        `/api/projects/${projectId}/service-descriptions`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selected_service_ids: nextIds }),
+        },
+      );
       const payload = (await response.json()) as {
-        services?: ProjectServiceDescription[];
+        selected_service_ids?: string[];
         error?: string;
       };
-      if (!response.ok || !payload.services) {
+      if (!response.ok || !Array.isArray(payload.selected_service_ids)) {
         throw new Error(payload.error || "Kunne ikke lagre tjenestevalg.");
       }
-      setServices(payload.services);
-      setClientCache(
-        projectServicesCacheKey(projectId),
-        payload.services,
-        PROJECT_SERVICES_CACHE_TTL_MS,
+
+      const confirmedIds = new Set(payload.selected_service_ids);
+      applyServices(
+        optimisticServices.map((service) => ({
+          ...service,
+          selected: confirmedIds.has(service.id),
+        })),
       );
       window.dispatchEvent(new CustomEvent("project-services-updated"));
     } catch (err) {
-      setServices(optimisticServices);
-      setClientCache(
-        projectServicesCacheKey(projectId),
-        optimisticServices,
-        PROJECT_SERVICES_CACHE_TTL_MS,
+      applyServices(previousServices);
+      setError(
+        err instanceof Error ? err.message : "Kunne ikke lagre tjenestevalg.",
       );
-      setError(err instanceof Error ? err.message : "Kunne ikke lagre tjenestevalg.");
     } finally {
-      setSavingSelectionIds((current) => {
-        const next = new Set(current);
-        next.delete(changedServiceId);
-        return next;
-      });
+      setSavingSelectionIds(new Set());
     }
   }
 
   async function toggleSelected(service: ProjectServiceDescription) {
+    if (selectionSaving) return;
+
     const previousServices = services;
     const optimisticServices = services.map((item) =>
       item.id === service.id ? { ...item, selected: !service.selected } : item,
@@ -135,443 +130,217 @@ export function ProjectServiceDescriptionTab({
       .filter((item) => item.selected)
       .map((item) => item.id);
 
-    setServices(optimisticServices);
-    setClientCache(
-      projectServicesCacheKey(projectId),
+    applyServices(optimisticServices);
+    await saveSelections(
+      nextIds,
+      previousServices,
       optimisticServices,
-      PROJECT_SERVICES_CACHE_TTL_MS,
+      service.id,
     );
-    window.dispatchEvent(new CustomEvent("project-services-updated"));
-    await saveSelections(nextIds, previousServices, service.id);
-  }
-
-  async function deleteDocument(serviceId: string, documentId: string) {
-    setBusy(`delete-document-${documentId}`);
-    setError("");
-    try {
-      const response = await fetch(
-        `/api/service-descriptions/${serviceId}/documents/${documentId}`,
-        { method: "DELETE" },
-      );
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Kunne ikke slette dokumentet.");
-      }
-      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
-      clearClientCache(projectServicesCacheKey(projectId));
-      await loadServices();
-      window.dispatchEvent(new CustomEvent("project-services-updated"));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke slette dokumentet.");
-    } finally {
-      setBusy("");
-    }
-  }
-
-  function resetUploadDraft() {
-    setServiceName("");
-    setTargetServiceId("");
-    setFile(null);
-    setUploadError("");
-    setFileInputKey((current) => current + 1);
-  }
-
-  function openUploadDialog(nextFile: File | null | undefined) {
-    if (!nextFile) return;
-    setFile(nextFile);
-    setTargetServiceId("");
-    setServiceName("");
-    setUploadError("");
-    setUploadDialogOpen(true);
-  }
-
-  function closeUploadDialog() {
-    if (busy === "upload") return;
-    setUploadDialogOpen(false);
-    resetUploadDraft();
-  }
-
-  function selectTargetService(value: string) {
-    setTargetServiceId(value);
-    const service = services.find((item) => item.id === value);
-    setServiceName(service?.name ?? "");
-    setUploadError("");
-  }
-
-  async function onUploadSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!file) {
-      setUploadError("Velg et dokument først.");
-      return;
-    }
-
-    const selectedService = targetServiceId
-      ? services.find((service) => service.id === targetServiceId)
-      : null;
-    const nextName = targetServiceId
-      ? selectedService?.name ?? ""
-      : serviceName.trim();
-
-    if (!nextName) {
-      setUploadError("Velg en tjeneste eller skriv navn på ny tjeneste.");
-      return;
-    }
-
-    setBusy("upload");
-    setError("");
-    setUploadError("");
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("title", fileTitle(file));
-      formData.append("service_id", targetServiceId);
-      formData.append("name", nextName);
-      formData.append("description", "");
-
-      const response = await fetch("/api/service-descriptions", {
-        method: "POST",
-        body: formData,
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Kunne ikke lagre tjenestebeskrivelsen.");
-      }
-      clearClientCache(SERVICE_DESCRIPTIONS_CACHE_KEY);
-      clearClientCache(projectServicesCacheKey(projectId));
-      setUploadDialogOpen(false);
-      resetUploadDraft();
-      await loadServices();
-      window.dispatchEvent(new CustomEvent("project-services-updated"));
-    } catch (err) {
-      setUploadError(
-        err instanceof Error
-          ? err.message
-          : "Kunne ikke lagre tjenestebeskrivelsen.",
-      );
-    } finally {
-      setBusy("");
-    }
-  }
-
-  function onDrop(event: DragEvent<HTMLLabelElement>) {
-    event.preventDefault();
-    setDragActive(false);
-    openUploadDialog(event.dataTransfer.files?.[0]);
   }
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2.5 border-y border-slate-200 bg-white px-5 py-6 text-sm text-slate-500">
+        <Spinner className="size-4 text-blue-700" />
         Laster tjenestekatalog ...
       </div>
     );
   }
 
   return (
-    <div className="min-w-0 space-y-6">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 bg-slate-50 px-5 py-5">
-          <div className="flex items-start gap-3">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white">
+    <div className="min-w-0 space-y-5">
+      <section className="overflow-hidden border-y border-slate-200 bg-white">
+        <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-6">
+          <div className="flex min-w-0 items-start gap-4">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white">
               <Layers3 className="size-5" />
             </span>
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                Global tjenestekatalog
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Prosjektgrunnlag
               </p>
-              <h2 className="mt-1 text-xl font-bold text-slate-950">
-                Tjenestebeskrivelser
+              <h2 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-900">
+                Velg tjenester
               </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Tjenester og dokumenter lagres globalt på tvers av prosjekter.
-                Huk av hvilke tjenester som skal brukes i dette prosjektet.
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Valgte tjenestedokumenter brukes som leverandørkontekst i
+                analyse, kravsvar og løsningsforslag for dette prosjektet.
               </p>
             </div>
           </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
+            <span className="text-xs font-medium tabular-nums text-slate-500">
+              <span className="text-slate-700">{selectedCount}</span>
+              av {services.length} valgt
+            </span>
+            <Link
+              href="/service-descriptions"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900",
+              )}
+            >
+              <Layers3 className="size-3.5 text-blue-700" />
+              Tjenestebeskrivelser
+            </Link>
+          </div>
         </div>
 
-        <div className="p-5">
-          <label
-            htmlFor="service-file"
-            onDragEnter={(event) => {
-              event.preventDefault();
-              setDragActive(true);
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "copy";
-              setDragActive(true);
-            }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={onDrop}
-            className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-7 text-center transition-colors ${
-              dragActive
-                ? "border-slate-950 bg-slate-100"
-                : "border-slate-300 bg-slate-50 hover:border-primary/60 hover:bg-primary/5"
-            }`}
-          >
-            <Upload className="mb-3 size-5 text-primary" />
-            <span className="text-sm font-semibold text-slate-950">
-              Slipp dokument her
-            </span>
-            <span className="mt-1 text-xs text-slate-500">
-              Velg tjeneste og navn i neste steg.
-            </span>
-            {file ? (
-              <span className="mt-3 max-w-full truncate rounded-lg bg-primary/10 px-3 py-2 text-xs font-semibold text-primary">
-                {file.name}
-              </span>
-            ) : null}
-          </label>
-          <Input
-            key={fileInputKey}
-            id="service-file"
-            type="file"
-            accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
-            className="sr-only"
-            onChange={(event) => openUploadDialog(event.target.files?.[0])}
-          />
+        <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-3.5 text-[0.8rem] leading-6 text-slate-500">
+          Katalogen forvaltes globalt. Her velger du bare hvilke tjenester som
+          hører til tilbudet, slik at endringer ikke påvirker katalogen ved et
+          uhell.
         </div>
       </section>
 
-      <Dialog
-        open={uploadDialogOpen}
-        onOpenChange={(open) => {
-          if (open) {
-            setUploadDialogOpen(true);
-          } else {
-            closeUploadDialog();
-          }
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <form onSubmit={onUploadSubmit} className="space-y-5">
-            <DialogHeader>
-              <DialogTitle>Knytt dokument til tjeneste</DialogTitle>
-              <DialogDescription>
-                Velg eksisterende tjenestegruppe, eller opprett en ny før
-                dokumentet lagres i den globale katalogen.
-              </DialogDescription>
-            </DialogHeader>
+      {error ? (
+        <div
+          role="alert"
+        className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          {error}
+        </div>
+      ) : null}
 
-            {file ? (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                  Dokument
-                </p>
-                <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-                  {file.name}
-                </p>
-              </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <label
-                htmlFor="service-group-modal"
-                className="text-sm font-medium text-slate-700"
-              >
-                Tjenestegruppe
-              </label>
-              <select
-                id="service-group-modal"
-                value={targetServiceId}
-                onChange={(event) => selectTargetService(event.target.value)}
-                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950"
-                disabled={busy === "upload"}
-              >
-                <option value="">Ny tjeneste</option>
-                {services.map((service) => (
-                  <option key={service.id} value={service.id}>
-                    {service.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label
-                htmlFor="service-name-modal"
-                className="text-sm font-medium text-slate-700"
-              >
-                Navn
-              </label>
-              <Input
-                id="service-name-modal"
-                value={serviceName}
-                onChange={(event) => {
-                  setServiceName(event.target.value);
-                  setUploadError("");
-                }}
-                placeholder="For eksempel Azure drift, sikkerhet, nettverk"
-                disabled={busy === "upload" || Boolean(targetServiceId)}
-              />
-              {targetServiceId ? (
-                <p className="text-xs text-slate-500">
-                  Navnet hentes fra tjenestegruppen.
-                </p>
-              ) : null}
-            </div>
-
-            {uploadError ? (
-              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                {uploadError}
-              </p>
-            ) : null}
-
-            <DialogFooter>
+      {recommendedServices.length ? (
+        <section className="border-l-2 border-amber-500 bg-amber-50/70 px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+              <Lightbulb className="size-4" />
+            </span>
+            <h3 className="text-sm font-semibold tracking-tight text-amber-950">
+              Relevante tjenester for prosjektet
+            </h3>
+          </div>
+          <div className="mt-3.5 flex flex-wrap gap-2">
+            {recommendedServices.map((service) => (
               <Button
+                key={service.id}
                 type="button"
                 variant="outline"
-                onClick={closeUploadDialog}
-                disabled={busy === "upload"}
-              >
-                Avbryt
-              </Button>
-              <Button type="submit" disabled={busy === "upload"}>
-                {busy === "upload" ? (
-                  <Spinner className="size-4" />
-                ) : (
-                  <Plus data-icon="inline-start" />
+                size="sm"
+                onClick={() => void toggleSelected(service)}
+                aria-pressed={service.selected}
+                disabled={selectionSaving}
+                className={cn(
+                  "rounded-md border-amber-300/80 bg-white text-amber-950 hover:bg-amber-100",
+                  service.selected &&
+                    "border-[rgb(30,58,138)] bg-blue-50/60 text-[rgb(30,58,138)] hover:bg-blue-50",
                 )}
-                Lagre dokument
+              >
+                {savingSelectionIds.has(service.id) ? (
+                  <Spinner className="size-3.5" />
+                ) : service.selected ? (
+                  <CheckCircle2 className="size-3.5" />
+                ) : null}
+                {service.name} · {service.recommendation_score}%
               </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <section className="min-w-0 space-y-4">
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {error}
+            ))}
           </div>
-        ) : null}
+        </section>
+      ) : null}
 
-        {recommendedServices.length ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
-            <div className="flex items-center gap-2 text-sm font-bold text-amber-950">
-              <Lightbulb className="size-4" />
-              Svært relevante tjenester for dette prosjektet
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {recommendedServices.map((service) => (
+      <section className="overflow-hidden border-y border-slate-200 bg-white">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 bg-slate-50/70 px-6 py-4">
+          <div>
+            <h3 className="text-base font-semibold tracking-tight text-slate-900">
+              Tjenester i katalogen
+            </h3>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Huk av tjenestene som skal inngå i prosjektets kunnskapsgrunnlag.
+            </p>
+          </div>
+        </div>
+
+        {services.length ? (
+          <div className="divide-y divide-slate-100">
+            {services.map((service) => (
+              <div
+                key={service.id}
+                className={cn(
+                  "px-6 py-4 transition-colors",
+                  service.selected
+                    ? "bg-blue-50/40"
+                    : "bg-white hover:bg-slate-50/60",
+                )}
+              >
                 <button
-                  key={service.id}
                   type="button"
                   onClick={() => void toggleSelected(service)}
                   aria-pressed={service.selected}
-                  className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-950 shadow-sm"
+                  aria-busy={savingSelectionIds.has(service.id)}
+                  disabled={selectionSaving}
+                  className="group flex w-full min-w-0 items-start gap-3.5 text-left transition-opacity disabled:cursor-wait disabled:opacity-70"
                 >
-                  {service.name} · {service.recommendation_score}%
+                  <span
+                    className={cn(
+                      "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-sm border transition-colors",
+                      service.selected
+                        ? "border-[rgb(30,58,138)] bg-[rgb(30,58,138)] text-white"
+                        : "border-slate-300 bg-white group-hover:border-[rgb(30,58,138)]",
+                    )}
+                  >
+                    {savingSelectionIds.has(service.id) ? (
+                      <Spinner className="size-3 text-current" />
+                    ) : service.selected ? (
+                      <CheckCircle2 className="size-3.5" />
+                    ) : null}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold tracking-tight text-slate-900">
+                        {service.name}
+                      </span>
+                      {service.recommended ? (
+                        <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-amber-800">
+                          Anbefalt
+                        </span>
+                      ) : null}
+                      <span className="text-[0.68rem] font-medium tabular-nums text-slate-500">
+                        {service.documents.length} dokument
+                      </span>
+                    </span>
+                    {service.description ? (
+                      <span className="mt-1.5 block text-sm leading-6 text-slate-600">
+                        {service.description}
+                      </span>
+                    ) : null}
+                    <span className="mt-1 block text-[0.8rem] leading-5 text-slate-500">
+                      {service.recommendation_reason}
+                    </span>
+                  </span>
                 </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-            <h3 className="text-sm font-bold text-slate-950">Tjenester</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              Huk av valgte tjenester som skal være med i dette prosjektet.
-            </p>
-          </div>
-
-          {services.length ? (
-            <div className="divide-y divide-slate-200">
-              {services.map((service) => (
-                <div key={service.id} className="px-5 py-4">
-                  <div className="flex min-w-0 items-start justify-between gap-4">
-                    <button
-                      type="button"
-                      onClick={() => void toggleSelected(service)}
-                      aria-pressed={service.selected}
-                      aria-busy={savingSelectionIds.has(service.id)}
-                      className="group flex min-w-0 flex-1 items-start gap-3 text-left transition-opacity"
-                    >
-                      <span
-                        className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
-                          service.selected
-                            ? "border-slate-950 bg-slate-950 text-white"
-                            : "border-slate-300 bg-white group-hover:border-slate-500"
-                        }`}
-                      >
-                        {savingSelectionIds.has(service.id) ? (
-                          <Spinner className="size-3 text-current" />
-                        ) : service.selected ? (
-                          <CheckCircle2 className="size-3.5" />
-                        ) : null}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-bold text-slate-950">{service.name}</span>
-                          {service.recommended ? (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900">
-                              Anbefalt
-                            </span>
-                          ) : null}
-                          {savingSelectionIds.has(service.id) ? (
-                            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
-                              Lagrer
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="mt-1 block text-sm text-slate-500">
-                          {service.recommendation_reason}
-                        </span>
-                      </span>
-                    </button>
-                  </div>
-
-                  <div className="mt-3 ml-8 space-y-2">
+                {service.documents.length ? (
+                  <div className="mt-3 ml-[2.15rem] flex flex-wrap gap-2">
                     {service.documents.map((document) => (
-                      <div
+                      <span
                         key={document.id}
-                        className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
+                        className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600"
                       >
-                        <div className="flex min-w-0 items-start gap-2">
-                          <FileText className="size-4 shrink-0 text-teal-700" />
-                          <span className="break-words text-sm font-medium leading-5 text-slate-700">
-                            {document.title}
-                          </span>
-                        </div>
-                        <DeleteConfirmDialog
-                          title="Slett tjenestedokument?"
-                          description={`Dette fjerner "${document.title}" fra tjenestebeskrivelsen. Handlingen kan ikke angres.`}
-                          confirmLabel="Slett dokument"
-                          onConfirm={() => deleteDocument(service.id, document.id)}
-                        >
-                          <Button
-                            aria-label={`Slett ${document.title}`}
-                            variant="ghost"
-                            size="icon-xs"
-                            disabled={busy === `delete-document-${document.id}`}
-                          >
-                            {busy === `delete-document-${document.id}` ? (
-                              <Spinner className="size-3.5" />
-                            ) : (
-                              <Trash2 className="size-3.5" />
-                            )}
-                          </Button>
-                        </DeleteConfirmDialog>
-                      </div>
+                        <FileText className="size-3.5 shrink-0 text-cyan-700" />
+                        <span className="max-w-72 truncate">{document.title}</span>
+                      </span>
                     ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="px-5 py-12 text-center">
-              <FileText className="mx-auto size-8 text-slate-400" />
-              <p className="mt-4 text-sm font-semibold text-slate-950">
-                Ingen tjenestebeskrivelser ennå
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Opprett første tjeneste og legg ett eller flere dokumenter under den.
-              </p>
-            </div>
-          )}
-        </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="px-6 py-14 text-center">
+            <span className="mx-auto flex size-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-400">
+              <FileText className="size-5" />
+            </span>
+            <p className="mt-4 text-sm font-semibold tracking-tight text-slate-900">
+              Ingen tjenestebeskrivelser ennå
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Opprett tjenestene i den globale katalogen først.
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );

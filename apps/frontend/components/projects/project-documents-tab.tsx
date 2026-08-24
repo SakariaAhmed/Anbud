@@ -12,6 +12,7 @@ import type {
   ProjectDocumentRole,
   ProjectServiceDescription,
 } from "@/lib/types";
+import { listSelectedServiceDocuments } from "@/lib/service-description";
 import { cn } from "@/lib/utils";
 
 type ProjectDocumentsTabProps = {
@@ -117,9 +118,7 @@ export function ProjectDocumentsTab({
   deletingDocumentId,
   onDeleteDocument,
 }: ProjectDocumentsTabProps) {
-  const serviceDocuments = services.flatMap((service) =>
-    service.documents.map((document) => ({ service, document })),
-  );
+  const serviceDocuments = listSelectedServiceDocuments(services);
 
   return (
     <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -141,7 +140,7 @@ export function ProjectDocumentsTab({
             </span>
           </span>
         </span>
-        <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-bold text-blue-700">
+        <span className="text-sm font-medium tabular-nums text-slate-500">
           {documents.length} dokumenter
         </span>
       </button>
@@ -344,8 +343,8 @@ export function ProjectDocumentsTab({
                 Ingen tjenestedokumenter valgt
               </p>
               <p className="mt-1 text-sm leading-6 text-slate-500">
-                Velg relevante tjenester i tjenestebeskrivelse-fanen for å
-                bruke dem som kontekst i genereringene.
+                Velg relevante tjenester i steg 2 for å bruke dokumentene som
+                kontekst i analyse og generering.
               </p>
             </div>
           )}

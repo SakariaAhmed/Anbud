@@ -10,11 +10,11 @@ const repositoryRoot = path.resolve(
 );
 
 const sqlContracts = [
-  ["supabase/schema.sql", 3],
-  ["supabase/document_chunks_and_embeddings.sql", 3],
-  ["supabase/hybrid_document_retrieval.sql", 2],
+  ["database/schema.sql", 3],
+  ["database/document_chunks_and_embeddings.sql", 3],
+  ["database/hybrid_document_retrieval.sql", 2],
   [
-    "supabase/migrations/20260711124500_selected_service_document_retrieval.sql",
+    "database/migrations/20260711124500_selected_service_document_retrieval.sql",
     3,
   ],
 ];

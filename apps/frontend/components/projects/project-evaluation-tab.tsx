@@ -7,6 +7,7 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
+  type FormEvent,
 } from "react";
 import {
   AlertTriangle,
@@ -48,6 +49,11 @@ type RequirementCoverage = NonNullable<
 >;
 type RequirementCoverageItem = RequirementCoverage["items"][number];
 
+const eyebrowClass =
+  "text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500";
+const eyebrowAccentClass =
+  "text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-700";
+
 function cleanEvaluationTypography(value: string) {
   let text = value
     .replace(/\b(Tabell\s+ID\s+\d{1,3})\s*[-.]\s*(\d{1,3}[A-Z]?)\b/gi, "$1-$2")
@@ -87,56 +93,49 @@ function getArchitectureComparison(evaluation: SolutionEvaluationResult) {
 
 function ArchitectScoreCard({ score }: { score: number }) {
   const safeScore = Math.min(100, Math.max(0, Math.round(score || 0)));
-  const scoreColor =
+  const scoreTone =
     safeScore >= 80
-      ? "text-emerald-700"
+      ? { text: "text-emerald-700", bar: "bg-emerald-600" }
       : safeScore >= 60
-        ? "text-teal-700"
-        : "text-amber-700";
+        ? { text: "text-teal-700", bar: "bg-teal-600" }
+        : { text: "text-amber-700", bar: "bg-amber-500" };
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-500 via-yellow-400 to-emerald-500" />
-      <div className="px-5 py-5 md:px-6 md:py-6">
+    <section className="border border-slate-200 bg-white px-5 py-5 md:px-7 md:py-6">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
           <div className="min-w-0">
-            <p className="text-[0.74rem] font-bold uppercase tracking-[0.14em] text-slate-500">
-              Arkitektløsning
-            </p>
-            <h4 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950">
+            <p className={eyebrowClass}>Arkitektløsning</p>
+            <h4 className="mt-2 text-2xl font-semibold leading-tight tracking-tight text-slate-900">
               Løsningsscore
             </h4>
-            <p className="mt-3 max-w-[38rem] text-[1rem] leading-7 text-slate-600">
+            <p className="mt-2 max-w-[38rem] text-sm leading-6 text-slate-600">
               Viser hvor godt arkitektløsningen dekker kundebehov, risiko og
               konkurransekraft.
             </p>
           </div>
           <div className="shrink-0 text-left md:text-right">
-            <div className={`text-5xl font-black leading-[0.9] tracking-[-0.04em] tabular-nums md:text-6xl ${scoreColor}`}>
+            <div
+              className={`text-5xl font-semibold leading-none tracking-tight tabular-nums md:text-6xl ${scoreTone.text}`}
+            >
               {safeScore}%
             </div>
           </div>
         </div>
 
-        <div className="mt-7">
-          <div className="relative h-4 overflow-hidden rounded-full bg-slate-100 shadow-inner">
+        <div className="mt-6">
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-red-500 via-yellow-400 to-emerald-500"
+              className={`h-full rounded-full ${scoreTone.bar}`}
               style={{ width: `${safeScore}%` }}
             />
-            <div
-              className="absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-slate-950 shadow-[0_8px_18px_rgba(15,23,42,0.25)]"
-              style={{ left: `${safeScore}%` }}
-            />
           </div>
-          <div className="mt-3 grid grid-cols-3 text-xs font-semibold text-slate-400">
+          <div className="mt-2 grid grid-cols-3 text-[0.68rem] font-medium tabular-nums text-slate-400">
             <span>0%</span>
             <span className="text-center">50%</span>
             <span className="text-right">100%</span>
           </div>
         </div>
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -156,14 +155,14 @@ function ComparisonList({
   }
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {items.map((item, index) => (
         <div
           key={`${item}-${index}`}
-          className="grid grid-cols-[1.4rem_minmax(0,1fr)] gap-2 rounded-lg bg-white/75 px-3 py-3"
+          className="grid grid-cols-[1.4rem_minmax(0,1fr)] gap-2.5 rounded-lg bg-slate-50/80 px-3 py-2.5"
         >
           <span
-            className={`mt-1 flex size-5 items-center justify-center rounded-full text-[0.68rem] font-black text-white ${markerClassName}`}
+            className={`mt-1 flex size-5 items-center justify-center rounded-full text-[0.65rem] font-semibold text-white ${markerClassName}`}
           >
             {index + 1}
           </span>
@@ -192,45 +191,48 @@ function FindingPanel({
 }) {
   const toneMap = {
     risk: {
-      shell: "border-rose-200 bg-rose-50/80",
-      icon: "bg-rose-600 text-white",
+      accent: "bg-rose-500",
+      icon: "bg-rose-50 text-rose-700",
       marker: "bg-rose-600",
     },
     gap: {
-      shell: "border-amber-200 bg-amber-50/75",
-      icon: "bg-amber-500 text-white",
+      accent: "bg-amber-400",
+      icon: "bg-amber-50 text-amber-700",
       marker: "bg-amber-500",
     },
     trust: {
-      shell: "border-emerald-200 bg-emerald-50/75",
-      icon: "bg-emerald-600 text-white",
+      accent: "bg-emerald-500",
+      icon: "bg-emerald-50 text-emerald-700",
       marker: "bg-emerald-600",
     },
     improve: {
-      shell: "border-blue-200 bg-blue-50/75",
-      icon: "bg-blue-600 text-white",
-      marker: "bg-blue-600",
+      accent: "bg-blue-600",
+      icon: "bg-blue-50 text-blue-700",
+      marker: "bg-blue-700",
     },
   }[tone];
 
   return (
-    <div className={`rounded-xl border px-4 py-4 ${toneMap.shell}`}>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${toneMap.icon}`}
-          >
-            <Icon className="size-5" />
+    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className={`absolute inset-y-0 left-0 w-1 ${toneMap.accent}`} />
+      <div className="px-5 py-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneMap.icon}`}
+            >
+              <Icon className="size-4.5" />
+            </span>
+            <h3 className="min-w-0 font-serif text-base font-semibold tracking-tight text-slate-900">
+              {title}
+            </h3>
+          </div>
+          <span className="shrink-0 text-xs font-medium tabular-nums text-slate-500">
+            {count}
           </span>
-          <h3 className="min-w-0 text-sm font-black text-slate-950">
-            {title}
-          </h3>
         </div>
-        <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-xs font-black tabular-nums text-slate-800 shadow-sm">
-          {count}
-        </span>
+        <ComparisonList items={items} markerClassName={toneMap.marker} />
       </div>
-      <ComparisonList items={items} markerClassName={toneMap.marker} />
     </div>
   );
 }
@@ -276,26 +278,30 @@ function findingTone(finding: SolutionDocumentFinding) {
   switch (finding.assessment) {
     case "Godt":
       return {
-        shell: "border-emerald-200 bg-emerald-50/70",
-        badge: "border-emerald-200 bg-emerald-100 text-emerald-800",
+        accent: "border-l-emerald-500",
+        badge: "border-emerald-200 bg-emerald-50 text-emerald-800",
+        iconWrap: "bg-emerald-50 text-emerald-700",
         icon: CheckCircle2,
       };
     case "Dårlig":
       return {
-        shell: "border-rose-200 bg-rose-50/70",
-        badge: "border-rose-200 bg-rose-100 text-rose-800",
+        accent: "border-l-rose-500",
+        badge: "border-rose-200 bg-rose-50 text-rose-800",
+        iconWrap: "bg-rose-50 text-rose-700",
         icon: XCircle,
       };
     case "Mangler":
       return {
-        shell: "border-amber-200 bg-amber-50/70",
-        badge: "border-amber-200 bg-amber-100 text-amber-800",
+        accent: "border-l-amber-400",
+        badge: "border-amber-200 bg-amber-50 text-amber-800",
+        iconWrap: "bg-amber-50 text-amber-700",
         icon: AlertTriangle,
       };
     default:
       return {
-        shell: "border-slate-200 bg-slate-50/80",
-        badge: "border-slate-200 bg-slate-100 text-slate-700",
+        accent: "border-l-slate-300",
+        badge: "border-slate-200 bg-slate-50 text-slate-700",
+        iconWrap: "bg-slate-100 text-slate-600",
         icon: MapPin,
       };
   }
@@ -305,26 +311,30 @@ function assessmentTone(assessment: RequirementCoverageItem["assessment"]) {
   switch (assessment) {
     case "Godt":
       return {
-        shell: "border-emerald-200 bg-emerald-50/70",
-        badge: "border-emerald-200 bg-emerald-100 text-emerald-800",
+        accent: "border-l-emerald-500",
+        badge: "border-emerald-200 bg-emerald-50 text-emerald-800",
+        iconWrap: "bg-emerald-50 text-emerald-700",
         icon: CheckCircle2,
       };
     case "Dårlig":
       return {
-        shell: "border-rose-200 bg-rose-50/70",
-        badge: "border-rose-200 bg-rose-100 text-rose-800",
+        accent: "border-l-rose-500",
+        badge: "border-rose-200 bg-rose-50 text-rose-800",
+        iconWrap: "bg-rose-50 text-rose-700",
         icon: XCircle,
       };
     case "Mangler":
       return {
-        shell: "border-amber-200 bg-amber-50/70",
-        badge: "border-amber-200 bg-amber-100 text-amber-800",
+        accent: "border-l-amber-400",
+        badge: "border-amber-200 bg-amber-50 text-amber-800",
+        iconWrap: "bg-amber-50 text-amber-700",
         icon: AlertTriangle,
       };
     default:
       return {
-        shell: "border-slate-200 bg-slate-50/80",
-        badge: "border-slate-200 bg-slate-100 text-slate-700",
+        accent: "border-l-slate-300",
+        badge: "border-slate-200 bg-slate-50 text-slate-700",
+        iconWrap: "bg-slate-100 text-slate-600",
         icon: MapPin,
       };
   }
@@ -346,22 +356,26 @@ function RequirementCoveragePanel({
     {
       label: "Godt",
       value: coverage.good ?? 0,
-      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      dot: "bg-emerald-500",
+      valueClass: "text-emerald-700",
     },
     {
       label: "Dårlig",
       value: coverage.weak ?? 0,
-      className: "border-rose-200 bg-rose-50 text-rose-800",
+      dot: "bg-rose-500",
+      valueClass: "text-rose-700",
     },
     {
       label: "Mangler",
       value: coverage.missing ?? 0,
-      className: "border-amber-200 bg-amber-50 text-amber-800",
+      dot: "bg-amber-400",
+      valueClass: "text-amber-700",
     },
     {
       label: "Uklart",
       value: coverage.unclear ?? 0,
-      className: "border-slate-200 bg-slate-50 text-slate-700",
+      dot: "bg-slate-400",
+      valueClass: "text-slate-700",
     },
   ];
   const orderedItems = sortByRequirementOrder(
@@ -376,50 +390,48 @@ function RequirementCoveragePanel({
   );
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-5 py-4 md:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
-              <ListChecks className="size-5" />
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-900 text-white">
+              <ListChecks className="size-4.5" />
             </span>
             <div className="min-w-0">
-              <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-slate-500">
-                Kravdekning
-              </p>
-              <h3 className="mt-1 text-lg font-black text-slate-950">
+              <p className={eyebrowClass}>Kravdekning</p>
+              <h3 className="mt-0.5 font-serif text-lg font-semibold tracking-tight text-slate-900">
                 Krav vurdert mot arkitektens svar
               </h3>
             </div>
           </div>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600">
+          <span className="text-xs font-medium tabular-nums text-slate-500">
             {assessed} av {total} krav
           </span>
         </div>
 
         <div className="mt-4">
-          <div className="h-2 overflow-hidden rounded-full bg-white shadow-inner">
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
             <div
-              className="h-full rounded-full bg-slate-950"
+              className="h-full rounded-full bg-blue-900"
               style={{ width: `${assessedPercent}%` }}
             />
           </div>
-          <p className="mt-2 text-xs font-semibold text-slate-500">
+          <p className="mt-2 text-xs font-medium text-slate-500">
             Dekningssikkerhet: {coverage.confidence}
           </p>
         </div>
       </div>
 
-      <div className="px-5 py-5">
+      <div className="px-5 py-5 md:px-6">
         {counterSummary.status !== "complete" ? (
           <div
             className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
               counterSummary.status === "inconsistent"
-                ? "border-rose-300 bg-rose-50 text-rose-900"
-                : "border-amber-300 bg-amber-50 text-amber-950"
+                ? "border-rose-200 bg-rose-50 text-rose-900"
+                : "border-amber-200 bg-amber-50 text-amber-950"
             }`}
           >
-            <div className="flex items-center gap-2 font-black">
+            <div className="flex items-center gap-2 font-semibold">
               <AlertTriangle className="size-4" />
               {counterSummary.status === "inconsistent"
                 ? "Kravdekningen har inkonsistente tellere"
@@ -449,16 +461,19 @@ function RequirementCoveragePanel({
           />
         ) : null}
 
-        <div className="mb-4 grid gap-2 sm:grid-cols-4">
+        <div className="mb-5 grid gap-2 sm:grid-cols-4">
           {stats.map((stat) => (
             <div
               key={stat.label}
-              className={`rounded-lg border px-3 py-3 ${stat.className}`}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-3"
             >
-              <p className="text-[0.68rem] font-black uppercase tracking-[0.14em]">
+              <p className="flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <span className={`size-1.5 rounded-full ${stat.dot}`} />
                 {stat.label}
               </p>
-              <p className="mt-1 text-2xl font-black tabular-nums">
+              <p
+                className={`mt-1.5 font-serif text-2xl font-semibold tabular-nums tracking-tight ${stat.valueClass}`}
+              >
                 {stat.value}
               </p>
             </div>
@@ -474,19 +489,23 @@ function RequirementCoveragePanel({
               return (
                 <article
                   key={`${item.reference}-${index}`}
-                  className={`rounded-xl border px-4 py-4 ${tone.shell}`}
+                  className={`rounded-xl border border-slate-200 border-l-[3px] bg-white px-4 py-4 shadow-sm ${tone.accent}`}
                 >
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-800 shadow-sm">
-                      <Icon className="size-4.5" />
+                    <span
+                      className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${tone.iconWrap}`}
+                    >
+                      <Icon className="size-4" />
                     </span>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tone.badge}`}>
+                        <span
+                          className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${tone.badge}`}
+                        >
                           {item.assessment}
                         </span>
-                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                           {item.reference
                             ? cleanEvaluationTypography(item.reference)
                             : "Kravreferanse mangler"}
@@ -494,13 +513,13 @@ function RequirementCoveragePanel({
                       </div>
                       <MarkdownViewer
                         content={item.requirement || "Kravtekst mangler."}
-                        className="analysis-prose mt-3 max-w-none text-sm font-semibold leading-6 text-slate-900"
+                        className="analysis-prose mt-3 max-w-none text-sm font-medium leading-6 text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="mb-3 inline-flex max-w-full items-start gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold leading-5 text-slate-600">
+                <div className="mb-3 inline-flex max-w-full items-start gap-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs font-medium leading-5 text-slate-500">
                   <MapPin className="mt-0.5 size-3.5 shrink-0" />
                   <span className="min-w-0 break-words">
                     {item.full_reference || item.source_reference
@@ -510,28 +529,22 @@ function RequirementCoveragePanel({
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
-                    <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-slate-500">
-                      Vurdering
-                    </p>
+                  <div className="rounded-lg bg-slate-50 px-3 py-3">
+                    <p className={`mb-1.5 ${eyebrowClass}`}>Vurdering</p>
                     <MarkdownViewer
                       content={item.rationale || "Ikke angitt."}
                       className="analysis-prose text-sm leading-6 text-slate-700"
                     />
                   </div>
-                  <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
-                    <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-slate-500">
-                      Bevis
-                    </p>
+                  <div className="rounded-lg bg-slate-50 px-3 py-3">
+                    <p className={`mb-1.5 ${eyebrowClass}`}>Bevis</p>
                     <MarkdownViewer
                       content={item.evidence || "Ikke angitt."}
                       className="analysis-prose text-sm leading-6 text-slate-700"
                     />
                   </div>
-                  <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
-                    <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-blue-700">
-                      Retting
-                    </p>
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-3">
+                    <p className={`mb-1.5 ${eyebrowAccentClass}`}>Retting</p>
                     <MarkdownViewer
                       content={item.recommendation || "Ikke angitt."}
                       className="analysis-prose text-sm leading-6 text-slate-800"
@@ -543,7 +556,7 @@ function RequirementCoveragePanel({
             })}
           </div>
         ) : (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900">
             Vurderingen inneholder ingen kravrader. Regenerer vurderingen før den
             brukes.
           </p>
@@ -563,24 +576,22 @@ function DocumentFindingsPanel({
   }
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-5 py-4 md:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-slate-500">
-              Bilag 2-referanser
-            </p>
-            <h3 className="mt-1 text-lg font-black text-slate-950">
+            <p className={eyebrowClass}>Bilag 2-referanser</p>
+            <h3 className="mt-0.5 font-serif text-lg font-semibold tracking-tight text-slate-900">
               Funn i arkitektens svar
             </h3>
           </div>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600">
+          <span className="text-xs font-medium tabular-nums text-slate-500">
             {findings.length} funn
           </span>
         </div>
       </div>
 
-      <div className="grid gap-3 px-5 py-5">
+      <div className="grid gap-3 px-5 py-5 md:px-6">
         {findings.map((finding, index) => {
           const tone = findingTone(finding);
           const Icon = tone.icon;
@@ -588,19 +599,23 @@ function DocumentFindingsPanel({
           return (
             <article
               key={`${finding.reference}-${finding.finding}-${index}`}
-              className={`rounded-xl border px-4 py-4 ${tone.shell}`}
+              className={`rounded-xl border border-slate-200 border-l-[3px] bg-white px-4 py-4 shadow-sm ${tone.accent}`}
             >
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
-                  <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-800 shadow-sm">
-                    <Icon className="size-4.5" />
+                  <span
+                    className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${tone.iconWrap}`}
+                  >
+                    <Icon className="size-4" />
                   </span>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tone.badge}`}>
+                      <span
+                        className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${tone.badge}`}
+                      >
                         {finding.assessment}
                       </span>
-                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                         <MapPin className="size-3.5 shrink-0" />
                         <span className="min-w-0 truncate">
                           {finding.reference
@@ -618,17 +633,15 @@ function DocumentFindingsPanel({
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
-                  <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-slate-500">
-                    Bevis i Bilag 2
-                  </p>
+                <div className="rounded-lg bg-slate-50 px-3 py-3">
+                  <p className={`mb-1.5 ${eyebrowClass}`}>Bevis i Bilag 2</p>
                   <MarkdownViewer
                     content={finding.evidence || "Ikke angitt."}
                     className="analysis-prose text-sm leading-6 text-slate-700"
                   />
                 </div>
-                <div className="rounded-lg border border-white/80 bg-white/80 px-3 py-3">
-                  <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-blue-700">
+                <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-3">
+                  <p className={`mb-1.5 ${eyebrowAccentClass}`}>
                     Anbefalt retting
                   </p>
                   <MarkdownViewer
@@ -715,44 +728,40 @@ function ArchitectureCallToAction({
   }
 
   return (
-    <section className="overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm">
-      <div className="border-b border-blue-100 bg-blue-50/80 px-5 py-4">
+    <section className="overflow-hidden rounded-2xl border border-blue-200 bg-white shadow-sm">
+      <div className="border-b border-blue-100 bg-blue-50/60 px-5 py-4 md:px-6">
         <div className="flex items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
-            <Sparkles className="size-5" />
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-900 text-white">
+            <Sparkles className="size-4.5" />
           </span>
           <div className="min-w-0">
-            <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-blue-700">
-              Call To Action
-            </p>
-            <h3 className="mt-1 text-lg font-black text-slate-950">
+            <p className={eyebrowAccentClass}>Call To Action</p>
+            <h3 className="mt-0.5 font-serif text-lg font-semibold tracking-tight text-slate-900">
               Adresser svakhetene i arkitektløsningen
             </h3>
           </div>
         </div>
       </div>
-      <div className="grid gap-3 px-5 py-5 lg:grid-cols-2">
+      <div className="grid gap-3 px-5 py-5 md:px-6 lg:grid-cols-2">
         {actions.map((item, index) => (
           <article
             key={`${item.location}-${index}`}
-            className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-4"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition-transform duration-[180ms] ease-out hover:-translate-y-0.5"
           >
             <div className="mb-3 flex items-start gap-3">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-900 text-xs font-semibold text-white">
                 {index + 1}
               </span>
               <div className="min-w-0">
-                <p className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-slate-500">
-                  Hvor i arkitektløsningen
-                </p>
-                <p className="mt-1 text-sm font-bold leading-6 text-slate-950">
+                <p className={eyebrowClass}>Hvor i arkitektløsningen</p>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-900">
                   {cleanEvaluationTypography(item.location)}
                 </p>
               </div>
             </div>
             {item.reason ? (
-              <div className="mb-3 rounded-md border border-rose-100 bg-white px-3 py-3">
-                <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-rose-600">
+              <div className="mb-3 rounded-lg border-l-2 border-rose-300 bg-rose-50/50 px-3 py-3">
+                <p className="mb-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-rose-600">
                   Svakhet
                 </p>
                 <MarkdownViewer
@@ -761,10 +770,8 @@ function ArchitectureCallToAction({
                 />
               </div>
             ) : null}
-            <div className="rounded-md border border-blue-100 bg-white px-3 py-3">
-              <p className="mb-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-blue-700">
-                Gjør dette
-              </p>
+            <div className="rounded-lg border-l-2 border-blue-300 bg-blue-50/50 px-3 py-3">
+              <p className={`mb-1.5 ${eyebrowAccentClass}`}>Gjør dette</p>
               <MarkdownViewer
                 content={item.action}
                 className="analysis-prose text-sm leading-6 text-slate-800"
@@ -840,6 +847,14 @@ export function ProjectEvaluationTab({
     await onGenerate(document.id, document);
   }
 
+  function handleGenerateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (actionBusy || !selectedDocumentId || !selectedDocumentRunnable) {
+      return;
+    }
+    void onGenerate(selectedDocumentId);
+  }
+
   useEffect(() => {
     setSelectedDocumentId((currentId) => {
       const currentDocument = candidateDocuments.find(
@@ -870,24 +885,24 @@ export function ProjectEvaluationTab({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <section className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-        <div className="space-y-4">
+      <section
+        className="mb-5 border border-slate-200 bg-white px-5 py-5"
+      >
+        <form className="space-y-5" onSubmit={handleGenerateSubmit}>
+          <div className="grid gap-6 lg:grid-cols-2">
           <div>
-            <label
-              htmlFor={documentSelectId}
-              className="text-xs font-black uppercase tracking-[0.2em] text-slate-500"
-            >
+            <label htmlFor={documentSelectId} className={eyebrowClass}>
               Dokument som skal vurderes
             </label>
             {candidateDocuments.length ? (
               <>
-                <div className="relative mt-3">
+                <div className="relative mt-2.5">
                   <select
                     id={documentSelectId}
                     value={selectedDocumentId}
                     onChange={(event) => setSelectedDocumentId(event.target.value)}
                     disabled={actionBusy}
-                    className="h-11 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-10 text-sm font-semibold text-slate-950 shadow-sm outline-none transition-colors focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                    className="h-11 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-10 text-sm font-medium text-slate-900 shadow-sm outline-none transition-colors duration-[180ms] focus:border-blue-700 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                   >
                     {candidateDocuments.map((document) => (
                       <option
@@ -904,7 +919,7 @@ export function ProjectEvaluationTab({
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-950" />
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
                 </div>
                 <div className="mt-3">
                   <DocumentSourceMeta
@@ -926,17 +941,15 @@ export function ProjectEvaluationTab({
                 ) : null}
               </>
             ) : (
-              <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-500">
+              <div className="mt-2.5 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-500">
                 Ingen Bilag 2- eller støttedokumenter er lastet opp ennå.
               </div>
             )}
           </div>
 
-          <div>
-            <h4 className="text-sm font-semibold text-slate-700">
-              Last inn dokument
-            </h4>
-            <div className="mt-3">
+          <div className="flex flex-col border-t border-slate-100 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+            <h4 className={eyebrowClass}>Last inn dokument</h4>
+            <div className="mt-2.5 flex flex-1 flex-col [&>button]:flex-1">
               <ArchitectureDocumentDropzone
                 busy={importBusy}
                 disabled={actionBusy}
@@ -944,13 +957,15 @@ export function ProjectEvaluationTab({
               />
             </div>
           </div>
+          </div>
 
+          <div className="border-t border-slate-100 pt-5">
           <Button
-            onClick={() => void onGenerate(selectedDocumentId)}
+            type="submit"
             disabled={
               actionBusy || !selectedDocumentId || !selectedDocumentRunnable
             }
-            className="h-10 w-full justify-center rounded-lg bg-blue-900 text-sm font-bold text-white hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
+            className="h-11 w-full justify-center rounded-xl bg-blue-900 text-sm font-semibold text-white shadow-sm transition-colors duration-[180ms] hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
           >
             {busy || importBusy ? (
               <Spinner className="size-4" />
@@ -959,7 +974,8 @@ export function ProjectEvaluationTab({
             )}
             Generer sammenligning
           </Button>
-        </div>
+          </div>
+        </form>
       </section>
 
       {busy && busyMessage ? (
@@ -977,22 +993,20 @@ export function ProjectEvaluationTab({
               <section className="space-y-4">
                 <ArchitectScoreCard score={comparison.architect_solution_score} />
 
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white px-5 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.07)] md:px-7 md:py-7">
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-sm md:px-7 md:py-7">
                   <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-900 text-white">
                         <Scale className="size-5" />
                       </span>
                       <div className="min-w-0">
-                        <p className="text-xs font-bold uppercase text-slate-500">
-                          Konklusjon
-                        </p>
-                        <h3 className="mt-1 text-3xl font-black text-slate-950">
+                        <p className={eyebrowClass}>Konklusjon</p>
+                        <h3 className="mt-1 font-serif text-3xl font-bold tracking-tight text-slate-900">
                           {comparison.winner}
                         </h3>
                       </div>
                     </div>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                    <span className="max-w-sm text-right text-xs font-medium leading-5 text-slate-500">
                       {evaluatesGeneratedArtifact
                         ? `Systemartefakt vurdert${
                             evaluatedGeneratedArtifactTitle
@@ -1002,10 +1016,10 @@ export function ProjectEvaluationTab({
                         : "Arkitektløsning vurdert"}
                     </span>
                   </div>
-                  <div className="rounded-lg border-l-4 border-teal-500 bg-slate-50 px-4 py-4">
+                  <div className="rounded-lg border-l-4 border-blue-900 bg-slate-50 px-4 py-4">
                     <MarkdownViewer
                       content={comparison.verdict}
-                      className="analysis-prose max-w-none text-[1rem] leading-7 text-slate-700"
+                      className="analysis-prose max-w-none text-[0.95rem] leading-7 text-slate-700"
                     />
                   </div>
                 </div>
@@ -1013,13 +1027,17 @@ export function ProjectEvaluationTab({
             );
           })()}
 
-          <RequirementCoveragePanel
-            coverage={solutionEvaluation.requirement_coverage}
-          />
+          <div>
+            <RequirementCoveragePanel
+              coverage={solutionEvaluation.requirement_coverage}
+            />
+          </div>
 
-          <DocumentFindingsPanel
-            findings={solutionEvaluation.document_findings}
-          />
+          <div>
+            <DocumentFindingsPanel
+              findings={solutionEvaluation.document_findings}
+            />
+          </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
             <FindingPanel
@@ -1038,7 +1056,9 @@ export function ProjectEvaluationTab({
             />
           </div>
 
-          <ArchitectureCallToAction evaluation={solutionEvaluation} />
+          <div>
+            <ArchitectureCallToAction evaluation={solutionEvaluation} />
+          </div>
         </div>
       ) : (
         <AnalysisTabEmptyState>

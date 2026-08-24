@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(__dirname, "../../../../..");
 const migrationPath = path.join(
   repositoryRoot,
-  "supabase/migrations/20260711133000_atomic_primary_document_roles.sql",
+  "database/migrations/20260711133000_atomic_primary_document_roles.sql",
 );
 const migrationSql = readFileSync(migrationPath, "utf8");
 

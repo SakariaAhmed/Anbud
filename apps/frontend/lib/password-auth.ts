@@ -1,9 +1,17 @@
 export const AUTH_COOKIE_NAME = "bidsite_session";
 export const AUTH_VERIFIED_HEADER = "x-bidsite-auth-verified";
+export const AUTH_DISPLAY_NAME_HEADER = "x-bidsite-display-name";
+export const AUTH_PRINCIPAL_HEADER = "x-bidsite-principal-id";
+export const AUTH_IDENTITY_TYPE_HEADER = "x-bidsite-identity-type";
+export const AUTH_IS_ADMIN_HEADER = "x-bidsite-is-admin";
+export const AUTH_SESSION_HEADER = "x-bidsite-session-id";
 
 const DEFAULT_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
 const MIN_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 15;
 const MAX_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+const DATABASE_SESSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const DATABASE_SESSION_SECRET_PATTERN = /^[A-Za-z0-9_-]{40,80}$/u;
 
 function configuredSessionMaxAgeSeconds() {
   const configured = Number(process.env.APP_SESSION_MAX_AGE_SECONDS);
@@ -27,10 +35,6 @@ let signingKeyCache:
     }
   | null = null;
 
-function getPassword() {
-  return process.env.APP_ACCESS_PASSWORD?.trim() ?? "";
-}
-
 function getSigningSecret() {
   return process.env.APP_SESSION_SECRET?.trim() ?? "";
 }
@@ -38,19 +42,6 @@ function getSigningSecret() {
 function toBase64Url(bytes: ArrayBuffer) {
   const binary = String.fromCharCode(...new Uint8Array(bytes));
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function timingSafeEqual(left: string, right: string) {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  let diff = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-
-  return diff === 0;
 }
 
 async function sign(value: string) {
@@ -77,50 +68,51 @@ async function sign(value: string) {
   return toBase64Url(signature);
 }
 
-export function isPasswordAuthConfigured() {
-  return Boolean(getPassword() && getSigningSecret());
+export function encodeDatabaseSessionToken(
+  sessionId: string,
+  secret: string,
+) {
+  if (
+    !DATABASE_SESSION_ID_PATTERN.test(sessionId) ||
+    !DATABASE_SESSION_SECRET_PATTERN.test(secret)
+  ) {
+    throw new Error("Invalid database session token.");
+  }
+  return `s4.${sessionId}.${secret}`;
 }
 
-export function verifyPassword(input: string) {
-  const password = getPassword();
-  if (!password) {
-    return false;
+export function parseDatabaseSessionToken(
+  token: string | undefined | null,
+) {
+  if (!token || token.length > 256) return null;
+  const [version, sessionId, secret, extra] = token.split(".");
+  if (
+    version !== "s4" ||
+    extra !== undefined ||
+    !sessionId ||
+    !secret ||
+    !DATABASE_SESSION_ID_PATTERN.test(sessionId) ||
+    !DATABASE_SESSION_SECRET_PATTERN.test(secret)
+  ) {
+    return null;
   }
-
-  return timingSafeEqual(input, password);
+  return { sessionId, secret };
 }
 
-export async function createSessionToken(now = Date.now()) {
-  const issuedAt = String(now);
-  const payload = `v1:${issuedAt}`;
-  const signature = await sign(payload);
-  return `${payload}.${signature}`;
+export function databaseSessionTokenHmac(
+  sessionId: string,
+  secret: string,
+) {
+  if (
+    !DATABASE_SESSION_ID_PATTERN.test(sessionId) ||
+    !DATABASE_SESSION_SECRET_PATTERN.test(secret)
+  ) {
+    throw new Error("Invalid database session token.");
+  }
+  return sign(`database-session:${sessionId}:${secret}`);
 }
 
-export async function verifySessionToken(token: string | undefined | null, now = Date.now()) {
-  if (!token) {
-    return false;
-  }
-
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature) {
-    return false;
-  }
-
-  const [version, issuedAtValue] = payload.split(":");
-  const issuedAt = Number(issuedAtValue);
-  if (version !== "v1" || !Number.isFinite(issuedAt)) {
-    return false;
-  }
-
-  const ageSeconds = Math.floor((now - issuedAt) / 1000);
-  if (ageSeconds < 0 || ageSeconds > AUTH_COOKIE_MAX_AGE_SECONDS) {
-    return false;
-  }
-
-  try {
-    return timingSafeEqual(signature, await sign(payload));
-  } catch {
-    return false;
-  }
+export async function deriveOwnerId(subject: string) {
+  if (!subject.trim()) throw new Error("Missing Microsoft account subject.");
+  return `u_${(await sign(`entra:${subject}`)).slice(0, 43)}`;
 }

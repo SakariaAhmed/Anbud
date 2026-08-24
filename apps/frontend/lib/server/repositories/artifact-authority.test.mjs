@@ -15,7 +15,7 @@ const jiti = createJiti(path.join(frontendRoot, "artifact-authority-tests.cjs"),
   interopDefault: true,
 });
 const { currentArtifactTypesFromAuthority } = await jiti.import(
-  path.join(frontendRoot, "lib/server/repositories/supabase-store.ts"),
+  path.join(frontendRoot, "lib/server/repositories/artifacts.ts"),
 );
 
 test("artifact authority derives current types without loading a project snapshot", async () => {

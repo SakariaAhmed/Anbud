@@ -19,7 +19,7 @@ const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
 const jiti = createJiti(path.join(frontendRoot, "document-chunks-tests.cjs"), {
   interopDefault: true,
   alias: {
-    "@/lib/server/supabase": testSupportPath,
+    "@/lib/server/data-api": testSupportPath,
     openai: testSupportPath,
     "@": frontendRoot,
     "server-only": "/dev/null",

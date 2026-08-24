@@ -50,28 +50,25 @@ function validateCutoverResult(result, operation) {
   return result;
 }
 
-export function createSupabaseCutoverRuntime({
-  supabaseUrl,
+export function createDataApiCutoverRuntime({
+  dataApiUrl,
   serviceRoleKey,
-  expectedProjectRef,
   fetchImpl = fetch,
 }) {
-  const baseUrl = required(supabaseUrl, "SUPABASE_URL");
-  const credential = required(
-    serviceRoleKey,
-    "SUPABASE_SERVICE_ROLE_KEY",
-  );
-  const checkedUrl = new URL(baseUrl);
+  const checkedUrl = new URL(required(dataApiUrl, "DATA_API_URL"));
   if (
-    expectedProjectRef?.trim() &&
-    checkedUrl.hostname !== `${expectedProjectRef.trim()}.supabase.co`
+    checkedUrl.protocol !== "https:" ||
+    checkedUrl.username ||
+    checkedUrl.password ||
+    checkedUrl.search ||
+    checkedUrl.hash
   ) {
-    throw new Error("SUPABASE_URL does not match SUPABASE_PROJECT_REF.");
+    throw new Error("DATA_API_URL must be a credential-free HTTPS URL.");
   }
-
+  const baseUrl = `${checkedUrl.origin}${checkedUrl.pathname}`.replace(/\/+$/u, "");
+  const credential = required(serviceRoleKey, "DATA_API_SERVICE_ROLE_KEY");
   const rpc = async (functionName, body) => {
-    const url = new URL(`/rest/v1/rpc/${functionName}`, checkedUrl);
-    const response = await fetchImpl(url, {
+    const response = await fetchImpl(`${baseUrl}/rpc/${functionName}`, {
       method: "POST",
       headers: {
         apikey: credential,
@@ -92,9 +89,7 @@ export function createSupabaseCutoverRuntime({
   return {
     async setClaimsEnabled(enabled) {
       const result = validateCutoverResult(
-        await rpc("set_project_job_claims_enabled", {
-          p_claims_enabled: enabled,
-        }),
+        await rpc("set_project_job_claims_enabled", { p_claims_enabled: enabled }),
         "Project-job claim gate",
       );
       if (result.claims_enabled !== enabled) {
@@ -117,11 +112,117 @@ export function createSupabaseCutoverRuntime({
   };
 }
 
+export function createAzureJobCutoverRuntime({
+  az = defaultAz,
+  resourceGroup,
+  workerJobName,
+  executionImage,
+  dataApiUrl,
+  pollIntervalMs = 5_000,
+  maxPolls = 120,
+  wait = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+}) {
+  const checkedDataApiUrl = new URL(required(dataApiUrl, "DATA_API_URL"));
+  const internalMarker = checkedDataApiUrl.hostname.toLowerCase().indexOf(".internal.");
+  if (checkedDataApiUrl.protocol !== "https:" || internalMarker <= 0) {
+    throw new Error("Azure cutover execution requires an internal HTTPS data API.");
+  }
+  const allowedHostSuffix = checkedDataApiUrl.hostname
+    .toLowerCase()
+    .slice(internalMarker);
+  const checkedResourceGroup = required(resourceGroup, "RESOURCE_GROUP");
+  const checkedWorkerJobName = required(
+    workerJobName,
+    "PROJECT_JOB_WORKER_APP",
+  );
+  const checkedExecutionImage = required(executionImage, "CANDIDATE_IMAGE");
+
+  const execute = async (operation) => {
+    const started = await az([
+      "containerapp",
+      "job",
+      "start",
+      "--resource-group",
+      checkedResourceGroup,
+      "--name",
+      checkedWorkerJobName,
+      "--container-name",
+      "worker",
+      "--image",
+      checkedExecutionImage,
+      "--command",
+      "node",
+      "--args",
+      "scripts/run_project_job_cutover_rpc.mjs",
+      "--env-vars",
+      `DATA_API_URL=${checkedDataApiUrl.href.replace(/\/+$/u, "")}`,
+      `DATA_API_ALLOWED_HOST_SUFFIX=${allowedHostSuffix}`,
+      "DATA_API_SERVICE_ROLE_KEY=secretref:data-api-service-role-key",
+      `PROJECT_JOB_CUTOVER_OPERATION=${operation}`,
+    ]);
+    const executionName = required(
+      started?.name,
+      "Azure cutover job execution name",
+    );
+
+    for (let poll = 0; poll < maxPolls; poll += 1) {
+      const execution = await az([
+        "containerapp",
+        "job",
+        "execution",
+        "show",
+        "--resource-group",
+        checkedResourceGroup,
+        "--name",
+        checkedWorkerJobName,
+        "--job-execution-name",
+        executionName,
+      ]);
+      const executionStatus =
+        execution?.properties?.status ?? execution?.status ?? "";
+      if (executionStatus === "Succeeded") return;
+      if (["Failed", "Stopped", "Degraded"].includes(executionStatus)) {
+        throw new Error(
+          `Azure cutover job ${executionName} ended with ${executionStatus}.`,
+        );
+      }
+      if (poll + 1 < maxPolls) await wait(pollIntervalMs);
+    }
+    throw new Error("Azure cutover job execution timed out.");
+  };
+
+  return {
+    async setClaimsEnabled(enabled) {
+      await execute(enabled ? "open-claims" : "close-claims");
+      return {
+        version: PROJECT_JOB_CUTOVER_VERSION,
+        claims_enabled: enabled,
+      };
+    },
+    async requeueRunningJobs() {
+      await execute("requeue");
+      return { version: PROJECT_JOB_CUTOVER_VERSION };
+    },
+    async prepareStableRollback() {
+      await execute("prepare-rollback");
+      return { version: PROJECT_JOB_CUTOVER_VERSION };
+    },
+  };
+}
+
 function defaultCutoverRuntime() {
-  return createSupabaseCutoverRuntime({
-    supabaseUrl: process.env.SUPABASE_URL,
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    expectedProjectRef: process.env.SUPABASE_PROJECT_REF,
+  if (process.env.CUTOVER_RPC_MODE === "azure-job") {
+    return createAzureJobCutoverRuntime({
+      resourceGroup: process.env.RESOURCE_GROUP,
+      workerJobName: process.env.PROJECT_JOB_WORKER_APP,
+      executionImage: process.env.CANDIDATE_IMAGE,
+      dataApiUrl: process.env.DATA_API_URL,
+    });
+  }
+  return createDataApiCutoverRuntime({
+    dataApiUrl: process.env.DATA_API_URL,
+    serviceRoleKey: process.env.DATA_API_SERVICE_ROLE_KEY,
   });
 }
 
@@ -175,6 +276,22 @@ function containerImage(resource, containerName) {
   const container =
     containers.find((item) => item.name === containerName) ?? containers[0];
   return required(container?.image, `${containerName} image`);
+}
+
+function assertContainerVersion(resource, containerName, expectedImage) {
+  const containers = resource?.properties?.template?.containers ?? [];
+  const container =
+    containers.find((item) => item.name === containerName) ?? containers[0];
+  const actualImage = required(container?.image, `${containerName} image`);
+  const appVersion = required(
+    container?.env?.find((item) => item.name === "APP_VERSION")?.value,
+    `${containerName} APP_VERSION`,
+  );
+  if (actualImage !== expectedImage || appVersion !== expectedImage) {
+    throw new Error(
+      `${containerName} image/version metadata did not reach the expected release.`,
+    );
+  }
 }
 
 function resourceFqdn(resource) {
@@ -233,6 +350,33 @@ function workerImageCommand(resourceGroup, workerJobName, image) {
     workerJobName,
     "--image",
     image,
+    "--set-env-vars",
+    `APP_VERSION=${image}`,
+  ];
+}
+
+function appImageCommand(
+  resourceGroup,
+  appName,
+  image,
+  revisionSuffix,
+  minReplicas,
+) {
+  return [
+    "containerapp",
+    "update",
+    "--resource-group",
+    resourceGroup,
+    "--name",
+    appName,
+    "--image",
+    image,
+    "--revision-suffix",
+    revisionSuffix,
+    "--min-replicas",
+    minReplicas,
+    "--set-env-vars",
+    `APP_VERSION=${image}`,
   ];
 }
 
@@ -248,10 +392,106 @@ function stopWorkerExecutionsCommand(resourceGroup, workerJobName) {
   ];
 }
 
-async function revisionFqdn(az, resourceGroup, appName, revisionName) {
-  const revision = await az(
-    revisionCommand("show", resourceGroup, appName, revisionName),
+async function revisionResource(az, resourceGroup, appName, revisionName) {
+  return az(revisionCommand("show", resourceGroup, appName, revisionName));
+}
+
+function revisionIsReady(revision) {
+  const provisioningState = revisionValue(revision, "provisioningState");
+  const healthState = revisionValue(revision, "healthState");
+  const runningState = revisionValue(revision, "runningState");
+  const replicas = Number(revisionValue(revision, "replicas"));
+  const provisioned =
+    provisioningState === "Provisioned" || provisioningState === "Succeeded";
+  const replicaStateReady =
+    (Number.isFinite(replicas) && replicas > 0) ||
+    (replicas === 0 && runningState === "ScaledToZero");
+  return provisioned && healthState === "Healthy" && replicaStateReady;
+}
+
+async function waitForRevisionReady(
+  az,
+  resourceGroup,
+  appName,
+  revisionName,
+  runtime = {},
+) {
+  const attempts = Number(runtime.revisionReadyAttempts ?? 60);
+  const wait =
+    runtime.wait ??
+    ((milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  if (!Number.isInteger(attempts) || attempts < 1 || attempts > 120) {
+    throw new Error(
+      "revisionReadyAttempts must be an integer from 1 through 120.",
+    );
+  }
+
+  let latest;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    latest = await revisionResource(az, resourceGroup, appName, revisionName);
+    if (revisionIsReady(latest)) return latest;
+    const provisioningState = revisionValue(latest, "provisioningState");
+    const healthState = revisionValue(latest, "healthState");
+    if (provisioningState === "Failed" || healthState === "Unhealthy") {
+      throw new Error(
+        `${revisionName} failed management-plane readiness (${provisioningState ?? "unknown"}/${healthState ?? "unknown"}).`,
+      );
+    }
+    if (attempt + 1 < attempts) await wait(5_000);
+  }
+  throw new Error(
+    `${revisionName} did not reach healthy provisioned replica readiness.`,
   );
+}
+
+async function deactivateZeroTrafficRevisions(
+  az,
+  resourceGroup,
+  appName,
+  servingRevision,
+) {
+  const revisions = await az([
+    "containerapp",
+    "revision",
+    "list",
+    "--resource-group",
+    resourceGroup,
+    "--name",
+    appName,
+  ]);
+  const retiredRevisions = [
+    ...new Set(
+      revisions.flatMap((revision) => {
+        const revisionName =
+          typeof revision?.name === "string" ? revision.name.trim() : "";
+        const rawTrafficWeight = revisionValue(revision, "trafficWeight");
+        const trafficWeight =
+          rawTrafficWeight === null ||
+          rawTrafficWeight === undefined ||
+          rawTrafficWeight === ""
+            ? Number.NaN
+            : Number(rawTrafficWeight);
+        return revisionName &&
+          revisionName !== servingRevision &&
+          revisionValue(revision, "active") === true &&
+          Number.isFinite(trafficWeight) &&
+          trafficWeight === 0
+          ? [revisionName]
+          : [];
+      }),
+    ),
+  ];
+
+  for (const revisionName of retiredRevisions) {
+    await az(
+      revisionCommand("deactivate", resourceGroup, appName, revisionName),
+    );
+  }
+  return retiredRevisions;
+}
+
+function revisionFqdn(revision, revisionName) {
   return required(
     revision?.properties?.fqdn ?? revision?.fqdn,
     `${revisionName} revision FQDN`,
@@ -273,28 +513,42 @@ async function restoreStableDeployment(config, state, runtime = {}) {
     state.previousWorkerImage,
     "state.previousWorkerImage",
   );
+  const previousAppImage = required(
+    state.previousAppImage,
+    "state.previousAppImage",
+  );
   const candidateRevision = state.candidateRevision?.trim();
+  const frozenIngressMode = state.frozenIngressMode === true;
   const az = runtime.az ?? defaultAz;
   const smoke = runtime.smoke ?? defaultSmoke;
   const cutover = runtime.cutover ?? defaultCutoverRuntime();
 
   // Fail closed: no writer may claim work while either application generation
-  // can still be alive. The gate is opened only after the stable web and worker
-  // have both been restored and smoked.
+  // can still be alive. A normal same-backend rollback reopens only after the
+  // stable web and worker are restored and smoked. Frozen rollback keeps the
+  // database claim gate closed for explicit operator recovery.
   await cutover.setClaimsEnabled(false);
   await az(
     revisionCommand("activate", resourceGroup, appName, previousRevision),
   );
-  const stableRevisionFqdn = await revisionFqdn(
-    az,
-    resourceGroup,
-    appName,
-    previousRevision,
-  );
-  await smoke(`https://${stableRevisionFqdn}`, "rollback-candidate");
+  const stableRevision = frozenIngressMode
+    ? await waitForRevisionReady(
+        az,
+        resourceGroup,
+        appName,
+        previousRevision,
+        runtime,
+      )
+    : await revisionResource(az, resourceGroup, appName, previousRevision);
+  assertContainerVersion(stableRevision, "web", previousAppImage);
+  if (!frozenIngressMode) {
+    const stableRevisionFqdn = revisionFqdn(stableRevision, previousRevision);
+    await smoke(`https://${stableRevisionFqdn}`, "rollback-candidate");
+  }
 
-  // Put a pre-smoked target behind the public endpoint before retiring the
-  // only serving revision. Claims remain closed throughout the short overlap.
+  // Put the validated target behind ingress before retiring the only serving
+  // revision. Claims remain closed throughout the short overlap. Frozen mode
+  // keeps that ingress internal; normal mode uses the pre-smoked revision.
   await az(
     trafficCommand(
       resourceGroup,
@@ -313,6 +567,16 @@ async function restoreStableDeployment(config, state, runtime = {}) {
   await az(
     workerImageCommand(resourceGroup, workerJobName, previousWorkerImage),
   );
+  const restoredWorker = await az([
+    "containerapp",
+    "job",
+    "show",
+    "--resource-group",
+    resourceGroup,
+    "--name",
+    workerJobName,
+  ]);
+  assertContainerVersion(restoredWorker, "worker", previousWorkerImage);
   // A schedule tick can create one last retired-image execution between the
   // first stop and the template update. Stop again while claims remain closed.
   await az(stopWorkerExecutionsCommand(resourceGroup, workerJobName));
@@ -326,6 +590,16 @@ async function restoreStableDeployment(config, state, runtime = {}) {
       "--name",
       appName,
     ]));
+  if (frozenIngressMode) {
+    if (app?.properties?.configuration?.ingress?.external !== false) {
+      throw new Error(
+        "Frozen rollback requires internal-only Container App ingress.",
+      );
+    }
+    // Keep database claims and the worker schedule closed until an operator
+    // has verified the restored Azure deployment.
+    return;
+  }
   await smoke(`https://${resourceFqdn(app)}`, "rollback-promoted");
   await cutover.setClaimsEnabled(true);
 }
@@ -337,6 +611,9 @@ export async function rolloutContainerApp(config, runtime = {}) {
   const candidateImage = required(config.candidateImage, "candidateImage");
   const revisionSuffix = required(config.revisionSuffix, "revisionSuffix");
   const minReplicas = String(config.minReplicas ?? 1);
+  const frozenIngressMode = config.frozenIngressMode === true;
+  const keepSourceClaimsClosedOnSuccess =
+    frozenIngressMode || config.keepSourceClaimsClosedOnSuccess === true;
   const az = runtime.az ?? defaultAz;
   const smoke = runtime.smoke ?? defaultSmoke;
   const writeState =
@@ -376,9 +653,24 @@ export async function rolloutContainerApp(config, runtime = {}) {
     "--name",
     workerJobName,
   ]);
+  if (
+    frozenIngressMode &&
+    app?.properties?.configuration?.ingress?.external !== false
+  ) {
+    throw new Error(
+      "Frozen Azure rollout requires internal-only Container App ingress.",
+    );
+  }
 
   const previousRevision = selectPreviousHealthyRevision(app, revisions);
-  const previousAppImage = containerImage(app, "web");
+  const previousRevisionResource = await revisionResource(
+    az,
+    resourceGroup,
+    appName,
+    previousRevision,
+  );
+  const previousAppImage = containerImage(previousRevisionResource, "web");
+  assertContainerVersion(previousRevisionResource, "web", previousAppImage);
   const previousWorkerImage = containerImage(worker, "worker");
   const appFqdn = resourceFqdn(app);
   const cutover = runtime.cutover ?? defaultCutoverRuntime();
@@ -389,9 +681,11 @@ export async function rolloutContainerApp(config, runtime = {}) {
     appName,
     workerJobName,
     previousRevision,
+    previousAppImage,
     previousWorkerImage,
     candidateRevision,
     cutoverStarted: false,
+    frozenIngressMode,
   };
   writeState(state);
 
@@ -420,20 +714,15 @@ export async function rolloutContainerApp(config, runtime = {}) {
   ]);
 
   try {
-    const updated = await az([
-      "containerapp",
-      "update",
-      "--resource-group",
-      resourceGroup,
-      "--name",
-      appName,
-      "--image",
-      candidateImage,
-      "--revision-suffix",
-      revisionSuffix,
-      "--min-replicas",
-      minReplicas,
-    ]);
+    const updated = await az(
+      appImageCommand(
+        resourceGroup,
+        appName,
+        candidateImage,
+        revisionSuffix,
+        minReplicas,
+      ),
+    );
     candidateRevision = required(
       updated?.properties?.latestRevisionName,
       "candidate revision",
@@ -444,22 +733,23 @@ export async function rolloutContainerApp(config, runtime = {}) {
       throw new Error("Azure did not create a distinct candidate revision.");
     }
 
-    const candidate = await az([
-      "containerapp",
-      "revision",
-      "show",
-      "--resource-group",
-      resourceGroup,
-      "--name",
-      appName,
-      "--revision",
-      candidateRevision,
-    ]);
-    const candidateFqdn = required(
-      candidate?.properties?.fqdn ?? candidate?.fqdn,
-      "candidate revision FQDN",
-    );
-    await smoke(`https://${candidateFqdn}`, "candidate");
+    const candidate = frozenIngressMode
+      ? await waitForRevisionReady(
+          az,
+          resourceGroup,
+          appName,
+          candidateRevision,
+          runtime,
+        )
+      : await revisionResource(az, resourceGroup, appName, candidateRevision);
+    assertContainerVersion(candidate, "web", candidateImage);
+    if (!frozenIngressMode) {
+      const candidateFqdn = required(
+        candidate?.properties?.fqdn ?? candidate?.fqdn,
+        "candidate revision FQDN",
+      );
+      await smoke(`https://${candidateFqdn}`, "candidate");
+    }
 
     // From this point on, fail closed. The shared database gate blocks both
     // the stable direct UPDATE claim path and the lease-aware candidate path.
@@ -479,21 +769,47 @@ export async function rolloutContainerApp(config, runtime = {}) {
         previousRevision,
       ),
     );
-    await az(
-      revisionCommand("deactivate", resourceGroup, appName, previousRevision),
+    // Multiple-revision mode leaves a zero-traffic revision running until it
+    // is explicitly deactivated. Sweep every retired active revision, rather
+    // than only the immediately preceding one, so each min replica stops
+    // billing after a successful cutover.
+    const retiredRevisions = await deactivateZeroTrafficRevisions(
+      az,
+      resourceGroup,
+      appName,
+      candidateRevision,
     );
     await az(stopWorkerExecutionsCommand(resourceGroup, workerJobName));
     await cutover.requeueRunningJobs();
-    await smoke(`https://${appFqdn}`, "promoted");
+    if (!frozenIngressMode) {
+      await smoke(`https://${appFqdn}`, "promoted");
+    }
 
     await az(workerImageCommand(resourceGroup, workerJobName, candidateImage));
+    const candidateWorker = await az([
+      "containerapp",
+      "job",
+      "show",
+      "--resource-group",
+      resourceGroup,
+      "--name",
+      workerJobName,
+    ]);
+    assertContainerVersion(candidateWorker, "worker", candidateImage);
     state.candidateWorkerActivated = true;
     writeState(state);
     // Close the schedule race: any execution created from the retired worker
-    // template before the update is stopped before claims are reopened.
+    // template before the update is stopped before either the same-backend
+    // gate is reopened or the external Azure activation control takes over.
     await az(stopWorkerExecutionsCommand(resourceGroup, workerJobName));
-    await cutover.setClaimsEnabled(true);
-    state.claimsEnabled = true;
+    if (keepSourceClaimsClosedOnSuccess) {
+      state.claimsEnabled = false;
+      state.sourceClaimsKeptClosed = true;
+    } else {
+      await cutover.setClaimsEnabled(true);
+      state.claimsEnabled = true;
+      state.sourceClaimsKeptClosed = false;
+    }
     writeState(state);
 
     return {
@@ -501,6 +817,7 @@ export async function rolloutContainerApp(config, runtime = {}) {
       candidateRevision,
       previousAppImage,
       previousWorkerImage,
+      retiredRevisions,
       promoted: true,
     };
   } catch (error) {
@@ -575,6 +892,18 @@ async function main() {
     console.log(JSON.stringify({ rollout: "rolled_back" }));
     return;
   }
+  const keepSourceClaimsClosed =
+    process.env.KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS?.trim() ?? "0";
+  if (!["0", "1"].includes(keepSourceClaimsClosed)) {
+    throw new Error(
+      "KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS must be exactly 0 or 1.",
+    );
+  }
+  const frozenIngressMode =
+    process.env.FROZEN_INGRESS_ROLLOUT?.trim() ?? "0";
+  if (!["0", "1"].includes(frozenIngressMode)) {
+    throw new Error("FROZEN_INGRESS_ROLLOUT must be exactly 0 or 1.");
+  }
   const result = await rolloutContainerApp({
     resourceGroup: process.env.RESOURCE_GROUP,
     appName: process.env.CONTAINER_APP,
@@ -585,6 +914,8 @@ async function main() {
     revisionSuffix: process.env.REVISION_SUFFIX,
     minReplicas: process.env.MIN_REPLICAS,
     stateFile: process.env.ROLLOUT_STATE_FILE,
+    keepSourceClaimsClosedOnSuccess: keepSourceClaimsClosed === "1",
+    frozenIngressMode: frozenIngressMode === "1",
   });
   console.log(
     JSON.stringify({

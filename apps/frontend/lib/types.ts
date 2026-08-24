@@ -132,7 +132,10 @@ export interface ProjectDocumentStructureEntry {
     | "table"
     | "docling_text"
     | "docling_table_row"
-    | "docling_markdown";
+    | "docling_markdown"
+    | "azure_paragraph"
+    | "azure_table_row"
+    | "azure_figure";
   parser?: string;
   page?: number | null;
   table_index?: number;
@@ -140,6 +143,11 @@ export interface ProjectDocumentStructureEntry {
   columns?: string[];
   cells?: Record<string, string>;
   docling_ref?: string;
+  source_id?: string;
+  role?: string;
+  confidence?: number;
+  polygon?: number[];
+  heading_path?: string[];
 }
 
 export interface ProjectDocumentDetail extends ProjectDocument {
@@ -220,6 +228,8 @@ export type CustomerAnalysisHistorySource =
   | "section_regeneration"
   | "manual_edit"
   | "high_level_design_update";
+
+export const MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS = 5;
 
 export type CustomerAnalysisSection =
   | "summary"
@@ -514,6 +524,7 @@ export interface ProjectDetail extends ProjectSummary {
 }
 
 export interface ProjectCreateInput {
+  owner_id?: string;
   name?: string | null;
   customer_name?: string | null;
   description?: string | null;

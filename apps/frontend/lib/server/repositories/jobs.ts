@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID as generateRandomUUID } from "node:crypto";
 
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 import { decryptJson, encryptJson } from "@/lib/server/crypto";
 import { sanitizeProjectJobTerminalMetadata } from "@/lib/server/project-job-terminal-metadata";
 import { authoritativeLeaseError } from "@/lib/server/repositories/lease-fenced-persistence";
@@ -80,7 +80,7 @@ export async function insertProjectJob(
   queuedInput: unknown,
   runtime: ProjectJobRepositoryRuntime = {},
 ) {
-  const supabase = serviceClient(runtime);
+  const dataApi = serviceClient(runtime);
   const durablePayload = {
     id: record.id,
     project_id: record.project_id,
@@ -94,7 +94,7 @@ export async function insertProjectJob(
     updated_at: record.updated_at,
   };
 
-  const { data, error } = await supabase.rpc("enqueue_project_job_serialized", {
+  const { data, error } = await dataApi.rpc("enqueue_project_job_serialized", {
     p_project_id: record.project_id,
     p_job: durablePayload,
   });
@@ -116,8 +116,8 @@ export async function insertFollowUpProjectJob(
     throw new Error("Oppfølgingsjobben mangler idempotency key.");
   }
 
-  const supabase = serviceClient(runtime);
-  const { data, error } = await supabase.rpc("lease_fenced_enqueue_project_job", {
+  const dataApi = serviceClient(runtime);
+  const { data, error } = await dataApi.rpc("lease_fenced_enqueue_project_job", {
     p_parent_job_id: parentLease.jobId,
     p_parent_lease_token: parentLease.leaseToken,
     p_project_id: parentLease.projectId,
@@ -149,7 +149,7 @@ export async function updatePersistedProjectJob(
   runtime: ProjectJobRepositoryRuntime = {},
 ) {
   assertLeaseToken(options.leaseToken);
-  const supabase = serviceClient(runtime);
+  const dataApi = serviceClient(runtime);
   const now = nowIso(runtime);
   const payload: Record<string, unknown> = {
     updated_at: now,
@@ -186,7 +186,7 @@ export async function updatePersistedProjectJob(
       patch.result === null ? null : encryptJson(patch.result);
   }
 
-  const updateQuery = supabase
+  const updateQuery = dataApi
     .from("project_jobs")
     .update(payload)
     .eq("id", jobId)
@@ -222,8 +222,8 @@ export async function findProjectJob(
   jobId: string,
   runtime: ProjectJobRepositoryRuntime = {},
 ) {
-  const supabase = serviceClient(runtime);
-  const { data, error } = await supabase
+  const dataApi = serviceClient(runtime);
+  const { data, error } = await dataApi
     .from("project_jobs")
     .select("*")
     .eq("id", jobId)
@@ -241,8 +241,8 @@ export async function getQueuedProjectJobInput(
   jobId: string,
   runtime: ProjectJobRepositoryRuntime = {},
 ) {
-  const supabase = serviceClient(runtime);
-  const { data, error } = await supabase
+  const dataApi = serviceClient(runtime);
+  const { data, error } = await dataApi
     .from("project_jobs")
     .select("*")
     .eq("id", jobId)
@@ -267,7 +267,7 @@ export async function claimQueuedProjectJob(
   jobId: string,
   runtime: ProjectJobRepositoryRuntime = {},
 ) {
-  const supabase = serviceClient(runtime);
+  const dataApi = serviceClient(runtime);
   const now = nowIso(runtime);
   const leaseToken = runtime.randomUUID?.() ?? generateRandomUUID();
   assertLeaseToken(leaseToken);
@@ -279,7 +279,7 @@ export async function claimQueuedProjectJob(
     started_at: now,
     updated_at: now,
   };
-  const claimed = await supabase
+  const claimed = await dataApi
     .from("project_jobs")
     .update(payload)
     .eq("id", jobId)
@@ -296,8 +296,8 @@ export async function listQueuedProjectJobIds(
   limit = 3,
   runtime: ProjectJobRepositoryRuntime = {},
 ) {
-  const supabase = serviceClient(runtime);
-  const { data, error } = await supabase
+  const dataApi = serviceClient(runtime);
+  const { data, error } = await dataApi
     .from("project_jobs")
     .select("id")
     .eq("status", "queued")
@@ -315,11 +315,11 @@ export async function resetStaleRunningProjectJobs(
   staleAfterMs = 15 * 60_000,
   runtime: ProjectJobRepositoryRuntime = {},
 ) {
-  const supabase = serviceClient(runtime);
+  const dataApi = serviceClient(runtime);
   const nowDate = runtime.now?.() ?? new Date();
   const now = nowDate.toISOString();
   const cutoff = new Date(nowDate.getTime() - staleAfterMs).toISOString();
-  const reset = await supabase
+  const reset = await dataApi
     .from("project_jobs")
     .update({
       status: "queued",
@@ -330,7 +330,10 @@ export async function resetStaleRunningProjectJobs(
     })
     .eq("status", "running")
     .or(`locked_at.is.null,locked_at.lt.${cutoff}`)
-    .select("id");
+    // PostgREST needs every column used by an OR filter in the mutation
+    // projection. Selecting only `id` makes its PATCH plan reference a column
+    // that is no longer exposed by the update CTE (Postgres 42703).
+    .select("id,locked_at");
 
   if (reset.error) {
     throw new Error(reset.error.message);

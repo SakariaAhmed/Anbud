@@ -10,6 +10,7 @@ import {
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
+import { recordDocumentIntelligenceEvent } from "@/lib/server/document-intelligence/repository";
 import {
   getProjectSnapshot,
   getProjectSourceRevision,
@@ -24,13 +25,14 @@ import {
   readStableSolutionEvaluationSourceSnapshot,
 } from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
-import type {
-  AnalysisRequirement,
-  CustomerAnalysisResult,
-  CustomerAnalysisSection,
-  RecommendedService,
-  RequirementImportance,
-  ValueOpportunity,
+import {
+  MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
+  type AnalysisRequirement,
+  type CustomerAnalysisResult,
+  type CustomerAnalysisSection,
+  type RecommendedService,
+  type RequirementImportance,
+  type ValueOpportunity,
 } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -161,7 +163,10 @@ function applyClarificationsSnapshot(
 
   return {
     ...analysis,
-    ambiguities: snapshot.ambiguities,
+    ambiguities: snapshot.ambiguities.slice(
+      0,
+      MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
+    ),
     expected_solution_direction: snapshot.expected_solution_direction,
     likely_evaluation_criteria: snapshot.likely_evaluation_criteria,
   };
@@ -393,7 +398,9 @@ export async function POST(
           await Promise.all([
             listProjectDocumentsForAnalysis(id),
             section ? getFreshCustomerAnalysis(id) : Promise.resolve(null),
-            listProjectServiceDescriptions(id),
+            listProjectServiceDescriptions(id, {
+              includeDocumentAiSummaries: true,
+            }),
           ]);
         return { projectDocuments, existingAnalysis, serviceCandidates };
       },
@@ -471,6 +478,16 @@ export async function POST(
           : "full_regeneration",
       },
     );
+    await recordDocumentIntelligenceEvent({
+      projectId: id,
+      documentId: customerDocument.id,
+      eventType: "analysis_regenerated",
+      sourceRevision: customerDocument.chunk_source_revision,
+      metadata: {
+        scope: section ?? "full_analysis",
+        supporting_document_count: supportingDocuments.length,
+      },
+    }).catch(() => false);
 
     const project = await getProjectSnapshot(id);
     return NextResponse.json({ analysis: saved, project });
@@ -499,10 +516,7 @@ export async function GET(
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke hente kundeanalysen.",
+        error: productionSafeErrorMessage(error, "Kunne ikke hente kundeanalysen."),
       },
       { status: 500 },
     );
@@ -590,14 +604,22 @@ export async function PUT(
         historySource: "manual_edit",
       },
     );
+    await recordDocumentIntelligenceEvent({
+      projectId: id,
+      documentId: customerDocument.id,
+      eventType: "analysis_manually_edited",
+      sourceRevision: customerDocument.chunk_source_revision,
+      metadata: {
+        scope: section ?? "strategy",
+      },
+    }).catch(() => false);
 
     const project = await getProjectSnapshot(id);
     return NextResponse.json({ analysis: saved, project });
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Kunne ikke lagre analysen.",
+        error: productionSafeErrorMessage(error, "Kunne ikke lagre analysen."),
       },
       { status: 500 },
     );

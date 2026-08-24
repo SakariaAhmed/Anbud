@@ -4,172 +4,27 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 env:
   RESOURCE_GROUP: anbud-prod
   CONTAINER_APP: anbud
   PROJECT_JOB_WORKER_APP: anbud-project-job-worker
+  POSTGREST_APP: anbud-postgrest
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
-  MIN_REPLICAS: "1"
+  MIN_REPLICAS: "0"
   PROJECT_JOB_WORKER_LIMIT: "1"
   PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"
   NODE_VERSION: "22.14.0"
-  FALLOW_VERSION: "2.104.0"
 
 jobs:
-  validation:
-    name: Validate exact production commit
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: public.ecr.aws/supabase/postgres:17.6.1.132@sha256:e09e93a61ed1560caf4be79c9eb29401875bea74b12aec4657cb08bf34ea3a13
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-    env:
-      PRIMARY_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
-      PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
-      DOCUMENT_CHUNKS_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
-      SERVICE_DOCUMENT_SQL_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-
-      - name: Set up Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: apps/frontend
-        run: npm ci
-
-      - name: Secret scan
-        working-directory: apps/frontend
-        run: npm run secrets:scan
-
-      - name: Deterministic durable-job and schema tests
-        run: |
-          node --test apps/frontend/lib/server/repositories/project-jobs-lifecycle.system.test.mjs apps/frontend/lib/server/repositories/project-job-terminal-audit.sql.test.mjs apps/frontend/lib/server/repositories/stable-main-rollback-bridge.sql.test.mjs apps/frontend/lib/server/repositories/lease-fenced-persistence.system.test.mjs scripts/validate_project_jobs_schema.test.mjs scripts/azure_containerapp_rollout.test.mjs scripts/async_worker_boundaries.test.mjs
-          node scripts/validate_project_jobs_schema.mjs
-
-      - name: Frontend tests
-        working-directory: apps/frontend
-        run: npm test
-
-      - name: Lint
-        working-directory: apps/frontend
-        run: npm run lint
-
-      - name: Production build
-        working-directory: apps/frontend
-        run: npm run build
-
-      - name: Validate workflow release boundaries
-        run: |
-          node scripts/verify_workflow_boundaries.mjs
-          node scripts/validate_release_workflows.mjs
-
-      - name: Parse workflow YAML
-        run: ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].each { |file| YAML.parse_file(file) }'
-
-      - name: Fallow static quality gate
-        run: |
-          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" --root . --format json --score --performance > /tmp/fallow-combined.json
-          FALLOW_UPDATE_CHECK=off npx --yes "fallow@$FALLOW_VERSION" fix --root . --dry-run --yes --no-create-config --format json > /tmp/fallow-fix-preview.json
-          node - <<'NODE'
-          const fs = require("node:fs");
-          function readJson(path) {
-            const raw = fs.readFileSync(path, "utf8");
-            return JSON.parse(raw.slice(raw.indexOf("{")));
-          }
-          const combined = readJson("/tmp/fallow-combined.json");
-          const fixPreview = readJson("/tmp/fallow-fix-preview.json");
-          const totalIssues = combined.check?.total_issues ?? 0;
-          const totalFixes = fixPreview.summary?.total_fixes ?? fixPreview.fixes?.length ?? 0;
-          console.log(JSON.stringify({ fallow_total_issues: totalIssues, fallow_fix_preview_total_fixes: totalFixes }));
-          if (totalIssues > 0 || totalFixes > 0) process.exit(1);
-          NODE
-
-  infrastructure-validation:
-    name: Validate production infrastructure
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
-
-      - name: Build Bicep
-        run: az bicep build --file infra/azure/container-app.bicep --stdout > /dev/null
-
-      - name: Lint Bicep
-        run: az bicep lint --file infra/azure/container-app.bicep
-
-  container-validation:
-    name: Validate production container and CVEs
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
-
-      - name: Set up Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: apps/frontend
-        run: npm ci
-
-      - name: Slim image smoke
-        working-directory: apps/frontend
-        run: npm run docker:smoke
-
-      - name: Production image smoke
-        working-directory: apps/frontend
-        run: npm run docker:smoke:docling -- --tag anbud-frontend-deploy-validation:${{ github.sha }} --keep-image
-
-      - name: Production image CVE scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          image-ref: anbud-frontend-deploy-validation:${{ github.sha }}
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
-          vuln-type: os,library
-
-      - name: Remove production validation image
-        if: always()
-        run: docker image rm anbud-frontend-deploy-validation:${{ github.sha }} >/dev/null 2>&1 || true
-
   deploy:
     name: Production deployment
-    needs:
-      - validation
-      - infrastructure-validation
-      - container-validation
-    if: >-
-      ${{ always()
-          && github.ref == 'refs/heads/main'
-          && needs.validation.result == 'success'
-          && needs.infrastructure-validation.result == 'success'
-          && needs.container-validation.result == 'success' }}
+    if: github.ref == 'refs/heads/main'
     permissions:
+      actions: read
       contents: read
       id-token: write
     runs-on: ubuntu-latest
@@ -180,25 +35,28 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Verify CI passed for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(gh api \
+            --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$GITHUB_SHA" \
+            -f status=success \
+            --jq '.workflow_runs[0].id // empty')"
+          if [ -z "$run_id" ]; then
+            echo "::error::This commit does not have a successful Frontend CI run."
+            exit 1
+          fi
+          echo "Using successful CI run $run_id for $GITHUB_SHA."
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: apps/frontend
-        run: npm ci
-
-      - name: Validate production durable-job schema
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-        run: node scripts/validate_project_jobs_schema.mjs --remote
 
       - name: Azure login
         uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43
@@ -209,6 +67,56 @@ jobs:
 
       - name: Ensure Container Apps extension
         run: az extension add --name containerapp --upgrade
+
+      - name: Validate Azure deployment configuration
+        env:
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
+          AZURE_STORAGE_ACCOUNT_URL: ${{ vars.AZURE_STORAGE_ACCOUNT_URL }}
+          AZURE_STORAGE_CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'anbud-documents' }}
+          APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
+          MICROSOFT_ENTRA_CLIENT_ID: ${{ vars.MICROSOFT_ENTRA_CLIENT_ID }}
+          MICROSOFT_ENTRA_CLIENT_SECRET: ${{ secrets.MICROSOFT_ENTRA_CLIENT_SECRET }}
+          MICROSOFT_ENTRA_TENANT_SUBDOMAIN: ${{ vars.MICROSOFT_ENTRA_TENANT_SUBDOMAIN }}
+          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
+          APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
+          APP_ADMIN_PRINCIPAL_ID: ${{ vars.APP_ADMIN_PRINCIPAL_ID }}
+          APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
+          APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
+          APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
+          APP_ACTIVITY_HASH_SECRET: ${{ secrets.APP_ACTIVITY_HASH_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
+        run: |
+          missing=0
+          for name in DATA_API_URL DATA_API_SERVICE_ROLE_KEY AZURE_STORAGE_ACCOUNT_URL AZURE_STORAGE_CONTAINER APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ADMIN_ACCESS_PASSWORD_HASH APP_ADMIN_PRINCIPAL_ID APP_SESSION_SECRET APP_GUEST_CODE_PEPPER APP_IDENTITY_LOOKUP_SECRET APP_ACTIVITY_HASH_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub production configuration: $name"
+              missing=1
+            fi
+          done
+          if [ "${#DATA_API_SERVICE_ROLE_KEY}" -lt 32 ]; then
+            echo "::error::DATA_API_SERVICE_ROLE_KEY is invalid."
+            missing=1
+          fi
+          if [[ ! "$AZURE_STORAGE_ACCOUNT_URL" =~ ^https://[a-z0-9-]+\.blob\.core\.windows\.net$ ]]; then
+            echo "::error::AZURE_STORAGE_ACCOUNT_URL must identify Azure Blob Storage."
+            missing=1
+          fi
+          if [[ ! "$AZURE_STORAGE_CONTAINER" =~ ^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])$ ]]; then
+            echo "::error::AZURE_STORAGE_CONTAINER is invalid."
+            missing=1
+          fi
+          postgrest_fqdn="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$POSTGREST_APP" --query properties.configuration.ingress.fqdn --output tsv --only-show-errors 2>/dev/null || true)"
+          postgrest_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$POSTGREST_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors 2>/dev/null || true)"
+          if [ "${DATA_API_URL%/}" != "https://${postgrest_fqdn}" ] || [ "$postgrest_external" != "false" ]; then
+            echo "::error::DATA_API_URL must identify the live internal-only PostgREST app."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Capture last healthy images
         run: |
@@ -221,72 +129,14 @@ jobs:
           echo "CURRENT_APP_IMAGE=$current_app_image" >> "$GITHUB_ENV"
           echo "CURRENT_WORKER_IMAGE=$current_worker_image" >> "$GITHUB_ENV"
 
-      - name: Reconcile infrastructure without releasing candidate code
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
-          APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
-          APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
-          PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
-          PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
-          DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
-          DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-        run: |
-          missing=0
-          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_ENCRYPTION_KEY APP_ACCESS_PASSWORD APP_SESSION_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN ACR_USERNAME ACR_PASSWORD
-          do
-            if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub production secret: $name"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
-
-          common_parameters=(
-            appName="$CONTAINER_APP"
-            image="$CURRENT_APP_IMAGE"
-            workerImage="$CURRENT_WORKER_IMAGE"
-            registryServer="${ACR_NAME}.azurecr.io"
-            registryUsername="$ACR_USERNAME"
-            registryPassword="$ACR_PASSWORD"
-            supabaseUrl="$SUPABASE_URL"
-            supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"
-            appEncryptionKey="$APP_ENCRYPTION_KEY"
-            appAccessPassword="$APP_ACCESS_PASSWORD"
-            appSessionSecret="$APP_SESSION_SECRET"
-            openAiApiKey="$OPENAI_API_KEY"
-            openAiModel="$OPENAI_MODEL"
-            projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
-            projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON"
-            projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT"
-            projectJobWorkerReplicaTimeout="$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"
-            doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE"
-            doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN"
-            minReplicas="$MIN_REPLICAS"
-          )
-
-          az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file infra/azure/container-app.bicep --result-format ResourceIdOnly --parameters "${common_parameters[@]}"
-
-          az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-infra-${GITHUB_SHA}" --template-file infra/azure/container-app.bicep --parameters "${common_parameters[@]}" --output none
-
-      - name: Docker login to ACR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0
-        with:
-          registry: ${{ env.ACR_NAME }}.azurecr.io
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+      - name: Docker login to ACR with Azure identity
+        run: az acr login --name "$ACR_NAME"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
 
       - name: Build and push candidate image
+        id: build_image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
@@ -300,33 +150,193 @@ jobs:
           sbom: true
           tags: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+      - name: Resolve immutable candidate image
+        id: immutable_image
+        env:
+          BUILT_DIGEST: ${{ steps.build_image.outputs.digest }}
+        run: |
+          if [[ ! "$BUILT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The image build did not return a valid immutable digest."
+            exit 1
+          fi
+          tag_digest="$(az acr repository show --name "$ACR_NAME" --image "$IMAGE_NAME:$GITHUB_SHA" --query digest -o tsv)"
+          if [ "$tag_digest" != "$BUILT_DIGEST" ]; then
+            echo "::error::The pushed SHA tag no longer identifies the image produced by this build."
+            exit 1
+          fi
+          candidate_image="$ACR_NAME.azurecr.io/$IMAGE_NAME@$BUILT_DIGEST"
+          echo "CANDIDATE_IMAGE=$candidate_image" >> "$GITHUB_ENV"
+          echo "candidate_image=$candidate_image" >> "$GITHUB_OUTPUT"
+
       - name: Scan candidate image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          image-ref: ${{ steps.immutable_image.outputs.candidate_image }}
           format: table
           exit-code: "1"
           ignore-unfixed: true
           severity: CRITICAL,HIGH
           vuln-type: os,library
 
+      - name: Validate production database contract from the Azure network
+        env:
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+        run: |
+          data_api_host="${DATA_API_URL#https://}"
+          data_api_host="${data_api_host%%/*}"
+          data_api_allowed_host_suffix="${data_api_host#${POSTGREST_APP}}"
+          if [[ ! "$data_api_allowed_host_suffix" =~ ^\.internal\.[a-z0-9.-]+$ ]]; then
+            echo "::error::Could not derive the internal PostgREST host suffix."
+            exit 1
+          fi
+          execution_name="$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$PROJECT_JOB_WORKER_APP" \
+            --container-name worker \
+            --image "$CANDIDATE_IMAGE" \
+            --command node \
+            --args scripts/validate_project_jobs_schema.mjs \
+            --env-vars \
+              DATA_API_URL="$DATA_API_URL" \
+              DATA_API_ALLOWED_HOST_SUFFIX="$data_api_allowed_host_suffix" \
+              DATA_API_SERVICE_ROLE_KEY=secretref:data-api-service-role-key \
+              REMOTE_SCHEMA_PREFLIGHT=1 \
+            --query name \
+            --output tsv \
+            --only-show-errors)"
+          if [ -z "$execution_name" ]; then
+            echo "::error::Azure did not return a database-preflight execution name."
+            exit 1
+          fi
+          for attempt in $(seq 1 120)
+          do
+            execution_status="$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$PROJECT_JOB_WORKER_APP" \
+              --job-execution-name "$execution_name" \
+              --query properties.status \
+              --output tsv \
+              --only-show-errors)"
+            case "$execution_status" in
+              Succeeded)
+                echo "Azure database contract preflight succeeded."
+                break
+                ;;
+              Failed|Stopped|Degraded)
+                echo "::error::Azure database contract preflight ended with $execution_status."
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" -eq 120 ]; then
+              echo "::error::Azure database contract preflight timed out."
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Reconcile Azure infrastructure without releasing candidate code
+        env:
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
+          AZURE_STORAGE_ACCOUNT_URL: ${{ vars.AZURE_STORAGE_ACCOUNT_URL }}
+          AZURE_STORAGE_CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'anbud-documents' }}
+          APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
+          MICROSOFT_ENTRA_CLIENT_ID: ${{ vars.MICROSOFT_ENTRA_CLIENT_ID }}
+          MICROSOFT_ENTRA_CLIENT_SECRET: ${{ secrets.MICROSOFT_ENTRA_CLIENT_SECRET }}
+          MICROSOFT_ENTRA_TENANT_SUBDOMAIN: ${{ vars.MICROSOFT_ENTRA_TENANT_SUBDOMAIN }}
+          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
+          APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
+          LEGACY_APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
+          APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
+          APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
+          APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
+          APP_ACTIVITY_HASH_SECRET: ${{ secrets.APP_ACTIVITY_HASH_SECRET }}
+          APP_ADMIN_PRINCIPAL_ID: ${{ vars.APP_ADMIN_PRINCIPAL_ID }}
+          APP_ADMIN_DISPLAY_NAME: ${{ vars.APP_ADMIN_DISPLAY_NAME || 'Administrator' }}
+          APP_ADMIN_EMAILS: ${{ vars.APP_ADMIN_EMAILS }}
+          AZURE_COMMUNICATION_EMAIL_ENDPOINT: ${{ vars.AZURE_COMMUNICATION_EMAIL_ENDPOINT }}
+          AZURE_COMMUNICATION_EMAIL_SENDER: ${{ vars.AZURE_COMMUNICATION_EMAIL_SENDER }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
+          OPENAI_DOCUMENT_ANALYSIS_MODEL: ${{ vars.OPENAI_DOCUMENT_ANALYSIS_MODEL || 'gpt-5.6-terra' }}
+          DOCUMENT_ANALYSIS_VERSION: ${{ vars.DOCUMENT_ANALYSIS_VERSION || 'off' }}
+          AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT }}
+          AZURE_DOCUMENT_INTELLIGENCE_KEY: ${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_KEY }}
+          AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION || 'auto' }}
+          PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
+          PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
+          DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
+          DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
+        run: |
+          legacy_revision="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && length(properties.template.containers[0].env[?secretRef=='app-access-password']) > \`0\`].name | [0]" --output tsv --only-show-errors)"
+          if [ -n "$legacy_revision" ] && [ -z "$LEGACY_APP_ACCESS_PASSWORD" ]; then
+            echo "::error::An active legacy revision still requires app-access-password."
+            exit 1
+          fi
+          parameters=(
+            appName="$CONTAINER_APP"
+            image="$CURRENT_APP_IMAGE"
+            workerImage="$CURRENT_WORKER_IMAGE"
+            registryName="$ACR_NAME"
+            dataApiUrl="$DATA_API_URL"
+            dataApiServiceRoleKey="$DATA_API_SERVICE_ROLE_KEY"
+            azureStorageAccountUrl="$AZURE_STORAGE_ACCOUNT_URL"
+            azureStorageContainer="$AZURE_STORAGE_CONTAINER"
+            appPublicOrigin="$APP_PUBLIC_ORIGIN"
+            microsoftEntraClientId="$MICROSOFT_ENTRA_CLIENT_ID"
+            microsoftEntraClientSecret="$MICROSOFT_ENTRA_CLIENT_SECRET"
+            microsoftEntraTenantSubdomain="$MICROSOFT_ENTRA_TENANT_SUBDOMAIN"
+            appEncryptionKey="$APP_ENCRYPTION_KEY"
+            appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH"
+            legacyAppAccessPassword="$LEGACY_APP_ACCESS_PASSWORD"
+            appSessionSecret="$APP_SESSION_SECRET"
+            appGuestCodePepper="$APP_GUEST_CODE_PEPPER"
+            appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET"
+            appActivityHashSecret="$APP_ACTIVITY_HASH_SECRET"
+            adminPrincipalId="$APP_ADMIN_PRINCIPAL_ID"
+            adminDisplayName="$APP_ADMIN_DISPLAY_NAME"
+            appAdminEmails="$APP_ADMIN_EMAILS"
+            azureCommunicationEmailEndpoint="$AZURE_COMMUNICATION_EMAIL_ENDPOINT"
+            azureCommunicationEmailSender="$AZURE_COMMUNICATION_EMAIL_SENDER"
+            openAiApiKey="$OPENAI_API_KEY"
+            openAiModel="$OPENAI_MODEL"
+            openAiDocumentAnalysisModel="$OPENAI_DOCUMENT_ANALYSIS_MODEL"
+            documentAnalysisVersion="$DOCUMENT_ANALYSIS_VERSION"
+            azureDocumentIntelligenceEndpoint="$AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"
+            azureDocumentIntelligenceKey="$AZURE_DOCUMENT_INTELLIGENCE_KEY"
+            azureDocumentIntelligenceHighResolution="$AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION"
+            projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
+            projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON"
+            projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT"
+            projectJobWorkerReplicaTimeout="$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"
+            doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE"
+            doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN"
+            externalIngressEnabled=true
+            minReplicas="$MIN_REPLICAS"
+          )
+          az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file infra/azure/container-app.bicep --result-format ResourceIdOnly --parameters "${parameters[@]}"
+          az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-infra-${GITHUB_SHA}" --template-file infra/azure/container-app.bicep --parameters "${parameters[@]}" --output none
+
       - name: Roll out zero-traffic candidate and promote
         id: rollout
         env:
-          CANDIDATE_IMAGE: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          CANDIDATE_IMAGE: ${{ steps.immutable_image.outputs.candidate_image }}
           REVISION_SUFFIX: sha-${{ github.sha }}
           ROLLOUT_STATE_FILE: ${{ runner.temp }}/anbud-rollout-state.json
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          CUTOVER_RPC_MODE: azure-job
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: node scripts/azure_containerapp_rollout.mjs
 
-      - name: Fallback rollback
-        if: always() && (steps.rollout.outcome == 'failure' || steps.rollout.outcome == 'cancelled')
+      - name: Roll back to the previous Azure revision
+        if: >-
+          ${{ always()
+              && (steps.rollout.outcome == 'failure'
+                  || steps.rollout.outcome == 'cancelled') }}
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          CUTOVER_RPC_MODE: azure-job
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: |
           state_file="${RUNNER_TEMP}/anbud-rollout-state.json"
           if [ -f "$state_file" ]; then

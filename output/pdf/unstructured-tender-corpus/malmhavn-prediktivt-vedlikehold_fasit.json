@@ -1,0 +1,227 @@
+{
+  "scenario_id": "malmhavn-prediktivt-vedlikehold",
+  "project_name": "Malmhavn Industri AS - prediktivt vedlikehold og feltarbeid",
+  "document_pattern": "numbered-brief",
+  "good_solution": {
+    "summary": "En sikker industriell dataplattform med lesende OT-innsamling, SAP som master, robust offline feltapp og forklarbar risikoprioritering der modeller aldri overstyrer sikkerhetsfunksjoner.",
+    "architecture": [
+      "Lokal innsamlingsnode i industriell DMZ med lesende OPC UA.",
+      "Buffer og kontrollert utgående overføring til skalerbart tidsserielager.",
+      "SAP S/4HANA-integrasjon med idempotens og masterdataeierskap.",
+      "Kryptert offline feltapp med versjonert synkronisering.",
+      "Modellregister, forklaringsdata og rollebeskyttet vedlikeholdsflate."
+    ],
+    "delivery": [
+      "Datakvalitetsprofilering før modellutvikling.",
+      "Pilot på kritisk utstyr med skyggekjøring og tydelig baseline.",
+      "Feilscenarioer på OT, nett, feltapp, SAP og modell som akseptansegate.",
+      "Utrulling til øvrige anlegg først etter dokumentert sikkerhet og effekt."
+    ],
+    "win_themes": [
+      "Sikker OT-separasjon uten skjult skriverettighet.",
+      "Feltarbeid som faktisk fungerer åtte timer uten dekning.",
+      "Forklarbare anbefalinger og reverserbar modellforvaltning.",
+      "Målbar effekt koblet til utførte tiltak."
+    ],
+    "key_risks": [
+      "Ukjent historikerdatakvalitet kan redusere modellverdi.",
+      "Parallelt valg av MDM kan påvirke feltutrulling.",
+      "Uavklarte regler for automatisk prioritering kan forsinke gevinstrealisering."
+    ]
+  },
+  "answer_key": {
+    "must_cover": [
+      {
+        "id": "scale",
+        "required_term_groups": [
+          [
+            "fire prosessanlegg",
+            "4 prosessanlegg"
+          ],
+          [
+            "1 460"
+          ],
+          [
+            "18 000"
+          ],
+          [
+            "12 millioner"
+          ]
+        ]
+      },
+      {
+        "id": "business_case",
+        "required_term_groups": [
+          [
+            "84 millioner"
+          ],
+          [
+            "20 prosent"
+          ],
+          [
+            "62"
+          ],
+          [
+            "78"
+          ],
+          [
+            "35 prosent"
+          ]
+        ]
+      },
+      {
+        "id": "timeline",
+        "required_term_groups": [
+          [
+            "1. mars 2027"
+          ],
+          [
+            "31. desember 2027"
+          ]
+        ]
+      },
+      {
+        "id": "architecture",
+        "required_term_groups": [
+          [
+            "OPC UA"
+          ],
+          [
+            "industriell DMZ"
+          ],
+          [
+            "SAP S/4HANA"
+          ],
+          [
+            "offline"
+          ],
+          [
+            "åtte timer",
+            "8 timer"
+          ]
+        ]
+      },
+      {
+        "id": "safety",
+        "required_term_groups": [
+          [
+            "ikke skrive",
+            "lesende"
+          ],
+          [
+            "sikkerhetsalarmer"
+          ],
+          [
+            "menneskelig",
+            "operatør"
+          ]
+        ]
+      },
+      {
+        "id": "evaluation",
+        "required_term_groups": [
+          [
+            "40 prosent"
+          ],
+          [
+            "35 prosent"
+          ],
+          [
+            "25 prosent"
+          ]
+        ]
+      }
+    ],
+    "must_not_claim": [
+      "At skyplattformen kan styre eller skrive direkte til OT.",
+      "At modellen kan erstatte sikkerhetsalarmer.",
+      "At datakvaliteten i alle tre historikere er dokumentert som god."
+    ]
+  },
+  "requirements": [
+    {
+      "id": "MAL-OT-01",
+      "priority": "A",
+      "topic": "OT-separasjon",
+      "text": "Løsningen skal hente tilstandsdata gjennom lesende grensesnitt i industriell DMZ og skal ikke kunne skrive direkte til styringssystem eller sikkerhetskritisk OT-sone.",
+      "answer": "AssetPulse bruker en lokalt plassert innsamlingsnode som leser fra godkjente OPC UA-endepunkter. Data sendes ut gjennom en enveiskontrollert forbindelse. Det finnes ingen rute eller legitimasjon for skriving tilbake til styringssystemene."
+    },
+    {
+      "id": "MAL-DAT-02",
+      "priority": "A",
+      "topic": "Datavolum",
+      "text": "Plattformen skal motta omtrent 12 millioner sensorverdier per døgn og bevare kvalitet, tidsstempel, enhet og kildeidentitet.",
+      "answer": "Inntaket validerer tidsstempel, enhet, kvalitet og kilde før lagring. Avviste eller forsinkede målinger telles separat. Kapasitetstesten bruker 1,5 ganger oppgitt døgnvolum og dokumenterer kø, latenstid og tap."
+    },
+    {
+      "id": "MAL-OFF-03",
+      "priority": "A",
+      "topic": "Offline feltarbeid",
+      "text": "Feltappen skal støtte minst åtte timer uten dekning og synkronisere arbeidsordre, bilder og måleverdier med kontrollert konflikthåndtering.",
+      "answer": "Kryptert lokal lagring holder tildelte arbeidsordrer, sjekklister og vedlegg tilgjengelig offline. Endringer journalføres lokalt. Ved gjenkobling brukes versjonsnummer og feltregler til å slå sammen sikre endringer, mens reelle konflikter sendes til ansvarlig arbeidsleder."
+    },
+    {
+      "id": "MAL-SAP-04",
+      "priority": "A",
+      "topic": "SAP-integrasjon",
+      "text": "SAP S/4HANA skal forbli autoritativ kilde for arbeidsordre, tekniske objekter og reservedeler.",
+      "answer": "Integrasjonen bruker SAPs dokumenterte API-er. AssetPulse oppretter ikke parallelle masterdata. Endringer i status og utførelse sendes med idempotensnøkkel, og SAP-kvittering bestemmer om arbeidsordren er fullført i feltflaten."
+    },
+    {
+      "id": "MAL-RIS-05",
+      "priority": "B",
+      "topic": "Risikoprioritering",
+      "text": "Vedlikeholdsleder bør få en prioritert liste der kritikalitet, tilstand, arbeidsordre og modellbidrag kan forklares.",
+      "answer": "Prioriteringen viser utstyrskritikalitet, siste tilstandsendring, åpen arbeidsordre og hvilke signaler som påvirket anbefalingen. Modellversjon og terskel lagres. Leder kan overstyre med begrunnelse uten å endre rådata."
+    },
+    {
+      "id": "MAL-SIK-06",
+      "priority": "A",
+      "topic": "Sikkerhet",
+      "text": "Tilgang skal bruke Entra ID, flerfaktorautentisering og rolleavgrensning per anlegg. Privilegert leverandørtilgang skal være tidsbegrenset og godkjent.",
+      "answer": "Entra ID og kundens betingede tilgang brukes. Roller begrenses per anlegg og funksjon. Leverandørtilgang aktiveres som just-in-time-tilgang med navngitt godkjenner, utløpstid og opptaks- og hendelseslogg."
+    },
+    {
+      "id": "MAL-SAF-07",
+      "priority": "A",
+      "topic": "Sikker drift",
+      "text": "Prediktive modeller skal ikke erstatte sikkerhetsalarmer, sperrer eller operatørens godkjente prosedyrer.",
+      "answer": "Modellresultater presenteres bare som vedlikeholdsanbefalinger. Sikkerhetsalarmer og sperrer kommer fra eksisterende systemer og kan ikke undertrykkes. Brukerflaten merker tydelig forskjellen og krever menneskelig beslutning før arbeidsordre prioriteres om."
+    },
+    {
+      "id": "MAL-MOD-08",
+      "priority": "B",
+      "topic": "Modellstyring",
+      "text": "Kunden bør kunne kontrollere treningsgrunnlag, modellversjon, terskler, ytelse og tilbakeføring til forrige godkjente versjon.",
+      "answer": "Et modellregister lagrer datasettversjon, egenskaper, godkjenning, terskler og mål per utstyrstype. Nye modeller kjøres i skygge før aktivering. Godkjent tidligere versjon kan gjeninnføres uten å miste hendelseshistorikk."
+    },
+    {
+      "id": "MAL-DRI-09",
+      "priority": "A",
+      "topic": "Drift",
+      "text": "Kritisk datainnsamling skal ha 99,9 prosent månedlig tilgjengelighet. Lokal buffer skal hindre tap ved 24 timers brudd mot skyplattformen.",
+      "answer": "Innsamlingsnoden overvåkes lokalt og bufferlagrer minst 48 timers pilotvolum. Etter gjenkobling sendes data i tidsrekkefølge med duplikatkontroll. Tilgjengelighet måles ved mottak av en avtalt testverdi gjennom hele kjeden."
+    },
+    {
+      "id": "MAL-TEST-10",
+      "priority": "A",
+      "topic": "Akseptanse",
+      "text": "Akseptansetesten skal omfatte nettverksbrudd, full lokal buffer, duplikater, feil enhet, feltkonflikt, SAP-feil og tilbakeføring av modell.",
+      "answer": "Testpakken dekker alle syv scenarioene med forventet resultat, teknisk bevis og navngitt godkjenner. Kritiske avvik retestes. Produksjonssetting krever både OT-sikkerhetsgodkjenning og prosesseiers signatur."
+    },
+    {
+      "id": "MAL-EFF-11",
+      "priority": "B",
+      "topic": "Effektmåling",
+      "text": "Løsningen bør dokumentere om pilotens reduksjon i stans og økning i planlagt vedlikehold kan tilskrives tiltakene.",
+      "answer": "Før pilot fastsettes baseline per utstyrsklasse for stanstid, arbeidsordretype og etterregistrering. Rapporten skiller anbefaling, faktisk tiltak og resultat. Endringer i produksjonsvolum og planlagt revisjonsstans merkes som forklaringsfaktorer."
+    },
+    {
+      "id": "MAL-UTR-12",
+      "priority": "A",
+      "topic": "Datauttrekk",
+      "text": "Kunden skal kunne hente ut råmålinger, kvalitetsflagg, modellmetadata, anbefalinger, overstyringer og revisjonslogger i dokumenterte formater.",
+      "answer": "Råmålinger og metadata eksporteres som Parquet eller CSV, mens konfigurasjon og revisjonsdata kan leveres som JSON. Uttrekket har manifest, skjema, kontrollsummer og relasjon mellom anbefaling, modellversjon og beslutning."
+    }
+  ]
+}

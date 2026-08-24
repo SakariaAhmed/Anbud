@@ -1,0 +1,72 @@
+BILAG 1 - KUNDENS BEHOV OG KRAV
+Vestfjord universitet - sikker forskningsdata- og AI-plattform
+Kunde: Vestfjord universitet
+Anskaffelse: Selvbetjent plattform for forskningsdata, analyse og kontrollert kunstig intelligens
+Kontrakt: SSA-L 2026
+Fiktivt testgrunnlag: Alle virksomheter, leverandører, tall og avtaler i dokumentet er fiktive.
+
+VIRKSOMHET OG ANSKAFFELSESBEHOV
+Vestfjord universitet har 18 600 studenter, 2 900 ansatte og rundt 1 250 aktive forskningsprosjekter. Data ligger i 43 instituttvise lagringsområder med ulike tilgangsprosesser. Universitetet forvalter omtrent 4 petabyte forskningsdata, hvorav 18 prosent er klassifisert som særlig beskyttelsesverdig.
+Universitetet skal anskaffe en selvbetjent plattform for prosjektopprettelse, datalagring, analyse, GPU-beregning og avslutning. Plattformen skal støtte åpne data, personopplysninger og prosjekter med strenge avtalevilkår uten at alle behandles på samme sikkerhetsnivå.
+Pilot med helsevitenskap og marin teknologi starter 1. januar 2027. Ordinær tjeneste skal åpnes 15. august 2027. Dagens forskningsdata skal migreres trinnvis over tre år, og universitetet vil unngå en stor engangsflytting uten verifisert bruk og arkivbehov.
+
+MÅL OG FORVENTEDE EFFEKTER
+Redusere median etableringstid for et standard forskningsmiljø fra 21 dager til 2 timer.
+Sikre at 100 prosent av prosjektene har navngitt dataeier, klassifisering, formål og sluttdato.
+Redusere overprovisjonert lagring og GPU-kapasitet med 25 prosent.
+Gjøre reproduserbare analyseoppsett til standard for de to pilotfakultetene.
+Automatisere arkivering eller dokumentert sletting når prosjektet avsluttes.
+
+FØRINGER OG AVGRENSNINGER
+Feide skal brukes for primær innlogging, med sterkere autentisering for beskyttede datasett.
+Data skal plasseres etter klassifisering; særlig beskyttelsesverdige data skal behandles i Norge.
+Generative modeller skal ikke trenes på prosjektdata uten eksplisitt godkjenning.
+Hver GPU-jobb skal være knyttet til prosjekt, koststed og godkjent bruker.
+Eksport fra høyeste dataklasse skal gå gjennom dokumentert kontroll og godkjenning.
+
+TILDELINGSMODELL
+Sikkerhet, forskerstøtte og funksjonell kvalitet: 45 prosent.
+Arkitektur, portabilitet og gjennomføring: 35 prosent.
+Pris: 20 prosent.
+
+KRAVMATRISE
+VES-SEL-01 | Prioritet A | Selvbetjening
+En standard prosjektarbeidsflate skal kunne etableres innen 2 timer etter komplett og godkjent bestilling.
+
+VES-IAM-02 | Prioritet A | Identitet
+Primær innlogging skal bruke Feide. Beskyttede datasett skal kreve sterkere autentisering og eksplisitt prosjektmedlemskap.
+
+VES-KLA-03 | Prioritet A | Klassifisering
+Lagring, nettverk, logging og eksportkontroll skal bestemmes av prosjektets dataklasse og kunne oppdateres kontrollert.
+
+VES-DAT-04 | Prioritet A | Datalokasjon
+Særlig beskyttelsesverdige data skal behandles i Norge, inkludert sikkerhetskopier og identifiserbare logger.
+
+VES-GPU-05 | Prioritet A | GPU-styring
+GPU-jobber skal knyttes til prosjekt, koststed og bruker, med kvote, automatisk stopp og synlig kostnadsestimat.
+
+VES-AI-06 | Prioritet A | Ansvarlig AI
+Generative modeller skal ikke trenes på eller beholde prosjektdata uten eksplisitt, dokumentert godkjenning.
+
+VES-REP-07 | Prioritet B | Reproduserbarhet
+Forskere bør kunne versjonere kode, miljø, avhengigheter og datasettpekere slik at en analyse kan reproduseres.
+
+VES-EKS-08 | Prioritet A | Eksportkontroll
+Eksport fra høyeste dataklasse skal skannes, begrunnes og godkjennes før data kan forlate miljøet.
+
+VES-LIV-09 | Prioritet A | Livssyklus
+Alle prosjekter skal ha sluttdato og arbeidsflyt for forlengelse, arkivering eller verifisert sletting.
+
+VES-MIG-10 | Prioritet B | Migrering
+Migreringen av omtrent 4 petabyte skal prioriteres etter aktiv bruk, dataklasse og bevaringsbehov over tre år.
+
+VES-UTR-11 | Prioritet A | Portabilitet
+Kunden skal kunne eksportere data, metadata, policy, miljømanifest og revisjonslogger i dokumenterte formater.
+
+VES-OBS-12 | Prioritet B | Styringsinformasjon
+Universitetet bør se etableringstid, kostnad, kapasitet, policyavvik, eksport og avslutningsstatus per fakultet og prosjekt.
+
+FORHOLD SOM SKAL AVKLARES
+Endelig klassifiseringsmodell vedtas av universitetets styre høsten 2026.
+Det er ikke avklart hvilke utenlandske samarbeidspartnere som skal få føderert tilgang i pilot.
+Omfang og format for langtidsbevaring varierer mellom fagområdene og må kartlegges.

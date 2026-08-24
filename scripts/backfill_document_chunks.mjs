@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { createClient } = require("../apps/frontend/node_modules/@supabase/supabase-js");
 const OpenAI = require("../apps/frontend/node_modules/openai").default;
 
 const PREFIX = "enc:v1";
@@ -29,24 +28,71 @@ function loadEnvFile(path) {
 loadEnvFile(".env");
 loadEnvFile("apps/frontend/.env.local");
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const dataApiUrl = process.env.DATA_API_URL;
+const serviceRoleKey = process.env.DATA_API_SERVICE_ROLE_KEY;
 const openAiKey = process.env.OPENAI_API_KEY;
 const embeddingModel = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 const limitArg = process.argv.find((arg) => arg.startsWith("--limit="));
 const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
 
-if (!supabaseUrl || !serviceRoleKey) {
-  throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
+if (!dataApiUrl || !serviceRoleKey) {
+  throw new Error("DATA_API_URL and DATA_API_SERVICE_ROLE_KEY are required.");
 }
 if (!process.env.APP_ENCRYPTION_KEY) {
   throw new Error("APP_ENCRYPTION_KEY is required.");
 }
 
-const supabase = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+const checkedDataApiUrl = new URL(dataApiUrl);
+const localDataApiHost =
+  checkedDataApiUrl.hostname === "127.0.0.1" ||
+  checkedDataApiUrl.hostname === "localhost";
+if (
+  (checkedDataApiUrl.protocol !== "https:" &&
+    !(checkedDataApiUrl.protocol === "http:" && localDataApiHost)) ||
+  checkedDataApiUrl.username ||
+  checkedDataApiUrl.password ||
+  checkedDataApiUrl.search ||
+  checkedDataApiUrl.hash
+) {
+  throw new Error("DATA_API_URL must be a credential-free HTTPS or local URL.");
+}
+const dataApiRoot = `${checkedDataApiUrl.origin}${checkedDataApiUrl.pathname}`.replace(/\/+$/u, "");
 const openai = openAiKey ? new OpenAI({ apiKey: openAiKey }) : null;
+
+async function dataApiRequest(resource, { method = "GET", query = {}, body } = {}) {
+  const url = new URL(`${dataApiRoot}/${resource}`);
+  for (const [name, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(name, String(value));
+    }
+  }
+  const response = await fetch(url, {
+    method,
+    headers: {
+      apikey: serviceRoleKey,
+      authorization: `Bearer ${serviceRoleKey}`,
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const responseText = response.status === 204 ? "" : await response.text();
+  let payload = null;
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      payload = responseText;
+    }
+  }
+  if (!response.ok) {
+    throw new Error(
+      (payload && typeof payload === "object" && payload.message) ||
+        `Data API request failed with HTTP ${response.status}.`,
+    );
+  }
+  return payload;
+}
 
 function deriveKey(secret) {
   return createHash("sha256").update(secret).digest();
@@ -229,15 +275,23 @@ async function createEmbeddings(texts) {
 
 async function insertBatches(rows) {
   for (let index = 0; index < rows.length; index += INSERT_BATCH_SIZE) {
-    const { error } = await supabase.from("document_chunks").insert(rows.slice(index, index + INSERT_BATCH_SIZE));
-    if (error) throw new Error(error.message);
+    await dataApiRequest("document_chunks", {
+      method: "POST",
+      body: rows.slice(index, index + INSERT_BATCH_SIZE),
+    });
   }
 }
 
 async function backfillDocument(sourceType, document) {
   const chunks = buildChunks(document);
   const embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
-  await supabase.from("document_chunks").delete().eq("source_type", sourceType).eq("source_id", document.id);
+  await dataApiRequest("document_chunks", {
+    method: "DELETE",
+    query: {
+      source_type: `eq.${sourceType}`,
+      source_id: `eq.${document.id}`,
+    },
+  });
   const now = new Date().toISOString();
   const rows = chunks.map((chunk, index) => ({
     source_type: sourceType,
@@ -271,25 +325,37 @@ async function backfillDocument(sourceType, document) {
   }));
   if (rows.length) {
     await insertBatches(rows);
-    const { error } = await supabase.rpc("update_document_chunk_search_vectors", {
-      source_type_filter: sourceType,
-      source_id_filter: document.id,
-      chunks: chunks.map((chunk) => ({
-        chunk_index: chunk.chunk_index,
-        search_text: [document.title, document.file_name, chunk.kind, chunk.reference, chunk.text].join("\n"),
-      })),
+    await dataApiRequest("rpc/update_document_chunk_search_vectors", {
+      method: "POST",
+      body: {
+        source_type_filter: sourceType,
+        source_id_filter: document.id,
+        chunks: chunks.map((chunk) => ({
+          chunk_index: chunk.chunk_index,
+          search_text: [
+            document.title,
+            document.file_name,
+            chunk.kind,
+            chunk.reference,
+            chunk.text,
+          ].join("\n"),
+        })),
+      },
     });
-    if (error) throw new Error(error.message);
   }
   return chunks.length;
 }
 
 async function fetchRows(table, select) {
-  let query = supabase.from(table).select(select).order("created_at", { ascending: true });
-  if (limit && Number.isFinite(limit)) query = query.limit(limit);
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return data || [];
+  return (
+    (await dataApiRequest(table, {
+      query: {
+        select,
+        order: "created_at.asc",
+        limit: limit && Number.isFinite(limit) ? limit : undefined,
+      },
+    })) || []
+  );
 }
 
 const projectDocuments = await fetchRows(

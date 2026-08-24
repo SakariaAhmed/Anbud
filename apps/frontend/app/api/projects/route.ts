@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { createProject, listProjects } from "@/lib/server/repositories/projects";
+import {
+  authorizationErrorResponse,
+  requireRequestPrincipal,
+} from "@/lib/server/authorization";
+import { recordActivity } from "@/lib/server/activity";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import type { ProjectCreateInput } from "@/lib/types";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
@@ -11,12 +17,17 @@ const READ_CACHE_HEADERS = {
 export async function GET() {
   try {
     return await withTiming("GET /api/projects", {}, async () => {
-      const projects = await listProjects();
+      const principal = await requireRequestPrincipal();
+      const projects = await listProjects(principal.id, {
+        admin: principal.isAdmin,
+      });
       return NextResponse.json(projects, { headers: READ_CACHE_HEADERS });
     });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke hente prosjekter." },
+      { error: productionSafeErrorMessage(error, "Kunne ikke hente prosjekter.") },
       { status: 500 },
     );
   }
@@ -39,9 +50,17 @@ export async function POST(request: Request) {
 
   try {
     return await withTiming("POST /api/projects", {}, async () => {
+      const principal = await requireRequestPrincipal();
+      if (principal.identityType === "guest") {
+        return NextResponse.json(
+          { error: "Gjester kan ikke opprette nye prosjekter." },
+          { status: 403 },
+        );
+      }
       const body = (await request.json()) as Partial<ProjectCreateInput>;
 
       const project = await createProject({
+        owner_id: principal.id,
         name: body.name?.trim() || null,
         customer_name: body.customer_name?.trim() || null,
         description: body.description?.trim() || null,
@@ -57,11 +76,20 @@ export async function POST(request: Request) {
         entityType: "project",
         entityId: project.id,
       });
+      await recordActivity({
+        principal,
+        action: "project.create",
+        projectId: project.id,
+        entityType: "project",
+        entityId: project.id,
+      });
       return NextResponse.json(project, { status: 201 });
     });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke opprette prosjekt." },
+      { error: productionSafeErrorMessage(error, "Kunne ikke opprette prosjekt.") },
       { status: 500 },
     );
   }

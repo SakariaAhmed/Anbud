@@ -21,7 +21,7 @@ import {
   runLeaseFencedProjectMutation,
 } from "@/lib/server/repositories/lease-fenced-persistence";
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 import type {
   DocumentFileFormat,
   ProjectDocumentDetail,
@@ -740,6 +740,15 @@ function structureEntryChunkMetadata(entry: ProjectDocumentStructureEntry) {
       ? { structure_row_index: entry.row_index }
       : {}),
     ...(entry.docling_ref ? { structure_docling_ref: entry.docling_ref } : {}),
+    ...(entry.source_id ? { structure_source_id: entry.source_id } : {}),
+    ...(entry.role ? { structure_role: entry.role } : {}),
+    ...(entry.confidence != null
+      ? { structure_confidence: entry.confidence }
+      : {}),
+    ...(entry.polygon?.length ? { structure_polygon: entry.polygon } : {}),
+    ...(entry.heading_path?.length
+      ? { structure_heading_path: entry.heading_path }
+      : {}),
   };
 }
 
@@ -840,8 +849,8 @@ async function hasChunkStorage() {
     return true;
   }
 
-  const supabase = createServiceClient();
-  const { error } = await supabase
+  const dataApi = createServiceClient();
+  const { error } = await dataApi
     .from("document_chunks")
     .select("id", { head: true, count: "exact" })
     .limit(1);
@@ -1010,8 +1019,8 @@ async function replaceDocumentChunkRowsAtomically(input: {
   sourceRevision: number;
   rows: Array<Record<string, unknown>>;
 }) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase.rpc("replace_document_chunks_atomic", {
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi.rpc("replace_document_chunks_atomic", {
     p_source_type: input.sourceType,
     p_source_id: input.sourceId,
     p_source_fingerprint: input.sourceFingerprint,
@@ -1241,8 +1250,8 @@ async function hasCompleteExistingDocumentChunks(input: {
     return true;
   }
 
-  const supabase = createServiceClient();
-  const { data, error } = await supabase.rpc("document_chunks_are_complete", {
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi.rpc("document_chunks_are_complete", {
     p_source_type: input.sourceType,
     p_source_id: input.sourceId,
     p_source_fingerprint: input.sourceFingerprint,
@@ -1390,8 +1399,8 @@ export async function deleteDocumentChunks(input: {
     return;
   }
 
-  const supabase = createServiceClient();
-  const { error } = await supabase
+  const dataApi = createServiceClient();
+  const { error } = await dataApi
     .from("document_chunks")
     .delete()
     .eq("source_type", input.sourceType)
@@ -1510,8 +1519,8 @@ async function storedVectorCandidates(input: {
     return [];
   }
 
-  const supabase = createServiceClient();
-  const { data: matches, error: matchError } = await supabase.rpc(
+  const dataApi = createServiceClient();
+  const { data: matches, error: matchError } = await dataApi.rpc(
     "match_document_chunks",
     {
       query_embedding: embedding,
@@ -1542,7 +1551,7 @@ async function storedVectorCandidates(input: {
       typeof match.similarity === "number" ? match.similarity : 0,
     ]),
   );
-  const { data: rows, error: rowsError } = await supabase
+  const { data: rows, error: rowsError } = await dataApi
     .from("document_chunks")
     .select(
       "id, source_type, source_id, document_title, kind, reference, heading_path, page_start, page_end, text_encrypted, metadata",
@@ -1622,8 +1631,8 @@ async function storedHybridCandidates(input: {
     Math.max(input.limit * HYBRID_MATCH_MULTIPLIER, 12),
     64,
   );
-  const supabase = createServiceClient();
-  const { data: matches, error: matchError } = await supabase.rpc(
+  const dataApi = createServiceClient();
+  const { data: matches, error: matchError } = await dataApi.rpc(
     "hybrid_match_document_chunks",
     {
       query_embedding: embedding,
@@ -1660,7 +1669,7 @@ async function storedHybridCandidates(input: {
   }
 
   const matchById = new Map(matchRows.map((match) => [match.id ?? "", match]));
-  const { data: rows, error: rowsError } = await supabase
+  const { data: rows, error: rowsError } = await dataApi
     .from("document_chunks")
     .select(
       "id, source_type, source_id, document_title, kind, reference, heading_path, page_start, page_end, text_encrypted, metadata",

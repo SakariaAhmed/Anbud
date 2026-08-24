@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -16,8 +17,7 @@ alter table public.project_jobs
   add column if not exists terminal_metadata jsonb not null default '{}'::jsonb,
   add column if not exists parent_job_id uuid,
   add column if not exists idempotency_key text;
-alter table public.audit_events
-  add column if not exists subject_project_id uuid;
+alter table public.audit_events add column if not exists subject_project_id uuid;
 create index if not exists project_jobs_queue_claim_idx on public.project_jobs(status, locked_at, created_at);
 create index if not exists project_jobs_running_lease_idx on public.project_jobs(id, lease_token);
 create index if not exists project_jobs_parent_job_idx on public.project_jobs(parent_job_id);
@@ -37,6 +37,38 @@ create or replace function public.insert_service_document_with_keywords(uuid, js
 create or replace function public.atomic_service_document_write_preflight() returns text language sql as 'select';
 `;
 
+const versions = new Map([
+  ["project_job_fencing_preflight", "authoritative-lease-fencing-v1"],
+  ["project_job_terminal_audit_preflight", "transactional-project-job-terminal-audit-v2"],
+  ["stable_main_rollback_bridge_preflight", "stable-main-rollback-bridge-v1"],
+  ["atomic_service_document_write_preflight", "atomic-service-document-write-v1"],
+]);
+
+function successfulFetch(calls, failureName = null) {
+  return async (url, options) => {
+    calls.push({ url, options });
+    const functionName = [...versions.keys()].find((name) =>
+      url.pathname.endsWith(name),
+    );
+    if (functionName === failureName) return { ok: false, status: 404 };
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return functionName ? versions.get(functionName) : null;
+      },
+    };
+  };
+}
+
+const configuration = {
+  dataApiUrl:
+    "https://anbud-postgrest.internal.example.norwayeast.azurecontainerapps.io",
+  dataApiServiceRoleKey: "synthetic-azure-key",
+  dataApiAllowedHostSuffix:
+    ".internal.example.norwayeast.azurecontainerapps.io",
+};
+
 test("canonical migration requires every durable column and index", () => {
   assert.doesNotThrow(() => validateCanonicalProjectJobMigration(completeMigration));
   assert.throws(
@@ -48,251 +80,81 @@ test("canonical migration requires every durable column and index", () => {
   );
 });
 
-test("remote preflight makes a metadata-only HEAD request", async () => {
+test("remote preflight checks only the internal PostgREST contract", async () => {
   const calls = [];
   const result = await preflightRemoteProjectJobSchema({
-    supabaseUrl: "https://example.supabase.co",
-    serviceRoleKey: "synthetic-test-key",
-    expectedProjectRef: "example",
-    async fetchImpl(url, options) {
-      calls.push({ url, options });
-      if (url.pathname.includes("project_job_fencing_preflight")) {
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return "authoritative-lease-fencing-v1";
-          },
-        };
-      }
-      if (url.pathname.includes("stable_main_rollback_bridge_preflight")) {
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return "stable-main-rollback-bridge-v1";
-          },
-        };
-      }
-      if (url.pathname.includes("atomic_service_document_write_preflight")) {
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return "atomic-service-document-write-v1";
-          },
-        };
-      }
-      return url.pathname.includes("project_job_terminal_audit_preflight")
-        ? {
-            ok: true,
-            status: 200,
-            async json() {
-              return "transactional-project-job-terminal-audit-v2";
-            },
-          }
-        : { ok: true, status: 200 };
-    },
+    ...configuration,
+    fetchImpl: successfulFetch(calls),
   });
 
   assert.equal(calls[0].options.method, "HEAD");
-  assert.equal(calls[0].url.searchParams.get("limit"), "0");
-  assert.match(calls[0].url.searchParams.get("select"), /lease_token/u);
-  assert.equal(calls[1].options.method, "HEAD");
-  assert.match(calls[1].url.pathname, /audit_events/u);
-  assert.equal(calls[1].url.searchParams.get("limit"), "0");
-  assert.equal(
-    calls[1].url.searchParams.get("select"),
-    "subject_project_id",
-  );
+  assert.equal(calls[0].url.pathname, "/project_jobs");
+  assert.equal(calls[1].url.pathname, "/audit_events");
   assert.equal(calls[2].options.method, "POST");
-  assert.match(calls[2].url.pathname, /project_job_fencing_preflight/u);
-  assert.equal(calls[3].options.method, "POST");
-  assert.match(
-    calls[3].url.pathname,
-    /project_job_terminal_audit_preflight/u,
+  assert.ok(calls.every((call) => call.options.headers.apikey === "synthetic-azure-key"));
+  assert.equal(
+    result.host,
+    "anbud-postgrest.internal.example.norwayeast.azurecontainerapps.io",
   );
-  assert.equal(calls[4].options.method, "POST");
-  assert.match(
-    calls[4].url.pathname,
-    /stable_main_rollback_bridge_preflight/u,
-  );
-  assert.equal(calls[5].options.method, "POST");
-  assert.match(
-    calls[5].url.pathname,
-    /atomic_service_document_write_preflight/u,
-  );
-  assert.equal(result.host, "example.supabase.co");
   assert.equal(result.fencingVersion, "authoritative-lease-fencing-v1");
   assert.equal(
     result.terminalAuditVersion,
     "transactional-project-job-terminal-audit-v2",
   );
-  assert.equal(
-    result.rollbackBridgeVersion,
-    "stable-main-rollback-bridge-v1",
+});
+
+test("containerized remote preflight is selected without a CLI flag", () => {
+  const source = readFileSync(
+    new URL("./validate_project_jobs_schema.mjs", import.meta.url),
+    "utf8",
   );
-  assert.equal(
-    result.serviceDocumentWriteVersion,
-    "atomic-service-document-write-v1",
+  assert.match(source, /process\.env\.REMOTE_SCHEMA_PREFLIGHT === "1"/u);
+  assert.ok(
+    source.indexOf("if (remotePreflight)") <
+      source.indexOf("validateCanonicalProjectJobMigration(canonicalMigrationSql(repoRoot))"),
   );
 });
 
-test("remote preflight rejects a mismatched project identity before fetching", async () => {
-  let fetched = false;
+test("remote preflight requires a complete credential pair and safe URL", async () => {
+  await assert.rejects(
+    preflightRemoteProjectJobSchema({ dataApiUrl: configuration.dataApiUrl }),
+    /required together/u,
+  );
   await assert.rejects(
     preflightRemoteProjectJobSchema({
-      supabaseUrl: "https://unexpected.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
-      expectedProjectRef: "intended",
-      async fetchImpl() {
-        fetched = true;
-        return { ok: true, status: 200 };
-      },
+      ...configuration,
+      dataApiUrl: "https://user:password@credential-capture.example",
     }),
-    /does not match SUPABASE_PROJECT_REF/u,
+    /credential-free HTTPS/u,
   );
-  assert.equal(fetched, false);
-});
-
-test("remote preflight fails closed on an absent schema", async () => {
   await assert.rejects(
     preflightRemoteProjectJobSchema({
-      supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
-      async fetchImpl() {
-        return { ok: false, status: 400 };
-      },
+      ...configuration,
+      dataApiUrl: "https://credential-capture.example",
     }),
-    /schema preflight failed with HTTP 400/u,
+    /expected internal ACA host suffix/u,
   );
 });
 
-test("remote preflight fails closed when authoritative fencing is absent", async () => {
+test("remote preflight fails closed when a required RPC is absent", async () => {
+  const calls = [];
   await assert.rejects(
     preflightRemoteProjectJobSchema({
-      supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
-      async fetchImpl(url) {
-        return url.pathname.includes("project_job_fencing_preflight")
-          ? { ok: false, status: 404 }
-          : { ok: true, status: 200 };
-      },
+      ...configuration,
+      fetchImpl: successfulFetch(calls, "project_job_fencing_preflight"),
     }),
     /fencing preflight failed with HTTP 404/u,
   );
 });
 
-test("remote preflight fails closed when transactional terminal audit is absent", async () => {
+test("remote preflight fails closed when table metadata is unavailable", async () => {
   await assert.rejects(
     preflightRemoteProjectJobSchema({
-      supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
-      async fetchImpl(url) {
-        if (url.pathname.includes("project_job_fencing_preflight")) {
-          return {
-            ok: true,
-            status: 200,
-            async json() {
-              return "authoritative-lease-fencing-v1";
-            },
-          };
-        }
-        return url.pathname.includes("project_job_terminal_audit_preflight")
-          ? { ok: false, status: 404 }
-          : { ok: true, status: 200 };
+      ...configuration,
+      async fetchImpl() {
+        return { ok: false, status: 400 };
       },
     }),
-    /terminal-audit preflight failed with HTTP 404/u,
-  );
-});
-
-test("remote preflight fails closed when audit subject schema is absent", async () => {
-  await assert.rejects(
-    preflightRemoteProjectJobSchema({
-      supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
-      async fetchImpl(url) {
-        return url.pathname === "/rest/v1/audit_events"
-          ? { ok: false, status: 400 }
-          : { ok: true, status: 200 };
-      },
-    }),
-    /Audit-events schema preflight failed with HTTP 400/u,
-  );
-});
-
-test("remote preflight fails closed when stable rollback bridge is absent", async () => {
-  await assert.rejects(
-    preflightRemoteProjectJobSchema({
-      supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
-      async fetchImpl(url) {
-        if (url.pathname.includes("project_job_fencing_preflight")) {
-          return {
-            ok: true,
-            status: 200,
-            async json() {
-              return "authoritative-lease-fencing-v1";
-            },
-          };
-        }
-        if (url.pathname.includes("project_job_terminal_audit_preflight")) {
-          return {
-            ok: true,
-            status: 200,
-            async json() {
-              return "transactional-project-job-terminal-audit-v2";
-            },
-          };
-        }
-        return url.pathname.includes("stable_main_rollback_bridge_preflight")
-          ? { ok: false, status: 404 }
-          : { ok: true, status: 200 };
-      },
-    }),
-    /rollback bridge preflight failed with HTTP 404/u,
-  );
-});
-
-test("remote preflight fails closed when atomic service-document writing is absent", async () => {
-  await assert.rejects(
-    preflightRemoteProjectJobSchema({
-      supabaseUrl: "https://example.supabase.co",
-      serviceRoleKey: "synthetic-test-key",
-      async fetchImpl(url) {
-        if (url.pathname.includes("project_job_fencing_preflight")) {
-          return {
-            ok: true,
-            status: 200,
-            async json() {
-              return "authoritative-lease-fencing-v1";
-            },
-          };
-        }
-        if (url.pathname.includes("project_job_terminal_audit_preflight")) {
-          return {
-            ok: true,
-            status: 200,
-            async json() {
-              return "transactional-project-job-terminal-audit-v2";
-            },
-          };
-        }
-        if (url.pathname.includes("stable_main_rollback_bridge_preflight")) {
-          return {
-            ok: true,
-            status: 200,
-            async json() {
-              return "stable-main-rollback-bridge-v1";
-            },
-          };
-        }
-        return url.pathname.includes("atomic_service_document_write_preflight")
-          ? { ok: false, status: 404 }
-          : { ok: true, status: 200 };
-      },
-    }),
-    /service-document write preflight failed with HTTP 404/u,
+    /schema preflight failed with HTTP 400/u,
   );
 });

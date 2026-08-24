@@ -1,0 +1,111 @@
+BILAG 2 - LEVERANDØRENS LØSNING
+Malmhavn Industri AS - prediktivt vedlikehold og feltarbeid
+Kunde: Malmhavn Industri AS
+Anskaffelse: Industriell vedlikeholdsplattform med OT-integrasjon og offline feltarbeid
+Kontrakt: SSA-T 2026
+Fiktivt testgrunnlag: Alle virksomheter, leverandører, tall og avtaler i dokumentet er fiktive.
+
+VIRKSOMHET OG ANSKAFFELSESBEHOV
+Malmhavn Industri AS driver fire prosessanlegg med 1 460 ansatte og omtrent 18 000 vedlikeholdsobjekter. Uplanlagt stans kostet virksomheten 84 millioner kroner i 2025. Arbeidsordrer ligger i SAP S/4HANA, mens tilstandssignaler samles i tre forskjellige historikere og lokale regneark.
+Selskapet skal etablere en felles vedlikeholdsplattform som samler tilstand, risiko, arbeidsordre og feltutførelse. Omtrent 12 millioner sensorverdier mottas per døgn. Feltarbeidere må kunne registrere kontroll, bilder og måleverdier i områder uten dekning i opptil åtte timer.
+Første leveranse gjelder smelteverk Nord og kritiske pumper, vifter og transportbånd. Pilot skal være i drift 1. mars 2027. Resterende tre anlegg skal innføres innen 31. desember 2027 dersom pilotens sikkerhets- og effektmål nås.
+
+MÅL OG FORVENTEDE EFFEKTER
+Redusere uplanlagt stans for pilotutstyret med 20 prosent i løpet av tolv måneder.
+Øke andelen planlagt vedlikehold fra 62 til 78 prosent.
+Redusere tiden feltarbeidere bruker på etterregistrering med 35 prosent.
+Oppnå 98 prosent synkronisering av komplette arbeidsordrer innen fem minutter etter at dekning er gjenopprettet.
+Gi vedlikeholdsleder én risikobasert prioriteringsliste med sporbar forklaring.
+
+FØRINGER OG AVGRENSNINGER
+Ingen skykomponent skal kunne skrive direkte til styringssystemer eller sikkerhetskritiske OT-soner.
+Datainnsamling skal bruke lesende OPC UA eller godkjent mellomvare i industriell DMZ.
+Feltappen skal fungere offline i minst åtte timer og håndtere konflikt ved synkronisering.
+Arbeidsordre og reservedelsdata forvaltes fortsatt i SAP S/4HANA.
+Kritiske sikkerhetsalarmer skal ikke erstattes av prediktive modeller.
+
+TILDELINGSMODELL
+Teknisk løsning, OT-sikkerhet og funksjonell kvalitet: 40 prosent.
+Dokumentert effekt og gjennomføringsevne: 35 prosent.
+Pris: 25 prosent.
+
+TILBUDT LØSNING: AssetPulse
+En sikker industriell dataplattform med lesende OT-innsamling, SAP som master, robust offline feltapp og forklarbar risikoprioritering der modeller aldri overstyrer sikkerhetsfunksjoner.
+
+MÅLARKITEKTUR
+Lokal innsamlingsnode i industriell DMZ med lesende OPC UA.
+Buffer og kontrollert utgående overføring til skalerbart tidsserielager.
+SAP S/4HANA-integrasjon med idempotens og masterdataeierskap.
+Kryptert offline feltapp med versjonert synkronisering.
+Modellregister, forklaringsdata og rollebeskyttet vedlikeholdsflate.
+
+GJENNOMFØRING
+Datakvalitetsprofilering før modellutvikling.
+Pilot på kritisk utstyr med skyggekjøring og tydelig baseline.
+Feilscenarioer på OT, nett, feltapp, SAP og modell som akseptansegate.
+Utrulling til øvrige anlegg først etter dokumentert sikkerhet og effekt.
+
+KRAVMATRISE
+MAL-OT-01 | Prioritet A | OT-separasjon
+Løsningen skal hente tilstandsdata gjennom lesende grensesnitt i industriell DMZ og skal ikke kunne skrive direkte til styringssystem eller sikkerhetskritisk OT-sone.
+Leverandørens svar: AssetPulse bruker en lokalt plassert innsamlingsnode som leser fra godkjente OPC UA-endepunkter. Data sendes ut gjennom en enveiskontrollert forbindelse. Det finnes ingen rute eller legitimasjon for skriving tilbake til styringssystemene.
+
+MAL-DAT-02 | Prioritet A | Datavolum
+Plattformen skal motta omtrent 12 millioner sensorverdier per døgn og bevare kvalitet, tidsstempel, enhet og kildeidentitet.
+Leverandørens svar: Inntaket validerer tidsstempel, enhet, kvalitet og kilde før lagring. Avviste eller forsinkede målinger telles separat. Kapasitetstesten bruker 1,5 ganger oppgitt døgnvolum og dokumenterer kø, latenstid og tap.
+
+MAL-OFF-03 | Prioritet A | Offline feltarbeid
+Feltappen skal støtte minst åtte timer uten dekning og synkronisere arbeidsordre, bilder og måleverdier med kontrollert konflikthåndtering.
+Leverandørens svar: Kryptert lokal lagring holder tildelte arbeidsordrer, sjekklister og vedlegg tilgjengelig offline. Endringer journalføres lokalt. Ved gjenkobling brukes versjonsnummer og feltregler til å slå sammen sikre endringer, mens reelle konflikter sendes til ansvarlig arbeidsleder.
+
+MAL-SAP-04 | Prioritet A | SAP-integrasjon
+SAP S/4HANA skal forbli autoritativ kilde for arbeidsordre, tekniske objekter og reservedeler.
+Leverandørens svar: Integrasjonen bruker SAPs dokumenterte API-er. AssetPulse oppretter ikke parallelle masterdata. Endringer i status og utførelse sendes med idempotensnøkkel, og SAP-kvittering bestemmer om arbeidsordren er fullført i feltflaten.
+
+MAL-RIS-05 | Prioritet B | Risikoprioritering
+Vedlikeholdsleder bør få en prioritert liste der kritikalitet, tilstand, arbeidsordre og modellbidrag kan forklares.
+Leverandørens svar: Prioriteringen viser utstyrskritikalitet, siste tilstandsendring, åpen arbeidsordre og hvilke signaler som påvirket anbefalingen. Modellversjon og terskel lagres. Leder kan overstyre med begrunnelse uten å endre rådata.
+
+MAL-SIK-06 | Prioritet A | Sikkerhet
+Tilgang skal bruke Entra ID, flerfaktorautentisering og rolleavgrensning per anlegg. Privilegert leverandørtilgang skal være tidsbegrenset og godkjent.
+Leverandørens svar: Entra ID og kundens betingede tilgang brukes. Roller begrenses per anlegg og funksjon. Leverandørtilgang aktiveres som just-in-time-tilgang med navngitt godkjenner, utløpstid og opptaks- og hendelseslogg.
+
+MAL-SAF-07 | Prioritet A | Sikker drift
+Prediktive modeller skal ikke erstatte sikkerhetsalarmer, sperrer eller operatørens godkjente prosedyrer.
+Leverandørens svar: Modellresultater presenteres bare som vedlikeholdsanbefalinger. Sikkerhetsalarmer og sperrer kommer fra eksisterende systemer og kan ikke undertrykkes. Brukerflaten merker tydelig forskjellen og krever menneskelig beslutning før arbeidsordre prioriteres om.
+
+MAL-MOD-08 | Prioritet B | Modellstyring
+Kunden bør kunne kontrollere treningsgrunnlag, modellversjon, terskler, ytelse og tilbakeføring til forrige godkjente versjon.
+Leverandørens svar: Et modellregister lagrer datasettversjon, egenskaper, godkjenning, terskler og mål per utstyrstype. Nye modeller kjøres i skygge før aktivering. Godkjent tidligere versjon kan gjeninnføres uten å miste hendelseshistorikk.
+
+MAL-DRI-09 | Prioritet A | Drift
+Kritisk datainnsamling skal ha 99,9 prosent månedlig tilgjengelighet. Lokal buffer skal hindre tap ved 24 timers brudd mot skyplattformen.
+Leverandørens svar: Innsamlingsnoden overvåkes lokalt og bufferlagrer minst 48 timers pilotvolum. Etter gjenkobling sendes data i tidsrekkefølge med duplikatkontroll. Tilgjengelighet måles ved mottak av en avtalt testverdi gjennom hele kjeden.
+
+MAL-TEST-10 | Prioritet A | Akseptanse
+Akseptansetesten skal omfatte nettverksbrudd, full lokal buffer, duplikater, feil enhet, feltkonflikt, SAP-feil og tilbakeføring av modell.
+Leverandørens svar: Testpakken dekker alle syv scenarioene med forventet resultat, teknisk bevis og navngitt godkjenner. Kritiske avvik retestes. Produksjonssetting krever både OT-sikkerhetsgodkjenning og prosesseiers signatur.
+
+MAL-EFF-11 | Prioritet B | Effektmåling
+Løsningen bør dokumentere om pilotens reduksjon i stans og økning i planlagt vedlikehold kan tilskrives tiltakene.
+Leverandørens svar: Før pilot fastsettes baseline per utstyrsklasse for stanstid, arbeidsordretype og etterregistrering. Rapporten skiller anbefaling, faktisk tiltak og resultat. Endringer i produksjonsvolum og planlagt revisjonsstans merkes som forklaringsfaktorer.
+
+MAL-UTR-12 | Prioritet A | Datauttrekk
+Kunden skal kunne hente ut råmålinger, kvalitetsflagg, modellmetadata, anbefalinger, overstyringer og revisjonslogger i dokumenterte formater.
+Leverandørens svar: Råmålinger og metadata eksporteres som Parquet eller CSV, mens konfigurasjon og revisjonsdata kan leveres som JSON. Uttrekket har manifest, skjema, kontrollsummer og relasjon mellom anbefaling, modellversjon og beslutning.
+
+FORHOLD SOM SKAL AVKLARES
+Datakvaliteten i to av de tre historikerne er ikke kartlagt.
+Kunden har ikke fastsatt hvilke prediktive modeller som kan gi automatisk prioriteringsforslag.
+Endelig MDM-løsning for robuste feltterminaler velges i et parallelt prosjekt.
+
+POSISJONERING OG VERDI
+Sikker OT-separasjon uten skjult skriverettighet.
+Feltarbeid som faktisk fungerer åtte timer uten dekning.
+Forklarbare anbefalinger og reverserbar modellforvaltning.
+Målbar effekt koblet til utførte tiltak.
+
+FORUTSETNINGER OG RISIKO
+Ukjent historikerdatakvalitet kan redusere modellverdi.
+Parallelt valg av MDM kan påvirke feltutrulling.
+Uavklarte regler for automatisk prioritering kan forsinke gevinstrealisering.

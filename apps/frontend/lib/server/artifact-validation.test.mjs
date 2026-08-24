@@ -633,3 +633,95 @@ test("manual kravsvar edit fails closed on malformed immutable ledger metadata",
     );
   }
 });
+
+const datedGoLiveSource =
+  "Produksjonssetting er planlagt 15. november 2026 etter godkjent akseptansetest.";
+const substantialDeliveryPhase = [
+  "## Fase 1: Verifisering av leveransegrunnlag",
+  "",
+  "Fasen samler kundens krav, ansvar og avhengigheter før den operative overgangen.",
+  "",
+  "- Bekreft løsningsomfang, akseptansekriterier og ansvar med kunden.",
+  "- Verifiser migreringsdata, sikkerhetskontroller og driftsprosedyrer.",
+  "- Dokumenter beslutningsgrunnlaget for neste fase og lukk kritiske avvik.",
+].join("\n");
+
+test("dated go-live sources require rollout, handover and post-go-live closure", () => {
+  const report = validateGeneratedArtifact({
+    artifactType: "gjennomforing_og_risiko",
+    title: "Fremdriftsplan",
+    contentMarkdown: substantialDeliveryPhase,
+    sourceText: datedGoLiveSource,
+  });
+
+  assert.equal(report.status, "fail");
+  assert.deepEqual(
+    report.issues.filter((issue) => /Fremdriftsplanen mangler/u.test(issue)),
+    [
+      "Fremdriftsplanen mangler produksjonsutrulling eller go-live, selv om kilden oppgir en eksplisitt go-live-dato.",
+      "Fremdriftsplanen mangler overlevering til drift eller forvaltning, selv om kilden oppgir en eksplisitt go-live-dato.",
+      "Fremdriftsplanen mangler hypercare, stabilisering eller avslutning, selv om kilden oppgir en eksplisitt go-live-dato.",
+    ],
+  );
+});
+
+test("Norwegian ordinary-operation date split across PDF lines activates the lifecycle gate", () => {
+  const report = validateGeneratedArtifact({
+    artifactType: "gjennomforing_og_risiko",
+    title: "Fremdriftsplan",
+    contentMarkdown: substantialDeliveryPhase,
+    sourceText: [
+      "Pilot skal starte 15. februar 2027, og ordinær drift",
+      "skal starte senest 1. april 2027.",
+    ].join("\n"),
+  });
+
+  assert.equal(report.status, "fail");
+  assert.equal(
+    report.issues.filter((issue) => /Fremdriftsplanen mangler/u.test(issue))
+      .length,
+    3,
+  );
+});
+
+test("dated go-live plans pass when every required transition is explicit", () => {
+  const report = validateGeneratedArtifact({
+    artifactType: "gjennomforing_og_risiko",
+    title: "Fremdriftsplan",
+    sourceText: datedGoLiveSource,
+    contentMarkdown: [
+      substantialDeliveryPhase,
+      "",
+      "## Fase 2: Produksjonsutrulling og go-live 15. november 2026",
+      "",
+      "Godkjent løsning settes i produksjon gjennom et kontrollert go/no-go.",
+      "",
+      "- Gjennomfør produksjonssetting med verifiserte rollback-kriterier.",
+      "- Bekreft kritiske arbeidsflyter og overvåking sammen med kunden.",
+      "- Registrer avvik og beslutning om videre drift.",
+      "",
+      "## Fase 3: Overlevering, hypercare og formell avslutning",
+      "",
+      "Leveransen stabiliseres og overføres til ordinær drift og forvaltning.",
+      "",
+      "- Gjennomfør kunnskapsoverføring og overlevering til driftsansvarlig.",
+      "- Følg opp løsningen i en avtalt hypercare-periode.",
+      "- Lukk restpunkter og dokumenter sluttgodkjenning før prosjektavslutning.",
+    ].join("\n"),
+  });
+
+  assert.equal(report.status, "pass");
+  assert.deepEqual(report.issues, []);
+});
+
+test("delivery milestone gate stays inactive without a dated go-live source", () => {
+  const report = validateGeneratedArtifact({
+    artifactType: "gjennomforing_og_risiko",
+    title: "Fremdriftsplan",
+    contentMarkdown: substantialDeliveryPhase,
+    sourceText: "Kontrakten skal signeres 15. november 2026.",
+  });
+
+  assert.equal(report.status, "pass");
+  assert.deepEqual(report.issues, []);
+});

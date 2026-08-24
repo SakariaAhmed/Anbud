@@ -2,13 +2,16 @@ import "server-only";
 
 export {
   createProject,
-  currentArtifactTypesFromAuthority,
   deleteProject,
   getProjectDetail,
-  getArtifactAuthoritySummary,
   getProjectShell,
   getProjectSnapshot,
   getProjectSourceRevision,
   listProjects,
   updateProjectMetadataFromInference,
-} from "@/lib/server/repositories/supabase-store";
+} from "@/lib/server/repositories/data-store";
+
+export {
+  currentArtifactTypesFromAuthority,
+  getArtifactAuthoritySummary,
+} from "@/lib/server/repositories/artifacts";

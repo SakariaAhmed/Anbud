@@ -18,10 +18,6 @@ const secretPatterns = [
     label: "Generic private key",
     pattern: /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/,
   },
-  {
-    label: "Supabase service role key",
-    pattern: /SUPABASE_SERVICE_ROLE_KEY\s*=\s*eyJ[A-Za-z0-9_-]{20,}/,
-  },
 ];
 
 const allowlistedFiles = new Set([".env.example"]);
@@ -208,7 +204,7 @@ function historyFindings() {
     ":(exclude)apps/frontend/node_modules/**",
   ];
   const highConfidencePattern =
-    "sk(-proj)?-[A-Za-z0-9_-]{30,}|-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|SUPABASE_SERVICE_ROLE_KEY[[:space:]]*=[[:space:]]*eyJ[A-Za-z0-9_-]{20,}";
+    "sk(-proj)?-[A-Za-z0-9_-]{30,}|-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----";
   const envAssignmentPattern =
     "^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*(API_KEY|SERVICE_ROLE_KEY|SECRET|TOKEN|PASSWORD|PASS|PRIVATE_KEY|ENCRYPTION_KEY)[A-Za-z0-9_]*[[:space:]]*=";
   const rawLines = [

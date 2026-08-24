@@ -1,21 +1,31 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { summarizeServiceDocumentForAi } from "@/lib/server/ai";
 import { enforceServiceDescriptionWriteRateLimit } from "@/lib/server/api-responses";
+import {
+  authorizationErrorResponse,
+  requireAdmin,
+} from "@/lib/server/authorization";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
-  getServiceDescription,
+  MultipartRequestError,
+  parseBoundedMultipartFormData,
+} from "@/lib/server/multipart";
+import {
+  getServiceDescriptionMetadata,
   listServiceDescriptions,
   saveServiceDocument,
   updateServiceDocumentAiSummary,
   upsertServiceDescription,
 } from "@/lib/server/repositories/services";
 import type { ServiceDocument } from "@/lib/types";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=300, stale-while-revalidate=1800",
 };
 const MAX_SERVICE_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 
 export async function GET() {
   try {
@@ -24,10 +34,10 @@ export async function GET() {
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke hente tjenestebeskrivelser.",
+        error: productionSafeErrorMessage(
+          error,
+          "Kunne ikke hente tjenestebeskrivelser.",
+        ),
       },
       { status: 500 },
     );
@@ -36,6 +46,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    await requireAdmin();
     const limited = await enforceServiceDescriptionWriteRateLimit(request);
     if (limited) {
       return limited;
@@ -44,12 +55,16 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") ?? "";
     if (!contentType.toLowerCase().includes("multipart/form-data")) {
       return NextResponse.json(
-        { error: "Opplastingen må sendes som skjemadata med filvedlegg." },
+        { error: "Tjenesten må sendes som skjemadata." },
         { status: 415 },
       );
     }
 
-    const formData = await request.formData();
+    const formData = await parseBoundedMultipartFormData(request, {
+      maxBodyBytes: MAX_SERVICE_UPLOAD_BYTES + MAX_MULTIPART_OVERHEAD_BYTES,
+      maxFileBytes: MAX_SERVICE_UPLOAD_BYTES,
+      maxFiles: 1,
+    });
     const file = formData.get("file");
     const serviceId = `${formData.get("service_id") || ""}`.trim();
     const name = `${formData.get("name") || ""}`.trim();
@@ -62,16 +77,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingService = serviceId
-      ? await getServiceDescription(serviceId)
-      : null;
-    const service = await upsertServiceDescription({
-      serviceId: serviceId || null,
-      name: name || existingService?.name || "",
-      description: description || existingService?.description || "",
-    });
-
-    let document: ServiceDocument | null = null;
+    let parsedFile: Awaited<ReturnType<typeof extractTextFromUpload>> | null =
+      null;
     if (file instanceof File) {
       if (file.size <= 0) {
         return NextResponse.json(
@@ -88,54 +95,77 @@ export async function POST(request: Request) {
           { status: 413 },
         );
       }
-      const parsed = await extractTextFromUpload(file, undefined, {
+      parsedFile = await extractTextFromUpload(file, undefined, {
         useDocling: false,
       });
-      if (!parsed.rawText.trim()) {
+      if (!parsedFile.rawText.trim()) {
         return NextResponse.json(
           { error: "Dokumentet har ingen lesbar tekst." },
           { status: 400 },
         );
       }
+    }
+
+    const existingService = serviceId
+      ? await getServiceDescriptionMetadata(serviceId)
+      : null;
+    const service = await upsertServiceDescription({
+      serviceId: serviceId || null,
+      name: name || existingService?.name || "",
+      description: description || existingService?.description || "",
+    });
+
+    let document: ServiceDocument | null = null;
+    if (file instanceof File && parsedFile) {
       document = await saveServiceDocument({
         serviceId: service.id,
         title:
           `${formData.get("title") || ""}`.trim() ||
           file.name.replace(/\.[^.]+$/, ""),
-        fileName: parsed.fileName,
-        fileFormat: parsed.fileFormat,
-        contentType: parsed.contentType,
+        fileName: parsedFile.fileName,
+        fileFormat: parsedFile.fileFormat,
+        contentType: parsedFile.contentType,
         fileSizeBytes: file.size,
-        fileBase64: parsed.fileBase64,
-        rawText: parsed.rawText,
-        structureMap: parsed.sourceMap,
+        fileBase64: parsedFile.fileBase64,
+        rawText: parsedFile.rawText,
+        structureMap: parsedFile.sourceMap,
       });
       const documentId = document.id;
-      void summarizeServiceDocumentForAi({
-        title: document.title,
-        fileName: document.file_name,
-        rawText: parsed.rawText,
-      })
-        .then((summary) =>
-          updateServiceDocumentAiSummary({
-            documentId,
-            aiSummary: summary,
-          }),
-        )
-        .catch(() => {
-          // Best-effort summary generation should not block upload.
-        });
+      const documentTitle = document.title;
+      const documentFileName = document.file_name;
+      const rawText = parsedFile.rawText;
+      after(async () => {
+        await summarizeServiceDocumentForAi({
+          title: documentTitle,
+          fileName: documentFileName,
+          rawText,
+        })
+          .then((summary) =>
+            updateServiceDocumentAiSummary({
+              documentId,
+              aiSummary: summary,
+            }),
+          )
+          .catch(() => {
+            // Best-effort summary generation should not block upload.
+          });
+      });
     }
 
     const services = await listServiceDescriptions();
     return NextResponse.json({ service, document, services }, { status: 201 });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
+    if (error instanceof MultipartRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke lagre tjenestebeskrivelsen.",
+        error: productionSafeErrorMessage(
+          error,
+          "Kunne ikke lagre tjenestebeskrivelsen.",
+        ),
       },
       { status: 500 },
     );

@@ -1,0 +1,1147 @@
+{
+  "version": "document-analysis-stress.v1",
+  "locale": "nb-NO",
+  "generated_at": "2026-07-23",
+  "documents": [
+    {
+      "id": "fjordhavn-port-operations",
+      "title": "Arbeidsgrunnlag - samordnet havnedrift og portlogistikk",
+      "client": "Fjordhavn Kommunale Havn KF",
+      "sector": "Havn og logistikk",
+      "pages": [
+        {
+          "layout": "full",
+          "blocks": [
+            {
+              "type": "cover",
+              "label": "ARBEIDSGRUNNLAG / IKKE REDIGERT",
+              "text": "Samordnet havnedrift og portlogistikk. Sammensatt av driftsnotat, e-postutdrag og kommersielle føringer. Versjon 0.7, 6. august 2026."
+            },
+            {
+              "type": "memo",
+              "label": "Fra mandagsmøtet - drift",
+              "text": "Fjordhavn Kommunale Havn KF driver tre terminaler og håndterer om lag 1,8 millioner tonn gods i året. Port, kai og gate er bemannet hele døgnet. I dag ligger anløpsplan, adgang, kranstatus og avvik i ulike skjermbilder. Vaktsjefen bruker ofte telefon og regneark for å få et samlet bilde."
+            },
+            {
+              "type": "note",
+              "label": "Effekt som styret har låst",
+              "text": "Gjennomsnittlig behandlingstid for lastebil ved gate skal ned fra 42 minutter til høyst 25 minutter innen 1. mars 2027. Målingen gjelder fra registrert ankomst til godkjent utpassering."
+            },
+            {
+              "type": "email",
+              "label": "E-post: havnedirektør -> anskaffelse",
+              "text": "Vi trenger ett operativt situasjonsbilde for anløp, kai, gate og farlig gods. Det må fungere på nettbrett i felt og på kontrollromsskjerm. Ikke skriv at vi har bestemt offentlig sky; driftsmodell skal begrunnes av leverandøren. Biometri er heller ikke bestilt."
+            },
+            {
+              "type": "paragraph",
+              "label": "Integrasjoner nevnt i rommet",
+              "text": "Løsningen må hente eller utveksle data med 11 kildesystemer. Listen omfatter terminaloperativt system, AIS-strøm, adgangskontroll, kran-PLC via eksisterende gateway, værstasjon, fakturagrunnlag og fem mindre fagsystemer. Grensesnittet mot det terminaloperative systemet er dokumentert som SOAP, men forvalter mener deler kan være proprietære."
+            }
+          ]
+        },
+        {
+          "layout": "two_column",
+          "blocks": [
+            {
+              "type": "memo",
+              "label": "Teknisk tavle - uten prioriteringsrekkefølge",
+              "text": "Operativt dashbord skal oppdatere synlige hendelser på under 5 sekunder. Eksterne aktører skal få et dokumentert API med hendelsesabonnement. Løsningen skal støtte minst 180 samtidige interne brukere og 600 eksterne transportørkontoer."
+            },
+            {
+              "type": "note",
+              "label": "Sikkerhet",
+              "text": "Produksjonsdata skal behandles i Norge. MFA og rollebasert tilgang er obligatorisk. Administrative handlinger og endringer i adgangsregler skal kunne revideres i 7 år. Kritiske sårbarheter skal ha korrigerende tiltak innen 72 timer."
+            },
+            {
+              "type": "email",
+              "label": "E-post: beredskapsleder",
+              "text": "For den operative kjernen er RTO 2 timer og RPO 15 minutter. Ved bortfall av sentral løsning skal gate kunne arbeide lokalt i minst 4 timer og etterregistrere hendelser uten doble passeringer."
+            },
+            {
+              "type": "paragraph",
+              "label": "Tilgjengelighet - to formuleringer",
+              "text": "Driftsavtalen sier 99,95 prosent tilgjengelighet per kalendermåned for operativ kjerne. Et eldre møtereferat sier at planlagt vedlikehold på inntil 4 timer per måned holdes utenfor. Juridisk notat i margen sier at dette unntaket ikke er avklart og må prises som et alternativ."
+            },
+            {
+              "type": "note",
+              "label": "Kameraomfang",
+              "text": "Sikkerhetslisten omtaler 14 eksisterende gatekameraer. Regnearket fra terminal Nord har 18 linjer. Det er uavklart om fire av dem er reservekameraer eller del av leveransen."
+            },
+            {
+              "type": "paragraph",
+              "label": "Leveranseløp",
+              "text": "Først skal leverandøren levere prosesskart og integrasjonsdesign. Pilot ved terminal Nord skal være akseptert 15. desember 2026. Produksjonssetting for alle tre terminaler er 1. mars 2027. Opplæring må gjennomføres på alle skift før hver lokal produksjonssetting."
+            }
+          ]
+        },
+        {
+          "layout": "mixed",
+          "blocks": [
+            {
+              "type": "pseudo_table",
+              "label": "Anskaffelsesdatoer - kopiert fra e-post",
+              "rows": [
+                ["Siste frist for spørsmål", "18.08.2026 kl. 12.00"],
+                ["Tilbudsfrist", "02.09.2026 kl. 12.00 CEST"],
+                ["Demonstrasjoner", "15.-17.09.2026"],
+                ["Planlagt tildeling", "05.10.2026"]
+              ]
+            },
+            {
+              "type": "pseudo_table",
+              "label": "Evaluering",
+              "rows": [
+                ["Løsningsforståelse og funksjon", "35 %"],
+                ["Gjennomføring og innføring", "25 %"],
+                ["Sikkerhet og beredskap", "20 %"],
+                ["Pris", "20 %"]
+              ]
+            },
+            {
+              "type": "note",
+              "label": "Minstekrav i evalueringen",
+              "text": "Tilbudet må få minst 70 av 100 poeng på løsningsforståelse. Sikkerhetskravene vurderes bestått eller ikke bestått før samlet rangering."
+            },
+            {
+              "type": "memo",
+              "label": "Økonomi - finansnotat",
+              "text": "Kostnadsrammen er 18,5 millioner kroner ekskl. merverdiavgift for etablering og fire års drift. Opsjon på forlengelse er 1 + 1 år. Drift, overvåking og ordinære oppgraderinger skal inngå. Fakturering skjer netto 30 dager etter godkjent milepæl. Årlig prisregulering kan ikke overstige 4 prosent."
+            },
+            {
+              "type": "paragraph",
+              "label": "Forbehold som må frem i tilbudsstrategien",
+              "text": "Fagforeningen vil se opplæringsplanen før pilot. Mudringsarbeid kan redusere tilgangen til terminal Nord i november. Eierskap til integrasjonsendringer i det gamle terminaloperative systemet er ikke avklart. Leverandøren må skille disse avhengighetene fra egne leveranser."
+            }
+          ]
+        }
+      ],
+      "answer_key": {
+        "profile": [
+          {
+            "id": "profile-client-scale",
+            "statement": "Fjordhavn Kommunale Havn KF driver tre terminaler og håndterer ca. 1,8 millioner tonn gods årlig.",
+            "required_term_groups": [["fjordhavn"], ["tre terminaler", "3 terminaler"], ["1,8 millioner"]]
+          },
+          {
+            "id": "profile-current-state",
+            "statement": "Dagens operative informasjon er fragmentert, og vaktsjefen bruker telefon og regneark.",
+            "required_term_groups": [["fragmentert", "ulike skjermbilder", "flere systemer"], ["telefon"], ["regneark"]]
+          }
+        ],
+        "goals": [
+          {
+            "id": "goal-gate-time",
+            "statement": "Redusere gatebehandling fra 42 til maksimalt 25 minutter innen 1. mars 2027.",
+            "required_term_groups": [["42"], ["25"], ["1. mars 2027"]]
+          },
+          {
+            "id": "goal-situational-awareness",
+            "statement": "Etablere ett operativt situasjonsbilde for anløp, kai, gate og farlig gods.",
+            "required_term_groups": [["operativt situasjonsbilde"], ["anløp"], ["gate"], ["farlig gods"]]
+          }
+        ],
+        "requirements": [
+          {
+            "id": "requirement-integrations",
+            "statement": "Integrere 11 kildesystemer, inkludert terminaloperativt system og AIS.",
+            "required_term_groups": [["11"], ["terminaloperativ"], ["ais"]]
+          },
+          {
+            "id": "requirement-performance",
+            "statement": "Synlige operative hendelser skal oppdateres på under 5 sekunder.",
+            "required_term_groups": [["under 5 sekunder", "mindre enn 5 sekunder"]]
+          },
+          {
+            "id": "requirement-security",
+            "statement": "Produksjonsdata behandles i Norge, med MFA, RBAC og 7 års revisjonsspor.",
+            "required_term_groups": [["norge"], ["mfa"], ["rollebasert", "rbac"], ["7 år"]]
+          },
+          {
+            "id": "requirement-recovery",
+            "statement": "Operativ kjerne har RTO 2 timer, RPO 15 minutter og lokal gatedrift i minst 4 timer.",
+            "required_term_groups": [["rto", "gjenoppretting"], ["2 timer"], ["rpo"], ["15 minutter"], ["4 timer"]]
+          }
+        ],
+        "deadlines": [
+          {
+            "id": "deadline-bid",
+            "statement": "Tilbudsfrist er 2. september 2026 kl. 12.00 CEST.",
+            "required_term_groups": [["2. september 2026", "02.09.2026"], ["12.00"], ["cest"]]
+          },
+          {
+            "id": "deadline-pilot-production",
+            "statement": "Pilot terminal Nord 15. desember 2026 og produksjon alle terminaler 1. mars 2027.",
+            "required_term_groups": [["15. desember 2026"], ["1. mars 2027"]]
+          }
+        ],
+        "commercial": [
+          {
+            "id": "commercial-cap",
+            "statement": "Ramme 18,5 millioner kroner ekskl. mva. for etablering og fire års drift.",
+            "required_term_groups": [["18,5 millioner"], ["fire års drift", "4 års drift"], ["ekskl", "uten merverdiavgift"]]
+          },
+          {
+            "id": "commercial-options-payment",
+            "statement": "Opsjon 1 + 1 år, netto 30 og maks 4 prosent årlig prisregulering.",
+            "required_term_groups": [["1 + 1", "1+1"], ["netto 30"], ["4 prosent"]]
+          }
+        ],
+        "evaluation": [
+          {
+            "id": "evaluation-weights",
+            "statement": "35 prosent løsning, 25 prosent gjennomføring, 20 prosent sikkerhet og 20 prosent pris.",
+            "required_term_groups": [["35"], ["25"], ["sikkerhet"], ["pris"]]
+          },
+          {
+            "id": "evaluation-gates",
+            "statement": "Minst 70/100 på løsning og sikkerhet bestått før rangering.",
+            "required_term_groups": [["70"], ["bestått"], ["sikkerhet"]]
+          }
+        ],
+        "risks": [
+          {
+            "id": "risk-legacy-interface",
+            "statement": "Proprietært eller uklart grensesnitt og eierskap i gammelt terminaloperativt system kan forsinke integrasjonen.",
+            "required_term_groups": [["terminaloperativ"], ["proprietær", "eierskap", "grensesnitt"]]
+          },
+          {
+            "id": "risk-pilot-access",
+            "statement": "Mudring kan redusere tilgang til terminal Nord før pilot.",
+            "required_term_groups": [["mudring"], ["terminal nord"], ["tilgang"]]
+          }
+        ],
+        "ambiguities": [
+          {
+            "id": "ambiguity-maintenance",
+            "statement": "Avklar om fire timer planlagt vedlikehold skal holdes utenfor SLA.",
+            "required_term_groups": [["planlagt vedlikehold"], ["4 timer", "fire timer"], ["avklar", "?"]]
+          },
+          {
+            "id": "ambiguity-cameras",
+            "statement": "Avklar om leveransen omfatter 14 eller 18 kameraer.",
+            "required_term_groups": [["14"], ["18"], ["kamera"], ["avklar", "?"]]
+          }
+        ],
+        "solution_direction": [
+          {
+            "id": "solution-unified-operations",
+            "statement": "Anbefal integrasjonsdrevet operativ plattform med sanntidsoversikt, robust lokal gatedrift og kildeadresserte hendelser.",
+            "required_term_groups": [["integrasjon"], ["operativ"], ["lokal", "offline"], ["gate"]]
+          }
+        ],
+        "must_not_claim": [
+          "offentlig sky er obligatorisk",
+          "biometrisk autentisering er obligatorisk",
+          "kameraomfanget er definitivt 18"
+        ]
+      }
+    },
+    {
+      "id": "niva-health-scheduling",
+      "title": "Saksmappe - pasientflyt, timebestilling og digital oppfolging",
+      "client": "Niva Helsepartner AS",
+      "sector": "Private helsetjenester",
+      "pages": [
+        {
+          "layout": "mixed",
+          "blocks": [
+            {
+              "type": "cover",
+              "label": "SAMMENSTILT SAKSMAPPE",
+              "text": "Pasientflyt, timebestilling og digital oppfølging. Utdrag fra klinikkledermøte, personvernnotat, økonomi-e-post og teknisk workshop. 11. september 2026."
+            },
+            {
+              "type": "memo",
+              "label": "Virksomheten slik klinikklederne beskrev den",
+              "text": "Niva Helsepartner AS har 12 klinikker, rundt 480 ansatte og omtrent 210 000 konsultasjoner per år. Telefon, webskjema og lokale arbeidslister brukes ulikt. Pasienter får derfor ulike svar avhengig av klinikk, og ledelsen mangler en samlet kapasitetsprognose."
+            },
+            {
+              "type": "note",
+              "label": "Resultatmål - må ikke omskrives til ambisjon",
+              "text": "Andel pasienter som ikke møter skal ned fra 9,4 prosent til høyst 5,5 prosent innen fjerde kvartal 2027. Gjennomsnittlig behandlingstid for en bestillingshenvendelse skal ned fra 7 minutter og 20 sekunder til under 4 minutter."
+            },
+            {
+              "type": "email",
+              "label": "E-post: medisinsk direktør",
+              "text": "Vi ønsker én inngang for bestilling, endring, påminnelse og digital oppfølging, men akutte henvendelser skal fortsatt styres til klinisk triage. Leverandøren skal ikke automatisere medisinske beslutninger. Prosjektet gjelder administrativ pasientflyt."
+            },
+            {
+              "type": "paragraph",
+              "label": "Datamengder på tavlen",
+              "text": "Migreringen omfatter ca. 1,2 millioner historiske avtaler og 85 000 aktive samtykkeregistreringer. Dubletter må håndteres uten at gyldig samtykke overskrives. Kildeeier skal godkjenne avstemmingsrapporten før produksjonssetting."
+            }
+          ]
+        },
+        {
+          "layout": "two_column",
+          "blocks": [
+            {
+              "type": "memo",
+              "label": "Integrasjonslapper",
+              "text": "Løsningen skal integreres med CareCore PAS, Norsk Helsenett-meldinger, Vipps-betaling, eksisterende kontaktsenter og SMS-leverandør. Leverandøren av CareCore har varslet begrenset kapasitet i januar og februar 2027."
+            },
+            {
+              "type": "note",
+              "label": "Personvern og sikkerhet",
+              "text": "Personopplysninger skal lagres og behandles i EØS. Data krypteres i transport og hvile. Tilgang skal følge tjenstlig behov, sterk autentisering og sporbar administrasjon. Logg for oppslag i pasientrelaterte data skal bevares i 10 år."
+            },
+            {
+              "type": "email",
+              "label": "E-post: driftsansvarlig",
+              "text": "For bestillingstjenesten gjelder 99,9 prosent tilgjengelighet per måned, RTO 4 timer og RPO 30 minutter. Påminnelser som allerede er sendt må ikke sendes på nytt etter gjenoppretting."
+            },
+            {
+              "type": "paragraph",
+              "label": "Pilot og leveranser",
+              "text": "To klinikker skal delta i pilot fra 3. mai 2027. Migreringsprøve og personvernkonsekvensvurdering skal godkjennes før piloten. Alle 12 klinikker skal være satt i produksjon senest 1. november 2027. Opplæring skal tilbys på norsk og engelsk."
+            },
+            {
+              "type": "note",
+              "label": "Tre åpne lapper fra personvernmøtet",
+              "text": "Avklar hvem som kan samtykke for mindreårige. Avklar om samtaleopptak i kontaktsenteret inngår, og i så fall lagringstid. Avklar om dagens SMS-leverandør skal beholdes eller konkurranseutsettes som del av leveransen."
+            },
+            {
+              "type": "paragraph",
+              "label": "Kapasitet",
+              "text": "Normal last er 350 samtidige ansatte og opptil 4 000 pasienthandlinger per time. I influensasesong skal løsningen tåle 8 000 handlinger per time i to timer uten tap av bekreftede bestillinger."
+            }
+          ]
+        },
+        {
+          "layout": "full",
+          "blocks": [
+            {
+              "type": "pseudo_table",
+              "label": "Frister",
+              "rows": [
+                ["Spørsmål fra leverandører", "09.10.2026 kl. 14.00"],
+                ["Tilbudsfrist", "23.10.2026 kl. 12.00"],
+                ["Dialogmøter", "02.-04.11.2026"],
+                ["Planlagt kontrakt", "14.12.2026"]
+              ]
+            },
+            {
+              "type": "memo",
+              "label": "Kommersielt notat - CFO",
+              "text": "Samlet kostnadstak er 22 millioner kroner ekskl. merverdiavgift de første tre årene. Av dette kan etablering ikke overstige 12 millioner kroner. Estimert årlig forvaltning er 3,2 millioner, men leverandøren skal prise trinn for volum. Betaling: 20 prosent etter design, 30 prosent etter pilot, 30 prosent etter full utrulling og 20 prosent etter tre måneders stabil drift."
+            },
+            {
+              "type": "pseudo_table",
+              "label": "Tildeling",
+              "rows": [
+                ["Pasient- og brukerreise", "30 %"],
+                ["Integrasjon og informasjonssikkerhet", "30 %"],
+                ["Gjennomføring", "20 %"],
+                ["Treårig totalkostnad", "20 %"]
+              ]
+            },
+            {
+              "type": "note",
+              "label": "Før rangering",
+              "text": "Personvernkonsept og migreringsmetode må vurderes som forsvarlig. Tilbud som foreslår automatisert medisinsk triage som del av grunnleveransen skal avvises som utenfor omfang."
+            },
+            {
+              "type": "paragraph",
+              "label": "Risikobildet fra programleder",
+              "text": "Største avhengighet er kapasitet hos CareCore-leverandøren. Ulik arbeidspraksis mellom klinikkene kan gi lav adopsjon. Dårlig dublettkontroll kan koble avtaler til feil samtykke. Influensasesongen gjør produksjonssetting etter november uønsket."
+            }
+          ]
+        }
+      ],
+      "answer_key": {
+        "profile": [
+          {
+            "id": "profile-client-scale",
+            "statement": "Niva Helsepartner har 12 klinikker, ca. 480 ansatte og ca. 210 000 konsultasjoner per år.",
+            "required_term_groups": [["niva helsepartner"], ["12 klinikker"], ["480"], ["210 000"]]
+          },
+          {
+            "id": "profile-fragmented-flow",
+            "statement": "Bestilling håndteres ulikt via telefon, webskjema og lokale arbeidslister.",
+            "required_term_groups": [["telefon"], ["webskjema"], ["arbeidslister"]]
+          }
+        ],
+        "goals": [
+          {
+            "id": "goal-no-show",
+            "statement": "Redusere ikke-møtt fra 9,4 til maks 5,5 prosent innen Q4 2027.",
+            "required_term_groups": [["9,4"], ["5,5"], ["2027"]]
+          },
+          {
+            "id": "goal-handling-time",
+            "statement": "Redusere bestillingsbehandling fra 7 min 20 sek til under 4 minutter.",
+            "required_term_groups": [["7 minutter", "7 min"], ["20 sek"], ["under 4 minutter"]]
+          }
+        ],
+        "requirements": [
+          {
+            "id": "requirement-no-clinical-automation",
+            "statement": "Omfanget er administrativ pasientflyt; medisinske beslutninger og akutt triage skal ikke automatiseres.",
+            "required_term_groups": [["administrativ"], ["medisinske beslutninger", "medisinsk triage"], ["ikke automatiser", "skal ikke"]]
+          },
+          {
+            "id": "requirement-migration",
+            "statement": "Migrere 1,2 millioner avtaler og 85 000 aktive samtykker med avstemming.",
+            "required_term_groups": [["1,2 millioner"], ["85 000"], ["samtykk"], ["avstemming"]]
+          },
+          {
+            "id": "requirement-security",
+            "statement": "Behandle data i EØS, kryptere data og bevare pasientoppslagslogger i 10 år.",
+            "required_term_groups": [["eøs"], ["krypter"], ["10 år"], ["logg"]]
+          },
+          {
+            "id": "requirement-recovery",
+            "statement": "99,9 prosent tilgjengelighet, RTO 4 timer og RPO 30 minutter uten doble påminnelser.",
+            "required_term_groups": [["99,9"], ["rto"], ["4 timer"], ["rpo"], ["30 minutter"], ["påminnelser"]]
+          }
+        ],
+        "deadlines": [
+          {
+            "id": "deadline-bid",
+            "statement": "Tilbudsfrist 23. oktober 2026 kl. 12.00.",
+            "required_term_groups": [["23.10.2026", "23. oktober 2026"], ["12.00"]]
+          },
+          {
+            "id": "deadline-rollout",
+            "statement": "Pilot fra 3. mai 2027 og alle klinikker i produksjon senest 1. november 2027.",
+            "required_term_groups": [["3. mai 2027"], ["1. november 2027"]]
+          }
+        ],
+        "commercial": [
+          {
+            "id": "commercial-cap",
+            "statement": "22 millioner kroner over tre år, med maks 12 millioner til etablering.",
+            "required_term_groups": [["22 millioner"], ["tre år", "3 år"], ["12 millioner"], ["etablering"]]
+          },
+          {
+            "id": "commercial-milestones",
+            "statement": "Betalingsplan 20/30/30/20 prosent knyttet til design, pilot, utrulling og stabil drift.",
+            "required_term_groups": [["20 prosent"], ["30 prosent"], ["pilot"], ["stabil drift"]]
+          }
+        ],
+        "evaluation": [
+          {
+            "id": "evaluation-weights",
+            "statement": "30 prosent brukerreise, 30 prosent integrasjon/sikkerhet, 20 prosent gjennomføring og 20 prosent TCO.",
+            "required_term_groups": [["brukerreise"], ["integrasjon"], ["sikkerhet"], ["gjennomføring"], ["totalkostnad", "tco"]]
+          }
+        ],
+        "risks": [
+          {
+            "id": "risk-carecore",
+            "statement": "Begrenset kapasitet hos CareCore-leverandøren kan forsinke integrasjon og pilot.",
+            "required_term_groups": [["carecore"], ["kapasitet"], ["forsink", "risiko", "avhengighet"]]
+          },
+          {
+            "id": "risk-consent-linking",
+            "statement": "Mangelfull dublettkontroll kan koble avtaler til feil samtykke.",
+            "required_term_groups": [["dublett"], ["feil samtykke", "samtykke"], ["risiko", "kan"]]
+          }
+        ],
+        "ambiguities": [
+          {
+            "id": "ambiguity-minors",
+            "statement": "Avklar hvem som kan samtykke for mindreårige.",
+            "required_term_groups": [["mindreårige"], ["samtykke"], ["avklar", "?"]]
+          },
+          {
+            "id": "ambiguity-recordings-sms",
+            "statement": "Avklar om samtaleopptak og dagens SMS-leverandør inngår.",
+            "required_term_groups": [["samtaleopptak"], ["sms"], ["avklar", "?"]]
+          }
+        ],
+        "solution_direction": [
+          {
+            "id": "solution-admin-flow",
+            "statement": "Anbefal felles administrativ pasientflyt med integrasjonslag, samtykkekontroll og skalerbar påminnelsesmotor.",
+            "required_term_groups": [["pasientflyt"], ["integrasjon"], ["samtykke"], ["påminnelse"]]
+          }
+        ],
+        "must_not_claim": [
+          "automatisert medisinsk triage er del av leveransen",
+          "pasientdata kan lagres utenfor EØS",
+          "alle klinikker har identisk arbeidsprosess"
+        ]
+      }
+    },
+    {
+      "id": "frostmat-cold-chain",
+      "title": "Beslutningsunderlag - kaldkjede, prognose og sporbar vareflyt",
+      "client": "FrostMat Distribusjon AS",
+      "sector": "Matdistribusjon og kaldkjede",
+      "pages": [
+        {
+          "layout": "full",
+          "blocks": [
+            {
+              "type": "cover",
+              "label": "BESLUTNINGSUNDERLAG - FELTNOTATER INKLUDERT",
+              "text": "Kaldkjede, prognose og sporbar vareflyt. Kildene er driftslogg, revisjonsfunn, økonominotat og leverandørdialog. 19. januar 2027."
+            },
+            {
+              "type": "memo",
+              "label": "Hvem vi er / hva som svikter",
+              "text": "FrostMat Distribusjon AS leverer kjøle- og frysevarer fra seks lagre med 320 biler. Normalvolumet er rundt 14 000 ordrelinjer per dag. Prognose gjøres delvis i regneark, temperaturalarmer håndteres i flere portaler, og lagerbytte mister ofte informasjon om holdbarhet."
+            },
+            {
+              "type": "note",
+              "label": "Tre styringsmål, godkjent i ledergruppen",
+              "text": "Matsvinn skal ned fra 2,8 til høyst 1,8 prosent. Prognosenøyaktighet skal opp fra 68 til minst 82 prosent. Levering i tide og komplett skal opp fra 91,5 til 97 prosent. Alle tre mål skal være nådd innen 30. september 2027."
+            },
+            {
+              "type": "email",
+              "label": "E-post: kvalitetsdirektør",
+              "text": "Ved tilbakekalling må vi kunne spore parti fra mottak til kunde på under 15 minutter. Systemet må vise temperaturbrudd og hvilke ordre som kan være berørt, men kvalitetsansvarlig beslutter alltid faktisk sperring."
+            },
+            {
+              "type": "paragraph",
+              "label": "Omfang uten pen kravliste",
+              "text": "Plattformen skal samle ordre, lagerbeholdning, prognoser, ruteplan og målinger fra 23 typer temperatursensorer. SAP S/4HANA, de tre WMS-instansene, transportstyring og leverandørportalen inngår. Sensorer rapporterer minst hvert 60. sekund."
+            }
+          ]
+        },
+        {
+          "layout": "two_column",
+          "blocks": [
+            {
+              "type": "memo",
+              "label": "Alarm og felt",
+              "text": "Et bekreftet temperaturavvik skal varsles til vakt innen 2 minutter. Lageret skal kunne registrere mottak, plukk og avvik lokalt i 8 timer ved nettutfall. Synkronisering skal bevare original tid og hindre doble lagerbevegelser."
+            },
+            {
+              "type": "note",
+              "label": "Beredskap",
+              "text": "For ekspedisjon og ruteplan gjelder RTO 1 time og RPO 5 minutter. For historisk analyse er gjenoppretting innen 24 timer akseptabelt. Sporbarhetsdata skal bevares i 5 år."
+            },
+            {
+              "type": "email",
+              "label": "E-post: innkjøp",
+              "text": "Pilotlager er Gardermoen og Trondheim. Pilotaksept er satt til 1. juni 2027. Alle seks lagre og flåtestyring skal være i produksjon 30. september 2027. Unngå produksjonssetting i uke 47-52."
+            },
+            {
+              "type": "paragraph",
+              "label": "Datakvalitet",
+              "text": "Samme varenummer finnes med ulike holdbarhetskoder i WMS-instansene. Sensorregisteret mangler plassering for cirka 7 prosent av enhetene. Leverandøren skal foreslå avviksprosess, men ikke endre masterdata uten godkjenning."
+            },
+            {
+              "type": "note",
+              "label": "Åpent punkt - må ikke gjettes",
+              "text": "Det er ikke bestemt om sjåførappen skal erstatte dagens håndterminal eller bare motta temperaturvarsler. Det er heller ikke avklart hvem som betaler utskifting av sensorer som bare støtter proprietær protokoll."
+            },
+            {
+              "type": "paragraph",
+              "label": "Sesonglast",
+              "text": "Normal last er 14 000 ordrelinjer per dag. Før jul kan volumet være 28 000. Løsningen skal håndtere toppvolum uten å øke alarmforsinkelsen over 2 minutter."
+            }
+          ]
+        },
+        {
+          "layout": "mixed",
+          "blocks": [
+            {
+              "type": "pseudo_table",
+              "label": "Anskaffelsesløp",
+              "rows": [
+                ["Frist spørsmål", "12.02.2027 kl. 12.00"],
+                ["Tilbudsfrist", "26.02.2027 kl. 12.00"],
+                ["Løsningsverksted", "08.-10.03.2027"],
+                ["Kontraktsignering", "29.03.2027"]
+              ]
+            },
+            {
+              "type": "memo",
+              "label": "Økonomi - utkast",
+              "text": "Etablering kan ikke overstige 8,5 millioner kroner. Årlig abonnement og forvaltning kan ikke overstige 3,2 millioner kroner ved normalvolum. Femårig estimert kontraktsverdi er 26 millioner ekskl. merverdiavgift. Ekstra sensorgateway og et sjuende lager prises som opsjoner. Netto 45 dager."
+            },
+            {
+              "type": "pseudo_table",
+              "label": "Vekter",
+              "rows": [
+                ["Funksjon og sporbarhet", "40 %"],
+                ["Innføring og datamigrering", "25 %"],
+                ["Femårig totalkostnad", "20 %"],
+                ["Dokumentert bærekraftseffekt", "15 %"]
+              ]
+            },
+            {
+              "type": "note",
+              "label": "Kvalifikasjonsgrense",
+              "text": "Sporingsøvelsen må dokumentere parti til kunde på under 15 minutter. Resultatet er en absolutt bestått/ikke bestått-port før poengsetting."
+            },
+            {
+              "type": "paragraph",
+              "label": "Risikomøte",
+              "text": "Ufullstendig sensorregister kan gi feil alarmmottaker. Ulik masterdata kan gi feil prognose. Produksjonssetting nær julesesong kan påvirke leveringspresisjon. Kvalitetsdirektøren krever derfor trinnvis datavalidering og eksplisitt rollback."
+            }
+          ]
+        }
+      ],
+      "answer_key": {
+        "profile": [
+          {
+            "id": "profile-scale",
+            "statement": "FrostMat har seks lagre, 320 biler og ca. 14 000 ordrelinjer daglig.",
+            "required_term_groups": [["frostmat"], ["seks lagre", "6 lagre"], ["320"], ["14 000"]]
+          },
+          {
+            "id": "profile-fragmentation",
+            "statement": "Prognoser, temperaturalarmer og holdbarhetsinformasjon er fragmentert.",
+            "required_term_groups": [["prognose"], ["temperaturalarm"], ["holdbarhet"], ["fragment", "flere portaler", "regneark"]]
+          }
+        ],
+        "goals": [
+          {
+            "id": "goal-three-metrics",
+            "statement": "Innen 30. september 2027: matsvinn maks 1,8 prosent, prognosenøyaktighet minst 82 prosent og OTIF 97 prosent.",
+            "required_term_groups": [["30. september 2027"], ["1,8"], ["82"], ["97"]]
+          }
+        ],
+        "requirements": [
+          {
+            "id": "requirement-traceability",
+            "statement": "Spore parti fra mottak til kunde på under 15 minutter; kvalitetsansvarlig beslutter sperring.",
+            "required_term_groups": [["under 15 minutter"], ["parti"], ["kunde"], ["kvalitetsansvarlig", "beslutter sperring"]]
+          },
+          {
+            "id": "requirement-integrations",
+            "statement": "Samle SAP S/4HANA, tre WMS, TMS, portal og 23 sensortyper med måling minst hvert 60. sekund.",
+            "required_term_groups": [["sap"], ["tre wms", "3 wms", "wms-instans"], ["23"], ["60. sekund", "60 sek"]]
+          },
+          {
+            "id": "requirement-offline",
+            "statement": "Temperaturvarsel innen 2 minutter og lokal lagerdrift i 8 timer.",
+            "required_term_groups": [["2 minutter"], ["8 timer"], ["lokal", "nettutfall", "offline"]]
+          },
+          {
+            "id": "requirement-recovery",
+            "statement": "Ekspedisjon og ruteplan har RTO 1 time og RPO 5 minutter; sporbarhetsdata lagres 5 år.",
+            "required_term_groups": [["rto"], ["1 time"], ["rpo"], ["5 minutter"], ["5 år"]]
+          }
+        ],
+        "deadlines": [
+          {
+            "id": "deadline-bid",
+            "statement": "Tilbudsfrist 26. februar 2027 kl. 12.00.",
+            "required_term_groups": [["26.02.2027", "26. februar 2027"], ["12.00"]]
+          },
+          {
+            "id": "deadline-rollout",
+            "statement": "Pilotaksept 1. juni og full produksjon 30. september 2027.",
+            "required_term_groups": [["1. juni 2027"], ["30. september 2027"]]
+          }
+        ],
+        "commercial": [
+          {
+            "id": "commercial-limits",
+            "statement": "Etablering maks 8,5 millioner, årlig drift maks 3,2 millioner og femårig verdi 26 millioner kroner.",
+            "required_term_groups": [["8,5 millioner"], ["3,2 millioner"], ["26 millioner"], ["femår", "5 år"]]
+          },
+          {
+            "id": "commercial-options",
+            "statement": "Sensorgateway og sjuende lager er opsjoner; betalingsfrist netto 45.",
+            "required_term_groups": [["sensorgateway"], ["sjuende lager", "7. lager"], ["opsjon"], ["netto 45"]]
+          }
+        ],
+        "evaluation": [
+          {
+            "id": "evaluation-weights",
+            "statement": "40 prosent funksjon, 25 prosent innføring, 20 prosent TCO og 15 prosent bærekraft.",
+            "required_term_groups": [["40"], ["25"], ["20"], ["15"], ["bærekraft"]]
+          },
+          {
+            "id": "evaluation-gate",
+            "statement": "Sporingsøvelse under 15 minutter er absolutt bestått-port.",
+            "required_term_groups": [["sporingsøvelse"], ["15 minutter"], ["bestått"]]
+          }
+        ],
+        "risks": [
+          {
+            "id": "risk-data-quality",
+            "statement": "Ufullstendig sensorregister og ulik masterdata kan gi feil alarmer og prognoser.",
+            "required_term_groups": [["sensorregister"], ["masterdata"], ["alarm"], ["prognose"]]
+          },
+          {
+            "id": "risk-season",
+            "statement": "Produksjonssetting nær julesesong kan svekke leveringspresisjon.",
+            "required_term_groups": [["julesesong", "uke 47", "uke 52"], ["produksjonssetting"], ["leveringspresisjon", "risiko"]]
+          }
+        ],
+        "ambiguities": [
+          {
+            "id": "ambiguity-driver-app",
+            "statement": "Avklar om sjåførappen erstatter håndterminalen.",
+            "required_term_groups": [["sjåførapp"], ["håndterminal"], ["avklar", "?"]]
+          },
+          {
+            "id": "ambiguity-sensor-cost",
+            "statement": "Avklar hvem som betaler utskifting av proprietære sensorer.",
+            "required_term_groups": [["hvem"], ["betaler"], ["sensor"], ["proprietær"]]
+          }
+        ],
+        "solution_direction": [
+          {
+            "id": "solution-cold-chain",
+            "statement": "Anbefal hendelsesdrevet kaldkjedeplattform med datakvalitetskontroll, lokal lagerbuffer og sporbarhetsgraf.",
+            "required_term_groups": [["kaldkjede"], ["datakvalitet"], ["lokal", "offline"], ["sporbarhet"]]
+          }
+        ],
+        "must_not_claim": [
+          "systemet skal automatisk beslutte varesperring",
+          "sjåførappen skal definitivt erstatte håndterminalen",
+          "sensorutskifting er inkludert i fastprisen"
+        ]
+      }
+    },
+    {
+      "id": "vestbo-building-energy",
+      "title": "Programmappe - energioppfolging for eiendomsportefoljen",
+      "client": "Vestbo Eiendom ASA",
+      "sector": "Eiendom og energiledelse",
+      "pages": [
+        {
+          "layout": "mixed",
+          "blocks": [
+            {
+              "type": "cover",
+              "label": "PROGRAMMAPPE / SAMMENFØYDE NOTATER",
+              "text": "Energioppfølging for eiendomsporteføljen. Intervjuutdrag, teknisk kartlegging, investeringsnotat og konkurranseplan. 4. februar 2027."
+            },
+            {
+              "type": "memo",
+              "label": "Porteføljen",
+              "text": "Vestbo Eiendom ASA forvalter 86 yrkesbygg på til sammen 1,15 millioner kvadratmeter. Værnormalisert energibruk i 2025 var beregnet til 168 GWh, men syv bygg mangler komplette målerserier. Byggene bruker SD-anlegg fra ni leverandører og har omtrent 38 000 målepunkter."
+            },
+            {
+              "type": "note",
+              "label": "Mål vedtatt av konsernledelsen",
+              "text": "Værnormalisert energibruk skal reduseres 18 prosent innen utgangen av 2029 mot 2025-baseline. Effekttopper skal reduseres 12 prosent, og dokumenterte klager på inneklima skal ned 30 prosent i samme periode."
+            },
+            {
+              "type": "email",
+              "label": "E-post: eiendomsdirektør",
+              "text": "Vi trenger prioriterte tiltak, ikke bare flere grafer. Plattformen skal finne avvik, støtte energioppfølging etter ISO 50001 og vise leietakerne relevant forbruk. Automatisk styring kan foreslås, men lokal driftsleder skal beholde overstyring."
+            },
+            {
+              "type": "paragraph",
+              "label": "Datarytme og omfang",
+              "text": "Måledata fra 38 000 punkter skal hentes minst hvert 15. minutt. Et workshopnotat bruker ordet sanntid og nevner 5 minutter for kritiske bygg, men listen over hvilke bygg som er kritiske finnes ikke. Leverandøren skal derfor prise 5-minutters intervall som opsjon."
+            }
+          ]
+        },
+        {
+          "layout": "two_column",
+          "blocks": [
+            {
+              "type": "memo",
+              "label": "Teknisk minimum",
+              "text": "Integrasjon skal dekke ni SD-leverandører, økonomisystem, leietakerregister og værdata. Dataeksport må være dokumentert. Manuell lokal styring skal fungere ved plattformutfall. Endring av settpunkter skal logges med bruker, tid og begrunnelse."
+            },
+            {
+              "type": "note",
+              "label": "Sikkerhet og drift",
+              "text": "Person- og leietakerdata skal behandles i EØS. Administratorer bruker MFA. Tilgjengelighetsmål er 99,5 prosent per måned, RTO 8 timer og RPO 4 timer. Kritiske sikkerhetsfunn skal varsles innen 24 timer."
+            },
+            {
+              "type": "email",
+              "label": "E-post: programleder",
+              "text": "Pilot omfatter åtte bygg i Oslo og Bergen. Datakartlegging ferdig 1. juni 2027, pilot godkjent 15. november 2027 og utrulling til resten av porteføljen senest 30. juni 2028. Gevinstmåling fortsetter ut 2029."
+            },
+            {
+              "type": "paragraph",
+              "label": "Baseline-problem",
+              "text": "Syv bygg mangler komplette 2025-data. Det er uavklart om de skal få modellert baseline, bruke 2026 eller holdes utenfor konsernmålet. Svaret påvirker både gevinstmodell og leverandørens bonus."
+            },
+            {
+              "type": "note",
+              "label": "Tilgang til bygg",
+              "text": "To pilotbygg har planlagt rehabilitering. Eldre tekniske rom kan kreve miljøkartlegging før installasjon. Ansvar for asbestkartlegging og kveldsvakter er ikke fordelt mellom Vestbo og leverandøren."
+            },
+            {
+              "type": "paragraph",
+              "label": "Brukere",
+              "text": "Omtrent 240 driftsbrukere trenger detaljtilgang. Inntil 6 000 leietakerbrukere skal se avgrensede data. Leietakere skal ikke kunne sammenligne navngitte virksomheters forbruk."
+            }
+          ]
+        },
+        {
+          "layout": "full",
+          "blocks": [
+            {
+              "type": "pseudo_table",
+              "label": "Konkurranseplan",
+              "rows": [
+                ["Frist for spørsmål", "19.03.2027 kl. 12.00"],
+                ["Tilbudsfrist", "09.04.2027 kl. 12.00"],
+                ["Forhandlinger", "26.-28.04.2027"],
+                ["Planlagt kontrakt", "17.05.2027"]
+              ]
+            },
+            {
+              "type": "memo",
+              "label": "Investeringsramme",
+              "text": "Kostnadsrammen er 34 millioner kroner ekskl. merverdiavgift og inkluderer etablering, målergateway der dette er spesifisert, og fem års forvaltning. Fastpris betales 15 prosent ved design, 25 prosent ved datakartlegging, 25 prosent ved pilot, 25 prosent ved utrulling og 10 prosent etter stabil drift."
+            },
+            {
+              "type": "note",
+              "label": "Kommersiell opsjon",
+              "text": "En modell der leverandøren får andel av dokumentert energibesparelse kan tilbys som opsjon. Den skal ikke inngå i sammenligningsprisen og er ikke valgt som grunnmodell."
+            },
+            {
+              "type": "pseudo_table",
+              "label": "Tildelingskriterier",
+              "rows": [
+                ["Løsning og arkitektur", "30 %"],
+                ["Gjennomføring og forvaltning", "25 %"],
+                ["Dokumenterte energiresultater", "20 %"],
+                ["Pris", "25 %"]
+              ]
+            },
+            {
+              "type": "paragraph",
+              "label": "Risikologg - kortversjon",
+              "text": "Ufullstendig baseline kan gi feil gevinstberegning. Ni SD-varianter kan gi uforutsett integrasjonsarbeid. Rehabilitering kan forskyve pilotmålinger. For aggressiv automatisk styring kan forverre inneklima og skape lav tillit hos lokale driftsledere."
+            }
+          ]
+        }
+      ],
+      "answer_key": {
+        "profile": [
+          {
+            "id": "profile-scale",
+            "statement": "Vestbo forvalter 86 bygg, 1,15 millioner m2, 168 GWh og ca. 38 000 målepunkter.",
+            "required_term_groups": [["vestbo"], ["86"], ["1,15 millioner"], ["168 gwh"], ["38 000"]]
+          },
+          {
+            "id": "profile-landscape",
+            "statement": "Porteføljen har SD-anlegg fra ni leverandører og mangelfull baseline i syv bygg.",
+            "required_term_groups": [["ni leverandører", "9 leverandører"], ["syv bygg", "7 bygg"], ["baseline", "målerserier"]]
+          }
+        ],
+        "goals": [
+          {
+            "id": "goal-energy",
+            "statement": "Innen utgangen av 2029: 18 prosent lavere energi, 12 prosent lavere effekttopp og 30 prosent færre inneklimaklager.",
+            "required_term_groups": [["2029"], ["18 prosent"], ["12 prosent"], ["30 prosent"], ["inneklima"]]
+          }
+        ],
+        "requirements": [
+          {
+            "id": "requirement-interval",
+            "statement": "38 000 punkter leses minst hvert 15. minutt; 5 minutter prises som opsjon.",
+            "required_term_groups": [["38 000"], ["15. minutt", "15 minutter"], ["5 minutter"], ["opsjon"]]
+          },
+          {
+            "id": "requirement-controls",
+            "statement": "Lokal manuell styring og overstyring bevares; settpunktendringer logges.",
+            "required_term_groups": [["lokal"], ["overstyring", "manuell styring"], ["settpunkt"], ["logg"]]
+          },
+          {
+            "id": "requirement-security-recovery",
+            "statement": "EØS, MFA, 99,5 prosent, RTO 8 timer og RPO 4 timer.",
+            "required_term_groups": [["eøs"], ["mfa"], ["99,5"], ["rto"], ["8 timer"], ["rpo"], ["4 timer"]]
+          },
+          {
+            "id": "requirement-privacy",
+            "statement": "Leietakerbrukere får avgrensede data og kan ikke sammenligne navngitte virksomheter.",
+            "required_term_groups": [["leietaker"], ["avgrens"], ["ikke", "kan ikke"], ["navngitte"]]
+          }
+        ],
+        "deadlines": [
+          {
+            "id": "deadline-bid",
+            "statement": "Tilbudsfrist 9. april 2027 kl. 12.00.",
+            "required_term_groups": [["09.04.2027", "9. april 2027"], ["12.00"]]
+          },
+          {
+            "id": "deadline-program",
+            "statement": "Datakartlegging 1. juni, pilot 15. november 2027 og utrulling 30. juni 2028.",
+            "required_term_groups": [["1. juni 2027"], ["15. november 2027"], ["30. juni 2028"]]
+          }
+        ],
+        "commercial": [
+          {
+            "id": "commercial-cap",
+            "statement": "34 millioner kroner ekskl. mva. inkluderer etablering og fem års forvaltning.",
+            "required_term_groups": [["34 millioner"], ["fem års forvaltning", "5 års forvaltning"], ["ekskl", "uten merverdiavgift"]]
+          },
+          {
+            "id": "commercial-savings-option",
+            "statement": "Besparelsesdeling er en opsjon, ikke grunnmodell eller sammenligningspris.",
+            "required_term_groups": [["besparelse"], ["opsjon"], ["ikke"], ["grunnmodell", "sammenligningspris"]]
+          }
+        ],
+        "evaluation": [
+          {
+            "id": "evaluation-weights",
+            "statement": "30 prosent løsning, 25 prosent gjennomføring, 20 prosent energiresultater og 25 prosent pris.",
+            "required_term_groups": [["30"], ["25"], ["20"], ["energiresultater"], ["pris"]]
+          }
+        ],
+        "risks": [
+          {
+            "id": "risk-baseline",
+            "statement": "Manglende baseline for syv bygg kan gi feil gevinstberegning og bonus.",
+            "required_term_groups": [["syv bygg", "7 bygg"], ["baseline"], ["gevinst", "bonus"], ["risiko", "kan"]]
+          },
+          {
+            "id": "risk-integration-and-climate",
+            "statement": "Ni SD-varianter og aggressiv automatisk styring kan gi integrasjonsarbeid og dårlig inneklima.",
+            "required_term_groups": [["ni", "9"], ["sd"], ["automatisk styring"], ["inneklima"]]
+          }
+        ],
+        "ambiguities": [
+          {
+            "id": "ambiguity-baseline",
+            "statement": "Avklar baseline-metode for de syv byggene med manglende 2025-data.",
+            "required_term_groups": [["baseline"], ["syv bygg", "7 bygg"], ["2025"], ["avklar", "?"]]
+          },
+          {
+            "id": "ambiguity-site-access",
+            "statement": "Avklar ansvar for asbestkartlegging og kveldsvakter.",
+            "required_term_groups": [["asbest"], ["kveldsvakt"], ["ansvar", "avklar", "?"]]
+          }
+        ],
+        "solution_direction": [
+          {
+            "id": "solution-energy-platform",
+            "statement": "Anbefal åpent integrasjonslag, avviksanalyse, tiltakssporing og menneskestyrt optimalisering.",
+            "required_term_groups": [["integrasjon"], ["avvik"], ["tiltak"], ["overstyring", "mennesk", "driftsleder"]]
+          }
+        ],
+        "must_not_claim": [
+          "fem minutters måleintervall er obligatorisk for alle bygg",
+          "besparelsesdeling er valgt grunnmodell",
+          "automatisk styring kan overstyre lokal driftsleder"
+        ]
+      }
+    },
+    {
+      "id": "nordkraft-grid-field-operations",
+      "title": "Beredskapsmappe - feltarbeid og feilretting i distribusjonsnettet",
+      "client": "Nordkraft Nettberedskap AS",
+      "sector": "Kraftnett og feltoperasjoner",
+      "pages": [
+        {
+          "layout": "full",
+          "blocks": [
+            {
+              "type": "cover",
+              "label": "BEREDSKAPSMAPPE / ARBEIDSVERSJON",
+              "text": "Feltarbeid og feilretting i distribusjonsnettet. Sammensatt av stormrapport, sikkerhetsnotat, vaktlederintervju og konkurranseplan. 22. mars 2027."
+            },
+            {
+              "type": "memo",
+              "label": "Virksomhet og hendelsesbilde",
+              "text": "Nordkraft Nettberedskap AS støtter distribusjonsnett i 46 kommuner, omtrent 18 000 kilometer linje og 310 000 målepunkt. Under uvær arbeider driftssentral, entreprenører og egne montører i ulike systemer. Status blir ofte formidlet via telefon før den registreres."
+            },
+            {
+              "type": "note",
+              "label": "Effektmål fra beredskapsutvalget",
+              "text": "Gjennomsnittlig avbruddsvarighet, SAIDI, skal reduseres 17 prosent innen utgangen av 2028. Tid fra verifisert feil til utsendt lag skal ned fra 11 til 6 minutter. Utnyttelse av tilgjengelige feltlag skal øke 10 prosent."
+            },
+            {
+              "type": "email",
+              "label": "E-post: beredskapssjef",
+              "text": "Løsningen skal gi ett oppdrag fra alarm til ferdig dokumentasjon, men koblingsordre og sikker jobb-analyse følger egne godkjenningsregler. En språkmodell eller optimaliseringsmotor skal aldri kunne godkjenne kobling i nettet."
+            },
+            {
+              "type": "paragraph",
+              "label": "Systemlandskap",
+              "text": "Integrasjoner omfatter nettinformasjon/GIS, avbruddssystem, AMS-hendelser, arbeidsordrer, lager, kjøretøyposisjon og Nødnett-katalog. Kildesystemene bruker både hendelsesstrøm, REST, filutveksling og eldre meldingskø."
+            }
+          ]
+        },
+        {
+          "layout": "two_column",
+          "blocks": [
+            {
+              "type": "memo",
+              "label": "Feltkrav",
+              "text": "Feltappen skal fungere uten dekning i 24 timer, inkludert kart, sikkerhetsdokumentasjon, bilder og materiell. Synkronisering skal vise konflikter og aldri overskrive en godkjent koblingsordre. Fullførte arbeidsordrer skal ikke gå tapt."
+            },
+            {
+              "type": "note",
+              "label": "Beredskap og volum",
+              "text": "Normal last er 250 samtidige feltbrukere. Ved regional storm skal 800 feltbrukere og 120 driftssentralbrukere støttes. Operativ tjeneste har 99,95 prosent tilgjengelighet, RTO 30 minutter og krav om null tap av ferdig godkjente arbeidsordrer."
+            },
+            {
+              "type": "email",
+              "label": "Sikkerhetsarkitektens notat",
+              "text": "Drifts- og geodata behandles i EØS. Privilegert tilgang krever MFA og PAM. Sikkerhets- og endringslogger bevares i 10 år. Leverandøren må støtte hendelsesvarsling innen 30 minutter og legge frem forsyningskjedeoversikt."
+            },
+            {
+              "type": "paragraph",
+              "label": "Leveranser - to tidslinjer",
+              "text": "Godkjent plan sier design ferdig 1. september 2027, vinterpilot i tre områder fra 15. november 2027 og full produksjon 1. juni 2028. Et eldre styrevedtak sier landsdekkende løsning innen 1. april 2028. Programleder har bedt om avklaring før kontrakt."
+            },
+            {
+              "type": "note",
+              "label": "Kart og radio",
+              "text": "Det er uavklart om leverandøren skal levere egne offline-kart eller distribuere kundens kartpakker. Nødnett-katalogen dekker personell, men radio-dekning i tunneler er ikke en del av programmet. Dette må ikke fremstilles som garantert dekning."
+            },
+            {
+              "type": "paragraph",
+              "label": "Operativ rapportering",
+              "text": "Foreløpig myndighetsrapport etter en større hendelse skal kunne produseres innen 30 minutter etter at driftssentralen har klassifisert hendelsen. Rapporten skal vise kilde og tidspunkt for hvert nøkkeltall."
+            }
+          ]
+        },
+        {
+          "layout": "mixed",
+          "blocks": [
+            {
+              "type": "pseudo_table",
+              "label": "Konkurransekalender",
+              "rows": [
+                ["Siste spørsmål", "30.04.2027 kl. 12.00"],
+                ["Tilbudsfrist", "21.05.2027 kl. 12.00"],
+                ["Beredskapsøvelse", "08.-10.06.2027"],
+                ["Planlagt kontrakt", "02.07.2027"]
+              ]
+            },
+            {
+              "type": "memo",
+              "label": "Kommersiell ramme",
+              "text": "Maksimal kontraktsverdi er 48 millioner kroner ekskl. merverdiavgift over seks år. Etablering kan ikke overstige 14 millioner. Servicekreditt ved brudd på operativ SLA er 2 prosent av månedlig vederlag per alvorlig brudd, begrenset til 10 prosent per måned. Betalingsfrist er netto 30."
+            },
+            {
+              "type": "pseudo_table",
+              "label": "Evaluering",
+              "rows": [
+                ["Funksjon og feltbruk", "30 %"],
+                ["Robusthet og sikkerhet", "30 %"],
+                ["Gjennomføring", "20 %"],
+                ["Livsløpskostnad", "20 %"]
+              ]
+            },
+            {
+              "type": "note",
+              "label": "Absolutt prøve",
+              "text": "I beredskapsøvelsen skal en feltbruker hente tildelt oppdrag, kart og sikkerhetsvedlegg uten nett, registrere utførelse og synkronisere uten tap. Prøven må bestås."
+            },
+            {
+              "type": "paragraph",
+              "label": "Risikologg",
+              "text": "Eldre meldingskø kan gi forsinket status. Motstridende utrullingsdatoer kan gi urealistisk plan. Mangelfull konflikthåndtering kan overskrive sikkerhetskritisk informasjon. Entreprenører har varierende enhetsforvaltning og opplæring."
+            }
+          ]
+        }
+      ],
+      "answer_key": {
+        "profile": [
+          {
+            "id": "profile-scale",
+            "statement": "Nordkraft støtter 46 kommuner, 18 000 km linje og 310 000 målepunkt.",
+            "required_term_groups": [["nordkraft"], ["46"], ["18 000"], ["310 000"]]
+          },
+          {
+            "id": "profile-fragmentation",
+            "statement": "Driftssentral, entreprenører og montører arbeider i ulike systemer og bruker telefon.",
+            "required_term_groups": [["driftssentral"], ["entreprenør"], ["montør"], ["telefon"]]
+          }
+        ],
+        "goals": [
+          {
+            "id": "goal-outage",
+            "statement": "Innen 2028: SAIDI ned 17 prosent, utsending fra 11 til 6 minutter og 10 prosent bedre feltlagsutnyttelse.",
+            "required_term_groups": [["saidi"], ["17 prosent"], ["11"], ["6 minutter"], ["10 prosent"]]
+          }
+        ],
+        "requirements": [
+          {
+            "id": "requirement-safety-authority",
+            "statement": "Automatisering skal aldri godkjenne koblingsordre.",
+            "required_term_groups": [["aldri", "ikke"], ["godkjenne"], ["koblingsordre"]]
+          },
+          {
+            "id": "requirement-offline",
+            "statement": "Feltapp fungerer offline i 24 timer og synkroniserer uten å overskrive godkjente koblingsordrer.",
+            "required_term_groups": [["24 timer"], ["offline", "uten dekning"], ["synkroniser"], ["koblingsordre"]]
+          },
+          {
+            "id": "requirement-scale-recovery",
+            "statement": "Stormlast 800 feltbrukere og 120 sentralbrukere, 99,95 prosent, RTO 30 minutter og null tap av godkjente arbeidsordrer.",
+            "required_term_groups": [["800"], ["120"], ["99,95"], ["rto"], ["30 minutter"], ["null tap", "ikke gå tapt"]]
+          },
+          {
+            "id": "requirement-security",
+            "statement": "EØS, MFA/PAM, 10 års logger og hendelsesvarsling innen 30 minutter.",
+            "required_term_groups": [["eøs"], ["mfa"], ["pam"], ["10 år"], ["30 minutter"]]
+          }
+        ],
+        "deadlines": [
+          {
+            "id": "deadline-bid",
+            "statement": "Tilbudsfrist 21. mai 2027 kl. 12.00.",
+            "required_term_groups": [["21.05.2027", "21. mai 2027"], ["12.00"]]
+          },
+          {
+            "id": "deadline-conflict",
+            "statement": "Gjeldende plan sier 1. juni 2028, mens eldre vedtak sier 1. april 2028; dette må avklares.",
+            "required_term_groups": [["1. juni 2028"], ["1. april 2028"], ["avklar", "motstrid"]]
+          }
+        ],
+        "commercial": [
+          {
+            "id": "commercial-cap",
+            "statement": "48 millioner kroner over seks år, med etablering maks 14 millioner.",
+            "required_term_groups": [["48 millioner"], ["seks år", "6 år"], ["14 millioner"], ["etablering"]]
+          },
+          {
+            "id": "commercial-service-credit",
+            "statement": "Servicekreditt 2 prosent per alvorlig brudd, begrenset til 10 prosent per måned; netto 30.",
+            "required_term_groups": [["2 prosent"], ["10 prosent"], ["servicekreditt"], ["netto 30"]]
+          }
+        ],
+        "evaluation": [
+          {
+            "id": "evaluation-weights",
+            "statement": "30 prosent funksjon, 30 prosent robusthet/sikkerhet, 20 prosent gjennomføring og 20 prosent LCC.",
+            "required_term_groups": [["30"], ["robusthet"], ["sikkerhet"], ["20"], ["livsløpskostnad", "lcc"]]
+          },
+          {
+            "id": "evaluation-offline-gate",
+            "statement": "Offline-beredskapsøvelsen er en obligatorisk bestått-prøve.",
+            "required_term_groups": [["beredskapsøvelse"], ["offline", "uten nett"], ["bestå"]]
+          }
+        ],
+        "risks": [
+          {
+            "id": "risk-conflict",
+            "statement": "Dårlig synkroniseringskonflikt kan overskrive sikkerhetskritisk informasjon.",
+            "required_term_groups": [["konflikt"], ["overskrive"], ["sikkerhetskritisk"]]
+          },
+          {
+            "id": "risk-legacy-and-contractors",
+            "statement": "Eldre meldingskø og varierende entreprenørenheter kan forsinke status og innføring.",
+            "required_term_groups": [["meldingskø"], ["entreprenør"], ["forsink", "risiko"], ["enhet", "opplæring"]]
+          }
+        ],
+        "ambiguities": [
+          {
+            "id": "ambiguity-rollout",
+            "statement": "Avklar om full produksjon er 1. april eller 1. juni 2028.",
+            "required_term_groups": [["1. april 2028"], ["1. juni 2028"], ["avklar", "?"]]
+          },
+          {
+            "id": "ambiguity-maps-radio",
+            "statement": "Avklar offline-kart; ikke anta garantert Nødnett-dekning i tunneler.",
+            "required_term_groups": [["offline-kart", "kartpakke"], ["nødnett"], ["tunnel"], ["avklar", "ikke garantert"]]
+          }
+        ],
+        "solution_direction": [
+          {
+            "id": "solution-field-platform",
+            "statement": "Anbefal robust feltplattform med offline-first oppdrag, eksplisitt konfliktløsning, kildebasert hendelseslogg og menneskelig sikkerhetsgodkjenning.",
+            "required_term_groups": [["offline"], ["konflikt"], ["hendelseslogg", "kilde"], ["mennesk", "godkjenning", "koblingsordre"]]
+          }
+        ],
+        "must_not_claim": [
+          "kunstig intelligens kan godkjenne koblingsordre",
+          "Nødnett-dekning i tunneler er garantert",
+          "full produksjon 1. april 2028 er endelig vedtatt"
+        ]
+      }
+    }
+  ]
+}

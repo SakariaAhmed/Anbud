@@ -24,35 +24,77 @@ param image string
 @description('Worker image kept on the last healthy release until web promotion succeeds.')
 param workerImage string
 
-@description('Container registry server, for example myregistry.azurecr.io.')
-param registryServer string
+@description('Azure Container Registry resource name in this resource group.')
+param registryName string
 
-@description('Container registry username.')
-param registryUsername string
-
-@secure()
-@description('Container registry password.')
-param registryPassword string
+@description('Full internal PostgREST root URL for the Azure data API.')
+param dataApiUrl string
 
 @secure()
-@description('Current Supabase project URL. Kept for phase 1 Azure hosting migration.')
-param supabaseUrl string
+@description('Service JWT for the internal Azure PostgREST API.')
+param dataApiServiceRoleKey string
+
+@description('Azure Blob service URL used with managed identity.')
+param azureStorageAccountUrl string
+
+@description('Private Azure Blob container that preserves the existing bucket contract.')
+param azureStorageContainer string = 'anbud-documents'
+
+@description('Public origin used for OAuth callbacks, for example https://bidsite.example.com.')
+param appPublicOrigin string
+
+@description('Application client ID for the Microsoft Entra External ID app registration.')
+param microsoftEntraClientId string
 
 @secure()
-@description('Current Supabase service role key. Kept server-side only.')
-param supabaseServiceRoleKey string
+@description('Client secret for the Microsoft Entra External ID app registration.')
+param microsoftEntraClientSecret string
+
+@description('External ID tenant subdomain, without .ciamlogin.com.')
+param microsoftEntraTenantSubdomain string
 
 @secure()
-@description('Stable app encryption key. Do not rotate during migration unless document data is re-encrypted.')
+@description('Stable app encryption key. Do not rotate unless document data is re-encrypted.')
 param appEncryptionKey string
 
 @secure()
-@description('Shared password for the current app-level login.')
-param appAccessPassword string
+@description('Encoded scrypt hash for the dedicated administrator password.')
+param appAdminAccessPasswordHash string
+
+@secure()
+@description('Temporary legacy plaintext password retained only while an older active revision still references it. Leave empty after that revision is retired.')
+param legacyAppAccessPassword string = ''
 
 @secure()
 @description('Stable session signing secret.')
 param appSessionSecret string
+
+@secure()
+@description('Dedicated HMAC pepper for guest access codes. Generate independently from the session secret.')
+param appGuestCodePepper string = ''
+
+@secure()
+@description('Dedicated HMAC secret used for deterministic email identity lookup.')
+param appIdentityLookupSecret string = ''
+
+@secure()
+@description('Dedicated HMAC secret used for privacy-preserving request context logging.')
+param appActivityHashSecret string = ''
+
+@description('Comma-separated internal emails bootstrapped with the administrator role.')
+param appAdminEmails string = ''
+
+@description('Optional Azure Communication Services endpoint used with the Container App managed identity.')
+param azureCommunicationEmailEndpoint string = ''
+
+@description('Verified MailFrom sender address in Azure Communication Services Email.')
+param azureCommunicationEmailSender string = ''
+
+@description('Stable pseudonymous ID for the dedicated administrator identity.')
+param adminPrincipalId string
+
+@description('Display name for the dedicated administrator identity.')
+param adminDisplayName string = 'Administrator'
 
 @secure()
 @description('OpenAI API key.')
@@ -60,6 +102,31 @@ param openAiApiKey string
 
 @description('Optional OpenAI model override.')
 param openAiModel string = 'gpt-5.4'
+
+@description('OpenAI model used only by the v3 customer-document analysis path.')
+param openAiDocumentAnalysisModel string = 'gpt-5.6-terra'
+
+@description('Selects the versioned document parsing and analysis pipeline.')
+@allowed([
+  'off'
+  'v3'
+])
+param documentAnalysisVersion string = 'off'
+
+@description('Optional Azure AI Document Intelligence endpoint. Leave empty to use the local layout parser with Docling fallback.')
+param azureDocumentIntelligenceEndpoint string = ''
+
+@secure()
+@description('Optional Azure AI Document Intelligence API key.')
+param azureDocumentIntelligenceKey string = ''
+
+@description('Azure OCR high-resolution feature. auto enables it only for PDFs with weak OCR; on forces it and off disables it.')
+@allowed([
+  'auto'
+  'on'
+  'off'
+])
+param azureDocumentIntelligenceHighResolution string = 'auto'
 
 @secure()
 @description('Shared token required by the project job worker endpoint.')
@@ -104,25 +171,42 @@ param projectJobWorkerMemory string = '4Gi'
 @minValue(2100)
 param projectJobWorkerReplicaTimeout int = 2100
 
+@description('Whether the web application exposes public ingress.')
+param externalIngressEnabled bool = true
+
 @description('Minimum active replicas.')
 @minValue(0)
-param minReplicas int = 1
+param minReplicas int = 0
 
 @description('Maximum active replicas.')
 @minValue(1)
 param maxReplicas int = 3
 
-var missionCriticalTags = {
+var commonTags = {
   workload: appName
   environment: environmentLabel
   criticality: workloadCriticality
   deploymentStamp: appName
+  dataClassification: 'confidential'
+  managedBy: 'bicep'
+}
+
+resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: registryName
+}
+
+// Created once by acr-pull-bootstrap.bicep under Owner/User Access
+// Administrator. Routine CI only needs Contributor and must not manage RBAC.
+resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+  name: '${appName}-acr-pull'
 }
 
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'observability'
+  })
   properties: {
     sku: {
       name: 'PerGB2018'
@@ -134,7 +218,9 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'container-apps-environment'
+  })
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -149,33 +235,37 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'web'
+  })
+  identity: {
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acrPullIdentity.id}': {}
+    }
+  }
   properties: {
     managedEnvironmentId: environment.id
     configuration: {
       activeRevisionsMode: 'Multiple'
       ingress: {
-        external: true
+        external: externalIngressEnabled
         targetPort: 3000
         transport: 'auto'
         allowInsecure: false
       }
-      secrets: [
+      secrets: concat([
         {
-          name: 'supabase-url'
-          value: supabaseUrl
-        }
-        {
-          name: 'supabase-service-role-key'
-          value: supabaseServiceRoleKey
+          name: 'microsoft-entra-client-secret'
+          value: microsoftEntraClientSecret
         }
         {
           name: 'app-encryption-key'
           value: appEncryptionKey
         }
         {
-          name: 'app-access-password'
-          value: appAccessPassword
+          name: 'app-admin-access-password-hash'
+          value: appAdminAccessPasswordHash
         }
         {
           name: 'app-session-secret'
@@ -189,16 +279,41 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'project-job-worker-token'
           value: projectJobWorkerToken
         }
+      ], !empty(legacyAppAccessPassword) ? [
         {
-          name: 'registry-password'
-          value: registryPassword
+          name: 'app-access-password'
+          value: legacyAppAccessPassword
         }
-      ]
+      ] : [], !empty(azureDocumentIntelligenceKey) ? [
+        {
+          name: 'azure-document-intelligence-key'
+          value: azureDocumentIntelligenceKey
+        }
+      ] : [], !empty(appGuestCodePepper) ? [
+        {
+          name: 'app-guest-code-pepper'
+          value: appGuestCodePepper
+        }
+      ] : [], !empty(appIdentityLookupSecret) ? [
+        {
+          name: 'app-identity-lookup-secret'
+          value: appIdentityLookupSecret
+        }
+      ] : [], !empty(appActivityHashSecret) ? [
+        {
+          name: 'app-activity-hash-secret'
+          value: appActivityHashSecret
+        }
+      ] : [], !empty(dataApiServiceRoleKey) ? [
+        {
+          name: 'data-api-service-role-key'
+          value: dataApiServiceRoleKey
+        }
+      ] : [])
       registries: [
         {
-          server: registryServer
-          username: registryUsername
-          passwordSecretRef: 'registry-password'
+          server: registry.properties.loginServer
+          identity: acrPullIdentity.id
         }
       ]
     }
@@ -207,7 +322,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'web'
           image: image
-          env: [
+          env: concat([
             {
               name: 'NODE_ENV'
               value: 'production'
@@ -237,24 +352,60 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               value: image
             }
             {
-              name: 'SUPABASE_URL'
-              secretRef: 'supabase-url'
+              name: 'TRUST_FORWARDED_RATE_LIMIT_HEADERS'
+              value: 'true'
             }
             {
-              name: 'SUPABASE_SERVICE_ROLE_KEY'
-              secretRef: 'supabase-service-role-key'
+              name: 'DATA_API_URL'
+              value: dataApiUrl
+            }
+            {
+              name: 'DATA_API_ALLOWED_HOST_SUFFIX'
+              value: '.internal.${environment.properties.defaultDomain}'
+            }
+            {
+              name: 'AZURE_STORAGE_ACCOUNT_URL'
+              value: azureStorageAccountUrl
+            }
+            {
+              name: 'AZURE_STORAGE_CONTAINER'
+              value: azureStorageContainer
+            }
+            {
+              name: 'APP_PUBLIC_ORIGIN'
+              value: appPublicOrigin
+            }
+            {
+              name: 'MICROSOFT_ENTRA_CLIENT_ID'
+              value: microsoftEntraClientId
+            }
+            {
+              name: 'MICROSOFT_ENTRA_CLIENT_SECRET'
+              secretRef: 'microsoft-entra-client-secret'
+            }
+            {
+              name: 'MICROSOFT_ENTRA_TENANT_SUBDOMAIN'
+              value: microsoftEntraTenantSubdomain
             }
             {
               name: 'APP_ENCRYPTION_KEY'
               secretRef: 'app-encryption-key'
             }
             {
-              name: 'APP_ACCESS_PASSWORD'
-              secretRef: 'app-access-password'
+              name: 'APP_ADMIN_ACCESS_PASSWORD_HASH'
+              secretRef: 'app-admin-access-password-hash'
             }
             {
               name: 'APP_SESSION_SECRET'
               secretRef: 'app-session-secret'
+            }
+            {
+              name: 'APP_ADMIN_PRINCIPAL_ID'
+              value: adminPrincipalId
+            }
+            {
+              name: 'APP_ADMIN_DISPLAY_NAME'
+              value: adminDisplayName
             }
             {
               name: 'OPENAI_API_KEY'
@@ -263,6 +414,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'OPENAI_MODEL'
               value: openAiModel
+            }
+            {
+              name: 'OPENAI_DOCUMENT_ANALYSIS_MODEL'
+              value: openAiDocumentAnalysisModel
             }
             {
               name: 'PROJECT_JOB_WORKER_TOKEN'
@@ -276,7 +431,58 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'DOCLING_ASYNC_AUTO_RUN'
               value: doclingAsyncAutoRun
             }
-          ]
+            {
+              name: 'DOCUMENT_ANALYSIS_VERSION'
+              value: documentAnalysisVersion
+            }
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION'
+              value: azureDocumentIntelligenceHighResolution
+            }
+          ], !empty(azureDocumentIntelligenceEndpoint) && !empty(azureDocumentIntelligenceKey) ? [
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT'
+              value: azureDocumentIntelligenceEndpoint
+            }
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_KEY'
+              secretRef: 'azure-document-intelligence-key'
+            }
+          ] : [], !empty(appGuestCodePepper) ? [
+            {
+              name: 'APP_GUEST_CODE_PEPPER'
+              secretRef: 'app-guest-code-pepper'
+            }
+          ] : [], !empty(appIdentityLookupSecret) ? [
+            {
+              name: 'APP_IDENTITY_LOOKUP_SECRET'
+              secretRef: 'app-identity-lookup-secret'
+            }
+          ] : [], !empty(appActivityHashSecret) ? [
+            {
+              name: 'APP_ACTIVITY_HASH_SECRET'
+              secretRef: 'app-activity-hash-secret'
+            }
+          ] : [], !empty(dataApiServiceRoleKey) ? [
+            {
+              name: 'DATA_API_SERVICE_ROLE_KEY'
+              secretRef: 'data-api-service-role-key'
+            }
+          ] : [], !empty(appAdminEmails) ? [
+            {
+              name: 'APP_ADMIN_EMAILS'
+              value: appAdminEmails
+            }
+          ] : [], !empty(azureCommunicationEmailEndpoint) && !empty(azureCommunicationEmailSender) ? [
+            {
+              name: 'AZURE_COMMUNICATION_EMAIL_ENDPOINT'
+              value: azureCommunicationEmailEndpoint
+            }
+            {
+              name: 'AZURE_COMMUNICATION_EMAIL_SENDER'
+              value: azureCommunicationEmailSender
+            }
+          ] : [])
           probes: [
             {
               type: 'Liveness'
@@ -286,15 +492,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               }
               initialDelaySeconds: 20
               periodSeconds: 30
-            }
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/api/health/ready'
-                port: 3000
-              }
-              initialDelaySeconds: 10
-              periodSeconds: 15
             }
           ]
           resources: {
@@ -324,7 +521,15 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
   name: '${appName}-project-job-worker'
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'background-jobs'
+  })
+  identity: {
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acrPullIdentity.id}': {}
+    }
+  }
   properties: {
     environmentId: environment.id
     configuration: {
@@ -336,22 +541,10 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
       }
       replicaRetryLimit: 1
       replicaTimeout: projectJobWorkerReplicaTimeout
-      secrets: [
-        {
-          name: 'supabase-url'
-          value: supabaseUrl
-        }
-        {
-          name: 'supabase-service-role-key'
-          value: supabaseServiceRoleKey
-        }
+      secrets: concat([
         {
           name: 'app-encryption-key'
           value: appEncryptionKey
-        }
-        {
-          name: 'app-access-password'
-          value: appAccessPassword
         }
         {
           name: 'app-session-secret'
@@ -365,16 +558,21 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
           name: 'project-job-worker-token'
           value: projectJobWorkerToken
         }
+      ], !empty(azureDocumentIntelligenceKey) ? [
         {
-          name: 'registry-password'
-          value: registryPassword
+          name: 'azure-document-intelligence-key'
+          value: azureDocumentIntelligenceKey
         }
-      ]
+      ] : [], !empty(dataApiServiceRoleKey) ? [
+        {
+          name: 'data-api-service-role-key'
+          value: dataApiServiceRoleKey
+        }
+      ] : [])
       registries: [
         {
-          server: registryServer
-          username: registryUsername
-          passwordSecretRef: 'registry-password'
+          server: registry.properties.loginServer
+          identity: acrPullIdentity.id
         }
       ]
     }
@@ -389,7 +587,7 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
           args: [
             'scripts/run_project_job_worker.mjs'
           ]
-          env: [
+          env: concat([
             {
               name: 'NODE_ENV'
               value: 'production'
@@ -419,20 +617,24 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               value: workerImage
             }
             {
-              name: 'SUPABASE_URL'
-              secretRef: 'supabase-url'
+              name: 'DATA_API_URL'
+              value: dataApiUrl
             }
             {
-              name: 'SUPABASE_SERVICE_ROLE_KEY'
-              secretRef: 'supabase-service-role-key'
+              name: 'DATA_API_ALLOWED_HOST_SUFFIX'
+              value: '.internal.${environment.properties.defaultDomain}'
+            }
+            {
+              name: 'AZURE_STORAGE_ACCOUNT_URL'
+              value: azureStorageAccountUrl
+            }
+            {
+              name: 'AZURE_STORAGE_CONTAINER'
+              value: azureStorageContainer
             }
             {
               name: 'APP_ENCRYPTION_KEY'
               secretRef: 'app-encryption-key'
-            }
-            {
-              name: 'APP_ACCESS_PASSWORD'
-              secretRef: 'app-access-password'
             }
             {
               name: 'APP_SESSION_SECRET'
@@ -445,6 +647,10 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'OPENAI_MODEL'
               value: openAiModel
+            }
+            {
+              name: 'OPENAI_DOCUMENT_ANALYSIS_MODEL'
+              value: openAiDocumentAnalysisModel
             }
             {
               name: 'PROJECT_JOB_WORKER_TOKEN'
@@ -462,7 +668,29 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               name: 'DOCLING_ASYNC_AUTO_RUN'
               value: 'off'
             }
-          ]
+            {
+              name: 'DOCUMENT_ANALYSIS_VERSION'
+              value: documentAnalysisVersion
+            }
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION'
+              value: azureDocumentIntelligenceHighResolution
+            }
+          ], !empty(azureDocumentIntelligenceEndpoint) && !empty(azureDocumentIntelligenceKey) ? [
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT'
+              value: azureDocumentIntelligenceEndpoint
+            }
+            {
+              name: 'AZURE_DOCUMENT_INTELLIGENCE_KEY'
+              secretRef: 'azure-document-intelligence-key'
+            }
+          ] : [], !empty(dataApiServiceRoleKey) ? [
+            {
+              name: 'DATA_API_SERVICE_ROLE_KEY'
+              secretRef: 'data-api-service-role-key'
+            }
+          ] : [])
           resources: {
             cpu: json(projectJobWorkerCpu)
             memory: projectJobWorkerMemory

@@ -7,6 +7,7 @@ import {
   isRequirementDocument,
 } from "@/lib/document-processing";
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
+import { explicitIdTableSourceIds } from "@/lib/server/requirements/explicit-id-table-parser";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
 
@@ -728,6 +729,66 @@ export function assertExplicitRequirementLedgersComplete(
       `Kravledgeren er tom for kravdokument: ${emptyRequirementDocuments
         .map((document) => document.title)
         .join(", ")}. Arbeidsflyten stoppes for å unngå ufullstendig kravdekning.`,
+    );
+  }
+
+  const corruptedAuthoritativeInventories = sourceDocuments.flatMap(
+    (document) => {
+      if (!requiresNonEmptyRequirementLedger(document)) return [];
+      const expected = explicitIdTableSourceIds(document.raw_text).map(
+        explicitInventoryId,
+      );
+      if (!expected.length) return [];
+
+      const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
+      const actualRows = ledger.map(explicitLedgerEntryIds);
+      const actual = actualRows.flatMap((ids) =>
+        ids.length === 1 ? ids : [],
+      );
+      const malformedRows = actualRows.filter((ids) => ids.length !== 1).length;
+      const exactMatch =
+        malformedRows === 0 &&
+        actual.length === expected.length &&
+        actual.every((id, index) => id === expected[index]);
+      if (exactMatch) return [];
+
+      const expectedSet = new Set(expected);
+      const unexpected = actual.filter((id) => !expectedSet.has(id));
+      const duplicate = actual.filter(
+        (id, index) => actual.indexOf(id) !== index,
+      );
+      return [
+        {
+          title: document.title,
+          expected: expected.length,
+          actual: ledger.length,
+          malformedRows,
+          unexpected: [...new Set(unexpected)],
+          duplicate: [...new Set(duplicate)],
+        },
+      ];
+    },
+  );
+
+  if (corruptedAuthoritativeInventories.length) {
+    throw new Error(
+      `Kravledgeren avviker fra den eksplisitte kravtabellen: ${corruptedAuthoritativeInventories
+        .map((issue) => {
+          const details = [
+            `${issue.title} (forventet ${issue.expected} rader i kildeorden, fikk ${issue.actual})`,
+            issue.malformedRows
+              ? `${issue.malformedRows} rader uten entydig krav-ID`
+              : "",
+            issue.unexpected.length
+              ? `uventede ID-er: ${issue.unexpected.slice(0, 12).join(", ")}`
+              : "",
+            issue.duplicate.length
+              ? `duplikater: ${issue.duplicate.slice(0, 12).join(", ")}`
+              : "",
+          ].filter(Boolean);
+          return details.join("; ");
+        })
+        .join("; ")}. Arbeidsflyten stoppes før vurdering for å unngå misvisende dekningsgrad.`,
     );
   }
 

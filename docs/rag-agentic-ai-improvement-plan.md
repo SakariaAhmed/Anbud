@@ -1,6 +1,6 @@
 # RAG og agentisk AI-forbedringsplan
 
-Denne vurderingen gjelder den eksisterende `anbud`-appen: en Next.js/Supabase-applikasjon som laster opp tilbuds- og kundedokumenter, analyserer dem med OpenAI, genererer tilbudsartefakter og lar brukeren chatte med prosjektkontekst.
+Denne vurderingen gjelder den eksisterende `anbud`-appen: en Next.js-applikasjon med Azure PostgreSQL som laster opp tilbuds- og kundedokumenter, analyserer dem med OpenAI, genererer tilbudsartefakter og lar brukeren chatte med prosjektkontekst.
 
 Målet er bedre svarkvalitet, raskere responstid og mer relevante, kildebaserte svar.
 
@@ -9,9 +9,9 @@ Målet er bedre svarkvalitet, raskere responstid og mer relevante, kildebaserte 
 Appen har allerede en viktig del av RAG-grunnmuren:
 
 - Dokumenter parses til `raw_text` og `structure_map` i `apps/frontend/lib/server/documents.ts`.
-- Dokumenter chunkes, embeddings opprettes og lagres i Supabase i `apps/frontend/lib/server/document-chunks.ts`.
-- Supabase-skjemaet har `document_chunks`, `extensions.vector(1536)` og HNSW-indeks i `supabase/document_chunks_and_embeddings.sql`.
-- Opplasting av prosjekt- og tjenestedokumenter trigger best-effort chunk-indeksering i `apps/frontend/lib/server/repositories/supabase-store.ts`.
+- Dokumenter chunkes, embeddings opprettes og lagres i PostgreSQL i `apps/frontend/lib/server/document-chunks.ts`.
+- PostgreSQL-skjemaet har `document_chunks`, `extensions.vector(1536)` og HNSW-indeks i `database/document_chunks_and_embeddings.sql`.
+- Opplasting av prosjekt- og tjenestedokumenter trigger best-effort chunk-indeksering i `apps/frontend/lib/server/repositories/data-store.ts`.
 - Chat og enkelte analyseflyter bruker `retrieveDocumentSnippets()` før modellen svarer.
 - Artefaktgenerering har `ensureSemanticChunks`, dokumentledger og batchgenerering for kravsvar.
 
@@ -19,7 +19,7 @@ Det betyr at appen ikke trenger en helt ny RAG-stack. Den trenger en mer presis 
 
 ## Viktigste mangler
 
-1. **Hybrid search er ikke fullverdig.** Dagens retrieval kombinerer vektorsøk med en in-memory leksikalsk fallback, men Supabase gjør ikke ekte fulltekst/BM25/tsvector-søk med RRF-fusjon.
+1. **Hybrid search er ikke fullverdig.** Dagens retrieval kombinerer vektorsøk med en in-memory leksikalsk fallback, men PostgreSQL gjør ikke ekte fulltekst/BM25/tsvector-søk med RRF-fusjon.
 2. **Ingen reranker.** Kandidater fra vektor/keyword velges direkte med enkel score. Dette er sårbart for chunks som er semantisk like, men ikke svarer på spørsmålet.
 3. **Ingen eksplisitt query rewrite.** Chat bruker domenehint, men omskriver ikke oppfølgingsspørsmål til selvstendige, søkbare queries med filtre og eksakte termer.
 4. **Ingen retrieval-gate.** Systemet måler ikke om kildene er gode nok før modellen får lov til å svare.
@@ -36,7 +36,7 @@ flowchart LR
   B --> C[Strukturert dokumentmodell]
   C --> D[Hierarkisk chunking]
   D --> E[Embeddings + fulltekstindeks]
-  E --> F[Supabase pgvector + FTS]
+  E --> F[PostgreSQL pgvector + FTS]
   G[Brukerspørsmål eller artefaktjobb] --> H[Query rewrite + scoping]
   H --> I[Hybrid retrieve]
   I --> J[Rerank]
@@ -85,11 +85,11 @@ Effekt:
 
 ### Vector database
 
-Supabase med pgvector er riktig valg for denne appen nå. Appen har allerede `document_chunks.embedding` og HNSW-indeks.
+PostgreSQL med pgvector er riktig valg for denne appen nå. Appen har allerede `document_chunks.embedding` og HNSW-indeks.
 
 Forbedring:
 
-- Behold Supabase/pgvector som primær vektordatabase.
+- Behold PostgreSQL/pgvector som primær vektordatabase.
 - Legg til query-embedding-cache per normalisert query, prosjekt og dokumentversjon.
 - Legg til `embedding_model`, `content_hash` og indeksstatus i UI/observability.
 - Kjør backfill for eksisterende dokumenter når migrasjonen er aktiv.
@@ -427,7 +427,7 @@ Effekt:
 
 ### Fase 1: Stabiliser eksisterende RAG
 
-- Verifiser at `supabase/document_chunks_and_embeddings.sql` er kjørt i alle miljøer.
+- Verifiser at `database/document_chunks_and_embeddings.sql` er kjørt i alle miljøer.
 - Lag backfill-jobb som indekserer alle eksisterende dokumenter.
 - Logg retrieval metadata for chat og artefakter: query, source IDs, chunk IDs, scores, timings og antall tokens.
 - Vis "kildegrunnlag" tydelig i UI.
@@ -435,7 +435,7 @@ Effekt:
 ### Fase 2: Ekte hybrid search
 
 - Legg til `fts tsvector` eller separat søkeindeks for chunks.
-- Implementer Supabase RPC `hybrid_match_document_chunks`.
+- Implementer PostgREST RPC `hybrid_match_document_chunks`.
 - Bruk RRF mellom fulltekst og vektor.
 - Skill `semantic_score`, `keyword_score`, `rrf_score` og `final_score`.
 
@@ -470,7 +470,7 @@ Effekt:
 ## Høyest avkastning først
 
 1. **Retrieval logging + eval-sett.** Uten dette vet dere ikke om endringer hjelper.
-2. **Ekte hybrid search i Supabase.** Dette vil gi stor effekt for krav-ID-er, tabeller og kontraktsreferanser.
+2. **Ekte hybrid search i PostgreSQL.** Dette vil gi stor effekt for krav-ID-er, tabeller og kontraktsreferanser.
 3. **Query rewrite for chat og artefakter.** Dette løser mange irrelevante retrievals.
 4. **Rerank + quality gate.** Dette reduserer dårlige svar fra svakt kildegrunnlag.
 5. **Docling for vanskelige dokumenter.** Dette forbedrer alt nedstrøms fordi bedre parsing gir bedre chunks.
@@ -490,7 +490,7 @@ Agentic RAG og LangGraph bør innføres etter at retrieval-kvaliteten kan måles
 - Docling hybrid chunking: https://docling-project.github.io/docling/_generated/examples/hybrid_chunking/
 - Docling chunking-konsepter: https://docling-project.github.io/docling/concepts/chunking/
 - Docling RAG med LangChain: https://docling-project.github.io/docling/_generated/examples/rag_langchain/
-- Supabase hybrid search: https://supabase.com/docs/guides/ai/hybrid-search
+- PostgreSQL full-text search: https://www.postgresql.org/docs/current/textsearch.html
 - LangChain retrieval/RAG-arkitekturer: https://docs.langchain.com/oss/python/langchain/retrieval
 - LangGraph Graph API: https://docs.langchain.com/oss/python/langgraph/graph-api
 - LangGraph.js StateGraph: https://langchain-ai.github.io/langgraphjs/reference/classes/langgraph.StateGraph.html

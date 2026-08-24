@@ -73,22 +73,37 @@ export function validateCanonicalProjectJobMigration(input) {
 }
 
 export async function preflightRemoteProjectJobSchema({
-  supabaseUrl,
-  serviceRoleKey,
-  expectedProjectRef,
+  dataApiUrl,
+  dataApiServiceRoleKey,
+  dataApiAllowedHostSuffix,
   fetchImpl = fetch,
 }) {
-  if (!supabaseUrl?.trim() || !serviceRoleKey?.trim()) {
-    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
+  const rootUrl = dataApiUrl?.trim().replace(/\/+$/u, "");
+  const serviceRoleKey = dataApiServiceRoleKey?.trim();
+  if (!rootUrl || !serviceRoleKey) {
+    throw new Error("DATA_API_URL and DATA_API_SERVICE_ROLE_KEY are required together.");
   }
-
-  const url = new URL("/rest/v1/project_jobs", supabaseUrl);
+  const checkedRootUrl = new URL(rootUrl);
   if (
-    expectedProjectRef?.trim() &&
-    url.hostname !== `${expectedProjectRef.trim()}.supabase.co`
+    checkedRootUrl.protocol !== "https:" ||
+    checkedRootUrl.username ||
+    checkedRootUrl.password ||
+    checkedRootUrl.search ||
+    checkedRootUrl.hash
   ) {
-    throw new Error("SUPABASE_URL does not match SUPABASE_PROJECT_REF.");
+    throw new Error("The data API root must be a credential-free HTTPS URL.");
   }
+  const suffix = dataApiAllowedHostSuffix?.trim().toLowerCase() || "";
+  if (suffix) {
+    if (
+      !/^\.internal\.[a-z0-9.-]+$/u.test(suffix) ||
+      !checkedRootUrl.hostname.toLowerCase().endsWith(suffix) ||
+      checkedRootUrl.hostname.length <= suffix.length
+    ) {
+      throw new Error("The explicit data API must use the expected internal ACA host suffix.");
+    }
+  }
+  const url = new URL(`${rootUrl}/project_jobs`);
   url.searchParams.set("select", REQUIRED_PROJECT_JOB_COLUMNS.join(","));
   url.searchParams.set("limit", "0");
   const response = await fetchImpl(url, {
@@ -106,7 +121,7 @@ export async function preflightRemoteProjectJobSchema({
     );
   }
 
-  const auditEventsUrl = new URL("/rest/v1/audit_events", supabaseUrl);
+  const auditEventsUrl = new URL(`${rootUrl}/audit_events`);
   auditEventsUrl.searchParams.set(
     "select",
     REQUIRED_AUDIT_EVENT_COLUMNS.join(","),
@@ -127,8 +142,7 @@ export async function preflightRemoteProjectJobSchema({
   }
 
   const fencingUrl = new URL(
-    "/rest/v1/rpc/project_job_fencing_preflight",
-    supabaseUrl,
+    `${rootUrl}/rpc/project_job_fencing_preflight`,
   );
   const fencingResponse = await fetchImpl(fencingUrl, {
     method: "POST",
@@ -151,8 +165,7 @@ export async function preflightRemoteProjectJobSchema({
   }
 
   const terminalAuditUrl = new URL(
-    "/rest/v1/rpc/project_job_terminal_audit_preflight",
-    supabaseUrl,
+    `${rootUrl}/rpc/project_job_terminal_audit_preflight`,
   );
   const terminalAuditResponse = await fetchImpl(terminalAuditUrl, {
     method: "POST",
@@ -177,8 +190,7 @@ export async function preflightRemoteProjectJobSchema({
   }
 
   const rollbackBridgeUrl = new URL(
-    "/rest/v1/rpc/stable_main_rollback_bridge_preflight",
-    supabaseUrl,
+    `${rootUrl}/rpc/stable_main_rollback_bridge_preflight`,
   );
   const rollbackBridgeResponse = await fetchImpl(rollbackBridgeUrl, {
     method: "POST",
@@ -203,8 +215,7 @@ export async function preflightRemoteProjectJobSchema({
   }
 
   const serviceDocumentWriteUrl = new URL(
-    "/rest/v1/rpc/atomic_service_document_write_preflight",
-    supabaseUrl,
+    `${rootUrl}/rpc/atomic_service_document_write_preflight`,
   );
   const serviceDocumentWriteResponse = await fetchImpl(
     serviceDocumentWriteUrl,
@@ -244,7 +255,7 @@ export async function preflightRemoteProjectJobSchema({
 }
 
 function canonicalMigrationSql(repoRoot) {
-  const migrationsDirectory = path.join(repoRoot, "supabase", "migrations");
+  const migrationsDirectory = path.join(repoRoot, "database", "migrations");
   const files = readdirSync(migrationsDirectory)
     .filter((file) => file.endsWith(".sql"))
     .sort();
@@ -255,13 +266,15 @@ function canonicalMigrationSql(repoRoot) {
 
 async function main() {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  validateCanonicalProjectJobMigration(canonicalMigrationSql(repoRoot));
+  const remotePreflight =
+    process.argv.includes("--remote") ||
+    process.env.REMOTE_SCHEMA_PREFLIGHT === "1";
 
-  if (process.argv.includes("--remote")) {
+  if (remotePreflight) {
     const result = await preflightRemoteProjectJobSchema({
-      supabaseUrl: process.env.SUPABASE_URL,
-      serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-      expectedProjectRef: process.env.SUPABASE_PROJECT_REF,
+      dataApiUrl: process.env.DATA_API_URL,
+      dataApiServiceRoleKey: process.env.DATA_API_SERVICE_ROLE_KEY,
+      dataApiAllowedHostSuffix: process.env.DATA_API_ALLOWED_HOST_SUFFIX,
     });
     console.log(
       JSON.stringify({
@@ -278,6 +291,7 @@ async function main() {
     return;
   }
 
+  validateCanonicalProjectJobMigration(canonicalMigrationSql(repoRoot));
   console.log(JSON.stringify({ project_jobs_migration: "valid" }));
 }
 

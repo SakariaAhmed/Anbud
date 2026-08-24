@@ -26,8 +26,6 @@ interface ProgressPhase {
   body: string;
 }
 
-const MAX_PROGRESS_PHASES = 4;
-
 const PHASE_CARD_STYLES = [
   {
     railClassName: "from-blue-600 via-blue-500 to-cyan-500",
@@ -228,7 +226,7 @@ function PhaseList({
   phases: ProgressPhase[];
   muted?: boolean;
 }) {
-  const visiblePhases = phases.slice(0, MAX_PROGRESS_PHASES);
+  const visiblePhases = phases;
 
   if (!visiblePhases.length) {
     return (
