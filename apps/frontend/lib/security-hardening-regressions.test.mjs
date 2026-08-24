@@ -75,18 +75,17 @@ test("legacy administrator secret is migration-only and never wired to a new rev
   assert.match(reconcileStep, /An active legacy revision still requires app-access-password/u);
 });
 
-test("legacy Supabase secrets exist only for the active rollback revision", () => {
+test("retired provider configuration stays removed", () => {
   const bicep = read("infra/azure/container-app.bicep", repositoryRoot);
   const workflow = read(".github/workflows/deploy-azure.yml", repositoryRoot);
+  const retiredProvider = ["supa", "base"].join("");
+  const retiredStorageSelector = ["FILE", "STORAGE", "BACKEND"].join("_");
 
-  assert.match(bicep, /param legacySupabaseUrl string = ''/u);
-  assert.match(bicep, /param legacySupabaseServiceRoleKey string = ''/u);
-  assert.equal(bicep.match(/name: 'supabase-url'/gu)?.length, 1);
-  assert.equal(bicep.match(/name: 'supabase-service-role-key'/gu)?.length, 1);
-  assert.doesNotMatch(bicep, /name: 'SUPABASE_URL'|name: 'SUPABASE_SERVICE_ROLE_KEY'/u);
-  assert.match(workflow, /active rollback revision still requires the temporary Supabase secrets/u);
-  assert.match(workflow, /name: Remove retired Supabase secrets/u);
-  assert.match(workflow, /--secret-names supabase-url supabase-service-role-key/u);
+  assert.doesNotMatch(`${bicep}\n${workflow}`, new RegExp(retiredProvider, "iu"));
+  assert.doesNotMatch(
+    `${bicep}\n${workflow}`,
+    new RegExp(retiredStorageSelector, "u"),
+  );
 });
 
 test("production deploy requires and forwards independent identity HMAC secrets", () => {

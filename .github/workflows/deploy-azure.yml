@@ -247,8 +247,6 @@ jobs:
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
           APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
           LEGACY_APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
-          LEGACY_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          LEGACY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
           APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
           APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
@@ -275,11 +273,6 @@ jobs:
             echo "::error::An active legacy revision still requires app-access-password."
             exit 1
           fi
-          legacy_supabase_revision="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && (length(properties.template.containers[0].env[?secretRef=='supabase-url']) > \`0\` || length(properties.template.containers[0].env[?secretRef=='supabase-service-role-key']) > \`0\`)].name | [0]" --output tsv --only-show-errors)"
-          if [ -n "$legacy_supabase_revision" ] && { [ -z "$LEGACY_SUPABASE_URL" ] || [ -z "$LEGACY_SUPABASE_SERVICE_ROLE_KEY" ]; }; then
-            echo "::error::The active rollback revision still requires the temporary Supabase secrets."
-            exit 1
-          fi
           parameters=(
             appName="$CONTAINER_APP"
             image="$CURRENT_APP_IMAGE"
@@ -296,8 +289,6 @@ jobs:
             appEncryptionKey="$APP_ENCRYPTION_KEY"
             appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH"
             legacyAppAccessPassword="$LEGACY_APP_ACCESS_PASSWORD"
-            legacySupabaseUrl="$LEGACY_SUPABASE_URL"
-            legacySupabaseServiceRoleKey="$LEGACY_SUPABASE_SERVICE_ROLE_KEY"
             appSessionSecret="$APP_SESSION_SECRET"
             appGuestCodePepper="$APP_GUEST_CODE_PEPPER"
             appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET"
@@ -336,23 +327,6 @@ jobs:
           DATA_API_URL: ${{ vars.DATA_API_URL }}
           DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: node scripts/azure_containerapp_rollout.mjs
-
-      - name: Remove retired Supabase secrets
-        run: |
-          active_legacy_refs="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && (length(properties.template.containers[0].env[?secretRef=='supabase-url']) > \`0\` || length(properties.template.containers[0].env[?secretRef=='supabase-service-role-key']) > \`0\`)].name | [0]" --output tsv --only-show-errors)"
-          if [ -n "$active_legacy_refs" ]; then
-            echo "::error::An active revision still references a retired Supabase secret."
-            exit 1
-          fi
-          configured_legacy_secrets="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.configuration.secrets[?name=='supabase-url' || name=='supabase-service-role-key'].name" --output tsv --only-show-errors)"
-          if [ -n "$configured_legacy_secrets" ]; then
-            az containerapp secret remove --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --secret-names supabase-url supabase-service-role-key --output none --only-show-errors
-          fi
-          remaining_legacy_secrets="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.configuration.secrets[?name=='supabase-url' || name=='supabase-service-role-key'].name | [0]" --output tsv --only-show-errors)"
-          if [ -n "$remaining_legacy_secrets" ]; then
-            echo "::error::Retired Supabase secrets remain configured."
-            exit 1
-          fi
 
       - name: Roll back to the previous Azure revision
         if: >-

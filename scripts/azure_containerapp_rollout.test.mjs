@@ -713,9 +713,8 @@ test("Azure workflow has one PostgREST and Blob Storage deployment path", () => 
   assert.match(fallbackStep, /steps\.rollout\.outcome == 'failure'/u);
   assert.match(fallbackStep, /--rollback-state/u);
   assert.doesNotMatch(workflow, /FROZEN_INGRESS_ROLLOUT/u);
-  assert.doesNotMatch(workflow, /FILE_STORAGE_BACKEND/u);
-  assert.equal(bicep.match(/name: 'FILE_STORAGE_BACKEND'/gu)?.length, 2);
-  assert.equal(bicep.match(/value: 'azure'/gu)?.length, 2);
-  assert.match(workflow, /name: Remove retired Supabase secrets/u);
-  assert.match(workflow, /containerapp secret remove/u);
+  assert.doesNotMatch(
+    `${workflow}\n${bicep}`,
+    new RegExp(["FILE", "STORAGE", "BACKEND"].join("_"), "u"),
+  );
 });

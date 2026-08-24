@@ -66,14 +66,6 @@ param appAdminAccessPasswordHash string
 param legacyAppAccessPassword string = ''
 
 @secure()
-@description('Temporary Supabase URL retained only as an app-level secret while the serving rollback revision still references it. It is never exposed to a new revision.')
-param legacySupabaseUrl string = ''
-
-@secure()
-@description('Temporary Supabase service key retained only as an app-level secret while the serving rollback revision still references it. It is never exposed to a new revision.')
-param legacySupabaseServiceRoleKey string = ''
-
-@secure()
 @description('Stable session signing secret.')
 param appSessionSecret string
 
@@ -284,15 +276,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'app-access-password'
           value: legacyAppAccessPassword
         }
-      ] : [], !empty(legacySupabaseUrl) && !empty(legacySupabaseServiceRoleKey) ? [
-        {
-          name: 'supabase-url'
-          value: legacySupabaseUrl
-        }
-        {
-          name: 'supabase-service-role-key'
-          value: legacySupabaseServiceRoleKey
-        }
       ] : [], !empty(azureDocumentIntelligenceKey) ? [
         {
           name: 'azure-document-intelligence-key'
@@ -371,12 +354,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'DATA_API_ALLOWED_HOST_SUFFIX'
               value: '.internal.${environment.properties.defaultDomain}'
-            }
-            // The serving rollback image still reads this Azure-only selector.
-            // Current application code ignores it.
-            {
-              name: 'FILE_STORAGE_BACKEND'
-              value: 'azure'
             }
             {
               name: 'AZURE_STORAGE_ACCOUNT_URL'
@@ -636,11 +613,6 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'DATA_API_ALLOWED_HOST_SUFFIX'
               value: '.internal.${environment.properties.defaultDomain}'
-            }
-            // Keep the previous worker image Azure-backed if rollout reverses.
-            {
-              name: 'FILE_STORAGE_BACKEND'
-              value: 'azure'
             }
             {
               name: 'AZURE_STORAGE_ACCOUNT_URL'
