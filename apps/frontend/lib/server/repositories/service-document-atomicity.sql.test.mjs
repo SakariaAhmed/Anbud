@@ -10,22 +10,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(__dirname, "../../../../..");
 const migrationPath = path.join(
   repositoryRoot,
-  "supabase/migrations/20260712133000_atomic_service_document_write.sql",
+  "database/migrations/20260712133000_atomic_service_document_write.sql",
 );
 const migrationSql = readFileSync(migrationPath, "utf8");
 const storeSource = readFileSync(
   path.join(
     repositoryRoot,
-    "apps/frontend/lib/server/repositories/supabase-store.ts",
+    "apps/frontend/lib/server/repositories/data-store.ts",
   ),
   "utf8",
 );
 const canonicalSchema = readFileSync(
-  path.join(repositoryRoot, "supabase/schema.sql"),
+  path.join(repositoryRoot, "database/schema.sql"),
   "utf8",
 );
 const durableSchema = readFileSync(
-  path.join(repositoryRoot, "supabase/project_jobs_durable_execution.sql"),
+  path.join(repositoryRoot, "database/project_jobs_durable_execution.sql"),
   "utf8",
 );
 

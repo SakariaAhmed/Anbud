@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 
 -- Run once as the Azure bootstrap administrator before restoring the sanitized
--- public-schema dump. This script intentionally creates no Supabase platform roles.
+-- public-schema dump. This script creates only the roles required by PostgREST.
 DO $bootstrap$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anbud_owner') THEN

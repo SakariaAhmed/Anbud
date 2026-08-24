@@ -20,8 +20,6 @@ const variableNames = [
   "DATA_API_SERVICE_ROLE_KEY",
   "DATA_API_ALLOWED_HOST_SUFFIX",
   "NODE_ENV",
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
 ];
 
 function withEnvironment(values, action) {
@@ -38,34 +36,16 @@ function withEnvironment(values, action) {
   }
 }
 
-test("data API config preserves the existing Supabase REST contract", () => {
-  withEnvironment(
-    {
-      SUPABASE_URL: "https://project.supabase.co/",
-      SUPABASE_SERVICE_ROLE_KEY: "supabase-key",
-    },
-    () =>
-      assert.deepEqual(dataApiConfiguration(), {
-        baseUrl: "https://project.supabase.co/rest/v1",
-        serviceKey: "supabase-key",
-        backend: "supabase",
-      }),
-  );
-});
-
-test("explicit internal data API takes precedence and requires a complete pair", () => {
+test("internal data API requires a complete and credential-free URL pair", () => {
   withEnvironment(
     {
       DATA_API_URL: "https://internal.example/",
       DATA_API_SERVICE_ROLE_KEY: "azure-key",
-      SUPABASE_URL: "https://project.supabase.co",
-      SUPABASE_SERVICE_ROLE_KEY: "supabase-key",
     },
     () =>
       assert.deepEqual(dataApiConfiguration(), {
         baseUrl: "https://internal.example",
         serviceKey: "azure-key",
-        backend: "azure",
       }),
   );
   withEnvironment({ DATA_API_URL: "https://incomplete.example" }, () => {
@@ -90,7 +70,7 @@ test("production data API credentials are limited to the internal ACA domain", (
       ".internal.kindstone-123.norwayeast.azurecontainerapps.io",
   };
   withEnvironment(valid, () => {
-    assert.equal(dataApiConfiguration()?.backend, "azure");
+    assert.equal(dataApiConfiguration()?.baseUrl, valid.DATA_API_URL);
   });
   withEnvironment(
     { ...valid, DATA_API_URL: "https://credential-capture.example" },

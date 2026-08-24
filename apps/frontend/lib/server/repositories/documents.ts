@@ -9,4 +9,4 @@ export {
   saveDocumentIngestionResult,
   savePendingDocument,
   updateDocumentProcessingState,
-} from "@/lib/server/repositories/supabase-store";
+} from "@/lib/server/repositories/data-store";

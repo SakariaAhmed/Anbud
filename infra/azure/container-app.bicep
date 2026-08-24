@@ -27,30 +27,15 @@ param workerImage string
 @description('Azure Container Registry resource name in this resource group.')
 param registryName string
 
-@secure()
-@description('Current Supabase project URL. Kept for phase 1 Azure hosting migration.')
-param supabaseUrl string = ''
+@description('Full internal PostgREST root URL for the Azure data API.')
+param dataApiUrl string
 
 @secure()
-@description('Current Supabase service role key. Kept server-side only.')
-param supabaseServiceRoleKey string = ''
+@description('Service JWT for the internal Azure PostgREST API.')
+param dataApiServiceRoleKey string
 
-@description('Optional full PostgREST root URL for the Azure data API. Leave empty until cutover.')
-param dataApiUrl string = ''
-
-@secure()
-@description('Optional service JWT for the internal Azure PostgREST API. Never reuse the Supabase key.')
-param dataApiServiceRoleKey string = ''
-
-@description('File storage implementation. Keep supabase until the verified blob cutover.')
-@allowed([
-  'supabase'
-  'azure'
-])
-param fileStorageBackend string = 'supabase'
-
-@description('Azure Blob service URL used with managed identity after storage cutover.')
-param azureStorageAccountUrl string = ''
+@description('Azure Blob service URL used with managed identity.')
+param azureStorageAccountUrl string
 
 @description('Private Azure Blob container that preserves the existing bucket contract.')
 param azureStorageContainer string = 'anbud-documents'
@@ -69,7 +54,7 @@ param microsoftEntraClientSecret string
 param microsoftEntraTenantSubdomain string
 
 @secure()
-@description('Stable app encryption key. Do not rotate during migration unless document data is re-encrypted.')
+@description('Stable app encryption key. Do not rotate unless document data is re-encrypted.')
 param appEncryptionKey string
 
 @secure()
@@ -79,6 +64,14 @@ param appAdminAccessPasswordHash string
 @secure()
 @description('Temporary legacy plaintext password retained only while an older active revision still references it. Leave empty after that revision is retired.')
 param legacyAppAccessPassword string = ''
+
+@secure()
+@description('Temporary Supabase URL retained only as an app-level secret while the serving rollback revision still references it. It is never exposed to a new revision.')
+param legacySupabaseUrl string = ''
+
+@secure()
+@description('Temporary Supabase service key retained only as an app-level secret while the serving rollback revision still references it. It is never exposed to a new revision.')
+param legacySupabaseServiceRoleKey string = ''
 
 @secure()
 @description('Stable session signing secret.')
@@ -186,7 +179,7 @@ param projectJobWorkerMemory string = '4Gi'
 @minValue(2100)
 param projectJobWorkerReplicaTimeout int = 2100
 
-@description('Public ingress is disabled during the Azure backend cutover and enabled only after target activation and smoke.')
+@description('Whether the web application exposes public ingress.')
 param externalIngressEnabled bool = true
 
 @description('Minimum active replicas.')
@@ -291,14 +284,14 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'app-access-password'
           value: legacyAppAccessPassword
         }
-      ] : [], !empty(supabaseUrl) && !empty(supabaseServiceRoleKey) ? [
+      ] : [], !empty(legacySupabaseUrl) && !empty(legacySupabaseServiceRoleKey) ? [
         {
           name: 'supabase-url'
-          value: supabaseUrl
+          value: legacySupabaseUrl
         }
         {
           name: 'supabase-service-role-key'
-          value: supabaseServiceRoleKey
+          value: legacySupabaseServiceRoleKey
         }
       ] : [], !empty(azureDocumentIntelligenceKey) ? [
         {
@@ -379,9 +372,11 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'DATA_API_ALLOWED_HOST_SUFFIX'
               value: '.internal.${environment.properties.defaultDomain}'
             }
+            // The serving rollback image still reads this Azure-only selector.
+            // Current application code ignores it.
             {
               name: 'FILE_STORAGE_BACKEND'
-              value: fileStorageBackend
+              value: 'azure'
             }
             {
               name: 'AZURE_STORAGE_ACCOUNT_URL'
@@ -459,16 +454,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION'
               value: azureDocumentIntelligenceHighResolution
             }
-          ], !empty(supabaseUrl) && !empty(supabaseServiceRoleKey) ? [
-            {
-              name: 'SUPABASE_URL'
-              secretRef: 'supabase-url'
-            }
-            {
-              name: 'SUPABASE_SERVICE_ROLE_KEY'
-              secretRef: 'supabase-service-role-key'
-            }
-          ] : [], !empty(azureDocumentIntelligenceEndpoint) && !empty(azureDocumentIntelligenceKey) ? [
+          ], !empty(azureDocumentIntelligenceEndpoint) && !empty(azureDocumentIntelligenceKey) ? [
             {
               name: 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT'
               value: azureDocumentIntelligenceEndpoint
@@ -585,16 +571,7 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
           name: 'project-job-worker-token'
           value: projectJobWorkerToken
         }
-      ], !empty(supabaseUrl) && !empty(supabaseServiceRoleKey) ? [
-        {
-          name: 'supabase-url'
-          value: supabaseUrl
-        }
-        {
-          name: 'supabase-service-role-key'
-          value: supabaseServiceRoleKey
-        }
-      ] : [], !empty(azureDocumentIntelligenceKey) ? [
+      ], !empty(azureDocumentIntelligenceKey) ? [
         {
           name: 'azure-document-intelligence-key'
           value: azureDocumentIntelligenceKey
@@ -660,9 +637,10 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               name: 'DATA_API_ALLOWED_HOST_SUFFIX'
               value: '.internal.${environment.properties.defaultDomain}'
             }
+            // Keep the previous worker image Azure-backed if rollout reverses.
             {
               name: 'FILE_STORAGE_BACKEND'
-              value: fileStorageBackend
+              value: 'azure'
             }
             {
               name: 'AZURE_STORAGE_ACCOUNT_URL'
@@ -716,16 +694,7 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
               name: 'AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION'
               value: azureDocumentIntelligenceHighResolution
             }
-          ], !empty(supabaseUrl) && !empty(supabaseServiceRoleKey) ? [
-            {
-              name: 'SUPABASE_URL'
-              secretRef: 'supabase-url'
-            }
-            {
-              name: 'SUPABASE_SERVICE_ROLE_KEY'
-              secretRef: 'supabase-service-role-key'
-            }
-          ] : [], !empty(azureDocumentIntelligenceEndpoint) && !empty(azureDocumentIntelligenceKey) ? [
+          ], !empty(azureDocumentIntelligenceEndpoint) && !empty(azureDocumentIntelligenceKey) ? [
             {
               name: 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT'
               value: azureDocumentIntelligenceEndpoint

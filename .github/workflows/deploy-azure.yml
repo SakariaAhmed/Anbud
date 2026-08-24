@@ -2,28 +2,6 @@ name: Deploy Azure Container App
 
 on:
   workflow_dispatch:
-    inputs:
-      confirm_azure_backend_cutover:
-        description: Confirm that the external write-freeze, final data sync, and rollback gates are complete before allowing Azure backends.
-        required: true
-        default: false
-        type: boolean
-      azure_backend_release_mode:
-        description: Use cutover only for a fresh final migration; use routine after Azure has already been activated successfully.
-        required: true
-        default: cutover
-        type: choice
-        options:
-          - cutover
-          - routine
-      final_cutover_evidence_blob:
-        description: Relative path of the final cutover evidence envelope in the private migration-evidence container (Azure backend only).
-        required: false
-        type: string
-      final_cutover_evidence_sha256:
-        description: SHA-256 of that exact final cutover evidence envelope (Azure backend only).
-        required: false
-        type: string
 
 permissions:
   actions: read
@@ -33,16 +11,12 @@ env:
   RESOURCE_GROUP: anbud-prod
   CONTAINER_APP: anbud
   PROJECT_JOB_WORKER_APP: anbud-project-job-worker
-  MIGRATION_CONTROL_JOB: anbud-migration-control
-  MIGRATION_ACTIVATION_JOB: anbud-migration-activate
-  MIGRATION_DEACTIVATION_JOB: anbud-migration-deactivate
   POSTGREST_APP: anbud-postgrest
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
   MIN_REPLICAS: "0"
   PROJECT_JOB_WORKER_LIMIT: "1"
   PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"
-  MIGRATION_DISABLED_WORKER_CRON: "0 0 31 2 *"
   NODE_VERSION: "22.14.0"
 
 jobs:
@@ -84,13 +58,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Validate production Supabase fallback schema
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-        run: node scripts/validate_project_jobs_schema.mjs --remote
-
       - name: Azure login
         uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43
         with:
@@ -100,6 +67,62 @@ jobs:
 
       - name: Ensure Container Apps extension
         run: az extension add --name containerapp --upgrade
+
+      - name: Validate Azure deployment configuration
+        env:
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
+          AZURE_STORAGE_ACCOUNT_URL: ${{ vars.AZURE_STORAGE_ACCOUNT_URL }}
+          AZURE_STORAGE_CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'anbud-documents' }}
+          APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
+          MICROSOFT_ENTRA_CLIENT_ID: ${{ vars.MICROSOFT_ENTRA_CLIENT_ID }}
+          MICROSOFT_ENTRA_CLIENT_SECRET: ${{ secrets.MICROSOFT_ENTRA_CLIENT_SECRET }}
+          MICROSOFT_ENTRA_TENANT_SUBDOMAIN: ${{ vars.MICROSOFT_ENTRA_TENANT_SUBDOMAIN }}
+          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
+          APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
+          APP_ADMIN_PRINCIPAL_ID: ${{ vars.APP_ADMIN_PRINCIPAL_ID }}
+          APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
+          APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
+          APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
+          APP_ACTIVITY_HASH_SECRET: ${{ secrets.APP_ACTIVITY_HASH_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
+        run: |
+          missing=0
+          for name in DATA_API_URL DATA_API_SERVICE_ROLE_KEY AZURE_STORAGE_ACCOUNT_URL AZURE_STORAGE_CONTAINER APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ADMIN_ACCESS_PASSWORD_HASH APP_ADMIN_PRINCIPAL_ID APP_SESSION_SECRET APP_GUEST_CODE_PEPPER APP_IDENTITY_LOOKUP_SECRET APP_ACTIVITY_HASH_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub production configuration: $name"
+              missing=1
+            fi
+          done
+          if [ "${#DATA_API_SERVICE_ROLE_KEY}" -lt 32 ]; then
+            echo "::error::DATA_API_SERVICE_ROLE_KEY is invalid."
+            missing=1
+          fi
+          if [[ ! "$AZURE_STORAGE_ACCOUNT_URL" =~ ^https://[a-z0-9-]+\.blob\.core\.windows\.net$ ]]; then
+            echo "::error::AZURE_STORAGE_ACCOUNT_URL must identify Azure Blob Storage."
+            missing=1
+          fi
+          if [[ ! "$AZURE_STORAGE_CONTAINER" =~ ^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])$ ]]; then
+            echo "::error::AZURE_STORAGE_CONTAINER is invalid."
+            missing=1
+          fi
+          postgrest_fqdn="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$POSTGREST_APP" --query properties.configuration.ingress.fqdn --output tsv --only-show-errors 2>/dev/null || true)"
+          postgrest_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$POSTGREST_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors 2>/dev/null || true)"
+          if [ "${DATA_API_URL%/}" != "https://${postgrest_fqdn}" ] || [ "$postgrest_external" != "false" ]; then
+            echo "::error::DATA_API_URL must identify the live internal-only PostgREST app."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Validate production database contract
+        env:
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
+        run: node scripts/validate_project_jobs_schema.mjs --remote
 
       - name: Capture last healthy images
         run: |
@@ -111,155 +134,6 @@ jobs:
           fi
           echo "CURRENT_APP_IMAGE=$current_app_image" >> "$GITHUB_ENV"
           echo "CURRENT_WORKER_IMAGE=$current_worker_image" >> "$GITHUB_ENV"
-
-      - name: Validate deployment configuration
-        id: deployment_config
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-          APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
-          MICROSOFT_ENTRA_CLIENT_ID: ${{ vars.MICROSOFT_ENTRA_CLIENT_ID }}
-          MICROSOFT_ENTRA_CLIENT_SECRET: ${{ secrets.MICROSOFT_ENTRA_CLIENT_SECRET }}
-          MICROSOFT_ENTRA_TENANT_SUBDOMAIN: ${{ vars.MICROSOFT_ENTRA_TENANT_SUBDOMAIN }}
-          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
-          APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
-          APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
-          APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
-          APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
-          APP_ACTIVITY_HASH_SECRET: ${{ secrets.APP_ACTIVITY_HASH_SECRET }}
-          APP_ADMIN_PRINCIPAL_ID: ${{ vars.APP_ADMIN_PRINCIPAL_ID }}
-          APP_ADMIN_DISPLAY_NAME: ${{ vars.APP_ADMIN_DISPLAY_NAME || 'Administrator' }}
-          APP_ADMIN_EMAILS: ${{ vars.APP_ADMIN_EMAILS }}
-          AZURE_COMMUNICATION_EMAIL_ENDPOINT: ${{ vars.AZURE_COMMUNICATION_EMAIL_ENDPOINT }}
-          AZURE_COMMUNICATION_EMAIL_SENDER: ${{ vars.AZURE_COMMUNICATION_EMAIL_SENDER }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
-          OPENAI_DOCUMENT_ANALYSIS_MODEL: ${{ vars.OPENAI_DOCUMENT_ANALYSIS_MODEL || 'gpt-5.6-terra' }}
-          DOCUMENT_ANALYSIS_VERSION: ${{ vars.DOCUMENT_ANALYSIS_VERSION || 'off' }}
-          AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT }}
-          AZURE_DOCUMENT_INTELLIGENCE_KEY: ${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_KEY }}
-          AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION || 'auto' }}
-          PROJECT_JOB_WORKER_TOKEN: ${{ secrets.PROJECT_JOB_WORKER_TOKEN }}
-          PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
-          DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
-          DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
-          DATA_API_URL: ${{ vars.DATA_API_URL }}
-          FILE_STORAGE_BACKEND: ${{ vars.FILE_STORAGE_BACKEND || 'supabase' }}
-          AZURE_STORAGE_ACCOUNT_URL: ${{ vars.AZURE_STORAGE_ACCOUNT_URL }}
-          AZURE_STORAGE_CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'anbud-documents' }}
-          MIGRATION_CONTROL_KEY_VAULT_NAME: ${{ vars.MIGRATION_CONTROL_KEY_VAULT_NAME }}
-          MIGRATION_CONTROL_DATA_API_SECRET_NAME: ${{ vars.MIGRATION_CONTROL_DATA_API_SECRET_NAME || 'postgrest-service-role-key' }}
-          MIGRATION_CONTROL_DATA_API_SECRET_VERSION: ${{ vars.MIGRATION_CONTROL_DATA_API_SECRET_VERSION }}
-          MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME: ${{ vars.MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME }}
-          MIGRATION_CONTROL_EVIDENCE_CONTAINER: ${{ vars.MIGRATION_CONTROL_EVIDENCE_CONTAINER || 'anbud-migration-evidence' }}
-          MIGRATION_CONTROL_EVIDENCE_BLOB: ${{ inputs.final_cutover_evidence_blob }}
-          MIGRATION_CONTROL_EVIDENCE_SHA256: ${{ inputs.final_cutover_evidence_sha256 }}
-          CONFIRM_AZURE_BACKEND_CUTOVER: ${{ inputs.confirm_azure_backend_cutover || false }}
-          AZURE_BACKEND_RELEASE_MODE: ${{ inputs.azure_backend_release_mode || 'cutover' }}
-        run: |
-          missing=0
-          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY APP_PUBLIC_ORIGIN MICROSOFT_ENTRA_CLIENT_ID MICROSOFT_ENTRA_CLIENT_SECRET MICROSOFT_ENTRA_TENANT_SUBDOMAIN APP_ENCRYPTION_KEY APP_ADMIN_ACCESS_PASSWORD_HASH APP_ADMIN_PRINCIPAL_ID APP_SESSION_SECRET APP_GUEST_CODE_PEPPER APP_IDENTITY_LOOKUP_SECRET APP_ACTIVITY_HASH_SECRET OPENAI_API_KEY PROJECT_JOB_WORKER_TOKEN
-          do
-            if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub production configuration: $name"
-              missing=1
-            fi
-          done
-          case "$FILE_STORAGE_BACKEND" in
-            supabase)
-              if [ -n "$DATA_API_URL" ]; then
-                echo "::error::The Supabase backend cannot be combined with DATA_API_URL."
-                missing=1
-              fi
-              echo "azure_backend=false" >> "$GITHUB_OUTPUT"
-              ;;
-            azure)
-              for name in DATA_API_URL AZURE_STORAGE_ACCOUNT_URL AZURE_STORAGE_CONTAINER MIGRATION_CONTROL_KEY_VAULT_NAME MIGRATION_CONTROL_DATA_API_SECRET_NAME MIGRATION_CONTROL_DATA_API_SECRET_VERSION MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME MIGRATION_CONTROL_EVIDENCE_CONTAINER MIGRATION_CONTROL_EVIDENCE_BLOB MIGRATION_CONTROL_EVIDENCE_SHA256 SUPABASE_PROJECT_REF
-              do
-                if [ -z "${!name}" ]; then
-                  echo "::error::Azure backend control is missing: $name"
-                  missing=1
-                fi
-              done
-              if [[ ! "$MIGRATION_CONTROL_DATA_API_SECRET_VERSION" =~ ^[0-9a-f]{32}$ ]]; then
-                echo "::error::MIGRATION_CONTROL_DATA_API_SECRET_VERSION must pin one immutable Key Vault version."
-                missing=1
-              fi
-              if [ "$MIGRATION_CONTROL_EVIDENCE_CONTAINER" = "$AZURE_STORAGE_CONTAINER" ] || [[ ! "$MIGRATION_CONTROL_EVIDENCE_CONTAINER" =~ ^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])$ ]]; then
-                echo "::error::Migration evidence must use a valid container separate from application documents."
-                missing=1
-              fi
-              if [[ ! "$MIGRATION_CONTROL_EVIDENCE_BLOB" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,1023}$ ]] || [[ "$MIGRATION_CONTROL_EVIDENCE_BLOB" == *"//"* ]] || [[ "$MIGRATION_CONTROL_EVIDENCE_BLOB" == *"/../"* ]] || [[ "$MIGRATION_CONTROL_EVIDENCE_BLOB" == ../* ]]; then
-                echo "::error::Final cutover evidence requires one safe relative Blob path."
-                missing=1
-              fi
-              if [[ ! "$MIGRATION_CONTROL_EVIDENCE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-                echo "::error::Final cutover evidence must be pinned by exact lowercase SHA-256."
-                missing=1
-              fi
-              if [ "$CONFIRM_AZURE_BACKEND_CUTOVER" != "true" ]; then
-                echo "::error::Azure backends require explicit confirmation that the external freeze, final sync, and rollback gates are complete."
-                missing=1
-              fi
-              case "$AZURE_BACKEND_RELEASE_MODE" in
-                cutover)
-                  echo "migration_control_mode=verify" >> "$GITHUB_OUTPUT"
-                  echo "azure_backend_release_mode=cutover" >> "$GITHUB_OUTPUT"
-                  ;;
-                routine)
-                  echo "migration_control_mode=validate-target" >> "$GITHUB_OUTPUT"
-                  echo "azure_backend_release_mode=routine" >> "$GITHUB_OUTPUT"
-                  ;;
-                *)
-                  echo "::error::AZURE_BACKEND_RELEASE_MODE must be cutover or routine."
-                  missing=1
-                  ;;
-              esac
-              key_vault_rbac="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query properties.enableRbacAuthorization --output tsv --only-show-errors 2>/dev/null || true)"
-              key_vault_template_deployment="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query properties.enabledForTemplateDeployment --output tsv --only-show-errors 2>/dev/null || true)"
-              if [ "$key_vault_rbac" != "true" ] || [ "$key_vault_template_deployment" != "true" ]; then
-                echo "::error::The migration Key Vault must use RBAC and allow pinned ARM secret references before source freeze."
-                missing=1
-              fi
-              expected_storage_url="https://${MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
-              if [ "$AZURE_STORAGE_ACCOUNT_URL" != "$expected_storage_url" ]; then
-                echo "::error::AZURE_STORAGE_ACCOUNT_URL does not match the bound migration Storage account."
-                missing=1
-              fi
-              postgrest_fqdn="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$POSTGREST_APP" --query properties.configuration.ingress.fqdn --output tsv --only-show-errors 2>/dev/null || true)"
-              postgrest_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$POSTGREST_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors 2>/dev/null || true)"
-              if [ "$postgrest_fqdn" != "${DATA_API_URL#https://}" ] || [ "$postgrest_external" != "false" ]; then
-                echo "::error::DATA_API_URL must identify the live internal-only PostgREST app."
-                missing=1
-              fi
-              control_principal_id="$(az identity show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query principalId --output tsv --only-show-errors 2>/dev/null || true)"
-              if [[ ! "$control_principal_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then
-                echo "::error::The privileged migration-control identity bootstrap is incomplete."
-                missing=1
-              else
-                key_vault_id="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query id --output tsv --only-show-errors)"
-                storage_account_id="$(az storage account show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME" --query id --output tsv --only-show-errors)"
-                storage_container_id="$storage_account_id/blobServices/default/containers/$AZURE_STORAGE_CONTAINER"
-                evidence_container_id="$storage_account_id/blobServices/default/containers/$MIGRATION_CONTROL_EVIDENCE_CONTAINER"
-                key_vault_role_count="$(az role assignment list --assignee-object-id "$control_principal_id" --scope "$key_vault_id" --query "[?ends_with(roleDefinitionId, '4633458b-17de-408a-b874-0445c86b69e6')] | length(@)" --output tsv --only-show-errors)"
-                storage_role_count="$(az role assignment list --assignee-object-id "$control_principal_id" --scope "$storage_container_id" --query "[?ends_with(roleDefinitionId, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')] | length(@)" --output tsv --only-show-errors)"
-                evidence_role_count="$(az role assignment list --assignee-object-id "$control_principal_id" --scope "$evidence_container_id" --query "[?ends_with(roleDefinitionId, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')] | length(@)" --output tsv --only-show-errors)"
-                if [ "$key_vault_role_count" != "1" ] || [ "$storage_role_count" != "1" ] || [ "$evidence_role_count" != "1" ]; then
-                  echo "::error::The migration-control identity bootstrap is missing an exact scoped read role."
-                  missing=1
-                fi
-              fi
-              echo "azure_backend=true" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "::error::FILE_STORAGE_BACKEND must be supabase or azure."
-              missing=1
-              ;;
-          esac
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
 
       - name: Docker login to ACR with Azure identity
         run: az acr login --name "$ACR_NAME"
@@ -310,279 +184,12 @@ jobs:
           severity: CRITICAL,HIGH
           vuln-type: os,library
 
-      - name: Prove public web ingress is frozen
-        if: >-
-          ${{ steps.deployment_config.outputs.azure_backend == 'true'
-              && steps.deployment_config.outputs.azure_backend_release_mode == 'cutover' }}
-        env:
-          APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
-        run: |
-          ingress_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors)"
-          if [ "$ingress_external" != "false" ]; then
-            echo "::error::Azure cutover requires the live web ingress to be internal before the source freeze is attested."
-            exit 1
-          fi
-          default_domain="$(az containerapp env show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP-env" --query properties.defaultDomain --output tsv --only-show-errors)"
-          expected_origin="https://${CONTAINER_APP}.${default_domain}"
-          if [ "${APP_PUBLIC_ORIGIN%/}" != "$expected_origin" ]; then
-            echo "::error::APP_PUBLIC_ORIGIN does not match the frozen production Container App boundary."
-            exit 1
-          fi
-
-          set +e
-          probe_status="$(curl --silent --show-error --output /dev/null --connect-timeout 5 --max-time 15 --max-redirs 0 --write-out '%{http_code}' "$expected_origin/api/health/live")"
-          probe_exit=$?
-          set -e
-          if [ "$probe_exit" -eq 0 ] && [ "$probe_status" != "404" ]; then
-            echo "::error::The external health probe still reached the web application (HTTP $probe_status); the source is not frozen."
-            exit 1
-          fi
-          echo "Public ingress freeze proved by external=false and a negative external probe."
-
-      - name: Prove frozen Supabase source has zero running jobs
-        if: >-
-          ${{ steps.deployment_config.outputs.azure_backend == 'true'
-              && steps.deployment_config.outputs.azure_backend_release_mode == 'cutover' }}
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-        run: |
-          node --input-type=module - <<'NODE'
-          const fail = (code) => {
-            console.error(`::error::Azure cutover source proof failed: ${code}.`);
-            process.exit(1);
-          };
-          try {
-            const source = new URL(process.env.SUPABASE_URL);
-            const expectedHost = `${process.env.SUPABASE_PROJECT_REF}.supabase.co`;
-            if (
-              !/^[a-z0-9]{20}$/u.test(process.env.SUPABASE_PROJECT_REF) ||
-              source.protocol !== "https:" ||
-              source.hostname !== expectedHost ||
-              source.username ||
-              source.password ||
-              source.search ||
-              source.hash ||
-              !["", "/"].includes(source.pathname)
-            ) fail("source_host_boundary_invalid");
-            const credential = process.env.SUPABASE_SERVICE_ROLE_KEY;
-            if (!credential) fail("source_credential_missing");
-            const headers = {
-              accept: "application/json",
-              apikey: credential,
-              authorization: `Bearer ${credential}`,
-            };
-            const request = async (path) => {
-              const response = await fetch(new URL(path, source), {
-                headers,
-                redirect: "error",
-                signal: AbortSignal.timeout(30_000),
-              });
-              if (!response.ok) fail("source_query_failed");
-              return response.json();
-            };
-            const [claimControl, runningJobs] = await Promise.all([
-              request("/rest/v1/project_job_claim_control?select=claims_enabled&singleton=eq.true"),
-              request("/rest/v1/project_jobs?select=id&status=eq.running&limit=1"),
-            ]);
-            if (
-              !Array.isArray(claimControl) ||
-              claimControl.length !== 1 ||
-              claimControl[0]?.claims_enabled !== false
-            ) fail("source_claim_gate_not_closed");
-            if (!Array.isArray(runningJobs) || runningJobs.length !== 0) {
-              fail("source_running_jobs_present");
-            }
-            console.log(JSON.stringify({ source_claims_frozen: true, source_running_jobs: 0 }));
-          } catch (error) {
-            if (error?.message?.startsWith("Azure cutover source proof failed:")) throw error;
-            fail("source_proof_unexpected_failure");
-          }
-          NODE
-
-      - name: Suspend scheduled worker for Azure cutover
-        if: ${{ steps.deployment_config.outputs.azure_backend == 'true' }}
-        run: |
-          az containerapp job update --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --cron-expression "$MIGRATION_DISABLED_WORKER_CRON" --output none --only-show-errors
-          az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none --only-show-errors
-
-      - name: Reconcile internal Azure migration control job
-        if: ${{ steps.deployment_config.outputs.azure_backend == 'true' }}
+      - name: Reconcile Azure infrastructure without releasing candidate code
         env:
           DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
           AZURE_STORAGE_ACCOUNT_URL: ${{ vars.AZURE_STORAGE_ACCOUNT_URL }}
           AZURE_STORAGE_CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'anbud-documents' }}
-          MIGRATION_CONTROL_KEY_VAULT_NAME: ${{ vars.MIGRATION_CONTROL_KEY_VAULT_NAME }}
-          MIGRATION_CONTROL_DATA_API_SECRET_NAME: ${{ vars.MIGRATION_CONTROL_DATA_API_SECRET_NAME || 'postgrest-service-role-key' }}
-          MIGRATION_CONTROL_DATA_API_SECRET_VERSION: ${{ vars.MIGRATION_CONTROL_DATA_API_SECRET_VERSION }}
-          MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME: ${{ vars.MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME }}
-          MIGRATION_CONTROL_EVIDENCE_CONTAINER: ${{ vars.MIGRATION_CONTROL_EVIDENCE_CONTAINER || 'anbud-migration-evidence' }}
-          MIGRATION_CONTROL_EVIDENCE_BLOB: ${{ inputs.final_cutover_evidence_blob }}
-          MIGRATION_CONTROL_EVIDENCE_SHA256: ${{ inputs.final_cutover_evidence_sha256 }}
-          CANDIDATE_IMAGE: ${{ steps.immutable_image.outputs.candidate_image }}
-          MIGRATION_CONTROL_MODE: ${{ steps.deployment_config.outputs.migration_control_mode }}
-        run: |
-          if [[ ! "$CANDIDATE_IMAGE" =~ ^[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::The migration control job requires the verified candidate digest."
-            exit 1
-          fi
-          key_vault_rbac="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query properties.enableRbacAuthorization --output tsv --only-show-errors)"
-          if [ "$key_vault_rbac" != "true" ]; then
-            echo "::error::The migration Key Vault must use Azure RBAC for the dedicated control identity."
-            exit 1
-          fi
-          control_parameters=(
-            environmentName="$CONTAINER_APP-env"
-            jobName="$MIGRATION_CONTROL_JOB"
-            activationJobName="$MIGRATION_ACTIVATION_JOB"
-            deactivationJobName="$MIGRATION_DEACTIVATION_JOB"
-            registryName="$ACR_NAME"
-            acrPullIdentityName="$CONTAINER_APP-acr-pull"
-            keyVaultName="$MIGRATION_CONTROL_KEY_VAULT_NAME"
-            dataApiServiceRoleSecretName="$MIGRATION_CONTROL_DATA_API_SECRET_NAME"
-            dataApiServiceRoleSecretVersion="$MIGRATION_CONTROL_DATA_API_SECRET_VERSION"
-            storageAccountName="$MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME"
-            storageContainerName="$AZURE_STORAGE_CONTAINER"
-            migrationEvidenceContainerName="$MIGRATION_CONTROL_EVIDENCE_CONTAINER"
-            migrationEvidenceBlobName="$MIGRATION_CONTROL_EVIDENCE_BLOB"
-            migrationEvidenceSha256="$MIGRATION_CONTROL_EVIDENCE_SHA256"
-            dataApiUrl="$DATA_API_URL"
-            azureStorageAccountUrl="$AZURE_STORAGE_ACCOUNT_URL"
-            image="$CANDIDATE_IMAGE"
-            controlMode="$MIGRATION_CONTROL_MODE"
-            bootstrapRoleAssignments=false
-          )
-          az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file infra/azure/migration-control.bicep --result-format ResourceIdOnly --parameters "${control_parameters[@]}"
-          az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-migration-control-${GITHUB_SHA}" --template-file infra/azure/migration-control.bicep --parameters "${control_parameters[@]}" --output none
-
-          control_principal_id="$(az identity show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query principalId --output tsv --only-show-errors)"
-          key_vault_id="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query id --output tsv --only-show-errors)"
-          storage_account_id="$(az storage account show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_STORAGE_ACCOUNT_NAME" --query id --output tsv --only-show-errors)"
-          storage_container_id="$storage_account_id/blobServices/default/containers/$AZURE_STORAGE_CONTAINER"
-          evidence_container_id="$storage_account_id/blobServices/default/containers/$MIGRATION_CONTROL_EVIDENCE_CONTAINER"
-          key_vault_role_count="$(az role assignment list --assignee-object-id "$control_principal_id" --scope "$key_vault_id" --query "[?ends_with(roleDefinitionId, '4633458b-17de-408a-b874-0445c86b69e6')] | length(@)" --output tsv --only-show-errors)"
-          storage_role_count="$(az role assignment list --assignee-object-id "$control_principal_id" --scope "$storage_container_id" --query "[?ends_with(roleDefinitionId, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')] | length(@)" --output tsv --only-show-errors)"
-          evidence_role_count="$(az role assignment list --assignee-object-id "$control_principal_id" --scope "$evidence_container_id" --query "[?ends_with(roleDefinitionId, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')] | length(@)" --output tsv --only-show-errors)"
-          if [ "$key_vault_role_count" != "1" ] || [ "$storage_role_count" != "1" ] || [ "$evidence_role_count" != "1" ]; then
-            echo "::error::The dedicated control identity lacks its exact Key Vault, document-container, or evidence-container read role. Run the one-time privileged bootstrap before routine deployment."
-            exit 1
-          fi
-
-          control_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
-          control_command_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'length(properties.template.containers[0].command)' --output tsv --only-show-errors)"
-          control_command="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.template.containers[0].command[0]' --output tsv --only-show-errors)"
-          control_arg_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'length(properties.template.containers[0].args)' --output tsv --only-show-errors)"
-          control_script_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.template.containers[0].args[0]' --output tsv --only-show-errors)"
-          control_mode_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.template.containers[0].args[1]' --output tsv --only-show-errors)"
-          control_trigger="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.configuration.triggerType' --output tsv --only-show-errors)"
-          control_retry_limit="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query 'properties.configuration.replicaRetryLimit' --output tsv --only-show-errors)"
-          control_secret_ref="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_SERVICE_ROLE_KEY'].secretRef | [0]" --output tsv --only-show-errors)"
-          control_data_api_url="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_URL'].value | [0]" --output tsv --only-show-errors)"
-          control_bound_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query "properties.template.containers[0].env[?name=='MIGRATION_CONTROL_IMAGE'].value | [0]" --output tsv --only-show-errors)"
-          if [ "${#MIGRATION_CONTROL_JOB}" -ge 32 ] || [ "$control_image" != "$CANDIDATE_IMAGE" ] || [ "$control_command_count" != "1" ] || [ "$control_command" != "node" ] || [ "$control_arg_count" != "2" ] || [ "$control_script_arg" != "scripts/run_azure_migration_control.mjs" ] || [ "$control_mode_arg" != "$MIGRATION_CONTROL_MODE" ] || [ "$control_trigger" != "Manual" ] || [ "$control_retry_limit" != "0" ] || [ "$control_secret_ref" != "data-api-service-role-key" ] || [ "$control_data_api_url" != "$DATA_API_URL" ] || [ "$control_bound_image" != "$CANDIDATE_IMAGE" ]; then
-            echo "::error::The migration control job does not have the immutable fail-closed command contract."
-            exit 1
-          fi
-          activation_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
-          activation_command_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'length(properties.template.containers[0].command)' --output tsv --only-show-errors)"
-          activation_command="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.template.containers[0].command[0]' --output tsv --only-show-errors)"
-          activation_arg_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'length(properties.template.containers[0].args)' --output tsv --only-show-errors)"
-          activation_script_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.template.containers[0].args[0]' --output tsv --only-show-errors)"
-          activation_mode_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.template.containers[0].args[1]' --output tsv --only-show-errors)"
-          activation_trigger="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.configuration.triggerType' --output tsv --only-show-errors)"
-          activation_retry_limit="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query 'properties.configuration.replicaRetryLimit' --output tsv --only-show-errors)"
-          activation_secret_ref="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_SERVICE_ROLE_KEY'].secretRef | [0]" --output tsv --only-show-errors)"
-          activation_data_api_url="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_URL'].value | [0]" --output tsv --only-show-errors)"
-          activation_control_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='MIGRATION_CONTROL_IMAGE'].value | [0]" --output tsv --only-show-errors)"
-          if [ "${#MIGRATION_ACTIVATION_JOB}" -ge 32 ] || [ "$activation_image" != "$CANDIDATE_IMAGE" ] || [ "$activation_command_count" != "1" ] || [ "$activation_command" != "node" ] || [ "$activation_arg_count" != "2" ] || [ "$activation_script_arg" != "scripts/run_azure_migration_control.mjs" ] || [ "$activation_mode_arg" != "activate-target" ] || [ "$activation_trigger" != "Manual" ] || [ "$activation_retry_limit" != "0" ] || [ "$activation_secret_ref" != "data-api-service-role-key" ] || [ "$activation_data_api_url" != "$DATA_API_URL" ] || [ "$activation_control_image" != "$CANDIDATE_IMAGE" ]; then
-            echo "::error::The dedicated activation job does not have the immutable fail-closed command contract."
-            exit 1
-          fi
-
-          deactivation_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
-          deactivation_command_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'length(properties.template.containers[0].command)' --output tsv --only-show-errors)"
-          deactivation_command="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.template.containers[0].command[0]' --output tsv --only-show-errors)"
-          deactivation_arg_count="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'length(properties.template.containers[0].args)' --output tsv --only-show-errors)"
-          deactivation_script_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.template.containers[0].args[0]' --output tsv --only-show-errors)"
-          deactivation_mode_arg="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.template.containers[0].args[1]' --output tsv --only-show-errors)"
-          deactivation_trigger="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.configuration.triggerType' --output tsv --only-show-errors)"
-          deactivation_retry_limit="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query 'properties.configuration.replicaRetryLimit' --output tsv --only-show-errors)"
-          deactivation_secret_ref="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_SERVICE_ROLE_KEY'].secretRef | [0]" --output tsv --only-show-errors)"
-          deactivation_data_api_url="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='DATA_API_URL'].value | [0]" --output tsv --only-show-errors)"
-          deactivation_control_image="$(az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query "properties.template.containers[0].env[?name=='MIGRATION_CONTROL_IMAGE'].value | [0]" --output tsv --only-show-errors)"
-          if [ "${#MIGRATION_DEACTIVATION_JOB}" -ge 32 ] || [ "$deactivation_image" != "$CANDIDATE_IMAGE" ] || [ "$deactivation_command_count" != "1" ] || [ "$deactivation_command" != "node" ] || [ "$deactivation_arg_count" != "2" ] || [ "$deactivation_script_arg" != "scripts/run_azure_migration_control.mjs" ] || [ "$deactivation_mode_arg" != "deactivate-target" ] || [ "$deactivation_trigger" != "Manual" ] || [ "$deactivation_retry_limit" != "0" ] || [ "$deactivation_secret_ref" != "data-api-service-role-key" ] || [ "$deactivation_data_api_url" != "$DATA_API_URL" ] || [ "$deactivation_control_image" != "$CANDIDATE_IMAGE" ]; then
-            echo "::error::The dedicated deactivation job does not have the immutable fail-closed command contract."
-            exit 1
-          fi
-
-      - name: Freeze internal Azure worker claims before control
-        id: deactivate_target
-        if: ${{ steps.deployment_config.outputs.azure_backend == 'true' }}
-        run: |
-          execution_name="$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --query name --output tsv --only-show-errors)"
-          if [[ ! "$execution_name" =~ ^[a-z0-9-]+$ ]]; then
-            echo "::error::Azure did not return a valid target-deactivation execution."
-            exit 1
-          fi
-
-          deadline=$((SECONDS + 600))
-          while [ "$SECONDS" -lt "$deadline" ]
-          do
-            status="$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_DEACTIVATION_JOB" --job-execution-name "$execution_name" --query properties.status --output tsv --only-show-errors)"
-            case "$status" in
-              Succeeded)
-                echo "Internal Azure project-job claims are closed and running jobs are requeued."
-                exit 0
-                ;;
-              Pending|Running|Processing)
-                sleep 10
-                ;;
-              *)
-                echo "::error::Internal Azure target deactivation failed closed with status ${status:-unknown}."
-                exit 1
-                ;;
-            esac
-          done
-          echo "::error::Internal Azure target deactivation exceeded its management-plane deadline."
-          exit 1
-
-      - name: Run internal Azure migration control
-        id: migration_control
-        if: ${{ steps.deployment_config.outputs.azure_backend == 'true' }}
-        run: |
-          execution_name="$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --query name --output tsv --only-show-errors)"
-          if [[ ! "$execution_name" =~ ^[a-z0-9-]+$ ]]; then
-            echo "::error::Azure did not return a valid migration control execution."
-            exit 1
-          fi
-
-          deadline=$((SECONDS + 600))
-          while [ "$SECONDS" -lt "$deadline" ]
-          do
-            status="$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_JOB" --job-execution-name "$execution_name" --query properties.status --output tsv --only-show-errors)"
-            case "$status" in
-              Succeeded)
-                echo "Internal Azure migration control succeeded."
-                exit 0
-                ;;
-              Pending|Running|Processing)
-                sleep 10
-                ;;
-              *)
-                echo "::error::Internal Azure migration control failed closed with status ${status:-unknown}."
-                exit 1
-                ;;
-            esac
-          done
-          echo "::error::Internal Azure migration control exceeded its management-plane deadline."
-          exit 1
-
-      - name: Reconcile infrastructure without releasing candidate code
-        if: ${{ steps.deployment_config.outputs.azure_backend != 'true' || steps.migration_control.outcome == 'success' }}
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
           MICROSOFT_ENTRA_CLIENT_ID: ${{ vars.MICROSOFT_ENTRA_CLIENT_ID }}
           MICROSOFT_ENTRA_CLIENT_SECRET: ${{ secrets.MICROSOFT_ENTRA_CLIENT_SECRET }}
@@ -590,6 +197,8 @@ jobs:
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
           APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
           LEGACY_APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
+          LEGACY_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          LEGACY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
           APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
           APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
@@ -610,55 +219,24 @@ jobs:
           PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
           DOCLING_ENHANCEMENT_MODE: ${{ vars.DOCLING_ENHANCEMENT_MODE || 'async' }}
           DOCLING_ASYNC_AUTO_RUN: ${{ vars.DOCLING_ASYNC_AUTO_RUN || 'off' }}
-          DATA_API_URL: ${{ vars.DATA_API_URL }}
-          FILE_STORAGE_BACKEND: ${{ vars.FILE_STORAGE_BACKEND || 'supabase' }}
-          AZURE_STORAGE_ACCOUNT_URL: ${{ vars.AZURE_STORAGE_ACCOUNT_URL }}
-          AZURE_STORAGE_CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'anbud-documents' }}
-          MIGRATION_CONTROL_KEY_VAULT_NAME: ${{ vars.MIGRATION_CONTROL_KEY_VAULT_NAME }}
-          MIGRATION_CONTROL_DATA_API_SECRET_NAME: ${{ vars.MIGRATION_CONTROL_DATA_API_SECRET_NAME || 'postgrest-service-role-key' }}
-          MIGRATION_CONTROL_DATA_API_SECRET_VERSION: ${{ vars.MIGRATION_CONTROL_DATA_API_SECRET_VERSION }}
-          AZURE_BACKEND_RELEASE_MODE: ${{ steps.deployment_config.outputs.azure_backend_release_mode }}
         run: |
-          effective_worker_cron="$PROJECT_JOB_WORKER_CRON"
-          external_ingress_enabled=true
-          if [ "$FILE_STORAGE_BACKEND" = "azure" ]; then
-            ingress_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors)"
-            case "$AZURE_BACKEND_RELEASE_MODE" in
-              cutover)
-                if [ "$ingress_external" != "false" ]; then
-                  echo "::error::The public write freeze was lost before Azure backend reconcile."
-                  exit 1
-                fi
-                az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none
-                effective_worker_cron="$MIGRATION_DISABLED_WORKER_CRON"
-                external_ingress_enabled=false
-                ;;
-              routine)
-                if [ "$ingress_external" != "true" ]; then
-                  echo "::error::A routine Azure release requires the healthy production ingress to remain external."
-                  exit 1
-                fi
-                ;;
-              *)
-                echo "::error::The validated Azure backend release mode is unavailable."
-                exit 1
-                ;;
-            esac
-          fi
           legacy_revision="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && length(properties.template.containers[0].env[?secretRef=='app-access-password']) > \`0\`].name | [0]" --output tsv --only-show-errors)"
           if [ -n "$legacy_revision" ] && [ -z "$LEGACY_APP_ACCESS_PASSWORD" ]; then
-            echo "::error::An active legacy revision still requires app-access-password, but the transitional GitHub secret is unavailable."
+            echo "::error::An active legacy revision still requires app-access-password."
             exit 1
           fi
-          common_parameters=(
+          legacy_supabase_revision="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && (length(properties.template.containers[0].env[?secretRef=='supabase-url']) > \`0\` || length(properties.template.containers[0].env[?secretRef=='supabase-service-role-key']) > \`0\`)].name | [0]" --output tsv --only-show-errors)"
+          if [ -n "$legacy_supabase_revision" ] && { [ -z "$LEGACY_SUPABASE_URL" ] || [ -z "$LEGACY_SUPABASE_SERVICE_ROLE_KEY" ]; }; then
+            echo "::error::The active rollback revision still requires the temporary Supabase secrets."
+            exit 1
+          fi
+          parameters=(
             appName="$CONTAINER_APP"
             image="$CURRENT_APP_IMAGE"
             workerImage="$CURRENT_WORKER_IMAGE"
             registryName="$ACR_NAME"
-            supabaseUrl="$SUPABASE_URL"
-            supabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"
             dataApiUrl="$DATA_API_URL"
-            fileStorageBackend="$FILE_STORAGE_BACKEND"
+            dataApiServiceRoleKey="$DATA_API_SERVICE_ROLE_KEY"
             azureStorageAccountUrl="$AZURE_STORAGE_ACCOUNT_URL"
             azureStorageContainer="$AZURE_STORAGE_CONTAINER"
             appPublicOrigin="$APP_PUBLIC_ORIGIN"
@@ -668,6 +246,8 @@ jobs:
             appEncryptionKey="$APP_ENCRYPTION_KEY"
             appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH"
             legacyAppAccessPassword="$LEGACY_APP_ACCESS_PASSWORD"
+            legacySupabaseUrl="$LEGACY_SUPABASE_URL"
+            legacySupabaseServiceRoleKey="$LEGACY_SUPABASE_SERVICE_ROLE_KEY"
             appSessionSecret="$APP_SESSION_SECRET"
             appGuestCodePepper="$APP_GUEST_CODE_PEPPER"
             appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET"
@@ -685,67 +265,16 @@ jobs:
             azureDocumentIntelligenceKey="$AZURE_DOCUMENT_INTELLIGENCE_KEY"
             azureDocumentIntelligenceHighResolution="$AZURE_DOCUMENT_INTELLIGENCE_HIGH_RESOLUTION"
             projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
-            projectJobWorkerCron="$effective_worker_cron"
+            projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON"
             projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT"
             projectJobWorkerReplicaTimeout="$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"
             doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE"
             doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN"
-            externalIngressEnabled="$external_ingress_enabled"
+            externalIngressEnabled=true
             minReplicas="$MIN_REPLICAS"
           )
-
-          data_api_secret_parameters=(dataApiServiceRoleKey="")
-          if [ "$FILE_STORAGE_BACKEND" = "azure" ]; then
-            key_vault_template_deployment="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query properties.enabledForTemplateDeployment --output tsv --only-show-errors)"
-            if [ "$key_vault_template_deployment" != "true" ]; then
-              echo "::error::The migration Key Vault must explicitly allow ARM template secret references."
-              exit 1
-            fi
-            key_vault_id="$(az keyvault show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_CONTROL_KEY_VAULT_NAME" --query id --output tsv --only-show-errors)"
-            if [[ ! "$key_vault_id" =~ ^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft.KeyVault/vaults/[^/]+$ ]]; then
-              echo "::error::Could not resolve the migration Key Vault resource ID."
-              exit 1
-            fi
-            data_api_reference_file="$RUNNER_TEMP/anbud-data-api-reference.json"
-            KEY_VAULT_ID="$key_vault_id" DATA_API_SECRET_NAME="$MIGRATION_CONTROL_DATA_API_SECRET_NAME" DATA_API_SECRET_VERSION="$MIGRATION_CONTROL_DATA_API_SECRET_VERSION" DATA_API_REFERENCE_FILE="$data_api_reference_file" node --input-type=module --eval '
-              import { writeFileSync } from "node:fs";
-              writeFileSync(
-                process.env.DATA_API_REFERENCE_FILE,
-                JSON.stringify({
-                  $schema: "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-                  contentVersion: "1.0.0.0",
-                  parameters: {
-                    dataApiServiceRoleKey: {
-                      reference: {
-                        keyVault: { id: process.env.KEY_VAULT_ID },
-                        secretName: process.env.DATA_API_SECRET_NAME,
-                        secretVersion: process.env.DATA_API_SECRET_VERSION,
-                      },
-                    },
-                  },
-                }),
-                { mode: 0o600 },
-              );
-            '
-            data_api_secret_parameters=("@$data_api_reference_file")
-          fi
-
-          az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file infra/azure/container-app.bicep --result-format ResourceIdOnly --parameters "${common_parameters[@]}" "${data_api_secret_parameters[@]}"
-          az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-infra-${GITHUB_SHA}" --template-file infra/azure/container-app.bicep --parameters "${common_parameters[@]}" "${data_api_secret_parameters[@]}" --output none
-          if [ "$FILE_STORAGE_BACKEND" = "azure" ]; then
-            ingress_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors)"
-            expected_ingress_external=true
-            if [ "$AZURE_BACKEND_RELEASE_MODE" = "cutover" ]; then
-              expected_ingress_external=false
-            fi
-            if [ "$ingress_external" != "$expected_ingress_external" ]; then
-              echo "::error::Azure reconcile did not preserve the validated ingress boundary."
-              exit 1
-            fi
-            if [ "$AZURE_BACKEND_RELEASE_MODE" = "cutover" ]; then
-              az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none
-            fi
-          fi
+          az deployment group what-if --resource-group "$RESOURCE_GROUP" --template-file infra/azure/container-app.bicep --result-format ResourceIdOnly --parameters "${parameters[@]}"
+          az deployment group create --resource-group "$RESOURCE_GROUP" --name "anbud-infra-${GITHUB_SHA}" --template-file infra/azure/container-app.bicep --parameters "${parameters[@]}" --output none
 
       - name: Roll out zero-traffic candidate and promote
         id: rollout
@@ -753,134 +282,37 @@ jobs:
           CANDIDATE_IMAGE: ${{ steps.immutable_image.outputs.candidate_image }}
           REVISION_SUFFIX: sha-${{ github.sha }}
           ROLLOUT_STATE_FILE: ${{ runner.temp }}/anbud-rollout-state.json
-          FROZEN_INGRESS_ROLLOUT: ${{ steps.deployment_config.outputs.azure_backend == 'true' && steps.deployment_config.outputs.azure_backend_release_mode == 'cutover' && '1' || '0' }}
-          KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS: ${{ steps.deployment_config.outputs.azure_backend == 'true' && '1' || '0' }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: node scripts/azure_containerapp_rollout.mjs
 
-      - name: Activate internal Azure worker claims after smoke-ready frozen candidate
-        id: activate_target
-        if: ${{ steps.deployment_config.outputs.azure_backend == 'true' && steps.rollout.outcome == 'success' }}
+      - name: Remove retired Supabase secrets
         run: |
-          execution_name="$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --query name --output tsv --only-show-errors)"
-          if [[ ! "$execution_name" =~ ^[a-z0-9-]+$ ]]; then
-            echo "::error::Azure did not return a valid target-activation execution."
+          active_legacy_refs="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && (length(properties.template.containers[0].env[?secretRef=='supabase-url']) > \`0\` || length(properties.template.containers[0].env[?secretRef=='supabase-service-role-key']) > \`0\`)].name | [0]" --output tsv --only-show-errors)"
+          if [ -n "$active_legacy_refs" ]; then
+            echo "::error::An active revision still references a retired Supabase secret."
+            exit 1
+          fi
+          configured_legacy_secrets="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.configuration.secrets[?name=='supabase-url' || name=='supabase-service-role-key'].name" --output tsv --only-show-errors)"
+          if [ -n "$configured_legacy_secrets" ]; then
+            az containerapp secret remove --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --secret-names supabase-url supabase-service-role-key --output none --only-show-errors
+          fi
+          remaining_legacy_secrets="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.configuration.secrets[?name=='supabase-url' || name=='supabase-service-role-key'].name | [0]" --output tsv --only-show-errors)"
+          if [ -n "$remaining_legacy_secrets" ]; then
+            echo "::error::Retired Supabase secrets remain configured."
             exit 1
           fi
 
-          deadline=$((SECONDS + 600))
-          while [ "$SECONDS" -lt "$deadline" ]
-          do
-            status="$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --job-execution-name "$execution_name" --query properties.status --output tsv --only-show-errors)"
-            case "$status" in
-              Succeeded)
-                echo "Internal Azure project-job claims activated after smoke."
-                exit 0
-                ;;
-              Pending|Running|Processing)
-                sleep 10
-                ;;
-              *)
-                echo "::error::Internal Azure target activation failed closed with status ${status:-unknown}."
-                exit 1
-                ;;
-            esac
-          done
-          echo "::error::Internal Azure target activation exceeded its management-plane deadline."
-          exit 1
-
-      - name: Stop on uncertain target activation
-        if: >-
-          ${{ always()
-              && steps.deployment_config.outputs.azure_backend == 'true'
-              && steps.rollout.outcome == 'success'
-              && steps.activate_target.outcome != 'success' }}
-        run: |
-          az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none --only-show-errors || true
-          az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$MIGRATION_ACTIVATION_JOB" --output none --only-show-errors || true
-          ingress_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors 2>/dev/null || true)"
-          if [ "$ingress_external" != "false" ]; then
-            az containerapp ingress enable --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --type internal --target-port 3000 --transport auto --allow-insecure false --output none --only-show-errors || true
-          fi
-          echo "::error::Target activation is failed, cancelled, or unknown. Traffic was not rolled back to Supabase; public ingress and the scheduled worker remain closed for operator inspection."
-          exit 1
-
-      - name: Open public ingress and smoke Azure candidate
-        id: public_smoke
-        if: >-
-          ${{ steps.deployment_config.outputs.azure_backend == 'true'
-              && steps.rollout.outcome == 'success'
-              && steps.activate_target.outcome == 'success' }}
-        env:
-          APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
-        run: |
-          default_domain="$(az containerapp env show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP-env" --query properties.defaultDomain --output tsv --only-show-errors)"
-          expected_origin="https://${CONTAINER_APP}.${default_domain}"
-          if [ "${APP_PUBLIC_ORIGIN%/}" != "$expected_origin" ]; then
-            echo "::error::APP_PUBLIC_ORIGIN does not match the production Container App boundary."
-            exit 1
-          fi
-          if ! az containerapp ingress enable --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --type external --target-port 3000 --transport auto --allow-insecure false --output none --only-show-errors; then
-            az containerapp ingress enable --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --type internal --target-port 3000 --transport auto --allow-insecure false --output none --only-show-errors || true
-            echo "::error::Public ingress activation failed closed."
-            exit 1
-          fi
-          ingress_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors)"
-          smoke_succeeded=false
-          if [ "$ingress_external" = "true" ]; then
-            for attempt in 1 2 3 4 5 6
-            do
-              if timeout 30s node apps/frontend/scripts/smoke_health.mjs "$expected_origin"; then
-                smoke_succeeded=true
-                break
-              fi
-              if [ "$attempt" -lt 6 ]; then sleep 10; fi
-            done
-          fi
-          if [ "$smoke_succeeded" != "true" ]; then
-            az containerapp ingress enable --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --type internal --target-port 3000 --transport auto --allow-insecure false --output none --only-show-errors || true
-            closed_external="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query properties.configuration.ingress.external --output tsv --only-show-errors 2>/dev/null || true)"
-            if [ "$closed_external" != "false" ]; then
-              echo "::error::Public smoke failed and the workflow could not prove ingress was closed again. Immediate operator action is required."
-            else
-              echo "::error::Public smoke failed; ingress was returned to internal-only mode."
-            fi
-            exit 1
-          fi
-
-      - name: Fallback rollback
-        id: fallback
+      - name: Roll back to the previous Azure revision
         if: >-
           ${{ always()
               && (steps.rollout.outcome == 'failure'
                   || steps.rollout.outcome == 'cancelled') }}
         env:
-          AZURE_BACKEND: ${{ steps.deployment_config.outputs.azure_backend }}
-          AZURE_BACKEND_RELEASE_MODE: ${{ steps.deployment_config.outputs.azure_backend_release_mode }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: |
           state_file="${RUNNER_TEMP}/anbud-rollout-state.json"
           if [ -f "$state_file" ]; then
             node scripts/azure_containerapp_rollout.mjs --rollback-state "$state_file"
           fi
-          if [ "$AZURE_BACKEND" = "true" ] && [ "$AZURE_BACKEND_RELEASE_MODE" = "cutover" ]; then
-            az containerapp job stop --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --output none --only-show-errors || true
-            echo "Azure rollout fallback remains internal-only with source claims and the worker closed. Reconcile and verify the Supabase backend before reopening either."
-          elif [ "$AZURE_BACKEND" = "true" ]; then
-            echo "Routine Azure rollback restored the previous serving revision without changing the public ingress boundary."
-          fi
-
-      - name: Restore scheduled worker after completed release
-        if: >-
-          ${{ always()
-              && steps.deployment_config.outputs.azure_backend == 'true'
-              && steps.rollout.outcome == 'success'
-              && steps.activate_target.outcome == 'success'
-              && steps.public_smoke.outcome == 'success' }}
-        env:
-          PROJECT_JOB_WORKER_CRON: ${{ vars.PROJECT_JOB_WORKER_CRON || '*/5 * * * *' }}
-        run: az containerapp job update --resource-group "$RESOURCE_GROUP" --name "$PROJECT_JOB_WORKER_APP" --cron-expression "$PROJECT_JOB_WORKER_CRON" --output none

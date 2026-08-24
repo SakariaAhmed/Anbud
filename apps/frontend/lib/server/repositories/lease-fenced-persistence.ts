@@ -2,7 +2,7 @@ import "server-only";
 
 import { ProjectJobLeaseLostError } from "@/lib/server/project-job-heartbeat";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 
 const LEASE_LOST_MARKER = "PROJECT_JOB_LEASE_LOST";
 
@@ -86,8 +86,8 @@ export async function runLeaseFencedProjectMutation<T>(
     return { fenced: false, data: null };
   }
 
-  const supabase = runtime.client ?? createServiceClient();
-  const { data, error } = await supabase.rpc("lease_fenced_project_write", {
+  const dataApi = runtime.client ?? createServiceClient();
+  const { data, error } = await dataApi.rpc("lease_fenced_project_write", {
     p_job_id: lease.jobId,
     p_lease_token: lease.leaseToken,
     p_project_id: projectId,
@@ -117,8 +117,8 @@ export async function runLeaseFencedGeneratedArtifactMutation<T>(
     return { fenced: false, data: null };
   }
 
-  const supabase = runtime.client ?? createServiceClient();
-  const { data, error } = await supabase.rpc(
+  const dataApi = runtime.client ?? createServiceClient();
+  const { data, error } = await dataApi.rpc(
     "lease_fenced_save_generated_artifact",
     {
       p_job_id: lease.jobId,
@@ -145,8 +145,8 @@ export async function runLeaseFencedCustomerAnalysisMutation<T>(
     return { fenced: false, data: null };
   }
 
-  const supabase = runtime.client ?? createServiceClient();
-  const { data, error } = await supabase.rpc(
+  const dataApi = runtime.client ?? createServiceClient();
+  const { data, error } = await dataApi.rpc(
     "lease_fenced_save_customer_analysis",
     {
       p_job_id: lease.jobId,
@@ -179,8 +179,8 @@ export async function runLeaseFencedSolutionEvaluationMutation<T>(
     return { fenced: false, data: null };
   }
 
-  const supabase = runtime.client ?? createServiceClient();
-  const { data, error } = await supabase.rpc(
+  const dataApi = runtime.client ?? createServiceClient();
+  const { data, error } = await dataApi.rpc(
     "lease_fenced_save_solution_evaluation",
     {
       p_job_id: lease.jobId,
@@ -206,8 +206,8 @@ export async function runLeaseFencedExecutiveSummaryMutation<T>(
   if (!lease) {
     return { fenced: false, data: null };
   }
-  const supabase = runtime.client ?? createServiceClient();
-  const { data, error } = await supabase.rpc(
+  const dataApi = runtime.client ?? createServiceClient();
+  const { data, error } = await dataApi.rpc(
     "lease_fenced_save_executive_summary",
     {
       p_job_id: lease.jobId,

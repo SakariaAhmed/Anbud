@@ -11,7 +11,7 @@ let solutionEvaluationMutationCalls: Array<{
   payload: Record<string, unknown>;
 }> = [];
 
-export function setSupabaseStorePersistenceTestClient(client: unknown) {
+export function setPostgRESTStorePersistenceTestClient(client: unknown) {
   activeClient = client;
   removedStoredFiles = [];
   projectMutationCalls = [];
@@ -39,7 +39,7 @@ export function getSolutionEvaluationMutationCallsForPersistenceTest() {
 
 export function createServiceClient() {
   if (!activeClient) {
-    throw new Error("Supabase persistence test client is not configured.");
+    throw new Error("PostgREST persistence test client is not configured.");
   }
   return activeClient;
 }

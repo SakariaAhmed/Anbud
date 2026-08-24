@@ -50,73 +50,6 @@ function validateCutoverResult(result, operation) {
   return result;
 }
 
-export function createSupabaseCutoverRuntime({
-  supabaseUrl,
-  serviceRoleKey,
-  expectedProjectRef,
-  fetchImpl = fetch,
-}) {
-  const baseUrl = required(supabaseUrl, "SUPABASE_URL");
-  const credential = required(
-    serviceRoleKey,
-    "SUPABASE_SERVICE_ROLE_KEY",
-  );
-  const checkedUrl = new URL(baseUrl);
-  if (
-    expectedProjectRef?.trim() &&
-    checkedUrl.hostname !== `${expectedProjectRef.trim()}.supabase.co`
-  ) {
-    throw new Error("SUPABASE_URL does not match SUPABASE_PROJECT_REF.");
-  }
-
-  const rpc = async (functionName, body) => {
-    const url = new URL(`/rest/v1/rpc/${functionName}`, checkedUrl);
-    const response = await fetchImpl(url, {
-      method: "POST",
-      headers: {
-        apikey: credential,
-        authorization: `Bearer ${credential}`,
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Project-job cutover RPC ${functionName} failed with HTTP ${response.status}.`,
-      );
-    }
-    return response.json();
-  };
-
-  return {
-    async setClaimsEnabled(enabled) {
-      const result = validateCutoverResult(
-        await rpc("set_project_job_claims_enabled", {
-          p_claims_enabled: enabled,
-        }),
-        "Project-job claim gate",
-      );
-      if (result.claims_enabled !== enabled) {
-        throw new Error("Project-job claim gate did not reach the requested state.");
-      }
-      return result;
-    },
-    async requeueRunningJobs() {
-      return validateCutoverResult(
-        await rpc("requeue_project_jobs_for_cutover", {}),
-        "Project-job cutover requeue",
-      );
-    },
-    async prepareStableRollback() {
-      return validateCutoverResult(
-        await rpc("prepare_stable_main_rollback", {}),
-        "Stable-main rollback preparation",
-      );
-    },
-  };
-}
-
 export function createDataApiCutoverRuntime({
   dataApiUrl,
   serviceRoleKey,
@@ -180,16 +113,9 @@ export function createDataApiCutoverRuntime({
 }
 
 function defaultCutoverRuntime() {
-  if (process.env.DATA_API_URL?.trim() || process.env.DATA_API_SERVICE_ROLE_KEY?.trim()) {
-    return createDataApiCutoverRuntime({
-      dataApiUrl: process.env.DATA_API_URL,
-      serviceRoleKey: process.env.DATA_API_SERVICE_ROLE_KEY,
-    });
-  }
-  return createSupabaseCutoverRuntime({
-    supabaseUrl: process.env.SUPABASE_URL,
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    expectedProjectRef: process.env.SUPABASE_PROJECT_REF,
+  return createDataApiCutoverRuntime({
+    dataApiUrl: process.env.DATA_API_URL,
+    serviceRoleKey: process.env.DATA_API_SERVICE_ROLE_KEY,
   });
 }
 
@@ -492,8 +418,8 @@ async function restoreStableDeployment(config, state, runtime = {}) {
 
   // Fail closed: no writer may claim work while either application generation
   // can still be alive. A normal same-backend rollback reopens only after the
-  // stable web and worker are restored and smoked. Frozen Azure rollback keeps
-  // the source gate closed until a later Supabase backend reconcile.
+  // stable web and worker are restored and smoked. Frozen rollback keeps the
+  // database claim gate closed for explicit operator recovery.
   await cutover.setClaimsEnabled(false);
   await az(
     revisionCommand("activate", resourceGroup, appName, previousRevision),
@@ -563,9 +489,8 @@ async function restoreStableDeployment(config, state, runtime = {}) {
         "Frozen rollback requires internal-only Container App ingress.",
       );
     }
-    // The application and worker templates still contain Azure backend
-    // configuration. Keep source claims and the worker schedule closed until
-    // a separate Supabase reconcile has completed and been verified.
+    // Keep database claims and the worker schedule closed until an operator
+    // has verified the restored Azure deployment.
     return;
   }
   await smoke(`https://${resourceFqdn(app)}`, "rollback-promoted");

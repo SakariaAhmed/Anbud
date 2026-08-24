@@ -12,17 +12,17 @@ const repositoryRoot = path.resolve(
 );
 const migrationPath = path.join(
   repositoryRoot,
-  "supabase/migrations/20260711140000_atomic_document_chunk_replacement.sql",
+  "database/migrations/20260711140000_atomic_document_chunk_replacement.sql",
 );
 const migrationSql = readFileSync(migrationPath, "utf8");
 const documentChunksSource = readFileSync(
   path.join(repositoryRoot, "apps/frontend/lib/server/document-chunks.ts"),
   "utf8",
 );
-const supabaseStoreSource = readFileSync(
+const dataApiStoreSource = readFileSync(
   path.join(
     repositoryRoot,
-    "apps/frontend/lib/server/repositories/supabase-store.ts",
+    "apps/frontend/lib/server/repositories/data-store.ts",
   ),
   "utf8",
 );
@@ -121,9 +121,9 @@ test("chunk replacement and completeness are single-RPC, full-set contracts", ()
   );
 
   for (const relativePath of [
-    "supabase/schema.sql",
-    "supabase/document_chunks_and_embeddings.sql",
-    "supabase/project_jobs_durable_execution.sql",
+    "database/schema.sql",
+    "database/document_chunks_and_embeddings.sql",
+    "database/project_jobs_durable_execution.sql",
   ]) {
     const canonicalSql = readFileSync(
       path.join(repositoryRoot, relativePath),
@@ -139,7 +139,7 @@ test("chunk replacement and completeness are single-RPC, full-set contracts", ()
         `${relativePath} has drifted for ${functionName}`,
       );
     }
-    if (relativePath !== "supabase/document_chunks_and_embeddings.sql") {
+    if (relativePath !== "database/document_chunks_and_embeddings.sql") {
       assert.equal(
         sqlFunction(canonicalSql, "lease_fenced_project_write"),
         leasedWrite,
@@ -150,11 +150,11 @@ test("chunk replacement and completeness are single-RPC, full-set contracts", ()
 
   assert.match(
     documentChunksSource,
-    /supabase\.rpc\("replace_document_chunks_atomic"/u,
+    /dataApi\.rpc\("replace_document_chunks_atomic"/u,
   );
   assert.match(
     documentChunksSource,
-    /supabase\.rpc\("document_chunks_are_complete"/u,
+    /dataApi\.rpc\("document_chunks_are_complete"/u,
   );
   const replacementBody = documentChunksSource.match(
     /async function replaceDocumentChunks\([\s\S]*?\n\}\n\nasync function hasCompleteExistingDocumentChunks/u,
@@ -168,7 +168,7 @@ test("chunk replacement and completeness are single-RPC, full-set contracts", ()
     replacementBody,
     /\.from\("document_chunks"\)\s*\.insert\(/u,
   );
-  const ingestionSave = supabaseStoreSource.match(
+  const ingestionSave = dataApiStoreSource.match(
     /export async function saveDocumentIngestionResult\([\s\S]*?\n\}\n\nexport async function getDocumentDetail/u,
   )?.[0];
   assert.ok(ingestionSave, "saveDocumentIngestionResult body is missing");

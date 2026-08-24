@@ -19,12 +19,12 @@ import {
   requireProjectPermission,
 } from "@/lib/server/authorization";
 import { checkRateLimit } from "@/lib/server/observability";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 async function projectName(projectId: string) {
-  const supabase = createServiceClient();
-  const modern = await supabase
+  const dataApi = createServiceClient();
+  const modern = await dataApi
     .from("projects")
     .select("name")
     .eq("id", projectId)
@@ -32,7 +32,7 @@ async function projectName(projectId: string) {
   if (!modern.error && modern.data) {
     return modern.data.name?.trim() || "Bidsite-prosjekt";
   }
-  const legacy = await supabase
+  const legacy = await dataApi
     .from("projects")
     .select("title")
     .eq("id", projectId)

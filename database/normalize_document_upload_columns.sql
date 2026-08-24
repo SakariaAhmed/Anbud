@@ -1,10 +1,3 @@
-insert into storage.buckets (id, name, public, file_size_limit)
-values ('anbud-documents', 'anbud-documents', false, 41943040)
-on conflict (id) do update
-set
-  public = false,
-  file_size_limit = 41943040;
-
 alter table documents
   add column if not exists supporting_subtype text,
   add column if not exists subtype text,

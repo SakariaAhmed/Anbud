@@ -11,7 +11,7 @@ const repositoryRoot = path.resolve(
 const migration = fs.readFileSync(
   path.join(
     repositoryRoot,
-    "supabase/migrations/20260813014812_restrict_document_chunk_search_rpc.sql",
+    "database/migrations/20260813014812_restrict_document_chunk_search_rpc.sql",
   ),
   "utf8",
 );

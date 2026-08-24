@@ -35,7 +35,6 @@ export function createAzureBlobStorageBackend(input: {
   getContainerClient: ContainerClientFactory;
 }) {
   const containerName = input.containerName?.trim() || DEFAULT_CONTAINER;
-  let containerReadyPromise: Promise<void> | null = null;
 
   function containerFor(bucket?: string | null) {
     const requested = bucket?.trim() || containerName;
@@ -45,13 +44,6 @@ export function createAzureBlobStorageBackend(input: {
       );
     }
     return input.getContainerClient(containerName);
-  }
-
-  async function ensureContainer() {
-    if (!containerReadyPromise) {
-      containerReadyPromise = containerFor().createIfNotExists().then(() => undefined);
-    }
-    return containerReadyPromise;
   }
 
   return {
@@ -67,7 +59,6 @@ export function createAzureBlobStorageBackend(input: {
       if (body.byteLength > MAX_FILE_BYTES) {
         throw new Error("Dokumentfilen overskrider lagringsgrensen på 40 MiB.");
       }
-      await ensureContainer();
       await containerFor()
         .getBlockBlobClient(normalizedPath(upload.path))
         .uploadData(body, {

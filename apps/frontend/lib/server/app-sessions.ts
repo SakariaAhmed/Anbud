@@ -7,7 +7,7 @@ import {
   databaseSessionTokenHmac,
   encodeDatabaseSessionToken,
 } from "@/lib/password-auth";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 
 export type AppSessionAuthMethod =
   | "entra"
@@ -27,8 +27,8 @@ export async function createAppSession(input: {
     Math.max(15 * 60, input.maxAgeSeconds ?? AUTH_COOKIE_MAX_AGE_SECONDS),
   );
   const expiresAt = new Date(Date.now() + maxAgeSeconds * 1_000).toISOString();
-  const supabase = createServiceClient();
-  const { error } = await supabase.from("app_sessions").insert({
+  const dataApi = createServiceClient();
+  const { error } = await dataApi.from("app_sessions").insert({
     id: sessionId,
     principal_id: input.principalId,
     token_hmac: tokenHmac,
@@ -48,8 +48,8 @@ export async function createAppSession(input: {
 
 export async function revokeAppSession(sessionId: string | null | undefined) {
   if (!sessionId) return;
-  const supabase = createServiceClient();
-  await supabase
+  const dataApi = createServiceClient();
+  await dataApi
     .from("app_sessions")
     .update({ revoked_at: new Date().toISOString() })
     .eq("id", sessionId)
@@ -57,8 +57,8 @@ export async function revokeAppSession(sessionId: string | null | undefined) {
 }
 
 export async function revokePrincipalSessions(principalId: string) {
-  const supabase = createServiceClient();
-  const { error } = await supabase
+  const dataApi = createServiceClient();
+  const { error } = await dataApi
     .from("app_sessions")
     .update({ revoked_at: new Date().toISOString() })
     .eq("principal_id", principalId)

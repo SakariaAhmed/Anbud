@@ -31,7 +31,7 @@ param jwtSecret string
 @maxValue(5)
 param databasePoolSize int = 5
 
-@description('Scale to zero outside cutover. Temporarily use one during the cutover window.')
+@description('Minimum active replicas. Zero minimizes idle cost but causes cold starts.')
 @minValue(0)
 @maxValue(1)
 param minReplicas int = 0
@@ -54,7 +54,7 @@ resource bridge 'Microsoft.App/containerApps@2024-03-01' = {
   tags: {
     workload: 'anbud'
     environment: 'prod'
-    migrationStage: 'temporary-compatibility-bridge'
+    component: 'data-api'
   }
   identity: {
     type: 'UserAssigned'

@@ -7,8 +7,8 @@ import {
   encryptString,
 } from "@/lib/server/crypto";
 import { revalidateProjectCaches } from "@/lib/server/repositories/repository-cache";
-import { isMissingRelationColumn } from "@/lib/server/repositories/supabase-compat";
-import { createServiceClient } from "@/lib/server/supabase";
+import { isMissingRelationColumn } from "@/lib/server/repositories/postgrest-compat";
+import { createServiceClient } from "@/lib/server/data-api";
 import type {
   ChatDomainHint,
   ChatMessage,
@@ -150,7 +150,7 @@ export async function appendChatMessage(
   contextSnapshot: unknown,
   options: { sessionId?: string | null } = {},
 ) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const payload = {
     project_id: projectId,
     ...(options.sessionId ? { session_id: options.sessionId } : {}),
@@ -158,7 +158,7 @@ export async function appendChatMessage(
     content,
     context_snapshot: encryptJson(contextSnapshot),
   };
-  let result = await supabase
+  let result = await dataApi
     .from("chat_messages")
     .insert(payload)
     .select("*")
@@ -169,7 +169,7 @@ export async function appendChatMessage(
     options.sessionId &&
     isMissingRelationColumn(result.error, "chat_messages")
   ) {
-    result = await supabase
+    result = await dataApi
       .from("chat_messages")
       .insert({
         project_id: projectId,
@@ -183,7 +183,7 @@ export async function appendChatMessage(
   if (result.error || !result.data) {
     throw new Error(result.error?.message || "Kunne ikke lagre chatmeldingen.");
   }
-  await supabase
+  await dataApi
     .from("projects")
     .update({ last_activity_at: new Date().toISOString() })
     .eq("id", projectId);
@@ -192,8 +192,8 @@ export async function appendChatMessage(
 }
 
 export async function listChatMessages(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi
     .from("chat_messages")
     .select("*")
     .eq("project_id", projectId)
@@ -204,8 +204,8 @@ export async function listChatMessages(projectId: string) {
 }
 
 export async function listChatSessions(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi
     .from("chat_sessions")
     .select("*")
     .eq("project_id", projectId)
@@ -226,8 +226,8 @@ export async function upsertChatSession(input: {
   lastMessagePreview?: string;
   messageCount?: number;
 }) {
-  const supabase = createServiceClient();
-  const { error } = await supabase.from("chat_sessions").upsert(
+  const dataApi = createServiceClient();
+  const { error } = await dataApi.from("chat_sessions").upsert(
     {
       id: input.sessionId,
       project_id: input.projectId,
@@ -253,8 +253,8 @@ export async function updateChatSessionMemory(input: {
   lastMessagePreview: string;
   messageCount: number;
 }) {
-  const supabase = createServiceClient();
-  const { error } = await supabase
+  const dataApi = createServiceClient();
+  const { error } = await dataApi
     .from("chat_sessions")
     .update({
       summary_encrypted: encryptString(input.summary),

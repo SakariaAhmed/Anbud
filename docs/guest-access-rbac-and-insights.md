@@ -30,8 +30,8 @@ revokes all active sessions for that guest.
 ## Cost impact
 
 The RBAC, guest-code and activity logic has no separate software licence. It
-adds ordinary Supabase database rows and requests, so it can increase usage if
-the current Supabase plan is near a limit. Azure Communication Services Email
+adds ordinary PostgreSQL rows and data-API requests, so it can increase database
+usage. Azure Communication Services Email
 is consumption-billed per email. Microsoft Entra External ID pricing depends on
 monthly active users and any premium add-ons; verify the current tenant pricing
 before production. The application-managed guest flow itself does not create
@@ -39,20 +39,20 @@ additional External ID monthly active users.
 
 ## Apply the database migration
 
-Apply `supabase/migrations/20260809141303_guest_rbac_superuser_insights.sql`
-through the normal Supabase migration pipeline before deploying the web
+Apply `database/migrations/20260809141303_guest_rbac_superuser_insights.sql`
+through the normal `database/migrations` pipeline before deploying the web
 revision. The migration creates identities, database sessions, groups,
 project grants, guest credentials and activity events. Existing project owners
 are backfilled as owner memberships.
 
-Then apply `supabase/migrations/20260812012210_admin_only_password_access.sql`
+Then apply `database/migrations/20260812012210_admin_only_password_access.sql`
 to remove the retired global role and enable dedicated administrator sessions.
 
-Finally apply `supabase/migrations/20260812020933_simplify_admin_sessions.sql`
+Finally apply `database/migrations/20260812020933_simplify_admin_sessions.sql`
 to revoke legacy password sessions and switch administrator updates to the
 single boolean `set_principal_admin` RPC.
 
-The Supabase service-role key remains server-only. The migration enables RLS,
+The data-API service-role key remains server-only. The migration enables RLS,
 revokes `anon` and `authenticated`, and grants the new tables and RPCs
 explicitly to `service_role`.
 

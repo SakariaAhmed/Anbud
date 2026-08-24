@@ -334,7 +334,10 @@ const {
   path.join(frontendRoot, "lib", "server", "project-jobs.ts"),
 );
 const { createServiceClient } = jiti(
-  path.join(frontendRoot, "lib", "server", "supabase.ts"),
+  path.join(frontendRoot, "lib", "server", "data-api.ts"),
+);
+const { listStoredFilesUnderPrefix } = jiti(
+  path.join(frontendRoot, "lib", "server", "file-storage-azure.ts"),
 );
 const { splitMarkdownTableRow } = jiti(
   path.join(frontendRoot, "lib", "markdown-table-row.ts"),
@@ -358,7 +361,7 @@ const { analyzeRequirementCoverageIntegrity } = jiti(
     "generated-corpus-parser.ts",
   ),
   path.join(frontendRoot, "lib", "server", "requirements", "presentation.ts"),
-  path.join(frontendRoot, "lib", "server", "repositories", "supabase-store.ts"),
+  path.join(frontendRoot, "lib", "server", "repositories", "data-store.ts"),
 );
 const {
   canonicalRequirementSourceDocuments,
@@ -629,7 +632,7 @@ const CHECKPOINT_CODE_PATHS = [
   ),
   path.join(frontendRoot, "lib", "server", "document-chunks.ts"),
   path.join(frontendRoot, "lib", "server", "embedding-request.ts"),
-  path.join(frontendRoot, "lib", "server", "repositories", "supabase-store.ts"),
+  path.join(frontendRoot, "lib", "server", "repositories", "data-store.ts"),
   path.join(frontendRoot, "lib", "document-processing.ts"),
   path.join(frontendRoot, "lib", "requirement-response-metadata.ts"),
   path.join(frontendRoot, "lib", "requirement-coverage-summary.ts"),
@@ -651,43 +654,43 @@ const CHECKPOINT_CODE_PATHS = [
   path.join(frontendRoot, "lib", "requirement-order.ts"),
   path.join(
     repoRoot,
-    "supabase",
+    "database",
     "migrations",
     "20260711121500_customer_analysis_invalidates_derived_outputs.sql",
   ),
   path.join(
     repoRoot,
-    "supabase",
+    "database",
     "migrations",
     "20260711123000_solution_evaluation_source_revision_fence.sql",
   ),
   path.join(
     repoRoot,
-    "supabase",
+    "database",
     "migrations",
     "20260711124500_selected_service_document_retrieval.sql",
   ),
   path.join(
     repoRoot,
-    "supabase",
+    "database",
     "migrations",
     "20260711130000_generated_artifact_source_revision_fence.sql",
   ),
   path.join(
     repoRoot,
-    "supabase",
+    "database",
     "migrations",
     "20260711133000_atomic_primary_document_roles.sql",
   ),
   path.join(
     repoRoot,
-    "supabase",
+    "database",
     "migrations",
     "20260711134500_atomic_project_service_selections.sql",
   ),
   path.join(
     repoRoot,
-    "supabase",
+    "database",
     "migrations",
     "20260711140000_atomic_document_chunk_replacement.sql",
   ),
@@ -695,7 +698,7 @@ const CHECKPOINT_CODE_PATHS = [
 const CHECKPOINT_CODE_ROOTS = [
   path.join(frontendRoot, "app", "api"),
   path.join(frontendRoot, "lib"),
-  path.join(repoRoot, "supabase", "migrations"),
+  path.join(repoRoot, "database", "migrations"),
 ];
 const CHECKPOINT_CODE_EXTENSIONS = new Set([
   ".js",
@@ -768,8 +771,8 @@ const CHECKPOINT_CONFIG_KEYS = [
   "GIT_COMMIT_SHA",
   "VERCEL_GIT_COMMIT_SHA",
   "OPENAI_PROMPT_CACHE_RETENTION",
-  "SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_URL",
+  "DATA_API_URL",
+  "AZURE_STORAGE_ACCOUNT_URL",
 ];
 let cachedCheckpointCodeRevision = null;
 
@@ -802,13 +805,14 @@ function checkpointBackendIdentity(options) {
   const apiBaseUrl = String(options.resolvedBaseUrl ?? options.baseUrl ?? "")
     .trim()
     .replace(/\/+$/, "");
-  const supabaseUrl = String(
-    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-  )
+  const dataApiUrl = String(process.env.DATA_API_URL ?? "")
+    .trim()
+    .replace(/\/+$/, "");
+  const storageAccountUrl = String(process.env.AZURE_STORAGE_ACCOUNT_URL ?? "")
     .trim()
     .replace(/\/+$/, "");
   return createHash("sha256")
-    .update(JSON.stringify({ apiBaseUrl, supabaseUrl }))
+    .update(JSON.stringify({ apiBaseUrl, dataApiUrl, storageAccountUrl }))
     .digest("hex");
 }
 
@@ -3974,10 +3978,10 @@ class ApiClient {
 }
 
 async function listStoragePrefixFiles({
-  supabase,
   prefix,
   bucket = DOCUMENT_STORAGE_BUCKET,
   pageSize = STORAGE_LIST_PAGE_SIZE,
+  listFiles = listStoredFilesUnderPrefix,
 }) {
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 1_000) {
     throw new Error("Storage page size must be an integer from 1 to 1000.");
@@ -3989,54 +3993,13 @@ async function listStoragePrefixFiles({
     throw new Error("Storage verification requires a non-empty prefix.");
   }
 
-  const pendingPrefixes = [normalizedPrefix];
-  const visitedPrefixes = new Set();
-  const files = [];
-  while (pendingPrefixes.length) {
-    const currentPrefix = pendingPrefixes.shift();
-    if (!currentPrefix || visitedPrefixes.has(currentPrefix)) continue;
-    visitedPrefixes.add(currentPrefix);
-
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .list(currentPrefix, {
-          limit: pageSize,
-          offset,
-          sortBy: { column: "name", order: "asc" },
-        });
-      if (error) {
-        throw new Error(
-          `Storage prefix query failed for ${bucket}/${currentPrefix}: ${
-            error.message || "unknown storage error"
-          }`,
-        );
-      }
-
-      const page = Array.isArray(data) ? data : [];
-      for (const entry of page) {
-        const name = String(entry?.name ?? "");
-        if (!name || name === "." || name === ".." || name.includes("/")) {
-          throw new Error(
-            `Storage prefix query returned an unsafe child name under ${bucket}/${currentPrefix}.`,
-          );
-        }
-        const childPath = `${currentPrefix}/${name}`;
-        const isFolder = entry?.id == null && entry?.metadata == null;
-        if (isFolder) pendingPrefixes.push(childPath);
-        else files.push(childPath);
-      }
-
-      if (page.length < pageSize) break;
-    }
-  }
-
-  return [...new Set(files)].sort();
+  const files = await listFiles({ prefix: normalizedPrefix, bucket });
+  return [...new Set(Array.isArray(files) ? files : [])].sort();
 }
 
 async function listDatabaseProjects() {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi
     .from("projects")
     .select("id, title, client_name, description");
   if (error) {
@@ -4053,8 +4016,8 @@ async function listDatabaseProjects() {
 }
 
 async function databaseProjectExists(apiProjectId) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi
     .from("projects")
     .select("id")
     .eq("id", apiProjectId)
@@ -4068,8 +4031,8 @@ async function databaseProjectExists(apiProjectId) {
 }
 
 async function getDatabaseProject(apiProjectId) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi
     .from("projects")
     .select("id, title, client_name, description")
     .eq("id", apiProjectId)
@@ -4586,7 +4549,6 @@ async function cleanupCreatedProjects(options, api) {
     })
     .map((project) => project.id);
   const remainingStorageObjects = [];
-  const storageClient = createServiceClient();
   const runOwnedStorageProjectIds = new Set([
     ...registeredProjectIds,
     ...projects.map((project) => project.apiProjectId).filter(Boolean),
@@ -4595,7 +4557,6 @@ async function cleanupCreatedProjects(options, api) {
     if (!projectId || protectedProjectIds.has(projectId)) continue;
     try {
       const paths = await listStoragePrefixFiles({
-        supabase: storageClient,
         prefix: `projects/${projectId}`,
       });
       if (paths.length) {
@@ -4742,9 +4703,9 @@ async function seedCustomerAnalysis({
     customerDocument,
     ledger: sourceLedger,
   });
-  const supabase = createServiceClient();
-  await supabase.from("customer_analyses").delete().eq("project_id", projectId);
-  const { error } = await supabase.from("customer_analyses").insert({
+  const dataApi = createServiceClient();
+  await dataApi.from("customer_analyses").delete().eq("project_id", projectId);
+  const { error } = await dataApi.from("customer_analyses").insert({
     project_id: projectId,
     source_document_ids: [customerDocumentId],
     result_json: encryptJson(analysis),
@@ -4753,7 +4714,7 @@ async function seedCustomerAnalysis({
   if (error) {
     throw new Error(error.message || "Kunne ikke seed-e kundeanalyse.");
   }
-  const update = await supabase
+  const update = await dataApi
     .from("projects")
     .update({
       customer_analysis_generated: true,

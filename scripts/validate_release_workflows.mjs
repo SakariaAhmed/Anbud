@@ -29,12 +29,8 @@ for (const required of [
   "npm run build",
   "validate_project_jobs_schema",
   "azure_containerapp_rollout.test",
-  "run_azure_migration_control.test",
-  "azure_cutover_evidence.test",
-  "azure_database_compare.test",
-  "azure_pg_restore_toc_sanitize.test",
   "PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL",
-  "public.ecr.aws/supabase/postgres:17.6.1.132@sha256:",
+  "pgvector/pgvector:pg17@sha256:",
   "az bicep build",
   "az bicep lint",
 ]) {
@@ -96,7 +92,7 @@ for (const required of [
   "docker/build-push-action",
   "trivy-action",
   "azure_containerapp_rollout.mjs",
-  "Fallback rollback",
+  "Roll back to the previous Azure revision",
 ]) {
   assert.ok(deploy.includes(required), `Production deploy is missing: ${required}`);
 }

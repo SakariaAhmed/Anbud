@@ -67,12 +67,26 @@ test("legacy administrator secret is migration-only and never wired to a new rev
   assert.match(bicep, /!empty\(legacyAppAccessPassword\)/u);
   assert.equal(bicep.match(/'app-access-password'/gu)?.length, 1);
   const reconcileStep = workflow.slice(
-    workflow.indexOf("name: Reconcile infrastructure without releasing candidate code"),
+    workflow.indexOf("name: Reconcile Azure infrastructure without releasing candidate code"),
     workflow.indexOf("name: Roll out zero-traffic candidate and promote"),
   );
   assert.match(reconcileStep, /LEGACY_APP_ACCESS_PASSWORD: \$\{\{ secrets\.APP_ACCESS_PASSWORD \}\}/u);
   assert.match(reconcileStep, /legacyAppAccessPassword="\$LEGACY_APP_ACCESS_PASSWORD"/u);
   assert.match(reconcileStep, /An active legacy revision still requires app-access-password/u);
+});
+
+test("legacy Supabase secrets exist only for the active rollback revision", () => {
+  const bicep = read("infra/azure/container-app.bicep", repositoryRoot);
+  const workflow = read(".github/workflows/deploy-azure.yml", repositoryRoot);
+
+  assert.match(bicep, /param legacySupabaseUrl string = ''/u);
+  assert.match(bicep, /param legacySupabaseServiceRoleKey string = ''/u);
+  assert.equal(bicep.match(/name: 'supabase-url'/gu)?.length, 1);
+  assert.equal(bicep.match(/name: 'supabase-service-role-key'/gu)?.length, 1);
+  assert.doesNotMatch(bicep, /name: 'SUPABASE_URL'|name: 'SUPABASE_SERVICE_ROLE_KEY'/u);
+  assert.match(workflow, /active rollback revision still requires the temporary Supabase secrets/u);
+  assert.match(workflow, /name: Remove retired Supabase secrets/u);
+  assert.match(workflow, /--secret-names supabase-url supabase-service-role-key/u);
 });
 
 test("production deploy requires and forwards independent identity HMAC secrets", () => {

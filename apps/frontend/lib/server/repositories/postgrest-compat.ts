@@ -1,8 +1,8 @@
 import "server-only";
 
-export type SupabaseErrorLike = { message?: string } | null;
+export type PostgRESTErrorLike = { message?: string } | null;
 
-export function isMissingSchemaColumn(error: SupabaseErrorLike) {
+export function isMissingSchemaColumn(error: PostgRESTErrorLike) {
   const message = (error?.message ?? "").toLowerCase();
   if (!message) {
     return false;
@@ -24,7 +24,7 @@ export function isMissingSchemaColumn(error: SupabaseErrorLike) {
 }
 
 export function isMissingRelationColumn(
-  error: SupabaseErrorLike,
+  error: PostgRESTErrorLike,
   relation: string,
 ) {
   const message = (error?.message ?? "").toLowerCase();
@@ -41,7 +41,7 @@ export function isMissingRelationColumn(
 }
 
 export function missingColumnNameFromError<const TColumn extends string>(
-  error: SupabaseErrorLike,
+  error: PostgRESTErrorLike,
   columns: readonly TColumn[],
 ): TColumn | null {
   if (!isMissingSchemaColumn(error)) {

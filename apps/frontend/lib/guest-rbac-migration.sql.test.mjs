@@ -10,27 +10,27 @@ const frontendRoot = path.resolve(
 );
 const migrationPath = path.resolve(
   frontendRoot,
-  "../../supabase/migrations/20260809141303_guest_rbac_superuser_insights.sql",
+  "../../database/migrations/20260809141303_guest_rbac_superuser_insights.sql",
 );
 const sql = await readFile(migrationPath, "utf8");
 const adminOnlySql = await readFile(
   path.resolve(
     frontendRoot,
-    "../../supabase/migrations/20260812012210_admin_only_password_access.sql",
+    "../../database/migrations/20260812012210_admin_only_password_access.sql",
   ),
   "utf8",
 );
 const simplifiedSessionSql = await readFile(
   path.resolve(
     frontendRoot,
-  "../../supabase/migrations/20260812020933_simplify_admin_sessions.sql",
+  "../../database/migrations/20260812020933_simplify_admin_sessions.sql",
   ),
   "utf8",
 );
 const guestDescriptionSql = await readFile(
   path.resolve(
     frontendRoot,
-    "../../supabase/migrations/20260814183208_require_guest_name_description.sql",
+    "../../database/migrations/20260814183208_require_guest_name_description.sql",
   ),
   "utf8",
 );

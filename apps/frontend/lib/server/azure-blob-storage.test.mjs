@@ -18,14 +18,9 @@ const { createAzureBlobStorageBackend } = jiti(
 function mockContainer() {
   const blobs = new Map();
   const uploads = [];
-  let createCalls = 0;
   const container = {
     async getProperties() {
       return { etag: "mock" };
-    },
-    async createIfNotExists() {
-      createCalls += 1;
-      return {};
     },
     getBlockBlobClient(name) {
       return {
@@ -53,7 +48,7 @@ function mockContainer() {
       };
     },
   };
-  return { blobs, container, uploads, createCalls: () => createCalls };
+  return { blobs, container, uploads };
 }
 
 test("Azure Blob adapter preserves encrypted UTF-8 bytes and overwrites the exact path", async () => {
@@ -76,7 +71,6 @@ test("Azure Blob adapter preserves encrypted UTF-8 bytes and overwrites the exac
     bucket: "anbud-documents",
     path: "projects/p-1/file.txt",
   });
-  assert.equal(mock.createCalls(), 1);
   assert.equal(mock.uploads.length, 2);
   assert.equal(
     await backend.downloadEncryptedBase64File(stored),
@@ -101,7 +95,6 @@ test("Azure Blob adapter readiness probe performs a non-mutating container read"
 
   await backend.probeAccess();
   assert.equal(propertyReads, 1);
-  assert.equal(mock.createCalls(), 0);
 });
 
 test("Azure Blob adapter lists only the slash-bounded prefix", async () => {

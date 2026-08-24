@@ -6,8 +6,8 @@ import type {
   DocumentIntelligenceArtifact,
   DocumentParseQuality,
 } from "@/lib/server/document-intelligence/types";
-import { isMissingRelationColumn } from "@/lib/server/repositories/supabase-compat";
-import { createServiceClient } from "@/lib/server/supabase";
+import { isMissingRelationColumn } from "@/lib/server/repositories/postgrest-compat";
+import { createServiceClient } from "@/lib/server/data-api";
 
 const ARTIFACT_TABLE = "document_intelligence_artifacts";
 const EVENT_TABLE = "document_intelligence_events";
@@ -34,8 +34,8 @@ export type DocumentIntelligenceEventType =
 export async function storeDocumentIntelligenceArtifact(
   artifact: DocumentIntelligenceArtifact,
 ) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase.rpc(SAVE_ARTIFACT_FUNCTION, {
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi.rpc(SAVE_ARTIFACT_FUNCTION, {
     p_document_id: artifact.documentId,
     p_project_id: artifact.projectId,
     p_source_revision: artifact.sourceRevision,
@@ -69,8 +69,8 @@ export async function listDocumentIntelligenceContexts(input: {
 }): Promise<DocumentIntelligenceContext[]> {
   const documentIds = [...new Set(input.documentIds.filter(Boolean))];
   if (!documentIds.length) return [];
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi
     .from(ARTIFACT_TABLE)
     .select(
       "document_id, source_revision, compiler_version, parser_used, quality, evidence_counts, analysis_context_encrypted",
@@ -116,8 +116,8 @@ export async function recordDocumentIntelligenceEvent(input: {
   sourceRevision?: number | null;
   metadata?: Record<string, string | number | boolean | null>;
 }) {
-  const supabase = createServiceClient();
-  const { error } = await supabase.from(EVENT_TABLE).insert({
+  const dataApi = createServiceClient();
+  const { error } = await dataApi.from(EVENT_TABLE).insert({
     project_id: input.projectId,
     document_id: input.documentId ?? null,
     event_type: input.eventType,

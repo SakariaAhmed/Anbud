@@ -1,4 +1,5 @@
 let activeClient: unknown = null;
+let activeStorageBackend: unknown = null;
 
 export function setStorageObservabilityTestClient(client: unknown) {
   activeClient = client;
@@ -11,4 +12,13 @@ export function createServiceClient() {
   return activeClient;
 }
 
-export const createSupabaseStorageClient = createServiceClient;
+export function setAzureBlobStorageTestBackend(backend: unknown) {
+  activeStorageBackend = backend;
+}
+
+export function defaultAzureBlobStorageBackend() {
+  if (!activeStorageBackend) {
+    throw new Error("Azure Blob Storage test backend is not configured.");
+  }
+  return activeStorageBackend;
+}

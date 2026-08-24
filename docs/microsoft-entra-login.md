@@ -1,6 +1,6 @@
 # Microsoft Entra External ID login
 
-Bidsite uses Microsoft Entra External ID directly through Microsoft's MSAL Node library. Supabase Auth is not part of the login flow.
+Bidsite uses Microsoft Entra External ID directly through Microsoft's MSAL Node library. Application sessions and access records are stored in PostgreSQL.
 
 ## Cost and data minimization
 
@@ -8,7 +8,7 @@ Microsoft states that the External ID core offering is free for the first 50,000
 
 The implementation deliberately minimizes stored identity data:
 
-- No Supabase `auth.users` record is created.
+- No separate database-authentication user is created.
 - No Microsoft Graph scopes are requested.
 - The validated ID token and account object exist only in memory during the callback and are discarded immediately.
 - The app session cookie contains an opaque random database-session credential.
@@ -53,4 +53,4 @@ This integration intentionally accepts only the standard `<tenant-subdomain>.cia
 - Keep the production redirect URI list short and remove retired domains.
 - Verify one successful login, one cancelled login, an expired callback, and
   (in development only) the explicitly enabled local password login.
-- Confirm no new row appears in Supabase Auth after Microsoft login.
+- Confirm the login only creates the expected application identity and session records.

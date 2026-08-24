@@ -14,7 +14,7 @@ import {
   withAbortTimeout,
   type DistributedRateLimitCircuitState,
 } from "@/lib/server/distributed-rate-limit-circuit";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 
 type RateLimitBucket = {
   count: number;
@@ -234,10 +234,10 @@ async function checkDatabaseRateLimit(input: {
   }
 
   try {
-    const supabase = createServiceClient();
+    const dataApi = createServiceClient();
     const result = await withAbortTimeout(
       (signal) =>
-        supabase
+        dataApi
           .rpc("check_app_rate_limit", {
             p_identity_hash: input.identityHash,
             p_limit: input.limit,

@@ -12,15 +12,15 @@ const repositoryRoot = path.resolve(
 );
 const migrationPath = path.join(
   repositoryRoot,
-  "supabase/migrations/20260712130000_transactional_project_job_terminal_audit_v2.sql",
+  "database/migrations/20260712130000_transactional_project_job_terminal_audit_v2.sql",
 );
 const migrationSql = readFileSync(migrationPath, "utf8");
 const schemaSql = readFileSync(
-  path.join(repositoryRoot, "supabase/schema.sql"),
+  path.join(repositoryRoot, "database/schema.sql"),
   "utf8",
 );
 const durableSql = readFileSync(
-  path.join(repositoryRoot, "supabase/project_jobs_durable_execution.sql"),
+  path.join(repositoryRoot, "database/project_jobs_durable_execution.sql"),
   "utf8",
 );
 

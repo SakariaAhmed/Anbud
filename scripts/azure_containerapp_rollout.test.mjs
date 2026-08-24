@@ -4,7 +4,6 @@ import test from "node:test";
 
 import {
   createDataApiCutoverRuntime,
-  createSupabaseCutoverRuntime,
   rollbackContainerAppFromState,
   rolloutContainerApp,
 } from "./azure_containerapp_rollout.mjs";
@@ -199,7 +198,7 @@ function matchingCalls(runtime, prefix) {
 test("rollout claim-gate argument matches the deployed SQL signature", () => {
   const migration = readFileSync(
     new URL(
-      "../supabase/migrations/20260712131500_stable_main_rollback_bridge.sql",
+      "../database/migrations/20260712131500_stable_main_rollback_bridge.sql",
       import.meta.url,
     ),
     "utf8",
@@ -216,78 +215,7 @@ test("rollout claim-gate argument matches the deployed SQL signature", () => {
   assert.doesNotMatch(rolloutSource, /p_enabled: enabled/u);
 });
 
-test("Supabase cutover client is project-bound, versioned, and fail-closed", async () => {
-  const calls = [];
-  const cutover = createSupabaseCutoverRuntime({
-    supabaseUrl: "https://expected.supabase.co",
-    serviceRoleKey: "synthetic-service-key",
-    expectedProjectRef: "expected",
-    async fetchImpl(url, options) {
-      calls.push({ url, options });
-      const claimsEnabled = JSON.parse(options.body).p_claims_enabled;
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return {
-            version: "project-job-cutover-v1",
-            ...(url.pathname.endsWith("set_project_job_claims_enabled")
-              ? { claims_enabled: claimsEnabled }
-              : {}),
-          };
-        },
-      };
-    },
-  });
-
-  await cutover.setClaimsEnabled(false);
-  await cutover.requeueRunningJobs();
-  await cutover.prepareStableRollback();
-  assert.deepEqual(
-    calls.map((call) => call.url.pathname),
-    [
-      "/rest/v1/rpc/set_project_job_claims_enabled",
-      "/rest/v1/rpc/requeue_project_jobs_for_cutover",
-      "/rest/v1/rpc/prepare_stable_main_rollback",
-    ],
-  );
-  assert.equal(calls[0].options.method, "POST");
-  assert.equal(
-    calls[0].options.headers.authorization,
-    "Bearer synthetic-service-key",
-  );
-  assert.equal(calls[0].options.body, '{"p_claims_enabled":false}');
-
-  assert.throws(
-    () =>
-      createSupabaseCutoverRuntime({
-        supabaseUrl: "https://wrong.supabase.co",
-        serviceRoleKey: "synthetic-service-key",
-        expectedProjectRef: "expected",
-      }),
-    /does not match SUPABASE_PROJECT_REF/u,
-  );
-
-  const wrongVersion = createSupabaseCutoverRuntime({
-    supabaseUrl: "https://expected.supabase.co",
-    serviceRoleKey: "synthetic-service-key",
-    async fetchImpl() {
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { version: "unexpected", claims_enabled: false };
-        },
-      };
-    },
-  });
-  await assert.rejects(
-    wrongVersion.setClaimsEnabled(false),
-    /unexpected cutover version/u,
-  );
-});
-
-test("Azure cutover client uses the explicit PostgREST root without Supabase paths", async () => {
+test("Azure cutover client uses the explicit internal PostgREST root", async () => {
   const calls = [];
   const cutover = createDataApiCutoverRuntime({
     dataApiUrl: "https://anbud-postgrest.internal/",
@@ -704,7 +632,7 @@ test("pre-cutover fallback never requeues work owned by the serving stable revis
   );
 });
 
-test("Azure workflow separates cutover freeze from routine releases", () => {
+test("Azure workflow has one PostgREST and Blob Storage deployment path", () => {
   const workflow = readFileSync(
     new URL("../.github/workflows/deploy-azure.yml", import.meta.url),
     "utf8",
@@ -716,82 +644,40 @@ test("Azure workflow separates cutover freeze from routine releases", () => {
 
   assert.match(bicep, /param externalIngressEnabled bool = true/u);
   assert.match(bicep, /external:\s*externalIngressEnabled/u);
-  assert.match(workflow, /externalIngressEnabled="\$external_ingress_enabled"/u);
-  assert.match(workflow, /FROZEN_INGRESS_ROLLOUT:/u);
-  assert.match(workflow, /KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS:/u);
-  const ingressProof = workflow.indexOf(
-    "name: Prove public web ingress is frozen",
-  );
-  const sourceProof = workflow.indexOf(
-    "name: Prove frozen Supabase source has zero running jobs",
-  );
-  assert.ok(ingressProof > 0 && ingressProof < sourceProof);
-  const ingressProofStep = workflow.slice(ingressProof, sourceProof);
-  assert.match(
-    ingressProofStep,
-    /azure_backend_release_mode == 'cutover'/u,
-  );
-  assert.match(ingressProofStep, /ingress\.external/u);
-  assert.match(ingressProofStep, /probe_status/u);
-  assert.match(ingressProofStep, /negative external probe/u);
-  const suspendStart = workflow.indexOf(
-    "name: Suspend scheduled worker for Azure cutover",
-  );
-  const sourceProofStep = workflow.slice(sourceProof, suspendStart);
-  assert.match(
-    sourceProofStep,
-    /azure_backend_release_mode == 'cutover'/u,
-  );
-
+  assert.match(workflow, /DATA_API_URL:/u);
+  assert.match(workflow, /DATA_API_SERVICE_ROLE_KEY:/u);
+  assert.match(workflow, /AZURE_STORAGE_ACCOUNT_URL:/u);
+  assert.match(workflow, /Validate production database contract/u);
   const reconcileStart = workflow.indexOf(
-    "name: Reconcile infrastructure without releasing candidate code",
+    "name: Reconcile Azure infrastructure without releasing candidate code",
   );
   const rolloutStart = workflow.indexOf(
     "name: Roll out zero-traffic candidate and promote",
   );
-  assert.ok(reconcileStart > sourceProof && rolloutStart > reconcileStart);
+  assert.ok(reconcileStart > 0 && rolloutStart > reconcileStart);
   const reconcileStep = workflow.slice(reconcileStart, rolloutStart);
-  assert.match(reconcileStep, /AZURE_BACKEND_RELEASE_MODE:/u);
-  assert.match(reconcileStep, /routine\)/u);
-  assert.match(reconcileStep, /remain external/u);
-
-  const activateStart = workflow.indexOf(
-    "name: Activate internal Azure worker claims after smoke-ready frozen candidate",
-  );
-  const rolloutStep = workflow.slice(rolloutStart, activateStart);
+  assert.match(reconcileStep, /dataApiUrl="\$DATA_API_URL"/u);
   assert.match(
-    rolloutStep,
-    /FROZEN_INGRESS_ROLLOUT:[^\n]*azure_backend_release_mode == 'cutover'/u,
+    reconcileStep,
+    /dataApiServiceRoleKey="\$DATA_API_SERVICE_ROLE_KEY"/u,
   );
+  assert.match(reconcileStep, /azureStorageAccountUrl/u);
   assert.match(
-    rolloutStep,
-    /KEEP_SOURCE_CLAIMS_CLOSED_ON_SUCCESS:[^\n]*azure_backend == 'true'/u,
+    reconcileStep,
+    /microsoftEntraTenantSubdomain="\$MICROSOFT_ENTRA_TENANT_SUBDOMAIN"/u,
   );
+  assert.match(reconcileStep, /externalIngressEnabled=true/u);
 
-  const uncertainStart = workflow.indexOf(
-    "name: Stop on uncertain target activation",
+  const fallbackStart = workflow.indexOf(
+    "name: Roll back to the previous Azure revision",
   );
-  const publicStart = workflow.indexOf(
-    "name: Open public ingress and smoke Azure candidate",
-  );
-  assert.ok(uncertainStart > 0 && publicStart > uncertainStart);
-  const uncertainStep = workflow.slice(uncertainStart, publicStart);
-  assert.match(uncertainStep, /steps\.activate_target\.outcome != 'success'/u);
-  assert.match(uncertainStep, /--type internal/u);
-  assert.doesNotMatch(uncertainStep, /--rollback-state/u);
-  assert.doesNotMatch(uncertainStep, /SUPABASE_SERVICE_ROLE_KEY/u);
-
-  const fallbackStart = workflow.indexOf("name: Fallback rollback");
-  const restoreStart = workflow.indexOf(
-    "name: Restore scheduled worker after completed release",
-  );
-  const fallbackStep = workflow.slice(fallbackStart, restoreStart);
+  const fallbackStep = workflow.slice(fallbackStart);
   assert.match(fallbackStep, /steps\.rollout\.outcome == 'failure'/u);
-  assert.doesNotMatch(fallbackStep, /steps\.activate_target\.outcome/u);
-  assert.doesNotMatch(fallbackStep, /--cron-expression/u);
-  assert.match(fallbackStep, /Reconcile and verify the Supabase backend/u);
-
-  const restoreStep = workflow.slice(restoreStart);
-  assert.match(restoreStep, /steps\.public_smoke\.outcome == 'success'/u);
-  assert.match(restoreStep, /--cron-expression/u);
+  assert.match(fallbackStep, /--rollback-state/u);
+  assert.doesNotMatch(workflow, /FROZEN_INGRESS_ROLLOUT/u);
+  assert.doesNotMatch(workflow, /FILE_STORAGE_BACKEND/u);
+  assert.equal(bicep.match(/name: 'FILE_STORAGE_BACKEND'/gu)?.length, 2);
+  assert.equal(bicep.match(/value: 'azure'/gu)?.length, 2);
+  assert.match(workflow, /name: Remove retired Supabase secrets/u);
+  assert.match(workflow, /containerapp secret remove/u);
 });

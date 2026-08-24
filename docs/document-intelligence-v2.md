@@ -77,7 +77,7 @@ kundeanalysen.
 - OpenAI-vision er et senere, avgrenset trinn for bare uløste figurregioner.
   Kvalitetsruteren merker disse nå, men hele PDF-er sendes ikke til en
   multimodal modell.
-- Supabase lagrer én kryptert artefaktrad per dokument. RLS er aktivert uten
+- PostgreSQL lagrer én kryptert artefaktrad per dokument. RLS er aktivert uten
   klientpolicyer; bare `service_role` har tabellprivilegier.
 
 ## Norsk språk og tidligere feil

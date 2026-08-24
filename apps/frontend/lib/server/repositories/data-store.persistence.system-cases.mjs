@@ -10,16 +10,16 @@ const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
 const testSupportPath = path.join(
   frontendRoot,
-  "lib/server/repositories/supabase-store.persistence.test-support.ts",
+  "lib/server/repositories/data-store.persistence.test-support.ts",
 );
 const storeJiti = createJiti(
-  path.join(frontendRoot, "supabase-store-persistence-tests.cjs"),
+  path.join(frontendRoot, "data-store-persistence-tests.cjs"),
   {
     interopDefault: true,
     alias: {
       "next/cache": testSupportPath,
-      "@/lib/server/supabase": testSupportPath,
-      "@/lib/server/file-storage": testSupportPath,
+      "@/lib/server/data-api": testSupportPath,
+      "@/lib/server/file-storage-azure": testSupportPath,
       "@/lib/server/document-chunks": testSupportPath,
       "@/lib/server/repositories/lease-fenced-persistence": testSupportPath,
       "@/lib/server/project-workflow-cancellation": testSupportPath,
@@ -42,7 +42,7 @@ const {
   getProjectMutationCallsForPersistenceTest,
   getRemovedStoredFilesForPersistenceTest,
   getSolutionEvaluationMutationCallsForPersistenceTest,
-  setSupabaseStorePersistenceTestClient,
+  setPostgRESTStorePersistenceTestClient,
   setSolutionEvaluationMutationFencedForPersistenceTest,
 } = storeJiti(testSupportPath);
 const {
@@ -57,7 +57,7 @@ const {
   sanitizeSolutionEvaluationResult,
   updateGeneratedArtifact,
 } = storeJiti(
-  path.join(frontendRoot, "lib/server/repositories/supabase-store.ts"),
+  path.join(frontendRoot, "lib/server/repositories/data-store.ts"),
 );
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
@@ -794,7 +794,7 @@ function persistenceDatabase(overrides = {}) {
       return { data: analysis, error: null };
     },
   };
-  setSupabaseStorePersistenceTestClient(database.client);
+  setPostgRESTStorePersistenceTestClient(database.client);
   return database;
 }
 

@@ -30,7 +30,6 @@
 # worker entrypoint below.
 apps/frontend/scripts/*
 !apps/frontend/scripts/run_project_job_worker.mjs
-!apps/frontend/scripts/run_azure_migration_control.mjs
 !infra/
 !infra/azure/
 !infra/azure/certs/

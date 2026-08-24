@@ -1,7 +1,6 @@
 export type DataApiConfiguration = {
   baseUrl: string;
   serviceKey: string;
-  backend: "azure" | "supabase";
 };
 
 function trimmed(name: string) {
@@ -41,20 +40,8 @@ export function dataApiConfiguration(): DataApiConfiguration | null {
   const explicitUrlValue = trimmed("DATA_API_URL");
   const explicitUrl = normalizedBaseUrl(explicitUrlValue);
   const explicitKey = trimmed("DATA_API_SERVICE_ROLE_KEY");
-  if (explicitUrlValue || explicitKey) {
-    return explicitUrl && explicitKey && explicitProductionHostAllowed(explicitUrl)
-      ? { baseUrl: explicitUrl, serviceKey: explicitKey, backend: "azure" }
-      : null;
-  }
-
-  const supabaseUrl = normalizedBaseUrl(trimmed("SUPABASE_URL"));
-  const supabaseKey = trimmed("SUPABASE_SERVICE_ROLE_KEY");
-  return supabaseUrl && supabaseKey
-    ? {
-        baseUrl: `${supabaseUrl}/rest/v1`,
-        serviceKey: supabaseKey,
-        backend: "supabase",
-      }
+  return explicitUrl && explicitKey && explicitProductionHostAllowed(explicitUrl)
+    ? { baseUrl: explicitUrl, serviceKey: explicitKey }
     : null;
 }
 

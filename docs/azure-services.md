@@ -10,7 +10,6 @@ Dette dokumentet forklarer hvilke Azure-tjenester Anbud bruker, hvorfor de er va
 Dokumentet skiller mellom:
 
 - **Aktiv**: tjenesten er deployet og inngår i den ordinære produksjonsflyten.
-- **Kontroll/beredskap**: tjenesten er deployet, men brukes bare ved migrering, aktivering, deaktivering eller rollback.
 - **Valgfri, ikke aktiv**: applikasjonen støtter tjenesten, men den er ikke konfigurert i produksjon nå.
 - **Ikke Azure**: en viktig avhengighet som det er lett å forveksle med en Azure-tjeneste.
 
@@ -18,7 +17,7 @@ Dokumentet skiller mellom:
 
 Den aktive produksjonsløsningen kjører Next.js-applikasjonen i Azure Container Apps. Containerbilder lagres i Azure Container Registry. Brukere logger inn gjennom Microsoft Entra External ID. Applikasjonen bruker en intern PostgREST-instans i Container Apps som data-API mot Azure Database for PostgreSQL Flexible Server, og dokumentfiler lagres kryptert i Azure Blob Storage. En tidsstyrt Container Apps Job behandler langvarige dokument- og AI-jobber. Logger fra Container Apps-miljøet sendes til Log Analytics.
 
-Azure Key Vault og tre manuelle Container Apps Jobs er avgrenset til migreringskontroll og beredskap. Azure Communication Services Email og Azure AI Document Intelligence støttes av koden, men er ikke deployet eller aktivert i den verifiserte produksjonskonfigurasjonen.
+Azure Communication Services Email og Azure AI Document Intelligence støttes av koden, men er ikke deployet eller aktivert i den verifiserte produksjonskonfigurasjonen.
 
 OpenAI-kall går til OpenAI API med `OPENAI_API_KEY`; løsningen bruker ikke Azure OpenAI Service.
 
@@ -46,9 +45,6 @@ flowchart LR
     Web -.->|"plattformlogger"| Logs["Log Analytics"]
     Worker -.->|"plattformlogger"| Logs
 
-    KV["Azure Key Vault"] -->|"Versjonspinnet migreringshemmelighet"| Control["Manuelle migreringsjobber"]
-    Control --> PostgREST
-    Control -->|"Lesetilgang"| Blob
 ```
 
 ## Tjenesteoversikt
@@ -56,14 +52,13 @@ flowchart LR
 | Azure-tjeneste | Status | Hvorfor den brukes | Hvordan den brukes |
 | --- | --- | --- | --- |
 | Azure Container Apps | Aktiv | Kjøre webappen som container uten å drifte Kubernetes | Offentlig Next.js-app med HTTPS-ingress, flere revisjoner og autoskalering fra 0 til 3 replikaer |
-| Azure Container Apps Jobs | Aktiv + kontroll/beredskap | Kjøre bakgrunnsarbeid og avgrensede migreringsoperasjoner | Én jobb kjører hvert femte minutt; tre separate jobber startes kun manuelt ved migreringskontroll |
+| Azure Container Apps Jobs | Aktiv | Kjøre bakgrunnsarbeid | Én prosjektarbeider kjører hvert femte minutt |
 | Azure Container Registry | Aktiv | Privat lagring og distribusjon av godkjente containerbilder | Web, worker, PostgREST og kontrolljobber bruker digest-pinnede images; ACR-passord er ikke i bruk |
 | Microsoft Entra External ID | Aktiv | Standardisert Microsoft-innlogging for interne brukere | Server-side OAuth/OIDC-flyt via MSAL og callback i applikasjonen |
-| Managed Identities + Azure RBAC | Aktiv | Unngå varige nøkler for ACR og Blob Storage | Egen pull-identitet for ACR, systemidentiteter for web/worker og egen kontrollidentitet for migrering |
+| Managed Identities + Azure RBAC | Aktiv | Unngå varige nøkler for ACR og Blob Storage | Egen pull-identitet for ACR og systemidentiteter for web/worker |
 | Azure Database for PostgreSQL Flexible Server | Aktiv | Relasjonsdatabase for prosjekter, brukere, roller, jobber, dokumentmetadata og RAG-data | PostgreSQL 17 nås kun gjennom intern PostgREST i ordinær applikasjonsflyt |
 | Azure Blob Storage | Aktiv | Lagring av opplastede dokumenter uten å legge binærdata i databasen | Privat dokumentcontainer, OAuth/managed identity og 14 dagers soft delete |
 | Azure Log Analytics | Aktiv | Samle plattform- og containerlogger sentralt | Container Apps-miljøet sender logger til workspace `anbud-logs` med 30 dagers retention |
-| Azure Key Vault | Kontroll/beredskap | Beskytte den uavhengige PostgREST-hemmeligheten under migreringskontroll | Manuelle kontrolljobber leser én eksplisitt versjon av hemmeligheten gjennom egen managed identity |
 | Azure Cost Management Budget | Aktiv | Varsle før kostnadene overskrider avtalt nivå | Månedlig budsjett på 600 i abonnementets faktureringsvaluta med terskler på 50, 80 og 100 prosent samt 100 prosent prognose |
 | Azure Communication Services Email | Valgfri, ikke aktiv | Sende personlige gjestekoder på e-post | Koden støtter endpoint + managed identity, men produksjonen har ikke tjenesten eller miljøvariablene konfigurert |
 | Azure AI Document Intelligence | Valgfri, ikke aktiv | OCR/layout som siste utvei for dokumenter med svak lokal ekstraksjon | Endpoint og nøkkel er ikke konfigurert; lokal parser og Docling brukes i stedet |
@@ -90,14 +85,6 @@ Relevant infrastruktur: [`infra/azure/container-app.bicep`](../infra/azure/conta
 
 `anbud-project-job-worker` kjører planlagt hvert femte minutt. Den henter høyst én prosjektjobb per kjøring og utfører blant annet dokumentforbedring, analyse og annet arbeid som ikke bør blokkere et webkall. Worker bruker samme godkjente applikasjonsimage som webrevisjonen etter vellykket utrulling, men har 2 CPU, 4 GiB minne og opptil 35 minutters kjøretid for tyngre Docling-jobber.
 
-Tre manuelle jobber er deployet som sikkerhetsmekanismer rundt datamigreringen:
-
-- `anbud-migration-control` verifiserer målmiljø og migreringsbevis;
-- `anbud-migration-activate` aktiverer et allerede validert Azure-mål;
-- `anbud-migration-deactivate` fryser Azure-målet før kontrollert repetisjon eller rollback.
-
-De manuelle jobbene har ingen planlagt trigger, ingen tomgangskjøring og ingen automatisk retry. De skal ikke brukes som ordinære applikasjonsarbeidere.
-
 ### Azure Container Registry
 
 Registry `anbudprod9841703` lagrer private images for webappen og PostgREST. Produksjonsimages refereres med SHA-256-digest, ikke en flyttbar tag. Dette gjør utrulling og rollback reproduserbar: samme referanse gir samme image.
@@ -119,7 +106,7 @@ Flyten er:
 3. Applikasjonen validerer tokenet og kobler Microsoft-subjektet til en intern applikasjonsidentitet.
 4. Applikasjonen oppretter en ugjennomsiktig, tilbakekallbar databaseøkt og setter en HttpOnly-cookie.
 
-Supabase Auth brukes ikke i denne innloggingsflyten. Gjestebrukere opprettes heller ikke i Entra; de bruker applikasjonsforvaltede gjestekoder.
+Innloggingen bruker applikasjonsforvaltede PostgreSQL-økter. Gjestebrukere opprettes heller ikke i Entra; de bruker applikasjonsforvaltede gjestekoder.
 
 Detaljer: [`docs/microsoft-entra-login.md`](microsoft-entra-login.md) og [`docs/guest-access-rbac-and-insights.md`](guest-access-rbac-and-insights.md).
 
@@ -130,9 +117,8 @@ Løsningen bruker identiteter med ulike oppgaver:
 - `anbud-acr-pull`: user-assigned identity som bare trekker images fra ACR;
 - webappens system-assigned identity: leser og skriver dokumenter i `anbud-documents`;
 - workerens system-assigned identity: leser og skriver dokumenter i samme container;
-- `anbud-migration-control`: user-assigned identity med lesetilgang til Key Vault-hemmeligheten, dokumentcontaineren og den separate evidenscontaineren.
 
-Tilgangene er gitt på lavest praktiske scope. Web og worker får `Storage Blob Data Contributor` på dokumentcontaineren, ikke på hele abonnementet. Kontrollidentiteten får `Storage Blob Data Reader` og `Key Vault Secrets User`, fordi kontrollflyten bare skal verifisere data og hente sin versjonspinnede hemmelighet.
+Tilgangene er gitt på lavest praktiske scope. Web og worker får `Storage Blob Data Contributor` på dokumentcontaineren, ikke på hele abonnementet.
 
 ### Azure Database for PostgreSQL Flexible Server
 
@@ -154,10 +140,9 @@ Relevant infrastruktur: [`infra/azure/postgres.bicep`](../infra/azure/postgres.b
 
 ### Azure Blob Storage
 
-Storage account `anbudprod9841703data` er aktiv fillagring. Den bruker StorageV2, Standard LRS og Hot tier. To private containere finnes:
+Storage account `anbudprod9841703data` er aktiv fillagring. Den bruker StorageV2, Standard LRS og Hot tier. Den private runtime-containeren er:
 
 - `anbud-documents` for applikasjonens dokumenter;
-- `anbud-migration-evidence` for separat, digest-pinnet migreringsbevis.
 
 Dokumenter krypteres av applikasjonen før opplasting og lagres som binære objekter under deterministiske objektstier. Databaseposten lagrer referansen til container og sti. Web og worker bruker `DefaultAzureCredential`, som i Azure løses til workloadens managed identity.
 
@@ -175,19 +160,11 @@ Dette gir et sentralt sted for container- og plattformlogger, feilsøking av rev
 
 Det er ikke opprettet Application Insights, Azure Monitor-workbooks eller eksplisitte alert rules i den verifiserte ressurslisten. Log Analytics er derfor logggrunnlaget, men komplett dashboarding, syntetiske tester og varsling må fortsatt etableres separat dersom det er et driftskrav.
 
-### Azure Key Vault
-
-Key Vault `anbud-prod-kv-9841703` brukes av migreringskontrolljobbene til å hente den separate JWT-hemmeligheten for PostgREST. Jobbdefinisjonen peker på en bestemt Key Vault-versjon, slik at en rotasjon ikke stille endrer hemmeligheten midt i en kontrollert cutover.
-
-Vaultet bruker Azure RBAC, soft delete og purge protection. Den er ikke generell secret store for webappen i dagens arkitektur. Web- og worker-hemmeligheter ligger som Container Apps secrets og mates inn fra det beskyttede GitHub-miljøet ved deploy. Dette skillet er viktig når hemmelighetsrotasjon og operativt ansvar beskrives.
-
-Relevant infrastruktur: [`infra/azure/migration-control.bicep`](../infra/azure/migration-control.bicep).
-
 ### Azure Cost Management Budget
 
 Budsjettet `anbud-monthly-cost` er satt til 600 per måned i abonnementets faktureringsvaluta. Det varsler ved 50, 80 og 100 prosent faktisk forbruk og ved 100 prosent prognostisert forbruk.
 
-Et Azure-budsjett stopper ikke ressurser og er ikke en hard kostnadsgrense. Det gir tidlig varsling slik at eier kan vurdere skalering, loggvolum, worker-frekvens og doble kostnader i en rollbackperiode.
+Et Azure-budsjett stopper ikke ressurser og er ikke en hard kostnadsgrense. Det gir tidlig varsling slik at eier kan vurdere skalering, loggvolum og worker-frekvens.
 
 Relevant infrastruktur: [`infra/azure/budget.bicep`](../infra/azure/budget.bicep).
 
@@ -214,12 +191,6 @@ Produksjonen har ikke et Document Intelligence-endpoint, og `DOCUMENT_ANALYSIS_V
 Web og worker bruker OpenAI API til blant annet generering, analyse, embeddings, RAG-query rewrite og tilbudsrelaterte AI-flyter. Autentisering skjer med `OPENAI_API_KEY`, og aktiv standardmodell er `gpt-5.4`.
 
 Dette er direkte bruk av OpenAI API, ikke Azure OpenAI Service. Det er ikke deployet en `Microsoft.CognitiveServices/accounts`-ressurs i abonnementet. Dersom løsningen senere skal bruke Azure OpenAI, må endpoint, autentisering, modell-deployments, SDK-konfigurasjon og dataflyt endres eksplisitt.
-
-### Supabase i rollbackperioden
-
-Den aktive applikasjonsrevisjonen har `FILE_STORAGE_BACKEND=azure` og intern `DATA_API_URL`, så ordinære data- og filoperasjoner går til Azure. Supabase URL og service-role-hemmelighet finnes fortsatt i revisjonen som kontrollert fallback/rollbackavhengighet.
-
-Etter formell avslutning av rollbackperioden bør en ny revisjon deployes uten Supabase-referanser før upstream-legitimasjonen trekkes tilbake. En hemmelighet må ikke slettes mens en aktiv eller rollbackbar revisjon fortsatt refererer til den.
 
 ## Viktige dataflyter
 
@@ -262,8 +233,6 @@ Workflow: [`.github/workflows/deploy-azure.yml`](../.github/workflows/deploy-azu
 - ACR-pull og Blob-tilgang bruker managed identity; Shared Key og ACR admin-bruker er deaktivert.
 - Containerimages er pinnet med digest.
 - PostgreSQL bruker TLS, avgrenset runtime-bruker og eksplisitt IP-brannmurregel.
-- Migreringsbevis lagres separat fra dokumentinventaret.
-- Key Vault-hemmeligheten er versjonspinnet og tilgjengelig bare for kontrollidentiteten.
 - Webappen kan skalere til null, som reduserer kostnad men gir mulig kaldstart.
 - PostgreSQL har ikke HA eller geo-backup. Dagens oppsett prioriterer kostnad foran høy tilgjengelighet.
 - Storage bruker LRS, så data replikeres i ett Azure-datasenterområde, ikke på tvers av regioner.
@@ -273,7 +242,6 @@ Workflow: [`.github/workflows/deploy-azure.yml`](../.github/workflows/deploy-azu
 
 | Variabel | Aktiv verdi/rolle | Betydning |
 | --- | --- | --- |
-| `FILE_STORAGE_BACKEND` | `azure` | Azure Blob Storage er aktiv fillagring |
 | `DATA_API_URL` | Intern `anbud-postgrest`-adresse | Azure/PostgreSQL er aktiv databasebane |
 | `AZURE_STORAGE_ACCOUNT_URL` | Blob-endpointet | Konto som web og worker når med managed identity |
 | `AZURE_STORAGE_CONTAINER` | `anbud-documents` | Eneste tillatte runtime-container |
@@ -289,20 +257,17 @@ Ingen hemmelige verdier skal lagres i repoet eller gjengis i dokumentasjon. `.en
 
 1. Etabler Azure Monitor-varsler og dashboards for webrevisjoner, jobbfeil, PostgreSQL-kapasitet, Blob-feil og helseendepunktene.
 2. Avklar SLO, RTO og RPO før PostgreSQL eventuelt oppgraderes til General Purpose, zone-redundant HA eller lengre backup.
-3. Avslutt Supabase rollbackavhengigheten gjennom den dokumenterte, ordnede oppryddingen når rollbackvinduet er formelt lukket.
-4. Vurder om web- og worker-hemmeligheter skal flyttes fra Container Apps secrets til Key Vault etter en egen rotasjons- og driftsanalyse.
-5. Aktiver Communication Services Email bare dersom e-postlevering av gjestekoder er et krav, og bruk managed identity med minst mulig rolle.
-6. Aktiver Azure AI Document Intelligence bare etter kvalitetstest og kostnadsgrense; lokal parser og Docling dekker normalflyten i dag.
-7. Vurder privat nettverk/VNet-integrasjon bare dersom sikkerhets- eller compliancekrav forsvarer kostnad og kompleksitet.
+3. Vurder om web- og worker-hemmeligheter skal flyttes fra Container Apps secrets til Key Vault etter en egen rotasjons- og driftsanalyse.
+4. Aktiver Communication Services Email bare dersom e-postlevering av gjestekoder er et krav, og bruk managed identity med minst mulig rolle.
+5. Aktiver Azure AI Document Intelligence bare etter kvalitetstest og kostnadsgrense; lokal parser og Docling dekker normalflyten i dag.
+6. Vurder privat nettverk/VNet-integrasjon bare dersom sikkerhets- eller compliancekrav forsvarer kostnad og kompleksitet.
 
 ## Kilder i repoet
 
 - [`infra/azure/README.md`](../infra/azure/README.md) – deploy og operativ kontroll.
-- [`docs/azure-migration.md`](azure-migration.md) – migrerings-, cutover-, rollback- og oppryddingsløp.
 - [`docs/mission-critical-azure-review.md`](mission-critical-azure-review.md) – Azure Well-Architected-vurdering og kjente utsettelser.
 - [`infra/azure/container-app.bicep`](../infra/azure/container-app.bicep) – web, worker, Container Apps environment og Log Analytics.
 - [`infra/azure/postgrest.bicep`](../infra/azure/postgrest.bicep) – intern data-API-bro.
 - [`infra/azure/postgres.bicep`](../infra/azure/postgres.bicep) – PostgreSQL-server og brannmur.
 - [`infra/azure/storage.bicep`](../infra/azure/storage.bicep) – Blob Storage, containere og RBAC.
-- [`infra/azure/migration-control.bicep`](../infra/azure/migration-control.bicep) – Key Vault-integrasjon og manuelle kontrolljobber.
-- [`.github/workflows/deploy-azure.yml`](../.github/workflows/deploy-azure.yml) – validering, deploy, cutoverkontroll og rollback.
+- [`.github/workflows/deploy-azure.yml`](../.github/workflows/deploy-azure.yml) – validering, deploy og rollback.

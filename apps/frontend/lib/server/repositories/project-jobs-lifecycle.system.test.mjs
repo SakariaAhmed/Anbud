@@ -570,7 +570,7 @@ class FakeQuery {
   }
 }
 
-function inMemorySupabase() {
+function inMemoryPostgREST() {
   const rows = [];
   return {
     rows,
@@ -639,7 +639,7 @@ test("durable persistence fails closed instead of retrying a legacy payload", as
 });
 
 test("queued input no longer reads the legacy result payload", async () => {
-  const client = inMemorySupabase();
+  const client = inMemoryPostgREST();
   client.rows.push({
     ...record("job-legacy-input"),
     input_json: null,
@@ -885,7 +885,7 @@ test("terminal persistence strips unknown fields and rejects impossible nested m
     false,
   );
 
-  const client = inMemorySupabase();
+  const client = inMemoryPostgREST();
   await insertProjectJob(record("job-terminal-boundary"), { projectId: "p" }, {
     client,
   });
@@ -904,7 +904,7 @@ test("terminal persistence strips unknown fields and rejects impossible nested m
   );
   assert.deepEqual(client.rows[0].terminal_metadata, sanitized);
 
-  const invalidClient = inMemorySupabase();
+  const invalidClient = inMemoryPostgREST();
   await insertProjectJob(record("job-terminal-invalid"), { projectId: "p" }, {
     client: invalidClient,
   });
@@ -1135,7 +1135,7 @@ test("lease takeover aborts the old workflow before its next business side effec
 });
 
 test("queue-wait heartbeat prevents stale reset and foreign claim after 15 minutes", async () => {
-  const client = inMemorySupabase();
+  const client = inMemoryPostgREST();
   const queuedInput = {
     kind: "artifact_generation",
     projectId: "00000000-0000-4000-8000-000000000001",
@@ -1224,7 +1224,7 @@ test("queue-wait heartbeat prevents stale reset and foreign claim after 15 minut
 });
 
 test("atomic claim grants exactly one lease and rejects foreign ownership", async () => {
-  const client = inMemorySupabase();
+  const client = inMemoryPostgREST();
   await insertProjectJob(record("job-atomic"), { projectId: "p" }, { client });
 
   const [first, second] = await Promise.all([
@@ -1255,7 +1255,7 @@ test("atomic claim grants exactly one lease and rejects foreign ownership", asyn
 });
 
 test("failed completion clears the owned lease and blocks later writes", async () => {
-  const client = inMemorySupabase();
+  const client = inMemoryPostgREST();
   await insertProjectJob(record("job-failed"), { projectId: "p" }, { client });
   const claimed = await claimQueuedProjectJob("job-failed", {
     client,
@@ -1318,7 +1318,7 @@ test("failed completion clears the owned lease and blocks later writes", async (
 });
 
 test("system: queued input survives lease heartbeat, expiry, takeover, and stale-worker rejection", async () => {
-  const client = inMemorySupabase();
+  const client = inMemoryPostgREST();
   const input = {
     kind: "customer_analysis",
     projectId: "00000000-0000-4000-8000-000000000001",

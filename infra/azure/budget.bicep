@@ -19,7 +19,7 @@ param startDate string = utcNow('yyyy-MM-01')
 @description('Budget end date.')
 param endDate string = '2036-01-01'
 
-resource migrationBudget 'Microsoft.Consumption/budgets@2023-11-01' = {
+resource workloadBudget 'Microsoft.Consumption/budgets@2023-11-01' = {
   name: 'anbud-monthly-cost'
   properties: {
     amount: monthlyAmount

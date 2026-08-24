@@ -13,11 +13,11 @@ param administratorLogin string
 @description('Bootstrap administrator password supplied from a protected secret store.')
 param administratorLoginPassword string
 
-@description('Exact IPv4 addresses allowed during migration. Never use 0.0.0.0/0 or Allow Azure services.')
+@description('Exact IPv4 addresses allowed to administer the server. Never use 0.0.0.0/0 or Allow Azure services.')
 @minLength(1)
 param allowedIpv4Addresses array
 
-@description('Lowest-cost initial SKU. Scale up before cutover if the representative load test misses its SLO.')
+@description('Lowest-cost initial SKU. Scale up if the representative load test misses its SLO.')
 param skuName string = 'Standard_B1ms'
 
 @description('SKU tier paired with skuName. Burstable is the cost-first default; use GeneralPurpose when scaling up.')
@@ -35,7 +35,7 @@ param skuTier string = 'Burstable'
 ])
 param storageSizeGiB int = 32
 
-@description('Point-in-time restore retention while Supabase is retained as the frozen source.')
+@description('Point-in-time restore retention for the production PostgreSQL database.')
 @minValue(7)
 @maxValue(35)
 param backupRetentionDays int = 7
@@ -44,7 +44,7 @@ var tags = {
   workload: 'anbud'
   environment: 'prod'
   dataClassification: 'confidential'
-  migrationStage: 'precutover'
+  component: 'database'
 }
 
 resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {

@@ -10,11 +10,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(__dirname, "../../../../..");
 const primaryRoleMigrationPath = path.join(
   repositoryRoot,
-  "supabase/migrations/20260711133000_atomic_primary_document_roles.sql",
+  "database/migrations/20260711133000_atomic_primary_document_roles.sql",
 );
 const solutionHistoryMigrationPath = path.join(
   repositoryRoot,
-  "supabase/migrations/20260711143000_preserve_customer_analysis_for_solution_history.sql",
+  "database/migrations/20260711143000_preserve_customer_analysis_for_solution_history.sql",
 );
 const solutionHistoryMigration = readFileSync(
   solutionHistoryMigrationPath,
@@ -89,23 +89,23 @@ test("solution-history migration keeps OLD/NEW analysis semantics explicit and s
 
 test("canonical and durable SQL retain solution-history subtype and trigger predicate", () => {
   const schema = readFileSync(
-    path.join(repositoryRoot, "supabase/schema.sql"),
+    path.join(repositoryRoot, "database/schema.sql"),
     "utf8",
   );
   const durable = readFileSync(
-    path.join(repositoryRoot, "supabase/project_jobs_durable_execution.sql"),
+    path.join(repositoryRoot, "database/project_jobs_durable_execution.sql"),
     "utf8",
   );
   const chunks = readFileSync(
-    path.join(repositoryRoot, "supabase/document_chunks_and_embeddings.sql"),
+    path.join(repositoryRoot, "database/document_chunks_and_embeddings.sql"),
     "utf8",
   );
   const normalizer = readFileSync(
-    path.join(repositoryRoot, "supabase/normalize_document_upload_columns.sql"),
+    path.join(repositoryRoot, "database/normalize_document_upload_columns.sql"),
     "utf8",
   );
   const performance = readFileSync(
-    path.join(repositoryRoot, "supabase/performance_metadata_and_indexes.sql"),
+    path.join(repositoryRoot, "database/performance_metadata_and_indexes.sql"),
     "utf8",
   );
 

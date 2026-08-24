@@ -1658,7 +1658,7 @@ test("document intelligence migration is service-only and stores encrypted paylo
   const sql = await readFile(
     path.join(
       repositoryRoot,
-      "supabase/migrations/20260714144342_document_intelligence_v2.sql",
+      "database/migrations/20260714144342_document_intelligence_v2.sql",
     ),
     "utf8",
   );

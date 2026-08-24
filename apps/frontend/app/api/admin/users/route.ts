@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import {
-  addPrincipalToGroups,
   inviteEmailToProject,
   listGroups,
   listPrincipals,
@@ -17,7 +16,7 @@ import {
   requireAdmin,
 } from "@/lib/server/authorization";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 import { checkRateLimit } from "@/lib/server/observability";
 
 export async function GET() {
@@ -36,14 +35,14 @@ export async function GET() {
 }
 
 async function projectName(projectId: string) {
-  const supabase = createServiceClient();
-  const modern = await supabase
+  const dataApi = createServiceClient();
+  const modern = await dataApi
     .from("projects")
     .select("name")
     .eq("id", projectId)
     .single<{ name: string | null }>();
   if (!modern.error && modern.data) return modern.data.name || "Bidsite-prosjekt";
-  const legacy = await supabase
+  const legacy = await dataApi
     .from("projects")
     .select("title")
     .eq("id", projectId)
@@ -156,12 +155,8 @@ export async function POST(request: Request) {
       guestDescription: body.guestDescription,
       role: firstProjectGrant.role,
       additionalProjectGrants,
-      createdBy: principal.id,
-    });
-    await addPrincipalToGroups({
-      principalId: invited.principalId,
       groupIds,
-      addedBy: principal.id,
+      createdBy: principal.id,
     });
     await recordActivity({
       principal,

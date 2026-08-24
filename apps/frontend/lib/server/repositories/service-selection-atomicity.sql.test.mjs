@@ -11,11 +11,11 @@ const repositoryRoot = path.resolve(__dirname, "../../../../..");
 const frontendRoot = path.join(repositoryRoot, "apps/frontend");
 const migrationPath = path.join(
   repositoryRoot,
-  "supabase/migrations/20260711134500_atomic_project_service_selections.sql",
+  "database/migrations/20260711134500_atomic_project_service_selections.sql",
 );
 const migrationSql = readFileSync(migrationPath, "utf8");
 const canonicalSchemaSql = readFileSync(
-  path.join(repositoryRoot, "supabase/schema.sql"),
+  path.join(repositoryRoot, "database/schema.sql"),
   "utf8",
 );
 
@@ -174,7 +174,7 @@ test("service selection replacement is one locked, validated RPC with fail-close
   const storeSource = readFileSync(
     path.join(
       frontendRoot,
-      "lib/server/repositories/supabase-store.ts",
+      "lib/server/repositories/data-store.ts",
     ),
     "utf8",
   );
@@ -201,8 +201,8 @@ test("service selection replacement is one locked, validated RPC with fail-close
   assert.doesNotMatch(canonicalDocumentTrigger, /old\.selected|new\.selected/u);
   assert.match(canonicalSelectionTrigger, /old\.selected is not distinct from new\.selected/u);
   for (const relativePath of [
-    "supabase/schema.sql",
-    "supabase/project_jobs_durable_execution.sql",
+    "database/schema.sql",
+    "database/project_jobs_durable_execution.sql",
   ]) {
     const bootstrapSql = readFileSync(
       path.join(repositoryRoot, relativePath),

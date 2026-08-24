@@ -9,13 +9,11 @@
     "apps/frontend/lib/server/requirements/corpus-parsers.test.mjs",
     "apps/frontend/lib/server/requirements/evaluation-coverage-integrity.ts",
     "apps/frontend/lib/server/requirements/evaluation-coverage-integrity.test.mjs",
-    "apps/frontend/lib/server/repositories/supabase-store.persistence.test-support.ts",
+    "apps/frontend/lib/server/repositories/data-store.persistence.test-support.ts",
     "apps/frontend/lib/server/storage-observability.test-support.ts",
     "apps/frontend/lib/server/document-chunks.test-support.ts",
     "apps/frontend/app/api/projects/*/solution-evaluation/route.test-support.ts",
     "apps/frontend/scripts/run_project_job_worker.mjs",
-    "scripts/backfill_document_storage.mjs",
-    "scripts/azure_migration_preflight.mjs",
     "scripts/benchmark_workspace_ui.mjs",
     "scripts/llm_quality_eval.mjs",
     "scripts/run_document_parser_bakeoff.mjs",
@@ -201,7 +199,7 @@
       "exports": ["isEmbeddingRetryDeferred"]
     },
     {
-      "file": "apps/frontend/lib/server/file-storage.ts",
+      "file": "apps/frontend/lib/server/file-storage-azure.ts",
       "exports": ["listStoredFilesUnderPrefix"]
     },
     {
@@ -238,7 +236,7 @@
       "exports": ["listGeneratedArtifactsFresh"]
     },
     {
-      "file": "apps/frontend/lib/server/repositories/supabase-store.ts",
+      "file": "apps/frontend/lib/server/repositories/data-store.ts",
       "exports": [
         "appendChatMessage",
         "deleteGeneratedArtifact",

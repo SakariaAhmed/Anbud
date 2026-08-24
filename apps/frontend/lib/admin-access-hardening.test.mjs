@@ -44,19 +44,25 @@ test("one admin invitation can grant unique projects with separate roles", () =>
     path.join(frontendRoot, "lib/server/access-control-repository.ts"),
     "utf8",
   );
-  const additionalGrants = repository.indexOf(
-    "for (const grant of input.additionalProjectGrants",
+  const atomicGrant = repository.indexOf(
+    'rpc("grant_guest_project_access_batch"',
   );
   const invitationEmail = repository.indexOf(
     "const emailResult = await sendGuestAccessEmail",
-    additionalGrants,
+    atomicGrant,
   );
-  assert.ok(additionalGrants > 0);
-  assert.ok(invitationEmail > additionalGrants);
+  assert.ok(atomicGrant > 0);
+  assert.ok(invitationEmail > atomicGrant);
+  assert.match(repository, /p_project_ids: projectGrants\.map/u);
+  assert.match(repository, /p_roles: projectGrants\.map/u);
+  assert.match(repository, /p_group_ids: groupIds/u);
+  assert.doesNotMatch(repository, /for \(const grant of input\.additionalProjectGrants/u);
   assert.match(
-    repository.slice(additionalGrants, invitationEmail + 500),
+    repository.slice(atomicGrant, invitationEmail + 500),
     /projectAccesses/u,
   );
+  assert.match(route.slice(invitation, invitation + 700), /groupIds/u);
+  assert.doesNotMatch(route, /await addPrincipalToGroups/u);
 
   const ui = readFileSync(
     path.join(frontendRoot, "components/admin/admin-console.tsx"),
@@ -94,7 +100,7 @@ test("direct access management cannot downgrade an existing project owner", () =
   );
   const ownerGuard = source.indexOf('existingMembership?.role === "owner"');
   const membershipWrite = source.indexOf(
-    'supabase.from("project_memberships").upsert',
+    'dataApi.from("project_memberships").upsert',
     ownerGuard,
   );
   assert.ok(ownerGuard > 0);
@@ -221,7 +227,7 @@ test("direct project access rows expand for editing and warn before owner remova
   );
 });
 
-test("admin owner changes release ownership before role update or revocation", () => {
+test("admin owner changes use one atomic database operation", () => {
   const repository = readFileSync(
     path.join(frontendRoot, "lib/server/access-control-repository.ts"),
     "utf8",
@@ -238,16 +244,11 @@ test("admin owner changes release ownership before role update or revocation", (
   );
   const updateBlock = repository.slice(updateStart, revokeStart);
   const revokeBlock = repository.slice(revokeStart, nextFunction);
-  assert.ok(updateBlock.indexOf("await releaseProjectOwnership") >= 0);
-  assert.ok(
-    updateBlock.indexOf("await releaseProjectOwnership") <
-      updateBlock.indexOf("await updateProjectMemberRole"),
-  );
-  assert.ok(revokeBlock.indexOf("await releaseProjectOwnership") >= 0);
-  assert.ok(
-    revokeBlock.indexOf('role: "restricted_viewer"') <
-      revokeBlock.indexOf("await revokeProjectMember"),
-  );
+  assert.match(updateBlock, /rpc\("set_admin_managed_project_access"/u);
+  assert.match(updateBlock, /p_revoke: false/u);
+  assert.match(revokeBlock, /rpc\("set_admin_managed_project_access"/u);
+  assert.match(revokeBlock, /p_revoke: true/u);
+  assert.doesNotMatch(repository, /releaseProjectOwnership/u);
 
   const route = readFileSync(
     path.join(
@@ -258,4 +259,34 @@ test("admin owner changes release ownership before role update or revocation", (
   );
   assert.match(route, /await updateAdminManagedProjectMemberRole/u);
   assert.match(route, /await revokeAdminManagedProjectMember/u);
+});
+
+test("access listings fail closed and exclude expired grants", () => {
+  const source = readFileSync(
+    path.join(frontendRoot, "lib/server/access-control-repository.ts"),
+    "utf8",
+  );
+  assert.match(source, /function activeAccessRows/u);
+  assert.match(source, /new Date\(row\.expires_at\)\.getTime\(\) > now/u);
+
+  const groupStart = source.indexOf("export async function getGroup");
+  const groupEnd = source.indexOf("export async function createGroup", groupStart);
+  const groupBlock = source.slice(groupStart, groupEnd);
+  assert.match(groupBlock, /memberError/u);
+  assert.match(groupBlock, /grantError/u);
+  assert.match(groupBlock, /principalError/u);
+  assert.match(groupBlock, /activeAccessRows\(grantRows\)/u);
+
+  const principalStart = source.indexOf("export async function listPrincipals");
+  const principalEnd = source.indexOf("export async function setAdminStatus", principalStart);
+  const principalBlock = source.slice(principalStart, principalEnd);
+  assert.match(principalBlock, /membershipError/u);
+  assert.match(principalBlock, /groupGrantError/u);
+  assert.match(principalBlock, /credentialError/u);
+  assert.match(principalBlock, /activeAccessRows\(memberships\)/u);
+  assert.match(principalBlock, /activeAccessRows\(groupGrants\)/u);
+
+  const grantStart = source.indexOf("export async function grantPrincipalProjectAccess");
+  const grantEnd = source.indexOf("export async function grantGroupProjectAccess", grantStart);
+  assert.match(source.slice(grantStart, grantEnd), /expires_at: null/u);
 });

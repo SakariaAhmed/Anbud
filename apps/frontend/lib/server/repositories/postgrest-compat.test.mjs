@@ -9,12 +9,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, "../../..");
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
-const supabaseStoreSource = fs.readFileSync(
-  path.join(frontendRoot, "lib/server/repositories/supabase-store.ts"),
+const dataApiStoreSource = fs.readFileSync(
+  path.join(frontendRoot, "lib/server/repositories/data-store.ts"),
   "utf8",
 );
 
-const jiti = createJiti(path.join(frontendRoot, "supabase-compat-tests.cjs"), {
+const jiti = createJiti(path.join(frontendRoot, "postgrest-compat-tests.cjs"), {
   interopDefault: true,
   alias: {
     "@": frontendRoot,
@@ -28,7 +28,7 @@ const {
   missingColumnNameFromError,
   removeMissingStorageColumns,
 } = jiti(
-  path.join(frontendRoot, "lib/server/repositories/supabase-compat.ts"),
+  path.join(frontendRoot, "lib/server/repositories/postgrest-compat.ts"),
 );
 
 test("schema compatibility helpers identify missing columns without hiding constraint errors", () => {
@@ -64,7 +64,7 @@ test("storage column removal drops only storage references", () => {
 
 test("legacy project creation preserves the authenticated owner", () => {
   assert.match(
-    supabaseStoreSource,
+    dataApiStoreSource,
     /if \(insertResult\.error && isMissingLegacyProjectColumn\(insertResult\.error\)\)[\s\S]*?\.insert\(\{\s*owner_id: input\.owner_id,/u,
   );
 });

@@ -53,7 +53,7 @@ create index if not exists document_chunks_content_hash_idx
   on document_chunks(source_type, source_id, content_hash);
 
 create index if not exists document_chunks_embedding_hnsw_idx
-  on document_chunks using hnsw (embedding vector_cosine_ops)
+  on document_chunks using hnsw (embedding extensions.vector_cosine_ops)
   where embedding is not null;
 
 create or replace function match_document_chunks(

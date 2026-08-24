@@ -74,15 +74,15 @@ test("distributed rate-limit timeout aborts the in-flight request", async () => 
 
 test("database outage uses the configured conservative local fallback", async (t) => {
   const saved = {
-    url: process.env.SUPABASE_URL,
-    key: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    url: process.env.DATA_API_URL,
+    key: process.env.DATA_API_SERVICE_ROLE_KEY,
     trust: process.env.TRUST_FORWARDED_RATE_LIMIT_HEADERS,
   };
   t.after(() => {
-    if (saved.url === undefined) delete process.env.SUPABASE_URL;
-    else process.env.SUPABASE_URL = saved.url;
-    if (saved.key === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    else process.env.SUPABASE_SERVICE_ROLE_KEY = saved.key;
+    if (saved.url === undefined) delete process.env.DATA_API_URL;
+    else process.env.DATA_API_URL = saved.url;
+    if (saved.key === undefined) delete process.env.DATA_API_SERVICE_ROLE_KEY;
+    else process.env.DATA_API_SERVICE_ROLE_KEY = saved.key;
     if (saved.trust === undefined) {
       delete process.env.TRUST_FORWARDED_RATE_LIMIT_HEADERS;
     } else {
@@ -90,8 +90,8 @@ test("database outage uses the configured conservative local fallback", async (t
     }
   });
 
-  delete process.env.SUPABASE_URL;
-  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.DATA_API_URL;
+  delete process.env.DATA_API_SERVICE_ROLE_KEY;
   process.env.TRUST_FORWARDED_RATE_LIMIT_HEADERS = "true";
   globalThis.__anbudRateLimits = new Map();
   globalThis.__anbudDatabaseRateLimitCircuit =

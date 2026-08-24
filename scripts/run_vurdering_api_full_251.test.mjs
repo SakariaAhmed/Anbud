@@ -3495,48 +3495,22 @@ test("direct-baseline cleanup targets exact run-owned orphans and protects Petor
   ]);
 });
 
-test("cleanup storage verification recursively paginates project prefixes", async () => {
+test("cleanup storage verification delegates normalized prefixes to Azure storage", async () => {
   const calls = [];
-  const entriesByPrefix = new Map([
-    [
-      "projects/test-project",
-      [
-        { name: "document-a", id: null, metadata: null },
-        { name: "document-b", id: null, metadata: null },
-        { name: "root.txt", id: "root-file", metadata: {} },
-      ],
-    ],
-    [
-      "projects/test-project/document-a",
-      [
-        { name: "a.pdf", id: "a-file", metadata: {} },
-        { name: "b.pdf", id: "b-file", metadata: {} },
-      ],
-    ],
-    ["projects/test-project/document-b", []],
-  ]);
-  const supabase = {
-    storage: {
-      from(bucket) {
-        assert.equal(bucket, "anbud-documents");
-        return {
-          async list(prefix, options) {
-            calls.push({ prefix, ...options });
-            const entries = entriesByPrefix.get(prefix) ?? [];
-            return {
-              data: entries.slice(options.offset, options.offset + options.limit),
-              error: null,
-            };
-          },
-        };
-      },
-    },
+  const listFiles = async (options) => {
+    calls.push(options);
+    return [
+      "projects/test-project/root.txt",
+      "projects/test-project/document-a/b.pdf",
+      "projects/test-project/document-a/a.pdf",
+      "projects/test-project/root.txt",
+    ];
   };
 
   const files = await listStoragePrefixFiles({
-    supabase,
     prefix: "/projects/test-project/",
     pageSize: 2,
+    listFiles,
   });
 
   assert.deepEqual(files, [
@@ -3544,16 +3518,10 @@ test("cleanup storage verification recursively paginates project prefixes", asyn
     "projects/test-project/document-a/b.pdf",
     "projects/test-project/root.txt",
   ]);
-  assert.ok(
-    calls.some(
-      (call) =>
-        call.prefix === "projects/test-project" && call.offset === 2,
-    ),
-  );
-  assert.ok(
-    calls.some(
-      (call) =>
-        call.prefix === "projects/test-project/document-a" && call.offset === 2,
-    ),
-  );
+  assert.deepEqual(calls, [
+    {
+      prefix: "projects/test-project",
+      bucket: "anbud-documents",
+    },
+  ]);
 });

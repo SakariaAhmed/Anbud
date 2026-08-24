@@ -19,7 +19,7 @@ import {
   AUTH_PRINCIPAL_HEADER,
   AUTH_SESSION_HEADER,
 } from "@/lib/password-auth";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 
 export type RequestPrincipal = {
   id: string;
@@ -49,9 +49,9 @@ async function validatePrincipalFromDatabase(input: {
   principalId: string;
   sessionId: string | null;
 }) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   if (input.sessionId) {
-    const { data: session, error } = await supabase
+    const { data: session, error } = await dataApi
       .from("app_sessions")
       .select("id, principal_id, expires_at, revoked_at")
       .eq("id", input.sessionId)
@@ -74,7 +74,7 @@ async function validatePrincipalFromDatabase(input: {
 
   const [{ data: principal, error: principalError }, { data: roleRows }] =
     await Promise.all([
-      supabase
+      dataApi
         .from("app_principals")
         .select("id, identity_type, disabled_at")
         .eq("id", input.principalId)
@@ -83,7 +83,7 @@ async function validatePrincipalFromDatabase(input: {
           identity_type: string;
           disabled_at: string | null;
         }>(),
-      supabase
+      dataApi
         .from("app_principal_roles")
         .select("role")
         .eq("principal_id", input.principalId),
@@ -138,22 +138,22 @@ export async function getEffectiveProjectRole(
   principalId: string,
   projectId: string,
 ): Promise<ProjectRole | null> {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const [
     { data: directRows, error: directError },
     { data: groupMemberRows, error: groupMemberError },
     { data: legacyProject, error: legacyError },
   ] = await Promise.all([
-    supabase
+    dataApi
       .from("project_memberships")
       .select("role, revoked_at, expires_at")
       .eq("project_id", projectId)
       .eq("principal_id", principalId),
-    supabase
+    dataApi
       .from("app_group_members")
       .select("group_id")
       .eq("principal_id", principalId),
-    supabase
+    dataApi
       .from("projects")
       .select("owner_id")
       .eq("id", projectId)
@@ -181,7 +181,7 @@ export async function getEffectiveProjectRole(
   const groupIds = (groupMemberRows ?? []).map((row) => row.group_id);
   let groupRoles: ProjectRole[] = [];
   if (groupIds.length) {
-    const { data: grants, error } = await supabase
+    const { data: grants, error } = await dataApi
       .from("project_group_grants")
       .select("role, revoked_at, expires_at")
       .eq("project_id", projectId)
@@ -259,21 +259,21 @@ export async function listAccessibleProjectIds(
   options?: { admin?: boolean },
 ) {
   if (options?.admin) return null;
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const [
     { data: directRows, error: directError },
     { data: groupRows, error: groupError },
     { data: ownedRows, error: ownedError },
   ] = await Promise.all([
-    supabase
+    dataApi
       .from("project_memberships")
       .select("project_id, revoked_at, expires_at")
       .eq("principal_id", principalId),
-    supabase
+    dataApi
       .from("app_group_members")
       .select("group_id")
       .eq("principal_id", principalId),
-    supabase.from("projects").select("id").eq("owner_id", principalId),
+    dataApi.from("projects").select("id").eq("owner_id", principalId),
   ]);
   if (directError || groupError || ownedError) {
     throw new Error(
@@ -296,7 +296,7 @@ export async function listAccessibleProjectIds(
 
   const groupIds = (groupRows ?? []).map((row) => row.group_id);
   if (groupIds.length) {
-    const { data: grantRows, error } = await supabase
+    const { data: grantRows, error } = await dataApi
       .from("project_group_grants")
       .select("project_id, revoked_at, expires_at")
       .in("group_id", groupIds);

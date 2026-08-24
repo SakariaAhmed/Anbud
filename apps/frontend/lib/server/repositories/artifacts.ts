@@ -4,7 +4,7 @@ import { buildValidatedManualArtifactInputSnapshot } from "@/lib/server/artifact
 import { decryptJson, encryptJson } from "@/lib/server/crypto";
 import { runLeaseFencedGeneratedArtifactMutation } from "@/lib/server/repositories/lease-fenced-persistence";
 import { revalidateProjectCaches } from "@/lib/server/repositories/repository-cache";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 import type {
   GeneratedArtifact,
   GeneratedArtifactAuthorityByType,
@@ -192,14 +192,14 @@ function parseSolutionEvaluationDependency(
 export async function getArtifactSourceRevisions(
   projectId: string,
 ): Promise<ArtifactSourceRevisions> {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase.rpc("get_artifact_source_revisions", {
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi.rpc("get_artifact_source_revisions", {
     p_project_id: projectId,
   });
   if (error || !data || typeof data !== "object") {
     throw new Error(
       error?.message ||
-        "Artefaktens kilderevisjon mangler. Kjør siste Supabase-migrering før generering.",
+        "Artefaktens kilderevisjon mangler. Kjør siste PostgREST-migrering før generering.",
     );
   }
   const record = data as Record<string, unknown>;
@@ -234,8 +234,8 @@ export function currentArtifactTypesFromAuthority(
 export async function getArtifactAuthoritySummary(
   projectId: string,
 ): Promise<GeneratedArtifactAuthorityByType> {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase.rpc("get_artifact_authority_summary", {
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi.rpc("get_artifact_authority_summary", {
     p_project_id: projectId,
   });
   if (error || !Array.isArray(data)) {
@@ -332,8 +332,8 @@ export async function updateGeneratedArtifact(input: {
   if (!title) throw new Error("Kravbesvarelsen må ha en tittel.");
   if (!contentMarkdown) throw new Error("Kravbesvarelsen kan ikke være tom.");
 
-  const supabase = createServiceClient();
-  const { data: parent, error: parentError } = await supabase
+  const dataApi = createServiceClient();
+  const { data: parent, error: parentError } = await dataApi
     .from("generated_artifacts")
     .select("*")
     .eq("id", input.artifactId)
@@ -355,7 +355,7 @@ export async function updateGeneratedArtifact(input: {
       input.acknowledgeDeterministicRepairs === true,
   });
   const revisions = await getArtifactSourceRevisions(input.projectId);
-  const { data, error } = await supabase.rpc("create_manual_artifact_version", {
+  const { data, error } = await dataApi.rpc("create_manual_artifact_version", {
     p_project_id: input.projectId,
     p_parent_artifact_id: input.artifactId,
     p_payload: {
@@ -378,8 +378,8 @@ export async function deleteGeneratedArtifact(input: {
   projectId: string;
   artifactId: string;
 }) {
-  const supabase = createServiceClient();
-  const { error } = await supabase.rpc("delete_artifact_version_serialized", {
+  const dataApi = createServiceClient();
+  const { error } = await dataApi.rpc("delete_artifact_version_serialized", {
     p_project_id: input.projectId,
     p_artifact_id: input.artifactId,
   });
@@ -415,8 +415,8 @@ export async function listGeneratedArtifactsFresh(
   projectId: string,
   options: { artifactType?: GeneratedArtifactType } = {},
 ) {
-  const supabase = createServiceClient();
-  let query = supabase
+  const dataApi = createServiceClient();
+  let query = dataApi
     .from("generated_artifacts")
     .select("*")
     .eq("project_id", projectId)
@@ -441,8 +441,8 @@ export async function listArtifactKnowledgeCandidatesFresh(
   projectId: string,
   artifactType: GeneratedArtifactType,
 ) {
-  const supabase = createServiceClient();
-  const { data: manifestData, error: manifestError } = await supabase.rpc(
+  const dataApi = createServiceClient();
+  const { data: manifestData, error: manifestError } = await dataApi.rpc(
     "artifact_knowledge_manifest",
     { p_project_id: projectId, p_artifact_type: artifactType },
   );
@@ -465,7 +465,7 @@ export async function listArtifactKnowledgeCandidatesFresh(
     return (entry as Record<string, unknown>).id as string;
   });
   if (!eligibleIds.length) return [];
-  const { data, error } = await supabase
+  const { data, error } = await dataApi
     .from("generated_artifacts")
     .select("*")
     .eq("project_id", projectId)

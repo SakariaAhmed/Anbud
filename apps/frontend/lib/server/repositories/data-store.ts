@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { after } from "next/server";
 
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 import { listAccessibleProjectIds } from "@/lib/server/authorization";
 import {
   buildStoredFilePrefix,
@@ -13,7 +13,7 @@ import {
   removeStoredFilePrefixes,
   removeStoredFiles,
   uploadEncryptedBase64File,
-} from "@/lib/server/file-storage";
+} from "@/lib/server/file-storage-azure";
 import {
   decryptJson,
   decryptString,
@@ -44,7 +44,7 @@ import {
   isMissingSchemaColumn,
   missingColumnNameFromError,
   removeMissingStorageColumns,
-} from "@/lib/server/repositories/supabase-compat";
+} from "@/lib/server/repositories/postgrest-compat";
 import {
   PROJECTS_LIST_TAG,
   SERVICE_DESCRIPTIONS_TAG,
@@ -793,10 +793,10 @@ function mapDocumentSummary(row: DocumentSummaryRow): ProjectDocument {
 }
 
 async function listProjectDocumentRoleRows(
-  supabase: ReturnType<typeof createServiceClient>,
+  dataApi: ReturnType<typeof createServiceClient>,
   projectId: string,
 ) {
-  const { data, error } = await supabase
+  const { data, error } = await dataApi
     .from("documents")
     .select("role")
     .eq("project_id", projectId);
@@ -808,10 +808,10 @@ async function listProjectDocumentRoleRows(
 }
 
 async function deleteProjectSolutionEvaluations(
-  supabase: ReturnType<typeof createServiceClient>,
+  dataApi: ReturnType<typeof createServiceClient>,
   projectId: string,
 ) {
-  const { error } = await supabase
+  const { error } = await dataApi
     .from("solution_evaluations")
     .delete()
     .eq("project_id", projectId);
@@ -821,10 +821,10 @@ async function deleteProjectSolutionEvaluations(
 }
 
 async function deleteProjectCustomerAnalyses(
-  supabase: ReturnType<typeof createServiceClient>,
+  dataApi: ReturnType<typeof createServiceClient>,
   projectId: string,
 ) {
-  const { error } = await supabase
+  const { error } = await dataApi
     .from("customer_analyses")
     .delete()
     .eq("project_id", projectId);
@@ -834,10 +834,10 @@ async function deleteProjectCustomerAnalyses(
 }
 
 async function deleteProjectExecutiveSummaries(
-  supabase: ReturnType<typeof createServiceClient>,
+  dataApi: ReturnType<typeof createServiceClient>,
   projectId: string,
 ) {
-  const { error } = await supabase
+  const { error } = await dataApi
     .from("executive_summaries")
     .delete()
     .eq("project_id", projectId);
@@ -869,11 +869,11 @@ function storedFileDeletionPrefixes(input: {
 }
 
 async function getDocumentDeletionSnapshot(
-  supabase: ReturnType<typeof createServiceClient>,
+  dataApi: ReturnType<typeof createServiceClient>,
   projectId: string,
   documentId: string,
 ): Promise<DocumentDeletionSnapshot | null> {
-  const currentResult = await supabase
+  const currentResult = await dataApi
     .from("documents")
     .select(
       "id, role, supporting_subtype, file_storage_bucket, file_storage_path",
@@ -891,7 +891,7 @@ async function getDocumentDeletionSnapshot(
     );
   }
 
-  const legacyResult = await supabase
+  const legacyResult = await dataApi
     .from("documents")
     .select("id, role, subtype, file_storage_bucket, file_storage_path")
     .eq("project_id", projectId)
@@ -923,10 +923,10 @@ async function getDocumentDeletionSnapshot(
 }
 
 async function getSelectedSolutionDocumentId(
-  supabase: ReturnType<typeof createServiceClient>,
+  dataApi: ReturnType<typeof createServiceClient>,
   projectId: string,
 ): Promise<string | null> {
-  const currentResult = await supabase
+  const currentResult = await dataApi
     .from("solution_evaluations")
     .select("solution_document_id, source_document_ids")
     .eq("project_id", projectId)
@@ -944,7 +944,7 @@ async function getSelectedSolutionDocumentId(
     queryError &&
     isMissingRelationColumn(queryError, "solution_evaluations")
   ) {
-    const legacyResult = await supabase
+    const legacyResult = await dataApi
       .from("solution_evaluations")
       .select("source_document_ids")
       .eq("project_id", projectId)
@@ -1511,8 +1511,8 @@ async function fetchSingleDocumentRow(
 }
 
 async function queryProjectRow(projectId: string) {
-  const supabase = createServiceClient();
-  const first = await supabase
+  const dataApi = createServiceClient();
+  const first = await dataApi
     .from("projects")
     .select(PROJECT_SELECT_SAFE)
     .eq("id", projectId)
@@ -1523,7 +1523,7 @@ async function queryProjectRow(projectId: string) {
   }
 
   if (isMissingLegacyProjectColumn(first.error)) {
-    const retry = await supabase
+    const retry = await dataApi
       .from("projects")
       .select(PROJECT_SELECT_LEGACY)
       .eq("id", projectId)
@@ -1538,8 +1538,8 @@ async function queryProjectRow(projectId: string) {
 }
 
 export async function getProjectSourceRevision(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi
     .from("projects")
     .select("source_revision")
     .eq("id", projectId)
@@ -1548,7 +1548,7 @@ export async function getProjectSourceRevision(projectId: string) {
   if (error || data?.source_revision == null) {
     throw new Error(
       error?.message ||
-        "Prosjektets source_revision mangler. Kjør siste Supabase-migrering før løsningsvurdering.",
+        "Prosjektets source_revision mangler. Kjør siste PostgREST-migrering før løsningsvurdering.",
     );
   }
 
@@ -1603,9 +1603,9 @@ export async function listProjects(
   if (accessibleProjectIds && !accessibleProjectIds.length) return [];
   const getCachedProjects = unstable_cache(
     async () => {
-      const supabase = createServiceClient();
+      const dataApi = createServiceClient();
       const projectQuery = async (select: string) => {
-        let query = supabase
+        let query = dataApi
           .from("projects")
           .select(select)
           .order("last_activity_at", { ascending: false })
@@ -1622,7 +1622,7 @@ export async function listProjects(
       ] = await Promise.all([
         projectQuery(PROJECT_SELECT_SAFE),
         fetchDocumentSummaryRows((select) => {
-          let query = supabase
+          let query = dataApi
             .from("documents")
             .select(select)
             .limit(PROJECT_LIST_LIMIT * 10);
@@ -1632,7 +1632,7 @@ export async function listProjects(
           return query;
         }),
         (() => {
-          let query = supabase
+          let query = dataApi
           .from("generated_artifacts")
           .select("id, project_id")
           .order("created_at", { ascending: false })
@@ -1694,8 +1694,8 @@ export async function listProjects(
   );
   const projects = await getCachedProjects();
   if (!projects.length) return projects;
-  const supabase = createServiceClient();
-  const { data, error } = await supabase.rpc(
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi.rpc(
     "get_solution_evaluation_currentness",
     { p_project_ids: projects.map((project) => project.id) },
   );
@@ -1714,7 +1714,7 @@ export async function listProjects(
 export async function createProject(
   input: ProjectCreateInput,
 ): Promise<ProjectSummary> {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const normalizedName = input.name?.trim() || "Ny analyse";
   const payload = {
     owner_id: input.owner_id,
@@ -1723,14 +1723,14 @@ export async function createProject(
     description: input.description?.trim() || null,
     industry: input.industry?.trim() || null,
   };
-  let insertResult = await supabase
+  let insertResult = await dataApi
     .from("projects")
     .insert(payload)
     .select("*")
     .single<Record<string, unknown>>();
 
   if (insertResult.error && isMissingLegacyProjectColumn(insertResult.error)) {
-    insertResult = await supabase
+    insertResult = await dataApi
       .from("projects")
       .insert({
         owner_id: input.owner_id,
@@ -1764,9 +1764,9 @@ export async function createProject(
 }
 
 export async function deleteProject(projectId: string) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const storedFiles = await fetchStoredFileReferencesPaginated((from, to) =>
-    supabase
+    dataApi
       .from("documents")
       .select("file_storage_bucket, file_storage_path")
       .eq("project_id", projectId)
@@ -1791,7 +1791,7 @@ export async function deleteProject(projectId: string) {
       );
     },
     deleteDatabaseRows: async () => {
-      const { error } = await supabase
+      const { error } = await dataApi
         .from("projects")
         .delete()
         .eq("id", projectId);
@@ -1811,15 +1811,15 @@ export async function listServiceDescriptions(
     options.includeDocumentAiSummaries === true;
   return unstable_cache(
     async () => {
-      const supabase = createServiceClient();
+      const dataApi = createServiceClient();
       const [servicesResult, documents] = await Promise.all([
-        supabase
+        dataApi
           .from("service_descriptions")
           .select("*")
           .order("name", { ascending: true }),
         fetchServiceDocumentSummaryRows(
           (select) =>
-            supabase
+            dataApi
               .from("service_documents")
               .select(select)
               .order("created_at", { ascending: false }),
@@ -1867,8 +1867,8 @@ export async function listServiceDescriptions(
 export async function getServiceDescriptionMetadata(
   serviceId: string,
 ) {
-  const supabase = createServiceClient();
-  const serviceResult = await supabase
+  const dataApi = createServiceClient();
+  const serviceResult = await dataApi
     .from("service_descriptions")
     .select("id, name, description")
     .eq("id", serviceId)
@@ -1885,7 +1885,7 @@ export async function upsertServiceDescription(input: {
   name: string;
   description?: string | null;
 }) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const payload = {
     name: input.name.trim(),
     description: input.description?.trim() || "",
@@ -1901,13 +1901,13 @@ export async function upsertServiceDescription(input: {
   }
 
   let query = input.serviceId
-    ? supabase
+    ? dataApi
         .from("service_descriptions")
         .update(payload)
         .eq("id", input.serviceId)
         .select("*")
         .single<ServiceDescriptionRow>()
-    : supabase
+    : dataApi
         .from("service_descriptions")
         .insert(payload)
         .select("*")
@@ -1922,13 +1922,13 @@ export async function upsertServiceDescription(input: {
       updated_at: payload.updated_at,
     };
     query = input.serviceId
-      ? supabase
+      ? dataApi
           .from("service_descriptions")
           .update(legacyPayload)
           .eq("id", input.serviceId)
           .select("*")
           .single<ServiceDescriptionRow>()
-      : supabase
+      : dataApi
           .from("service_descriptions")
           .insert(legacyPayload)
           .select("*")
@@ -1957,7 +1957,7 @@ export async function saveServiceDocument(input: {
   rawText: string;
   structureMap: unknown;
 }) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const documentId = randomUUID();
   const normalizedTitle =
     input.title?.trim() ||
@@ -1996,7 +1996,7 @@ export async function saveServiceDocument(input: {
   const nextKeywords = keywordsFromText(
     `${normalizedTitle} ${input.fileName} ${input.rawText}`,
   );
-  const insertResult = await supabase.rpc(
+  const insertResult = await dataApi.rpc(
     "insert_service_document_with_keywords",
     {
       p_service_id: input.serviceId,
@@ -2044,8 +2044,8 @@ export async function deleteServiceDocument(
   serviceId: string,
   documentId: string,
 ) {
-  const supabase = createServiceClient();
-  const { data: storedFile, error: storedFileError } = await supabase
+  const dataApi = createServiceClient();
+  const { data: storedFile, error: storedFileError } = await dataApi
     .from("service_documents")
     .select("file_storage_bucket, file_storage_path")
     .eq("service_id", serviceId)
@@ -2082,7 +2082,7 @@ export async function deleteServiceDocument(
       );
     },
     deleteDatabaseRows: async () => {
-      const { error } = await supabase
+      const { error } = await dataApi
         .from("service_documents")
         .delete()
         .eq("service_id", serviceId)
@@ -2102,9 +2102,9 @@ export async function deleteServiceDocument(
 }
 
 export async function deleteServiceDescription(serviceId: string) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const storedFiles = await fetchStoredFileReferencesPaginated((from, to) =>
-    supabase
+    dataApi
       .from("service_documents")
       .select("file_storage_bucket, file_storage_path")
       .eq("service_id", serviceId)
@@ -2128,7 +2128,7 @@ export async function deleteServiceDescription(serviceId: string) {
       );
     },
     deleteDatabaseRows: async () => {
-      const { error } = await supabase
+      const { error } = await dataApi
         .from("service_descriptions")
         .delete()
         .eq("id", serviceId);
@@ -2156,7 +2156,7 @@ export async function listServiceDocumentDetailsForProject(
     return [];
   }
 
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const documentIdFilter = Array.isArray(options?.documentIds)
     ? options.documentIds
     : null;
@@ -2167,7 +2167,7 @@ export async function listServiceDocumentDetailsForProject(
   }
 
   if (documentIds.length) {
-    let query = supabase
+    let query = dataApi
       .from("service_documents")
       .select("*")
       .in("id", documentIds)
@@ -2187,7 +2187,7 @@ export async function listServiceDocumentDetailsForProject(
     );
   }
 
-  const { data: selections, error: selectionsError } = await supabase
+  const { data: selections, error: selectionsError } = await dataApi
     .from("project_service_selections")
     .select("service_id")
     .eq("project_id", projectId)
@@ -2214,7 +2214,7 @@ export async function listServiceDocumentDetailsForProject(
     return [];
   }
 
-  let query = supabase
+  let query = dataApi
     .from("service_documents")
     .select("*")
     .in("service_id", serviceIds)
@@ -2238,8 +2238,8 @@ export async function listServiceDocumentDetailsForProject(
 export async function listServiceDocumentSummariesForProject(
   projectId: string,
 ): Promise<ServiceDocument[]> {
-  const supabase = createServiceClient();
-  const { data: selections, error: selectionsError } = await supabase
+  const dataApi = createServiceClient();
+  const { data: selections, error: selectionsError } = await dataApi
     .from("project_service_selections")
     .select("service_id")
     .eq("project_id", projectId)
@@ -2267,7 +2267,7 @@ export async function listServiceDocumentSummariesForProject(
   }
 
   const rows = await fetchServiceDocumentSummaryRows((select) =>
-    supabase
+    dataApi
       .from("service_documents")
       .select(select)
       .in("service_id", serviceIds)
@@ -2281,8 +2281,8 @@ export async function updateServiceDocumentAiSummary(input: {
   documentId: string;
   aiSummary: string;
 }) {
-  const supabase = createServiceClient();
-  const { error } = await supabase
+  const dataApi = createServiceClient();
+  const { error } = await dataApi
     .from("service_documents")
     .update({
       ai_summary: encryptString(input.aiSummary),
@@ -2302,7 +2302,7 @@ export async function listProjectServiceDescriptions(
   projectId: string,
   options: { includeDocumentAiSummaries?: boolean } = {},
 ): Promise<ProjectServiceDescription[]> {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const [
     services,
     project,
@@ -2313,11 +2313,11 @@ export async function listProjectServiceDescriptions(
       includeDocumentAiSummaries: options.includeDocumentAiSummaries,
     }),
     queryProjectRow(projectId),
-    supabase
+    dataApi
       .from("documents")
       .select("title, file_name")
       .eq("project_id", projectId),
-    supabase
+    dataApi
       .from("project_service_selections")
       .select("service_id, selected")
       .eq("project_id", projectId),
@@ -2391,9 +2391,9 @@ export async function setProjectServiceSelections(
   projectId: string,
   serviceIds: string[],
 ) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const uniqueIds = Array.from(new Set(serviceIds.filter(Boolean)));
-  const { error } = await supabase.rpc("replace_project_service_selections", {
+  const { error } = await dataApi.rpc("replace_project_service_selections", {
     p_project_id: projectId,
     p_service_ids: uniqueIds,
   });
@@ -2411,7 +2411,7 @@ export async function updateProjectMetadataFromInference(
   projectId: string,
   inferred: ProjectMetadataInference,
 ) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const project = await queryProjectRow(projectId);
 
   const nextName = shouldUseInferredValue(
@@ -2476,7 +2476,7 @@ export async function updateProjectMetadataFromInference(
     return fromUnknownProjectRow(fencedUpdate.data);
   }
 
-  let updateResult = await supabase
+  let updateResult = await dataApi
     .from("projects")
     .update(standardPatch)
     .eq("id", projectId)
@@ -2497,7 +2497,7 @@ export async function updateProjectMetadataFromInference(
       legacyPatch.description = nextDescription;
     }
 
-    updateResult = await supabase
+    updateResult = await dataApi
       .from("projects")
       .update(legacyPatch)
       .eq("id", projectId)
@@ -2517,12 +2517,12 @@ export async function updateProjectMetadataFromInference(
 }
 
 async function updateProjectContextKeywords(projectId: string) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   try {
     const [project, documents, analysis] = await Promise.all([
       queryProjectRow(projectId),
       fetchDocumentSummaryRows((select) =>
-        supabase
+        dataApi
           .from("documents")
           .select(select)
           .eq("project_id", projectId),
@@ -2557,7 +2557,7 @@ async function updateProjectContextKeywords(projectId: string) {
       { context_keywords: keywords },
     );
     if (!fencedUpdate.fenced) {
-      const { error } = await supabase
+      const { error } = await dataApi
         .from("projects")
         .update({ context_keywords: keywords })
         .eq("id", projectId);
@@ -2575,7 +2575,7 @@ async function updateProjectContextKeywords(projectId: string) {
 export async function getProjectDetail(
   projectId: string,
 ): Promise<ProjectDetail> {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
 
   const [
     projectRow,
@@ -2587,13 +2587,13 @@ export async function getProjectDetail(
   ] = await Promise.all([
     queryProjectRow(projectId),
     fetchDocumentSummaryRows((select) =>
-      supabase
+      dataApi
         .from("documents")
         .select(select)
         .eq("project_id", projectId)
         .order("created_at", { ascending: false }),
     ),
-    supabase
+    dataApi
       .from("customer_analyses")
       .select("*")
       .eq("project_id", projectId)
@@ -2601,7 +2601,7 @@ export async function getProjectDetail(
       .order("created_at", { ascending: false })
       .limit(1),
     getFreshProjectDerivedSnapshot(projectId),
-    supabase
+    dataApi
       .from("generated_artifacts")
       .select("artifact_type")
       .eq("project_id", projectId),
@@ -2671,7 +2671,7 @@ export async function getProjectShell(
   const projectRow = await queryProjectRow(projectId);
   const getCachedShell = unstable_cache(
     async () => {
-      const supabase = createServiceClient();
+      const dataApi = createServiceClient();
 
       const [
         documentRows,
@@ -2679,18 +2679,18 @@ export async function getProjectShell(
         { data: analyses, error: analysesError },
       ] = await Promise.all([
         fetchDocumentSummaryRows((select) =>
-          supabase
+          dataApi
             .from("documents")
             .select(select)
             .eq("project_id", projectId)
             .order("created_at", { ascending: false }),
         ),
-        supabase
+        dataApi
           .from("generated_artifacts")
           .select("artifact_type")
           .eq("project_id", projectId),
         options.includeCustomerAnalysis
-          ? supabase
+          ? dataApi
               .from("customer_analyses")
               .select("*")
               .eq("project_id", projectId)
@@ -2796,7 +2796,7 @@ export async function savePendingDocument(input: {
   fileSizeBytes: number;
   fileBase64: string;
 }) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const documentId = randomUUID();
   const normalizedTitle =
     input.title?.trim() ||
@@ -2848,7 +2848,7 @@ export async function savePendingDocument(input: {
 
   if (requestedPrimaryRole) {
     const { data: insertedPrimary, error: insertPrimaryError } =
-      await supabase.rpc("insert_primary_project_document", {
+      await dataApi.rpc("insert_primary_project_document", {
         p_project_id: input.projectId,
         p_primary_role: requestedPrimaryRole,
         p_payload: insertPayload,
@@ -2902,7 +2902,7 @@ export async function savePendingDocument(input: {
       shouldRemoveStoredFileAfterInsert = true;
     }
 
-    insertResult = await supabase
+    insertResult = await dataApi
       .from("documents")
       .insert(payloadForAttempt)
       .select("*")
@@ -2951,20 +2951,20 @@ export async function savePendingDocument(input: {
     last_activity_at: new Date().toISOString(),
   };
   projectPatch.customer_analysis_generated = false;
-  await deleteProjectCustomerAnalyses(supabase, input.projectId);
+  await deleteProjectCustomerAnalyses(dataApi, input.projectId);
   projectPatch.solution_evaluation_generated = false;
-  await deleteProjectSolutionEvaluations(supabase, input.projectId);
+  await deleteProjectSolutionEvaluations(dataApi, input.projectId);
 
-  await deleteProjectExecutiveSummaries(supabase, input.projectId);
+  await deleteProjectExecutiveSummaries(dataApi, input.projectId);
 
   Object.assign(
     projectPatch,
     projectDocumentStatusPatch(
-      await listProjectDocumentRoleRows(supabase, input.projectId),
+      await listProjectDocumentRoleRows(dataApi, input.projectId),
     ),
   );
 
-  const projectUpdate = await supabase
+  const projectUpdate = await dataApi
     .from("projects")
     .update(projectPatch)
     .eq("id", input.projectId);
@@ -3016,8 +3016,8 @@ export async function updateDocumentProcessingState(input: {
     return;
   }
 
-  const supabase = createServiceClient();
-  const { error } = await supabase
+  const dataApi = createServiceClient();
+  const { error } = await dataApi
     .from("documents")
     .update(payload)
     .eq("project_id", input.projectId)
@@ -3051,7 +3051,7 @@ export async function saveDocumentIngestionResult(input: {
   indexChunks?: boolean;
   precomputedQuality?: Omit<PrecomputedDocumentQuality, "sourceRevision">;
 }) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const shouldIndexChunks = input.indexChunks !== false;
   const pageCount =
     pageCountFromStructureMap(input.structureMap, input.fileFormat) ??
@@ -3107,7 +3107,7 @@ export async function saveDocumentIngestionResult(input: {
       attempt < PROJECT_DOCUMENT_INSERT_COLUMN_NAMES.length + 2;
       attempt += 1
     ) {
-      updateResult = await supabase
+      updateResult = await dataApi
         .from("documents")
         .update(updatePayload)
         .eq("project_id", input.projectId)
@@ -3235,9 +3235,9 @@ export async function getDocumentDetail(
   projectId: string,
   documentId: string,
 ): Promise<ProjectDocumentDetail> {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const data = await fetchSingleDocumentRow((select) =>
-    supabase
+    dataApi
       .from("documents")
       .select(select)
       .eq("project_id", projectId)
@@ -3253,10 +3253,10 @@ export async function getDocumentDetail(
 }
 
 export async function deleteDocument(projectId: string, documentId: string) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const [beforeDelete, selectedSolutionDocumentId] = await Promise.all([
-    getDocumentDeletionSnapshot(supabase, projectId, documentId),
-    getSelectedSolutionDocumentId(supabase, projectId),
+    getDocumentDeletionSnapshot(dataApi, projectId, documentId),
+    getSelectedSolutionDocumentId(dataApi, projectId),
   ]);
 
   await runStorageFirstDeletion({
@@ -3277,7 +3277,7 @@ export async function deleteDocument(projectId: string, documentId: string) {
       );
     },
     deleteDatabaseRows: async () => {
-      const { error } = await supabase
+      const { error } = await dataApi
         .from("documents")
         .delete()
         .eq("project_id", projectId)
@@ -3294,7 +3294,7 @@ export async function deleteDocument(projectId: string, documentId: string) {
     // Best-effort cleanup for deployments before the chunk table exists.
   });
 
-  const { data: remaining } = await supabase
+  const { data: remaining } = await dataApi
     .from("documents")
     .select("role")
     .eq("project_id", projectId);
@@ -3318,17 +3318,17 @@ export async function deleteDocument(projectId: string, documentId: string) {
   };
 
   if (shouldClearCustomerAnalysis) {
-    await deleteProjectCustomerAnalyses(supabase, projectId);
+    await deleteProjectCustomerAnalyses(dataApi, projectId);
     projectPatch.customer_analysis_generated = false;
   }
 
   if (shouldClearSolutionEvaluation) {
-    await deleteProjectSolutionEvaluations(supabase, projectId);
-    await deleteProjectExecutiveSummaries(supabase, projectId);
+    await deleteProjectSolutionEvaluations(dataApi, projectId);
+    await deleteProjectExecutiveSummaries(dataApi, projectId);
     projectPatch.solution_evaluation_generated = false;
   }
 
-  const projectUpdate = await supabase
+  const projectUpdate = await dataApi
     .from("projects")
     .update(projectPatch)
     .eq("id", projectId);
@@ -3343,10 +3343,10 @@ export async function markDocumentAsPrimarySolution(
   projectId: string,
   documentId: string,
 ) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
 
   const selected = await fetchSingleDocumentRow((select) =>
-    supabase
+    dataApi
       .from("documents")
       .select(select)
       .eq("project_id", projectId)
@@ -3362,7 +3362,7 @@ export async function markDocumentAsPrimarySolution(
     throw new Error("Kundedokumentet kan ikke brukes som Bilag 2 / arkitektløsning.");
   }
 
-  const { data: promoted, error: promoteError } = await supabase.rpc(
+  const { data: promoted, error: promoteError } = await dataApi.rpc(
     "set_primary_project_document",
     {
       p_project_id: projectId,
@@ -3386,9 +3386,9 @@ export async function markDocumentAsPrimarySolution(
 }
 
 export async function listProjectDocumentSummaries(projectId: string) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const rows = await fetchDocumentSummaryRows((select) =>
-    supabase
+    dataApi
       .from("documents")
       .select(select)
       .eq("project_id", projectId)
@@ -3399,10 +3399,10 @@ export async function listProjectDocumentSummaries(projectId: string) {
 }
 
 export async function listProjectDocumentsForAnalysis(projectId: string) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const rows = await fetchDocumentRows(
     (select) =>
-      supabase
+      dataApi
         .from("documents")
         .select(select)
         .eq("project_id", projectId)
@@ -3410,7 +3410,7 @@ export async function listProjectDocumentsForAnalysis(projectId: string) {
         .order("created_at", { ascending: false }),
     DOCUMENT_ANALYSIS_SELECT_SAFE,
     (select) =>
-      supabase
+      dataApi
         .from("documents")
         .select(select)
         .eq("project_id", projectId)
@@ -3451,7 +3451,7 @@ export async function saveCustomerAnalysis(
   ) {
     throw new Error("Kundeanalysen mangler en gyldig source_revision.");
   }
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const previousAnalysis =
     "previousAnalysis" in options
       ? (options.previousAnalysis ?? null)
@@ -3492,7 +3492,7 @@ export async function saveCustomerAnalysis(
     return decryptJson(fencedSave.data.result_json, CUSTOMER_ANALYSIS_EMPTY);
   }
 
-  const { data, error } = await supabase.rpc(
+  const { data, error } = await dataApi.rpc(
     "save_customer_analysis_if_source_revision",
     {
       p_project_id: projectId,
@@ -3513,8 +3513,8 @@ export async function saveCustomerAnalysis(
 }
 
 export async function getFreshCustomerAnalysis(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi
     .from("customer_analyses")
     .select("*")
     .eq("project_id", projectId)
@@ -3640,8 +3640,8 @@ export async function getExecutiveSummary(projectId: string) {
 }
 
 export async function isSolutionEvaluationCurrent(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase.rpc(
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi.rpc(
     "solution_evaluation_is_current",
     { p_project_id: projectId },
   );
@@ -3661,8 +3661,8 @@ export async function getFreshSolutionEvaluationSnapshot(projectId: string) {
 }
 
 export async function getFreshProjectDerivedSnapshot(projectId: string) {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase.rpc(
+  const dataApi = createServiceClient();
+  const { data, error } = await dataApi.rpc(
     "get_current_project_derived_snapshot",
     { p_project_id: projectId },
   );

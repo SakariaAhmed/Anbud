@@ -15,9 +15,9 @@ Målet er at kodebasen skal utvikles mot enterprise-nivå: robust, sikker, vedli
 - `apps/frontend` er hovedappen: Next.js 15, React 19, TypeScript strict, App Router og Tailwind CSS 4.
 - `apps/frontend/app` inneholder sider og API-ruter.
 - `apps/frontend/components` inneholder React-komponenter. Gjenbruk `components/ui` og eksisterende prosjektkomponenter for ny UI.
-- `apps/frontend/lib/server` inneholder serverlogikk, AI-flyt, dokumentbehandling, Supabase-klienter, repositories og use-cases.
+- `apps/frontend/lib/server` inneholder serverlogikk, AI-flyt, dokumentbehandling, PostgREST-klient, repositories og use-cases.
 - `apps/frontend/lib/client` inneholder klient-API-er og browser-hjelpere.
-- `supabase` inneholder SQL-skjema, migrasjoner og ytelses-/sikkerhetsrelaterte SQL-filer.
+- `database` inneholder SQL-skjema, migrasjoner og ytelses-/sikkerhetsrelaterte SQL-filer.
 - `scripts` inneholder repo-skript for RAG/backfill/evaluering.
 - `infra/azure` dekker deploy-oppsett.
 
@@ -57,8 +57,10 @@ Bruk `npm run build` som primær verifisering etter endringer i appen. For rene 
 
 Se `.env.example`. Viktige verdier:
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `DATA_API_URL`
+- `DATA_API_SERVICE_ROLE_KEY`
+- `AZURE_STORAGE_ACCOUNT_URL`
+- `AZURE_STORAGE_CONTAINER`
 - `APP_ENCRYPTION_KEY`
 - `APP_ACCESS_PASSWORD`
 - `APP_SESSION_SECRET`
@@ -67,20 +69,20 @@ Se `.env.example`. Viktige verdier:
 - `PROJECT_JOB_WORKER_TOKEN`
 - `DOCLING_*` for avansert dokumentingest
 
-Serverruter og repositories bruker service-role Supabase-tilgang. Ikke eksponer service-role-nøkler eller server-only kode til klientkomponenter.
+Serverruter og repositories bruker en server-only nøkkel mot intern PostgREST. Ikke eksponer nøkkelen eller server-only kode til klientkomponenter.
 
 ## AI, dokumenter og RAG
 
-- Dokumentflyten bygger på parsing, `raw_text`, `structure_map`, chunking, embeddings og Supabase/pgvector.
+- Dokumentflyten bygger på parsing, `raw_text`, `structure_map`, chunking, embeddings og PostgreSQL/pgvector.
 - Hold dokument-ID-er, prosjekt-ID-er, tilgangskontroll, cache keys, validering og sortering deterministisk i kode.
 - Bruk LLM til generering, query rewrite, semantisk vurdering og språkforbedring, ikke til vilkårlig databasetilgang.
 - Nye AI-flyter bør hente prosjektkontekst via eksisterende serverfunksjoner i `lib/server`, ikke ved å sende store råtekster ukritisk til modellen.
 - Svar som bygger på kundedokumenter bør være kildebaserte når flyten støtter det.
 - Bevar dokumentroller som `primary_customer_document`, `primary_solution_document` og `supporting_document`.
 
-## Supabase og database
+## Database
 
-- Legg skjemaendringer i `supabase` som eksplisitte SQL-filer, og oppdater `supabase/schema.sql` når repoets praksis tilsier det.
+- Legg skjemaendringer i `database/migrations` som eksplisitte SQL-filer, og oppdater `database/schema.sql` når repoets praksis tilsier det.
 - Vurder indeksbruk og RLS/sikkerhet ved nye tabeller eller spørringer.
 - Ikke drop indekser eller endre produksjonskritiske tabeller uten audit eller tydelig begrunnelse.
 - Kryptert dokumentinnhold og søkeindekser må behandles bevisst, særlig ved fulltekstindeks eller metadata som kan lekke sensitive ord.
@@ -110,5 +112,5 @@ Serverruter og repositories bruker service-role Supabase-tilgang. Ikke eksponer 
 
 - Kjør relevante kommandoer for endringen, normalt `npm run build` fra `apps/frontend`.
 - For UI-endringer: start devserver og sjekk aktuell side i browser når mulig.
-- For Supabase/RAG-endringer: vurder om backfill, eval eller SQL-verifisering trengs.
+- For database-/RAG-endringer: vurder om backfill, eval eller SQL-verifisering trengs.
 - Oppsummer hva som ble endret, hvilke filer som ble berørt, og hvilke verifiseringer som ble kjørt eller ikke kjørt.

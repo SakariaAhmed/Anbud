@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { dataApiConfiguration } from "@/lib/data-api-config";
 import { defaultAzureBlobStorageBackend } from "@/lib/server/azure-blob-storage";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 
 export type HealthStatus = "healthy" | "degraded" | "unhealthy";
 
@@ -91,19 +91,9 @@ function runtimeComponent(): HealthComponent {
 }
 
 function configurationComponent(): HealthComponent {
-  const fileStorageBackend =
-    process.env.FILE_STORAGE_BACKEND?.trim().toLowerCase() || "supabase";
-  const storageBackendValid =
-    fileStorageBackend === "azure" || fileStorageBackend === "supabase";
-  const storageConfigured =
-    !storageBackendValid
-      ? false
-      : fileStorageBackend === "azure"
-      ? Boolean(process.env.AZURE_STORAGE_ACCOUNT_URL?.trim())
-      : Boolean(
-          process.env.SUPABASE_URL?.trim() &&
-            process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
-        );
+  const storageConfigured = Boolean(
+    process.env.AZURE_STORAGE_ACCOUNT_URL?.trim(),
+  );
   const missingCount =
     REQUIRED_ENV.filter((name) => !process.env[name]?.trim()).length +
     (dataApiConfiguration() ? 0 : 1) +
@@ -120,8 +110,8 @@ function configurationComponent(): HealthComponent {
       missing_required_count: missingCount,
       docling_mode: process.env.DOCLING_ENHANCEMENT_MODE?.trim() || "async",
       docling_auto_run: process.env.DOCLING_ASYNC_AUTO_RUN?.trim() || "off",
-      data_backend: dataApiConfiguration()?.backend || "unconfigured",
-      file_storage_backend: fileStorageBackend,
+      data_backend: dataApiConfiguration() ? "azure_postgrest" : "unconfigured",
+      file_storage_backend: "azure_blob",
     },
   };
 }
@@ -183,7 +173,7 @@ async function dataApiComponent(): Promise<HealthComponent> {
           ? "The data API is reachable but responding slowly."
           : "The data API is reachable.",
       latency_ms: latencyMs,
-      metadata: { backend: configuration.backend },
+      metadata: { backend: "azure_postgrest" },
     };
   } catch (error) {
     const latencyMs = Math.round(performance.now() - start);
@@ -200,29 +190,6 @@ async function dataApiComponent(): Promise<HealthComponent> {
 }
 
 async function fileStorageComponent(): Promise<HealthComponent> {
-  const backend = process.env.FILE_STORAGE_BACKEND?.trim().toLowerCase() || "supabase";
-  if (backend === "supabase") {
-    const configured = Boolean(
-      process.env.SUPABASE_URL?.trim() &&
-        process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
-    );
-    return {
-      name: "file_storage",
-      status: configured ? "healthy" : "unhealthy",
-      description: configured
-        ? "Supabase file storage configuration is present."
-        : "Supabase file storage configuration is missing.",
-      metadata: { backend },
-    };
-  }
-  if (backend !== "azure") {
-    return {
-      name: "file_storage",
-      status: "unhealthy",
-      description: "The file storage backend is invalid.",
-    };
-  }
-
   const start = performance.now();
   try {
     await withAbortTimeout(STORAGE_TIMEOUT_MS, (signal) =>
@@ -233,7 +200,7 @@ async function fileStorageComponent(): Promise<HealthComponent> {
       status: "healthy",
       description: "The private Azure Blob container is reachable with managed identity.",
       latency_ms: Math.round(performance.now() - start),
-      metadata: { backend },
+      metadata: { backend: "azure_blob" },
     };
   } catch (error) {
     return {
@@ -244,7 +211,7 @@ async function fileStorageComponent(): Promise<HealthComponent> {
           ? "The Azure Blob container probe timed out."
           : "The Azure Blob container probe failed.",
       latency_ms: Math.round(performance.now() - start),
-      metadata: { backend },
+      metadata: { backend: "azure_blob" },
     };
   }
 }

@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 
 import type { AuthorizedProjectContext, RequestPrincipal } from "@/lib/server/authorization";
 import { requestContextHmac } from "@/lib/server/identity-crypto";
-import { createServiceClient } from "@/lib/server/supabase";
+import { createServiceClient } from "@/lib/server/data-api";
 
 const SENSITIVE_METADATA_KEYS =
   /(code|token|secret|password|prompt|content|raw|base64|authorization|cookie)/iu;
@@ -66,8 +66,8 @@ export async function recordActivity(input: {
     ipHmac: null,
     userAgentHmac: null,
   }));
-  const supabase = createServiceClient();
-  const { error } = await supabase.from("activity_events").insert({
+  const dataApi = createServiceClient();
+  const { error } = await dataApi.from("activity_events").insert({
     actor_principal_id: principal?.id ?? null,
     actor_session_id: principal?.sessionId ?? null,
     action: input.action,
@@ -100,9 +100,9 @@ export async function listActivity(input?: {
   from?: string | null;
   limit?: number;
 }) {
-  const supabase = createServiceClient();
+  const dataApi = createServiceClient();
   const limit = Math.min(500, Math.max(1, input?.limit ?? 200));
-  let query = supabase
+  let query = dataApi
     .from("activity_events")
     .select(
       "id, occurred_at, actor_principal_id, actor_session_id, action, result, project_id, entity_type, entity_id, request_id, metadata",
@@ -134,20 +134,20 @@ export async function listActivity(input?: {
   ];
   const [{ data: principals }, projectResult] = await Promise.all([
     principalIds.length
-      ? supabase
+      ? dataApi
           .from("app_principals")
           .select("id, display_name, identity_type, email_masked")
           .in("id", principalIds)
       : Promise.resolve({ data: [], error: null }),
     projectIds.length
-      ? supabase.from("projects").select("id, name").in("id", projectIds)
+      ? dataApi.from("projects").select("id, name").in("id", projectIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
   let projects = projectResult.data as
     | Array<{ id: string; name?: string | null; title?: string | null }>
     | null;
   if (projectIds.length && projectResult.error) {
-    const legacy = await supabase
+    const legacy = await dataApi
       .from("projects")
       .select("id, title")
       .in("id", projectIds);

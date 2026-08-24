@@ -76,27 +76,13 @@ export async function preflightRemoteProjectJobSchema({
   dataApiUrl,
   dataApiServiceRoleKey,
   dataApiAllowedHostSuffix,
-  supabaseUrl,
-  supabaseServiceRoleKey,
-  expectedProjectRef,
   fetchImpl = fetch,
 }) {
-  const explicitDataApiUrl = dataApiUrl?.trim();
-  const explicitDataApiKey = dataApiServiceRoleKey?.trim();
-  const explicitPairSelected = Boolean(explicitDataApiUrl || explicitDataApiKey);
-  if (explicitPairSelected && (!explicitDataApiUrl || !explicitDataApiKey)) {
+  const rootUrl = dataApiUrl?.trim().replace(/\/+$/u, "");
+  const serviceRoleKey = dataApiServiceRoleKey?.trim();
+  if (!rootUrl || !serviceRoleKey) {
     throw new Error("DATA_API_URL and DATA_API_SERVICE_ROLE_KEY are required together.");
   }
-  const supabaseRoot = supabaseUrl?.trim();
-  const supabaseKey = supabaseServiceRoleKey?.trim();
-  if (!explicitPairSelected && (!supabaseRoot || !supabaseKey)) {
-    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required together.");
-  }
-
-  const rootUrl = explicitPairSelected
-    ? explicitDataApiUrl.replace(/\/+$/u, "")
-    : new URL("/rest/v1", supabaseRoot).toString().replace(/\/+$/u, "");
-  const serviceRoleKey = explicitPairSelected ? explicitDataApiKey : supabaseKey;
   const checkedRootUrl = new URL(rootUrl);
   if (
     checkedRootUrl.protocol !== "https:" ||
@@ -107,8 +93,8 @@ export async function preflightRemoteProjectJobSchema({
   ) {
     throw new Error("The data API root must be a credential-free HTTPS URL.");
   }
-  if (explicitPairSelected) {
-    const suffix = dataApiAllowedHostSuffix?.trim().toLowerCase() || "";
+  const suffix = dataApiAllowedHostSuffix?.trim().toLowerCase() || "";
+  if (suffix) {
     if (
       !/^\.internal\.[a-z0-9.-]+$/u.test(suffix) ||
       !checkedRootUrl.hostname.toLowerCase().endsWith(suffix) ||
@@ -118,13 +104,6 @@ export async function preflightRemoteProjectJobSchema({
     }
   }
   const url = new URL(`${rootUrl}/project_jobs`);
-  if (
-    !explicitPairSelected &&
-    expectedProjectRef?.trim() &&
-    url.hostname !== `${expectedProjectRef.trim()}.supabase.co`
-  ) {
-    throw new Error("SUPABASE_URL does not match SUPABASE_PROJECT_REF.");
-  }
   url.searchParams.set("select", REQUIRED_PROJECT_JOB_COLUMNS.join(","));
   url.searchParams.set("limit", "0");
   const response = await fetchImpl(url, {
@@ -276,7 +255,7 @@ export async function preflightRemoteProjectJobSchema({
 }
 
 function canonicalMigrationSql(repoRoot) {
-  const migrationsDirectory = path.join(repoRoot, "supabase", "migrations");
+  const migrationsDirectory = path.join(repoRoot, "database", "migrations");
   const files = readdirSync(migrationsDirectory)
     .filter((file) => file.endsWith(".sql"))
     .sort();
@@ -294,9 +273,6 @@ async function main() {
       dataApiUrl: process.env.DATA_API_URL,
       dataApiServiceRoleKey: process.env.DATA_API_SERVICE_ROLE_KEY,
       dataApiAllowedHostSuffix: process.env.DATA_API_ALLOWED_HOST_SUFFIX,
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-      expectedProjectRef: process.env.SUPABASE_PROJECT_REF,
     });
     console.log(
       JSON.stringify({
