@@ -332,6 +332,7 @@ jobs:
           CANDIDATE_IMAGE: ${{ steps.immutable_image.outputs.candidate_image }}
           REVISION_SUFFIX: sha-${{ github.sha }}
           ROLLOUT_STATE_FILE: ${{ runner.temp }}/anbud-rollout-state.json
+          CUTOVER_RPC_MODE: azure-job
           DATA_API_URL: ${{ vars.DATA_API_URL }}
           DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: node scripts/azure_containerapp_rollout.mjs
@@ -359,6 +360,7 @@ jobs:
               && (steps.rollout.outcome == 'failure'
                   || steps.rollout.outcome == 'cancelled') }}
         env:
+          CUTOVER_RPC_MODE: azure-job
           DATA_API_URL: ${{ vars.DATA_API_URL }}
           DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: |

@@ -30,6 +30,7 @@
 # worker entrypoint below.
 apps/frontend/scripts/*
 !apps/frontend/scripts/run_project_job_worker.mjs
+!apps/frontend/scripts/run_project_job_cutover_rpc.mjs
 !scripts/
 scripts/*
 !scripts/validate_project_jobs_schema.mjs
