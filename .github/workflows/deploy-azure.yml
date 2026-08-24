@@ -118,12 +118,6 @@ jobs:
             exit 1
           fi
 
-      - name: Validate production database contract
-        env:
-          DATA_API_URL: ${{ vars.DATA_API_URL }}
-          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
-        run: node scripts/validate_project_jobs_schema.mjs --remote
-
       - name: Capture last healthy images
         run: |
           current_app_image="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.template.containers[?name=='web'].image | [0]" --output tsv)"
@@ -183,6 +177,62 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
           vuln-type: os,library
+
+      - name: Validate production database contract from the Azure network
+        env:
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+        run: |
+          data_api_host="${DATA_API_URL#https://}"
+          data_api_host="${data_api_host%%/*}"
+          data_api_allowed_host_suffix="${data_api_host#${POSTGREST_APP}}"
+          if [[ ! "$data_api_allowed_host_suffix" =~ ^\.internal\.[a-z0-9.-]+$ ]]; then
+            echo "::error::Could not derive the internal PostgREST host suffix."
+            exit 1
+          fi
+          execution_name="$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$PROJECT_JOB_WORKER_APP" \
+            --container-name worker \
+            --image "$CANDIDATE_IMAGE" \
+            --command node \
+            --args scripts/validate_project_jobs_schema.mjs \
+            --env-vars \
+              DATA_API_URL="$DATA_API_URL" \
+              DATA_API_ALLOWED_HOST_SUFFIX="$data_api_allowed_host_suffix" \
+              DATA_API_SERVICE_ROLE_KEY=secretref:data-api-service-role-key \
+              REMOTE_SCHEMA_PREFLIGHT=1 \
+            --query name \
+            --output tsv \
+            --only-show-errors)"
+          if [ -z "$execution_name" ]; then
+            echo "::error::Azure did not return a database-preflight execution name."
+            exit 1
+          fi
+          for attempt in $(seq 1 120)
+          do
+            execution_status="$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$PROJECT_JOB_WORKER_APP" \
+              --job-execution-name "$execution_name" \
+              --query properties.status \
+              --output tsv \
+              --only-show-errors)"
+            case "$execution_status" in
+              Succeeded)
+                echo "Azure database contract preflight succeeded."
+                break
+                ;;
+              Failed|Stopped|Degraded)
+                echo "::error::Azure database contract preflight ended with $execution_status."
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" -eq 120 ]; then
+              echo "::error::Azure database contract preflight timed out."
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: Reconcile Azure infrastructure without releasing candidate code
         env:

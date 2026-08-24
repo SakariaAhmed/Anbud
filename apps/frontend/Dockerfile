@@ -111,6 +111,7 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 # Azure Container Apps jobs override the command to run this entrypoint.
 COPY --from=builder --chown=node:node /app/scripts/run_project_job_worker.mjs ./scripts/run_project_job_worker.mjs
+COPY --chown=node:node scripts/validate_project_jobs_schema.mjs ./scripts/validate_project_jobs_schema.mjs
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
@@ -127,6 +128,7 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 # Azure Container Apps jobs override the command to run this entrypoint.
 COPY --from=builder --chown=node:node /app/scripts/run_project_job_worker.mjs ./scripts/run_project_job_worker.mjs
+COPY --chown=node:node scripts/validate_project_jobs_schema.mjs ./scripts/validate_project_jobs_schema.mjs
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
