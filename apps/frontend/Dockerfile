@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS deps
+FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341 AS deps
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY apps/frontend/package.json ./package.json
@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/root/.npm \
     && npm config set fetch-timeout 300000 \
     && npm ci --no-audit --no-fund --prefer-offline
 
-FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS builder
+FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341 AS builder
 WORKDIR /app
 ENV NEXT_OUTPUT_FILE_TRACING_ROOT=/app
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -26,7 +26,7 @@ RUN if [ -f .next/standalone/apps/frontend/server.js ]; then \
     fi \
     && rm -rf .next/standalone/apps .next/standalone/app
 
-FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS runner-os
+FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341 AS runner-os
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
