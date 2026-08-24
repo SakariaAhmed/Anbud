@@ -6,6 +6,15 @@ param location string = resourceGroup().location
 @description('Globally unique PostgreSQL Flexible Server name.')
 param serverName string
 
+@description('Workload label used for resource tags.')
+param workloadName string = 'anbud'
+
+@description('Environment label used for resource tags.')
+param environmentLabel string = 'prod'
+
+@description('Criticality label used for resource tags.')
+param workloadCriticality string = 'mission-critical'
+
 @description('Bootstrap administrator. Runtime workloads must never use this role.')
 param administratorLogin string
 
@@ -41,10 +50,13 @@ param storageSizeGiB int = 32
 param backupRetentionDays int = 7
 
 var tags = {
-  workload: 'anbud'
-  environment: 'prod'
+  workload: workloadName
+  environment: environmentLabel
+  criticality: workloadCriticality
+  deploymentStamp: workloadName
   dataClassification: 'confidential'
   component: 'database'
+  managedBy: 'bicep'
 }
 
 resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {

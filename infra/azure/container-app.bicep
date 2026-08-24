@@ -182,11 +182,13 @@ param minReplicas int = 0
 @minValue(1)
 param maxReplicas int = 3
 
-var missionCriticalTags = {
+var commonTags = {
   workload: appName
   environment: environmentLabel
   criticality: workloadCriticality
   deploymentStamp: appName
+  dataClassification: 'confidential'
+  managedBy: 'bicep'
 }
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -202,7 +204,9 @@ resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'observability'
+  })
   properties: {
     sku: {
       name: 'PerGB2018'
@@ -214,7 +218,9 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'container-apps-environment'
+  })
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -229,7 +235,9 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'web'
+  })
   identity: {
     type: 'SystemAssigned, UserAssigned'
     userAssignedIdentities: {
@@ -513,7 +521,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
   name: '${appName}-project-job-worker'
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'background-jobs'
+  })
   identity: {
     type: 'SystemAssigned, UserAssigned'
     userAssignedIdentities: {

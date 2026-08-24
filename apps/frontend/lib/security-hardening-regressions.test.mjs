@@ -48,6 +48,7 @@ test("only liveness is public and detailed health endpoints require admin", () =
 test("Azure image pulls use managed identity and no static ACR password", () => {
   const bicep = read("infra/azure/container-app.bicep", repositoryRoot);
   const bootstrap = read("infra/azure/acr-pull-bootstrap.bicep", repositoryRoot);
+  const registry = read("infra/azure/registry.bicep", repositoryRoot);
   const workflow = read(".github/workflows/deploy-azure.yml", repositoryRoot);
 
   assert.match(bicep, /userAssignedIdentities/u);
@@ -57,6 +58,30 @@ test("Azure image pulls use managed identity and no static ACR password", () => 
   assert.doesNotMatch(bicep, /registryPassword|registryUsername/u);
   assert.doesNotMatch(workflow, /ACR_PASSWORD|ACR_USERNAME/u);
   assert.match(workflow, /az acr login/u);
+  assert.match(registry, /adminUserEnabled: false/u);
+  assert.match(registry, /dataEndpointEnabled: false/u);
+});
+
+test("Azure resources use steady-state ownership and component tags", () => {
+  const templates = [
+    "infra/azure/acr-pull-bootstrap.bicep",
+    "infra/azure/container-app.bicep",
+    "infra/azure/postgres.bicep",
+    "infra/azure/postgrest.bicep",
+    "infra/azure/registry.bicep",
+    "infra/azure/resource-group.bicep",
+    "infra/azure/storage.bicep",
+  ].map((file) => read(file, repositoryRoot));
+
+  for (const template of templates) {
+    assert.match(template, /managedBy:/u);
+    assert.match(template, /component:/u);
+    assert.doesNotMatch(template, /migrationStage:/u);
+  }
+
+  const storage = read("infra/azure/storage.bicep", repositoryRoot);
+  assert.match(storage, /allowSharedKeyAccess: false/u);
+  assert.match(storage, /defaultToOAuthAuthentication: true/u);
 });
 
 test("legacy administrator secret is migration-only and never wired to a new revision", () => {

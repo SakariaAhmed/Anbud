@@ -14,6 +14,12 @@ param appName string = 'anbud'
 @description('Existing scheduled worker that receives container-scoped Blob access.')
 param workerName string = '${appName}-project-job-worker'
 
+@description('Environment label used for resource tags.')
+param environmentLabel string = 'prod'
+
+@description('Criticality label used for resource tags.')
+param workloadCriticality string = 'mission-critical'
+
 @description('Private container name. It must match existing database bucket values.')
 @allowed([
   'anbud-documents'
@@ -27,9 +33,12 @@ param softDeleteDays int = 14
 
 var tags = {
   workload: appName
-  environment: 'prod'
+  environment: environmentLabel
+  criticality: workloadCriticality
+  deploymentStamp: appName
   dataClassification: 'confidential'
   component: 'document-storage'
+  managedBy: 'bicep'
 }
 
 var blobDataContributorRoleDefinitionId = subscriptionResourceId(
@@ -97,7 +106,6 @@ resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   name: containerName
   properties: {
     defaultEncryptionScope: '$account-encryption-key'
-    denyEncryptionScopeOverride: false
     publicAccess: 'None'
   }
 }

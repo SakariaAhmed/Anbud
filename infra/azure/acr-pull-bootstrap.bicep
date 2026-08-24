@@ -9,6 +9,12 @@ param registryName string
 @description('Container App workload name. The routine deployment references the resulting identity.')
 param appName string = 'anbud'
 
+@description('Environment label used for resource tags.')
+param environmentLabel string = 'prod'
+
+@description('Criticality label used for resource tags.')
+param workloadCriticality string = 'mission-critical'
+
 var acrPullRoleDefinitionId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '7f951dda-4ed3-4680-a7ca-43fe172d538d'
@@ -23,8 +29,12 @@ resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
   location: location
   tags: {
     workload: appName
-    environment: 'prod'
-    purpose: 'acr-pull'
+    environment: environmentLabel
+    criticality: workloadCriticality
+    deploymentStamp: appName
+    dataClassification: 'internal'
+    component: 'acr-pull-identity'
+    managedBy: 'bicep'
   }
 }
 
