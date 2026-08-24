@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -99,6 +100,18 @@ test("remote preflight checks only the internal PostgREST contract", async () =>
   assert.equal(
     result.terminalAuditVersion,
     "transactional-project-job-terminal-audit-v2",
+  );
+});
+
+test("containerized remote preflight is selected without a CLI flag", () => {
+  const source = readFileSync(
+    new URL("./validate_project_jobs_schema.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /process\.env\.REMOTE_SCHEMA_PREFLIGHT === "1"/u);
+  assert.ok(
+    source.indexOf("if (remotePreflight)") <
+      source.indexOf("validateCanonicalProjectJobMigration(canonicalMigrationSql(repoRoot))"),
   );
 });
 

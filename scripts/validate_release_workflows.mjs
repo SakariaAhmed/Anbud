@@ -88,7 +88,8 @@ assert.match(
   "Deploy must use the protected production environment.",
 );
 for (const required of [
-  "validate_project_jobs_schema.mjs --remote",
+  "Validate production database contract from the Azure network",
+  "REMOTE_SCHEMA_PREFLIGHT=1",
   "docker/build-push-action",
   "trivy-action",
   "azure_containerapp_rollout.mjs",

@@ -266,9 +266,11 @@ function canonicalMigrationSql(repoRoot) {
 
 async function main() {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  validateCanonicalProjectJobMigration(canonicalMigrationSql(repoRoot));
+  const remotePreflight =
+    process.argv.includes("--remote") ||
+    process.env.REMOTE_SCHEMA_PREFLIGHT === "1";
 
-  if (process.argv.includes("--remote")) {
+  if (remotePreflight) {
     const result = await preflightRemoteProjectJobSchema({
       dataApiUrl: process.env.DATA_API_URL,
       dataApiServiceRoleKey: process.env.DATA_API_SERVICE_ROLE_KEY,
@@ -289,6 +291,7 @@ async function main() {
     return;
   }
 
+  validateCanonicalProjectJobMigration(canonicalMigrationSql(repoRoot));
   console.log(JSON.stringify({ project_jobs_migration: "valid" }));
 }
 

@@ -66,14 +66,6 @@ param appAdminAccessPasswordHash string
 param legacyAppAccessPassword string = ''
 
 @secure()
-@description('Temporary Supabase URL retained only as an app-level secret while the serving rollback revision still references it. It is never exposed to a new revision.')
-param legacySupabaseUrl string = ''
-
-@secure()
-@description('Temporary Supabase service key retained only as an app-level secret while the serving rollback revision still references it. It is never exposed to a new revision.')
-param legacySupabaseServiceRoleKey string = ''
-
-@secure()
 @description('Stable session signing secret.')
 param appSessionSecret string
 
@@ -190,11 +182,13 @@ param minReplicas int = 0
 @minValue(1)
 param maxReplicas int = 3
 
-var missionCriticalTags = {
+var commonTags = {
   workload: appName
   environment: environmentLabel
   criticality: workloadCriticality
   deploymentStamp: appName
+  dataClassification: 'confidential'
+  managedBy: 'bicep'
 }
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -210,7 +204,9 @@ resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'observability'
+  })
   properties: {
     sku: {
       name: 'PerGB2018'
@@ -222,7 +218,9 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'container-apps-environment'
+  })
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -237,7 +235,9 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'web'
+  })
   identity: {
     type: 'SystemAssigned, UserAssigned'
     userAssignedIdentities: {
@@ -283,15 +283,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'app-access-password'
           value: legacyAppAccessPassword
-        }
-      ] : [], !empty(legacySupabaseUrl) && !empty(legacySupabaseServiceRoleKey) ? [
-        {
-          name: 'supabase-url'
-          value: legacySupabaseUrl
-        }
-        {
-          name: 'supabase-service-role-key'
-          value: legacySupabaseServiceRoleKey
         }
       ] : [], !empty(azureDocumentIntelligenceKey) ? [
         {
@@ -371,12 +362,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'DATA_API_ALLOWED_HOST_SUFFIX'
               value: '.internal.${environment.properties.defaultDomain}'
-            }
-            // The serving rollback image still reads this Azure-only selector.
-            // Current application code ignores it.
-            {
-              name: 'FILE_STORAGE_BACKEND'
-              value: 'azure'
             }
             {
               name: 'AZURE_STORAGE_ACCOUNT_URL'
@@ -536,7 +521,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
   name: '${appName}-project-job-worker'
   location: location
-  tags: missionCriticalTags
+  tags: union(commonTags, {
+    component: 'background-jobs'
+  })
   identity: {
     type: 'SystemAssigned, UserAssigned'
     userAssignedIdentities: {
@@ -636,11 +623,6 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'DATA_API_ALLOWED_HOST_SUFFIX'
               value: '.internal.${environment.properties.defaultDomain}'
-            }
-            // Keep the previous worker image Azure-backed if rollout reverses.
-            {
-              name: 'FILE_STORAGE_BACKEND'
-              value: 'azure'
             }
             {
               name: 'AZURE_STORAGE_ACCOUNT_URL'

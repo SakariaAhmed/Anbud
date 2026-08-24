@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Verify CI passed for this commit
         env:
@@ -118,12 +118,6 @@ jobs:
             exit 1
           fi
 
-      - name: Validate production database contract
-        env:
-          DATA_API_URL: ${{ vars.DATA_API_URL }}
-          DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
-        run: node scripts/validate_project_jobs_schema.mjs --remote
-
       - name: Capture last healthy images
         run: |
           current_app_image="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.template.containers[?name=='web'].image | [0]" --output tsv)"
@@ -139,7 +133,7 @@ jobs:
         run: az acr login --name "$ACR_NAME"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
 
       - name: Build and push candidate image
         id: build_image
@@ -184,6 +178,62 @@ jobs:
           severity: CRITICAL,HIGH
           vuln-type: os,library
 
+      - name: Validate production database contract from the Azure network
+        env:
+          DATA_API_URL: ${{ vars.DATA_API_URL }}
+        run: |
+          data_api_host="${DATA_API_URL#https://}"
+          data_api_host="${data_api_host%%/*}"
+          data_api_allowed_host_suffix="${data_api_host#${POSTGREST_APP}}"
+          if [[ ! "$data_api_allowed_host_suffix" =~ ^\.internal\.[a-z0-9.-]+$ ]]; then
+            echo "::error::Could not derive the internal PostgREST host suffix."
+            exit 1
+          fi
+          execution_name="$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$PROJECT_JOB_WORKER_APP" \
+            --container-name worker \
+            --image "$CANDIDATE_IMAGE" \
+            --command node \
+            --args scripts/validate_project_jobs_schema.mjs \
+            --env-vars \
+              DATA_API_URL="$DATA_API_URL" \
+              DATA_API_ALLOWED_HOST_SUFFIX="$data_api_allowed_host_suffix" \
+              DATA_API_SERVICE_ROLE_KEY=secretref:data-api-service-role-key \
+              REMOTE_SCHEMA_PREFLIGHT=1 \
+            --query name \
+            --output tsv \
+            --only-show-errors)"
+          if [ -z "$execution_name" ]; then
+            echo "::error::Azure did not return a database-preflight execution name."
+            exit 1
+          fi
+          for attempt in $(seq 1 120)
+          do
+            execution_status="$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$PROJECT_JOB_WORKER_APP" \
+              --job-execution-name "$execution_name" \
+              --query properties.status \
+              --output tsv \
+              --only-show-errors)"
+            case "$execution_status" in
+              Succeeded)
+                echo "Azure database contract preflight succeeded."
+                break
+                ;;
+              Failed|Stopped|Degraded)
+                echo "::error::Azure database contract preflight ended with $execution_status."
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" -eq 120 ]; then
+              echo "::error::Azure database contract preflight timed out."
+              exit 1
+            fi
+            sleep 5
+          done
+
       - name: Reconcile Azure infrastructure without releasing candidate code
         env:
           DATA_API_URL: ${{ vars.DATA_API_URL }}
@@ -197,8 +247,6 @@ jobs:
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
           APP_ADMIN_ACCESS_PASSWORD_HASH: ${{ secrets.APP_ADMIN_ACCESS_PASSWORD_HASH }}
           LEGACY_APP_ACCESS_PASSWORD: ${{ secrets.APP_ACCESS_PASSWORD }}
-          LEGACY_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          LEGACY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
           APP_GUEST_CODE_PEPPER: ${{ secrets.APP_GUEST_CODE_PEPPER }}
           APP_IDENTITY_LOOKUP_SECRET: ${{ secrets.APP_IDENTITY_LOOKUP_SECRET }}
@@ -225,11 +273,6 @@ jobs:
             echo "::error::An active legacy revision still requires app-access-password."
             exit 1
           fi
-          legacy_supabase_revision="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && (length(properties.template.containers[0].env[?secretRef=='supabase-url']) > \`0\` || length(properties.template.containers[0].env[?secretRef=='supabase-service-role-key']) > \`0\`)].name | [0]" --output tsv --only-show-errors)"
-          if [ -n "$legacy_supabase_revision" ] && { [ -z "$LEGACY_SUPABASE_URL" ] || [ -z "$LEGACY_SUPABASE_SERVICE_ROLE_KEY" ]; }; then
-            echo "::error::The active rollback revision still requires the temporary Supabase secrets."
-            exit 1
-          fi
           parameters=(
             appName="$CONTAINER_APP"
             image="$CURRENT_APP_IMAGE"
@@ -246,8 +289,6 @@ jobs:
             appEncryptionKey="$APP_ENCRYPTION_KEY"
             appAdminAccessPasswordHash="$APP_ADMIN_ACCESS_PASSWORD_HASH"
             legacyAppAccessPassword="$LEGACY_APP_ACCESS_PASSWORD"
-            legacySupabaseUrl="$LEGACY_SUPABASE_URL"
-            legacySupabaseServiceRoleKey="$LEGACY_SUPABASE_SERVICE_ROLE_KEY"
             appSessionSecret="$APP_SESSION_SECRET"
             appGuestCodePepper="$APP_GUEST_CODE_PEPPER"
             appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET"
@@ -282,26 +323,10 @@ jobs:
           CANDIDATE_IMAGE: ${{ steps.immutable_image.outputs.candidate_image }}
           REVISION_SUFFIX: sha-${{ github.sha }}
           ROLLOUT_STATE_FILE: ${{ runner.temp }}/anbud-rollout-state.json
+          CUTOVER_RPC_MODE: azure-job
           DATA_API_URL: ${{ vars.DATA_API_URL }}
           DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: node scripts/azure_containerapp_rollout.mjs
-
-      - name: Remove retired Supabase secrets
-        run: |
-          active_legacy_refs="$(az containerapp revision list --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "[?properties.active && (length(properties.template.containers[0].env[?secretRef=='supabase-url']) > \`0\` || length(properties.template.containers[0].env[?secretRef=='supabase-service-role-key']) > \`0\`)].name | [0]" --output tsv --only-show-errors)"
-          if [ -n "$active_legacy_refs" ]; then
-            echo "::error::An active revision still references a retired Supabase secret."
-            exit 1
-          fi
-          configured_legacy_secrets="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.configuration.secrets[?name=='supabase-url' || name=='supabase-service-role-key'].name" --output tsv --only-show-errors)"
-          if [ -n "$configured_legacy_secrets" ]; then
-            az containerapp secret remove --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --secret-names supabase-url supabase-service-role-key --output none --only-show-errors
-          fi
-          remaining_legacy_secrets="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" --query "properties.configuration.secrets[?name=='supabase-url' || name=='supabase-service-role-key'].name | [0]" --output tsv --only-show-errors)"
-          if [ -n "$remaining_legacy_secrets" ]; then
-            echo "::error::Retired Supabase secrets remain configured."
-            exit 1
-          fi
 
       - name: Roll back to the previous Azure revision
         if: >-
@@ -309,6 +334,7 @@ jobs:
               && (steps.rollout.outcome == 'failure'
                   || steps.rollout.outcome == 'cancelled') }}
         env:
+          CUTOVER_RPC_MODE: azure-job
           DATA_API_URL: ${{ vars.DATA_API_URL }}
           DATA_API_SERVICE_ROLE_KEY: ${{ secrets.DATA_API_SERVICE_ROLE_KEY }}
         run: |

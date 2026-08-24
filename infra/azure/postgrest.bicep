@@ -9,6 +9,15 @@ param environmentName string = 'anbud-env'
 @description('Internal bridge name.')
 param appName string = 'anbud-postgrest'
 
+@description('Workload label used for resource tags.')
+param workloadName string = 'anbud'
+
+@description('Environment label used for resource tags.')
+param environmentLabel string = 'prod'
+
+@description('Criticality label used for resource tags.')
+param workloadCriticality string = 'mission-critical'
+
 @description('Existing Azure Container Registry containing the pinned PostgREST image.')
 param registryName string
 
@@ -52,9 +61,13 @@ resource bridge 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
   tags: {
-    workload: 'anbud'
-    environment: 'prod'
+    workload: workloadName
+    environment: environmentLabel
+    criticality: workloadCriticality
+    deploymentStamp: workloadName
+    dataClassification: 'confidential'
     component: 'data-api'
+    managedBy: 'bicep'
   }
   identity: {
     type: 'UserAssigned'

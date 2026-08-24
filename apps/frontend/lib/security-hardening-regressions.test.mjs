@@ -48,6 +48,7 @@ test("only liveness is public and detailed health endpoints require admin", () =
 test("Azure image pulls use managed identity and no static ACR password", () => {
   const bicep = read("infra/azure/container-app.bicep", repositoryRoot);
   const bootstrap = read("infra/azure/acr-pull-bootstrap.bicep", repositoryRoot);
+  const registry = read("infra/azure/registry.bicep", repositoryRoot);
   const workflow = read(".github/workflows/deploy-azure.yml", repositoryRoot);
 
   assert.match(bicep, /userAssignedIdentities/u);
@@ -57,6 +58,30 @@ test("Azure image pulls use managed identity and no static ACR password", () => 
   assert.doesNotMatch(bicep, /registryPassword|registryUsername/u);
   assert.doesNotMatch(workflow, /ACR_PASSWORD|ACR_USERNAME/u);
   assert.match(workflow, /az acr login/u);
+  assert.match(registry, /adminUserEnabled: false/u);
+  assert.match(registry, /dataEndpointEnabled: false/u);
+});
+
+test("Azure resources use steady-state ownership and component tags", () => {
+  const templates = [
+    "infra/azure/acr-pull-bootstrap.bicep",
+    "infra/azure/container-app.bicep",
+    "infra/azure/postgres.bicep",
+    "infra/azure/postgrest.bicep",
+    "infra/azure/registry.bicep",
+    "infra/azure/resource-group.bicep",
+    "infra/azure/storage.bicep",
+  ].map((file) => read(file, repositoryRoot));
+
+  for (const template of templates) {
+    assert.match(template, /managedBy:/u);
+    assert.match(template, /component:/u);
+    assert.doesNotMatch(template, /migrationStage:/u);
+  }
+
+  const storage = read("infra/azure/storage.bicep", repositoryRoot);
+  assert.match(storage, /allowSharedKeyAccess: false/u);
+  assert.match(storage, /defaultToOAuthAuthentication: true/u);
 });
 
 test("legacy administrator secret is migration-only and never wired to a new revision", () => {
@@ -75,18 +100,17 @@ test("legacy administrator secret is migration-only and never wired to a new rev
   assert.match(reconcileStep, /An active legacy revision still requires app-access-password/u);
 });
 
-test("legacy Supabase secrets exist only for the active rollback revision", () => {
+test("retired provider configuration stays removed", () => {
   const bicep = read("infra/azure/container-app.bicep", repositoryRoot);
   const workflow = read(".github/workflows/deploy-azure.yml", repositoryRoot);
+  const retiredProvider = ["supa", "base"].join("");
+  const retiredStorageSelector = ["FILE", "STORAGE", "BACKEND"].join("_");
 
-  assert.match(bicep, /param legacySupabaseUrl string = ''/u);
-  assert.match(bicep, /param legacySupabaseServiceRoleKey string = ''/u);
-  assert.equal(bicep.match(/name: 'supabase-url'/gu)?.length, 1);
-  assert.equal(bicep.match(/name: 'supabase-service-role-key'/gu)?.length, 1);
-  assert.doesNotMatch(bicep, /name: 'SUPABASE_URL'|name: 'SUPABASE_SERVICE_ROLE_KEY'/u);
-  assert.match(workflow, /active rollback revision still requires the temporary Supabase secrets/u);
-  assert.match(workflow, /name: Remove retired Supabase secrets/u);
-  assert.match(workflow, /--secret-names supabase-url supabase-service-role-key/u);
+  assert.doesNotMatch(`${bicep}\n${workflow}`, new RegExp(retiredProvider, "iu"));
+  assert.doesNotMatch(
+    `${bicep}\n${workflow}`,
+    new RegExp(retiredStorageSelector, "u"),
+  );
 });
 
 test("production deploy requires and forwards independent identity HMAC secrets", () => {

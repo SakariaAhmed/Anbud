@@ -3,10 +3,48 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  createAzureJobCutoverRuntime,
   createDataApiCutoverRuntime,
   rollbackContainerAppFromState,
   rolloutContainerApp,
 } from "./azure_containerapp_rollout.mjs";
+
+test("Azure cutover RPCs run as private one-off job executions", async () => {
+  const calls = [];
+  let statusPolls = 0;
+  const runtime = createAzureJobCutoverRuntime({
+    resourceGroup: "anbud-prod",
+    workerJobName: "anbud-project-job-worker",
+    executionImage: "registry.example/anbud@sha256:candidate",
+    dataApiUrl:
+      "https://anbud-postgrest.internal.example.norwayeast.azurecontainerapps.io",
+    async wait() {},
+    async az(args) {
+      calls.push(args);
+      if (args.includes("start")) return { name: "cutover-execution-1" };
+      statusPolls += 1;
+      return {
+        properties: { status: statusPolls === 1 ? "Running" : "Succeeded" },
+      };
+    },
+  });
+
+  const result = await runtime.setClaimsEnabled(false);
+  assert.equal(result.claims_enabled, false);
+  const start = calls.find((args) => args.includes("start"));
+  assert.ok(start.includes("scripts/run_project_job_cutover_rpc.mjs"));
+  assert.ok(start.includes("PROJECT_JOB_CUTOVER_OPERATION=close-claims"));
+  assert.ok(
+    start.includes(
+      "DATA_API_SERVICE_ROLE_KEY=secretref:data-api-service-role-key",
+    ),
+  );
+  assert.equal(
+    calls.filter((args) => args.includes("execution") && args.includes("show"))
+      .length,
+    2,
+  );
+});
 
 function fixtureRuntime({
   failCandidate = false,
@@ -675,9 +713,8 @@ test("Azure workflow has one PostgREST and Blob Storage deployment path", () => 
   assert.match(fallbackStep, /steps\.rollout\.outcome == 'failure'/u);
   assert.match(fallbackStep, /--rollback-state/u);
   assert.doesNotMatch(workflow, /FROZEN_INGRESS_ROLLOUT/u);
-  assert.doesNotMatch(workflow, /FILE_STORAGE_BACKEND/u);
-  assert.equal(bicep.match(/name: 'FILE_STORAGE_BACKEND'/gu)?.length, 2);
-  assert.equal(bicep.match(/value: 'azure'/gu)?.length, 2);
-  assert.match(workflow, /name: Remove retired Supabase secrets/u);
-  assert.match(workflow, /containerapp secret remove/u);
+  assert.doesNotMatch(
+    `${workflow}\n${bicep}`,
+    new RegExp(["FILE", "STORAGE", "BACKEND"].join("_"), "u"),
+  );
 });

@@ -112,7 +112,114 @@ export function createDataApiCutoverRuntime({
   };
 }
 
+export function createAzureJobCutoverRuntime({
+  az = defaultAz,
+  resourceGroup,
+  workerJobName,
+  executionImage,
+  dataApiUrl,
+  pollIntervalMs = 5_000,
+  maxPolls = 120,
+  wait = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+}) {
+  const checkedDataApiUrl = new URL(required(dataApiUrl, "DATA_API_URL"));
+  const internalMarker = checkedDataApiUrl.hostname.toLowerCase().indexOf(".internal.");
+  if (checkedDataApiUrl.protocol !== "https:" || internalMarker <= 0) {
+    throw new Error("Azure cutover execution requires an internal HTTPS data API.");
+  }
+  const allowedHostSuffix = checkedDataApiUrl.hostname
+    .toLowerCase()
+    .slice(internalMarker);
+  const checkedResourceGroup = required(resourceGroup, "RESOURCE_GROUP");
+  const checkedWorkerJobName = required(
+    workerJobName,
+    "PROJECT_JOB_WORKER_APP",
+  );
+  const checkedExecutionImage = required(executionImage, "CANDIDATE_IMAGE");
+
+  const execute = async (operation) => {
+    const started = await az([
+      "containerapp",
+      "job",
+      "start",
+      "--resource-group",
+      checkedResourceGroup,
+      "--name",
+      checkedWorkerJobName,
+      "--container-name",
+      "worker",
+      "--image",
+      checkedExecutionImage,
+      "--command",
+      "node",
+      "--args",
+      "scripts/run_project_job_cutover_rpc.mjs",
+      "--env-vars",
+      `DATA_API_URL=${checkedDataApiUrl.href.replace(/\/+$/u, "")}`,
+      `DATA_API_ALLOWED_HOST_SUFFIX=${allowedHostSuffix}`,
+      "DATA_API_SERVICE_ROLE_KEY=secretref:data-api-service-role-key",
+      `PROJECT_JOB_CUTOVER_OPERATION=${operation}`,
+    ]);
+    const executionName = required(
+      started?.name,
+      "Azure cutover job execution name",
+    );
+
+    for (let poll = 0; poll < maxPolls; poll += 1) {
+      const execution = await az([
+        "containerapp",
+        "job",
+        "execution",
+        "show",
+        "--resource-group",
+        checkedResourceGroup,
+        "--name",
+        checkedWorkerJobName,
+        "--job-execution-name",
+        executionName,
+      ]);
+      const executionStatus =
+        execution?.properties?.status ?? execution?.status ?? "";
+      if (executionStatus === "Succeeded") return;
+      if (["Failed", "Stopped", "Degraded"].includes(executionStatus)) {
+        throw new Error(
+          `Azure cutover job ${executionName} ended with ${executionStatus}.`,
+        );
+      }
+      if (poll + 1 < maxPolls) await wait(pollIntervalMs);
+    }
+    throw new Error("Azure cutover job execution timed out.");
+  };
+
+  return {
+    async setClaimsEnabled(enabled) {
+      await execute(enabled ? "open-claims" : "close-claims");
+      return {
+        version: PROJECT_JOB_CUTOVER_VERSION,
+        claims_enabled: enabled,
+      };
+    },
+    async requeueRunningJobs() {
+      await execute("requeue");
+      return { version: PROJECT_JOB_CUTOVER_VERSION };
+    },
+    async prepareStableRollback() {
+      await execute("prepare-rollback");
+      return { version: PROJECT_JOB_CUTOVER_VERSION };
+    },
+  };
+}
+
 function defaultCutoverRuntime() {
+  if (process.env.CUTOVER_RPC_MODE === "azure-job") {
+    return createAzureJobCutoverRuntime({
+      resourceGroup: process.env.RESOURCE_GROUP,
+      workerJobName: process.env.PROJECT_JOB_WORKER_APP,
+      executionImage: process.env.CANDIDATE_IMAGE,
+      dataApiUrl: process.env.DATA_API_URL,
+    });
+  }
   return createDataApiCutoverRuntime({
     dataApiUrl: process.env.DATA_API_URL,
     serviceRoleKey: process.env.DATA_API_SERVICE_ROLE_KEY,
