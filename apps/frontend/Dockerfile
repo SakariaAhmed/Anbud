@@ -49,7 +49,7 @@ RUN rm -rf \
     fi \
     && rm -rf /usr/share/perl5 /var/lib/apt/lists/*
 
-FROM python:3.12-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b AS docling-os
+FROM python:3.14-slim-bookworm@sha256:4ff4b92a68355dbdb52584ab3391dff8d371a61d4e063468bfd0130e3189c6d9 AS docling-os
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -88,8 +88,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && /opt/docling/bin/pip install --force-reinstall --no-cache-dir --no-deps opencv-python-headless==4.13.0.92 \
     && find /opt/docling -type d \( -name __pycache__ -o -name test -o -name tests \) -prune -exec rm -rf '{}' + \
     && find /opt/docling -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.a' \) -delete \
-    && rm -rf /opt/docling/lib/python3.12/site-packages/torch/include \
-      /opt/docling/lib/python3.12/site-packages/torch/share
+    && rm -rf /opt/docling/lib/python*/site-packages/torch/include \
+      /opt/docling/lib/python*/site-packages/torch/share
 RUN mkdir -p /opt/docling-models \
     && /opt/docling/bin/docling-tools models download -o /opt/docling-models -q \
     && find /opt/docling-models -type d -name .cache -prune -exec rm -rf '{}' + \
