@@ -9,6 +9,41 @@ export type StableProjectSourceSnapshot<Value> = {
   sourceRevision: number;
 };
 
+const PROJECT_SOURCE_REVISION_CHANGED = "PROJECT_SOURCE_REVISION_CHANGED";
+
+export function isProjectSourceRevisionChangedError(
+  error: unknown,
+): error is Error {
+  return (
+    error instanceof Error &&
+    error.message.includes(PROJECT_SOURCE_REVISION_CHANGED)
+  );
+}
+
+export async function runWithProjectSourceRevisionRetry<Value>(input: {
+  run: (attempt: number) => Promise<Value>;
+  onRetry?: (input: { attempt: number; error: Error }) => void | Promise<void>;
+  maxAttempts?: number;
+}) {
+  const maxAttempts = Math.max(1, input.maxAttempts ?? 2);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await input.run(attempt);
+    } catch (error) {
+      if (
+        !isProjectSourceRevisionChangedError(error) ||
+        attempt === maxAttempts
+      ) {
+        throw error;
+      }
+      await input.onRetry?.({ attempt, error });
+    }
+  }
+
+  throw new Error("Klarte ikke å lese et stabilt prosjektgrunnlag.");
+}
+
 export async function readStableProjectSourceSnapshot<Value>(input: {
   readSourceRevision: () => Promise<number>;
   readValue: () => Promise<Value>;

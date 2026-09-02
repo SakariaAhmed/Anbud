@@ -20,7 +20,13 @@ import {
   type ProjectSort,
   type ProjectStatusFilter,
 } from "@/components/projects/project-dashboard-sections";
-import type { ProjectSummary } from "@/lib/types";
+import { watchProjectJob } from "@/lib/client/project-api";
+import type {
+  ProjectDocument,
+  ProjectJobRecord,
+  ProjectSnapshotResult,
+  ProjectSummary,
+} from "@/lib/types";
 
 const HomepageRefreshAnimation = dynamic(
   () =>
@@ -49,9 +55,22 @@ async function uploadProjectDocument({
     method: "POST",
     body: formData,
   });
-  const payload = (await response.json()) as { error?: string };
-  if (!response.ok) {
+  const payload = (await response.json()) as {
+    error?: string;
+    document?: ProjectDocument;
+    project?: ProjectSnapshotResult;
+    job?: ProjectJobRecord;
+  };
+  if (!response.ok || !payload.document || !payload.project) {
     throw new Error(payload.error || "Kunne ikke laste opp dokumentet.");
+  }
+
+  if (payload.job?.kind === "document_ingestion") {
+    await watchProjectJob({
+      projectId,
+      jobId: payload.job.id,
+      onStatus: () => undefined,
+    });
   }
 }
 

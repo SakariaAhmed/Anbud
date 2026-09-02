@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const frontendRoot = path.resolve(__dirname, "../..");
+const require = createRequire(import.meta.url);
+const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
+const jiti = createJiti(path.join(frontendRoot, "project-analysis-tab-tests.cjs"), {
+  interopDefault: true,
+  alias: { "@": frontendRoot },
+});
+const { isDocumentReadyForEvaluation } = jiti(
+  path.join(frontendRoot, "lib/document-processing.ts"),
+);
 
 const source = await readFile(
   new URL("./project-analysis-tab.tsx", import.meta.url),
@@ -31,4 +46,22 @@ test("customer analysis navigation excludes the keyword tab", () => {
     { value: "value", label: "Verdi" },
   ]);
   assert.doesNotMatch(tabsBlock, /Nøkkelord|value: "keywords"/u);
+});
+
+test("customer analysis stays unavailable until document preparation publishes readiness", () => {
+  const document = { processing_status: "processing" };
+
+  assert.equal(isDocumentReadyForEvaluation(document), false);
+
+  document.processing_status = "basic_ready";
+  assert.equal(isDocumentReadyForEvaluation(document), true);
+});
+
+test("analysis CTA checks readiness instead of document count only", () => {
+  assert.match(source, /analysisDocuments\.every\(isDocumentReadyForEvaluation\)/u);
+  assert.match(source, /disabled=\{busy \|\| Boolean\(sectionBusy\) \|\| !documentsReady\}/u);
+  assert.doesNotMatch(
+    source,
+    /disabled=\{busy \|\| Boolean\(sectionBusy\) \|\| !hasDocuments\}/u,
+  );
 });

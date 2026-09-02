@@ -83,6 +83,7 @@ import {
 import {
   readStableProjectSourceSnapshot,
   readStableSolutionEvaluationSourceSnapshot,
+  runWithProjectSourceRevisionRetry,
 } from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
 import {
   assertCustomerAnalysisRequirementSourcesReady,
@@ -812,6 +813,14 @@ async function runDocumentIngestionWorkflow(
       hasDoclingEnhancement && doclingMode === "inline";
     const shouldQueueDoclingEnhancement =
       hasDoclingEnhancement && doclingMode === "async";
+    const readyStatus = shouldQueueDoclingEnhancement
+      ? "basic_ready"
+      : "enhanced_ready";
+    const readyMessage = shouldQueueDoclingEnhancement
+      ? "Dokumentet er RAG-klart. Docling-forbedring er køet."
+      : "Dokumentet er klart for RAG.";
+    const waitsForProjectMetadata =
+      document.role === "primary_customer_document" && !shouldRunInlineDocling;
     handlers.setProgress(
       shouldRunInlineDocling
         ? "[48%] Lagrer raskt tekstgrunnlag ..."
@@ -835,16 +844,15 @@ async function runDocumentIngestionWorkflow(
         parserUsed: parsed.parserUsed,
         contentHash: parseSelection.selectedContentHash,
       },
-      status: shouldRunInlineDocling
-        ? "processing"
-        : shouldQueueDoclingEnhancement
-          ? "basic_ready"
-          : "enhanced_ready",
+      status:
+        shouldRunInlineDocling || waitsForProjectMetadata
+          ? "processing"
+          : readyStatus,
       message: shouldRunInlineDocling
         ? "Rask parser er ferdig. Forbedrer struktur med Docling ..."
-        : shouldQueueDoclingEnhancement
-          ? "Dokumentet er RAG-klart. Docling-forbedring er køet."
-        : "Dokumentet er klart for RAG.",
+        : waitsForProjectMetadata
+          ? "Tekstgrunnlaget er klart. Oppdaterer prosjektmetadata ..."
+          : readyMessage,
       indexChunks: !shouldRunInlineDocling,
     });
     await recordParserSelectionEvents({
@@ -878,12 +886,33 @@ async function runDocumentIngestionWorkflow(
       handlers.onPhase?.("metadata");
     }
 
+    let readyDocument = basicDocument;
+    if (waitsForProjectMetadata) {
+      handlers.setProgress("[96%] Ferdigstiller dokumentgrunnlaget ...");
+      assertWorkflowActive(handlers);
+      await updateDocumentProcessingState({
+        projectId: input.projectId,
+        documentId: input.documentId,
+        status: readyStatus,
+        message: readyMessage,
+        error: null,
+        parserUsed: parsed.parserUsed,
+      });
+      readyDocument = {
+        ...basicDocument,
+        processing_status: readyStatus,
+        processing_message: readyMessage,
+        processing_error: null,
+      };
+      handlers.onPhase?.("readiness_publisering");
+    }
+
     if (!shouldRunInlineDocling) {
       return {
-        document: basicDocument,
+        document: readyDocument,
         document_id: input.documentId,
-        status: basicDocument.processing_status,
-        parser_used: basicDocument.parser_used ?? parsed.parserUsed,
+        status: readyDocument.processing_status,
+        parser_used: readyDocument.parser_used ?? parsed.parserUsed,
         project: await getProjectSnapshot(input.projectId),
         docling_enhancement_requested: shouldQueueDoclingEnhancement,
       };
@@ -1126,67 +1155,85 @@ async function runCustomerAnalysisWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "customer_analysis" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
-  handlers.setProgress("Laster dokumentgrunnlag ...");
-  const sourceSnapshot = await readStableProjectSourceSnapshot({
-    readSourceRevision: () => getProjectSourceRevision(input.projectId),
-    readValue: async () => {
-      const [projectDocuments, serviceCandidates] = await Promise.all([
-        listProjectDocumentsForAnalysis(input.projectId),
-        listProjectServiceDescriptions(input.projectId, {
-          includeDocumentAiSummaries: true,
+  return runWithProjectSourceRevisionRetry({
+    maxAttempts: 2,
+    onRetry: ({ attempt }) => {
+      console.info(
+        JSON.stringify({
+          event: "customer_analysis_source_revision_retry",
+          project_id: input.projectId,
+          attempt,
         }),
+      );
+    },
+    run: async (attempt) => {
+      handlers.setProgress(
+        attempt === 1
+          ? "Laster dokumentgrunnlag ..."
+          : "Dokumentgrunnlaget ble oppdatert. Laster siste versjon før nytt analyseforsøk ...",
+      );
+      const sourceSnapshot = await readStableProjectSourceSnapshot({
+        readSourceRevision: () => getProjectSourceRevision(input.projectId),
+        readValue: async () => {
+          const [projectDocuments, serviceCandidates] = await Promise.all([
+            listProjectDocumentsForAnalysis(input.projectId),
+            listProjectServiceDescriptions(input.projectId, {
+              includeDocumentAiSummaries: true,
+            }),
+          ]);
+          return { projectDocuments, serviceCandidates };
+        },
+      });
+      const { projectDocuments, serviceCandidates } = sourceSnapshot.value;
+      const { projectDocuments: analysisDocuments } =
+        splitServiceDescriptionDetails(projectDocuments);
+      const { customerDocument, supportingDocuments } =
+        selectProjectDocuments(analysisDocuments);
+      handlers.onPhase?.("dokumenthenting");
+
+      if (!customerDocument) {
+        throw new Error("Last opp minst ett dokument først.");
+      }
+
+      assertCustomerAnalysisRequirementSourcesReady([
+        customerDocument,
+        ...supportingDocuments,
       ]);
-      return { projectDocuments, serviceCandidates };
+
+      handlers.setProgress("Analyserer kundedokumentet med AI ...");
+      const result = await analyzeCustomerDocuments({
+        projectName: customerDocument.title,
+        customerDocument,
+        supportingDocuments,
+        serviceCandidates,
+        model: input.model,
+      });
+      handlers.onPhase?.("ai_analyse");
+
+      handlers.setProgress("Lagrer kundeanalysen ...");
+      assertWorkflowActive(handlers);
+      const analysis = await saveCustomerAnalysis(
+        input.projectId,
+        [
+          customerDocument.id,
+          ...supportingDocuments.map((document) => document.id),
+        ],
+        result,
+        {
+          expectedSourceRevision: sourceSnapshot.sourceRevision,
+          previousAnalysis: null,
+          updatedSections: [...CUSTOMER_ANALYSIS_SECTIONS],
+          historySource: "full_regeneration",
+        },
+      );
+      handlers.onPhase?.("lagring");
+
+      return {
+        analysis,
+        project: await getProjectSnapshot(input.projectId),
+      };
     },
   });
-  const { projectDocuments, serviceCandidates } = sourceSnapshot.value;
-  const { projectDocuments: analysisDocuments } =
-    splitServiceDescriptionDetails(projectDocuments);
-  const { customerDocument, supportingDocuments } =
-    selectProjectDocuments(analysisDocuments);
-  handlers.onPhase?.("dokumenthenting");
-
-  if (!customerDocument) {
-    throw new Error("Last opp minst ett dokument først.");
-  }
-
-  assertCustomerAnalysisRequirementSourcesReady([
-    customerDocument,
-    ...supportingDocuments,
-  ]);
-
-  handlers.setProgress("Analyserer kundedokumentet med AI ...");
-  const result = await analyzeCustomerDocuments({
-    projectName: customerDocument.title,
-    customerDocument,
-    supportingDocuments,
-    serviceCandidates,
-    model: input.model,
-  });
-  handlers.onPhase?.("ai_analyse");
-
-  handlers.setProgress("Lagrer kundeanalysen ...");
-  assertWorkflowActive(handlers);
-  const analysis = await saveCustomerAnalysis(
-    input.projectId,
-    [
-      customerDocument.id,
-      ...supportingDocuments.map((document) => document.id),
-    ],
-    result,
-    {
-      expectedSourceRevision: sourceSnapshot.sourceRevision,
-      previousAnalysis: null,
-      updatedSections: [...CUSTOMER_ANALYSIS_SECTIONS],
-      historySource: "full_regeneration",
-    },
-  );
-  handlers.onPhase?.("lagring");
-
-  return {
-    analysis,
-    project: await getProjectSnapshot(input.projectId),
-  };
 }
 
 async function runArtifactGenerationWorkflow(

@@ -49,6 +49,10 @@ import {
   ValueTags,
 } from "@/components/projects/project-workspace-shared";
 import { getCustomerAnalysisSectionSnapshot } from "@/lib/customer-analysis-history";
+import {
+  isDocumentReadyForEvaluation,
+  isHistoricalSolutionDocument,
+} from "@/lib/document-processing";
 import { normalizeTechnologySignalWords } from "@/lib/signal-words";
 import {
   MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
@@ -2954,7 +2958,14 @@ export function ProjectAnalysisTab({
   const recommendedServices = customerAnalysis
     ? getRecommendedServices(customerAnalysis)
     : [];
-  const hasDocuments = documents.length > 0;
+  const analysisDocuments = documents.filter(
+    (document) =>
+      document.role !== "primary_solution_document" &&
+      !isHistoricalSolutionDocument(document),
+  );
+  const hasDocuments = analysisDocuments.length > 0;
+  const documentsReady =
+    hasDocuments && analysisDocuments.every(isDocumentReadyForEvaluation);
 
   function getSectionLabel(section: CustomerAnalysisSection) {
     return SECTION_TABS.find((tab) => tab.value === section)?.label ?? section;
@@ -3996,7 +4007,7 @@ export function ProjectAnalysisTab({
             {!customerAnalysis ? (
               <Button
                 onClick={onGenerate}
-                disabled={busy || Boolean(sectionBusy) || !hasDocuments}
+                disabled={busy || Boolean(sectionBusy) || !documentsReady}
                 className="mb-2 max-w-full shrink-0"
               >
                 {busy ? (
@@ -4008,6 +4019,12 @@ export function ProjectAnalysisTab({
               </Button>
             ) : null}
           </div>
+          {!customerAnalysis && hasDocuments && !documentsReady ? (
+            <p className="mt-2 text-sm text-slate-500">
+              Dokumentgrunnlaget klargjøres. Kundeanalysen kan startes så snart
+              dokumentbehandlingen er ferdig.
+            </p>
+          ) : null}
         </div>
 
         {customerAnalysis ? (

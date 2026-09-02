@@ -14,14 +14,65 @@ const jiti = createJiti(
   { alias: { "@": frontendRoot }, interopDefault: true },
 );
 const {
+  isProjectSourceRevisionChangedError,
   readStableProjectSourceSnapshot,
   readStableSolutionEvaluationSourceSnapshot,
+  runWithProjectSourceRevisionRetry,
 } = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/use-cases/solution-evaluation-source-snapshot.ts",
   ),
 );
+
+test("customer analysis retries against the latest snapshot when ingestion metadata changes", async () => {
+  let sourceRevision = 11;
+  let attempts = 0;
+  const retriedRevisions = [];
+
+  const result = await runWithProjectSourceRevisionRetry({
+    onRetry: () => retriedRevisions.push(sourceRevision),
+    run: async () => {
+      attempts += 1;
+      const capturedRevision = sourceRevision;
+
+      if (attempts === 1) {
+        sourceRevision += 1;
+      }
+
+      if (capturedRevision !== sourceRevision) {
+        throw new Error(
+          "PROJECT_SOURCE_REVISION_CHANGED: project inputs changed while the analysis was running",
+        );
+      }
+
+      return { savedRevision: capturedRevision };
+    },
+  });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(retriedRevisions, [12]);
+  assert.deepEqual(result, { savedRevision: 12 });
+});
+
+test("source revision retry only handles the known optimistic-concurrency conflict", async () => {
+  assert.equal(
+    isProjectSourceRevisionChangedError(
+      new Error(
+        "PROJECT_SOURCE_REVISION_CHANGED: project inputs changed while the analysis was running",
+      ),
+    ),
+    true,
+  );
+  await assert.rejects(
+    runWithProjectSourceRevisionRetry({
+      run: async () => {
+        throw new Error("OpenAI is unavailable");
+      },
+    }),
+    /OpenAI is unavailable/u,
+  );
+});
 
 test("service candidates are retried inside the same source-revision snapshot", async () => {
   let revision = 4;
