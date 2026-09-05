@@ -14,10 +14,10 @@ import type {
 } from "@/lib/types";
 import {
   clearClientCache,
-  getClientCache,
+  readClientCache,
+  type ClientReadOptions,
   PROJECT_SERVICES_CACHE_TTL_MS,
   projectServicesCacheKey,
-  setClientCache,
 } from "@/lib/client-cache";
 
 export type ProjectSnapshotPayload = ProjectSnapshotResult;
@@ -34,114 +34,15 @@ type ProjectWorkspaceTabName =
   | "executive-summary";
 
 const PROJECT_READ_CACHE_TTL_MS = 30_000;
-const pendingProjectReads = new Map<string, Promise<unknown>>();
-const projectReadVersions = new Map<string, number>();
-const projectReadRequestSequences = new Map<string, number>();
-
-type ProjectReadOptions = {
-  signal?: AbortSignal;
-  forceRefresh?: boolean;
-};
+type ProjectReadOptions = ClientReadOptions;
 
 function projectReadCacheKey(projectId: string, resource: string) {
   return `project-read:${projectId}:${resource}`;
 }
 
-function projectIdFromReadCacheKey(key: string) {
-  const prefix = "project-read:";
-  if (!key.startsWith(prefix)) {
-    return "";
-  }
-
-  const rest = key.slice(prefix.length);
-  const separatorIndex = rest.indexOf(":");
-  return separatorIndex >= 0 ? rest.slice(0, separatorIndex) : "";
-}
-
-function projectReadVersion(projectId: string) {
-  return projectReadVersions.get(projectId) ?? 0;
-}
-
-function abortablePendingRead<T>(pending: Promise<T>, signal: AbortSignal) {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason);
-  }
-
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () =>
-      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-
-    signal.addEventListener("abort", onAbort, { once: true });
-    pending
-      .then(resolve)
-      .catch(reject)
-      .finally(() => signal.removeEventListener("abort", onAbort));
-  });
-}
-
-function cachedProjectRead<T>(
-  key: string,
-  fetcher: () => Promise<T>,
-  ttlMs = PROJECT_READ_CACHE_TTL_MS,
-  options: ProjectReadOptions = {},
-) {
-  const cached = options.forceRefresh
-    ? null
-    : getClientCache<{ value: T }>(key);
-  if (cached) {
-    return Promise.resolve(cached.value);
-  }
-
-  const pending = options.forceRefresh
-    ? undefined
-    : (pendingProjectReads.get(key) as Promise<T> | undefined);
-  if (pending) {
-    if (!options.signal) {
-      return pending;
-    }
-
-    return abortablePendingRead(pending, options.signal);
-  }
-
-  if (options.forceRefresh) {
-    pendingProjectReads.delete(key);
-  }
-
-  const projectId = projectIdFromReadCacheKey(key);
-  const version = projectId ? projectReadVersion(projectId) : 0;
-  const requestSequence = (projectReadRequestSequences.get(key) ?? 0) + 1;
-  projectReadRequestSequences.set(key, requestSequence);
-  const request = fetcher()
-    .then((value) => {
-      if (
-        !options.signal?.aborted &&
-        projectReadRequestSequences.get(key) === requestSequence &&
-        (!projectId || projectReadVersion(projectId) === version)
-      ) {
-        setClientCache(key, { value }, ttlMs);
-      }
-      return value;
-    })
-    .finally(() => {
-      if (!options.signal && pendingProjectReads.get(key) === request) {
-        pendingProjectReads.delete(key);
-      }
-    });
-
-  if (!options.signal) {
-    pendingProjectReads.set(key, request);
-  }
-  return request;
-}
-
 function invalidateProjectReadCache(projectId: string) {
-  projectReadVersions.set(projectId, projectReadVersion(projectId) + 1);
   clearClientCache(`project-read:${projectId}:`);
-  for (const key of pendingProjectReads.keys()) {
-    if (key.startsWith(`project-read:${projectId}:`)) {
-      pendingProjectReads.delete(key);
-    }
-  }
+  clearClientCache(projectServicesCacheKey(projectId));
 }
 
 function errorMessageFromPayload(
@@ -378,10 +279,12 @@ export async function watchProjectJob({
     signal?.addEventListener("abort", onAbort, { once: true });
 
     source.addEventListener("job", (event) => {
-      let payload: { job?: ProjectJobRecord };
+      if (settled) return;
+      let payload: { job?: ProjectJobRecord } | null;
       try { payload = JSON.parse((event as MessageEvent).data); }
       catch { fallbackToPolling(); return; }
-      if (!payload.job || settled) {
+      if (!payload?.job) {
+        fallbackToPolling();
         return;
       }
 
@@ -393,7 +296,13 @@ export async function watchProjectJob({
         invalidateProjectReadCache(projectId);
       }
 
-      onStatus(payload.job);
+      try {
+        onStatus(payload.job);
+      } catch (error) {
+        cleanup();
+        reject(error);
+        return;
+      }
 
       if (payload.job.status === "failed") {
         cleanup();
@@ -435,64 +344,32 @@ export async function fetchProjectServices(
   projectId: string,
   options: ProjectReadOptions = {},
 ) {
-  const cacheKey = projectServicesCacheKey(projectId);
-  const cached = getClientCache<ProjectServiceDescription[]>(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const pendingKey = `project-services:${projectId}`;
-  const pending = pendingProjectReads.get(pendingKey) as
-    | Promise<ProjectServiceDescription[]>
-    | undefined;
-  if (pending) {
-    if (!options.signal) {
-      return pending;
-    }
-    return abortablePendingRead(pending, options.signal);
-  }
-
-  const request = (async () => {
-    const response = await fetch(
-      `/api/projects/${projectId}/service-descriptions`,
-      {
-        cache: "no-store",
-        signal: options.signal,
-      },
-    );
-    const payload = await readJsonPayload<{
-      services?: ProjectServiceDescription[];
-      error?: string;
-    }>(response, "Kunne ikke hente tjenestebeskrivelser.");
-    if (!response.ok || !payload.services) {
-      throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
-    }
-    if (!options.signal?.aborted) {
-      setClientCache(
-        cacheKey,
-        payload.services,
-        PROJECT_SERVICES_CACHE_TTL_MS,
+  return readClientCache(
+    projectServicesCacheKey(projectId),
+    async () => {
+      const response = await fetch(
+        `/api/projects/${projectId}/service-descriptions`,
+        { cache: "no-store", signal: options.signal },
       );
-    }
-    return payload.services;
-  })().finally(() => {
-    if (!options.signal) {
-      pendingProjectReads.delete(pendingKey);
-    }
-  });
-
-  if (!options.signal) {
-    pendingProjectReads.set(pendingKey, request);
-  }
-
-  return request;
+      const payload = await readJsonPayload<{
+        services?: ProjectServiceDescription[];
+        error?: string;
+      }>(response, "Kunne ikke hente tjenestebeskrivelser.");
+      if (!response.ok || !payload.services) {
+        throw new Error(payload.error || "Kunne ikke hente tjenestebeskrivelser.");
+      }
+      return payload.services;
+    },
+    PROJECT_SERVICES_CACHE_TTL_MS,
+    options,
+  );
 }
 
 export async function fetchCustomerAnalysis(
   projectId: string,
   options: ProjectReadOptions = {},
 ) {
-  return cachedProjectRead(
+  return readClientCache(
     projectReadCacheKey(projectId, "customer-analysis"),
     async () => {
       const response = await fetch(`/api/projects/${projectId}/customer-analysis`, {
@@ -517,7 +394,7 @@ export async function fetchSolutionEvaluation(
   projectId: string,
   options: ProjectReadOptions = {},
 ) {
-  return cachedProjectRead(
+  return readClientCache(
     projectReadCacheKey(projectId, "solution-evaluation"),
     async () => {
       const response = await fetch(
@@ -542,7 +419,7 @@ export async function fetchExecutiveSummary(
   projectId: string,
   options: ProjectReadOptions = {},
 ) {
-  return cachedProjectRead(
+  return readClientCache(
     projectReadCacheKey(projectId, "executive-summary"),
     async () => {
       const response = await fetch(`/api/projects/${projectId}/executive-summary`, {
@@ -570,7 +447,7 @@ export async function fetchGeneratedArtifacts(
   const resource = options.artifactType
     ? `generated-artifacts:${options.artifactType}`
     : "generated-artifacts";
-  return cachedProjectRead(
+  return readClientCache(
     projectReadCacheKey(projectId, resource),
     async () => {
       const query = options.artifactType

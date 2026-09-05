@@ -458,6 +458,39 @@ test("terminal job states invalidate cached and pending project reads", async ()
     });
     assert.equal(evaluationFetchCount, 2);
 
+    const aborted = new AbortController();
+    aborted.abort();
+    const connectionsBeforeAbort = FakeEventSource.instances.length;
+    await assert.rejects(watchProjectJob({
+      projectId: "aborted-project",
+      jobId: "aborted-job",
+      onStatus() {},
+      signal: aborted.signal,
+    }), { name: "AbortError" });
+    assert.equal(FakeEventSource.instances.length, connectionsBeforeAbort);
+
+    const malformed = watchProjectJob({
+      projectId: pollingProjectId,
+      jobId: "malformed-event",
+      onStatus() {},
+    });
+    const malformedSource = FakeEventSource.instances.at(-1);
+    for (const listener of malformedSource.listeners.get("job")) {
+      listener({ data: "not JSON" });
+    }
+    assert.equal((await malformed).status, "completed");
+    assert.equal(malformedSource.readyState, FakeEventSource.CLOSED);
+
+    const brokenCallback = watchProjectJob({
+      projectId: "callback-project",
+      jobId: "callback-job",
+      onStatus() { throw new Error("render failed"); },
+    });
+    const callbackSource = FakeEventSource.instances.at(-1);
+    callbackSource.emitJob({ status: "running" });
+    await assert.rejects(brokenCallback, /render failed/);
+    assert.equal(callbackSource.readyState, FakeEventSource.CLOSED);
+
     const pendingProjectId = "terminal-pending-read-project";
     let releasePendingRead;
     let pendingFetchCount = 0;
