@@ -1,18 +1,17 @@
 "use client";
 
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { markNextHomeNavigationWithoutAnimation } from "@/components/layout/app-header-logo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { fetchServiceDescriptions } from "@/lib/client/service-descriptions-api";
-import { cn } from "@/lib/utils";
 import type { ServiceDescription } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export function ProjectNewPage() {
   const router = useRouter();
@@ -190,7 +189,6 @@ export function ProjectNewPage() {
           <div className="mt-6 flex items-center justify-between border-t border-border pt-5">
             <Link
               href="/"
-              onClick={markNextHomeNavigationWithoutAnimation}
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1.5 text-muted-foreground")}
             >
               <ArrowLeft className="size-3.5" />

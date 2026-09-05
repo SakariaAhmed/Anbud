@@ -439,7 +439,7 @@ export function ProjectShareDialog({
                 </div>
                 <div>
                   <AccessLevelPicker value={personRole} onChange={setPersonRole} />
-                  <Button type="submit" className="mt-4 w-full bg-blue-900 text-white hover:bg-blue-800" disabled={!selectedPrincipalId || Boolean(busy)}>
+                  <Button type="submit" className="mt-4 w-full bg-primary text-primary-foreground hover:bg-primary-hover" disabled={!selectedPrincipalId || Boolean(busy)}>
                     {busy === "person" ? <LoaderCircle className="animate-spin" /> : <Plus />}
                     Gi personen tilgang
                   </Button>
@@ -467,7 +467,7 @@ export function ProjectShareDialog({
                 </div>
                 <div>
                   <AccessLevelPicker value={inviteRole} onChange={setInviteRole} />
-                  <Button type="submit" className="mt-4 w-full bg-blue-900 text-white hover:bg-blue-800" disabled={guestName.trim().length < 2 || guestDescription.trim().length < 3 || !email.trim() || Boolean(busy)}>
+                  <Button type="submit" className="mt-4 w-full bg-primary text-primary-foreground hover:bg-primary-hover" disabled={guestName.trim().length < 2 || guestDescription.trim().length < 3 || !email.trim() || Boolean(busy)}>
                     {busy === "invite" ? <LoaderCircle className="animate-spin" /> : <Mail />}
                     Inviter og gi tilgang
                   </Button>
@@ -494,7 +494,7 @@ export function ProjectShareDialog({
                 </Field>
                 <div>
                   <AccessLevelPicker value={groupRole} onChange={setGroupRole} />
-                  <Button type="submit" className="mt-4 w-full bg-blue-900 text-white hover:bg-blue-800" disabled={!groupId || Boolean(busy)}>
+                  <Button type="submit" className="mt-4 w-full bg-primary text-primary-foreground hover:bg-primary-hover" disabled={!groupId || Boolean(busy)}>
                     {busy === "group" ? <LoaderCircle className="animate-spin" /> : <Users />}
                     Gi gruppen tilgang
                   </Button>
@@ -602,7 +602,7 @@ function AccessLevelPicker({ value, onChange }: { value: ShareableRole; onChange
           const selected = value === role;
           return (
             <button key={role} type="button" onClick={() => onChange(role)} aria-pressed={selected} className={`flex items-start gap-3 border px-3 py-3 text-left transition-colors ${selected ? "border-blue-900 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-400"}`}>
-              <span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border ${selected ? "border-blue-900 bg-blue-900 text-white" : "border-slate-300"}`}>{selected ? <Check className="size-2.5" /> : null}</span>
+              <span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border ${selected ? "border-primary bg-primary text-primary-foreground" : "border-slate-300"}`}>{selected ? <Check className="size-2.5" /> : null}</span>
               <span>
                 <span className="block text-xs font-semibold text-slate-900">{ROLE_DETAILS[role].label}</span>
                 <span className="mt-0.5 block text-[0.68rem] leading-4 text-slate-500">{ROLE_DETAILS[role].detail}</span>

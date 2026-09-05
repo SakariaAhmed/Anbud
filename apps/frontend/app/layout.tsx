@@ -1,19 +1,17 @@
-import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Schibsted_Grotesk } from "next/font/google";
-import { headers } from "next/headers";
-import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AUTH_DISPLAY_NAME_HEADER,
-  AUTH_IS_ADMIN_HEADER,
   AUTH_IDENTITY_TYPE_HEADER,
+  AUTH_IS_ADMIN_HEADER,
   AUTH_VERIFIED_HEADER,
 } from "@/lib/password-auth";
+import type { Metadata } from "next";
+import { IBM_Plex_Mono, IBM_Plex_Sans, Schibsted_Grotesk } from "next/font/google";
+import { headers } from "next/headers";
+import type { ReactNode } from "react";
 
 import "./globals.css";
-
-const CURRENT_PATH_HEADER = "x-current-pathname";
 
 const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
@@ -52,8 +50,6 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const requestHeaders = await headers();
-  const pathname = requestHeaders.get(CURRENT_PATH_HEADER) ?? "";
-  const isHomeRoute = pathname === "/";
   const displayName = requestHeaders.get(AUTH_DISPLAY_NAME_HEADER);
   const authenticated = requestHeaders.get(AUTH_VERIFIED_HEADER) === "1";
   const identityType = requestHeaders.get(AUTH_IDENTITY_TYPE_HEADER);
@@ -63,7 +59,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang="no" className={documentFontVariables}>
       <body
         className="min-h-screen bg-background text-foreground antialiased"
-        data-route={isHomeRoute ? "home" : undefined}
       >
         <TooltipProvider>
           <AppShell

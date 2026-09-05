@@ -9,10 +9,5 @@ export default async function HomePage() {
   const projects = await listProjects(principal.id, {
     admin: principal.isAdmin,
   });
-  return (
-    <>
-      <div aria-hidden="true" className="bidsite-boot-cover" />
-      <ProjectDashboard projects={projects} />
-    </>
-  );
+  return <ProjectDashboard projects={projects} />;
 }

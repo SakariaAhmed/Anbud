@@ -1,40 +1,18 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import {
-  useRef,
-  useCallback,
-  useMemo,
-  useState,
-  type ChangeEvent,
-  type DragEvent,
-} from "react";
+import { useCallback, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 
 import {
   DashboardHero,
   DashboardIntro,
   ProjectListSection,
-  WorkflowSteps,
   normalizeSearch,
   type ProjectSort,
   type ProjectStatusFilter,
 } from "@/components/projects/project-dashboard-sections";
-import { watchProjectJob } from "@/lib/client/project-api";
-import type {
-  ProjectDocument,
-  ProjectJobRecord,
-  ProjectSnapshotResult,
-  ProjectSummary,
-} from "@/lib/types";
-
-const HomepageRefreshAnimation = dynamic(
-  () =>
-    import("@/components/projects/homepage-refresh-animation").then(
-      (module) => module.HomepageRefreshAnimation,
-    ),
-  { ssr: false, loading: () => null },
-);
+import { uploadProjectDocument as uploadDocument, watchProjectJob } from "@/lib/client/project-api";
+import type { ProjectSummary } from "@/lib/types";
 
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
@@ -51,19 +29,11 @@ async function uploadProjectDocument({
   formData.append("file", file);
   formData.append("title", fileTitle(file));
 
-  const response = await fetch(`/api/projects/${projectId}/documents`, {
-    method: "POST",
-    body: formData,
+  const payload = await uploadDocument({
+    projectId,
+    formData,
+    fallbackMessage: "Kunne ikke laste opp dokumentet.",
   });
-  const payload = (await response.json()) as {
-    error?: string;
-    document?: ProjectDocument;
-    project?: ProjectSnapshotResult;
-    job?: ProjectJobRecord;
-  };
-  if (!response.ok || !payload.document || !payload.project) {
-    throw new Error(payload.error || "Kunne ikke laste opp dokumentet.");
-  }
 
   if (payload.job?.kind === "document_ingestion") {
     await watchProjectJob({
@@ -216,7 +186,6 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
 
   return (
     <>
-      <HomepageRefreshAnimation />
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <DashboardIntro />
         <DashboardHero
@@ -247,7 +216,6 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
           statusFilter={statusFilter}
           statusOptions={statusOptions}
         />
-        <WorkflowSteps />
       </div>
     </>
   );

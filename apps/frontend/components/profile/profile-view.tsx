@@ -199,7 +199,7 @@ export function ProfileView({
                       href="https://mysignins.microsoft.com/security-info/password/change"
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     >
                       Bytt passord
                       <ArrowUpRight className="size-3.5" />

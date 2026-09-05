@@ -151,7 +151,7 @@ export function LoginForm({
 
       <main className="relative grid min-h-screen lg:grid-cols-[minmax(0,1.14fr)_minmax(27rem,0.86fr)]">
         <section className="login-brand-panel flex min-h-[25rem] flex-col px-6 py-7 sm:px-10 sm:py-9 lg:min-h-screen lg:px-[clamp(3rem,6vw,7.5rem)] lg:py-12">
-          <div className="login-enter flex items-center gap-3">
+          <div className="login-enter flex items-center gap-4">
             <Image
               src="/bidsite-logo.png"
               alt=""
@@ -159,46 +159,46 @@ export function LoginForm({
               height={38}
               aria-hidden="true"
               priority
-              className="h-11 w-auto drop-shadow-[0_5px_16px_rgba(59,130,246,0.45)]"
+              className="h-16 w-auto drop-shadow-[0_7px_22px_rgba(59,130,246,0.5)]"
             />
-            <span className="text-[1.85rem] font-semibold tracking-[-0.045em]">
+            <span className="text-[2.5rem] font-semibold tracking-[-0.05em]">
               bidsite
             </span>
           </div>
 
-          <div className="my-auto max-w-[50rem] py-14 lg:py-16">
-            <p className="login-enter login-enter-delay-1 mb-5 flex items-center gap-2 font-mono text-[0.68rem] font-medium uppercase tracking-[0.2em] text-blue-300">
+          <div className="my-auto max-w-[50rem] py-14 lg:mb-auto lg:mt-[clamp(3rem,7vh,5rem)] lg:py-6">
+            <p className="login-enter login-enter-delay-1 mb-5 flex items-center gap-2 font-mono text-sm font-medium uppercase tracking-[0.2em] text-blue-300">
               <span className="login-eyebrow-line h-px w-8 bg-blue-400/70" />
               Tilbudsarbeid, samlet
             </p>
             <h1 className="login-enter login-enter-delay-2 max-w-[17ch] font-serif text-[clamp(2.5rem,4.65vw,4.75rem)] font-bold leading-[1.02] tracking-[-0.03em] text-white">
-              Fra kundekrav til et beslutningsklart tilbud.
+              Krav inn. Tilbud ut.
             </h1>
             <p className="login-enter login-enter-delay-3 mt-7 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
               Et sikkert arbeidsrom for team som må forstå kunden, svare presist
               og dokumentere hvorfor tilbudet holder.
             </p>
 
-            <div className="login-workflow login-enter login-enter-delay-3 mt-11 max-w-3xl">
+            <div className="login-workflow login-enter login-enter-delay-3 mt-11 max-w-[50rem]">
               <span className="login-workflow-rail" aria-hidden="true">
                 <span className="login-workflow-runner" />
               </span>
-              <ol className="relative grid gap-3 sm:grid-cols-3">
+              <ol className="relative grid gap-4 sm:grid-cols-3">
                 {WORKFLOW.map(({ title, description, icon: Icon }, index) => (
                   <li
                     key={title}
-                    className={`login-workflow-card login-workflow-card--${index + 1} rounded-xl border border-white/10 bg-white/[0.055] p-4 backdrop-blur-sm`}
+                    className={`login-workflow-card login-workflow-card--${index + 1} min-h-[11rem] rounded-xl border border-white/10 bg-white/[0.055] p-5 backdrop-blur-sm`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className={`login-workflow-icon login-workflow-icon--${index + 1} grid size-8 place-items-center rounded-lg border border-blue-300/15 bg-blue-400/10 text-cyan-300`}>
-                        <Icon className="size-4" />
+                      <span className={`login-workflow-icon login-workflow-icon--${index + 1} grid size-10 place-items-center rounded-xl border border-blue-300/15 bg-blue-400/10 text-cyan-300`}>
+                        <Icon className="size-5" />
                       </span>
-                      <span className="font-mono text-[0.65rem] text-slate-500">
+                      <span className="font-mono text-xs text-slate-500">
                         0{index + 1}
                       </span>
                     </div>
-                    <p className="mt-4 text-sm font-semibold text-white">{title}</p>
-                    <p className="mt-1.5 text-xs leading-5 text-slate-400">{description}</p>
+                    <p className="mt-5 text-base font-semibold text-white">{title}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">{description}</p>
                   </li>
                 ))}
               </ol>
@@ -311,7 +311,7 @@ export function LoginForm({
                         className="h-11 border-slate-300 bg-white px-3 text-slate-950 shadow-sm focus-visible:border-blue-600 focus-visible:ring-blue-600/20"
                       />
                     </div>
-                    <Button type="submit" className="login-lift h-11 w-full bg-slate-950 text-white hover:bg-blue-800" disabled={pending !== null}>
+                    <Button type="submit" className="login-lift h-11 w-full bg-primary text-primary-foreground hover:bg-primary-hover" disabled={pending !== null}>
                       {pending === "admin" ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <LockKeyhole data-icon="inline-start" />}
                       {pending === "admin" ? "Logger inn …" : "Logg inn"}
                     </Button>

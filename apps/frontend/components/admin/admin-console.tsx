@@ -62,7 +62,7 @@ const SELECT_CLASS =
   "h-10 w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 pr-9 text-sm text-slate-900 outline-none transition-colors duration-180 focus:border-blue-900 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400";
 
 const PRIMARY_BUTTON_CLASS =
-  "bg-blue-900 text-white shadow-sm transition-all duration-180 hover:bg-blue-800 hover:shadow";
+  "bg-primary text-primary-foreground shadow-sm transition-all duration-180 hover:bg-primary-hover hover:shadow";
 
 const EYEBROW_CLASS = "text-[0.68rem] font-semibold uppercase tracking-[0.14em]";
 
@@ -218,7 +218,7 @@ function NavButton({ active, icon, label, onClick }: {
       aria-current={active ? "page" : undefined}
       className={`flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold transition-colors ${
         active
-          ? "bg-slate-900 text-white shadow-sm"
+          ? "bg-primary text-primary-foreground shadow-sm"
           : "text-slate-600 hover:bg-white hover:text-slate-950"
       } [&_svg]:size-4`}
     >
@@ -305,7 +305,7 @@ function OverviewSection({ admin, users, groups, projects, activity, onNavigate 
           <button
             type="button"
             onClick={() => onNavigate("people")}
-            className="group flex w-full items-center justify-between border border-blue-900 bg-blue-900 p-6 text-left text-white transition-colors duration-180 hover:bg-blue-800"
+            className="group flex w-full items-center justify-between border border-primary bg-primary p-6 text-left text-primary-foreground transition-colors duration-180 hover:bg-primary-hover"
           >
             <span>
               <span className={`block ${EYEBROW_CLASS} text-cyan-300`}>Neste handling</span>
@@ -640,7 +640,7 @@ function InviteUserPanel({ groups, projects, onCreated }: {
                   onClick={() => setGroupIds((current) => checked ? current.filter((id) => id !== group.id) : [...current, group.id])}
                   className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all duration-180 ${
                     checked
-                      ? "border-blue-900 bg-blue-900 text-white"
+                      ? "border-primary bg-primary text-primary-foreground"
                       : "border-slate-300 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-900"
                   }`}
                 >
@@ -1576,7 +1576,7 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
       type="button"
       onClick={onClick}
       className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all duration-180 ${
-        active ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
+        active ? "bg-primary text-primary-foreground shadow-sm" : "text-slate-500 hover:text-slate-900"
       }`}
     >
       {children}

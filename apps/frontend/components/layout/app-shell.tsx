@@ -21,15 +21,18 @@ function isChatWindow(pathname: string) {
 function MenuLink({
   href,
   icon,
+  onActivate,
   children,
 }: {
   href: string;
   icon: ReactNode;
+  onActivate: () => void;
   children: ReactNode;
 }) {
   return (
     <Link
       href={href}
+      onClick={onActivate}
       className="flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
     >
       <span className="text-slate-500 [&_svg]:size-4">{icon}</span>
@@ -154,14 +157,23 @@ export function AppShell({
                         <MenuLink
                           href="/profile"
                           icon={<CircleUserRound />}
+                          onActivate={() => setMenuOpen(false)}
                         >
                           Min profil
                         </MenuLink>
-                        <MenuLink href="/" icon={<BriefcaseBusiness />}>
+                        <MenuLink
+                          href="/"
+                          icon={<BriefcaseBusiness />}
+                          onActivate={() => setMenuOpen(false)}
+                        >
                           Mine prosjekter
                         </MenuLink>
                         {isAdmin ? (
-                          <MenuLink href="/admin" icon={<ShieldCheck />}>
+                          <MenuLink
+                            href="/admin"
+                            icon={<ShieldCheck />}
+                            onActivate={() => setMenuOpen(false)}
+                          >
                             Styring og innsikt
                           </MenuLink>
                         ) : null}

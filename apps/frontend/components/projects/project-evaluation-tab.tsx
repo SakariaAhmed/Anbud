@@ -965,7 +965,7 @@ export function ProjectEvaluationTab({
             disabled={
               actionBusy || !selectedDocumentId || !selectedDocumentRunnable
             }
-            className="h-11 w-full justify-center rounded-xl bg-blue-900 text-sm font-semibold text-white shadow-sm transition-colors duration-[180ms] hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500"
+            className="h-11 w-full justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-[180ms] hover:bg-primary-hover disabled:bg-slate-200 disabled:text-slate-500"
           >
             {busy || importBusy ? (
               <Spinner className="size-4" />

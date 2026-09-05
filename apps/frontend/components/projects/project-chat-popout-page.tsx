@@ -684,7 +684,7 @@ export function ProjectChatPopoutPage({
                       className={cn(
                         "rounded-lg border px-3 py-3 text-left transition-colors",
                         project.id === projectId
-                          ? "border-slate-900 bg-slate-950 text-white"
+                          ? "border-primary bg-primary text-primary-foreground"
                           : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
                       )}
                     >

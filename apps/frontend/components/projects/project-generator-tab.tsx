@@ -53,7 +53,7 @@ export function ProjectGeneratorTab({
           <form onSubmit={onSubmit} className="border-t border-slate-100 pt-5">
             <Button
               type="submit"
-              className="h-11 w-full justify-center rounded-md bg-slate-900 text-sm font-semibold text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-500"
+              className="h-11 w-full justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:bg-slate-200 disabled:text-slate-500"
               disabled={busy}
             >
               {busy ? (

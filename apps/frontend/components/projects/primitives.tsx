@@ -14,12 +14,12 @@ type ButtonSize = "default" | "sm" | "lg";
 
 function buttonClasses(variant: ButtonVariant, size: ButtonSize) {
   return cn(
-    "inline-flex items-center justify-center gap-2 rounded-md border text-sm font-semibold transition-all outline-none",
-    "focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-55",
-    variant === "default" && "border-blue-900 bg-blue-900 text-white hover:bg-blue-800 shadow-sm",
-    variant === "outline" && "border-slate-300 bg-white text-slate-800 hover:bg-slate-50 shadow-sm",
+    "inline-flex items-center justify-center gap-2 rounded-md border text-sm font-semibold transition-colors duration-150 outline-none",
+    "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-55",
+    variant === "default" && "border-primary bg-primary text-primary-foreground hover:bg-primary-hover shadow-sm",
+    variant === "outline" && "border-input bg-card text-foreground hover:bg-muted",
     variant === "ghost" && "border-transparent bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-    variant === "destructive" && "border-red-300 bg-red-50 text-red-800 hover:bg-red-100",
+    variant === "destructive" && "border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20",
     size === "default" && "h-9 px-4",
     size === "sm" && "h-8 px-3 text-[13px]",
     size === "lg" && "h-10 px-5 text-sm",
