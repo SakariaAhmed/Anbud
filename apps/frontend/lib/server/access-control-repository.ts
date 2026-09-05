@@ -2,12 +2,9 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 
-import {
-  PROJECT_ROLE_LABELS,
-  isProjectRole,
-  type ProjectRole,
-} from "@/lib/access-control";
+import { PROJECT_ROLE_LABELS, isProjectRole, type ProjectRole } from "@/lib/access-control";
 import { decryptString } from "@/lib/server/crypto";
+import { createServiceClient } from "@/lib/server/data-api";
 import { sendGuestAccessEmail } from "@/lib/server/guest-email";
 import {
   emailHmac,
@@ -16,10 +13,8 @@ import {
   guestCodeHmac,
   guestCodeLastFour,
   maskEmail,
-  normalizeEmail,
   validateEmail,
 } from "@/lib/server/identity-crypto";
-import { createServiceClient } from "@/lib/server/data-api";
 
 function newGuestPrincipalId() {
   return `g_${randomBytes(24).toString("base64url")}`;
@@ -51,31 +46,6 @@ function isShareableProjectRole(
   return isProjectRole(value) && value !== "owner";
 }
 
-function configuredEmailSet(name: string) {
-  return new Set(
-    (process.env[name] ?? "")
-      .split(",")
-      .map((email) => normalizeEmail(email))
-      .filter(Boolean),
-  );
-}
-
-async function syncBootstrapRoles(principalId: string, email?: string | null) {
-  if (!email) return;
-  const normalized = normalizeEmail(email);
-  if (!configuredEmailSet("APP_ADMIN_EMAILS").has(normalized)) return;
-  const dataApi = createServiceClient();
-  const { error } = await dataApi.from("app_principal_roles").upsert(
-    {
-      principal_id: principalId,
-      role: "admin",
-      granted_by: principalId,
-    },
-    { onConflict: "principal_id,role" },
-  );
-  if (error) throw new Error(error.message);
-}
-
 export async function upsertInternalPrincipal(input: {
   candidateId: string;
   displayName: string;
@@ -93,14 +63,15 @@ export async function upsertInternalPrincipal(input: {
     p_email_masked: normalizedEmail ? maskEmail(normalizedEmail) : null,
   });
   if (error || !Array.isArray(data) || !data[0]) {
-    throw new Error(error?.message || "Kunne ikke lagre brukeridentitet.");
+    throw Object.assign(new Error(error?.message || "Kunne ikke lagre brukeridentitet."), {
+      code: error?.code,
+    });
   }
   const row = data[0] as {
     principal_id: string;
     identity_type: "internal";
     display_name: string;
   };
-  await syncBootstrapRoles(row.principal_id, normalizedEmail);
   return {
     id: row.principal_id,
     identity_type: row.identity_type,
@@ -721,32 +692,6 @@ export async function setGroupMembers(input: {
     p_principal_ids: uniqueIds,
     p_added_by: input.addedBy,
   });
-  if (error) throw new Error(error.message);
-}
-
-export async function addPrincipalToGroups(input: {
-  principalId: string;
-  groupIds: string[];
-  addedBy: string;
-}) {
-  const uniqueGroupIds = [...new Set(input.groupIds)].slice(0, 100);
-  if (!uniqueGroupIds.length) return;
-  const dataApi = createServiceClient();
-  const { data: groups, error: groupError } = await dataApi
-    .from("app_groups")
-    .select("id")
-    .in("id", uniqueGroupIds);
-  if (groupError || (groups ?? []).length !== uniqueGroupIds.length) {
-    throw new Error(groupError?.message || "En eller flere grupper finnes ikke.");
-  }
-  const { error } = await dataApi.from("app_group_members").upsert(
-    uniqueGroupIds.map((groupId) => ({
-      group_id: groupId,
-      principal_id: input.principalId,
-      added_by: input.addedBy,
-    })),
-    { onConflict: "group_id,principal_id" },
-  );
   if (error) throw new Error(error.message);
 }
 

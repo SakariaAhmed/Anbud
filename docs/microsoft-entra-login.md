@@ -54,3 +54,33 @@ This integration intentionally accepts only the standard `<tenant-subdomain>.cia
 - Verify one successful login, one cancelled login, an expired callback, and
   (in development only) the explicitly enabled local password login.
 - Confirm the login only creates the expected application identity and session records.
+
+## Login failure handling and administrator access
+
+Microsoft sign-in resolves an application principal and creates an opaque
+session. It does not assign the global administrator role. The configured
+`APP_ADMIN_PRINCIPAL_ID` identifies the singleton administrator;
+`APP_ADMIN_EMAILS` is retired and must not be passed to running revisions.
+For a Microsoft-backed administrator, set this ID to the verified existing
+Entra application principal and use the explicit administrator-assignment RPC.
+The password fallback must reference the same principal, including in GitHub
+production variables, so it cannot move the singleton role to another identity.
+
+A member following a saved `/admin` login destination is sent to the project
+workspace after authentication. Administrator authorization is still enforced;
+this redirect does not grant administration access. Unexpected database failures
+on the administrator page propagate to error handling instead of becoming 404s.
+
+Failure redirects distinguish token verification (`microsoft_callback_failed`),
+application identity/session persistence (`microsoft_session_failed`), and denied
+identities (`microsoft_access_denied`). Unexpected failures include a UUID
+`authRef`, also recorded in a `microsoft_auth_failed` server log with the stage
+and safe error code. Never log token responses, codes, cookies, credentials, or
+raw identity payloads. A failed discovery request is evicted from the shared
+cache so later logins can retry; discovery is bounded to ten seconds.
+
+Apply `database/migrations/20260905011500_preserve_disabled_principals_on_login.sql`
+through the database migration process. Login must not reactivate a disabled
+principal, including when it is found by email or alias. The regression runs
+against an isolated disposable database when
+`PRIMARY_DOCUMENT_SQL_TEST_DATABASE_URL` is set.

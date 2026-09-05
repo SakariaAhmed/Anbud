@@ -6,6 +6,10 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   microsoft_cancelled: "Microsoft-innloggingen ble avbrutt.",
   microsoft_callback_failed:
     "Vi kunne ikke bekrefte Microsoft-kontoen. Prøv på nytt.",
+  microsoft_session_failed:
+    "Microsoft-kontoen ble bekreftet, men vi kunne ikke opprette en innlogget økt. Prøv igjen om litt, eller kontakt administrator.",
+  microsoft_access_denied:
+    "Kontoen har ikke tilgang til å logge inn. Kontakt administrator.",
   microsoft_callback_invalid:
     "Innloggingsforsøket er utløpt eller ugyldig. Start på nytt.",
   microsoft_not_configured:
@@ -18,12 +22,16 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ authError?: string; next?: string }>;
+  searchParams: Promise<{ authError?: string; authRef?: string; next?: string }>;
 }) {
-  const { authError, next } = await searchParams;
+  const { authError, authRef, next } = await searchParams;
+  const message = authError ? AUTH_ERROR_MESSAGES[authError] : undefined;
+  const reference = authRef && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(authRef)
+    ? authRef
+    : undefined;
   return (
     <LoginForm
-      initialError={authError ? AUTH_ERROR_MESSAGES[authError] : undefined}
+      initialError={message && reference ? `${message} Referanse: ${reference}` : message}
       microsoftEnabled={isMicrosoftAuthConfigured()}
       adminPasswordEnabled={isAdminPasswordAuthConfigured()}
       nextPath={next ?? "/"}

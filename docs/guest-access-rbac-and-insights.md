@@ -70,15 +70,17 @@ Configure:
 APP_GUEST_CODE_PEPPER=
 APP_IDENTITY_LOOKUP_SECRET=
 APP_ACTIVITY_HASH_SECRET=
-APP_ADMIN_EMAILS=admin@example.no
 APP_ADMIN_ACCESS_PASSWORD_HASH=scrypt\$... # Escape dollar signs in dotenv files.
 APP_ADMIN_PRINCIPAL_ID=u_admin_<stable-random-identifier>
 APP_ADMIN_DISPLAY_NAME=Administrator
 ```
 
-`APP_ADMIN_EMAILS` is comma-separated. A matching administrator role is
-synchronized when the internal user next signs in with Microsoft. Roles can
-also be changed in **Styring og innsikt**.
+`APP_ADMIN_PRINCIPAL_ID` identifies the single global administrator. It can be
+the verified existing Microsoft principal, with the password fallback pointing
+to that same identity.
+Microsoft sign-in creates or resolves an identity and preserves its existing
+project access; it never grants global administrator rights. The retired
+`APP_ADMIN_EMAILS` setting must be removed from running revisions.
 
 Keep the HMAC secrets stable. Rotating `APP_GUEST_CODE_PEPPER` invalidates all
 guest codes; rotating `APP_IDENTITY_LOOKUP_SECRET` prevents matching a new
@@ -87,7 +89,7 @@ invitation to an existing email identity.
 For GitHub-based production deployments, store the three HMAC values as
 repository or environment secrets with the same names. The deployment workflow
 requires them so production cannot silently fall back to the session-signing
-secret. Configure `APP_ADMIN_EMAILS`, `AZURE_COMMUNICATION_EMAIL_ENDPOINT`, and
+secret. Configure `AZURE_COMMUNICATION_EMAIL_ENDPOINT` and
 `AZURE_COMMUNICATION_EMAIL_SENDER` as deployment variables when those optional
 features are enabled.
 
@@ -139,14 +141,13 @@ For internal administrator identification:
    `preferred_username` or `email` value for the internal users. The callback
    also falls back to the MSAL account username.
 3. Keep authorization tied to the stable Entra account subject; email is used
-   only to match bootstrap roles and audit identity.
+   to match invitations and audit identity, never to grant global roles.
 4. Enforce MFA and an appropriate Conditional Access policy for accounts that
    receive `admin`.
 
 If the tenant cannot reliably emit an email-like claim, the user can still log
-in, but `APP_ADMIN_EMAILS` cannot match automatically.
-In that case, bootstrap one role directly in `app_principal_roles`, then use
-the admin UI for subsequent role assignment.
+in using the stable Entra subject, but email-based invitation matching is not
+available. Use the dedicated administrator login for global administration.
 
 ## Operational checks
 

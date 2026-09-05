@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import {
   ConfidentialClientApplication,
   CryptoProvider,
@@ -110,7 +112,10 @@ async function getAuthorityMetadata(url: string) {
   if (!authorityMetadataCache || authorityMetadataCache.url !== url) {
     authorityMetadataCache = {
       url,
-      promise: fetch(url, { cache: "force-cache" }).then(async (response) => {
+      promise: fetch(url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      }).then(async (response) => {
         if (!response.ok) {
           throw new Error("Could not resolve Microsoft Entra authority metadata.");
         }
@@ -119,7 +124,35 @@ async function getAuthorityMetadata(url: string) {
     };
   }
 
-  return authorityMetadataCache.promise;
+  const pending = authorityMetadataCache;
+  try {
+    return await pending.promise;
+  } catch (error) {
+    // A transient discovery failure must not poison every later login on this replica.
+    if (authorityMetadataCache === pending) authorityMetadataCache = undefined;
+    throw error;
+  }
+}
+
+export function reportMicrosoftAuthFailure(
+  stage: "start" | "token" | "identity" | "session" | "activity",
+  error: unknown,
+) {
+  const reference = randomUUID();
+  const code = error && typeof error === "object" && "errorCode" in error
+    ? error.errorCode
+    : error && typeof error === "object" && "code" in error
+      ? error.code
+      : undefined;
+  console.error(JSON.stringify({
+    event: "microsoft_auth_failed",
+    stage,
+    reference,
+    errorCode: typeof code === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(code)
+      ? code
+      : "internal_error",
+  }));
+  return reference;
 }
 
 export async function createMicrosoftAuthClient() {

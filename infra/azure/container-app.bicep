@@ -81,9 +81,6 @@ param appIdentityLookupSecret string = ''
 @description('Dedicated HMAC secret used for privacy-preserving request context logging.')
 param appActivityHashSecret string = ''
 
-@description('Comma-separated internal emails bootstrapped with the administrator role.')
-param appAdminEmails string = ''
-
 @description('Optional Azure Communication Services endpoint used with the Container App managed identity.')
 param azureCommunicationEmailEndpoint string = ''
 
@@ -467,11 +464,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'DATA_API_SERVICE_ROLE_KEY'
               secretRef: 'data-api-service-role-key'
-            }
-          ] : [], !empty(appAdminEmails) ? [
-            {
-              name: 'APP_ADMIN_EMAILS'
-              value: appAdminEmails
             }
           ] : [], !empty(azureCommunicationEmailEndpoint) && !empty(azureCommunicationEmailSender) ? [
             {

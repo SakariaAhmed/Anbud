@@ -54,7 +54,6 @@ az deployment group create \
     appGuestCodePepper="$APP_GUEST_CODE_PEPPER" \
     appIdentityLookupSecret="$APP_IDENTITY_LOOKUP_SECRET" \
     appActivityHashSecret="$APP_ACTIVITY_HASH_SECRET" \
-    appAdminEmails="$APP_ADMIN_EMAILS" \
     adminPrincipalId="$APP_ADMIN_PRINCIPAL_ID" \
     openAiApiKey="$OPENAI_API_KEY" \
     projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"

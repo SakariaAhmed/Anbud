@@ -12,13 +12,15 @@ import {
   isMicrosoftAuthConfigured,
   microsoftCallbackUrl,
   publicAppOrigin,
+  reportMicrosoftAuthFailure,
 } from "@/lib/server/microsoft-auth";
 import { checkRateLimit } from "@/lib/server/observability";
 
-function loginErrorRedirect(request: Request, code: string, nextPath: string) {
+function loginErrorRedirect(request: Request, code: string, nextPath: string, reference?: string) {
   const url = new URL("/login", publicAppOrigin(request));
   url.searchParams.set("authError", code);
   url.searchParams.set("next", nextPath);
+  if (reference) url.searchParams.set("authRef", reference);
   return NextResponse.redirect(url, 302);
 }
 
@@ -75,7 +77,7 @@ export async function GET(request: NextRequest) {
     response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (error) {
-    console.error("Could not initiate Microsoft authentication.", error);
-    return loginErrorRedirect(request, "microsoft_start_failed", nextPath);
+    const reference = reportMicrosoftAuthFailure("start", error);
+    return loginErrorRedirect(request, "microsoft_start_failed", nextPath, reference);
   }
 }

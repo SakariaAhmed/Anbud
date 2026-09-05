@@ -253,7 +253,6 @@ jobs:
           APP_ACTIVITY_HASH_SECRET: ${{ secrets.APP_ACTIVITY_HASH_SECRET }}
           APP_ADMIN_PRINCIPAL_ID: ${{ vars.APP_ADMIN_PRINCIPAL_ID }}
           APP_ADMIN_DISPLAY_NAME: ${{ vars.APP_ADMIN_DISPLAY_NAME || 'Administrator' }}
-          APP_ADMIN_EMAILS: ${{ vars.APP_ADMIN_EMAILS }}
           AZURE_COMMUNICATION_EMAIL_ENDPOINT: ${{ vars.AZURE_COMMUNICATION_EMAIL_ENDPOINT }}
           AZURE_COMMUNICATION_EMAIL_SENDER: ${{ vars.AZURE_COMMUNICATION_EMAIL_SENDER }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -295,7 +294,6 @@ jobs:
             appActivityHashSecret="$APP_ACTIVITY_HASH_SECRET"
             adminPrincipalId="$APP_ADMIN_PRINCIPAL_ID"
             adminDisplayName="$APP_ADMIN_DISPLAY_NAME"
-            appAdminEmails="$APP_ADMIN_EMAILS"
             azureCommunicationEmailEndpoint="$AZURE_COMMUNICATION_EMAIL_ENDPOINT"
             azureCommunicationEmailSender="$AZURE_COMMUNICATION_EMAIL_SENDER"
             openAiApiKey="$OPENAI_API_KEY"

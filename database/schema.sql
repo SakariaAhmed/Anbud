@@ -5877,6 +5877,9 @@ begin
   for update of principal;
 
   if found then
+    if v_principal.disabled_at is not null then
+      raise exception using errcode = '42501', message = 'Principal is disabled';
+    end if;
     v_was_guest := v_principal.identity_type = 'guest';
     update public.app_principals principal
     set
@@ -5885,7 +5888,6 @@ begin
       email_hmac = coalesce(p_email_hmac, principal.email_hmac),
       email_encrypted = coalesce(p_email_encrypted, principal.email_encrypted),
       email_masked = coalesce(p_email_masked, principal.email_masked),
-      disabled_at = null,
       last_login_at = now(),
       updated_at = now()
     where principal.id = v_principal.id

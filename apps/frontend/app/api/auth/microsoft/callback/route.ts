@@ -18,6 +18,7 @@ import {
   microsoftCallbackUrl,
   parseMicrosoftFlowState,
   publicAppOrigin,
+  reportMicrosoftAuthFailure,
 } from "@/lib/server/microsoft-auth";
 
 function clearMicrosoftFlowCookies(response: NextResponse) {
@@ -38,10 +39,11 @@ function clearMicrosoftFlowCookies(response: NextResponse) {
   }
 }
 
-function redirectToLogin(request: Request, code: string, nextPath = "/") {
+function redirectToLogin(request: Request, code: string, nextPath = "/", reference?: string) {
   const url = new URL("/login", publicAppOrigin(request));
   url.searchParams.set("authError", code);
   url.searchParams.set("next", safeRedirectPath(nextPath));
+  if (reference) url.searchParams.set("authRef", reference);
   const response = NextResponse.redirect(url, 302);
   clearMicrosoftFlowCookies(response);
   response.headers.set("Cache-Control", "no-store");
@@ -84,6 +86,7 @@ export async function GET(request: NextRequest) {
     return redirectToLogin(request, "microsoft_callback_invalid", nextPath);
   }
 
+  let stage: "token" | "identity" | "session" | "activity" = "token";
   try {
     const microsoft = await createMicrosoftAuthClient();
     const result = await microsoft.acquireTokenByCode(
@@ -113,6 +116,7 @@ export async function GET(request: NextRequest) {
       (value): value is string =>
         typeof value === "string" && value.includes("@"),
     );
+    stage = "identity";
     const principal = await upsertInternalPrincipal({
       candidateId: await deriveOwnerId(
         result.account.localAccountId || result.account.homeAccountId,
@@ -120,10 +124,12 @@ export async function GET(request: NextRequest) {
       displayName: result.account.name || "Bidsite-bruker",
       email: emailCandidate ?? null,
     });
+    stage = "session";
     const session = await createAppSession({
       principalId: principal.id,
       authMethod: "entra",
     });
+    stage = "activity";
     await recordActivity({
       principal: {
         id: principal.id,
@@ -150,7 +156,15 @@ export async function GET(request: NextRequest) {
     response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (error) {
-    console.error("Could not complete Microsoft authentication.", error);
-    return redirectToLogin(request, "microsoft_callback_failed", nextPath);
+    const reference = reportMicrosoftAuthFailure(stage, error);
+    const accessDenied = stage === "identity" && error instanceof Error &&
+      "code" in error && error.code === "42501";
+    return redirectToLogin(
+      request,
+      accessDenied ? "microsoft_access_denied" :
+        stage === "token" ? "microsoft_callback_failed" : "microsoft_session_failed",
+      nextPath,
+      reference,
+    );
   }
 }
