@@ -10,17 +10,17 @@ F1–F10 i den opprinnelige rapporten er rettet. Alle tester er kjørt med synte
 | F4: utkast forsvant ved lagringsfeil | Lagringsresultatet returneres eksplisitt til redigeringskomponenten. Utkastet og redigeringsgrunnlaget beholdes ved feil; brukeren kan eksplisitt velge siste analyse som grunnlag. Hele flyten ble bekreftet i nettleser. |
 | F5: dokument ble klart før indeks | Dokumentet forblir processing med tom indexed_at under indeksering. Egen RPC publiserer readiness etter indeks med kontroll av dokumentrevisjon og jobblease. Feil, sletting og lease-overtakelse testes. |
 | F6: ufullstendig forbedringsjobb | Lagret løsningsutkast rapporteres med evaluation_pending når revurdering gjenstår. Nytt forsøk gjenbruker nøyaktig samme artefakt. Jobbstatus og «Fortsett revurdering» er tilgjengelig etter gjenåpning. |
-| F7: lagret resultat ble feilrapportert | Prosjektsnapshot etter commit er best effort. Jobbens resultatpeker lagres i samme transaksjon som resultatet og brukes ved gjenopptakelse/avbrudd. Nyere redigering gjenbrukes aldri som resultatet til den gamle jobben. |
+| F7: lagret resultat ble feilrapportert | Prosjektsnapshot etter commit er best effort. Jobbens resultatpeker lagres i samme transaksjon som resultatet og brukes ved gjenopptakelse/avbrudd. Hvis resultatet siden er erstattet, avvises den gamle jobben som superseded; den starter ikke ny generering og overskriver dermed ikke manuell tekst. |
 | F8: samtidige handlinger og arbeidere | Lokal handlingslås, felles busy-status og databasebasert kø-/claim-kontroll per prosjekt. Like forespørsler samles. To samtidige databasesesjoner bekrefter maksimalt én kjørende jobb per prosjekt. |
 | F9: forutsetninger ble kontrollert for sent | Manglende analyse/vurdering og pågående dokumentbehandling avvises før genereringsjobben legges i kø. Kjente domenefeil vises med faste, forståelige norske meldinger; ukjente feil skjules fortsatt. |
-| F10: nettverksfeil og gamle snapshots | Polling tåler midlertidige transportfeil, SSE faller tilbake til polling, og UI fabrikerer ikke dokumentfeil ved brutt forbindelse. Nye serveroppslag og monoton snapshot_revision beskytter mot eldre svar, også når dokumentrevisjonen er uendret. |
+| F10: nettverksfeil og gamle snapshots | Polling tåler midlertidige transportfeil, SSE faller tilbake til polling, og UI fabrikerer ikke dokumentfeil ved brutt forbindelse. Nye serveroppslag og monoton snapshot_revision beskytter mot eldre svar, også når dokumentrevisjonen er uendret. Analyse, vurdering og oppsummering hentes samlet fra gjeldende prosjekt etter lagring; eldre jobbinnhold blandes ikke med et nyere snapshot. |
 
 ## Verifikasjon
 
 - 846 eksisterende tester bestått, ingen skips.
-- 41 regresjons-/etterkontrolltester bestått, ingen skips.
+- 43 regresjons-/etterkontrolltester bestått, ingen skips.
 - 37 utrullings-/databasekontrakter bestått.
-- Totalt 924 tester bestått.
+- Totalt 926 tester bestått.
 - TypeScript, ESLint og produksjonsbygg bestått.
 - Migreringen ble kjørt to ganger mot forrige skjema med eksisterende testanalyse; innholdet ble bevart.
 - Ny gjennomgang rettet statusrekkefølge ved uendret kildegrunnlag, manglende artefakt i gjenopprettet revurderingsresultat, arkivets standardprivilegier og like React-nøkler.

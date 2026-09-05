@@ -464,7 +464,7 @@ test('REVIEW CHECKPOINT: analysis commit can be recovered after a failed respons
   assert.equal(recovered.analysis.executive_summary,'Committed before disconnection');
   assert.equal(recovered.project,null);
   await save('Newer manual edit');
-  assert.equal(await recovery()(P,J),null);
+  await assert.rejects(recovery()(P,J),/PROJECT_JOB_SUPERSEDED/);
 });
 
 test('REVIEW CHECKPOINT: perfect-solution artifact commits a checkpoint and retry uses the same artifact', async () => {
@@ -521,4 +521,40 @@ test('REVIEW CONCURRENCY: two independent database sessions cannot run jobs in t
   const results=await Promise.all([claim(first.id),claim(second.id)]);
   assert.deepEqual(results.sort(),['f','t']);
   assert.equal(sql(`select count(*) from project_jobs where project_id=${quote(P)} and status='running'`),'1');
+});
+
+test('REGRESSION UI8: completed job body cannot overwrite a newer edit paired with its snapshot', async () => {
+  const newer = { id: P, snapshot_revision: 12, customer_analysis: { executive_summary: 'Newer manual edit' }, generated_artifacts: [] };
+  let state = { ...newer, generated_artifacts: [{ id: 'loaded-artifact' }] };
+  let reads = 0;
+  const { refreshProjectAfterMutation } = actual('components/projects/project-workspace-page.tsx', ['refreshProjectAfterMutation'], {
+    project: { id: P }, fetchProjectState: async () => { reads++; return newer; },
+    setProject: update => state = update(state), normalizeProjectState: value => value,
+    isProjectSnapshotOlder: (current, fresh) => fresh.snapshot_revision < current.snapshot_revision,
+    window: { dispatchEvent: noop }, Event,
+  });
+  const { onGenerateCustomerAnalysis } = actual('components/projects/project-workspace-page.tsx', ['onGenerateCustomerAnalysis'], {
+    runAction: async (_, action) => action(), startWorkspaceJob: async () => ({ id: 'finished', message: '' }),
+    setBusyMessage: noop, setAnalysisLoaded: noop, refreshProjectAfterMutation,
+    waitForProjectJob: async () => ({ result: { analysis: { executive_summary: 'Old generated text' }, project: newer } }),
+  });
+  await onGenerateCustomerAnalysis();
+  assert.equal(reads, 1);
+  assert.equal(state.customer_analysis.executive_summary, 'Newer manual edit');
+  assert.deepEqual(state.generated_artifacts, [{ id: 'loaded-artifact' }]);
+});
+
+test('REGRESSION UI9: post-save refresh failure does not report committed edit as a failed save', async () => {
+  let retryRequested = false;
+  const { refreshProjectAfterMutation } = actual('components/projects/project-workspace-page.tsx', ['refreshProjectAfterMutation'], {
+    project: { id: P }, fetchProjectState: async () => { throw new Error('Injected offline read'); },
+    window: { dispatchEvent: () => retryRequested = true }, Event,
+  });
+  const { onSaveAnalysis } = actual('components/projects/project-workspace-page.tsx', ['onSaveAnalysis'], {
+    project: { id: P }, runAction: async (_, action) => { await action(); return true; },
+    saveCustomerAnalysisSection: async () => ({ analysis: {}, project: null }),
+    refreshProjectAfterMutation, setAnalysisLoaded: noop, setNotice: noop,
+  });
+  assert.equal(await onSaveAnalysis('strategy', {}, 'revision'), true);
+  assert.equal(retryRequested, true);
 });

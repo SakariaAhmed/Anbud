@@ -1447,6 +1447,23 @@ export function ProjectWorkspacePage({
     });
   }
 
+  async function refreshProjectAfterMutation() {
+    try {
+      const fresh = await fetchProjectState(project.id);
+      setProject((current) =>
+        isProjectSnapshotOlder(current, fresh)
+          ? current
+          : normalizeProjectState(
+              { ...current, ...fresh, generated_artifacts: current.generated_artifacts },
+              { preserveArtifactCount: true },
+            ),
+      );
+    } catch {
+      // The mutation already committed; background refresh will retry the read.
+    }
+    window.dispatchEvent(new Event("project-workflow-updated"));
+  }
+
   async function onGenerateCustomerAnalysis() {
     await runAction(
       "analysis",
@@ -1456,26 +1473,12 @@ export function ProjectWorkspacePage({
           "Kunne ikke starte kundeanalysen.",
         );
         setBusyMessage(job.message);
-        const completedJob = await waitForProjectJob(
+        await waitForProjectJob(
           job.id,
           "Kundeanalysen feilet.",
           job,
         );
-        const result = completedJob.result as {
-          analysis: CustomerAnalysisResult;
-          project: ProjectSnapshotPayload;
-        };
-        setProject((current) =>
-          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
-            applyProjectSnapshot(
-              { ...current, customer_analysis: result.analysis },
-              result.project,
-            ),
-            {
-              preserveArtifactCount: true,
-            },
-          ),
-        );
+        await refreshProjectAfterMutation();
         setAnalysisLoaded(true);
       },
       ["Starter kundeanalysen ..."],
@@ -1488,23 +1491,13 @@ export function ProjectWorkspacePage({
     revision?: string,
   ) {
     return runAction("save-analysis", async () => {
-      const payload = await saveCustomerAnalysisSection({
+      await saveCustomerAnalysisSection({
         projectId: project.id,
         section,
         snapshot,
         revision,
       });
-      setProject((current) =>
-        isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
-          applyProjectSnapshot(
-            { ...current, customer_analysis: payload.analysis },
-            payload.project,
-          ),
-          {
-            preserveArtifactCount: true,
-          },
-        ),
-      );
+      await refreshProjectAfterMutation();
       setAnalysisLoaded(true);
       setNotice("Analysen er oppdatert og lagret i prosjektet.");
     });
@@ -1531,15 +1524,12 @@ export function ProjectWorkspacePage({
         const result = completedJob.result as {
           artifact: GeneratedArtifact;
           project: ProjectSnapshotPayload;
-          evaluation?: SolutionEvaluationResult;
         };
         setProject((current) =>
           isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
               {
                 ...current,
-                solution_evaluation:
-                  result.evaluation ?? current.solution_evaluation,
                 generated_artifacts: prependGeneratedArtifact(
                   current.generated_artifacts,
                   result.artifact,
@@ -1744,31 +1734,12 @@ export function ProjectWorkspacePage({
           "Kunne ikke starte løsningsvurderingen.",
         );
         setBusyMessage(job.message);
-        const completedJob = await waitForProjectJob(
+        await waitForProjectJob(
           job.id,
           "Løsningsvurderingen feilet.",
           job,
         );
-        const result = completedJob.result as {
-          evaluation: SolutionEvaluationResult;
-          project: ProjectSnapshotPayload;
-        };
-        setProject((current) =>
-          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
-            applyProjectSnapshot(
-              {
-                ...current,
-                solution_evaluation: result.evaluation,
-                executive_summary: null,
-                has_executive_summary: false,
-              },
-              result.project,
-            ),
-            {
-              preserveArtifactCount: true,
-            },
-          ),
-        );
+        await refreshProjectAfterMutation();
         setEvaluationLoadError("");
         setEvaluationLoaded(true);
         setExecutiveSummaryLoaded(true);
@@ -1787,29 +1758,12 @@ export function ProjectWorkspacePage({
           "Kunne ikke starte lederoppsummeringen.",
         );
         setBusyMessage(job.message);
-        const completedJob = await waitForProjectJob(
+        await waitForProjectJob(
           job.id,
           "Lederoppsummeringen feilet.",
           job,
         );
-        const result = completedJob.result as {
-          executive_summary: ExecutiveSummaryResult;
-          project: ProjectSnapshotPayload;
-        };
-        setProject((current) =>
-          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
-            applyProjectSnapshot(
-              {
-                ...current,
-                executive_summary: result.executive_summary,
-              },
-              result.project,
-            ),
-            {
-              preserveArtifactCount: true,
-            },
-          ),
-        );
+        await refreshProjectAfterMutation();
         setExecutiveSummaryLoaded(true);
         setNotice("Lederoppsummeringen er generert og lagret separat.");
       },
