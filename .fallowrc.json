@@ -99,7 +99,6 @@
     {
       "file": "apps/frontend/lib/server/ai.ts",
       "exports": [
-        "ArtifactKnowledgeItem",
         "answerFromBatchRows",
         "applyVerifiedDeterministicControlRepairs",
         "assertSubstantiveSolutionEvaluationResult",
@@ -153,7 +152,6 @@
         "reuseExactDuplicateRequirementAnswers",
         "selectDistributedGoodCoverageExamples",
         "selectDistributedNonGoodCoverageDetails",
-        "selectDocumentStructureEntries",
         "selectEvidenceGroundedDocumentFindings",
         "selectRequirementDocumentsForGeneration",
         "selectRequirementsForSolutionCoverage",
@@ -164,6 +162,10 @@
         "validateRequirementCoverageBatchRows",
         "validateRequirementResponseBatchRows"
       ]
+    },
+    {
+      "file": "apps/frontend/lib/server/ai/context.ts",
+      "exports": ["selectDocumentStructureEntries"]
     },
     {
       "file": "apps/frontend/lib/server/ai/json-completion.ts",

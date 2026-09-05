@@ -2,6 +2,8 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { discoverTestGroups } from "../apps/frontend/scripts/run_tests.mjs";
 
 const ci = readFileSync(".github/workflows/ci.yml", "utf8");
 const deploy = readFileSync(".github/workflows/deploy-azure.yml", "utf8");
@@ -28,7 +30,6 @@ for (const required of [
   "npm run lint",
   "npm run build",
   "validate_project_jobs_schema",
-  "azure_containerapp_rollout.test",
   "PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL",
   "pgvector/pgvector:pg17@sha256:",
   "az bicep build",
@@ -36,6 +37,20 @@ for (const required of [
 ]) {
   assert.ok(ci.includes(required), `PR CI is missing: ${required}`);
 }
+
+const frontendPackage = JSON.parse(readFileSync("apps/frontend/package.json", "utf8"));
+assert.equal(frontendPackage.scripts.test, "node scripts/run_tests.mjs");
+const discovered = discoverTestGroups();
+for (const file of [
+  "validate_project_jobs_schema.test.mjs",
+  "azure_containerapp_rollout.test.mjs",
+  "async_worker_boundaries.test.mjs",
+  "azure_migration_guardrails.test.mjs",
+]) {
+  assert.ok(discovered.repository.includes(path.resolve("scripts", file)), `CI test discovery omits ${file}`);
+}
+assert.ok(!discovered.frontend.some(file => file.includes("/audit-20260905/")), "Audit tests require their dedicated database runner.");
+assert.ok(ci.includes("node lib/server/audit-20260905/run.mjs"), "CI must retain the workflow regressions and additive upgrade test.");
 
 assert.match(deploy, /workflow_dispatch:/u, "Production deploy must be manual.");
 assert.match(

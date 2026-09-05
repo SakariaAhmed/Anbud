@@ -71,11 +71,6 @@ jobs:
       - name: Repository contracts
         working-directory: .
         run: |
-          node --test \
-            scripts/validate_project_jobs_schema.test.mjs \
-            scripts/azure_containerapp_rollout.test.mjs \
-            scripts/async_worker_boundaries.test.mjs \
-            scripts/azure_migration_guardrails.test.mjs
           node scripts/validate_project_jobs_schema.mjs
           node scripts/verify_workflow_boundaries.mjs
           node scripts/validate_release_workflows.mjs

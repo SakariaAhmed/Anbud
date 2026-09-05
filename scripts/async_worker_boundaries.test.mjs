@@ -47,7 +47,6 @@ const workerScript = read(
   "apps/frontend/scripts/run_project_job_worker.mjs",
 );
 const bicep = read("infra/azure/container-app.bicep");
-const ciWorkflow = read(".github/workflows/ci.yml");
 const deployWorkflow = read(".github/workflows/deploy-azure.yml");
 
 test("direct solution-evaluation POST preserves sync compatibility with explicit async opt-in", () => {
@@ -302,14 +301,6 @@ test("one worker invocation has a 30-minute job plus startup allowance", () => {
   assert.match(
     deployWorkflow,
     /projectJobWorkerReplicaTimeout="\$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"/u,
-  );
-});
-
-test("CI executes the async worker boundary test once before deployment", () => {
-  assert.match(ciWorkflow, /scripts\/async_worker_boundaries\.test\.mjs/u);
-  assert.doesNotMatch(
-    deployWorkflow,
-    /scripts\/async_worker_boundaries\.test\.mjs/u,
   );
 });
 
