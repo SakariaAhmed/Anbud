@@ -59,7 +59,6 @@ const {
   reuseExactDuplicateRequirementAnswers,
   resolveRequirementAnswerAfterStrictHandoff,
   resolveRequirementAnswerBeforeStrictHandoff,
-  selectDocumentStructureEntries,
   selectDistributedGoodCoverageExamples,
   selectDistributedNonGoodCoverageDetails,
   selectRequirementsForSolutionCoverage,
@@ -70,6 +69,7 @@ const {
   validateRequirementCoverageBatchRows,
   validateRequirementResponseBatchRows,
 } = jiti(path.join(frontendRoot, "lib/server/ai.ts"));
+const { selectDocumentStructureEntries } = jiti(path.join(frontendRoot, "lib/server/ai/context.ts"));
 const { analyzeRequirementCoverageIntegrity } = jiti(
   path.join(
     frontendRoot,

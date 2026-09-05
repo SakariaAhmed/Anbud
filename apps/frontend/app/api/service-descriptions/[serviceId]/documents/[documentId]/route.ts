@@ -5,7 +5,7 @@ import {
   authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
-import { deleteServiceDocument } from "@/lib/server/repositories/services";
+import { deleteServiceDocument } from "@/lib/server/repositories/data-store";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export async function DELETE(

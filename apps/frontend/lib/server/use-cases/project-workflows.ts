@@ -16,14 +16,10 @@ import {
   hasReadableRequirementDocumentContent,
   isHistoricalSolutionDocument,
 } from "@/lib/document-processing";
-import {
-  analyzeCustomerDocuments,
-  evaluateSolutionDocument,
-  extractRequirementLedgerForDocument,
-  generateExecutiveSummary,
-  generateHighLevelDesign,
-  inferProjectMetadataFromCustomerDocument,
-} from "@/lib/server/ai";
+import { analyzeCustomerDocuments, evaluateSolutionDocument, generateHighLevelDesign } from "@/lib/server/ai";
+import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/extraction";
+import { generateExecutiveSummary } from "@/lib/server/ai/executive-summary";
+import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai/document-analysis";
 import {
   canUseDoclingForFormat,
   extractTextFromBuffer,
@@ -51,22 +47,9 @@ import {
   saveSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
 import { assertExecutiveSummaryEvaluationReady } from "@/lib/server/executive-summary-readiness";
-import {
-  getDocumentDetail,
-  listProjectDocumentsForAnalysis,
-  saveDocumentIngestionResult,
-  publishDocumentReadiness,
-  updateDocumentProcessingState,
-} from "@/lib/server/repositories/documents";
-import {
-  getProjectDetail,
-  getProjectSnapshotAfterCommit,
-  getProjectSourceRevision,
-  updateProjectMetadataFromInference,
-} from "@/lib/server/repositories/projects";
-import {
-  listProjectServiceDescriptions,
-} from "@/lib/server/repositories/services";
+import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState } from "@/lib/server/repositories/data-store";
+import { getProjectDetail, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
+import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
   GeneratedArtifactType,

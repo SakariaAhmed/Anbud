@@ -5,11 +5,7 @@ import {
   authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
-import {
-  deleteServiceDescription,
-  getServiceDescriptionMetadata,
-  upsertServiceDescription,
-} from "@/lib/server/repositories/services";
+import { deleteServiceDescription, getServiceDescriptionMetadata, upsertServiceDescription } from "@/lib/server/repositories/data-store";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export async function PATCH(

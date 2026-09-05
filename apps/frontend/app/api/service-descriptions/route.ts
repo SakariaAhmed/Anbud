@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 
-import { summarizeServiceDocumentForAi } from "@/lib/server/ai";
+import { summarizeServiceDocumentForAi } from "@/lib/server/ai/document-analysis";
 import { enforceServiceDescriptionWriteRateLimit } from "@/lib/server/api-responses";
 import {
   authorizationErrorResponse,
@@ -11,13 +11,7 @@ import {
   MultipartRequestError,
   parseBoundedMultipartFormData,
 } from "@/lib/server/multipart";
-import {
-  getServiceDescriptionMetadata,
-  listServiceDescriptions,
-  saveServiceDocument,
-  updateServiceDocumentAiSummary,
-  upsertServiceDescription,
-} from "@/lib/server/repositories/services";
+import { getServiceDescriptionMetadata, listServiceDescriptions, saveServiceDocument, updateServiceDocumentAiSummary, upsertServiceDescription } from "@/lib/server/repositories/data-store";
 import type { ServiceDocument } from "@/lib/types";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 

@@ -7,7 +7,7 @@ import {
   updateGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
 import { normalizeArtifactInstructions } from "@/lib/server/artifact-generation-input";
-import { getProjectSnapshot } from "@/lib/server/repositories/projects";
+import { getProjectSnapshot } from "@/lib/server/repositories/data-store";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
 import { queueArtifactGenerationJob } from "@/lib/server/project-jobs";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";

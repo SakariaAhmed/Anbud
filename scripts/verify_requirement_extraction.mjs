@@ -39,7 +39,7 @@ const {
   inferUploadFileFormat,
 } = jiti(path.join(frontendRoot, "lib", "server", "documents.ts"));
 const { extractRequirementLedgerForDocument } = jiti(
-  path.join(frontendRoot, "lib", "server", "ai.ts"),
+  path.join(frontendRoot, "lib", "server", "requirements", "extraction.ts"),
 );
 
 // Verification-only oracle. These counts are never imported by app code or sent to model prompts.

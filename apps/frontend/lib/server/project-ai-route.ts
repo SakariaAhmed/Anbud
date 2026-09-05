@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 
-import { resolveOpenAIModelOverride } from "@/lib/server/ai";
+import { resolveOpenAIModelOverride } from "@/lib/server/ai/model-config";
 import { enforceProjectRouteRateLimit } from "@/lib/server/api-responses";
 
 type ProjectRouteContext = { params: Promise<{ id: string }> };

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { deleteProject, getProjectDetail } from "@/lib/server/repositories/projects";
+import { deleteProject, getProjectDetail } from "@/lib/server/repositories/data-store";
 import {
   authorizationErrorResponse,
   requireProjectPermission,

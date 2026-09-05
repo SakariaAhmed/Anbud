@@ -492,7 +492,7 @@ const {
   ),
 );
 const { extractRequirementLedgerForDocument } = jiti(
-  path.join(frontendRoot, "lib", "server", "ai.ts"),
+  path.join(frontendRoot, "lib", "server", "requirements", "extraction.ts"),
 );
 
 let client = null;

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createProject, listProjects } from "@/lib/server/repositories/projects";
+import { createProject, listProjects } from "@/lib/server/repositories/data-store";
 import {
   authorizationErrorResponse,
   requireRequestPrincipal,

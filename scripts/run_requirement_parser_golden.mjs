@@ -54,7 +54,12 @@ const {
 const {
   extractRequirementLedgerForDocument,
 } = jiti(
-  fileURLToPath(new URL("../apps/frontend/lib/server/ai.ts", import.meta.url)),
+  fileURLToPath(
+    new URL(
+      "../apps/frontend/lib/server/requirements/extraction.ts",
+      import.meta.url,
+    ),
+  ),
 );
 const {
   requirementDisplayRef,

@@ -2,7 +2,7 @@ import "server-only";
 import { createServiceClient } from "@/lib/server/data-api";
 import { decryptJson } from "@/lib/server/crypto";
 import { listGeneratedArtifactsFresh } from "@/lib/server/repositories/artifacts";
-import { getProjectSnapshotAfterCommit } from "@/lib/server/repositories/projects";
+import { getProjectSnapshotAfterCommit } from "@/lib/server/repositories/data-store";
 import type { GeneratedArtifact, ProjectJobResult } from "@/lib/types";
 
 export async function findWorkflowArtifact(projectId: string, jobId?: string, artifactId?: string): Promise<GeneratedArtifact | null> {

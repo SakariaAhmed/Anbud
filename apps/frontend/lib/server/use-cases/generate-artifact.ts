@@ -36,18 +36,9 @@ import {
   listArtifactKnowledgeCandidatesFresh,
   saveGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
-import {
-  getDocumentDetail,
-  listProjectDocumentsForAnalysis,
-} from "@/lib/server/repositories/documents";
-import {
-  getProjectSnapshot,
-  getProjectSnapshotAfterCommit,
-} from "@/lib/server/repositories/projects";
-import {
-  listServiceDocumentDetailsForProject,
-  listServiceDocumentSummariesForProject,
-} from "@/lib/server/repositories/services";
+import { getDocumentDetail, listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
+import { getProjectSnapshot, getProjectSnapshotAfterCommit } from "@/lib/server/repositories/data-store";
+import { listServiceDocumentDetailsForProject, listServiceDocumentSummariesForProject } from "@/lib/server/repositories/data-store";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import {
   hasReadableRequirementDocumentContent,

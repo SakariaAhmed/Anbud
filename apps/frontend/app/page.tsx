@@ -1,6 +1,6 @@
 import { ProjectDashboard } from "@/components/projects/project-dashboard";
 import { requireRequestPrincipal } from "@/lib/server/authorization";
-import { listProjects } from "@/lib/server/repositories/projects";
+import { listProjects } from "@/lib/server/repositories/data-store";
 
 export const dynamic = "force-dynamic";
 

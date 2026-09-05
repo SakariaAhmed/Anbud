@@ -5,14 +5,14 @@ import "server-only";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type UntypedData = any;
 
-export type PostgrestError = {
+type PostgrestError = {
   code: string | null;
   details: string | null;
   hint: string | null;
   message: string;
 };
 
-export type PostgrestResponse<T> = {
+type PostgrestResponse<T> = {
   data: T | null;
   error: PostgrestError | null;
   count: number | null;

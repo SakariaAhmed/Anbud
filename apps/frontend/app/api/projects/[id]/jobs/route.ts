@@ -15,7 +15,7 @@ import {
   normalizeArtifactInstructions,
   normalizeSourceDocumentIds,
 } from "@/lib/server/artifact-generation-input";
-import { resolveOpenAIModelOverride } from "@/lib/server/ai";
+import { resolveOpenAIModelOverride } from "@/lib/server/ai/model-config";
 import { enforceRateLimit } from "@/lib/server/api-responses";
 import { auditEvent, withTiming } from "@/lib/server/observability";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";

@@ -22,7 +22,6 @@ const parsers = jiti(
   path.join(frontendRoot, "lib/server/requirements/corpus-parsers.ts"),
 );
 const {
-  extractRequirementLedgerForDocument,
   filterPdfTableDuplicateExtractionArtifacts,
   filterDuplicateLegacyStandaloneNoteLines,
   isMalformedPdfRequirementReference,
@@ -30,6 +29,9 @@ const {
   stripAnswerTextFromRequirement: productionStripAnswerTextFromRequirement,
 } = jiti(
   path.join(frontendRoot, "lib/server/ai.ts"),
+);
+const { extractRequirementLedgerForDocument } = jiti(
+  path.join(frontendRoot, "lib/server/requirements/extraction.ts"),
 );
 
 test("supplier-answer stripping preserves lowercase Norwegian relative clauses", () => {

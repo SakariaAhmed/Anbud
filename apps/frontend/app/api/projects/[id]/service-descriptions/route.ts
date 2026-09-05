@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 
-import {
-  listProjectServiceDescriptions,
-  setProjectServiceSelections,
-} from "@/lib/server/repositories/services";
+import { listProjectServiceDescriptions, setProjectServiceSelections } from "@/lib/server/repositories/data-store";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const PROJECT_SERVICE_CACHE_HEADERS = {

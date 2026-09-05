@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 
-import {
-  CHAT_SESSION_MEMORY_STORAGE_LIMIT,
-  inferProjectChatDomains,
-  resolveOpenAIModelOverride,
-  streamProjectChat,
-  type ChatPromptAttachment,
-} from "@/lib/server/ai";
+import { CHAT_SESSION_MEMORY_STORAGE_LIMIT, inferProjectChatDomains, streamProjectChat, type ChatPromptAttachment } from "@/lib/server/ai/project-chat";
+import { resolveOpenAIModelOverride } from "@/lib/server/ai/model-config";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
   MultipartRequestError,
@@ -20,10 +15,10 @@ import {
   upsertChatSession,
 } from "@/lib/server/repositories/chat";
 import { getFreshCustomerAnalysis } from "@/lib/server/repositories/analyses";
-import { getProjectDetail } from "@/lib/server/repositories/projects";
+import { getProjectDetail } from "@/lib/server/repositories/data-store";
 import { checkRateLimit } from "@/lib/server/observability";
 import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
-import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
+import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
 import {
   productionSafeErrorMessage,
   safeErrorTelemetry,

@@ -43,7 +43,7 @@ const {
   inferUploadFileFormat,
 } = jiti(path.join(frontendRoot, "lib", "server", "documents.ts"));
 const { extractRequirementLedgerForDocument } = jiti(
-  path.join(frontendRoot, "lib", "server", "ai.ts"),
+  path.join(frontendRoot, "lib", "server", "requirements", "extraction.ts"),
 );
 
 function parseArgs() {

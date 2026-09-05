@@ -12,13 +12,10 @@ import {
   getProjectResultHistory,
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
-import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
+import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
 import { recordDocumentIntelligenceEvent } from "@/lib/server/document-intelligence/repository";
-import {
-  getProjectSnapshotAfterCommit,
-  getProjectSourceRevision,
-} from "@/lib/server/repositories/projects";
-import { listProjectServiceDescriptions } from "@/lib/server/repositories/services";
+import { getProjectSnapshotAfterCommit, getProjectSourceRevision } from "@/lib/server/repositories/data-store";
+import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
 import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";

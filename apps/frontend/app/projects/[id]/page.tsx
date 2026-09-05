@@ -5,7 +5,7 @@ import {
   type ProjectWorkspaceTab,
 } from "@/components/projects/project-workspace-page";
 import { requireProjectPermission } from "@/lib/server/authorization";
-import { getProjectShell } from "@/lib/server/repositories/projects";
+import { getProjectShell } from "@/lib/server/repositories/data-store";
 
 const validTabs = new Set<string>([
   "documents",

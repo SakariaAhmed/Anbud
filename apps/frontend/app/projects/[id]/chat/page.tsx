@@ -3,10 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ProjectChatPopoutPage } from "@/components/projects/project-chat-popout-page";
 import { AUTH_PRINCIPAL_HEADER } from "@/lib/password-auth";
-import {
-  getProjectShell,
-  listProjects,
-} from "@/lib/server/repositories/projects";
+import { getProjectShell, listProjects } from "@/lib/server/repositories/data-store";
 
 function parseSessionId(value: string | string[] | undefined) {
   const sessionId = Array.isArray(value) ? value[0] : value;

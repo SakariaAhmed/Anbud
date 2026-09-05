@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { contentTypeForUploadFormat } from "@/lib/server/documents";
-import {
-  deleteDocument,
-  getDocumentDetail,
-  markDocumentAsPrimarySolution,
-} from "@/lib/server/repositories/documents";
-import { getProjectSnapshot } from "@/lib/server/repositories/projects";
+import { deleteDocument, getDocumentDetail, markDocumentAsPrimarySolution } from "@/lib/server/repositories/data-store";
+import { getProjectSnapshot } from "@/lib/server/repositories/data-store";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import {
   authorizationErrorResponse,

@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 
-import {
-  currentArtifactTypesFromAuthority,
-  getArtifactAuthoritySummary,
-} from "@/lib/server/repositories/projects";
+import { currentArtifactTypesFromAuthority, getArtifactAuthoritySummary } from "@/lib/server/repositories/artifacts";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 export async function GET(

@@ -10,11 +10,8 @@ import {
   parseBoundedMultipartFormData,
 } from "@/lib/server/multipart";
 import { queueDocumentIngestionJob } from "@/lib/server/project-jobs";
-import {
-  listProjectDocumentSummaries,
-  savePendingDocument,
-} from "@/lib/server/repositories/documents";
-import { getProjectSnapshot } from "@/lib/server/repositories/projects";
+import { listProjectDocumentSummaries, savePendingDocument } from "@/lib/server/repositories/data-store";
+import { getProjectSnapshot } from "@/lib/server/repositories/data-store";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 import type { ProjectDocumentRole, SupportingDocumentSubtype } from "@/lib/types";
