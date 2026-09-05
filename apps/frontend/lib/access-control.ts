@@ -99,6 +99,13 @@ export function globalAccessAllows(
   return isAdmin && (isReadPermission(permission) || permission === "project.share");
 }
 
+export function effectiveProjectPermissions(isAdmin: boolean, role: ProjectRole | null): ProjectPermission[] {
+  return [...new Set([
+    ...PROJECT_ROLE_PERMISSIONS.owner.filter((permission) => globalAccessAllows(isAdmin, permission)),
+    ...(role ? PROJECT_ROLE_PERMISSIONS[role] : []),
+  ])];
+}
+
 export function isProjectRole(value: unknown): value is ProjectRole {
   return (
     typeof value === "string" &&

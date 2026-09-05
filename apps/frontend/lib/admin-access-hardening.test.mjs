@@ -1,3 +1,4 @@
+import { createJiti } from "jiti";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -107,22 +108,14 @@ test("direct access management cannot downgrade an existing project owner", () =
   assert.ok(membershipWrite > ownerGuard);
 });
 
-test("administrator project context exposes only global read and share permissions", () => {
-  const source = readFileSync(
-    path.join(frontendRoot, "lib/server/authorization.ts"),
-    "utf8",
-  );
-  const globalBranch = source.indexOf(
-    "if (globalAccessAllows(principal.isAdmin, permission))",
-  );
-  const roleLookup = source.indexOf(
-    "const effectiveRole = await getEffectiveProjectRole",
-    globalBranch,
-  );
-  const branch = source.slice(globalBranch, roleLookup);
-  assert.match(branch, /PROJECT_ROLE_PERMISSIONS\.owner\.filter/u);
-  assert.match(branch, /globalAccessAllows\(principal\.isAdmin, candidate\)/u);
-  assert.match(branch, /permissions: globalPermissions/u);
+test("administrator permissions include actual project grants without granting global writes", () => {
+  const {effectiveProjectPermissions} = createJiti(import.meta.url)("./access-control.ts");
+  assert.equal(effectiveProjectPermissions(true,null).includes("project.update"),false);
+  assert.equal(effectiveProjectPermissions(true,null).includes("project.read"),true);
+  assert.equal(effectiveProjectPermissions(true,null).includes("project.share"),true);
+  assert.equal(effectiveProjectPermissions(true,"owner").includes("project.update"),true);
+  assert.equal(effectiveProjectPermissions(false,"restricted_viewer").includes("document.download"),false);
+  assert.deepEqual(effectiveProjectPermissions(false,null),[]);
 });
 
 test("project owners can grant an existing active person direct access", () => {

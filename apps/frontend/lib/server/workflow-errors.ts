@@ -1,5 +1,7 @@
 // Only fixed domain messages may cross the production error boundary.
 const ERRORS: Record<string, { status: number; message: string }> = {
+  INVALID_PDF_DOCUMENT: { status: 400, message: "PDF-filen er ugyldig eller skadet. Åpne filen i en PDF-leser og lagre en ny kopi før du laster opp igjen." },
+  PASSWORD_PROTECTED_PDF: { status: 400, message: "PDF-filen er passordbeskyttet. Last opp en ulåst kopi." },
   CUSTOMER_ANALYSIS_CHANGED: { status: 409, message: "Analysen er endret siden du åpnet den. Utkastet ditt er beholdt. Last inn siste analyse før du lagrer igjen." },
   CUSTOMER_ANALYSIS_REVISION_REQUIRED: { status: 409, message: "Last inn siste analyse før du lagrer. Utkastet ditt er beholdt." },
   PROJECT_SOURCE_REVISION_CHANGED: { status: 409, message: "Prosjektgrunnlaget ble endret under generering. Vent til dokumentbehandlingen er ferdig, og start på nytt. Tidligere analyser er bevart i historikken." },

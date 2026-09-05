@@ -1,0 +1,16 @@
+QA-20260905 – Kun syntetiske testdata
+Konkurransegrunnlag for Nordlys Testkommune (fiktiv)
+
+1. Kunden og målet
+Nordlys Testkommune har 120 ansatte på tre lokasjoner. Kommunen ønsker én sikker og forutsigbar driftsleveranse for Microsoft 365, Azure og klientadministrasjon. Dagens fragmenterte leverandørmodell gir lang feilrettingstid. Målet er bedre tilgjengelighet, sporbarhet og tydelig ansvar. Produksjonssetting skal være fullført innen 1. desember 2026. Kontrakten varer tre år med årlig evaluering.
+
+2. Absolutte krav
+K-01: Leverandøren skal kreve flerfaktorautentisering for alle administratorer og dokumentere at privilegert tilgang er tidsbegrenset.
+K-02: Tjenesten skal ha minimum 99,9 prosent månedlig tilgjengelighet. Planlagt vedlikehold skal varsles minst fem arbeidsdager før.
+K-03: Personopplysninger skal lagres og behandles innenfor EØS. Underleverandører og behandlingssted skal dokumenteres.
+K-04: Sikkerhetskopier skal tas daglig. Gjenoppretting skal testes kvartalsvis. Maksimal gjenopprettingstid er fire timer og maksimalt datatap er 24 timer.
+K-05: Kritiske hendelser skal ha responstid maksimalt 30 minutter hele døgnet. Kunden skal få en hendelsesrapport innen to arbeidsdager.
+K-06: Leverandøren skal levere månedlig rapport om SLA, sikkerhetshendelser, kostnader og forbedringstiltak, samt avholde et månedlig styringsmøte.
+
+3. Evaluering
+Kvalitet vektes 60 prosent og pris 40 prosent. Leverandøren skal besvare hvert krav med referanse til krav-ID og konkrete tiltak. Ubekreftede forutsetninger skal tydelig merkes. Ingen reelle personopplysninger, kundedata eller hemmeligheter finnes i dette testdokumentet.

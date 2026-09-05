@@ -48,3 +48,15 @@ test("multiple PDFs parse sequentially in one process", async () => {
   assert.match(await textFromPdf(second), /L-08/);
   assert.match(await textFromPdf(first), /K-08/);
 });
+
+
+test("object-stream PDFs exercise the modern fallback and retain extractable text", async () => {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  document.addPage([300, 200]).drawText("K-05 modern PDF", {x:24,y:100,size:12,font});
+  assert.match(await textFromPdf(Buffer.from(await document.save())), /K-05 modern PDF/);
+});
+
+test("invalid PDF gets an actionable domain error", async () => {
+  await assert.rejects(parsePdf(Buffer.from("This is not a PDF")), /INVALID_PDF_DOCUMENT/);
+});

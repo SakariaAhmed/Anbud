@@ -42,6 +42,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import type {
   CustomerAnalysisResult,
@@ -432,6 +433,11 @@ function ProjectWorkspaceSidebar({
   onSetWorkspaceTab,
   onOpenChatPopout,
 }: ProjectWorkspaceSidebarProps) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  function navigate(tab: ProjectWorkspaceTab) {
+    onSetWorkspaceTab(tab);
+    if (isMobile) setOpenMobile(false);
+  }
   return (
     <Sidebar
       collapsible="icon"
@@ -493,7 +499,7 @@ function ProjectWorkspaceSidebar({
                     )}
                     onPointerDown={() => onPreloadWorkspaceTab(item.value)}
                     onFocus={() => onPreloadWorkspaceTab(item.value)}
-                    onClick={() => onSetWorkspaceTab(item.value)}
+                    onClick={() => navigate(item.value)}
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-[0.86rem] font-semibold text-blue-600 shadow-sm group-data-active/menu-button:border-blue-200 group-data-active/menu-button:bg-white group-data-active/menu-button:text-blue-700">
                       {item.step}
@@ -544,7 +550,10 @@ function ProjectWorkspaceSidebar({
                         href={`/projects/${project.id}/chat`}
                         target={`bidsite-project-chat-${project.id}`}
                         rel="noopener noreferrer"
-                        onClick={onOpenChatPopout}
+                        onClick={() => {
+                          onOpenChatPopout();
+                          if (isMobile) setOpenMobile(false);
+                        }}
                       />
                     }
                     size="lg"
@@ -575,7 +584,7 @@ function ProjectWorkspaceSidebar({
                       )}
                       onPointerDown={() => onPreloadWorkspaceTab(item.value)}
                       onFocus={() => onPreloadWorkspaceTab(item.value)}
-                      onClick={() => onSetWorkspaceTab(item.value)}
+                      onClick={() => navigate(item.value)}
                     >
                       <item.icon className="size-4.5 text-slate-500" />
                       {sidebarOpen ? <span>{item.label}</span> : null}
@@ -814,7 +823,7 @@ export function ProjectWorkspaceTabContent({
             busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
             busyProgress={busyProgress}
             onGenerate={onGenerateSolutionEvaluation}
-            importBusy={Boolean(busy)}
+            importBusy={busy === "upload-architecture-document"}
             onImportArchitectureDocument={onUploadArchitectureDocument}
           />
         )
@@ -859,6 +868,7 @@ export function ProjectWorkspaceTabContent({
           documents={project.documents}
           artifacts={requirementArtifacts}
           uploadBusy={Boolean(busy)}
+          uploadInProgress={busy === "upload-requirement-document"}
           generateBusy={Boolean(busy)}
           busyMessage={busy === "requirement-response" ? busyMessage : ""}
           busyProgress={busyProgress}
