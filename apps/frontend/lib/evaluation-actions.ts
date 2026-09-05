@@ -27,4 +27,3 @@ export function buildArchitectureActions(evaluation: SolutionEvaluationResult) {
 
   return sourceItems.slice(0, 4);
 }
-

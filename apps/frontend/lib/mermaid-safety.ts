@@ -44,4 +44,3 @@ export function sanitizeMermaidChart(input: string) {
 
   return { chart: normalized, error: "" };
 }
-
