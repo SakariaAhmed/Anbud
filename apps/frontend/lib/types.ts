@@ -60,6 +60,8 @@ export type ProjectStatus =
   | "Klar for sparring";
 
 export interface ProjectSummary {
+  source_revision?: number;
+  snapshot_revision?: number;
   id: string;
   name: string;
   customer_name: string | null;
@@ -89,6 +91,8 @@ export interface ProjectSummary {
 }
 
 export interface ProjectSnapshotResult {
+  source_revision?: number;
+  snapshot_revision?: number;
   name: string;
   customer_name: string | null;
   description: string | null;
@@ -297,6 +301,7 @@ export type CustomerAnalysisSectionHistories = Partial<
 >;
 
 export interface CustomerAnalysisResult {
+  revision?: string;
   customer_profile_summary: string;
   customer_goals_summary: string;
   high_level_solution_design: string;
@@ -552,29 +557,29 @@ export type ProjectJobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface ArtifactGenerationJobResult {
   artifact: GeneratedArtifact;
-  project: ProjectSnapshotResult;
+  project: ProjectSnapshotResult | null;
 }
 
 export interface SolutionEvaluationJobResult {
   evaluation: SolutionEvaluationResult;
-  project: ProjectSnapshotResult;
+  project: ProjectSnapshotResult | null;
   artifact: null;
   used_generated_solution: false;
 }
 
 export interface HighLevelDesignJobResult {
   analysis: CustomerAnalysisResult;
-  project: ProjectSnapshotResult;
+  project: ProjectSnapshotResult | null;
 }
 
 export interface CustomerAnalysisJobResult {
   analysis: CustomerAnalysisResult;
-  project: ProjectSnapshotResult;
+  project: ProjectSnapshotResult | null;
 }
 
 export interface ExecutiveSummaryJobResult {
   executive_summary: ExecutiveSummaryResult;
-  project: ProjectSnapshotResult;
+  project: ProjectSnapshotResult | null;
 }
 
 export interface DocumentIngestionJobResult {
@@ -582,7 +587,7 @@ export interface DocumentIngestionJobResult {
   document_id: string;
   status: DocumentProcessingStatus;
   parser_used: string | null;
-  project: ProjectSnapshotResult;
+  project: ProjectSnapshotResult | null;
   docling_enhancement_requested?: boolean;
   docling_enhancement_job_id?: string;
 }

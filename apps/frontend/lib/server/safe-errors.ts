@@ -1,3 +1,4 @@
+import { workflowError } from "@/lib/server/workflow-errors";
 import { createHash } from "node:crypto";
 
 const SAFE_REQUEST_ID = /^[a-z0-9_.:-]{1,128}$/i;
@@ -64,6 +65,8 @@ export function productionSafeErrorMessage(
   fallback: string,
   requestId?: string | null,
 ) {
+  const known = workflowError(error);
+  if (known) return known.message;
   if (process.env.NODE_ENV !== "production") {
     return error instanceof Error ? error.message : String(error ?? fallback);
   }

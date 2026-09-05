@@ -14,7 +14,7 @@ const migrationPath = path.join(
   repositoryRoot,
   "database/migrations/20260711140000_atomic_document_chunk_replacement.sql",
 );
-const migrationSql = readFileSync(migrationPath, "utf8");
+const migrationSql = readFileSync(migrationPath, "utf8") + "\n" + readFileSync(path.join(repositoryRoot, "database/migrations/20260905020000_workflow_consistency.sql"), "utf8");
 const documentChunksSource = readFileSync(
   path.join(repositoryRoot, "apps/frontend/lib/server/document-chunks.ts"),
   "utf8",

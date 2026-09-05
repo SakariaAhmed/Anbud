@@ -6,6 +6,7 @@ export {
   getProjectDetail,
   getProjectShell,
   getProjectSnapshot,
+  getProjectSnapshotAfterCommit,
   getProjectSourceRevision,
   listProjects,
   updateProjectMetadataFromInference,

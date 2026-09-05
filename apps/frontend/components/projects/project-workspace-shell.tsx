@@ -1,5 +1,7 @@
 "use client";
 
+import { ProjectResultHistory } from "@/components/projects/project-result-history";
+import { ProjectWorkflowJobs } from "@/components/projects/project-workflow-jobs";
 import dynamic from "next/dynamic";
 import type {
   CSSProperties,
@@ -291,7 +293,8 @@ export type ProjectWorkspaceTabContentProps = {
   onSaveAnalysis: (
     section: CustomerAnalysisSection,
     snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
-  ) => Promise<void>;
+    revision?: string,
+  ) => Promise<boolean>;
   onGenerateSolutionEvaluation: (
     solutionDocumentId?: string,
     importedDocument?: ProjectDocument,
@@ -736,6 +739,8 @@ export function ProjectWorkspaceTabContent({
 }: ProjectWorkspaceTabContentProps) {
   return (
     <>
+      <ProjectWorkflowJobs key={`jobs-${project.id}`} projectId={project.id} />
+      {activeTab === "analysis" && <ProjectResultHistory key={`history-${project.id}`} projectId={project.id} />}
       {activeTab === "documents" ? (
         <ProjectDocumentsTab
           projectId={project.id}
@@ -751,7 +756,7 @@ export function ProjectWorkspaceTabContent({
           onFileChange={onFileChange}
           documentFileInputKey={documentFileInputKey}
           onUploadDocument={onUploadDocument}
-          uploadBusy={busy === "upload"}
+          uploadBusy={Boolean(busy)}
           deletingDocumentId={
             busy?.startsWith("delete-") ? busy.slice("delete-".length) : null
           }
@@ -767,7 +772,7 @@ export function ProjectWorkspaceTabContent({
             projectId={project.id}
             documents={project.documents}
             customerAnalysis={customerAnalysis}
-            busy={busy === "analysis"}
+            busy={Boolean(busy)}
             saveBusy={busy === "save-analysis"}
             sectionBusy={analysisSectionBusy}
             busyMessage={analysisSectionBusy ? busyMessage : ""}
@@ -805,11 +810,11 @@ export function ProjectWorkspaceTabContent({
             hasSolutionDocument={architectureDocumentCandidates.some(
               isDocumentReadyForEvaluation,
             )}
-            busy={busy === "solution-evaluation"}
+            busy={Boolean(busy)}
             busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
             busyProgress={busyProgress}
             onGenerate={onGenerateSolutionEvaluation}
-            importBusy={busy === "upload-architecture-document"}
+            importBusy={Boolean(busy)}
             onImportArchitectureDocument={onUploadArchitectureDocument}
           />
         )
@@ -819,7 +824,7 @@ export function ProjectWorkspaceTabContent({
         <ProjectBilag1Tab
           documents={project.documents}
           artifacts={bilag1Artifacts}
-          busy={busy === "bilag1-artifact"}
+          busy={Boolean(busy)}
           busyMessage={busy === "bilag1-artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
           onDeleteArtifact={onDeleteArtifact}
@@ -830,7 +835,7 @@ export function ProjectWorkspaceTabContent({
       {activeTab === "delivery" ? (
         <ProjectDeliveryTab
           artifacts={deliveryArtifacts}
-          busy={busy === "delivery-artifact"}
+          busy={Boolean(busy)}
           busyMessage={busy === "delivery-artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
           hasCustomerAnalysis={
@@ -853,8 +858,8 @@ export function ProjectWorkspaceTabContent({
           projectId={project.id}
           documents={project.documents}
           artifacts={requirementArtifacts}
-          uploadBusy={busy === "upload-requirement-document"}
-          generateBusy={busy === "requirement-response"}
+          uploadBusy={Boolean(busy)}
+          generateBusy={Boolean(busy)}
           busyMessage={busy === "requirement-response" ? busyMessage : ""}
           busyProgress={busyProgress}
           deletingDocumentId={
@@ -877,7 +882,7 @@ export function ProjectWorkspaceTabContent({
             hasSolutionEvaluation={
               Boolean(solutionEvaluation) || project.solution_evaluation_generated
             }
-            busy={busy === "executive-summary"}
+            busy={Boolean(busy)}
             busyMessage={busy === "executive-summary" ? busyMessage : ""}
             busyProgress={busyProgress}
             onGenerate={onGenerateExecutiveSummary}
@@ -888,7 +893,7 @@ export function ProjectWorkspaceTabContent({
       {activeTab === "generator" ? (
         <ProjectGeneratorTab
           artifacts={solutionDraftArtifacts}
-          busy={busy === "artifact"}
+          busy={Boolean(busy)}
           busyMessage={busy === "artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
           onDeleteArtifact={onDeleteArtifact}

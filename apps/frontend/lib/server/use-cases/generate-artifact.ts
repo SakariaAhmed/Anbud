@@ -42,6 +42,7 @@ import {
 } from "@/lib/server/repositories/documents";
 import {
   getProjectSnapshot,
+  getProjectSnapshotAfterCommit,
 } from "@/lib/server/repositories/projects";
 import {
   listServiceDocumentDetailsForProject,
@@ -97,7 +98,7 @@ export interface GenerateAndSaveArtifactInput {
 
 export interface GenerateAndSaveArtifactResult {
   artifact: GeneratedArtifact;
-  project: ProjectSnapshotResult;
+  project: ProjectSnapshotResult | null;
 }
 
 const ARTIFACT_FILE_LEDGER_FORMATS = new Set(["pdf", "docx", "xlsx", "xls"]);
@@ -868,6 +869,6 @@ export async function generateAndSaveProjectArtifact(
 
   return {
     artifact,
-    project: await getProjectSnapshot(input.projectId),
+    project: await getProjectSnapshotAfterCommit(input.projectId),
   };
 }

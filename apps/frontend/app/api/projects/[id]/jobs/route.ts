@@ -1,4 +1,7 @@
+import { listRecentProjectJobs } from "@/lib/server/repositories/jobs";
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
+import { workflowErrorStatus } from "@/lib/server/workflow-errors";
 
 import {
   queueArtifactGenerationJob,
@@ -40,6 +43,7 @@ type ProjectJobRequestBody =
     }
   | {
       kind?: "perfect_system_solution";
+      resume_artifact_id?: string;
     }
   | {
       kind?: "executive_summary";
@@ -85,8 +89,12 @@ async function queueSimpleProjectJob(
         job: await queueHighLevelDesignJob({ projectId, model }),
       };
     case "perfect_system_solution":
+      if (body.kind === "perfect_system_solution" && body.resume_artifact_id !== undefined &&
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.resume_artifact_id)) {
+        throw new Error("Ugyldig løsningsutkast-ID.");
+      }
       return {
-        job: await queuePerfectSystemSolutionJob({ projectId, model }),
+        job: await queuePerfectSystemSolutionJob({ projectId, model, resumeArtifactId: body.kind === "perfect_system_solution" ? body.resume_artifact_id : undefined }),
       };
     case "executive_summary":
       return {
@@ -204,7 +212,17 @@ export async function POST(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke starte jobben."),
       },
-      { status: 500 },
+      { status: workflowErrorStatus(error) },
     );
+  }
+}
+
+export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params;
+    await requireProjectPermission(id, "project.read");
+    return NextResponse.json({ jobs: await listRecentProjectJobs(id) }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) {
+    return authorizationErrorResponse(error) ?? NextResponse.json({ error: productionSafeErrorMessage(error, "Kunne ikke hente jobbstatus.") }, { status: workflowErrorStatus(error) });
   }
 }

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { workflowErrorStatus } from "@/lib/server/workflow-errors";
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 
 import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
 import {
@@ -7,12 +9,13 @@ import {
 } from "@/lib/server/ai";
 import {
   getFreshCustomerAnalysis,
+  getProjectResultHistory,
   saveCustomerAnalysis,
 } from "@/lib/server/repositories/analyses";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/documents";
 import { recordDocumentIntelligenceEvent } from "@/lib/server/document-intelligence/repository";
 import {
-  getProjectSnapshot,
+  getProjectSnapshotAfterCommit,
   getProjectSourceRevision,
 } from "@/lib/server/repositories/projects";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/services";
@@ -489,7 +492,7 @@ export async function POST(
       },
     }).catch(() => false);
 
-    const project = await getProjectSnapshot(id);
+    const project = await getProjectSnapshotAfterCommit(id);
     return NextResponse.json({ analysis: saved, project });
   } catch (error) {
     return NextResponse.json(
@@ -499,26 +502,30 @@ export async function POST(
           "Kunne ikke generere kundeanalyse.",
         ),
       },
-      { status: 500 },
+      { status: workflowErrorStatus(error) },
     );
   }
 }
 
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "project.read");
+    if (new URL(request.url).searchParams.get("history") === "1") {
+      return NextResponse.json({ history: await getProjectResultHistory(id) }, { headers: READ_CACHE_HEADERS });
+    }
     const analysis = await getFreshCustomerAnalysis(id);
 
     return NextResponse.json({ analysis }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
-    return NextResponse.json(
+    return authorizationErrorResponse(error) ?? NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke hente kundeanalysen."),
       },
-      { status: 500 },
+      { status: workflowErrorStatus(error) },
     );
   }
 }
@@ -531,6 +538,7 @@ export async function PUT(
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as {
       analysis_text?: string;
+      expected_analysis_revision?: unknown;
       section?: unknown;
       section_snapshot?: unknown;
     };
@@ -557,6 +565,10 @@ export async function PUT(
       );
     }
 
+    if (typeof body.expected_analysis_revision !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.expected_analysis_revision)) {
+      throw new Error("CUSTOMER_ANALYSIS_REVISION_REQUIRED");
+    }
     const sourceSnapshot = await readStableSolutionEvaluationSourceSnapshot({
       readSourceRevision: () => getProjectSourceRevision(id),
       readDocuments: () => listProjectDocumentsForAnalysis(id),
@@ -583,6 +595,9 @@ export async function PUT(
       );
     }
 
+    if (existingAnalysis.revision !== body.expected_analysis_revision) {
+      throw new Error("CUSTOMER_ANALYSIS_CHANGED");
+    }
     const nextAnalysis = section
       ? applySectionSnapshot(existingAnalysis, section, body.section_snapshot)
       : {
@@ -599,6 +614,7 @@ export async function PUT(
       nextAnalysis,
       {
         expectedSourceRevision: sourceSnapshot.sourceRevision,
+        expectedAnalysisRevision: body.expected_analysis_revision,
         previousAnalysis: existingAnalysis,
         updatedSections: [section ?? "strategy"],
         historySource: "manual_edit",
@@ -614,14 +630,14 @@ export async function PUT(
       },
     }).catch(() => false);
 
-    const project = await getProjectSnapshot(id);
+    const project = await getProjectSnapshotAfterCommit(id);
     return NextResponse.json({ analysis: saved, project });
   } catch (error) {
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke lagre analysen."),
       },
-      { status: 500 },
+      { status: workflowErrorStatus(error) },
     );
   }
 }

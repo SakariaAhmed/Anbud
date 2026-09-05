@@ -8,6 +8,7 @@ import type {
   ProjectJobRecord,
   ProjectServiceDescription,
   ProjectSnapshotResult,
+  ProjectDetail,
   SolutionEvaluationResult,
   CustomerAnalysisSection,
 } from "@/lib/types";
@@ -267,6 +268,7 @@ async function pollProjectJob({
 }) {
   const delays = [1500, 3000, 5000, 8000, 12000];
   let attempt = 0;
+  let transportFailures = 0;
   let terminalCacheInvalidated = false;
 
   while (true) {
@@ -279,17 +281,25 @@ async function pollProjectJob({
     await sleep(delay, signal);
     attempt += 1;
 
-    const statusResponse = await fetch(
-      `/api/projects/${projectId}/jobs/${jobId}`,
-      { cache: "no-store", signal },
-    );
-    const statusPayload = await readJsonPayload<{
-      error?: string;
-      job?: ProjectJobRecord;
-    }>(statusResponse, "Kunne ikke hente jobbstatus.");
-    if (!statusResponse.ok || !statusPayload.job) {
-      throw new Error(statusPayload.error || "Kunne ikke hente jobbstatus.");
+    let statusPayload: { error?: string; job?: ProjectJobRecord };
+    try {
+      const statusResponse = await fetch(`/api/projects/${projectId}/jobs/${jobId}`, { cache: "no-store", signal });
+      statusPayload = await readJsonPayload<{ error?: string; job?: ProjectJobRecord }>(statusResponse, "Kunne ikke hente jobbstatus.");
+      if (!statusResponse.ok || !statusPayload.job) {
+        if ([401, 403, 404].includes(statusResponse.status)) {
+          throw Object.assign(new Error(statusPayload.error || "Jobben er ikke tilgjengelig."), { permanent: true });
+        }
+        throw new Error("Kontakt med jobbstatus er midlertidig utilgjengelig.");
+      }
+      transportFailures = 0;
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      if ((error as { permanent?: boolean })?.permanent || ++transportFailures >= 5) {
+        throw new Error("Mistet kontakt med jobbstatus. Jobben kan fortsatt pågå. Last inn prosjektet på nytt for å sjekke resultatet.");
+      }
+      continue;
     }
+    if (!statusPayload.job) continue;
 
     if (
       !terminalCacheInvalidated &&
@@ -330,13 +340,13 @@ export async function watchProjectJob({
   onStatus: (job: ProjectJobRecord) => void;
   signal?: AbortSignal;
 }) {
+  signal?.throwIfAborted();
   if (typeof window === "undefined" || !("EventSource" in window)) {
     return pollProjectJob({ projectId, jobId, onStatus, signal });
   }
 
   return new Promise<ProjectJobRecord>((resolve, reject) => {
     let settled = false;
-    let sawEvent = false;
     let fallbackStarted = false;
     let terminalCacheInvalidated = false;
     const source = new EventSource(
@@ -352,6 +362,7 @@ export async function watchProjectJob({
     const fallbackToPolling = () => {
       if (settled || fallbackStarted) return;
       fallbackStarted = true;
+      settled = true;
       source.close();
       signal?.removeEventListener("abort", onAbort);
       void pollProjectJob({ projectId, jobId, onStatus, signal })
@@ -367,10 +378,9 @@ export async function watchProjectJob({
     signal?.addEventListener("abort", onAbort, { once: true });
 
     source.addEventListener("job", (event) => {
-      sawEvent = true;
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        job?: ProjectJobRecord;
-      };
+      let payload: { job?: ProjectJobRecord };
+      try { payload = JSON.parse((event as MessageEvent).data); }
+      catch { fallbackToPolling(); return; }
       if (!payload.job || settled) {
         return;
       }
@@ -409,11 +419,16 @@ export async function watchProjectJob({
     });
 
     source.addEventListener("error", () => {
-      if (!sawEvent || source.readyState === EventSource.CLOSED) {
-        fallbackToPolling();
-      }
+      fallbackToPolling();
     });
   });
+}
+
+export async function fetchProjectState(projectId: string, signal?: AbortSignal): Promise<ProjectDetail> {
+  const response = await fetch(`/api/projects/${projectId}`, { cache: "no-store", signal });
+  const payload = await readJsonPayload<ProjectDetail & { error?: string }>(response, "Kunne ikke oppdatere prosjektstatus.");
+  if (!response.ok || !payload.id) throw new Error(payload.error ?? "Kunne ikke oppdatere prosjektstatus.");
+  return payload;
 }
 
 export async function fetchProjectServices(
@@ -709,6 +724,7 @@ export async function saveCustomerAnalysisSection(input: {
   projectId: string;
   section: CustomerAnalysisSection;
   snapshot: unknown;
+  revision?: string;
   headers?: Record<string, string>;
 }) {
   invalidateProjectReadCache(input.projectId);
@@ -720,6 +736,7 @@ export async function saveCustomerAnalysisSection(input: {
       body: JSON.stringify({
         section: input.section,
         section_snapshot: input.snapshot,
+        expected_analysis_revision: input.revision,
       }),
     },
   );
@@ -728,12 +745,12 @@ export async function saveCustomerAnalysisSection(input: {
     analysis?: CustomerAnalysisResult;
     project?: ProjectSnapshotPayload;
   }>(response, "Kunne ikke lagre analysen.");
-  if (!response.ok || !payload.analysis || !payload.project) {
+  if (!response.ok || !payload.analysis) {
     throw new Error(payload.error || "Kunne ikke lagre analysen.");
   }
   return {
     analysis: payload.analysis,
-    project: payload.project,
+    project: payload.project ?? null,
   };
 }
 

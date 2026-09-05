@@ -122,11 +122,24 @@ export function createLatestArtifactAuthorityRequestGate() {
   };
 }
 
+export function isProjectSnapshotOlder(
+  project: Pick<ProjectDetail, "source_revision" | "snapshot_revision">,
+  snapshot: Pick<ProjectSnapshotResult, "source_revision" | "snapshot_revision"> | null | undefined,
+) {
+  if (!snapshot) return true;
+  if (typeof project.snapshot_revision === "number") {
+    return typeof snapshot.snapshot_revision !== "number" || snapshot.snapshot_revision < project.snapshot_revision;
+  }
+  return typeof project.source_revision === "number" &&
+    (typeof snapshot.source_revision !== "number" || snapshot.source_revision < project.source_revision);
+}
+
 export function applyProjectSnapshot(
   project: ProjectDetail,
-  snapshot: ProjectSnapshotResult,
+  snapshot: ProjectSnapshotResult | null | undefined,
   options: { invalidateExecutiveSummary?: boolean } = {},
 ): ProjectDetail {
+  if (!snapshot || isProjectSnapshotOlder(project, snapshot)) return project;
   const solutionEvaluationGenerated = snapshot.solution_evaluation_generated;
   const executiveSummaryGenerated =
     solutionEvaluationGenerated && !options.invalidateExecutiveSummary;

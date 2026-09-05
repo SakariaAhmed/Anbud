@@ -10,6 +10,7 @@ import {
 const completeMigration = `
 alter table public.project_jobs
   add column if not exists input_json jsonb,
+  add column if not exists result_checkpoint jsonb,
   add column if not exists locked_at timestamptz,
   add column if not exists lease_token uuid,
   add column if not exists started_at timestamptz,
@@ -89,8 +90,10 @@ test("remote preflight checks only the internal PostgREST contract", async () =>
 
   assert.equal(calls[0].options.method, "HEAD");
   assert.equal(calls[0].url.pathname, "/project_jobs");
-  assert.equal(calls[1].url.pathname, "/audit_events");
-  assert.equal(calls[2].options.method, "POST");
+  assert.equal(calls[1].url.pathname, "/projects");
+  assert.equal(calls[3].url.pathname, "/project_result_history");
+  assert.equal(calls[4].url.pathname, "/audit_events");
+  assert.equal(calls[5].options.method, "POST");
   assert.ok(calls.every((call) => call.options.headers.apikey === "synthetic-azure-key"));
   assert.equal(
     result.host,

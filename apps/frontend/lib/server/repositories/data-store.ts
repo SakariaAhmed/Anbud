@@ -1,4 +1,9 @@
 import "server-only";
+import { readStableProjectSourceSnapshot } from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
+import { safeErrorTelemetry } from "@/lib/server/safe-errors";
+import { analysisContentEqual, withoutAnalysisRevision } from "@/lib/customer-analysis-version";
+import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
+
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
@@ -127,6 +132,8 @@ type Json =
   | null;
 
 interface ProjectRow {
+  source_revision?: number;
+  snapshot_revision?: number;
   id: string;
   name: string;
   customer_name: string | null;
@@ -195,6 +202,7 @@ interface DocumentSummaryRow {
 }
 
 interface CustomerAnalysisRow {
+  revision?: string;
   id: string;
   project_id: string;
   source_document_ids: string[];
@@ -294,6 +302,8 @@ interface ServiceDocumentSummaryRow {
 }
 
 interface ProjectCacheSnapshot {
+  source_revision?: number;
+  snapshot_revision?: number;
   name: string;
   customer_name: string | null;
   description: string | null;
@@ -338,9 +348,9 @@ const DOCUMENT_SUMMARY_SELECT_COLUMNS = [
 const DOCUMENT_SUMMARY_SELECT_LEGACY =
   "id, project_id, role, subtype, display_name, file_format, content_type, created_at";
 const PROJECT_SELECT_SAFE =
-  "id, name, customer_name, description, industry, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
+  "snapshot_revision, source_revision, id, name, customer_name, description, industry, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
 const PROJECT_SELECT_LEGACY =
-  "id, title, client_name, description, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
+  "snapshot_revision, source_revision, id, title, client_name, description, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
 const SERVICE_DOCUMENT_SUMMARY_SELECT =
   "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, ai_summary, ai_summary_updated_at, chunk_source_revision, created_at, updated_at";
 const SERVICE_DOCUMENT_SUMMARY_SELECT_BASE =
@@ -604,6 +614,8 @@ function fromUnknownProjectRow(row: Record<string, unknown>): ProjectRow {
 
   return {
     id: String(row.id ?? ""),
+    source_revision: row.source_revision == null ? undefined : Number(row.source_revision),
+    snapshot_revision: row.snapshot_revision == null ? undefined : Number(row.snapshot_revision),
     name: String(row.name ?? row.title ?? "Nytt prosjekt"),
     customer_name:
       row.customer_name == null && row.client_name == null
@@ -1194,6 +1206,8 @@ function mapProjectSummary(
 ): ProjectSummary {
   return {
     id: row.id,
+    source_revision: row.source_revision,
+    snapshot_revision: row.snapshot_revision,
     name: row.name,
     customer_name: row.customer_name,
     description: row.description,
@@ -1222,6 +1236,8 @@ function mapProjectSnapshot(
 ): ProjectCacheSnapshot {
   const currentArtifactTypes = currentArtifactTypesFromAuthority(artifactAuthority);
   return {
+    source_revision: row.source_revision,
+    snapshot_revision: row.snapshot_revision,
     name: row.name,
     customer_name: row.customer_name,
     description: row.description,
@@ -2572,7 +2588,15 @@ async function updateProjectContextKeywords(projectId: string) {
   }
 }
 
-export async function getProjectDetail(
+export async function getProjectDetail(projectId: string): Promise<ProjectDetail> {
+  const snapshot = await readStableProjectSourceSnapshot({
+    readSourceRevision: () => getProjectSnapshotRevision(projectId),
+    readValue: () => readProjectDetail(projectId),
+  });
+  return { ...snapshot.value, snapshot_revision: snapshot.sourceRevision };
+}
+
+async function readProjectDetail(
   projectId: string,
 ): Promise<ProjectDetail> {
   const dataApi = createServiceClient();
@@ -2624,6 +2648,8 @@ export async function getProjectDetail(
 
   return {
     id: projectRow.id,
+    source_revision: projectRow.source_revision,
+    snapshot_revision: projectRow.snapshot_revision,
     name: projectRow.name,
     customer_name: projectRow.customer_name,
     description: projectRow.description,
@@ -2651,7 +2677,7 @@ export async function getProjectDetail(
     has_chat: false,
     documents: documentRows.map(mapDocumentSummary),
     customer_analysis: analysisRow
-      ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
+      ? mapCustomerAnalysis(analysisRow)
       : null,
     solution_evaluation: derivedSnapshot?.evaluation ?? null,
     executive_summary: derivedSnapshot?.executiveSummary ?? null,
@@ -2713,6 +2739,8 @@ export async function getProjectShell(
 
       return {
         id: projectRow.id,
+    source_revision: projectRow.source_revision,
+    snapshot_revision: projectRow.snapshot_revision,
         name: projectRow.name,
         customer_name: projectRow.customer_name,
         description: projectRow.description,
@@ -2737,7 +2765,7 @@ export async function getProjectShell(
         has_chat: false,
         documents: documentRows.map(mapDocumentSummary),
         customer_analysis: analysisRow
-          ? decryptJson(analysisRow.result_json, CUSTOMER_ANALYSIS_EMPTY)
+          ? mapCustomerAnalysis(analysisRow)
           : null,
         solution_evaluation: null,
         executive_summary: null,
@@ -3030,6 +3058,26 @@ export async function updateDocumentProcessingState(input: {
   revalidateProjectCaches(input.projectId);
 }
 
+export async function publishDocumentReadiness(input: {
+  projectId: string; documentId: string; sourceRevision: number;
+  status: "basic_ready" | "enhanced_ready"; message: string; parserUsed: string | null;
+}) {
+  const lease = getProjectWorkflowLease();
+  const { data, error } = await createServiceClient().rpc("publish_document_readiness", {
+    p_project_id: input.projectId, p_document_id: input.documentId,
+    p_source_revision: input.sourceRevision, p_status: input.status,
+    p_message: input.message, p_parser_used: input.parserUsed,
+    p_job_id: lease?.jobId ?? null, p_lease_token: lease?.leaseToken ?? null,
+  });
+  if (error) {
+    rethrowAuthoritativeLeaseLoss(new Error(error.message));
+    throw new Error(error.message);
+  }
+  if (!data) throw new Error("DOCUMENT_INDEX_NOT_READY");
+  revalidateProjectCaches(input.projectId);
+  return mapDocumentSummary(fromUnknownDocumentRow(data));
+}
+
 export async function saveDocumentIngestionResult(input: {
   projectId: string;
   documentId: string;
@@ -3058,8 +3106,21 @@ export async function saveDocumentIngestionResult(input: {
     pageCountFromRawText(input.rawText, input.fileFormat) ??
     input.pageCountFallback ??
     null;
-  const encryptedRawText = encryptString(input.rawText);
-  const encryptedStructureMap = encryptJson(input.structureMap);
+  const existing = await fetchSingleDocumentRow(select => dataApi.from("documents")
+    .select(select).eq("project_id", input.projectId).eq("id", input.documentId).single());
+  if (!existing) throw new Error("Fant ikke dokumentet.");
+  const sameText = decryptString(existing.raw_text) === input.rawText;
+  const sameStructure = JSON.stringify(decryptJson(existing.structure_map, [])) === JSON.stringify(input.structureMap);
+  const encryptedRawText = sameText ? existing.raw_text : encryptString(input.rawText);
+  const encryptedStructureMap = sameStructure ? existing.structure_map : encryptJson(input.structureMap);
+  if (sameText && sameStructure && existing.file_name === input.fileName &&
+      existing.file_format === input.fileFormat && existing.content_type === input.contentType &&
+      existing.page_count === pageCount && existing.indexed_at &&
+      (existing.processing_status === "basic_ready" || existing.processing_status === "enhanced_ready") &&
+      input.status !== "processing") {
+    return publishDocumentReadiness({ projectId: input.projectId, documentId: input.documentId,
+      sourceRevision: existing.chunk_source_revision, status: input.status, message: input.message, parserUsed: input.parserUsed });
+  }
   const updatedAt = new Date().toISOString();
   const updatePayload: Record<string, unknown> = {
     file_name: input.fileName,
@@ -3068,11 +3129,11 @@ export async function saveDocumentIngestionResult(input: {
     page_count: pageCount,
     raw_text: encryptedRawText,
     structure_map: encryptedStructureMap,
-    processing_status: input.status,
+    processing_status: "processing",
     processing_message: input.message,
     processing_error: null,
     parser_used: input.parserUsed,
-    indexed_at: shouldIndexChunks ? updatedAt : null,
+    indexed_at: null,
     updated_at: updatedAt,
   };
 
@@ -3081,16 +3142,17 @@ export async function saveDocumentIngestionResult(input: {
     "document_ingestion_result",
     {
       document_id: input.documentId,
+      expected_chunk_source_revision: existing.chunk_source_revision,
       file_name: input.fileName,
       file_format: input.fileFormat,
       content_type: input.contentType,
       page_count: pageCount,
       raw_text: encryptedRawText,
       structure_map: encryptedStructureMap,
-      status: input.status,
+      status: "processing",
       message: input.message,
       parser_used: input.parserUsed,
-      indexed_at: shouldIndexChunks ? updatedAt : null,
+      indexed_at: null,
       updated_at: updatedAt,
     },
   );
@@ -3112,6 +3174,7 @@ export async function saveDocumentIngestionResult(input: {
         .update(updatePayload)
         .eq("project_id", input.projectId)
         .eq("id", input.documentId)
+        .eq("chunk_source_revision", existing.chunk_source_revision)
         .select("*")
         .single<Record<string, unknown>>();
 
@@ -3228,6 +3291,13 @@ export async function saveDocumentIngestionResult(input: {
   }
   revalidateProjectCaches(input.projectId);
 
+  if (shouldIndexChunks && input.status !== "processing") {
+    return publishDocumentReadiness({
+      projectId: input.projectId, documentId: input.documentId,
+      sourceRevision: updated.chunk_source_revision, status: input.status,
+      message: input.message, parserUsed: input.parserUsed,
+    });
+  }
   return mapDocumentSummary(updated);
 }
 
@@ -3434,12 +3504,25 @@ export async function listProjectDocumentsForAnalysis(projectId: string) {
   );
 }
 
+function mapCustomerAnalysis(row: CustomerAnalysisRow): CustomerAnalysisResult {
+  return { ...decryptJson(row.result_json, CUSTOMER_ANALYSIS_EMPTY), ...(row.revision ? { revision: row.revision } : {}) };
+}
+
+export async function getProjectResultHistory(projectId: string) {
+  const { data, error } = await createServiceClient().from("project_result_history")
+    .select("id,kind,result_json,original_updated_at,archived_at,reason")
+    .eq("project_id", projectId).order("archived_at", { ascending: false }).order("id", { ascending: false }).limit(30);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(row => ({ ...row, result_json: decryptJson(row.result_json, {}) }));
+}
+
 export async function saveCustomerAnalysis(
   projectId: string,
   sourceDocumentIds: string[],
   result: CustomerAnalysisResult,
   options: {
     expectedSourceRevision: number;
+    expectedAnalysisRevision?: string;
     previousAnalysis?: CustomerAnalysisResult | null;
     updatedSections?: CustomerAnalysisSection[];
     historySource?: CustomerAnalysisHistorySource;
@@ -3458,7 +3541,7 @@ export async function saveCustomerAnalysis(
       : await getFreshCustomerAnalysis(projectId);
   const resultWithHistory = appendCustomerAnalysisSectionHistory({
     previousAnalysis,
-    nextAnalysis: result,
+    nextAnalysis: withoutAnalysisRevision(result),
     sections: options.updatedSections ?? [...CUSTOMER_ANALYSIS_SECTIONS],
     source: options.historySource ?? "full_regeneration",
   });
@@ -3478,6 +3561,10 @@ export async function saveCustomerAnalysis(
   const payload = {
     source_document_ids: sourceDocumentIds,
     expected_source_revision: options.expectedSourceRevision,
+    ...(options.expectedAnalysisRevision || previousAnalysis?.revision
+      ? { expected_analysis_revision: options.expectedAnalysisRevision ?? previousAnalysis?.revision }
+      : {}),
+    unchanged: analysisContentEqual(previousAnalysis, result),
     result_json: encryptJson(resultWithHistory),
     last_activity_at: new Date().toISOString(),
     context_keywords: projectKeywords,
@@ -3489,7 +3576,7 @@ export async function saveCustomerAnalysis(
     );
   if (fencedSave.fenced) {
     revalidateProjectCaches(projectId);
-    return decryptJson(fencedSave.data.result_json, CUSTOMER_ANALYSIS_EMPTY);
+    return mapCustomerAnalysis(fencedSave.data);
   }
 
   const { data, error } = await dataApi.rpc(
@@ -3506,10 +3593,7 @@ export async function saveCustomerAnalysis(
 
   revalidateProjectCaches(projectId);
 
-  return decryptJson(
-    (data as CustomerAnalysisRow).result_json,
-    CUSTOMER_ANALYSIS_EMPTY,
-  );
+  return mapCustomerAnalysis(data as CustomerAnalysisRow);
 }
 
 export async function getFreshCustomerAnalysis(projectId: string) {
@@ -3527,7 +3611,7 @@ export async function getFreshCustomerAnalysis(projectId: string) {
   }
 
   const row = (data?.[0] as CustomerAnalysisRow | undefined) ?? null;
-  return row ? decryptJson(row.result_json, CUSTOMER_ANALYSIS_EMPTY) : null;
+  return row ? mapCustomerAnalysis(row) : null;
 }
 
 export async function getCustomerAnalysis(projectId: string) {
@@ -3716,17 +3800,30 @@ export async function getSolutionEvaluation(projectId: string) {
   )();
 }
 
-export async function getProjectSnapshot(
-  projectId: string,
-): Promise<ProjectCacheSnapshot> {
-  const [project, artifactAuthority, evaluationSnapshot] = await Promise.all([
-    queryProjectRow(projectId),
-    getArtifactAuthoritySummary(projectId),
-    getFreshSolutionEvaluationSnapshot(projectId),
-  ]);
-  return mapProjectSnapshot(
-    project,
-    artifactAuthority,
-    Boolean(evaluationSnapshot),
-  );
+export async function getProjectSnapshot(projectId: string): Promise<ProjectCacheSnapshot> {
+  const snapshot = await readStableProjectSourceSnapshot({
+    readSourceRevision: () => getProjectSnapshotRevision(projectId),
+    readValue: async () => {
+      const [project, artifactAuthority, evaluationSnapshot] = await Promise.all([
+        queryProjectRow(projectId), getArtifactAuthoritySummary(projectId), getFreshSolutionEvaluationSnapshot(projectId),
+      ]);
+      return mapProjectSnapshot(project, artifactAuthority, Boolean(evaluationSnapshot));
+    },
+  });
+  return { ...snapshot.value, snapshot_revision: snapshot.sourceRevision };
+}
+
+export async function getProjectSnapshotAfterCommit(projectId: string): Promise<ProjectCacheSnapshot | null> {
+  try { return await getProjectSnapshot(projectId); }
+  catch (error) {
+    console.warn(JSON.stringify({ event: "project_snapshot_refresh_failed", project_id: projectId, ...safeErrorTelemetry(error) }));
+    return null;
+  }
+}
+
+async function getProjectSnapshotRevision(projectId: string) {
+  const {data,error} = await createServiceClient().from("projects").select("snapshot_revision")
+    .eq("id",projectId).single<{snapshot_revision:number}>();
+  if (error || !Number.isSafeInteger(data?.snapshot_revision)) throw new Error(error?.message ?? "Prosjektets statusversjon mangler.");
+  return data!.snapshot_revision;
 }

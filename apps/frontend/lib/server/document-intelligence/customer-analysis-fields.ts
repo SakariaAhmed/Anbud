@@ -100,7 +100,7 @@ const valueOpportunity = {
 
 export type CustomerAnalysisModelField = Exclude<
   keyof CustomerAnalysisResult,
-  "section_histories" | "signal_word_counts"
+  "revision" | "section_histories" | "signal_word_counts"
 >;
 
 type CustomerAnalysisFieldDefinition = {

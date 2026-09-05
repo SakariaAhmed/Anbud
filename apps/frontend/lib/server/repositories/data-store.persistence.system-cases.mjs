@@ -325,6 +325,7 @@ function projectRow(overrides = {}) {
     customer_analysis_generated: true,
     solution_document_uploaded: true,
     solution_evaluation_generated: true,
+    snapshot_revision: 0,
     source_revision: 0,
     last_activity_at: NOW,
     created_at: NOW,
@@ -355,6 +356,7 @@ function documentRow(id, role, supportingSubtype = null, overrides = {}) {
     processing_error: null,
     parser_used: "test",
     indexed_at: NOW,
+    chunk_source_revision: 0,
     created_at: NOW,
     updated_at: NOW,
     ...overrides,
@@ -494,6 +496,7 @@ function persistenceDatabase(overrides = {}) {
         }
 
         const inserted = {
+          chunk_source_revision: 0,
           ...structuredClone(args.p_payload),
           project_id: args.p_project_id,
           role: args.p_primary_role,
@@ -1305,8 +1308,8 @@ test("primary solution upload and ingestion preserve customer analysis and conte
     rawText: "Et løsningsdokument med unikt innhold.",
     structureMap: [],
     parserUsed: "test-parser",
-    status: "enhanced_ready",
-    message: "Dokumentet er klart.",
+    status: "processing",
+    message: "Venter på indeksering.",
     indexChunks: false,
   });
 
@@ -1395,8 +1398,8 @@ test("replacing, ingesting, and deleting solution history preserve customer anal
     rawText: "Ny løsning er ferdig indeksert.",
     structureMap: [],
     parserUsed: "test-parser",
-    status: "enhanced_ready",
-    message: "Dokumentet er klart.",
+    status: "processing",
+    message: "Venter på indeksering.",
     indexChunks: false,
   });
   await saveDocumentIngestionResult({
@@ -1411,8 +1414,8 @@ test("replacing, ingesting, and deleting solution history preserve customer anal
     rawText: "Forsinket indeksering av tidligere løsning.",
     structureMap: [],
     parserUsed: "test-parser",
-    status: "enhanced_ready",
-    message: "Dokumentet er klart.",
+    status: "processing",
+    message: "Venter på indeksering.",
     indexChunks: false,
   });
 

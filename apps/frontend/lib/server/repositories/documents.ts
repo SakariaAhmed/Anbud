@@ -7,6 +7,7 @@ export {
   listProjectDocumentsForAnalysis,
   markDocumentAsPrimarySolution,
   saveDocumentIngestionResult,
+  publishDocumentReadiness,
   savePendingDocument,
   updateDocumentProcessingState,
 } from "@/lib/server/repositories/data-store";

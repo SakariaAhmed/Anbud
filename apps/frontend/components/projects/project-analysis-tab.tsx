@@ -2813,7 +2813,7 @@ function NeedSignalCard({
 export function ProjectAnalysisTab({
   projectId,
   documents,
-  customerAnalysis,
+  customerAnalysis: latestCustomerAnalysis,
   busy,
   saveBusy,
   sectionBusy,
@@ -2834,12 +2834,16 @@ export function ProjectAnalysisTab({
   onSaveAnalysis: (
     section: CustomerAnalysisSection,
     snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
-  ) => Promise<void>;
+    revision?: string,
+  ) => Promise<boolean>;
 }) {
   const [editingSection, setEditingSection] =
     useState<CustomerAnalysisSection | null>(null);
   const [sectionDraft, setSectionDraft] =
     useState<EditableCustomerAnalysisSnapshot | null>(null);
+  const [editingBasis, setEditingBasis] = useState<CustomerAnalysisResult | null>(null);
+  const customerAnalysis = latestCustomerAnalysis ?? (editingSection ? editingBasis : null);
+  const [sectionRevision, setSectionRevision] = useState<string | undefined>();
   const [sectionDraftError, setSectionDraftError] = useState("");
   const [activeSection, setActiveSection] =
     useState<(typeof SECTION_TABS)[number]["value"]>(
@@ -2855,13 +2859,13 @@ export function ProjectAnalysisTab({
   const [showValueList, setShowValueList] = useState(false);
 
   useEffect(() => {
-    if (!customerAnalysis) {
+    if (!customerAnalysis && !editingSection) {
       setActiveSection("summary");
       setEditingSection(null);
       setSectionDraft(null);
       setSectionDraftError("");
     }
-  }, [customerAnalysis]);
+  }, [customerAnalysis, editingSection]);
 
   useEffect(() => {
     if (
@@ -2982,6 +2986,8 @@ export function ProjectAnalysisTab({
   }
 
   function onStartSectionEdit(section: CustomerAnalysisSection) {
+    setEditingBasis(customerAnalysis);
+    setSectionRevision(customerAnalysis?.revision);
     setEditingSection(section);
     setSectionDraft(makeSectionDraft(section));
     setSectionDraftError("");
@@ -3001,10 +3007,12 @@ export function ProjectAnalysisTab({
 
     try {
       const snapshot = sanitizeSectionDraft(section, sectionDraft);
-      await onSaveAnalysis(
+      const saved = await onSaveAnalysis(
         section,
         snapshot as CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
+        sectionRevision,
       );
+      if (!saved) return;
       setEditingSection(null);
       setSectionDraft(null);
       setSectionDraftError("");
@@ -3041,6 +3049,12 @@ export function ProjectAnalysisTab({
             )}
             Lagre
           </Button>
+          {customerAnalysis?.revision && sectionRevision !== customerAnalysis.revision && (
+            <div className="w-full text-sm text-amber-800">
+              <p>Analysen er endret. Utkastet ditt er beholdt. Hvis du fortsetter, erstatter utkastet denne seksjonen i siste analyse.</p>
+              <Button variant="outline" size="sm" disabled={saveBusy} onClick={() => setSectionRevision(customerAnalysis.revision)}>Bruk siste analyse som grunnlag</Button>
+            </div>
+          )}
         </>
       );
     }

@@ -1,4 +1,6 @@
 import "server-only";
+import { findWorkflowArtifact, pendingEvaluationResult } from "@/lib/server/project-job-results";
+import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
 
 import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
 import {
@@ -53,11 +55,12 @@ import {
   getDocumentDetail,
   listProjectDocumentsForAnalysis,
   saveDocumentIngestionResult,
+  publishDocumentReadiness,
   updateDocumentProcessingState,
 } from "@/lib/server/repositories/documents";
 import {
   getProjectDetail,
-  getProjectSnapshot,
+  getProjectSnapshotAfterCommit,
   getProjectSourceRevision,
   updateProjectMetadataFromInference,
 } from "@/lib/server/repositories/projects";
@@ -83,7 +86,6 @@ import {
 import {
   readStableProjectSourceSnapshot,
   readStableSolutionEvaluationSourceSnapshot,
-  runWithProjectSourceRevisionRetry,
 } from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
 import {
   assertCustomerAnalysisRequirementSourcesReady,
@@ -120,7 +122,7 @@ export type ProjectWorkflowInput =
       model?: string;
     }
   | { kind: "high_level_design"; projectId: string; model?: string }
-  | { kind: "perfect_system_solution"; projectId: string; model?: string }
+  | { kind: "perfect_system_solution"; projectId: string; model?: string; resumeArtifactId?: string }
   | { kind: "executive_summary"; projectId: string; model?: string };
 
 export type ProjectWorkflowPhaseHandler = (phase: string) => void;
@@ -416,7 +418,7 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
     case "high_level_design":
       return { kind: "high_level_design", projectId, model };
     case "perfect_system_solution":
-      return { kind: "perfect_system_solution", projectId, model };
+      return { kind: "perfect_system_solution", projectId, model, resumeArtifactId: optionalWorkflowString(input.resumeArtifactId) };
     case "executive_summary":
       return { kind: "executive_summary", projectId, model };
     default:
@@ -788,7 +790,7 @@ async function runDocumentIngestionWorkflow(
             document_id: input.documentId,
             status: enhancedDocument.processing_status,
             parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
-            project: await getProjectSnapshot(input.projectId),
+            project: await getProjectSnapshotAfterCommit(input.projectId),
           };
         }
       }
@@ -890,20 +892,11 @@ async function runDocumentIngestionWorkflow(
     if (waitsForProjectMetadata) {
       handlers.setProgress("[96%] Ferdigstiller dokumentgrunnlaget ...");
       assertWorkflowActive(handlers);
-      await updateDocumentProcessingState({
-        projectId: input.projectId,
-        documentId: input.documentId,
-        status: readyStatus,
-        message: readyMessage,
-        error: null,
-        parserUsed: parsed.parserUsed,
+      readyDocument = await publishDocumentReadiness({
+        projectId: input.projectId, documentId: input.documentId,
+        sourceRevision: basicDocument.chunk_source_revision ?? 0,
+        status: readyStatus, message: readyMessage, parserUsed: parsed.parserUsed,
       });
-      readyDocument = {
-        ...basicDocument,
-        processing_status: readyStatus,
-        processing_message: readyMessage,
-        processing_error: null,
-      };
       handlers.onPhase?.("readiness_publisering");
     }
 
@@ -913,7 +906,7 @@ async function runDocumentIngestionWorkflow(
         document_id: input.documentId,
         status: readyDocument.processing_status,
         parser_used: readyDocument.parser_used ?? parsed.parserUsed,
-        project: await getProjectSnapshot(input.projectId),
+        project: await getProjectSnapshotAfterCommit(input.projectId),
         docling_enhancement_requested: shouldQueueDoclingEnhancement,
       };
     }
@@ -968,7 +961,7 @@ async function runDocumentIngestionWorkflow(
         document_id: input.documentId,
         status: enhancedDocument.processing_status,
         parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
-        project: await getProjectSnapshot(input.projectId),
+        project: await getProjectSnapshotAfterCommit(input.projectId),
       };
     }
 
@@ -996,7 +989,7 @@ async function runDocumentIngestionWorkflow(
       document_id: input.documentId,
       status: "basic_ready",
       parser_used: parsed.parserUsed,
-      project: await getProjectSnapshot(input.projectId),
+      project: await getProjectSnapshotAfterCommit(input.projectId),
     };
   } catch (error) {
     assertWorkflowActive(handlers);
@@ -1036,7 +1029,7 @@ async function runDocumentDoclingEnhancementWorkflow(
       document_id: input.documentId,
       status: document.processing_status,
       parser_used: document.parser_used,
-      project: await getProjectSnapshot(input.projectId),
+      project: await getProjectSnapshotAfterCommit(input.projectId),
       skipped: true,
     };
   }
@@ -1058,7 +1051,7 @@ async function runDocumentDoclingEnhancementWorkflow(
       document_id: input.documentId,
       status: document.processing_status,
       parser_used: document.parser_used,
-      project: await getProjectSnapshot(input.projectId),
+      project: await getProjectSnapshotAfterCommit(input.projectId),
       skipped: true,
     };
   }
@@ -1116,7 +1109,7 @@ async function runDocumentDoclingEnhancementWorkflow(
       document_id: input.documentId,
       status: readyStatus,
       parser_used: document.parser_used,
-      project: await getProjectSnapshot(input.projectId),
+      project: await getProjectSnapshotAfterCommit(input.projectId),
       skipped: true,
     };
   }
@@ -1146,7 +1139,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     document_id: input.documentId,
     status: enhancedDocument.processing_status,
     parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
-    project: await getProjectSnapshot(input.projectId),
+    project: await getProjectSnapshotAfterCommit(input.projectId),
     skipped: false,
   };
 }
@@ -1155,85 +1148,68 @@ async function runCustomerAnalysisWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "customer_analysis" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
-  return runWithProjectSourceRevisionRetry({
-    maxAttempts: 2,
-    onRetry: ({ attempt }) => {
-      console.info(
-        JSON.stringify({
-          event: "customer_analysis_source_revision_retry",
-          project_id: input.projectId,
-          attempt,
+  handlers.setProgress("Laster dokumentgrunnlag ...");
+  const sourceSnapshot = await readStableProjectSourceSnapshot({
+    readSourceRevision: () => getProjectSourceRevision(input.projectId),
+    readValue: async () => {
+      const [projectDocuments, serviceCandidates, previousAnalysis] = await Promise.all([
+        listProjectDocumentsForAnalysis(input.projectId),
+        listProjectServiceDescriptions(input.projectId, {
+          includeDocumentAiSummaries: true,
         }),
-      );
-    },
-    run: async (attempt) => {
-      handlers.setProgress(
-        attempt === 1
-          ? "Laster dokumentgrunnlag ..."
-          : "Dokumentgrunnlaget ble oppdatert. Laster siste versjon før nytt analyseforsøk ...",
-      );
-      const sourceSnapshot = await readStableProjectSourceSnapshot({
-        readSourceRevision: () => getProjectSourceRevision(input.projectId),
-        readValue: async () => {
-          const [projectDocuments, serviceCandidates] = await Promise.all([
-            listProjectDocumentsForAnalysis(input.projectId),
-            listProjectServiceDescriptions(input.projectId, {
-              includeDocumentAiSummaries: true,
-            }),
-          ]);
-          return { projectDocuments, serviceCandidates };
-        },
-      });
-      const { projectDocuments, serviceCandidates } = sourceSnapshot.value;
-      const { projectDocuments: analysisDocuments } =
-        splitServiceDescriptionDetails(projectDocuments);
-      const { customerDocument, supportingDocuments } =
-        selectProjectDocuments(analysisDocuments);
-      handlers.onPhase?.("dokumenthenting");
-
-      if (!customerDocument) {
-        throw new Error("Last opp minst ett dokument først.");
-      }
-
-      assertCustomerAnalysisRequirementSourcesReady([
-        customerDocument,
-        ...supportingDocuments,
+        getFreshCustomerAnalysis(input.projectId),
       ]);
-
-      handlers.setProgress("Analyserer kundedokumentet med AI ...");
-      const result = await analyzeCustomerDocuments({
-        projectName: customerDocument.title,
-        customerDocument,
-        supportingDocuments,
-        serviceCandidates,
-        model: input.model,
-      });
-      handlers.onPhase?.("ai_analyse");
-
-      handlers.setProgress("Lagrer kundeanalysen ...");
-      assertWorkflowActive(handlers);
-      const analysis = await saveCustomerAnalysis(
-        input.projectId,
-        [
-          customerDocument.id,
-          ...supportingDocuments.map((document) => document.id),
-        ],
-        result,
-        {
-          expectedSourceRevision: sourceSnapshot.sourceRevision,
-          previousAnalysis: null,
-          updatedSections: [...CUSTOMER_ANALYSIS_SECTIONS],
-          historySource: "full_regeneration",
-        },
-      );
-      handlers.onPhase?.("lagring");
-
-      return {
-        analysis,
-        project: await getProjectSnapshot(input.projectId),
-      };
+      return { projectDocuments, serviceCandidates, previousAnalysis };
     },
   });
+  const { projectDocuments, serviceCandidates } = sourceSnapshot.value;
+  const { projectDocuments: analysisDocuments } =
+    splitServiceDescriptionDetails(projectDocuments);
+  const { customerDocument, supportingDocuments } =
+    selectProjectDocuments(analysisDocuments);
+  handlers.onPhase?.("dokumenthenting");
+
+  if (!customerDocument) {
+    throw new Error("Last opp minst ett dokument først.");
+  }
+
+  assertCustomerAnalysisRequirementSourcesReady([
+    customerDocument,
+    ...supportingDocuments,
+  ]);
+
+  handlers.setProgress("Analyserer kundedokumentet med AI ...");
+  const result = await analyzeCustomerDocuments({
+    projectName: customerDocument.title,
+    customerDocument,
+    supportingDocuments,
+    serviceCandidates,
+    model: input.model,
+  });
+  handlers.onPhase?.("ai_analyse");
+
+  handlers.setProgress("Lagrer kundeanalysen ...");
+  assertWorkflowActive(handlers);
+  const analysis = await saveCustomerAnalysis(
+    input.projectId,
+    [
+      customerDocument.id,
+      ...supportingDocuments.map((document) => document.id),
+    ],
+    result,
+    {
+      expectedSourceRevision: sourceSnapshot.sourceRevision,
+      previousAnalysis: sourceSnapshot.value.previousAnalysis,
+      updatedSections: [...CUSTOMER_ANALYSIS_SECTIONS],
+      historySource: "full_regeneration",
+    },
+  );
+  handlers.onPhase?.("lagring");
+
+  return {
+    analysis,
+    project: await getProjectSnapshotAfterCommit(input.projectId),
+  };
 }
 
 async function runArtifactGenerationWorkflow(
@@ -1416,7 +1392,7 @@ export async function runSolutionEvaluationWorkflow(
 
   return {
     evaluation,
-    project: await getProjectSnapshot(input.projectId),
+    project: await getProjectSnapshotAfterCommit(input.projectId),
     artifact: null,
     used_generated_solution: false,
   };
@@ -1481,7 +1457,7 @@ async function runHighLevelDesignWorkflow(
 
   return {
     analysis,
-    project: await getProjectSnapshot(input.projectId),
+    project: await getProjectSnapshotAfterCommit(input.projectId),
   };
 }
 
@@ -1527,7 +1503,7 @@ async function runExecutiveSummaryWorkflow(
 
   return {
     executive_summary: executiveSummary,
-    project: await getProjectSnapshot(input.projectId),
+    project: await getProjectSnapshotAfterCommit(input.projectId),
   };
 }
 
@@ -1539,15 +1515,15 @@ async function runPerfectSystemSolutionWorkflow(
   const project = await getProjectDetail(input.projectId);
   handlers.onPhase?.("prosjekthenting");
 
-  if (!project.solution_evaluation) {
+  if (!project.solution_evaluation && !input.resumeArtifactId) {
     throw new Error("Generer vurdering før du forbedrer systemløsningen.");
   }
 
   const systemScore =
-    project.solution_evaluation.architecture_comparison?.system_solution_score ??
+    project.solution_evaluation?.architecture_comparison?.system_solution_score ??
     0;
 
-  if (systemScore >= 100) {
+  if (systemScore >= 100 && !input.resumeArtifactId) {
     throw new Error("Systemløsningen har allerede 100/100 i vurderingen.");
   }
 
@@ -1561,7 +1537,10 @@ async function runPerfectSystemSolutionWorkflow(
   ].join("\n");
 
   handlers.setProgress("Skriver forbedret systemløsning mot 100/100 ...");
-  const { artifact } = await generateAndSaveProjectArtifact({
+  const savedArtifact = await findWorkflowArtifact(input.projectId, getProjectWorkflowLease()?.jobId, input.resumeArtifactId);
+  if (input.resumeArtifactId && !savedArtifact) throw new Error("Fant ikke løsningsutkastet som skal revurderes.");
+  if (savedArtifact && (!savedArtifact.is_current || !savedArtifact.source_is_current)) throw new Error("ARTIFACT_SOURCE_REVISION_CHANGED");
+  const artifact = savedArtifact ?? (await generateAndSaveProjectArtifact({
     projectId: input.projectId,
     artifactType: "losningsutkast",
     instructions,
@@ -1577,8 +1556,9 @@ async function runPerfectSystemSolutionWorkflow(
     timings: handlers.timings,
     totalDurationMs: handlers.totalDurationMs,
     assertActive: handlers.assertActive,
-  });
+  })).artifact;
 
+  try {
   handlers.setProgress("Laster dokumentgrunnlag for ny vurdering ...");
   const {
     customerAnalysis,
@@ -1591,10 +1571,7 @@ async function runPerfectSystemSolutionWorkflow(
   handlers.onPhase?.("revalueringsgrunnlag");
 
   if (!customerDocument || !customerAnalysis || !solutionDocument) {
-    return {
-      artifact,
-      project: await getProjectSnapshot(input.projectId),
-    };
+    return pendingEvaluationResult(artifact, "Dokumentgrunnlaget eller kundeanalysen mangler. Oppdater grunnlaget før du fortsetter.");
   }
 
   assertEvaluationRequirementSourcesReady([
@@ -1680,9 +1657,14 @@ async function runPerfectSystemSolutionWorkflow(
 
   return {
     artifact,
-    project: await getProjectSnapshot(input.projectId),
+    project: await getProjectSnapshotAfterCommit(input.projectId),
     evaluation,
   };
+  } catch (error) {
+    rethrowAuthoritativeLeaseLoss(error);
+    return pendingEvaluationResult(artifact, productionSafeErrorMessage(error, "Revurderingen kunne ikke fullføres."));
+  }
+
 }
 
 export async function runProjectWorkflow(

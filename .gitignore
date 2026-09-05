@@ -35,3 +35,7 @@ reports/
 
 # OS
 .DS_Store
+
+# Local audit evidence (reports are tracked explicitly)
+output/audit-2026-09-05/
+output/remediation-2026-09-05/

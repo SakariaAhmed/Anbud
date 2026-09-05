@@ -1,4 +1,5 @@
 import "server-only";
+import { recoverCommittedProjectJobResult } from "@/lib/server/project-job-results";
 
 import { randomUUID } from "node:crypto";
 
@@ -155,10 +156,6 @@ function autoRunProjectJob(
   task: () => Promise<void>,
 ) {
   setTimeout(() => {
-    if (input.kind === "document_ingestion") {
-      void task();
-      return;
-    }
     void scheduleHeavyProjectJobAutorun(task);
   }, 0);
 }
@@ -194,11 +191,7 @@ export async function claimAndScheduleProjectJobAutorun(
 ) {
   const claim = runtime.claim ?? claimQueuedProjectJob;
   const claimed = await claim(jobId);
-  if (!claimed) {
-    throw new Error(
-      "Prosjektjobben kunne ikke reserveres av serverversjonen som godtok den.",
-    );
-  }
+  if (!claimed) return; // Another job owns the project; the durable worker will retry.
 
   const schedule = runtime.schedule ?? autoRunProjectJob;
   const run = runtime.run ?? runProjectJob;
@@ -699,7 +692,9 @@ async function runProjectJob(
           },
           async () => {
             const assertWorkflowActive = () => workflowSignal.throwIfAborted();
-            const workflowResult = await runProjectWorkflow(input, {
+            const committed = context.persisted ? await recoverCommittedProjectJobResult(input.projectId, jobId) : null;
+            const completeCheckpoint = committed && !("completion_status" in committed && committed.completion_status === "evaluation_pending");
+            const workflowResult = completeCheckpoint ? committed : await runProjectWorkflow(input, {
               setProgress(message) {
                 assertWorkflowActive();
                 updateJob(jobId, { message, status: "running" }, context);
@@ -748,7 +743,8 @@ async function runProjectJob(
 
     terminalPatch = {
       status: "completed",
-      message: "Ferdig.",
+      message: "completion_status" in result && result.completion_status === "evaluation_pending"
+        ? "Løsningsutkastet er lagret. Revurdering gjenstår." : "Ferdig.",
       result,
       error: null,
     };
@@ -771,6 +767,11 @@ async function runProjectJob(
       );
       return;
     }
+    const committed = context.persisted ? await recoverCommittedProjectJobResult(input.projectId, jobId).catch(() => null) : null;
+    if (committed) {
+      terminalPatch = { status: "completed", message: "completion_status" in committed
+        ? "Løsningsutkastet er lagret. Revurdering gjenstår." : "Resultatet er lagret.", error: null, result: committed };
+    } else {
     const errorTerminalMetadata = projectJobTerminalMetadataFromError(error);
     if (Object.keys(errorTerminalMetadata).length > 0) {
       failureTerminalMetadata = errorTerminalMetadata;
@@ -814,6 +815,7 @@ async function runProjectJob(
         ),
         result: null,
       };
+    }
     }
   } finally {
     try {
@@ -898,12 +900,14 @@ export async function queueCustomerAnalysisJob(input: {
 export async function queuePerfectSystemSolutionJob(input: {
   projectId: string;
   model?: string;
+  resumeArtifactId?: string;
 }, options: QueueJobOptions = {}) {
   return enqueueProjectJob(
     {
       kind: "perfect_system_solution",
       projectId: input.projectId,
       model: input.model,
+      resumeArtifactId: input.resumeArtifactId,
     },
     options,
   );

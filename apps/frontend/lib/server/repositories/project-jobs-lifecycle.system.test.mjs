@@ -211,9 +211,9 @@ test("accepting server owns the durable lease before autorun is scheduled", asyn
   assert.equal(leaseStops, 1, "workflow owns and stops the handed-off heartbeat");
 });
 
-test("autorun fails closed without scheduling when another revision wins the claim", async () => {
+test("autorun leaves work queued without scheduling when another worker owns the project", async () => {
   let scheduled = false;
-  await assert.rejects(
+  await assert.doesNotReject(
     claimAndScheduleProjectJobAutorun(
       "stolen-job",
       {
@@ -231,7 +231,6 @@ test("autorun fails closed without scheduling when another revision wins the cla
         },
       },
     ),
-    /kunne ikke reserveres av serverversjonen/u,
   );
   assert.equal(scheduled, false);
 });
@@ -570,11 +569,17 @@ class FakeQuery {
   }
 }
 
-function inMemoryPostgREST() {
+function inMemoryPostgREST(now = "2026-07-10T08:00:00.000Z") {
   const rows = [];
   return {
     rows,
     async rpc(name, args) {
+      if (name === "claim_project_job_serialized") {
+        const row = rows.find(row => row.id === args.p_job_id && row.status === "queued");
+        if (!row || rows.some(other => other.project_id === row.project_id && other.status === "running")) return {data:null,error:null};
+        Object.assign(row, {status:"running",lease_token:args.p_lease_token,locked_at:now,started_at:now,updated_at:now});
+        return {data:{id:row.id},error:null};
+      }
       assert.equal(name, "enqueue_project_job_serialized");
       assert.equal(args.p_project_id, args.p_job.project_id);
       rows.push({ ...args.p_job });
@@ -1224,7 +1229,7 @@ test("queue-wait heartbeat prevents stale reset and foreign claim after 15 minut
 });
 
 test("atomic claim grants exactly one lease and rejects foreign ownership", async () => {
-  const client = inMemoryPostgREST();
+  const client = inMemoryPostgREST("2026-07-10T08:01:00.000Z");
   await insertProjectJob(record("job-atomic"), { projectId: "p" }, { client });
 
   const [first, second] = await Promise.all([

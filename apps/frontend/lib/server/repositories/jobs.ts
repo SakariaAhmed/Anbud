@@ -268,24 +268,11 @@ export async function claimQueuedProjectJob(
   runtime: ProjectJobRepositoryRuntime = {},
 ) {
   const dataApi = serviceClient(runtime);
-  const now = nowIso(runtime);
   const leaseToken = runtime.randomUUID?.() ?? generateRandomUUID();
   assertLeaseToken(leaseToken);
-  const payload = {
-    status: "running",
-    message: "Starter jobben ...",
-    locked_at: now,
-    lease_token: leaseToken,
-    started_at: now,
-    updated_at: now,
-  };
-  const claimed = await dataApi
-    .from("project_jobs")
-    .update(payload)
-    .eq("id", jobId)
-    .eq("status", "queued")
-    .select("id")
-    .maybeSingle<{ id: string }>();
+  const claimed = await dataApi.rpc("claim_project_job_serialized", {
+    p_job_id: jobId, p_lease_token: leaseToken,
+  });
   if (claimed.error) {
     throw new Error(claimed.error.message);
   }
@@ -339,4 +326,11 @@ export async function resetStaleRunningProjectJobs(
     throw new Error(reset.error.message);
   }
   return reset.data?.length ?? 0;
+}
+
+export async function listRecentProjectJobs(projectId: string) {
+  const { data, error } = await createServiceClient().from("project_jobs").select("*")
+    .eq("project_id", projectId).order("created_at", { ascending: false }).limit(20);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as JobRow[]).map(mapJobRow);
 }

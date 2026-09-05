@@ -31,6 +31,7 @@ import {
   fetchGeneratedArtifacts,
   fetchProjectArtifactAuthority,
   fetchProjectServices,
+  fetchProjectState,
   fetchSolutionEvaluation,
   markClientPerformance,
   saveCustomerAnalysisSection,
@@ -60,6 +61,7 @@ import {
 } from "@/components/projects/project-workspace-types";
 import {
   applyProjectSnapshot,
+  isProjectSnapshotOlder,
   createLatestArtifactAuthorityRequestGate,
   hasAuthoritativeCurrentArtifact,
   loadedArtifactTypesMissingAuthorityVersion,
@@ -343,6 +345,7 @@ export function ProjectWorkspacePage({
   >([]);
   const [serviceDescriptionsLoaded, setServiceDescriptionsLoaded] =
     useState(false);
+  const busyActionRef = useRef<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [busyMessage, setBusyMessage] = useState("");
   const [busyProgress, setBusyProgress] = useState(0);
@@ -542,6 +545,7 @@ export function ProjectWorkspacePage({
     };
     window.addEventListener("project-services-updated", refresh);
     window.addEventListener("focus", refresh);
+    window.addEventListener("project-workflow-updated", refresh);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       controller.abort();
@@ -672,6 +676,28 @@ export function ProjectWorkspacePage({
     },
   });
 
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = false;
+    const refresh = async () => {
+      if (active || document.visibilityState === "hidden") return;
+      active = true;
+      try {
+        const fresh = await fetchProjectState(project.id, controller.signal);
+        if (!controller.signal.aborted) setProject(current => {
+          if (isProjectSnapshotOlder(current, fresh)) return current;
+          return normalizeProjectState({ ...current, ...fresh, generated_artifacts: current.generated_artifacts });
+        });
+      } catch { /* A transport failure never changes authoritative document status. */ }
+      finally { active = false; }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 15_000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("project-workflow-updated", refresh);
+    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener("focus", refresh); window.removeEventListener("project-workflow-updated", refresh); };
+  }, [project.id]);
+
   async function trackDocumentIngestionJob(
     job: ProjectJobRecord | null | undefined,
     documentId: string,
@@ -684,12 +710,14 @@ export function ProjectWorkspacePage({
     const controller = new AbortController();
     documentJobAbortControllersRef.current.add(controller);
 
+    let serverFailure = false;
     try {
-      const completedJob = await watchProjectJob({
+      let completedJob = await watchProjectJob({
         projectId: project.id,
         jobId: job.id,
         signal: controller.signal,
         onStatus(jobStatus) {
+          if (jobStatus.status === "failed") serverFailure = true;
           if (options.propagateFailure) {
             setBusyMessage(progressMessageLabel(jobStatus.message));
             setBusyProgress((current) =>
@@ -737,60 +765,31 @@ export function ProjectWorkspacePage({
           );
         },
       });
+      const enhancementId = completedJob.result && "docling_enhancement_job_id" in completedJob.result
+        ? completedJob.result.docling_enhancement_job_id : null;
+      if (typeof enhancementId === "string") {
+        setNotice("Dokumentet er lest. Venter på den siste dokumentforbedringen før ny generering.");
+        completedJob = await watchProjectJob({ projectId: project.id, jobId: enhancementId, signal: controller.signal,
+          onStatus: status => setBusyMessage(progressMessageLabel(status.message)) });
+      }
       const completedDocument = documentFromJobResult(completedJob.result);
       if (!completedDocument) {
         return null;
       }
 
-      const projectSnapshot =
-        completedJob.result &&
-        typeof completedJob.result === "object" &&
-        "project" in completedJob.result
-          ? (completedJob.result as { project?: ProjectSnapshotPayload }).project
-          : null;
-
-      setProject((current) =>
-        normalizeProjectState(
-          applyProjectSnapshot(
-            {
-              ...current,
-              documents: dedupeDocuments([
-                completedDocument,
-                ...current.documents.filter(
-                  (document) => document.id !== completedDocument.id,
-                ),
-              ]),
-            },
-            projectSnapshot ?? current,
-          ),
-          { preserveArtifactCount: true },
-        ),
-      );
+      const freshProject = await fetchProjectState(project.id, controller.signal);
+      setProject(current => {
+        if (isProjectSnapshotOlder(current, freshProject)) return current;
+        return normalizeProjectState({ ...current, ...freshProject }, { preserveArtifactCount: true });
+      });
       return completedDocument;
     } catch (err) {
       if (controller.signal.aborted) {
         return null;
       }
 
-      setProject((current) =>
-        normalizeProjectState(
-          {
-            ...current,
-            documents: current.documents.map((document) =>
-              document.id === documentId
-                ? {
-                    ...document,
-                    processing_status: "failed",
-                    processing_message: "Dokumentindeksering feilet.",
-                    processing_error:
-                      err instanceof Error ? err.message : "Ukjent feil.",
-                  }
-                : document,
-            ),
-          },
-          { preserveArtifactCount: true },
-        ),
-      );
+      if (serverFailure) setError(err instanceof Error ? err.message : "Dokumentbehandlingen feilet.");
+      else setNotice("Mistet kontakt med dokumentbehandlingen. Status oppdateres når forbindelsen er tilbake.");
       if (options.propagateFailure) {
         throw err;
       }
@@ -1014,17 +1013,25 @@ export function ProjectWorkspacePage({
     action: () => Promise<void>,
     progressMessages?: string[],
   ) {
+    if (busyActionRef.current) {
+      setError("En handling pågår allerede. Vent til den er ferdig.");
+      return false;
+    }
+    busyActionRef.current = label;
     setBusy(label);
     setError("");
     setNotice("");
     startProgressTicker(progressMessages ?? []);
     try {
       await action();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
+      return false;
     } finally {
       setBusyProgress(100);
       stopProgressTicker();
+      busyActionRef.current = null;
       setBusy(null);
     }
   }
@@ -1099,7 +1106,7 @@ export function ProjectWorkspacePage({
       setUploadRole("supporting_document");
       setDocumentFileInputKey((current) => current + 1);
       setProject((current) =>
-        normalizeProjectState(
+        isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
           applyProjectSnapshot(
             {
               ...current,
@@ -1137,7 +1144,7 @@ export function ProjectWorkspacePage({
         fallbackMessage: "Kunne ikke laste opp kravdokumentet.",
       });
       setProject((current) =>
-        normalizeProjectState(
+        isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
           applyProjectSnapshot(
             {
               ...current,
@@ -1196,7 +1203,7 @@ export function ProjectWorkspacePage({
         fallbackMessage: "Kunne ikke laste opp Bilag 2.",
       });
       setProject((current) =>
-        normalizeProjectState(
+        isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
           applyProjectSnapshot(
             {
               ...current,
@@ -1273,7 +1280,7 @@ export function ProjectWorkspacePage({
           value.acknowledge_deterministic_repairs === true,
       });
       setProject((current) =>
-        normalizeProjectState(
+        isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
           applyProjectSnapshot(
             {
               ...current,
@@ -1337,7 +1344,7 @@ export function ProjectWorkspacePage({
         // remaining version with the authoritative source-current summary.
       }
       setProject((current) =>
-        normalizeProjectState(
+        isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
           applyProjectSnapshot(
             {
               ...current,
@@ -1395,6 +1402,7 @@ export function ProjectWorkspacePage({
         throw err;
       }
       setProject((current) => {
+        if (isProjectSnapshotOlder(current, payload.project)) return current;
         const next = applyProjectSnapshot(
           {
             ...current,
@@ -1458,7 +1466,7 @@ export function ProjectWorkspacePage({
           project: ProjectSnapshotPayload;
         };
         setProject((current) =>
-          normalizeProjectState(
+          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
               { ...current, customer_analysis: result.analysis },
               result.project,
@@ -1477,15 +1485,17 @@ export function ProjectWorkspacePage({
   async function onSaveAnalysis(
     section: CustomerAnalysisSection,
     snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
+    revision?: string,
   ) {
-    await runAction("save-analysis", async () => {
+    return runAction("save-analysis", async () => {
       const payload = await saveCustomerAnalysisSection({
         projectId: project.id,
         section,
         snapshot,
+        revision,
       });
       setProject((current) =>
-        normalizeProjectState(
+        isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
           applyProjectSnapshot(
             { ...current, customer_analysis: payload.analysis },
             payload.project,
@@ -1524,7 +1534,7 @@ export function ProjectWorkspacePage({
           evaluation?: SolutionEvaluationResult;
         };
         setProject((current) =>
-          normalizeProjectState(
+          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
               {
                 ...current,
@@ -1572,7 +1582,7 @@ export function ProjectWorkspacePage({
           project: ProjectSnapshotPayload;
         };
         setProject((current) =>
-          normalizeProjectState(
+          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
               {
                 ...current,
@@ -1621,7 +1631,7 @@ export function ProjectWorkspacePage({
           project: ProjectSnapshotPayload;
         };
         setProject((current) =>
-          normalizeProjectState(
+          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
               {
                 ...current,
@@ -1677,7 +1687,7 @@ export function ProjectWorkspacePage({
           project: ProjectSnapshotPayload;
         };
         setProject((current) =>
-          normalizeProjectState(
+          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
               {
                 ...current,
@@ -1744,7 +1754,7 @@ export function ProjectWorkspacePage({
           project: ProjectSnapshotPayload;
         };
         setProject((current) =>
-          normalizeProjectState(
+          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
               {
                 ...current,
@@ -1787,7 +1797,7 @@ export function ProjectWorkspacePage({
           project: ProjectSnapshotPayload;
         };
         setProject((current) =>
-          normalizeProjectState(
+          isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
               {
                 ...current,

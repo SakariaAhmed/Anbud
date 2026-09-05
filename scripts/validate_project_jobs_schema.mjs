@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REQUIRED_PROJECT_JOB_COLUMNS = [
   "input_json",
+  "result_checkpoint",
   "locked_at",
   "lease_token",
   "started_at",
@@ -119,6 +120,19 @@ export async function preflightRemoteProjectJobSchema({
     throw new Error(
       `Durable project_jobs schema preflight failed with HTTP ${response.status}.`,
     );
+  }
+
+  for (const [table, columns] of [
+    ["projects", "snapshot_revision"], ["customer_analyses", "revision"],
+    ["project_result_history", "id,project_id,result_json"],
+  ]) {
+    const consistencyUrl = new URL(`${rootUrl}/${table}`);
+    consistencyUrl.searchParams.set("select", columns);
+    consistencyUrl.searchParams.set("limit", "0");
+    const check = await fetchImpl(consistencyUrl, { method: "HEAD", headers: {
+      apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}`, accept: "application/json",
+    } });
+    if (!check.ok) throw new Error(`Workflow consistency schema preflight failed for ${table} with HTTP ${check.status}.`);
   }
 
   const auditEventsUrl = new URL(`${rootUrl}/audit_events`);
