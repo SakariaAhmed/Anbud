@@ -18,3 +18,11 @@ The signed-in synthetic production test found nine defects. This change fixes th
 The deletion regression covers three linked artifact versions and an evaluation, and verifies that individual parent deletion remains blocked. Requirement fixtures reproduce the six known source IDs, supplier narrative matching and the explicit unpriced 24/7 gap. Diagram tests include ordinary arrows and blocked active content.
 
 Production retest and generated export verification are tracked separately in the local test report; pre-release checks do not constitute a production sign-off. Apply `database/migrations/20260905100000_project_artifact_tree_deletion.sql` before the production retest.
+
+## Follow-up from the live retest
+
+The first release exposed a second Mermaid issue: its temporary render container must be attached to the DOM for measurement. A browser reproduction fails when detached and passes when mounted offscreen. The follow-up also keeps already persisted submissions queued during the deployment claim pause, while unrelated claim errors still reject.
+
+Downloaded PDFs were present in Downloads even though the embedded browser emitted no download event. Visual review found row splitting at adjacent-cell paragraph boundaries; pagination now uses whole-row boundaries and preserves full headings. Invalid PDF signatures now use the actionable PDF domain error and HTTP 400. Evaluation actions now include deficient rows from the complete coverage result instead of relying only on sampled findings.
+
+The combined local suite passes 909 tests with zero skips and 22 parser golden cases, plus lint/build. Production results and cleanup are recorded in the separate retest report.

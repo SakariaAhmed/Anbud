@@ -1837,7 +1837,7 @@ export function validateUploadFileSignature(
   };
 
   if (fileFormat === "pdf" && !buffer.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
-    invalid();
+    throw new Error("INVALID_PDF_DOCUMENT");
   }
   if (
     (fileFormat === "docx" || fileFormat === "xlsx") &&

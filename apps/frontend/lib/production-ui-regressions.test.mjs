@@ -8,3 +8,19 @@ test('rewrite suggestions do not acquire unrelated weaknesses by array position'
  const result=buildArchitectureActions({document_findings:[],rewrite_suggestions:[{target:'K-02',suggestion:'Clarify availability'}],weaknesses:['K-05 lacks 24/7'],missing_elements:[],improvement_recommendations:[],generic_sections:[]});
  assert.deepEqual(result,[{location:'K-02',action:'Clarify availability',reason:''}]);
 });
+
+
+test('complete coverage contributes omitted deficiencies without duplicating sampled findings',()=>{
+ const result=buildArchitectureActions({
+  requirement_coverage:{items:[
+   {reference:'K-02',source_reference:'Source K-02',assessment:'Dårlig',rationale:'Availability is only a goal',recommendation:'Commit to the SLA'},
+   {reference:'K-05',source_reference:'Source K-05',assessment:'Dårlig',rationale:'No out-of-hours coverage',recommendation:'Clarify 24/7 staffing'},
+  ]},
+  document_findings:[{reference:'Source K-02',assessment:'Dårlig',finding:'Availability is only a goal',recommendation:'Commit to the SLA'}],
+  rewrite_suggestions:[],weaknesses:[],
+ });
+ assert.deepEqual(result,[
+  {location:'K-02',action:'Commit to the SLA',reason:'Availability is only a goal'},
+  {location:'K-05',action:'Clarify 24/7 staffing',reason:'No out-of-hours coverage'},
+ ]);
+});
