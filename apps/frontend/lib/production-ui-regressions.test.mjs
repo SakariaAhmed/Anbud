@@ -36,3 +36,9 @@ test('saved fallback diagrams repair identity group cycles without changing edge
   assert.equal(sanitizeMermaidChart(result.chart).chart,result.chart);
  }
 });
+
+test('rendered Mermaid themes retain local gradients without accepting external content',()=>{
+ const {isSafeRenderedMermaidCss}=j('./mermaid-safety.ts');
+ for(const css of ['.node{stroke:url(#mermaid-_R_1_-gradient)}','.node{fill:url("#gradient")}','.node{fill:url(\'#gradient\')}']) assert.equal(isSafeRenderedMermaidCss(css),true,css);
+ for(const css of ['.node{fill:url(https://evil.test/image)}','.node{fill:url(#ok);stroke:url(//evil.test)}','@import "https://evil.test";','.node{fill:url(data:image/svg+xml,test)}','.node{fill:expression(alert(1))}']) assert.equal(isSafeRenderedMermaidCss(css),false,css);
+});
