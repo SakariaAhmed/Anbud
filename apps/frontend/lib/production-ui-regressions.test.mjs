@@ -24,3 +24,15 @@ test('complete coverage contributes omitted deficiencies without duplicating sam
   {location:'K-05',action:'Clarify 24/7 staffing',reason:'No out-of-hours coverage'},
  ]);
 });
+
+test('saved fallback diagrams repair identity group cycles without changing edges',()=>{
+ for(const label of ['Microsoft Entra ID','Identitet og tilgang']) {
+  const chart=`flowchart LR\n subgraph Identity["Identitet"]\n Identity[${label}]\n end\n Identity --> Platform[Azure]\n IdentityLayer[Existing node]`;
+  const result=sanitizeMermaidChart(chart);
+  assert.equal(result.error,'');
+  assert.match(result.chart,/subgraph IdentityLayer2\["Identitet"\]/);
+  assert.ok(result.chart.includes(`Identity[${label}]`));
+  assert.ok(result.chart.includes('Identity --> Platform[Azure]'));
+  assert.equal(sanitizeMermaidChart(result.chart).chart,result.chart);
+ }
+});

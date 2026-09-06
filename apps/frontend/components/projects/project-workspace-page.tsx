@@ -61,6 +61,7 @@ import {
 } from "@/components/projects/project-workspace-types";
 import {
   applyProjectSnapshot,
+  mergeProjectRefresh,
   isProjectSnapshotOlder,
   createLatestArtifactAuthorityRequestGate,
   hasAuthoritativeCurrentArtifact,
@@ -685,8 +686,7 @@ export function ProjectWorkspacePage({
       try {
         const fresh = await fetchProjectState(project.id, controller.signal);
         if (!controller.signal.aborted) setProject(current => {
-          if (isProjectSnapshotOlder(current, fresh)) return current;
-          return normalizeProjectState({ ...current, ...fresh, generated_artifacts: current.generated_artifacts });
+          return mergeProjectRefresh(current, fresh);
         });
       } catch { /* A transport failure never changes authoritative document status. */ }
       finally { active = false; }
@@ -779,8 +779,7 @@ export function ProjectWorkspacePage({
 
       const freshProject = await fetchProjectState(project.id, controller.signal);
       setProject(current => {
-        if (isProjectSnapshotOlder(current, freshProject)) return current;
-        return normalizeProjectState({ ...current, ...freshProject }, { preserveArtifactCount: true });
+        return mergeProjectRefresh(current, freshProject);
       });
       return completedDocument;
     } catch (err) {
@@ -1451,12 +1450,7 @@ export function ProjectWorkspacePage({
     try {
       const fresh = await fetchProjectState(project.id);
       setProject((current) =>
-        isProjectSnapshotOlder(current, fresh)
-          ? current
-          : normalizeProjectState(
-              { ...current, ...fresh, generated_artifacts: current.generated_artifacts },
-              { preserveArtifactCount: true },
-            ),
+        mergeProjectRefresh(current, fresh),
       );
     } catch {
       // The mutation already committed; background refresh will retry the read.
