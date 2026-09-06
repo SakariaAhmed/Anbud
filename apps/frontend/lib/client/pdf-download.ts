@@ -167,6 +167,13 @@ function createExportContainer({
   const clone = element.cloneNode(true) as HTMLElement;
   Object.assign(clone.style, {
     background: "#ffffff",
+    position: "static",
+    left: "auto",
+    top: "auto",
+    zIndex: "auto",
+    height: "auto",
+    maxHeight: "none",
+    transform: "none",
     maxWidth: "none",
     overflow: "visible",
     padding: "0",

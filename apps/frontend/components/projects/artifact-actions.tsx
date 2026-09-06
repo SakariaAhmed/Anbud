@@ -1,8 +1,9 @@
 "use client";
 
 import { Download, FileDown, Printer } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { Button } from "@/components/ui/button";
 import { downloadTextFile, sanitizeDownloadFileBase } from "@/lib/client/download";
 import { downloadElementAsPdf } from "@/lib/client/pdf-download";
@@ -18,22 +19,7 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
-function markdownToHtml(markdown: string) {
-  return escapeHtml(markdown)
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("## ")) return `<h2>${line.slice(3)}</h2>`;
-      if (line.startsWith("# ")) return `<h1>${line.slice(2)}</h1>`;
-      if (line.startsWith("- ")) return `<li>${line.slice(2)}</li>`;
-      if (!line.trim()) return "";
-      return `<p>${line}</p>`;
-    })
-    .join("\n")
-    .replace(/(<li>[\s\S]*?<\/li>)/g, "<ul>$1</ul>")
-    .replace(/<\/ul>\s*<ul>/g, "");
-}
-
-function artifactHtml(artifact: GeneratedArtifact) {
+function artifactHtml(artifact: GeneratedArtifact, renderedMarkdown: string) {
   const title = escapeHtml(artifact.title || "Artefakt");
   return `<!doctype html>
 <html lang="no">
@@ -42,7 +28,7 @@ function artifactHtml(artifact: GeneratedArtifact) {
   <title>${title}</title>
   <style>
     body { color: #111827; font-family: "IBM Plex Serif", Georgia, "Times New Roman", serif; line-height: 1.62; margin: 48px; }
-    h1, h2 { font-family: "IBM Plex Sans", Arial, sans-serif; line-height: 1.22; margin: 28px 0 10px; }
+    h1, h2, h3, h4, h5, h6 { font-family: "IBM Plex Sans", Arial, sans-serif; line-height: 1.22; margin: 28px 0 10px; }
     h1 { font-size: 26px; }
     h2 { border-bottom: 1px solid #d1d5db; font-size: 18px; padding-bottom: 6px; }
     p, li { font-size: 11.5pt; }
@@ -52,12 +38,13 @@ function artifactHtml(artifact: GeneratedArtifact) {
 </head>
 <body>
   <h1>${title}</h1>
-  ${markdownToHtml(artifact.content_markdown)}
+  ${renderedMarkdown}
 </body>
 </html>`;
 }
 
 export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
+  const exportContent = useRef<HTMLDivElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [pdfError, setPdfError] = useState("");
   const fileBase = sanitizeDownloadFileBase(artifact.title, "artefakt");
@@ -84,7 +71,7 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
     if (downloadingPdf) return;
 
     const source = document.createElement("article");
-    source.innerHTML = markdownToHtml(artifact.content_markdown);
+    source.innerHTML = exportContent.current?.innerHTML ?? "";
     Object.assign(source.style, {
       background: "#ffffff",
       color: "#0f172a",
@@ -99,7 +86,7 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
       width: "960px",
       zIndex: "-2",
     });
-    for (const heading of source.querySelectorAll<HTMLElement>("h1, h2")) {
+    for (const heading of source.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")) {
       Object.assign(heading.style, {
         color: "#0f172a",
         fontFamily: 'Arial, "Helvetica Neue", sans-serif',
@@ -110,6 +97,15 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
     for (const paragraph of source.querySelectorAll<HTMLElement>("p, li")) {
       Object.assign(paragraph.style, {
         margin: "0 0 10px",
+      });
+    }
+    for (const table of source.querySelectorAll<HTMLElement>("table")) {
+      Object.assign(table.style, { borderCollapse: "collapse", width: "100%" });
+    }
+    for (const cell of source.querySelectorAll<HTMLElement>("th, td")) {
+      Object.assign(cell.style, {
+        border: "1px solid #cbd5e1", padding: "6px 8px",
+        textAlign: "left", verticalAlign: "top",
       });
     }
     document.body.appendChild(source);
@@ -134,6 +130,9 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
 
   return (
     <div className="space-y-2">
+      <div hidden ref={exportContent} aria-hidden="true">
+        <MarkdownViewer content={artifact.content_markdown} />
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={cn(
@@ -181,7 +180,7 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
             downloadTextFile(
               `${fileBase}.doc`,
               "application/msword;charset=utf-8",
-              artifactHtml(artifact),
+              artifactHtml(artifact, exportContent.current?.innerHTML ?? ""),
             )
           }
         >
