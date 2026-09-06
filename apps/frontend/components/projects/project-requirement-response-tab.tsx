@@ -558,6 +558,7 @@ export function ProjectRequirementResponseTab({
   documents,
   artifacts,
   uploadBusy,
+  uploadInProgress = uploadBusy,
   generateBusy,
   busyMessage,
   busyProgress,
@@ -570,6 +571,7 @@ export function ProjectRequirementResponseTab({
   documents: ProjectDocument[];
   artifacts: GeneratedArtifact[];
   uploadBusy: boolean;
+  uploadInProgress?: boolean;
   generateBusy: boolean;
   busyMessage: string;
   busyProgress: number;
@@ -687,7 +689,11 @@ export function ProjectRequirementResponseTab({
 
   async function downloadRequirementResponsePdf(artifact: GeneratedArtifact) {
     const element = responseContentRefs.current[artifact.id];
-    if (!element || downloadingArtifactId) return;
+    if (downloadingArtifactId) return;
+    if (!element) {
+      setDownloadError("Åpne kravbesvarelsen før du laster ned PDF.");
+      return;
+    }
 
     const title = artifact.title || "Kravbesvarelse";
     setDownloadingArtifactId(artifact.id);
@@ -1213,12 +1219,12 @@ export function ProjectRequirementResponseTab({
               })}`}
             >
               <DocumentUploadDropzoneContent
-                busy={uploadBusy}
+                busy={uploadInProgress}
                 busyLabel="Laster opp kravdokument ..."
                 selectedFileName={file?.name}
                 selectedFileDescription={
                   file
-                    ? uploadBusy
+                    ? uploadInProgress
                       ? "Laster opp ..."
                       : `Tittel: ${fileTitle(file)}`
                     : undefined

@@ -670,7 +670,9 @@ function SectionHistoryPanel({
               onValueChange={setSelectedHistoryId}
             >
               <SelectTrigger className="mt-2 h-10 w-full max-w-full bg-white">
-                <SelectValue placeholder="Velg en tidligere seksjon" />
+                <SelectValue placeholder="Velg en tidligere seksjon">
+                  {selectedEntry ? `${formatHistoryTimestamp(selectedEntry.created_at)} · ${historySourceLabel(selectedEntry.source)}` : "Velg en tidligere seksjon"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent align="start" className="max-h-80">
                 {entries.map((entry) => (

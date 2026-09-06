@@ -64,7 +64,13 @@ let pdfJsPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | nu
   null;
 
 async function getPdfJs() {
-  pdfJsPromise ??= import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfJsPromise ??= (async () => {
+    const canvas = await import("@napi-rs/canvas");
+    for (const name of ["DOMMatrix", "ImageData", "Path2D"] as const) {
+      if (!(name in globalThis)) Object.assign(globalThis, { [name]: canvas[name] });
+    }
+    return import("pdfjs-dist/legacy/build/pdf.mjs");
+  })();
   return pdfJsPromise;
 }
 
@@ -189,7 +195,17 @@ export async function parsePdf(
   try {
     parsed = await parseWithIsolatedLegacyWorker(buffer);
   } catch {
-    parsed = await parseWithModernPdfJs(buffer);
+    try {
+      parsed = await parseWithModernPdfJs(buffer);
+    } catch (error) {
+      if (error instanceof Error && error.name === "InvalidPDFException") {
+        throw new Error("INVALID_PDF_DOCUMENT");
+      }
+      if (error instanceof Error && error.name === "PasswordException") {
+        throw new Error("PASSWORD_PROTECTED_PDF");
+      }
+      throw error;
+    }
   }
 
   const pageTexts: string[] = [];

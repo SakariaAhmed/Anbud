@@ -981,7 +981,7 @@ async function runDocumentIngestionWorkflow(
       documentId: input.documentId,
       status: "failed",
       message: "Dokumentindeksering feilet.",
-      error: error instanceof Error ? error.message : "Ukjent feil.",
+      error: productionSafeErrorMessage(error, "Dokumentindeksering feilet. Prøv å laste opp filen igjen, eller kontakt support."),
     }).catch((persistenceError) => {
       rethrowAuthoritativeLeaseLoss(persistenceError);
       return undefined;

@@ -1,5 +1,7 @@
 "use client";
 
+import { buildArchitectureActions } from "@/lib/evaluation-actions";
+
 import {
   useEffect,
   useMemo,
@@ -237,42 +239,6 @@ function FindingPanel({
   );
 }
 
-function buildArchitectureActions(evaluation: SolutionEvaluationResult) {
-  const referencedFindings = evaluation.document_findings
-    .filter((finding) => finding.assessment !== "Godt")
-    .map((finding) => ({
-      location: finding.reference || "Arkitektløsningen generelt",
-      action:
-        finding.recommendation ||
-        "Rett svaret slik at det kobles tydeligere til kundens behov, krav og evalueringssignaler.",
-      reason: finding.finding || finding.evidence,
-    }));
-
-  const sourceItems = referencedFindings.length
-    ? referencedFindings
-    : evaluation.rewrite_suggestions.length
-    ? evaluation.rewrite_suggestions.map((suggestion, index) => ({
-        location: suggestion.target || "Arkitektløsningen generelt",
-        action: suggestion.suggestion,
-        reason:
-          evaluation.weaknesses[index] ??
-          evaluation.missing_elements[index] ??
-          evaluation.improvement_recommendations[index] ??
-          "",
-      }))
-    : evaluation.weaknesses.slice(0, 4).map((weakness, index) => ({
-        location:
-          evaluation.generic_sections[index] ||
-          evaluation.missing_elements[index] ||
-          "Arkitektløsningen generelt",
-        action:
-          evaluation.improvement_recommendations[index] ||
-          "Skriv delen mer konkret med ansvar, rekkefølge, beslutningspunkt og kundespesifikk konsekvens.",
-        reason: weakness,
-      }));
-
-  return sourceItems.slice(0, 4);
-}
 
 function findingTone(finding: SolutionDocumentFinding) {
   switch (finding.assessment) {

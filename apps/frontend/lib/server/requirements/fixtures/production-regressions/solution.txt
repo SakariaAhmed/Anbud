@@ -1,0 +1,6 @@
+QA-20260905 – Syntetisk løsningsbeskrivelse for Nordlys Testkommune
+
+Vi leverer drift av Microsoft 365, Azure og Intune for 120 ansatte. Administratorer bruker Microsoft Entra multifaktorautentisering og Privileged Identity Management med tidsbegrenset aktivering og revisjonslogg (K-01). Løsningen driftes med overvåking og varsling med mål om 99,9 prosent månedlig tilgjengelighet; vedlikehold varsles fem arbeidsdager før (K-02).
+Data og sikkerhetskopier lagres i Azure Norway East og Norway West innen EØS, og en databehandleravtale dokumenterer underleverandørene (K-03). Daglig sikkerhetskopi og kvartalsvis dokumentert gjenopprettingstest sikrer RPO 24 timer og RTO fire timer (K-04).
+Servicedesk tilbyr 30 minutters responstid på kritiske hendelser i arbeidstiden 08–16. Vaktberedskap utenfor arbeidstid er ikke priset og må avklares (bevisst testavvik for K-05). Hendelsesrapport sendes innen to arbeidsdager. Månedlig SLA- og kostnadsrapport, sikkerhetsstatus og forbedringsplan gjennomgås i styringsmøte (K-06).
+Innføring: kartlegging i september, pilot i oktober, migrering og akseptansetest i november, produksjonssetting 1. desember 2026. Kunden eier godkjenning av akseptansetesten. Risiko: uklart om eksisterende applikasjoner støtter moderne autentisering; dette kartlegges før migrering.

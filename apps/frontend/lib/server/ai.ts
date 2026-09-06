@@ -1,5 +1,7 @@
 import "server-only";
 
+import { narrativeAnswerEvidence } from "@/lib/server/requirements/narrative-answer-evidence";
+
 import {
   createJsonCompletion,
   createJsonCompletionWithFileInputs,
@@ -8011,8 +8013,19 @@ export async function buildRequirementSourceLedgerWithFiles(
       ),
   );
 
+  // A line-anchored ID/text pair is stronger evidence than a flattened
+  // heuristic row that attached the same text to the following ID.
+  const anchoredLines = document.file_format !== "pdf"
+    ? buildPrefixedLineRequirementLedger(document, corpusParserContext)
+    : [];
+  const sourceBoundLedger = ledger.filter((entry) => !anchoredLines.some((anchor) =>
+    normalizeEvidenceText(anchor.text) === normalizeEvidenceText(entry.text) &&
+    normalizeRequirementId(anchor.id) !== normalizeRequirementId(entry.id) &&
+    !entry.tableId && anchor.sourceExcerpt &&
+    document.raw_text.includes(anchor.sourceExcerpt)
+  ));
   const finalizedLedger = finalizeRequirementLedgerEntries(
-    ledger,
+    sourceBoundLedger,
     sourceDocumentSha256,
   ).map((entry) => ({
     ...entry,
@@ -16118,6 +16131,12 @@ function answerExplicitlyDeclinesRequirement(value: string) {
   );
 }
 
+export function supplierAnswerNeedsConfirmation(value: string) {
+  return answerExplicitlyDeclinesRequirement(value) ||
+    answerDefersRequirementConfirmation(value) ||
+    /\b(?:ikke\s+priset|må\s+avklares|ikke\s+(?:avklart|bekreftet|avtalt))\b/i.test(value);
+}
+
 function answerDefersRequirementConfirmation(value: string) {
   const text = normalizePageText(value);
   return (
@@ -19462,10 +19481,18 @@ async function buildSolutionRequirementCoverage(input: {
       "Kravdekningen stoppet fordi originale kravdokumenter finnes, men ingen krav kunne ekstraheres fra dem.",
     );
   }
+  const proseAnswers = narrativeAnswerEvidence(input.solutionDocument, sourceLedger);
+  const proseIds = new Set(proseAnswers.map((entry) => normalizeRequirementId(entry.id)));
+  const solutionAnswers = [
+    ...solutionLedger.filter((entry) =>
+      !proseIds.has(normalizeRequirementId(entry.id)) || Boolean(entry.answerExcerpt?.trim())),
+    ...proseAnswers.filter((entry) => !solutionLedger.some((existing) =>
+      normalizeRequirementId(existing.id) === normalizeRequirementId(entry.id) && existing.answerExcerpt?.trim())),
+  ];
   const ledger = sourceLedger.length
     ? mergeRequirementCoverageLedgerWithSolutionAnswers({
         sourceRequirements: sourceLedger,
-        solutionEntries: solutionLedger,
+        solutionEntries: solutionAnswers,
       })
     : solutionLedger;
   const requirements = selectRequirementsForSolutionCoverage({
@@ -19877,6 +19904,7 @@ async function generateRequirementResponseFromLedger(input: {
   serviceDocuments: ProjectDocumentDetail[];
   model?: string;
   onProgress?: (message: string) => void;
+  solutionDocument?: ProjectDocumentDetail | null;
 }) {
   const responseLedger = sortRequirementLedgerInDocumentOrder(input.ledger);
   const chunks = chunkRequirements(responseLedger);
@@ -20053,8 +20081,13 @@ async function generateRequirementResponseFromLedger(input: {
       ...input.serviceDocuments,
     ],
   });
+  const reservations = input.solutionDocument
+    ? narrativeAnswerEvidence(input.solutionDocument, responseLedger).filter((entry) =>
+        supplierAnswerNeedsConfirmation(entry.answerExcerpt ?? ""))
+    : [];
+  const reservationById = new Map(reservations.map((entry) => [normalizeRequirementId(entry.id), entry]));
   const proposalInputRequired =
-    proposalInputRequiredMetadata.proposal_input_required_count > 0;
+    proposalInputRequiredMetadata.proposal_input_required_count > 0 || reservations.length > 0;
   const manualReviewRequired =
     deterministicTemplateRepairMetadata.manual_review_required === true ||
     deterministicControlRepairMetadata.manual_review_required === true ||
@@ -20062,7 +20095,8 @@ async function generateRequirementResponseFromLedger(input: {
   const manualReviewNote = [
     deterministicTemplateRepairMetadata.manual_review_note,
     deterministicControlRepairMetadata.manual_review_note,
-    proposalInputRequired
+    reservations.length ? `${reservations.length} krav har uttrykkelige avvik eller uavklarte leverandørforutsetninger i løsningsgrunnlaget.` : "",
+    proposalInputRequiredMetadata.proposal_input_required_count > 0
       ? `${proposalInputRequiredMetadata.proposal_input_required_count} krav trenger dokumentert leverandørbevis, kommersielle vilkår eller et eksplisitt tilbudsvalg før innlevering.`
       : "",
   ]
@@ -20135,7 +20169,15 @@ async function generateRequirementResponseFromLedger(input: {
 
   const contentMarkdown = buildRequirementResponseMarkdown({
     ledger: responseLedger,
-    answers: answerResults,
+    answers: answerResults.map((answer, index) => {
+      const reservation = reservationById.get(normalizeRequirementId(responseLedger[index].id));
+      if (!reservation) return answer;
+      return {
+        ...answer,
+        answer: `Ubekreftet forutsetning – må avklares før innlevering. Løsningsgrunnlaget oppgir: «${reservation.answerExcerpt}» Forslag til svar etter avklaring: ${answer.answer}`,
+        evidence: `${reservation.documentTitle}, ${reservation.id}: ${reservation.answerExcerpt}`,
+      };
+    }),
   });
   const requirementRefs = responseLedger.map((entry) =>
     requirementDisplayRef(entry, requirementGroupHeading(entry)),
@@ -23039,6 +23081,7 @@ export async function generateProjectArtifact(input: ProjectArtifactGenerationIn
       projectName: input.projectName,
       baseContext: requirementAnswer.baseContext,
       ledger: requirementContext.requirementLedger,
+      solutionDocument: input.solutionDocument,
       ledgerConfidence: requirementContext.requirementLedgerConfidence,
       requirementDocuments: requirementContext.requirementDocuments,
       supportingDocuments: requirementAnswer.supportingDocuments,

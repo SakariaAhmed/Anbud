@@ -3,6 +3,10 @@ const path = require("node:path");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typedRoutes: true,
+  serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas"],
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/@napi-rs/canvas*/**/*", "./node_modules/pdfjs-dist/legacy/build/**/*", "./node_modules/pdf-parse/lib/**/*"],
+  },
   output: "standalone",
   experimental: {
     authInterrupts: true,

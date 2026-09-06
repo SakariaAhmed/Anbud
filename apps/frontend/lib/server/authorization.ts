@@ -6,9 +6,9 @@ import { NextResponse } from "next/server";
 import {
   PROJECT_ROLE_PERMISSIONS,
   globalAccessAllows,
+  effectiveProjectPermissions,
   isIdentityType,
   isProjectRole,
-  isReadPermission,
   projectRoleAllows,
   strongestProjectRole,
   type IdentityType,
@@ -211,20 +211,12 @@ export async function requireProjectPermission(
   permission: ProjectPermission,
 ): Promise<AuthorizedProjectContext> {
   const principal = await requireRequestPrincipal();
+  const effectiveRole = await getEffectiveProjectRole(principal.id, projectId);
   if (globalAccessAllows(principal.isAdmin, permission)) {
-    const readOnly = isReadPermission(permission);
-    const globalPermissions = PROJECT_ROLE_PERMISSIONS.owner.filter(
-      (candidate) => globalAccessAllows(principal.isAdmin, candidate),
-    );
-    return {
-      principal,
-      projectId,
-      effectiveRole: readOnly ? "admin_read" : "owner",
-      permissions: globalPermissions,
-    };
+    const permissions = effectiveProjectPermissions(principal.isAdmin, effectiveRole);
+    return { principal, projectId, effectiveRole: effectiveRole ?? "admin_read", permissions };
   }
 
-  const effectiveRole = await getEffectiveProjectRole(principal.id, projectId);
   if (!effectiveRole || !projectRoleAllows(effectiveRole, permission)) {
     throw new AuthorizationError("Du har ikke tilgang til denne handlingen.");
   }
