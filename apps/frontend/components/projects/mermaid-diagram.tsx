@@ -680,12 +680,20 @@ export function MermaidDiagram({
         }
 
         const renderContainer = document.createElement("div");
-
-        const { svg: rendered } = await mermaid.render(
-          `mermaid-${renderId}`,
-          normalizedChart,
-          renderContainer,
-        );
+        Object.assign(renderContainer.style, {
+          position: "absolute", left: "-10000px", top: "0", visibility: "hidden",
+        });
+        document.body.appendChild(renderContainer);
+        let rendered: string;
+        try {
+          ({ svg: rendered } = await mermaid.render(
+            `mermaid-${renderId}`,
+            normalizedChart,
+            renderContainer,
+          ));
+        } finally {
+          renderContainer.remove();
+        }
         const enhanced = enhanceRenderedSvg(rendered);
         if (!cancelled) {
           setSvg(enhanced.svg);

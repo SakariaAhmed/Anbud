@@ -190,7 +190,15 @@ export async function claimAndScheduleProjectJobAutorun(
   runtime: AutorunClaimRuntime = {},
 ) {
   const claim = runtime.claim ?? claimQueuedProjectJob;
-  const claimed = await claim(jobId);
+  let claimed: ClaimedProjectJob | null;
+  try {
+    claimed = await claim(jobId);
+  } catch (error) {
+    // The job is already durable. During release cutover, keep it queued for
+    // the aligned worker instead of reporting a failed submission to the UI.
+    if (error instanceof Error && error.message.startsWith("PROJECT_JOB_CLAIMS_CLOSED:")) return;
+    throw error;
+  }
   if (!claimed) return; // Another job owns the project; the durable worker will retry.
 
   const schedule = runtime.schedule ?? autoRunProjectJob;
