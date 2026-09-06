@@ -1411,3 +1411,19 @@ test("system: queued input survives lease heartbeat, expiry, takeover, and stale
     worker: "current",
   });
 });
+
+
+test("deployment claim pause keeps a durable job queued, while unrelated errors still reject", async () => {
+  const workflow = {kind:"customer_analysis",projectId:"00000000-0000-4000-8000-000000000001"};
+  let scheduled = false;
+  const runtime = {
+    async claim() { throw new Error("PROJECT_JOB_CLAIMS_CLOSED: project-job claims are disabled for deployment cutover"); },
+    schedule() { scheduled = true; },
+    startLease() { throw new Error("A queued job must not get a heartbeat"); },
+  };
+  await assert.doesNotReject(claimAndScheduleProjectJobAutorun("queued-during-deployment", workflow, runtime));
+  assert.equal(scheduled, false);
+  await assert.rejects(claimAndScheduleProjectJobAutorun("unrelated-failure",workflow,{
+    ...runtime, async claim() { throw new Error("Unexpected database failure"); },
+  }), /Unexpected database failure/);
+});

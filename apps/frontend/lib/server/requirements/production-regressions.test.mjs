@@ -35,3 +35,10 @@ test('narrative supplier answers remain source-bound and preserve explicit gaps'
  const ambiguous=narrativeAnswerEvidence(solution,[...rows,{...rows[0],heading:'Another independent source section'}]);
  assert.equal(ambiguous.some(r=>r.id==='K-01'),false);
 });
+
+test('identical wording under distinct explicit IDs preserves both source requirements',async()=>{
+ const source=document('customer','primary_customer_document');
+ source.raw_text='Absolutte krav\nK-01: Leverandøren skal dokumentere daglig sikkerhetskopiering.\nK-02: Leverandøren skal dokumentere daglig sikkerhetskopiering.\n';
+ const rows=await extractRequirementLedgerForDocument(source);
+ assert.deepEqual(rows.map(row=>row.id),['K-01','K-02']);
+});
