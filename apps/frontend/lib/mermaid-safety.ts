@@ -4,6 +4,16 @@ const BLOCKED_MERMAID_LINE =
   /^\s*(%%\{|classDef\b|class\s+\S+\s+\S+|click\b|href\b|linkStyle\b|style\b|accTitle\b|accDescr\b)/i;
 const BLOCKED_MERMAID_CONTENT = /<\/?[a-z!]|javascript:|data:|@import|url\s*\(/i;
 
+export function isSafeRenderedMermaidCss(css: string) {
+  // Mermaid's own theme references gradients inside the generated SVG.
+  // Permit simple fragment IDs, while still rejecting every external URL.
+  const withoutLocalReferences = css.replace(
+    /url\(\s*(?:(["'])#[\w-]+\1|#[\w-]+)\s*\)/gi,
+    "",
+  );
+  return !/@import|url\s*\(|expression\s*\(|javascript:|data:/i.test(withoutLocalReferences);
+}
+
 export function sanitizeMermaidChart(input: string) {
   const normalized = input.replace(/\r\n?/g, "\n").trim();
   if (!normalized) {

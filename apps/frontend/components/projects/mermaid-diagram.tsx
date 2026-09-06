@@ -1,6 +1,6 @@
 "use client";
 
-import { sanitizeMermaidChart } from "@/lib/mermaid-safety";
+import { isSafeRenderedMermaidCss, sanitizeMermaidChart } from "@/lib/mermaid-safety";
 
 import { useEffect, useId, useState } from "react";
 import { Download, ImageDown, Sparkles } from "lucide-react";
@@ -581,7 +581,7 @@ function sanitizeRenderedSvg(root: Element) {
 
   root.querySelectorAll("style").forEach((element) => {
     const css = element.textContent ?? "";
-    if (/@import|url\s*\(|expression\s*\(|javascript:|data:/i.test(css)) {
+    if (!isSafeRenderedMermaidCss(css)) {
       element.remove();
     }
   });
@@ -658,9 +658,9 @@ export function MermaidDiagram({
           securityLevel: "strict",
           theme: "neutral",
           fontFamily: "inherit",
+          htmlLabels: false,
           flowchart: {
             useMaxWidth: true,
-            htmlLabels: false,
             curve: "basis",
           },
         });
