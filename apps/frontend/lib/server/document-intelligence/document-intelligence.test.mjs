@@ -508,6 +508,10 @@ test("customer analysis postprocessing preserves the established output rules", 
     100,
   );
   assert.match(normalized.high_level_architecture_mermaid, /^flowchart LR/u);
+  const diagram = normalized.high_level_architecture_mermaid;
+  const groups = [...diagram.matchAll(/^\s*subgraph\s+(\w+)\[/gm)].map((match) => match[1]);
+  const nodes = [...diagram.matchAll(/^\s*(\w+)\[/gm)].map((match) => match[1]);
+  assert.ok(groups.every((group) => !nodes.includes(group)), "fallback groups cannot be their own child nodes");
   assert.equal(normalized.recommended_services.length, 1);
 
   const enriched = enrichCustomerAnalysisWithCriticalFacts(analysis, [

@@ -42,5 +42,19 @@ export function sanitizeMermaidChart(input: string) {
     };
   }
 
-  return { chart: normalized, error: "" };
+  // Older fallback diagrams gave the identity group and its child the same ID.
+  // Repair only that known persisted shape, leaving node/edge identities intact.
+  let chart = normalized;
+  if (
+    /^\s*subgraph Identity\["Identitet"\]\s*$/m.test(chart) &&
+    /^\s*Identity\[(Microsoft Entra ID|Identitet og tilgang)\]\s*$/m.test(chart)
+  ) {
+    let groupId = "IdentityLayer";
+    let suffix = 2;
+    while (new RegExp(`\\b${groupId}\\b`).test(chart)) {
+      groupId = `IdentityLayer${suffix++}`;
+    }
+    chart = chart.replace(/^(\s*subgraph )Identity(?=\["Identitet"\])/m, `$1${groupId}`);
+  }
+  return { chart, error: "" };
 }

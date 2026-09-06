@@ -580,7 +580,7 @@ function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
     "    Users[Forretningsbrukere og fagmiljø]",
     "    Apps[Applikasjoner og arbeidsflater]",
     "  end",
-    '  subgraph Identity["Identitet"]',
+    '  subgraph IdentityLayer["Identitet"]',
     hasMicrosoftIdentity
       ? "    Identity[Microsoft Entra ID]"
       : "    Identity[Identitet og tilgang]",

@@ -171,6 +171,17 @@ export function applyProjectSnapshot(
   };
 }
 
+export function mergeProjectRefresh(current: ProjectDetail, fresh: ProjectDetail): ProjectDetail {
+  if (isProjectSnapshotOlder(current, fresh)) return current;
+  // The refresh contains full counts, but artifact bodies are loaded per tab.
+  // Keep those cached bodies and reconcile their authority without replacing
+  // the server's total with the length of a partial client collection.
+  return applyProjectSnapshot(
+    { ...current, ...fresh, generated_artifacts: current.generated_artifacts },
+    fresh,
+  );
+}
+
 export function solutionProposalWorkflowStatus(input: {
   hasGeneratedSolutionDescription: boolean;
   hasReadyEvaluationBasis: boolean;
