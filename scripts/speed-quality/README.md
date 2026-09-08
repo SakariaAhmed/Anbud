@@ -106,6 +106,15 @@ bruker standard. Ingen av disse lokale proxyvalgene endrer applikasjonens tier.
 - `sse-local-check` oppretter og fjerner en egen lokal statusfixture. Den tester
   autentisering, to abonnenter, frakobling, heartbeat og terminalstatus uten
   worker eller modellkall. Dette er ikke et komplett jobbavbruddsløp.
+- `worker-lease-transport-check --label=<nytt-navn>` kølegger og kjører bare sin
+  egen disponible jobb via faktisk workflow, database, heartbeat og OpenAI SDK.
+  Den tillater bare lokal PostgREST på 55440 og en kontrollert HTTP-server på 4329,
+  og bruker en plassholdernøkkel. Etter leasebytte må ordinær heartbeat stoppe
+  workeren og lukke modelltransporten før opprydding. Den verifiserer inngjerdede
+  skrivinger med null treff, ingen lagrede resultater og uendrede frosne input og
+  budsjettlogg. Next-cache er forbikoblet; dette tester ikke route-autentisering,
+  bruker-cancel, live modellkvalitet eller ny hastighetsgevinst. V2s feilaktige
+  forventning om 200/[] beholdes; V3 godtar eksakt 406/PGRST116 med null rader.
 - `populated-service-check` oppretter en egen tom database med kopiert skjema og
   tre fiktive tjenester med dokumenter. Den måler faktiske repository-eiere med
   Next-cache forbikoblet, og tester valg-RPC direkte. Container og database fjernes

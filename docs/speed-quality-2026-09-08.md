@@ -228,7 +228,7 @@ Enkelttider er ikke p95 eller sikker kausal effekt. Mini er en rådgivende domme
 | Løsningsvurdering/kravdekning | evaluateSolutionDocument, direct-solution-evaluation | Tidligere små par 101,02→106,72 / 107,23→99,16 s, begge vinnere. Original Sundvik V5: 105,096→111,619 s; dekning 3→32 krav, kvalitetsvinner, tregere |
 | Forbedringsløp | perfect_system_solution i project-workflows | Ikke kjørt som komplett før/etter-par; konservativ helreservasjon overstiger gjenstående budsjett |
 | Lederoppsummering | ai/executive-summary.ts | Innlesingen halverer DB-kall. Siste modellpar 3,33→4,74 / 3,09→5,05 s; begge kvalitetsvinnere mot samme avledede vurdering, men tregere |
-| Kø/status/SSE/avbrytelse | project-jobs, jobs-ruter, lease fencing | Kø/lease/lagring kontrollert med faktisk kravsvarjobb; standardgrense fortsatt én. Lokal SSE med to klienter, frakobling og terminalstatus bestod; ikke worker-avbrudd eller før/etter-latens |
+| Kø/status/SSE/avbrytelse | project-jobs, jobs-ruter, lease fencing | Kø/lease/lagring kontrollert med faktisk kravsvarjobb; standardgrense fortsatt én. Lokal SSE med to klienter, frakobling og terminalstatus bestod. Reell lokal worker/SDK-transport stanset ved tapt lease etter ordinær 30 s heartbeat; ingen ny hastighetsgevinst eller bruker-cancel-API påstås |
 | Eksport | komponentenes eksporthandlinger | 30 klare tekst-/listepar: MD 32,90→31,68 ms, Word 29,88→30,20 ms, PDF 570,81→566,60 ms; omtrent uendret. Separate funksjonskontroller av tabell og diagram |
 
 ## Siste kvalitetskontroller og metodegrenser
@@ -284,7 +284,7 @@ generering og lagring. Dens PDF har to visuelt kontrollerte A4-sider med alle
 dokumenter testet repository/RPC, GET/PATCH, dokumentvisning, tastaturvalg,
 SPA-cache, hard reload og kontrollert 503-tilbakeføring på desktop/mobil; den ble
 fjernet. SSE testet to klienter, frakobling, heartbeat, terminalstatus og anonym
-401. Dette er ikke worker-avbrudd.
+401. Denne SSE-kontrollen alene tester ikke worker-avbrudd; senere lease-/transportkontroll er beskrevet under.
 
 Eksportserien `plaintext-v4` fullførte 30 par per format med identisk Markdown/
 Word, to PDF-sider og SVG/PNG. Medianer i ms: MD 32,90→31,68, Word 29,88→30,20,
@@ -306,6 +306,58 @@ offline på AMD64, ikke-root, med 12 fakta og proveniens fra tre sider. Emulert
 24,48 s er ikke produksjonslatens; OCR og Azure-ingest inngikk ikke. Lokal
 liveness var 200; readiness 503 grunnet manglende Azure-konfigurasjon.
 
+## Reelt worker-avbrudd ved tapt lease
+
+Ingen appendring var nødvendig. En egen disponibel prosjektfixture med gyldig
+fiktiv vurdering ble kølagt via faktisk `queueExecutiveSummaryJob` og kjørt med
+`runQueuedProjectJob` mot lokal PostgreSQL/PostgREST. OpenAI SDK sendte en ekte
+HTTP-forespørsel til en lokal server som bevisst aldri sendte svaret. API-nøkkelen
+var en plassholder, og en fetch-guard tillot bare lokal database og denne serveren.
+Ingen OpenAI-/Azure-kall eller endring av frosne genereringsdata inngikk.
+
+Etter at transporten var bekreftet åpen, byttet testen bare denne jobbens lease-token.
+Den ordinære, uendrede 30-sekunders heartbeat forsøkte å oppdatere med gammel lease
+og fikk ingen matchende rad. Rå PostgREST-respons var `406/PGRST116` med eksplisitt
+null rader; adapterens `maybeSingle` gjorde dette om til `data:null`, og heartbeat
+meldte tapt lease. Deretter returnerte workeren og lukket SDK-forbindelsen.
+
+Endelig kontroll `worker-lease-transport-v3` målte **29,957 s til worker-retur og
+29,960 s til transportlukking** etter leasebyttet. Lease-loss-hendelsen kom først,
+og kontrollen ventet på både retur og transportlukking før opprydding. Den egne
+watchdogen var dermed ikke årsaken. Ingen ferdig-/feilstatus ble skrevet av gammel
+worker, den nye leasen og running-status ble bevart, og ingen lederoppsummering
+eller artefakt ble lagret. Alle oppdateringsforsøk etter takeover hadde leasefilter
+og null treff. Fixture og tilhørende rader ble fjernet; kilde-revisjon, budsjettlogg
+og frosne input var uendret.
+
+V1 fullførte samme kjede uten detaljert DB-sporing. V2 beholdes som en feilet
+harnessforventning: den forventet 200/[] i stedet for korrekt singular-respons
+406 med null rader. V3 kontrollerer den eksakte feilkoden og null-rad-detaljen;
+vilkårlig 406 godtas ikke. Dette er én avgrenset runtime-egenskap, ikke statistisk
+før/etter-ytelse, live modellkvalitet eller en ny brukeroperasjon for avbrytelse.
+Next-cache er forbikoblet i denne kontrollen; route-autentisering og flerworkerlast
+inngår ikke. Appens eksisterende klientabort stopper statusventingen, mens workerens
+avbrudd her utløses av tapt lease.
+
+## Hva som nå krever annet verifikasjonsgrunnlag
+
+Kjente store lokale lese-/lagringsflaskehalser er rettet og dokumentert. I de
+undersøkte gjenværende modellstiene fant denne runden ingen ny betydelig forbedring
+som kunne godkjennes uten å endre genereringsgrunnlaget og kjøre nye livepar.
+Fjords siste chat tok 13,982 s: omskriving 2,434 s, embedding 0,231 s og svar
+11,211 s hos leverandøren. Retrieval bruker omskrivingsresultatet; å hoppe over
+omskriving eller endre modell/tier krever ny kvalitetskontroll. Lederoppsummeringen
+har ett modellkall, og raskere DB-innlesing beviser ikke raskere eller bedre svar.
+
+Samlet godkjenning krever fortsatt nye representative live hastighets-/kvalitetspar
+for genereringene som er tregere, uavklarte eller ikke kvalitetsgodkjent, samt hele
+forbedringsløpet. Gjenstående 0,670850 USD dekker ikke konservativ helreservasjon
+for sistnevntes før/etter-par. Beløpet er bevart; det er ikke gjort nye betalte kall.
+Lokal testkonfigurasjon har ingen Azure Storage-konto. Faktisk opplasting, metadata,
+indeksering, Azure-sletting og Entra-flyt krever et tilgjengelig, isolert testmiljø
+med riktig identitet og lagring. Dette er ikke en påstand om at Azure-miljøer ikke
+finnes utenfor denne kjøringen, og produksjonskandidater regnes ikke som isolert test.
+
 ## Gjenstående mål
 
 - Betydelig hastighetsgevinst også for uendrede, tregere og umålte funksjoner,
@@ -314,5 +366,7 @@ liveness var 200; readiness 503 grunnet manglende Azure-konfigurasjon.
   holdout, inkludert uenige dommer og inkonsistent kravklassifisering.
 - Hele forbedringsløpet med nytt utkast og lagret revurdering på begge sider,
   innen autorisert budsjett.
-- Faktisk Azure/Entra/ingest, grupper, produksjonslik samtidighet og worker-
-  avbrudd. Ingen produksjonsutrulling følger av denne rapporten.
+- Faktisk Azure/Entra/ingest, grupper og produksjonslik samtidighet. Lokalt
+  worker-avbrudd ved tapt lease er kontrollert med åpen SDK-transport, men ikke
+  produksjonslast eller en bruker-cancel-operasjon. Ingen produksjonsutrulling
+  følger av denne rapporten.

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-08T10:52:17.287Z",
-  "repositoryCommit": "60b428266dafbc5824ea050f3b196beafae95801",
+  "generatedAt": "2026-09-08T11:13:44.321Z",
+  "repositoryCommit": "9d1bfc9f68d604092e07163153eeb7e4099b4583",
   "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
@@ -46,6 +46,16 @@
     "beforeReport": "storage-delete-before.json",
     "verification": "verification/storage-delete-v8/scope.json",
     "scope": "Actual storage adapter with an injected in-memory SDK and simulated 10 ms per delete. Thirty pairs each for 1/24 files; not measured Azure or complete project-deletion latency. No paid calls."
+  },
+  "subsequentWorkerLeaseVerification": {
+    "applicationCommit": "29fb7689",
+    "verification": "verification/worker-lease-transport-v3/checks.json",
+    "sourceAndScope": "verification/worker-lease-transport-v3/source-and-scope.json",
+    "priorRuns": [
+      "verification/worker-lease-transport-v1/checks.json",
+      "verification/worker-lease-transport-v2/checks.json"
+    ],
+    "scope": "Actual local queue, claim, workflow, normal 30-second heartbeat, PostgREST and OpenAI SDK HTTP transport. Lease takeover stopped the worker and closed the deliberately stalled local response before cleanup; stale renewal matched zero rows and no outputs were persisted. V2 failed only its incorrect expectation of HTTP 200 instead of singular zero-row 406/PGRST116. No application change, new speed claim, paid call, route-authentication test or user-cancel operation."
   },
   "generationComparisons": [
     {
@@ -3976,6 +3986,41 @@
       "path": "verification/storage-delete-v8/scope.json",
       "bytes": 648,
       "sha256": "8ff2ad6944b43ad08cde93348ad629a15264419b886065273240bcc88fd82842"
+    },
+    {
+      "path": "verification/worker-lease-transport-v1/checks.json",
+      "bytes": 1453,
+      "sha256": "569e8fe01c35d48e6dfd872dab72537e8a77c1a499b547e1274c79491cda18b0"
+    },
+    {
+      "path": "verification/worker-lease-transport-v1/run.log",
+      "bytes": 2885,
+      "sha256": "6e9170861538077bb51264fca1d0b83a190571b6a343ed8480a4982d8744e750"
+    },
+    {
+      "path": "verification/worker-lease-transport-v2/checks.json",
+      "bytes": 8219,
+      "sha256": "987218eccd9fee347f2a8d3ed05a2a2bb817aede28f9d1fc7b61128b911b7489"
+    },
+    {
+      "path": "verification/worker-lease-transport-v2/run.log",
+      "bytes": 2013,
+      "sha256": "90fefd6f7129f0d536c3a651eefd23c753849d5619de5e1ae1df43473ae74614"
+    },
+    {
+      "path": "verification/worker-lease-transport-v3/checks.json",
+      "bytes": 9107,
+      "sha256": "4e81c1f1564a67fcf1d4b0df368b44873ddee7104d92cdc1b0d36f9939ae78aa"
+    },
+    {
+      "path": "verification/worker-lease-transport-v3/run.log",
+      "bytes": 10539,
+      "sha256": "d246b5849c11c7bf3f4f7ff6c21b19af6e5ebb8a4e98132777af322c53a8e846"
+    },
+    {
+      "path": "verification/worker-lease-transport-v3/source-and-scope.json",
+      "bytes": 2025,
+      "sha256": "db9171c7de0cf9e6bb1eccd9956dbe7b10f26c1bf4ca2caf7f36a446f5c66ff1"
     },
     {
       "path": "write-fixtures-plaintext-v3.json",
