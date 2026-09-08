@@ -209,7 +209,7 @@ Enkelttider er ikke p95 eller sikker kausal effekt. Mini er en rådgivende domme
 | Brukerfunksjon | Faktisk implementasjon | Før/etter-status |
 | --- | --- | --- |
 | Pålogging, bruker-/gruppe-/prosjekttilgang | auth-ruter, authorization, access-control-repository | Rolleoppslag 3→1 DB-kall; autentiserte ruter målt; full Entra-flyt og grupper med realistisk innhold gjenstår |
-| Prosjektoversikt og oppretting/sletting | projects-ruter, data-store.listProjects/createProject/deleteProject | Oversikt 17,0→15,8 ms median, ingen stor gevinst; oppretting/sletting ikke målt |
+| Prosjektoversikt og oppretting/sletting | projects-ruter, data-store.listProjects/createProject/deleteProject | Eldre varm HTTP-oversikt 17,0→15,8 ms; ukachet owner etter lesefiks 11,07→7,20 ms. createProject-owner 3,31→3,15 ms, uendret logikk. Filsletting har separat syntetisk kømåling; komplette opprettings-/Azure-sletteruter er ikke målt |
 | Prosjektdetalj og navigasjon | getProjectDetail/getProjectShell, felles klientcache | Korrekt klartekst: stor detalj 348,87→61,02 ms, 30 par; desktop/mobil kontrollert |
 | Lesing/lagring av analyser og artefakter | customer-analysis/generate/artifact-authority-ruter | Korrekt klartekst: stor oversikt 336,65→47,89 ms; PATCH 768,51→91,24 ms; DELETE 355,21→55,11 ms |
 | Tjenestebibliotek og valgte tjenester | service-descriptions-ruter og repositorium | Isolert repository/RPC, HTTP og browser-cache med tre tjenester/dokumenter bestod. Separate AI-par med katalogbeskrivelser: utvikling 7,872→8,050 s, holdout 4,250→3,121 s; begge likeverdige, holdout tom |

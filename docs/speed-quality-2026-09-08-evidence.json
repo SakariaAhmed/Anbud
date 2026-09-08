@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-08T10:51:29.407Z",
-  "repositoryCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
+  "generatedAt": "2026-09-08T10:52:17.287Z",
+  "repositoryCommit": "60b428266dafbc5824ea050f3b196beafae95801",
   "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
@@ -3966,6 +3966,11 @@
       "path": "verification/storage-delete-v8/anbud-storage-delete-tests-before.log",
       "bytes": 6451,
       "sha256": "54978c9a0215998d0ea47ff05559c100e3547e729861b89764041eee2f2c2264"
+    },
+    {
+      "path": "verification/storage-delete-v8/local-runtime.json",
+      "bytes": 2417,
+      "sha256": "c8cbb77e6d2b08d3587dd0cc4c1975fe62f778fc26d59201bba058e7604f434a"
     },
     {
       "path": "verification/storage-delete-v8/scope.json",
