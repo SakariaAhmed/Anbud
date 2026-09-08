@@ -67,7 +67,7 @@ Returner kun JSON: {"A":{"faithfulness":0,"coverage":0,"specificity":0,"decision
   if (preflightLabel) {
     const ledgerBytes = readFileSync(path.join(dir, "api-budget.json"));
     const ledger = JSON.parse(ledgerBytes);
-    if (ledger.limitUsd !== 14 || ledger.accountingPolicy !== ACCOUNTING_POLICY || ledger.requests.some((row) => row.status === "pending")) throw new Error("Unexpected or pending budget ledger.");
+    if (ledger.limitUsd !== 14 || ledger.accountingPolicy !== ACCOUNTING_POLICY || ledger.requests.some((row) => ["pending", "reserved"].includes(row.status))) throw new Error("Unexpected or pending budget ledger.");
     const remainingUsd = ledger.limitUsd - ledger.requests.reduce((sum, row) => sum + accountedCostUpperBound(row), 0);
     const prepared = prepareRequest("/v1/chat/completions", payload, 8000, "default");
     const miniFile = `judge-${mode}-${protocol}-mini-${candidateLabel}-${fixture.caseId}-${kind}.json`;

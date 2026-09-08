@@ -41,8 +41,8 @@ mobiloverflyt på analyse-/artefaktflater.
 ## Budsjett og hele forbedringsløpet
 
 Hard samlet grense: **14 USD**, inkludert embeddings, retries og dommere.
-Siste avstemming: **467 registrerte kall, 13,329150 USD konservativ
-kostnadsøvregrense, 0,670850 USD igjen og ingen uavklarte reservasjoner**.
+Siste avstemming: **469 registrerte kall, 13,393718 USD konservativ
+kostnadsøvregrense, 0,606282 USD igjen og ingen uavklarte reservasjoner**.
 Evalueringsproxyen er stoppet.
 Dette er ikke endelig fakturert beløp.
 
@@ -72,7 +72,7 @@ Et komplett `perfect_system_solution`-par trenger nytt løsningsutkast,
 kravdekning og helhetlig revurdering på begge sider. Bare outputdelen av full
 reservasjon er minst
 `2 × (8000 × 4,5 + 8000 × 15 + 16000 × 15) × 1,1 / 1000000 = 0,871200 USD`.
-Dette overstiger 0,670850 USD før input, embeddings og retries. Det er en
+Dette overstiger dagens rest på 0,606282 USD før input, embeddings og retries. Det er en
 konservativ reservasjonsberegning, ikke en påstand om faktisk fakturert kostnad.
 Hele paret er derfor ikke startet på antatt lavere usage. Ingen outputgrenser,
 modeller eller normal samtidighet er redusert for å få det til å passe.
@@ -351,8 +351,8 @@ har ett modellkall, og raskere DB-innlesing beviser ikke raskere eller bedre sva
 
 Samlet godkjenning krever fortsatt nye representative live hastighets-/kvalitetspar
 for genereringene som er tregere, uavklarte eller ikke kvalitetsgodkjent, samt hele
-forbedringsløpet. Gjenstående 0,670850 USD dekker ikke konservativ helreservasjon
-for sistnevntes før/etter-par. Beløpet er bevart; det er ikke gjort nye betalte kall.
+forbedringsløpet. Gjenstående 0,606282 USD dekker ikke konservativ helreservasjon
+for sistnevntes før/etter-par. To senere godkjente dommerkall er beskrevet nedenfor.
 Lokal testkonfigurasjon har ingen Azure Storage-konto. Faktisk opplasting, metadata,
 indeksering, Azure-sletting og Entra-flyt krever et tilgjengelig, isolert testmiljø
 med riktig identitet og lagring. Dette er ikke en påstand om at Azure-miljøer ikke
@@ -378,9 +378,38 @@ Dette inkluderer inputgrense, framing, 3500 outputtokens og 10 % margin, uten
 antatte cachetreff eller retry. Payloadene matcher eksisterende Mini-vurderinger
 byteidentisk bortsett fra modellnavnet; kilder og blind rekkefølge er uendret.
 `verification/judge-preflight-gpt54-v1-total.json` registrerer begge filer og
-hasher. Ingen av disse kallene er kjørt på dette tidspunktet. De kan avklare
-dommeruenighet, men erstatter ikke nye genereringer, gjentatte hastighetsmålinger,
-hele forbedringsløpet eller øvrige uoppfylte mål.
+hasher. Dette beskriver forhåndsreservasjonen mot daværende 0,670850 USD;
+de to kallene ble deretter uttrykkelig frigitt og kjørt sekvensielt.
+
+Begge fullførte med HTTP 200 og `stop`, uendret blind rekkefølge og faktisk
+forespørselshash lik preflight. Ingen retries eller nye genereringer ble kjørt.
+Fjords kall tok 5,681 s og kostet konservativt 0,024126 USD; Kysts tok 7,238 s
+og kostet 0,040442 USD. Dette er dommerkallenes tid, ikke nye genereringstider.
+De første 467 budsjettpostene er uendret. Proxyen ble stoppet etter de to kallene.
+
+GPT-5.4 foretrakk baseline og avviste kandidatens noninferiority i begge par,
+samme utfall som Mini. Begrunnelsene er ikke fullt sammenfallende. For Fjord
+rapporterer GPT-5.4 ingen kritiske feil og peker på plassering/prioritering av
+K-2, K-4 og K-6. Kildekontrollen bekrefter at baseline grupperer disse i sine
+fem prioriteringer, mens kandidaten bevarer alle tre i `expected_solution_direction`
+uten å løfte dem i prioriteringene. Den tidligere tilbakevisningen av full
+utelatelse står dermed ved lag; en smalere innvending om synlighet er støttet.
+
+For Kyst støtter feltkontrollen baselinefordelen for 180 dagers loggoppbevaring
+og konkret opplæring, driftsdokumentasjon og overtakelsesprøve i de undersøkte
+feltene. Begge diagrammer har samme type generiske svakhet. Kandidaten bevarer
+H-8 med normal/tredoblet last og tydelige forutsetninger, så Minis påstand om
+baselinefordel akkurat der er ikke etablert. GPT-5.4 peker selv på en begrensning
+i baselines H-8-presisjon. Dette er kildeadjudikasjon av frosset holdout; ingen
+prompter, modeller eller genereringer er tilpasset etter innsynet.
+
+`verification/two-gpt54-judges-reconciliation-v1.json` registrerer kallene;
+`two-gpt54-judges-source-field-evidence-v1.json` og
+`two-gpt54-judges-source-adjudication-v1.json` i samme mappe bevarer grunnlag og
+avgrenset tolkning separat. Opprinnelige Mini-resultater er uendret. To dommere
+som foretrekker baseline styrker beviset for at kvalitetsmålet fortsatt ikke er
+oppfylt, men høyere dommermodell gir ingen automatisk fasit. Dette erstatter ikke
+nye genereringer, gjentatte hastighetsmålinger eller hele forbedringsløpet.
 
 ## Gjenstående mål
 

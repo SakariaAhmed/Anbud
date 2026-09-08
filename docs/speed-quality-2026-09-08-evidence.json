@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-09-08T11:25:04.030Z",
-  "repositoryCommit": "c475173a70c6b921145db07fd7f019106614bc75",
+  "generatedAt": "2026-09-08T11:33:56.914Z",
+  "repositoryCommit": "1c66f4f19c99d3f0dd9c08f0bbcd5cea0031d6cb",
   "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
     "limitUsd": 14,
     "accountingPolicy": "verified-cache-usage-or-full-reservation-v5",
-    "accountedUpperBoundUsd": 13.32914999999998,
-    "remainingUsd": 0.6708500000000193,
-    "requestCount": 467,
-    "ledgerSha256": "33cd65a7133faacdfa2e8f0cb35910650f802910bdea16f0e47aad455c8ab5d6"
+    "accountedUpperBoundUsd": 13.393717999999982,
+    "remainingUsd": 0.606282000000018,
+    "requestCount": 469,
+    "ledgerSha256": "aa88728ce13d3629262f56db143a57cde5d3a67359fa032adfffc31d164f083f"
   },
   "limitations": [
     "Single generation per pair is not a p95 or causal latency regression test. Additional repetitions never replace the original 44-pair matrix.",
@@ -63,7 +63,193 @@
   },
   "additionalJudgePreflight": {
     "verification": "verification/judge-preflight-gpt54-v1-total.json",
-    "scope": "Offline exact preparation of two GPT-5.4 judges for already stored V5 Fjord V3 and Kyst legacy pairs. Both match the existing Mini payloads except model, cost 0.327356 USD at full conservative reservation and fit the unchanged ledger. Preflight is not paid execution, a verdict, new generation or complete quality acceptance."
+    "scope": "Historical offline preparation against the 467-row ledger: two GPT-5.4 judges reserved 0.327356 USD in total. Both matched existing Mini payloads except model. Subsequent authorized execution is recorded separately; this preflight is not itself a verdict or quality acceptance."
+  },
+  "additionalIndependentJudges": {
+    "at": "2026-09-08T11:32:51.327Z",
+    "executionCodeCommit": "1c66f4f1",
+    "applicationCommit": "29fb7689",
+    "paidCalls": 2,
+    "retries": 0,
+    "newGenerations": 0,
+    "previousRequestCount": 467,
+    "requestCount": 469,
+    "previousRowsUnchanged": true,
+    "ledgerSha256": "aa88728ce13d3629262f56db143a57cde5d3a67359fa032adfffc31d164f083f",
+    "previousAccountedUpperBoundUsd": 13.32914999999998,
+    "newCallsAccountedUpperBoundUsd": 0.064568,
+    "accountedUpperBoundUsd": 13.393717999999982,
+    "remainingUsd": 0.606282000000018,
+    "proxyTerminated": true,
+    "ledgerLockRemoved": true,
+    "cases": [
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "customer_analysis_v3",
+        "judgeFile": "judge-quality-task-sources-v2-final-standard-v5-fjord-drift-development-customer_analysis_v3.json",
+        "judgeSha256": "5f3223e2c9bbc4756f72b2201f49e24f35fa8944f23b5a9b32b103b5b5e2585d",
+        "miniFile": "judge-quality-task-sources-v2-mini-final-standard-v5-fjord-drift-development-customer_analysis_v3.json",
+        "miniSha256": "885e7a62394ab44bdbca9cfbdcd5b1160f8095e90fdf980f0620f84eba2cb7ef",
+        "order": {
+          "A": "baseline",
+          "B": "candidate"
+        },
+        "scores": {
+          "A": {
+            "faithfulness": 3,
+            "coverage": 4,
+            "specificity": 4,
+            "decision_support": 4,
+            "clarity": 3,
+            "critical_errors": [],
+            "missing_binding_details": []
+          },
+          "B": {
+            "faithfulness": 3,
+            "coverage": 3,
+            "specificity": 3,
+            "decision_support": 4,
+            "clarity": 4,
+            "critical_errors": [],
+            "missing_binding_details": [
+              "Prioriterte krav utelater bindende K-2 «Alle administratorer, også eksterne konsulenter, skal bruke flerfaktorautentisering».",
+              "Prioriterte krav utelater bindende K-4 «gjennomføre og dokumentere gjenopprettingstest hvert kvartal».",
+              "Prioriterte krav utelater bindende K-6 «månedlig kostnadsrapport med avviksforklaring per applikasjon».",
+              "Løsningsskissen nevner ikke eksplisitt MFA-kravet i K-2, selv om det senere tas inn under expected_solution_direction."
+            ]
+          },
+          "winner": "A",
+          "noninferior": [
+            "A"
+          ],
+          "comparison": "A bevarer alle selvstendige bindende krav K-1 til K-8 tydeligere og mer komplett, inkludert K-2, K-4 og K-6 i prioriteringene og løsningsdesignet. B er klar og nyttig, men er vesentlig svakere på coverage og specificity fordi flere bindende krav ikke er bevart som egne prioriterte krav og MFA ikke er tydelig i hoveddesignet."
+        },
+        "miniScores": {
+          "A": {
+            "faithfulness": 4,
+            "coverage": 4,
+            "specificity": 4,
+            "decision_support": 4,
+            "clarity": 4,
+            "critical_errors": [],
+            "missing_binding_details": []
+          },
+          "B": {
+            "faithfulness": 3,
+            "coverage": 2,
+            "specificity": 2,
+            "decision_support": 2,
+            "clarity": 3,
+            "critical_errors": [
+              "Mangler eksplisitt prioritering/bevaring av flere bindende krav fra kilden, særlig K-2, K-4 og K-6.",
+              "Kravbildet er dermed ufullstendig for en kundeanalyse som skal bevare alle selvstendige krav og terskler."
+            ],
+            "missing_binding_details": [
+              "K-2: «Alle administratorer, også eksterne konsulenter, skal bruke flerfaktorautentisering.»",
+              "K-4: «Leverandøren skal gjennomføre og dokumentere gjenopprettingstest hvert kvartal.»",
+              "K-6: «Kunden skal få månedlig kostnadsrapport med avviksforklaring per applikasjon.»"
+            ]
+          },
+          "winner": "A",
+          "noninferior": [
+            "A"
+          ],
+          "comparison": "A bevarer i praksis hele kravbildet bedre: den tar med alle sentrale bindende krav i prioriteringer og løsningsretning, mens B utelater flere kritiske krav (særlig MFA, kvartalsvise gjenopprettingstester og månedlig kostnadsrapport per applikasjon). Begge er relativt klare, men B er vesentlig svakere i kravdekning og beslutningsstøtte."
+        },
+        "candidateNoninferior": false,
+        "candidateWinner": false,
+        "requestId": "996df2c7-95bf-4164-9f3c-599b15ca3b1b",
+        "requestSha256": "e9e50f7025f9b1ed0551bf65f41b956ccba4e52b425150f70aeb81222685600c",
+        "matchesPreflight": true,
+        "reservedUsd": 0.140556,
+        "accountedUpperBoundUsd": 0.024126,
+        "durationMs": 5681,
+        "providerStatus": 200,
+        "finishReason": "stop"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "customer_analysis",
+        "judgeFile": "judge-quality-task-sources-v2-final-standard-v5-kyst-data-holdout-customer_analysis.json",
+        "judgeSha256": "41183c0886da67b4289f1a2e13b601f8927db0b050232641e9976c2f8a77ce4b",
+        "miniFile": "judge-quality-task-sources-v2-mini-final-standard-v5-kyst-data-holdout-customer_analysis.json",
+        "miniSha256": "f38db014ddf68ed2ca416a7ac60bf50974a3e323426bc1cb89085fd75079effd",
+        "order": {
+          "A": "candidate",
+          "B": "baseline"
+        },
+        "scores": {
+          "A": {
+            "faithfulness": 4,
+            "coverage": 3,
+            "specificity": 3,
+            "decision_support": 4,
+            "clarity": 4,
+            "critical_errors": [],
+            "missing_binding_details": [
+              "H-3 nedprioriteres i prioriterte krav og lederoppsummering: «Revisjonslogger skal oppbevares i 180 dager og kunne eksporteres til kundens logganalyse.»",
+              "H-6 er ikke tydelig løftet som selvstendig bindende krav i prioriteringer/oppsummering: «Kunden skal få opplæring, driftsdokumentasjon og en praktisk overtakelsesprøve.»",
+              "Arkitekturdiagrammet viser ikke eksplisitt lokal edge/buffer per havn eller pilot ved to havner, selv om dette er styrende fra H-1 og H-5."
+            ]
+          },
+          "B": {
+            "faithfulness": 4,
+            "coverage": 4,
+            "specificity": 4,
+            "decision_support": 4,
+            "clarity": 4,
+            "critical_errors": [],
+            "missing_binding_details": [
+              "H-8s eksakte ordlyd om estimat for både «normal last og tredoblet datavolum, med tydelige forutsetninger» er omtalt, men ikke alltid gjentatt med full terskelpresisjon i alle oppsummeringer.",
+              "Arkitekturdiagrammet viser ikke eksplisitt lokal edge/buffer per havn eller pilot ved to havner, selv om dette beskrives tydelig i teksten fra H-1 og H-5."
+            ]
+          },
+          "winner": "B",
+          "noninferior": [
+            "B"
+          ],
+          "comparison": "Begge variantene er tro mot kilden og gir nyttige anbefalinger uten å gjøre åpne forhold til krav. B er sterkere på dekning og konkretisering fordi den tydeligere bevarer H-3, H-6 og sammenhengen mellom pilot, logging, overtakelse og driftbarhet. A er god, men utelater flere bindende detaljer fra prioritering/oppsummering og er derfor vesentlig svakere på coverage/specificity."
+        },
+        "miniScores": {
+          "A": {
+            "faithfulness": 3,
+            "coverage": 3,
+            "specificity": 3,
+            "decision_support": 3,
+            "clarity": 3,
+            "critical_errors": [],
+            "missing_binding_details": []
+          },
+          "B": {
+            "faithfulness": 4,
+            "coverage": 4,
+            "specificity": 4,
+            "decision_support": 4,
+            "clarity": 3,
+            "critical_errors": [],
+            "missing_binding_details": []
+          },
+          "winner": "B",
+          "noninferior": [
+            "B"
+          ],
+          "comparison": "B bevarer flere bindende krav tydeligere, særlig H-3 om revisjonslogger i 180 dager, H-6 om opplæring/driftsdokumentasjon/overtakelsesprøve og H-8 om kostnadsestimat med forutsetninger. Den er også mer konkret i prioritering og løsningsretning. A er god, men svakere på full kravdekning og litt mindre presis i prioritering."
+        },
+        "candidateNoninferior": false,
+        "candidateWinner": false,
+        "requestId": "92088c58-a7be-4db1-89d4-1d7ef96d1ca8",
+        "requestSha256": "40a4d03cf9b7ec828bd7eb217dbd51926c358d556c872e4bce5dbac7ff975a23",
+        "matchesPreflight": true,
+        "reservedUsd": 0.1868,
+        "accountedUpperBoundUsd": 0.040442,
+        "durationMs": 7238,
+        "providerStatus": 200,
+        "finishReason": "stop"
+      }
+    ],
+    "sourceFieldEvidence": "verification/two-gpt54-judges-source-field-evidence-v1.json",
+    "sourceAdjudication": "verification/two-gpt54-judges-source-adjudication-v1.json",
+    "scope": "Exactly two prespecified judges of existing frozen V5 pairs. No new generation, extra judge or retry. Earlier Mini verdicts and development adjudication remain unchanged. Higher judge model does not itself establish quality or supersede source evidence."
   },
   "generationComparisons": [
     {
@@ -1346,6 +1532,11 @@
   "rawEvidenceRoot": "output/speed-quality-2026-09-08 (local, gitignored)",
   "rawFiles": [
     {
+      "path": "api-budget-before-two-gpt54-judges-v1.json",
+      "bytes": 505193,
+      "sha256": "33cd65a7133faacdfa2e8f0cb35910650f802910bdea16f0e47aad455c8ab5d6"
+    },
+    {
       "path": "api-budget-before-v3.json",
       "bytes": 440095,
       "sha256": "a6fa1bf1427a92874435f121851416ae35d94f6b2467802d2a015574f9506c13"
@@ -1357,8 +1548,8 @@
     },
     {
       "path": "api-budget.json",
-      "bytes": 505193,
-      "sha256": "33cd65a7133faacdfa2e8f0cb35910650f802910bdea16f0e47aad455c8ab5d6"
+      "bytes": 507918,
+      "sha256": "aa88728ce13d3629262f56db143a57cde5d3a67359fa032adfffc31d164f083f"
     },
     {
       "path": "auth-after.json",
@@ -1884,6 +2075,16 @@
       "path": "judge-quality-quality-requirement-prompt-v1-kyst-data-holdout-forbedret_kravsvar.json",
       "bytes": 505612,
       "sha256": "bdad3a81362032e1f62dba22014038256e386749a2ef66a04283908bd68047eb"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-final-standard-v5-fjord-drift-development-customer_analysis_v3.json",
+      "bytes": 1077125,
+      "sha256": "5f3223e2c9bbc4756f72b2201f49e24f35fa8944f23b5a9b32b103b5b5e2585d"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-final-standard-v5-kyst-data-holdout-customer_analysis.json",
+      "bytes": 1080442,
+      "sha256": "41183c0886da67b4289f1a2e13b601f8927db0b050232641e9976c2f8a77ce4b"
     },
     {
       "path": "judge-quality-task-sources-v2-mini-final-fast-v4-fjord-drift-development-customer_analysis.json",
@@ -4014,6 +4215,36 @@
       "path": "verification/storage-delete-v8/scope.json",
       "bytes": 648,
       "sha256": "8ff2ad6944b43ad08cde93348ad629a15264419b886065273240bcc88fd82842"
+    },
+    {
+      "path": "verification/two-gpt54-judge-fjord-v1.log",
+      "bytes": 190,
+      "sha256": "bd969b3a27a78c11f1925ffdf6774b6524cdeb52d009b3f646a63c6a4e36edb4"
+    },
+    {
+      "path": "verification/two-gpt54-judge-kyst-v1.log",
+      "bytes": 181,
+      "sha256": "ce727e044ab9007c2e346f40a2a53743ffc1b7066b81ffd05badef9517dc5904"
+    },
+    {
+      "path": "verification/two-gpt54-judges-proxy-v1.log",
+      "bytes": 117,
+      "sha256": "8f1cf4ab4d37d90229441e0fe3602987adfb07f702e3edccea2c7a185ad8132e"
+    },
+    {
+      "path": "verification/two-gpt54-judges-reconciliation-v1.json",
+      "bytes": 8826,
+      "sha256": "294e3270a952ac0ae9a07eeb1f751f16c2a855933d2aa18dbec2f59cfa84d0ae"
+    },
+    {
+      "path": "verification/two-gpt54-judges-source-adjudication-v1.json",
+      "bytes": 2837,
+      "sha256": "404f4bd8c4c92b518742e5994d2c92ed06b6e8516f2122f17cb7d9f9e748ea97"
+    },
+    {
+      "path": "verification/two-gpt54-judges-source-field-evidence-v1.json",
+      "bytes": 26667,
+      "sha256": "0ba92919205c79a231af957dc20ede96bfa0ec59368af9f82c142d574e60fd54"
     },
     {
       "path": "verification/worker-lease-transport-v1/checks.json",
