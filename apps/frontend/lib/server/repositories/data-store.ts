@@ -2596,6 +2596,23 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
   return { ...snapshot.value, snapshot_revision: snapshot.sourceRevision };
 }
 
+// Generation needs the project name and a current evaluation with its exact
+// dependency. Avoid loading UI document summaries, artifact counts/authority
+// and an unused customer-analysis copy while retaining the snapshot fence.
+export async function getProjectGenerationContext(projectId: string) {
+  const snapshot = await readStableProjectSourceSnapshot({
+    readSourceRevision: () => getProjectSnapshotRevision(projectId),
+    readValue: async () => {
+      const [project, solutionEvaluationSnapshot] = await Promise.all([
+        queryProjectRow(projectId),
+        getFreshSolutionEvaluationSnapshot(projectId),
+      ]);
+      return { name: project.name, solutionEvaluationSnapshot };
+    },
+  });
+  return { ...snapshot.value, snapshot_revision: snapshot.sourceRevision };
+}
+
 async function readProjectDetail(
   projectId: string,
 ): Promise<ProjectDetail> {

@@ -213,7 +213,7 @@ test('CONTROL ING4: deleted document cannot be resurrected by old ingestion work
 test('REGRESSION PERF1: reevaluation failure returns a recoverable partial result with its committed artifact', async () => {
   reset(); await save('Analysis'); downstream();
   const { runPerfectSystemSolutionWorkflow } = workflow(['runPerfectSystemSolutionWorkflow'], {
-    getProjectDetail: async () => ({ solution_evaluation: { architecture_comparison: { system_solution_score: 60 } } }),
+    getProjectGenerationContext: async () => ({ solutionEvaluationSnapshot: { evaluation: { architecture_comparison: { system_solution_score: 60 } } } }),
     generateAndSaveProjectArtifact: async () => {
       // Generation IO is stubbed; its successful COMMIT is represented by a real insert.
       sql(`insert into generated_artifacts(project_id,artifact_type,title,content_markdown,artifact_version) values (${quote(P)},'losningsutkast','Improved','Improved solution',1)`);
@@ -230,7 +230,7 @@ test('REGRESSION PERF1: reevaluation failure returns a recoverable partial resul
 test('REGRESSION PERF2: missing reevaluation document explicitly reports evaluation pending', async () => {
   reset(); await save('Analysis');
   const { runPerfectSystemSolutionWorkflow } = workflow(['runPerfectSystemSolutionWorkflow'], {
-    getProjectDetail: async () => ({ solution_evaluation: { architecture_comparison: { system_solution_score: 60 } } }),
+    getProjectGenerationContext: async () => ({ solutionEvaluationSnapshot: { evaluation: { architecture_comparison: { system_solution_score: 60 } } } }),
     generateAndSaveProjectArtifact: async () => ({ artifact: { id: 'improved' } }),
     readStableEvaluationSources: async () => ({ documents: [], customerAnalysis: null, sourceRevision: revision() }),
   });
@@ -359,7 +359,7 @@ for (const kind of ['solution_evaluation', 'executive_summary']) {
     const response = await POST(new Request('http://localhost/audit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind }) }), { params: Promise.resolve({ id: P }) });
     assert.equal(response.status, 422, response.body?.error); assert.equal(response.body.job, undefined);
     const runners = workflow(['runSolutionEvaluationWorkflow','runExecutiveSummaryWorkflow','readStableEvaluationSources'], {
-      getProjectDetail: async () => ({ name: 'Audit' }), getFreshSolutionEvaluationSnapshot: async () => null,
+      getProjectGenerationContext: async () => ({ name: 'Audit', solutionEvaluationSnapshot: null }),
     });
     await assert.rejects(kind === 'solution_evaluation' ? runners.runSolutionEvaluationWorkflow({ kind, projectId: P }, handlers) : runners.runExecutiveSummaryWorkflow({ kind, projectId: P }, handlers), kind === 'solution_evaluation' ? /Generer kundeanalyse før løsningsvurdering/ : /Generer vurdering før lederoppsummering/);
   });
@@ -483,7 +483,7 @@ test('REVIEW CHECKPOINT: perfect-solution artifact commits a checkpoint and retr
   assert.equal(recovered.resume_request.resume_artifact_id,row.id);
   let generated=0;
   const {runPerfectSystemSolutionWorkflow}=workflow(['runPerfectSystemSolutionWorkflow'], {
-    getProjectDetail:async()=>({solution_evaluation:null}),
+    getProjectGenerationContext:async()=>({solutionEvaluationSnapshot:null}),
     findWorkflowArtifact:async()=>({...row,is_current:true,source_is_current:true}),
     generateAndSaveProjectArtifact:async()=>{generated++;throw new Error('must not regenerate');},
     readStableEvaluationSources:async()=>{throw new Error('Still offline');},

@@ -42,14 +42,13 @@ import {
 } from "@/lib/server/document-intelligence/config";
 import {
   getFreshCustomerAnalysis,
-  getFreshSolutionEvaluationSnapshot,
   saveCustomerAnalysis,
   saveExecutiveSummary,
   saveSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
 import { assertExecutiveSummaryEvaluationReady } from "@/lib/server/executive-summary-readiness";
 import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState } from "@/lib/server/repositories/data-store";
-import { getProjectDetail, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
+import { getProjectGenerationContext, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
@@ -1450,11 +1449,11 @@ async function runExecutiveSummaryWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster prosjekt, kundeanalyse og vurdering ...");
-  const [project, customerAnalysis, evaluationSnapshot] = await Promise.all([
-    getProjectDetail(input.projectId),
+  const [project, customerAnalysis] = await Promise.all([
+    getProjectGenerationContext(input.projectId),
     getFreshCustomerAnalysis(input.projectId),
-    getFreshSolutionEvaluationSnapshot(input.projectId),
   ]);
+  const evaluationSnapshot = project.solutionEvaluationSnapshot;
   handlers.onPhase?.("dokumenthenting");
 
   if (!evaluationSnapshot) {
@@ -1496,15 +1495,16 @@ async function runPerfectSystemSolutionWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster vurdering, dokumenter og siste løsningsbeskrivelse ...");
-  const project = await getProjectDetail(input.projectId);
+  const project = await getProjectGenerationContext(input.projectId);
+  const solutionEvaluation = project.solutionEvaluationSnapshot?.evaluation ?? null;
   handlers.onPhase?.("prosjekthenting");
 
-  if (!project.solution_evaluation && !input.resumeArtifactId) {
+  if (!solutionEvaluation && !input.resumeArtifactId) {
     throw new Error("Generer vurdering før du forbedrer systemløsningen.");
   }
 
   const systemScore =
-    project.solution_evaluation?.architecture_comparison?.system_solution_score ??
+    solutionEvaluation?.architecture_comparison?.system_solution_score ??
     0;
 
   if (systemScore >= 100 && !input.resumeArtifactId) {

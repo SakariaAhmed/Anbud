@@ -16,7 +16,7 @@ import {
   upsertChatSession,
 } from "@/lib/server/repositories/chat";
 import { getFreshCustomerAnalysis } from "@/lib/server/repositories/analyses";
-import { getProjectDetail } from "@/lib/server/repositories/data-store";
+import { getProjectGenerationContext } from "@/lib/server/repositories/data-store";
 import { checkRateLimit } from "@/lib/server/observability";
 import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
@@ -423,7 +423,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       chatHistory,
       storedSessions,
     ] = await Promise.all([
-      getProjectDetail(id),
+      getProjectGenerationContext(id),
       getFreshCustomerAnalysis(id),
       listProjectDocumentsForAnalysis(id),
       listGeneratedArtifacts(id),
@@ -453,7 +453,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
     const contextSnapshot = {
       customer_analysis_present: Boolean(customerAnalysis),
-      solution_evaluation_present: Boolean(project.solution_evaluation),
+      solution_evaluation_present: Boolean(project.solutionEvaluationSnapshot),
       chat_session_id: sessionId,
       chat_session_title: sessionTitle,
       domain_hints: domainHints,
@@ -476,7 +476,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const chatStream = await streamProjectChat({
       projectName: project.name,
       customerAnalysis,
-      solutionEvaluation: project.solution_evaluation,
+      solutionEvaluation: project.solutionEvaluationSnapshot?.evaluation ?? null,
       generatedArtifacts,
       recentMessages: chatHistoryForSession.concat([
         {
