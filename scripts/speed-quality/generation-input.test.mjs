@@ -34,3 +34,24 @@ test("analysis sections remain distinct frozen operations", () => {
   assert.throws(() => assertComparableInputs({ fixture, kind: "section_design", before: run, after: run }), /differ/);
   assert.equal(fixture.input.section, undefined);
 });
+
+test("route-current chat input is frozen and cannot be mixed with empty history evidence", () => {
+  const fixture = { projectId: "frozen-project", input: { projectName: "Frozen" } };
+  const empty = frozenInvocation(fixture, "chat");
+  const current = frozenInvocation(fixture, "chat", { chatHistoryMode: "route-current" });
+  assert.deepEqual(empty.recentMessages, []);
+  assert.equal(current.recentMessages.length, 1);
+  assert.equal(current.recentMessages[0].id, "pending-user");
+  assert.equal(current.recentMessages[0].content, current.question);
+  assert.equal(current.recentMessages[0].project_id, fixture.projectId);
+  assert.deepEqual(current, frozenInvocation(fixture, "chat", { chatHistoryMode: "route-current" }));
+  const run = { chatHistoryMode: "route-current", evidenceInputSha256: hashInput(current) };
+  assert.deepEqual(assertComparableInputs({ fixture, kind: "chat", before: run, after: run }), current);
+  assert.throws(() => assertComparableInputs({ fixture, kind: "chat", before: run, after: { evidenceInputSha256: hashInput(empty) } }), /history modes differ/);
+  assert.throws(() => assertComparableInputs({ fixture, kind: "chat", before: run, after: { ...run, evidenceInputSha256: hashInput(empty) } }), /inputs differ/);
+  assert.equal(fixture.input.recentMessages, undefined);
+  const late = frozenInvocation(fixture, "chat", { chatHistoryMode: "route-current", chatQuestionMode: "late-operational-requirements" });
+  const lateRun = { chatHistoryMode: "route-current", chatQuestionMode: "late-operational-requirements", evidenceInputSha256: hashInput(late) };
+  assert.deepEqual(assertComparableInputs({ fixture, kind: "chat", before: lateRun, after: lateRun }), late);
+  assert.throws(() => assertComparableInputs({ fixture, kind: "chat", before: run, after: lateRun }), /question modes differ/);
+});

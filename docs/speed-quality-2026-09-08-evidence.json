@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-09-08T11:58:54.574Z",
-  "repositoryCommit": "fe393b859076eb988ea9f6a31aaf27afce2c6272",
+  "generatedAt": "2026-09-08T12:20:56.630Z",
+  "repositoryCommit": "992cce1cd9daebb0a6c65aa0f3d9bb173cacd0d8",
   "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
     "limitUsd": 27.393718,
     "accountingPolicy": "verified-cache-usage-or-full-reservation-v5",
-    "accountedUpperBoundUsd": 13.798745,
-    "remainingUsd": 13.594973,
-    "requestCount": 478,
-    "ledgerSha256": "2d33d402f0c1f80e5a5c3d22e52b51e56407d721c61e10761757d94576316722"
+    "accountedUpperBoundUsd": 13.991005,
+    "remainingUsd": 13.402713,
+    "requestCount": 502,
+    "ledgerSha256": "031c909970e7334fbf13c51cc7e57314da52bae966c8b764d2f1c2d03ac4ab8c"
   },
   "limitations": [
     "Single generation per pair is not a p95 or causal latency regression test. Additional repetitions never replace the original 44-pair matrix.",
@@ -263,6 +263,10 @@
     "scope": "One actual queued worker pair completed with new drafts and evaluations persisted against the correct artifact IDs. 113.421 to 110.162 seconds, not significant/statistically reliable speed proof; self-scores 88/84 are not independent quality acceptance. Original fixtures unchanged, own DBs/containers removed. No HTTP/Azure/holdout claim."
   },
   "judgeContractQualification": "verification/v3-judge-contract-qualification-v1.json",
+  "firstQuestionChatDevelopment": {
+    "verification": "verification/chat-first-question-v1/comparison.json",
+    "scope": "Four development pairs, including distinct empty/current-message input variants and a long-source question. Avoidable rewrite removed; all observed pairs faster. Two advisory noninferiority failures preserved. Long-source omissions and citation precision remain unresolved; no universal quality or holdout claim."
+  },
   "generationComparisons": [
     {
       "caseId": "fjord-drift-development",
@@ -1565,8 +1569,8 @@
     },
     {
       "path": "api-budget.json",
-      "bytes": 519856,
-      "sha256": "2d33d402f0c1f80e5a5c3d22e52b51e56407d721c61e10761757d94576316722"
+      "bytes": 549816,
+      "sha256": "031c909970e7334fbf13c51cc7e57314da52bae966c8b764d2f1c2d03ac4ab8c"
     },
     {
       "path": "auth-after.json",
@@ -2104,6 +2108,26 @@
       "sha256": "41183c0886da67b4289f1a2e13b601f8927db0b050232641e9976c2f8a77ce4b"
     },
     {
+      "path": "judge-quality-task-sources-v2-mini-after-refill-chat-long-v1-sundvik-32-requirements-chat.json",
+      "bytes": 1170423,
+      "sha256": "fb2be937bf11f6bcff68bbbde7a344d09b956c1d0734910d39525074c8fc27ff"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-after-refill-chat-v1-fjord-drift-development-chat.json",
+      "bytes": 1121759,
+      "sha256": "2d31d8250fd42ddbe76289a0e5155ae0a9efb9fa10abeb5aa493a8fec5800fc1"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-after-refill-chat-v2-fjord-drift-development-chat.json",
+      "bytes": 1163626,
+      "sha256": "ee3dfc50ce5d82e653f2a347119cd841fa562db33351efb125b1c7760c6cda2b"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-after-refill-chat-v3-fjord-drift-development-chat.json",
+      "bytes": 1166991,
+      "sha256": "c66044e07a2a98d61bd935a3e551da85f7a137d372c0c7f237316fb17c639cf0"
+    },
+    {
       "path": "judge-quality-task-sources-v2-mini-final-fast-v4-fjord-drift-development-customer_analysis.json",
       "bytes": 995336,
       "sha256": "eaf201edda43b0aa753b859ccc74c8b56f6c9b90fc9fb2692a1f11b64817379f"
@@ -2439,6 +2463,26 @@
       "sha256": "03553f2fdc2c1aad9f803ef5cd403da0a9009f232b7ea5cd547d5da562d9b458"
     },
     {
+      "path": "matrix-after-refill-chat-long-v1-sundvik-32-requirements-chat.json",
+      "bytes": 1169276,
+      "sha256": "840d3ab9064f534634e7d46e37d0ad9f86942f779ace09d898297415d46dff61"
+    },
+    {
+      "path": "matrix-after-refill-chat-v1-fjord-drift-development-chat.json",
+      "bytes": 1128286,
+      "sha256": "3ccd09ae70015ee7eccc1318ca44b860b467ba2a0d44cde24372c2ca35052f85"
+    },
+    {
+      "path": "matrix-after-refill-chat-v2-fjord-drift-development-chat.json",
+      "bytes": 1145351,
+      "sha256": "3c1b932f93ac25183b14003c7ac801756f58d0941eeec3ac08a8dd307d121ef3"
+    },
+    {
+      "path": "matrix-after-refill-chat-v3-fjord-drift-development-chat.json",
+      "bytes": 1151478,
+      "sha256": "e876e457b1dd1f31987bfe82a6322e086840ced4ce9a12d33e8c0ee3ab7bd5d8"
+    },
+    {
       "path": "matrix-baseline-fjord-drift-development-anbefalt_arkitektur.json",
       "bytes": 41721,
       "sha256": "ff5efccea86d83c6ac214cd7ce343587bbe8489b31dfc842cdc3ce6fa0bd307c"
@@ -2702,6 +2746,26 @@
       "path": "matrix-baseline16k-kyst-data-holdout-solution_evaluation.json",
       "bytes": 125891,
       "sha256": "433c33a4fe4ac7dd89b50c9ddd0e912fa3a0a90ebb653bc4947d1923772a36ca"
+    },
+    {
+      "path": "matrix-before-refill-chat-long-v1-sundvik-32-requirements-chat.json",
+      "bytes": 1162913,
+      "sha256": "23e27945760da86389414b437bdf59cb23c9ef20e561e950123aa644e92dc69a"
+    },
+    {
+      "path": "matrix-before-refill-chat-v1-fjord-drift-development-chat.json",
+      "bytes": 1123545,
+      "sha256": "74c15b6a441ad99ad8818c8c4771ffe5ba8c28f6f8647078f8463dafdb0d8b93"
+    },
+    {
+      "path": "matrix-before-refill-chat-v2-fjord-drift-development-chat.json",
+      "bytes": 1139626,
+      "sha256": "a434e6c2384bf249e5f1ba8e9c0d7f365104aa7c140323c470ebc402cc731e97"
+    },
+    {
+      "path": "matrix-before-refill-chat-v3-fjord-drift-development-chat.json",
+      "bytes": 1157960,
+      "sha256": "97147da54884d3be079ab3b8cbcb900e6485bd131a8b3b9dc2f3c431925aad38"
     },
     {
       "path": "matrix-candidate-batch-policy-sundvik-32-explicit-ids-forbedret_kravsvar.json",
@@ -3747,6 +3811,56 @@
       "path": "verification/browser-exports-table-functional-v6/visual-review.json",
       "bytes": 363,
       "sha256": "ecb4c999aa17568ada4b2f691cf629a8bd18a178f4b49285b8d91bfc9031edda"
+    },
+    {
+      "path": "verification/chat-first-question-development-plan-v1.json",
+      "bytes": 1399,
+      "sha256": "302f4528bac2e7099dcc9051310a5df470836a1500788ed7fac3317c6714fe19"
+    },
+    {
+      "path": "verification/chat-first-question-v1/build.log",
+      "bytes": 5097,
+      "sha256": "a940d1d393dd6a9cc5cb7c097c8f2b8ea5a77a07131dd4e08e0bc9a3656f2ec4"
+    },
+    {
+      "path": "verification/chat-first-question-v1/comparison.json",
+      "bytes": 5958,
+      "sha256": "85b57b73a6fe7fb242fcb1247fafc50b225a1d77451fc1bfaeddcdb2256a85c8"
+    },
+    {
+      "path": "verification/chat-first-question-v1/full-tests.log",
+      "bytes": 221418,
+      "sha256": "47909e470567feb85c0b6fbb4b52c04913c188bb4ea79e02fe7ea4a771f03484"
+    },
+    {
+      "path": "verification/chat-first-question-v1/harness.log",
+      "bytes": 2102,
+      "sha256": "618c35dddb8b8d4d37e3ececa3caf0750eff7a123e55b609caf2424709e53397"
+    },
+    {
+      "path": "verification/chat-first-question-v1/lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/chat-first-question-v1/parent-perfect-source-review.json",
+      "bytes": 2701,
+      "sha256": "b426fd82083a5bc2ac124ebdc4d361f85422a02eda50a00b778b206ba42b870e"
+    },
+    {
+      "path": "verification/chat-first-question-v1/parent-source-adjudication.json",
+      "bytes": 2699,
+      "sha256": "6416490ff974b9ee925c60cf1040d230286eddaf66c2a18802a415b1234aca00"
+    },
+    {
+      "path": "verification/chat-first-question-v1/parent-system-artifact-tail-diagnostic.json",
+      "bytes": 1141,
+      "sha256": "a31f9b4617d21152a446c517eb4499ba3dfdb61f1a15a3ad9eb020d3bad02cea"
+    },
+    {
+      "path": "verification/chat-long-development-plan-v1.json",
+      "bytes": 110272,
+      "sha256": "ee4c31c42f626916c904e4e766a0adbf79705ec4a235b74eeb9c6228cf7c0531"
     },
     {
       "path": "verification/closing-boundaries.log",

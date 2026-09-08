@@ -12,13 +12,19 @@ const dir = path.join(root, "output/speed-quality-2026-09-08");
 const option = (name, fallback) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const code = option("code", "candidate");
 if (!["candidate", "baseline"].includes(code)) throw new Error("Unknown implementation.");
+const baselineRevision = option("baseline-ref", "3779e6f2");
+if (!/^[a-f0-9]{8,40}$/.test(baselineRevision)) throw new Error("Use an immutable baseline commit.");
+const chatHistoryMode = option("chat-history", "empty");
+if (!["empty", "route-current"].includes(chatHistoryMode)) throw new Error("Unknown chat history mode.");
+const chatQuestionMode = option("chat-question", "standard");
+if (!["standard", "late-operational-requirements"].includes(chatQuestionMode)) throw new Error("Unknown chat question mode.");
 let frontend = installedFrontend;
 if (code === "baseline") {
-  const baselineRoot = "/tmp/anbud-speed-quality-baseline-3779e6f2";
+  const baselineRoot = `/tmp/anbud-speed-quality-baseline-${baselineRevision}`;
   frontend = path.join(baselineRoot, "apps/frontend");
   if (!existsSync(frontend)) {
     mkdirSync(baselineRoot, { recursive: true });
-    execFileSync("tar", ["-xf", "-", "-C", baselineRoot], { input: execFileSync("git", ["archive", "3779e6f2", "apps/frontend/lib"], { cwd: root, maxBuffer: 30e6 }) });
+    execFileSync("tar", ["-xf", "-", "-C", baselineRoot], { input: execFileSync("git", ["archive", baselineRevision, "apps/frontend/lib"], { cwd: root, maxBuffer: 30e6 }) });
     symlinkSync(path.join(installedFrontend, "node_modules"), path.join(frontend, "node_modules"));
   }
 }
@@ -68,9 +74,9 @@ for (const fixture of cases) for (const kind of kinds) {
   if (budgetBefore.remainingUsd < minimumReserve) throw new Error("Preserve final-evaluation budget headroom.");
   process.env.DOCUMENT_ANALYSIS_VERSION = kind === "customer_analysis_v3" ? "v3" : "off";
   const evaluation = kind === "executive_summary" ? JSON.parse(readFileSync(path.join(dir, `matrix-${evaluationLabel}-${fixture.caseId}-solution_evaluation.json`), "utf8")).result : undefined;
-  const invocation = frozenInvocation(fixture, kind, { model, evaluation });
+  const invocation = frozenInvocation(fixture, kind, { model, evaluation, chatHistoryMode, chatQuestionMode });
   const evidenceInput = { ...invocation }; delete evidenceInput.model;
-  const report = { evidenceInputSha256: sha(JSON.stringify(evidenceInput)), modelOverride: model || undefined, evaluationLabel: kind === "executive_summary" ? evaluationLabel : undefined, at: new Date().toISOString(), label, caseId: fixture.caseId, split: fixture.split, kind, code, baselineRevision: code === "baseline" ? "3779e6f2" : undefined, codeSha256, fullInputSha256: sha(JSON.stringify(invocation)), effectiveConfig: { DOCUMENT_ANALYSIS_VERSION: process.env.DOCUMENT_ANALYSIS_VERSION, OPENAI_MODEL: process.env.OPENAI_MODEL, OPENAI_DOCUMENT_ANALYSIS_MODEL: process.env.OPENAI_DOCUMENT_ANALYSIS_MODEL, OPENAI_REQUIREMENT_RESPONSE_MODEL: process.env.OPENAI_REQUIREMENT_RESPONSE_MODEL ?? (code === "baseline" ? "not-supported" : "gpt-5.6-luna (single-batch default)"), REQUIREMENT_RESPONSE_BATCH_SIZE: process.env.REQUIREMENT_RESPONSE_BATCH_SIZE ?? (code === "baseline" ? "24 (default)" : "12 (default)"), LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE: process.env.LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE ?? "28 (default)", REQUIREMENT_RESPONSE_BATCH_CONCURRENCY: process.env.REQUIREMENT_RESPONSE_BATCH_CONCURRENCY ?? "4 (default)", RAG_QUERY_REWRITE: process.env.RAG_QUERY_REWRITE ?? "adaptive (default)" }, budgetBefore, boundary: "Actual generation function, frozen full inputs and real local retrieval/index. Excludes job queue, route auth, persistence and browser rendering." };
+  const report = { evidenceInputSha256: sha(JSON.stringify(evidenceInput)), modelOverride: model || undefined, evaluationLabel: kind === "executive_summary" ? evaluationLabel : undefined, at: new Date().toISOString(), label, caseId: fixture.caseId, split: fixture.split, kind, code, baselineRevision: code === "baseline" ? baselineRevision : undefined, chatHistoryMode, chatQuestionMode, codeSha256, fullInputSha256: sha(JSON.stringify(invocation)), effectiveConfig: { DOCUMENT_ANALYSIS_VERSION: process.env.DOCUMENT_ANALYSIS_VERSION, OPENAI_MODEL: process.env.OPENAI_MODEL, OPENAI_DOCUMENT_ANALYSIS_MODEL: process.env.OPENAI_DOCUMENT_ANALYSIS_MODEL, OPENAI_REQUIREMENT_RESPONSE_MODEL: process.env.OPENAI_REQUIREMENT_RESPONSE_MODEL ?? (code === "baseline" ? "not-supported" : "gpt-5.6-luna (single-batch default)"), REQUIREMENT_RESPONSE_BATCH_SIZE: process.env.REQUIREMENT_RESPONSE_BATCH_SIZE ?? (code === "baseline" ? "24 (default)" : "12 (default)"), LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE: process.env.LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE ?? "28 (default)", REQUIREMENT_RESPONSE_BATCH_CONCURRENCY: process.env.REQUIREMENT_RESPONSE_BATCH_CONCURRENCY ?? "4 (default)", RAG_QUERY_REWRITE: process.env.RAG_QUERY_REWRITE ?? "adaptive (default)" }, budgetBefore, boundary: "Actual generation function, frozen full inputs and real local retrieval/index. Excludes job queue, route auth, persistence and browser rendering." };
   writeFileSync(file, JSON.stringify(report, null, 2));
   report.inputFixtureFile = inputFixtureFile;
   report.requestedServiceTier = budgetBefore.proxyServiceTier ?? "default";

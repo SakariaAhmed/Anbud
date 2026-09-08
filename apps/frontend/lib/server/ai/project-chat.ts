@@ -373,6 +373,20 @@ async function buildProjectChatRetrievalPlan(input: {
   if (rewriteMode === "off") {
     return fallback;
   }
+  // The route appends the current user message to recentMessages before calling
+  // us. That message alone does not provide conversation context to resolve.
+  const lastMessage = input.recentMessages.at(-1);
+  const priorMessages =
+    lastMessage?.role === "user" &&
+    lastMessage.content.trim() === input.question.trim()
+      ? input.recentMessages.slice(0, -1)
+      : input.recentMessages;
+  const hasConversationContext =
+    Boolean(input.sessionSummary?.trim()) ||
+    priorMessages.some((message) => Boolean(message.content.trim()));
+  if (rewriteMode === "adaptive" && !hasConversationContext) {
+    return fallback;
+  }
   const isLikelyFollowUp =
     input.question.length < 180 ||
     input.recentMessages.length > 2 ||

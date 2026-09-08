@@ -480,3 +480,11 @@ nye genereringer, gjentatte hastighetsmålinger eller hele forbedringsløpet.
   worker-avbrudd ved tapt lease er kontrollert med åpen SDK-transport, men ikke
   produksjonslast eller en bruker-cancel-operasjon. Ingen produksjonsutrulling
   følger av denne rapporten.
+
+### Første chatspørsmål – fire utviklingspar
+
+Adaptiv omskriving hopper nå over et selvstendig første spørsmål, også når API-ruten allerede har lagt det aktuelle spørsmålet i historikken. Tidligere samtale, samtaleminne og eksplisitt aktivert omskriving beholdes. Én modellforespørsel forsvinner. De to parene med rutens meldingsformat målte 13,797 → 10,891 og 17,622 → 12,254 sekunder; første tekst kom etter 4,747 → 1,736 og 6,691 → 1,853 sekunder. Separat tom-historikkpar: 16,256 → 12,118 sekunder. Langt kildegrunnlag: 8,227 → 7,780 sekunder. Få repetisjoner gir ikke p95 eller generell kvalitetsaksept.
+
+Alle fire opprinnelige dommerresultater er bevart, inkludert to noninferiority-feil. Begge lange svar mister opplæring/driftsmøter fra kilden; kildeutdrag og komplett referanseliste må forbedres separat. En dommer blander manglende leverandørbekreftelse med manglende kundekrav for sletting, og reelle blokkreferanser manglet i dommerens kildebundle. Dette avgrenser disse begrunnelsene uten å fjerne de faktiske kvalitetsgapene. Se `verification/chat-first-question-v1/comparison.json` og kildebevisene ved siden av.
+
+Verifisert: 910 frontendtester, 129 rottester, alle SQL-tester på disponibel lokal database, 20 harness-tester, lint uten advarsler og produksjonsbygg. Ingen produksjonsendring. Budsjettet har 502 registrerte forespørsler, konservativ total 13,991005 USD, brukt av nytt påfyll 0,597287 USD og 13,402713 USD igjen. Proxyen er stoppet uten ventende kall.
