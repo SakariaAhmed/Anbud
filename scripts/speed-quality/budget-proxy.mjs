@@ -9,6 +9,8 @@ const args = new Map(process.argv.slice(2).reduce((pairs, value, index, all) => 
 const ledgerPath = args.get("--ledger");
 const keyFile = args.get("--key-env");
 const phase = args.get("--phase");
+const serviceTier = args.get("--service-tier") ?? "default";
+if (!["default", "priority"].includes(serviceTier)) throw new Error("Unpriced evaluation service tier.");
 if (!ledgerPath || !keyFile || !phase) throw new Error("Required: --ledger <file> --key-env <existing env file> --phase <label> [--port 4319] [--output-limit 8000]");
 // Read only the API key, never load production database/storage/auth settings.
 const match = /^OPENAI_API_KEY\s*=\s*(.+)$/m.exec(readFileSync(keyFile, "utf8"));
@@ -22,7 +24,7 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/budget") {
       response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify(ledger.snapshot()));
+      response.end(JSON.stringify({ ...ledger.snapshot(), proxyServiceTier: serviceTier }));
       return;
     }
     if (request.method !== "POST") throw new Error("Only POST is supported.");
@@ -39,7 +41,7 @@ const server = createServer(async (request, response) => {
     // a batch. Use the same sufficient cap for baseline and candidate; retain
     // the failed earlier run and its charge rather than calling it a speed win.
     const evaluationLimit = /solution-evaluation-holistic|requirement-response-batch/.test(String(original.prompt_cache_key ?? "")) ? 16000 : outputLimit;
-    const prepared = prepareRequest(endpoint, original, evaluationLimit);
+    const prepared = prepareRequest(endpoint, original, evaluationLimit, serviceTier);
     reservation = ledger.reserve({ ...prepared, endpoint, model: prepared.request.model, phase });
     const upstream = await fetch(`https://api.openai.com${endpoint}`, {
       method: "POST",
@@ -61,16 +63,18 @@ const server = createServer(async (request, response) => {
     const body = Buffer.from(await upstream.arrayBuffer());
     let usage;
     let completion;
+    let returnedServiceTier;
     if (upstream.ok && !prepared.request.stream) {
       const parsed = JSON.parse(body.toString());
       usage = parsed.usage;
+      returnedServiceTier = parsed.service_tier;
       completion = {
         status: parsed.status,
         incompleteReason: parsed.incomplete_details?.reason,
         finishReasons: parsed.choices?.map((choice) => choice.finish_reason),
       };
     }
-    ledger.finish(reservation, { status: upstream.status, durationMs: Math.round(performance.now() - started), usage, completion });
+    ledger.finish(reservation, { status: upstream.status, durationMs: Math.round(performance.now() - started), usage, completion, returnedServiceTier });
     response.statusCode = upstream.status;
     response.setHeader("content-type", upstream.headers.get("content-type") ?? "application/json");
     response.end(upstream.ok ? body : JSON.stringify({ error: { message: `Evaluation provider request failed (HTTP ${upstream.status}).`, type: "evaluation_provider_error" } }));

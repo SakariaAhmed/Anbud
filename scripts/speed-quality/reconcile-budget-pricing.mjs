@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { ACCOUNTING_POLICY, accountedCostUpperBound, accountedCostUpperBoundV2 } from "./budget.mjs";
+import { ACCOUNTING_POLICY_V3 as ACCOUNTING_POLICY, accountedCostUpperBoundV3 as accountedCostUpperBound, accountedCostUpperBoundV2 } from "./budget.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const dir = path.join(root, "output/speed-quality-2026-09-08");

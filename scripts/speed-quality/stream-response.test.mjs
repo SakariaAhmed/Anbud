@@ -20,3 +20,12 @@ test("streams immediately, preserves split UTF-8 bytes and records completion/us
   assert.deepEqual(metadata.completion, { finishReasons: ["stop"] });
   assert.ok(metadata.firstContentMs >= 75);
 });
+
+test("provider tier is observed for Chat and Responses streams, including explicit downgrade", async () => {
+  for (const [payload, expected] of [[{ choices: [], service_tier: "priority" }, "priority"], [{ type: "response.completed", response: { status: "completed", service_tier: "default" } }, "default"]]) {
+    const bytes = Buffer.from(`data: ${JSON.stringify(payload)}\n\n`);
+    async function* body() { yield bytes; }
+    const result = await forwardStream(body(), () => {});
+    assert.equal(result.returnedServiceTier, expected);
+  }
+});

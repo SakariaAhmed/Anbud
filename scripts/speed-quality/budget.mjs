@@ -15,12 +15,15 @@ const rates = {
 // long-context pricing begins above 272K input tokens. Keep the stricter 256K
 // input-upper-bound + maximum-output guard and charge all input as cache writes.
 const shortRates = { "gpt-5.4": [2.5, 15], "gpt-5.6-terra": [2.5, 12], "gpt-5.6-luna": [0.25, 1.2] };
-export const ACCOUNTING_POLICY = "verified-bounded-short-usage-or-full-reservation-v3";
+const fastShortRates = { "gpt-5.4": [5, 30], "gpt-5.6-terra": [5, 24], "gpt-5.6-luna": [0.5, 2.4] };
+const fastLongRates = { "gpt-5.6-terra": [10, 36], "gpt-5.6-luna": [1, 3.6] };
+export const ACCOUNTING_POLICY = "verified-tiered-usage-or-full-reservation-v4";
+export const ACCOUNTING_POLICY_V3 = "verified-bounded-short-usage-or-full-reservation-v3";
 
 // Reconcile only verifiable text-token usage. Unknown, malformed, failed
 // transport and in-flight requests retain their complete preflight reservation.
 // Keep the historical reservation on disk for every request, including retries.
-function accountedForPolicy(row, includeGpt56Short) {
+function accountedForPolicy(row, includeGpt56Short, allowFast = false) {
   const fallback = row.reservedUsd;
   if (row.status !== 200 || !row.usage || !rates[row.model]) return fallback;
   const embedding = row.model.startsWith("text-embedding-");
@@ -32,7 +35,15 @@ function accountedForPolicy(row, includeGpt56Short) {
   const [maximumInput, maximumOutput] = rates[row.model];
   const eligibleShort = row.model === "gpt-5.4" && row.priceTier === "bounded-short" || includeGpt56Short && ["gpt-5.6-terra", "gpt-5.6-luna"].includes(row.model) && [undefined, "maximum", "bounded-short"].includes(row.priceTier);
   const short = eligibleShort && row.inputTokensUpperBound + row.outputTokensLimit < 256_000;
-  const [inputRate, outputRate] = short ? shortRates[row.model] : [maximumInput, maximumOutput];
+  let selectedRates = short ? shortRates[row.model] : [maximumInput, maximumOutput];
+  if (row.requestedServiceTier === "priority") {
+    if (!allowFast || !["priority", "fast", "default"].includes(row.returnedServiceTier)) return fallback;
+    if (row.returnedServiceTier !== "default") {
+      selectedRates = row.inputTokensUpperBound + row.outputTokensLimit < 256_000 ? fastShortRates[row.model] : fastLongRates[row.model];
+      if (!selectedRates) return fallback;
+    }
+  } else if (row.requestedServiceTier !== undefined && row.requestedServiceTier !== "default") return fallback;
+  const [inputRate, outputRate] = selectedRates;
   // Count cached tokens as full-price input and reasoning as output. The same
   // 10% margin applies. A inconsistent reconciliation cannot release budget.
   const bound = Math.ceil((input * inputRate + output * outputRate) * 1.1) / 1e6;
@@ -41,9 +52,11 @@ function accountedForPolicy(row, includeGpt56Short) {
 // V2 remains callable solely to audit the explicit policy transition. Neither
 // calculation modifies historical rows or their recorded priceTier/reservedUsd.
 export const accountedCostUpperBoundV2 = (row) => accountedForPolicy(row, false);
-export const accountedCostUpperBound = (row) => accountedForPolicy(row, true);
+export const accountedCostUpperBoundV3 = (row) => accountedForPolicy(row, true);
+export const accountedCostUpperBound = (row) => accountedForPolicy(row, true, true);
 
-export function prepareRequest(endpoint, original, outputLimit = 8000) {
+export function prepareRequest(endpoint, original, outputLimit = 8000, serviceTier = "default") {
+  if (!["default", "priority"].includes(serviceTier)) throw new Error("Unpriced service tier.");
   if (!["/v1/chat/completions", "/v1/responses", "/v1/embeddings"].includes(endpoint)) {
     throw new Error("Unsupported endpoint: only text generation and embeddings are budgeted.");
   }
@@ -53,6 +66,8 @@ export function prepareRequest(endpoint, original, outputLimit = 8000) {
   }
   const request = structuredClone(original);
   const embedding = endpoint.endsWith("/embeddings");
+  const requestedServiceTier = embedding ? "default" : serviceTier;
+  if (embedding) delete request.service_tier;
   if (embedding !== request.model.startsWith("text-embedding-")) throw new Error("Model/endpoint mismatch.");
   if (request.tools?.length || request.previous_response_id || request.conversation || request.background) {
     throw new Error("Tools and externally retained context are not budgeted.");
@@ -72,7 +87,7 @@ export function prepareRequest(endpoint, original, outputLimit = 8000) {
   validateText(content);
   let outputTokens = 0;
   if (!embedding) {
-    request.service_tier = "default";
+    request.service_tier = requestedServiceTier;
     request.store = false;
     if (endpoint.endsWith("/chat/completions") && request.stream) request.stream_options = { ...request.stream_options, include_usage: true };
     if (request.n !== undefined && request.n !== 1) throw new Error("Multiple outputs are not budgeted.");
@@ -90,9 +105,14 @@ export function prepareRequest(endpoint, original, outputLimit = 8000) {
   // threshold, so eligible models cannot enter the more expensive context tier.
   // Keep 16K headroom beneath that threshold and never revise old reservations.
   const priceTier = shortRates[request.model] && inputTokens + outputTokens < 256_000 ? "bounded-short" : "maximum";
-  const [inputRate, outputRate] = priceTier === "bounded-short" ? shortRates[request.model] : rates[request.model];
+  let selectedRates = priceTier === "bounded-short" ? shortRates[request.model] : rates[request.model];
+  if (requestedServiceTier === "priority") {
+    selectedRates = inputTokens + outputTokens < 256_000 ? fastShortRates[request.model] : fastLongRates[request.model];
+    if (!selectedRates) throw new Error("Fast model/long-context price is not verified.");
+  }
+  const [inputRate, outputRate] = selectedRates;
   const reservedUsd = Math.ceil((inputTokens * inputRate + outputTokens * outputRate) * 1.1) / 1e6;
-  return { request, inputTokens, outputTokens, reservedUsd, priceTier, inputRate, outputRate, requestSha256: createHash("sha256").update(JSON.stringify(request)).digest("hex"), inputSha256: createHash("sha256").update(JSON.stringify({ content, instructions: request.instructions, response_format: request.response_format, text: request.text })).digest("hex") };
+  return { request, requestedServiceTier, inputTokens, outputTokens, reservedUsd, priceTier, inputRate, outputRate, requestSha256: createHash("sha256").update(JSON.stringify(request)).digest("hex"), inputSha256: createHash("sha256").update(JSON.stringify({ content, instructions: request.instructions, response_format: request.response_format, text: request.text })).digest("hex") };
 }
 
 export function openBudgetLedger(file, limitUsd = 14) {
@@ -123,17 +143,17 @@ export function openBudgetLedger(file, limitUsd = 14) {
   function accountedTotal() { return ledger.requests.reduce((sum, row) => sum + accountedCostUpperBound(row), 0); }
   save();
   return {
-    reserve({ endpoint, model, inputTokens, outputTokens, reservedUsd, phase, requestSha256, inputSha256, priceTier, inputRate, outputRate }) {
+    reserve({ endpoint, model, inputTokens, outputTokens, reservedUsd, phase, requestSha256, inputSha256, priceTier, inputRate, outputRate, requestedServiceTier }) {
       if (!(reservedUsd > 0) || !Number.isFinite(reservedUsd) || accountedTotal() + reservedUsd > limitUsd) throw new Error("Evaluation budget exhausted.");
-      const row = { id: randomUUID(), at: new Date().toISOString(), accountingPolicy: ACCOUNTING_POLICY, phase, endpoint, model, requestSha256, inputSha256, priceTier, inputRatePerMillion: inputRate, outputRatePerMillion: outputRate, inputTokensUpperBound: inputTokens, outputTokensLimit: outputTokens, reservedUsd, status: "reserved" };
+      const row = { id: randomUUID(), at: new Date().toISOString(), accountingPolicy: ACCOUNTING_POLICY, phase, endpoint, model, requestSha256, inputSha256, requestedServiceTier, priceTier, inputRatePerMillion: inputRate, outputRatePerMillion: outputRate, inputTokensUpperBound: inputTokens, outputTokensLimit: outputTokens, reservedUsd, status: "reserved" };
       ledger.requests.push(row);
       save();
       return row.id;
     },
-    finish(id, { status, durationMs, usage, completion, firstContentMs }) {
+    finish(id, { status, durationMs, usage, completion, firstContentMs, returnedServiceTier }) {
       const row = ledger.requests.find((row) => row.id === id);
       if (!row) throw new Error("Unknown reservation.");
-      Object.assign(row, { status, durationMs, usage, completion, firstContentMs });
+      Object.assign(row, { status, durationMs, usage, completion, firstContentMs, returnedServiceTier });
       row.accountedCostUpperBoundUsd = accountedCostUpperBound(row);
       save();
     },

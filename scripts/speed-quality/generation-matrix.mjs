@@ -69,6 +69,7 @@ for (const fixture of cases) for (const kind of kinds) {
   const evidenceInput = { ...invocation }; delete evidenceInput.model;
   const report = { evidenceInputSha256: sha(JSON.stringify(evidenceInput)), modelOverride: model || undefined, evaluationLabel: kind === "executive_summary" ? evaluationLabel : undefined, at: new Date().toISOString(), label, caseId: fixture.caseId, split: fixture.split, kind, code, baselineRevision: code === "baseline" ? "3779e6f2" : undefined, codeSha256, fullInputSha256: sha(JSON.stringify(invocation)), effectiveConfig: { DOCUMENT_ANALYSIS_VERSION: process.env.DOCUMENT_ANALYSIS_VERSION, OPENAI_MODEL: process.env.OPENAI_MODEL, OPENAI_DOCUMENT_ANALYSIS_MODEL: process.env.OPENAI_DOCUMENT_ANALYSIS_MODEL, OPENAI_REQUIREMENT_RESPONSE_MODEL: process.env.OPENAI_REQUIREMENT_RESPONSE_MODEL ?? (code === "baseline" ? "not-supported" : "gpt-5.6-luna (single-batch default)"), REQUIREMENT_RESPONSE_BATCH_SIZE: process.env.REQUIREMENT_RESPONSE_BATCH_SIZE ?? (code === "baseline" ? "24 (default)" : "12 (default)"), LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE: process.env.LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE ?? "28 (default)", REQUIREMENT_RESPONSE_BATCH_CONCURRENCY: process.env.REQUIREMENT_RESPONSE_BATCH_CONCURRENCY ?? "4 (default)", RAG_QUERY_REWRITE: process.env.RAG_QUERY_REWRITE ?? "adaptive (default)" }, budgetBefore, boundary: "Actual generation function, frozen full inputs and real local retrieval/index. Excludes job queue, route auth, persistence and browser rendering." };
   writeFileSync(file, JSON.stringify(report, null, 2));
+  report.requestedServiceTier = budgetBefore.proxyServiceTier ?? "default";
   report.batchSizeOverride = batchSize ? Number(batchSize) : undefined;
   const started = performance.now();
   try {
@@ -97,7 +98,7 @@ for (const fixture of cases) for (const kind of kinds) {
   const previous = new Set(report.budgetBefore.requests.map((r) => r.id));
   report.requestIds = report.budgetAfter.requests.filter((r) => !previous.has(r.id)).map((r) => r.id);
   const requests = report.budgetAfter.requests.filter((r) => report.requestIds.includes(r.id) && !r.model.startsWith("text-embedding-"));
-  report.providerOutcomes = requests.map(({ id, model, status, completion }) => ({ id, model, status, completion }));
+  report.providerOutcomes = requests.map(({ id, model, status, completion, requestedServiceTier, returnedServiceTier }) => ({ id, model, status, completion, requestedServiceTier, returnedServiceTier }));
   report.allProviderOutputsComplete = requests.every((r) => r.status === 200 && (r.completion?.status === "completed" || (r.completion?.finishReasons?.length && r.completion.finishReasons.every((reason) => reason === "stop"))));
   report.providerFailureOrIncomplete = requests.some((r) => r.status !== 200 || r.completion?.status === "incomplete" || r.completion?.finishReasons?.includes("length"));
   // Provider stop does not rule out schema/coverage retries inside the app.

@@ -53,6 +53,29 @@ test("pricing reconciliation preserves every historical row and its original res
   } finally { ledger?.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
+test("Fast trials reserve the premium and reconcile only an explicitly returned tier", () => {
+  for (const model of ["gpt-5.4", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+    const input = { model, input: "Samme frosne kilde" };
+    const standard = prepareRequest("/v1/responses", input);
+    const fast = prepareRequest("/v1/responses", input, 8000, "priority");
+    assert.equal(fast.request.service_tier, "priority");
+    assert.equal(fast.requestedServiceTier, "priority");
+    assert.equal(fast.inputRate, standard.inputRate * 2);
+    assert.equal(fast.outputRate, standard.outputRate * 2);
+    const row = { model, priceTier: fast.priceTier, requestedServiceTier: "priority", status: 200, reservedUsd: fast.reservedUsd, inputTokensUpperBound: fast.inputTokens, outputTokensLimit: fast.outputTokens, usage: { input_tokens: 1000, output_tokens: 2000, total_tokens: 3000 } };
+    const expected = Math.ceil((1000 * fast.inputRate + 2000 * fast.outputRate) * 1.1) / 1e6;
+    assert.equal(accountedCostUpperBound({ ...row, returnedServiceTier: "priority" }), expected);
+    assert.equal(accountedCostUpperBound({ ...row, returnedServiceTier: "fast" }), expected);
+    assert.equal(accountedCostUpperBound({ ...row, returnedServiceTier: "default" }), Math.ceil((1000 * standard.inputRate + 2000 * standard.outputRate) * 1.1) / 1e6);
+    for (const tier of [undefined, "auto", "unknown"]) assert.equal(accountedCostUpperBound({ ...row, returnedServiceTier: tier }), fast.reservedUsd);
+  }
+  assert.throws(() => prepareRequest("/v1/responses", { model: "gpt-5.4", input: "x".repeat(256000) }, 8000, "priority"), /Fast.*long/i);
+  assert.throws(() => prepareRequest("/v1/responses", { model: "gpt-5.4", input: "x" }, 8000, "auto"), /tier/i);
+  const embedding = prepareRequest("/v1/embeddings", { model: "text-embedding-3-small", input: "Krav" }, 8000, "priority");
+  assert.equal(embedding.requestedServiceTier, "default");
+  assert.equal(embedding.request.service_tier, undefined);
+});
+
 test("text calls have conservative input bounds and capped reasoning-inclusive output", () => {
   const input = { model: "gpt-5.4", messages: [{ role: "user", content: "Ærlig svar" }], max_completion_tokens: 20000, service_tier: "priority" };
   const prepared = prepareRequest("/v1/chat/completions", input);
