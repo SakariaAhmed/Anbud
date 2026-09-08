@@ -284,8 +284,8 @@ function SectionSurface({
 }) {
   return (
     <section className="max-w-full overflow-hidden rounded-b-lg border border-t-0 border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.055)]">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-6 py-6 md:px-7">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
+      <div className="flex flex-col items-start gap-4 border-b border-slate-200 px-6 py-6 sm:flex-row sm:justify-between md:px-7">
+        <div className="flex w-full min-w-0 flex-1 items-start gap-3 sm:w-auto">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(135deg,rgb(239,246,255),rgb(219,234,254)_52%,rgb(224,242,254))] text-blue-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_12px_24px_rgba(37,99,235,0.12)] ring-1 ring-blue-100/80">
             <Icon className="size-5 drop-shadow-[0_1px_1px_rgba(255,255,255,0.55)]" />
           </div>
@@ -297,7 +297,7 @@ function SectionSurface({
           </div>
         </div>
         {action ? (
-          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-2 self-end sm:self-auto">
             {action}
           </div>
         ) : null}
