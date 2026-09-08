@@ -191,11 +191,15 @@ export function buildHighLevelDesignPrompt() {
   });
 }
 
-export function buildSolutionEvaluationPrompt() {
+export function buildSolutionEvaluationPrompt(
+  options: { hasSystemSolutionArtifact?: boolean } = {},
+) {
   return buildPromptTemplate({
     role: "Du er en krevende senior tilbudsansvarlig, løsningsarkitekt og evalueringsrådgiver som sammenligner systemets anbefalte strategi/løsning med en importert menneskelig arkitektløsning.",
     task: [
-      "Sammenlign systemløsningen i kundeanalysen med det importerte løsnings-/arkitektdokumentet.",
+      options.hasSystemSolutionArtifact
+        ? "Bruk den oppgitte systemartefakten som primærgrunnlag når systemløsningen sammenlignes med det importerte løsnings-/arkitektdokumentet."
+        : "Når ingen systemartefakt er oppgitt, sammenlign systemløsningen i kundeanalysen med det importerte løsnings-/arkitektdokumentet.",
       "Vurder hvilken løsning som er best for å vinne og gjennomføre tilbudet: systemets strategi/løsning eller arkitektløsningen.",
       "Gi sterk, konkret kritikk av arkitektløsningen og av strategien der den er svak.",
       "Gi dype, pragmatiske refleksjoner og forbedringsråd som tilbudsteamet faktisk kan bruke.",
@@ -211,7 +215,9 @@ export function buildSolutionEvaluationPrompt() {
       "Vær hard, men presis: kritikk skal være basert på dokumentene, ikke retorisk overdrivelse.",
       "Skill eksplisitte kundekrav fra avklaringspunkter og risikodrivere. Ikke gjør et tema til krav med mindre den aktuelle kilden selv uttrykker det som et bindende krav.",
       "Når en føring er et avklaringspunkt, beskriv den som avklaringsbehov, forbehold eller risikodriver, ikke som et etablert løfte kunden allerede har spesifisert.",
-      "Sammenlign alltid mot systemets high_level_solution_design, expected_solution_direction, positioning_recommendations og executive_summary når de finnes.",
+      options.hasSystemSolutionArtifact
+        ? "Score systemartefaktens faktiske forpliktelser, mangler og forbehold, også i senere avsnitt. Kundeanalysen er støtte og kontekst; ved motstrid skal den ikke erstatte eller overstyre systemartefakten som vurderes."
+        : "Bruk kundeanalysens high_level_solution_design, expected_solution_direction, positioning_recommendations og executive_summary når de finnes.",
       "Når dokumentene nevner konkrete føringer som applikasjonsomfang/waves, zero downtime/RTO/RPO, hybrid/on-prem/OT, kommersielle rammer eller blackout/API-avhengigheter, skal de vurderes eksplisitt som dekning, mangel, risiko eller avklaring i topplistene.",
       "Før du skriver at noe mangler, må du kontrollere om samme krav er besvart i importert Bilag 2, kravradutdrag, svarutdrag eller kravdekningen. Hvis svaret finnes, skal du vurdere kvaliteten som Godt, Dårlig eller Uklart, ikke påstå at kravet mangler.",
       "Når kravdekning eller coverage_registry finnes, er den autoritativ for konkrete kravfunn. Behold radidentitet: like eller gjentatte kravrader skal ikke slås sammen når de har ulike nr, ref, source_reference eller evidence.",

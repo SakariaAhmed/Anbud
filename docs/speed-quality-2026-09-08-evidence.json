@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-09-08T12:40:00.655Z",
-  "repositoryCommit": "766799a1b6319a7c286a912d76dab89f4bdb3f40",
-  "applicationCommit": "766799a1b6319a7c286a912d76dab89f4bdb3f40",
+  "generatedAt": "2026-09-08T13:01:57.953Z",
+  "repositoryCommit": "83921062e6c2debc4b72a8d9a280789b6fdb268d",
+  "applicationCommit": "83921062e6c2debc4b72a8d9a280789b6fdb268d",
   "goalCompleted": false,
   "budget": {
     "limitUsd": 27.393718,
     "accountingPolicy": "verified-cache-usage-or-full-reservation-v5",
-    "accountedUpperBoundUsd": 14.059523,
-    "remainingUsd": 13.334195,
-    "requestCount": 512,
-    "ledgerSha256": "91d0803951cbbbdbdf2ba6a0a0394346e80e07c88c461eb0b05213d8f88243cd"
+    "accountedUpperBoundUsd": 14.726669,
+    "remainingUsd": 12.667049,
+    "requestCount": 518,
+    "ledgerSha256": "fa030cdcb214fd31650fbc859022834aed6f7b896caba7187be5a31ccf5855d9"
   },
   "limitations": [
     "Single generation per pair is not a p95 or causal latency regression test. Additional repetitions never replace the original 44-pair matrix.",
@@ -270,6 +270,10 @@
   "chatSourceEvidenceCorrection": {
     "verification": "verification/chat-evidence-v1/comparison.json",
     "scope": "Subsequent fix preserves selected chunks, prioritizes question topics and retains all16 locators through repository/API/UI. Long development omissions corrected; two new locator-aware advisory judge wins. Both full answers slower; no universal speed/quality acceptance. Original browser HTTP cleanup500 and separate local DB cleanup retained."
+  },
+  "systemArtifactContextAndHolisticTrial": {
+    "verification": "verification/holistic-artifact-v1/comparison.json",
+    "scope": "Full scored artifact and correct artifact/analysis priority. Actual long counterexample exposes then fixes lost MFA exemption; overall advisory judge prefers baseline and is preserved. Isolated same-input GPT-5.4/Terra pair gives no speed gain; GPT-5.4 retained. Same imported coverage replayed; not a fresh complete workflow or holdout test."
   },
   "generationComparisons": [
     {
@@ -1573,8 +1577,8 @@
     },
     {
       "path": "api-budget.json",
-      "bytes": 561056,
-      "sha256": "91d0803951cbbbdbdf2ba6a0a0394346e80e07c88c461eb0b05213d8f88243cd"
+      "bytes": 569419,
+      "sha256": "fa030cdcb214fd31650fbc859022834aed6f7b896caba7187be5a31ccf5855d9"
     },
     {
       "path": "auth-after.json",
@@ -4207,6 +4211,116 @@
       "sha256": "1e1c71aeef17b28845fcea2608eab93e1a1861cad6763da17a8a12082d3d2759"
     },
     {
+      "path": "verification/holistic-artifact-v1/budget.json",
+      "bytes": 165,
+      "sha256": "b914fc6bbd758f39ea957886c6016cecb9badba2b052933db820f7c02b363f4f"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/comparison.json",
+      "bytes": 3453,
+      "sha256": "7854e1683913934dbe6babd13f8be92f6c140a8b3ebc6389911a10b86602f8ec"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/fixture.json",
+      "bytes": 379480,
+      "sha256": "6b2f32dbde0d6b4c69482b73fa353bee72bd7483e11d74323edf81bd0d58ffef"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/judge-real-v1.json",
+      "bytes": 1353789,
+      "sha256": "b6b01f8bbc2b932a98488dee7c2217400d94a0c06b4ac2cc88fd993d2064ae64"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/judge-real.log",
+      "bytes": 213,
+      "sha256": "3ff023926cb4782524ab0ca1067aac36d8d01e209e4922b471ea4f67c2b98eaf"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/judge-tail-v1.json",
+      "bytes": 1358861,
+      "sha256": "4f3b8b8c71786def0e6fa317f85e81c76de0546871d8e33aabd78af7c1d2e4f6"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/judge-tail.log",
+      "bytes": 214,
+      "sha256": "52998cbbd5a3dba046e573dbc725adcbeae4bde9ff144fa95a93934b9ffd1374"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/official-terra-model.md",
+      "bytes": 1217,
+      "sha256": "d6ed1b67c963843adff531428a9c435acecb2ee475048b785377f5bff32437ed"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/official-token-pricing.md",
+      "bytes": 21266,
+      "sha256": "f57c93f8de46d42cfb50477972bebb050c2d3529fdf00abcf8bb6ccf35585049"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/parent-preflight-review.json",
+      "bytes": 1510,
+      "sha256": "f343b820001c60f07749587ed051e04ea07ce36fa2f3563c683151e03d29d409"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/parent-quality-criteria.json",
+      "bytes": 1758,
+      "sha256": "4c2504062cb18e15dba1c50cf463b302df7700f111aef998d154967c26e8bbbb"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/parent-tail-source-review.json",
+      "bytes": 2031,
+      "sha256": "1fa5e77457411f34c50edec578b8c8b4afe07172b0787894f0166cab01343756"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/plan.json",
+      "bytes": 191826,
+      "sha256": "c5d45dfc1ef96d65ecf6319d70b7cadb93a1cbe06428929f160c64ca4432e49a"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/prepare.log",
+      "bytes": 641,
+      "sha256": "cce6ec4f3d52304af99b0b870db2ba2d7ff17ad8354e486524f007b4e4dd609a"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/real-after.json",
+      "bytes": 1232589,
+      "sha256": "915c6c95b2712374ead785736a8d2b5d040447426f2775ec8241cd08e2b5dde3"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/real-after.log",
+      "bytes": 1207,
+      "sha256": "337c34d2bc897bb162bbcb5acaada986f4b4a044324752d104a75fa377ecca9c"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/real-terra.json",
+      "bytes": 1237631,
+      "sha256": "9c15c3141aed5d5aaeca6b7d1b65a1e7dda64509e61e577fa25bf35921885505"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/real-terra.log",
+      "bytes": 1233,
+      "sha256": "ad48367c8447a71c48e4b253ee103ed330e4d18d429587512aeccfa473668773"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/tail-after.json",
+      "bytes": 1231394,
+      "sha256": "b78d63322fa6f5341ad8ceaeddfe404c4560b9686dff9587c6070c1e1083ec0a"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/tail-after.log",
+      "bytes": 1206,
+      "sha256": "debb6da0f72296c6e8b41a89f4c34424daee21c56d8939d98fe812a67c3c67c7"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/tail-before.json",
+      "bytes": 1227697,
+      "sha256": "4ef104500306bbd484d482944742a66fa684289f8855bb6f0346009fa206cc2d"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/tail-before.log",
+      "bytes": 1208,
+      "sha256": "53a047c96e064d3ffdaadd23fcfd070182ff625e2261f900fe58780833a5ed7e"
+    },
+    {
       "path": "verification/judge-preflight-gpt54-v1-fjord-drift-development-customer_analysis_v3.json",
       "bytes": 53782,
       "sha256": "cf89acac875b18c71cb1b25f062da88432e23d5fa0b89790c23a954d3f9c6f05"
@@ -4545,6 +4659,46 @@
       "path": "verification/storage-delete-v8/scope.json",
       "bytes": 648,
       "sha256": "8ff2ad6944b43ad08cde93348ad629a15264419b886065273240bcc88fd82842"
+    },
+    {
+      "path": "verification/system-artifact-tail-v1/build-v1.log",
+      "bytes": 5097,
+      "sha256": "6c552a782fe2aa2b99371f9a53194f48725e8447626ed0771c581652cc798476"
+    },
+    {
+      "path": "verification/system-artifact-tail-v1/full-tests-v1.log",
+      "bytes": 222414,
+      "sha256": "b3918c78d11f743fc895a447f7537617f631eec718352dfc2d440cd156ebbfe7"
+    },
+    {
+      "path": "verification/system-artifact-tail-v1/green-v1.log",
+      "bytes": 721,
+      "sha256": "14249f31712d86913b8faaa75d7e5cbd397c8105f62769b8e7539713cd5fabb0"
+    },
+    {
+      "path": "verification/system-artifact-tail-v1/lint-v1.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/system-artifact-tail-v1/red-v1.log",
+      "bytes": 1439,
+      "sha256": "bc7c7d732303c3b9581454147627a9c78d06a811336181c39f8b932e5d65ca6a"
+    },
+    {
+      "path": "verification/system-artifact-tail-v1/red-v2.log",
+      "bytes": 1850,
+      "sha256": "398d115906ddee07d400c7ed718a9221da4e65c9c76067bfa43917f6536164e0"
+    },
+    {
+      "path": "verification/system-artifact-tail-v1/red-v3.log",
+      "bytes": 1195,
+      "sha256": "fb47e2d231528304e94751c49087778f3911ef29f93c3ab023c6f24c12b4a2b4"
+    },
+    {
+      "path": "verification/system-artifact-tail-v1/verification.json",
+      "bytes": 1084,
+      "sha256": "6cdc48c58085f57ce33b9ec1f3f0c5afba9d55c78aad314d919a2a5a618bbdc2"
     },
     {
       "path": "verification/two-gpt54-judge-fjord-v1.log",

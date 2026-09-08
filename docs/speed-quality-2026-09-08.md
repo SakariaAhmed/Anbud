@@ -41,7 +41,7 @@ mobiloverflyt på analyse-/artefaktflater.
 ## Budsjett og hele forbedringsløpet
 
 Opprinnelig hard grense: **14 USD**, inkludert embeddings, retries og dommere.
-Siste avstemming: **478 registrerte kall, 13,798745 USD konservativ
+Siste avstemming: **518 registrerte kall, 14,726669 USD konservativ
 kostnadsøvregrense og ingen uavklarte reservasjoner**.
 Evalueringsproxyen er stoppet.
 Dette er ikke endelig fakturert beløp.
@@ -50,7 +50,7 @@ Brukeren har deretter skrevet «right now i have refilled the api credits to 14
 dollars» i hovedoppgaven. I konteksten av det åpne budsjettspørsmålet er dette
 registrert som **opptil 14 nye USD**, ikke en nullstilling av historikken.
 Den kumulative grensen er derfor **27,393718 USD**, med **14 USD tilgjengelig**
-ved påfyllet og **13,594973 USD igjen** etter det første komplette forbedringsparet.
+ved påfyllet og **12,667049 USD igjen** etter de registrerte chat- og helhetsvurderingsforsøkene.
 Tidligere ubrukt rest legges ikke til en gang til. Samme aktive
 ledger bevarer alle 469 rader; førversjonen er arkivert byteidentisk. Autorisasjonen
 med eksakt utsagn, kilde-ID, observert registreringstid og hasher ligger i
@@ -498,3 +498,13 @@ Langt utviklingssvar dekker nå de undersøkte kravene og forbeholdene korrekt. 
 912 frontendtester og 129 rottester, inkludert alle disponible SQL-tester, samt 20 harness-tester, lint og bygg passerer. To nye owner-regresjoner feiler på eldre kode. Faktisk kryptert lagring, gjeninnlesing og API beholder 16 kilder; visuelt kontrollert ved 1440/390 px med tastaturåpning og uten sideoverflow. HTTP-sletting ved opprydding ga500 i miljøet uten Azure-konfigurasjon; det eksakte tomme testprosjektet og meldingene ble fjernet gjennom lokal PostgREST. Dette er ikke en vellykket ende-til-ende-test av prosjektsletting. Se `verification/chat-evidence-v1/comparison.json`, browserbevis og separat cleanup-reconciliation.
 
 Gjeldende budsjett: 512 forespørsler, total 14.059523 USD, nytt påfyll brukt 0.665805 USD, igjen 13.334195 USD. Proxyen er stoppet; ingen ventende kall. Alle469 historiske rader er uendret. Eldre budsjettall i de daterte avsnittene er historiske. Ingen produksjonsutrulling.
+
+### Full systemartefakt og riktig prioritet i helhetsvurderingen
+
+Vurderingen fikk tidligere bare de første3800/4500 tegnene av artefakten som skulle scores, samtidig som systemprompten krevde sammenligning mot eldre kundeanalyse. Nå får den hele artefakten, og systemprompten prioriterer oppgitt artefakt; kundeanalysen er fallback når artefakt mangler. En faktisk owner-test med motsatte sene MFA-forpliktelser feiler på førversjonen og passerer etter retting. 913 frontendtester, 129 rottester med alle SQL-kontroller, lint og bygg passerer.
+
+I det frosne lange utviklingseksemplet fant før-svaret ikke systemartefaktens sene MFA-unntak; etter-svaret beskrev løfte→sen tilbaketrekking eksplisitt. Dette er et konkret kildekvalitetsfunn, men Mini-dommeren ga samlet NI=false og foretrakk førversjonen. Dommen er bevart. Flere konkrete begrunnelser motsies av etter-svarets tekst; kildeadjudikasjon avgrenser disse uten å erklære samlet kvalitetsseier. Råd om å fjerne forbehold kan fortsatt misforstås når de brukes i neste forbedringsrunde; nødvendige leverandørbekreftelser må ikke bli oppdiktet.
+
+Fire faktiske holistic-kall brukte samme importerte kravdekning fra det fullførte perfekte utviklingsparet. De er isolerte vurderingsmålinger, ikke ny helarbeidsflyt. Langt moteksempel:88,516→100,519 sekunder. Eksakt uendret tidligere generert artefakt: GPT-5.4 91,376 sekunder mot Terra93,655 med ellers identisk prompt, medium resonnering og svarkontrakt. Terra fikk NI=true, men vant ikke. GPT-5.4 beholdes; ingen målbar fartsgevinst begrunner bytte. Cachetreff og få repetisjoner begrenser konklusjonen. Se `verification/holistic-artifact-v1/comparison.json`.
+
+Gjeldende budsjett er518 kall, konservativ total14,726669 USD, nytt påfyll brukt1,332951 USD og12,667049 USD igjen. Ingen ventende kall; proxyen er stoppet. Ingen produksjonsutrulling.

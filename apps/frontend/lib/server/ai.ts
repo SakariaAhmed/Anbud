@@ -22098,10 +22098,7 @@ export async function evaluateSolutionDocument(input: {
           "Systemløsning som skal scores",
           [
             `Tittel: ${input.systemSolutionArtifact.title}`,
-            compactText(
-              input.systemSolutionArtifact.content_markdown,
-              hasRequirementCoverage ? 3800 : 4500,
-            ),
+            input.systemSolutionArtifact.content_markdown,
           ].join("\n\n"),
         )
       : "",
@@ -22158,7 +22155,9 @@ export async function evaluateSolutionDocument(input: {
       },
       () =>
         createJsonCompletion<SolutionEvaluationResult>({
-          system: buildSolutionEvaluationPrompt(),
+          system: buildSolutionEvaluationPrompt({
+            hasSystemSolutionArtifact: Boolean(input.systemSolutionArtifact),
+          }),
           user: userPrompt,
           temperature: 0.1,
           model: requirementCoverageBatchModel(input.model),
