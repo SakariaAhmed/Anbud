@@ -5,10 +5,13 @@ import assert from "node:assert/strict";
 import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const dir = path.join(root, "output/speed-quality-2026-09-08");
-const fixtures = JSON.parse(readFileSync(path.join(dir, "write-fixtures.json"), "utf8"));
+const fixtureLabel = process.argv.find((arg) => arg.startsWith("--fixtures-label="))?.slice(17) ?? "";
+assert.match(fixtureLabel, /^[a-z0-9-]*$/);
+const pairedDatabases = process.argv.includes("--paired-databases");
+const fixtures = JSON.parse(readFileSync(path.join(dir, `write-fixtures${fixtureLabel ? `-${fixtureLabel}` : ""}.json`), "utf8"));
 const verificationOnly = process.argv.includes("--verify-source-current");
 const sampleCount = verificationOnly ? 1 : 30;
-const output = path.join(dir, verificationOnly ? "http-artifact-write-source-verification.json" : "http-artifact-write-comparison.json");
+const output = path.join(dir, `${verificationOnly ? "http-artifact-write-source-verification" : "http-artifact-write-comparison"}${fixtureLabel ? `-${fixtureLabel}` : ""}.json`);
 if (existsSync(output)) throw new Error("Write comparison already exists.");
 const db = "postgresql://postgres:speed-quality-local-only@127.0.0.1:55439/speed_quality";
 const baseline = path.join(root, "apps/frontend/lib/server/repositories/fixtures/snapshot-dependencies-before.sql");
@@ -17,7 +20,7 @@ const install = (file) => execFileSync("psql", [db, "-X", "-q", "-v", "ON_ERROR_
 const report = { at: new Date().toISOString(), sampleCount, verificationOnly, measurement: "Authenticated PATCH and DELETE through separate local production builds, identical isolated synthetic fixture restored after each sample by the real delete route. Includes full response body; validation reads excluded from timed requests. Baseline phase then candidate phase; not an Azure measurement.", rows: [] };
 try {
   for (const [version, port, sql] of [["before", 4317, baseline], ["after", 4318, candidate]]) {
-    install(sql);
+    if (!pairedDatabases) install(sql);
     const base = `http://localhost:${port}`;
     const login = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: "speed-quality-local-test-password" }) });
     assert.equal(login.status, 200);
@@ -33,6 +36,7 @@ try {
       const route = `/api/projects/${fixture.id}/generate`;
       const initial = (await request(route)).data.artifacts;
       assert.equal(initial.length, 7, "Do not reuse a partially modified fixture.");
+      if (fixtureLabel) assert.ok(initial.every((a) => !a.content_markdown.startsWith("enc:v1:")), "Seed plaintext artifact content according to its persistence contract.");
       const parent = initial.find((a) => a.artifact_type === "tilbudsstrategi");
       assert.equal(parent.source_is_current, true, "Manual editing requires a fully current parent.");
       const input = { artifact_id: parent.id, title: "Fiktiv manuelt revidert tilbudsstrategi", content_markdown: `${parent.content_markdown}\n\nFiktivt tillegg: Kunde og leverandør godkjenner planen før gjennomføring.` };
@@ -66,4 +70,4 @@ try {
       console.log(JSON.stringify({ ...row, samples: undefined }));
     }
   }
-} finally { install(candidate); }
+} finally { if (!pairedDatabases) install(candidate); }

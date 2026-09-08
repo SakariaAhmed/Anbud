@@ -18,6 +18,10 @@ const kinds = ["customer_analysis", "customer_analysis_v3", ...analysisSectionKi
 const budget = read("api-budget.json");
 const costUpperBound = budget.requests.reduce((sum, row) => sum + accountedCostUpperBound(row), 0);
 const comparisons = [];
+const complete = (run) => {
+  const requests = run.budgetAfter.requests.filter((r) => run.requestIds.includes(r.id) && !r.model.startsWith("text-embedding-"));
+  return run.completed && run.sourceUnchanged !== false && requests.length > 0 && requests.every((r) => r.status === 200 && (r.completion?.status === "completed" || r.completion?.finishReasons?.length > 0 && r.completion.finishReasons.every((reason) => reason === "stop")));
+};
 for (const fixture of frozen.cases.filter((c) => c.split !== "large-regression")) for (const kind of kinds) {
   const baselineLabel = kind === "customer_analysis" ? "baseline-function" : kind === "solution_evaluation" ? "baseline16k" : analysisSectionKinds.includes(kind) && kind !== "section_summary" ? "baseline-sections" : "baseline";
   const candidateLabel = corrected.has(kind) ? "quality-final-corrections-v1" : "quality-expanded-v1";
@@ -29,12 +33,24 @@ for (const fixture of frozen.cases.filter((c) => c.split !== "large-regression")
   const judgeFile = `judge-quality-${scoped.has(kind) ? "task-sources-v2-" : ""}mini-${candidateLabel}-${fixture.caseId}-${kind}.json`;
   const judge = read(judgeFile);
   if (judge.finishReason !== "stop") throw new Error("Missing completed comparison.");
-  const complete = (run) => {
-    const requests = run.budgetAfter.requests.filter((r) => run.requestIds.includes(r.id) && !r.model.startsWith("text-embedding-"));
-    return run.completed && run.sourceUnchanged !== false && requests.length > 0 && requests.every((r) => r.status === 200 && (r.completion?.status === "completed" || r.completion?.finishReasons?.length > 0 && r.completion.finishReasons.every((reason) => reason === "stop")));
-  };
   if (!complete(before) || !complete(after)) throw new Error("Incomplete generation evidence.");
   comparisons.push({ caseId: fixture.caseId, split: fixture.split, kind, beforeFile, afterFile, judgeFile, baselineMs: before.totalMs, candidateMs: after.totalMs, candidateFirstTextMs: after.firstTextMs, baselineCodeSha256: before.codeSha256, candidateCodeSha256: after.codeSha256, frozenInputMatched: true, providersCompleted: true, judgeModel: judge.judgeModel, judgeProtocol: judge.protocol ?? "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)", candidateContentNoninferior: judge.candidateContentNoninferior, candidateWinner: judge.candidateWinner, recordedSectionPreserved: judge.outsideSectionPreserved });
+}
+// Additional runs with recorded code versions remain separate from the original 44-pair
+// matrix. Never silently replace earlier outcomes with a preferred repetition.
+const additionalGenerationComparisons = [];
+for (const judgeFile of readdirSync(dir).filter((name) => /^judge-quality-task-sources-v2-mini-final-(standard-v[345]|fast-v4|services-v5)-.+\.json$/.test(name)).sort()) {
+  const judge = read(judgeFile);
+  const inputFixtureFile = judge.inputFixtureFile ?? "generation-inputs.json";
+  if (!/^generation-inputs(?:-[a-z0-9-]+)?\.json$/.test(inputFixtureFile)) throw new Error("Invalid supplemental frozen-input file.");
+  const fixture = read(inputFixtureFile).cases.find((c) => c.caseId === judge.caseId);
+  if (!fixture || judge.finishReason !== "stop") throw new Error("Incomplete final-code comparison.");
+  const beforeFile = `matrix-${judge.baselineLabel}-${judge.caseId}-${judge.kind}.json`;
+  const afterFile = `matrix-${judge.candidateLabel}-${judge.caseId}-${judge.kind}.json`;
+  const before = read(beforeFile); const after = read(afterFile);
+  assertComparableInputs({ fixture, kind: judge.kind, before, after });
+  if (!complete(before) || !complete(after)) throw new Error("Incomplete final-code generation.");
+  additionalGenerationComparisons.push({ caseId: fixture.caseId, split: fixture.split, kind: judge.kind, inputFixtureFile, beforeFile, afterFile, judgeFile, baselineMs: before.totalMs, candidateMs: after.totalMs, candidateRequestedServiceTier: after.requestedServiceTier, candidateCodeSha256: after.codeSha256, frozenInputMatched: true, providersCompleted: true, candidateContentNoninferior: judge.candidateContentNoninferior, candidateWinner: judge.candidateWinner, outsideSectionPreserved: judge.outsideSectionPreserved });
 }
 const rawFiles = [];
 function walk(directory) {
@@ -47,10 +63,11 @@ function walk(directory) {
 }
 walk(dir);
 const index = {
-  generatedAt: new Date().toISOString(), applicationCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(), goalCompleted: false,
+  generatedAt: new Date().toISOString(), repositoryCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(), applicationCommit: execFileSync("git", ["log", "-1", "--format=%H", "--", "apps/frontend"], { cwd: root, encoding: "utf8" }).trim(), goalCompleted: false,
   budget: { limitUsd: budget.limitUsd, accountingPolicy: budget.accountingPolicy, accountedUpperBoundUsd: costUpperBound, remainingUsd: budget.limitUsd - costUpperBound, requestCount: budget.requests.length, ledgerSha256: sha(readFileSync(path.join(dir, "api-budget.json"))) },
-  limitations: ["Single generation per pair is not a p95 or causal latency regression test.", "Single blind Mini judge is advisory; source reviews have identified judge mistakes. Identical empty keyword/service lists do not demonstrate an improvement.", "The original full-fixture judge method gave 26 customer-only/derived-only operations unavailable sources. Those historical judgments are excluded here.", "Eight non-strategy section outputs predate the deterministic scope fix. The separate 18-row owner replay preserved all non-target fields and changed no target fields; it is not fresh provider execution.", "Full customer-analysis generation outputs predate the final removal of a 220-character postprocessing cut. Its regression is deterministic; no fresh full-analysis model run proves final end-to-end quality.", "All fixtures are fictional and local. Azure storage, Entra, populated service recommendations and broader concurrent production workloads are not verified by these runs."],
-  generationComparisons: comparisons, sectionScopeReplay: read("section-preservation-owner-correction-v1.json"), rawEvidenceRoot: "output/speed-quality-2026-09-08 (local, gitignored)", rawFiles,
+  limitations: ["Single generation per pair is not a p95 or causal latency regression test. Additional repetitions never replace the original 44-pair matrix.", "Single blind Mini judge is advisory. The V5 development V3 adjudication refutes three missing-detail claims without changing the original verdict or establishing an overall winner.", "The original full-fixture judge method gave 26 customer-only/derived-only operations unavailable sources. Those historical judgments are excluded here.", "Eight non-strategy section outputs predate the deterministic scope fix. The separate 18-row owner replay preserved all non-target fields and changed no target fields; it is not fresh provider execution.", "Fresh V5 legacy/V3/HLD runs exercise application commit 07b51e3e. V3/V4 and original matrix outputs retain their actual older code hashes.", "The supplemental populated-service inputs change only serviceCandidates. Both development outputs select the two relevant services; both holdout outputs select none. This is not end-to-end AI integration with persisted service documents or evidence of improved holdout recommendations.", "Historical read/write seeding incorrectly encrypted plaintext content_markdown. Use plaintext-v3 semantic read, write and generation-context evidence for representative plaintext performance. Earlier runs are preserved, not promoted as equivalent evidence.", "Export plaintext-v4 is 30-pair plaintext/list performance; malformed fixture table rows render as pipe text. Table-functional-v6 is separate single-pair functional evidence with a real table, not p95. HTML .doc is not native Word verification.", "All fixtures are fictional and local. Azure storage, Entra, complete perfect_system_solution and broader concurrent production workloads remain unverified. Full-pair conservative output reservations alone exceed the remaining API budget."],
+  currentFreeEvidence: { reads: "http-quiet-plaintext-v3-semantic-control-pairs.json", writes: "http-artifact-write-comparison-plaintext-v3.json", context: "generation-context-comparison-plaintext-v3.json", exportPerformance: "verification/browser-exports-plaintext-v4/checks.json", exportTable: "verification/browser-exports-table-functional-v6/checks.json", judgeAdjudication: "verification/development-v3-judge-adjudication-v5.json", perfectWorkflowBudgetPreflight: "verification/perfect-workflow-budget-preflight-v5.json" },
+  generationComparisons: comparisons, additionalGenerationComparisons, sectionScopeReplay: read("section-preservation-owner-correction-v1.json"), rawEvidenceRoot: "output/speed-quality-2026-09-08 (local, gitignored)", rawFiles,
 };
 writeFileSync(output, JSON.stringify(index, null, 2));
 console.log(JSON.stringify({ file: output, pairedGenerations: comparisons.length, contentNoninferior: comparisons.filter((r) => r.candidateContentNoninferior).length, winners: comparisons.filter((r) => r.candidateWinner).length, rawFileCount: rawFiles.length, rawBytes: rawFiles.reduce((sum, f) => sum + f.bytes, 0) }));

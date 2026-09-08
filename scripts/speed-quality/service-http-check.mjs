@@ -4,8 +4,9 @@ import { once } from "node:events";
 import { openSync, closeSync, cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { checkServiceBrowser } from "./service-browser-check.mjs";
 
-export async function checkServiceHttp({ root, env, projectId, services }) {
+export async function checkServiceHttp({ root, env, projectId, services, browser = false, label = "initial" }) {
   const children = [];
   const logFile = `verification/populated-service-http-server-${Date.now()}.log`;
   const log = openSync(path.join(root, "output/speed-quality-2026-09-08", logFile), "wx");
@@ -52,7 +53,8 @@ export async function checkServiceHttp({ root, env, projectId, services }) {
       assert.deepEqual(actual, expected);
       transitions.push({ submittedCount: selected.length, persistedSelectedCount: actual.length });
     }
-    return { scope: "Actual isolated standalone HTTP GET/PATCH, local password auth and real Next invalidation execution; isolated runtime/disk cache, no browser cache or AI generation, no latency gain claim.", logFile, anonymousReadDenied: true, anonymousWriteDenied: true, invalidPayloadRejected: true, warmedCatalogRead: true, selectionTransitionsReadBack: transitions };
+    const browserResult = browser ? await checkServiceBrowser({ root, origin, projectId, services, label }) : undefined;
+    return { scope: "Actual isolated standalone HTTP GET/PATCH, local password auth and real Next invalidation execution; isolated runtime/disk cache, no AI generation, no latency gain claim. Optional browser checks have their own scope.", logFile, anonymousReadDenied: true, anonymousWriteDenied: true, invalidPayloadRejected: true, warmedCatalogRead: true, selectionTransitionsReadBack: transitions, browser: browserResult };
   } finally {
     for (const child of children) if (child.exitCode === null) {
       const exited = once(child, "exit"); child.kill("SIGTERM");

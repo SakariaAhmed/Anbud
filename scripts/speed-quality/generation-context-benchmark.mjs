@@ -6,7 +6,9 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const frontend = path.join(root, "apps/frontend");
 const dir = path.join(root, "output/speed-quality-2026-09-08");
-const output = path.join(dir, "generation-context-comparison.json");
+const label = process.argv.find((arg) => arg.startsWith("--fixtures-label="))?.slice(17) ?? "";
+assert.match(label, /^[a-z0-9-]*$/);
+const output = path.join(dir, `generation-context-comparison${label ? `-${label}` : ""}.json`);
 if (existsSync(output)) throw new Error("Context benchmark already exists.");
 const env = JSON.parse(readFileSync(path.join(dir, "local-environment.json"), "utf8"));
 assert.equal(env.DATA_API_URL, "http://127.0.0.1:55440");
@@ -18,11 +20,11 @@ function load(directory) {
 }
 const before = load("/tmp/anbud-speed-quality-baseline-3779e6f2/apps/frontend");
 const after = load(frontend);
-const fixtures = JSON.parse(readFileSync(path.join(dir, "read-fixtures.json"), "utf8"));
+const fixtures = JSON.parse(readFileSync(path.join(dir, `read-fixtures${label ? `-${label}` : ""}.json`), "utf8"));
 const nativeFetch = globalThis.fetch;
 let reads = 0;
 globalThis.fetch = (...args) => { reads++; return nativeFetch(...args); };
-const report = { at: new Date().toISOString(), measurement: "Real repository owners on identical independent local DB snapshots, original versus candidate SQL. Same name, evaluation, dependency and snapshot revision; alternating warm pairs. Excludes route authentication, generation, writes and browser. Fetch count measures database HTTP requests.", rows: [] };
+const report = { at: new Date().toISOString(), measurement: "Real repository owners on separate local DBs with matched fixture contents, original versus candidate SQL. Same name, evaluation, dependency and snapshot revision; alternating warm pairs. Excludes route authentication, generation, writes and browser. Fetch count measures database HTTP requests.", rows: [] };
 try {
   for (const size of ["small", "large"]) for (const useCase of ["chat", "executive-summary"]) {
     const fixture = fixtures.find((p) => p.size === size);

@@ -26,7 +26,10 @@ const { customerAnalysisRegenerationContract } = jiti(path.join(root, "apps/fron
 const { getCustomerAnalysisSectionSnapshot } = jiti(path.join(root, "apps/frontend/lib/customer-analysis-history.ts"));
 const { summarizeCustomerAnalysis, summarizeSolutionEvaluation } = jiti(path.join(root, "apps/frontend/lib/server/ai/context.ts"));
 if (![candidateLabel, baselineLabel, ...kinds].every((s) => /^[a-z0-9_-]+$/.test(s)) || !["speed", "quality"].includes(mode)) throw new Error("Invalid comparison configuration.");
-const frozen = JSON.parse(readFileSync(path.join(dir, "generation-inputs.json"), "utf8"));
+const inputLabel = option("inputs", "");
+if (!/^[a-z0-9-]*$/.test(inputLabel)) throw new Error("Invalid frozen-input label.");
+const inputFixtureFile = `generation-inputs${inputLabel ? `-${inputLabel}` : ""}.json`;
+const frozen = JSON.parse(readFileSync(path.join(dir, inputFixtureFile), "utf8"));
 const fixtures = frozen.cases.filter((c) => (!selectedCase || c.caseId === selectedCase) && (split === "all" ? c.split !== "large-regression" : c.split === split));
 if (!fixtures.length) throw new Error("No frozen cases selected.");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -41,6 +44,7 @@ for (const fixture of fixtures) for (const kind of kinds) {
   const before = JSON.parse(readFileSync(path.join(dir, `matrix-${baselineLabel}-${fixture.caseId}-${kind}.json`), "utf8"));
   const after = JSON.parse(readFileSync(path.join(dir, `matrix-${candidateLabel}-${fixture.caseId}-${kind}.json`), "utf8"));
   requireComplete(before); requireComplete(after);
+  if ([before, after].some((r) => (r.inputFixtureFile ?? "generation-inputs.json") !== inputFixtureFile)) throw new Error("The compared runs used different frozen-input files.");
   const evaluation = kind === "executive_summary" ? JSON.parse(readFileSync(path.join(dir, `matrix-${before.evaluationLabel ?? "baseline16k"}-${fixture.caseId}-solution_evaluation.json`), "utf8")).result : undefined;
   const invocation = assertComparableInputs({ fixture, kind, before, after, evaluation });
   const baselineIsA = Number.parseInt(sha(`${fixture.caseId}:${kind}:frozen-order-v1`).slice(0, 2), 16) % 2 === 0;
@@ -61,6 +65,7 @@ Returner kun JSON: {"A":{"faithfulness":0,"coverage":0,"specificity":0,"decision
   const candidateSectionCheck = sectionChecks?.[baselineIsA ? 1 : 0];
   const report = { at: new Date().toISOString(), mode, judgeModel, candidateLabel, baselineLabel, caseId: fixture.caseId, kind, inputSha256: fixture.inputSha256, judgeRequestSha256: sha(JSON.stringify(payload)), sectionFields: sectionContract?.fields, sectionResultFields: resultFields, sectionPreservation: sectionChecks ? { A: sectionChecks[0].changedOutsideSection, B: sectionChecks[1].changedOutsideSection } : undefined, outsideSectionPreserved: candidateSectionCheck ? candidateSectionCheck.changedOutsideSection.length === 0 : undefined, order: baselineIsA ? { A: "baseline", B: "candidate" } : { A: "candidate", B: "baseline" }, beforeMs: before.totalMs, afterMs: after.totalMs, budgetBefore, limitation: "Single independent model judge, blind variant order; complements source review and deterministic checks, not proof of universal quality. Mini judge results are separate from the earlier GPT-5.4 protocol. Section content scores do not erase deterministic preservation failures." };
   report.protocol = protocol;
+  report.inputFixtureFile = inputFixtureFile;
   report.taskBoundary = scopedEvidence.taskBoundary;
   writeFileSync(file, JSON.stringify(report, null, 2));
   const response = await fetch("http://127.0.0.1:4319/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });

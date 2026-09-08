@@ -8,8 +8,11 @@ import { checkServiceHttp } from "./service-http-check.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const dir = path.join(root, "output/speed-quality-2026-09-08");
-const http = process.argv.includes("--http");
-const output = path.join(dir, `verification/populated-service-${http ? "http" : "owner"}.json`);
+const browser = process.argv.includes("--browser");
+const label = process.argv.find((arg) => arg.startsWith("--label="))?.slice(8) ?? "initial";
+if (!/^[a-z0-9_-]+$/.test(label)) throw new Error("Invalid evidence label.");
+const http = browser || process.argv.includes("--http");
+const output = path.join(dir, `verification/populated-service-${browser ? `browser-${label}` : http ? "http" : "owner"}.json`);
 if (existsSync(output)) throw new Error("Preserve existing service evidence.");
 const env = JSON.parse(readFileSync(path.join(dir, "local-environment.json"), "utf8"));
 assert.equal(env.DATA_API_URL, "http://127.0.0.1:55440");
@@ -40,6 +43,7 @@ async function db(route, method = "GET", body) {
   return response.status === 204 ? null : response.json();
 }
 const report = { at: new Date().toISOString(), scope: "30 alternating actual repository-owner reads of a populated fictional service catalog. Identical isolated database using current schema, baseline 3779e6f2 versus current code. Next cache bypassed in both owners; no route/auth/browser, generation, Azure upload, or production latency claim. Selection persistence exercises the actual SQL RPC directly, not Next cache invalidation.", rows: [], checks: {} };
+if (browser) report.scope = "Browser and HTTP extension of the isolated fictional catalog fixture; prior owner benchmarks are not repeated. See nested HTTP/browser checks for exercised behavior and limits. No model calls.";
 let databaseCreated = false;
 let containerStarted = false;
 try {
@@ -76,7 +80,7 @@ try {
   await db("service_descriptions", "POST", definitions);
   await db("service_documents", "POST", definitions.map((s, i) => ({ id: randomUUID(), service_id: s.id, title: s.name, file_name: `tjeneste-${i}.md`, file_format: "md", file_size_bytes: 120, raw_text: encryptString(`${s.description}. Fiktiv kilde.`), ai_summary: encryptString(`Fiktivt sammendrag: ${s.description}`), ai_summary_updated_at: fixedTime, created_at: fixedTime, updated_at: fixedTime })));
   await db("rpc/replace_project_service_selections", "POST", { p_project_id: projectId, p_service_ids: [definitions[0].id] });
-  for (const withSummaries of [false, true]) {
+  for (const withSummaries of browser ? [] : [false, true]) {
     const row = { withSummaries, before: [], after: [] };
     for (let sample = -2; sample < 30; sample++) {
       const values = {};
@@ -106,8 +110,8 @@ try {
   assert.deepEqual(changed.filter((s) => s.selected).map((s) => s.id), [definitions[1].id]);
   await db("rpc/replace_project_service_selections", "POST", { p_project_id: projectId, p_service_ids: [] });
   assert.equal((await owners.after.listProjectServiceDescriptions(projectId)).some((s) => s.selected), false);
-  if (http) report.http = await checkServiceHttp({ root, env, projectId, services: definitions });
-  report.checks = { threeServicesAndDocumentsRead: true, matchingAndNonmatchingServices: true, decryptedSummaryOptIn: true, baselineCandidateIdentical: true, selectionReplaceDeduplicatedAndCleared: true, ledgerUnchanged: beforeLedger === ledgerHash() };
+  if (http) report.http = await checkServiceHttp({ root, env, projectId, services: definitions, browser, label });
+  report.checks = { ...(!browser ? { threeServicesAndDocumentsRead: true, matchingAndNonmatchingServices: true, decryptedSummaryOptIn: true, baselineCandidateIdentical: true } : {}), selectionReplaceDeduplicatedAndCleared: true, ledgerUnchanged: beforeLedger === ledgerHash() };
   assert.equal(report.checks.ledgerUnchanged, true);
 } finally {
   if (containerStarted) docker("rm", "--force", container);

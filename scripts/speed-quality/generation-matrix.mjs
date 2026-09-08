@@ -49,7 +49,10 @@ const { getProjectSourceRevision } = jiti(path.join(frontend, "lib/server/reposi
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const sources = execFileSync("rg", ["--files", "lib/server/ai", "lib/server/prompts", "lib/server/requirements", "lib/server/document-intelligence"], { cwd: frontend, encoding: "utf8" }).trim().split("\n").filter((f) => /\.ts$/.test(f)).concat(["lib/server/ai.ts", "lib/server/prompts.ts", "lib/server/document-chunks.ts"]).sort();
 const codeSha256 = sha(JSON.stringify(sources.map((f) => [f, sha(readFileSync(path.join(frontend, f)))])));
-const frozen = JSON.parse(readFileSync(path.join(dir, "generation-inputs.json"), "utf8"));
+const inputLabel = option("inputs", "");
+if (!/^[a-z0-9-]*$/.test(inputLabel)) throw new Error("Invalid frozen-input label.");
+const inputFixtureFile = `generation-inputs${inputLabel ? `-${inputLabel}` : ""}.json`;
+const frozen = JSON.parse(readFileSync(path.join(dir, inputFixtureFile), "utf8"));
 const cases = frozen.cases.filter((c) => (!selectedCase || c.caseId === selectedCase) && (split === "all" || c.split === split || (split === "small" && c.split !== "large-regression")));
 if (!cases.length) throw new Error("No frozen cases selected.");
 // Sequential runs isolate per-generation latency. Separate autorun experiments
@@ -69,6 +72,7 @@ for (const fixture of cases) for (const kind of kinds) {
   const evidenceInput = { ...invocation }; delete evidenceInput.model;
   const report = { evidenceInputSha256: sha(JSON.stringify(evidenceInput)), modelOverride: model || undefined, evaluationLabel: kind === "executive_summary" ? evaluationLabel : undefined, at: new Date().toISOString(), label, caseId: fixture.caseId, split: fixture.split, kind, code, baselineRevision: code === "baseline" ? "3779e6f2" : undefined, codeSha256, fullInputSha256: sha(JSON.stringify(invocation)), effectiveConfig: { DOCUMENT_ANALYSIS_VERSION: process.env.DOCUMENT_ANALYSIS_VERSION, OPENAI_MODEL: process.env.OPENAI_MODEL, OPENAI_DOCUMENT_ANALYSIS_MODEL: process.env.OPENAI_DOCUMENT_ANALYSIS_MODEL, OPENAI_REQUIREMENT_RESPONSE_MODEL: process.env.OPENAI_REQUIREMENT_RESPONSE_MODEL ?? (code === "baseline" ? "not-supported" : "gpt-5.6-luna (single-batch default)"), REQUIREMENT_RESPONSE_BATCH_SIZE: process.env.REQUIREMENT_RESPONSE_BATCH_SIZE ?? (code === "baseline" ? "24 (default)" : "12 (default)"), LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE: process.env.LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE ?? "28 (default)", REQUIREMENT_RESPONSE_BATCH_CONCURRENCY: process.env.REQUIREMENT_RESPONSE_BATCH_CONCURRENCY ?? "4 (default)", RAG_QUERY_REWRITE: process.env.RAG_QUERY_REWRITE ?? "adaptive (default)" }, budgetBefore, boundary: "Actual generation function, frozen full inputs and real local retrieval/index. Excludes job queue, route auth, persistence and browser rendering." };
   writeFileSync(file, JSON.stringify(report, null, 2));
+  report.inputFixtureFile = inputFixtureFile;
   report.requestedServiceTier = budgetBefore.proxyServiceTier ?? "default";
   report.batchSizeOverride = batchSize ? Number(batchSize) : undefined;
   const started = performance.now();
