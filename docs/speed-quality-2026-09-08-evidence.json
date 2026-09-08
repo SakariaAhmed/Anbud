@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-08T10:30:45.550Z",
-  "repositoryCommit": "1383ef0d7bad1f65b0cb47f3847d3bd4dd06e5ad",
-  "applicationCommit": "07b51e3e48ea8e67389e8513ab44bc1aa2469154",
+  "generatedAt": "2026-09-08T10:44:45.877Z",
+  "repositoryCommit": "b65a512fd5f5642e22d8ebde4a67dfbe1911bd39",
+  "applicationCommit": "b65a512fd5f5642e22d8ebde4a67dfbe1911bd39",
   "goalCompleted": false,
   "budget": {
     "limitUsd": 14,
@@ -30,6 +30,15 @@
     "exportTable": "verification/browser-exports-table-functional-v6/checks.json",
     "judgeAdjudication": "verification/development-v3-judge-adjudication-v5.json",
     "perfectWorkflowBudgetPreflight": "verification/perfect-workflow-budget-preflight-v5.json"
+  },
+  "subsequentReadImprovement": {
+    "applicationCommit": "b65a512f",
+    "ownerReport": "project-schema-read-only-v2.json",
+    "ownerBaseline": "820bb84a",
+    "httpReport": "http-quiet-project-schema-v7-control-pairs.json",
+    "httpBaseline": "3779e6f2",
+    "methodClarification": "verification/project-schema-v7/method-clarification.json",
+    "scope": "Metadata reads only; AI-generation evidence keeps its actual earlier code versions. Owner cache is bypassed on both sides. The 120 HTTP pairs verify the new build; the earlier 780-pair series predates this metadata fix."
   },
   "generationComparisons": [
     {
@@ -1577,6 +1586,11 @@
       "sha256": "2fc346591db3e14958f3e2fb4a30fd84fe5ad8be0a823d26f0e5df4eaae8c62b"
     },
     {
+      "path": "http-quiet-project-schema-v7-control-pairs.json",
+      "bytes": 65112,
+      "sha256": "9fe78e9a59e92e2733610cbe043f28c44fabeff5861b718de73400f5bbb8e483"
+    },
+    {
       "path": "http-read-after.json",
       "bytes": 124176,
       "sha256": "b4b0378da71f31cf687a7234de36dac1d35e2341d6f4904f3e455c04d8e0e78a"
@@ -3002,6 +3016,26 @@
       "sha256": "29e90013490bb6572cfeda8db6055db8a857459af5e5453e21cf3880e62ce784"
     },
     {
+      "path": "project-schema-before-owner.ts",
+      "bytes": 118680,
+      "sha256": "db7874dfb74bb8bf85f85683b4f83227d95df99630c00862475f9dc0ab22d32d"
+    },
+    {
+      "path": "project-schema-before.json",
+      "bytes": 39858,
+      "sha256": "a46a76b9b8893ac0bb4727e672b8ca083246d59ce2d8c1c61fc986c5b2cbbe05"
+    },
+    {
+      "path": "project-schema-paired.json",
+      "bytes": 71422,
+      "sha256": "a79f01414cc71ae4ad7b78067617268e33aeafc98bd60ba811af0ed0957340f3"
+    },
+    {
+      "path": "project-schema-read-only-v2.json",
+      "bytes": 160795,
+      "sha256": "d51d6db1c86f648ff670184aa0536f148922c5f1ad59ad2678033e950bc5cee6"
+    },
+    {
       "path": "read-fixtures-plaintext-v1.json",
       "bytes": 881,
       "sha256": "1c7ae3cd418795f8428a1051b3926317fb6178000bde9e833109858987fa00ed"
@@ -3735,6 +3769,76 @@
       "path": "verification/populated-service-owner.log",
       "bytes": 792,
       "sha256": "c5f31015b005b12bf957dc0b5de54cfecc3e65c32cb1f504308583eea368c38f"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-before-v2.log",
+      "bytes": 263,
+      "sha256": "1bf0d506a9f0f1a4a896566184083051b48a8010715ac5df58c139b0d9c7d196"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-before.log",
+      "bytes": 1911,
+      "sha256": "57aa701053daa12655f00d6811167930c16629dfcbf65cf9984e4f910b86694e"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-build.log",
+      "bytes": 5097,
+      "sha256": "420346a4f3516a2257bf6e5bec598f6ee0352551f48622d3f5a6079ec0c42efa"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-full-tests.log",
+      "bytes": 218897,
+      "sha256": "bd57c9da0f1f3f61c59a502c6e1392797f6129e2778a3add00b01115c10ef44c"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-harness-tests.log",
+      "bytes": 3552,
+      "sha256": "46e458e02612738474f00e7b6fe96caf8df328e94bd1534bc666ecb0f1ff9335"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-http.log",
+      "bytes": 672,
+      "sha256": "09e7ff42ba448f0e7f99d83d4d7bd6f00c4da8bdfb23f1d064cccb18e52fa87c"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-paired.log",
+      "bytes": 460,
+      "sha256": "80d62685d209919473fe92a68a7d98f8ebd549bf206a1fd5c4d5f9a5ae1e4d77"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-production.log",
+      "bytes": 34687,
+      "sha256": "f20f145a8b70f313dfa854b0c0db6d0d9eb854bb19865656192db434f56d7860"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-read-only-v2.log",
+      "bytes": 933,
+      "sha256": "ff0ac6cb0925509d5b7667e1ee5df178c7f32d724416c3f929d2f4868b358434"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-secrets.log",
+      "bytes": 106,
+      "sha256": "0f1a14836531b5a336264a40103097ba1edfc8f1f952a23ead341fe885f36416"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-tests-after.log",
+      "bytes": 1653,
+      "sha256": "5b5fc3799fe0d82eb8ff528643239ed5e6d03281c907142f2793557561f2f8d4"
+    },
+    {
+      "path": "verification/project-schema-v7/anbud-project-schema-tests-before.log",
+      "bytes": 4143,
+      "sha256": "e72db6b0ded5801fd9417b3039fa66fdc5fe0eee49767e7424cc293f7e690c53"
+    },
+    {
+      "path": "verification/project-schema-v7/method-clarification.json",
+      "bytes": 795,
+      "sha256": "576730799831c753e2e87b8871339496f7b3cd4f79398dab66c7e11611754e4b"
     },
     {
       "path": "verification/runner-docling-amd64-build-record.json",

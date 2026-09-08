@@ -45,6 +45,14 @@ bruker standard. Ingen av disse lokale proxyvalgene endrer applikasjonens tier.
 
 ## Verktøy og bevisgrenser
 
+- `project-schema-benchmark --before-only` bevarer en førmåling med owner fra
+  `820bb84a`. `--label=<navn>` kjører 30 par mot aktuell owner og samme disponible
+  DB. `unstable_cache` forbikobles og invalidering stubbes på begge sider; dette
+  er ikke varm Next-cache eller HTTP-latens. Oppretting rydder egne prosjekter
+  direkte i PostgREST utenfor målt tid, og måler dermed ikke sletting i appen.
+  Endelig lesekandidat er `project-schema-read-only-v2.json`; den tidligere
+  `project-schema-paired.json` inkluderer en forkastet INSERT-endring.
+
 - `context-benchmark`, `auth-benchmark`, `snapshot-benchmark` og
   `generation-context-benchmark` måler faktiske avgrensede eiere. Dette er ikke
   modell-/nettleserlatens. SQL-fixturer må bare installeres i disponible databaser.
@@ -60,6 +68,9 @@ bruker standard. Ingen av disse lokale proxyvalgene endrer applikasjonens tier.
   på begge sider; `--for-writes` oppretter egne skrivefixturer. Tidligere data
   bevares. JSON-sammenligning kanoniserer bare objektnøkler, beholder alle verdier
   og arrayrekkefølger og registrerer separat råhash utenfor målt tid.
+  `--project-details` avgrenser en ny serie til små/store detaljer og tre samtidige
+  prosjekter. `--offline-ledger` verifiserer uendret ledgerhash uten å starte
+  evalueringsproxyen; ingen pågående reservasjoner er tillatt ved start.
 - `seed-local-*` muterer lokale fixturer. Live-seeding kan bruke betalte
   embeddings, og inkluderer parser, indeks, compiler og readiness-RPC. Den
   omgår Azure-opplasting og modellbasert metadata; dette er ikke full ingest-E2E.

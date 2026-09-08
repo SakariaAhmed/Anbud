@@ -13,7 +13,13 @@ if (label && !/^[a-z0-9_-]+$/.test(label)) throw new Error("Invalid quiet-run la
 const output = path.join(dir, `http-quiet-${label ? `${label}-` : ""}${extended ? "access-download" : "control"}-pairs.json`);
 if (existsSync(output)) throw new Error("Quiet control already exists.");
 const fixtures = JSON.parse(readFileSync(path.join(dir, `read-fixtures${fixtureLabel ? `-${fixtureLabel}` : ""}.json`), "utf8"));
-const initialBudget = await fetch("http://127.0.0.1:4319/budget").then((r) => r.json());
+const offlineLedger = process.argv.includes("--offline-ledger");
+async function budgetSnapshot() {
+  if (!offlineLedger) return fetch("http://127.0.0.1:4319/budget").then((r) => r.json());
+  const bytes = readFileSync(path.join(dir, "api-budget.json"));
+  return { ...JSON.parse(bytes), ledgerSha256: createHash("sha256").update(bytes).digest("hex") };
+}
+const initialBudget = await budgetSnapshot();
 assert.equal(initialBudget.requests.some((r) => r.status === "reserved"), false, "Wait for all paid work to finish.");
 const clients = {};
 for (const [version, port] of [["before", 4317], ["after", 4318]]) {
@@ -32,6 +38,16 @@ for (const [version, port] of [["before", 4317], ["after", 4318]]) {
 const report = { at: new Date().toISOString(), completed: false, measurement: "30 alternating sequential warm baseline/candidate pairs per route. Separate local DBs with matched fixture contents, baseline/candidate SQL and standalone production builds; no concurrent AI, writes, builds or SQL benchmarks. Not Azure latency.", rows: [] };
 const routes = (extended ? [["small", "access"], ["large", "access"]] : [["small", "customer-analysis"], ["small", "executive-summary"], ["small", "service-descriptions"], ["large", "service-descriptions"], ["large", "executive-summary"], ["large", "generate"]]).map(([size, endpoint]) => ({size, endpoint, url: `/api/projects/${fixtures.find((p) => p.size === size).id}/${endpoint}`}));
 report.fixtureLabel = fixtureLabel;
+if (process.argv.includes("--project-details")) {
+  assert.equal(extended, false);
+  assert.equal(process.argv.includes("--all-workspaces"), false);
+  routes.length = 0;
+  for (const size of ["small", "large"]) {
+    const projects = fixtures.filter((p) => p.size === size);
+    routes.push({ size, endpoint: "detail", url: `/api/projects/${projects[0].id}` });
+    routes.push({ size, endpoint: "detail-three-projects", urls: projects.map((p) => `/api/projects/${p.id}`) });
+  }
+}
 if (process.argv.includes("--all-workspaces")) {
   assert.equal(extended, false);
   routes.length = 0;
@@ -98,8 +114,9 @@ for (const route of routes) {
   writeFileSync(output, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ size, endpoint, before: row.beforeSummary, after: row.afterSummary }));
 }
-const finalBudget = await fetch("http://127.0.0.1:4319/budget").then((r) => r.json());
+const finalBudget = await budgetSnapshot();
 assert.equal(finalBudget.requests.length, initialBudget.requests.length, "Paid work overlapped the control run.");
+if (offlineLedger) assert.equal(finalBudget.ledgerSha256, initialBudget.ledgerSha256, "The offline ledger changed during the run.");
 report.noConcurrentPaidRequests = true;
 report.completed = true;
 writeFileSync(output, JSON.stringify(report, null, 2));

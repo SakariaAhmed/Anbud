@@ -2,7 +2,7 @@
 
 **Målet om betydelig raskere funksjoner og bedre genereringer overalt er ikke
 oppfylt. Ingen produksjonsutrulling er utført.** Siste applikasjonscommit er
-`07b51e3e`. Store lokale forbedringer i lesing, lagring og klargjøring er målt,
+`b65a512f` (siste AI-endring: `07b51e3e`). Store lokale forbedringer i lesing, lagring og klargjøring er målt,
 men flere modellgenereringer er tregere og kvaliteten er ikke godkjent overalt.
 
 Brukerens ønskede rekkefølge var hastighet → kvalitet → samlet regresjonskontroll.
@@ -120,6 +120,54 @@ og reduserer DB-lesinger fra 9/10 til 5; dette er ikke hele modellgenereringen.
 Tilgangslisten er omtrent 31 ms begge sider, og stor listes p95 økte fra 36,90
 til 46,84 ms. Jobbstatus/små tjenestelister er omtrent uendret.
 
+## Videre leseforbedring etter første samlede kontroll
+
+Commit `b65a512f` fjerner et forventet feiloppslag i prosjektmetadata. Gjeldende
+skjema har `title/client_name`, mens koden først spurte etter
+`name/customer_name/industry`. Lesingen henter nå den lille metadataraden én
+gang og bruker eksisterende eksplisitt feltmapping. Det bevarer prioriteringen
+av alternative navn og `industry` når begge kolonnesett finnes. Eier-ID og andre
+interne felt sendes ikke ut gjennom mappingen. Dokument-/artefaktinnhold ligger
+i andre tabeller. Tre runtime-regresjoner dekker gjeldende, alternativt og dobbelt
+kolonnesett; testen på gjeldende skjema feilet på den faktiske ekstrarunden før retting.
+
+Førmåling ble lagret før appendringen. Endelig `project-schema-read-only-v2.json`
+har 30 vekslende par med samme fulle returverdier mot samme lokale DB:
+
+| Repository-operasjon | Før → etter, median ms | DB-forespørsler |
+| --- | --- | --- |
+| Lite prosjekt, shell | 13,508 → 10,166 | 6 → 5 |
+| Prosjektoversikt | 11,069 → 7,198 | 5 → 4 |
+| Lite prosjekt, genereringsgrunnlag | 11,118 → 8,053 | 5 → 4 |
+| Prosjektoppretting | 3,307 → 3,147 | 2 → 2; ingen retting/gevinst påstås |
+
+**Metodepresisering:** `unstable_cache` er forbikoblet på begge sider, i tillegg
+til at cacheinvalidering er stubbet. Råfilenes første scope-tekst nevnte bare
+invalidering; denne presiseringen og en separat metodefil korrigerer beskrivelsen
+uten å skrive om målingene. Dette er varme prosess-/DB-kall med ukachet funksjon,
+ikke varm Next-cache, autentisert HTTP eller komplett brukeropplevelse. Opprettede
+prosjekter fjernes direkte i disponibel DB utenfor målt tid; dette måler ikke
+prosjektsletting. Bare ID og DB-genererte tidsstempler unntas ved sammenligning
+av to nye prosjekter; alle andre opprettingsverdier sammenlignes.
+
+En forsøksvariant snudde også INSERT-rekkefølgen og ga færre kall ved oppretting.
+Den ble trukket tilbake fordi alternative/overlappende skjemaer ellers kunne få
+endrede navne-defaults eller miste `industry`. De målingene er bevart med sin
+opprinnelige kodehash som forkastet kandidat, ikke som sluttresultat.
+
+Det nye produksjonsbygget ble i tillegg kontrollert med **120 autentiserte
+HTTP-par**, sammenlignet med opprinnelig baseline `3779e6f2`, uten samtidige
+betalte kall og med uendret ledger. Små detaljer: 41,426→32,984 ms; tre små
+samtidig: 56,003→44,961 ms. Store detaljer: 345,552→54,682 ms; tre store samtidig:
+403,513→89,356 ms. Alle JSON-verdier var identiske. Dette måler samlet endring
+siden opprinnelig baseline; den isolerte ekstra gevinsten fra `b65a512f` er
+repository-parene over. Tidligere 780-pars serie gjelder bygget før denne rettingen.
+
+Etter rettingen bestod 903 frontendtester og 125 rottester, null feil/hopp,
+med alle fire SQL-testvariabler mot disponibel PostgreSQL. Lint og nytt
+produksjonsbygg bestod. Ingen modellkall, modellendring, migrasjon eller
+produksjonsutrulling ble gjort i denne runden.
+
 ## Funksjons- og bevismatrise
 
 Alle funksjoner er fortsatt i omfang. Modellresultater uten eksplisitt V5-merke
@@ -191,7 +239,7 @@ det er ikke nye providersvar. Små utvalg og dommerfeil hindrer samlet godkjenni
 
 ## Regresjon og visuell kontroll
 
-Etter siste appendring bestod **900 frontendtester + 124 rottester**, null feil
+Etter siste appendring bestod **903 frontendtester + 125 rottester**, null feil
 og null hopp, med alle fire SQL-testdatabaser på disponibel PostgreSQL. Lint og
 produksjonsbygg bestod. Senere harnessendringer har **16 beståtte nettverksfrie tester**. Jobbskjema-,
 workflowgrense- og releasekontroll, syntakskontroll av alle harnessfiler,
