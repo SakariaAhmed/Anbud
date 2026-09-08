@@ -8,6 +8,7 @@ import {
 
 const DEFAULT_CONTAINER = "anbud-documents";
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
+const DELETE_CONCURRENCY = 4;
 
 type ContainerClientFactory = (containerName: string) => ContainerClient;
 
@@ -94,11 +95,34 @@ export function createAzureBlobStorageBackend(input: {
           path: normalizedPath(file.path),
         });
       }
-      for (const file of unique.values()) {
-        await containerFor(file.bucket)
-          .getBlockBlobClient(file.path)
-          .deleteIfExists({ deleteSnapshots: "include" });
+      // Validate the entire input above before starting any storage mutation.
+      const pending = unique.values();
+      let failed = false;
+      let failure: unknown;
+      async function deleteNextFiles() {
+        while (!failed) {
+          const next = pending.next();
+          if (next.done) return;
+          try {
+            await containerFor(next.value.bucket)
+              .getBlockBlobClient(next.value.path)
+              .deleteIfExists({ deleteSnapshots: "include" });
+          } catch (error) {
+            if (!failed) {
+              failed = true;
+              failure = error;
+            }
+            return;
+          }
+        }
       }
+      // Workers record errors instead of rejecting early: callers must not
+      // observe completion while any already-started delete is still running.
+      await Promise.all(Array.from(
+        { length: Math.min(DELETE_CONCURRENCY, unique.size) },
+        deleteNextFiles,
+      ));
+      if (failed) throw failure;
     },
 
     async listStoredFilesUnderPrefix(list: {
