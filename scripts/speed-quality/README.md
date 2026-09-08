@@ -92,6 +92,12 @@ bruker standard. Ingen av disse lokale proxyvalgene endrer applikasjonens tier.
   lederoppsummering får bare de avledede sammendragene den bruker. Historiske
   dommerfiler med feil kildegrense er beholdt, ikke godkjenningsbevis.
   Mini og GPT-5.4 er separate protokoller. Ingen enkel dommer er en fasit.
+  `--preflight=<nytt-navn>` bygger samme ferdige forespørsel uten nettverk og
+  beregner nøyaktig `prepareRequest`-reservasjon mot eksisterende V5-ledger.
+  Modellen kan byttes, men resten av payloaden må matche den lagrede Mini-dommeren.
+  Resultatet lagrer payload, blind rekkefølge, kostnadsgrense og hasher i en ny
+  verifikasjonsfil. Det reserverer eller bruker ingen penger. Ved flere planlagte
+  kall må summen passe før kjøring; en individuell godkjenning er ikke nok.
 - `section-evidence` skiller vurdering av mål-felt fra deterministisk kontroll
   av øvrige felt. Bare seksjonens kontrakt, avledede nøkkelordtellinger og
   historikkhåndtering har lov å endres. `inspect-final-section-preservation`

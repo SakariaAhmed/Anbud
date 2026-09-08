@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-08T11:15:43.354Z",
-  "repositoryCommit": "e20ba6256ea406f9914cc6e080de18678c1a4254",
+  "generatedAt": "2026-09-08T11:25:04.030Z",
+  "repositoryCommit": "c475173a70c6b921145db07fd7f019106614bc75",
   "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
@@ -60,6 +60,10 @@
   "environmentAvailabilityEvidence": {
     "verification": "verification/azure-visible-resource-inventory-v1.json",
     "scope": "Parent task's normalized summary of read-only Azure CLI outputs, not a raw transcript. Two visible subscriptions; case-sensitive anbud/bidsite resource-group filter found only anbud-prod with ten resources. No separate test resource identified in this scope. Logical databases, other group names, access and tenants were not inspected. No production mutations or paid model calls."
+  },
+  "additionalJudgePreflight": {
+    "verification": "verification/judge-preflight-gpt54-v1-total.json",
+    "scope": "Offline exact preparation of two GPT-5.4 judges for already stored V5 Fjord V3 and Kyst legacy pairs. Both match the existing Mini payloads except model, cost 0.327356 USD at full conservative reservation and fit the unchanged ledger. Preflight is not paid execution, a verdict, new generation or complete quality acceptance."
   },
   "generationComparisons": [
     {
@@ -3730,6 +3734,21 @@
       "path": "verification/final-v6-logs/anbud-populated-service-matrix-v5.log",
       "bytes": 4421,
       "sha256": "1e1c71aeef17b28845fcea2608eab93e1a1861cad6763da17a8a12082d3d2759"
+    },
+    {
+      "path": "verification/judge-preflight-gpt54-v1-fjord-drift-development-customer_analysis_v3.json",
+      "bytes": 53782,
+      "sha256": "cf89acac875b18c71cb1b25f062da88432e23d5fa0b89790c23a954d3f9c6f05"
+    },
+    {
+      "path": "verification/judge-preflight-gpt54-v1-kyst-data-holdout-customer_analysis.json",
+      "bytes": 87403,
+      "sha256": "8e6240be60155d4ab2a3c8804daaf4e698ea28b1ffd49dd62b230097bdc5fe7f"
+    },
+    {
+      "path": "verification/judge-preflight-gpt54-v1-total.json",
+      "bytes": 1752,
+      "sha256": "5222f18f3ef664ceb7a835a9a0eebbc59ee23d8710c92803404fc24f598a09b7"
     },
     {
       "path": "verification/perfect-workflow-budget-preflight-v5.json",

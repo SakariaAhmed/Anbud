@@ -369,6 +369,19 @@ Ingen produksjonsressurser ble endret. Videre miljøverifisering trenger dermed
 en konkret identifisert testressurs og passende testidentitet; dette søket gir
 ikke grunnlag for å behandle produksjonsressursene som et testmiljø.
 
+En senere, konkret foreslått kontroll kan likevel styrke eksisterende
+kvalitetsbevis innen restbudsjettet: to GPT-5.4-dommere av allerede lagrede
+V5-par, Fjord V3 og Kyst legacy. Offline-preflight med faktiske ferdige payloads
+gir henholdsvis **0,140556 og 0,186800 USD**, samlet **0,327356 USD**. Det
+etterlater minst **0,343494 USD** dersom begge bruker full reservasjon.
+Dette inkluderer inputgrense, framing, 3500 outputtokens og 10 % margin, uten
+antatte cachetreff eller retry. Payloadene matcher eksisterende Mini-vurderinger
+byteidentisk bortsett fra modellnavnet; kilder og blind rekkefølge er uendret.
+`verification/judge-preflight-gpt54-v1-total.json` registrerer begge filer og
+hasher. Ingen av disse kallene er kjørt på dette tidspunktet. De kan avklare
+dommeruenighet, men erstatter ikke nye genereringer, gjentatte hastighetsmålinger,
+hele forbedringsløpet eller øvrige uoppfylte mål.
+
 ## Gjenstående mål
 
 - Betydelig hastighetsgevinst også for uendrede, tregere og umålte funksjoner,

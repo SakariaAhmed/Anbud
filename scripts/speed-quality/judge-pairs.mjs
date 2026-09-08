@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { assertComparableInputs, analysisSectionKinds } from "./generation-input.mjs";
 import { inspectSectionEvidence } from "./section-evidence.mjs";
 import { judgeEvidence } from "./judge-evidence.mjs";
+import { accountedCostUpperBound, ACCOUNTING_POLICY, prepareRequest } from "./budget.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const dir = path.join(root, "output/speed-quality-2026-09-08");
@@ -18,6 +19,9 @@ const kinds = option("kinds", "bilag1_rekonstruksjon").split(",");
 const mode = option("mode", "speed");
 const judgeModel = option("judge-model", "gpt-5.4");
 const protocol = option("protocol", "task-sources-v2");
+const preflightLabel = option("preflight", "");
+if (!/^[a-z0-9-]*$/.test(preflightLabel)) throw new Error("Invalid preflight label.");
+if (preflightLabel) globalThis.fetch = async () => { throw new Error("Network is prohibited during judge preflight."); };
 if (protocol !== "task-sources-v2") throw new Error("Only the corrected per-owner evidence protocol can start new judges.");
 if (!["gpt-5.4", "gpt-5.4-mini"].includes(judgeModel)) throw new Error("Unpriced judge model.");
 const require = createRequire(path.join(root, "apps/frontend/package.json"));
@@ -60,6 +64,26 @@ Vurder oppgavetypen: Bilag 1 rekonstruerer kundebehov og skal bevare alle selvst
 Oppgi konkrete kritiske feil og tapte bindende detaljer med krav-ID eller kort kildesitat. Ikke dikt opp mangler for å skape en forskjell. noninferior skal bare inneholde varianten(e) som ikke er vesentlig svakere enn den andre på noen av de fem dimensjonene og ikke introduserer nye kritiske feil. Eksisterende like feil gjør ikke begge gode. winner kan være tie.
 Returner kun JSON: {"A":{"faithfulness":0,"coverage":0,"specificity":0,"decision_support":0,"clarity":0,"critical_errors":[],"missing_binding_details":[]},"B":{"faithfulness":0,"coverage":0,"specificity":0,"decision_support":0,"clarity":0,"critical_errors":[],"missing_binding_details":[]},"winner":"A|B|tie","noninferior":["A"],"comparison":"kort konkret forklaring"}.`;
   const payload = { model: judgeModel, reasoning_effort: "low", max_completion_tokens: 3500, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: JSON.stringify({ task: kind, sectionContract: sectionContract ? { label: sectionContract.label, fields: sectionContract.fields, guidance: sectionContract.guidance } : undefined, ...scopedEvidence, A: judgedResults[0], B: judgedResults[1] }) }] };
+  if (preflightLabel) {
+    const ledgerBytes = readFileSync(path.join(dir, "api-budget.json"));
+    const ledger = JSON.parse(ledgerBytes);
+    if (ledger.limitUsd !== 14 || ledger.accountingPolicy !== ACCOUNTING_POLICY || ledger.requests.some((row) => row.status === "pending")) throw new Error("Unexpected or pending budget ledger.");
+    const remainingUsd = ledger.limitUsd - ledger.requests.reduce((sum, row) => sum + accountedCostUpperBound(row), 0);
+    const prepared = prepareRequest("/v1/chat/completions", payload, 8000, "default");
+    const miniFile = `judge-${mode}-${protocol}-mini-${candidateLabel}-${fixture.caseId}-${kind}.json`;
+    const mini = JSON.parse(readFileSync(path.join(dir, miniFile)));
+    if (sha(JSON.stringify({ ...payload, model: "gpt-5.4-mini" })) !== mini.judgeRequestSha256) throw new Error("Prepared evidence differs from the existing Mini judge beyond model choice.");
+    const preflightFile = path.join(dir, "verification", `judge-preflight-${preflightLabel}-${fixture.caseId}-${kind}.json`);
+    const result = { at: new Date().toISOString(), protocol, judgeModel, baselineLabel, candidateLabel, caseId: fixture.caseId, kind,
+      inputFixtureFile, inputSha256: fixture.inputSha256, order: baselineIsA ? { A: "baseline", B: "candidate" } : { A: "candidate", B: "baseline" },
+      miniFile, matchesExistingMiniExceptModel: true, ledgerSha256: sha(ledgerBytes), requestCount: ledger.requests.length, remainingUsd,
+      payload, prepared, fitsIndividually: prepared.reservedUsd <= remainingUsd,
+      scope: "Exact existing judge payload construction and proxy prepareRequest; default tier, unchanged 3500 output-token limit. No network calls, ledger reservation, new generation or changed source/variant ordering. This is a conservative reservation, not predicted billing. No retries are included." };
+    writeFileSync(preflightFile, JSON.stringify(result, null, 2), { flag: "wx" });
+    if (sha(readFileSync(path.join(dir, "api-budget.json"))) !== result.ledgerSha256) throw new Error("Budget changed during preflight.");
+    console.log(JSON.stringify({ file: preflightFile, reservedUsd: prepared.reservedUsd, remainingUsd, requestSha256: prepared.requestSha256, inputTokensUpperBound: prepared.inputTokens, outputTokensLimit: prepared.outputTokens, matchesExistingMiniExceptModel: true }));
+    continue;
+  }
   const budgetBefore = await fetch("http://127.0.0.1:4319/budget").then((r) => r.json());
   if (budgetBefore.limitUsd !== 14 || budgetBefore.remainingUsd < 0.04) throw new Error("Insufficient bounded judge budget.");
   const candidateSectionCheck = sectionChecks?.[baselineIsA ? 1 : 0];
