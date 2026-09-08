@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-09-08T13:01:57.953Z",
-  "repositoryCommit": "83921062e6c2debc4b72a8d9a280789b6fdb268d",
-  "applicationCommit": "83921062e6c2debc4b72a8d9a280789b6fdb268d",
+  "generatedAt": "2026-09-08T13:38:09.725Z",
+  "repositoryCommit": "6bbb21794de70459ea619f2c0b17c1465f75d6f4",
+  "applicationCommit": "6bbb21794de70459ea619f2c0b17c1465f75d6f4",
   "goalCompleted": false,
   "budget": {
     "limitUsd": 27.393718,
     "accountingPolicy": "verified-cache-usage-or-full-reservation-v5",
-    "accountedUpperBoundUsd": 14.726669,
-    "remainingUsd": 12.667049,
-    "requestCount": 518,
-    "ledgerSha256": "fa030cdcb214fd31650fbc859022834aed6f7b896caba7187be5a31ccf5855d9"
+    "accountedUpperBoundUsd": 15.437355,
+    "remainingUsd": 11.956363,
+    "requestCount": 525,
+    "ledgerSha256": "83ca9e4bcdaa6879f10c0b693d70aba7db30c2e0d0a6af9bfc834fea02098cc4"
   },
   "limitations": [
     "Single generation per pair is not a p95 or causal latency regression test. Additional repetitions never replace the original 44-pair matrix.",
@@ -274,6 +274,17 @@
   "systemArtifactContextAndHolisticTrial": {
     "verification": "verification/holistic-artifact-v1/comparison.json",
     "scope": "Full scored artifact and correct artifact/analysis priority. Actual long counterexample exposes then fixes lost MFA exemption; overall advisory judge prefers baseline and is preserved. Isolated same-input GPT-5.4/Terra pair gives no speed gain; GPT-5.4 retained. Same imported coverage replayed; not a fresh complete workflow or holdout test."
+  },
+  "rejectedCompactFindingTrials": {
+    "comparisons": [
+      "verification/compact-findings-v2/comparison.json",
+      "verification/compact-findings-v3/comparison.json"
+    ],
+    "scope": "Compact medium pair gave no observed speed improvement. Reverse-order repetition failed on Norwegian quote delimiters; original failure retained, remainder stopped. Compact application code removed after trials; patch/tests archived. Generic quote correction retained and verified through original full-finding owner path. Ambiguous matching across duplicate local IDs/identical evidence remains a separate existing risk."
+  },
+  "rejectedLowReasoningTrial": {
+    "verification": "verification/holistic-reasoning-v2/comparison.json",
+    "scope": "Same compact prompts/code/source, only medium versus low differs. One pair 86.489 to58.701 seconds, advisory noninferiority failed. Both retain unconfirmed-commitment advice defects. No app model/reasoning change, p95, complete-workflow or holdout acceptance."
   },
   "generationComparisons": [
     {
@@ -1577,8 +1588,8 @@
     },
     {
       "path": "api-budget.json",
-      "bytes": 569419,
-      "sha256": "fa030cdcb214fd31650fbc859022834aed6f7b896caba7187be5a31ccf5855d9"
+      "bytes": 579128,
+      "sha256": "83ca9e4bcdaa6879f10c0b693d70aba7db30c2e0d0a6af9bfc834fea02098cc4"
     },
     {
       "path": "auth-after.json",
@@ -4011,6 +4022,181 @@
       "sha256": "0f1a14836531b5a336264a40103097ba1edfc8f1f952a23ead341fe885f36416"
     },
     {
+      "path": "verification/compact-findings-v1/fixture.json",
+      "bytes": 282526,
+      "sha256": "6a9a9bd12502e494fbb1534285e9079330abc66b72005a2cb0ee3ac46e0aef16"
+    },
+    {
+      "path": "verification/compact-findings-v1/plan.json",
+      "bytes": 94096,
+      "sha256": "791c1cbadd33dce93589515850998fd7bbe2067ef30250d098418696c87009af"
+    },
+    {
+      "path": "verification/compact-findings-v2/budget-draft-v1-incorrect-accounting.json",
+      "bytes": 190,
+      "sha256": "68c758528c825f394d9b287f87a09f183772b4f3ed8c326890727f47d4643074"
+    },
+    {
+      "path": "verification/compact-findings-v2/budget.json",
+      "bytes": 192,
+      "sha256": "2a4795c31531cd4a86b97ab712536ab52b6a2c94171b7dc6e9e75fc3d8107e2f"
+    },
+    {
+      "path": "verification/compact-findings-v2/build.log",
+      "bytes": 5097,
+      "sha256": "11410288f823a1148a9e1d938ef62d64c1795a68226f2f169ba605bc3edd1058"
+    },
+    {
+      "path": "verification/compact-findings-v2/comparison-draft-v1-incorrect-accounting.json",
+      "bytes": 2874,
+      "sha256": "c9ccb4da443742111084e2f4a6e6c167973fa7b47e4d1f8ba9b038757f49561e"
+    },
+    {
+      "path": "verification/compact-findings-v2/comparison.json",
+      "bytes": 3164,
+      "sha256": "b5e71e716087a7824d70ae507410566168636e13f66aba726632cb5804e3b87c"
+    },
+    {
+      "path": "verification/compact-findings-v2/fixture.json",
+      "bytes": 282712,
+      "sha256": "47eca2b9f9f724bbdc0523967520856fb38df357aad2c75e38054db06ad645d1"
+    },
+    {
+      "path": "verification/compact-findings-v2/full-tests.log",
+      "bytes": 223394,
+      "sha256": "9dbd29943733e051ff72c4405e7f3e37a15314ed675403ef3959409fdf188536"
+    },
+    {
+      "path": "verification/compact-findings-v2/harness.log",
+      "bytes": 2099,
+      "sha256": "d42a9e11f93138888a595b2d4b8787ce7ca9d4ddcb73e4f2f5940c38fa7cdd16"
+    },
+    {
+      "path": "verification/compact-findings-v2/judge-real-v1.json",
+      "bytes": 1366329,
+      "sha256": "974860e29ace10c2deabbccd02423143e09855bb6b72abf2bd36dbf54e4f5906"
+    },
+    {
+      "path": "verification/compact-findings-v2/lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/compact-findings-v2/parent-duplicate-evidence-diagnostic.json",
+      "bytes": 659,
+      "sha256": "9dac828a778af80785bde385570829d054e613213a90b80a81b828aa10fc7e90"
+    },
+    {
+      "path": "verification/compact-findings-v2/parent-live-review.json",
+      "bytes": 2350,
+      "sha256": "8cafa83226114ebde5d948d2078763609005bd544d7b47a4444edc1dc4891e48"
+    },
+    {
+      "path": "verification/compact-findings-v2/plan.json",
+      "bytes": 94281,
+      "sha256": "12edaaade79f0e3dcdb8a53f50d091ae666ff7e18e5478cdca3653e6b00aa6c6"
+    },
+    {
+      "path": "verification/compact-findings-v2/real-after.json",
+      "bytes": 1266028,
+      "sha256": "337116e5fee0d186a63cf219f0fd1f6794dca855744a33949da21171eedb4b6a"
+    },
+    {
+      "path": "verification/compact-findings-v2/real-before.json",
+      "bytes": 1268364,
+      "sha256": "f5357f779b5313b9843ae34f5ba4fd002bed28caafc749639e0f224c8316d547"
+    },
+    {
+      "path": "verification/compact-findings-v2/verification.json",
+      "bytes": 1072,
+      "sha256": "c07d823ef574880dcce052cbaa717d47ac6bc15eedc7fee1fcc94b912434d3a2"
+    },
+    {
+      "path": "verification/compact-findings-v3/archived-compact-evaluation-findings.test.mjs",
+      "bytes": 6469,
+      "sha256": "86f5289e553ffb53bc0a909b3d4bc4a95a108a0b9df607070bbf0f41aedeafc1"
+    },
+    {
+      "path": "verification/compact-findings-v3/archived-solution-artifact-context.test.mjs",
+      "bytes": 8073,
+      "sha256": "0396ced1b3c193976126145f4d75715511986c6f0fe623dd986f308299b38393"
+    },
+    {
+      "path": "verification/compact-findings-v3/budget.json",
+      "bytes": 185,
+      "sha256": "d94545261959323ca3350094ac0c3d5e3162b57501113039b94ec5746bba72f9"
+    },
+    {
+      "path": "verification/compact-findings-v3/comparison.json",
+      "bytes": 1392,
+      "sha256": "166c95ed8af07ad4780e26c1b898aecc3b11a2b7b9af9b9e3d34a9bbe900578c"
+    },
+    {
+      "path": "verification/compact-findings-v3/fixture.json",
+      "bytes": 282712,
+      "sha256": "ddf17cd0a9ddc32bb6084ab512ac390bd9bb1bbe3cf0cdad10c22359393d587e"
+    },
+    {
+      "path": "verification/compact-findings-v3/parent-quote-replay.json",
+      "bytes": 768,
+      "sha256": "6cd5ebcb52a5be755a3d8abf9683aa09e898ac909f8ba6599644a5a16b1724f0"
+    },
+    {
+      "path": "verification/compact-findings-v3/plan.json",
+      "bytes": 94281,
+      "sha256": "1ec0b973a64cc20617572c3c2d2bfe6fa9cdeabb56c791ef0f16be3909882c67"
+    },
+    {
+      "path": "verification/compact-findings-v3/quote-build.log",
+      "bytes": 5097,
+      "sha256": "b6d090c6ea16a7094d0876eeacf1480641e89854348bbfe158245c55e0c9c818"
+    },
+    {
+      "path": "verification/compact-findings-v3/quote-full-tests.log",
+      "bytes": 223872,
+      "sha256": "cd27ba295f7243a958c8047894d0d01a4b56aa839ea7eff555ac48a51546579e"
+    },
+    {
+      "path": "verification/compact-findings-v3/quote-green.log",
+      "bytes": 2168,
+      "sha256": "6558d2f2cd05857d6b13c711b4d95ae086a3a456d9cbe1874ce4cdb1507c43a6"
+    },
+    {
+      "path": "verification/compact-findings-v3/quote-lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/compact-findings-v3/quote-red.log",
+      "bytes": 2808,
+      "sha256": "1e7d494f557ccd41cfd0b03dfd2eac58c4541de9fce764c3ad4833d6f675a0f7"
+    },
+    {
+      "path": "verification/compact-findings-v3/quote-replay.log",
+      "bytes": 182,
+      "sha256": "8929c89170c94d47248618ec396707e05abc0c6ba00c204650756258ee957fd9"
+    },
+    {
+      "path": "verification/compact-findings-v3/real-after-offline-replay.json",
+      "bytes": 35143,
+      "sha256": "46e451486edbd4a33e1cd98605cb88192eed8677f9e2559926480ec8fdd00f8f"
+    },
+    {
+      "path": "verification/compact-findings-v3/real-after.json",
+      "bytes": 1285273,
+      "sha256": "bb5e30b09fd2ed8be1c9f722b3e6a81203fcc884b93154104ae3613291b357bc"
+    },
+    {
+      "path": "verification/compact-findings-v3/unaccepted-application.patch",
+      "bytes": 24400,
+      "sha256": "1fd638b32a2925da06bdc8e87c02e1c5b0ec4272254f5cf1f6678a787f3deb2d"
+    },
+    {
+      "path": "verification/compact-findings-v3/verification.json",
+      "bytes": 1197,
+      "sha256": "b312c2fb0ba963dbb03e6eca7a7c156acce1800c179cdc561df2bfd292de1064"
+    },
+    {
       "path": "verification/development-v3-judge-adjudication-v5.json",
       "bytes": 1634,
       "sha256": "618f4d7b9efc6ac664a2a51e10821d61b8fb7f1fe64943f76541ea0ff9ab6265"
@@ -4256,6 +4442,16 @@
       "sha256": "f57c93f8de46d42cfb50477972bebb050c2d3529fdf00abcf8bb6ccf35585049"
     },
     {
+      "path": "verification/holistic-artifact-v1/parent-compact-findings-diagnostic.json",
+      "bytes": 882,
+      "sha256": "c71d25237cca18bbaf8a190c51283999b8096585cbba07f57c6fb89748c67be7"
+    },
+    {
+      "path": "verification/holistic-artifact-v1/parent-judge-adjudication.json",
+      "bytes": 2688,
+      "sha256": "1157f0343ab7a6471758e221f33803180d9ef2edaf9c4b0e7b523372607773b1"
+    },
+    {
       "path": "verification/holistic-artifact-v1/parent-preflight-review.json",
       "bytes": 1510,
       "sha256": "f343b820001c60f07749587ed051e04ea07ce36fa2f3563c683151e03d29d409"
@@ -4321,6 +4517,56 @@
       "sha256": "53a047c96e064d3ffdaadd23fcfd070182ff625e2261f900fe58780833a5ed7e"
     },
     {
+      "path": "verification/holistic-reasoning-v1/fixture.json",
+      "bytes": 283288,
+      "sha256": "39f6642e09e0ed5aa5a4f16aa714dc93dcd6c58d063e7dd0c6c19cd0bb6d71f7"
+    },
+    {
+      "path": "verification/holistic-reasoning-v1/plan.json",
+      "bytes": 94777,
+      "sha256": "6255f44b6ddc9b354097b0bd328ee1fb896a538272e32fcc871afe4553903f58"
+    },
+    {
+      "path": "verification/holistic-reasoning-v2/budget.json",
+      "bytes": 192,
+      "sha256": "3978c5dad0289acfae41968161beafa2c6dd610cdb407abad03ed20b93f635b6"
+    },
+    {
+      "path": "verification/holistic-reasoning-v2/comparison.json",
+      "bytes": 2602,
+      "sha256": "7f83cb2d9677a23967e632ca50c8d0ef13c95e768ba50b1f49e20980e266e4ef"
+    },
+    {
+      "path": "verification/holistic-reasoning-v2/fixture.json",
+      "bytes": 283288,
+      "sha256": "b1625ac852e5c01ebe0fa333f4d83a102b7a32726afe0a5adc8811d81e670e5c"
+    },
+    {
+      "path": "verification/holistic-reasoning-v2/judge-real-v1.json",
+      "bytes": 1375562,
+      "sha256": "1828bfa4864445d16a0c7059482714df4129c4def9e3962864bbefbd8a29a668"
+    },
+    {
+      "path": "verification/holistic-reasoning-v2/parent-source-review.json",
+      "bytes": 1593,
+      "sha256": "39c0ae5b6f409e576d77fb74e84f0ea8eabc48bcbce408104e64b24aafc312eb"
+    },
+    {
+      "path": "verification/holistic-reasoning-v2/plan.json",
+      "bytes": 94777,
+      "sha256": "1f7e886dc6d67fbf2536b654139be62458861a0b3abdf379da779f770006cadb"
+    },
+    {
+      "path": "verification/holistic-reasoning-v2/real-after.json",
+      "bytes": 1278327,
+      "sha256": "c296aab9ae7f9e559e953a1c1b4f197ab6f8101cae9ae31032917cd6f117c056"
+    },
+    {
+      "path": "verification/holistic-reasoning-v2/real-before.json",
+      "bytes": 1272019,
+      "sha256": "54d1aab6832b3d57a4f5591f0907a4a75b8effef3668e10996f015b6ffa2f56d"
+    },
+    {
       "path": "verification/judge-preflight-gpt54-v1-fjord-drift-development-customer_analysis_v3.json",
       "bytes": 53782,
       "sha256": "cf89acac875b18c71cb1b25f062da88432e23d5fa0b89790c23a954d3f9c6f05"
@@ -4334,6 +4580,41 @@
       "path": "verification/judge-preflight-gpt54-v1-total.json",
       "bytes": 1752,
       "sha256": "5222f18f3ef664ceb7a835a9a0eebbc59ee23d8710c92803404fc24f598a09b7"
+    },
+    {
+      "path": "verification/legacy-quote-v1/build.log",
+      "bytes": 5097,
+      "sha256": "6c552a782fe2aa2b99371f9a53194f48725e8447626ed0771c581652cc798476"
+    },
+    {
+      "path": "verification/legacy-quote-v1/full-tests.log",
+      "bytes": 222433,
+      "sha256": "778acbd5cf778314f65f9ff79f5a7a91d54f1a8c53c6df86d8efcdb888805b95"
+    },
+    {
+      "path": "verification/legacy-quote-v1/green.log",
+      "bytes": 724,
+      "sha256": "6b0f09b52ccdc7f253161bf1b0c6b111aac4351a0a2a6dd818ede95aa6c86af5"
+    },
+    {
+      "path": "verification/legacy-quote-v1/harness.log",
+      "bytes": 2095,
+      "sha256": "5402604e09412d82cb49883492f74a49e388b77d65fccad23df42c90c095faec"
+    },
+    {
+      "path": "verification/legacy-quote-v1/lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/legacy-quote-v1/red.log",
+      "bytes": 1477,
+      "sha256": "f74c4fb34b100ffb33070303c2667e67358149b22ad1e8c443832571cd230255"
+    },
+    {
+      "path": "verification/legacy-quote-v1/verification.json",
+      "bytes": 1279,
+      "sha256": "5072f787ea3adf60389768887ed2c3fee2ede937c78ad8376fbbea562fbcffdc"
     },
     {
       "path": "verification/perfect-workflow-budget-preflight-v5.json",

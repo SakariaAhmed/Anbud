@@ -18212,7 +18212,7 @@ export function coverageItemFromBatchRow(input: {
 function normalizeCoverageEvidenceText(value: string) {
   return normalizePageText(value)
     .toLocaleLowerCase("nb")
-    .replace(/[“”"]/g, "")
+    .replace(/[“”"«»]/g, "")
     .trim();
 }
 

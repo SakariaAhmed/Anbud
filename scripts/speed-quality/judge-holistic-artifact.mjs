@@ -5,10 +5,15 @@ import path from "node:path";
 import { validatedBudgetLimit } from "./budget.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const dir = path.join(root, "output/speed-quality-2026-09-08/verification/holistic-artifact-v1");
+const reasoningExperiment = process.argv.includes("--reasoning");
+const compactExperiment = process.argv.includes("--compact") || reasoningExperiment;
+const compactLabel = process.argv.find(arg => arg.startsWith("--label="))?.slice(8) ?? "v1";
+assert.match(compactLabel, /^v[0-9]+$/);
+const dir = path.join(root, reasoningExperiment ? `output/speed-quality-2026-09-08/verification/holistic-reasoning-${compactLabel}` : compactExperiment ? `output/speed-quality-2026-09-08/verification/compact-findings-${compactLabel}` : "output/speed-quality-2026-09-08/verification/holistic-artifact-v1");
 const scenario = process.argv[2];
 assert.ok(["tail", "real"].includes(scenario));
-const names = scenario === "tail" ? ["tail-before", "tail-after"] : ["real-after", "real-terra"];
+if (compactExperiment) assert.equal(scenario, "real");
+const names = compactExperiment ? ["real-before", "real-after"] : scenario === "tail" ? ["tail-before", "tail-after"] : ["real-after", "real-terra"];
 const sha = value => createHash("sha256").update(value).digest("hex");
 const fixtureBytes = readFileSync(path.join(dir, "fixture.json"));
 const fixture = JSON.parse(fixtureBytes);

@@ -22,6 +22,7 @@ test("solution evaluation receives opposite late artifact commitments and select
       }
       if (input.promptCacheKey !== "solution-evaluation-holistic") throw new Error("Unexpected model operation: " + input.promptCacheKey);
       state.prompts.push(input);
+      if (state.reply) return structuredClone(state.reply);
       throw new Error("Stop at captured model boundary; no answer generated.");
     };
     exports.getClient = () => null;
@@ -62,6 +63,34 @@ test("solution evaluation receives opposite late artifact commitments and select
     assert.equal(state.coverageCalls, 3, "Actual requirement coverage still runs on each evaluation.");
     assert.match(state.prompts[2].system, /ingen systemartefakt.*kundeanalysen/i);
     assert.ok(!state.prompts[2].user.includes("Systemløsning som skal scores"));
+    state.reply = {
+      fit_to_customer_needs: "Den foreliggende planen beskriver administratorenes autentisering, men gjennomføringsbeviset må kvalitetssikres.",
+      strengths: ["MFA er eksplisitt inkludert for administratorer."],
+      weaknesses: ["Tilgangstesten har ennå ikke en dokumentert gjennomføring."],
+      improvement_recommendations: ["Gjennomfør testen med representanter for kundens applikasjonseiere."],
+      executive_summary: "Før innlevering bør teamet gjennomføre en uavhengig akseptansekontroll av identitetsplattformen og dokumentere resultatet.",
+      likely_score_assessment: { quality: "Relevant leveranse", delivery_confidence: "Krever testbevis", risk: "Operativ usikkerhet", competitiveness: "Avhengig av dokumentasjon" },
+      rewrite_suggestions: [{ target: "Akseptanse", suggestion: "Beskriv hvem som godkjenner autentiseringstesten og hvor resultatet lagres." }],
+      document_findings: [],
+      architecture_comparison: { winner: "Uavgjort", architect_solution_score: 70, system_solution_score: 70, verdict: "Begge løsninger beskriver autentisering, men akseptansen må dokumenteres.", strong_critique: ["Testbeviset mangler i begge alternativer."], pragmatic_reflections: ["Automatisert kontroll må kombineres med funksjonell akseptanse."], strategy_improvement_advice: ["Koble akseptansebevis til kundens godkjenningsprosess."] },
+    };
+    const exactEvidence = "Kundens applikasjonseiere godkjenner funksjonelle tester. Leverandøren gjennomfører teknisk migrering og dokumenterer resultatet.";
+    const withSection = { ...input, solutionDocument: { ...input.solutionDocument, raw_text: input.solutionDocument.raw_text + "\n\n" + exactEvidence } };
+    const finding = { reference: "Seksjonsfunn: Overlevering", assessment: "Uklart", finding: "Løsningen beskriver testgodkjenning, men ikke hvem som håndterer hendelser etter overlevering.", recommendation: "Avklar hendelsesansvaret mellom kundens applikasjonseiere og leverandørens driftsorganisasjon." };
+    for (const evidence of [`«${exactEvidence}»`, `“${exactEvidence}”`, `"${exactEvidence}"`]) {
+      state.reply.document_findings = [{ ...finding, evidence }];
+      const completed = await evaluateSolutionDocument(withSection);
+      assert.equal(completed.document_findings.length, 1);
+      assert.equal(completed.document_findings[0].reference_match, "section", "An exact quoted section must not disappear into the fallback requirement finding.");
+      assert.equal(completed.document_findings[0].evidence_grounding, "document_exact");
+      assert.equal(completed.document_findings[0].evidence, evidence, "Displayed source quote remains intact.");
+    }
+    for (const evidence of [`«${exactEvidence.replace("godkjenner", "godkjenner ikke")}»`, "«Leverandøren lover døgnbemannet beredskap og fem minutters responstid.»"]) {
+      state.reply.document_findings = [{ ...finding, evidence }];
+      const completed = await evaluateSolutionDocument(withSection);
+      assert.ok(completed.document_findings.every(item => item.reference_match !== "section"), "Changed assertions and fabricated quotes must not be published as grounded sections.");
+      assert.equal(completed.document_findings[0].matched_requirement_reference, "R-91", "Existing grounded coverage fallback remains available.");
+    }
   } finally {
     delete globalThis.__systemArtifactContextTest;
     rmSync(directory, { recursive: true, force: true });
