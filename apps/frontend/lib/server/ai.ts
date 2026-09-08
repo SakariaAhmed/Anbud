@@ -13581,6 +13581,19 @@ function extractDocumentedContinuityTargets(
       "max",
     );
   }
+  // Norwegian also places the bound before the noun: "maksimal
+  // gjenopprettingstid er 90 minutter". Require an adjacent duration so a
+  // later, unrelated number cannot turn an unspecified target into evidence.
+  for (const match of normalized.matchAll(
+    new RegExp(
+      `\\b(?:maksimal|maksimalt|maks\\.?)\\s+gjenopprettingstid\\s*(?:(?:er|på|skal\\s+være)\\s*|[:=]\\s*)?(\\d+(?:[,.]\\d+)?|${wordPattern})\\s*(${unitPattern})`,
+      "giu",
+    ),
+  )) {
+    const duration = numberWords[match[1].toLocaleLowerCase("nb")] ??
+      Number.parseFloat(match[1].replace(",", "."));
+    addTarget(match, duration, match[2], "RTO", "max");
+  }
   for (const match of normalized.matchAll(
     new RegExp(`${leadPattern}(\\d{1,3}):([0-5]\\d)\\b`, "gi"),
   )) {
@@ -14337,7 +14350,7 @@ function hasDocumentedExactContinuityValue(value: string) {
 }
 
 function hasDocumentedExactCommercialOrDeadlineValue(value: string) {
-  return /\b(?:NOK|EUR)\s*\d|(?:\d+[,.]\d+|\d+)\s*(?:million|mill\.|m\b)|\bNet\s*\d+|\b\d{1,2}\.?\s*(?:april|mai|juni|july|august|september|oktober|november|desember)\s*20\d{2}|\b20\d{2}-\d{2}-\d{2}\b/i.test(
+  return /\b(?:NOK|EUR)\s*\d|(?:\d+[,.]\d+|\d+)\s*(?:million|mill\.|m\b)|\bNet\s*\d+|\b\d{1,2}\.?\s*(?:januar|februar|mars|april|mai|juni|juli|july|august|september|oktober|november|desember)\s*20\d{2}|\b20\d{2}-\d{2}-\d{2}\b/i.test(
     value,
   );
 }
@@ -15852,7 +15865,9 @@ function requirementCoverageRef(entry: RequirementLedgerEntry) {
 
 function requirementCoverageIdentityRef(entry: RequirementLedgerEntry) {
   const tableId = normalizedRequirementCoverageTableId(entry);
-  if (tableId) {
+  // These are parser location labels shared by many distinct source rows.
+  // Preserve them as locators, while matching answers by the actual row ID.
+  if (tableId && !/^Dokumenttekst(?: krav-ID)?$/iu.test(tableId)) {
     return tableId;
   }
 

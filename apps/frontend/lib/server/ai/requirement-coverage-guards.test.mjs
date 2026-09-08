@@ -70,6 +70,69 @@ const {
   validateRequirementResponseBatchRows,
 } = jiti(path.join(frontendRoot, "lib/server/ai.ts"));
 const { selectDocumentStructureEntries } = jiti(path.join(frontendRoot, "lib/server/ai/context.ts"));
+
+test("documented deadlines in every Norwegian month survive answer clarification", () => {
+  for (const month of ["januar", "februar", "mars", "april", "mai", "juni", "juli", "august", "september", "oktober", "november", "desember"]) {
+    const text = `Leveransefrist er 15. ${month} 2027.`;
+    const answer = `Atea setter løsningen i drift innen 15. ${month} 2027 og dokumenterer godkjent akseptansetest.`;
+    const result = normalizeRequirementAnswerResult(answer, requirement({ text, sourceExcerpt: text }), text);
+    assert.equal(result.source, "batch", month);
+    assert.doesNotMatch(result.answer, /ikke dokumentert|tilbudsforutsetninger/, month);
+    assert.match(result.answer, new RegExp(`15\\. ${month} 2027`));
+  }
+  const text = "Leveransefrist fastsettes etter akseptansetesten.";
+  const result = normalizeRequirementAnswerResult(
+    "Atea setter løsningen i drift etter gjennomført akseptansetest og dokumenterer resultatene sammen med kunden.",
+    requirement({ text, sourceExcerpt: text }), text,
+  );
+  assert.equal(result.source, "batch");
+  assert.match(result.answer, /ikke dokumentert/);
+});
+
+test("a maximum recovery duration before the noun remains a documented commitment", () => {
+  const text = "Maksimal gjenopprettingstid er 90 minutter for journalintegrasjonen. Andre systemer kan ha inntil 8 timer.";
+  const entry = requirement({ id: "L-10", text, sourceExcerpt: text });
+  const answer = "Atea gjenoppretter journalintegrasjonen innen 90 minutter og øvrige systemer innen 8 timer; gjenopprettingstiden måles og dokumenteres gjennom en kontrollert test før produksjonssetting.";
+  const result = normalizeRequirementAnswerResult(answer, entry, text);
+  assert.equal(result.source, "batch");
+  assert.doesNotMatch(result.answer, /ikke tallfestet|avklares som foreslåtte tjenestenivåer/);
+  assert.match(result.answer, /90 minutter/);
+
+  const unspecified = "Maksimal gjenopprettingstid skal fastsettes for journalintegrasjonen.";
+  const noTarget = normalizeRequirementAnswerResult(
+    "Atea dokumenterer gjenoppretting av journalintegrasjonen og verifiserer forløpet gjennom en kontrollert test før produksjonssetting.",
+    requirement({ id: "L-11", text: unspecified, sourceExcerpt: unspecified }),
+    unspecified,
+  );
+  assert.equal(noTarget.source, "batch");
+  assert.match(noTarget.answer, /ikke tallfestet/);
+
+  for (const source of [
+    "Maksimal gjenopprettingstid er fire timer.",
+    "Maksimal gjenopprettingstid: 4 timer.",
+    "Maksimal gjenopprettingstid skal være 4 timer.",
+  ]) {
+    const known = normalizeRequirementAnswerResult(
+      "Atea gjenoppretter tjenesten innen fire timer og dokumenterer målt gjenopprettingstid gjennom en kontrollert test før produksjonssetting.",
+      requirement({ text: source, sourceExcerpt: source }),
+      source,
+    );
+    assert.equal(known.source, "batch", source);
+    assert.doesNotMatch(known.answer, /ikke tallfestet/, source);
+  }
+  for (const source of [
+    "Maksimal gjenopprettingstid er ikke 90 minutter, men skal fastsettes senere.",
+    "Maksimal gjenopprettingstid er uavklart. Rapporten skal gjennomgås innen 90 minutter.",
+  ]) {
+    const unknown = normalizeRequirementAnswerResult(
+      "Atea dokumenterer gjenoppretting av tjenesten og verifiserer forløpet gjennom en kontrollert test før produksjonssetting.",
+      requirement({ text: source, sourceExcerpt: source }),
+      source,
+    );
+    assert.equal(unknown.source, "batch", source);
+    assert.match(unknown.answer, /ikke tallfestet/, source);
+  }
+});
 const { analyzeRequirementCoverageIntegrity } = jiti(
   path.join(
     frontendRoot,
@@ -5565,6 +5628,20 @@ test("coverage batch maps reordered rows by exact nr and ref", () => {
     mapped.map((row) => row.nr),
     [1, 2, 3],
   );
+});
+
+test("a parser location label cannot replace distinct coverage requirement identities", () => {
+  const entries = [1, 2].map((nr) => requirement({
+    id: `L-0${nr}`, tableId: "Dokumenttekst krav-ID",
+    text: `Leverandøren skal dokumentere kontroll ${nr}.`,
+  }));
+  const registry = buildRequirementCoverageBatchRegistry(entries);
+  assert.deepEqual(registry.map((row) => row.ref), ["L-01", "L-02"]);
+  assert.equal(registry[0].table_id, "Dokumenttekst krav-ID");
+  const rows = [{ nr: 2, ref: "L-02", assessment: "Dårlig" }, { nr: 1, ref: "L-01", assessment: "Godt" }];
+  assert.deepEqual(validateRequirementCoverageBatchRows({ entries, rows, startIndex: 0 }).map((row) => row.ref), ["L-01", "L-02"]);
+  assert.throws(() => validateRequirementCoverageBatchRows({ entries, rows: rows.map((row) => ({ ...row, ref: row.nr === 1 ? "L-02" : "L-01" })), startIndex: 0 }), /forventet/);
+  assert.equal(buildRequirementCoverageBatchRegistry([requirement({ id: "ID 2-22", tableId: "Tabell ID 2-22" })])[0].ref, "Tabell ID 2-22");
 });
 
 test("coverage batch rejects missing, swapped, duplicate, and extra identities", () => {
