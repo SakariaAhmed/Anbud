@@ -1,0 +1,2816 @@
+{
+  "generatedAt": "2026-09-08T08:43:41.068Z",
+  "applicationCommit": "5c1598e998a6300d4e809e83f0d74f1b183e65d2",
+  "goalCompleted": false,
+  "budget": {
+    "limitUsd": 14,
+    "accountingPolicy": "verified-usage-or-full-reservation-v2",
+    "accountedUpperBoundUsd": 13.903331999999978,
+    "remainingUsd": 0.0966680000000224,
+    "requestCount": 414,
+    "ledgerSha256": "a6fa1bf1427a92874435f121851416ae35d94f6b2467802d2a015574f9506c13"
+  },
+  "limitations": [
+    "Single generation per pair is not a p95 or causal latency regression test.",
+    "Single blind Mini judge is advisory; source reviews have identified judge mistakes. Identical empty keyword/service lists do not demonstrate an improvement.",
+    "The original full-fixture judge method gave 26 customer-only/derived-only operations unavailable sources. Those historical judgments are excluded here.",
+    "Eight non-strategy section outputs predate the deterministic scope fix. The separate 18-row owner replay preserved all non-target fields and changed no target fields; it is not fresh provider execution.",
+    "Full customer-analysis generation outputs predate the final removal of a 220-character postprocessing cut. Its regression is deterministic; no fresh full-analysis model run proves final end-to-end quality.",
+    "All fixtures are fictional and local. Azure storage, Entra, populated service recommendations and broader concurrent production workloads are not verified by these runs."
+  ],
+  "generationComparisons": [
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "customer_analysis",
+      "beforeFile": "matrix-baseline-function-fjord-drift-development-customer_analysis.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-customer_analysis.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-customer_analysis.json",
+      "baselineMs": 60923.059291,
+      "candidateMs": 65328.24725,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "customer_analysis_v3",
+      "beforeFile": "matrix-baseline-fjord-drift-development-customer_analysis_v3.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-customer_analysis_v3.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-customer_analysis_v3.json",
+      "baselineMs": 36884.380292,
+      "candidateMs": 42375.76083299999,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_summary",
+      "beforeFile": "matrix-baseline-fjord-drift-development-section_summary.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-section_summary.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_summary.json",
+      "baselineMs": 6529.539790999996,
+      "candidateMs": 5651.832582999996,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_strategy",
+      "beforeFile": "matrix-baseline-sections-fjord-drift-development-section_strategy.json",
+      "afterFile": "matrix-quality-final-corrections-v1-fjord-drift-development-section_strategy.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-final-corrections-v1-fjord-drift-development-section_strategy.json",
+      "baselineMs": 14283.818208,
+      "candidateMs": 9099.736083,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_clarifications",
+      "beforeFile": "matrix-baseline-sections-fjord-drift-development-section_clarifications.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-section_clarifications.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_clarifications.json",
+      "baselineMs": 13709.592541999999,
+      "candidateMs": 11303.084417000005,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_design",
+      "beforeFile": "matrix-baseline-sections-fjord-drift-development-section_design.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-section_design.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_design.json",
+      "baselineMs": 7742.710333999999,
+      "candidateMs": 8377.971374999994,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_risks",
+      "beforeFile": "matrix-baseline-sections-fjord-drift-development-section_risks.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-section_risks.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_risks.json",
+      "baselineMs": 12138.960917000004,
+      "candidateMs": 10688.070917000005,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_needs",
+      "beforeFile": "matrix-baseline-sections-fjord-drift-development-section_needs.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-section_needs.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_needs.json",
+      "baselineMs": 9884.844417,
+      "candidateMs": 9224.829708999983,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_keywords",
+      "beforeFile": "matrix-baseline-sections-fjord-drift-development-section_keywords.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-section_keywords.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_keywords.json",
+      "baselineMs": 3595.929541000005,
+      "candidateMs": 2856.193750000006,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_services",
+      "beforeFile": "matrix-baseline-sections-fjord-drift-development-section_services.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-section_services.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_services.json",
+      "baselineMs": 1239.246291000003,
+      "candidateMs": 1742.8131250000151,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "section_value",
+      "beforeFile": "matrix-baseline-sections-fjord-drift-development-section_value.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-section_value.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_value.json",
+      "baselineMs": 10740.006332999998,
+      "candidateMs": 8827.69875000001,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": false,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "high_level_design",
+      "beforeFile": "matrix-baseline-fjord-drift-development-high_level_design.json",
+      "afterFile": "matrix-quality-final-corrections-v1-fjord-drift-development-high_level_design.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-final-corrections-v1-fjord-drift-development-high_level_design.json",
+      "baselineMs": 21244.552499999998,
+      "candidateMs": 13841.413792,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "solution_evaluation",
+      "beforeFile": "matrix-baseline16k-fjord-drift-development-solution_evaluation.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-solution_evaluation.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-solution_evaluation.json",
+      "baselineMs": 101023.5395,
+      "candidateMs": 106716.09012499999,
+      "baselineCodeSha256": "4cee5555a9907ae4a0978e1c3783bb432e9f1f4c17c1879c8a99395f5dfa4290",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "executive_summary",
+      "beforeFile": "matrix-baseline-fjord-drift-development-executive_summary.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-executive_summary.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-executive_summary.json",
+      "baselineMs": 3333.474625,
+      "candidateMs": 4737.71762499999,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "chat",
+      "beforeFile": "matrix-baseline-fjord-drift-development-chat.json",
+      "afterFile": "matrix-quality-final-corrections-v1-fjord-drift-development-chat.json",
+      "judgeFile": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-chat.json",
+      "baselineMs": 13266.376208000001,
+      "candidateMs": 13981.892042000003,
+      "candidateFirstTextMs": 3891.5229580000014,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "bilag1_rekonstruksjon",
+      "beforeFile": "matrix-baseline-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "baselineMs": 54444.585542,
+      "candidateMs": 50923.93200000003,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "forbedret_kravsvar",
+      "beforeFile": "matrix-baseline-fjord-drift-development-forbedret_kravsvar.json",
+      "afterFile": "matrix-quality-final-corrections-v1-fjord-drift-development-forbedret_kravsvar.json",
+      "judgeFile": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-forbedret_kravsvar.json",
+      "baselineMs": 31174.840666999997,
+      "candidateMs": 17041.662875,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "losningsutkast",
+      "beforeFile": "matrix-baseline-fjord-drift-development-losningsutkast.json",
+      "afterFile": "matrix-quality-final-corrections-v1-fjord-drift-development-losningsutkast.json",
+      "judgeFile": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-losningsutkast.json",
+      "baselineMs": 11538.982708000003,
+      "candidateMs": 6832.172874999997,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "tilbudsstrategi",
+      "beforeFile": "matrix-baseline-fjord-drift-development-tilbudsstrategi.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-tilbudsstrategi.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-tilbudsstrategi.json",
+      "baselineMs": 23639.519249999998,
+      "candidateMs": 23702.09695800004,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "verdiargumentasjon",
+      "beforeFile": "matrix-baseline-fjord-drift-development-verdiargumentasjon.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-verdiargumentasjon.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-verdiargumentasjon.json",
+      "baselineMs": 10715.741666999995,
+      "candidateMs": 13265.067958,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "anbefalt_arkitektur",
+      "beforeFile": "matrix-baseline-fjord-drift-development-anbefalt_arkitektur.json",
+      "afterFile": "matrix-quality-expanded-v1-fjord-drift-development-anbefalt_arkitektur.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-anbefalt_arkitektur.json",
+      "baselineMs": 14566.674958000003,
+      "candidateMs": 12673.25795900001,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "fjord-drift-development",
+      "split": "development",
+      "kind": "gjennomforing_og_risiko",
+      "beforeFile": "matrix-baseline-fjord-drift-development-gjennomforing_og_risiko.json",
+      "afterFile": "matrix-quality-final-corrections-v1-fjord-drift-development-gjennomforing_og_risiko.json",
+      "judgeFile": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-gjennomforing_og_risiko.json",
+      "baselineMs": 17412.659832999998,
+      "candidateMs": 12328.237874999999,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "customer_analysis",
+      "beforeFile": "matrix-baseline-function-kyst-data-holdout-customer_analysis.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-customer_analysis.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-customer_analysis.json",
+      "baselineMs": 56550.722917,
+      "candidateMs": 58661.91875000001,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "customer_analysis_v3",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-customer_analysis_v3.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-customer_analysis_v3.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-customer_analysis_v3.json",
+      "baselineMs": 29127.734542000002,
+      "candidateMs": 35313.201291000005,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_summary",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-section_summary.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_summary.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_summary.json",
+      "baselineMs": 3937.5447920000006,
+      "candidateMs": 4590.546250000014,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_strategy",
+      "beforeFile": "matrix-baseline-sections-kyst-data-holdout-section_strategy.json",
+      "afterFile": "matrix-quality-final-corrections-v1-kyst-data-holdout-section_strategy.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-final-corrections-v1-kyst-data-holdout-section_strategy.json",
+      "baselineMs": 8097.412916999994,
+      "candidateMs": 7297.510957999999,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_clarifications",
+      "beforeFile": "matrix-baseline-sections-kyst-data-holdout-section_clarifications.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_clarifications.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_clarifications.json",
+      "baselineMs": 12409.552249999993,
+      "candidateMs": 9971.780499999993,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": false,
+      "recordedSectionPreserved": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_design",
+      "beforeFile": "matrix-baseline-sections-kyst-data-holdout-section_design.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_design.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_design.json",
+      "baselineMs": 9011.678541999994,
+      "candidateMs": 10353.17637500004,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true,
+      "recordedSectionPreserved": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_risks",
+      "beforeFile": "matrix-baseline-sections-kyst-data-holdout-section_risks.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_risks.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_risks.json",
+      "baselineMs": 10957.086708999996,
+      "candidateMs": 10885.95170799992,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true,
+      "recordedSectionPreserved": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_needs",
+      "beforeFile": "matrix-baseline-sections-kyst-data-holdout-section_needs.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_needs.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_needs.json",
+      "baselineMs": 7884.692250000007,
+      "candidateMs": 6333.775167000014,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": false,
+      "recordedSectionPreserved": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_keywords",
+      "beforeFile": "matrix-baseline-sections-kyst-data-holdout-section_keywords.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_keywords.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_keywords.json",
+      "baselineMs": 2657.0231249999924,
+      "candidateMs": 3657.07820800005,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_services",
+      "beforeFile": "matrix-baseline-sections-kyst-data-holdout-section_services.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_services.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_services.json",
+      "baselineMs": 1131.8642499999987,
+      "candidateMs": 1426.5042919999687,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": false,
+      "recordedSectionPreserved": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "section_value",
+      "beforeFile": "matrix-baseline-sections-kyst-data-holdout-section_value.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_value.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_value.json",
+      "baselineMs": 5690.540458000003,
+      "candidateMs": 5284.57037500001,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false,
+      "recordedSectionPreserved": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "high_level_design",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-high_level_design.json",
+      "afterFile": "matrix-quality-final-corrections-v1-kyst-data-holdout-high_level_design.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-final-corrections-v1-kyst-data-holdout-high_level_design.json",
+      "baselineMs": 14410.438582999996,
+      "candidateMs": 12535.98316599999,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "solution_evaluation",
+      "beforeFile": "matrix-baseline16k-kyst-data-holdout-solution_evaluation.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-solution_evaluation.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-solution_evaluation.json",
+      "baselineMs": 107233.594041,
+      "candidateMs": 99160.75058300002,
+      "baselineCodeSha256": "4cee5555a9907ae4a0978e1c3783bb432e9f1f4c17c1879c8a99395f5dfa4290",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "executive_summary",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-executive_summary.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-executive_summary.json",
+      "judgeFile": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-executive_summary.json",
+      "baselineMs": 3085.2467909999978,
+      "candidateMs": 5051.840457999962,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "task-sources-v2",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "chat",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-chat.json",
+      "afterFile": "matrix-quality-final-corrections-v1-kyst-data-holdout-chat.json",
+      "judgeFile": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-chat.json",
+      "baselineMs": 10701.46925000001,
+      "candidateMs": 14244.788040999993,
+      "candidateFirstTextMs": 4219.261957999988,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "bilag1_rekonstruksjon",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "baselineMs": 51501.288499999995,
+      "candidateMs": 37812.82504099992,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "forbedret_kravsvar",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-forbedret_kravsvar.json",
+      "afterFile": "matrix-quality-final-corrections-v1-kyst-data-holdout-forbedret_kravsvar.json",
+      "judgeFile": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-forbedret_kravsvar.json",
+      "baselineMs": 38600.246167000005,
+      "candidateMs": 22980.888250000004,
+      "baselineCodeSha256": "e7eb3f8df09a30dffec2173d3ccfdb077594a662e0eeb5a747a09bd939719ac1",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "losningsutkast",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-losningsutkast.json",
+      "afterFile": "matrix-quality-final-corrections-v1-kyst-data-holdout-losningsutkast.json",
+      "judgeFile": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-losningsutkast.json",
+      "baselineMs": 7783.075749999989,
+      "candidateMs": 5483.943041999999,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "tilbudsstrategi",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-tilbudsstrategi.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-tilbudsstrategi.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-tilbudsstrategi.json",
+      "baselineMs": 18359.657166999998,
+      "candidateMs": 21085.907125000027,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "verdiargumentasjon",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-verdiargumentasjon.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-verdiargumentasjon.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-verdiargumentasjon.json",
+      "baselineMs": 6879.042124999978,
+      "candidateMs": 9539.500916999998,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "anbefalt_arkitektur",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-anbefalt_arkitektur.json",
+      "afterFile": "matrix-quality-expanded-v1-kyst-data-holdout-anbefalt_arkitektur.json",
+      "judgeFile": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-anbefalt_arkitektur.json",
+      "baselineMs": 10711.123709000007,
+      "candidateMs": 15418.526209000032,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": false,
+      "candidateWinner": false
+    },
+    {
+      "caseId": "kyst-data-holdout",
+      "split": "holdout",
+      "kind": "gjennomforing_og_risiko",
+      "beforeFile": "matrix-baseline-kyst-data-holdout-gjennomforing_og_risiko.json",
+      "afterFile": "matrix-quality-final-corrections-v1-kyst-data-holdout-gjennomforing_og_risiko.json",
+      "judgeFile": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-gjennomforing_og_risiko.json",
+      "baselineMs": 15430.782124999998,
+      "candidateMs": 11757.708332999988,
+      "baselineCodeSha256": "294726ac65b141b99708a96fb9e0f47a570a9e49b86be8f93dcbd5faba9edc3b",
+      "candidateCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+      "frozenInputMatched": true,
+      "providersCompleted": true,
+      "judgeModel": "gpt-5.4-mini",
+      "judgeProtocol": "full-fixture-mini-v1 (valid only for owners using both customer and supplier sources)",
+      "candidateContentNoninferior": true,
+      "candidateWinner": true
+    }
+  ],
+  "sectionScopeReplay": {
+    "at": "2026-09-08T07:39:38.657Z",
+    "label": "owner-correction-v1",
+    "boundary": "Offline execution of the actual current section regenerator with previously paid normalized target fields substituted at the structured-completion boundary. Not raw-provider replay, fresh AI quality evidence, or an end-to-end timing. Network disabled. Reports hashes/field names only for holdout.",
+    "rows": [
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_summary",
+        "sourceFile": "matrix-quality-expanded-v1-fjord-drift-development-section_summary.json",
+        "sourceSha256": "caf1f5f8d8f4dcac12ca5c081ffc0284cd8a6383f7c23eb4b00eb2932f0996ca",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "c96000ce21d30e033ccf42b99877c10711c5f7a1e8d076ac9eaaeee526506947",
+        "replayResultSha256": "c96000ce21d30e033ccf42b99877c10711c5f7a1e8d076ac9eaaeee526506947"
+      },
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_strategy",
+        "sourceFile": "matrix-quality-final-corrections-v1-fjord-drift-development-section_strategy.json",
+        "sourceSha256": "d48dce8b442e2f9e950d1692e12174016124fbd03451472904c38be2eee71728",
+        "sourceCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "342e4f50aaba6e789183ea04c0cd2cff1905f73be735e971bde96e6cde31cd83",
+        "replayResultSha256": "342e4f50aaba6e789183ea04c0cd2cff1905f73be735e971bde96e6cde31cd83"
+      },
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_clarifications",
+        "sourceFile": "matrix-quality-expanded-v1-fjord-drift-development-section_clarifications.json",
+        "sourceSha256": "fc34409239f9848dd1d639fef1a9ab3910d5ca668a8b4b6e8c7488211346d55d",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "6916714a6a27c0b87d67e5d7746ba8eeb3b8fdc05764d4549ff3931d22318612",
+        "replayResultSha256": "6916714a6a27c0b87d67e5d7746ba8eeb3b8fdc05764d4549ff3931d22318612"
+      },
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_design",
+        "sourceFile": "matrix-quality-expanded-v1-fjord-drift-development-section_design.json",
+        "sourceSha256": "8a1b0c4dcd4bb248c04d2cc82cd69a3d1caf42378250abfa66713d60eb7ab4c6",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "53b6594474fb3faf53f1f59b623072b4eb326b890c0b9c7fe4568fec0a2c8699",
+        "replayResultSha256": "53b6594474fb3faf53f1f59b623072b4eb326b890c0b9c7fe4568fec0a2c8699"
+      },
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_risks",
+        "sourceFile": "matrix-quality-expanded-v1-fjord-drift-development-section_risks.json",
+        "sourceSha256": "da4e85d7ffbe6092d94844e464126e2dba36c3c61afd6ddfa69214f633b02681",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "7c90f92487103b43d10b174f3b9a51ffdf6703678c667d36fb4f3b23e153b2c2",
+        "replayResultSha256": "7c90f92487103b43d10b174f3b9a51ffdf6703678c667d36fb4f3b23e153b2c2"
+      },
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_needs",
+        "sourceFile": "matrix-quality-expanded-v1-fjord-drift-development-section_needs.json",
+        "sourceSha256": "7ee6de27823ecbda408344b1b8b04f5bcdeb9f816a32f0e006a8304a0337176b",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "909c5c0dcf6e3c65e1b00cd655c2446745a77caca572607289adba9707c30c04",
+        "replayResultSha256": "909c5c0dcf6e3c65e1b00cd655c2446745a77caca572607289adba9707c30c04"
+      },
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_keywords",
+        "sourceFile": "matrix-quality-expanded-v1-fjord-drift-development-section_keywords.json",
+        "sourceSha256": "b17429c47eb51431f784c6a9d2375de1a470ebbc02bdb17497cd5b3203088702",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "cb6137f4759aaa19b2c89e7f933bf1e3647de8bc30a892a643a9a297f05af60a",
+        "replayResultSha256": "cb6137f4759aaa19b2c89e7f933bf1e3647de8bc30a892a643a9a297f05af60a"
+      },
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_services",
+        "sourceFile": "matrix-quality-expanded-v1-fjord-drift-development-section_services.json",
+        "sourceSha256": "6c20b0eab60eae128cafae691cab6f3add7dc67ea6b7ff298387d271009ad904",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "cb6137f4759aaa19b2c89e7f933bf1e3647de8bc30a892a643a9a297f05af60a",
+        "replayResultSha256": "cb6137f4759aaa19b2c89e7f933bf1e3647de8bc30a892a643a9a297f05af60a"
+      },
+      {
+        "caseId": "fjord-drift-development",
+        "kind": "section_value",
+        "sourceFile": "matrix-quality-expanded-v1-fjord-drift-development-section_value.json",
+        "sourceSha256": "fe49d60305ad5c5a57b4c849b3b4993d424dc6b9842e7b7afaf357b2eac7c235",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "05ac8d2be38e1f40ae4735b24886fcfd142194c9b423967168559c06974e10ea",
+        "replayResultSha256": "05ac8d2be38e1f40ae4735b24886fcfd142194c9b423967168559c06974e10ea"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_summary",
+        "sourceFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_summary.json",
+        "sourceSha256": "8635a3fa39e02d3a65519e4ff4b4745087191cf1210f8c09d02876096f4917f2",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "ed0dddf5eaaf37014d757affd5afffb55a8ab5276b97ee68c011195ab2382580",
+        "replayResultSha256": "bd5aec99efa43fd9bfb5670557a2a2ca6da266630ac207785be67d622798d318"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_strategy",
+        "sourceFile": "matrix-quality-final-corrections-v1-kyst-data-holdout-section_strategy.json",
+        "sourceSha256": "fc3179e75865dfb95c5ce934e49288eea373be9875eb63d6cbfbe5b05125db93",
+        "sourceCodeSha256": "a3a2183e299387225ceef6f2d52c30eb0bec388d0314552c11e2433d330e9c9e",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "bac3671d7a1c3c30a7528c7887669dd673034358a41ff9aa4a7bd1dc61481ca9",
+        "replayResultSha256": "bac3671d7a1c3c30a7528c7887669dd673034358a41ff9aa4a7bd1dc61481ca9"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_clarifications",
+        "sourceFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_clarifications.json",
+        "sourceSha256": "e5b2578877a066bc45d59fec7af2c4a227f550a3a31469b324a80315bda7ea5e",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "6576e87e5406b9164adc85e99af1967501a25096d87fa10dc0db832ac5eabafd",
+        "replayResultSha256": "8fb3c942d843dafd146fb412d2bfbfbffd94cb3dbf6aacb17a6d1cdfcbd41808"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_design",
+        "sourceFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_design.json",
+        "sourceSha256": "d95b099e2f0e2dfc8ea7702f1c2c3dbb6179b58fa9ea52b00664dd508c57bd2b",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "a8ab9c5079d211ccafd58a52f1ea2944d8b208762f8911097192cd1fc3ebf10e",
+        "replayResultSha256": "a8ab9c5079d211ccafd58a52f1ea2944d8b208762f8911097192cd1fc3ebf10e"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_risks",
+        "sourceFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_risks.json",
+        "sourceSha256": "c8bdf22c30178863ed7789cc73ccfc685ff99d3150c3af7d0d29bcdd03ec5f0d",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "a16c7a3820b0135015d63011a98600cdcfa142f6c374670bc4f03de36cf91732",
+        "replayResultSha256": "e020f4572dddd263b930d88e2c106c737b61bc7a34b2e87202bf5196ba3057f2"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_needs",
+        "sourceFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_needs.json",
+        "sourceSha256": "81b04ff8d3a1b4480f9f593fcdc39597d3ac3d4dd741dd0bc1a2c7bb9b41e566",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "295c2f61ed390febcf9aa77ec7875668afcc7b04e98c1898f4e3edaa7e59780c",
+        "replayResultSha256": "2948cf7b6d1a6f09209a08de0fcb32df188ba922b67f34968025c3bf30f52a89"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_keywords",
+        "sourceFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_keywords.json",
+        "sourceSha256": "c3e9d14a62d7ac9f70d091c8294b21d67a9b0224a5f9be7f56e35401b58948f0",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "552683797eb372de60115a81c8db52ec8ebc8b216d909f4e6f4e6557a5aaba86",
+        "replayResultSha256": "144438b59f53951296a2947c3433abe47c98905f4e34175aa603d08aa61e5b80"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_services",
+        "sourceFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_services.json",
+        "sourceSha256": "fc73b669f85a8bcaf7aa468b3b57e2f8a6d216cd02ac074ff6897ddd5db470e8",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "69ba83a72e28fa69ee9709453a837c41bce300e97288098f8840a5250442012d",
+        "replayResultSha256": "144438b59f53951296a2947c3433abe47c98905f4e34175aa603d08aa61e5b80"
+      },
+      {
+        "caseId": "kyst-data-holdout",
+        "kind": "section_value",
+        "sourceFile": "matrix-quality-expanded-v1-kyst-data-holdout-section_value.json",
+        "sourceSha256": "a35e9dd97e20f2bcf5be6a2212844031dab39c0816213ab8abcfe289f5b4e668",
+        "sourceCodeSha256": "6328ec9513e3c8677bfbed8a33953d77009e1fb55f1e72d29b4a1db452edd9da",
+        "changedOutsideSection": [],
+        "changedTargetFields": [],
+        "callerInputPreserved": true,
+        "sourceResultSha256": "ba85c7990cce17fcb2a3db0180b2c2ecb6a5485021b69eebffbbec4d05b2656a",
+        "replayResultSha256": "f5736ce83af612d3565486ec15d592feab78f6fcf491e4e4f389beac10ded139"
+      }
+    ]
+  },
+  "rawEvidenceRoot": "output/speed-quality-2026-09-08 (local, gitignored)",
+  "rawFiles": [
+    {
+      "path": "api-budget.json",
+      "bytes": 440095,
+      "sha256": "a6fa1bf1427a92874435f121851416ae35d94f6b2467802d2a015574f9506c13"
+    },
+    {
+      "path": "auth-after.json",
+      "bytes": 11280,
+      "sha256": "56121c1ca1bc86f9fc540923f942b5b09a13b9ca2f002693719dcfe6af20eb89"
+    },
+    {
+      "path": "auth-before.json",
+      "bytes": 11321,
+      "sha256": "7bddf81e28321f64583dd7f0bacd55545e874697ac4e09ab5d9fd8477264e640"
+    },
+    {
+      "path": "browser-final/checks.json",
+      "bytes": 1349,
+      "sha256": "05b486d49fe045427b618c5a159cc31020b894064d5cca45a5ec7673533e0fe1"
+    },
+    {
+      "path": "browser-final/desktop-analysis-verified.png",
+      "bytes": 333747,
+      "sha256": "9e095bd9bfa5f7e9ca5c18d0325eaf80c9f5bf5621da7b36ed3ae5aecbbffbce"
+    },
+    {
+      "path": "browser-final/desktop-analysis.png",
+      "bytes": 87937,
+      "sha256": "f2aa89cd6481b5a685b729453988f73e6a9e88e8a084838b79a6904581d1e23e"
+    },
+    {
+      "path": "browser-final/desktop-requirements-verified.png",
+      "bytes": 662003,
+      "sha256": "59b81c46966af1e47d86462b506610f0d1e388fed9f95a68632c03f9e77e72a5"
+    },
+    {
+      "path": "browser-final/kravsvar-export.pdf",
+      "bytes": 914521,
+      "sha256": "7278a5ea42b12d1437a82bb1dcb703010196f1cfe59849328a2607ff9a7a57d3"
+    },
+    {
+      "path": "browser-final/kravsvar-page-1.png",
+      "bytes": 198800,
+      "sha256": "9b44180850e62719023487987170036431f18682662c7745dda2ebfe35d653ec"
+    },
+    {
+      "path": "browser-final/kravsvar-page-2.png",
+      "bytes": 234824,
+      "sha256": "785828d03ff3a10ae10f267b386a53355a74297d333fdb5d4a38738cea828a46"
+    },
+    {
+      "path": "browser-final/mobile-analysis-verified.png",
+      "bytes": 345516,
+      "sha256": "e2b43df6be2329ef786260c754cb1580afc8d9f499c290ec055839b1cc148f6e"
+    },
+    {
+      "path": "browser-final/mobile-header/checks.json",
+      "bytes": 1476,
+      "sha256": "8ba7ad6d1a9ef2dad2df778c63184e0b72f1418de628aa29916ee88a355d41f3"
+    },
+    {
+      "path": "browser-final/mobile-header/desktop-analysis-verified.png",
+      "bytes": 333747,
+      "sha256": "9e095bd9bfa5f7e9ca5c18d0325eaf80c9f5bf5621da7b36ed3ae5aecbbffbce"
+    },
+    {
+      "path": "browser-final/mobile-header/desktop-requirements-verified.png",
+      "bytes": 662016,
+      "sha256": "e0a24f88084161ffa78451d73f11da010e6a552f131a95d4c05afe085ab9c099"
+    },
+    {
+      "path": "browser-final/mobile-header/kravsvar-export.pdf",
+      "bytes": 914521,
+      "sha256": "a29f7266e4fe8e726d8c601fac4e7c93fa7a82ea63ba39e778dcf9b4e3abe1cf"
+    },
+    {
+      "path": "browser-final/mobile-header/mobile-analysis-verified.png",
+      "bytes": 345516,
+      "sha256": "e2b43df6be2329ef786260c754cb1580afc8d9f499c290ec055839b1cc148f6e"
+    },
+    {
+      "path": "browser-final/mobile-header/mobile-requirements-verified.png",
+      "bytes": 192291,
+      "sha256": "1c6b2704d331dbc6ae22b57f4fec770f32de592233c89a147fb97da5281d7210"
+    },
+    {
+      "path": "browser-final/mobile-requirements-ready.png",
+      "bytes": 194286,
+      "sha256": "0e454e2782fb9610fcdab9199581941b6ff4df1a3ab75262de2ca80da42dfd4d"
+    },
+    {
+      "path": "browser-final/mobile-requirements-verified.png",
+      "bytes": 194286,
+      "sha256": "0e454e2782fb9610fcdab9199581941b6ff4df1a3ab75262de2ca80da42dfd4d"
+    },
+    {
+      "path": "chat-first-question-rejected.patch",
+      "bytes": 5802,
+      "sha256": "744752495beeb7cfb75246bc4fced32eb2558a6eac75a85de404039c173ba037"
+    },
+    {
+      "path": "context-after.json",
+      "bytes": 33518,
+      "sha256": "f72528b06941d8ce1fa9f2934736aa1e8e0c1054b95f6af71a517e068bd36ae7"
+    },
+    {
+      "path": "context-baseline.json",
+      "bytes": 27707,
+      "sha256": "396dd14b72b1f7c8c62c403f125735e7cadd16016e46df4c902d61b2fd843c3f"
+    },
+    {
+      "path": "evaluation-workflow-evidence-before.json",
+      "bytes": 11107,
+      "sha256": "a3ed078324aa41c4d72bb41a311663177539ff427851790beb343a4e566a93e0"
+    },
+    {
+      "path": "evaluation-workflow-evidence-declared-heading-alias.json",
+      "bytes": 209921,
+      "sha256": "8304896446889a27364cadd9e88d4bf26753a962579eb5704cf82b561bca861f"
+    },
+    {
+      "path": "evaluation-workflow-evidence-declared-heading-compact.json",
+      "bytes": 259291,
+      "sha256": "9d8450c0de7b0ab0f3cf81f4f392fdd3ecfef56affd23d1a0a8360c08b67b8b9"
+    },
+    {
+      "path": "evaluation-workflow-evidence-narrative-candidate.json",
+      "bytes": 119669,
+      "sha256": "054970359c6246d42609c8ce6c6ca2784307d91bd0837b0b1f51e8b83607233e"
+    },
+    {
+      "path": "explicit-fixture-extraction.json",
+      "bytes": 18934,
+      "sha256": "e282955f6a4c9a2840c90fdeb59225439b8881d7cf2ad20db5532d5863199f49"
+    },
+    {
+      "path": "frozen-ledgers-declared-heading-and-line-order.json",
+      "bytes": 70487,
+      "sha256": "d502e26c8cdba8049e560e263990a9802e5cb2a98ad11e8f567f02da01e598ec"
+    },
+    {
+      "path": "frozen-ledgers-declared-heading-candidate.json",
+      "bytes": 70387,
+      "sha256": "0403578b61695aff62be9c59f3d16773cf9f7ab9fc74392c9fc70662bb4c09b0"
+    },
+    {
+      "path": "frozen-ledgers.json",
+      "bytes": 10818,
+      "sha256": "03337dc8d7c438808fe43d59c2e63102585a99c7f47ceed7e79302885a91e8c1"
+    },
+    {
+      "path": "generation-context-comparison.json",
+      "bytes": 21239,
+      "sha256": "cad869c43c1a04cf011203e7c372471207bd4c9a726d2269190853c62ddaba28"
+    },
+    {
+      "path": "generation-inputs.json",
+      "bytes": 355220,
+      "sha256": "b1d81538ae8cd9ce94f0a332406e78ddf537e3fcef9210e605f4d74d50ae45a8"
+    },
+    {
+      "path": "http-artifact-write-comparison.json",
+      "bytes": 21818,
+      "sha256": "752198a9284f63fd1d483d92e0a0a8e564d7a08fa4b146ecc185b648182e91e0"
+    },
+    {
+      "path": "http-artifact-write-source-verification.json",
+      "bytes": 2606,
+      "sha256": "5aad5ab251538127a181355248a89879b43f0889f9d9284733d91da63b0ad4f1"
+    },
+    {
+      "path": "http-production-after.json",
+      "bytes": 124183,
+      "sha256": "873b2d3630a4bd5afd59be7c88b00b95768104e331471aba6e6f87804a65a5dd"
+    },
+    {
+      "path": "http-production-before.json",
+      "bytes": 124211,
+      "sha256": "8d54b35cfa20c4d5fb271810c9292edd639c288911e617991f574afc6ada0c88"
+    },
+    {
+      "path": "http-production-comparison.json",
+      "bytes": 3602,
+      "sha256": "8b00ba9f275ea198a0f1b1d73df4380e0d9169105dc91cfe3ce52bd6e49c27b9"
+    },
+    {
+      "path": "http-quiet-access-download-pairs.json",
+      "bytes": 42165,
+      "sha256": "3ef4519d0601fe5d2e8248e2a9b664213223286b643b149273b56ef1fbb0e3f8"
+    },
+    {
+      "path": "http-quiet-control-pairs.json",
+      "bytes": 62742,
+      "sha256": "cfcc44981bd8cc9aa13c68947e8824e478114f9346e17c987bc3aa50ec247bd7"
+    },
+    {
+      "path": "http-quiet-final-access-download-pairs.json",
+      "bytes": 42206,
+      "sha256": "65e9a474aacc1f93176a64acf0605caede36122a09d9ca89e3a96b8f97385715"
+    },
+    {
+      "path": "http-quiet-final-control-pairs.json",
+      "bytes": 62714,
+      "sha256": "4f5c6ebb4bf9a6919514799b137384f135c981b79957b676caa291d0ee218d44"
+    },
+    {
+      "path": "http-read-after.json",
+      "bytes": 124176,
+      "sha256": "b4b0378da71f31cf687a7234de36dac1d35e2341d6f4904f3e455c04d8e0e78a"
+    },
+    {
+      "path": "http-read-before.json",
+      "bytes": 124035,
+      "sha256": "604a4c10078fbe746f1d9ee609efe16b4c2c719a8dcca54bcab38d9f77f806a0"
+    },
+    {
+      "path": "http-workspace-after.json",
+      "bytes": 97159,
+      "sha256": "bd9a867bc1cab119a77ca2965ffc5d5f396d71ebdffaeb9a183fe141385b1f63"
+    },
+    {
+      "path": "http-workspace-before.json",
+      "bytes": 97223,
+      "sha256": "87903220c8100cc49279c0b120a7e5fad3fc0fee50f808e6df3c0d4514d28133"
+    },
+    {
+      "path": "http-workspace-comparison.json",
+      "bytes": 5419,
+      "sha256": "b627e2053c00b5631ce60503ece9806760203fefa28aa025c1a4c5f64ab5d05f"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-anbefalt_arkitektur.json",
+      "bytes": 805294,
+      "sha256": "597592d2cafc33f03a9319694dc24e3cff3d63f45876df85134a40757702c1d3"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "bytes": 797989,
+      "sha256": "c7c5e88188e3ec7b752b91c596db5c8e626353f813d593b8213e0c979bf21588"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-customer_analysis_v3.json",
+      "bytes": 790702,
+      "sha256": "9a68bd999702e56b0037ef166e213d68e2e0ba0f265c0a33600a31247988fe47"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-customer_analysis.json",
+      "bytes": 784739,
+      "sha256": "7ae548a6ac6b9968dce07cc6bebe7f3a9e6c75ef3091afb5d7af28e1d24d06ae"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-executive_summary.json",
+      "bytes": 795766,
+      "sha256": "f23748a083b89562928bac45dede894e6c4da33bb7a14c62b5d3d550abf00696"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-section_clarifications.json",
+      "bytes": 831644,
+      "sha256": "beb25b4d0bafd95492c665d0971ddc846938b2855900a6207083debc5ecad6df"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-section_design.json",
+      "bytes": 835022,
+      "sha256": "379cf56cbf7bfaca389c8d81bb52ca5df8e98146760f4fb30cbb9bc66b15ae4c"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-section_keywords.json",
+      "bytes": 842139,
+      "sha256": "2a3de655036afa90a9ec0fca9fd1e8cc4b11ca82870cd496a7b2ceaa8ec7a9ce"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-section_needs.json",
+      "bytes": 839295,
+      "sha256": "ec28e458b4c978a0d4f161066895e7becb681d5f150eec2ec10faa4dbd70f317"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-section_risks.json",
+      "bytes": 837566,
+      "sha256": "cda6f8b5037e719e1a60374e15b9804c6d5a136dbd356420b3881aeee603006e"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-section_services.json",
+      "bytes": 843982,
+      "sha256": "66a33da5b926cbc42f9f228da230be4cc0c729a55adbf59b11012e44a1c229cb"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-section_summary.json",
+      "bytes": 793149,
+      "sha256": "0cdb9dbc3ec33ed7e109b7147bde070b10708f77eb4676f2aaf420868faa6e80"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-section_value.json",
+      "bytes": 846652,
+      "sha256": "c50aa4636ff840d83cd09f813d0535ff89c4c66b43af41fd441f883cfbcb5455"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-solution_evaluation.json",
+      "bytes": 826826,
+      "sha256": "ac27c77487f54e850da65262bbdfb1afb474c633b1688f3bfa5e800ec7cb8d9b"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-tilbudsstrategi.json",
+      "bytes": 801074,
+      "sha256": "fe6cab35e08c57ed36eec4d8f8389f55892b6cc1961050279cd22433a9f2cec7"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-fjord-drift-development-verdiargumentasjon.json",
+      "bytes": 804013,
+      "sha256": "82892a39dccfa2aaabd85f3ac8ed24ecb52c7b0d978f98ac2cda64c2a4db9523"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-anbefalt_arkitektur.json",
+      "bytes": 824036,
+      "sha256": "5fe9de1b3fb6916bda0e4f64b6243c5276ace3f6ef4df33841293641bfc7fea0"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "bytes": 815488,
+      "sha256": "6ffc522367e75f0da1a41e41b5c296124f720332bdd9c8002e2ad74c826e54fa"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-customer_analysis_v3.json",
+      "bytes": 810270,
+      "sha256": "c1faa3361f13e4534c325263152f9c93663c8f05fe6201b616c23799db627154"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-customer_analysis.json",
+      "bytes": 787337,
+      "sha256": "70cab0e45a16dafc9bff8ec95cc59e29fc623193e4b039b6b52513b75019dbe9"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-executive_summary.json",
+      "bytes": 814118,
+      "sha256": "8b1b89f124018bc10ee2fadc5d7af11c32b13b01ca2a0e4c7b1cecc1e3bf8b5e"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-section_clarifications.json",
+      "bytes": 851199,
+      "sha256": "2ffb7883e65af3b5b6c8f59852ed84f2ca1318a5de3dad5cdaec8027b2caa528"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-section_design.json",
+      "bytes": 853282,
+      "sha256": "912bc4e3c786282de550a9c364c33cbc2a74da37a1a235eea1fb2a6ad4febb69"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-section_keywords.json",
+      "bytes": 860205,
+      "sha256": "2a00b46c8dbf508ebadd6b94b6912201d1b50dbe67e55d3e56bea2040ec3cffe"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-section_needs.json",
+      "bytes": 857181,
+      "sha256": "65c5d7a97e4cf43e7200219b8d3b8ec7ae5d24e7747306cdae2ffc6487f655fd"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-section_risks.json",
+      "bytes": 856611,
+      "sha256": "4ca6b49dec4b3fa204b2fc8763272e9735994c00c7b90c019f6c4287014600ca"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-section_services.json",
+      "bytes": 862031,
+      "sha256": "1c37ac2cf5f746c8769a8d6016821bf9895f318d95fa78cd79df2ac4a5cc2d3b"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-section_summary.json",
+      "bytes": 811836,
+      "sha256": "631850f6f77edadf02dff55555c22debd185e1465262d16f214b8ece46bb6342"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-section_value.json",
+      "bytes": 865330,
+      "sha256": "bbdb351bfe749e9e8c56ddf9e9d7a73f42e266108e8a5fa336d53a358aae0ce2"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-solution_evaluation.json",
+      "bytes": 829766,
+      "sha256": "993ce9a851a0392a22cb2ed88dd4549c4568ee8cc705a996ba8fd3489883ca08"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-tilbudsstrategi.json",
+      "bytes": 818638,
+      "sha256": "5b54cf6c7994820e52c0848650edd44e1371c6a6c99c8d62ced496766fdd4e01"
+    },
+    {
+      "path": "judge-quality-mini-quality-expanded-v1-kyst-data-holdout-verdiargumentasjon.json",
+      "bytes": 822294,
+      "sha256": "2ea1972056095d359f72506887ceccbacb01fbbf671484ee4ce12245533c853c"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-chat.json",
+      "bytes": 757442,
+      "sha256": "d5af1fcf958955c59d2079dbb294c1cb9b1664c5cefce4726cc2bd74e2d80ddd"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 759832,
+      "sha256": "8fbbdc9673d53dca98c7328f0d2f2d91eda0b20d39ce69f3d819b998ccc1138f"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-gjennomforing_og_risiko.json",
+      "bytes": 764622,
+      "sha256": "e76c3e1a3fb5629e73760cf8af215ac11c50f75e84a1eee8342ddc7a8875b3a5"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-high_level_design.json",
+      "bytes": 755822,
+      "sha256": "86c789ec4363b71145ff86c50b9ddeb9eae8a2a91fadf64ff6a012cc05456615"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-losningsutkast.json",
+      "bytes": 762912,
+      "sha256": "f4e52aa0c6220454d5ea9480792303d2bb2128111cf9e392c71031136f6b14c9"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-fjord-drift-development-section_strategy.json",
+      "bytes": 782214,
+      "sha256": "7f586d35d9710a1f82df994d116c3fc31e5c446f9218a4ace06954352b447767"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-chat.json",
+      "bytes": 770868,
+      "sha256": "e15ad59e30e9ca07d82b1ba493fe7365d6f0b2b403866275f7f8bfb7eb93a781"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 774611,
+      "sha256": "fbe4d9eae90f25769dffa05658546b9b559360fbc128541f54514ee4a8f2e4b1"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-gjennomforing_og_risiko.json",
+      "bytes": 778276,
+      "sha256": "717956f734fcd2de11e7f5672a3d0a4d3740a0f69912d950dd4538f21052e0bf"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-high_level_design.json",
+      "bytes": 767244,
+      "sha256": "03c03212c298512d233b842ee545c04c317a13f63b953aa24c5891f4061b4a8b"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-losningsutkast.json",
+      "bytes": 776511,
+      "sha256": "95894a621494c364a5ec9fb0e87c301679e6af3bc3c66b77127266e4f3b06534"
+    },
+    {
+      "path": "judge-quality-mini-quality-final-corrections-v1-kyst-data-holdout-section_strategy.json",
+      "bytes": 783144,
+      "sha256": "a9dec23c4ae915505f52ced0df4b7f1fb807a9d63a377e69b2300cfc314c66de"
+    },
+    {
+      "path": "judge-quality-quality-evidence-v1-fjord-drift-development-solution_evaluation.json",
+      "bytes": 473797,
+      "sha256": "8d6202ee1c251f4b048fb0a054f89f6a43808832c2a312af88f985e03cb65d0c"
+    },
+    {
+      "path": "judge-quality-quality-evidence-v2-fjord-drift-development-solution_evaluation.json",
+      "bytes": 487398,
+      "sha256": "28dbc4db89808d809375f7af428827cd307c600c967a83cf0bad6171c8984c13"
+    },
+    {
+      "path": "judge-quality-quality-evidence-v2-kyst-data-holdout-solution_evaluation.json",
+      "bytes": 488247,
+      "sha256": "2632c021d842091c9c119c3bf0cd359a10c8b264e7b571952860719ed7a19606"
+    },
+    {
+      "path": "judge-quality-quality-requirement-prompt-v1-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 496297,
+      "sha256": "35e64ed3d421072010f60de6e95fdf62b8321ba049ed156f91e85835fe202596"
+    },
+    {
+      "path": "judge-quality-quality-requirement-prompt-v1-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 505612,
+      "sha256": "bdad3a81362032e1f62dba22014038256e386749a2ef66a04283908bd68047eb"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-customer_analysis_v3.json",
+      "bytes": 869858,
+      "sha256": "e13c32522ebcb2171dfb235df7c3cd8fbdc68d18416993b4b1e00f3102981f44"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-customer_analysis.json",
+      "bytes": 883618,
+      "sha256": "09e883440b35188134ea235e090c4fcb2834de0c3bfff712be77b9a721e8b229"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-executive_summary.json",
+      "bytes": 868017,
+      "sha256": "521fad683cd03b6f3564f4c26cb7748b4f877e7cef381ae0b838ab9f8cafc3bc"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_clarifications.json",
+      "bytes": 898484,
+      "sha256": "04953a5f0135513b5a63e5f7a40a380e3ad4765addaf29421f6db9ce7632434b"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_design.json",
+      "bytes": 902469,
+      "sha256": "5513bcf7463b9f8630c9d3fab3abd289d6bb8e06cb92cea3b50a66d943b983a9"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_keywords.json",
+      "bytes": 909740,
+      "sha256": "85f2ccfe1bdfcc5fa5263c53214309b4902a24fa7adf9ba7654fe57669f98d76"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_needs.json",
+      "bytes": 906847,
+      "sha256": "ee3cbeb96ab052ba39fdf6c4e8874fa66ab8608e35a7e06c375b0ab3189c5b9e"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_risks.json",
+      "bytes": 904151,
+      "sha256": "a88fb199e71f18c46d6f6a6c68e5103f8d35611622701a7dfa64ae2074700f79"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_services.json",
+      "bytes": 911053,
+      "sha256": "73c19c37294fd99ec254dafacb077a6f6087bf28425dfcc6f02f8a2cfc71287a"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_summary.json",
+      "bytes": 873254,
+      "sha256": "201e4dc649ceecfbd81afbe56b3a2b650791ad357ba9f3e174e7de4e11a3130d"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-fjord-drift-development-section_value.json",
+      "bytes": 913716,
+      "sha256": "b51237e00263cbbdfe6e59119dae32c2919f8ff0be4c3ff3ea5e7e6cbaddbcbe"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-customer_analysis_v3.json",
+      "bytes": 879101,
+      "sha256": "1983866926eed5094e53bfeabd3c627340a523e6c25d708c853c6c1761f3b350"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-customer_analysis.json",
+      "bytes": 885216,
+      "sha256": "1e2931d3a3a1592e72e6eb736643ebedc7d8c389b60bc1bba59e7cbe9df14ffd"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-executive_summary.json",
+      "bytes": 875629,
+      "sha256": "e51e7b4feddf77a4f376b40d76c630d60ad04cdf97a7f7c6008069120d8f57b7"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_clarifications.json",
+      "bytes": 916618,
+      "sha256": "8d7b4355f9efd1b9b01e8f0aa6da7c18f7ccc441d50356ab86ce7b9a0c7d5210"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_design.json",
+      "bytes": 919752,
+      "sha256": "6722e30bb50b6c990c6a927165fedab55e81fb53d02379dedb5b644c0c128a8b"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_keywords.json",
+      "bytes": 928501,
+      "sha256": "13af23996a3cf2696b5f8307ea362430f730b36e4f355b8bfbfef45a81bfadec"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_needs.json",
+      "bytes": 923991,
+      "sha256": "76a6faad3609739e780f6d5c2edb8928e30f79e626792f59f47c6fd84aa830fa"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_risks.json",
+      "bytes": 922390,
+      "sha256": "7183b9de2012f8abfb1da701ffc56041da629beacdff91295e010a3475e27465"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_services.json",
+      "bytes": 929061,
+      "sha256": "7e7bccd7ca8fed8bea0a380b01e25da00272c5626751b32dd7c49e59a114ae4c"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_summary.json",
+      "bytes": 880913,
+      "sha256": "1087e6ed2a9ac7707f4cb372e02f754ca449c21ed5b4212a4e008caf8f54717c"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-expanded-v1-kyst-data-holdout-section_value.json",
+      "bytes": 932348,
+      "sha256": "efae41b121ecbffb16bee95d6024119f568b67ba92d36a5772b83206d0218660"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-final-corrections-v1-fjord-drift-development-high_level_design.json",
+      "bytes": 888169,
+      "sha256": "5f45abd7797d0f4716ee9d8eb235edb49c8e2894316219efdc3d7fb956c0094a"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-final-corrections-v1-fjord-drift-development-section_strategy.json",
+      "bytes": 894092,
+      "sha256": "87636da33f7b7ffe66824269f2ae28127bd878dcda09ae5f81a4ea0d6f3f55a6"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-final-corrections-v1-kyst-data-holdout-high_level_design.json",
+      "bytes": 891077,
+      "sha256": "6dbaf01d5dde21b6b1835345488c3258859dd110745b23dd6da952c114df5a4b"
+    },
+    {
+      "path": "judge-quality-task-sources-v2-mini-quality-final-corrections-v1-kyst-data-holdout-section_strategy.json",
+      "bytes": 896144,
+      "sha256": "a73083a1d80ddb749beead3e3f1647c1dc4c4397472431318f497a7cabc9ee50"
+    },
+    {
+      "path": "judge-speed-candidate-batch-policy-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 451864,
+      "sha256": "a1719c5196a556d7c14a2533635c9b2387dd0782e0cd4bcb2c46d272a5f2fbf7"
+    },
+    {
+      "path": "judge-speed-candidate-hld-speed-sundvik-32-explicit-ids-high_level_design.json",
+      "bytes": 466938,
+      "sha256": "1eee0edb9f63e5e41ee7877173be83c1dbec70ef8f5fdbb47105c588cb9e511f"
+    },
+    {
+      "path": "judge-speed-chat-first-question-fjord-drift-development-chat.json",
+      "bytes": 351248,
+      "sha256": "870499c8c0924579c71a0e1f82840293d41fad9204a111699fb8ba9b06c12c5f"
+    },
+    {
+      "path": "judge-speed-chat-first-question-kyst-data-holdout-chat.json",
+      "bytes": 353072,
+      "sha256": "7ac7c4392d0aa6eb87ea37cfca2f5c11340af54e0db80532562a188d65ca5289"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "bytes": 300054,
+      "sha256": "885b2f2e5691dfd32cded77c6e489c0737cb80b789f9ca43da6c4821d495193a"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-fjord-drift-development-customer_analysis_v3.json",
+      "bytes": 292979,
+      "sha256": "600aed58e14eab4fcfabebb41f5d679f677bc8fb4418e03436dbdc2188f9a4ff"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-fjord-drift-development-customer_analysis.json",
+      "bytes": 303359,
+      "sha256": "cf1ce8f643a4789b53a5cf47ca4dadd51a23b37461ec60e0eac756921f74e578"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 175725,
+      "sha256": "af3aa42895ebfe8329d511f75d8cdb79499549284d0a287094bd5efde90d130f"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-fjord-drift-development-high_level_design.json",
+      "bytes": 172554,
+      "sha256": "9a753e4b2188419aca8d7edf26cd1b3f59e96d81ebfaaad5db8676e4a8cb9dc7"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-fjord-drift-development-losningsutkast.json",
+      "bytes": 299838,
+      "sha256": "2de81a1e3a091d6d4ce96328ec30af5ca5a3dfcc0dfd56e39e4c1be370b51b96"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-fjord-drift-development-section_summary.json",
+      "bytes": 295272,
+      "sha256": "ceee1383cc82d95ee907705d1fc8071f979e51339ed05c1074eb77f695913784"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-fjord-drift-development-solution_evaluation.json",
+      "bytes": 178426,
+      "sha256": "da13dd8a10b3b141c25491c0b2132ebcdef77d4b6fb63b27e7457bd8c1a6643c"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "bytes": 357429,
+      "sha256": "64943e2102e3b9a044eb41c398e9a455c059b5c343bce509d9b62a661be5bd0f"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 361674,
+      "sha256": "ce6fc05320ab5dd50f1807ae96f6d9a13ad372454d769fb71ce1c39cb1274d35"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-kyst-data-holdout-losningsutkast.json",
+      "bytes": 358168,
+      "sha256": "6692d9e92cc27c1f95c11f718ed80116492173211a45d48c171cf24e84595072"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-kyst-data-holdout-solution_evaluation.json",
+      "bytes": 364584,
+      "sha256": "f13b586dbdd59355b1798d55110f2040e3c2fa29c9e06ce43bfb38374f693d2e"
+    },
+    {
+      "path": "judge-speed-luna-speed-trial-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 370918,
+      "sha256": "581fee19f24e3927affbf1c3417436190ec6f12a38f898dfdbc5af78c3bddfd3"
+    },
+    {
+      "path": "judge-speed-small-batch-speed-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 436010,
+      "sha256": "2947d8d0eb4059e6152e954d020dc8dd6cfa2c9ded40b6d05cdbb4fc8c26a515"
+    },
+    {
+      "path": "judge-speed-speed-deduplicated-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "bytes": 146662,
+      "sha256": "1d098d6dfea4013f7a01cc88df39a25b47bf55b64c6d8861e90cd7b9865b2ee6"
+    },
+    {
+      "path": "judge-speed-speed-deduplicated-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "bytes": 149099,
+      "sha256": "a369ded427973fdd1e6dde842fd918fc3521a0d30d9b9efc915cfea19bf529d4"
+    },
+    {
+      "path": "live-concurrency-one-customer_analysis.json",
+      "bytes": 58321,
+      "sha256": "f1b35be22adbdd76ea5f07827f83e16d3691a509dc4dcd5e61a432007697133b"
+    },
+    {
+      "path": "live-concurrency-two-customer_analysis.json",
+      "bytes": 136113,
+      "sha256": "9bf19e4055a048dadeb829eb95e426f9e9816b44f5e1fd2139b56847cbe848c5"
+    },
+    {
+      "path": "live-final-workflow-artifact_generation.json",
+      "bytes": 989283,
+      "sha256": "ab4a09ba903f952b02cd4fc01534567c671f3ed26a694acd28de1a60ec4d9303"
+    },
+    {
+      "path": "live-fixtures.json",
+      "bytes": 4941,
+      "sha256": "2c85b3ce8499506dcb7297f97175f52d20ed6989a53f6156d4415d79085df469"
+    },
+    {
+      "path": "live-large-baseline-customer_analysis.json",
+      "bytes": 170265,
+      "sha256": "e2fac06411d3ca8f781592a221368acf592e23fcd39f9cb61f63d6e39d8568de"
+    },
+    {
+      "path": "live-large-explicit-baseline-customer_analysis.json",
+      "bytes": 226907,
+      "sha256": "75a7d30bb113a0ad4f8b6a2e977b78d25b2efed15a39c2e1034a485a7fd0dc0d"
+    },
+    {
+      "path": "live-one-warm-development-customer_analysis.json",
+      "bytes": 61283,
+      "sha256": "03553f2fdc2c1aad9f803ef5cd403da0a9009f232b7ea5cd547d5da562d9b458"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-anbefalt_arkitektur.json",
+      "bytes": 41721,
+      "sha256": "ff5efccea86d83c6ac214cd7ce343587bbe8489b31dfc842cdc3ce6fa0bd307c"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "bytes": 80924,
+      "sha256": "8de24a226dad724bdf6646e13ef7f14401cd0dd80831874a30ad06c02cf2803e"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-chat.json",
+      "bytes": 135415,
+      "sha256": "6e50ee2da8b7904d50f0be79c91b12cda99e684fb5c35a62efad4f819d5db6a2"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-customer_analysis_v3.json",
+      "bytes": 76378,
+      "sha256": "a99ed1a3281ca0b69862985e303958ae56e18755917feb1d923870cd632f7c0c"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-executive_summary.json",
+      "bytes": 123394,
+      "sha256": "6c9dd5932e33a6970a75ff2bdb170f535c3fca8105a4758bf8aa47162e3f8e0d"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 84587,
+      "sha256": "7718f38aba862ba5a4d47ca3b74a2ff3eb4aa42d1c24c072b1b461eb7ba00a64"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-gjennomforing_og_risiko.json",
+      "bytes": 45221,
+      "sha256": "4cf9b30683ac46e7d39f949ee9a69c7b5b8f8f6cebe7865835e5cfaeaf530480"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-high_level_design.json",
+      "bytes": 25884,
+      "sha256": "9f0344188f4b1f82b6f645135920bcea33f3331b3014c9a0f5b0a1079b2a8ffb"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-losningsutkast.json",
+      "bytes": 27449,
+      "sha256": "054f3aa2f605f8cc9347f628437006a1960df3ded58482f7f8e33d8c1eb29f82"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-section_summary.json",
+      "bytes": 85956,
+      "sha256": "caa2505f0c9777e53f72c80f3f655c06a3453c70951c575d066be0160e9ab38e"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-solution_evaluation.json",
+      "bytes": 77300,
+      "sha256": "263596dc3b11fc81418f6b068bacd445a9d2a4d319bfd2ed38aca539621f8f42"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-tilbudsstrategi.json",
+      "bytes": 37564,
+      "sha256": "9d6ea9fe1ca74b2dc3c7262c4daae9e00235f97ceb6f46e2688ffa981e0dd4be"
+    },
+    {
+      "path": "matrix-baseline-fjord-drift-development-verdiargumentasjon.json",
+      "bytes": 35463,
+      "sha256": "c369dd5989bc7943579fddb5037be0ee250d35c8e6fbbf855bc22f47f15fda30"
+    },
+    {
+      "path": "matrix-baseline-function-fjord-drift-development-customer_analysis.json",
+      "bytes": 209536,
+      "sha256": "a76dbab2df5769f81c851accc7aff9299135133ba38227f4c5648a6e850df354"
+    },
+    {
+      "path": "matrix-baseline-function-kyst-data-holdout-customer_analysis.json",
+      "bytes": 213744,
+      "sha256": "2159701d96837c4cd1480bfc0d5e82203399568f9dd175e7a6cbe23c92d5d16a"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-anbefalt_arkitektur.json",
+      "bytes": 61997,
+      "sha256": "33212bbce652f88cc95e90ddeacd7850251844e6748938d1c8d4c263198a7353"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "bytes": 116416,
+      "sha256": "2fc770e8925f6668e0d4ab0879489799d0f72aca638b4d705dbbd09a5c3ffb99"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-chat.json",
+      "bytes": 124744,
+      "sha256": "109e9c15ec1b2f47e1b824a125b2018dbd53426a4797f0f31a7414da66c96563"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-customer_analysis_v3.json",
+      "bytes": 110542,
+      "sha256": "dca6d0bf71a88e0d70451ea844be6b6d70c2c6398087223f754cbe3961966e7f"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-executive_summary.json",
+      "bytes": 114701,
+      "sha256": "f5c265e80674297afa851c7cddaad5bc81770561fc06385be10737c6f79d2070"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 122501,
+      "sha256": "79dee29eb350dd1045b4789adeb44d0e3272a6f4a7074a67faaf8b78063a45b4"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-gjennomforing_og_risiko.json",
+      "bytes": 67352,
+      "sha256": "46f30eed884ddcefd17a93d00a02e3f2f8de31c1b89ba156744905ec1ebeb452"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-high_level_design.json",
+      "bytes": 46391,
+      "sha256": "5540f8e68f1333a29997ff24309d90664b338a4265234ba4d6aab2a3860cfff8"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-losningsutkast.json",
+      "bytes": 48656,
+      "sha256": "9ddb7092c6e40344f409fc7cc79673ec134c7c1e076a4494fcb08e3e5fa3713d"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-section_summary.json",
+      "bytes": 121604,
+      "sha256": "e43a49f429927d51e96f98b9651dc9943ba3d04aa08170e26fd685ac631a0f52"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-tilbudsstrategi.json",
+      "bytes": 57613,
+      "sha256": "cc6af4d87a825540836cf30afb1694800530d3550ae1ccafcea5898f57ae76b8"
+    },
+    {
+      "path": "matrix-baseline-kyst-data-holdout-verdiargumentasjon.json",
+      "bytes": 56064,
+      "sha256": "14ddcaf2104fb556e73f27c460070dc979b2266c2ddc2f1452ab513f764164ce"
+    },
+    {
+      "path": "matrix-baseline-large-sundvik-32-explicit-ids-chat.json",
+      "bytes": 391846,
+      "sha256": "5ea572cf205b5224946be3a27cc4603f8f6ab0caa858feca3444225e966b3a85"
+    },
+    {
+      "path": "matrix-baseline-large-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 276885,
+      "sha256": "7e82f9481ed43e363bb3cab2414e1c2936e25ee5a6e058335c1e86a91944e359"
+    },
+    {
+      "path": "matrix-baseline-large-sundvik-32-explicit-ids-high_level_design.json",
+      "bytes": 215780,
+      "sha256": "1b044a3fc402da54a7955d61923c6c863b59dac851414b10db437c3f5b863878"
+    },
+    {
+      "path": "matrix-baseline-large16k-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 286608,
+      "sha256": "3cf17e6e6ea3d312d57b82dd0afdb83767a129f8afbfd671653bc3a90160a6e6"
+    },
+    {
+      "path": "matrix-baseline-large16k-sundvik-32-explicit-ids-solution_evaluation.json",
+      "bytes": 316988,
+      "sha256": "09bfeec2e2c87e35ff17cf586f8623da04416545e6dad622b0e2a1688a944661"
+    },
+    {
+      "path": "matrix-baseline-sections-fjord-drift-development-section_clarifications.json",
+      "bytes": 532647,
+      "sha256": "6d384a3fc968e93e6c16dcbd333cf2ea7eb463bd29cb1121713e997e0fe4dd5f"
+    },
+    {
+      "path": "matrix-baseline-sections-fjord-drift-development-section_design.json",
+      "bytes": 535369,
+      "sha256": "60f9ee28098fb70aa859ff1dc93746dde22abd8269322796e76c9d7ecc5c329c"
+    },
+    {
+      "path": "matrix-baseline-sections-fjord-drift-development-section_keywords.json",
+      "bytes": 542179,
+      "sha256": "45c3d9f2a7e7d6232ed5f66b3612c0a5a6604f14d5f7cb7ab54b73a00e2650bb"
+    },
+    {
+      "path": "matrix-baseline-sections-fjord-drift-development-section_needs.json",
+      "bytes": 539212,
+      "sha256": "11069df47509468fd0aeba96be4d4f43ed58acfe96bfdf9194714ddc10f9e491"
+    },
+    {
+      "path": "matrix-baseline-sections-fjord-drift-development-section_risks.json",
+      "bytes": 538518,
+      "sha256": "6c9f0a1476846ef3f5b83fd2f5da425c98ed0234af14f66a8753e8eb673b52da"
+    },
+    {
+      "path": "matrix-baseline-sections-fjord-drift-development-section_services.json",
+      "bytes": 544425,
+      "sha256": "67377716284c6d578501ca1eeee1b00cf2b2d27df38d3d47e2cc0ff4fd461cd1"
+    },
+    {
+      "path": "matrix-baseline-sections-fjord-drift-development-section_strategy.json",
+      "bytes": 530911,
+      "sha256": "916ed5dadd54fb0d04d73122a1948284ab90557806c2456bf84e7300ed10fe45"
+    },
+    {
+      "path": "matrix-baseline-sections-fjord-drift-development-section_value.json",
+      "bytes": 546268,
+      "sha256": "4d30bf5a929c727c36e8f84039c4c9e35d001ae128a997f46fdac4b7eb9e92e7"
+    },
+    {
+      "path": "matrix-baseline-sections-kyst-data-holdout-section_clarifications.json",
+      "bytes": 551539,
+      "sha256": "57a44d41649df9fba8dacca6924e18b7ca82f2ea158abd0ae2fc524d29fbf93d"
+    },
+    {
+      "path": "matrix-baseline-sections-kyst-data-holdout-section_design.json",
+      "bytes": 554160,
+      "sha256": "f13f546ea405dae305008d093c2c346bc6cdcf40b6c986b4c484275e086d006a"
+    },
+    {
+      "path": "matrix-baseline-sections-kyst-data-holdout-section_keywords.json",
+      "bytes": 560792,
+      "sha256": "fbdbf817eaab97e55557679b5b6f3b72e2c1fe480a0bfe009274160efaa91e5a"
+    },
+    {
+      "path": "matrix-baseline-sections-kyst-data-holdout-section_needs.json",
+      "bytes": 558114,
+      "sha256": "2a195a96006c15993c9f21597c4d0462ed6912d2e0a6466f41f2ab5150e67394"
+    },
+    {
+      "path": "matrix-baseline-sections-kyst-data-holdout-section_risks.json",
+      "bytes": 556542,
+      "sha256": "4dcd8d77a4e4ead7c8f9f14e7671882221aef8ecd92dd6d9876628bb87c386e1"
+    },
+    {
+      "path": "matrix-baseline-sections-kyst-data-holdout-section_services.json",
+      "bytes": 563047,
+      "sha256": "7bdfcb6418caf0a43ae839d29f6d9ff6c48af13b12376e548f2bc1d9cd2e2ac2"
+    },
+    {
+      "path": "matrix-baseline-sections-kyst-data-holdout-section_strategy.json",
+      "bytes": 548770,
+      "sha256": "adf97ea4bad1143b9e26fc73bcffeda4be982787b76ee4da931483a1334ff48e"
+    },
+    {
+      "path": "matrix-baseline-sections-kyst-data-holdout-section_value.json",
+      "bytes": 564656,
+      "sha256": "a23f58a4b836872425c844844af0854bcfa9f56ca087dce212712ba02e51a1a1"
+    },
+    {
+      "path": "matrix-baseline16k-fjord-drift-development-solution_evaluation.json",
+      "bytes": 113788,
+      "sha256": "77c04999b23a69d877481e09deebee63e652c853f7661de2bcc39b0eb8246e66"
+    },
+    {
+      "path": "matrix-baseline16k-kyst-data-holdout-solution_evaluation.json",
+      "bytes": 125891,
+      "sha256": "433c33a4fe4ac7dd89b50c9ddd0e912fa3a0a90ebb653bc4947d1923772a36ca"
+    },
+    {
+      "path": "matrix-candidate-batch-policy-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 490774,
+      "sha256": "08967c292bc52884de6e484c4afba1cec85360331bbc58d8152d506ef1ffc192"
+    },
+    {
+      "path": "matrix-candidate-conservative-repair-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 464275,
+      "sha256": "9c2dcc12bdb57245e4e54b0f982b6cc6cdd1090295b8fc8bc888f7b5295d8528"
+    },
+    {
+      "path": "matrix-candidate-default-requirements-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 390675,
+      "sha256": "3ae599462786eafdf58aae9377bca38fd6471f2b71ca9162ac958bcbda86e4b3"
+    },
+    {
+      "path": "matrix-candidate-default-requirements-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 397224,
+      "sha256": "675a99d05ae64306a4cf513bdf02d9c625f3071af0202f7809ee4ca1305d3024"
+    },
+    {
+      "path": "matrix-candidate-default-requirements-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 396988,
+      "sha256": "234ee2ad6a590ae7b4998ffc454e5f7957bac51525b1c9386c0bcc7ab36be2fb"
+    },
+    {
+      "path": "matrix-candidate-hld-speed-sundvik-32-explicit-ids-high_level_design.json",
+      "bytes": 461894,
+      "sha256": "7e7cd69829e340520bcdcc8d352c7e7ef9f8b6caa267f58795839cc295e58da2"
+    },
+    {
+      "path": "matrix-chat-first-question-fjord-drift-development-chat.json",
+      "bytes": 354458,
+      "sha256": "db780080fe02208e2865d5a58c88d28f8b0ab9e10ae237771e182d9e44cf36b1"
+    },
+    {
+      "path": "matrix-chat-first-question-kyst-data-holdout-chat.json",
+      "bytes": 359361,
+      "sha256": "d2022296b38eedf3f1a97698ac9ff288ad029f0225952d5c523cb52d75c38052"
+    },
+    {
+      "path": "matrix-chat-first-question-sundvik-32-explicit-ids-chat.json",
+      "bytes": 391410,
+      "sha256": "b56083ba4f1969bf741a3d7a6ed46bb6ac4ddeda2a5ddab93cdcd64b8181edf6"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-anbefalt_arkitektur.json",
+      "bytes": 281748,
+      "sha256": "1ff954ee5f8d9fe531b4fdfd474a03713442feed8f48bde816d66aa3a7d6ce0c"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "bytes": 273101,
+      "sha256": "ba7f4ee9eea216fff03bb6860cd28ba4654caceb8ad47f27f93f2006e5af5f14"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-chat.json",
+      "bytes": 297554,
+      "sha256": "73100151cc0622205151bf5f2aa573118fc5993cf6c27998848289bcd43c6887"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-customer_analysis_v3.json",
+      "bytes": 265186,
+      "sha256": "b12f494214c9e9ab52b7fe49676f2161fc931b7be0142a4882a79d9fe1296833"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-customer_analysis.json",
+      "bytes": 185202,
+      "sha256": "42cd8999b3173889b6687b490c3cfeb006c6343aac3af800eceaa37ad210f249"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-executive_summary.json",
+      "bytes": 285642,
+      "sha256": "8b4d1909e35b1bdad43a3e1922f22ee73ad6930d9d3579760dcb2f88b2a0ff39"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 169221,
+      "sha256": "3fbbed5031b4c9015168980a020cd5b8d2b907c4c0dcf5f23124f447687fba4e"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-gjennomforing_og_risiko.json",
+      "bytes": 286808,
+      "sha256": "297c506447c3e336b759e6c75949f2de8c566977429e2c01133861086d612014"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-high_level_design.json",
+      "bytes": 155983,
+      "sha256": "dee7d578d6bff09b6c9ea1b912fbc9b518a108e6d9ff0546830043c387711cbd"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-losningsutkast.json",
+      "bytes": 261566,
+      "sha256": "5560446f21df65df3c2bbbdfa821e3f8a8d15c8c707812cd09881acb8bdca161"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-section_summary.json",
+      "bytes": 275026,
+      "sha256": "a7a0e287fbee5ba7eae872b4eff3f83a8dd8f2c3715b5b4d5caceb838d19215d"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-solution_evaluation.json",
+      "bytes": 187362,
+      "sha256": "bd3d0d6bad2360985c8b0594252d135e51c85767432d1e6fe279f6039db1f8e4"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-tilbudsstrategi.json",
+      "bytes": 278422,
+      "sha256": "c295db78714a39533d4b270d046942b6408987f2c033d15fd3365301f296e78c"
+    },
+    {
+      "path": "matrix-luna-speed-trial-fjord-drift-development-verdiargumentasjon.json",
+      "bytes": 275576,
+      "sha256": "f21a13f4ed6022440495986aca83613599af6f9c79929e9b256f75e0a686df17"
+    },
+    {
+      "path": "matrix-luna-speed-trial-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "bytes": 322291,
+      "sha256": "b2999a59ec1fba1096edcc8be7dd156d740cb1fd5a336f0245ef97178e80446b"
+    },
+    {
+      "path": "matrix-luna-speed-trial-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 327856,
+      "sha256": "0a972b71eb109353abf9e3535915773c3774621355a5aed2c1cfbf98f9db84df"
+    },
+    {
+      "path": "matrix-luna-speed-trial-kyst-data-holdout-losningsutkast.json",
+      "bytes": 308581,
+      "sha256": "ae1bbb22e730d5407eea6a59a01e08e428cc24d3b3acaac24ad283910307f20e"
+    },
+    {
+      "path": "matrix-luna-speed-trial-kyst-data-holdout-solution_evaluation.json",
+      "bytes": 344128,
+      "sha256": "cbf8d4b6fb081fe1297a94ff8b5034e2526300fe656f72c2b8d500bf63b656e8"
+    },
+    {
+      "path": "matrix-luna-speed-trial-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 374052,
+      "sha256": "df58859e32d123d236a7da76acc32321b79f0dc4ef9499cd49a0ba6db75115f3"
+    },
+    {
+      "path": "matrix-luna-speed-trial-sundvik-32-explicit-ids-solution_evaluation.json",
+      "bytes": 336669,
+      "sha256": "713bd6113e531c5bea7585cd274a2f86257f1a699ecdc6a03e854c275893ab60"
+    },
+    {
+      "path": "matrix-quality-evidence-v1-fjord-drift-development-solution_evaluation.json",
+      "bytes": 499798,
+      "sha256": "cc84ba5ee9dee78dc3ae7bf804387e49ef30304a82a7ff0ebeb5b0f8116d958d"
+    },
+    {
+      "path": "matrix-quality-evidence-v2-fjord-drift-development-solution_evaluation.json",
+      "bytes": 508197,
+      "sha256": "2344490ad22408a791dffecf9cb31066d4ae9706fd7590a7240aad5231e7e60c"
+    },
+    {
+      "path": "matrix-quality-evidence-v2-kyst-data-holdout-solution_evaluation.json",
+      "bytes": 513085,
+      "sha256": "f8ad8b72e48c56b5dc2ca9bd20db6da9ab3bb646463abed85a7d05e3dfddb08c"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-anbefalt_arkitektur.json",
+      "bytes": 621517,
+      "sha256": "e08468d116cd336aeedf9f0f46bf07266435b16c4e698e98c2ff9e744f294405"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "bytes": 605169,
+      "sha256": "c4955bc0bb2e83b6883f8c7d08e04895bc13a6bafc97aeff788b05198fa9b728"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-chat.json",
+      "bytes": 602222,
+      "sha256": "e8251b86ec759d9abfda96edd258f70e4e23dbc70402dfff191b90566d05772c"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-customer_analysis_v3.json",
+      "bytes": 562223,
+      "sha256": "e4933123edc58a8dcd5bdb4266febf566a88b758b38676e3963af5b0e0dfa726"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-customer_analysis.json",
+      "bytes": 569449,
+      "sha256": "756843f6bed8a75128aeffc824915503bc9d3975cb927699ea94caeea656e91c"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-executive_summary.json",
+      "bytes": 585252,
+      "sha256": "7416013072a066e88cc8c05f836b2c6bd2217aae1bc57346947ceb29721e3626"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 611764,
+      "sha256": "e822b4b55a7d04b5b001a63aeb85bee4189c107a3fa87ddfc7992ca864ba5b30"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-gjennomforing_og_risiko.json",
+      "bytes": 625682,
+      "sha256": "5985d06fccd2cdcb13636fb64711e9846f2ac743ef633577aa69f5caaf89fc56"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-high_level_design.json",
+      "bytes": 579287,
+      "sha256": "357ae2df9641eeb2397cf26663663aed735cf699b6ea4785f9fa486fd097d49f"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-losningsutkast.json",
+      "bytes": 604607,
+      "sha256": "154b2877babaafc55d321b5c8573673611a16b9b493dcc6ebbff72ec63a3c298"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_clarifications.json",
+      "bytes": 577583,
+      "sha256": "d641bbc4498158b02359128b1857862ff9ffeee1641b2810576fe802184875b1"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_design.json",
+      "bytes": 580106,
+      "sha256": "0bc360e91d52497b81a47af704870348285a2f5d9d7b934d0de2a932136c0b86"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_keywords.json",
+      "bytes": 586907,
+      "sha256": "39c22ff1c9fe2189b3a0429d8b34a9808b0bde714bfd464f6412b9846cd45d40"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_needs.json",
+      "bytes": 583689,
+      "sha256": "e5c3a197a23dc337ae87a6421c0f1c5b7727fc6a5c0ada150f2963f85411d935"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_risks.json",
+      "bytes": 582785,
+      "sha256": "6fc66258be34b4c669bc6812fa1f78767f55c639a0804851cf18df7ad4a8c3cc"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_services.json",
+      "bytes": 589150,
+      "sha256": "4c7261ebac3fb141ef9e1f84e3724ecfa839ffdc61351835b27efff2a03afd54"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_strategy.json",
+      "bytes": 575491,
+      "sha256": "cb0a4bb567f5b0a6647799ede95b9946338665e8818263e9756d4d406ebcf329"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_summary.json",
+      "bytes": 572967,
+      "sha256": "07ec0546d8fe71a3e36b72de2c0af598586bd6f3b63647caf4465179add6c68e"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-section_value.json",
+      "bytes": 590867,
+      "sha256": "e4e8d9a6fc700a40f028e920898cd2adecff7fb681d7254d2aa80116a27d9097"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-solution_evaluation.json",
+      "bytes": 610854,
+      "sha256": "7d6d0d69b50ebb72b77161e0fd1f0c3639e9fa958f1fae08391b6691215eda43"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-tilbudsstrategi.json",
+      "bytes": 616012,
+      "sha256": "ea98cf30490c388866923d5596ae2e96c90da9e908e2da40038086850745a024"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-fjord-drift-development-verdiargumentasjon.json",
+      "bytes": 617383,
+      "sha256": "b4ba018ab2be662aad7369b1a39f2650db3a92cf7ba50c7e8bb038b52f040cb3"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-anbefalt_arkitektur.json",
+      "bytes": 700263,
+      "sha256": "9cb5a46bc4b64e1285df1d1dc7b8562118be70f1801052a3747eb4f6a537ec1e"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "bytes": 680077,
+      "sha256": "0759988ffaf2992dc16a304aa02d9acf745840982301e84b35de2176c95ea102"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-chat.json",
+      "bytes": 676757,
+      "sha256": "06c2672e6f9fd3abb616cb7cefde8236766861732ae1d795380036cae609d8c1"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-customer_analysis_v3.json",
+      "bytes": 638122,
+      "sha256": "56a46d67cfadae5f7573ff3ab500797f607d7311c934760430633ee797d61f40"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-customer_analysis.json",
+      "bytes": 642818,
+      "sha256": "aab6c93456e7539c434267d5af40c36022355cd9289efe547fb71da0127cfbaf"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-executive_summary.json",
+      "bytes": 661228,
+      "sha256": "62560dcabba773d38d04bb52cef7e01c18b4e11dd7f42db58640dfb040d81265"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 690285,
+      "sha256": "60e0b467ff8cab5def5a2277df70987bc1fdf4f5d07fa73b728acc6c1db53b1b"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-gjennomforing_og_risiko.json",
+      "bytes": 703205,
+      "sha256": "f893718d11d84980d776a9d41c1b4ef3f827d19e1c595064997813cd7b47b4a8"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-high_level_design.json",
+      "bytes": 654504,
+      "sha256": "9c87c2ff3ed1af88c980af0117b1940d0611993119e0f1cd3d17291833b2cbfb"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-losningsutkast.json",
+      "bytes": 682864,
+      "sha256": "c40f65da9166d6d2f2e536f3d2a52098d73f0f5a07230ed3fe30a05e2ce39ae1"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_clarifications.json",
+      "bytes": 653644,
+      "sha256": "18c52235cf5649340b6db8e027e3466bb82f086d05a8f132670ec5233aa0d7bf"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_design.json",
+      "bytes": 656687,
+      "sha256": "c9cefadcccf81860514a14cc646b0bb46427ab3fa8262642c4f56d9ca9e12ae3"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_keywords.json",
+      "bytes": 663261,
+      "sha256": "480465aaeaac13f0415304a93be6367dc2ccc2832c34f0c1e7e3834be3d50b28"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_needs.json",
+      "bytes": 660352,
+      "sha256": "a736aeded4bc446b36e67edd032f84a1269a7fedf5b0cd19d3e5d1b057078f1e"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_risks.json",
+      "bytes": 658767,
+      "sha256": "207ff947765e769a174b7248d0fb9974ff3a250c2ffde45e838310392cd8fa8f"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_services.json",
+      "bytes": 665510,
+      "sha256": "09dd32300cdcde968579560dead115e7a559d88ca50f86b11f048b10dc0b5d3f"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_strategy.json",
+      "bytes": 651222,
+      "sha256": "51123b7b153ef6e78dcdc1b3eb93029574a410b7449210715b7e3c1a61bc19e8"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_summary.json",
+      "bytes": 648726,
+      "sha256": "160526199164e95eacfd87e74fec0d5cad2460f3c89fbcfd79fc7640f1cf5dde"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-section_value.json",
+      "bytes": 667135,
+      "sha256": "9cee25f05703a4dd9c42146e9354ed6f677ed5196a253f6d6df61d283707ab44"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-solution_evaluation.json",
+      "bytes": 684351,
+      "sha256": "034304a502eb810115c06edc9c91c5d4316eb0cac6b2c8bc7949cebf85ea3d90"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-tilbudsstrategi.json",
+      "bytes": 693297,
+      "sha256": "4074f4880b1ad52087fda2a35c8337d9e33f74a375dce29f7e787597025681c4"
+    },
+    {
+      "path": "matrix-quality-expanded-v1-kyst-data-holdout-verdiargumentasjon.json",
+      "bytes": 693492,
+      "sha256": "68f299a70c0a512334600ee52093f297561addd07c6362e0e465c72eb73dd167"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-fjord-drift-development-chat.json",
+      "bytes": 724014,
+      "sha256": "4fd42df7f371bdc4e040b31198e538446b1f8bed66e3aebbcf7ed985aadb54a8"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 730747,
+      "sha256": "32483fafc556dd2f3509a81709fec9d03e4bc4c127298acc25d55f9e5a00613b"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-fjord-drift-development-gjennomforing_og_risiko.json",
+      "bytes": 729268,
+      "sha256": "e2569111a4ab9b57bd318a3dc7ddd5bceb56d552c367ca17eb02788d14e812f5"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-fjord-drift-development-high_level_design.json",
+      "bytes": 709235,
+      "sha256": "cde18542da332ce4a3b5ffc4ff825c8343fd02e017f8f25e5354587d9b578586"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-fjord-drift-development-losningsutkast.json",
+      "bytes": 723326,
+      "sha256": "b62585cf83b0b070a8c831309f260159a10de877f7affdad6e354a9ea62aee23"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-fjord-drift-development-section_strategy.json",
+      "bytes": 720790,
+      "sha256": "32ccbe62ee1d8bfcded9a73c98215fb48ecad88369c2606bde4b30074e6dbd78"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-kyst-data-holdout-chat.json",
+      "bytes": 750591,
+      "sha256": "960f2d315c68abba04fe1b4263463f1bdf2076b8e92aef40e7d82d4eb875c724"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 758461,
+      "sha256": "105d7b4a9fbd7c7f2da8df7e05923257beba2d6de13ce2fde36d29d5c242a48c"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-kyst-data-holdout-gjennomforing_og_risiko.json",
+      "bytes": 757047,
+      "sha256": "8bd02caa01e5c41e0a39ea228f3c0433259a0752278a0cb4eec43a9897d6e731"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-kyst-data-holdout-high_level_design.json",
+      "bytes": 734452,
+      "sha256": "fc7bd5a37e3c96fc278fbec5c13bfd3f3c6c2b0b4b8821065041eb3dce0eaaa1"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-kyst-data-holdout-losningsutkast.json",
+      "bytes": 748845,
+      "sha256": "ec7a870cdee5d790c3a5e3b9b11a0af23e5c503b583451a5c515d98fc3a6350b"
+    },
+    {
+      "path": "matrix-quality-final-corrections-v1-kyst-data-holdout-section_strategy.json",
+      "bytes": 747158,
+      "sha256": "c241fdda7e4c408fc6e7d999c2a25d0fff08c2b7f9b40c818c8c95ba892ac4ff"
+    },
+    {
+      "path": "matrix-quality-requirement-prompt-v1-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 504539,
+      "sha256": "0a929e5828098dcaaca1074a6a0bbffaf755bf686931709b0c87c470df1cec46"
+    },
+    {
+      "path": "matrix-quality-requirement-prompt-v1-kyst-data-holdout-forbedret_kravsvar.json",
+      "bytes": 514053,
+      "sha256": "662cfd09062d424704e9fcae21e24c0deeb527c3785bb69aabb3d0c235ced9c6"
+    },
+    {
+      "path": "matrix-quality-requirement-review-v2-fjord-drift-development-forbedret_kravsvar.json",
+      "bytes": 520805,
+      "sha256": "bef0f88ea5e8e23ff603411096e04ae7eddffbe9612cae00e74f7c33820756fd"
+    },
+    {
+      "path": "matrix-small-batch-speed-sundvik-32-explicit-ids-forbedret_kravsvar.json",
+      "bytes": 476742,
+      "sha256": "d262f241ab6010bcdb72843e4966a563e515342a258a589ce786d313784bba1d"
+    },
+    {
+      "path": "matrix-speed-deduplicated-fjord-drift-development-bilag1_rekonstruksjon.json",
+      "bytes": 141380,
+      "sha256": "d752a2f4e6851da65c03b65b0f9350dff24ead05f43f987d5943a43cded6589e"
+    },
+    {
+      "path": "matrix-speed-deduplicated-kyst-data-holdout-bilag1_rekonstruksjon.json",
+      "bytes": 143393,
+      "sha256": "342205c47cecb020315a03ae1e6077d425e96522f21b7a190c40a4019954e838"
+    },
+    {
+      "path": "matrix-terra-speed-trial-fjord-drift-development-customer_analysis.json",
+      "bytes": 200799,
+      "sha256": "99f41423a9de6bf28d420e078db59e542fa64bf4faf523f4f065f8d86fa5b25b"
+    },
+    {
+      "path": "matrix-terra-speed-trial-fjord-drift-development-high_level_design.json",
+      "bytes": 184168,
+      "sha256": "29e90013490bb6572cfeda8db6055db8a857459af5e5453e21cf3880e62ce784"
+    },
+    {
+      "path": "read-fixtures.json",
+      "bytes": 881,
+      "sha256": "0750001e5fe1055b1aa56edfd454ceda8c1b308c11782052d335e735f5c8d6c6"
+    },
+    {
+      "path": "section-preservation-owner-correction-v1.json",
+      "bytes": 12258,
+      "sha256": "1872e0feafbd0ca53ed7b3a93a5d71e6e99f2f4f821ab39a8d6ff4b3c77d02a2"
+    },
+    {
+      "path": "snapshot-after.json",
+      "bytes": 18548,
+      "sha256": "62b5e7db68268397729ffeb34a08527a9ee80c2001f4eeb7ab4e60a56373ca3c"
+    },
+    {
+      "path": "snapshot-current-fixed-comparison.json",
+      "bytes": 18539,
+      "sha256": "d71f25198671b27f1c9953906d6dd3ff311721f8bf06f6802533a040fdef2755"
+    },
+    {
+      "path": "snapshot-empty-comparison.json",
+      "bytes": 14419,
+      "sha256": "50a035af9aafb697d198ff0b4d25d0728e621f774c307b499790d8d70b187657"
+    },
+    {
+      "path": "snapshot-experiment-traced.json",
+      "bytes": 18383,
+      "sha256": "1ba53dc368240725e5ab785d075efd648e5c6937324b2ec57b66b9f06c049fa2"
+    },
+    {
+      "path": "snapshot-experiment.json",
+      "bytes": 9312,
+      "sha256": "a138e901aacf48cb71926b130723e10aee48ff81282a22cc21848143460aa9af"
+    },
+    {
+      "path": "snapshot-large-artifacts-all.json",
+      "bytes": 18551,
+      "sha256": "fc96e40ac8c74b9ac86bf3b8eca06e60b342426de7f71fa600a0ad7bce684d67"
+    },
+    {
+      "path": "snapshot-large-artifacts-none.json",
+      "bytes": 18397,
+      "sha256": "61917e23db28c7ed2f8760670ad486625a15f0a8622873b9655328f28c9355b2"
+    },
+    {
+      "path": "snapshot-large-artifacts-some.json",
+      "bytes": 18538,
+      "sha256": "60067855a8c0982ac355e9e5df322cb401118490b026ddd12a862b0eafdf4138"
+    },
+    {
+      "path": "snapshot-stale-comparison.json",
+      "bytes": 15507,
+      "sha256": "eb927124eb69c8aa6d200510c7746ce1d8789542f466b7fc27bbd1b3257c87fd"
+    },
+    {
+      "path": "snapshot-stale-fixed-comparison.json",
+      "bytes": 15524,
+      "sha256": "c371411487069ef5166969eaef8cf8583d035a3259603ab3acf82cc83b4a18d1"
+    },
+    {
+      "path": "verification/anbud-final-build.log",
+      "bytes": 5097,
+      "sha256": "363e4a5b293f11839eb0502e81847b5c127147081c809768f033aa9293371951"
+    },
+    {
+      "path": "verification/anbud-final-full-tests.log",
+      "bytes": 216196,
+      "sha256": "6d1184b896c3741213cc6011deb8cdb5dada288c6446f7d653a7d32fec27fe1f"
+    },
+    {
+      "path": "verification/anbud-final-harness-tests.log",
+      "bytes": 2187,
+      "sha256": "726eb561a148c5ffdf3234ccada5700004c29e28c85dfb4d082f60b2b1a060d3"
+    },
+    {
+      "path": "verification/anbud-final-lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/anbud-final-mobile-build.log",
+      "bytes": 5097,
+      "sha256": "6ca4aa755f51ec3d4635d2acc2ea8862658b4922dfc2742da335175c7f433239"
+    },
+    {
+      "path": "verification/anbud-final-mobile-lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/anbud-final-owner-fixes-tests.log",
+      "bytes": 775,
+      "sha256": "05a8e891c80b5d05572ed99d47d1ce6c25e2fef3a2265dfdb7e0b31b4f9394bc"
+    },
+    {
+      "path": "verification/anbud-final-secrets-scan.log",
+      "bytes": 106,
+      "sha256": "0f1a14836531b5a336264a40103097ba1edfc8f1f952a23ead341fe885f36416"
+    },
+    {
+      "path": "verification/anbud-foundation-markdown-before.log",
+      "bytes": 2372,
+      "sha256": "54d98c0ba9509f0763d0ef46bf60d70282233c7c2ae816a78871178cc2dc6721"
+    },
+    {
+      "path": "verification/anbud-review-metadata-expanded-after.log",
+      "bytes": 569,
+      "sha256": "f0e514a517ef3246e0c890b386eec57a0bb76cfe06a29d208f8f6ccf7553f7c8"
+    },
+    {
+      "path": "verification/anbud-review-metadata-expanded-before.log",
+      "bytes": 1233,
+      "sha256": "aee32b20047cb0ad862031f1bbd0c2815e715c34fb421b43c67f29e05d3492b5"
+    },
+    {
+      "path": "verification/anbud-section-control-marker-before.log",
+      "bytes": 956,
+      "sha256": "7a4b676f4b464f011182baa79f687f4ab667eddf2804fe49befb7ae94f3457c3"
+    },
+    {
+      "path": "verification/anbud-section-isolation-before.log",
+      "bytes": 3693,
+      "sha256": "3bc54717a85686db9a28f5b149728a5557c6e54395655a29ab2ed4325717fc3f"
+    },
+    {
+      "path": "verification/anbud-section-old-content-after.log",
+      "bytes": 341,
+      "sha256": "0fcd4226a85c6bd69eb9c2eb40dd510f89c63e4a79c73c7c302257c31f89cb07"
+    },
+    {
+      "path": "verification/anbud-section-old-content-before.log",
+      "bytes": 1766,
+      "sha256": "5b34ed3f34c7c2ad3d0028ae2d8ef6af4a487cd4c1fe48ec8e8af3745e4d456e"
+    },
+    {
+      "path": "verification/closing-boundaries.log",
+      "bytes": 283,
+      "sha256": "769bd9def6059e772128ac08853456d60702bece0f0c2ce65fdbb5ccde02e7cd"
+    },
+    {
+      "path": "verification/closing-harness-tests.log",
+      "bytes": 2182,
+      "sha256": "765dd2a79ea1bff107dcefffaad5271b03efccb01f8c295f6881488658b4a389"
+    },
+    {
+      "path": "verification/closing-job-schema.log",
+      "bytes": 35,
+      "sha256": "ca38a6389adb7d01bddae6d6fe4a395817578fe2e1f305274474ae9477ff0e75"
+    },
+    {
+      "path": "verification/closing-release.log",
+      "bytes": 41,
+      "sha256": "0a52fbe48fe2f45e217e80398de3799ee7840d0d5ca429eed663acfaac6a537b"
+    },
+    {
+      "path": "verification/closing-secrets-scan.log",
+      "bytes": 106,
+      "sha256": "0f1a14836531b5a336264a40103097ba1edfc8f1f952a23ead341fe885f36416"
+    },
+    {
+      "path": "verification/docling-amd64/checks.json",
+      "bytes": 1547,
+      "sha256": "9886947176841d4ad5a80e787fcf087af9b6e1c4d7217f402902927020ad95d6"
+    },
+    {
+      "path": "verification/docling-amd64/source.json",
+      "bytes": 37053,
+      "sha256": "40bcd043a3fdb0288dbb809f70f0784c1307ff7628afdc8d3f9c7c12096af9a4"
+    },
+    {
+      "path": "verification/docling-amd64/source.md",
+      "bytes": 3866,
+      "sha256": "9ca699f7d385b6a23039c111623aea06a30dc863059a75ff1763131a1c53b2e9"
+    },
+    {
+      "path": "verification/docling-amd64/stderr.log",
+      "bytes": 315,
+      "sha256": "38c29cf6022a38ee2082324213d820cae891be6635c02fc11646951b2453672d"
+    },
+    {
+      "path": "verification/docling-amd64/stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verification/final-frozen-source-revisions.json",
+      "bytes": 749,
+      "sha256": "bed4829c9324bab3b22fc3e81f3ebc5908ae7c498c7fd53e497046205f760157"
+    },
+    {
+      "path": "verification/final-readiness.json",
+      "bytes": 2456,
+      "sha256": "4392a74f08512c136d0dde55c5276a4ffd98d0ec628c94a1c5ea6de74eb6e359"
+    },
+    {
+      "path": "verification/final-sse.json",
+      "bytes": 560,
+      "sha256": "f0ad6a0e4b57e466abedb9a4f0c99ced5a474f5f048a2dc6473b63b276decd8a"
+    },
+    {
+      "path": "verification/final-sse.log",
+      "bytes": 560,
+      "sha256": "f0ad6a0e4b57e466abedb9a4f0c99ced5a474f5f048a2dc6473b63b276decd8a"
+    },
+    {
+      "path": "verification/final-staged-harness.log",
+      "bytes": 2182,
+      "sha256": "b460a2522fba549ce37d380d84ea11d7ac215200ce0d3217844a168e700567ed"
+    },
+    {
+      "path": "verification/final-staged-secrets.log",
+      "bytes": 106,
+      "sha256": "0f1a14836531b5a336264a40103097ba1edfc8f1f952a23ead341fe885f36416"
+    },
+    {
+      "path": "verification/populated-service-http-isolated.log",
+      "bytes": 792,
+      "sha256": "70978122a9ecbd9f6336957f4d6614650a860a35f82f41db58be84c15f901368"
+    },
+    {
+      "path": "verification/populated-service-http-server-1788856405611.log",
+      "bytes": 221,
+      "sha256": "2b157e9f473b2abad021aed6c3ffcea31b2ca12d749be8ceb1060d09deeed6c2"
+    },
+    {
+      "path": "verification/populated-service-http-server.log",
+      "bytes": 222,
+      "sha256": "7001de20bc0356a54d0ac74a897a75ff73f4aa6c1cc29fa22a8c73a2d05bbdc8"
+    },
+    {
+      "path": "verification/populated-service-http-shared-cache-failed.log",
+      "bytes": 619,
+      "sha256": "da6b06f9c380a3776964853844ba7136efe804a82532c60a0822ac5d12222e77"
+    },
+    {
+      "path": "verification/populated-service-http.json",
+      "bytes": 5494,
+      "sha256": "58844c4559df2bf395379439125584a6bc7953caa7a62cd26a5ea42ad3473a33"
+    },
+    {
+      "path": "verification/populated-service-owner.json",
+      "bytes": 4771,
+      "sha256": "278b95e8bfb1e65eb9113006f7e77b4ffe855ed2fbae51870c511e74c477e26e"
+    },
+    {
+      "path": "verification/populated-service-owner.log",
+      "bytes": 792,
+      "sha256": "c5f31015b005b12bf957dc0b5de54cfecc3e65c32cb1f504308583eea368c38f"
+    },
+    {
+      "path": "verification/runner-docling-amd64-build-record.json",
+      "bytes": 2275,
+      "sha256": "8835260275020bd6f5414caf8378c201a1a268ea86a8b03c25e8962fc9d5f0bc"
+    },
+    {
+      "path": "verification/runner-docling-amd64-conversion.log",
+      "bytes": 1547,
+      "sha256": "9886947176841d4ad5a80e787fcf087af9b6e1c4d7217f402902927020ad95d6"
+    },
+    {
+      "path": "verification/runner-docling-amd64-smoke.log",
+      "bytes": 58244,
+      "sha256": "29d0996d7601b2101570a0fffa2fa2621f5fff4981e9cf2f22890ad2f6cec58c"
+    },
+    {
+      "path": "verification/runner-docling-arm64-smoke.log",
+      "bytes": 58232,
+      "sha256": "e0dd7083070ad8f9a921d8324125d00f0ac0e8e38fca83ebc6b11f783749e466"
+    },
+    {
+      "path": "verification/runner-docling-build-record.json",
+      "bytes": 2236,
+      "sha256": "cb7206c8f2764c52f96252228c440c24908a5cab0aa9b12a42787e45c4b4caba"
+    },
+    {
+      "path": "verification/runner-docling-credential-helper-interrupted.log",
+      "bytes": 537,
+      "sha256": "0e97a02eedfd3fc6c204f2b7910991b473a6a39ad19c3360e08a6538aa9fdd22"
+    },
+    {
+      "path": "write-fixtures.json",
+      "bytes": 295,
+      "sha256": "9c3a607256463cfb9715b2da1e13761f525c2b6acc1eb4a29819d3d5ca4c3097"
+    }
+  ]
+}
