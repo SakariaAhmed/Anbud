@@ -28,6 +28,8 @@ import {
   DOCUMENT_ANALYSIS_MODEL,
   EVALUATION_REASONING_EFFORT,
   FAST_MODEL,
+  requirementResponseBatchModel,
+  requirementResponseRepairModel,
   FAST_REASONING_EFFORT,
 } from "@/lib/server/ai/model-config";
 import { extractExactRetrievalTerms } from "@/lib/server/ai/retrieval-query";
@@ -403,7 +405,7 @@ const CHUNK_CONCURRENCY = 3;
 const SINGLE_BATCH_REQUIREMENT_RESPONSE_MAX = 18;
 const REQUIREMENT_RESPONSE_BATCH_SIZE = parsePositiveIntegerEnv(
   "REQUIREMENT_RESPONSE_BATCH_SIZE",
-  24,
+  12,
 );
 const LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE = parsePositiveIntegerEnv(
   "LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE",
@@ -9459,15 +9461,6 @@ function shouldUseRequirementLedgerGeneration(input: {
   );
 }
 
-function requirementResponseBatchModel(model?: string) {
-  const normalized = model?.trim();
-  if (!normalized || /(?:mini|nano)$/i.test(normalized)) {
-    return ANALYSIS_MODEL;
-  }
-
-  return normalized;
-}
-
 function requirementCoverageBatchModel(model?: string) {
   const normalized = model?.trim();
   if (!normalized || /(?:mini|nano)$/i.test(normalized)) {
@@ -10081,7 +10074,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
         strictRow,
       }),
       temperature: 0.1,
-      model: requirementResponseBatchModel(input.model),
+      model: requirementResponseRepairModel(input.model),
       reasoningEffort: ANALYSIS_REASONING_EFFORT,
       timeoutMs:
         input.timeoutMs ?? REQUIREMENT_RESPONSE_STRICT_HANDOFF_TIMEOUT_MS,
@@ -10572,7 +10565,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
                 .filter(Boolean)
                 .join("\n\n"),
               temperature: 0.1,
-              model: requirementResponseBatchModel(input.model),
+              model: requirementResponseRepairModel(input.model),
               reasoningEffort: ANALYSIS_REASONING_EFFORT,
               timeoutMs: REQUIREMENT_RESPONSE_HANDOFF_TIMEOUT_MS,
               maxRetries: 1,
@@ -19909,7 +19902,7 @@ async function generateRequirementResponseFromLedger(input: {
   const responseLedger = sortRequirementLedgerInDocumentOrder(input.ledger);
   const chunks = chunkRequirements(responseLedger);
   const responseSystemPrompt = requirementBatchSystemPrompt();
-  const responseModel = requirementResponseBatchModel(input.model);
+  const responseModel = requirementResponseBatchModel(input.model, chunks.length > 1);
   const responseSharedPromptPrefix = [
     "Besvar kravene i JSON. Ikke legg til, fjern eller slå sammen krav.",
     input.baseContext,
