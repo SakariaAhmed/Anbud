@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { accountedCostUpperBound, openBudgetLedger, prepareRequest } from "./budget.mjs";
@@ -22,6 +22,35 @@ test("budget reserves concurrent calls durably and never refunds failures or ret
     assert.throws(() => ledger.reserve({ reservedUsd: 0.000001 }), /exhausted/);
     for (const value of [NaN, Infinity, -1, 0]) assert.throws(() => ledger.reserve({ reservedUsd: value }));
   } finally { ledger?.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("short Terra and Luna calls use maximum short cache-write rates with the full margin", () => {
+  for (const [model, inputRate, outputRate, longInput, longOutput] of [["gpt-5.6-terra", 2.5, 12, 5, 18], ["gpt-5.6-luna", 0.25, 1.2, 0.5, 1.8]]) {
+    const historical = { model, priceTier: "maximum", status: 200, reservedUsd: 2, inputTokensUpperBound: 24000, outputTokensLimit: 16000, usage: { prompt_tokens: 10000, completion_tokens: 8000, total_tokens: 18000, prompt_tokens_details: { cached_tokens: 10000 } } };
+    assert.equal(accountedCostUpperBound(historical), Math.ceil((10000 * inputRate + 8000 * outputRate) * 1.1) / 1e6);
+    assert.equal(accountedCostUpperBound({ ...historical, priceTier: undefined }), accountedCostUpperBound(historical), "Early rows still have a complete byte-based token bound before priceTier was added.");
+    for (const upper of [240000, 256000, 300000]) assert.equal(accountedCostUpperBound({ ...historical, inputTokensUpperBound: upper }), Math.ceil((10000 * longInput + 8000 * longOutput) * 1.1) / 1e6);
+    for (const patch of [{ status: "uncertain" }, { usage: undefined }, { inputTokensUpperBound: NaN }, { outputTokensLimit: 7000 }]) assert.equal(accountedCostUpperBound({ ...historical, ...patch }), historical.reservedUsd);
+    const request = prepareRequest("/v1/responses", { model, input: "Kort lokal prøve" });
+    assert.equal(request.priceTier, "bounded-short");
+    assert.equal(request.reservedUsd, Math.ceil((request.inputTokens * inputRate + request.outputTokens * outputRate) * 1.1) / 1e6);
+  }
+});
+
+test("pricing reconciliation preserves every historical row and its original reservation", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-budget-policy-"));
+  const file = path.join(directory, "ledger.json");
+  const historical = { id: "old", model: "gpt-5.6-terra", priceTier: "maximum", status: 200, reservedUsd: 1, accountedCostUpperBoundUsd: 0.253, inputTokensUpperBound: 20000, outputTokensLimit: 8000, usage: { prompt_tokens: 10000, completion_tokens: 8000, total_tokens: 18000 } };
+  writeFileSync(file, JSON.stringify({ version: 1, limitUsd: 1, accountingPolicy: "verified-usage-or-full-reservation-v2", requests: [historical] }));
+  let ledger;
+  try {
+    ledger = openBudgetLedger(file, 1);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).requests, [historical]);
+    assert.equal(ledger.snapshot().accountedUpperBoundUsd, accountedCostUpperBound(historical));
+    ledger.reserve({ reservedUsd: 0.86 });
+    assert.throws(() => ledger.reserve({ reservedUsd: 0.02 }), /exhausted/);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).requests[0], historical);
+  } finally { ledger?.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("text calls have conservative input bounds and capped reasoning-inclusive output", () => {

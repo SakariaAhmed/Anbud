@@ -11,11 +11,16 @@ const rates = {
   "gpt-5.6-luna": [0.5, 1.8],
   "text-embedding-3-small": [0.02, 0],
 };
+// Rechecked against pricing plus both model pages on 2026-09-08. GPT-5.6
+// long-context pricing begins above 272K input tokens. Keep the stricter 256K
+// input-upper-bound + maximum-output guard and charge all input as cache writes.
+const shortRates = { "gpt-5.4": [2.5, 15], "gpt-5.6-terra": [2.5, 12], "gpt-5.6-luna": [0.25, 1.2] };
+export const ACCOUNTING_POLICY = "verified-bounded-short-usage-or-full-reservation-v3";
 
 // Reconcile only verifiable text-token usage. Unknown, malformed, failed
 // transport and in-flight requests retain their complete preflight reservation.
 // Keep the historical reservation on disk for every request, including retries.
-export function accountedCostUpperBound(row) {
+function accountedForPolicy(row, includeGpt56Short) {
   const fallback = row.reservedUsd;
   if (row.status !== 200 || !row.usage || !rates[row.model]) return fallback;
   const embedding = row.model.startsWith("text-embedding-");
@@ -25,14 +30,18 @@ export function accountedCostUpperBound(row) {
   if (!Number.isSafeInteger(row.inputTokensUpperBound) || !Number.isSafeInteger(row.outputTokensLimit)) return fallback;
   if (row.usage.total_tokens !== undefined && row.usage.total_tokens !== input + output) return fallback;
   const [maximumInput, maximumOutput] = rates[row.model];
-  const short = row.priceTier === "bounded-short" && row.model === "gpt-5.4" && row.inputTokensUpperBound + row.outputTokensLimit < 256_000;
-  const inputRate = short ? 2.5 : maximumInput;
-  const outputRate = short ? 15 : maximumOutput;
+  const eligibleShort = row.model === "gpt-5.4" && row.priceTier === "bounded-short" || includeGpt56Short && ["gpt-5.6-terra", "gpt-5.6-luna"].includes(row.model) && [undefined, "maximum", "bounded-short"].includes(row.priceTier);
+  const short = eligibleShort && row.inputTokensUpperBound + row.outputTokensLimit < 256_000;
+  const [inputRate, outputRate] = short ? shortRates[row.model] : [maximumInput, maximumOutput];
   // Count cached tokens as full-price input and reasoning as output. The same
   // 10% margin applies. A inconsistent reconciliation cannot release budget.
   const bound = Math.ceil((input * inputRate + output * outputRate) * 1.1) / 1e6;
   return bound >= 0 && bound <= fallback ? bound : fallback;
 }
+// V2 remains callable solely to audit the explicit policy transition. Neither
+// calculation modifies historical rows or their recorded priceTier/reservedUsd.
+export const accountedCostUpperBoundV2 = (row) => accountedForPolicy(row, false);
+export const accountedCostUpperBound = (row) => accountedForPolicy(row, true);
 
 export function prepareRequest(endpoint, original, outputLimit = 8000) {
   if (!["/v1/chat/completions", "/v1/responses", "/v1/embeddings"].includes(endpoint)) {
@@ -78,10 +87,10 @@ export function prepareRequest(endpoint, original, outputLimit = 8000) {
   // serialization plus 4096 tokens covers schema and message framing overhead.
   const inputTokens = Buffer.byteLength(JSON.stringify(request), "utf8") + 4096;
   // The UTF-8 upper bound plus all output is below the documented 272K
-  // threshold, so GPT-5.4 cannot enter the more expensive context tier.
+  // threshold, so eligible models cannot enter the more expensive context tier.
   // Keep 16K headroom beneath that threshold and never revise old reservations.
-  const priceTier = request.model === "gpt-5.4" && inputTokens + outputTokens < 256_000 ? "bounded-short" : "maximum";
-  const [inputRate, outputRate] = priceTier === "bounded-short" ? [2.5, 15] : rates[request.model];
+  const priceTier = shortRates[request.model] && inputTokens + outputTokens < 256_000 ? "bounded-short" : "maximum";
+  const [inputRate, outputRate] = priceTier === "bounded-short" ? shortRates[request.model] : rates[request.model];
   const reservedUsd = Math.ceil((inputTokens * inputRate + outputTokens * outputRate) * 1.1) / 1e6;
   return { request, inputTokens, outputTokens, reservedUsd, priceTier, inputRate, outputRate, requestSha256: createHash("sha256").update(JSON.stringify(request)).digest("hex"), inputSha256: createHash("sha256").update(JSON.stringify({ content, instructions: request.instructions, response_format: request.response_format, text: request.text })).digest("hex") };
 }
@@ -99,8 +108,9 @@ export function openBudgetLedger(file, limitUsd = 14) {
     if (ledger.version !== 1 || ledger.limitUsd !== limitUsd || !Array.isArray(ledger.requests)) throw new Error("Invalid existing ledger.");
     if (ledger.requests.some((r) => !(r.reservedUsd > 0) || !Number.isFinite(r.reservedUsd))) throw new Error("Invalid reservation.");
   } catch (error) { unlinkSync(lock); throw error; }
-  ledger.accountingPolicy = "verified-usage-or-full-reservation-v2";
-  for (const row of ledger.requests) row.accountedCostUpperBoundUsd = accountedCostUpperBound(row);
+  ledger.accountingPolicy = ACCOUNTING_POLICY;
+  // Keep old recorded derived costs as historical data. The live aggregate is
+  // always recomputed under the named policy, never trusted from saved totals.
   function save() {
     const temporary = `${file}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(ledger, null, 2)}\n`, { mode: 0o600, flush: true });
@@ -115,7 +125,7 @@ export function openBudgetLedger(file, limitUsd = 14) {
   return {
     reserve({ endpoint, model, inputTokens, outputTokens, reservedUsd, phase, requestSha256, inputSha256, priceTier, inputRate, outputRate }) {
       if (!(reservedUsd > 0) || !Number.isFinite(reservedUsd) || accountedTotal() + reservedUsd > limitUsd) throw new Error("Evaluation budget exhausted.");
-      const row = { id: randomUUID(), at: new Date().toISOString(), phase, endpoint, model, requestSha256, inputSha256, priceTier, inputRatePerMillion: inputRate, outputRatePerMillion: outputRate, inputTokensUpperBound: inputTokens, outputTokensLimit: outputTokens, reservedUsd, status: "reserved" };
+      const row = { id: randomUUID(), at: new Date().toISOString(), accountingPolicy: ACCOUNTING_POLICY, phase, endpoint, model, requestSha256, inputSha256, priceTier, inputRatePerMillion: inputRate, outputRatePerMillion: outputRate, inputTokensUpperBound: inputTokens, outputTokensLimit: outputTokens, reservedUsd, status: "reserved" };
       ledger.requests.push(row);
       save();
       return row.id;
@@ -127,7 +137,7 @@ export function openBudgetLedger(file, limitUsd = 14) {
       row.accountedCostUpperBoundUsd = accountedCostUpperBound(row);
       save();
     },
-    snapshot() { return structuredClone({ ...ledger, accountingPolicy: "verified-usage-or-full-reservation-v2", reservedUsd: total(), accountedUpperBoundUsd: accountedTotal(), remainingUsd: limitUsd - accountedTotal() }); },
+    snapshot() { return structuredClone({ ...ledger, accountingPolicy: ACCOUNTING_POLICY, reservedUsd: total(), accountedUpperBoundUsd: accountedTotal(), remainingUsd: limitUsd - accountedTotal() }); },
     close() { unlinkSync(lock); },
   };
 }
