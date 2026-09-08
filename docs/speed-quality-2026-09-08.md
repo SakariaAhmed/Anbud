@@ -2,7 +2,7 @@
 
 **Målet om betydelig raskere funksjoner og bedre genereringer overalt er ikke
 oppfylt. Ingen produksjonsutrulling er utført.** Siste applikasjonscommit er
-`b65a512f` (siste AI-endring: `07b51e3e`). Store lokale forbedringer i lesing, lagring og klargjøring er målt,
+`29fb7689` (siste AI-endring: `07b51e3e`). Store lokale forbedringer i lesing, lagring og klargjøring er målt,
 men flere modellgenereringer er tregere og kvaliteten er ikke godkjent overalt.
 
 Brukerens ønskede rekkefølge var hastighet → kvalitet → samlet regresjonskontroll.
@@ -168,6 +168,38 @@ med alle fire SQL-testvariabler mot disponibel PostgreSQL. Lint og nytt
 produksjonsbygg bestod. Ingen modellkall, modellendring, migrasjon eller
 produksjonsutrulling ble gjort i denne runden.
 
+## Begrenset parallell filsletting
+
+Commit `29fb7689` lar den eksisterende Azure-adapteren slette høyst fire filer
+samtidig. Tidligere ble alle slettinger utført sekvensielt. Alle bøtter og stier
+valideres og duplikater fjernes før første sletting. `deleteSnapshots: include`
+og idempotent `deleteIfExists` er bevart. Ved første observerte feil starter ikke
+flere køelementer; alle allerede påbegynte slettinger må avslutte før feilen
+returneres. Et separat feilflagg bevarer også avvisning med `undefined`, `null`
+eller `false`. Den eksisterende lagring-før-database-rekkefølgen er uendret.
+
+Førmåling ble tatt før rettingen. **Dette er syntetisk nettverkslatens, ikke
+målt Azure- eller komplett prosjektsletting:** faktisk adapter med injisert
+SDK-klient ventet 10 ms per fil, og 30 par målte køhåndteringen.
+
+| Filer | Før → etter, median ms | Maksimalt aktive slettinger |
+| --- | --- | --- |
+| 1 | 12,067 → 12,067 | 1 → 1 |
+| 24 | 282,835 → 71,473 | 1 → 4 |
+
+Filsett og snapshots-argument var identiske, og ingen kall var aktive ved
+vellykket retur. Ingen ekte Azure-kall, AI-kall eller databaseendringer inngikk.
+Det er fortsatt et gap å måle faktisk Azure og hele sletteløpet med audit.
+
+Seks nye regresjoner dekker overlapp/grense, snapshots/deduplisering,
+forhåndsvalidering, tom input og avvisning med fire forskjellige feilverdier.
+De fem samtidighetskontrollene feilet på sekvensiell baseline. Testene bruker
+også faktisk `runStorageFirstDeletion`: database-callback kommer først etter
+ferdig lagring og aldri etter lagringsfeil. Etter rettingen bestod **909 frontend-
+og 125 rottester**, null feil/hopp, med lokale SQL-tester; lint og bygg bestod.
+En ekstra eksplisitt DB-nekt-assertion ble deretter kontrollert med de fokuserte
+lagringstestene. Målefilenes opprinnelige ownerhasher er bevart.
+
 ## Funksjons- og bevismatrise
 
 Alle funksjoner er fortsatt i omfang. Modellresultater uten eksplisitt V5-merke
@@ -239,7 +271,7 @@ det er ikke nye providersvar. Små utvalg og dommerfeil hindrer samlet godkjenni
 
 ## Regresjon og visuell kontroll
 
-Etter siste appendring bestod **903 frontendtester + 125 rottester**, null feil
+Etter siste appendring bestod **909 frontendtester + 125 rottester**, null feil
 og null hopp, med alle fire SQL-testdatabaser på disponibel PostgreSQL. Lint og
 produksjonsbygg bestod. Senere harnessendringer har **16 beståtte nettverksfrie tester**. Jobbskjema-,
 workflowgrense- og releasekontroll, syntakskontroll av alle harnessfiler,

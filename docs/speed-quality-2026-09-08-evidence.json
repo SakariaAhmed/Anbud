@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-08T10:44:45.877Z",
-  "repositoryCommit": "b65a512fd5f5642e22d8ebde4a67dfbe1911bd39",
-  "applicationCommit": "b65a512fd5f5642e22d8ebde4a67dfbe1911bd39",
+  "generatedAt": "2026-09-08T10:51:29.407Z",
+  "repositoryCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
+  "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
     "limitUsd": 14,
@@ -39,6 +39,13 @@
     "httpBaseline": "3779e6f2",
     "methodClarification": "verification/project-schema-v7/method-clarification.json",
     "scope": "Metadata reads only; AI-generation evidence keeps its actual earlier code versions. Owner cache is bypassed on both sides. The 120 HTTP pairs verify the new build; the earlier 780-pair series predates this metadata fix."
+  },
+  "subsequentStorageImprovement": {
+    "applicationCommit": "29fb7689",
+    "pairedReport": "storage-delete-paired.json",
+    "beforeReport": "storage-delete-before.json",
+    "verification": "verification/storage-delete-v8/scope.json",
+    "scope": "Actual storage adapter with an injected in-memory SDK and simulated 10 ms per delete. Thirty pairs each for 1/24 files; not measured Azure or complete project-deletion latency. No paid calls."
   },
   "generationComparisons": [
     {
@@ -3111,6 +3118,21 @@
       "sha256": "c371411487069ef5166969eaef8cf8583d035a3259603ab3acf82cc83b4a18d1"
     },
     {
+      "path": "storage-delete-before-owner.ts",
+      "bytes": 4681,
+      "sha256": "510c857a7048b85205ff776a930facbadfb46e6b2a7e6916e792c75af701f71a"
+    },
+    {
+      "path": "storage-delete-before.json",
+      "bytes": 7472,
+      "sha256": "9e4a302b939218c43d12eb46b6dbd1523a2e33440648b6cac550d449035d21ee"
+    },
+    {
+      "path": "storage-delete-paired.json",
+      "bytes": 14153,
+      "sha256": "0d9e4901b494c6bc75233b8414c482fde9657fc2673d0e83f356dfd6ae79093f"
+    },
+    {
       "path": "verification/anbud-final-build.log",
       "bytes": 5097,
       "sha256": "363e4a5b293f11839eb0502e81847b5c127147081c809768f033aa9293371951"
@@ -3894,6 +3916,61 @@
       "path": "verification/service-browser-verified/checks.json",
       "bytes": 895,
       "sha256": "10dc957878a996d12c3bf97ab206cf2f59a867fd24ece72e5c5165eb37b9b270"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-before.log",
+      "bytes": 193,
+      "sha256": "63871823edde69fb7c483d301089ed4c8098a9789709017bf2cc28725e657c7b"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-build.log",
+      "bytes": 5098,
+      "sha256": "6de0b8c0bc3764d38cdb5036df8276b93ee198195354f0ad12fd43f9f20234d4"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-final-focused-tests.log",
+      "bytes": 3391,
+      "sha256": "47560e0aaa7dc97ec408e0f9851f3ff5b384823ddd91c38a27eb1ff0f6ab5107"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-full-tests.log",
+      "bytes": 219993,
+      "sha256": "59e7b3099dfec8c07222bcebe24b5e4ee975597dd47244e0053d1601ff645b2b"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-paired.log",
+      "bytes": 352,
+      "sha256": "4e6691678d2312bf6b66c3fe18c916d4f8f782323411051f9184ad53b3a47b3d"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-production.log",
+      "bytes": 143,
+      "sha256": "bfc2ce0e63b25ebec8b9844aaa40d602391a26ecb8d7e021d68b2498143609dd"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-secrets.log",
+      "bytes": 106,
+      "sha256": "0f1a14836531b5a336264a40103097ba1edfc8f1f952a23ead341fe885f36416"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-tests-after.log",
+      "bytes": 2681,
+      "sha256": "932339c428c282d93d5e3664a5690174718481b2aff2f0ee49f32edd9637cbb1"
+    },
+    {
+      "path": "verification/storage-delete-v8/anbud-storage-delete-tests-before.log",
+      "bytes": 6451,
+      "sha256": "54978c9a0215998d0ea47ff05559c100e3547e729861b89764041eee2f2c2264"
+    },
+    {
+      "path": "verification/storage-delete-v8/scope.json",
+      "bytes": 648,
+      "sha256": "8ff2ad6944b43ad08cde93348ad629a15264419b886065273240bcc88fd82842"
     },
     {
       "path": "write-fixtures-plaintext-v3.json",

@@ -45,6 +45,12 @@ bruker standard. Ingen av disse lokale proxyvalgene endrer applikasjonens tier.
 
 ## Verktøy og bevisgrenser
 
+- `storage-delete-benchmark --before-only` fryser adapter fra `07d40e7f` og
+  måler før appendring. Uten flagget måles 30 før/etter-par for én og 24 filer.
+  SDK-klienten er injisert og venter kunstig 10 ms per sletting. Dette viser
+  adapterens køhåndtering, ikke faktisk Azure-/prosjektslettingslatens. Ingen
+  Azure-nettverk, database eller AI brukes. Feil/drain/DB-nekt testes separat.
+
 - `project-schema-benchmark --before-only` bevarer en førmåling med owner fra
   `820bb84a`. `--label=<navn>` kjører 30 par mot aktuell owner og samme disponible
   DB. `unstable_cache` forbikobles og invalidering stubbes på begge sider; dette
