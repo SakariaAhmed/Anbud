@@ -26,7 +26,7 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/budget") {
       response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({ ...ledger.snapshot(), proxyServiceTier: serviceTier }));
+      response.end(JSON.stringify({ ...ledger.snapshot(), proxyServiceTier: serviceTier, proxyPhase: phase, proxyPhaseBudgetUsd: phaseBudgetUsd }));
       return;
     }
     if (request.method !== "POST") throw new Error("Only POST is supported.");

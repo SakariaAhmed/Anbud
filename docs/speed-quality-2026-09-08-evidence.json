@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-09-08T11:41:59.507Z",
-  "repositoryCommit": "103925833c05ce0f6401d46fa90146b4632e7df2",
+  "generatedAt": "2026-09-08T11:58:54.574Z",
+  "repositoryCommit": "fe393b859076eb988ea9f6a31aaf27afce2c6272",
   "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
     "limitUsd": 27.393718,
     "accountingPolicy": "verified-cache-usage-or-full-reservation-v5",
-    "accountedUpperBoundUsd": 13.393718,
-    "remainingUsd": 14,
-    "requestCount": 469,
-    "ledgerSha256": "baa424428fb329ec07cb54fea8db215965412a40368cfdcfa3401d7a3d13f37f"
+    "accountedUpperBoundUsd": 13.798745,
+    "remainingUsd": 13.594973,
+    "requestCount": 478,
+    "ledgerSha256": "2d33d402f0c1f80e5a5c3d22e52b51e56407d721c61e10761757d94576316722"
   },
   "limitations": [
     "Single generation per pair is not a p95 or causal latency regression test. Additional repetitions never replace the original 44-pair matrix.",
@@ -20,7 +20,7 @@
     "The supplemental populated-service inputs change only serviceCandidates. Both development outputs select the two relevant services; both holdout outputs select none. This is not end-to-end AI integration with persisted service documents or evidence of improved holdout recommendations.",
     "Historical read/write seeding incorrectly encrypted plaintext content_markdown. Use plaintext-v3 semantic read, write and generation-context evidence for representative plaintext performance. Earlier runs are preserved, not promoted as equivalent evidence.",
     "Export plaintext-v4 is 30-pair plaintext/list performance; malformed fixture table rows render as pipe text. Table-functional-v6 is separate single-pair functional evidence with a real table, not p95. HTML .doc is not native Word verification.",
-    "All fixtures are fictional and local. Azure storage, Entra, complete perfect_system_solution and broader concurrent production workloads remain unverified. Before the explicit refill, full-pair conservative output reservations exceeded the available budget. The refill funds further work but does not establish any missing workflow or quality evidence."
+    "All fixtures are fictional and local. Azure storage, Entra and broader concurrent production workloads remain unverified. One development perfect_system_solution pair completed; holdout, statistically reliable speed and quality acceptance remain incomplete. Before the explicit refill, full-pair conservative output reservations exceeded the available budget. The refill funds further work but does not establish any missing workflow or quality evidence."
   ],
   "currentFreeEvidence": {
     "reads": "http-quiet-plaintext-v3-semantic-control-pairs.json",
@@ -257,6 +257,12 @@
     "archive": "api-budget-before-authorized-refill-v1.json",
     "scope": "Explicit user refill grants at most 14 new USD from prior conservative cost 13.393718 USD. Same ledger, all 469 prior rows preserved, cumulative ceiling 27.393718 USD. Earlier budget preflight gaps remain historical evidence; fresh live workflow verification is now funded but incomplete."
   },
+  "completeDevelopmentWorkflowPair": {
+    "verification": "verification/perfect-workflow-v1/comparison.json",
+    "sourceReview": "verification/perfect-workflow-v1/source-review.json",
+    "scope": "One actual queued worker pair completed with new drafts and evaluations persisted against the correct artifact IDs. 113.421 to 110.162 seconds, not significant/statistically reliable speed proof; self-scores 88/84 are not independent quality acceptance. Original fixtures unchanged, own DBs/containers removed. No HTTP/Azure/holdout claim."
+  },
+  "judgeContractQualification": "verification/v3-judge-contract-qualification-v1.json",
   "generationComparisons": [
     {
       "caseId": "fjord-drift-development",
@@ -1559,8 +1565,8 @@
     },
     {
       "path": "api-budget.json",
-      "bytes": 508764,
-      "sha256": "baa424428fb329ec07cb54fea8db215965412a40368cfdcfa3401d7a3d13f37f"
+      "bytes": 519856,
+      "sha256": "2d33d402f0c1f80e5a5c3d22e52b51e56407d721c61e10761757d94576316722"
     },
     {
       "path": "auth-after.json",
@@ -3988,6 +3994,66 @@
       "sha256": "0c4badf9babaad286e98f59afb833f4725e016a8ffb773478b76a7d0a0e7253a"
     },
     {
+      "path": "verification/perfect-workflow-v1/baseline.json",
+      "bytes": 1186795,
+      "sha256": "f1be3b55e2eca7bee337ea05182762869e7c548d0a50a9e14b649e805b61eef4"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/baseline.log",
+      "bytes": 6455,
+      "sha256": "15c5fdbcf027a69c5322625568dec25454ddc4083db78934a3d721bdd62e6f36"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/candidate.json",
+      "bytes": 1195723,
+      "sha256": "ad89005802850c0a6f986ec094ebd1e0e4acd9ba7b136739915b7dce423cc2d7"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/candidate.log",
+      "bytes": 5983,
+      "sha256": "0dce17b9b68411269c8a0764480091847848ed5320e8056449c74a234c94c9d5"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/cleanup.json",
+      "bytes": 120,
+      "sha256": "6e67263a80747f6e4fe12577ecb2493a47f7460e04525fa89fa34a0a08d47c31"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/cleanup.log",
+      "bytes": 75,
+      "sha256": "0e62df20c27cc9ddd0b8fe29276c0754e96042e666a7d98aba278a0256ed637e"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/comparison.json",
+      "bytes": 1687,
+      "sha256": "ca2b0ac5e1675a3efdc4effe0d8762f57754e1cd74aa6436f4aabdb72898dd58"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/fixture.json",
+      "bytes": 3011,
+      "sha256": "72f85ca0609b37b6671531d27179913c40e8c9aba7aa79d1fdfa48a66ae31739"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/preparation.json",
+      "bytes": 1398,
+      "sha256": "9972834eb8238051db375a1e98ab5aa87cfd5d8800d14ff72914716b6a37e3eb"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/prepare.log",
+      "bytes": 175,
+      "sha256": "44bae6832ab481fc05783d7886254beae59141c6d6e284693e387bc7d5d9fef7"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/proxy.log",
+      "bytes": 168,
+      "sha256": "225aa58b27f27bfdc7af92f507d97258dceb6b4e35c9c0bf84602d543c9dec0d"
+    },
+    {
+      "path": "verification/perfect-workflow-v1/source-review.json",
+      "bytes": 5854,
+      "sha256": "296095145e137df9474ffe137b25348e313a59a0ae0d2669a389c503583b86c0"
+    },
+    {
       "path": "verification/plaintext-access-v2-differences.json",
       "bytes": 180,
       "sha256": "eab891009e4b9402ff6dddfe5224aa12f0dfa3f04d78ef71354800fd71fba7a1"
@@ -4276,6 +4342,11 @@
       "path": "verification/two-gpt54-judges-source-field-evidence-v1.json",
       "bytes": 26667,
       "sha256": "0ba92919205c79a231af957dc20ede96bfa0ec59368af9f82c142d574e60fd54"
+    },
+    {
+      "path": "verification/v3-judge-contract-qualification-v1.json",
+      "bytes": 1293,
+      "sha256": "2755d0a1b4c19c9cdf6c5661e3f26a2d94e7da876edcdecbd8a595bb839f6790"
     },
     {
       "path": "verification/worker-lease-transport-v1/checks.json",

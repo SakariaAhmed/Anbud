@@ -114,6 +114,14 @@ bruker standard. Ingen av disse lokale proxyvalgene endrer applikasjonens tier.
   Dette er ikke råprovider-replay eller ny live-kvalitet.
 - `live-jobs` bruker ekte lokal auth, kø, lease, generering og lagring. Det siste
   artefaktløpet er én eksplisitt liten case, ikke throughput eller stor last.
+- `perfect-workflow-paired --label=<nytt-navn> --mode=prepare` oppretter to egne
+  lokale DB-kopier med identisk Fjord-grunnlag og lagret baselinevurdering uten
+  modellkall. `--mode=baseline` og deretter `--mode=candidate` kjører hver sin
+  faktiske kø/worker gjennom nytt utkast og lagret revurdering. Proxyen må bruke
+  `--phase refill-v1-perfect --phase-budget 4 --service-tier default`.
+  Råresultatene og FK-/kilderevisjonskontrollen bevares, også ved feil.
+  `--mode=cleanup` fjerner bare egne kopier og kontrollerer originalprosjektet.
+  Next-cache er forbikoblet; dette er ikke HTTP/Azure/holdout eller p95.
 - `browser-final-check` bruker separat headless Chromium og bare lokal fiktiv
   data. Sett `PLAYWRIGHT_MODULE` til en allerede installert Playwright-pakke hvis
   den ikke finnes i modulstien. `--label=<navn>` skiller QA-runder. Appgenerering

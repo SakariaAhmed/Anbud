@@ -41,7 +41,7 @@ mobiloverflyt på analyse-/artefaktflater.
 ## Budsjett og hele forbedringsløpet
 
 Opprinnelig hard grense: **14 USD**, inkludert embeddings, retries og dommere.
-Siste avstemming: **469 registrerte kall, 13,393718 USD konservativ
+Siste avstemming: **478 registrerte kall, 13,798745 USD konservativ
 kostnadsøvregrense og ingen uavklarte reservasjoner**.
 Evalueringsproxyen er stoppet.
 Dette er ikke endelig fakturert beløp.
@@ -50,7 +50,8 @@ Brukeren har deretter skrevet «right now i have refilled the api credits to 14
 dollars» i hovedoppgaven. I konteksten av det åpne budsjettspørsmålet er dette
 registrert som **opptil 14 nye USD**, ikke en nullstilling av historikken.
 Den kumulative grensen er derfor **27,393718 USD**, med **14 USD tilgjengelig**
-ved påfyllet. Tidligere ubrukt rest legges ikke til en gang til. Samme aktive
+ved påfyllet og **13,594973 USD igjen** etter det første komplette forbedringsparet.
+Tidligere ubrukt rest legges ikke til en gang til. Samme aktive
 ledger bevarer alle 469 rader; førversjonen er arkivert byteidentisk. Autorisasjonen
 med eksakt utsagn, kilde-ID, observert registreringstid og hasher ligger i
 `verification/api-budget-refill-authorization-v1.json`.
@@ -93,11 +94,43 @@ reservasjon er minst
 `2 × (8000 × 4,5 + 8000 × 15 + 16000 × 15) × 1,1 / 1000000 = 0,871200 USD`.
 Dette oversteg resten på 0,606282 USD før påfyllet, allerede før input, embeddings og retries. Det er en
 konservativ reservasjonsberegning, ikke en påstand om faktisk fakturert kostnad.
-Paret ble derfor ikke startet på antatt lavere usage før påfyllet. Det har nå
-første prioritet innen den nye rammen, men er ennå ikke fullført. Ingen outputgrenser,
+Paret ble derfor ikke startet på antatt lavere usage før påfyllet. Ett komplett
+utviklingspar er nå fullført som beskrevet nedenfor. Ingen outputgrenser,
 modeller eller normal samtidighet er redusert for å få det til å passe.
 Lagret utkast eller `pendingEvaluationResult` ville ikke alene vært fullføring;
 ny vurdering må være lagret mot riktig artefakt og kilderevisjon.
+
+## Komplett forbedringsløp på utviklingsgrunnlaget
+
+`verification/perfect-workflow-v1/comparison.json` dokumenterer faktisk kø,
+worker, nytt løsningsutkast, indeksering, kravdekning, helhetlig revurdering og
+lagring på begge sider. To disponibele lokale databasekopier hadde identiske
+prosjekt-/dokument-/analyse-/chunk-/artefakt-/jobbdata og samme allerede betalte
+baselinevurdering. Opprinnelige fixturer ble ikke endret. Next-cache var forbikoblet;
+HTTP-autentisering, nettleser, Azure og holdout inngikk ikke.
+
+Baseline `3779e6f2` tok **113,421 s / 5 kall**, kandidat `29fb7689` tok
+**110,162 s / 4 kall**. Forskjellen på **2,87 % i ett par** er ikke en dokumentert
+betydelig eller statistisk sikker hastighetsgevinst. Helhetlig GPT-5.4-vurdering
+tok omtrent 85,9 og 85,7 s og dominerte begge løp. Alle providerutfall var 200
+og komplette. Begge lagret et nytt utkast med riktig jobb-ID og en revurdering
+der `evaluated_generated_artifact_id` peker på dette utkastet. Ingen resume-snarvei
+eller `evaluation_pending` ble godkjent som fullføring. Kilderevisjonen var uendret.
+
+Egenscore for de forskjellige utkastene var **88 mot 84**, uten at dette er en
+uavhengig kvalitetsdom. Kildegjennomgangen i `source-review.json` i samme mappe
+viser at begge bevarer mange presise krav, mens kandidaten plasserer 24/7-modellen
+under bekreftelse før produksjonssetting. Kandidaten skiller samtidig tydeligere
+mellom foreslått endring og dokumentert leveranse i enkelte passasjer. Leverandørens
+eksplisitte avvik kan ikke gjøres til bekreftet kapasitet bare for å få høyere score.
+Kravdekningen gjelder opprinnelig leverandørdokument: kandidaten finner fem avvik
+og tre støttede krav, mens baseline feilaktig markerer alle åtte som manglende.
+Generert utkast vurderes separat i arkitektursammenligningen.
+
+Paret kostet konservativt **0,405027 USD** av delbudsjettet på 4 USD. Proxy og
+begge egne containere/databaser er stoppet og fjernet. Råresultater, logger og
+oppryddingsbevis er bevart. Lokal fullføring av dette ene utviklingsparet lukker
+et funksjonsgap; bred hastighets-/kvalitetsgodkjenning gjenstår.
 
 ## Korrigerte lokale målinger
 
@@ -414,6 +447,10 @@ K-2, K-4 og K-6. Kildekontrollen bekrefter at baseline grupperer disse i sine
 fem prioriteringer, mens kandidaten bevarer alle tre i `expected_solution_direction`
 uten å løfte dem i prioriteringene. Den tidligere tilbakevisningen av full
 utelatelse står dermed ved lag; en smalere innvending om synlighet er støttet.
+Kontrakten presiserer imidlertid at kundeanalysen ikke er en komplett kravtabell,
+og at maksimalt fem prioriteringer skal fremheve de viktigste kravene. Fravær fra
+prioritetslisten alene er derfor ikke et etablert kontraktsbrudd. Dette er presisert
+separat i `verification/v3-judge-contract-qualification-v1.json`.
 
 For Kyst støtter feltkontrollen baselinefordelen for 180 dagers loggoppbevaring
 og konkret opplæring, driftsdokumentasjon og overtakelsesprøve i de undersøkte
@@ -437,8 +474,8 @@ nye genereringer, gjentatte hastighetsmålinger eller hele forbedringsløpet.
   med representativ last og tilstrekkelige repetisjoner.
 - Parvis kvalitetsgodkjenning av alle endelige genereringer på utvikling og
   holdout, inkludert uenige dommer og inkonsistent kravklassifisering.
-- Hele forbedringsløpet med nytt utkast og lagret revurdering på begge sider,
-  innen autorisert budsjett.
+- Bredere kvalitets- og ytelsesgodkjenning av hele forbedringsløpet; det første
+  lokale utviklingsparet har nå nye utkast og riktig lagrede revurderinger på begge sider.
 - Faktisk Azure/Entra/ingest, grupper og produksjonslik samtidighet. Lokalt
   worker-avbrudd ved tapt lease er kontrollert med åpen SDK-transport, men ikke
   produksjonslast eller en bruker-cancel-operasjon. Ingen produksjonsutrulling
