@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { listProjectServiceDescriptions, setProjectServiceSelections } from "@/lib/server/repositories/data-store";
@@ -13,12 +14,15 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "project.read");
     const services = await listProjectServiceDescriptions(id);
     return NextResponse.json(
       { services },
       { headers: PROJECT_SERVICE_CACHE_HEADERS },
     );
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke hente prosjektets tjenester."),
@@ -34,6 +38,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "project.update");
     const body = (await request.json().catch(() => ({}))) as {
       selected_service_ids?: unknown;
     };
@@ -56,6 +61,8 @@ export async function PATCH(
     await setProjectServiceSelections(id, selectedServiceIds);
     return NextResponse.json({ selected_service_ids: selectedServiceIds });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke lagre prosjektets tjenester."),

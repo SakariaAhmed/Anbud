@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { CHAT_SESSION_MEMORY_STORAGE_LIMIT, inferProjectChatDomains, streamProjectChat, type ChatPromptAttachment } from "@/lib/server/ai/project-chat";
@@ -350,6 +351,7 @@ function normalizeSessionTitle(value: unknown, fallback: string) {
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "chat.read");
     const requestedSessionId = new URL(request.url).searchParams.get("session_id");
     const [allMessages, storedSessions] = await Promise.all([
       listChatMessages(id),
@@ -368,6 +370,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       active_session_id: activeSessionId,
     });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       { error: productionSafeErrorMessage(error, "Kunne ikke hente chatten.") },
       { status: 500 },
@@ -378,6 +382,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "chat.write");
     const rateLimit = await checkRateLimit(request, `project-chat:${id}`, {
       limit: 30,
       windowMs: 60_000,
@@ -580,6 +585,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     );
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     if (error instanceof ChatRequestError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

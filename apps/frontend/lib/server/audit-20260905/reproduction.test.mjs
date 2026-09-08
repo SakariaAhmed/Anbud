@@ -97,6 +97,8 @@ test('REGRESSION W4: final snapshot failure preserves successful committed workf
 test('REGRESSION API1: stale manual editor is rejected without overwriting newer edit', async () => {
   reset(); await save('Original editor snapshot'); const editorRevision = (await freshAnalysis()).revision; await save('Other user newer text');
   const { PUT } = actual('app/api/projects/[id]/customer-analysis/route.ts', ['PUT', 'isCustomerAnalysisSection'], {
+    requireProjectPermission: async (id, permission) => { assert.equal(id, P); assert.equal(permission, 'analysis.write'); },
+    authorizationErrorResponse: () => null,
     CUSTOMER_ANALYSIS_SECTIONS: ['strategy'],
     ...jiti(path.join(frontend, 'lib/server/use-cases/solution-evaluation-source-snapshot.ts')),
     ...jiti(path.join(frontend, 'lib/server/domain/project-documents.ts')),
@@ -107,7 +109,7 @@ test('REGRESSION API1: stale manual editor is rejected without overwriting newer
     saveCustomerAnalysis, recordDocumentIntelligenceEvent: async () => false, getProjectSnapshot: async () => ({ id: P }), productionSafeErrorMessage: e => e.message,
   });
   const response = await PUT(new Request('http://localhost/audit', { method: 'PUT', body: JSON.stringify({ analysis_text: 'Stale editor text', expected_analysis_revision: editorRevision }) }), { params: Promise.resolve({ id: P }) });
-  assert.equal(response.status, 409); assert.equal((await freshAnalysis()).executive_summary, 'Other user newer text');
+  assert.equal(response.status, 409, response.body?.error); assert.equal((await freshAnalysis()).executive_summary, 'Other user newer text');
   // History survives manual/manual saves; active text still silently loses the newer edit.
   assert.ok(JSON.stringify((await freshAnalysis()).section_histories).includes('Original editor snapshot'));
   assert.ok(!JSON.stringify(await freshAnalysis()).includes('Stale editor text'));
@@ -347,13 +349,15 @@ for (const kind of ['solution_evaluation', 'executive_summary']) {
     reset();
     const queued = actual('lib/server/project-jobs.ts', ['queueSolutionEvaluationJob','queueExecutiveSummaryJob'], { enqueueProjectJob: async input => enqueue(input.kind) });
     const { POST } = actual('app/api/projects/[id]/jobs/route.ts', ['POST','queueSimpleProjectJob','jobAcceptedResponse'], {
+      requireProjectPermission: async (id, permission) => { assert.equal(id, P); assert.equal(permission, 'job.run'); },
+      authorizationErrorResponse: () => null,
       ...queued, workflowErrorStatus: jiti(path.join(frontend, 'lib/server/workflow-errors.ts')).workflowErrorStatus,
     NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) },
       enforceRateLimit: async () => null, withTiming: async (_, __, fn) => fn(),
       resolveOpenAIModelOverride: async () => undefined, auditEvent: async () => {}, productionSafeErrorMessage: error => error.message,
     });
     const response = await POST(new Request('http://localhost/audit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind }) }), { params: Promise.resolve({ id: P }) });
-    assert.equal(response.status, 422); assert.equal(response.body.job, undefined);
+    assert.equal(response.status, 422, response.body?.error); assert.equal(response.body.job, undefined);
     const runners = workflow(['runSolutionEvaluationWorkflow','runExecutiveSummaryWorkflow','readStableEvaluationSources'], {
       getProjectDetail: async () => ({ name: 'Audit' }), getFreshSolutionEvaluationSnapshot: async () => null,
     });

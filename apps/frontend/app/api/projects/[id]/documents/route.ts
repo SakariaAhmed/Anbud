@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import {
@@ -127,6 +128,7 @@ function enforceUploadRateLimit(projectId: string) {
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "document.upload");
     const requestLimit = await checkRateLimit(request, "document-upload", {
       limit: 16,
       windowMs: 60_000,
@@ -282,6 +284,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     );
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     if (error instanceof MultipartRequestError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

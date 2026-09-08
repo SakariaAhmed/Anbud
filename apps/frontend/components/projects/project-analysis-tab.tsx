@@ -49,6 +49,7 @@ import {
   ValueTags,
 } from "@/components/projects/project-workspace-shared";
 import { getCustomerAnalysisSectionSnapshot } from "@/lib/customer-analysis-history";
+import { getDisplayProfitShares, MAX_MANUAL_VALUE_OPPORTUNITIES } from "@/lib/value-opportunities";
 import {
   isDocumentReadyForEvaluation,
   isHistoricalSolutionDocument,
@@ -720,41 +721,6 @@ function SectionHistoryPanel({
       </div>
     </details>
   );
-}
-
-function getDisplayProfitShares(
-  opportunities: CustomerAnalysisResult["value_opportunities"],
-) {
-  if (!opportunities.length) {
-    return [];
-  }
-
-  const rawValues = opportunities.map((item) =>
-    typeof item.profit_share_percent === "number" &&
-    Number.isFinite(item.profit_share_percent)
-      ? Math.max(1, Math.round(item.profit_share_percent))
-      : 0,
-  );
-
-  const total = rawValues.reduce((sum, value) => sum + value, 0);
-  const normalized =
-    total > 0
-      ? rawValues.map((value) => Math.max(1, Math.round((value / total) * 100)))
-      : opportunities.map(() => Math.floor(100 / opportunities.length));
-
-  let currentTotal = normalized.reduce((sum, value) => sum + value, 0);
-  let index = 0;
-  while (currentTotal !== 100 && normalized.length > 0) {
-    const direction = currentTotal < 100 ? 1 : -1;
-    const targetIndex = index % normalized.length;
-    if (direction > 0 || normalized[targetIndex] > 1) {
-      normalized[targetIndex] += direction;
-      currentTotal += direction;
-    }
-    index += 1;
-  }
-
-  return normalized;
 }
 
 const PIE_NEUTRAL = "rgb(203, 213, 225)";
@@ -3661,12 +3627,19 @@ export function ProjectAnalysisTab({
             type="button"
             variant="outline"
             size="sm"
+            disabled={items.length >= MAX_MANUAL_VALUE_OPPORTUNITIES}
             onClick={() => onChange([...items, emptyValueOpportunity()])}
           >
             <Plus data-icon="inline-start" />
             Legg til
           </Button>
         </div>
+        {items.length >= MAX_MANUAL_VALUE_OPPORTUNITIES ? (
+          <p className="text-sm text-muted-foreground">
+            Maksimalt {MAX_MANUAL_VALUE_OPPORTUNITIES} verdimuligheter kan lagres.
+            Fjern noen punkter før du legger til flere eller lagrer en lengre liste.
+          </p>
+        ) : null}
         <div className="space-y-3">
           {items.map((item, index) => {
             const updateItem = (nextItem: ValueOpportunity) =>

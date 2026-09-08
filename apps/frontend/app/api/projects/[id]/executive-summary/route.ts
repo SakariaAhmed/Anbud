@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import {
@@ -17,12 +18,15 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "analysis.read");
     const executiveSummary = await getFreshExecutiveSummary(id);
     return NextResponse.json(
       { executive_summary: executiveSummary },
       { headers: READ_CACHE_HEADERS },
     );
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke hente lederoppsummeringen."),
@@ -55,6 +59,8 @@ export async function POST(
     const job = await queueExecutiveSummaryJob({ projectId: id, model });
     return NextResponse.json({ job }, { status: 202 });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke generere lederoppsummering."),

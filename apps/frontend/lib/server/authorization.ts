@@ -19,6 +19,7 @@ import {
   AUTH_PRINCIPAL_HEADER,
   AUTH_SESSION_HEADER,
 } from "@/lib/password-auth";
+import { canonicalProjectId } from "@/lib/middleware-project-authorization";
 import { createServiceClient } from "@/lib/server/data-api";
 
 export type RequestPrincipal = {
@@ -210,6 +211,11 @@ export async function requireProjectPermission(
   projectId: string,
   permission: ProjectPermission,
 ): Promise<AuthorizedProjectContext> {
+  const canonicalId = canonicalProjectId(projectId);
+  if (!canonicalId) {
+    throw new AuthorizationError("Ugyldig prosjekt-ID.", 404);
+  }
+  projectId = canonicalId;
   const principal = await requireRequestPrincipal();
   const effectiveRole = await getEffectiveProjectRole(principal.id, projectId);
   if (globalAccessAllows(principal.isAdmin, permission)) {

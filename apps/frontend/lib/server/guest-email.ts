@@ -76,7 +76,7 @@ export async function sendGuestAccessEmail(input: {
       <p style="color:#475569">Logg inn med Microsoft-kontoen som er knyttet til denne e-postadressen.</p>
     `
     : `
-      <p style="color:#475569">Bruk den eksisterende gjestekoden din. Hvis du ikke lenger har koden, be prosjekteieren om å rotere og sende en ny.</p>
+      <p style="color:#475569">Bruk den eksisterende gjestekoden din. Hvis du ikke lenger har koden, be administratoren om å sende en ny.</p>
     `;
   const expiryText = input.expiresAt
     ? `Tilgangen utløper ${new Intl.DateTimeFormat("nb-NO", {

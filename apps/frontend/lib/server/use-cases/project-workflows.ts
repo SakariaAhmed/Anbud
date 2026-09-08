@@ -1,4 +1,5 @@
 import "server-only";
+import { projectJobDocumentSummary } from "@/lib/server/project-job-result-projection";
 import { findWorkflowArtifact, pendingEvaluationResult } from "@/lib/server/project-job-results";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
 
@@ -1008,7 +1009,7 @@ async function runDocumentDoclingEnhancementWorkflow(
 
   if (!document.file_base64 || document.parser_used === "docling") {
     return {
-      document,
+      document: projectJobDocumentSummary(document),
       document_id: input.documentId,
       status: document.processing_status,
       parser_used: document.parser_used,
@@ -1030,7 +1031,7 @@ async function runDocumentDoclingEnhancementWorkflow(
 
   if (!shouldEnhance) {
     return {
-      document,
+      document: projectJobDocumentSummary(document),
       document_id: input.documentId,
       status: document.processing_status,
       parser_used: document.parser_used,
@@ -1088,7 +1089,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     });
 
     return {
-      document,
+      document: projectJobDocumentSummary(document),
       document_id: input.documentId,
       status: readyStatus,
       parser_used: document.parser_used,
@@ -1118,7 +1119,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   handlers.onPhase?.("docling_indeksering");
 
   return {
-    document: enhancedDocument,
+    document: projectJobDocumentSummary(enhancedDocument),
     document_id: input.documentId,
     status: enhancedDocument.processing_status,
     parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,

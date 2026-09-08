@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import {
   appendFile,
   mkdir,
@@ -1110,6 +1110,7 @@ async function discoverRekkefolgeProjects({ root }) {
     const projectId = normalizeInlineText(row["Prosjekt ID"]);
     const documentName = normalizeInlineText(row["Bilag 2-fil"]);
     if (!projectId || !documentName) continue;
+    assertSafeArtifactProjectId(projectId);
     const key = `${projectId}|${documentName}`;
     grouped.set(key, [...(grouped.get(key) ?? []), row]);
   }
@@ -1127,8 +1128,10 @@ async function discoverRekkefolgeProjects({ root }) {
         throw new Error(`Fant ikke rekkefolge-Bilag 1: ${customerName}`);
       }
       const number = leadingProjectNumber(requirementPath);
+      const id = `rekkefolge-100-${number || projectId}`;
+      assertSafeArtifactProjectId(id);
       return {
-        id: `rekkefolge-100-${number || projectId}`,
+        id,
         corpus: "rekkefolge-100",
         projectNumber: index + 1,
         sourceNumber: number,
@@ -4065,15 +4068,49 @@ function isRunOwnedProject(project, runId) {
   );
 }
 
+function assertSafeArtifactProjectId(id) {
+  // Reject unsafe metadata rather than turning it into a different project ID.
+  if (typeof id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,159}$/.test(id)) {
+    throw new Error("Unsafe corpus project ID for artifact storage.");
+  }
+}
+
+function containedProjectArtifactPath(options, directory, filename) {
+  const root = path.resolve(options.artifactsRoot);
+  const parent = path.resolve(root, directory);
+  const destination = path.resolve(parent, filename);
+  if (path.dirname(parent) !== root || path.dirname(destination) !== parent) {
+    throw new Error("Project artifact path escapes its designated directory.");
+  }
+  // A supplied ID cannot select symlinks left in an existing artifact directory.
+  // The operator chooses the root; its immediate children must be real entries.
+  for (const entry of [parent, destination]) {
+    try {
+      if (lstatSync(entry).isSymbolicLink()) {
+        throw new Error("Project artifact path must not use symbolic links.");
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  return destination;
+}
+
 function checkpointArtifactPaths(project, options) {
+  assertSafeArtifactProjectId(project.id);
   return {
-    requirementResponseMarkdown: path.join(
-      options.artifactsRoot,
+    projectCheckpointJson: containedProjectArtifactPath(
+      options,
+      "projects",
+      `${project.id}.json`,
+    ),
+    requirementResponseMarkdown: containedProjectArtifactPath(
+      options,
       "kravsvar",
       `${project.id}-${slug(project.name)}.md`,
     ),
-    solutionEvaluationJson: path.join(
-      options.artifactsRoot,
+    solutionEvaluationJson: containedProjectArtifactPath(
+      options,
       "evaluations",
       `${project.id}.json`,
     ),
@@ -4732,11 +4769,10 @@ async function seedCustomerAnalysis({
 }
 
 async function runProjectCore(project, options, api) {
-  const artifactPath = path.join(
-    options.artifactsRoot,
-    "projects",
-    `${project.id}.json`,
-  );
+  const artifactPath = checkpointArtifactPaths(
+    project,
+    options,
+  ).projectCheckpointJson;
   const model = requestedModel(options);
   const checkpointContext = await projectCheckpointContext(project, options);
   const checkpointIdentityFields = checkpointIdentity(
@@ -5015,11 +5051,10 @@ async function runProjectCore(project, options, api) {
     ],
   });
   durations.requirementResponseMs = Date.now() - stageStartedAt;
-  const markdownPath = path.join(
-    options.artifactsRoot,
-    "kravsvar",
-    `${project.id}-${slug(project.name)}.md`,
-  );
+  const markdownPath = checkpointArtifactPaths(
+    project,
+    options,
+  ).requirementResponseMarkdown;
   await mkdir(path.dirname(markdownPath), { recursive: true });
   await writeFile(markdownPath, artifactMarkdown, "utf8");
 
@@ -5128,11 +5163,10 @@ async function runProjectCore(project, options, api) {
     expectedSolutionDocumentId: uploadedSolution.document.id,
   });
   durations.totalMs = Date.now() - projectStartedAt;
-  const evaluationPath = path.join(
-    options.artifactsRoot,
-    "evaluations",
-    `${project.id}.json`,
-  );
+  const evaluationPath = checkpointArtifactPaths(
+    project,
+    options,
+  ).solutionEvaluationJson;
   await writeJson(evaluationPath, evaluation);
   const localArtifactHashes = await checkpointArtifactHashes(project, options);
 
@@ -5216,7 +5250,10 @@ async function runProjectCore(project, options, api) {
   });
   summary.ok = summary.qualityGate.passed;
 
-  await writeJson(artifactPath, summary);
+  await writeJson(
+    checkpointArtifactPaths(project, options).projectCheckpointJson,
+    summary,
+  );
   return summary;
 }
 
@@ -6112,6 +6149,7 @@ function selectProjects(projects, options) {
   if (selected.length === 0) {
     throw new Error("Project selection is empty before sharding.");
   }
+  for (const project of selected) assertSafeArtifactProjectId(project.id);
   for (const [label, values] of [
     ["project id", selected.map((project) => project.id)],
     [
@@ -6191,11 +6229,10 @@ async function mergeExistingProjectArtifacts({
   const results = [];
   let validatedLiveProjectCount = 0;
   for (const project of projects) {
-    const artifactPath = path.join(
-      options.artifactsRoot,
-      "projects",
-      `${project.id}.json`,
-    );
+    const artifactPath = checkpointArtifactPaths(
+      project,
+      options,
+    ).projectCheckpointJson;
     if (existsSync(artifactPath)) {
       const checkpointContext = await projectCheckpointContext(
         project,
@@ -6483,7 +6520,7 @@ async function main() {
         });
         results.push(failure);
         await writeJson(
-          path.join(options.artifactsRoot, "projects", `${project.id}.json`),
+          checkpointArtifactPaths(project, options).projectCheckpointJson,
           failure,
         );
         console.error(`  FAILED ${project.id}: ${failure.error}`);
@@ -6593,6 +6630,8 @@ export {
   buildSyntheticCustomerDocument,
   buildRequirementCoverageLedgerFromDocuments,
   checkpointArtifactHashes,
+  checkpointArtifactPaths,
+  discoverRekkefolgeProjects,
   checkpointConfigurationRevision,
   checkpointIdentity,
   checkpointIdentityMismatch,
