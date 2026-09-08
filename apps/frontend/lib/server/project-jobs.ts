@@ -98,6 +98,8 @@ declare global {
         queued: Array<{
           task: () => Promise<void>;
           resolve: () => void;
+          queuedAt: number;
+          workflow?: Pick<ProjectWorkflowInput, "projectId" | "kind">;
         }>;
       }
     | undefined;
@@ -127,6 +129,14 @@ function drainHeavyProjectJobAutorunQueue() {
     const next = state.queued.shift();
     if (!next) break;
     state.active += 1;
+    console.info(JSON.stringify({
+      event: "project_job_autorun_started",
+      project_id: next.workflow?.projectId,
+      kind: next.workflow?.kind,
+      queue_wait_ms: Math.max(0, Date.now() - next.queuedAt),
+      active_jobs: state.active,
+      concurrency,
+    }));
     void Promise.resolve()
       .then(next.task)
       .catch((error) => {
@@ -145,9 +155,12 @@ function drainHeavyProjectJobAutorunQueue() {
   }
 }
 
-export function scheduleHeavyProjectJobAutorun(task: () => Promise<void>) {
+export function scheduleHeavyProjectJobAutorun(
+  task: () => Promise<void>,
+  workflow?: Pick<ProjectWorkflowInput, "projectId" | "kind">,
+) {
   return new Promise<void>((resolve) => {
-    heavyProjectJobAutorunState().queued.push({ task, resolve });
+    heavyProjectJobAutorunState().queued.push({ task, resolve, queuedAt: Date.now(), workflow });
     drainHeavyProjectJobAutorunQueue();
   });
 }
@@ -157,7 +170,7 @@ function autoRunProjectJob(
   task: () => Promise<void>,
 ) {
   setTimeout(() => {
-    void scheduleHeavyProjectJobAutorun(task);
+    void scheduleHeavyProjectJobAutorun(task, input);
   }, 0);
 }
 

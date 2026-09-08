@@ -21892,11 +21892,6 @@ export async function generateHighLevelDesign(input: {
   model?: string;
 }) {
   const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
-  const customerDocumentDigest = await buildDocumentInsightDigest(
-    "Primært kundedokument",
-    input.customerDocument,
-    { maxChunks: 5 },
-  );
   const supportingContexts = input.supportingDocuments
     .slice(0, 4)
     .map((document, index) =>
@@ -21914,13 +21909,22 @@ export async function generateHighLevelDesign(input: {
     customerAnalysis,
     documents: documentsForCoverage,
   });
-  const coverageRetrieval = await retrieveDocumentSnippetsWithMetadata({
-    query: coverageSeed.query,
-    projectId: input.customerDocument.project_id,
-    documents: documentsForCoverage,
-    exactTerms: coverageSeed.exactTerms,
-    limit: 16,
-  });
+  // Both use the same frozen sources; retrieval does not depend on the digest.
+  // Start both together and wait for all evidence before composing the prompt.
+  const [customerDocumentDigest, coverageRetrieval] = await Promise.all([
+    buildDocumentInsightDigest(
+      "Primært kundedokument",
+      input.customerDocument,
+      { maxChunks: 5 },
+    ),
+    retrieveDocumentSnippetsWithMetadata({
+      query: coverageSeed.query,
+      projectId: input.customerDocument.project_id,
+      documents: documentsForCoverage,
+      exactTerms: coverageSeed.exactTerms,
+      limit: 16,
+    }),
+  ]);
   const coverageContext = buildOfferCoverageContext({
     mode: "high_level_design",
     customerAnalysis,

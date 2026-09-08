@@ -64,9 +64,9 @@ const {
   path.join(frontendRoot, "lib/server/project-jobs.ts"),
 );
 
-test("heavy autorun jobs are bounded to one active task per replica by default", async () => {
+test("heavy autorun jobs default to one-task concurrency", async () => {
   const previousConcurrency = process.env.PROJECT_JOB_AUTORUN_CONCURRENCY;
-  process.env.PROJECT_JOB_AUTORUN_CONCURRENCY = "1";
+  delete process.env.PROJECT_JOB_AUTORUN_CONCURRENCY;
   delete globalThis.__anbudHeavyProjectJobAutorunState;
   let active = 0;
   let maximumActive = 0;
@@ -105,6 +105,36 @@ test("heavy autorun jobs are bounded to one active task per replica by default",
     } else {
       process.env.PROJECT_JOB_AUTORUN_CONCURRENCY = previousConcurrency;
     }
+  }
+});
+
+test("configured concurrency admits two tasks and queues the third until capacity is released", async () => {
+  const previous = process.env.PROJECT_JOB_AUTORUN_CONCURRENCY;
+  process.env.PROJECT_JOB_AUTORUN_CONCURRENCY = "2";
+  delete globalThis.__anbudHeavyProjectJobAutorunState;
+  const releases = [];
+  const started = [];
+  const task = (id) => scheduleHeavyProjectJobAutorun(async () => {
+    started.push(id);
+    await new Promise((resolve) => releases.push(resolve));
+  });
+  try {
+    const first = task(1), second = task(2), third = task(3);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(started, [1, 2]);
+    assert.equal(globalThis.__anbudHeavyProjectJobAutorunState.active, 2);
+    releases.shift()();
+    await first;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(started, [1, 2, 3]);
+    assert.equal(globalThis.__anbudHeavyProjectJobAutorunState.active, 2);
+    for (const release of releases) release();
+    await Promise.all([second, third]);
+    assert.equal(globalThis.__anbudHeavyProjectJobAutorunState.active, 0);
+  } finally {
+    delete globalThis.__anbudHeavyProjectJobAutorunState;
+    if (previous === undefined) delete process.env.PROJECT_JOB_AUTORUN_CONCURRENCY;
+    else process.env.PROJECT_JOB_AUTORUN_CONCURRENCY = previous;
   }
 });
 

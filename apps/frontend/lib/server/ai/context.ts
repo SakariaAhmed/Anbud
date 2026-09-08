@@ -10,11 +10,32 @@ import type {
 
 export function compactText(value: unknown, limit = 16000) {
   const source = typeof value === "string" ? value : "";
-  const normalized = source.replace(/\s+/g, " ").trim();
-  if (normalized.length <= limit) {
-    return normalized;
+  // Only normalize enough source to produce the requested prefix. Large source
+  // documents are reused for many short excerpts; scanning the full document
+  // for each excerpt needlessly blocks the event loop and allocates large strings.
+  // Expand when whitespace consumes the prefix so the output stays byte-identical
+  // to full normalization, including the decision to append an ellipsis.
+  let end = Number.isFinite(limit) && limit >= 0
+    ? Math.min(source.length, Math.max(256, Math.ceil(limit * 1.5) + 1))
+    : source.length;
+  let start = 0;
+  let normalized = "";
+  while (true) {
+    const chunk = source.slice(start, end).replace(/\s+/g, " ");
+    normalized = !normalized
+      ? chunk.trimStart()
+      : normalized + (normalized.endsWith(" ") && chunk.startsWith(" ") ? chunk.slice(1) : chunk);
+    const trimmed = normalized.trimEnd();
+    if (trimmed.length > limit) return `${trimmed.slice(0, limit)}…`;
+    if (end === source.length) {
+      return trimmed.length <= limit
+        ? trimmed
+        : `${trimmed.slice(0, limit)}…`;
+    }
+    // Scan each source character once, including whitespace-heavy documents.
+    start = end;
+    end = Math.min(source.length, end * 2);
   }
-  return `${normalized.slice(0, limit)}…`;
 }
 
 export function documentContext(

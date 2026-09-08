@@ -2224,7 +2224,7 @@ $$;
 
 create or replace function public.get_current_project_derived_snapshot(p_project_id uuid)
 returns jsonb language sql stable security invoker set search_path = '' as $$
-  with current_dependency as (
+  with current_dependency as materialized (
     select public.artifact_solution_evaluation_dependency(p_project_id) as dependency
   )
   select case when current_dependency.dependency is null then null else jsonb_build_object(
@@ -2268,9 +2268,11 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
     from public.generated_artifacts artifact where artifact.project_id = p_project_id
     order by artifact.artifact_type, artifact.artifact_version desc,
              artifact.created_at desc, artifact.id desc
-  ), authority as (
+  ), authority as materialized (
     select project.artifact_source_revision, source_state.service_library_revision,
-           public.raw_artifact_solution_evaluation_dependency(project.id) as evaluation_dependency
+           case when exists (select 1 from latest where used_solution_evaluation)
+             then public.raw_artifact_solution_evaluation_dependency(project.id)
+             else null end as evaluation_dependency
     from public.projects project cross join public.artifact_source_state source_state
     where project.id = p_project_id and source_state.singleton = true
   )
@@ -2842,10 +2844,13 @@ language sql stable security invoker set search_path = '' as $$
     where artifact.project_id = p_project_id
     order by artifact.artifact_type, artifact.artifact_version desc,
              artifact.created_at desc, artifact.id desc
-  ), authority as (
+  ), authority as materialized (
     select project.artifact_source_revision,
            source_state.service_library_revision,
-           public.raw_artifact_solution_evaluation_dependency(project.id) as evaluation_dependency
+           case when exists (
+             select 1 from latest where used_solution_evaluation and artifact_type <> p_artifact_type
+           ) then public.raw_artifact_solution_evaluation_dependency(project.id)
+             else null end as evaluation_dependency
     from public.projects project cross join public.artifact_source_state source_state
     where project.id = p_project_id and source_state.singleton = true
   )

@@ -12,9 +12,13 @@ const { NextResponse } = require("next/server");
 const projectId = "123e4567-e89b-12d3-a456-426614174000";
 
 // Real route and authorization code; only external services are replaced.
-function harness({ role = null, admin = false, active = true } = {}) {
+function harness({ role = null, admin = false, active = true, roleError = false } = {}) {
   const calls = [], dataCalls = [], cache = new Map();
-  const db = { from(table) {
+  const db = { rpc(name, input) {
+    assert.equal(name, "resolve_project_role");
+    calls.push({ rpc: name, filters: { project_id: input.p_project_id, principal_id: input.p_principal_id } });
+    return Promise.resolve({ data: role, error: roleError ? { message: "Role lookup unavailable" } : null });
+  }, from(table) {
     const filters = {};
     const result = () => {
       calls.push({ table, filters: { ...filters } });
@@ -78,6 +82,14 @@ test("revoked sessions cannot read chat or delete artifacts with editor grants",
   for (const [route, method] of [["chat", "GET"], ["generate", "DELETE"]]) {
     const h = harness({ role: "editor", active: false });
     assert.equal((await invoke(h, route, method, projectId)).status, 401);
+    assert.deepEqual(h.dataCalls, []);
+  }
+});
+test("role lookup failures and malformed roles fail closed before project data access", async () => {
+  for (const options of [{ role: "editor", roleError: true }, { role: "unknown-role" }, { role: { role: "owner" } }]) {
+    const h = harness(options);
+    const response = await invoke(h, "chat", "GET", projectId);
+    assert.equal(response.status, 500);
     assert.deepEqual(h.dataCalls, []);
   }
 });
