@@ -3,7 +3,7 @@ import "server-only";
 import { buildPromptTemplate } from "@/lib/server/prompts";
 
 const requirementDeliveryEvidenceRule =
-  "Kundens krav er ikke bevis på leverandørens eksisterende dekning. Bevar uttrykkelige avvik og forbehold i løsningsgrunnlaget. Skill dokumentert leveranse fra foreslått ny leveranse: Når løsningen avviker, skriv kort hva som avviker og foreslå en konkret endring med leveransemåte og verifikasjon. Merk endringen som foreslått forbedring som krever leverandørens bekreftelse; ikke påstå at avviket allerede er løst. Når dokumentasjon mangler, angi hvilket konkret bevis eller tilbudsvalg som må kompletteres, og beskriv et faglig forsvarlig forslag uten å fremstille det som avtalt.";
+  "Kundens krav er ikke bevis på leverandørens eksisterende dekning. Bevar uttrykkelige avvik og forbehold i løsningsgrunnlaget. Skill dokumentert leveranse fra foreslått ny leveranse: Ved avvik skal første setning beskrive den dokumenterte leveransen og avviket. Start neste setning med 'Foreslått forbedring som krever leverandørens bekreftelse:' og beskriv konkret leveransemåte og verifikasjon. Ikke start med et ubetinget presensløfte om at kravet oppfylles når kilden viser et avvik. Denne evidensregelen gjelder også tekniske standardmønstre og backup-rutiner. Når dokumentasjon mangler, angi hvilket konkret bevis eller tilbudsvalg som må kompletteres, og beskriv et faglig forsvarlig forslag uten å fremstille det som avtalt.";
 
 export function requirementBatchSystemPrompt() {
   return buildPromptTemplate({

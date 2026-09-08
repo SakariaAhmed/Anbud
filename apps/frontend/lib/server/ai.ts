@@ -15006,7 +15006,12 @@ export function buildProposalInputRequiredMetadata(input: {
     const proposedDeliveryNeedsConfirmation =
       /\b(?:foreslår|foreslås|foreslått(?:e)?)\b/iu.test(answer) &&
       /(?<!ikke )\b(?:krever|forutsetter)\s+(?!(?:ikke|ingen|intet)\b)[^.?!]{0,100}(?:bekreftelse|godkjenning)|(?<!ikke )\bmå\s+(?!ikke\b)[^.?!]{0,100}(?:bekreftes|godkjennes)/iu.test(answer);
-    if ((proposedDeliveryNeedsConfirmation || supplierAnswerNeedsConfirmation(answer)) && !reasons.includes("explicit_bid_decision")) {
+    const pendingSupplierEvidence =
+      /(?<!ingen )(?<!ikke )\bleverandørbekreftelse\s+må\s+(?!ikke\b)(?:kompletteres|innhentes|avklares)/iu.test(answer);
+    const documentedGapNeedsCorrection =
+      /\b(?:dette\s+(?:er\s+et\s+avvik|avviker)|dokumentert\s+(?:løsning|løsningsgrunnlag))\b/iu.test(answer) &&
+      /\bmå\s+(?!ikke\b)(?:derfor\s+)?(?:lukkes|oppdateres|erstattes)\b[^.?!]{0,150}\bfør\b/iu.test(answer);
+    if ((proposedDeliveryNeedsConfirmation || pendingSupplierEvidence || documentedGapNeedsCorrection || supplierAnswerNeedsConfirmation(answer)) && !reasons.includes("explicit_bid_decision")) {
       reasons.push("explicit_bid_decision");
     }
     return reasons.length
@@ -21856,13 +21861,14 @@ export async function regenerateCustomerAnalysisSection(input: {
     ...input.supportingDocuments.map((document) => document.raw_text),
   ].join("\n\n");
 
-  return normalizeCustomerAnalysisResult(
+  const normalized = normalizeCustomerAnalysisResult(
     mergeCustomerAnalysisSectionPatch({
       analysis: customerAnalysis,
       section: input.section,
       patch,
     }),
     {
+      generatedFields: contract.fields,
       signalSourceText,
       serviceCandidates: input.serviceCandidates,
       sourceDocuments: analysisDocuments.map((document) => ({
@@ -21872,6 +21878,16 @@ export async function regenerateCustomerAnalysisSection(input: {
       })),
     },
   );
+  const result = mergeCustomerAnalysisSectionPatch({
+    analysis: customerAnalysis,
+    section: input.section,
+    patch: normalized,
+  });
+  // Keyword occurrence counts are derived output owned by the same section,
+  // although only the keyword list is supplied by the model's schema.
+  return input.section === "keywords"
+    ? { ...result, signal_word_counts: normalized.signal_word_counts }
+    : result;
 }
 
 export async function generateHighLevelDesign(input: {
@@ -21974,19 +21990,9 @@ export async function generateHighLevelDesign(input: {
     promptCacheKey: "high-level-design",
   });
 
-  const highLevelSolutionDesign = dedupeSummary(
-    result.high_level_solution_design || "",
-    [
-      customerAnalysis.customer_profile_summary,
-      customerAnalysis.customer_goals_summary,
-      ...customerAnalysis.positioning_recommendations,
-      customerAnalysis.executive_summary,
-    ],
-  );
-
   const normalizedHighLevelSolutionDesign =
     enrichHighLevelDesignTextWithFoundationFacts(
-      highLevelSolutionDesign,
+      result.high_level_solution_design || "",
       designFoundationFacts,
     );
 

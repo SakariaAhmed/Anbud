@@ -8,7 +8,27 @@ import type { CustomerAnalysisResult } from "@/lib/types";
  */
 export function normalizeCustomerAnalysisNorwegianProse(
   result: CustomerAnalysisResult,
+  options: { generatedFields?: readonly string[] } = {},
 ): CustomerAnalysisResult {
+  const preservedFields = new Set(["source_excerpt", "source_reference", "high_level_architecture_mermaid", "signal_words", "signal_word_counts", "section_histories"]);
+  const validateProse = (value: unknown): void => {
+    // Role delimiters inside generated prose indicate a corrupt model result.
+    // Never trim original quotations or validate unrelated stored sections.
+    if (typeof value === "string") {
+      if (/(?:[【】]|<\|[^|\n]{1,30}\|>)\s*assistant\s+(?:to\s*=|analysis\b)/iu.test(value)) {
+        throw new Error("AI_OUTPUT_CORRUPT: Modellsvaret inneholder ugyldige kontrollmarkører.");
+      }
+    } else if (Array.isArray(value)) {
+      value.forEach(validateProse);
+    } else if (value && typeof value === "object") {
+      for (const [key, item] of Object.entries(value)) {
+        if (!preservedFields.has(key)) validateProse(item);
+      }
+    }
+  };
+  for (const [field, value] of Object.entries(result)) {
+    if (!preservedFields.has(field) && (!options.generatedFields || options.generatedFields.includes(field))) validateProse(value);
+  }
   const prose = (value: string) => normalizeGeneratedNorwegianProse(value);
   const proseList = (values: string[] | undefined) =>
     (values ?? []).map(prose).filter(Boolean);

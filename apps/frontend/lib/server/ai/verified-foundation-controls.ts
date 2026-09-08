@@ -2,20 +2,13 @@ export type VerifiedFoundationFact = {
   text: string;
 };
 
-function compact(value: string, maxLength = 220) {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length <= maxLength
-    ? text
-    : `${text.slice(0, maxLength - 3).trim()}...`;
-}
-
 function documentedFactText(
   facts: VerifiedFoundationFact[],
   pattern: RegExp,
 ) {
   return facts
     .filter((fact) => pattern.test(fact.text))
-    .map((fact) => compact(fact.text))
+    .map((fact) => fact.text.replace(/\s+/g, " ").trim())
     .slice(0, 6)
     .join(" ");
 }

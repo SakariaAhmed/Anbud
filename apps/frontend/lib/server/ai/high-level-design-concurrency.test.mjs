@@ -21,7 +21,7 @@ test("HLD overlaps digest and retrieval, waits for both, and stops on evidence f
     writeFileSync(completion, `exports.createJsonCompletion = async (input) => {
       const state = globalThis.__hldConcurrencyTest;
       if (input.promptCacheKey === "document-insight-digest") { state.started.push("digest"); return state.digest.promise; }
-      state.prompts.push(input); return { high_level_solution_design: "Foreslått segmentert løsning.", high_level_architecture_mermaid: "flowchart LR\\n A[Bruker] --> B[Tjeneste]" };
+      state.prompts.push(input); return { high_level_solution_design: "## Målarkitektur\\n- Plattform i Norge.\\n- MFA for administratorer.\\n\\n## Drift\\n- Test hvert kvartal.", high_level_architecture_mermaid: "flowchart LR\\n A[Bruker] --> B[Tjeneste]" };
     };`);
     writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async (input) => {
       const state = globalThis.__hldConcurrencyTest; state.started.push("retrieval"); state.retrievalInput = input; return state.retrieval.promise;
@@ -44,7 +44,9 @@ test("HLD overlaps digest and retrieval, waits for both, and stops on evidence f
     await tick();
     assert.equal(state.prompts.length, 0, "generation must await the digest too");
     state.digest.resolve({ document_summary: "Unikt dokumentfunn for test", important_requirements: ["Bevar dette funnet"] });
-    await run;
+    const first = await run;
+    assert.match(first.high_level_solution_design, /## Målarkitektur\n- Plattform i Norge\.\n- MFA for administratorer\./);
+    assert.match(first.high_level_solution_design, /^- Test hvert kvartal\./m);
     assert.equal(state.prompts.length, 1);
     assert.match(state.prompts[0].user, /Unikt dokumentfunn for test/);
     assert.deepEqual(state.retrievalInput.documents, [document]);

@@ -5005,6 +5005,23 @@ test("proposed answers requiring confirmation retain review metadata per source 
   assert.equal(buildProposalInputRequiredMetadata({ ledger: ledger.slice(0, 1), answers: [{ answer: "Atea foreslår en dokumentert rutine som ikke krever ny bekreftelse." }] }).proposal_input_required_count, 0);
 });
 
+test("documented delivery gaps awaiting correction retain review metadata without proposal phrasing", () => {
+  const answers = [
+    "Dokumentert løsning bruker passord uten MFA; dette er et avvik som må lukkes før administrativ tilgang gis.",
+    "Dokumentert løsningsgrunnlag oppfyller derfor ikke RTO-kravet; en teknisk dimensjonering og leverandørbekreftelse må kompletteres før innlevering og produksjonssetting.",
+    "Dokumentert løsningsgrunnlag angir årlig test, og må derfor oppdateres til kvartalsvis gjennomføring før innlevering.",
+    "Dette avviker fra kravet og må erstattes av en bekreftet 24x7-modell før innlevering.",
+    "Atea dokumenterer tilgangsstyring og kunden godkjenner testprotokollen.",
+    "Eventuelle testavvik må lukkes og retestes som del av dokumentert produksjonsrutine.",
+    "Dokumentert løsning er bekreftet, og må ikke oppdateres før innlevering.",
+    "Ingen leverandørbekreftelse må kompletteres før innlevering.",
+  ];
+  const ledger = answers.map((_, index) => requirement({ id: `R-${index}`, documentId: "source-review" }));
+  const metadata = buildProposalInputRequiredMetadata({ ledger, answers: answers.map((answer) => ({ answer })) });
+  assert.deepEqual(metadata.proposal_input_required_rows.map((row) => row.order_index), [0, 1, 2, 3]);
+  assert.ok(metadata.proposal_input_required_rows.every((row) => row.source_document_id === "source-review"));
+});
+
 test("template provenance blocks only deterministic Uklart promotion, not AI Godt", () => {
   const entry = requirement({
     id: "R-035",
