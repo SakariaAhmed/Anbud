@@ -99,3 +99,63 @@ test("adaptive first questions skip rewriting while prior context and forced rew
     delete globalThis.__projectChatRewriteTest; rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("chat keeps question-specific evidence, complete late qualifications and all supplied source locators without inventing platform requirements", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-evidence-"));
+  const state = { prompts: [], retrieval: [], snippets: [] };
+  globalThis.__projectChatEvidenceTest = state;
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatEvidenceTest.prompts.push(input);
+      return (async function* () { yield "Lokalt testsvar."; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => {
+      const state = globalThis.__projectChatEvidenceTest; state.retrieval.push(input);
+      return { snippets: state.snippets, telemetry: { durationMs: 0, usedHybridSearch: true, quality: { sufficient: true, sourceCount: state.snippets.length, topScore: 200 } } };
+    };`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const qualification = "Tilgjengelighetsprøver godkjennes bare etter kundens signatur. Unntak: ingen godkjenning ved tap av revisjonsspor.";
+    const training = "Minst 75 deltakere skal bestå individuell praktisk prøve før produksjonssetting.";
+    const exception = "Eksterne konsulenter er unntatt og bruker bare passord.";
+    const late = `# Bakgrunn\n${"Generell historikk uten relevans. ".repeat(45)}\n# Tilgjengelighetsprøver\n${qualification}\n# Opplæring\n${training}\n# Forbehold\n${exception}`;
+    state.snippets = Array.from({ length: 16 }, (_, index) => ({
+      sourceType: "project_document", sourceId: index % 2 ? "supplier" : "customer",
+      documentTitle: index % 2 ? "Leverandør" : "Kunde", reference: `Unik kilde ${index + 1}`,
+      text: index === 15 ? late : "Generell bakgrunn.", headingPath: [], pageStart: index + 1, pageEnd: index + 1,
+      lexicalScore: 1, score: 100, similarity: 0.8,
+    }));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    for (const customerText of ["Kunden stiller ingen krav til plattformleverandør.", "Microsoft Azure skal ikke brukes. Plattformen skal driftes lokalt."]) {
+      const result = await streamProjectChat({
+        projectName: "Fiktiv kildekontroll", question: "Hva kreves om tilgjengelighetsprøver og opplæring? Skill krav og avvik.",
+        customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+        customerDocument: document("customer", "primary_customer_document", customerText),
+        solutionDocument: document("supplier", "primary_solution_document", "Leverandøren foreslår Microsoft Azure."),
+      });
+      for await (const chunk of result.stream) assert.equal(chunk, "Lokalt testsvar.");
+      const prompt = state.prompts.at(-1).user;
+      assert.ok(prompt.includes(qualification), "The complete late condition and its exception must reach the answer model.");
+      assert.ok(prompt.includes(exception), "A separate exception section must survive even without repeating the question term.");
+      assert.ok(prompt.includes(training), "Another requested topic must retain its complete acceptance criterion.");
+      assert.ok(prompt.includes(customerText));
+      assert.ok(!prompt.includes("Kildene inneholder en Microsoft-relatert føring"), "Supplier choice or a negated platform mention must not become an asserted customer requirement.");
+      assert.ok(state.retrieval.at(-1).exactTerms.includes("tilgjengelighetsprøver"));
+      assert.ok(state.retrieval.at(-1).exactTerms.includes("opplæring"));
+      assert.equal(result.sourceReferences.length, 16);
+      for (const reference of result.sourceReferences) assert.ok(prompt.includes(`Referanse: ${reference.reference}`));
+      assert.equal(state.snippets[15].text, late, "Original source text remains intact.");
+    }
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatEvidenceTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

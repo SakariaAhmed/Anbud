@@ -1,8 +1,8 @@
 # Hastighet og genereringskvalitet — pågående arbeid
 
 **Målet om betydelig raskere funksjoner og bedre genereringer overalt er ikke
-oppfylt. Ingen produksjonsutrulling er utført.** Siste applikasjonscommit er
-`29fb7689` (siste AI-endring: `07b51e3e`). Store lokale forbedringer i lesing, lagring og klargjøring er målt,
+oppfylt. Ingen produksjonsutrulling er utført.** Applikasjonsversjonene er merket ved hver måleserie. `766799a1` innførte
+raskere første chatspørsmål; den påfølgende chatrettingen er dokumentert nederst. Store lokale forbedringer i lesing, lagring og klargjøring er målt,
 men flere modellgenereringer er tregere og kvaliteten er ikke godkjent overalt.
 
 Brukerens ønskede rekkefølge var hastighet → kvalitet → samlet regresjonskontroll.
@@ -488,3 +488,13 @@ Adaptiv omskriving hopper nå over et selvstendig første spørsmål, også når
 Alle fire opprinnelige dommerresultater er bevart, inkludert to noninferiority-feil. Begge lange svar mister opplæring/driftsmøter fra kilden; kildeutdrag og komplett referanseliste må forbedres separat. En dommer blander manglende leverandørbekreftelse med manglende kundekrav for sletting, og reelle blokkreferanser manglet i dommerens kildebundle. Dette avgrenser disse begrunnelsene uten å fjerne de faktiske kvalitetsgapene. Se `verification/chat-first-question-v1/comparison.json` og kildebevisene ved siden av.
 
 Verifisert: 910 frontendtester, 129 rottester, alle SQL-tester på disponibel lokal database, 20 harness-tester, lint uten advarsler og produksjonsbygg. Ingen produksjonsendring. Budsjettet har 502 registrerte forespørsler, konservativ total 13,991005 USD, brukt av nytt påfyll 0,597287 USD og 13,402713 USD igjen. Proxyen er stoppet uten ventende kall.
+
+### Chatens kildeutvalg og sporbarhet
+
+Faktisk promptopptak skilte mellom manglende utvalg (opplæring og leverandørens driftsmøtesvar) og avkorting av en valgt blokk (kundens driftsmøtekrav). Søket bruker nå spørsmålets konkrete termer, og modellen mottar hele de valgte tekstblokkene. Chunk-eieren begrenser også struktur-/tabellrader til 4800 tegn og retrieval til 16 blokker. Produktnavn blir ikke lenger automatisk gjort til et positivt kundekrav. Alle kildene beholdes gjennom repository, API og det eksisterende sammenleggbare kildefeltet.
+
+Langt utviklingssvar dekker nå de undersøkte kravene og forbeholdene korrekt. To nye blindede Mini-dommere med separat locator-aware protokoll foretrekker kandidatene; gamle dommer beholdes. Begge fullførte svar er langsommere: langt 7,780 → 9,446 sekunder, lite 10,891 → 15,629. Langt svar fikk første tekst tidligere, 3,757 → 2,824 sekunder; lite fikk den senere, 1,736 → 4,888. Småsvaret gjentar flere poenger og har en upresis formulering om kostnadsprognose. Det er ikke erklært feilfri kvalitet eller generell hastighetsgevinst.
+
+912 frontendtester og 129 rottester, inkludert alle disponible SQL-tester, samt 20 harness-tester, lint og bygg passerer. To nye owner-regresjoner feiler på eldre kode. Faktisk kryptert lagring, gjeninnlesing og API beholder 16 kilder; visuelt kontrollert ved 1440/390 px med tastaturåpning og uten sideoverflow. HTTP-sletting ved opprydding ga500 i miljøet uten Azure-konfigurasjon; det eksakte tomme testprosjektet og meldingene ble fjernet gjennom lokal PostgREST. Dette er ikke en vellykket ende-til-ende-test av prosjektsletting. Se `verification/chat-evidence-v1/comparison.json`, browserbevis og separat cleanup-reconciliation.
+
+Gjeldende budsjett: 512 forespørsler, total 14.059523 USD, nytt påfyll brukt 0.665805 USD, igjen 13.334195 USD. Proxyen er stoppet; ingen ventende kall. Alle469 historiske rader er uendret. Eldre budsjettall i de daterte avsnittene er historiske. Ingen produksjonsutrulling.

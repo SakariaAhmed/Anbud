@@ -97,8 +97,7 @@ function normalizeChatSourceReferences(value: unknown): ChatSourceReference[] {
           : ("project_document" as const),
       source_id: typeof item.source_id === "string" ? item.source_id : "",
     }))
-    .filter((item) => item.document_title || item.reference)
-    .slice(0, 8);
+    .filter((item) => item.document_title || item.reference);
 }
 
 function sessionIdFromSnapshot(snapshot: unknown) {

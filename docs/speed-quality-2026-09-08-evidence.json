@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-09-08T12:20:56.630Z",
-  "repositoryCommit": "992cce1cd9daebb0a6c65aa0f3d9bb173cacd0d8",
-  "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
+  "generatedAt": "2026-09-08T12:40:00.655Z",
+  "repositoryCommit": "766799a1b6319a7c286a912d76dab89f4bdb3f40",
+  "applicationCommit": "766799a1b6319a7c286a912d76dab89f4bdb3f40",
   "goalCompleted": false,
   "budget": {
     "limitUsd": 27.393718,
     "accountingPolicy": "verified-cache-usage-or-full-reservation-v5",
-    "accountedUpperBoundUsd": 13.991005,
-    "remainingUsd": 13.402713,
-    "requestCount": 502,
-    "ledgerSha256": "031c909970e7334fbf13c51cc7e57314da52bae966c8b764d2f1c2d03ac4ab8c"
+    "accountedUpperBoundUsd": 14.059523,
+    "remainingUsd": 13.334195,
+    "requestCount": 512,
+    "ledgerSha256": "91d0803951cbbbdbdf2ba6a0a0394346e80e07c88c461eb0b05213d8f88243cd"
   },
   "limitations": [
     "Single generation per pair is not a p95 or causal latency regression test. Additional repetitions never replace the original 44-pair matrix.",
@@ -266,6 +266,10 @@
   "firstQuestionChatDevelopment": {
     "verification": "verification/chat-first-question-v1/comparison.json",
     "scope": "Four development pairs, including distinct empty/current-message input variants and a long-source question. Avoidable rewrite removed; all observed pairs faster. Two advisory noninferiority failures preserved. Long-source omissions and citation precision remain unresolved; no universal quality or holdout claim."
+  },
+  "chatSourceEvidenceCorrection": {
+    "verification": "verification/chat-evidence-v1/comparison.json",
+    "scope": "Subsequent fix preserves selected chunks, prioritizes question topics and retains all16 locators through repository/API/UI. Long development omissions corrected; two new locator-aware advisory judge wins. Both full answers slower; no universal speed/quality acceptance. Original browser HTTP cleanup500 and separate local DB cleanup retained."
   },
   "generationComparisons": [
     {
@@ -1569,8 +1573,8 @@
     },
     {
       "path": "api-budget.json",
-      "bytes": 549816,
-      "sha256": "031c909970e7334fbf13c51cc7e57314da52bae966c8b764d2f1c2d03ac4ab8c"
+      "bytes": 561056,
+      "sha256": "91d0803951cbbbdbdf2ba6a0a0394346e80e07c88c461eb0b05213d8f88243cd"
     },
     {
       "path": "auth-after.json",
@@ -2096,6 +2100,16 @@
       "path": "judge-quality-quality-requirement-prompt-v1-kyst-data-holdout-forbedret_kravsvar.json",
       "bytes": 505612,
       "sha256": "bdad3a81362032e1f62dba22014038256e386749a2ef66a04283908bd68047eb"
+    },
+    {
+      "path": "judge-quality-task-sources-chat-locators-v1-mini-chat-evidence-v1-fjord-drift-development-chat.json",
+      "bytes": 1193422,
+      "sha256": "341a0afb8545cf76bf58fdf6dab5827cba379531263044050be43286a74a6288"
+    },
+    {
+      "path": "judge-quality-task-sources-chat-locators-v1-mini-chat-evidence-v1-sundvik-32-requirements-chat.json",
+      "bytes": 1190022,
+      "sha256": "8a5bcc171ea9149ea522e0b3c967923e123dc86dfa324624f7dbde7a55e0b803"
     },
     {
       "path": "judge-quality-task-sources-v2-final-standard-v5-fjord-drift-development-customer_analysis_v3.json",
@@ -2796,6 +2810,16 @@
       "path": "matrix-candidate-hld-speed-sundvik-32-explicit-ids-high_level_design.json",
       "bytes": 461894,
       "sha256": "7e7cd69829e340520bcdcc8d352c7e7ef9f8b6caa267f58795839cc295e58da2"
+    },
+    {
+      "path": "matrix-chat-evidence-v1-fjord-drift-development-chat.json",
+      "bytes": 1193672,
+      "sha256": "b73d65e3264a57428c3553e77cccdc2f33a295eb609ab57c95179ebaf8d87225"
+    },
+    {
+      "path": "matrix-chat-evidence-v1-sundvik-32-requirements-chat.json",
+      "bytes": 1190646,
+      "sha256": "62654248f25789dba8937de345e02cd70d8e5fff14c437ccf88ba0cc11a50916"
     },
     {
       "path": "matrix-chat-first-question-fjord-drift-development-chat.json",
@@ -3813,6 +3837,81 @@
       "sha256": "ecb4c999aa17568ada4b2f691cf629a8bd18a178f4b49285b8d91bfc9031edda"
     },
     {
+      "path": "verification/chat-context-after-packing-final-v1.json",
+      "bytes": 1306855,
+      "sha256": "774451d8f455ddd7941fddcaa05f92377e4481e05bb29e5ed546c391f65746db"
+    },
+    {
+      "path": "verification/chat-context-after-packing-v1.json",
+      "bytes": 1302755,
+      "sha256": "d9601adf47b86541b7ef8695025f0d04225fe115c68b02acbc670fd55ba4f21a"
+    },
+    {
+      "path": "verification/chat-context-after-packing-v2.json",
+      "bytes": 1302711,
+      "sha256": "d951d02e6f5c124f269a01aa368fe9eb1d903984e9ae026578a9688ce4d52d8c"
+    },
+    {
+      "path": "verification/chat-context-before-packing-v1.json",
+      "bytes": 1304008,
+      "sha256": "0216b80eb2c7da23691a95eb9d11c01b4c95a3d1d8f575e770690eedc8499cf1"
+    },
+    {
+      "path": "verification/chat-evidence-development-plan-v1.json",
+      "bytes": 939,
+      "sha256": "aca138f8b05cb419bef5f5aa9db367aece505bad11abdd0adc3717cf941d3b23"
+    },
+    {
+      "path": "verification/chat-evidence-v1/budget.json",
+      "bytes": 109,
+      "sha256": "a75d99738f1b3951c6952ac1dfd6ec83f591ad9b4c49ca3806c54daa33731ad3"
+    },
+    {
+      "path": "verification/chat-evidence-v1/build.log",
+      "bytes": 5097,
+      "sha256": "064d11f95ddd6011976368124e71cdeb6ca5b42d40eea3738faf642eb682b1bf"
+    },
+    {
+      "path": "verification/chat-evidence-v1/comparison.json",
+      "bytes": 4922,
+      "sha256": "1b5edc899500f928290e90d391911f113ffa55c7cd193c24804d866c9ddb5d83"
+    },
+    {
+      "path": "verification/chat-evidence-v1/full-tests.log",
+      "bytes": 221839,
+      "sha256": "29927a46d20e616f484231ff120089de045a4b0e791b5170a8442c9ca4424ebb"
+    },
+    {
+      "path": "verification/chat-evidence-v1/harness.log",
+      "bytes": 2090,
+      "sha256": "101956bfdb478c8af20ab616ca325b59e800d3fbb0f31e7e2d3ac69d05e71eb8"
+    },
+    {
+      "path": "verification/chat-evidence-v1/initial-test-harness-envelope-error.log",
+      "bytes": 2180,
+      "sha256": "188a077039ee152e6b339b7efc890f5caa91131cfbb83a5b55e0e91843f16249"
+    },
+    {
+      "path": "verification/chat-evidence-v1/lint.log",
+      "bytes": 60,
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "verification/chat-evidence-v1/parent-platform-premise.json",
+      "bytes": 1043,
+      "sha256": "8dc4e927396a973307f3ff04f9b283eeefe532b71f0da93c896220fd90db67c1"
+    },
+    {
+      "path": "verification/chat-evidence-v1/parent-review.json",
+      "bytes": 4311,
+      "sha256": "5a65f3455ba56cf68a649a0261b076434fb8aa25b2c17c34a91f3c9a07ddff05"
+    },
+    {
+      "path": "verification/chat-evidence-v1/regression-red.log",
+      "bytes": 10425,
+      "sha256": "ea4d5da1469e1d4de297ccc952272f1caa326f980e9c218e0841fc0949d8a3f3"
+    },
+    {
       "path": "verification/chat-first-question-development-plan-v1.json",
       "bytes": 1399,
       "sha256": "302f4528bac2e7099dcc9051310a5df470836a1500788ed7fac3317c6714fe19"
@@ -3861,6 +3960,26 @@
       "path": "verification/chat-long-development-plan-v1.json",
       "bytes": 110272,
       "sha256": "ee4c31c42f626916c904e4e766a0adbf79705ec4a235b74eeb9c6228cf7c0531"
+    },
+    {
+      "path": "verification/chat-source-browser-v1/checks.json",
+      "bytes": 952,
+      "sha256": "b34494f1b955f134cb163c627e23a90de91e23ec0f52ecb8f01425664ef6938b"
+    },
+    {
+      "path": "verification/chat-source-browser-v1/cleanup-reconciliation.json",
+      "bytes": 508,
+      "sha256": "43732482c3b47dc24981a52dd8a7c1d88326f454175016ce998598cc19aff483"
+    },
+    {
+      "path": "verification/chat-source-browser-v1/desktop.png",
+      "bytes": 135934,
+      "sha256": "fe69720f651c7503abadfc5ab3912cd1631e70c088b1b8b7242e3d98dacf6743"
+    },
+    {
+      "path": "verification/chat-source-browser-v1/mobile.png",
+      "bytes": 66862,
+      "sha256": "c5409f26e843ebb0d6716ac27ad5b83a9004de681ba5f2e0463f359c7277e2b7"
     },
     {
       "path": "verification/closing-boundaries.log",

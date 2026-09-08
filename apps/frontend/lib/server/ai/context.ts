@@ -8,6 +8,14 @@ import type {
   SolutionEvaluationResult,
 } from "@/lib/types";
 
+export function questionRetrievalTerms(question: string) {
+  return Array.from(new Set(question.toLowerCase()
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .match(/[a-zæøå0-9-]{4,}/g) ?? []))
+    .filter(term => !["skal", "ikke", "eller", "dette", "hvilke", "hvordan", "kreves", "bekrefter", "skill", "mellom", "krav", "avvik", "manglende", "dokumentasjon", "løsningsbeskrivelsen", "the", "with", "from", "that"].includes(term))
+    .slice(0, 24);
+}
+
 export function compactText(value: unknown, limit = 16000) {
   const source = typeof value === "string" ? value : "";
   // Only normalize enough source to produce the requested prefix. Large source
@@ -108,13 +116,13 @@ export function selectDocumentStructureEntries(
 export function retrievedSnippetContext(
   label: string,
   snippets: RetrievedDocumentSnippet[],
-  options?: { textLimit?: number },
+  options?: { textLimit?: number | null },
 ) {
   if (!snippets.length) {
     return "";
   }
 
-  const textLimit = options?.textLimit ?? 1200;
+  const textLimit = options?.textLimit === null ? null : options?.textLimit ?? 1200;
   return buildDelimitedContext(
     label,
     snippets
@@ -135,7 +143,7 @@ export function retrievedSnippetContext(
           snippet.similarity != null
             ? `Semantisk treff: ${snippet.similarity.toFixed(3)}`
             : `Nøkkelordtreff: ${snippet.lexicalScore}`,
-          compactText(snippet.text, textLimit),
+          textLimit === null ? snippet.text : compactText(snippet.text, textLimit),
         ]
           .filter(Boolean)
           .join("\n"),

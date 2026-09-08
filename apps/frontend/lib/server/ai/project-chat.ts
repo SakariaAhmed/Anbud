@@ -2,7 +2,7 @@ import "server-only";
 
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import { createJsonCompletion, createTextCompletionStream } from "@/lib/server/ai/completion";
-import { compactText, retrievedSnippetContext } from "@/lib/server/ai/context";
+import { compactText, questionRetrievalTerms, retrievedSnippetContext } from "@/lib/server/ai/context";
 import { FAST_MODEL, FAST_REASONING_EFFORT } from "@/lib/server/ai/model-config";
 import { extractExactRetrievalTerms } from "@/lib/server/ai/retrieval-query";
 import {
@@ -11,7 +11,6 @@ import {
 } from "@/lib/server/document-chunks";
 import {
   buildOfferCoverageContext,
-  buildOfferCoverageRetrievalSeed,
   shouldUseStructuredCoverageForChat,
 } from "@/lib/server/offer-coverage";
 import { buildChatPrompt, buildDelimitedContext, buildPromptTemplate } from "@/lib/server/prompts";
@@ -341,21 +340,9 @@ function deterministicRetrievalPlan(input: {
     : input.question;
 
   return {
-    standalone_query: compactText(
-      [standalone, input.domainHints.join(" "), input.domainTerms.join(" ")]
-        .filter(Boolean)
-        .join("\n"),
-      1200,
-    ),
+    standalone_query: compactText(standalone, 1200),
     exact_terms: exactTerms,
-    subqueries: input.domainTerms.length
-      ? [
-          [input.question, input.domainTerms.slice(0, 6).join(" ")]
-            .filter(Boolean)
-            .join(" "),
-        ]
-      : [],
-    rationale: "Deterministisk retrieval-plan basert på domener, historikk og eksakte termer.",
+    subqueries: [],
   };
 }
 
@@ -473,7 +460,7 @@ function sourceReferencesFromSnippets(
     }
   }
 
-  return [...byKey.values()].slice(0, 8);
+  return [...byKey.values()];
 }
 
 function buildChatHistoryContext(messages: ChatMessage[]) {
@@ -581,39 +568,13 @@ function buildChatAnswerStructureContext(input: {
         ? "For brede prosjektspørsmål kan du bruke dekningskonteksten som en sjekkliste, men ikke som en tvungen svarstruktur."
         : "For smale spørsmål skal svaret være direkte og ikke utvides til full prosjektanalyse uten at brukeren ber om det.",
       sourceRule,
+      "Skill eksplisitte kundekrav fra leverandørens produktvalg og egne anbefalinger. Bevar negasjoner og forbehold; et produktnavn i kilden er ikke i seg selv et kundekrav.",
       input.domainHints.length
         ? `Tolkede fagvinkler: ${input.domainHints.join(", ")}. Bruk dem som intern kontekst, ikke som synlig modus.`
         : "",
     ]
       .filter(Boolean)
       .join("\n"),
-  );
-}
-
-function buildChatMicrosoftGuidanceContext(
-  documents: ProjectDocumentDetail[],
-) {
-  const corpus = documents
-    .map((document) => `${document.title}\n${document.raw_text}`)
-    .join("\n\n");
-  if (!/\b(Microsoft|Azure|Entra|M365|Microsoft 365)\b/i.test(corpus)) {
-    return "";
-  }
-
-  const lockInText =
-    /\b(leverandørlåsing|leverand[øo]r-?l[åa]sing|lock-?in|unødig\s+l[åa]sing)\b/i.test(
-      corpus,
-    )
-      ? "Kildene nevner også at dette ikke skal bli unødig leverandørlåsing. Presenter Microsoft som en føring og et naturlig tjenestespor, ikke som eksklusiv låsing."
-      : "Ikke utvid Microsoft-føringen til eksklusiv leverandørlåsing uten dokumentstøtte.";
-
-  return buildDelimitedContext(
-    "Dokumentert Microsoft-føring",
-    [
-      "Kildene inneholder en Microsoft-relatert føring. For brede krav- og prosjektspørsmål skal svaret omtale dette eksplisitt under plattform, sikkerhet, drift eller prioriteringer.",
-      "Bruk konkrete formuleringer som Microsoft-nær plattform, Entra/AD-overgang, M365/Azure-kompatibel drift eller tilsvarende bare når det passer med dokumentgrunnlaget.",
-      lockInText,
-    ].join("\n"),
   );
 }
 
@@ -637,13 +598,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     input.solutionDocument,
     ...(input.supportingDocuments ?? []),
   ].filter((document): document is ProjectDocumentDetail => Boolean(document));
-  const coverageSeed = buildOfferCoverageRetrievalSeed({
-    projectName: input.projectName,
-    mode: "chat",
-    question: input.question,
-    customerAnalysis: input.customerAnalysis,
-    documents: projectDocumentsForRetrieval,
-  });
   const retrievalPlan = await buildProjectChatRetrievalPlan({
     question: input.question,
     domainHints,
@@ -652,10 +606,10 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     sessionSummary: input.sessionSummary,
     model: input.model,
   });
+  const questionTerms = questionRetrievalTerms(input.question);
   const retrievalQuery = [
     retrievalPlan.standalone_query,
     ...retrievalPlan.subqueries,
-    useStructuredCoverage ? coverageSeed.query : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -665,9 +619,10 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     documents: projectDocumentsForRetrieval,
     exactTerms: Array.from(
       new Set([
-        ...(useStructuredCoverage ? coverageSeed.exactTerms : []),
-        ...retrievalPlan.exact_terms,
-        ...domainTerms,
+        ...extractExactRetrievalTerms(input.question),
+        ...questionTerms,
+        ...retrievalPlan.exact_terms.filter(term => !questionTerms.length || !domainTerms.includes(term)),
+        ...(!questionTerms.length ? domainTerms : []),
       ]),
     ).slice(0, useStructuredCoverage ? 36 : 24),
     limit: useStructuredCoverage ? 16 : 12,
@@ -682,7 +637,9 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const retrievalContext = retrievedSnippetContext(
     "Mest relevante dokumentutdrag for spørsmålet",
     retrievedSnippets,
-    { textLimit: useStructuredCoverage ? 950 : 1300 },
+    // Retrieval already bounds the number and size of chunks. Keep their
+    // complete text: a later section can qualify an earlier commitment.
+    { textLimit: null },
   );
   const attachmentTextLimit = useStructuredCoverage
     ? CHAT_ATTACHMENT_STRUCTURED_CONTEXT_LIMIT
@@ -715,9 +672,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
       })
     : "";
   const sourceReferences = sourceReferencesFromSnippets(retrievedSnippets);
-  const microsoftGuidanceContext = buildChatMicrosoftGuidanceContext(
-    projectDocumentsForRetrieval,
-  );
   const supportingDocuments = (input.supportingDocuments ?? [])
     .slice(0, 4)
     .map((document, index) =>
@@ -765,7 +719,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
       hasStrongRetrieval,
       domainHints,
     }),
-    microsoftGuidanceContext,
     useStructuredCoverage
       ? buildDelimitedContext(
           "Dekningsstøtte for bredt prosjektspørsmål",
