@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-09-08T11:33:56.914Z",
-  "repositoryCommit": "1c66f4f19c99d3f0dd9c08f0bbcd5cea0031d6cb",
+  "generatedAt": "2026-09-08T11:41:59.507Z",
+  "repositoryCommit": "103925833c05ce0f6401d46fa90146b4632e7df2",
   "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
-    "limitUsd": 14,
+    "limitUsd": 27.393718,
     "accountingPolicy": "verified-cache-usage-or-full-reservation-v5",
-    "accountedUpperBoundUsd": 13.393717999999982,
-    "remainingUsd": 0.606282000000018,
+    "accountedUpperBoundUsd": 13.393718,
+    "remainingUsd": 14,
     "requestCount": 469,
-    "ledgerSha256": "aa88728ce13d3629262f56db143a57cde5d3a67359fa032adfffc31d164f083f"
+    "ledgerSha256": "baa424428fb329ec07cb54fea8db215965412a40368cfdcfa3401d7a3d13f37f"
   },
   "limitations": [
     "Single generation per pair is not a p95 or causal latency regression test. Additional repetitions never replace the original 44-pair matrix.",
@@ -20,7 +20,7 @@
     "The supplemental populated-service inputs change only serviceCandidates. Both development outputs select the two relevant services; both holdout outputs select none. This is not end-to-end AI integration with persisted service documents or evidence of improved holdout recommendations.",
     "Historical read/write seeding incorrectly encrypted plaintext content_markdown. Use plaintext-v3 semantic read, write and generation-context evidence for representative plaintext performance. Earlier runs are preserved, not promoted as equivalent evidence.",
     "Export plaintext-v4 is 30-pair plaintext/list performance; malformed fixture table rows render as pipe text. Table-functional-v6 is separate single-pair functional evidence with a real table, not p95. HTML .doc is not native Word verification.",
-    "All fixtures are fictional and local. Azure storage, Entra, complete perfect_system_solution and broader concurrent production workloads remain unverified. Full-pair conservative output reservations alone exceed the remaining API budget."
+    "All fixtures are fictional and local. Azure storage, Entra, complete perfect_system_solution and broader concurrent production workloads remain unverified. Before the explicit refill, full-pair conservative output reservations exceeded the available budget. The refill funds further work but does not establish any missing workflow or quality evidence."
   ],
   "currentFreeEvidence": {
     "reads": "http-quiet-plaintext-v3-semantic-control-pairs.json",
@@ -250,6 +250,12 @@
     "sourceFieldEvidence": "verification/two-gpt54-judges-source-field-evidence-v1.json",
     "sourceAdjudication": "verification/two-gpt54-judges-source-adjudication-v1.json",
     "scope": "Exactly two prespecified judges of existing frozen V5 pairs. No new generation, extra judge or retry. Earlier Mini verdicts and development adjudication remain unchanged. Higher judge model does not itself establish quality or supersede source evidence."
+  },
+  "authorizedBudgetRefill": {
+    "authorization": "verification/api-budget-refill-authorization-v1.json",
+    "testPlan": "verification/api-budget-refill-test-plan-v1.json",
+    "archive": "api-budget-before-authorized-refill-v1.json",
+    "scope": "Explicit user refill grants at most 14 new USD from prior conservative cost 13.393718 USD. Same ledger, all 469 prior rows preserved, cumulative ceiling 27.393718 USD. Earlier budget preflight gaps remain historical evidence; fresh live workflow verification is now funded but incomplete."
   },
   "generationComparisons": [
     {
@@ -1532,6 +1538,11 @@
   "rawEvidenceRoot": "output/speed-quality-2026-09-08 (local, gitignored)",
   "rawFiles": [
     {
+      "path": "api-budget-before-authorized-refill-v1.json",
+      "bytes": 507918,
+      "sha256": "aa88728ce13d3629262f56db143a57cde5d3a67359fa032adfffc31d164f083f"
+    },
+    {
       "path": "api-budget-before-two-gpt54-judges-v1.json",
       "bytes": 505193,
       "sha256": "33cd65a7133faacdfa2e8f0cb35910650f802910bdea16f0e47aad455c8ab5d6"
@@ -1548,8 +1559,8 @@
     },
     {
       "path": "api-budget.json",
-      "bytes": 507918,
-      "sha256": "aa88728ce13d3629262f56db143a57cde5d3a67359fa032adfffc31d164f083f"
+      "bytes": 508764,
+      "sha256": "baa424428fb329ec07cb54fea8db215965412a40368cfdcfa3401d7a3d13f37f"
     },
     {
       "path": "auth-after.json",
@@ -3425,6 +3436,26 @@
       "path": "verification/anbud-section-old-content-before.log",
       "bytes": 1766,
       "sha256": "5b34ed3f34c7c2ad3d0028ae2d8ef6af4a487cd4c1fe48ec8e8af3745e4d456e"
+    },
+    {
+      "path": "verification/api-budget-refill-authorization-v1.json",
+      "bytes": 1373,
+      "sha256": "7765d5e29afd2a3ccd004e41de52b6fe2838234d43fd9759f0c459c45a611380"
+    },
+    {
+      "path": "verification/api-budget-refill-harness-tests-v2.log",
+      "bytes": 4273,
+      "sha256": "154a21c1eee0690ab109127e662e902932b466afc8d1e069f4abe53f97b6645c"
+    },
+    {
+      "path": "verification/api-budget-refill-test-plan-v1.json",
+      "bytes": 1972,
+      "sha256": "21640f68139867edd5744063c33ffbbfdf399a0f863c54bd1f20a5b65f1c7f86"
+    },
+    {
+      "path": "verification/api-budget-refill-verification-v1.json",
+      "bytes": 937,
+      "sha256": "4fbf988b3a19af59b003b7f87202b63dd5bc78174a44b0d51a63fc43d74c86b1"
     },
     {
       "path": "verification/azure-visible-resource-inventory-v1.json",

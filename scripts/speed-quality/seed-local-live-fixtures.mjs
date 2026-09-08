@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
+import { validatedBudgetLimit } from "./budget.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const frontend = path.join(root, "apps/frontend");
@@ -16,7 +17,8 @@ if (existsSync(output) && !append) throw new Error("Live fixtures already exist.
 const env = JSON.parse(readFileSync(path.join(root, "output/speed-quality-2026-09-08/local-environment.json"), "utf8"));
 if (env.DATA_API_URL !== "http://127.0.0.1:55440" || env.OPENAI_BASE_URL !== "http://127.0.0.1:4319/v1" || env.OPENAI_API_KEY !== "local-evaluation-proxy-only") throw new Error("Only the disposable local database and budget proxy are allowed.");
 const budget = await fetch("http://127.0.0.1:4319/budget").then((r) => r.json());
-if (budget.limitUsd !== 14 || budget.remainingUsd < 5) throw new Error("Budget proxy unavailable or insufficient reserved headroom.");
+validatedBudgetLimit(budget);
+if (budget.remainingUsd < 5) throw new Error("Budget proxy unavailable or insufficient reserved headroom.");
 Object.assign(process.env, env);
 const require = createRequire(path.join(frontend, "package.json"));
 const jiti = require("jiti").createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });

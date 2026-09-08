@@ -64,7 +64,7 @@ for (const fixture of cases) for (const kind of kinds) {
   if (await getProjectSourceRevision(fixture.projectId) !== fixture.sourceRevision) throw new Error("Persisted retrieval source changed.");
   const budgetBefore = await fetch("http://127.0.0.1:4319/budget").then((r) => r.json());
   // Baseline trials are finished. Retain a bounded final judge reserve while
-  // the proxy independently enforces the unchanged USD 14 aggregate ceiling.
+  // the proxy independently enforces the recorded authorized aggregate ceiling.
   if (budgetBefore.remainingUsd < minimumReserve) throw new Error("Preserve final-evaluation budget headroom.");
   process.env.DOCUMENT_ANALYSIS_VERSION = kind === "customer_analysis_v3" ? "v3" : "off";
   const evaluation = kind === "executive_summary" ? JSON.parse(readFileSync(path.join(dir, `matrix-${evaluationLabel}-${fixture.caseId}-solution_evaluation.json`), "utf8")).result : undefined;

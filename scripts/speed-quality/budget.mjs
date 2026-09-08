@@ -135,18 +135,46 @@ export function prepareRequest(endpoint, original, outputLimit = 8000, serviceTi
   return { request, requestedServiceTier, inputTokens, outputTokens, reservedUsd, priceTier, inputRate, outputRate, requestSha256: createHash("sha256").update(JSON.stringify(request)).digest("hex"), inputSha256: createHash("sha256").update(JSON.stringify({ content, instructions: request.instructions, response_format: request.response_format, text: request.text })).digest("hex") };
 }
 
-export function openBudgetLedger(file, limitUsd = 14) {
-  if (!(limitUsd > 0 && limitUsd <= 14)) throw new Error("Budget must be at most 14 USD.");
+const moneyMicros = (value) => Math.round(value * 1e6);
+const requestsHash = (rows) => createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+export function validatedBudgetLimit(ledger) {
+  if (!Array.isArray(ledger.requests)) throw new Error("Invalid budget requests.");
+  const events = ledger.budgetAuthorizations ?? [];
+  if (!Array.isArray(events)) throw new Error("Invalid budget authorizations.");
+  let limit = events[0]?.previousLimitUsd ?? ledger.limitUsd;
+  if (!(Number.isFinite(limit) && limit > 0 && limit <= 14)) throw new Error("Initial budget must be at most 14 USD.");
+  let previousCount = 0;
+  const ids = new Set();
+  for (const event of events) {
+    const count = event.previousRequestCount;
+    if (!Number.isSafeInteger(count) || count < previousCount || count > ledger.requests.length ||
+        !Number.isFinite(event.additionalBudgetUsd) || event.additionalBudgetUsd <= 0 || event.additionalBudgetUsd > 14 || event.additionalBudgetUsd !== moneyMicros(event.additionalBudgetUsd) / 1e6 ||
+        !event.sourceMessageId || !event.sourceThreadId || !event.userStatement || !Number.isFinite(Date.parse(event.observedAt)) ||
+        !/^[a-f0-9]{64}$/.test(event.previousLedgerSha256 ?? "") || ids.has(event.sourceMessageId)) throw new Error("Invalid explicit budget authorization.");
+    const prefix = ledger.requests.slice(0, count);
+    const usedMicros = prefix.reduce((sum, row) => sum + moneyMicros(accountedCostUpperBound(row)), 0);
+    if (prefix.some((row) => ["reserved", "pending"].includes(row.status)) || requestsHash(prefix) !== event.previousRequestsSha256 ||
+        event.previousLimitUsd !== limit || usedMicros !== moneyMicros(event.accountedUpperBoundAtAuthorizationUsd) ||
+        moneyMicros(event.newLimitUsd) !== usedMicros + moneyMicros(event.additionalBudgetUsd)) throw new Error("Budget authorization does not match preserved history.");
+    limit = event.newLimitUsd; previousCount = count; ids.add(event.sourceMessageId);
+  }
+  if (ledger.limitUsd !== limit) throw new Error("Unrecorded budget limit change.");
+  return limit;
+}
+
+export function openBudgetLedger(file, requestedLimitUsd) {
+  if (requestedLimitUsd !== undefined && !(Number.isFinite(requestedLimitUsd) && requestedLimitUsd > 0)) throw new Error("Invalid requested budget.");
   const lock = `${file}.lock`;
   const descriptor = openSync(lock, "wx", 0o600);
   closeSync(descriptor);
   let ledger;
   try {
     ledger = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {
-      version: 1, limitUsd, createdAt: new Date().toISOString(), requests: [],
+      version: 1, limitUsd: requestedLimitUsd ?? 14, createdAt: new Date().toISOString(), requests: [],
     };
-    if (ledger.version !== 1 || ledger.limitUsd !== limitUsd || !Array.isArray(ledger.requests)) throw new Error("Invalid existing ledger.");
+    if (ledger.version !== 1 || requestedLimitUsd !== undefined && ledger.limitUsd !== requestedLimitUsd || !Array.isArray(ledger.requests)) throw new Error("Invalid existing ledger.");
     if (ledger.requests.some((r) => !(r.reservedUsd > 0) || !Number.isFinite(r.reservedUsd))) throw new Error("Invalid reservation.");
+    validatedBudgetLimit(ledger);
   } catch (error) { unlinkSync(lock); throw error; }
   ledger.accountingPolicy = ACCOUNTING_POLICY;
   // Keep old recorded derived costs as historical data. The live aggregate is
@@ -160,12 +188,17 @@ export function openBudgetLedger(file, limitUsd = 14) {
   // Check committed upper bounds plus all pending/unknown reservations before
   // every call, under the same exclusive process lock.
   function total() { return ledger.requests.reduce((sum, row) => sum + row.reservedUsd, 0); }
-  function accountedTotal() { return ledger.requests.reduce((sum, row) => sum + accountedCostUpperBound(row), 0); }
+  function accountedTotal() { return ledger.requests.reduce((sum, row) => sum + moneyMicros(accountedCostUpperBound(row)), 0) / 1e6; }
   save();
   return {
-    reserve({ endpoint, model, inputTokens, outputTokens, reservedUsd, phase, requestSha256, inputSha256, priceTier, inputRate, outputRate, requestedServiceTier }) {
-      if (!(reservedUsd > 0) || !Number.isFinite(reservedUsd) || accountedTotal() + reservedUsd > limitUsd) throw new Error("Evaluation budget exhausted.");
-      const row = { id: randomUUID(), at: new Date().toISOString(), accountingPolicy: ACCOUNTING_POLICY, phase, endpoint, model, requestSha256, inputSha256, requestedServiceTier, priceTier, inputRatePerMillion: inputRate, outputRatePerMillion: outputRate, inputTokensUpperBound: inputTokens, outputTokensLimit: outputTokens, reservedUsd, status: "reserved" };
+    reserve({ endpoint, model, inputTokens, outputTokens, reservedUsd, phase, phaseBudgetUsd, requestSha256, inputSha256, priceTier, inputRate, outputRate, requestedServiceTier }) {
+      if (!(reservedUsd > 0) || !Number.isFinite(reservedUsd) || reservedUsd !== moneyMicros(reservedUsd) / 1e6 || moneyMicros(accountedTotal()) + moneyMicros(reservedUsd) > moneyMicros(ledger.limitUsd)) throw new Error("Evaluation budget exhausted.");
+      if (phaseBudgetUsd !== undefined) {
+        if (!phase || !(Number.isFinite(phaseBudgetUsd) && phaseBudgetUsd > 0 && phaseBudgetUsd <= 14)) throw new Error("Invalid phase budget.");
+        const used = ledger.requests.filter((row) => row.phase === phase).reduce((sum, row) => sum + moneyMicros(accountedCostUpperBound(row)), 0);
+        if (used + moneyMicros(reservedUsd) > moneyMicros(phaseBudgetUsd)) throw new Error("Evaluation phase budget exhausted.");
+      }
+      const row = { id: randomUUID(), at: new Date().toISOString(), accountingPolicy: ACCOUNTING_POLICY, phase, phaseBudgetUsd, endpoint, model, requestSha256, inputSha256, requestedServiceTier, priceTier, inputRatePerMillion: inputRate, outputRatePerMillion: outputRate, inputTokensUpperBound: inputTokens, outputTokensLimit: outputTokens, reservedUsd, status: "reserved" };
       ledger.requests.push(row);
       save();
       return row.id;
@@ -177,7 +210,17 @@ export function openBudgetLedger(file, limitUsd = 14) {
       row.accountedCostUpperBoundUsd = accountedCostUpperBound(row);
       save();
     },
-    snapshot() { return structuredClone({ ...ledger, accountingPolicy: ACCOUNTING_POLICY, reservedUsd: total(), accountedUpperBoundUsd: accountedTotal(), remainingUsd: limitUsd - accountedTotal() }); },
+    authorizeAdditionalBudget(authorization) {
+      if (!existsSync(file) || ledger.requests.some((row) => ["reserved", "pending"].includes(row.status))) throw new Error("Cannot refill with pending requests.");
+      const previousLedgerSha256 = createHash("sha256").update(readFileSync(file)).digest("hex");
+      if (authorization.previousLedgerSha256 !== previousLedgerSha256) throw new Error("Refill authorization targets a different ledger state.");
+      const event = { ...authorization, previousRequestCount: ledger.requests.length, previousRequestsSha256: requestsHash(ledger.requests), previousLimitUsd: ledger.limitUsd,
+        accountedUpperBoundAtAuthorizationUsd: accountedTotal(), newLimitUsd: (moneyMicros(accountedTotal()) + moneyMicros(authorization.additionalBudgetUsd)) / 1e6 };
+      const updated = { ...ledger, limitUsd: event.newLimitUsd, budgetAuthorizations: [...(ledger.budgetAuthorizations ?? []), event] };
+      validatedBudgetLimit(updated);
+      ledger = updated; save(); return structuredClone(event);
+    },
+    snapshot() { return structuredClone({ ...ledger, accountingPolicy: ACCOUNTING_POLICY, reservedUsd: total(), accountedUpperBoundUsd: accountedTotal(), remainingUsd: (moneyMicros(ledger.limitUsd) - moneyMicros(accountedTotal())) / 1e6 }); },
     close() { unlinkSync(lock); },
   };
 }

@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { assertComparableInputs, analysisSectionKinds } from "./generation-input.mjs";
 import { inspectSectionEvidence } from "./section-evidence.mjs";
 import { judgeEvidence } from "./judge-evidence.mjs";
-import { accountedCostUpperBound, ACCOUNTING_POLICY, prepareRequest } from "./budget.mjs";
+import { accountedCostUpperBound, ACCOUNTING_POLICY, prepareRequest, validatedBudgetLimit } from "./budget.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const dir = path.join(root, "output/speed-quality-2026-09-08");
@@ -67,7 +67,8 @@ Returner kun JSON: {"A":{"faithfulness":0,"coverage":0,"specificity":0,"decision
   if (preflightLabel) {
     const ledgerBytes = readFileSync(path.join(dir, "api-budget.json"));
     const ledger = JSON.parse(ledgerBytes);
-    if (ledger.limitUsd !== 14 || ledger.accountingPolicy !== ACCOUNTING_POLICY || ledger.requests.some((row) => ["pending", "reserved"].includes(row.status))) throw new Error("Unexpected or pending budget ledger.");
+    validatedBudgetLimit(ledger);
+    if (ledger.accountingPolicy !== ACCOUNTING_POLICY || ledger.requests.some((row) => ["pending", "reserved"].includes(row.status))) throw new Error("Unexpected or pending budget ledger.");
     const remainingUsd = ledger.limitUsd - ledger.requests.reduce((sum, row) => sum + accountedCostUpperBound(row), 0);
     const prepared = prepareRequest("/v1/chat/completions", payload, 8000, "default");
     const miniFile = `judge-${mode}-${protocol}-mini-${candidateLabel}-${fixture.caseId}-${kind}.json`;
@@ -85,7 +86,8 @@ Returner kun JSON: {"A":{"faithfulness":0,"coverage":0,"specificity":0,"decision
     continue;
   }
   const budgetBefore = await fetch("http://127.0.0.1:4319/budget").then((r) => r.json());
-  if (budgetBefore.limitUsd !== 14 || budgetBefore.remainingUsd < 0.04) throw new Error("Insufficient bounded judge budget.");
+  validatedBudgetLimit(budgetBefore);
+  if (budgetBefore.remainingUsd < 0.04) throw new Error("Insufficient bounded judge budget.");
   const candidateSectionCheck = sectionChecks?.[baselineIsA ? 1 : 0];
   const report = { at: new Date().toISOString(), mode, judgeModel, candidateLabel, baselineLabel, caseId: fixture.caseId, kind, inputSha256: fixture.inputSha256, judgeRequestSha256: sha(JSON.stringify(payload)), sectionFields: sectionContract?.fields, sectionResultFields: resultFields, sectionPreservation: sectionChecks ? { A: sectionChecks[0].changedOutsideSection, B: sectionChecks[1].changedOutsideSection } : undefined, outsideSectionPreserved: candidateSectionCheck ? candidateSectionCheck.changedOutsideSection.length === 0 : undefined, order: baselineIsA ? { A: "baseline", B: "candidate" } : { A: "candidate", B: "baseline" }, beforeMs: before.totalMs, afterMs: after.totalMs, budgetBefore, limitation: "Single independent model judge, blind variant order; complements source review and deterministic checks, not proof of universal quality. Mini judge results are separate from the earlier GPT-5.4 protocol. Section content scores do not erase deterministic preservation failures." };
   report.protocol = protocol;

@@ -40,11 +40,30 @@ mobiloverflyt på analyse-/artefaktflater.
 
 ## Budsjett og hele forbedringsløpet
 
-Hard samlet grense: **14 USD**, inkludert embeddings, retries og dommere.
+Opprinnelig hard grense: **14 USD**, inkludert embeddings, retries og dommere.
 Siste avstemming: **469 registrerte kall, 13,393718 USD konservativ
-kostnadsøvregrense, 0,606282 USD igjen og ingen uavklarte reservasjoner**.
+kostnadsøvregrense og ingen uavklarte reservasjoner**.
 Evalueringsproxyen er stoppet.
 Dette er ikke endelig fakturert beløp.
+
+Brukeren har deretter skrevet «right now i have refilled the api credits to 14
+dollars» i hovedoppgaven. I konteksten av det åpne budsjettspørsmålet er dette
+registrert som **opptil 14 nye USD**, ikke en nullstilling av historikken.
+Den kumulative grensen er derfor **27,393718 USD**, med **14 USD tilgjengelig**
+ved påfyllet. Tidligere ubrukt rest legges ikke til en gang til. Samme aktive
+ledger bevarer alle 469 rader; førversjonen er arkivert byteidentisk. Autorisasjonen
+med eksakt utsagn, kilde-ID, observert registreringstid og hasher ligger i
+`verification/api-budget-refill-authorization-v1.json`.
+
+Prioritert testbudsjett for de 14 nye dollarene er 4 USD til komplett forbedringsløp,
+4 USD til utviklingsbaserte kvalitets-/hastighetsrettinger, 3 USD til øvrige
+genereringer og regresjon, 2 USD til låst holdout og 1 USD til begrunnet feil-/testreserve.
+Dette er delbudsjetter, ikke antatt faktura eller forhåndsgodkjenning av ukjente
+payloads. Proxyen reserverer hvert kall og håndhever både kumulativ grense og
+valgt delbudsjett, også etter omstart. Testplanen er registrert i
+`verification/api-budget-refill-test-plan-v1.json`. 19 nettverksfrie harness-tester
+bestod, inkludert uendret historikk, avvist uregistrert grenseøkning, pending-/feilkostnader,
+gjenåpning og delbudsjett. Ingen nye kall var gjort ved denne registreringen.
 
 Proxyen leser bare API-nøkkelen fra eksplisitt lokal nøkkelfil. Appen får en
 plassholder; produksjonens data-/lagrings-/identitetskonfigurasjon lastes ikke.
@@ -72,9 +91,10 @@ Et komplett `perfect_system_solution`-par trenger nytt løsningsutkast,
 kravdekning og helhetlig revurdering på begge sider. Bare outputdelen av full
 reservasjon er minst
 `2 × (8000 × 4,5 + 8000 × 15 + 16000 × 15) × 1,1 / 1000000 = 0,871200 USD`.
-Dette overstiger dagens rest på 0,606282 USD før input, embeddings og retries. Det er en
+Dette oversteg resten på 0,606282 USD før påfyllet, allerede før input, embeddings og retries. Det er en
 konservativ reservasjonsberegning, ikke en påstand om faktisk fakturert kostnad.
-Hele paret er derfor ikke startet på antatt lavere usage. Ingen outputgrenser,
+Paret ble derfor ikke startet på antatt lavere usage før påfyllet. Det har nå
+første prioritet innen den nye rammen, men er ennå ikke fullført. Ingen outputgrenser,
 modeller eller normal samtidighet er redusert for å få det til å passe.
 Lagret utkast eller `pendingEvaluationResult` ville ikke alene vært fullføring;
 ny vurdering må være lagret mot riktig artefakt og kilderevisjon.
@@ -351,8 +371,8 @@ har ett modellkall, og raskere DB-innlesing beviser ikke raskere eller bedre sva
 
 Samlet godkjenning krever fortsatt nye representative live hastighets-/kvalitetspar
 for genereringene som er tregere, uavklarte eller ikke kvalitetsgodkjent, samt hele
-forbedringsløpet. Gjenstående 0,606282 USD dekker ikke konservativ helreservasjon
-for sistnevntes før/etter-par. To senere godkjente dommerkall er beskrevet nedenfor.
+forbedringsløpet. Den tidligere budsjettblokkeringen er fjernet med det eksplisitte
+påfyllet ovenfor; verifikasjonsarbeidet gjenstår. To godkjente dommerkall er beskrevet nedenfor.
 Lokal testkonfigurasjon har ingen Azure Storage-konto. Faktisk opplasting, metadata,
 indeksering, Azure-sletting og Entra-flyt krever et tilgjengelig, isolert testmiljø
 med riktig identitet og lagring. Dette er ikke en påstand om at Azure-miljøer ikke

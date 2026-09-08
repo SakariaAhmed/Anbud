@@ -23,8 +23,17 @@ bare ved å generere dem igjen. Bevisregisteret inneholder SHA-256-hasher.
 `local-environment.json` inneholder bare lokale testnøkler, men skal likevel
 aldri spores eller inkluderes i en rapportpakke.
 
-Den samlede autoriserte grensen er fortsatt 14 USD. Gjeldende kostnadsøvregrense
-står i rapporten og bevisregisteret. Ikke start en ny ledger for å omgå totalen.
+Den opprinnelige grensen var 14 USD. Etter eksplisitt påfyll gir autorisasjonen
+`01a080c8-3780-7b91-adb5-37b11dfd0b3c` opptil 14 nye USD fra historisk
+kostnadsøvregrense 13,393718 USD: kumulativ grense 27,393718 USD. Samme ledger
+beholder alle tidligere rader og registrerer autorisasjonen med kilde, tidspunkt,
+arkivhash og historikkhash. Ikke start en ny ledger eller endre grensen direkte.
+`authorizeAdditionalBudget` brukes bare ved en eksplisitt ny autorisasjon;
+vanlig gjenåpning validerer historikken og øker aldri grensen. Hvert nytt påfyll
+kan maksimalt autorisere 14 USD og må rette seg mot eksakt eksisterende ledgerhash.
+`--phase-budget <USD>` på proxyen håndhever planlagt delbudsjett for samme
+`--phase` også ved omstart; ventende og feilede kall teller. Gjeldende grense,
+kostnad og prioritert testbudsjett står i rapporten og bevisregisteret.
 Policy V3 korrigerte konservative langkontekstpriser for dokumentert korte Terra-
 og Luna-kall; original ledger og avledede avstemmingsmanifester er bevart. Policy
 V4 legger til eksplisitt priset Fast-forsøk. Ingen historisk forespørselsrad endres.
@@ -35,7 +44,7 @@ fortsatt null cachetreff. Original ledger før V5 og avledet manifest beholdes.
 `budget-proxy.mjs` leser bare `OPENAI_API_KEY` fra en eksplisitt `--key-env`-fil;
 den laster ikke andre variabler derfra. Hvert kall, retry og embedding reserveres
 før videresending. Kun komplett validert usage kan erstatte en full reservasjon
-med en konservativ kostnadsøvregrense. Ukjente utfall beholder reservasjonen.
+  med en konservativ kostnadsøvregrense. Ukjente utfall beholder reservasjonen.
 Ikke kjør proxyer, genereringer eller dommere parallelt: per-operasjonstider og
 request-ID-er ville da ikke være isolerte.
 `--service-tier default` er standard; et eksplisitt `priority`-forsøk krever

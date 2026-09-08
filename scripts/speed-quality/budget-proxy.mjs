@@ -10,6 +10,8 @@ const ledgerPath = args.get("--ledger");
 const keyFile = args.get("--key-env");
 const phase = args.get("--phase");
 const serviceTier = args.get("--service-tier") ?? "default";
+const phaseBudgetUsd = args.has("--phase-budget") ? Number(args.get("--phase-budget")) : undefined;
+if (phaseBudgetUsd !== undefined && !(Number.isFinite(phaseBudgetUsd) && phaseBudgetUsd > 0 && phaseBudgetUsd <= 14)) throw new Error("Invalid phase budget.");
 if (!["default", "priority"].includes(serviceTier)) throw new Error("Unpriced evaluation service tier.");
 if (!ledgerPath || !keyFile || !phase) throw new Error("Required: --ledger <file> --key-env <existing env file> --phase <label> [--port 4319] [--output-limit 8000]");
 // Read only the API key, never load production database/storage/auth settings.
@@ -42,7 +44,7 @@ const server = createServer(async (request, response) => {
     // the failed earlier run and its charge rather than calling it a speed win.
     const evaluationLimit = /solution-evaluation-holistic|requirement-response-batch/.test(String(original.prompt_cache_key ?? "")) ? 16000 : outputLimit;
     const prepared = prepareRequest(endpoint, original, evaluationLimit, serviceTier);
-    reservation = ledger.reserve({ ...prepared, endpoint, model: prepared.request.model, phase });
+    reservation = ledger.reserve({ ...prepared, endpoint, model: prepared.request.model, phase, phaseBudgetUsd });
     const upstream = await fetch(`https://api.openai.com${endpoint}`, {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
@@ -87,5 +89,5 @@ const server = createServer(async (request, response) => {
     }
   }
 });
-server.listen(Number(args.get("--port") ?? 4319), "127.0.0.1", () => console.log("Budget proxy listening on loopback; verified usage bounds plus unresolved and new reservations cannot exceed 14 USD."));
+server.listen(Number(args.get("--port") ?? 4319), "127.0.0.1", () => console.log(`Budget proxy listening on loopback; verified usage bounds plus unresolved and new reservations cannot exceed the recorded authorized cumulative limit of ${ledger.snapshot().limitUsd} USD.`));
 for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => server.close(() => { ledger.close(); process.exit(0); }));

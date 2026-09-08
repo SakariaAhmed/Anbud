@@ -3,7 +3,75 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { accountedCostUpperBound, accountedCostUpperBoundV4, openBudgetLedger, prepareRequest } from "./budget.mjs";
+import { createHash } from "node:crypto";
+import { accountedCostUpperBound, accountedCostUpperBoundV4, openBudgetLedger, prepareRequest, validatedBudgetLimit } from "./budget.mjs";
+
+test("explicit refill preserves settled history and permits at most fourteen new dollars across restarts", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "anbud-budget-refill-"));
+  const file = path.join(dir, "ledger.json");
+  let ledger;
+  try {
+    ledger = openBudgetLedger(file);
+    const id = ledger.reserve({ reservedUsd: 13.393718, model: "gpt-5.4" });
+    ledger.finish(id, { status: "uncertain" });
+    const bytes = readFileSync(file);
+    const old = JSON.parse(bytes);
+    const event = { sourceMessageId: "explicit-test-message", sourceThreadId: "test-thread", userStatement: "Refill with 14 new USD", observedAt: new Date().toISOString(), additionalBudgetUsd: 14,
+      previousLedgerSha256: createHash("sha256").update(bytes).digest("hex") };
+    assert.throws(() => ledger.authorizeAdditionalBudget({ ...event, previousLedgerSha256: "0".repeat(64) }), /different ledger/);
+    assert.throws(() => ledger.authorizeAdditionalBudget({ ...event, additionalBudgetUsd: 14.000001 }), /authorization/);
+    ledger.authorizeAdditionalBudget(event);
+    assert.deepEqual(JSON.parse(readFileSync(file)).requests, old.requests);
+    assert.equal(ledger.snapshot().limitUsd, 27.393718);
+    assert.equal(ledger.snapshot().remainingUsd, 14);
+    ledger.close(); ledger = openBudgetLedger(file);
+    assert.equal(ledger.snapshot().remainingUsd, 14);
+    const again = { ...event, previousLedgerSha256: createHash("sha256").update(readFileSync(file)).digest("hex") };
+    assert.throws(() => ledger.authorizeAdditionalBudget(again), /authorization/);
+    ledger.reserve({ reservedUsd: 7, model: "gpt-5.4" });
+    ledger.reserve({ reservedUsd: 7, model: "gpt-5.4" });
+    assert.throws(() => ledger.reserve({ reservedUsd: 0.000001 }), /exhausted/);
+    assert.equal(ledger.snapshot().remainingUsd, 0);
+    assert.throws(() => ledger.authorizeAdditionalBudget(again), /pending/);
+    ledger.close(); ledger = openBudgetLedger(file);
+    assert.throws(() => ledger.reserve({ reservedUsd: 0.000001 }), /exhausted/);
+    assert.deepEqual(JSON.parse(readFileSync(file)).requests[0], old.requests[0]);
+    const changed = ledger.snapshot(); changed.requests[0].status = 500;
+    assert.throws(() => validatedBudgetLimit(changed), /preserved history/);
+    const raised = ledger.snapshot(); raised.limitUsd += 1;
+    assert.throws(() => validatedBudgetLimit(raised), /Unrecorded/);
+  } finally { ledger?.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("larger budgets cannot be silently created and sub-microdollar reservations cannot evade accounting", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "anbud-budget-limit-"));
+  const file = path.join(dir, "ledger.json");
+  let ledger;
+  try {
+    assert.throws(() => openBudgetLedger(file, 28), /Initial budget/);
+    ledger = openBudgetLedger(file);
+    assert.throws(() => ledger.reserve({ reservedUsd: 0.0000001 }), /exhausted/);
+    assert.equal(ledger.snapshot().requests.length, 0);
+    assert.throws(() => validatedBudgetLimit({ ...ledger.snapshot(), limitUsd: 28 }), /Initial budget/);
+  } finally { ledger?.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("phase ceilings count pending and failed requests independently of global headroom", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "anbud-budget-phase-"));
+  const file = path.join(dir, "ledger.json");
+  let ledger;
+  try {
+    ledger = openBudgetLedger(file);
+    const id = ledger.reserve({ reservedUsd: 1.5, phase: "perfect", phaseBudgetUsd: 2 });
+    assert.throws(() => ledger.reserve({ reservedUsd: 0.6, phase: "perfect", phaseBudgetUsd: 2 }), /phase budget exhausted/);
+    ledger.finish(id, { status: 500 });
+    ledger.close(); ledger = openBudgetLedger(file);
+    assert.throws(() => ledger.reserve({ reservedUsd: 0.6, phase: "perfect", phaseBudgetUsd: 2 }), /phase budget exhausted/);
+    ledger.reserve({ reservedUsd: 0.5, phase: "perfect", phaseBudgetUsd: 2 });
+    ledger.reserve({ reservedUsd: 1, phase: "development", phaseBudgetUsd: 4 });
+    assert.equal(ledger.snapshot().accountedUpperBoundUsd, 3);
+  } finally { ledger?.close(); rmSync(dir, { recursive: true, force: true }); }
+});
 
 test("only validated cache reads reduce reconciled usage, never the next reservation", () => {
   for (const [model, inputRate, cachedRate, outputRate] of [["gpt-5.4", 2.5, 0.25, 15], ["gpt-5.6-terra", 2.5, 0.2, 12], ["gpt-5.6-luna", 0.25, 0.02, 1.2]]) {

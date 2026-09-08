@@ -2,6 +2,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { validatedBudgetLimit } from "./budget.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const option = (name, fallback) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
@@ -21,7 +22,8 @@ const projects = fixtures.projects.filter((p) => (!selectedCase || p.caseId === 
 if (!projects.length) throw new Error("No projects selected.");
 const base = "http://localhost:4318";
 const budgetBefore = await fetch("http://127.0.0.1:4319/budget").then((r) => r.json());
-if (budgetBefore.limitUsd !== 14 || budgetBefore.remainingUsd < (requirementArtifact ? 0.075 : 6)) throw new Error("Insufficient budget headroom for generation and final evaluation.");
+validatedBudgetLimit(budgetBefore);
+if (budgetBefore.remainingUsd < (requirementArtifact ? 0.075 : 6)) throw new Error("Insufficient budget headroom for generation and final evaluation.");
 const login = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: "speed-quality-local-test-password" }) });
 if (!login.ok) throw new Error(`Local login failed (${login.status}).`);
 const cookie = login.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
