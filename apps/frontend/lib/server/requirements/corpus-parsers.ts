@@ -12,6 +12,8 @@ export {
   buildExplicitIdPdfNarrativeRequirementLedger,
 } from "@/lib/server/requirements/explicit-id-narrative-parser";
 export {
+  buildDeclaredHeadingRequirementLedger,
+  restoreExplicitLineRequirementOrder,
   buildPrefixedLineRequirementLedger,
   isLegacyMixedFofingerCorpus,
   repairLegacyFofingerTextArtifacts,

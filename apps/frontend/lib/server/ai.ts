@@ -105,6 +105,8 @@ import {
   requirementHandoffSystemPrompt,
 } from "@/lib/server/prompts/requirements";
 import {
+  buildDeclaredHeadingRequirementLedger,
+  restoreExplicitLineRequirementOrder,
   buildExplicitIdPdfLayoutRequirementLedger,
   buildExplicitIdPdfNarrativeRequirementLedger,
   buildExplicitIdTableRequirementLedger,
@@ -7996,8 +7998,10 @@ export async function buildRequirementSourceLedgerWithFiles(
   const pdfLayoutTableLedger = useGeneratedPdfLedger
     ? []
     : await buildPdfLayoutTableRequirementLedger(document);
+  const declaredHeadingLedger = buildDeclaredHeadingRequirementLedger(document);
   const ledger = filterSyntheticRequirementFallbacks(
     filterSyntheticRequirementDuplicates([
+      ...declaredHeadingLedger,
       ...unstructuredLedger,
       ...generatedPdfLedgerWithLocalTableText,
       ...mixedTextLedger,
@@ -8020,14 +8024,19 @@ export async function buildRequirementSourceLedgerWithFiles(
   const anchoredLines = document.file_format !== "pdf"
     ? buildPrefixedLineRequirementLedger(document, corpusParserContext)
     : [];
-  const sourceBoundLedger = ledger.filter((entry) => !anchoredLines.some((anchor) =>
+  const headingBoundLedger = ledger.filter((entry) => !declaredHeadingLedger.some((anchor) =>
+    entry !== anchor &&
+    (isSyntheticRequirementId(entry.id) || normalizeRequirementId(entry.id) === normalizeRequirementId(anchor.id)) &&
+    normalizeEvidenceText(anchor.text).includes(normalizeEvidenceText(entry.text))
+  ));
+  const sourceBoundLedger = headingBoundLedger.filter((entry) => !anchoredLines.some((anchor) =>
     normalizeEvidenceText(anchor.text) === normalizeEvidenceText(entry.text) &&
     normalizeRequirementId(anchor.id) !== normalizeRequirementId(entry.id) &&
     !entry.tableId && anchor.sourceExcerpt &&
     document.raw_text.includes(anchor.sourceExcerpt)
   ));
   const finalizedLedger = finalizeRequirementLedgerEntries(
-    sourceBoundLedger,
+    restoreExplicitLineRequirementOrder(document, sourceBoundLedger),
     sourceDocumentSha256,
   ).map((entry) => ({
     ...entry,
@@ -14976,10 +14985,14 @@ export function proposalEvidenceSupportsReason(
 
 export function buildProposalInputRequiredMetadata(input: {
   ledger: RequirementLedgerEntry[];
+  answers?: Array<Pick<RequirementAnswerResult, "answer">>;
   evidenceDocuments?: Array<
     Pick<ProjectDocumentDetail, "title" | "file_name" | "raw_text">
   >;
 }) {
+  if (input.answers && input.answers.length !== input.ledger.length) {
+    throw new Error("Svar og krav må ha samme antall rader ved kontroll av tilbudsvalg.");
+  }
   const evidenceCorpus = (input.evidenceDocuments ?? [])
     .map((document) => document.raw_text)
     .filter((value) => typeof value === "string" && value.trim())
@@ -14989,6 +15002,13 @@ export function buildProposalInputRequiredMetadata(input: {
       (reason) =>
         !proposalEvidenceSupportsReason(evidenceCorpus, reason, entry.text),
     );
+    const answer = normalizePageText(input.answers?.[orderIndex]?.answer ?? "");
+    const proposedDeliveryNeedsConfirmation =
+      /\b(?:foreslår|foreslås|foreslått(?:e)?)\b/iu.test(answer) &&
+      /(?<!ikke )\b(?:krever|forutsetter)\s+(?!(?:ikke|ingen|intet)\b)[^.?!]{0,100}(?:bekreftelse|godkjenning)|(?<!ikke )\bmå\s+(?!ikke\b)[^.?!]{0,100}(?:bekreftes|godkjennes)/iu.test(answer);
+    if ((proposedDeliveryNeedsConfirmation || supplierAnswerNeedsConfirmation(answer)) && !reasons.includes("explicit_bid_decision")) {
+      reasons.push("explicit_bid_decision");
+    }
     return reasons.length
       ? [
           {
@@ -15140,10 +15160,10 @@ const ARTIFACT_FOUNDATION_FACT_PATTERNS = [
   {
     label: "SLA og kontinuitet",
     pattern:
-      /\b(RTO|RPO|failover|disaster recovery|beredskap|gjenoppretting|tilgjengelighet)\b/i,
+      /\b(RTO|RPO|failover|disaster recovery|beredskap|gjenoppretting(?:stid)?|tilgjengelighet)\b/i,
   },
   {
-    label: "Leveransefrister",
+    label: "Leveransekrav og frister",
     pattern:
       /\b(deliverable|leveranse|frist|deadline|due|D[1-9]|april|mai|may|juni|june|september|desember|december|20\d{2})\b/i,
   },
@@ -15233,14 +15253,14 @@ export function collectArtifactFoundationFacts(input: {
       }
 
       const normalized = normalizeComparableText(fragment);
-      const dedupeKey = `${match.label}:${normalized.slice(0, 180)}`;
+      const dedupeKey = `${match.label}:${normalized}`;
       if (seen.has(dedupeKey)) {
         continue;
       }
       seen.add(dedupeKey);
       facts.push({
         label: match.label,
-        text: compactText(fragment, 260),
+        text: fragment,
         source: document.title,
       });
     }
@@ -15253,8 +15273,8 @@ export function collectArtifactFoundationFacts(input: {
         ? 8
         : label === "Omfang og migrering"
           ? 4
-        : label === "Leveransefrister" || label === "Kommersielle rammer"
-          ? label === "Leveransefrister"
+        : label === "Leveransekrav og frister" || label === "Kommersielle rammer"
+          ? label === "Leveransekrav og frister"
             ? 8
             : 6
           : 3;
@@ -15362,53 +15382,14 @@ function factsInclude(facts: ArtifactFoundationFact[], pattern: RegExp) {
   return pattern.test(factsText(facts));
 }
 
-function extractDocumentedContinuityMetric(
-  facts: ArtifactFoundationFact[],
-  label: "RTO" | "RPO",
-) {
-  const text = factsText(facts);
-  const unit = "(?:minutes?|minutter|hours?|timer|days|dager)";
-  const direct = new RegExp(
-    `\\b${label}\\b[^0-9]{0,50}(\\d+\\s*${unit})`,
-    "i",
-  ).exec(text);
-  if (direct?.[1]) {
-    return direct[1].replace(/\s+/g, " ").trim();
-  }
-  const reverse = new RegExp(
-    `(\\d+\\s*${unit})[^.\\n]{0,50}\\b${label}\\b`,
-    "i",
-  ).exec(text);
-  return reverse?.[1]?.replace(/\s+/g, " ").trim() ?? "";
-}
-
-function hasContinuitySignals(facts: ArtifactFoundationFact[]) {
-  return factsInclude(
-    facts,
-    /\b(SLA|RTO|RPO|failover|disaster recovery|beredskap|backup|gjenoppretting|tilgjengelighet|nedetid|tjenestenivå)\b/i,
-  );
-}
-
 function documentedContinuityControlText(facts: ArtifactFoundationFact[]) {
-  if (!hasContinuitySignals(facts)) {
-    return "";
-  }
-
-  const rto = extractDocumentedContinuityMetric(facts, "RTO");
-  const rpo = extractDocumentedContinuityMetric(facts, "RPO");
-  const targets = [
-    factsInclude(facts, /\bzero unplanned downtime\b/i)
-      ? "zero unplanned downtime"
-      : "",
-    rto ? `RTO ${rto}` : "",
-    rpo ? `RPO ${rpo}` : "",
-  ].filter(Boolean);
-
-  if (targets.length) {
-    return `Kontinuitet kontrolleres mot dokumenterte mål (${targets.join(", ")}), failover, backup/gjenoppretting og testbare runbooks.`;
-  }
-
-  return "Kontinuitet må kontrolleres mot dokumenterte krav om høy tilgjengelighet, begrenset nedetid, backup/gjenoppretting og foreslåtte tjenestenivåer; eksakte RTO/RPO-verdier må avklares før de forpliktes.";
+  const source = documentedFactText(
+    facts,
+    /\b(SLA|RTO|RPO|failover|disaster recovery|beredskap|backup|gjenoppretting(?:stid)?|tilgjengelighet|nedetid|tjenestenivå)\b/i,
+  );
+  // Keep each target with its scope instead of combining the first RTO and
+  // RPO from unrelated systems or inventing an unspecified-target warning.
+  return source ? `Kontinuitetskrav fra kildene: ${source}` : "";
 }
 
 function hasDocumentedCommercialTerms(facts: ArtifactFoundationFact[]) {
@@ -15421,7 +15402,7 @@ function hasDocumentedCommercialTerms(facts: ArtifactFoundationFact[]) {
 function documentedFactText(facts: ArtifactFoundationFact[], pattern: RegExp) {
   return facts
     .filter((fact) => pattern.test(fact.text))
-    .map((fact) => compactText(fact.text, 220))
+    .map((fact) => fact.text)
     .slice(0, 6)
     .join(" ");
 }
@@ -15435,7 +15416,7 @@ function documentedDeliverableControlText(facts: ArtifactFoundationFact[]) {
     return "";
   }
 
-  return `Dokumenterte leveransefrister må styre plan og evalueringsbevis: ${source}`;
+  return `Dokumenterte leveransekrav og rammer må styre plan og evalueringsbevis: ${source}`;
 }
 
 function documentedCommercialControlText(facts: ArtifactFoundationFact[]) {
@@ -15471,7 +15452,7 @@ function documentedRiskControlText(facts: ArtifactFoundationFact[]) {
   );
 
   return risks
-    ? `Avklarings- og risikodrivere fra verifisert kildegrunnlag: ${risks}`
+    ? `Dokumenterte avklarings- og risikoforhold: ${risks}`
     : "";
 }
 
@@ -20084,6 +20065,7 @@ async function generateRequirementResponseFromLedger(input: {
     });
   const proposalInputRequiredMetadata = buildProposalInputRequiredMetadata({
     ledger: responseLedger,
+    answers: answerResults,
     evidenceDocuments: [
       ...input.supportingDocuments,
       ...input.serviceDocuments,

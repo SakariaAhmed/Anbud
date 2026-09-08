@@ -57,5 +57,14 @@ test("HLD overlaps digest and retrieval, waits for both, and stops on evidence f
     state.digest.resolve({ document_summary: "unused" });
     await tick();
     assert.equal(state.prompts.length, 1, "failed evidence must not launch final generation");
+
+    state.retrieval = deferred();
+    state.retrieval.resolve({ snippets: [], telemetry: { sourceCount: 0, quality: { sufficient: false, confidence: "low", reason: "Ingen treff" } } });
+    const scoped = await generateHighLevelDesign({ ...input, customerDocument: {
+      ...document, id: "hld-continuity", raw_text: "Krav til gjenoppretting: Maksimal gjenopprettingstid er 90 minutter for journalintegrasjonen. Andre systemer kan ha inntil 8 timer.",
+    } });
+    assert.match(scoped.high_level_solution_design, /90 minutter for journalintegrasjonen/);
+    assert.match(scoped.high_level_solution_design, /Andre systemer kan ha inntil 8 timer/);
+    assert.doesNotMatch(scoped.high_level_solution_design, /RTO\/RPO-verdier må avklares/);
   } finally { delete globalThis.__hldConcurrencyTest; rmSync(directory, { recursive: true, force: true }); }
 });

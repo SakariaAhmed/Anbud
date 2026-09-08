@@ -62,3 +62,21 @@ test("unknown, repeated and ambiguous references cannot become a unique answer",
   assert.equal(narrativeAnswerEvidence(document("K-1: Tilgangen er dokumentert med en kontrollert akseptansetest.\nK-1: Nei."), rows).length, 0);
   assert.equal(narrativeAnswerEvidence(document("Tilgang og drift leveres med separate avtaler (K-1 og K-2)."), rows).length, 0);
 });
+
+test("a unique hyphen variant links to the original ID without collapsing ambiguous source rows", () => {
+  const source = [{ ...rows[0], id: "L01" }];
+  const text = "## S01 – svar på L-01\nKundedata lagres i Sverige, og flytting til Norge er ikke priset.";
+  const [answer] = narrativeAnswerEvidence(document(text), source);
+  assert.equal(answer.id, "L01");
+  assert.equal(answer.answerExcerpt, text);
+  assert.match(answer.answerReference, /L-01/);
+  assert.equal(narrativeAnswerEvidence(document(text), [...source, { ...source[0], id: "L-01" }]).length, 0);
+  assert.equal(narrativeAnswerEvidence(document(text), [{ ...source[0], id: "L1" }]).length, 0);
+});
+
+test("an explicit answer target distinguishes compact requirement IDs from section numbering", () => {
+  const source = [{ ...rows[0], id: "L01" }, { ...rows[1], id: "L02" }];
+  const text = "## S01 – svar på L01\nKundedata lagres i Sverige, og flytting til Norge er ikke priset.\n## S02 – svar på L02\nAdministratorer bruker flerfaktorautentisering ved alle pålogginger.";
+  assert.deepEqual(narrativeAnswerEvidence(document(text), source).map((row) => row.id), ["L01", "L02"]);
+  assert.equal(narrativeAnswerEvidence(document(text.replace('svar på L01', 'svar på L01 og L99')), source).length, 1);
+});

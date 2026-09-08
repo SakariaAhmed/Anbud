@@ -2,9 +2,20 @@ import type { ProjectDocumentDetail } from "@/lib/types";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 
 const normalizeId = (value: string) => value.replace(/\s+/g, "").toUpperCase();
+// Permit only the separator variant of a simple letter/number ID, retaining
+// leading zeroes. Both spellings in the source make the alias ambiguous.
+const referenceKey = (value: string) => normalizeId(value).replace(/^([A-ZÆØÅ]{1,8})-(\d{1,5})$/u, "$1$2");
 const explicitIds = (value: string) =>
   [...value.matchAll(/\b[A-ZÆØÅ]{1,8}[ \t]*-[ \t]*\d{1,5}\b/giu)]
     .map((match) => normalizeId(match[0]));
+const answerHeadingIds = (value: string) => {
+  const target = /\bsvar\s+på\s+(.+)$/iu.exec(value)?.[1];
+  // "S01 – svar på L01" supplies an answer-section label and a distinct
+  // requirement reference. Only the explicit target supplies the binding.
+  return target
+    ? [...target.matchAll(/\b[A-ZÆØÅ]{1,8}[ \t]*-?[ \t]*\d{1,5}\b/giu)].map((match) => normalizeId(match[0]))
+    : explicitIds(value);
+};
 
 /** Bind explicit answer sections or trailing prose references to source requirements.
  * Repeated IDs across source sections remain ambiguous and are not guessed.
@@ -17,16 +28,19 @@ export function narrativeAnswerEvidence(
   if (!["txt", "md", "docx"].includes(document.file_format)) return [];
   const byId = new Map<string, RequirementLedgerEntry[]>();
   for (const entry of requirements) {
-    const id = normalizeId(entry.id);
+    const id = referenceKey(entry.id);
     byId.set(id, [...(byId.get(id) ?? []), entry]);
   }
   const result: RequirementLedgerEntry[] = [];
   const counts = new Map<string, number>();
   const text = document.raw_text;
   const addAnswer = (ids: string[], rawExcerpt: string) => {
-    for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
+    for (const id of ids) {
+      const key = referenceKey(id);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
     if (ids.length !== 1) return;
-    const sources = byId.get(ids[0]);
+    const sources = byId.get(referenceKey(ids[0]));
     const excerpt = rawExcerpt.trim();
     if (sources?.length !== 1 || excerpt.length < 30 || excerpt.length > 2400) return;
     result.push({
@@ -35,7 +49,7 @@ export function narrativeAnswerEvidence(
       sourceExcerpt: excerpt,
       documentId: document.id,
       documentTitle: document.title,
-      answerReference: `${document.title}, ${sources[0].id}`,
+      answerReference: `${document.title}, ${ids[0]}`,
     });
   };
 
@@ -50,7 +64,7 @@ export function narrativeAnswerEvidence(
     const start = starts[index];
     const section = text.slice(start, starts[index + 1] ?? text.length);
     const heading = section.split("\n", 1)[0];
-    const headingIds = boundarySet.has(start) ? explicitIds(heading) : [];
+    const headingIds = boundarySet.has(start) ? answerHeadingIds(heading) : [];
     if (headingIds.length) {
       const headingLevel = heading.trimStart().match(/^#+/u)?.[0].length;
       if (headingLevel === undefined) {
@@ -66,7 +80,7 @@ export function narrativeAnswerEvidence(
         const nextHeading = text.slice(starts[next], lineEnd < 0 ? text.length : lineEnd);
         const nextLevel = nextHeading.trimStart().match(/^#+/u)?.[0].length ?? 7;
         // Nested notes without a new ID are still part of this answer.
-        if (explicitIds(nextHeading).length || nextLevel <= level) break;
+        if (answerHeadingIds(nextHeading).length || nextLevel <= level) break;
       }
       addAnswer(headingIds, text.slice(start, starts[next] ?? text.length));
       index = next - 1;
@@ -96,5 +110,5 @@ export function narrativeAnswerEvidence(
     }
   }
   // Multiple prose references to the same ID are not a single unambiguous answer.
-  return result.filter((entry) => counts.get(normalizeId(entry.id)) === 1);
+  return result.filter((entry) => counts.get(referenceKey(entry.id)) === 1);
 }

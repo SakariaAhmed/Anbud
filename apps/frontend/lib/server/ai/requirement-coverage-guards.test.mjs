@@ -260,6 +260,17 @@ test("foundation facts distribute a bounded budget across 100 documents", () => 
   );
 });
 
+test("foundation facts preserve late qualifications and distinct clauses after a shared prefix", () => {
+  const prefix = "Leveranse av drift omfatter " + "dokumenterte rutiner og ansvar for kundens plattform, ".repeat(5);
+  const included = prefix + "men beredskap utenfor arbeidstid er ikke inkludert.";
+  const excluded = prefix + "og beredskap utenfor arbeidstid er inkludert i avtalen.";
+  assert.ok(included.length > 260 && included.length < 800);
+  const facts = collectArtifactFoundationFacts({ documents: [{ ...document("source"), raw_text: `${included}\n${excluded}` }], serviceDocuments: [] });
+  assert.ok(facts.some((fact) => fact.text === included));
+  assert.ok(facts.some((fact) => fact.text === excluded));
+  assert.ok(facts.every((fact) => fact.text.length <= 800));
+});
+
 test("8-19 character explicit source rows prevent false 100 percent coverage", () => {
   const sourceLedger = [
     requirement({ id: "K-1" }),
@@ -4969,6 +4980,29 @@ test("proposal input metadata separates customer requirements from supplier evid
     "K-PRICE-SEC",
     "K-DECISION-SUB",
   ]);
+});
+
+test("proposed answers requiring confirmation retain review metadata per source row", () => {
+  const ledger = [
+    requirement({ id: "K-1", documentId: "source-a" }),
+    requirement({ id: "K-1", documentId: "source-b", heading: "Annet kildekrav" }),
+    requirement({ id: "K-2", documentId: "source-a" }),
+  ];
+  const answers = [
+    { answer: "Foreslått forbedring, som krever Atea-bekreftelse: Atea håndhever MFA for alle administratorer." },
+    { answer: "Foreslått leveranse må bekreftes av leverandøren: Atea dokumenterer alle tilgangsrettigheter." },
+    { answer: "Atea dokumenterer tilgangsstyring og kunden godkjenner testprotokollen." },
+  ];
+  const metadata = buildProposalInputRequiredMetadata({ ledger, answers });
+  assert.equal(metadata.proposal_input_required_count, 2);
+  assert.deepEqual(metadata.proposal_input_required_rows.map((row) => [row.order_index, row.source_document_id, row.reasons]), [
+    [0, "source-a", ["explicit_bid_decision"]],
+    [1, "source-b", ["explicit_bid_decision"]],
+  ]);
+  assert.throws(() => buildProposalInputRequiredMetadata({ ledger, answers: answers.slice(0, 1) }), /samme antall/);
+  assert.equal(buildProposalInputRequiredMetadata({ ledger: ledger.slice(0, 1), answers: [{ answer: "Foreslått forbedring er bekreftet av leverandøren og krever ikke ny bekreftelse." }] }).proposal_input_required_count, 0);
+  assert.equal(buildProposalInputRequiredMetadata({ ledger: ledger.slice(0, 1), answers: [{ answer: "Atea foreslår som forbedring at sikkerhetskopier lagres i Norge; endringen krever leverandørens bekreftelse." }] }).proposal_input_required_count, 1);
+  assert.equal(buildProposalInputRequiredMetadata({ ledger: ledger.slice(0, 1), answers: [{ answer: "Atea foreslår en dokumentert rutine som ikke krever ny bekreftelse." }] }).proposal_input_required_count, 0);
 });
 
 test("template provenance blocks only deterministic Uklart promotion, not AI Godt", () => {
