@@ -358,6 +358,17 @@ indeksering, Azure-sletting og Entra-flyt krever et tilgjengelig, isolert testmi
 med riktig identitet og lagring. Dette er ikke en påstand om at Azure-miljøer ikke
 finnes utenfor denne kjøringen, og produksjonskandidater regnes ikke som isolert test.
 
+En separat lesekontroll med Azure CLI fant to tilgjengelige abonnementer. Et
+case-sensitivt gruppesøk etter `anbud` eller `bidsite` fant bare `anbud-prod`,
+med ti ressurser. Ingen separat testressurs ble identifisert i dette avgrensede
+søket. Logiske databaser inne i serveren, andre gruppenavn, andre tilganger og
+andre tenants ble ikke undersøkt. Vedlegget
+`verification/azure-visible-resource-inventory-v1.json` er hovedoppgavens
+normaliserte oppsummering av CLI-resultatene, ikke et rått CLI-transkript.
+Ingen produksjonsressurser ble endret. Videre miljøverifisering trenger dermed
+en konkret identifisert testressurs og passende testidentitet; dette søket gir
+ikke grunnlag for å behandle produksjonsressursene som et testmiljø.
+
 ## Gjenstående mål
 
 - Betydelig hastighetsgevinst også for uendrede, tregere og umålte funksjoner,

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-08T11:13:44.321Z",
-  "repositoryCommit": "9d1bfc9f68d604092e07163153eeb7e4099b4583",
+  "generatedAt": "2026-09-08T11:15:43.354Z",
+  "repositoryCommit": "e20ba6256ea406f9914cc6e080de18678c1a4254",
   "applicationCommit": "29fb7689bb4b4277b0c64e5effbad3200b1cbdbb",
   "goalCompleted": false,
   "budget": {
@@ -56,6 +56,10 @@
       "verification/worker-lease-transport-v2/checks.json"
     ],
     "scope": "Actual local queue, claim, workflow, normal 30-second heartbeat, PostgREST and OpenAI SDK HTTP transport. Lease takeover stopped the worker and closed the deliberately stalled local response before cleanup; stale renewal matched zero rows and no outputs were persisted. V2 failed only its incorrect expectation of HTTP 200 instead of singular zero-row 406/PGRST116. No application change, new speed claim, paid call, route-authentication test or user-cancel operation."
+  },
+  "environmentAvailabilityEvidence": {
+    "verification": "verification/azure-visible-resource-inventory-v1.json",
+    "scope": "Parent task's normalized summary of read-only Azure CLI outputs, not a raw transcript. Two visible subscriptions; case-sensitive anbud/bidsite resource-group filter found only anbud-prod with ten resources. No separate test resource identified in this scope. Logical databases, other group names, access and tenants were not inspected. No production mutations or paid model calls."
   },
   "generationComparisons": [
     {
@@ -3216,6 +3220,11 @@
       "path": "verification/anbud-section-old-content-before.log",
       "bytes": 1766,
       "sha256": "5b34ed3f34c7c2ad3d0028ae2d8ef6af4a487cd4c1fe48ec8e8af3745e4d456e"
+    },
+    {
+      "path": "verification/azure-visible-resource-inventory-v1.json",
+      "bytes": 3278,
+      "sha256": "1f7c724952ccc81bfe4edd7fdba981c521b8a64e33873a36c9690f97e3d00dce"
     },
     {
       "path": "verification/browser-exports/after.md",
