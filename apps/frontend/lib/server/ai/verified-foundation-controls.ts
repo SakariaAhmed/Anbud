@@ -9,8 +9,23 @@ function documentedFactText(
   return facts
     .filter((fact) => pattern.test(fact.text))
     .map((fact) => fact.text.replace(/\s+/g, " ").trim())
+    // Preserve complete qualifications, but do not repeat a sentence already
+    // contained verbatim in another selected source fragment.
+    .filter((text, index, texts) => !texts.some((other, otherIndex) =>
+      other.includes(text) && (other.length > text.length || otherIndex < index),
+    ))
     .slice(0, 6)
     .join(" ");
+}
+
+export function documentedMigrationControl(facts: VerifiedFoundationFact[]) {
+  const migration = documentedFactText(
+    facts,
+    /\b(?:waves?|bølge(?:r|ne)?|migrer(?:ing(?:en)?|es)|migrat(?:ion|e[ds]?))\b/i,
+  );
+  return migration
+    ? `Migreringsplanen må styres mot dokumentert kildegrunnlag: ${migration}`
+    : "";
 }
 
 function continuityControl(facts: VerifiedFoundationFact[]) {
@@ -30,10 +45,6 @@ export function buildVerifiedFoundationControls(
     facts,
     /\b(D[1-9]|deliverable|milepæl|frist|deadline)\b/i,
   );
-  const migration = documentedFactText(
-    facts,
-    /\b(\d+\s+(?:applications?|applikasjoner)|Wave\s*\d+|bølge\s*\d+|shared services|customer-facing|analytics|archive)\b/i,
-  );
   const commercial = documentedFactText(
     facts,
     /\b(EUR|NOK|budget|budsjett|Net\s*\d+|payment terms|betalingsvilkår|pricing|pris|fixed implementation|monthly managed service fee|accelerated)\b/i,
@@ -47,9 +58,7 @@ export function buildVerifiedFoundationControls(
     deliverables
       ? `Leveranseplanen må styres mot dokumentert kildegrunnlag: ${deliverables}`
       : "",
-    migration
-      ? `Migreringsplanen må styres mot dokumentert kildegrunnlag: ${migration}`
-      : "",
+    documentedMigrationControl(facts),
     continuityControl(facts),
     commercial
       ? `Kommersielle føringer må styres mot dokumentert kildegrunnlag: ${commercial}`

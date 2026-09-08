@@ -33,7 +33,7 @@ import {
   FAST_REASONING_EFFORT,
 } from "@/lib/server/ai/model-config";
 import { extractExactRetrievalTerms } from "@/lib/server/ai/retrieval-query";
-import { buildVerifiedFoundationControls } from "@/lib/server/ai/verified-foundation-controls";
+import { buildVerifiedFoundationControls, documentedMigrationControl } from "@/lib/server/ai/verified-foundation-controls";
 import {
   buildImmutableRequirementRowManifest,
   type ImmutableRequirementRowManifest,
@@ -15461,18 +15461,6 @@ function documentedRiskControlText(facts: ArtifactFoundationFact[]) {
     : "";
 }
 
-function documentedWaveControlText(facts: ArtifactFoundationFact[]) {
-  const source = documentedFactText(
-    facts,
-    /\b(\d+\s+(?:applications?|applikasjoner)|Wave\s*\d+|bølge\s*\d+|shared services|customer-facing|analytics|archive)\b/i,
-  );
-  if (!source) {
-    return "";
-  }
-
-  return `Migreringsplanen må styres mot dokumentert kildegrunnlag: ${source}`;
-}
-
 function appendUniqueTextItems(
   items: string[],
   additions: string[],
@@ -20726,7 +20714,7 @@ function enrichHighLevelDesignTextWithFoundationFacts(
   }
 
   text = appendHighLevelDesignSection(text, "Målarkitektur", [
-    documentedWaveControlText(facts),
+    documentedMigrationControl(facts),
   ]);
   text = appendHighLevelDesignSection(text, "Drift og gjennomføring", [
     documentedDeliverableControlText(facts),
