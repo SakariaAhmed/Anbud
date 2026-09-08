@@ -3,7 +3,27 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { accountedCostUpperBound, openBudgetLedger, prepareRequest } from "./budget.mjs";
+import { accountedCostUpperBound, accountedCostUpperBoundV4, openBudgetLedger, prepareRequest } from "./budget.mjs";
+
+test("only validated cache reads reduce reconciled usage, never the next reservation", () => {
+  for (const [model, inputRate, cachedRate, outputRate] of [["gpt-5.4", 2.5, 0.25, 15], ["gpt-5.6-terra", 2.5, 0.2, 12], ["gpt-5.6-luna", 0.25, 0.02, 1.2]]) {
+    const row = { model, priceTier: "bounded-short", requestedServiceTier: "default", status: 200, reservedUsd: 2, inputTokensUpperBound: 20000, outputTokensLimit: 8000, usage: { input_tokens: 10000, output_tokens: 2000, total_tokens: 12000, input_tokens_details: { cached_tokens: 6000, cache_write_tokens: 3000 } } };
+    const expected = Math.ceil((4000 * inputRate + 6000 * cachedRate + 2000 * outputRate) * 1.1) / 1e6;
+    assert.equal(accountedCostUpperBound(row), expected);
+    assert.equal(accountedCostUpperBound({ ...row, requestedServiceTier: "priority", returnedServiceTier: "priority" }), Math.ceil((4000 * inputRate + 6000 * cachedRate + 2000 * outputRate) * 2 * 1.1) / 1e6);
+    assert.equal(accountedCostUpperBound({ ...row, requestedServiceTier: "priority", returnedServiceTier: "default" }), expected);
+    assert.equal(accountedCostUpperBound({ ...row, requestedServiceTier: "priority" }), row.reservedUsd);
+    const withoutDiscount = Math.ceil((10000 * inputRate + 2000 * outputRate) * 1.1) / 1e6;
+    for (const details of [{}, { cached_tokens: -1 }, { cached_tokens: 10001 }, { cached_tokens: 0.5 }, { cached_tokens: "6000" }, { cached_tokens: 6000, cache_write_tokens: 4001 }, { cached_tokens: 6000, cache_write_tokens: -1 }]) {
+      assert.equal(accountedCostUpperBound({ ...row, usage: { ...row.usage, input_tokens_details: details } }), withoutDiscount);
+    }
+    for (const status of ["reserved", "uncertain", 500]) assert.equal(accountedCostUpperBound({ ...row, status }), row.reservedUsd);
+    assert.equal(accountedCostUpperBound({ ...row, usage: { ...row.usage, total_tokens: 11999 } }), row.reservedUsd);
+    const request = { model, input: "Kravgrunnlag" };
+    const prepared = prepareRequest("/v1/responses", request);
+    assert.equal(prepared.reservedUsd, Math.ceil((prepared.inputTokens * inputRate + prepared.outputTokens * outputRate) * 1.1) / 1e6);
+  }
+});
 
 test("budget reserves concurrent calls durably and never refunds failures or retries", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "anbud-budget-test-"));
@@ -24,13 +44,13 @@ test("budget reserves concurrent calls durably and never refunds failures or ret
   } finally { ledger?.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("short Terra and Luna calls use maximum short cache-write rates with the full margin", () => {
+test("historical V4 short Terra and Luna calls use maximum short cache-write rates with the full margin", () => {
   for (const [model, inputRate, outputRate, longInput, longOutput] of [["gpt-5.6-terra", 2.5, 12, 5, 18], ["gpt-5.6-luna", 0.25, 1.2, 0.5, 1.8]]) {
     const historical = { model, priceTier: "maximum", status: 200, reservedUsd: 2, inputTokensUpperBound: 24000, outputTokensLimit: 16000, usage: { prompt_tokens: 10000, completion_tokens: 8000, total_tokens: 18000, prompt_tokens_details: { cached_tokens: 10000 } } };
-    assert.equal(accountedCostUpperBound(historical), Math.ceil((10000 * inputRate + 8000 * outputRate) * 1.1) / 1e6);
-    assert.equal(accountedCostUpperBound({ ...historical, priceTier: undefined }), accountedCostUpperBound(historical), "Early rows still have a complete byte-based token bound before priceTier was added.");
-    for (const upper of [240000, 256000, 300000]) assert.equal(accountedCostUpperBound({ ...historical, inputTokensUpperBound: upper }), Math.ceil((10000 * longInput + 8000 * longOutput) * 1.1) / 1e6);
-    for (const patch of [{ status: "uncertain" }, { usage: undefined }, { inputTokensUpperBound: NaN }, { outputTokensLimit: 7000 }]) assert.equal(accountedCostUpperBound({ ...historical, ...patch }), historical.reservedUsd);
+    assert.equal(accountedCostUpperBoundV4(historical), Math.ceil((10000 * inputRate + 8000 * outputRate) * 1.1) / 1e6);
+    assert.equal(accountedCostUpperBoundV4({ ...historical, priceTier: undefined }), accountedCostUpperBoundV4(historical), "Early rows still have a complete byte-based token bound before priceTier was added.");
+    for (const upper of [240000, 256000, 300000]) assert.equal(accountedCostUpperBoundV4({ ...historical, inputTokensUpperBound: upper }), Math.ceil((10000 * longInput + 8000 * longOutput) * 1.1) / 1e6);
+    for (const patch of [{ status: "uncertain" }, { usage: undefined }, { inputTokensUpperBound: NaN }, { outputTokensLimit: 7000 }]) assert.equal(accountedCostUpperBoundV4({ ...historical, ...patch }), historical.reservedUsd);
     const request = prepareRequest("/v1/responses", { model, input: "Kort lokal prøve" });
     assert.equal(request.priceTier, "bounded-short");
     assert.equal(request.reservedUsd, Math.ceil((request.inputTokens * inputRate + request.outputTokens * outputRate) * 1.1) / 1e6);

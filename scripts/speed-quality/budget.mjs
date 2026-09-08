@@ -17,13 +17,14 @@ const rates = {
 const shortRates = { "gpt-5.4": [2.5, 15], "gpt-5.6-terra": [2.5, 12], "gpt-5.6-luna": [0.25, 1.2] };
 const fastShortRates = { "gpt-5.4": [5, 30], "gpt-5.6-terra": [5, 24], "gpt-5.6-luna": [0.5, 2.4] };
 const fastLongRates = { "gpt-5.6-terra": [10, 36], "gpt-5.6-luna": [1, 3.6] };
-export const ACCOUNTING_POLICY = "verified-tiered-usage-or-full-reservation-v4";
+export const ACCOUNTING_POLICY = "verified-cache-usage-or-full-reservation-v5";
+export const ACCOUNTING_POLICY_V4 = "verified-tiered-usage-or-full-reservation-v4";
 export const ACCOUNTING_POLICY_V3 = "verified-bounded-short-usage-or-full-reservation-v3";
 
 // Reconcile only verifiable text-token usage. Unknown, malformed, failed
 // transport and in-flight requests retain their complete preflight reservation.
 // Keep the historical reservation on disk for every request, including retries.
-function accountedForPolicy(row, includeGpt56Short, allowFast = false) {
+function accountedForPolicy(row, includeGpt56Short, allowFast = false, allowCached = false) {
   const fallback = row.reservedUsd;
   if (row.status !== 200 || !row.usage || !rates[row.model]) return fallback;
   const embedding = row.model.startsWith("text-embedding-");
@@ -36,24 +37,43 @@ function accountedForPolicy(row, includeGpt56Short, allowFast = false) {
   const eligibleShort = row.model === "gpt-5.4" && row.priceTier === "bounded-short" || includeGpt56Short && ["gpt-5.6-terra", "gpt-5.6-luna"].includes(row.model) && [undefined, "maximum", "bounded-short"].includes(row.priceTier);
   const short = eligibleShort && row.inputTokensUpperBound + row.outputTokensLimit < 256_000;
   let selectedRates = short ? shortRates[row.model] : [maximumInput, maximumOutput];
+  let cacheShort = short;
   if (row.requestedServiceTier === "priority") {
     if (!allowFast || !["priority", "fast", "default"].includes(row.returnedServiceTier)) return fallback;
     if (row.returnedServiceTier !== "default") {
-      selectedRates = row.inputTokensUpperBound + row.outputTokensLimit < 256_000 ? fastShortRates[row.model] : fastLongRates[row.model];
+      cacheShort = row.inputTokensUpperBound + row.outputTokensLimit < 256_000;
+      selectedRates = cacheShort ? fastShortRates[row.model] : fastLongRates[row.model];
       if (!selectedRates) return fallback;
     }
   } else if (row.requestedServiceTier !== undefined && row.requestedServiceTier !== "default") return fallback;
   const [inputRate, outputRate] = selectedRates;
-  // Count cached tokens as full-price input and reasoning as output. The same
-  // 10% margin applies. A inconsistent reconciliation cannot release budget.
-  const bound = Math.ceil((input * inputRate + output * outputRate) * 1.1) / 1e6;
+  let cached = 0;
+  let cacheRate = inputRate;
+  // Discount only explicitly returned, internally consistent cache reads.
+  // Every other input token retains the maximum cache-write rate. Preflight
+  // never assumes a cache hit; failed/unknown requests returned above in full.
+  const readRates = { "gpt-5.4": [0.25, 0.5], "gpt-5.6-terra": [0.2, 0.4], "gpt-5.6-luna": [0.02, 0.04] };
+  const details = row.usage.input_tokens_details ?? row.usage.prompt_tokens_details;
+  const ambiguousDetails = row.usage.input_tokens_details && row.usage.prompt_tokens_details;
+  if (allowCached && readRates[row.model] && details && !ambiguousDetails) {
+    const count = details.cached_tokens;
+    const writes = details.cache_write_tokens;
+    if (Number.isSafeInteger(count) && count >= 0 && count <= input &&
+        (writes === undefined || Number.isSafeInteger(writes) && writes >= 0 && writes <= input - count)) {
+      cached = count;
+      const fast = row.requestedServiceTier === "priority" && row.returnedServiceTier !== "default";
+      cacheRate = readRates[row.model][cacheShort ? 0 : 1] * (fast ? 2 : 1);
+    }
+  }
+  const bound = Math.ceil(((input - cached) * inputRate + cached * cacheRate + output * outputRate) * 1.1) / 1e6;
   return bound >= 0 && bound <= fallback ? bound : fallback;
 }
 // V2 remains callable solely to audit the explicit policy transition. Neither
 // calculation modifies historical rows or their recorded priceTier/reservedUsd.
 export const accountedCostUpperBoundV2 = (row) => accountedForPolicy(row, false);
 export const accountedCostUpperBoundV3 = (row) => accountedForPolicy(row, true);
-export const accountedCostUpperBound = (row) => accountedForPolicy(row, true, true);
+export const accountedCostUpperBoundV4 = (row) => accountedForPolicy(row, true, true);
+export const accountedCostUpperBound = (row) => accountedForPolicy(row, true, true, true);
 
 export function prepareRequest(endpoint, original, outputLimit = 8000, serviceTier = "default") {
   if (!["default", "priority"].includes(serviceTier)) throw new Error("Unpriced service tier.");
