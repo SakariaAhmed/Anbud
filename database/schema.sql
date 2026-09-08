@@ -2270,7 +2270,11 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
              artifact.created_at desc, artifact.id desc
   ), authority as materialized (
     select project.artifact_source_revision, source_state.service_library_revision,
-           case when exists (select 1 from latest where used_solution_evaluation)
+           case when exists (
+             select 1 from latest where used_solution_evaluation
+               and input_artifact_source_revision = project.artifact_source_revision
+               and input_service_library_revision = source_state.service_library_revision
+           )
              then public.raw_artifact_solution_evaluation_dependency(project.id)
              else null end as evaluation_dependency
     from public.projects project cross join public.artifact_source_state source_state
@@ -2849,6 +2853,8 @@ language sql stable security invoker set search_path = '' as $$
            source_state.service_library_revision,
            case when exists (
              select 1 from latest where used_solution_evaluation and artifact_type <> p_artifact_type
+               and input_artifact_source_revision = project.artifact_source_revision
+               and input_service_library_revision = source_state.service_library_revision
            ) then public.raw_artifact_solution_evaluation_dependency(project.id)
              else null end as evaluation_dependency
     from public.projects project cross join public.artifact_source_state source_state

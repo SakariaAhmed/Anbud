@@ -40,12 +40,24 @@ test("snapshot optimization preserves currentness, exact dependencies, missing d
     });
     const output = psql(database, `
       begin;
+      set local track_functions = 'all';
       ${originals.join("\n")}
       create function pg_temp.assert_same(p uuid) returns void language plpgsql as $body$
       begin
         if public.get_current_project_derived_snapshot(p) is distinct from pg_temp.get_current_project_derived_snapshot_before(p) then raise exception 'Derived snapshot changed'; end if;
         if public.get_artifact_authority_summary(p) is distinct from pg_temp.get_artifact_authority_summary_before(p) then raise exception 'Artifact currentness changed'; end if;
         if (select jsonb_agg(to_jsonb(c)) from public.artifact_base_knowledge_candidates(p,'losningsutkast') c) is distinct from (select jsonb_agg(to_jsonb(c)) from pg_temp.artifact_base_knowledge_candidates_before(p,'losningsutkast') c) then raise exception 'Knowledge candidates changed'; end if;
+      end $body$;
+      create function pg_temp.assert_no_unneeded_hash(p uuid) returns void language plpgsql as $body$
+      declare calls_before bigint; calls_after bigint;
+      begin
+        select coalesce(sum(calls), 0) into calls_before from pg_stat_xact_user_functions
+          where funcid = 'public.raw_artifact_solution_evaluation_dependency(uuid)'::regprocedure;
+        perform public.get_artifact_authority_summary(p);
+        perform * from public.artifact_base_knowledge_candidates(p, 'losningsutkast');
+        select coalesce(sum(calls), 0) into calls_after from pg_stat_xact_user_functions
+          where funcid = 'public.raw_artifact_solution_evaluation_dependency(uuid)'::regprocedure;
+        if calls_after <> calls_before then raise exception 'Hashed evaluation despite no eligible artifact'; end if;
       end $body$;
       do $cases$
       declare p uuid := '00000000-0000-4000-8000-000000000808'; e public.solution_evaluations%rowtype; artifact_id uuid;
@@ -54,6 +66,7 @@ test("snapshot optimization preserves currentness, exact dependencies, missing d
         perform pg_temp.assert_same(p);
         insert into solution_evaluations(project_id,result_json,evaluation_provenance_mode) values(p,jsonb_build_object('encrypted',true,'payload',repeat('encrypted-synthetic-payload-',10000)),'document_only') returning * into e;
         perform pg_temp.assert_same(p);
+        perform pg_temp.assert_no_unneeded_hash(p);
         insert into executive_summaries(project_id,result_json,provenance_verified,input_solution_evaluation_id,input_solution_evaluation_updated_at,input_solution_evaluation_hash) values(p,'{"summary":"Bevar"}',true,e.id,e.updated_at,public.raw_artifact_solution_evaluation_dependency(p)->>'content_hash');
         perform pg_temp.assert_same(p);
         set local role service_role;
@@ -73,6 +86,10 @@ test("snapshot optimization preserves currentness, exact dependencies, missing d
         perform pg_temp.assert_same(p);
         update projects set artifact_source_revision=artifact_source_revision+1 where id=p;
         perform pg_temp.assert_same(p);
+        perform pg_temp.assert_no_unneeded_hash(p);
+        update generated_artifacts set input_artifact_source_revision=(select artifact_source_revision from projects where id=p),input_service_library_revision=-1 where project_id=p;
+        perform pg_temp.assert_same(p);
+        perform pg_temp.assert_no_unneeded_hash(p);
         update solution_evaluations set evaluation_provenance_mode='legacy_unknown' where project_id=p;
         perform pg_temp.assert_same(p);
         delete from solution_evaluations where project_id=p;
