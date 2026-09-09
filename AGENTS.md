@@ -108,8 +108,10 @@ credentials or copy tokens, session values, or confidential documents into logs.
 - Microsoft Entra authenticates internal users; guest codes are application-managed
   credentials. Entra tenant membership and application project grants are distinct.
 - Enforce current session and project permissions server-side. Global `admin`
-  manages access and can read projects; it does not imply global content-write
-  permission. `restricted_viewer` must not gain source-document downloads.
+  has full access to every project, including content changes, generation,
+  downloads, sharing, and deletion, without a project-specific grant.
+  Non-admin users remain limited by their project roles; `restricted_viewer`
+  must not gain source-document downloads.
 - Preserve the single global administrator invariant. The password fallback and
   intended Microsoft administrator use the same configured principal. Microsoft
   login must not grant admin by email; do not restore retired `APP_ADMIN_EMAILS`.

@@ -31,7 +31,7 @@ export type RequestPrincipal = {
 export type AuthorizedProjectContext = {
   principal: RequestPrincipal;
   projectId: string;
-  effectiveRole: ProjectRole | "admin_read";
+  effectiveRole: ProjectRole | "admin";
   permissions: readonly ProjectPermission[];
 };
 
@@ -214,7 +214,7 @@ export async function requireProjectPermission(
   const effectiveRole = await getEffectiveProjectRole(principal.id, projectId);
   if (globalAccessAllows(principal.isAdmin, permission)) {
     const permissions = effectiveProjectPermissions(principal.isAdmin, effectiveRole);
-    return { principal, projectId, effectiveRole: effectiveRole ?? "admin_read", permissions };
+    return { principal, projectId, effectiveRole: "admin", permissions };
   }
 
   if (!effectiveRole || !projectRoleAllows(effectiveRole, permission)) {

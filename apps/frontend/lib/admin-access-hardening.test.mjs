@@ -108,14 +108,16 @@ test("direct access management cannot downgrade an existing project owner", () =
   assert.ok(membershipWrite > ownerGuard);
 });
 
-test("administrator permissions include actual project grants without granting global writes", () => {
-  const {effectiveProjectPermissions} = createJiti(import.meta.url)("./access-control.ts");
-  assert.equal(effectiveProjectPermissions(true,null).includes("project.update"),false);
-  assert.equal(effectiveProjectPermissions(true,null).includes("project.read"),true);
-  assert.equal(effectiveProjectPermissions(true,null).includes("project.share"),true);
-  assert.equal(effectiveProjectPermissions(true,"owner").includes("project.update"),true);
-  assert.equal(effectiveProjectPermissions(false,"restricted_viewer").includes("document.download"),false);
-  assert.deepEqual(effectiveProjectPermissions(false,null),[]);
+test("administrator has full effective access even without a grant or with a read-only grant", () => {
+  const { effectiveProjectPermissions, PROJECT_PERMISSIONS, PROJECT_ROLES, PROJECT_ROLE_PERMISSIONS } =
+    createJiti(import.meta.url)("./access-control.ts");
+  for (const role of [null, ...PROJECT_ROLES]) {
+    assert.deepEqual(effectiveProjectPermissions(true, role), PROJECT_PERMISSIONS);
+    assert.deepEqual(
+      effectiveProjectPermissions(false, role),
+      role ? PROJECT_ROLE_PERMISSIONS[role] : [],
+    );
+  }
 });
 
 test("project owners can grant an existing active person direct access", () => {
