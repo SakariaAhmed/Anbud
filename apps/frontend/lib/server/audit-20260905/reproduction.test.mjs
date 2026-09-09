@@ -119,12 +119,23 @@ test('REGRESSION UI1: failed save keeps editor open with unsaved draft', async (
     busyActionRef: { current: null }, setBusy: noop, setError: value => error = value, setNotice: noop, startProgressTicker: noop, setBusyProgress: noop, stopProgressTicker: noop,
   });
   const { onSaveSectionEdit } = actual('components/projects/project-analysis-tab.tsx', ['onSaveSectionEdit'], {
+    readOnly: false,
     sectionRevision: "original-revision", sectionDraft: draft, sanitizeSectionDraft: (_, value) => value,
     onSaveAnalysis: () => runAction('save-analysis', async () => { throw new Error('Injected offline save'); }),
     setEditingSection: value => editing = value, setSectionDraft: value => draft = value, setSectionDraftError: noop,
   });
   await onSaveSectionEdit('strategy');
   assert.equal(error, 'Injected offline save'); assert.equal(editing, 'strategy'); assert.equal(draft.executive_summary, 'Unsaved work');
+});
+
+test('REGRESSION UI HISTORY: historical analysis cannot start an edit or save a snapshot', async () => {
+  const unexpected = () => assert.fail('Historical analysis must not edit or save');
+  const { onStartSectionEdit, onSaveSectionEdit } = actual('components/projects/project-analysis-tab.tsx', ['onStartSectionEdit', 'onSaveSectionEdit'], {
+    readOnly: true, onSaveAnalysis: unexpected, setEditingSection: unexpected,
+    setSectionDraft: unexpected, setSectionDraftError: unexpected,
+  });
+  onStartSectionEdit('strategy');
+  await onSaveSectionEdit('strategy');
 });
 
 test('REGRESSION UI2: one local action holds busy state and rejects overlapping actions', async () => {
