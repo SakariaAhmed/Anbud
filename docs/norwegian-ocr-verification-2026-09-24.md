@@ -72,6 +72,34 @@ Python/package upgrades. These three synthetic scan pages establish the observed
 regression and holdout behavior, not character-perfect OCR for every scan, font,
 language, handwriting or degradation level.
 
+The subsequent Python 3.14.6 / Docling 2.99.0 / core 2.95.0 production-target
+image also passed all three exact-text pages, source references/bytes and the
+byte-identical OCR-off control. Final checks confirmed `nor`/`eng`/`osd`, UID
+1001, no network, and removal of Perl. The actual Docling binary rejected an
+injected unsupported option; the application's compatibility retry then retained
+the exact Norwegian text. Node 22.23.1 inside the image correctly classified a
+real Docling timeout. The final Next.js server returned liveness 200.
+
+Build qualification: the unseeded build was stopped during slow model downloads
+after about 25 minutes. A local copy of the current Dockerfile preloaded the
+existing immutable model bundle, then executed the unchanged downloader and
+cleanup successfully. All 48 final model paths/checksums match that bundle.
+The evidence register records this recipe's hash and the final image ID; no
+cache workaround was committed. This verifies the current runtime with cached
+models, not a completed fresh download or a protected production rollout.
+
+At the user's request, ChatGPT independently reviewed the supplied code excerpts
+and evidence in a local browser conversation. Codex identified itself as the
+implementation agent and disclosed rejected experiments, the initial runtime
+mismatch and the final caching qualification. The reviewer supported the narrow
+diagnosis, identified no confirmed code defect, and called for final-runtime
+checks. Its timeout concern was closed by inspecting the complete runner and
+testing a real output-limit failure. This was an evidence/code review, not a
+second agent independently executing repository tests. CI run `36053805108`
+passed on code commit `5b093ab0`. After receiving the final runtime results and
+caching qualification, ChatGPT found no demonstrated OCR defect warranting
+another code change; it retained cold-build and protected-release checks.
+
 No production rollout, source backfill or new cloud-ingestion run occurred. The
 normal protected release remains required; already-ingested text is unchanged
 until explicitly reprocessed. This follow-up made zero paid AI calls, leaving

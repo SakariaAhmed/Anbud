@@ -203,5 +203,86 @@
     "Three synthetic scanned pages, not a representative customer OCR corpus",
     "No new live cloud ingestion run or production deployment",
     "Existing stored documents require explicit reprocessing after release"
-  ]
+  ],
+  "finalRuntimeVerification": {
+    "codeCommit": "5b093ab0af09f64d3193dc954ca1b52fed71651a",
+    "imageId": "sha256:c07ed9aa23b4282059853cfeeb6bc06a57cf6b13e10bf4ff9bc2f94b107ff531",
+    "inspectSizeBytes": 1665172827,
+    "buildQualification": "Local copy of the current Dockerfile prefills /opt/docling-models from immutable existing image f168a8e0, then runs the unchanged model-download and cleanup commands. The unseeded build was canceled in model download after about 25 minutes; it is not recorded as a successful clean download. No caching workaround was committed.",
+    "buildRecipeSha256": "b20f03e6c46e75d00870dbc4d65e73473bfe4552f34765bdc37e5c346e706eda",
+    "runtime": {
+      "python": "3.14.6",
+      "uid": 1001,
+      "doclingSlim": "2.99.0",
+      "doclingCore": "2.95.0",
+      "languages": [
+        "eng",
+        "nor",
+        "osd"
+      ],
+      "tesseract": "tesseract 5.3.0",
+      "perlRemoved": true
+    },
+    "modelFiles": 48,
+    "modelManifestSha256": "f2b89a94576de535563d47f5c4c59b366e43226abbaae483745148002f2b0d3b",
+    "modelManifestIdenticalToBaseline": true,
+    "network": "none",
+    "applicationParserRuns": [
+      {
+        "file": "norwegian-regression.pdf",
+        "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87",
+        "imageId": "sha256:c07ed9aa23b4282059853cfeeb6bc06a57cf6b13e10bf4ff9bc2f94b107ff531",
+        "pages": 1,
+        "exactText": true,
+        "elapsedMs": 13866
+      },
+      {
+        "file": "norwegian-holdout.pdf",
+        "sha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2",
+        "imageId": "sha256:c07ed9aa23b4282059853cfeeb6bc06a57cf6b13e10bf4ff9bc2f94b107ff531",
+        "pages": 2,
+        "exactText": true,
+        "elapsedMs": 17290
+      }
+    ],
+    "realCliCompatibilityRetry": [
+      {
+        "file": "norwegian-regression.pdf",
+        "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87",
+        "imageId": "sha256:c07ed9aa23b4282059853cfeeb6bc06a57cf6b13e10bf4ff9bc2f94b107ff531",
+        "pages": 1,
+        "exactText": true,
+        "elapsedMs": 17068
+      }
+    ],
+    "realCliTimeout": {
+      "node": "v22.23.1",
+      "elapsedMs": 1052,
+      "killed": true,
+      "signal": "SIGTERM",
+      "timedOut": true
+    },
+    "bornDigitalOutputIdentical": {
+      "md": true,
+      "json": true
+    },
+    "liveness": {
+      "httpStatus": 200,
+      "status": "healthy"
+    },
+    "ci": {
+      "runId": 36053805108,
+      "conclusion": "success",
+      "codeCommit": "5b093ab0af09f64d3193dc954ca1b52fed71651a"
+    }
+  },
+  "independentReview": {
+    "reviewer": "ChatGPT in the local browser, explicitly requested by the user",
+    "access": "Supplied implementation excerpts and reported evidence only; no independent repository execution",
+    "disclosure": "Codex identified itself as implementation agent and shared rejected candidate, test scope, initial Python mismatch and final cache-build qualification",
+    "initialFinding": "No confirmed defect in chosen OCR policy; inspect timeout termination paths and validate final Python 3.14 runtime",
+    "timeoutFollowup": "No AbortSignal or explicit kill path in execDocling; real Node maxBuffer error is not classified as timeout. Reviewer closed that concern.",
+    "paidApiCalls": 0,
+    "finalVerdict": "Based on supplied evidence, no demonstrated OCR defect requires another code change. Current Python 3.14 runtime checks support the fix; the verified-cache build does not prove fully cold build reliability. Protected release and post-deploy checks remain."
+  }
 }
