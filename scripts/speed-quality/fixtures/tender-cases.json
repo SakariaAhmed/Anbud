@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "frozenAt": "2026-09-08",
+  "dataPolicy": "Entirely fictional evaluation material. No production or customer documents.",
+  "cases": [
+    {
+      "id": "fjord-drift-development",
+      "split": "development",
+      "customerName": "Fiktiv Fjord Drift AS",
+      "customerText": "# Fiktiv Fjord Drift AS – konkurransegrunnlag\n\n## 1. Kunden og oppdraget\nFiktiv Fjord Drift AS har 240 ansatte, 12 lokasjoner og 18 applikasjoner. Kunden ønsker en trinnvis overgang fra lokalt VMware-miljø til Azure. Ordrebehandling er kritisk i åpningstiden 06–22. To ansatte har ansvar for intern IT. Leverandøren skal beskrive ansvarssnitt og avhengigheter til kundens applikasjonseiere.\n\n## 2. Bindende krav\nK-1: Produksjonsdata og sikkerhetskopier skal lagres og behandles i Norge.\nK-2: Alle administratorer, også eksterne konsulenter, skal bruke flerfaktorautentisering.\nK-3: Ordrebehandling skal ha RTO på høyst 2 timer og RPO på høyst 30 minutter.\nK-4: Leverandøren skal gjennomføre og dokumentere gjenopprettingstest hvert kvartal.\nK-5: Migrering skal skje i tre bølger med kundegodkjent testprotokoll og dokumentert tilbakeføringsplan før hver produksjonssetting.\nK-6: Kunden skal få månedlig kostnadsrapport med avviksforklaring per applikasjon.\nK-7: Driftsavtalen skal dekke kritiske hendelser hele døgnet, alle dager.\nK-8: Ved avtalens slutt skal data og konfigurasjon eksporteres i dokumenterte åpne formater innen 20 arbeidsdager.\n\n## 3. Evaluering og avklaringer\nTilbudene vurderes på kvalitet 50 prosent, pris 30 prosent og gjennomføring 20 prosent. Kontraktens startdato og totalbudsjett er ikke fastsatt. Kunden har ikke godkjent dataoverføring til Sverige eller Danmark. Leverandøren må oppgi hvilke vilkår og forutsetninger som krever avklaring, og må ikke fremstille egne forslag som avtalt leveranse.",
+      "solutionText": "# Fiktiv leverandørløsning\n\nK-1: Azure-region Norway East brukes for produksjonsdata. Sikkerhetskopier replikeres til Sweden Central.\nK-2: Interne administratorer får MFA via Entra ID. Eksterne konsulenter bruker foreløpig passord uten MFA.\nK-3: Vi tilbyr gjenoppretting innen fire timer og maksimalt 30 minutters datatap.\nK-4: Vi gjennomfører årlig gjenopprettingstest. Testprotokollen sendes kunden.\nK-5: Migreringen deles i tre bølger. Kunden godkjenner testprotokoll, avhengigheter og tilbakeføringsplan før hver produksjonssetting.\nK-6: Kunden mottar månedlig kostnadsrapport fordelt på applikasjon, med forklaring av avvik mot prognose.\nK-7: Vår bemannede servicedesk er åpen hverdager 08–16. Kritiske varsler utenom dette håndteres neste arbeidsdag.\nK-8: Data og konfigurasjon eksporteres i dokumenterte åpne formater innen 20 arbeidsdager etter avtalens slutt.\n\nKundens applikasjonseiere godkjenner funksjonelle tester. Leverandøren gjennomfører teknisk migrering og dokumenterer resultatet. Pris og oppstartsdato må avtales.",
+      "expected": {
+        "requirements": ["K-1", "K-2", "K-3", "K-4", "K-5", "K-6", "K-7", "K-8"],
+        "contradictedRequirements": ["K-1", "K-2", "K-3", "K-4", "K-7"],
+        "supportedRequirements": ["K-5", "K-6", "K-8"],
+        "exactFacts": ["240", "12", "18", "2 timer", "30 minutter", "20 arbeidsdager"],
+        "mustRemainUnspecified": ["totalbudsjett", "startdato"],
+        "criticalTopics": ["Norge", "eksterne konsulenter", "kvartal", "hele døgnet", "tilbakeføringsplan"]
+      }
+    },
+    {
+      "id": "kyst-data-holdout",
+      "split": "holdout",
+      "customerName": "Fiktiv Kyst Data SA",
+      "customerText": "# Fiktiv Kyst Data SA – konkurransegrunnlag\n\n## 1. Oppdrag\nFiktiv Kyst Data SA har 85 ansatte og driver sensordatafangst ved 7 havner. Kunden vil etablere en skybasert dataplattform uten å stanse lokal datainnsamling. Kundens nettverksansvarlige må godkjenne endringer i havnenes brannmurer. Plattformvalg er åpent; Microsoft er ikke et krav.\n\n## 2. Krav\nH-1: Lokal innsamling skal fortsette i minst 48 timer ved brudd i forbindelsen til skyen.\nH-2: Plattformen skal registrere tidsstempel, måleenhet og sensor-ID for alle målinger og avvise ugyldige måleenheter.\nH-3: Revisjonslogger skal oppbevares i 180 dager og kunne eksporteres til kundens logganalyse.\nH-4: Personopplysninger skal behandles i EØS; underleverandører skal navngis før avtaleinngåelse.\nH-5: Pilot ved to havner skal være godkjent senest 12. november 2027 før utrulling til øvrige havner.\nH-6: Kunden skal få opplæring, driftsdokumentasjon og en praktisk overtakelsesprøve.\nH-7: Data skal kunne hentes gjennom et dokumentert API uten særskilt lisens for eksport.\nH-8: Leverandøren skal vise et kostnadsestimat for normal last og tredoblet datavolum, med tydelige forutsetninger.\n\n## 3. Åpne spørsmål\nEndelig budsjett, normal datamengde og supportens åpningstid er ikke oppgitt. Kunden har ikke stilt krav om døgnbemannet support eller en bestemt tilgjengelighetsprosent. Eventuelle forslag til tjenestenivå skal merkes som forslag.",
+      "solutionText": "# Fiktiv løsningsbeskrivelse\n\nH-1: Hver havn har lokal buffer med kapasitet til 72 timers datainnsamling. Nettverksansvarlig godkjenner brannmurendringer.\nH-2: Sensor-ID og tidsstempel valideres. Måleenhet lagres som fritekst uten kontroll.\nH-3: Revisjonslogger beholdes i 90 dager. Eksport til kundens logganalyse er inkludert.\nH-4: Behandling skjer i EØS. Underleverandørlisten fastsettes etter avtaleinngåelse.\nH-5: Pilot ved to havner leveres 19. november 2027.\nH-6: Opplæring og driftsdokumentasjon er inkludert. Praktisk overtakelsesprøve er ikke beskrevet.\nH-7: Åpent, dokumentert API inkluderer eksport uten særskilt lisens.\nH-8: Prisen gjelder normal last; tredoblet datavolum er ikke beregnet.\n\nVi foreslår support hverdager 08–16, som må avtales med kunden. Plattformvalg og pris avklares etter måling av normal datamengde.",
+      "expected": {
+        "requirements": ["H-1", "H-2", "H-3", "H-4", "H-5", "H-6", "H-7", "H-8"],
+        "contradictedRequirements": ["H-2", "H-3", "H-4", "H-5"],
+        "missingEvidenceRequirements": ["H-6", "H-8"],
+        "supportedRequirements": ["H-1", "H-7"],
+        "exactFacts": ["85", "7 havner", "48 timer", "180 dager", "12. november 2027"],
+        "mustRemainUnspecified": ["budsjett", "normal datamengde", "supportens åpningstid"],
+        "criticalTopics": ["måleenhet", "underleverandører", "overtakelsesprøve", "tredoblet datavolum"]
+      }
+    }
+  ]
+}

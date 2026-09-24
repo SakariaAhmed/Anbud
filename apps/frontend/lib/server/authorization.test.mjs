@@ -42,6 +42,14 @@ async function withRequest(t, options, callback) {
   t.mock.method(globalThis, "fetch", async (input, init) => {
     const url = new URL(input);
     assert.equal(url.origin, env.DATA_API_URL);
+    if (url.pathname === "/rpc/resolve_project_role") {
+      assert.equal(init.method, "POST");
+      assert.deepEqual(JSON.parse(init.body), {
+        p_principal_id: principalId,
+        p_project_id: projectId,
+      });
+      return Response.json(options.role ?? null);
+    }
     assert.equal(init.method, "GET");
     switch (url.pathname) {
       case "/app_sessions":
@@ -61,14 +69,6 @@ async function withRequest(t, options, callback) {
         });
       case "/app_principal_roles":
         return Response.json(options.admin ? [{ role: "admin" }] : []);
-      case "/project_memberships":
-        return Response.json(options.role
-          ? [{ role: options.role, revoked_at: null, expires_at: null }]
-          : []);
-      case "/app_group_members":
-        return Response.json([]);
-      case "/projects":
-        return Response.json({ owner_id: "u_other_project_owner" });
       default:
         assert.fail(`Unexpected authorization request: ${url.pathname}`);
     }

@@ -1,0 +1,720 @@
+{
+  "date": "2026-09-24",
+  "baseCommit": "080bcf607211d985d789d97f8fa5f5101e51938c",
+  "scope": "Focused AI follow-up: duration retention, supplier reservation handling and holistic evaluation reasoning. Fictional frozen inputs; actual generation/normalization owners and provider transport; in-memory retrieval/context persistence. No database/queue/route/browser/Azure latency.",
+  "budget": {
+    "authorization": "use 2 dollars and fix rest of the unresolved issues",
+    "limitUsd": 2,
+    "conservativeSpendUsd": 1.549892,
+    "remainingUsd": 0.450108,
+    "requests": 20,
+    "pending": 0,
+    "ledger": {
+      "path": "tmp/integration/ai-followup/api-budget.json",
+      "sha256": "ee651b8eb9344d99e5014ee48cec3fd711473bd6da5fe5695a7d6171a3beb6ad"
+    },
+    "pricingSource": "https://developers.openai.com/api/docs/pricing",
+    "policy": "Existing V5 usage accounting, maximum uncached/cache-write input pricing plus 10% margin; no credit assumed before verified usage. Task ledger is separate because inherited authorization format failed current validation; original 1062-row historical snapshot preserved unchanged, no historical allowance reused.",
+    "history": {
+      "path": "tmp/integration/ai-followup/inherited-budget.json",
+      "sha256": "297034bdd3acb785d76a87c3e8c416f200d027a849bd8254bfb7622f54a31229"
+    },
+    "authorizationRecord": {
+      "path": "tmp/integration/ai-followup/authorization.json",
+      "sha256": "25a7a56c5069ab8774ef4aecf680551af15bcfdb265c71788095f88f507e788b"
+    }
+  },
+  "fixtures": {
+    "development": {
+      "path": "tmp/integration/ai-followup/development.json",
+      "sha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82"
+    },
+    "holdout": {
+      "path": "tmp/integration/ai-followup/holdout.json",
+      "sha256": "92593e64e74bc0c68439aeb0440396427b89c79c2f1a1ed3ab0b86f922adc56e"
+    },
+    "large": {
+      "path": "tmp/integration/ai-followup/large.json",
+      "sha256": "28f072c0f4587b1e61f0b15c933d5aa26d2332ce1d658ddfbb1694e8e3d9ed33"
+    },
+    "verification": {
+      "path": "tmp/integration/ai-followup/verification.json",
+      "sha256": "6d64f626076d4127fda0732e08a91a6e79326eeb03c56369d0e9d4e33595af5c"
+    }
+  },
+  "pairs": [
+    {
+      "caseName": "development",
+      "order": [
+        "dev-eval-medium-v2",
+        "dev-eval-low"
+      ],
+      "identicalPayloadExceptReasoning": true,
+      "judge": "dev-evaluation-judge",
+      "medium": {
+        "label": "dev-eval-medium-v2",
+        "requestSha256": "5280d8ce75df8370ce6f7ce7b6128d6a1f3173d2fd873180762d5f1ee0b10c56",
+        "milliseconds": 90434.967833,
+        "inputTokens": 8507,
+        "cachedTokens": 0,
+        "outputTokens": 8335,
+        "reasoningTokens": 4037
+      },
+      "low": {
+        "label": "dev-eval-low",
+        "requestSha256": "3020951b4531c7d0a06c77f1ea66a2b1a4ca1942eafc018ea48783255e030199",
+        "milliseconds": 55217.888208,
+        "inputTokens": 8507,
+        "cachedTokens": 0,
+        "outputTokens": 4541,
+        "reasoningTokens": 256
+      },
+      "reductionPercent": 38.94188328792569
+    },
+    {
+      "caseName": "holdout",
+      "order": [
+        "holdout-eval-low",
+        "holdout-eval-medium"
+      ],
+      "identicalPayloadExceptReasoning": true,
+      "judge": "holdout-evaluation-judge",
+      "medium": {
+        "label": "holdout-eval-medium",
+        "requestSha256": "623b8c97afdd45e7b3e2b614c8caefcfea8782e3e5dfa9fcac623d34343f1577",
+        "milliseconds": 117761.37004200001,
+        "inputTokens": 8533,
+        "cachedTokens": 2816,
+        "outputTokens": 10712,
+        "reasoningTokens": 5806
+      },
+      "low": {
+        "label": "holdout-eval-low",
+        "requestSha256": "f715d91f8985c524cfaacbb3fc50ebbcf482cc2e923efb2a9c1551d8600dca49",
+        "milliseconds": 53845.590833999995,
+        "inputTokens": 8533,
+        "cachedTokens": 2816,
+        "outputTokens": 4317,
+        "reasoningTokens": 184
+      },
+      "reductionPercent": 54.27567561858717
+    },
+    {
+      "caseName": "larger",
+      "order": [
+        "large-eval-low-v2",
+        "large-eval-medium-v2"
+      ],
+      "identicalPayloadExceptReasoning": true,
+      "judge": "large-evaluation-judge",
+      "medium": {
+        "label": "large-eval-medium-v2",
+        "requestSha256": "446e72620e23854e0ea840008b654272f44b9eaa4cbde700b5260b7e61c61d63",
+        "milliseconds": 109258.79154199999,
+        "inputTokens": 16652,
+        "cachedTokens": 2816,
+        "outputTokens": 9803,
+        "reasoningTokens": 5297
+      },
+      "low": {
+        "label": "large-eval-low-v2",
+        "requestSha256": "1b66c50dd6b1be1009bd81a0cc12d0735114386d407596b26ef1e10d0f0c5959",
+        "milliseconds": 56746.946,
+        "inputTokens": 16652,
+        "cachedTokens": 2816,
+        "outputTokens": 4935,
+        "reasoningTokens": 364
+      },
+      "reductionPercent": 48.061894883592956
+    }
+  ],
+  "runs": {
+    "dev-eval-low": {
+      "path": "tmp/integration/ai-followup/dev-eval-low.json",
+      "sha256": "c00c3065ea20132bbbf27c6b05c4139e6cb959dc93e8123f77f192208509ed29",
+      "kind": "evaluation",
+      "caseName": "development",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 55392.651292,
+      "costUpperBoundUsd": 0.09832099999999999,
+      "reasoningOverride": "low",
+      "coverageReplaySha256": "09dd0f744723cc94359a80844342236f031b28184f8d792980ef31a74ed68235",
+      "paidRequestCount": 1
+    },
+    "dev-eval-medium-v2": {
+      "path": "tmp/integration/ai-followup/dev-eval-medium-v2.json",
+      "sha256": "255a0acb525c776561776e16d152c73e00be9d8f0de7b4f0afc408cecbfbb9be",
+      "kind": "evaluation",
+      "caseName": "development",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 107911.932833,
+      "costUpperBoundUsd": 0.198878,
+      "reasoningOverride": "medium",
+      "paidRequestCount": 2
+    },
+    "dev-eval-medium": {
+      "path": "tmp/integration/ai-followup/dev-eval-medium.json",
+      "sha256": "06cda480f925c46d7431502a8a9dd9a5d6e2e9fafd0b6c483b22924e332b51e4",
+      "kind": "evaluation",
+      "caseName": "development",
+      "code": "current",
+      "completed": false,
+      "providersComplete": false,
+      "error": "Kravvurderingen stoppet fordi 1 av 1 AI-batcher feilet. Første feil: Connection error.",
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "costUpperBoundUsd": 0,
+      "paidRequestCount": 0
+    },
+    "dev-evaluation-judge": {
+      "path": "tmp/integration/ai-followup/dev-evaluation-judge.json",
+      "sha256": "d6d8a91cfb57c00207498f521c145c8bcc6daea8d0e72b404774dd52dc94528e",
+      "completed": true,
+      "costUpperBoundUsd": 0.017823000000000033,
+      "paidRequestCount": 1,
+      "judgeOrder": {
+        "A": "dev-eval-medium-v2",
+        "B": "dev-eval-low"
+      },
+      "judgeVerdict": {
+        "A": {
+          "faithfulness": 4,
+          "coverage": 4,
+          "clarity": 3,
+          "critical_errors": [],
+          "missing_details": [],
+          "minor_issues": []
+        },
+        "B": {
+          "faithfulness": 4,
+          "coverage": 4,
+          "clarity": 3,
+          "critical_errors": [],
+          "missing_details": [],
+          "minor_issues": []
+        },
+        "winner": "tie",
+        "noninferior": [
+          "A",
+          "B"
+        ],
+        "explanation": "Begge resultatene er i hovedsak kildetro og dekker de samme kundekravene og leverandøravvikene korrekt. Det finnes ingen klare kritiske feil mot kildene i noen av dem. B er litt strammere formulert, men forskjellen er ikke stor nok til å kåre en tydelig vinner."
+      }
+    },
+    "dev-improved-draft": {
+      "path": "tmp/integration/ai-followup/dev-improved-draft.json",
+      "sha256": "891f659ed780555861d5a111252e665d06f5fc41eff23ee228ef121772948c21",
+      "kind": "draft",
+      "caseName": "development",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "e217c6542a0a1b29cc71f651771050b9a61ecc35775adbc38c3c7726e9fde0b5",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 9039.971416999999,
+      "costUpperBoundUsd": 0.010739000000000054,
+      "paidRequestCount": 1
+    },
+    "dev-improved-reeval": {
+      "path": "tmp/integration/ai-followup/dev-improved-reeval.json",
+      "sha256": "d0b2a0f03cd721ab8741692c4c0f5c87eb3e0b9638c1aa23a9ce04f3f62a6065",
+      "kind": "evaluation",
+      "caseName": "development",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "e217c6542a0a1b29cc71f651771050b9a61ecc35775adbc38c3c7726e9fde0b5",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 56555.566708,
+      "costUpperBoundUsd": 0.09505600000000003,
+      "reasoningOverride": "low",
+      "coverageReplaySha256": "09dd0f744723cc94359a80844342236f031b28184f8d792980ef31a74ed68235",
+      "paidRequestCount": 1
+    },
+    "dev-legacy-current": {
+      "path": "tmp/integration/ai-followup/dev-legacy-current.json",
+      "sha256": "fd650d23cbcf1c7180f4aaa9c3ef59dbd83b6b2ff012132b170e1d92777c6405",
+      "kind": "analysis-legacy",
+      "caseName": "development",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 70331.50083300001,
+      "costUpperBoundUsd": 0.10677499999999995,
+      "paidRequestCount": 1
+    },
+    "dev-v3-baseline": {
+      "path": "tmp/integration/ai-followup/dev-v3-baseline.json",
+      "sha256": "fc9a4953f6a3237143ecd8205bb9a96079e8593ce1b672847613da41c3330e09",
+      "kind": "analysis-v3",
+      "caseName": "development",
+      "code": "baseline",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "0c850c820029734eaf13cea36a07ef4881953dce2b2964af8e1e8ddee9a59fab",
+        "lib/server/prompts.ts": "da40db2468e5ad139b5cd41b2edb4cbe0f9b4058045026e3725c830c4ea4a54b",
+        "lib/server/prompts/requirements.ts": "3473d9ca8642a82a04426d1c7982e95921b908f5ef35fa7d9a2d5bfeaf93ff33",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "d230b7727de9f8cd175852549ab583f149b9eca787547d887d9b3b48e6235294",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "fb388a0f351916568ce77e86a84e204915e29dc05cf193660b2f2ef5efedf4a0",
+        "lib/server/use-cases/project-workflows.ts": "26d7572ff9e8aa09b44b872046d4bf4355b29ac46044b85b37759f94968d2df3"
+      },
+      "totalMs": 34609.85933299999,
+      "costUpperBoundUsd": 0.044320999999999944,
+      "paidRequestCount": 1
+    },
+    "dev-v3-current-v2": {
+      "path": "tmp/integration/ai-followup/dev-v3-current-v2.json",
+      "sha256": "4731214b21c20ed7b6bd94cc621b127382ef35655ac97add5bd92e5ac836ba5f",
+      "kind": "analysis-v3",
+      "caseName": "development",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 37948.539625000005,
+      "costUpperBoundUsd": 0.044348,
+      "paidRequestCount": 1
+    },
+    "dev-v3-current": {
+      "path": "tmp/integration/ai-followup/dev-v3-current.json",
+      "sha256": "1a8fba160e7822e3bfe7a1c8152e7b4f809eeb99ba16800e9d8b5f09ac50b970",
+      "kind": "analysis-v3",
+      "caseName": "development",
+      "code": "current",
+      "completed": false,
+      "providersComplete": false,
+      "error": "storedContexts.filter is not a function",
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "costUpperBoundUsd": 0,
+      "paidRequestCount": 0
+    },
+    "final-default-eval": {
+      "path": "tmp/integration/ai-followup/final-default-eval.json",
+      "sha256": "9601406b5fbf4b96c3ae1d8b96972fd97dd6e4b96e76aa67c8a6b49a7fa9bbf2",
+      "kind": "evaluation",
+      "caseName": "development",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6cbb8ad9fd1bb5bce0758aeb11950242968d38b016021c844f6d8256173f6c82",
+      "sourceHashes": {
+        "lib/server/ai.ts": "d112fba4dda61a9f1aa3a30b1c52de31bec34894f4c9045c5efa9ba1efbff34d",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "5aa8047041cb98db907dad03d09acee91d55b95d0c114fc731fb8aa6342ec3ae",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "e217c6542a0a1b29cc71f651771050b9a61ecc35775adbc38c3c7726e9fde0b5",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 55350.137582999996,
+      "costUpperBoundUsd": 0.0822750000000001,
+      "coverageReplaySha256": "09dd0f744723cc94359a80844342236f031b28184f8d792980ef31a74ed68235",
+      "paidRequestCount": 1
+    },
+    "holdout-eval-low": {
+      "path": "tmp/integration/ai-followup/holdout-eval-low.json",
+      "sha256": "3ff3ea788736946aa276e1d30728957714df087aaf3f460f0431262fde3252a2",
+      "kind": "evaluation",
+      "caseName": "holdout",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "92593e64e74bc0c68439aeb0440396427b89c79c2f1a1ed3ab0b86f922adc56e",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 72557.13016700001,
+      "costUpperBoundUsd": 0.12645799999999996,
+      "reasoningOverride": "low",
+      "paidRequestCount": 2
+    },
+    "holdout-eval-medium": {
+      "path": "tmp/integration/ai-followup/holdout-eval-medium.json",
+      "sha256": "983abf2f3d6ed9fb9974176c3390fd2ec9a1061f9b4eaef9a5625152368bf2bc",
+      "kind": "evaluation",
+      "caseName": "holdout",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "92593e64e74bc0c68439aeb0440396427b89c79c2f1a1ed3ab0b86f922adc56e",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 117884.54212499999,
+      "costUpperBoundUsd": 0.19324500000000006,
+      "reasoningOverride": "medium",
+      "coverageReplaySha256": "1909f8851a41a56d476033f22fa8f376f8be146dd2f9fb825ae865c81e270647",
+      "paidRequestCount": 1
+    },
+    "holdout-evaluation-judge": {
+      "path": "tmp/integration/ai-followup/holdout-evaluation-judge.json",
+      "sha256": "61d3e9d82ab1a28c2094555ef295b6fdff22327e73b379c434c7e2a1c8285331",
+      "completed": true,
+      "costUpperBoundUsd": 0.015302999999999956,
+      "paidRequestCount": 1,
+      "judgeOrder": {
+        "A": "holdout-eval-low",
+        "B": "holdout-eval-medium"
+      },
+      "judgeVerdict": {
+        "A": {
+          "faithfulness": 4,
+          "coverage": 4,
+          "clarity": 4,
+          "critical_errors": [],
+          "missing_details": [],
+          "minor_issues": []
+        },
+        "B": {
+          "faithfulness": 4,
+          "coverage": 4,
+          "clarity": 4,
+          "critical_errors": [],
+          "missing_details": [],
+          "minor_issues": []
+        },
+        "winner": "tie",
+        "noninferior": [
+          "A",
+          "B"
+        ],
+        "explanation": "Begge svarene er kildetro og holder tydelig skille mellom kundekrav, leverandørens faktiske avvik/bekreftelser og systemforslaget som et forslag. De gjengir sentrale krav korrekt, unngår å påstå ubekreftet levering som bekreftet, og vurderer arkitektløsningen mot de eksakte kildene. B er litt mer utfyllende på manglende migreringsplan og operativ modell, men forskjellen er ikke stor nok til å gi en tydelig vinner."
+      }
+    },
+    "holdout-legacy-current": {
+      "path": "tmp/integration/ai-followup/holdout-legacy-current.json",
+      "sha256": "f665b5dd455ece17426083b81d25ff147738b3bf507d67f493abbeed09c7fd7a",
+      "kind": "analysis-legacy",
+      "caseName": "holdout",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "92593e64e74bc0c68439aeb0440396427b89c79c2f1a1ed3ab0b86f922adc56e",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 71898.71587500001,
+      "costUpperBoundUsd": 0.09252800000000005,
+      "paidRequestCount": 1
+    },
+    "holdout-v3-current": {
+      "path": "tmp/integration/ai-followup/holdout-v3-current.json",
+      "sha256": "fd0ba3e5da7c927e4c85b75d552dc3f31ff61c9c09e3e498eb97421cebf4fefb",
+      "kind": "analysis-v3",
+      "caseName": "holdout",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "92593e64e74bc0c68439aeb0440396427b89c79c2f1a1ed3ab0b86f922adc56e",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "cd8b7169403fd6ec1b8067ef6762902954ed1699892d9f516070cfdab5dff354",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 27814.341667,
+      "costUpperBoundUsd": 0.03462100000000001,
+      "paidRequestCount": 1
+    },
+    "large-eval-low-v2": {
+      "path": "tmp/integration/ai-followup/large-eval-low-v2.json",
+      "sha256": "daed36e7262c265b1c121ae861f0ebab5eb7b4fa9ebf2ff5c2fb58d260e8111b",
+      "kind": "evaluation",
+      "caseName": "large",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "28f072c0f4587b1e61f0b15c933d5aa26d2332ce1d658ddfbb1694e8e3d9ed33",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "e217c6542a0a1b29cc71f651771050b9a61ecc35775adbc38c3c7726e9fde0b5",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 56902.07125,
+      "costUpperBoundUsd": 0.12025099999999989,
+      "reasoningOverride": "low",
+      "coverageReplaySha256": "b8bda2cf9187b4f232616f677fcfd5192108a274f89b68e5ebdb41e1ee8b6c28",
+      "paidRequestCount": 1
+    },
+    "large-eval-low": {
+      "path": "tmp/integration/ai-followup/large-eval-low.json",
+      "sha256": "6699f5684f9f1d1f2daef69195e2e152520152f446e552dd5f25641ef2046861",
+      "kind": "evaluation",
+      "caseName": "large",
+      "code": "current",
+      "completed": false,
+      "providersComplete": false,
+      "error": "Kravvurderingen stoppet fordi 1 av 2 AI-batcher feilet. Første feil: Ugyldig coverage-batch: forventet 15 rader, mottok 16; uventet nr=1.",
+      "fixtureSha256": "28f072c0f4587b1e61f0b15c933d5aa26d2332ce1d658ddfbb1694e8e3d9ed33",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "e217c6542a0a1b29cc71f651771050b9a61ecc35775adbc38c3c7726e9fde0b5",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "costUpperBoundUsd": 0,
+      "coverageReplaySha256": "b8bda2cf9187b4f232616f677fcfd5192108a274f89b68e5ebdb41e1ee8b6c28",
+      "paidRequestCount": 0
+    },
+    "large-eval-medium-v2": {
+      "path": "tmp/integration/ai-followup/large-eval-medium-v2.json",
+      "sha256": "cd29045f4a16902c9acde9bde63efd876500f9e8d25a2d79721af8b1032d26bf",
+      "kind": "evaluation",
+      "caseName": "large",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "28f072c0f4587b1e61f0b15c933d5aa26d2332ce1d658ddfbb1694e8e3d9ed33",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "e217c6542a0a1b29cc71f651771050b9a61ecc35775adbc38c3c7726e9fde0b5",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 109401.068416,
+      "costUpperBoundUsd": 0.2005730000000001,
+      "reasoningOverride": "medium",
+      "coverageReplaySha256": "b8bda2cf9187b4f232616f677fcfd5192108a274f89b68e5ebdb41e1ee8b6c28",
+      "paidRequestCount": 1
+    },
+    "large-evaluation-judge": {
+      "path": "tmp/integration/ai-followup/large-evaluation-judge.json",
+      "sha256": "8278d85f45a702617e3cd2f638b7f8c1efa8a1bec398456d618882537d37f489",
+      "completed": true,
+      "costUpperBoundUsd": 0.030854999999999855,
+      "paidRequestCount": 1,
+      "judgeOrder": {
+        "A": "large-eval-medium-v2",
+        "B": "large-eval-low-v2"
+      },
+      "judgeVerdict": {
+        "A": {
+          "faithfulness": 4,
+          "coverage": 4,
+          "clarity": 4,
+          "critical_errors": [],
+          "missing_details": [],
+          "minor_issues": []
+        },
+        "B": {
+          "faithfulness": 4,
+          "coverage": 4,
+          "clarity": 4,
+          "critical_errors": [],
+          "missing_details": [],
+          "minor_issues": []
+        },
+        "winner": "tie",
+        "noninferior": [
+          "A",
+          "B"
+        ],
+        "explanation": "Begge svarene er godt forankret i kildene og skiller korrekt mellom kundekrav, leverandørens faktiske svar og systemløsningen som forslag. Begge fanger hovedavvikene og de gode punktene uten å påstå ubekreftet leveranse som bekreftet. Det er ingen tydelige kritiske feil eller mangler som kan belegges kort og ordrett fra kildene."
+      }
+    },
+    "verification-v3-fixed": {
+      "path": "tmp/integration/ai-followup/verification-v3-fixed.json",
+      "sha256": "43ffc71a5476732d76e7ec5a87016ecc646c3ab48b3af39b586aa1a4b3f90bb7",
+      "kind": "analysis-v3",
+      "caseName": "verification",
+      "code": "current",
+      "completed": true,
+      "providersComplete": true,
+      "fixtureSha256": "6d64f626076d4127fda0732e08a91a6e79326eeb03c56369d0e9d4e33595af5c",
+      "sourceHashes": {
+        "lib/server/ai.ts": "7c84859bf781cba7cdc9b93d211de3770e9352fc31321cafca80c271f4f0acc0",
+        "lib/server/prompts.ts": "bdbc5e2c2b7f76464731c01011806f8315588d2a498c2bd4203d0a78f56b95ab",
+        "lib/server/prompts/requirements.ts": "9a950cbcfe63119b87a01382dbc7fc38db208b39868f5cd0d77661b61edfadad",
+        "lib/server/ai/model-config.ts": "f3ae71b8b7c5f8f2dafa1f6c539acb66a08ae8a00f825e606ba5159d2033e160",
+        "lib/server/document-intelligence/customer-analysis-v3.ts": "e217c6542a0a1b29cc71f651771050b9a61ecc35775adbc38c3c7726e9fde0b5",
+        "lib/server/document-intelligence/customer-analysis-fields.ts": "da3db1dc21b36d6630b6216dde8d7714a3831b9807fcf32d3b98637d21944abe",
+        "lib/server/use-cases/project-workflows.ts": "b6df20dd8d29c705d228ab006e4ab88441ad55100c8b11e90b92e91d5fb2ad98"
+      },
+      "totalMs": 34254.964041,
+      "costUpperBoundUsd": 0.037522000000000055,
+      "paidRequestCount": 1
+    }
+  },
+  "checks": {
+    "duration": {
+      "failure": "holdout-v3-current omitted the 20-arbeidsdager exit deadline.",
+      "fix": "Recognize arbeidsdag/arbeidsdager and month/måned/måneder in existing threshold extraction and normalize English months.",
+      "offlineReplay": {
+        "path": "tmp/integration/ai-followup/duration-offline-replay.json",
+        "sha256": "f55e8fd364be5e1caea8a548474c9a335f9a4058034be6fdb18a4e011d322a14"
+      },
+      "freshRun": "verification-v3-fixed",
+      "freshValues": [
+        "14 måneder security retention",
+        "four training sessions",
+        "signed acceptance before launch",
+        "12 arbeidsdager exit",
+        "separate incident-log period remains unspecified"
+      ],
+      "criticalPriorityPreservation": true,
+      "originalSourceUnchanged": true
+    },
+    "legacy": {
+      "runs": [
+        "dev-legacy-current",
+        "holdout-legacy-current"
+      ],
+      "observed": "Both retain all eight operational requirements across the full output, including exact retention, training count, handover/acceptance and exit deadline. Priority labels vary; this is not a complete requirements table or proof of universal quality."
+    },
+    "workflow": {
+      "generation": "dev-improved-draft",
+      "reevaluation": "dev-improved-reeval",
+      "finalConfiguredPolicyRun": "final-default-eval",
+      "finalConfiguredPolicy": "No reasoning override; actual GPT-5.4 low payload equals experimental re-evaluation payload byte-for-byte, all canonical coverage unchanged; new score 74 still identifies open supplier confirmation and price.",
+      "observed": "The actual improvement workflow instructions are captured, then passed to actual artifact generation; the exact new artifact reaches actual evaluation. Supplier confirmations and price conditions remain open; revised proposal scored 72, not 100. Existing canonical supplier coverage is replayed unchanged.",
+      "limitations": "In-memory workflow handoff stops before publication. This is not a new persisted queue/workflow or Azure end-to-end run. Some rewrite advice remains terse and depends on the surrounding decision/confirmation instructions."
+    }
+  },
+  "limitations": [
+    "Single pair per case, not p95 or universal latency/quality acceptance. Earlier failed experiments remain unchanged.",
+    "Larger case uses 32 synthetic fixed coverage rows to isolate holistic evaluation; small cases use actual fresh model coverage, replayed identically in their pair.",
+    "Holdout analysis exposed the duration defect and became regression input. The separate verification fixture was frozen after the fix.",
+    "Mini blind judgments are advisory, checked against sources, not a deterministic guarantee.",
+    "Initial dev-v3-current-v2 has provider ledger usage but no SDK payload capture; later runs use explicit SDK fetch capture.",
+    "Setup failures dev-v3-current, dev-eval-medium and large-eval-low used zero paid requests and remain preserved.",
+    "Larger-case pair used Node 23.7.0; final configured-policy live run and application validation used Node 22.14.0. Paired timings compare provider completion on the same runtime within each pair.",
+    "No production deployment, Azure/Entra/ingest or representative multi-worker load was exercised."
+  ],
+  "harness": [
+    {
+      "path": "tmp/integration/ai-followup/run.mjs",
+      "sha256": "7f14cc270fb6e840c6b328dba6ac6422133286cec017a215c967bc1ddd7f4957"
+    },
+    {
+      "path": "tmp/integration/ai-followup/judge.mjs",
+      "sha256": "a1acba25acdc84d71932b311957d038fffdb9e3c93ee3caffe82124d4dbc3858"
+    },
+    {
+      "path": "tmp/integration/ai-followup/write-evidence.mjs",
+      "sha256": "798357a9d28638d44d516feea00f3026b440e50ea50cbfb233632cb94aad1952"
+    }
+  ],
+  "validation": {
+    "node": "22.14.0",
+    "frontendTests": 929,
+    "repositoryTests": 129,
+    "workflowTests": 45,
+    "failures": 0,
+    "skips": 0,
+    "database": "Disposable PostgreSQL 17/pgvector",
+    "lint": "zero warnings",
+    "build": "passed",
+    "contracts": "passed",
+    "productionDeployed": false
+  }
+}

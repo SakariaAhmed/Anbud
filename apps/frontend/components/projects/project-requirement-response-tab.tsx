@@ -792,7 +792,7 @@ export function ProjectRequirementResponseTab({
               open={index === 0}
               className="group min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:shadow-md"
             >
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 px-6 py-5 text-left transition-colors duration-[180ms] hover:bg-slate-50/60 [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none flex-col items-stretch justify-between gap-4 px-6 py-5 text-left transition-colors duration-[180ms] hover:bg-slate-50/60 sm:flex-row sm:items-start [&::-webkit-details-marker]:hidden">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-700">
                     <span>Kravbesvarelse</span>
@@ -855,10 +855,10 @@ export function ProjectRequirementResponseTab({
                     ) : null}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-start gap-3">
+                <div className="flex min-w-0 shrink-0 items-start justify-between gap-3 sm:justify-start">
                   {editingArtifactId !== artifact.id ? (
                     <div
-                      className="flex flex-wrap justify-end gap-2"
+                      className="flex min-w-0 flex-wrap justify-start gap-2 sm:justify-end"
                       onClick={stopSummaryToggle}
                       onKeyDown={(event) => event.stopPropagation()}
                     >

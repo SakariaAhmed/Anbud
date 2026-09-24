@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { workflowErrorStatus } from "@/lib/server/workflow-errors";
 import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 
+import { isValidManualValueOpportunities, MANUAL_VALUE_OPPORTUNITIES_ERROR } from "@/lib/value-opportunities";
+
 import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
 import {
   analyzeCustomerDocuments,
@@ -32,7 +34,6 @@ import {
   type CustomerAnalysisSection,
   type RecommendedService,
   type RequirementImportance,
-  type ValueOpportunity,
 } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -71,17 +72,6 @@ function isAnalysisRequirement(value: unknown): value is AnalysisRequirement {
     (value.kind === "Eksplisitt" || value.kind === "Implisitt") &&
     typeof value.source_reference === "string" &&
     typeof value.source_excerpt === "string"
-  );
-}
-
-function isValueOpportunity(value: unknown): value is ValueOpportunity {
-  return (
-    isRecord(value) &&
-    typeof value.title === "string" &&
-    typeof value.description === "string" &&
-    Array.isArray(value.value_categories) &&
-    value.value_categories.every((item) => typeof item === "string") &&
-    typeof value.profit_share_percent === "number"
   );
 }
 
@@ -315,11 +305,10 @@ function applyValueSnapshot(
   const valueOpportunities = snapshot.value_opportunities;
 
   if (
-    !Array.isArray(valueOpportunities) ||
-    !valueOpportunities.every(isValueOpportunity)
+    !isValidManualValueOpportunities(valueOpportunities)
   ) {
     throw new Error(
-      "Verdi må inneholde en gyldig value_opportunities-liste.",
+      MANUAL_VALUE_OPPORTUNITIES_ERROR,
     );
   }
 
@@ -492,7 +481,7 @@ export async function POST(
     const project = await getProjectSnapshotAfterCommit(id);
     return NextResponse.json({ analysis: saved, project });
   } catch (error) {
-    return NextResponse.json(
+    return authorizationErrorResponse(error) ?? NextResponse.json(
       {
         error: productionSafeErrorMessage(
           error,
@@ -533,6 +522,7 @@ export async function PUT(
 ) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "analysis.write");
     const body = (await request.json().catch(() => ({}))) as {
       analysis_text?: string;
       expected_analysis_revision?: unknown;
@@ -551,6 +541,15 @@ export async function PUT(
     if (typeof body.section !== "undefined" && !section) {
       return NextResponse.json(
         { error: "Ugyldig analyseseksjon." },
+        { status: 400 },
+      );
+    }
+
+    if (section === "value" &&
+        (!isRecord(body.section_snapshot) ||
+          !isValidManualValueOpportunities(body.section_snapshot.value_opportunities))) {
+      return NextResponse.json(
+        { error: MANUAL_VALUE_OPPORTUNITIES_ERROR },
         { status: 400 },
       );
     }
@@ -630,7 +629,7 @@ export async function PUT(
     const project = await getProjectSnapshotAfterCommit(id);
     return NextResponse.json({ analysis: saved, project });
   } catch (error) {
-    return NextResponse.json(
+    return authorizationErrorResponse(error) ?? NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke lagre analysen."),
       },

@@ -347,10 +347,6 @@ const DOCUMENT_SUMMARY_SELECT_COLUMNS = [
 ] as const;
 const DOCUMENT_SUMMARY_SELECT_LEGACY =
   "id, project_id, role, subtype, display_name, file_format, content_type, created_at";
-const PROJECT_SELECT_SAFE =
-  "snapshot_revision, source_revision, id, name, customer_name, description, industry, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
-const PROJECT_SELECT_LEGACY =
-  "snapshot_revision, source_revision, id, title, client_name, description, context_keywords, customer_document_uploaded, customer_analysis_generated, solution_document_uploaded, solution_evaluation_generated, last_activity_at, created_at, updated_at";
 const SERVICE_DOCUMENT_SUMMARY_SELECT =
   "id, service_id, title, file_name, file_format, content_type, file_size_bytes, page_count, ai_summary, ai_summary_updated_at, chunk_source_revision, created_at, updated_at";
 const SERVICE_DOCUMENT_SUMMARY_SELECT_BASE =
@@ -1530,24 +1526,15 @@ async function queryProjectRow(projectId: string) {
   const dataApi = createServiceClient();
   const first = await dataApi
     .from("projects")
-    .select(PROJECT_SELECT_SAFE)
+    // Projects contain metadata, not document or artifact bodies. Read the row
+    // once so current title/client_name and alternate name/customer_name schemas
+    // both work, including deployments containing both sets of columns.
+    .select("*")
     .eq("id", projectId)
     .single<Record<string, unknown>>();
 
   if (!first.error && first.data) {
     return fromUnknownProjectRow(first.data);
-  }
-
-  if (isMissingLegacyProjectColumn(first.error)) {
-    const retry = await dataApi
-      .from("projects")
-      .select(PROJECT_SELECT_LEGACY)
-      .eq("id", projectId)
-      .single<Record<string, unknown>>();
-
-    if (!retry.error && retry.data) {
-      return fromUnknownProjectRow(retry.data);
-    }
   }
 
   throw new Error("Fant ikke prosjektet.");
@@ -1636,7 +1623,9 @@ export async function listProjects(
         documentRows,
         { data: artifacts },
       ] = await Promise.all([
-        projectQuery(PROJECT_SELECT_SAFE),
+        // fromUnknownProjectRow keeps only the public project fields and
+        // preserves alternate-column precedence when both schemas coexist.
+        projectQuery("*"),
         fetchDocumentSummaryRows((select) => {
           let query = dataApi
             .from("documents")
@@ -1659,13 +1648,7 @@ export async function listProjects(
           return query;
         })(),
       ]);
-      let { data: projects, error: projectsError } = projectsResult;
-
-      if (projectsError && isMissingLegacyProjectColumn(projectsError)) {
-        const retry = await projectQuery(PROJECT_SELECT_LEGACY);
-        projects = retry.data;
-        projectsError = retry.error;
-      }
+      const { data: projects, error: projectsError } = projectsResult;
 
       if (projectsError) {
         throw new Error(projectsError.message);
@@ -2592,6 +2575,23 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
   const snapshot = await readStableProjectSourceSnapshot({
     readSourceRevision: () => getProjectSnapshotRevision(projectId),
     readValue: () => readProjectDetail(projectId),
+  });
+  return { ...snapshot.value, snapshot_revision: snapshot.sourceRevision };
+}
+
+// Generation needs the project name and a current evaluation with its exact
+// dependency. Avoid loading UI document summaries, artifact counts/authority
+// and an unused customer-analysis copy while retaining the snapshot fence.
+export async function getProjectGenerationContext(projectId: string) {
+  const snapshot = await readStableProjectSourceSnapshot({
+    readSourceRevision: () => getProjectSnapshotRevision(projectId),
+    readValue: async () => {
+      const [project, solutionEvaluationSnapshot] = await Promise.all([
+        queryProjectRow(projectId),
+        getFreshSolutionEvaluationSnapshot(projectId),
+      ]);
+      return { name: project.name, solutionEvaluationSnapshot };
+    },
   });
   return { ...snapshot.value, snapshot_revision: snapshot.sourceRevision };
 }

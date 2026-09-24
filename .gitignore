@@ -28,6 +28,11 @@ test-data/*
 !test-data/tenders/
 test-data/tenders/*
 !test-data/tenders/tender_nordic_hybrid_cloud_2026.pdf
+!test-data/ocr/
+test-data/ocr/*
+!test-data/ocr/expected.json
+!test-data/ocr/norwegian-regression.pdf
+!test-data/ocr/norwegian-holdout.pdf
 
 # Generated reports and local scratch artifacts
 tmp/
@@ -39,3 +44,4 @@ reports/
 # Local audit evidence (reports are tracked explicitly)
 output/audit-2026-09-05/
 output/remediation-2026-09-05/
+output/speed-quality-2026-09-08/

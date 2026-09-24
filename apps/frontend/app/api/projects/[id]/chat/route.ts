@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { CHAT_SESSION_MEMORY_STORAGE_LIMIT, inferProjectChatDomains, streamProjectChat, type ChatPromptAttachment } from "@/lib/server/ai/project-chat";
@@ -15,7 +16,7 @@ import {
   upsertChatSession,
 } from "@/lib/server/repositories/chat";
 import { getFreshCustomerAnalysis } from "@/lib/server/repositories/analyses";
-import { getProjectDetail } from "@/lib/server/repositories/data-store";
+import { getProjectGenerationContext } from "@/lib/server/repositories/data-store";
 import { checkRateLimit } from "@/lib/server/observability";
 import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
@@ -350,6 +351,7 @@ function normalizeSessionTitle(value: unknown, fallback: string) {
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "chat.read");
     const requestedSessionId = new URL(request.url).searchParams.get("session_id");
     const [allMessages, storedSessions] = await Promise.all([
       listChatMessages(id),
@@ -368,6 +370,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       active_session_id: activeSessionId,
     });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       { error: productionSafeErrorMessage(error, "Kunne ikke hente chatten.") },
       { status: 500 },
@@ -378,6 +382,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "chat.write");
     const rateLimit = await checkRateLimit(request, `project-chat:${id}`, {
       limit: 30,
       windowMs: 60_000,
@@ -418,7 +423,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       chatHistory,
       storedSessions,
     ] = await Promise.all([
-      getProjectDetail(id),
+      getProjectGenerationContext(id),
       getFreshCustomerAnalysis(id),
       listProjectDocumentsForAnalysis(id),
       listGeneratedArtifacts(id),
@@ -448,7 +453,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
     const contextSnapshot = {
       customer_analysis_present: Boolean(customerAnalysis),
-      solution_evaluation_present: Boolean(project.solution_evaluation),
+      solution_evaluation_present: Boolean(project.solutionEvaluationSnapshot),
       chat_session_id: sessionId,
       chat_session_title: sessionTitle,
       domain_hints: domainHints,
@@ -471,7 +476,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const chatStream = await streamProjectChat({
       projectName: project.name,
       customerAnalysis,
-      solutionEvaluation: project.solution_evaluation,
+      solutionEvaluation: project.solutionEvaluationSnapshot?.evaluation ?? null,
       generatedArtifacts,
       recentMessages: chatHistoryForSession.concat([
         {
@@ -580,6 +585,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     );
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     if (error instanceof ChatRequestError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

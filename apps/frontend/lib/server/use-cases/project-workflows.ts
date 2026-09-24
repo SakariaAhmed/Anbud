@@ -1,4 +1,5 @@
 import "server-only";
+import { projectJobDocumentSummary } from "@/lib/server/project-job-result-projection";
 import { findWorkflowArtifact, pendingEvaluationResult } from "@/lib/server/project-job-results";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
 
@@ -41,14 +42,13 @@ import {
 } from "@/lib/server/document-intelligence/config";
 import {
   getFreshCustomerAnalysis,
-  getFreshSolutionEvaluationSnapshot,
   saveCustomerAnalysis,
   saveExecutiveSummary,
   saveSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
 import { assertExecutiveSummaryEvaluationReady } from "@/lib/server/executive-summary-readiness";
 import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState } from "@/lib/server/repositories/data-store";
-import { getProjectDetail, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
+import { getProjectGenerationContext, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import type {
@@ -441,7 +441,9 @@ function looksLikePoorPdfExtraction(input: {
   rawText: string;
   fileSizeBytes: number;
 }) {
-  const text = input.rawText.trim();
+  // Page references can be the only parser output for an image-only PDF.
+  // Ignore them for OCR selection without changing the original source text.
+  const text = input.rawText.replace(/\[\[SIDE:\d+(?:-\d+)?\]\]/gu, "").trim();
   if (!text) {
     return true;
   }
@@ -1008,7 +1010,7 @@ async function runDocumentDoclingEnhancementWorkflow(
 
   if (!document.file_base64 || document.parser_used === "docling") {
     return {
-      document,
+      document: projectJobDocumentSummary(document),
       document_id: input.documentId,
       status: document.processing_status,
       parser_used: document.parser_used,
@@ -1030,7 +1032,7 @@ async function runDocumentDoclingEnhancementWorkflow(
 
   if (!shouldEnhance) {
     return {
-      document,
+      document: projectJobDocumentSummary(document),
       document_id: input.documentId,
       status: document.processing_status,
       parser_used: document.parser_used,
@@ -1088,7 +1090,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     });
 
     return {
-      document,
+      document: projectJobDocumentSummary(document),
       document_id: input.documentId,
       status: readyStatus,
       parser_used: document.parser_used,
@@ -1118,7 +1120,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   handlers.onPhase?.("docling_indeksering");
 
   return {
-    document: enhancedDocument,
+    document: projectJobDocumentSummary(enhancedDocument),
     document_id: input.documentId,
     status: enhancedDocument.processing_status,
     parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
@@ -1449,11 +1451,11 @@ async function runExecutiveSummaryWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster prosjekt, kundeanalyse og vurdering ...");
-  const [project, customerAnalysis, evaluationSnapshot] = await Promise.all([
-    getProjectDetail(input.projectId),
+  const [project, customerAnalysis] = await Promise.all([
+    getProjectGenerationContext(input.projectId),
     getFreshCustomerAnalysis(input.projectId),
-    getFreshSolutionEvaluationSnapshot(input.projectId),
   ]);
+  const evaluationSnapshot = project.solutionEvaluationSnapshot;
   handlers.onPhase?.("dokumenthenting");
 
   if (!evaluationSnapshot) {
@@ -1495,15 +1497,16 @@ async function runPerfectSystemSolutionWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress("Laster vurdering, dokumenter og siste løsningsbeskrivelse ...");
-  const project = await getProjectDetail(input.projectId);
+  const project = await getProjectGenerationContext(input.projectId);
+  const solutionEvaluation = project.solutionEvaluationSnapshot?.evaluation ?? null;
   handlers.onPhase?.("prosjekthenting");
 
-  if (!project.solution_evaluation && !input.resumeArtifactId) {
+  if (!solutionEvaluation && !input.resumeArtifactId) {
     throw new Error("Generer vurdering før du forbedrer systemløsningen.");
   }
 
   const systemScore =
-    project.solution_evaluation?.architecture_comparison?.system_solution_score ??
+    solutionEvaluation?.architecture_comparison?.system_solution_score ??
     0;
 
   if (systemScore >= 100 && !input.resumeArtifactId) {
@@ -1512,14 +1515,14 @@ async function runPerfectSystemSolutionWorkflow(
 
   const instructions = [
     `Systemløsningen scoret ${Math.round(systemScore)}/100 i siste vurdering.`,
-    "Lag en ny, forbedret systemløsning som eksplisitt lukker alle gap som hindrer 100/100.",
+    "Lag en ny, forbedret systemløsning som retter dokumenterte svakheter innenfor bekreftet leveranse og beskriver konkrete forslag for øvrige gap.",
     "Bruk improvement_recommendations, weaknesses, missing_elements, risks_to_customer, rewrite_suggestions og architecture_comparison.strategy_improvement_advice som endringsliste.",
     "Ikke bare kommenter hva som bør gjøres. Skriv inn endringene direkte i løsningsbeskrivelsen.",
-    "Målet er en løsningsbeskrivelse som kan vurderes til 100/100 fordi den er kundespesifikk, komplett, gjennomførbar, risikoreduserende og tydelig differensiert.",
+    "Kildetro leveranse går foran høy score. Bevar uttrykkelige avvik, manglende prising og nødvendige leverandørbekreftelser selv om vurderingen anbefaler å fjerne dem. Merk ny eller endret leveranse som forslag som krever leverandørens bekreftelse; tekstendringen alene lukker ikke avviket.",
     "Hvis vurderingen peker på manglende overgangsmodell, beslutningspunkter, ansvar, risiko, bevis eller kundeverdi, skal dette konkret innarbeides i riktig seksjon.",
   ].join("\n");
 
-  handlers.setProgress("Skriver forbedret systemløsning mot 100/100 ...");
+  handlers.setProgress("Skriver forbedret systemløsning med dokumenterte forutsetninger ...");
   const savedArtifact = await findWorkflowArtifact(input.projectId, getProjectWorkflowLease()?.jobId, input.resumeArtifactId);
   if (input.resumeArtifactId && !savedArtifact) throw new Error("Fant ikke løsningsutkastet som skal revurderes.");
   if (savedArtifact && (!savedArtifact.is_current || !savedArtifact.source_is_current)) throw new Error("ARTIFACT_SOURCE_REVISION_CHANGED");

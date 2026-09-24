@@ -1,0 +1,212 @@
+{
+  "cases": [
+    {
+      "id": "sundvik-32-explicit-ids",
+      "split": "large-regression",
+      "customerName": "Fiktiv Sundvik kommune",
+      "customerText": "# Fiktiv Sundvik kommune – Bilag 1: kravspesifikasjon\n\nDette er et fiktivt testanbud. Sundvik kommune skal fornye driftsplattformen for helse og omsorg. Omfanget er 2400 ansatte ved 20 lokasjoner, 38 applikasjoner og 14 integrasjoner. Helseforetak og nabokommuner inngår ikke i avtalen. Kunden har ansvar for kliniske beslutninger og kvaliteten på egne grunndata. Leverandøren har ansvar for plattform, integrasjonsdrift, sikkerhet og tjenestestyring. Avtalen varer i tre år med opsjon på ett år.\n\nAlle L-krav nedenfor er obligatoriske. Hvert krav skal besvares separat med oppfylt, delvis oppfylt eller ikke oppfylt, dokumentert leveransemåte, avgrensninger og kildehenvisning til Bilag 2. Et generelt løfte om å følge kravspesifikasjonen er ikke bevis for et konkret krav. Der det mangler dokumentasjon skal leverandøren angi en navngitt leveranse eller avklaring før kontrakt; slike forslag skal ikke fremstilles som allerede avtalte forhold. Tildelingen vekter dokumentert kvalitet 55 prosent, samlet treårskostnad 30 prosent og gjennomføringsevne 15 prosent. Obligatoriske krav kan ikke veies bort med lavere pris.\n\n## Tilgjengelighet\n\nL-01: Tjenesten skal levere 99,95 prosent tilgjengelighet per kalendermåned. Planlagt vedlikehold teller som nedetid når det berører pasientadministrative arbeidsflater.\n\nAkseptansekriterium: Månedsrapport med alle avbrudd, avtalt målepunkt og beregning av nevner.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Gjenoppretting\n\nL-02: Maksimal gjenopprettingstid er 90 minutter for journalintegrasjonen. Andre systemer kan ha inntil 8 timer.\n\nAkseptansekriterium: Tidsstemplet øvelse som viser fungerende ende-til-ende journalintegrasjon.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Datatap\n\nL-03: For journalintegrasjonen er maksimalt akseptabelt datatap 15 minutter.\n\nAkseptansekriterium: Dokumentert siste gjenopprettbare transaksjon i samme øvelse som L02.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Dataområde\n\nL-04: Journaldata, sikkerhetskopier og driftslogger med personopplysninger skal lagres og behandles i Norge.\n\nAkseptansekriterium: Navngitte regioner og konkret oversikt over alle replikaer og støttesystemer.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Tilgang\n\nL-05: Alle interaktive brukere, inkludert leverandørens tekniske personell, skal bruke flerfaktorautentisering.\n\nAkseptansekriterium: Test av ansatt, vikar og leverandøradministrator.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Privilegier\n\nL-06: Privilegert tilgang skal være tidsbegrenset til høyst 60 minutter og kreve godkjenning fra en annen person.\n\nAkseptansekriterium: Revisjon av fem godkjente tilganger samt negativ test av selv-godkjenning.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Avslutning\n\nL-07: Opphørt arbeidsforhold skal deaktivere tilgangen til alle systemer innen 30 minutter etter hendelse fra HR-systemet.\n\nAkseptansekriterium: Kjøre dokumentert test fra HR-hendelse til avvist pålogging og tilbakekalt økt.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Logging\n\nL-08: Sikkerhetslogger skal bevares søkbare i minst 365 dager og beskyttes mot endring også fra administratorer.\n\nAkseptansekriterium: Test av søk etter et 365 dager gammelt eksempel og avvist endringsforsøk.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Kritiske hendelser\n\nL-09: Kritiske sikkerhetshendelser skal varsles til kommunens beredskapskontakt innen 20 minutter etter bekreftelse.\n\nAkseptansekriterium: Varslingsøvelse med tidsstempel og kvittering fra navngitt mottaker.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Patch\n\nL-10: Kritiske utnyttede sårbarheter skal risikovurderes innen 4 timer og avhjelpes eller kompenseres innen 24 timer.\n\nAkseptansekriterium: Eksempel på hendelsesforløp med dokumentert risikobeslutning og tiltak.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Nettsegmentering\n\nL-11: Administrasjon, integrasjon, arbeidsflater og sikkerhetskopier skal ligge i separate nettsegmenter med eksplisitte tillatelser mellom dem.\n\nAkseptansekriterium: Oppdatert trafikkmatrise og negativ forbindelsestest mellom segmenter.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Kryptering\n\nL-12: All overføring av personopplysninger skal bruke TLS 1.2 eller nyere. Ukryptert videresending i interne nett er ikke tillatt.\n\nAkseptansekriterium: Skann av offentlige og interne endepunkter.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Nøkler\n\nL-13: Kunden skal kunne tilbakekalle leverandørtilgang til krypteringsnøkler uten å slette lagrede data.\n\nAkseptansekriterium: Demonstrasjon av tilbakekalling, avvist bruk og gjenetablert kundetilgang.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Sikkerhetskopi\n\nL-14: Det skal finnes minst én uforanderlig sikkerhetskopi med 30 dagers oppbevaring i separat administrasjonsdomene.\n\nAkseptansekriterium: Dokumentert negativ slettetest med produksjonsadministrator.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Gjenopprettingstest\n\nL-15: Full gjenoppretting skal testes hvert kvartal med kundens observatør til stede.\n\nAkseptansekriterium: Fire daterte tester per år med signert resultat og avviksliste.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Beredskap\n\nL-16: Beredskapsplanen skal øves sammen med kommunen to ganger per år, hvorav minst én øvelse inkluderer bortfall av hovedregionen.\n\nAkseptansekriterium: Årsplan og rapport for regionbortfall.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Migreringsbølger\n\nL-17: Migreringen skal gjennomføres i fire bølger. Første bølge må omfatte høyst to lokasjoner.\n\nAkseptansekriterium: Godkjent bølgeplan med eksplisitt lokasjonsliste.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Pilotfrist\n\nL-18: Pilot skal være ferdig godkjent senest 18. mai 2027. Produksjonssetting kan tidligst skje etter kundens signerte aksept.\n\nAkseptansekriterium: Signert pilotrapport og produksjonsbeslutning med dato.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Tilbakeføring\n\nL-19: Hver migreringsbølge skal ha testet tilbakeføring som kan utføres innen 45 minutter uten tap av bekreftede transaksjoner.\n\nAkseptansekriterium: Tidsmålt tilbakeføringstest og sammenligning av transaksjonsjournal.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Integrasjonsansvar\n\nL-20: Leverandøren skal eie feilretting mot alle 14 navngitte integrasjoner fram til årsaken er dokumentert hos en annen part.\n\nAkseptansekriterium: Ansvarsmatrise og eksempel på tverrleverandørhendelse.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Kapasitet\n\nL-21: Tilbudet skal dimensjoneres for 1600 samtidige brukere og 25 prosent årlig datavekst i tre år.\n\nAkseptansekriterium: Lasttest og kapasitetsberegning med årlige tall.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Svartid\n\nL-22: Ved 1600 samtidige brukere skal p95 for oppslag i pasientadministrativ arbeidsflate være under 1,5 sekunder.\n\nAkseptansekriterium: Lasttest med råmålinger, percentilberegning og realistisk datamengde.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Offline\n\nL-23: Mobile hjemmetjenesteenheter skal kunne registrere oppdrag uten nett i minst åtte timer og synkronisere uten duplikater etterpå.\n\nAkseptansekriterium: Åtte timers frakoblingstest med etterfølgende duplikatkontroll.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Opplæring\n\nL-24: Minst 40 superbrukere skal få praktisk opplæring før første produksjonsbølge.\n\nAkseptansekriterium: Deltakerliste og individuell godkjent praktisk oppgave.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Dokumentasjon\n\nL-25: Driftsdokumentasjon skal leveres på norsk i redigerbart format senest ti arbeidsdager før overtakelse.\n\nAkseptansekriterium: Kunden kontrollerer språk, redigerbarhet og leveringsdato.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Prisstruktur\n\nL-26: Prisskjemaet skal skille engangskostnader, faste månedskostnader, volumpriser og alle tredjepartslisenser.\n\nAkseptansekriterium: Avstemming mellom tilbudets prisskjema og komponentliste.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Prisregulering\n\nL-27: Prisene kan reguleres én gang årlig med KPI, første gang etter 12 måneder. Valutapåslag er ikke tillatt.\n\nAkseptansekriterium: Kontraktsbestemmelse med første reguleringsdato og indeksgrunnlag.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Underleverandører\n\nL-28: Navn, land og oppgave for alle underleverandører med tilgang til personopplysninger skal oppgis før kontraktsinngåelse.\n\nAkseptansekriterium: Komplett liste som vedlegg til databehandleravtalen.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Revisjonsrett\n\nL-29: Kommunen skal kunne gjennomføre én årlig sikkerhetsrevisjon uten ekstra honorar med ti arbeidsdagers varsel.\n\nAkseptansekriterium: Kontraktsklausul som dekker innsyn, tilgang og kostnader.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Exit\n\nL-30: Ved avtalens slutt skal komplett dataeksport, metadata og koblingsnøkler leveres i et dokumentert åpent format innen 15 arbeidsdager.\n\nAkseptansekriterium: Prøveeksport med kontroll av antall poster og relasjoner.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Sletting\n\nL-31: Etter kundens godkjente exit skal personopplysninger slettes innen 60 dager, og leverandøren skal levere sletteattest.\n\nAkseptansekriterium: Sletteattest som omfatter produksjon, replikaer og sikkerhetskopier.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.\n\n## Samhandling\n\nL-32: Det skal avholdes månedlig driftsmøte med status for tjenestenivå, risiko, økonomi og forbedringstiltak.\n\nAkseptansekriterium: Referatmal med eier og frist for alle tiltak.\n\nDokumentasjonsansvar: Leverandøren skal i tilbudssvaret knytte leveransemåten til dette kravet og angi eventuelle forbehold. Kommunens fagansvarlige godkjenner den angitte verifikasjonen før overtakelse. Henvisning til andre krav skal angi krav-ID; tilgrensende krav erstatter ikke dette kriteriet.",
+      "solutionText": "# Fiktiv Sundvik kommune – Bilag 2: foreslått leveranse\n\nTilbudet er et utkast fra en fiktiv leverandør. Bare eksplisitte beskrivelser nedenfor er bekreftede løsningsvalg. Tiltak som ikke er omtalt er ikke dokumentert. Vi foreslår en skybasert driftsplattform med separate drifts- og applikasjonsansvarlige. Kunden eier sine data. Prisbeløp, bemanningstall og navngitte skyleverandører er ikke fastlagt.\n\n## S01 – svar på L-01\n\nVi tilbyr 99,9 prosent tilgjengelighet og unntar varslet vedlikehold.\n\n## S02 – svar på L-02\n\nJournalintegrasjonen gjenopprettes innen fire timer.\n\n## S03 – svar på L-03\n\nReplikering kjøres hver time.\n\n## S04 – svar på L-04\n\nJournaldata lagres i Norge. Sikkerhetskopier lagres i Sverige.\n\n## S05 – svar på L-05\n\nAnsatte bruker flerfaktor. Leverandøradministratorer unntas ved beredskap.\n\n## S06 – svar på L-06\n\nPrivilegert tilgang gis i 60 minutter etter godkjenning fra en annen person.\n\n## S07 – svar på L-07\n\nSynkronisering fra HR skjer hver natt.\n\n## S08 – svar på L-08\n\nVi lagrer logger i 180 dager uten skrivebeskyttelse.\n\n## S09 – svar på L-09\n\nBekreftede kritiske hendelser varsles innen 20 minutter.\n\n## S10 – svar på L-10\n\nKritiske sikkerhetsoppdateringer installeres innen sju dager.\n\n## S11 – svar på L-11\n\nVi oppretter fire segmenter med eksplisitte tillatelser og dokumentert trafikkmatrise.\n\n## S12 – svar på L-12\n\nOffentlige endepunkter bruker TLS 1.3. Interne integrasjoner bruker HTTP.\n\n## S13 – svar på L-13\n\nNøklene administreres utelukkende av leverandøren.\n\n## S14 – svar på L-14\n\nEn uforanderlig kopi lagres i separat administrasjonsdomene i 30 dager.\n\n## S15 – svar på L-15\n\nFull gjenoppretting testes én gang i året.\n\n## S16 – svar på L-16\n\nVi gjennomfører to felles beredskapsøvelser per år, inkludert regionbortfall.\n\n## S17 – svar på L-17\n\nVi foreslår to bølger med ti lokasjoner i første bølge.\n\n## S18 – svar på L-18\n\nPilot planlegges godkjent 1. juni 2027.\n\n## S19 – svar på L-19\n\nHver bølge har testet tilbakeføring innen 45 minutter uten tap av bekreftede transaksjoner.\n\n## S20 – svar på L-20\n\nKommunen koordinerer all feilretting mot integrasjoner.\n\n## S21 – svar på L-21\n\nDimensjoneringen gjelder 800 samtidige brukere og 10 prosent årlig datavekst.\n\n## S22 – svar på L-22\n\nVed 1600 samtidige brukere garanteres p95 under 1,5 sekunder for oppslag.\n\n## S23 – svar på L-23\n\nMobile enheter krever kontinuerlig nettforbindelse.\n\n## S25 – svar på L-25\n\nDokumentasjonen leveres som engelsk PDF på overtakelsesdagen.\n\n## S26 – svar på L-26\n\nPrisskjemaet skiller engangskostnader, faste månedskostnader, volumpriser og tredjepartslisenser.\n\n## S27 – svar på L-27\n\nPrisene valutajusteres kvartalsvis i tillegg til årlig KPI.\n\n## S28 – svar på L-28\n\nUnderleverandører navngis først etter oppstart.\n\n## S29 – svar på L-29\n\nÅrlig sikkerhetsrevisjon kan gjennomføres uten ekstra honorar med ti arbeidsdagers varsel.\n\n## S30 – svar på L-30\n\nEksport leveres i leverandørens proprietære format innen 45 arbeidsdager.\n\n## S32 – svar på L-32\n\nMånedlige driftsmøter dekker tjenestenivå, risiko, økonomi og forbedringstiltak.",
+      "requirements": [
+        {
+          "id": "L-01",
+          "requirement": "Tjenesten skal levere 99,95 prosent tilgjengelighet per kalendermåned. Planlagt vedlikehold teller som nedetid når det berører pasientadministrative arbeidsflater.",
+          "acceptance": "Månedsrapport med alle avbrudd, avtalt målepunkt og beregning av nevner."
+        },
+        {
+          "id": "L-02",
+          "requirement": "Maksimal gjenopprettingstid er 90 minutter for journalintegrasjonen. Andre systemer kan ha inntil 8 timer.",
+          "acceptance": "Tidsstemplet øvelse som viser fungerende ende-til-ende journalintegrasjon."
+        },
+        {
+          "id": "L-03",
+          "requirement": "For journalintegrasjonen er maksimalt akseptabelt datatap 15 minutter.",
+          "acceptance": "Dokumentert siste gjenopprettbare transaksjon i samme øvelse som L02."
+        },
+        {
+          "id": "L-04",
+          "requirement": "Journaldata, sikkerhetskopier og driftslogger med personopplysninger skal lagres og behandles i Norge.",
+          "acceptance": "Navngitte regioner og konkret oversikt over alle replikaer og støttesystemer."
+        },
+        {
+          "id": "L-05",
+          "requirement": "Alle interaktive brukere, inkludert leverandørens tekniske personell, skal bruke flerfaktorautentisering.",
+          "acceptance": "Test av ansatt, vikar og leverandøradministrator."
+        },
+        {
+          "id": "L-06",
+          "requirement": "Privilegert tilgang skal være tidsbegrenset til høyst 60 minutter og kreve godkjenning fra en annen person.",
+          "acceptance": "Revisjon av fem godkjente tilganger samt negativ test av selv-godkjenning."
+        },
+        {
+          "id": "L-07",
+          "requirement": "Opphørt arbeidsforhold skal deaktivere tilgangen til alle systemer innen 30 minutter etter hendelse fra HR-systemet.",
+          "acceptance": "Kjøre dokumentert test fra HR-hendelse til avvist pålogging og tilbakekalt økt."
+        },
+        {
+          "id": "L-08",
+          "requirement": "Sikkerhetslogger skal bevares søkbare i minst 365 dager og beskyttes mot endring også fra administratorer.",
+          "acceptance": "Test av søk etter et 365 dager gammelt eksempel og avvist endringsforsøk."
+        },
+        {
+          "id": "L-09",
+          "requirement": "Kritiske sikkerhetshendelser skal varsles til kommunens beredskapskontakt innen 20 minutter etter bekreftelse.",
+          "acceptance": "Varslingsøvelse med tidsstempel og kvittering fra navngitt mottaker."
+        },
+        {
+          "id": "L-10",
+          "requirement": "Kritiske utnyttede sårbarheter skal risikovurderes innen 4 timer og avhjelpes eller kompenseres innen 24 timer.",
+          "acceptance": "Eksempel på hendelsesforløp med dokumentert risikobeslutning og tiltak."
+        },
+        {
+          "id": "L-11",
+          "requirement": "Administrasjon, integrasjon, arbeidsflater og sikkerhetskopier skal ligge i separate nettsegmenter med eksplisitte tillatelser mellom dem.",
+          "acceptance": "Oppdatert trafikkmatrise og negativ forbindelsestest mellom segmenter."
+        },
+        {
+          "id": "L-12",
+          "requirement": "All overføring av personopplysninger skal bruke TLS 1.2 eller nyere. Ukryptert videresending i interne nett er ikke tillatt.",
+          "acceptance": "Skann av offentlige og interne endepunkter."
+        },
+        {
+          "id": "L-13",
+          "requirement": "Kunden skal kunne tilbakekalle leverandørtilgang til krypteringsnøkler uten å slette lagrede data.",
+          "acceptance": "Demonstrasjon av tilbakekalling, avvist bruk og gjenetablert kundetilgang."
+        },
+        {
+          "id": "L-14",
+          "requirement": "Det skal finnes minst én uforanderlig sikkerhetskopi med 30 dagers oppbevaring i separat administrasjonsdomene.",
+          "acceptance": "Dokumentert negativ slettetest med produksjonsadministrator."
+        },
+        {
+          "id": "L-15",
+          "requirement": "Full gjenoppretting skal testes hvert kvartal med kundens observatør til stede.",
+          "acceptance": "Fire daterte tester per år med signert resultat og avviksliste."
+        },
+        {
+          "id": "L-16",
+          "requirement": "Beredskapsplanen skal øves sammen med kommunen to ganger per år, hvorav minst én øvelse inkluderer bortfall av hovedregionen.",
+          "acceptance": "Årsplan og rapport for regionbortfall."
+        },
+        {
+          "id": "L-17",
+          "requirement": "Migreringen skal gjennomføres i fire bølger. Første bølge må omfatte høyst to lokasjoner.",
+          "acceptance": "Godkjent bølgeplan med eksplisitt lokasjonsliste."
+        },
+        {
+          "id": "L-18",
+          "requirement": "Pilot skal være ferdig godkjent senest 18. mai 2027. Produksjonssetting kan tidligst skje etter kundens signerte aksept.",
+          "acceptance": "Signert pilotrapport og produksjonsbeslutning med dato."
+        },
+        {
+          "id": "L-19",
+          "requirement": "Hver migreringsbølge skal ha testet tilbakeføring som kan utføres innen 45 minutter uten tap av bekreftede transaksjoner.",
+          "acceptance": "Tidsmålt tilbakeføringstest og sammenligning av transaksjonsjournal."
+        },
+        {
+          "id": "L-20",
+          "requirement": "Leverandøren skal eie feilretting mot alle 14 navngitte integrasjoner fram til årsaken er dokumentert hos en annen part.",
+          "acceptance": "Ansvarsmatrise og eksempel på tverrleverandørhendelse."
+        },
+        {
+          "id": "L-21",
+          "requirement": "Tilbudet skal dimensjoneres for 1600 samtidige brukere og 25 prosent årlig datavekst i tre år.",
+          "acceptance": "Lasttest og kapasitetsberegning med årlige tall."
+        },
+        {
+          "id": "L-22",
+          "requirement": "Ved 1600 samtidige brukere skal p95 for oppslag i pasientadministrativ arbeidsflate være under 1,5 sekunder.",
+          "acceptance": "Lasttest med råmålinger, percentilberegning og realistisk datamengde."
+        },
+        {
+          "id": "L-23",
+          "requirement": "Mobile hjemmetjenesteenheter skal kunne registrere oppdrag uten nett i minst åtte timer og synkronisere uten duplikater etterpå.",
+          "acceptance": "Åtte timers frakoblingstest med etterfølgende duplikatkontroll."
+        },
+        {
+          "id": "L-24",
+          "requirement": "Minst 40 superbrukere skal få praktisk opplæring før første produksjonsbølge.",
+          "acceptance": "Deltakerliste og individuell godkjent praktisk oppgave."
+        },
+        {
+          "id": "L-25",
+          "requirement": "Driftsdokumentasjon skal leveres på norsk i redigerbart format senest ti arbeidsdager før overtakelse.",
+          "acceptance": "Kunden kontrollerer språk, redigerbarhet og leveringsdato."
+        },
+        {
+          "id": "L-26",
+          "requirement": "Prisskjemaet skal skille engangskostnader, faste månedskostnader, volumpriser og alle tredjepartslisenser.",
+          "acceptance": "Avstemming mellom tilbudets prisskjema og komponentliste."
+        },
+        {
+          "id": "L-27",
+          "requirement": "Prisene kan reguleres én gang årlig med KPI, første gang etter 12 måneder. Valutapåslag er ikke tillatt.",
+          "acceptance": "Kontraktsbestemmelse med første reguleringsdato og indeksgrunnlag."
+        },
+        {
+          "id": "L-28",
+          "requirement": "Navn, land og oppgave for alle underleverandører med tilgang til personopplysninger skal oppgis før kontraktsinngåelse.",
+          "acceptance": "Komplett liste som vedlegg til databehandleravtalen."
+        },
+        {
+          "id": "L-29",
+          "requirement": "Kommunen skal kunne gjennomføre én årlig sikkerhetsrevisjon uten ekstra honorar med ti arbeidsdagers varsel.",
+          "acceptance": "Kontraktsklausul som dekker innsyn, tilgang og kostnader."
+        },
+        {
+          "id": "L-30",
+          "requirement": "Ved avtalens slutt skal komplett dataeksport, metadata og koblingsnøkler leveres i et dokumentert åpent format innen 15 arbeidsdager.",
+          "acceptance": "Prøveeksport med kontroll av antall poster og relasjoner."
+        },
+        {
+          "id": "L-31",
+          "requirement": "Etter kundens godkjente exit skal personopplysninger slettes innen 60 dager, og leverandøren skal levere sletteattest.",
+          "acceptance": "Sletteattest som omfatter produksjon, replikaer og sikkerhetskopier."
+        },
+        {
+          "id": "L-32",
+          "requirement": "Det skal avholdes månedlig driftsmøte med status for tjenestenivå, risiko, økonomi og forbedringstiltak.",
+          "acceptance": "Referatmal med eier og frist for alle tiltak."
+        }
+      ],
+      "expectedContradictions": [
+        "L-01",
+        "L-02",
+        "L-03",
+        "L-04",
+        "L-05",
+        "L-07",
+        "L-08",
+        "L-10",
+        "L-12",
+        "L-13",
+        "L-15",
+        "L-17",
+        "L-18",
+        "L-20",
+        "L-21",
+        "L-23",
+        "L-25",
+        "L-27",
+        "L-28",
+        "L-30"
+      ],
+      "expectedSupported": [
+        "L-06",
+        "L-09",
+        "L-11",
+        "L-14",
+        "L-16",
+        "L-19",
+        "L-22",
+        "L-26",
+        "L-29",
+        "L-32"
+      ],
+      "missingEvidence": [
+        "L-24",
+        "L-31"
+      ],
+      "note": "Separate comparison fixture with explicit requirement-ID lines. The original heading-only L01 fixture is preserved as a parser regression case."
+    }
+  ]
+}

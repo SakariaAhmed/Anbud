@@ -11,6 +11,8 @@ const DEFAULT_ANALYSIS_MODEL =
     : DEFAULT_OPENAI_MODEL);
 export const DOCUMENT_ANALYSIS_MODEL =
   process.env.OPENAI_DOCUMENT_ANALYSIS_MODEL?.trim() || "gpt-5.6-terra";
+const REQUIREMENT_RESPONSE_MODEL =
+  process.env.OPENAI_REQUIREMENT_RESPONSE_MODEL?.trim() || "gpt-5.6-luna";
 const WORKSPACE_MODEL_IDS = [
   "gpt-5.6",
   "gpt-5.6-sol",
@@ -29,6 +31,28 @@ export const ANALYSIS_REASONING_EFFORT: ReasoningEffort = "medium";
 export const EVALUATION_REASONING_EFFORT: ReasoningEffort = "medium";
 export const FAST_REASONING_EFFORT: ReasoningEffort = "low";
 export const GPT_MODELS_USE_DEFAULT_TEMPERATURE = /^gpt-5/i;
+
+export function solutionEvaluationReasoningEffort(model: string): ReasoningEffort {
+  // Paired source-grounded evaluations support this change for GPT-5.4 only.
+  // Coverage, requirement responses and other model overrides retain medium.
+  return model === "gpt-5.4" ? "low" : EVALUATION_REASONING_EFFORT;
+}
+
+export function requirementResponseBatchModel(model?: string, multipleBatches = false) {
+  const normalized = model?.trim();
+  if (!normalized) return multipleBatches ? ANALYSIS_MODEL : REQUIREMENT_RESPONSE_MODEL;
+  // Preserve the existing protection for explicit mini/nano overrides.
+  return /(?:mini|nano)$/i.test(normalized) ? ANALYSIS_MODEL : normalized;
+}
+
+export function requirementResponseRepairModel(model?: string) {
+  const normalized = model?.trim();
+  // Recovery retains its established model; the faster default is restricted
+  // to ordinary batches. An explicit supported override remains explicit.
+  return !normalized || /(?:mini|nano)$/i.test(normalized)
+    ? ANALYSIS_MODEL
+    : normalized;
+}
 
 function normalizeModelId(value: string | null | undefined) {
   const normalized = value?.trim();
@@ -63,6 +87,7 @@ export async function resolveOpenAIModelOverride(
       DEFAULT_OPENAI_MODEL,
       ANALYSIS_MODEL,
       DOCUMENT_ANALYSIS_MODEL,
+      REQUIREMENT_RESPONSE_MODEL,
     ].includes(modelId as (typeof WORKSPACE_MODEL_IDS)[number])
   ) {
     throw new Error("Valgt modell er ikke tilgjengelig for denne API-nøkkelen.");

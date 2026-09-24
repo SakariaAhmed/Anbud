@@ -3,6 +3,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 
 import { PROJECT_ROLE_LABELS, isProjectRole, type ProjectRole } from "@/lib/access-control";
+import { AuthorizationError, requireAdmin, requireRequestPrincipal } from "@/lib/server/authorization";
 import { decryptString } from "@/lib/server/crypto";
 import { createServiceClient } from "@/lib/server/data-api";
 import { sendGuestAccessEmail } from "@/lib/server/guest-email";
@@ -95,6 +96,8 @@ export async function inviteEmailToProject(input: {
   expiresAt?: string | null;
   createdBy: string;
 }) {
+  const actor = await requireRequestPrincipal();
+  if (actor.id !== input.createdBy) throw new AuthorizationError("Ugyldig avsender.");
   const email = validateEmail(input.email);
   if (!isShareableProjectRole(input.role)) {
     throw new Error("Ugyldig rolle for invitert bruker.");
@@ -178,7 +181,7 @@ export async function inviteEmailToProject(input: {
     principalId: row.principal_id,
     identityType: row.identity_type,
     credentialCreated: row.credential_created,
-    guestCode,
+    guestCode: actor.isAdmin ? guestCode : null,
     email: maskEmail(email),
     emailDelivery: emailResult,
   };
@@ -189,6 +192,10 @@ export async function rotateGuestCode(input: {
   rotatedBy: string;
   projectName?: string;
 }) {
+  const administrator = await requireAdmin();
+  if (administrator.id !== input.rotatedBy) {
+    throw new AuthorizationError("Ugyldig administrator.");
+  }
   const dataApi = createServiceClient();
   const { data: principal, error: principalError } = await dataApi
     .from("app_principals")

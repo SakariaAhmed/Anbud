@@ -1,4 +1,5 @@
 import "server-only";
+import { projectJobResultForRead } from "@/lib/server/project-job-result-projection";
 
 import { randomUUID as generateRandomUUID } from "node:crypto";
 
@@ -70,7 +71,7 @@ function mapJobRow(row: JobRow): ProjectJobRecord {
     error: row.error,
     result:
       row.status === "completed"
-        ? decryptJson<ProjectJobResult | null>(row.result_json, null)
+        ? projectJobResultForRead(decryptJson<ProjectJobResult | null>(row.result_json, null))
         : null,
   };
 }
@@ -183,7 +184,7 @@ export async function updatePersistedProjectJob(
   if (patch.error !== undefined) payload.error = patch.error;
   if (patch.result !== undefined) {
     payload.result_json =
-      patch.result === null ? null : encryptJson(patch.result);
+      patch.result === null ? null : encryptJson(projectJobResultForRead(patch.result));
   }
 
   const updateQuery = dataApi
@@ -328,8 +329,8 @@ export async function resetStaleRunningProjectJobs(
   return reset.data?.length ?? 0;
 }
 
-export async function listRecentProjectJobs(projectId: string) {
-  const { data, error } = await createServiceClient().from("project_jobs").select("*")
+export async function listRecentProjectJobs(projectId: string, runtime: ProjectJobRepositoryRuntime = {}) {
+  const { data, error } = await serviceClient(runtime).from("project_jobs").select("*")
     .eq("project_id", projectId).order("created_at", { ascending: false }).limit(20);
   if (error) throw new Error(error.message);
   return ((data ?? []) as JobRow[]).map(mapJobRow);

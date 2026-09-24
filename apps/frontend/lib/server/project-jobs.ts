@@ -1,4 +1,5 @@
 import "server-only";
+import { projectJobResultForRead } from "@/lib/server/project-job-result-projection";
 import { recoverCommittedProjectJobResult } from "@/lib/server/project-job-results";
 
 import { randomUUID } from "node:crypto";
@@ -97,6 +98,8 @@ declare global {
         queued: Array<{
           task: () => Promise<void>;
           resolve: () => void;
+          queuedAt: number;
+          workflow?: Pick<ProjectWorkflowInput, "projectId" | "kind">;
         }>;
       }
     | undefined;
@@ -126,6 +129,14 @@ function drainHeavyProjectJobAutorunQueue() {
     const next = state.queued.shift();
     if (!next) break;
     state.active += 1;
+    console.info(JSON.stringify({
+      event: "project_job_autorun_started",
+      project_id: next.workflow?.projectId,
+      kind: next.workflow?.kind,
+      queue_wait_ms: Math.max(0, Date.now() - next.queuedAt),
+      active_jobs: state.active,
+      concurrency,
+    }));
     void Promise.resolve()
       .then(next.task)
       .catch((error) => {
@@ -144,9 +155,12 @@ function drainHeavyProjectJobAutorunQueue() {
   }
 }
 
-export function scheduleHeavyProjectJobAutorun(task: () => Promise<void>) {
+export function scheduleHeavyProjectJobAutorun(
+  task: () => Promise<void>,
+  workflow?: Pick<ProjectWorkflowInput, "projectId" | "kind">,
+) {
   return new Promise<void>((resolve) => {
-    heavyProjectJobAutorunState().queued.push({ task, resolve });
+    heavyProjectJobAutorunState().queued.push({ task, resolve, queuedAt: Date.now(), workflow });
     drainHeavyProjectJobAutorunQueue();
   });
 }
@@ -156,7 +170,7 @@ function autoRunProjectJob(
   task: () => Promise<void>,
 ) {
   setTimeout(() => {
-    void scheduleHeavyProjectJobAutorun(task);
+    void scheduleHeavyProjectJobAutorun(task, input);
   }, 0);
 }
 
@@ -357,6 +371,7 @@ function patchInMemoryJob(jobId: string, patch: Partial<ProjectJobRecord>) {
     store.set(jobId, {
       ...current,
       ...patch,
+      result: projectJobResultForRead(patch.result === undefined ? current.result : patch.result),
       updated_at: updatedAt,
     });
   }
@@ -845,7 +860,7 @@ async function runProjectJob(
 }
 
 export async function getProjectJob(projectId: string, jobId: string) {
-  return readProjectJobAuthoritatively({
+  const job = await readProjectJobAuthoritatively({
     jobs: getStore(),
     localJobIds: getLocalJobIds(),
     locallyManagedPersistedJobIds: getLocallyManagedPersistedJobIds(),
@@ -853,6 +868,7 @@ export async function getProjectJob(projectId: string, jobId: string) {
     jobId,
     findPersisted: () => findProjectJob(projectId, jobId),
   });
+  return job ? { ...job, result: projectJobResultForRead(job.result) } : null;
 }
 
 export async function queueArtifactGenerationJob(input: {
@@ -969,10 +985,11 @@ async function runQueuedProjectJobInput(jobId: string, queuedInput: unknown) {
   const input = parseProjectWorkflowInput(queuedInput);
   const claimed = await claimQueuedProjectJob(jobId);
   if (!claimed) {
-    return;
+    return false;
   }
 
   await runProjectJob(jobId, input, jobRunContextFromClaim(claimed));
+  return true;
 }
 
 function jobRunContextFromClaim(claimed: ClaimedProjectJob): JobRunContext {
@@ -1011,8 +1028,8 @@ export async function runAvailableProjectJobs(options?: {
         continue;
       }
 
-      await runQueuedProjectJobInput(jobId, queuedInput);
-      results.push({ job_id: jobId, status: "processed" });
+      const processed = await runQueuedProjectJobInput(jobId, queuedInput);
+      results.push({ job_id: jobId, status: processed ? "processed" : "skipped" });
     } catch (error) {
       results.push({
         job_id: jobId,

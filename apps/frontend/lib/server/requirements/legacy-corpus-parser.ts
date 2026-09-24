@@ -1,4 +1,5 @@
 import { normalizePageText } from "@/lib/server/requirements/pdf-normalization";
+import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
 import { splitInlineNumberedHeadingRequirement } from "@/lib/server/requirements/heading-detection";
 import type { RequirementCorpusParserContext } from "@/lib/server/requirements/corpus-parser-context";
 import {
@@ -8,6 +9,87 @@ import {
 } from "@/lib/server/requirements/mixed-corpus-rules";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
+
+/** Recover a missing position only from a unique, explicit ID/text line.
+ * This attaches provenance to already extracted rows; it does not find new requirements.
+ */
+export function restoreExplicitLineRequirementOrder(
+  document: ProjectDocumentDetail,
+  entries: RequirementLedgerEntry[],
+): RequirementLedgerEntry[] {
+  if (document.file_format === "pdf" || !entries.some((entry) => entry.documentEntryOrder === undefined)) return entries;
+  const normalizedText = normalizedRequirementOrderSearchText(document.raw_text);
+  const positions = new Map<string, Array<{ text: string; order: number }>>();
+  const pattern = new RegExp(`^\\s*(${legacyExplicitIdPattern()})\\s*[:–—-]?\\s+(.+)$`, "iu");
+  let cursor = 0;
+  for (const line of document.raw_text.split("\n")) {
+    const match = pattern.exec(line);
+    if (!match) continue;
+    const order = findRequirementOrderOffset(normalizedText, line, cursor);
+    if (order === null) continue;
+    cursor = order + normalizedRequirementOrderSearchText(line).length;
+    const id = normalizeRequirementId(match[1]);
+    const matches = positions.get(id) ?? [];
+    matches.push({ text: normalizedRequirementOrderSearchText(match[2]), order });
+    positions.set(id, matches);
+  }
+  return entries.map((entry) => {
+    if (entry.documentEntryOrder !== undefined) return entry;
+    const needle = normalizedRequirementOrderSearchText(entry.text);
+    const matches = (positions.get(normalizeRequirementId(entry.id)) ?? [])
+      .filter((position) => needle.length >= 20 && position.text.startsWith(needle));
+    return matches.length === 1 ? { ...entry, documentEntryOrder: matches[0].order } : entry;
+  });
+}
+
+/** A declared mandatory ID series makes its labelled Markdown sections requirements.
+ * Keep the complete section, including acceptance criteria and nested notes.
+ * Bare product/standard headings without that declaration are not requirement IDs.
+ */
+export function buildDeclaredHeadingRequirementLedger(document: ProjectDocumentDetail): RequirementLedgerEntry[] {
+  if (!["md", "txt"].includes(document.file_format) || document.role === "primary_solution_document") return [];
+  const text = document.raw_text;
+  const prefixes = new Set([...text.matchAll(
+    /\b(?:alle|samtlige)\s+([A-ZÆØÅ]{1,8})\s*[-–]\s*krav\b[^.!?\n]{0,80}\b(?:obligatoriske|bindende)\b/giu,
+  )].filter((match) => !/\bikke\b/iu.test(
+    text.slice(Math.max(0, match.index! - 24), match.index!) + match[0],
+  )).map((match) => match[1].toUpperCase()));
+  if (!prefixes.size) return [];
+  const headings = [...text.matchAll(/^[ \t]*(#{1,6})[ \t]+([^\n]+)$/gmu)];
+  const normalizedText = normalizedRequirementOrderSearchText(text);
+  const rows: RequirementLedgerEntry[] = [];
+  let sourceCursor = 0;
+  for (let index = 0; index < headings.length; index += 1) {
+    const heading = headings[index];
+    const identity = /^([A-ZÆØÅ]{1,8})(-?)(\d{1,5})\s*[-–—:]\s+(.+)$/iu.exec(heading[2].trim());
+    if (!identity || !prefixes.has(identity[1].toUpperCase())) continue;
+    let next = index + 1;
+    for (; next < headings.length; next += 1) {
+      if (headings[next][1].length <= heading[1].length) break;
+      const nestedId = /^([A-ZÆØÅ]{1,8})-?\d{1,5}\s*[-–—:]/iu.exec(headings[next][2]);
+      if (nestedId && prefixes.has(nestedId[1].toUpperCase())) break;
+    }
+    const start = heading.index!;
+    const end = headings[next]?.index ?? text.length;
+    const body = text.slice(start + heading[0].length, end).trim();
+    if (body.length < 30 || body.length > 20_000) continue;
+    const order = findRequirementOrderOffset(normalizedText, heading[0], sourceCursor);
+    if (order === null) continue;
+    sourceCursor = order + normalizedRequirementOrderSearchText(heading[0]).length;
+    rows.push({
+      id: `${identity[1]}${identity[2]}${identity[3]}`,
+      text: body,
+      heading: heading[2].trim(),
+      pages: [],
+      documentEntryOrder: order,
+      documentId: document.id,
+      documentTitle: document.title,
+      tableId: "Dokumenttekst",
+      sourceExcerpt: text.slice(start, end).trim(),
+    });
+  }
+  return rows;
+}
 
 export function isLegacyMixedFofingerCorpus(document: ProjectDocumentDetail) {
   return (

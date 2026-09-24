@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { getProjectJob } from "@/lib/server/project-jobs";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
@@ -35,6 +36,13 @@ export async function GET(
   context: { params: Promise<{ id: string; jobId: string }> },
 ) {
   const { id, jobId } = await context.params;
+  try {
+    await requireProjectPermission(id, "job.read");
+  } catch (error) {
+    const response = authorizationErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
 
   const stream = new ReadableStream({
     async start(controller) {

@@ -56,6 +56,7 @@ const {
   saveSolutionEvaluation,
   sanitizeSolutionEvaluationResult,
   updateGeneratedArtifact,
+  updateProjectMetadataFromInference,
 } = storeJiti(
   path.join(frontendRoot, "lib/server/repositories/data-store.ts"),
 );
@@ -1918,3 +1919,22 @@ test("a transient selected-solution metadata error blocks deletion before state 
   assert.equal(database.tables.solution_evaluations.length, 1);
   assert.equal(database.tables.executive_summaries.length, 1);
 });
+
+for (const schema of ["current", "alternative", "dual"]) {
+  test(`project metadata reads ${schema} columns without a failed schema probe`, async () => {
+    const row = { ...projectRow(), title: "Gjeldende tittel", client_name: "Gjeldende kunde", owner_id: "private-owner", internal_only: "not-for-clients" };
+    if (schema === "current") { delete row.name; delete row.customer_name; delete row.industry; }
+    else { row.name = "Alternativt navn"; row.customer_name = "Alternativ kunde"; row.industry = "Energi"; }
+    if (schema === "alternative") { delete row.title; delete row.client_name; }
+    const database = persistenceDatabase({ projects: [row] });
+    database.missingColumns.projects = new Set(schema === "current" ? ["name", "customer_name", "industry"] : schema === "alternative" ? ["title", "client_name"] : []);
+    setPostgRESTStorePersistenceTestClient(database.client);
+    const result = await updateProjectMetadataFromInference(PROJECT_ID, {});
+    assert.equal(result.name, schema === "current" ? "Gjeldende tittel" : "Alternativt navn");
+    assert.equal(result.customer_name, schema === "current" ? "Gjeldende kunde" : "Alternativ kunde");
+    assert.equal(result.industry, schema === "current" ? null : "Energi");
+    assert.equal(Object.hasOwn(result, "owner_id"), false);
+    assert.equal(Object.hasOwn(result, "internal_only"), false);
+    assert.equal(database.operations.length, 1);
+  });
+}

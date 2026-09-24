@@ -50,3 +50,13 @@ test("unsafe request ids are discarded", () => {
   assert.equal(telemetry.request_id, null);
   assert.match(telemetry.error_hash, /^[a-f0-9]{24}$/u);
 });
+
+test("corrupt generated prose returns an actionable fixed message without model text", (t) => {
+  const previous = process.env.NODE_ENV;
+  t.after(() => { if (previous === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous; });
+  process.env.NODE_ENV = "production";
+  const error = new Error("AI_OUTPUT_CORRUPT: confidential generated text");
+  const message = productionSafeErrorMessage(error, "Kunne ikke generere.");
+  assert.match(message, /ikke lagret.*generere på nytt/);
+  assert.doesNotMatch(message, /confidential|AI_OUTPUT_CORRUPT/);
+});

@@ -97,6 +97,8 @@ test('REGRESSION W4: final snapshot failure preserves successful committed workf
 test('REGRESSION API1: stale manual editor is rejected without overwriting newer edit', async () => {
   reset(); await save('Original editor snapshot'); const editorRevision = (await freshAnalysis()).revision; await save('Other user newer text');
   const { PUT } = actual('app/api/projects/[id]/customer-analysis/route.ts', ['PUT', 'isCustomerAnalysisSection'], {
+    requireProjectPermission: async (id, permission) => { assert.equal(id, P); assert.equal(permission, 'analysis.write'); },
+    authorizationErrorResponse: () => null,
     CUSTOMER_ANALYSIS_SECTIONS: ['strategy'],
     ...jiti(path.join(frontend, 'lib/server/use-cases/solution-evaluation-source-snapshot.ts')),
     ...jiti(path.join(frontend, 'lib/server/domain/project-documents.ts')),
@@ -107,7 +109,7 @@ test('REGRESSION API1: stale manual editor is rejected without overwriting newer
     saveCustomerAnalysis, recordDocumentIntelligenceEvent: async () => false, getProjectSnapshot: async () => ({ id: P }), productionSafeErrorMessage: e => e.message,
   });
   const response = await PUT(new Request('http://localhost/audit', { method: 'PUT', body: JSON.stringify({ analysis_text: 'Stale editor text', expected_analysis_revision: editorRevision }) }), { params: Promise.resolve({ id: P }) });
-  assert.equal(response.status, 409); assert.equal((await freshAnalysis()).executive_summary, 'Other user newer text');
+  assert.equal(response.status, 409, response.body?.error); assert.equal((await freshAnalysis()).executive_summary, 'Other user newer text');
   // History survives manual/manual saves; active text still silently loses the newer edit.
   assert.ok(JSON.stringify((await freshAnalysis()).section_histories).includes('Original editor snapshot'));
   assert.ok(!JSON.stringify(await freshAnalysis()).includes('Stale editor text'));
@@ -222,7 +224,7 @@ test('CONTROL ING4: deleted document cannot be resurrected by old ingestion work
 test('REGRESSION PERF1: reevaluation failure returns a recoverable partial result with its committed artifact', async () => {
   reset(); await save('Analysis'); downstream();
   const { runPerfectSystemSolutionWorkflow } = workflow(['runPerfectSystemSolutionWorkflow'], {
-    getProjectDetail: async () => ({ solution_evaluation: { architecture_comparison: { system_solution_score: 60 } } }),
+    getProjectGenerationContext: async () => ({ solutionEvaluationSnapshot: { evaluation: { architecture_comparison: { system_solution_score: 60 } } } }),
     generateAndSaveProjectArtifact: async () => {
       // Generation IO is stubbed; its successful COMMIT is represented by a real insert.
       sql(`insert into generated_artifacts(project_id,artifact_type,title,content_markdown,artifact_version) values (${quote(P)},'losningsutkast','Improved','Improved solution',1)`);
@@ -236,10 +238,30 @@ test('REGRESSION PERF1: reevaluation failure returns a recoverable partial resul
   assert.deepEqual(counts(), [1, 1, 1]);
 });
 
+test('REGRESSION PERF advice: supplier reservations outrank a recommendation to promise unconfirmed scope', async () => {
+  reset(); await save('Analysis');
+  let generation;
+  const { runPerfectSystemSolutionWorkflow } = workflow(['runPerfectSystemSolutionWorkflow'], {
+    getProjectGenerationContext: async () => ({ solutionEvaluationSnapshot: { evaluation: {
+      architecture_comparison: { system_solution_score: 60 },
+      improvement_recommendations: ['Fjern forbeholdet og lov at døgnberedskap inngår i prisen.'],
+    } } }),
+    generateAndSaveProjectArtifact: async input => { generation = input; return { artifact: { id: 'proposed-change' } }; },
+    readStableEvaluationSources: async () => ({ documents: [], customerAnalysis: null, sourceRevision: revision() }),
+  });
+  const result = await runPerfectSystemSolutionWorkflow({ kind: 'perfect_system_solution', projectId: P }, handlers);
+  assert.equal(generation.artifactType, 'losningsutkast');
+  assert.match(generation.instructions, /Bevar uttrykkelige avvik, manglende prising og nødvendige leverandørbekreftelser selv om vurderingen anbefaler å fjerne dem/u);
+  assert.match(generation.instructions, /forslag som krever leverandørens bekreftelse/u);
+  assert.match(generation.instructions, /tekstendringen alene lukker ikke avviket/u);
+  assert.doesNotMatch(generation.instructions, /Målet er.*100|lukk.*100/u);
+  assert.equal(result.completion_status, 'evaluation_pending');
+});
+
 test('REGRESSION PERF2: missing reevaluation document explicitly reports evaluation pending', async () => {
   reset(); await save('Analysis');
   const { runPerfectSystemSolutionWorkflow } = workflow(['runPerfectSystemSolutionWorkflow'], {
-    getProjectDetail: async () => ({ solution_evaluation: { architecture_comparison: { system_solution_score: 60 } } }),
+    getProjectGenerationContext: async () => ({ solutionEvaluationSnapshot: { evaluation: { architecture_comparison: { system_solution_score: 60 } } } }),
     generateAndSaveProjectArtifact: async () => ({ artifact: { id: 'improved' } }),
     readStableEvaluationSources: async () => ({ documents: [], customerAnalysis: null, sourceRevision: revision() }),
   });
@@ -323,6 +345,28 @@ for (const mode of ['success', 'parser_failure']) {
   });
 }
 
+test('REGRESSION OCR: page markers alone trigger OCR for small image-only PDFs', () => {
+  const { shouldUseDoclingOcr } = workflow([
+    'shouldUseDoclingOcr', 'looksLikePoorPdfExtraction', 'optionalPositiveNumberEnv', 'alphaRatio',
+  ], { DEFAULT_DOCLING_POOR_EXTRACTION_MAX_CHARS: 2_000 });
+  const previous = process.env.DOCLING_OCR;
+  try {
+    process.env.DOCLING_OCR = 'auto';
+    for (const rawText of ['[[SIDE:1]]', '[[SIDE:1]]\n\n[[SIDE:2]]', '[[SIDE:1-3]]']) {
+      const input = { fileFormat: 'pdf', rawText, sourceMapLength: 0, fileSizeBytes: 20_000 };
+      assert.equal(shouldUseDoclingOcr(input), true);
+      assert.equal(input.rawText, rawText, 'OCR selection must preserve original source markers');
+    }
+    assert.equal(shouldUseDoclingOcr({ fileFormat: 'pdf', rawText: '[[SIDE:1]]\nLeverandøren skal holde fire kurs.', sourceMapLength: 1, fileSizeBytes: 20_000 }), false);
+    assert.equal(shouldUseDoclingOcr({ fileFormat: 'docx', rawText: '', sourceMapLength: 0, fileSizeBytes: 20_000 }), false);
+    process.env.DOCLING_OCR = 'off';
+    assert.equal(shouldUseDoclingOcr({ fileFormat: 'pdf', rawText: '[[SIDE:1]]', sourceMapLength: 0, fileSizeBytes: 20_000 }), false);
+  } finally {
+    if (previous === undefined) delete process.env.DOCLING_OCR;
+    else process.env.DOCLING_OCR = previous;
+  }
+});
+
 test('CONTROL META: actual ingestion keeps primary document processing through inferred metadata write', async () => {
   reset(); sql(`update documents set file_base64='YXVkaXQ=' where id=${quote(D)}`);
   const repository = ingestionRepository(async () => {}); const statuses = [];
@@ -358,15 +402,17 @@ for (const kind of ['solution_evaluation', 'executive_summary']) {
     reset();
     const queued = actual('lib/server/project-jobs.ts', ['queueSolutionEvaluationJob','queueExecutiveSummaryJob'], { enqueueProjectJob: async input => enqueue(input.kind) });
     const { POST } = actual('app/api/projects/[id]/jobs/route.ts', ['POST','queueSimpleProjectJob','jobAcceptedResponse'], {
+      requireProjectPermission: async (id, permission) => { assert.equal(id, P); assert.equal(permission, 'job.run'); },
+      authorizationErrorResponse: () => null,
       ...queued, workflowErrorStatus: jiti(path.join(frontend, 'lib/server/workflow-errors.ts')).workflowErrorStatus,
     NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) },
       enforceRateLimit: async () => null, withTiming: async (_, __, fn) => fn(),
       resolveOpenAIModelOverride: async () => undefined, auditEvent: async () => {}, productionSafeErrorMessage: error => error.message,
     });
     const response = await POST(new Request('http://localhost/audit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind }) }), { params: Promise.resolve({ id: P }) });
-    assert.equal(response.status, 422); assert.equal(response.body.job, undefined);
+    assert.equal(response.status, 422, response.body?.error); assert.equal(response.body.job, undefined);
     const runners = workflow(['runSolutionEvaluationWorkflow','runExecutiveSummaryWorkflow','readStableEvaluationSources'], {
-      getProjectDetail: async () => ({ name: 'Audit' }), getFreshSolutionEvaluationSnapshot: async () => null,
+      getProjectGenerationContext: async () => ({ name: 'Audit', solutionEvaluationSnapshot: null }),
     });
     await assert.rejects(kind === 'solution_evaluation' ? runners.runSolutionEvaluationWorkflow({ kind, projectId: P }, handlers) : runners.runExecutiveSummaryWorkflow({ kind, projectId: P }, handlers), kind === 'solution_evaluation' ? /Generer kundeanalyse før løsningsvurdering/ : /Generer vurdering før lederoppsummering/);
   });
@@ -490,7 +536,7 @@ test('REVIEW CHECKPOINT: perfect-solution artifact commits a checkpoint and retr
   assert.equal(recovered.resume_request.resume_artifact_id,row.id);
   let generated=0;
   const {runPerfectSystemSolutionWorkflow}=workflow(['runPerfectSystemSolutionWorkflow'], {
-    getProjectDetail:async()=>({solution_evaluation:null}),
+    getProjectGenerationContext:async()=>({solutionEvaluationSnapshot:null}),
     findWorkflowArtifact:async()=>({...row,is_current:true,source_is_current:true}),
     generateAndSaveProjectArtifact:async()=>{generated++;throw new Error('must not regenerate');},
     readStableEvaluationSources:async()=>{throw new Error('Still offline');},
