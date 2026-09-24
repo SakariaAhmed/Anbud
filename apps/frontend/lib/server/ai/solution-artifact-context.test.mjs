@@ -19,6 +19,7 @@ test("solution evaluation receives opposite late artifact commitments and select
       if (input.promptCacheKey === "requirement-coverage-batch") {
         state.coverageCalls++;
         state.coverageSystem = input.system;
+        state.coverageReasoningEffort = input.reasoningEffort;
         return { rows: [{ nr: 1, ref: "R-91", assessment: "Godt", rationale: "Leverandøren bekrefter MFA for administratorer.", evidence: "Alle administratorer bruker MFA.", recommendation: "Kontroller løsningen i akseptansetesten." }] };
       }
       if (input.promptCacheKey !== "solution-evaluation-holistic") throw new Error("Unexpected model operation: " + input.promptCacheKey);
@@ -53,6 +54,9 @@ test("solution evaluation receives opposite late artifact commitments and select
       await assert.rejects(evaluateSolutionDocument({ ...input, systemSolutionArtifact: artifact }), /Stop at captured model boundary|Helhetsvurderingen feilet/);
       const prompt = state.prompts.at(-1);
       assert.ok(prompt, "The actual owner must reach its holistic model boundary.");
+      assert.equal(prompt.model, "gpt-5.4");
+      assert.equal(prompt.reasoningEffort, "low", "The measured default holistic path uses low reasoning.");
+      assert.equal(state.coverageReasoningEffort, "medium", "Requirement coverage retains its reasoning budget.");
       assert.ok(prompt.user.includes(artifact.content_markdown), "The complete artifact, including late commitments, must reach evaluation without truncation.");
       assert.match(prompt.system, /systemartefakt.*primærgrunnlag/i);
       assert.match(prompt.system, /Ikke anbefal å fjerne et reelt forbehold/u);
@@ -66,6 +70,10 @@ test("solution evaluation receives opposite late artifact commitments and select
     assert.equal(state.coverageCalls, 3, "Actual requirement coverage still runs on each evaluation.");
     assert.match(state.prompts[2].system, /ingen systemartefakt.*kundeanalysen/i);
     assert.ok(!state.prompts[2].user.includes("Systemløsning som skal scores"));
+    await assert.rejects(evaluateSolutionDocument({ ...input, model: "gpt-5.6-terra" }), /Stop at captured model boundary|Helhetsvurderingen feilet/);
+    assert.equal(state.prompts.at(-1).model, "gpt-5.6-terra");
+    assert.equal(state.prompts.at(-1).reasoningEffort, "medium", "Other model overrides retain their previous reasoning budget.");
+    assert.equal(state.coverageReasoningEffort, "medium");
     state.reply = {
       fit_to_customer_needs: "Den foreliggende planen beskriver administratorenes autentisering, men gjennomføringsbeviset må kvalitetssikres.",
       strengths: ["MFA er eksplisitt inkludert for administratorer."],

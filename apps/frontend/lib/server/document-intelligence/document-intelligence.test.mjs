@@ -781,6 +781,29 @@ test("critical-fact enrichment preserves higher-priority requirements at the lis
   assert.deepEqual(analysis, before, "Enrichment must not mutate the model result.");
 });
 
+test("workday deadlines and month retention survive omissions from an otherwise full analysis", () => {
+  const priorities = Array.from({ length: 5 }, (_, index) => ({
+    requirement: `Sikkerhetskrav ${index + 1}`, priority: "Kritisk", reason: "Bindende krav.",
+  }));
+  const analysis = {
+    customer_profile: [], customer_goals: [], expected_solution_direction: [],
+    positioning_recommendations: [], high_level_solution_design: "Sikker drift og kontrollert exit.",
+    executive_summary: "Dokumentert overlevering.", prioritized_requirements: priorities,
+  };
+  const clauses = [
+    "D-61: Ved exit skal data og konfigurasjon eksporteres i åpne formater innen 17 arbeidsdager.",
+    "D-62: Sikkerhetslogger skal oppbevares i 13 måneder og være søkbare ved revisjon.",
+  ];
+  const source = { documentId: "customer", title: "Driftskrav", role: "primary_customer_document", context: "", sourceText: clauses.join("\n") };
+  const before = structuredClone(source);
+  const enriched = enrichCustomerAnalysisWithCriticalFacts(analysis, [source]);
+  for (const clause of clauses) assert.ok(enriched.expected_solution_direction.some(text => text.includes(clause.slice(0, -1))));
+  assert.deepEqual(enriched.prioritized_requirements, priorities, "Missing details must not evict critical requirements.");
+  assert.deepEqual(source, before, "Original source text stays intact.");
+  const english = buildCustomerAnalysisCriticalFactChecklist([{ ...source, sourceText: "Audit logs shall be retained for 6 months and remain searchable." }]);
+  assert.match(JSON.stringify(english), /6 måneder/u);
+});
+
 test("trusted local requirement rows replace only matching truncated generated text", () => {
   const generated = {
     id: "KR-063-34",

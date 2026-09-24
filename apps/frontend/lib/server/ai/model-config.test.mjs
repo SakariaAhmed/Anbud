@@ -27,6 +27,11 @@ test("requirement batch policy changes only the default workload and preserves e
     assert.equal(config.ANALYSIS_MODEL, "gpt-5.4");
     assert.equal(config.FAST_MODEL, "gpt-5.4-mini");
     assert.equal(config.DOCUMENT_ANALYSIS_MODEL, "gpt-5.6-terra");
+    assert.equal(config.solutionEvaluationReasoningEffort("gpt-5.4"), "low");
+    for (const model of ["gpt-5.6-terra", "gpt-5.4-mini", "gpt-5.4-2026-03-05"]) {
+      assert.equal(config.solutionEvaluationReasoningEffort(model), "medium", "Untested models retain their reasoning policy.");
+    }
+    assert.equal(config.EVALUATION_REASONING_EFFORT, "medium");
     process.env.OPENAI_REQUIREMENT_RESPONSE_MODEL = " gpt-5.4 ";
     config = load();
     assert.equal(config.requirementResponseBatchModel(), "gpt-5.4", "operators can restore the prior batch model without changing other generation policies");

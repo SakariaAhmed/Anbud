@@ -30,6 +30,7 @@ import {
   FAST_MODEL,
   requirementResponseBatchModel,
   requirementResponseRepairModel,
+  solutionEvaluationReasoningEffort,
   FAST_REASONING_EFFORT,
 } from "@/lib/server/ai/model-config";
 import { extractExactRetrievalTerms } from "@/lib/server/ai/retrieval-query";
@@ -22155,6 +22156,7 @@ export async function evaluateSolutionDocument(input: {
     .filter(Boolean)
     .join("\n\n");
 
+  const evaluationModel = requirementCoverageBatchModel(input.model);
   let result: SolutionEvaluationResult;
   try {
     input.onProgress?.(
@@ -22174,8 +22176,8 @@ export async function evaluateSolutionDocument(input: {
           }),
           user: userPrompt,
           temperature: 0.1,
-          model: requirementCoverageBatchModel(input.model),
-          reasoningEffort: EVALUATION_REASONING_EFFORT,
+          model: evaluationModel,
+          reasoningEffort: solutionEvaluationReasoningEffort(evaluationModel),
           timeoutMs: SOLUTION_EVALUATION_TIMEOUT_MS,
           maxRetries: 1,
           promptCacheKey: "solution-evaluation-holistic",

@@ -108,18 +108,107 @@ job schema, workflow boundaries, release contracts, and whitespace checks passed
 The prior authenticated desktop/mobile integration checks were not repeated for
 these server-only changes and progress-message wording.
 
-### Still unverified
+## Live AI verification within the additional $2 cap
 
-No paid model calls were made in this follow-up. New paired live evaluations need
-an authorized task spending cap; historical evaluation-ledger headroom is not a
-new authorization. Prompt changes still need fresh source-grounded output review
-for omitted operational details and unsupported commitments. They do not provide
-a deterministic guarantee that every future answer preserves every reservation.
+The user authorized up to $2 for this round. All new calls went through the
+existing budget proxy with a separate $2 task cap and conservative usage
+accounting. The inherited ledger failed the current authorization validator; its
+1,062-row snapshot was preserved unchanged, and none of its historical allowance
+was reused. The validator and accounting rules were not weakened. Prices were
+checked against [OpenAI's pricing documentation](https://developers.openai.com/api/docs/pricing).
+All 20 paid requests completed. Conservative spending was **$1.549892**, leaving
+**$0.450108** unused; the proxy was stopped with no pending calls. Usage, request
+counts and hashes are recorded in the
+[AI evidence register](speed-quality-integration-ai-evidence-2026-09-24.json).
 
-Generation speed remains unresolved. Earlier attempts to reduce holistic output
-or change its model did not establish a speed/quality improvement. This follow-up
-introduces no extra model calls and makes no latency claim. Fresh paired runs must
-measure full completion time, usage, and answer quality on identical inputs,
-including the actual improvement-and-re-evaluation workflow, before changing
-model or context settings. Production deployment and the original migration and
-cleanup requirements remain as described above.
+### Confirmed omission and focused fix
+
+Fresh legacy analyses on two eight-requirement cases retained the investigated
+operational details: retention period, training count, operations documentation,
+signed acceptance before startup, and exit deadline. The first v3 analysis also
+retained them. The second v3 analysis omitted the 20-working-day exit deadline.
+Its existing fallback recognized Norwegian `virkedager`, but not `arbeidsdager`,
+and did not recognize month-based retention periods.
+
+The existing duration extractor now recognizes those forms and normalizes English
+months to Norwegian. A regression fails before the fix and passes afterward;
+replaying the exact failed analysis restores the source deadline without changing
+its five critical priorities or original source text. A separate fresh fixture,
+frozen after that finding, then retained 14 months of security logs, four training
+sessions, signed acceptance before launch, and exit within 12 working days. Its
+separate incident-log retention period correctly remained an open clarification.
+This fixes the observed omission path; it is not a promise that a five-item
+priority list reproduces a full requirements register.
+
+### Holistic evaluation speed
+
+The three pairs below used the same GPT-5.4 model, source input, full solution
+artifact, output contract and completed requirement coverage within each pair.
+Captured provider payloads are identical except for `reasoning_effort`. Calls
+were serial and measured without concurrent tests or builds. The second and
+third pairs ran the lower reasoning level first. Cached input counts matched
+within every pair: 0, 2,816 and 2,816 respectively.
+
+| Frozen case | Medium reasoning | Low reasoning | Reduction |
+| --- | ---: | ---: | ---: |
+| Development, 8 requirements | 90.43 s | 55.22 s | 38.9% |
+| Holdout, 8 requirements | 117.76 s | 53.85 s | 54.3% |
+| Larger case, 32 requirements | 109.26 s | 56.75 s | 48.1% |
+
+Source review and three separately blinded GPT-5.4-mini judgments found the lower
+reasoning results no worse on the investigated requirements, source fidelity and
+supplier reservations. All three judges returned a tie. Each result retains the
+full canonical coverage; the holistic narrative can select a smaller set of
+findings. Judge scores are advisory, not a guarantee of correctness. These are
+three individual comparisons, not a p95 estimate or approval of every generation
+feature. The larger case replays synthetic fixed coverage rows and therefore
+measures holistic evaluation, not fresh 32-row coverage quality.
+
+Only the GPT-5.4 holistic evaluation now uses low reasoning, selected in the
+existing model-configuration owner. Coverage, requirement responses, other
+models, source selection and output limits retain their existing policies.
+Tests capture the actual evaluation boundary, verify unchanged coverage reasoning,
+and check that another model override still uses medium reasoning. Their new
+expectations fail on the old policy. No provider or model migration was added.
+
+### Improvement and re-evaluation
+
+The actual improvement workflow supplied its revised instructions to actual
+artifact generation. The new draft retained Norwegian backup, external MFA,
+RTO, log retention, training and round-the-clock service changes as unresolved
+supplier decisions, subject to confirmation and price. The exact generated
+artifact then reached actual evaluation. The evaluation still identified the
+unconfirmed commitments; its improved score of 72 did not imply that those
+requirements had become confirmed. Existing supplier coverage remained unchanged.
+A final live re-evaluation on Node 22 used the newly configured policy without
+a test override; its submitted payload matched the experimental low-reasoning
+payload exactly. Supplier coverage stayed unchanged and the result still
+identified the open confirmations and prices (score 74). Some rewrite advice is terse and relies on the surrounding confirmation
+instructions; no deterministic guarantee of model compliance is claimed.
+
+The experiment uses in-memory retrieval and context persistence and captures the
+workflow handoff before publication. It is not a newly persisted queue/workflow
+run. Existing database/workflow regressions separately cover publication, partial
+failure and lease behavior. Setup failures are preserved and cost $0: the initial
+context stub, initial SDK fetch setup, and the larger-case replay accidentally
+including an example row from the system prompt. The first successful v3 run has
+ledger usage but lacks SDK payload capture; later runs record the full payload.
+
+### Final validation
+
+Node 22.14.0: 929 frontend tests, 129 repository tests and 45 workflow
+regressions passed with zero failures or skips, including parser golden cases,
+disposable PostgreSQL/pgvector checks and the existing populated-schema upgrade
+regression. Lint had zero warnings; production build/type validation, secret
+scan, project-job schema, workflow boundaries, release contracts and whitespace
+checks passed. The two reasoning-policy regressions failed before implementation
+and pass in the full suite. Authenticated desktop/mobile checks from integration
+were not repeated for these server-only changes.
+
+### Release boundaries
+
+No production code, configuration, migration or cleanup was deployed. Azure/Entra,
+real ingestion and representative multi-worker load remain outside this local AI
+verification. The earlier migration/cleanup requirements still apply. Historical
+failed experiments and broader per-feature speed/quality goals remain in the
+original report; these focused results do not retroactively approve them.

@@ -32,6 +32,12 @@ export const EVALUATION_REASONING_EFFORT: ReasoningEffort = "medium";
 export const FAST_REASONING_EFFORT: ReasoningEffort = "low";
 export const GPT_MODELS_USE_DEFAULT_TEMPERATURE = /^gpt-5/i;
 
+export function solutionEvaluationReasoningEffort(model: string): ReasoningEffort {
+  // Paired source-grounded evaluations support this change for GPT-5.4 only.
+  // Coverage, requirement responses and other model overrides retain medium.
+  return model === "gpt-5.4" ? "low" : EVALUATION_REASONING_EFFORT;
+}
+
 export function requirementResponseBatchModel(model?: string, multipleBatches = false) {
   const normalized = model?.trim();
   if (!normalized) return multipleBatches ? ANALYSIS_MODEL : REQUIREMENT_RESPONSE_MODEL;

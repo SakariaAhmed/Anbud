@@ -196,6 +196,7 @@ function normalizeThresholdFactLanguage(value: string) {
     .replace(/\bminutes?\b/giu, "minutter")
     .replace(/\bhours?\b/giu, "timer")
     .replace(/\bdays?\b/giu, "dager")
+    .replace(/\bmonths?\b/giu, "måneder")
     .replace(/\byears?\b/giu, "år")
     .replace(/\bsensor\s+types?\b/giu, "sensortyper")
     .replace(/\bretained\b/giu, "bevares")
@@ -361,7 +362,7 @@ function deterministicMetricFacts(
   }
   deadlineValues.splice(6);
   const thresholdPattern = new RegExp(
-    String.raw`\b(?:(?:minst\s+)?hvert|under|innen|within|every)\s+(?:${CRITICAL_NUMBER}|one|two|three|four|five|six|seven|eight|nine|ten|ett|to|tre|fire|fem|seks|syv|åtte|ni|ti)\s*[.]?\s*(?:business\s+days?|seconds?|minutes?|hours?|days?|years?|sekunder?|minutter?|timer?|dager?|virkedager?|år)\b|\b(?:oppbevares|bevares|revideres|retained|resolved|mitigated)\b[^.]{0,60}?\b(?:${CRITICAL_NUMBER}|one|two|three|four|five|six|seven|eight|nine|ten|ett|to|tre|fire|fem|seks|syv|åtte|ni|ti)\s+(?:business\s+days?|seconds?|minutes?|hours?|days?|years?|sekunder?|minutter?|timer?|dager?|virkedager?|år)\b|\b${CRITICAL_NUMBER}\s+(?:sensor\s+types?|sensortyper)\b`,
+    String.raw`\b(?:(?:minst\s+)?hvert|under|innen|within|every)\s+(?:${CRITICAL_NUMBER}|one|two|three|four|five|six|seven|eight|nine|ten|ett|to|tre|fire|fem|seks|syv|åtte|ni|ti)\s*[.]?\s*(?:business\s+days?|seconds?|minutes?|hours?|days?|months?|years?|sekunder?|minutter?|timer?|dager?|arbeidsdag(?:er)?|virkedager?|måned(?:er)?|år)\b|\b(?:oppbevares|bevares|revideres|retained|resolved|mitigated)\b[^.]{0,60}?\b(?:${CRITICAL_NUMBER}|one|two|three|four|five|six|seven|eight|nine|ten|ett|to|tre|fire|fem|seks|syv|åtte|ni|ti)\s+(?:business\s+days?|seconds?|minutes?|hours?|days?|months?|years?|sekunder?|minutter?|timer?|dager?|arbeidsdag(?:er)?|virkedager?|måned(?:er)?|år)\b|\b${CRITICAL_NUMBER}\s+(?:sensor\s+types?|sensortyper)\b`,
     "iu",
   );
   const thresholdValues = collectContextualFactFragments(
@@ -501,7 +502,7 @@ function criticalFactCategory(value: string) {
     return "constraint";
   }
   if (
-    /\b(?:sekunder|minutter|timer|dager|år|sensortyper|oppbevares|bevares|revideres)\b/iu.test(
+    /\b(?:sekunder|minutter|timer|dager|arbeidsdag(?:er)?|måned(?:er)?|år|sensortyper|oppbevares|bevares|revideres)\b/iu.test(
       value,
     )
   ) {
