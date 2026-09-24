@@ -178,6 +178,13 @@ jobs:
           severity: CRITICAL,HIGH
           vuln-type: os,library
 
+      - name: Verify Norwegian OCR in candidate image
+        timeout-minutes: 10
+        run: |
+          docker pull --platform linux/amd64 "$CANDIDATE_IMAGE"
+          test "$(docker image inspect "$CANDIDATE_IMAGE" --format '{{.Architecture}}')" = amd64
+          node apps/frontend/scripts/verify_norwegian_ocr.mjs "$CANDIDATE_IMAGE" --image-only
+
       - name: Validate production database contract from the Azure network
         env:
           DATA_API_URL: ${{ vars.DATA_API_URL }}

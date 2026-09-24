@@ -35,6 +35,12 @@ requirements, page references and unchanged source bytes. `runner-docling`
 bundles Tesseract and its `nor`/`eng` data; local Docling installations also need
 these installed. It makes no paid AI calls.
 
+The production workflow also runs this check with `--image-only` against the
+immutable `linux/amd64` candidate before database preflight or promotion. That
+mode tests the image's offline Docling runtime without installing application
+dependencies on the release runner. The default mode above additionally tests
+the application parser adapter.
+
 CI scans the production image before deployment. Base images are pinned by
 digest and refreshed through Dependabot.
 

@@ -3,19 +3,26 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createJiti } from "jiti";
 
 const image = process.argv[2];
-assert.ok(image, "Usage: node scripts/verify_norwegian_ocr.mjs <runner-docling-image>");
+assert.ok(image, "Usage: node scripts/verify_norwegian_ocr.mjs <runner-docling-image> [--image-only]");
+assert.ok(process.argv.slice(3).every((arg) => arg === "--image-only"), "Unknown OCR verification option");
+const imageOnly = process.argv.includes("--image-only");
 const frontend = path.resolve(import.meta.dirname, "..");
 const fixtures = path.resolve(frontend, "../../test-data/ocr");
-const jiti = createJiti(import.meta.url, {
-  alias: { "@": frontend, "server-only": "/dev/null" },
-});
-const { extractTextFromBuffer } = await jiti.import(path.join(frontend, "lib/server/documents.ts"));
+// The release gate checks the built image without reinstalling app dependencies.
+// The default local mode additionally exercises the application parser adapter.
+let extractTextFromBuffer;
+if (!imageOnly) {
+  const { createJiti } = await import("jiti");
+  const jiti = createJiti(import.meta.url, {
+    alias: { "@": frontend, "server-only": "/dev/null" },
+  });
+  ({ extractTextFromBuffer } = await jiti.import(path.join(frontend, "lib/server/documents.ts")));
+}
 const normalizeSpacing = (value) => value.replace(/\s+/gu, " ").trim();
 const directory = await mkdtemp(path.join(tmpdir(), "anbud-ocr-evaluation-"));
 const command = path.join(directory, "docling.mjs");
@@ -58,6 +65,28 @@ process.exitCode = result.status ?? 1;
     const buffer = await readFile(path.join(fixtures, fixture.file));
     assert.equal(createHash("sha256").update(buffer).digest("hex"), fixture.sha256);
     const start = Date.now();
+    if (imageOnly) {
+      const output = path.join(directory, fixture.file + "-output");
+      await mkdir(output);
+      await chmod(output, 0o777);
+      execFileSync(process.execPath, [command,
+        "--to", "md", "--to", "json", "--output", output,
+        "--artifacts-path", "/opt/docling-models", "--num-threads", "2",
+        "--table-mode", "accurate", "--image-export-mode", "placeholder",
+        "--document-timeout", "180", "--ocr", "--ocr-engine", "tesseract",
+        "--ocr-lang", "nor,eng", path.join(fixtures, fixture.file),
+      ], { stdio: "inherit", timeout: 230000 });
+      const document = JSON.parse(await readFile(path.join(output, "source.json"), "utf8"));
+      assert.deepEqual(Object.keys(document.pages).map(Number), fixture.pages.map((_, i) => i + 1));
+      for (const [index, lines] of fixture.pages.entries()) {
+        const source = document.texts.filter((entry) => entry.prov.some((item) => item.page_no === index + 1));
+        assert.ok(source.length > 0 && source.every((entry) => entry.self_ref));
+        assert.equal(normalizeSpacing(source.map((entry) => entry.text).join(" ")), lines.join(" "), `${fixture.file}, page ${index + 1}`);
+      }
+      assert.deepEqual(await readFile(path.join(fixtures, fixture.file)), buffer, "Original PDF must remain unchanged");
+      console.info(JSON.stringify({ mode: "image-only", file: fixture.file, sha256: fixture.sha256, imageId, pages: fixture.pages.length, exactText: true, elapsedMs: Date.now() - start }));
+      continue;
+    }
     const parsed = await extractTextFromBuffer({
       buffer, fileName: fixture.file, useDocling: true, useDoclingOcr: true,
     });
