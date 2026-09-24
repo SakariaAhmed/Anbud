@@ -2941,8 +2941,31 @@ test("explicit rejection of a mandatory requirement is always Dårlig", () => {
 
       assert.equal(corrected.assessment, "Dårlig");
       assert.match(corrected.rationale, /avslår|utenfor leveransen/i);
+      assert.equal(corrected.evidence, answerExcerpt);
+      assert.match(corrected.recommendation, /Bevar avslaget.*inntil leverandøren.*bekreftet/u);
+      assert.match(corrected.recommendation, /omfang og pris/u);
     }
   }
+});
+
+test("unconfirmed delivery advice preserves the reservation until supplier confirmation", () => {
+  const answer = "Endelig omfang og løsning må avklares før vi kan bekrefte leveransen.";
+  const corrected = correctCoverageAssessmentWithSourceEvidence({
+    entry: requirement({
+      text: "Leverandøren skal levere og dokumentere døgnberedskap.",
+      sourceExcerpt: `Kravgrunnlag: Leverandøren skal levere døgnberedskap. | Svarrad: ${answer}`,
+      answerExcerpt: answer,
+      answerDocumentId: "solution",
+    }),
+    assessment: "Godt",
+    rationale: "Modellen antar at leveransen er avklart.",
+    evidence: answer,
+    recommendation: "Fjern forbeholdet og lov døgnberedskap.",
+  });
+  assert.equal(corrected.assessment, "Uklart");
+  assert.equal(corrected.evidence, answer);
+  assert.match(corrected.recommendation, /Bevar forbeholdet inntil leveransen er bekreftet/u);
+  assert.match(corrected.recommendation, /forslag, ikke som en inngått forpliktelse/u);
 });
 
 test("mandatory requirement without a matched answer remains Mangler", () => {
@@ -6061,6 +6084,46 @@ test("duplicate evidence is ambiguous and does not pick the first coverage row",
   assert.equal(normalized.reference_match, "section");
   assert.equal(normalized.matched_requirement_reference, null);
   assert.match(normalized.reference, /^Seksjonsfunn:/);
+});
+
+test("qualified document references disambiguate identical requirement IDs and quotes", () => {
+  const evidence = "Leverandøren overvåker tjenesten og dokumenterer hendelser i en felles driftslogg.";
+  const base = coverageFixture(2);
+  const items = base.items.map((item, index) => ({
+    ...item,
+    reference: "R-101",
+    full_reference: `Dokument ${index + 1} > Drift > R-101`,
+    source_reference: `Dokument ${index + 1}, R-101`,
+    source_document_id: `document-${index + 1}`,
+    evidence,
+    assessment: index === 0 ? "Godt" : "Dårlig",
+    rationale: index === 0 ? "Dekker normal drift." : "Døgnberedskap er ikke dokumentert.",
+    recommendation: index === 0 ? "Bevar beskrivelsen." : "Innhent bekreftelse på døgnberedskap.",
+  }));
+  const coverage = { ...base, items };
+  for (const reference of [items[1].full_reference, items[1].source_reference]) {
+    const [finding] = normalizeDocumentFindingsAgainstCoverage([
+      { reference, evidence, assessment: "Godt", finding: "Modellens forslag", recommendation: "Modellens råd" },
+    ], coverage);
+    assert.equal(finding.reference, items[1].full_reference);
+    assert.equal(finding.reference_match, "coverage");
+    assert.equal(finding.assessment, "Dårlig");
+    assert.equal(finding.finding, items[1].rationale);
+    assert.equal(finding.recommendation, items[1].recommendation);
+  }
+
+  const [ambiguous] = normalizeDocumentFindingsAgainstCoverage([
+    { reference: "R-101", evidence, assessment: "Godt", finding: "Ukjent dokument", recommendation: "Avklar kilden" },
+  ], coverage);
+  assert.equal(ambiguous.reference_match, "section");
+  assert.equal(ambiguous.matched_requirement_reference, null);
+
+  const different = { ...coverage, items: [items[0], { ...items[1], evidence: "Beredskap om natten inngår ikke i tilbudet og må prises separat." }] };
+  const [conflict] = normalizeDocumentFindingsAgainstCoverage([
+    { reference: items[1].full_reference, evidence, assessment: "Godt", finding: "Feil kilde", recommendation: "Kontroller henvisningen" },
+  ], different);
+  assert.equal(conflict.reference_match, "section", "A precise reference must never silently switch to another document because its quote matches.");
+  assert.equal(conflict.matched_requirement_reference, null);
 });
 
 test("explicit section findings stay sections even when evidence matches coverage", () => {

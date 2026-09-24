@@ -18,6 +18,7 @@ test("solution evaluation receives opposite late artifact commitments and select
       const state = globalThis.__systemArtifactContextTest;
       if (input.promptCacheKey === "requirement-coverage-batch") {
         state.coverageCalls++;
+        state.coverageSystem = input.system;
         return { rows: [{ nr: 1, ref: "R-91", assessment: "Godt", rationale: "Leverandøren bekrefter MFA for administratorer.", evidence: "Alle administratorer bruker MFA.", recommendation: "Kontroller løsningen i akseptansetesten." }] };
       }
       if (input.promptCacheKey !== "solution-evaluation-holistic") throw new Error("Unexpected model operation: " + input.promptCacheKey);
@@ -54,6 +55,8 @@ test("solution evaluation receives opposite late artifact commitments and select
       assert.ok(prompt, "The actual owner must reach its holistic model boundary.");
       assert.ok(prompt.user.includes(artifact.content_markdown), "The complete artifact, including late commitments, must reach evaluation without truncation.");
       assert.match(prompt.system, /systemartefakt.*primærgrunnlag/i);
+      assert.match(prompt.system, /Ikke anbefal å fjerne et reelt forbehold/u);
+      assert.match(state.coverageSystem, /Bevar reelle avvik, manglende prising og forbehold inntil leverandøren har bekreftet endringen/u);
       assert.ok(!prompt.system.includes("Sammenlign alltid mot systemets high_level_solution_design"));
       assert.ok(prompt.user.includes(customerAnalysis.high_level_solution_design), "Earlier analysis remains supporting evidence.");
     }

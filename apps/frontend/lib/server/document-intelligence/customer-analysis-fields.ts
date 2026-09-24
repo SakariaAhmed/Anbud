@@ -180,7 +180,7 @@ export const CUSTOMER_ANALYSIS_FIELD_DEFINITIONS = {
     fullAnalysis: true,
     historySection: "needs",
     fullGuidance: [
-      "prioritized_requirements: maksimalt 5 styrende eller konkurranseutløsende krav.",
+      "prioritized_requirements: maksimalt 5 styrende krav. Prioriter absolutte krav om avvisning, sikkerhet og leveranseevne. Bevar krav-ID, terskler og vilkår også ved gruppering.",
     ],
   },
   ambiguities: {

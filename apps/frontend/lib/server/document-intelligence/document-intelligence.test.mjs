@@ -756,6 +756,31 @@ test("customer analysis postprocessing preserves the established output rules", 
   );
 });
 
+test("critical-fact enrichment preserves higher-priority requirements at the list boundary", () => {
+  const critical = [
+    { requirement: "S-11: Administratorer skal bruke flerfaktorautentisering.", priority: "Kritisk", reason: "Absolutt sikkerhetskrav." },
+    { requirement: "S-12: Tilgang skal tilbakekalles ved fratredelse.", priority: "Kritisk", reason: "Absolutt tilgangskrav." },
+  ];
+  const normal = Array.from({ length: 3 }, (_, index) => ({
+    requirement: `Vanlig leveranseprioritet ${index + 1}.`, priority: "Viktig", reason: "Dokumentert behov.",
+  }));
+  const analysis = {
+    customer_profile_summary: "Fiktiv kunde", customer_goals_summary: "Sikker drift",
+    customer_profile: [], customer_goals: [], expected_solution_direction: [],
+    positioning_recommendations: [], high_level_solution_design: "", executive_summary: "",
+    prioritized_requirements: [...normal, ...critical],
+  };
+  const before = structuredClone(analysis);
+  const result = enrichCustomerAnalysisWithCriticalFacts(analysis, [{
+    documentId: "customer", title: "Kundekrav", role: "primary_customer_document", context: "",
+    sourceText: "Operativ kjerne skal ha RTO 3 timer og RPO 20 minutter.",
+  }]);
+  assert.deepEqual(result.prioritized_requirements.slice(0, 2), critical);
+  assert.equal(result.prioritized_requirements.length, MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS);
+  assert.match(JSON.stringify(result.expected_solution_direction), /RTO 3 timer/);
+  assert.deepEqual(analysis, before, "Enrichment must not mutate the model result.");
+});
+
 test("trusted local requirement rows replace only matching truncated generated text", () => {
   const generated = {
     id: "KR-063-34",

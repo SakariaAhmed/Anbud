@@ -1513,14 +1513,14 @@ async function runPerfectSystemSolutionWorkflow(
 
   const instructions = [
     `Systemløsningen scoret ${Math.round(systemScore)}/100 i siste vurdering.`,
-    "Lag en ny, forbedret systemløsning som eksplisitt lukker alle gap som hindrer 100/100.",
+    "Lag en ny, forbedret systemløsning som retter dokumenterte svakheter innenfor bekreftet leveranse og beskriver konkrete forslag for øvrige gap.",
     "Bruk improvement_recommendations, weaknesses, missing_elements, risks_to_customer, rewrite_suggestions og architecture_comparison.strategy_improvement_advice som endringsliste.",
     "Ikke bare kommenter hva som bør gjøres. Skriv inn endringene direkte i løsningsbeskrivelsen.",
-    "Målet er en løsningsbeskrivelse som kan vurderes til 100/100 fordi den er kundespesifikk, komplett, gjennomførbar, risikoreduserende og tydelig differensiert.",
+    "Kildetro leveranse går foran høy score. Bevar uttrykkelige avvik, manglende prising og nødvendige leverandørbekreftelser selv om vurderingen anbefaler å fjerne dem. Merk ny eller endret leveranse som forslag som krever leverandørens bekreftelse; tekstendringen alene lukker ikke avviket.",
     "Hvis vurderingen peker på manglende overgangsmodell, beslutningspunkter, ansvar, risiko, bevis eller kundeverdi, skal dette konkret innarbeides i riktig seksjon.",
   ].join("\n");
 
-  handlers.setProgress("Skriver forbedret systemløsning mot 100/100 ...");
+  handlers.setProgress("Skriver forbedret systemløsning med dokumenterte forutsetninger ...");
   const savedArtifact = await findWorkflowArtifact(input.projectId, getProjectWorkflowLease()?.jobId, input.resumeArtifactId);
   if (input.resumeArtifactId && !savedArtifact) throw new Error("Fant ikke løsningsutkastet som skal revurderes.");
   if (savedArtifact && (!savedArtifact.is_current || !savedArtifact.source_is_current)) throw new Error("ARTIFACT_SOURCE_REVISION_CHANGED");

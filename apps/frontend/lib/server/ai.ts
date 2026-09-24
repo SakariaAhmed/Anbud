@@ -17934,7 +17934,7 @@ export function correctCoverageAssessmentWithSourceEvidence(input: {
         "Svarutdraget avslår eller plasserer et obligatorisk krav utenfor leveransen. Det er et faktisk svar, men det oppfyller ikke kravet og kan derfor verken vurderes som Godt, Uklart eller Mangler.",
       evidence: compactText(answerEvidence, 420),
       recommendation:
-        "Erstatt avslaget med en tydelig leveranseforpliktelse som beskriver løsning, ansvar, kontroll og verifikasjon, eller registrer et eksplisitt kontraktsforbehold for tilbudsbeslutning.",
+        "Bevar avslaget som et dokumentert avvik inntil leverandøren har besluttet og bekreftet en endret leveranse, inkludert omfang og pris. Beskriv deretter løsning, ansvar, kontroll og verifikasjon, eller behold avviket for tilbudsbeslutning.",
     };
   }
 
@@ -18000,7 +18000,7 @@ export function correctCoverageAssessmentWithSourceEvidence(input: {
         "Svarutdraget sier at leveranse, omfang eller ansvar må avklares før kravet kan bekreftes. Det er et faktisk svar, men dekningen er ikke verifiserbar nok til å være Godt eller tydelig nok til å være et endelig avslag.",
       evidence: compactText(answerEvidence, 420),
       recommendation:
-        "Avklar omfang, ansvar og løsningsvalg, og erstatt forbeholdet med en testbar leveransebeskrivelse eller et eksplisitt forbehold.",
+        "Avklar omfang, ansvar, løsningsvalg og eventuell pris med leverandøren. Bevar forbeholdet inntil leveransen er bekreftet; beskriv en mulig endring som et forslag, ikke som en inngått forpliktelse.",
     };
   }
 
@@ -21006,11 +21006,25 @@ export function normalizeDocumentFindingsAgainstCoverage(
           : ("Uklart" as const);
       const explicitSectionFinding = isExplicitSectionFinding(item);
       const candidateEvidence = compactText(item.evidence ?? "", 500);
+      // Local requirement IDs and supplier quotes can repeat across documents.
+      // A precise source locator constrains evidence matching; it must not be
+      // silently replaced with another document's otherwise identical quote.
+      const normalizedReference = normalizedCoverageRef(item.reference ?? "");
+      const qualifiedReferenceMatches = coverage.items.filter((candidate) =>
+        [candidate.full_reference, candidate.source_reference].some((label) =>
+          typeof label === "string" && label.length > 0 &&
+          normalizedCoverageRef(label) !== normalizedCoverageRef(candidate.reference) &&
+          normalizedCoverageRef(label) === normalizedReference,
+        ),
+      );
+      const scopedEvidenceIndex = qualifiedReferenceMatches.length
+        ? evidenceIndex.filter((entry) => qualifiedReferenceMatches.includes(entry.item))
+        : evidenceIndex;
       const evidenceMatch = explicitSectionFinding
         ? null
         : matchFindingEvidenceToCoverageItem({
             evidence: candidateEvidence,
-            evidenceIndex,
+            evidenceIndex: scopedEvidenceIndex,
           });
       const directMatch =
         !explicitSectionFinding && !candidateEvidence

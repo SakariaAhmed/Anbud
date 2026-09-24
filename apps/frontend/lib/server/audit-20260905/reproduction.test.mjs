@@ -238,6 +238,26 @@ test('REGRESSION PERF1: reevaluation failure returns a recoverable partial resul
   assert.deepEqual(counts(), [1, 1, 1]);
 });
 
+test('REGRESSION PERF advice: supplier reservations outrank a recommendation to promise unconfirmed scope', async () => {
+  reset(); await save('Analysis');
+  let generation;
+  const { runPerfectSystemSolutionWorkflow } = workflow(['runPerfectSystemSolutionWorkflow'], {
+    getProjectGenerationContext: async () => ({ solutionEvaluationSnapshot: { evaluation: {
+      architecture_comparison: { system_solution_score: 60 },
+      improvement_recommendations: ['Fjern forbeholdet og lov at døgnberedskap inngår i prisen.'],
+    } } }),
+    generateAndSaveProjectArtifact: async input => { generation = input; return { artifact: { id: 'proposed-change' } }; },
+    readStableEvaluationSources: async () => ({ documents: [], customerAnalysis: null, sourceRevision: revision() }),
+  });
+  const result = await runPerfectSystemSolutionWorkflow({ kind: 'perfect_system_solution', projectId: P }, handlers);
+  assert.equal(generation.artifactType, 'losningsutkast');
+  assert.match(generation.instructions, /Bevar uttrykkelige avvik, manglende prising og nødvendige leverandørbekreftelser selv om vurderingen anbefaler å fjerne dem/u);
+  assert.match(generation.instructions, /forslag som krever leverandørens bekreftelse/u);
+  assert.match(generation.instructions, /tekstendringen alene lukker ikke avviket/u);
+  assert.doesNotMatch(generation.instructions, /Målet er.*100|lukk.*100/u);
+  assert.equal(result.completion_status, 'evaluation_pending');
+});
+
 test('REGRESSION PERF2: missing reevaluation document explicitly reports evaluation pending', async () => {
   reset(); await save('Analysis');
   const { runPerfectSystemSolutionWorkflow } = workflow(['runPerfectSystemSolutionWorkflow'], {

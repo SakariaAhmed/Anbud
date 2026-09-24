@@ -50,14 +50,76 @@ Used Node 22.14.0 and the merged npm lockfile.
   draft survived visiting history. No horizontal page overflow or JavaScript
   errors occurred. Desktop/mobile screenshots were visually inspected.
 
-## Remaining boundaries
+## Initial integration boundaries
 
-This is integration verification, not renewed AI quality or performance approval.
-The limitations in `speed-quality-2026-09-08.md` remain open; no paid model calls
-were made. Browser testing used a local development server and password login,
+The checks above established integration behavior, not renewed AI quality or
+performance approval. At the integration commit, all limitations in
+`speed-quality-2026-09-08.md` remained open; no paid model calls were made. Browser testing used a local development server and password login,
 not production, Microsoft Entra, or Azure document ingestion/storage.
 
 Deployment still requires the guest credential authority, job result cleanup,
 and snapshot dependency migrations. Follow `security-job-result-cleanup.md` for
 stored historical job-result cleanup. No production code, configuration,
 migration, or cleanup was deployed by this integration task.
+
+
+## Focused AI follow-up
+
+The follow-up against integration commit `3a285d6427155cf992bc180af9c8109996ce609c`
+addresses three confirmed paths without changing models, reasoning levels,
+retrieval budgets, database contracts, or provider configuration:
+
+- Critical-fact enrichment previously prepended numeric facts as `Viktig` before
+  truncating the five-item priority list. That could remove a model-selected
+  `Kritisk` requirement. Critical items now retain precedence; additional facts
+  remain represented in the solution-direction field. Both analysis prompts also
+  call out absolute requirements and concrete log-retention, training, operations
+  documentation, and acceptance conditions. The v3 prompt stays below its existing
+  5,000-character limit.
+- Deterministic coverage advice for a rejected or unconfirmed requirement could
+  tell the improvement step to replace the reservation with a commitment. That
+  advice now requires an explicit supplier decision and confirmation, including
+  scope and price. Coverage and holistic evaluation instructions preserve real
+  reservations. The improvement workflow prioritizes supported delivery over
+  reaching 100/100 and labels unconfirmed changes as proposals. Existing scores,
+  original evidence, partial-result recovery, and re-evaluation stay intact.
+- Identical quotes and local requirement IDs in two documents previously defeated
+  finding normalization even when the model supplied the correct full reference.
+  An exact qualified reference now constrains evidence matching. Ambiguous bare
+  references remain unmatched; a conflicting quote cannot switch to another
+  document's coverage row. The canonical row still owns the displayed assessment,
+  evidence, explanation, and recommendation.
+
+### Follow-up verification
+
+Four selected regressions fail on the integration commit for the expected
+behavioral reasons and pass with the changes: critical-priority loss, duplicate
+source identity, rejection advice, and unconfirmed-delivery advice. Additional
+checks capture the actual coverage/holistic model boundary and improvement
+workflow instructions, including a prior evaluation that recommends removing an
+unconfirmed reservation. These checks validate the delivered instructions, not
+model compliance.
+
+Node 22.14.0 validation: 928 frontend tests, 129 repository tests, and 45 workflow
+regressions passed with no failures or skips. The full run used disposable local
+PostgreSQL/pgvector and included parser golden checks and the existing additive
+upgrade regression. Lint, production build/type validation, secret scan, project
+job schema, workflow boundaries, release contracts, and whitespace checks passed.
+The prior authenticated desktop/mobile integration checks were not repeated for
+these server-only changes and progress-message wording.
+
+### Still unverified
+
+No paid model calls were made in this follow-up. New paired live evaluations need
+an authorized task spending cap; historical evaluation-ledger headroom is not a
+new authorization. Prompt changes still need fresh source-grounded output review
+for omitted operational details and unsupported commitments. They do not provide
+a deterministic guarantee that every future answer preserves every reservation.
+
+Generation speed remains unresolved. Earlier attempts to reduce holistic output
+or change its model did not establish a speed/quality improvement. This follow-up
+introduces no extra model calls and makes no latency claim. Fresh paired runs must
+measure full completion time, usage, and answer quality on identical inputs,
+including the actual improvement-and-re-evaluation workflow, before changing
+model or context settings. Production deployment and the original migration and
+cleanup requirements remain as described above.

@@ -126,7 +126,7 @@ export function requirementCoverageSystemPrompt() {
       "Hvis svarutdraget sier at leveranse, omfang, ansvar eller løsning må avklares før leverandøren kan bekrefte dekning, skal det normalt vurderes som Uklart, ikke Mangler.",
       "Vurder hele kravraden: kravtekst, svar, forbehold, avklaringer og om svaret faktisk er operasjonelt nok for kundens kontekst.",
       "evidence skal være et kort tekstnært utdrag fra Bilag 2, helst ordrett fra kravrad, svarutdrag eller radutdrag. Ikke bruk kundeanalysen som evidence og ikke skriv fri parafrase.",
-      "recommendation skal være en konkret retting som kan gjøres i arkitektens svar.",
+      "recommendation skal beskrive en konkret retting og nødvendig leverandørbeslutning eller dokumentasjon. Bevar reelle avvik, manglende prising og forbehold inntil leverandøren har bekreftet endringen; en omskriving alene lukker ikke avviket.",
       "Ikke overdriv svakheter. Vær konservativ når utdragene ikke gir sikkert grunnlag.",
     ],
     outputContract: [
