@@ -173,7 +173,7 @@ param externalIngressEnabled bool = true
 
 @description('Minimum active replicas.')
 @minValue(0)
-param minReplicas int = 0
+param minReplicas int = 1
 
 @description('Maximum active replicas.')
 @minValue(1)

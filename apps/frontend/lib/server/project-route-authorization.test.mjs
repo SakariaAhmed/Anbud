@@ -93,11 +93,12 @@ test("role lookup failures and malformed roles fail closed before project data a
     assert.deepEqual(h.dataCalls, []);
   }
 });
-test("restricted viewers and global admins cannot delete artifacts; editors can", async () => {
-  for (const options of [{ role: "restricted_viewer" }, { admin: true }, { role: "editor" }]) {
+test("restricted viewers cannot delete artifacts; global admins and editors can", async () => {
+  for (const options of [{ role: "restricted_viewer" }, { admin: true }, { admin: true, role: "restricted_viewer" }, { role: "editor" }]) {
     const h = harness(options);
-    assert.equal((await invoke(h, "generate", "DELETE", projectId)).status, options.role === "editor" ? 200 : 403);
-    assert.equal(h.dataCalls.some(({ name }) => name === "deleteGeneratedArtifact"), options.role === "editor");
+    const allowed = options.admin === true || options.role === "editor";
+    assert.equal((await invoke(h, "generate", "DELETE", projectId)).status, allowed ? 200 : 403);
+    assert.equal(h.dataCalls.some(({ name }) => name === "deleteGeneratedArtifact"), allowed);
   }
 });
 test("permitted reads retain role and uppercase UUID compatibility", async () => {

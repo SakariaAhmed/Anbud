@@ -22,24 +22,12 @@ test("admin is the only global role", () => {
   assert.equal(access.isAdminRole("super_user"), false);
 });
 
-test("global admin policy permits reads and sharing only", () => {
-  for (const permission of [
-    "project.read",
-    "document.download",
-    "analysis.read",
-    "project.share",
-  ]) {
+test("global admin can perform every project operation without a project grant", () => {
+  for (const permission of access.PROJECT_PERMISSIONS) {
     assert.equal(access.globalAccessAllows(true, permission), true);
-  }
-  for (const permission of [
-    "project.update",
-    "project.delete",
-    "document.upload",
-    "analysis.write",
-  ]) {
-    assert.equal(access.globalAccessAllows(true, permission), false);
     assert.equal(access.globalAccessAllows(false, permission), false);
   }
+  assert.equal(access.globalAccessAllows(true, "unknown.permission"), false);
 });
 
 test("project role hierarchy selects the strongest direct or group role", () => {

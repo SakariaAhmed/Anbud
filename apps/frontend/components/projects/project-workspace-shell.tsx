@@ -749,7 +749,6 @@ export function ProjectWorkspaceTabContent({
   return (
     <>
       <ProjectWorkflowJobs key={`jobs-${project.id}`} projectId={project.id} />
-      {activeTab === "analysis" && <ProjectResultHistory key={`history-${project.id}`} projectId={project.id} />}
       {activeTab === "documents" ? (
         <ProjectDocumentsTab
           projectId={project.id}
@@ -774,22 +773,24 @@ export function ProjectWorkspaceTabContent({
       ) : null}
 
       {activeTab === "analysis" ? (
-        !analysisLoaded || analysisLoading ? (
-          <DeferredSectionLoader label="Laster kundeanalyse ..." />
-        ) : (
-          <ProjectAnalysisTab
-            projectId={project.id}
-            documents={project.documents}
-            customerAnalysis={customerAnalysis}
-            busy={Boolean(busy)}
-            saveBusy={busy === "save-analysis"}
-            sectionBusy={analysisSectionBusy}
-            busyMessage={analysisSectionBusy ? busyMessage : ""}
-            busyProgress={busyProgress}
-            onGenerate={onGenerateCustomerAnalysis}
-            onSaveAnalysis={onSaveAnalysis}
-          />
-        )
+        <ProjectResultHistory key={`history-${project.id}`} projectId={project.id} documents={project.documents}>
+          {!analysisLoaded || analysisLoading ? (
+            <DeferredSectionLoader label="Laster kundeanalyse ..." />
+          ) : (
+            <ProjectAnalysisTab
+              projectId={project.id}
+              documents={project.documents}
+              customerAnalysis={customerAnalysis}
+              busy={Boolean(busy)}
+              saveBusy={busy === "save-analysis"}
+              sectionBusy={analysisSectionBusy}
+              busyMessage={analysisSectionBusy ? busyMessage : ""}
+              busyProgress={busyProgress}
+              onGenerate={onGenerateCustomerAnalysis}
+              onSaveAnalysis={onSaveAnalysis}
+            />
+          )}
+        </ProjectResultHistory>
       ) : null}
 
       {activeTab === "evaluation" ? (

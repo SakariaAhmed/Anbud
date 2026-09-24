@@ -2789,6 +2789,7 @@ export function ProjectAnalysisTab({
   busyProgress,
   onGenerate,
   onSaveAnalysis,
+  readOnly = false,
 }: {
   projectId: string;
   documents: ProjectDocument[];
@@ -2798,8 +2799,9 @@ export function ProjectAnalysisTab({
   sectionBusy: CustomerAnalysisSection | null;
   busyMessage: string;
   busyProgress: number;
-  onGenerate: () => void;
-  onSaveAnalysis: (
+  readOnly?: boolean;
+  onGenerate?: () => void;
+  onSaveAnalysis?: (
     section: CustomerAnalysisSection,
     snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
     revision?: string,
@@ -2954,6 +2956,7 @@ export function ProjectAnalysisTab({
   }
 
   function onStartSectionEdit(section: CustomerAnalysisSection) {
+    if (readOnly || !onSaveAnalysis) return;
     setEditingBasis(customerAnalysis);
     setSectionRevision(customerAnalysis?.revision);
     setEditingSection(section);
@@ -2968,6 +2971,7 @@ export function ProjectAnalysisTab({
   }
 
   async function onSaveSectionEdit(section: CustomerAnalysisSection) {
+    if (readOnly || !onSaveAnalysis) return;
     if (!sectionDraft) {
       setSectionDraftError("Ingen endringer å lagre.");
       return;
@@ -2990,6 +2994,7 @@ export function ProjectAnalysisTab({
   }
 
   function renderEditButton(section: CustomerAnalysisSection) {
+    if (readOnly || !onSaveAnalysis) return null;
     const isEditing = editingSection === section;
 
     if (isEditing) {
@@ -3993,7 +3998,7 @@ export function ProjectAnalysisTab({
                 </TabsList>
               </div>
             </div>
-            {!customerAnalysis ? (
+            {!customerAnalysis && !readOnly && onGenerate ? (
               <Button
                 onClick={onGenerate}
                 disabled={busy || Boolean(sectionBusy) || !documentsReady}
@@ -4218,7 +4223,7 @@ export function ProjectAnalysisTab({
           <TabsContent value="design" className="mt-0">
             <SectionSurface
               title="High-level design av løsningen"
-              description="Vis og rediger anbefalt overordnet arkitektur når denne delen er klar."
+              description={readOnly ? "Anbefalt overordnet arkitektur fra denne versjonen." : "Vis og rediger anbefalt overordnet arkitektur når denne delen er klar."}
               icon={Compass}
               action={renderSectionActions("design")}
             >

@@ -87,22 +87,34 @@ test("malformed percent-encoding and decoded control characters fail closed", ()
   );
 });
 
-test("administrator can read and share globally but cannot mutate project content", () => {
-  for (const [method, suffix, allowed] of [
-    ["GET", "", true],
-    ["POST", "/access", true],
-    ["PATCH", "", false],
-    ["DELETE", "", false],
+test("administrator can read, generate, edit, delete and share across projects", () => {
+  for (const [method, suffix] of [
+    ["GET", ""],
+    ["POST", "/access"],
+    ["PATCH", ""],
+    ["DELETE", ""],
+    ["POST", "/jobs"],
+    ["PATCH", "/customer-analysis"],
+    ["POST", "/documents"],
+    ["GET", `/documents/${documentId}`],
+    ["DELETE", `/documents/${documentId}`],
+    ["POST", "/chat"],
   ]) {
-    assert.equal(
-      authorization.projectRoleAllowsAuthorizationPath({
-        method,
-        pathname: `/api/projects/${projectId}${suffix}`,
-        role: null,
-        isAdmin: true,
-      }),
-      allowed,
-    );
+    for (const role of [null, "restricted_viewer", "viewer"]) {
+      const request = { method, pathname: `/api/projects/${projectId}${suffix}`, role };
+      assert.equal(
+        authorization.projectRoleAllowsAuthorizationPath({ ...request, isAdmin: true }),
+        true,
+        `${method} ${suffix} must allow admin with role ${role}`,
+      );
+      if (method !== "GET") {
+        assert.equal(
+          authorization.projectRoleAllowsAuthorizationPath({ ...request, isAdmin: false }),
+          false,
+          `${method} ${suffix} must deny non-admin with role ${role}`,
+        );
+      }
+    }
   }
 });
 

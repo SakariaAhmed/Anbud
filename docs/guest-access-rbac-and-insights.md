@@ -13,11 +13,12 @@ login. It does not create guest users in the Entra tenant.
   role wins.
 - Project roles are `owner`, `editor`, `viewer`, and `restricted_viewer`.
   Restricted viewers can read in the app but cannot download source documents.
-- `admin` is the only global role. It manages roles and groups, can read every
-  project, and can inspect the global activity stream. It does not receive
-  global write access to project content.
+- `admin` is the only global role. It manages roles and groups, has full access
+  to every project, and can inspect the global activity stream. It can generate,
+  edit, upload, download, share, and delete without a project-specific grant,
+  even when its project role grants only read access.
 - Authenticated route activity is scheduled for best-effort persistence in
-  `activity_events`, including administrator reads, without delaying the
+  `activity_events`, including administrator reads and writes, without delaying the
   response. Explicit access and role changes are still recorded synchronously.
   Events store actor, project/entity references and the operation, not a
   duplicate copy of raw document or prompt content. An administrator can open
@@ -160,4 +161,7 @@ available. Use the dedicated administrator login for global administration.
 - Revoke the final active project and confirm that the guest session is
   revoked.
 - Confirm an admin can read every project and open the activity stream.
-- Confirm an admin without a project role cannot change project content.
+- On a disposable project owned by another user, confirm an admin without a
+  project role can generate, edit, upload, download, share, and delete.
+- Confirm non-admin viewers still cannot change project content and restricted
+  viewers cannot download source documents.
