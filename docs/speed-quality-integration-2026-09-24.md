@@ -215,3 +215,10 @@ Representative multi-worker load is still unmeasured. The earlier
 migration/cleanup requirements still apply. Historical
 failed experiments and broader per-feature speed/quality goals remain in the
 original report; these focused results do not retroactively approve them.
+
+## Norwegian OCR follow-up
+
+The later [Norwegian OCR follow-up](norwegian-ocr-verification-2026-09-24.md)
+addresses the accent loss found during ingestion verification, using bundled
+Norwegian/English recognition and exact-text scan fixtures. It makes no paid AI
+calls and does not deploy the integration branch.

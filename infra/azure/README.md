@@ -23,6 +23,18 @@ npm --prefix apps/frontend run docker:smoke
 npm --prefix apps/frontend run docker:smoke:docling
 ```
 
+Verify Norwegian OCR in the built production image before promotion:
+
+```bash
+node apps/frontend/scripts/verify_norwegian_ocr.mjs <acr-name>.azurecr.io/anbud:<tag>
+```
+
+This opt-in check runs the application's parser on frozen fictional scans, with
+network access disabled. It requires exact Norwegian/English text, numeric
+requirements, page references and unchanged source bytes. `runner-docling`
+bundles Tesseract and its `nor`/`eng` data; local Docling installations also need
+these installed. It makes no paid AI calls.
+
 CI scans the production image before deployment. Base images are pinned by
 digest and refreshed through Dependabot.
 

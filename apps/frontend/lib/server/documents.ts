@@ -423,7 +423,7 @@ function sourceFileExtensionForFormat(fileFormat: ParsedUpload["fileFormat"]) {
 function doclingCliArgs(
   inputPath: string,
   outputDir: string,
-  options: { useOcr?: boolean; tableMode?: string | null } = {},
+  options: { useOcr?: boolean; tableMode?: string | null; compatibility?: boolean } = {},
 ) {
   const args = [
     "--to",
@@ -432,11 +432,13 @@ function doclingCliArgs(
     "json",
     "--output",
     outputDir,
-    "--image-export-mode",
-    doclingImageExportMode(),
-    "--document-timeout",
-    String(Math.ceil(doclingTimeoutMs() / 1000)),
   ];
+  if (!options.compatibility) {
+    args.push(
+      "--image-export-mode", doclingImageExportMode(),
+      "--document-timeout", String(Math.ceil(doclingTimeoutMs() / 1000)),
+    );
+  }
   const artifactsPath = normalizedOptionalEnv("DOCLING_ARTIFACTS_PATH");
   const numThreads = doclingNumThreads();
   const tableMode = (
@@ -454,18 +456,20 @@ function doclingCliArgs(
     args.push("--artifacts-path", artifactsPath);
   }
 
-  if (numThreads) {
+  if (numThreads && !options.compatibility) {
     args.push("--num-threads", numThreads);
   }
 
-  if (tableMode === "fast" || tableMode === "accurate") {
+  if (!options.compatibility && (tableMode === "fast" || tableMode === "accurate")) {
     args.push("--table-mode", tableMode);
   }
 
   if (ocrMode === "off" || ocrMode === "false" || ocrMode === "0") {
     args.push("--no-ocr");
-  } else if (ocrMode === "on" || ocrMode === "true" || ocrMode === "1") {
-    args.push("--ocr");
+  } else {
+    // Docling's automatic RapidOCR model loses Norwegian letters. Use its
+    // existing Tesseract integration with languages bundled in runner-docling.
+    args.push("--ocr", "--ocr-engine", "tesseract", "--ocr-lang", "nor,eng");
   }
 
   args.push(inputPath);
@@ -484,9 +488,11 @@ function execDocling(args: string[]) {
       (error, stdout, stderr) => {
         if (error) {
           const execError = error as ExecFileError;
+          // execFile's message includes the command's --document-timeout flag,
+          // even when the failure is an unsupported option, not a timeout.
           const timedOut =
             (execError.killed === true && execError.signal === "SIGTERM") ||
-            /\b(?:timed out|timeout)\b/i.test(execError.message);
+            execError.code === "ETIMEDOUT";
           reject(
             new DoclingCommandError(
               [
@@ -963,15 +969,12 @@ async function runDoclingConversion(input: {
     useOcr: input.useOcr,
     tableMode: input.tableMode,
   });
-  const fallbackArgs = [
-    "--to",
-    "md",
-    "--to",
-    "json",
-    "--output",
-    input.outputDir,
-    input.inputPath,
-  ];
+  // A compatibility retry must retain OCR language/off settings and offline
+  // artifacts; dropping those silently changes the extracted source text.
+  const fallbackArgs = doclingCliArgs(input.inputPath, input.outputDir, {
+    useOcr: input.useOcr,
+    compatibility: true,
+  });
   let markdown = "";
   let doclingJson: Record<string, unknown> | null = null;
   let lastError: unknown = null;

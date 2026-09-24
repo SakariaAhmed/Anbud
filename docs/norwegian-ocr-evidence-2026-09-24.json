@@ -1,0 +1,207 @@
+{
+  "date": "2026-09-24",
+  "parentCommit": "a91a415246c2fd553e23014fafbf2a4297414a48",
+  "scope": "Norwegian OCR recognition; no production rollout or cloud writes",
+  "decision": {
+    "accepted": "Docling 2.99.0 Tesseract CLI with nor,eng",
+    "rejected": "Docling 2.103.0 RapidOCR Latin (no,en): accents still missing and control code regressed",
+    "textSubstitutions": false,
+    "doclingVersionChanged": false
+  },
+  "fixtures": [
+    {
+      "file": "norwegian-regression.pdf",
+      "pages": [
+        [
+          "FIKTIV OCR-VERIFISERING",
+          "Nordlys Testkommune",
+          "Krav K-42: Sikkerhetslogger lagres i 14 måneder.",
+          "Krav K-43: Leverandøren holder fire kurs.",
+          "Kontrollkode: VERIFIKASJON-84",
+          "Dette dokumentet inneholder kun testdata."
+        ]
+      ],
+      "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87"
+    },
+    {
+      "file": "norwegian-holdout.pdf",
+      "pages": [
+        [
+          "FIKTIV NORSK SPRÅKPRØVE",
+          "Ærlig vurdering av Østfold og Ålesund.",
+          "Før oppstart må løsningen støtte særnorske tegn.",
+          "Leverandøren skal tilby opplæring og døgnvakt.",
+          "Sikkerhetslogger lagres i 14 måneder.",
+          "Krav K-42: Fire kurs før overgang til drift.",
+          "Pris 1 250 000 NOK. RTO 60 minutter. RPO 15 minutter."
+        ],
+        [
+          "NORSK OG ENGELSK KONTROLL",
+          "Bærum kommune ønsker å fornye løsningen.",
+          "Årlig møte med Øyvind og Ægir.",
+          "Far får svar. Bare bære. For før.",
+          "Supplier must preserve 14 months of security logs.",
+          "Original code: ABC-42. Reference: XYZ-73."
+        ]
+      ],
+      "scope": "Synthetic image-only PDF; Helvetica and Times; second page rotated 0.3 degrees",
+      "sha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2"
+    }
+  ],
+  "comparisonRuns": {
+    "before-regression": {
+      "image": "anbud-frontend-local:runner-docling",
+      "source": "regression.pdf",
+      "sourceSha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87",
+      "options": [],
+      "exitCode": 0,
+      "durationMs": 16320,
+      "network": "none",
+      "text": "FIKTIV OCR-VERIFISERING Nordlys Testkommune Krav K-42: Sikkerhetslogger lagres i 14 maneder. Krav K-43: Leverandoren holder fire kurs. Kontrollkode: VERIFIKASJON-84 Dette dokumentet inneholder kun testdata."
+    },
+    "before-holdout": {
+      "image": "anbud-frontend-local:runner-docling",
+      "imageId": "sha256:f168a8e0229f22ef2127275dd068500e4520a3401985cd8eddcfd4e201eee137",
+      "source": "holdout.pdf",
+      "sourceSha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2",
+      "options": [],
+      "exitCode": 0,
+      "durationMs": 13211,
+      "network": "none",
+      "text": "FIKTIV NORSK SPRAKPROVE AErlig vurdering av Ostfold og Alesund. For oppstart ma losningen stotte saernorske tegn. Leverandoren skal tilby opplaering og dognvakt. Sikkerhetslogger lagres i 14 maneder. Krav K-42: Fire kurs for overgang til drift. Pris 1 250 000 NOK. RTO 60 minutter. RPO 15 minutter.\n\n## NORSK OG ENGELSK KONTROLL\n\nBerum kommune onsker a fornye losningen.\n\nArlig mote med Oyvind og Egir.\n\nFar far svar. Bare bere. For for.\n\nSupplier must preserve 14 months of security logs.\n\nOriginal code: ABC-42. Reference: XYZ-73."
+    },
+    "after-regression-onnx": {
+      "image": "anbud-ocr-norwegian:experiment",
+      "imageId": "sha256:47b09f014c11848cfb5eb158d592e31b5b8fb26ef18b9b6545f15f0de95e269d",
+      "source": "regression.pdf",
+      "sourceSha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87",
+      "options": [
+        "--ocr-engine",
+        "rapidocr",
+        "--ocr-lang",
+        "no,en"
+      ],
+      "exitCode": 0,
+      "durationMs": 10148,
+      "network": "none",
+      "text": "FIKTIV OCR-VERIFISERING Nordlys Testkommune Krav K-42: Sikkerhetslogger lagres i 14 mäneder. Krav K-43: Leverandoren holder fire kurs. Kontrollkode: VERlFlKASJON-84 Dette dokumentet inneholder kun testdata."
+    },
+    "after-holdout": {
+      "image": "anbud-ocr-norwegian:experiment",
+      "imageId": "sha256:47b09f014c11848cfb5eb158d592e31b5b8fb26ef18b9b6545f15f0de95e269d",
+      "source": "holdout.pdf",
+      "sourceSha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2",
+      "options": [
+        "--ocr-engine",
+        "rapidocr",
+        "--ocr-lang",
+        "no,en"
+      ],
+      "exitCode": 0,
+      "durationMs": 9265,
+      "network": "none",
+      "text": "FIKTIV NORSK SPRAKPROVE AErlig vurdering av stfold og Alesund. For oppstart mä losningen stotte sarnorske tegn. Leverandaren skal tilby opplæring og dognvakt. Sikkerhetslogger lagres i 14 mäneder. Krav K-42: Fire kurs for overgang til drift. Pris 1 250 000 NOK. RTO 60 minutter. RPO 15 minutter.\n\n## NORSK OG ENGELSK KONTROLL\n\nBærum kommune nsker &amp; fornye losningen.\n\nArlig mote med yvind og Egir.\n\nFar far svar. Bare bare. For for.\n\nSupplier must preserve 14 months of security logs.\n\nOriginal code: ABC-42. Reference: XYZ-73."
+    },
+    "tesseract-regression": {
+      "image": "anbud-ocr-norwegian:tesseract",
+      "imageId": "sha256:34dae7d719978621563839b48cba8526d16ec0798c6eb091ee5a9eb3c03f5834",
+      "source": "regression.pdf",
+      "sourceSha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87",
+      "options": [
+        "--ocr-engine",
+        "tesseract",
+        "--ocr-lang",
+        "nor,eng"
+      ],
+      "exitCode": 0,
+      "durationMs": 28983,
+      "network": "none",
+      "text": "FIKTIV OCR-VERIFISERING Nordlys Testkommune Krav K-42: Sikkerhetslogger lagres i 14 måneder. Krav K-43: Leverandøren holder fire kurs. Kontrollkode: VERIFIKASJON-84 Dette dokumentet inneholder kun testdata."
+    },
+    "tesseract-holdout": {
+      "image": "anbud-ocr-norwegian:tesseract",
+      "imageId": "sha256:34dae7d719978621563839b48cba8526d16ec0798c6eb091ee5a9eb3c03f5834",
+      "source": "holdout.pdf",
+      "sourceSha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2",
+      "options": [
+        "--ocr-engine",
+        "tesseract",
+        "--ocr-lang",
+        "nor,eng"
+      ],
+      "exitCode": 0,
+      "durationMs": 10789,
+      "network": "none",
+      "text": "FIKTIV NORSK SPRÅKPRØVE Ærlig vurdering av Østfold og Ålesund. Før oppstart må løsningen støtte særnorske tegn. Leverandøren skal tilby opplæring og døgnvakt. Sikkerhetslogger lagres i 14 måneder. Krav K-42: Fire kurs før overgang til drift. Pris 1 250 000 NOK. RTO 60 minutter. RPO 15 minutter.\n\n## NORSK OG ENGELSK KONTROLL\n\nBærum kommune ønsker å fornye løsningen.\n\nÅrlig møte med Øyvind og Ægir.\n\nFar får svar. Bare bære. For før.\n\nSupplier must preserve 14 months of security logs.\n\nOriginal code:\n\nABC-42. Reference:\n\nXYZ-73."
+    }
+  },
+  "applicationParserRuns": [
+    {
+      "file": "norwegian-regression.pdf",
+      "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87",
+      "imageId": "sha256:34dae7d719978621563839b48cba8526d16ec0798c6eb091ee5a9eb3c03f5834",
+      "pages": 1,
+      "exactText": true,
+      "elapsedMs": 10642
+    },
+    {
+      "file": "norwegian-holdout.pdf",
+      "sha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2",
+      "imageId": "sha256:34dae7d719978621563839b48cba8526d16ec0798c6eb091ee5a9eb3c03f5834",
+      "pages": 2,
+      "exactText": true,
+      "elapsedMs": 9881
+    }
+  ],
+  "bornDigitalControl": {
+    "file": "test-data/tenders/tender_nordic_hybrid_cloud_2026.pdf",
+    "sourceSha256": "5ce4df2a9e25c26b08e0a422411b9e700257a469d8392aee94a4fe65a073ab3c",
+    "ocr": false,
+    "outputs": {
+      "md": {
+        "sha256": "9ca699f7d385b6a23039c111623aea06a30dc863059a75ff1763131a1c53b2e9",
+        "unchanged": true
+      },
+      "json": {
+        "sha256": "40bcd043a3fdb0288dbb809f70f0784c1307ff7628afdc8d3f9c7c12096af9a4",
+        "unchanged": true
+      }
+    }
+  },
+  "runtime": {
+    "comparisonPython": "3.12",
+    "doclingSlim": "2.99.0",
+    "doclingCore": "2.86.0",
+    "tesseract": "5.3.0-2",
+    "norAndEngPackages": "1:4.1.0-2",
+    "network": "none",
+    "uid": 1001,
+    "perlRemoved": true
+  },
+  "checks": {
+    "frontendTests": 936,
+    "repositoryTests": 129,
+    "workflowTests": 46,
+    "failed": 0,
+    "skipped": 0,
+    "realDisposablePostgres": true,
+    "parserGolden": "passed",
+    "lint": "passed",
+    "applicationBuild": "passed",
+    "secretScan": "passed",
+    "repositoryContracts": "passed"
+  },
+  "failedAttempts": [
+    "RapidOCR Latin experiment initially lacked onnxruntime; rerun with bundled ONNX still failed the text acceptance criteria",
+    "Tesseract experiment initially installed after the old image had removed Perl/debconf files; restored build tools temporarily, installed Tesseract and removed Perl again. Production installs before its existing Perl removal",
+    "Experimental package download failed once with network/DNS errors; retry succeeded"
+  ],
+  "paidApiCalls": 0,
+  "cumulativePaidApiCostUsd": 1.562117,
+  "remainingAuthorizedApiBudgetUsd": 0.437883,
+  "limits": [
+    "Three synthetic scanned pages, not a representative customer OCR corpus",
+    "No new live cloud ingestion run or production deployment",
+    "Existing stored documents require explicit reprocessing after release"
+  ]
+}

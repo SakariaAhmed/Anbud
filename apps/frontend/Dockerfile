@@ -97,7 +97,10 @@ RUN mkdir -p /opt/docling-models \
 # The production Docling image does not use Debian package management at
 # runtime. Remove Perl after build-time tooling has finished to keep the final
 # image free of the current unfixed Perl CVEs in Debian slim bases.
-RUN if dpkg-query -W perl-base >/dev/null 2>&1; then \
+# Norwegian and English OCR data are installed at build time for offline use.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-nor tesseract-ocr-eng \
+    && if dpkg-query -W perl-base >/dev/null 2>&1; then \
       dpkg --purge --force-depends --force-remove-essential perl-base; \
     fi \
     && rm -rf /usr/share/perl5 /var/lib/apt/lists/*

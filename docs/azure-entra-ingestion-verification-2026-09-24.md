@@ -47,6 +47,10 @@ are retained. Some Norwegian accents are lost (`måneder` becomes `maneder`);
 this functional check does not establish character-perfect OCR. The original
 PDF remains byte-identical on download.
 
+The subsequent [Norwegian OCR follow-up](norwegian-ocr-verification-2026-09-24.md)
+fixes this observed accent loss and verifies exact text on the same scan plus a
+separate two-page holdout. The historical result above is retained as the baseline.
+
 ## Live Azure and Microsoft sign-in
 
 Read-only production checks used the `anbud-prod` resource group in subscription
