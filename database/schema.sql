@@ -3879,6 +3879,8 @@ revoke all on all tables in schema public from authenticated;
 revoke all on all sequences in schema public from anon;
 revoke all on all sequences in schema public from authenticated;
 grant usage on schema public to service_role;
+-- Vector casts in ingestion and retrieval run under the application role.
+grant usage on schema extensions to service_role;
 grant all privileges on all tables in schema public to service_role;
 grant all privileges on all sequences in schema public to service_role;
 revoke execute on all functions in schema public from public;

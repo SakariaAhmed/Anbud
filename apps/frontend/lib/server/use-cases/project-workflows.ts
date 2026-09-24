@@ -441,7 +441,9 @@ function looksLikePoorPdfExtraction(input: {
   rawText: string;
   fileSizeBytes: number;
 }) {
-  const text = input.rawText.trim();
+  // Page references can be the only parser output for an image-only PDF.
+  // Ignore them for OCR selection without changing the original source text.
+  const text = input.rawText.replace(/\[\[SIDE:\d+(?:-\d+)?\]\]/gu, "").trim();
   if (!text) {
     return true;
   }

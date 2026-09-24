@@ -345,6 +345,28 @@ for (const mode of ['success', 'parser_failure']) {
   });
 }
 
+test('REGRESSION OCR: page markers alone trigger OCR for small image-only PDFs', () => {
+  const { shouldUseDoclingOcr } = workflow([
+    'shouldUseDoclingOcr', 'looksLikePoorPdfExtraction', 'optionalPositiveNumberEnv', 'alphaRatio',
+  ], { DEFAULT_DOCLING_POOR_EXTRACTION_MAX_CHARS: 2_000 });
+  const previous = process.env.DOCLING_OCR;
+  try {
+    process.env.DOCLING_OCR = 'auto';
+    for (const rawText of ['[[SIDE:1]]', '[[SIDE:1]]\n\n[[SIDE:2]]', '[[SIDE:1-3]]']) {
+      const input = { fileFormat: 'pdf', rawText, sourceMapLength: 0, fileSizeBytes: 20_000 };
+      assert.equal(shouldUseDoclingOcr(input), true);
+      assert.equal(input.rawText, rawText, 'OCR selection must preserve original source markers');
+    }
+    assert.equal(shouldUseDoclingOcr({ fileFormat: 'pdf', rawText: '[[SIDE:1]]\nLeverandøren skal holde fire kurs.', sourceMapLength: 1, fileSizeBytes: 20_000 }), false);
+    assert.equal(shouldUseDoclingOcr({ fileFormat: 'docx', rawText: '', sourceMapLength: 0, fileSizeBytes: 20_000 }), false);
+    process.env.DOCLING_OCR = 'off';
+    assert.equal(shouldUseDoclingOcr({ fileFormat: 'pdf', rawText: '[[SIDE:1]]', sourceMapLength: 0, fileSizeBytes: 20_000 }), false);
+  } finally {
+    if (previous === undefined) delete process.env.DOCLING_OCR;
+    else process.env.DOCLING_OCR = previous;
+  }
+});
+
 test('CONTROL META: actual ingestion keeps primary document processing through inferred metadata write', async () => {
   reset(); sql(`update documents set file_base64='YXVkaXQ=' where id=${quote(D)}`);
   const repository = ingestionRepository(async () => {}); const statuses = [];

@@ -207,8 +207,11 @@ were not repeated for these server-only changes.
 
 ### Release boundaries
 
-No production code, configuration, migration or cleanup was deployed. Azure/Entra,
-real ingestion and representative multi-worker load remain outside this local AI
-verification. The earlier migration/cleanup requirements still apply. Historical
+No production code, configuration, migration or cleanup was deployed. Azure/Entra
+and real ingestion were outside this local AI verification; the subsequent
+[Azure/Entra/ingestion follow-up](azure-entra-ingestion-verification-2026-09-24.md)
+records live checks, two confirmed fixes and its exact remaining boundaries.
+Representative multi-worker load is still unmeasured. The earlier
+migration/cleanup requirements still apply. Historical
 failed experiments and broader per-feature speed/quality goals remain in the
 original report; these focused results do not retroactively approve them.
