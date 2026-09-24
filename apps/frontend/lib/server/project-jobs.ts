@@ -985,10 +985,11 @@ async function runQueuedProjectJobInput(jobId: string, queuedInput: unknown) {
   const input = parseProjectWorkflowInput(queuedInput);
   const claimed = await claimQueuedProjectJob(jobId);
   if (!claimed) {
-    return;
+    return false;
   }
 
   await runProjectJob(jobId, input, jobRunContextFromClaim(claimed));
+  return true;
 }
 
 function jobRunContextFromClaim(claimed: ClaimedProjectJob): JobRunContext {
@@ -1027,8 +1028,8 @@ export async function runAvailableProjectJobs(options?: {
         continue;
       }
 
-      await runQueuedProjectJobInput(jobId, queuedInput);
-      results.push({ job_id: jobId, status: "processed" });
+      const processed = await runQueuedProjectJobInput(jobId, queuedInput);
+      results.push({ job_id: jobId, status: processed ? "processed" : "skipped" });
     } catch (error) {
       results.push({
         job_id: jobId,
