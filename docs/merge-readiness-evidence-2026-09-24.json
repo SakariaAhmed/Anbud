@@ -386,7 +386,8 @@
     "suppliedEvidenceOnly": true,
     "identifiedAsCodex": true,
     "verdict": "No demonstrated flaw in the narrow reporting fix; real rebuilt worker race required and subsequently passed.",
-    "architectureAndModelCacheLimitsDisclosed": true
+    "architectureAndModelCacheLimitsDisclosed": true,
+    "finalVerdict": "After the recorded real-worker result was supplied, the reviewer found no demonstrated defect requiring another code change before merge; amd64 packaging, unseeded build and deployed smoke checks remain."
   },
   "budget": {
     "authorizedUsd": 2,
@@ -485,8 +486,9 @@
     "otherStagesUsedExistingDockerCache": true,
     "architecture": "arm64",
     "log": "/tmp/anbud-merge-container-build.log",
-    "sha256": "fea550b2b59ff49490b5a79a10ded8a5d71e05c8aba67c558165fc8461de8846",
-    "interpretation": "Incomplete local build attempt; no fatal application build incompatibility demonstrated. Does not validate Azure amd64 build."
+    "sha256": "7098880c58b1d44c4090f95ad94cdb30576bae023f7185d680538ba2618180e5",
+    "interpretation": "Incomplete local build attempt; no fatal application build incompatibility demonstrated. Does not validate Azure amd64 build.",
+    "processExitCode": 130
   },
   "cleanup": {
     "at": "2026-09-24T21:13:37.496403+00:00",
@@ -527,5 +529,10 @@
         "sha256": "0ee494f6e114a57aa54959cabba48c1f5c8f4e35c2688786604b10bb19924558"
       }
     ]
+  },
+  "applicationCi": {
+    "commit": "56e62cccfc54daf044ec41d616aef1e4fc78ee3a",
+    "conclusion": "success",
+    "url": "https://github.com/SakariaAhmed/Anbud/actions/runs/36059592649"
   }
 }
