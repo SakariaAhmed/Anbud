@@ -709,7 +709,12 @@ async function runDocumentIngestionWorkflow(
       handlers.onPhase?.("azure_layout");
     }
 
-    if (!parsed.rawText.trim()) {
+    // Scanned PDFs can contain page markers without any indexable text.
+    // Obtain OCR text before the first index, even when enhancement is async.
+    const readableText = parsed.fileFormat === "pdf"
+      ? parsed.rawText.replace(/\[\[SIDE:\d+(?:-\d+)?\]\]/gu, "").trim()
+      : parsed.rawText.trim();
+    if (!readableText) {
       const shouldAttemptDocling = shouldRunDoclingEnhancement({
           fileFormat: parsed.fileFormat,
           parserUsed: parsed.parserUsed,
