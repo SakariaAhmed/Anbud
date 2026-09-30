@@ -51,12 +51,6 @@ export async function POST(request: Request) {
   try {
     return await withTiming("POST /api/projects", {}, async () => {
       const principal = await requireRequestPrincipal();
-      if (principal.identityType === "guest") {
-        return NextResponse.json(
-          { error: "Gjester kan ikke opprette nye prosjekter." },
-          { status: 403 },
-        );
-      }
       const body = (await request.json()) as Partial<ProjectCreateInput>;
 
       const project = await createProject({

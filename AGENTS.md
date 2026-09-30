@@ -107,6 +107,8 @@ credentials or copy tokens, session values, or confidential documents into logs.
 
 - Microsoft Entra authenticates internal users; guest codes are application-managed
   credentials. Entra tenant membership and application project grants are distinct.
+- Signed-in guests can create projects and become their owner. Global admin
+  access includes guest-owned projects; other users still need project access.
 - Enforce current session and project permissions server-side. Global `admin`
   has full access to every project, including content changes, generation,
   downloads, sharing, and deletion, without a project-specific grant.

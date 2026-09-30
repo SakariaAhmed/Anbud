@@ -9,6 +9,10 @@ login. It does not create guest users in the Entra tenant.
 - A guest receives one personal `gst_...` code by email. The code can unlock
   several projects over time; each project has its own role and optional
   expiry. Adding a second project does not create a second guest or code.
+- Signed-in guests can create projects and become their owner automatically.
+  The global administrator has full access to these projects without an
+  invitation. Guest access to other projects still depends on project grants;
+  the shared service-description library remains unavailable to guests.
 - A direct project role and any group roles are combined. The strongest active
   role wins.
 - Project roles are `owner`, `editor`, `viewer`, and `restricted_viewer`.
@@ -155,6 +159,9 @@ available. Use the dedicated administrator login for global administration.
 - Invite a new guest and verify that the code works once delivered.
 - Add the same email to a second project; verify that the original code opens
   both projects.
+- Create a project through both the new-project form and dashboard upload as a
+  guest. Verify owner access and administrator access without an invitation,
+  and confirm that another uninvited guest cannot open the project.
 - Change each project role and verify read/write/download restrictions.
 - Rotate the code and confirm that all existing guest sessions stop working.
 - Revoke one project and confirm that other project access remains active.
