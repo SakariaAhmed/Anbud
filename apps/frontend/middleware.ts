@@ -452,8 +452,7 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
   if (authenticated) {
     if (
       identity?.identityType === "guest" &&
-      (pathname === "/projects/new" ||
-        pathname.startsWith("/service-descriptions") ||
+      (pathname.startsWith("/service-descriptions") ||
         pathname.startsWith("/api/service-descriptions"))
     ) {
       await recordRequestActivity(
