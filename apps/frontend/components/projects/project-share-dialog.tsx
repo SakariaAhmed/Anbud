@@ -331,7 +331,7 @@ export function ProjectShareDialog({
           Tilgang
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[92dvh] max-w-4xl overflow-y-auto p-0">
+      <DialogContent className="app-reading max-h-[92dvh] max-w-4xl overflow-y-auto p-0">
         <DialogHeader className="border-b border-slate-200 px-6 py-5 pr-12">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 grid size-10 shrink-0 place-items-center rounded-xl bg-blue-950 text-cyan-300">
@@ -422,7 +422,7 @@ export function ProjectShareDialog({
                             {principal.email_masked ?? (principal.identity_type === "guest" ? "Gjest" : "Microsoft-konto")}
                           </span>
                           {principal.inheritedGroups.length ? (
-                            <span className="mt-0.5 block text-[0.68rem] text-cyan-800">
+                            <span className="mt-0.5 block text-xs text-cyan-800">
                               Har allerede tilgang via {principal.inheritedGroups.map((group) => group.name).join(", ")}
                             </span>
                           ) : null}
@@ -525,11 +525,11 @@ export function ProjectShareDialog({
                       <div className="min-w-44 flex-1">
                         <p className="text-sm font-semibold text-slate-900">
                           {name}
-                          {isGuest ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[0.62rem] uppercase tracking-wide text-amber-800">Gjest</span> : null}
+                          {isGuest ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs tracking-normal text-amber-800">Gjest</span> : null}
                         </p>
                         <p className="text-xs text-slate-500">{member.principal?.email_masked ?? (member.accepted_at ? "Aktiv" : "Invitert")}</p>
                         {member.inheritedGroups.length ? (
-                          <p className="mt-1 text-[0.68rem] text-cyan-800">
+                          <p className="mt-1 text-xs text-cyan-800">
                             Har også tilgang via {member.inheritedGroups.map((group) => group.name).join(", ")}
                           </p>
                         ) : null}
@@ -605,7 +605,7 @@ function AccessLevelPicker({ value, onChange }: { value: ShareableRole; onChange
               <span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border ${selected ? "border-primary bg-primary text-primary-foreground" : "border-slate-300"}`}>{selected ? <Check className="size-2.5" /> : null}</span>
               <span>
                 <span className="block text-xs font-semibold text-slate-900">{ROLE_DETAILS[role].label}</span>
-                <span className="mt-0.5 block text-[0.68rem] leading-4 text-slate-500">{ROLE_DETAILS[role].detail}</span>
+                <span className="mt-0.5 block text-xs leading-4 text-slate-500">{ROLE_DETAILS[role].detail}</span>
               </span>
             </button>
           );
@@ -624,7 +624,7 @@ function RoleSelect({ value, onChange, disabled }: { value: ShareableRole; onCha
 }
 
 function AccessMetric({ label, value }: { label: string; value: number }) {
-  return <div className="px-4 py-3 text-center"><p className="text-lg font-bold tabular-nums text-slate-950">{value}</p><p className="text-[0.68rem] text-slate-500">{label}</p></div>;
+  return <div className="px-4 py-3 text-center"><p className="text-lg font-bold tabular-nums text-slate-950">{value}</p><p className="text-xs text-slate-500">{label}</p></div>;
 }
 
 function PersonAvatar({ name, guest }: { name: string; guest?: boolean }) {
@@ -636,7 +636,7 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor: string; c
 }
 
 function AccessSectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="border-y border-slate-200 bg-slate-50 px-4 py-2 first:border-t-0"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">{children}</p></div>;
+  return <div className="border-y border-slate-200 bg-slate-50 px-4 py-2 first:border-t-0"><p className="text-xs font-semibold tracking-normal text-slate-500">{children}</p></div>;
 }
 
 function GuestCodeReveal({ code, copied, onCopy }: { code: string; copied: boolean; onCopy: () => void }) {

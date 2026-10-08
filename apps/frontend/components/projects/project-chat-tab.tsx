@@ -526,7 +526,7 @@ export function ProjectChatTab({
                         {domains.map((domain) => (
                           <span
                             key={domain}
-                            className="inline-flex min-h-7 items-center rounded-md bg-background px-2 text-[0.7rem] font-medium text-muted-foreground"
+                            className="inline-flex min-h-7 items-center rounded-md bg-background px-2 text-xs font-medium text-muted-foreground"
                           >
                             {domain}
                           </span>

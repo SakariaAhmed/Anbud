@@ -22,7 +22,7 @@ const source = await readFile(
   "utf8",
 );
 
-test("customer analysis navigation excludes the keyword tab", () => {
+test("customer analysis navigation keeps the requested five sections", () => {
   const tabsBlock = source.match(
     /const SECTION_TABS = \[([\s\S]*?)\] as const;/u,
   )?.[1];
@@ -39,9 +39,6 @@ test("customer analysis navigation excludes the keyword tab", () => {
     { value: "summary", label: "Oppsummering" },
     { value: "strategy", label: "Strategi" },
     { value: "clarifications", label: "Avklaringer" },
-    { value: "design", label: "Design" },
-    { value: "risks", label: "Risiko" },
-    { value: "needs", label: "Behov" },
     { value: "services", label: "Anbefalt tjeneste" },
     { value: "value", label: "Verdi" },
   ]);

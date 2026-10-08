@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 
 import { AppHeaderLogo } from "@/components/layout/app-header-logo";
+import "./app-typography.css";
+import "./app-theme.css";
 
 function isChatWindow(pathname: string) {
   return /^\/projects\/[^/]+\/chat\/?$/.test(pathname);
@@ -86,10 +88,10 @@ export function AppShell({
     }
   }
 
-  if (isolatedChat) return <div className="min-h-screen">{children}</div>;
+  if (isolatedChat) return <div className="app-theme app-reading min-h-screen">{children}</div>;
 
   return (
-    <div className="min-h-screen">
+    <div className={pathname === "/login" ? "min-h-screen" : "app-theme app-reading min-h-screen"}>
       {showHeader ? (
         <header
           className="fixed inset-x-0 top-0 z-[60] border-b border-slate-700 bg-slate-900"
@@ -115,16 +117,16 @@ export function AppShell({
                     aria-haspopup="menu"
                     aria-expanded={menuOpen}
                     onClick={() => setMenuOpen((value) => !value)}
-                    className="flex h-9 items-center gap-2 rounded-md px-1.5 text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="flex h-9 items-center gap-2 rounded-md px-1.5 text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 md:w-60"
                   >
                     <span className="grid size-7 place-items-center rounded-md bg-blue-400/15 text-xs font-semibold uppercase text-blue-100">
                       {userLabel.charAt(0)}
                     </span>
-                    <span className="hidden max-w-44 truncate text-sm md:block">
+                    <span className="hidden min-w-0 flex-1 truncate text-left text-sm md:block">
                       {userLabel}
                     </span>
                     <ChevronDown
-                      className={`hidden size-3.5 text-slate-400 transition-transform md:block ${menuOpen ? "rotate-180" : ""}`}
+                      className={`hidden size-3.5 shrink-0 text-slate-400 transition-transform md:block ${menuOpen ? "rotate-180" : ""}`}
                     />
                   </button>
 

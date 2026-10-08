@@ -12,7 +12,6 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  ArrowRight,
   Brain,
   ClipboardCheck,
   FileCheck2,
@@ -90,7 +89,7 @@ import type {
 export type { ProjectWorkspaceTab } from "@/components/projects/project-workspace-types";
 
 const PROJECT_WORKSPACE_UI_SCALE = 0.9;
-const DEFAULT_SIDEBAR_WIDTH = Math.round(285 * PROJECT_WORKSPACE_UI_SCALE);
+const DEFAULT_SIDEBAR_WIDTH = 260;
 const MIN_SIDEBAR_WIDTH = Math.round(270 * PROJECT_WORKSPACE_UI_SCALE);
 const MAX_SIDEBAR_WIDTH = Math.round(440 * PROJECT_WORKSPACE_UI_SCALE);
 
@@ -376,6 +375,8 @@ export function ProjectWorkspacePage({
       !initialData.solution_evaluation_generated,
   );
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisLoadError, setAnalysisLoadError] = useState("");
+  const [analysisLoadRetryToken, setAnalysisLoadRetryToken] = useState(0);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [evaluationLoadError, setEvaluationLoadError] = useState("");
   const [evaluationLoadRetryToken, setEvaluationLoadRetryToken] = useState(0);
@@ -868,10 +869,12 @@ export function ProjectWorkspacePage({
 
     const controller = new AbortController();
     setAnalysisLoading(true);
-    fetchCustomerAnalysis(project.id, { signal: controller.signal })
+    setAnalysisLoadError("");
+    const requestSnapshot = project.snapshot_revision;
+    fetchCustomerAnalysis(project.id, { signal: controller.signal, forceRefresh: true })
       .then((analysis) => {
         if (!controller.signal.aborted) {
-          setProject((current) => ({
+          setProject((current) => current.snapshot_revision !== requestSnapshot ? current : ({
             ...current,
             customer_analysis: analysis,
           }));
@@ -880,7 +883,7 @@ export function ProjectWorkspacePage({
       })
       .catch((err) => {
         if (!controller.signal.aborted && !isAbortError(err)) {
-          setError(
+          setAnalysisLoadError(
             err instanceof Error
               ? err.message
               : "Kunne ikke hente kundeanalysen.",
@@ -902,6 +905,8 @@ export function ProjectWorkspacePage({
     analysisLoaded,
     project.customer_analysis_generated,
     project.id,
+    project.snapshot_revision,
+    analysisLoadRetryToken,
   ]);
 
   useEffect(() => {
@@ -1798,7 +1803,6 @@ export function ProjectWorkspacePage({
     architectureDocumentCandidates.some(isDocumentReadyForEvaluation);
   const hasSolutionEvaluation =
     Boolean(solutionEvaluation) || project.solution_evaluation_generated;
-  const hasDeliveryPlan = hasArtifactType("gjennomforing_og_risiko");
   const hasExecutiveSummary =
     Boolean(executiveSummary) || Boolean(project.has_executive_summary);
   const primaryWorkflowSteps: WorkflowStepItem[] = [
@@ -1862,17 +1866,6 @@ export function ProjectWorkspacePage({
     },
     {
       step: 7,
-      value: "delivery",
-      label: "Fremdriftsplan",
-      icon: ArrowRight,
-      status: hasDeliveryPlan
-        ? "Generert"
-        : hasSolutionEvaluation
-          ? "Klar"
-          : "Venter",
-    },
-    {
-      step: 8,
       value: "executive-summary",
       label: "Lederoppsummering",
       icon: ClipboardCheck,
@@ -1963,6 +1956,8 @@ export function ProjectWorkspacePage({
         executiveSummary={executiveSummary}
         analysisLoaded={analysisLoaded}
         analysisLoading={analysisLoading}
+        analysisLoadError={analysisLoadError}
+        onRetryAnalysisLoad={() => { setAnalysisLoaded(false); setAnalysisLoadRetryToken(value => value + 1); }}
         evaluationLoaded={evaluationLoaded}
         evaluationLoading={evaluationLoading}
         evaluationLoadError={evaluationLoadError}

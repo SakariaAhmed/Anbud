@@ -3508,10 +3508,13 @@ function mapCustomerAnalysis(row: CustomerAnalysisRow): CustomerAnalysisResult {
   return { ...decryptJson(row.result_json, CUSTOMER_ANALYSIS_EMPTY), ...(row.revision ? { revision: row.revision } : {}) };
 }
 
-export async function getProjectResultHistory(projectId: string) {
-  const { data, error } = await createServiceClient().from("project_result_history")
+export async function getProjectResultHistory(projectId: string, latestAnalysisOnly = false) {
+  let query = createServiceClient().from("project_result_history")
     .select("id,kind,result_json,original_updated_at,archived_at,reason")
-    .eq("project_id", projectId).order("archived_at", { ascending: false }).order("id", { ascending: false }).limit(30);
+    .eq("project_id", projectId);
+  if (latestAnalysisOnly) query = query.eq("kind", "customer_analyses");
+  const { data, error } = await query.order("archived_at", { ascending: false })
+    .order("id", { ascending: false }).limit(latestAnalysisOnly ? 1 : 30);
   if (error) throw new Error(error.message);
   return (data ?? []).map(row => ({ ...row, result_json: decryptJson(row.result_json, {}) }));
 }

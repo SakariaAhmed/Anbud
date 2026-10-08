@@ -64,7 +64,7 @@ export function DocumentSourceMeta({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
       <FileText className="size-3.5 shrink-0 text-teal-700" />
-      <span className="font-semibold uppercase tracking-[0.12em] text-slate-500">
+      <span className="font-semibold tracking-normal text-slate-500">
         {label}
       </span>
       <span className="min-w-0 truncate font-medium text-slate-700">
@@ -99,7 +99,7 @@ export function DocumentUploadDropzoneContent({
       <span className="mt-2 text-xs font-semibold text-slate-950">
         {busy ? busyLabel : "Dra og slipp dokumentet her"}
       </span>
-      <span className="mt-0.5 text-[0.7rem] leading-4 text-slate-500">
+      <span className="mt-0.5 text-xs leading-4 text-slate-500">
         eller klikk for å velge PDF, DOCX, Excel, TXT eller MD.
       </span>
       {selectedFileName ? (
@@ -149,7 +149,7 @@ export function ValueTags({ values }: { values: ValueCategory[] }) {
 
 export function AnalysisTabEmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="py-12 text-center text-sm text-muted-foreground">
+    <div className="py-4 text-sm text-muted-foreground">
       {children}
     </div>
   );

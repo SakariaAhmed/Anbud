@@ -651,7 +651,7 @@ export function ProjectChatPopoutPage({
             <div className="border-b border-slate-200 px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  <p className="text-xs font-semibold tracking-normal text-slate-500">
                     {activePanel === "projects" ? "Prosjektliste" : "Samtalehistorikk"}
                   </p>
                   <h2 className="mt-1 truncate text-base font-semibold text-slate-950">
@@ -743,7 +743,7 @@ export function ProjectChatPopoutPage({
                           </span>
                         </span>
                         {session.id === activeSessionId ? (
-                          <span className="shrink-0 rounded-md bg-slate-950 px-2 py-1 text-[0.65rem] font-semibold text-white">
+                          <span className="shrink-0 rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-white">
                             Aktiv
                           </span>
                         ) : null}
@@ -766,7 +766,7 @@ export function ProjectChatPopoutPage({
                             <span
                               key={domain}
                               className={cn(
-                                "rounded-md border px-2 py-1 text-[0.68rem] font-medium",
+                                "rounded-md border px-2 py-1 text-xs font-medium",
                                 session.id === activeSessionId
                                   ? "border-slate-200 bg-white text-slate-600"
                                   : "border-slate-200 bg-white text-slate-500",

@@ -511,8 +511,9 @@ export async function GET(
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "project.read");
-    if (new URL(request.url).searchParams.get("history") === "1") {
-      return NextResponse.json({ history: await getProjectResultHistory(id) }, { headers: READ_CACHE_HEADERS });
+    const history = new URL(request.url).searchParams.get("history");
+    if (history === "1" || history === "latest") {
+      return NextResponse.json({ history: await getProjectResultHistory(id, history === "latest") }, { headers: READ_CACHE_HEADERS });
     }
     const analysis = await getFreshCustomerAnalysis(id);
 

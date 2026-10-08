@@ -1,0 +1,76 @@
+/* Approved Elektrisk blå gallery palette. Body scope also reaches portalled menus.
+   Login has no app-theme wrapper; error pages retain their original composition. */
+body:has(.app-theme):not(:has(.error-stage)),
+.app-theme:not(:has(.error-stage)) {
+  --app-ink: #182b42;
+  --app-muted: #53657a;
+  --app-accent: #4f61b7;
+  --background: #ffffff;
+  --foreground: var(--app-ink);
+  --card: #ffffff;
+  --card-foreground: var(--app-ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--app-ink);
+  --primary: #294bd3;
+  --primary-hover: color-mix(in srgb, var(--primary), black 12%);
+  --border: #d7dee6;
+  --muted: #f4f5fa;
+  --muted-foreground: var(--app-muted);
+  --ring: var(--primary);
+  --sidebar: #eef2ff;
+  --sidebar-foreground: #273c53;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dce3fb;
+  --sidebar-accent-foreground: var(--primary);
+  --sidebar-border: color-mix(in srgb, var(--sidebar-foreground) 18%, transparent);
+  --sidebar-ring: var(--primary);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+.app-theme:not(:has(.error-stage)) :is(h1,h2,h3,h4,h5,.font-display) {
+  font-family: var(--font-display);
+}
+
+.app-theme:not(:has(.error-stage)) [data-app-header="true"] {
+  background: #14245c;
+  border-color: #233774;
+}
+
+.app-theme:not(:has(.error-stage)) [data-app-header="true"] .brand-logo {
+  color: #f8fafc;
+}
+
+/* Match existing workspace surfaces and supporting text to the selected palette. */
+.app-theme .project-workspace :is(.text-slate-950,.text-slate-900,.text-slate-800,.text-slate-700) {
+  color: var(--foreground);
+}
+.app-theme .project-workspace :is(.text-slate-600,.text-slate-500,.text-slate-400) {
+  color: var(--muted-foreground);
+}
+.app-theme .project-workspace :is(.text-blue-700,.text-blue-900,.text-blue-950) {
+  color: var(--primary);
+}
+.app-theme .project-workspace :is(.bg-white,.bg-card) { background: var(--card); }
+.app-theme .project-workspace :is([class*="bg-slate-50"],[class*="bg-blue-50"]) { background: var(--muted); }
+.app-theme .project-workspace :is(.border-slate-200,.border-slate-100,.border-blue-100) { border-color: var(--border); }
+
+.app-theme .analysis-summary-column .analysis-prose > p + p {
+  border-top: 1px solid #dfe5f2;
+  margin-top: 20px;
+  padding-top: 18px;
+}
+
+.app-theme .admin-monitoring .monitor-tab[aria-selected="true"] {
+  color: var(--primary);
+  background: var(--sidebar-accent);
+  box-shadow: inset 0 -2px var(--primary);
+}
+
+.app-theme .admin-navigation { background: var(--sidebar); }
+
+body:has(.app-theme):not(:has(.error-stage)) [data-slot="sidebar"][data-mobile="true"] {
+  top: var(--app-header-height);
+  height: calc(100dvh - var(--app-header-height));
+}

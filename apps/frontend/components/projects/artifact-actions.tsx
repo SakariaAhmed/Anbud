@@ -65,7 +65,7 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
     ? artifact.source_is_current
       ? "Gjeldende"
       : "Grunnlaget er endret – regenerer"
-    : "Historikk";
+    : null;
 
   async function downloadArtifactPdf() {
     if (downloadingPdf) return;
@@ -134,7 +134,7 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
         <MarkdownViewer content={artifact.content_markdown} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span
+        {authorityLabel && <span
           className={cn(
             "inline-flex h-9 items-center rounded-lg border px-3 text-xs font-bold",
             artifact.is_current && artifact.source_is_current
@@ -145,7 +145,7 @@ export function ArtifactActions({ artifact }: { artifact: GeneratedArtifact }) {
           )}
         >
           {authorityLabel}
-        </span>
+        </span>}
         {artifact.artifact_version || sourceCount ? (
           <span className="text-xs font-medium tabular-nums text-muted-foreground">
             {artifact.artifact_version

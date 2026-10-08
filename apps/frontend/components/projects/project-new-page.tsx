@@ -83,7 +83,7 @@ export function ProjectNewPage() {
           <div className="space-y-5">
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="name" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <Label htmlFor="name" className="text-xs font-semibold tracking-normal text-muted-foreground">
                   Prosjektnavn
                 </Label>
                 <Input
@@ -94,7 +94,7 @@ export function ProjectNewPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="customerName" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <Label htmlFor="customerName" className="text-xs font-semibold tracking-normal text-muted-foreground">
                   Kunde
                 </Label>
                 <Input
@@ -108,7 +108,7 @@ export function ProjectNewPage() {
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="industry" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <Label htmlFor="industry" className="text-xs font-semibold tracking-normal text-muted-foreground">
                   Domene / bransje
                 </Label>
                 <Input
@@ -119,7 +119,7 @@ export function ProjectNewPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="description" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <Label htmlFor="description" className="text-xs font-semibold tracking-normal text-muted-foreground">
                   Kort beskrivelse
                 </Label>
                 <Input
@@ -136,7 +136,7 @@ export function ProjectNewPage() {
             <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <p className="text-xs font-semibold tracking-normal text-muted-foreground">
                     Tjenestebeskrivelser
                   </p>
                   <p className="mt-1 text-sm text-slate-600">

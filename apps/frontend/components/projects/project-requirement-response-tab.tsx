@@ -13,6 +13,7 @@ import {
   CheckSquare,
   ChevronDown,
   FileDown,
+  FileText,
   Pencil,
   Save,
   Trash2,
@@ -23,7 +24,6 @@ import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { canEditGeneratedArtifact } from "@/components/projects/project-workflow-status";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import {
-  DocumentSourceMeta,
   DocumentUploadDropzoneContent,
   formatDate,
   GenerationProgress,
@@ -278,11 +278,11 @@ function RequirementIdCell({
       title={label}
       className="min-w-0 space-y-1"
     >
-      <span className="inline-flex items-center rounded-md border border-blue-100 bg-blue-50/70 px-2 py-0.5 text-[0.8rem] font-semibold leading-5 tracking-tight tabular-nums text-blue-950">
+      <span className="inline-flex items-center rounded-md border border-blue-100 bg-blue-50/70 px-2 py-0.5 text-xs font-semibold leading-5 tracking-tight tabular-nums text-blue-950">
         {sourceId || "-"}
       </span>
       {requirementType ? (
-        <span className="block max-w-[12rem] truncate whitespace-nowrap text-[0.7rem] font-medium leading-5 text-slate-500">
+        <span className="block break-words text-xs font-medium leading-5 text-slate-500">
           {requirementType}
         </span>
       ) : null}
@@ -468,23 +468,28 @@ function RequirementResponseContent({
                     {rows.length} krav
                   </span>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-[1040px] w-full border-collapse text-left">
-                    <thead className="bg-white text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div
+                  className="overflow-x-auto rounded-b-xl focus-visible:outline-2 focus-visible:outline-blue-600"
+                  role="region"
+                  aria-label={`Kravtabell: ${tableId}`}
+                  tabIndex={0}
+                >
+                  <table className="w-full min-w-[760px] table-fixed border-collapse text-left [overflow-wrap:anywhere] lg:min-w-0">
+                    <thead className="bg-white text-xs font-semibold tracking-normal text-slate-500">
                       <tr>
-                        <th className="w-40 border-b border-slate-200 px-5 py-3">
+                        <th className="w-[10%] border-b border-slate-200 px-3 py-3">
                           ID
                         </th>
-                        <th className="w-[30%] border-b border-slate-200 px-5 py-3">
+                        <th className="w-[25%] border-b border-slate-200 px-3 py-3">
                           Krav
                         </th>
-                        <th className="w-[34%] border-b border-slate-200 px-5 py-3">
+                        <th className="w-[31%] border-b border-slate-200 px-3 py-3">
                           Atea svar
                         </th>
-                        <th className="w-[15rem] border-b border-slate-200 px-5 py-3">
+                        <th className="w-[17%] border-b border-slate-200 px-3 py-3">
                           Svargrunnlag
                         </th>
-                        <th className="w-[15rem] border-b border-slate-200 px-5 py-3">
+                        <th className="w-[17%] border-b border-slate-200 px-3 py-3">
                           Kildegrunnlag
                         </th>
                       </tr>
@@ -501,7 +506,7 @@ function RequirementResponseContent({
                             key={`${row.ref}-${rowIndex}`}
                             className="align-top transition-colors duration-[180ms] odd:bg-white even:bg-slate-50/50 hover:bg-blue-50/40"
                           >
-                            <td className="px-5 py-4">
+                            <td className="px-3 py-4">
                               {row.ref ? (
                                 <RequirementIdCell
                                   section={tableId}
@@ -511,28 +516,28 @@ function RequirementResponseContent({
                                 <span className="text-slate-400">-</span>
                               )}
                             </td>
-                            <td className="px-5 py-4">
+                            <td className="px-3 py-4">
                               <p className="max-w-[38rem] whitespace-pre-wrap text-sm leading-6 text-slate-700">
                                 {row.requirement}
                               </p>
                             </td>
-                            <td className="px-5 py-4">
+                            <td className="px-3 py-4">
                               <p className="max-w-[46rem] whitespace-pre-wrap text-sm leading-6 text-slate-900">
                                 {row.answer}
                               </p>
                             </td>
-                            <td className="px-5 py-4">
+                            <td className="px-3 py-4">
                               {row.evidence ? (
-                                <p className="max-w-[17rem] whitespace-pre-wrap text-[0.78rem] leading-5 text-slate-600">
+                                <p className="max-w-[17rem] whitespace-pre-wrap text-xs leading-5 text-slate-600">
                                   {row.evidence}
                                 </p>
                               ) : (
                                 <span className="text-slate-400">-</span>
                               )}
                             </td>
-                            <td className="px-5 py-4">
+                            <td className="px-3 py-4">
                               {source ? (
-                                <p className="max-w-[17rem] break-words text-[0.78rem] font-medium leading-5 text-slate-500">
+                                <p className="max-w-[17rem] break-words text-xs font-medium leading-5 text-slate-500">
                                   {source}
                                 </p>
                               ) : (
@@ -619,6 +624,7 @@ export function ProjectRequirementResponseTab({
     });
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const requirementFileInput = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const [editingArtifactId, setEditingArtifactId] = useState<string | null>(
     null,
@@ -731,7 +737,7 @@ export function ProjectRequirementResponseTab({
   const savedRequirementResponses = (
     <section className="min-w-0">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h3 className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        <h3 className="text-xs font-semibold tracking-normal text-slate-500">
           Lagrede kravbesvarelser
         </h3>
         {requirementResponses.length > 0 ? (
@@ -746,14 +752,7 @@ export function ProjectRequirementResponseTab({
         </p>
       ) : null}
       {requirementResponses.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-          <span className="flex size-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400">
-            <CheckSquare className="size-4.5" />
-          </span>
-          <p className="text-sm font-medium text-slate-500">
-            Ingen kravbesvarelse ennå.
-          </p>
-        </div>
+        <p className="text-sm text-slate-500">Ingen kravbesvarelse ennå.</p>
       ) : (
         <div className="space-y-3">
           {requirementResponses.map((artifact, index) => {
@@ -792,9 +791,9 @@ export function ProjectRequirementResponseTab({
               open={index === 0}
               className="group min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:shadow-md"
             >
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 px-6 py-5 text-left transition-colors duration-[180ms] hover:bg-slate-50/60 [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none flex-col items-start justify-between gap-4 px-5 py-5 text-left sm:px-6 lg:flex-row transition-colors duration-[180ms] hover:bg-slate-50/60 [&::-webkit-details-marker]:hidden">
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-700">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold tracking-normal text-blue-700">
                     <span>Kravbesvarelse</span>
                     <span className="text-slate-300">·</span>
                     <span className="text-slate-500">
@@ -827,15 +826,7 @@ export function ProjectRequirementResponseTab({
                           ? "Gjeldende"
                           : "Grunnlaget er endret – regenerer"}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                        <span
-                          aria-hidden="true"
-                          className="size-1.5 rounded-full bg-slate-400"
-                        />
-                        Historikk
-                      </span>
-                    )}
+                    ) : null}
                     {neutralMetadata.length ? (
                       <span className="text-xs font-medium tabular-nums text-slate-500">
                         {neutralMetadata.join(" · ")}
@@ -855,10 +846,10 @@ export function ProjectRequirementResponseTab({
                     ) : null}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-start gap-3">
+                <div className="flex w-full min-w-0 items-start justify-between gap-3 lg:w-auto lg:shrink-0">
                   {editingArtifactId !== artifact.id ? (
                     <div
-                      className="flex flex-wrap justify-end gap-2"
+                      className="flex min-w-0 flex-wrap gap-2 lg:justify-end"
                       onClick={stopSummaryToggle}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
@@ -922,7 +913,7 @@ export function ProjectRequirementResponseTab({
                 ref={(node) => {
                   responseContentRefs.current[artifact.id] = node;
                 }}
-                className="space-y-5 rounded-b-2xl border-t border-slate-200 bg-white px-7 py-7"
+                className="space-y-5 rounded-b-2xl border-t border-slate-200 bg-white px-3 py-5 sm:px-5 sm:py-6"
               >
                 {editingArtifactId === artifact.id ? (
                   <form
@@ -935,7 +926,7 @@ export function ProjectRequirementResponseTab({
                     <div className="space-y-2">
                       <Label
                         htmlFor={`requirement-title-${artifact.id}`}
-                        className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500"
+                        className="text-xs font-semibold tracking-normal text-slate-500"
                       >
                         Tittel
                       </Label>
@@ -948,7 +939,7 @@ export function ProjectRequirementResponseTab({
                     <div className="space-y-2">
                       <Label
                         htmlFor={`requirement-content-${artifact.id}`}
-                        className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500"
+                        className="text-xs font-semibold tracking-normal text-slate-500"
                       >
                         Kravbesvarelse
                       </Label>
@@ -1140,66 +1131,52 @@ export function ProjectRequirementResponseTab({
   );
 
   return (
-    <div className="min-w-0 space-y-8">
-      <section className="overflow-hidden border border-slate-200 bg-white">
-        <div className="space-y-6 px-6 py-6">
-          <div className="grid gap-6 lg:grid-cols-2">
+    <div className="mx-auto min-w-0 w-full space-y-6">
+      <section aria-label="Kravgrunnlag">
+        <div className="space-y-4">
+          <div className="space-y-4">
           <div>
-            <Label
-              htmlFor="requirement-document-select"
-              className="block font-serif text-base font-semibold tracking-tight text-slate-900"
-            >
-              Kravdokumenter som skal besvares
-            </Label>
+            <h3 className="text-base font-semibold text-slate-900">Kravgrunnlag</h3>
             {requirementDocuments.length ? (
               <div className="mt-3 space-y-2">
-                <div className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="min-w-0">
                   {requirementDocuments.map((document) => {
                     const documentReady = isDocumentReadyForEvaluation(document);
                     return (
-                      <div
-                        key={document.id}
-                        className="flex items-center gap-3 border-b border-slate-100 bg-white px-4 py-3 transition-colors duration-[180ms] last:border-b-0 hover:bg-slate-50/70"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            documentReady ? "bg-emerald-500" : "bg-amber-400",
-                          )}
-                        />
+                      <div key={document.id} className="flex min-w-0 items-start gap-3 border-b border-slate-200 py-3 last:border-0">
+                        <FileText className="mt-0.5 size-4 shrink-0 text-slate-500" aria-hidden="true" />
                         <div className="min-w-0 flex-1">
-                          <DocumentSourceMeta
-                            document={document}
-                            label={
-                              document.role === "primary_customer_document"
-                                ? documentReady
-                                  ? "Kundehovedkilde – inngår automatisk"
-                                  : "Kundehovedkilde – venter på dokumentbehandling"
-                                : documentReady
-                                  ? "Inngår i kravgrunnlaget"
-                                  : "Venter på dokumentbehandling"
-                            }
-                          />
+                          <p className="break-words text-sm font-medium text-slate-800">{document.title}</p>
+                          <p className={cn("mt-0.5 text-xs", documentReady ? "text-slate-500" : "text-amber-700")}>
+                            {!documentReady ? "Venter på dokumentbehandling" : document.role === "primary_customer_document" ? "Kundehovedkilde · inngår automatisk" : "Kravdokument"}
+                          </p>
                         </div>
+                        <span className="shrink-0 text-xs text-slate-500">{document.file_format.toUpperCase()}</span>
                       </div>
                     );
                   })}
                 </div>
               </div>
             ) : (
-              <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-6 text-center text-sm font-medium text-slate-500">
+              <div className="mt-2 text-sm text-slate-500">
                 Ingen kravdokumenter er lastet opp ennå.
               </div>
             )}
           </div>
 
-          <div className="flex flex-col border-t border-slate-100 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Last inn dokument
-            </p>
+          <div className="min-w-0">
             <label
               htmlFor="requirement-file"
+              role="button"
+              tabIndex={uploadBusy ? -1 : 0}
+              aria-label="Last opp kravdokument"
+              aria-disabled={uploadBusy}
+              onKeyDown={(event) => {
+                if (!uploadBusy && (event.key === "Enter" || event.key === " ")) {
+                  event.preventDefault();
+                  requirementFileInput.current?.click();
+                }
+              }}
               onDragEnter={(event) => {
                 event.preventDefault();
                 if (uploadBusy) return;
@@ -1213,7 +1190,7 @@ export function ProjectRequirementResponseTab({
               }}
               onDragLeave={() => setDragActive(false)}
               onDrop={onDrop}
-              className={`mt-3 flex-1 ${documentDropzoneClass({
+              className={`focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${documentDropzoneClass({
                 active: dragActive,
                 disabled: uploadBusy,
               })}`}
@@ -1231,12 +1208,15 @@ export function ProjectRequirementResponseTab({
                 }
               />
             </label>
-            <Input
+            <input
+              ref={requirementFileInput}
               key={fileInputKey}
               id="requirement-file"
               type="file"
               accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
               className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
               disabled={uploadBusy}
               onChange={(event) =>
                 void uploadSelectedFile(event.target.files?.[0] ?? null)
@@ -1245,10 +1225,11 @@ export function ProjectRequirementResponseTab({
           </div>
           </div>
 
-          <form onSubmit={onSubmit} className="border-t border-slate-100 pt-5">
+          <form onSubmit={onSubmit} className="space-y-2">
             <Button
               type="submit"
-              className="h-11 w-full justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-[180ms] hover:bg-primary-hover disabled:bg-slate-200 disabled:text-slate-500"
+              className="max-w-full whitespace-normal"
+              aria-describedby={!canGenerate && !generateBusy ? "requirement-generation-help" : undefined}
               disabled={!canGenerate}
             >
               {generateBusy ? (
@@ -1259,7 +1240,7 @@ export function ProjectRequirementResponseTab({
               Generer kravbesvarelse
             </Button>
             {unreadyRequirementDocumentCount > 0 && !generateBusy ? (
-              <p className="mt-2 text-xs font-medium text-amber-700">
+              <p id="requirement-generation-help" className="text-sm text-slate-600">
                 {unreadyRequirementDocumentCount} kravkilde
                 {unreadyRequirementDocumentCount === 1 ? "" : "r"} er ikke
                 ferdig behandlet. Generering blir tilgjengelig når alle
@@ -1269,7 +1250,7 @@ export function ProjectRequirementResponseTab({
             {!readyFormalRequirementDocuments.length &&
             unreadyRequirementDocumentCount === 0 &&
             !generateBusy ? (
-              <p className="mt-2 text-xs font-medium text-amber-700">
+              <p id="requirement-generation-help" className="text-sm text-slate-600">
                 Last opp minst ett formelt kravdokument før du genererer
                 kravbesvarelsen. Kundehovedkilden inngår deretter automatisk.
               </p>

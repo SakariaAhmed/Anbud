@@ -97,7 +97,7 @@ export function DashboardIntro() {
   return (
     <section className="mb-5">
       <div className="min-w-0">
-        <p className="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+        <p className="text-xs font-bold tracking-normal text-slate-500">
           Prosjektoversikt
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
@@ -236,12 +236,9 @@ function ProjectFilters({
     <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/80 px-4 py-4 lg:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-900">
+          <h2 className="text-sm font-semibold text-slate-900">
             Prosjekter
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Sorter etter aktivitet, filtrer på status, og åpne anbefalt neste steg.
-          </p>
         </div>
         <span className="text-sm font-medium tabular-nums text-slate-500">
           {filteredCount} av {projectCount}
@@ -323,7 +320,7 @@ export function ProjectListSection({
   statusOptions: ProjectStatusFilter[];
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+    <section className="overflow-hidden rounded-md border border-slate-200 bg-white">
       <ProjectFilters
         filteredCount={filteredProjects.length}
         projectCount={projects.length}
@@ -392,7 +389,7 @@ function ProjectListBody({
 
 function EmptyProjectState() {
   return (
-    <div className="py-16 text-center">
+    <div className="py-6 text-center">
       <div className="mx-auto flex size-12 items-center justify-center rounded-md bg-muted">
         <Search className="size-5 text-muted-foreground" />
       </div>
@@ -415,7 +412,7 @@ function EmptyProjectState() {
 
 function NoFilteredProjectsState() {
   return (
-    <div className="px-6 py-14 text-center">
+    <div className="px-6 py-6 text-center">
       <div className="mx-auto flex size-12 items-center justify-center rounded-md bg-slate-100">
         <Search className="size-5 text-slate-500" />
       </div>
@@ -448,7 +445,7 @@ function ProjectTable({
             {["Prosjekt", "Status", "Dok.", "Utkast", "Sist endret"].map((label) => (
               <th
                 key={label}
-                className="px-5 py-4 text-xs font-bold uppercase tracking-[0.16em] text-slate-400 first:px-7"
+                className="px-5 py-4 text-xs font-bold tracking-normal text-slate-400 first:px-7"
               >
                 {label}
               </th>
@@ -713,7 +710,7 @@ function ProjectMobileStats({ project }: { project: ProjectSummary }) {
           <p className="truncate text-sm font-semibold tabular-nums text-slate-950">
             {stat.value}
           </p>
-          <p className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-slate-500">
+          <p className="text-xs font-bold tracking-normal text-slate-500">
             {stat.label}
           </p>
         </div>
