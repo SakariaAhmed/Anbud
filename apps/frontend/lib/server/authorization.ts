@@ -10,7 +10,6 @@ import {
   isIdentityType,
   isProjectRole,
   projectRoleAllows,
-  strongestProjectRole,
   type IdentityType,
   type ProjectPermission,
   type ProjectRole,
@@ -19,6 +18,7 @@ import {
   AUTH_PRINCIPAL_HEADER,
   AUTH_SESSION_HEADER,
 } from "@/lib/password-auth";
+import { canonicalProjectId } from "@/lib/middleware-project-authorization";
 import { createServiceClient } from "@/lib/server/data-api";
 
 export type RequestPrincipal = {
@@ -138,78 +138,31 @@ export async function getEffectiveProjectRole(
   principalId: string,
   projectId: string,
 ): Promise<ProjectRole | null> {
-  const dataApi = createServiceClient();
-  const [
-    { data: directRows, error: directError },
-    { data: groupMemberRows, error: groupMemberError },
-    { data: legacyProject, error: legacyError },
-  ] = await Promise.all([
-    dataApi
-      .from("project_memberships")
-      .select("role, revoked_at, expires_at")
-      .eq("project_id", projectId)
-      .eq("principal_id", principalId),
-    dataApi
-      .from("app_group_members")
-      .select("group_id")
-      .eq("principal_id", principalId),
-    dataApi
-      .from("projects")
-      .select("owner_id")
-      .eq("id", projectId)
-      .maybeSingle<{ owner_id: string | null }>(),
-  ]);
-  if (directError || groupMemberError || legacyError) {
-    throw new Error(
-      directError?.message ||
-        groupMemberError?.message ||
-        legacyError?.message ||
-        "Kunne ikke kontrollere prosjekttilgang.",
-    );
+  // Reuse the same database owner as middleware. One statement evaluates direct
+  // grants, group grants and legacy ownership against a single current snapshot.
+  const { data, error } = await createServiceClient().rpc("resolve_project_role", {
+    p_principal_id: principalId,
+    p_project_id: projectId,
+  });
+  if (error) {
+    throw new Error(error.message || "Kunne ikke kontrollere prosjekttilgang.");
   }
-
-  const directRoles = activeGrantFilter(
-    (directRows ?? []) as Array<{
-      role: string;
-      revoked_at: string | null;
-      expires_at: string | null;
-    }>,
-  )
-    .map((row) => row.role)
-    .filter(isProjectRole);
-
-  const groupIds = (groupMemberRows ?? []).map((row) => row.group_id);
-  let groupRoles: ProjectRole[] = [];
-  if (groupIds.length) {
-    const { data: grants, error } = await dataApi
-      .from("project_group_grants")
-      .select("role, revoked_at, expires_at")
-      .eq("project_id", projectId)
-      .in("group_id", groupIds);
-    if (error) {
-      throw new Error(error.message);
-    }
-    groupRoles = activeGrantFilter(
-      (grants ?? []) as Array<{
-        role: string;
-        revoked_at: string | null;
-        expires_at: string | null;
-      }>,
-    )
-      .map((row) => row.role)
-      .filter(isProjectRole);
+  if (data === null) return null;
+  if (!isProjectRole(data)) {
+    throw new Error("Databasen returnerte en ugyldig prosjektrolle.");
   }
-
-  if (legacyProject?.owner_id === principalId) {
-    directRoles.push("owner");
-  }
-  return strongestProjectRole([...directRoles, ...groupRoles]);
+  return data;
 }
 
 export async function requireProjectPermission(
   projectId: string,
   permission: ProjectPermission,
 ): Promise<AuthorizedProjectContext> {
+  const canonicalId = canonicalProjectId(projectId);
+  if (!canonicalId) {
+    throw new AuthorizationError("Ugyldig prosjekt-ID.", 404);
+  }
+  projectId = canonicalId;
   const principal = await requireRequestPrincipal();
   const effectiveRole = await getEffectiveProjectRole(principal.id, projectId);
   if (globalAccessAllows(principal.isAdmin, permission)) {

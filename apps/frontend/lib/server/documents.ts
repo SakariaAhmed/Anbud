@@ -3,6 +3,8 @@ import "server-only";
 import { execFile } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { promisify } from "node:util";
+import { inflateRaw } from "node:zlib";
 import path from "node:path";
 import { DOMParser as XmlDomParser } from "@xmldom/xmldom";
 import JSZip, { type JSZipObject } from "jszip";
@@ -104,13 +106,72 @@ type OfficeZipEntryWithSizes = JSZipObject & {
   _data?: {
     compressedSize?: number;
     uncompressedSize?: number;
+    compressedContent?: Uint8Array;
+    compression?: { magic?: string };
   };
 };
+
+const inflateOfficeEntry = promisify(inflateRaw);
+
+// JSZip discards compressed bytes for entries advertising zero expanded size.
+// Check those raw entries before loading so hidden data cannot become an empty
+// canonical file. Follow the central directory; never scan payload signatures.
+async function validateEmptyOfficeZipEntries(buffer: Buffer, fileName: string) {
+  const invalid = () => new Error(`${fileName} har ugyldige ZIP-data.`);
+  let end = buffer.length - 22;
+  const earliest = Math.max(0, end - 65535);
+  while (end >= earliest) {
+    if (buffer.readUInt32LE(end) === 0x06054b50 &&
+        end + 22 + buffer.readUInt16LE(end + 20) === buffer.length) break;
+    end -= 1;
+  }
+  if (end < earliest || buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06])) !== end) {
+    throw invalid();
+  }
+  const count = buffer.readUInt16LE(end + 10);
+  const directorySize = buffer.readUInt32LE(end + 12);
+  let cursor = buffer.readUInt32LE(end + 16);
+  // Reject unsupported multi-volume/ZIP64 representations explicitly.
+  if (buffer.readUInt16LE(end + 4) !== 0 || buffer.readUInt16LE(end + 6) !== 0 ||
+      buffer.readUInt16LE(end + 8) !== count || count === 0xffff ||
+      directorySize === 0xffffffff || cursor === 0xffffffff ||
+      cursor + directorySize !== end) throw invalid();
+  if (count > MAX_OFFICE_ZIP_ENTRIES) {
+    throw new Error(`${fileName} inneholder for mange arkivoppføringer (${count}).`);
+  }
+  for (let index = 0; index < count; index += 1) {
+    if (cursor + 46 > end || buffer.readUInt32LE(cursor) !== 0x02014b50) throw invalid();
+    const compressed = buffer.readUInt32LE(cursor + 20);
+    const expanded = buffer.readUInt32LE(cursor + 24);
+    const local = buffer.readUInt32LE(cursor + 42);
+    if (compressed === 0xffffffff || expanded === 0xffffffff || local === 0xffffffff) throw invalid();
+    if (expanded === 0) {
+      if (local + 30 > end || buffer.readUInt32LE(local) !== 0x04034b50) throw invalid();
+      const start = local + 30 + buffer.readUInt16LE(local + 26) + buffer.readUInt16LE(local + 28);
+      if (start + compressed > end) throw invalid();
+      const method = buffer.readUInt16LE(cursor + 10);
+      if (method === 0) {
+        if (compressed !== 0) throw invalid();
+      } else if (method === 8) {
+        try {
+          const bytes = await inflateOfficeEntry(buffer.subarray(start, start + compressed), { maxOutputLength: 1 });
+          if (bytes.length !== 0) throw invalid();
+        } catch (cause) {
+          throw new Error(`${fileName} har ugyldige ZIP-data eller overskrider grensen for utpakking.`, { cause });
+        }
+      } else throw invalid();
+    }
+    cursor += 46 + buffer.readUInt16LE(cursor + 28) + buffer.readUInt16LE(cursor + 30) + buffer.readUInt16LE(cursor + 32);
+    if (cursor > end) throw invalid();
+  }
+  if (cursor !== end) throw invalid();
+}
 
 export async function loadValidatedOfficeZip(
   buffer: Buffer,
   fileName: string,
 ) {
+  await validateEmptyOfficeZipEntries(buffer, fileName);
   const zip = await JSZip.loadAsync(buffer);
   const entries = Object.values(zip.files).filter((entry) => !entry.dir);
   if (entries.length > MAX_OFFICE_ZIP_ENTRIES) {
@@ -122,9 +183,15 @@ export async function loadValidatedOfficeZip(
   let expandedBytes = 0;
   let compressedBytes = 0;
   for (const entry of entries as OfficeZipEntryWithSizes[]) {
+    if (entry.unsafeOriginalName !== undefined && entry.unsafeOriginalName !== entry.name) {
+      throw new Error(`${fileName} inneholder et ugyldig ZIP-filnavn.`);
+    }
     const expanded = Number(entry._data?.uncompressedSize ?? 0);
     const compressed = Number(entry._data?.compressedSize ?? 0);
-    if (!Number.isSafeInteger(expanded) || expanded < 0) {
+    if (
+      !Number.isSafeInteger(expanded) || expanded < 0 ||
+      !Number.isSafeInteger(compressed) || compressed < 0
+    ) {
       throw new Error(`${fileName} har ugyldig ZIP-størrelsesmetadata.`);
     }
     if (expanded > MAX_OFFICE_ZIP_ENTRY_BYTES) {
@@ -148,7 +215,55 @@ export async function loadValidatedOfficeZip(
       `${fileName} har en utrygg kompresjonsgrad og kan ikke pakkes ut.`,
     );
   }
-  return zip;
+  // JSZip's async reader accumulates output before checking declared sizes.
+  // Native zlib enforces maxOutputLength while inflating, so a forged size can
+  // never turn metadata screening into an unbounded allocation. Rebuild from
+  // verified bytes so subsequent parsers cannot reinterpret the original ZIP.
+  const validatedZip = new JSZip();
+  let actualExpandedBytes = 0;
+  for (const entry of entries as OfficeZipEntryWithSizes[]) {
+    const data = entry._data;
+    // Raw zero-size entries were validated before JSZip discarded their bytes.
+    if (data instanceof Promise && await data === "") {
+      validatedZip.file(entry.name, Buffer.alloc(0), { createFolders: false });
+      continue;
+    }
+    const compressed = data?.compressedContent;
+    const declared = data?.uncompressedSize ?? 0;
+    if (!(compressed instanceof Uint8Array) || compressed.byteLength !== data?.compressedSize) {
+      throw new Error(`${fileName} har ugyldig ZIP-størrelsesmetadata.`);
+    }
+    const budget = Math.min(
+      declared,
+      MAX_OFFICE_ZIP_ENTRY_BYTES,
+      MAX_OFFICE_ZIP_EXPANDED_BYTES - actualExpandedBytes,
+    );
+    let content: Buffer;
+    if (data?.compression?.magic === "\x00\x00") {
+      if (compressed.byteLength > budget) {
+        throw new Error(`${fileName} overskrider grensen for utpakking.`);
+      }
+      content = Buffer.from(compressed);
+    } else if (data?.compression?.magic === "\x08\x00") {
+      try {
+        content = await inflateOfficeEntry(compressed, {
+          // zlib requires a positive limit, including for valid empty files.
+          maxOutputLength: Math.max(1, budget),
+          chunkSize: 16 * 1024,
+        });
+      } catch (cause) {
+        throw new Error(`${fileName} har ugyldige ZIP-data eller overskrider grensen for utpakking.`, { cause });
+      }
+    } else {
+      throw new Error(`${fileName} bruker en ZIP-komprimering som ikke støttes.`);
+    }
+    if (content.byteLength !== declared || content.byteLength > budget) {
+      throw new Error(`${fileName} har ugyldig ZIP-størrelsesmetadata.`);
+    }
+    actualExpandedBytes += content.byteLength;
+    validatedZip.file(entry.name, content, { createFolders: false });
+  }
+  return validatedZip;
 }
 
 async function getMammoth() {
@@ -308,7 +423,7 @@ function sourceFileExtensionForFormat(fileFormat: ParsedUpload["fileFormat"]) {
 function doclingCliArgs(
   inputPath: string,
   outputDir: string,
-  options: { useOcr?: boolean; tableMode?: string | null } = {},
+  options: { useOcr?: boolean; tableMode?: string | null; compatibility?: boolean } = {},
 ) {
   const args = [
     "--to",
@@ -317,11 +432,13 @@ function doclingCliArgs(
     "json",
     "--output",
     outputDir,
-    "--image-export-mode",
-    doclingImageExportMode(),
-    "--document-timeout",
-    String(Math.ceil(doclingTimeoutMs() / 1000)),
   ];
+  if (!options.compatibility) {
+    args.push(
+      "--image-export-mode", doclingImageExportMode(),
+      "--document-timeout", String(Math.ceil(doclingTimeoutMs() / 1000)),
+    );
+  }
   const artifactsPath = normalizedOptionalEnv("DOCLING_ARTIFACTS_PATH");
   const numThreads = doclingNumThreads();
   const tableMode = (
@@ -339,18 +456,20 @@ function doclingCliArgs(
     args.push("--artifacts-path", artifactsPath);
   }
 
-  if (numThreads) {
+  if (numThreads && !options.compatibility) {
     args.push("--num-threads", numThreads);
   }
 
-  if (tableMode === "fast" || tableMode === "accurate") {
+  if (!options.compatibility && (tableMode === "fast" || tableMode === "accurate")) {
     args.push("--table-mode", tableMode);
   }
 
   if (ocrMode === "off" || ocrMode === "false" || ocrMode === "0") {
     args.push("--no-ocr");
-  } else if (ocrMode === "on" || ocrMode === "true" || ocrMode === "1") {
-    args.push("--ocr");
+  } else {
+    // Docling's automatic RapidOCR model loses Norwegian letters. Use its
+    // existing Tesseract integration with languages bundled in runner-docling.
+    args.push("--ocr", "--ocr-engine", "tesseract", "--ocr-lang", "nor,eng");
   }
 
   args.push(inputPath);
@@ -369,9 +488,11 @@ function execDocling(args: string[]) {
       (error, stdout, stderr) => {
         if (error) {
           const execError = error as ExecFileError;
+          // execFile's message includes the command's --document-timeout flag,
+          // even when the failure is an unsupported option, not a timeout.
           const timedOut =
             (execError.killed === true && execError.signal === "SIGTERM") ||
-            /\b(?:timed out|timeout)\b/i.test(execError.message);
+            execError.code === "ETIMEDOUT";
           reject(
             new DoclingCommandError(
               [
@@ -848,15 +969,12 @@ async function runDoclingConversion(input: {
     useOcr: input.useOcr,
     tableMode: input.tableMode,
   });
-  const fallbackArgs = [
-    "--to",
-    "md",
-    "--to",
-    "json",
-    "--output",
-    input.outputDir,
-    input.inputPath,
-  ];
+  // A compatibility retry must retain OCR language/off settings and offline
+  // artifacts; dropping those silently changes the extracted source text.
+  const fallbackArgs = doclingCliArgs(input.inputPath, input.outputDir, {
+    useOcr: input.useOcr,
+    compatibility: true,
+  });
   let markdown = "";
   let doclingJson: Record<string, unknown> | null = null;
   let lastError: unknown = null;
@@ -1055,12 +1173,18 @@ async function tryExtractWithDocling(input: {
     return null;
   }
 
+  // Keep archive rejection outside Docling's compatibility-fallback catch.
+  let parsingBuffer = input.buffer;
+  if (input.fileFormat === "docx" || input.fileFormat === "xlsx") {
+    const zip = await loadValidatedOfficeZip(input.buffer, input.fileName);
+    parsingBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "STORE" });
+  }
   const tempDir = await mkdtemp(path.join(tmpdir(), "anbud-docling-"));
   const suffix = sourceFileExtensionForFormat(input.fileFormat);
   const inputPath = path.join(tempDir, `source${suffix}`);
 
   try {
-    await writeFile(inputPath, input.buffer);
+    await writeFile(inputPath, parsingBuffer);
     const chunkedPdf = await tryExtractChunkedPdfWithDocling({
       buffer: input.buffer,
       fileName: input.fileName,
@@ -1241,11 +1365,18 @@ async function extractPdf(buffer: Buffer, fileName: string, role?: ProjectDocume
 }
 
 async function extractDocx(buffer: Buffer, fileName: string, role?: ProjectDocumentRole): Promise<ParsedUpload> {
+  // Archive rejection is terminal: compatibility parsers only receive validated bytes.
+  const zip = await loadValidatedOfficeZip(buffer, fileName);
   try {
-    return await extractDocxFromWordXml(buffer, fileName, role, null);
+    return await extractDocxFromWordXml(zip, buffer, fileName, role, null);
   } catch (wordXmlError) {
     try {
-      return await extractDocxWithMammoth(buffer, fileName, role);
+      const validatedBuffer = await zip.generateAsync({
+        type: "nodebuffer",
+        compression: "STORE",
+      });
+      const parsed = await extractDocxWithMammoth(validatedBuffer, fileName, role);
+      return { ...parsed, fileBase64: buffer.toString("base64") };
     } catch {
       throw wordXmlError;
     }
@@ -1487,13 +1618,13 @@ function docxParseErrorMessage(fileName: string, fallbackError: unknown) {
 }
 
 async function extractDocxFromWordXml(
+  zip: JSZip,
   buffer: Buffer,
   fileName: string,
   role: ProjectDocumentRole | undefined,
   originalError: unknown,
 ): Promise<ParsedUpload> {
   try {
-    const zip = await loadValidatedOfficeZip(buffer, fileName);
     const documentXml = zip.file("word/document.xml");
 
     if (!documentXml) {
@@ -1750,11 +1881,13 @@ async function extractSpreadsheet(
   fileFormat: "xlsx" | "xls",
   role?: ProjectDocumentRole,
 ): Promise<ParsedUpload> {
+  let parsingBuffer = buffer;
   if (fileFormat === "xlsx") {
-    await loadValidatedOfficeZip(buffer, fileName);
+    const zip = await loadValidatedOfficeZip(buffer, fileName);
+    parsingBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "STORE" });
   }
   const xlsx = await getXlsx();
-  const workbook = xlsx.read(buffer, {
+  const workbook = xlsx.read(parsingBuffer, {
     type: "buffer",
     cellDates: true,
     cellText: true,

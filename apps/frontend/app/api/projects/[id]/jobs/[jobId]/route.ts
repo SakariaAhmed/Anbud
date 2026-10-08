@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { getProjectJob } from "@/lib/server/project-jobs";
@@ -6,6 +7,7 @@ import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 export async function GET(_: Request, context: { params: Promise<{ id: string; jobId: string }> }) {
   try {
     const { id, jobId } = await context.params;
+    await requireProjectPermission(id, "job.read");
     const job = await getProjectJob(id, jobId);
 
     if (!job) {
@@ -14,7 +16,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string; j
 
     return NextResponse.json({ job });
   } catch (error) {
-    return NextResponse.json(
+    return authorizationErrorResponse(error) ?? NextResponse.json(
       {
         error: productionSafeErrorMessage(
           error,

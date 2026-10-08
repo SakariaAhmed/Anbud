@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import {
@@ -31,10 +32,13 @@ export const maxDuration = 2100;
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "analysis.read");
     const evaluation = await getFreshSolutionEvaluation(id);
 
     return NextResponse.json({ evaluation }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(
@@ -148,6 +152,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     return NextResponse.json(result);
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     const timedOut = error instanceof DirectSolutionEvaluationWaitTimeoutError;
     return NextResponse.json(
       {

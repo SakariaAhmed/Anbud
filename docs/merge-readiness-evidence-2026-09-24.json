@@ -1,0 +1,538 @@
+{
+  "at": "2026-09-24T21:12:57.109Z",
+  "base": "74de89311ace741fc17733c3924ad16574315813",
+  "applicationCommit": "56e62cccfc54daf044ec41d616aef1e4fc78ee3a",
+  "sourceFiles": [
+    {
+      "file": "apps/frontend/lib/server/project-jobs.ts",
+      "sha256": "beb2d40eec7e42b8974a0c9cd5d173374a08c2900e279d19237d2216247a9fee"
+    },
+    {
+      "file": "apps/frontend/lib/server/project-job-worker-reporting.test.mjs",
+      "sha256": "989b20ad961c2f28ae2c0c6f347a8cf2d5e9c4a58f1fa148de1d806e551dd490"
+    },
+    {
+      "file": "apps/frontend/Dockerfile",
+      "sha256": "034f78a33b561db73480918a8781bd90508f51d0f2845b1395ce21090f99ea16"
+    },
+    {
+      "file": "apps/frontend/package-lock.json",
+      "sha256": "da47c98d5a861864e8d5880f24e50eacb0c82469689b384c85c7d4a9aead9ed4"
+    }
+  ],
+  "tests": {
+    "frontend": 939,
+    "repository": 129,
+    "workflow": 46,
+    "total": 1114,
+    "failures": 0,
+    "skipped": 0,
+    "duplicateContractChecksExcluded": 36,
+    "parserGolden": {
+      "normalization": 8,
+      "tableRepairs": 5,
+      "qualityPass": 2,
+      "qualityFail": 5,
+      "ledgerExtraction": 2
+    },
+    "checks": [
+      "lint zero warnings",
+      "production build/types",
+      "secret scan",
+      "project-job schema",
+      "workflow boundaries",
+      "release contracts",
+      "workflow YAML",
+      "Bicep build/lint",
+      "git diff --check"
+    ]
+  },
+  "databaseUpgrade": {
+    "base": "74de89311ace741fc17733c3924ad16574315813",
+    "migrations": [
+      "20260906093000_guest_credential_authority.sql",
+      "20260906100000_clean_project_job_results.sql",
+      "20260908100000_materialize_snapshot_dependencies.sql",
+      "20260924183000_service_role_extensions_access.sql"
+    ],
+    "appliedTwice": true,
+    "freshSchemaMatches": true,
+    "functionsCompared": 7,
+    "wholePublicSchemaCompared": true,
+    "totalFunctions": 87,
+    "serviceRoleOnly": true,
+    "existingAnalysisPreserved": true
+  },
+  "schemaComparison": {
+    "upgradedSha256": "2a93afa79a0296f086b5fd304b7813ca48670af21bf3883ca7db261e5aaca991",
+    "freshSha256": "2a93afa79a0296f086b5fd304b7813ca48670af21bf3883ca7db261e5aaca991",
+    "identical": true
+  },
+  "corpus": {
+    "documents": 100,
+    "expectedRequirements": 7038,
+    "everyDocumentScoreAndMismatchEqual": true,
+    "metrics": {
+      "overall": {
+        "name": "overall",
+        "documents": 100,
+        "documentsExactCount": 74,
+        "expectedRequirements": 7038,
+        "extractedRequirements": 7494,
+        "orderedTextMatches": 5376,
+        "strictTextMatches": 7034,
+        "alignedTextMatches": 7038,
+        "usableIdExpected": 4086,
+        "usableIdCorrect": 3558,
+        "syntheticIdExpected": 2952,
+        "syntheticIdTypeCorrect": 2938,
+        "headingExpected": 7038,
+        "headingCorrect": 6856,
+        "sourceLocatorExpected": 7038,
+        "sourceLocatorPresent": 7038,
+        "countAccuracy": 74,
+        "orderedTextAccuracy": 76.4,
+        "strictTextRecall": 99.9,
+        "alignedTextAccuracy": 100,
+        "usableIdAccuracy": 87.1,
+        "syntheticIdTypeAccuracy": 99.5,
+        "idAccuracy": 92.3,
+        "headingAccuracy": 97.4,
+        "sourceLocatorPresence": 100
+      },
+      "byStructuregrad": [
+        {
+          "name": "blandet",
+          "documents": 34,
+          "documentsExactCount": 22,
+          "expectedRequirements": 2418,
+          "extractedRequirements": 2582,
+          "orderedTextMatches": 1642,
+          "strictTextMatches": 2417,
+          "alignedTextMatches": 2418,
+          "usableIdExpected": 1402,
+          "usableIdCorrect": 1149,
+          "syntheticIdExpected": 1016,
+          "syntheticIdTypeCorrect": 1015,
+          "headingExpected": 2418,
+          "headingCorrect": 2343,
+          "sourceLocatorExpected": 2418,
+          "sourceLocatorPresent": 2418,
+          "countAccuracy": 64.7,
+          "orderedTextAccuracy": 67.9,
+          "strictTextRecall": 100,
+          "alignedTextAccuracy": 100,
+          "usableIdAccuracy": 82,
+          "syntheticIdTypeAccuracy": 99.9,
+          "idAccuracy": 89.5,
+          "headingAccuracy": 96.9,
+          "sourceLocatorPresence": 100
+        },
+        {
+          "name": "strukturert",
+          "documents": 33,
+          "documentsExactCount": 30,
+          "expectedRequirements": 2318,
+          "extractedRequirements": 2330,
+          "orderedTextMatches": 2182,
+          "strictTextMatches": 2315,
+          "alignedTextMatches": 2318,
+          "usableIdExpected": 2040,
+          "usableIdCorrect": 1984,
+          "syntheticIdExpected": 278,
+          "syntheticIdTypeCorrect": 266,
+          "headingExpected": 2318,
+          "headingCorrect": 2261,
+          "sourceLocatorExpected": 2318,
+          "sourceLocatorPresent": 2318,
+          "countAccuracy": 90.9,
+          "orderedTextAccuracy": 94.1,
+          "strictTextRecall": 99.9,
+          "alignedTextAccuracy": 100,
+          "usableIdAccuracy": 97.3,
+          "syntheticIdTypeAccuracy": 95.7,
+          "idAccuracy": 97.1,
+          "headingAccuracy": 97.5,
+          "sourceLocatorPresence": 100
+        },
+        {
+          "name": "ustrukturert",
+          "documents": 33,
+          "documentsExactCount": 22,
+          "expectedRequirements": 2302,
+          "extractedRequirements": 2582,
+          "orderedTextMatches": 1552,
+          "strictTextMatches": 2302,
+          "alignedTextMatches": 2302,
+          "usableIdExpected": 644,
+          "usableIdCorrect": 425,
+          "syntheticIdExpected": 1658,
+          "syntheticIdTypeCorrect": 1657,
+          "headingExpected": 2302,
+          "headingCorrect": 2252,
+          "sourceLocatorExpected": 2302,
+          "sourceLocatorPresent": 2302,
+          "countAccuracy": 66.7,
+          "orderedTextAccuracy": 67.4,
+          "strictTextRecall": 100,
+          "alignedTextAccuracy": 100,
+          "usableIdAccuracy": 66,
+          "syntheticIdTypeAccuracy": 99.9,
+          "idAccuracy": 90.4,
+          "headingAccuracy": 97.8,
+          "sourceLocatorPresence": 100
+        }
+      ],
+      "byKravtype": [
+        {
+          "name": "Avklaringskrav",
+          "expectedRequirements": 443,
+          "orderedTextMatches": 286,
+          "strictTextMatches": 443,
+          "alignedTextMatches": 443,
+          "orderedTextAccuracy": 64.6,
+          "strictTextRecall": 100,
+          "alignedTextAccuracy": 100
+        },
+        {
+          "name": "Notatkrav",
+          "expectedRequirements": 614,
+          "orderedTextMatches": 401,
+          "strictTextMatches": 614,
+          "alignedTextMatches": 614,
+          "orderedTextAccuracy": 65.3,
+          "strictTextRecall": 100,
+          "alignedTextAccuracy": 100
+        },
+        {
+          "name": "Punktkrav",
+          "expectedRequirements": 1266,
+          "orderedTextMatches": 919,
+          "strictTextMatches": 1266,
+          "alignedTextMatches": 1266,
+          "orderedTextAccuracy": 72.6,
+          "strictTextRecall": 100,
+          "alignedTextAccuracy": 100
+        },
+        {
+          "name": "Tabellkrav",
+          "expectedRequirements": 3313,
+          "orderedTextMatches": 2785,
+          "strictTextMatches": 3309,
+          "alignedTextMatches": 3313,
+          "orderedTextAccuracy": 84.1,
+          "strictTextRecall": 99.9,
+          "alignedTextAccuracy": 100
+        },
+        {
+          "name": "Tekstkrav",
+          "expectedRequirements": 1402,
+          "orderedTextMatches": 985,
+          "strictTextMatches": 1402,
+          "alignedTextMatches": 1402,
+          "orderedTextAccuracy": 70.3,
+          "strictTextRecall": 100,
+          "alignedTextAccuracy": 100
+        }
+      ]
+    },
+    "interpretation": "No measured extraction regression versus current main. Existing count, ID and heading inaccuracies persist."
+  },
+  "container": {
+    "tag": "anbud-merge-verification:worker-fix",
+    "id": "sha256:e4b322ccd175940a96ff4171f0558a85b3b115003b55838b795d7afc7dfd4a26",
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "node",
+    "sizeBytes": 1665172656,
+    "python": "3.14.6",
+    "node": "22.23.1",
+    "docling": "2.99.0",
+    "modelCachePrefill": true,
+    "committedDockerfileChangedForCache": false,
+    "productionArchitecture": "amd64"
+  },
+  "system": {
+    "commit": "ea4ca9cb714d8655d35f42fd2575cb664cb68f63",
+    "at": "2026-09-24T21:08:44.115Z",
+    "image": "anbud-merge-verification:worker-fix",
+    "scope": "Production container HTTP auth, real PostgreSQL/PostgREST, two web replicas and scheduled worker entrypoint, controlled local model HTTP responses. No Azure storage/Entra or live AI quality claim.",
+    "checks": [
+      {
+        "name": "Anonymous requests denied; real password login works across both replicas",
+        "detail": true
+      },
+      {
+        "name": "Missing generation prerequisite returns 422 without enqueue",
+        "detail": true
+      },
+      {
+        "name": "Global admin has access without grant; restricted, revoked and disabled users denied",
+        "detail": true
+      },
+      {
+        "name": "Eight concurrent enqueues coalesce; two replicas execute one job and publish one result",
+        "detail": {
+          "workerResponses": [
+            {
+              "processed": 0,
+              "results": [
+                {
+                  "job_id": "0a64e661-6675-4134-9caf-fb68807d9ca7",
+                  "status": "skipped"
+                }
+              ]
+            },
+            {
+              "processed": 1,
+              "results": [
+                {
+                  "job_id": "0a64e661-6675-4134-9caf-fb68807d9ca7",
+                  "status": "processed"
+                }
+              ]
+            }
+          ],
+          "model": {
+            "mode": "answer",
+            "count": 1,
+            "closed": 1,
+            "active": 0,
+            "maxActive": 1
+          },
+          "persistedResults": 1
+        }
+      },
+      {
+        "name": "Two different projects execute concurrently across replicas",
+        "detail": true
+      },
+      {
+        "name": "Changing the evaluation during generation rejects stale output",
+        "detail": true
+      },
+      {
+        "name": "Lease takeover closes model transport and prevents stale publication",
+        "detail": {
+          "milliseconds": 30280
+        }
+      },
+      {
+        "name": "Actual production scheduled-worker entrypoint claims and completes a persisted job",
+        "detail": true
+      }
+    ],
+    "completed": true
+  },
+  "browser": {
+    "scope": "Production container (Python 3.14 + Node 22), actual HTTP password auth, isolated PostgreSQL/PostgREST, encrypted fictional fixtures; no Entra, Azure storage or live AI calls.",
+    "checks": [
+      {
+        "size": "desktop",
+        "historyReadOnly": true,
+        "allEightHistoryTabsChecked": true,
+        "keyboardOpenAndReturn": true,
+        "unsavedDraftPreserved": true,
+        "currentAnalysisPreserved": true,
+        "dimensions": {
+          "width": 1440,
+          "scrollWidth": 1440
+        },
+        "currentDimensions": {
+          "width": 1440,
+          "scrollWidth": 1440
+        }
+      },
+      {
+        "size": "mobile",
+        "historyReadOnly": true,
+        "allEightHistoryTabsChecked": true,
+        "keyboardOpenAndReturn": true,
+        "unsavedDraftPreserved": true,
+        "currentAnalysisPreserved": true,
+        "dimensions": {
+          "width": 390,
+          "scrollWidth": 390
+        },
+        "currentDimensions": {
+          "width": 390,
+          "scrollWidth": 390
+        }
+      }
+    ],
+    "errors": []
+  },
+  "ocr": [
+    {
+      "file": "norwegian-regression.pdf",
+      "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87",
+      "imageId": "sha256:e4b322ccd175940a96ff4171f0558a85b3b115003b55838b795d7afc7dfd4a26",
+      "pages": 1,
+      "exactText": true,
+      "elapsedMs": 12320
+    },
+    {
+      "file": "norwegian-holdout.pdf",
+      "sha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2",
+      "imageId": "sha256:e4b322ccd175940a96ff4171f0558a85b3b115003b55838b795d7afc7dfd4a26",
+      "pages": 2,
+      "exactText": true,
+      "elapsedMs": 10127
+    }
+  ],
+  "testSourceNote": "The system log recorded HEAD ea4ca9cb while testing the uncommitted patch subsequently committed unchanged in 56e62ccc; application-file hashes identify the tested source.",
+  "review": {
+    "url": "https://chatgpt.com/c/6ab586c9-9190-83eb-af9b-fdeaa6930cce",
+    "suppliedEvidenceOnly": true,
+    "identifiedAsCodex": true,
+    "verdict": "No demonstrated flaw in the narrow reporting fix; real rebuilt worker race required and subsequently passed.",
+    "architectureAndModelCacheLimitsDisclosed": true,
+    "finalVerdict": "After the recorded real-worker result was supplied, the reviewer found no demonstrated defect requiring another code change before merge; amd64 packaging, unseeded build and deployed smoke checks remain."
+  },
+  "budget": {
+    "authorizedUsd": 2,
+    "previousAccountedUsd": 1.562117,
+    "newPaidApiCalls": 0,
+    "remainingUsd": 0.437883
+  },
+  "limits": [
+    "Unseeded committed Dockerfile model-download build did not produce a verified image",
+    "Final Azure amd64 image not built or executed in this pass",
+    "No candidate deployment or deployed smoke test",
+    "Controlled model responses do not prove live AI answer quality",
+    "Two workers are a bounded concurrency check, not sustained load",
+    "Existing extraction accuracy shortcomings equal main"
+  ],
+  "logs": [
+    {
+      "file": "/tmp/anbud-merge-worker-before.log",
+      "sha256": "feab787a701da5f44dd4e2d6dcb23264ffc35882a7db985b3441e6640f102eda"
+    },
+    {
+      "file": "/tmp/anbud-merge-full-tests-final.log",
+      "sha256": "8a772a3d8f2b6a32875c9c1000d15099685344e98febc2cbfe8b8f4b697eacd1"
+    },
+    {
+      "file": "/tmp/anbud-merge-lint-final.log",
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "file": "/tmp/anbud-merge-build-final.log",
+      "sha256": "15cc8bef2a021393e617c4f377fdcfc6bcb64d103400489c310a69311998497e"
+    },
+    {
+      "file": "/tmp/anbud-merge-worker-image.log",
+      "sha256": "f7139c46b98f797cf0b2d1a5c32d8d142a88e92ad117a7599227b0688355d4ab"
+    },
+    {
+      "file": "/tmp/anbud-merge-upgrade-full.log",
+      "sha256": "fb13e56d045460ea34563693f0a3c9d241b6e697707e46b5624d13db3ee53d78"
+    },
+    {
+      "file": "/tmp/anbud-merge-ocr-final.log",
+      "sha256": "6e80825b7ba682a6d2674a450d24e958e0e32e2f6845c0195c1dbbdb1674b0a8"
+    },
+    {
+      "file": "/tmp/anbud-merge-system-confirm.log",
+      "sha256": "c133325924cca6a7dbcda8a9396d3fded7b2a64500c7ebe9bffe19bec5803826"
+    },
+    {
+      "file": "/tmp/anbud-merge-browser-final.log",
+      "sha256": "888964b4c7320e2642cdf7bb155c4b1534cf2310f6ca2bbb852bfb5d0ca2aa92"
+    },
+    {
+      "file": "/tmp/anbud-merge-corpus-main.log",
+      "sha256": "5239abe36a316aa009b36cd64787ccc3d54f61b3a8388805a31345ae41ad26de"
+    },
+    {
+      "file": "/tmp/anbud-merge-corpus-candidate.log",
+      "sha256": "6d744349058d35762f1213aa597b63318992b60160cab7e3ff720836be07fab5"
+    }
+  ],
+  "harnesses": [
+    {
+      "file": "tmp/integration/merge-system/setup.mjs",
+      "sha256": "a4414ecab16cbf22bd9dd6c25c088b6bc7fd120868ba6bf5b59462b684303784"
+    },
+    {
+      "file": "tmp/integration/merge-system/enable-tls.mjs",
+      "sha256": "a8db0cb566b8da002f4d4ed42f2f8e69ec6013e7f3338696f3900ef4f0f88900"
+    },
+    {
+      "file": "tmp/integration/merge-system/tls-proxy.mjs",
+      "sha256": "406c895f9b24c89fe496e398ebc6c8bf80e5308290010e3b075625274b00e9a8"
+    },
+    {
+      "file": "tmp/integration/merge-system/provider.mjs",
+      "sha256": "33cd18b12388cae8c3e97dbfd078e434df59cebdc49053444a2b5d2e82dcdab3"
+    },
+    {
+      "file": "tmp/integration/merge-system/system.mjs",
+      "sha256": "342aec90b74752fb8fa35c840b910d5e1ee866ce5509fec0d6553759c8bec2e0"
+    },
+    {
+      "file": "tmp/integration/merge-system/upgrade.mjs",
+      "sha256": "89d5b399e0580988f918156db35b51ff9d068b1abce61569092b8a1a426fb3f5"
+    },
+    {
+      "file": "tmp/integration/merge-system/browser.mjs",
+      "sha256": "3d4e60e760f75fb2634c6c819ec41ae86d2d3c4c75f754f1ef43fd1a7c0a8c40"
+    }
+  ],
+  "unseededBuild": {
+    "status": "cancelled after about 20 minutes in model-download step",
+    "noImageProduced": true,
+    "prefilledModels": false,
+    "otherStagesUsedExistingDockerCache": true,
+    "architecture": "arm64",
+    "log": "/tmp/anbud-merge-container-build.log",
+    "sha256": "7098880c58b1d44c4090f95ad94cdb30576bae023f7185d680538ba2618180e5",
+    "interpretation": "Incomplete local build attempt; no fatal application build incompatibility demonstrated. Does not validate Azure amd64 build.",
+    "processExitCode": 130
+  },
+  "cleanup": {
+    "at": "2026-09-24T21:13:37.496403+00:00",
+    "ownSixContainersRemoved": true,
+    "ownNetworkRemoved": true,
+    "ephemeralEnvironmentAndTlsKeyRemoved": true,
+    "unrelatedContainersPreserved": true,
+    "noCloudResourcesCreated": true,
+    "logs": [
+      {
+        "name": "web",
+        "file": "tmp/integration/merge-system/web-container.log",
+        "sha256": "5ab36e8f405bacd5dbebf471d2dec85f48d6cf89b69c49f63b795191361c9e34"
+      },
+      {
+        "name": "replica",
+        "file": "tmp/integration/merge-system/replica-container.log",
+        "sha256": "3f8344f90b79ca1f01bdef2f86edb72d6c6f49dc6002cd6e56a8f7fafd5ede28"
+      },
+      {
+        "name": "provider",
+        "file": "tmp/integration/merge-system/provider-container.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "tls",
+        "file": "tmp/integration/merge-system/tls-container.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "rest",
+        "file": "tmp/integration/merge-system/rest-container.log",
+        "sha256": "7a07b80e546a45d28bfbe3721e0903b8392099f4c1a4aa96c0cc7bc1363ae26a"
+      },
+      {
+        "name": "db",
+        "file": "tmp/integration/merge-system/db-container.log",
+        "sha256": "0ee494f6e114a57aa54959cabba48c1f5c8f4e35c2688786604b10bb19924558"
+      }
+    ]
+  },
+  "applicationCi": {
+    "commit": "56e62cccfc54daf044ec41d616aef1e4fc78ee3a",
+    "conclusion": "success",
+    "url": "https://github.com/SakariaAhmed/Anbud/actions/runs/36059592649"
+  }
+}

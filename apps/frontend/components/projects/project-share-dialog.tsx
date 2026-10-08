@@ -74,6 +74,7 @@ type AvailablePrincipal = {
 };
 
 type AccessPayload = {
+  canManageGuestCredentials: boolean;
   members: AccessMember[];
   groups: AccessGroup[];
   availableGroups: AvailableGroup[];
@@ -145,6 +146,7 @@ export function ProjectShareDialog({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [guestCode, setGuestCode] = useState("");
+  const [invitationStatus, setInvitationStatus] = useState("");
   const [copied, setCopied] = useState(false);
 
   const loadAccess = useCallback(async () => {
@@ -223,7 +225,11 @@ export function ProjectShareDialog({
       busy
     ) return;
     setGuestCode("");
-    const invited = await runAccessMutation<{ guestCode?: string }>({
+    setInvitationStatus("");
+    const invited = await runAccessMutation<{
+      guestCode?: string | null;
+      emailDelivery?: { delivered: boolean };
+    }>({
       key: "invite",
       init: {
         method: "POST",
@@ -236,7 +242,12 @@ export function ProjectShareDialog({
         }),
       },
       fallbackError: "Kunne ikke invitere personen.",
-      onSuccess: (payload) => setGuestCode(payload.guestCode ?? ""),
+      onSuccess: (payload) => {
+        setGuestCode(payload.guestCode ?? "");
+        setInvitationStatus(payload.emailDelivery?.delivered
+          ? "Invitasjonen er sendt på e-post til mottakeren."
+          : "Tilgangen er lagret, men e-posten kunne ikke sendes. Kontakt administratoren hvis mottakeren trenger en gjestekode.");
+      },
     });
     if (invited) {
       setGuestName("");
@@ -362,6 +373,10 @@ export function ProjectShareDialog({
             <p role="alert" className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
               {error}
             </p>
+          ) : null}
+
+          {invitationStatus ? (
+            <p role="status" className="text-sm text-slate-700">{invitationStatus}</p>
           ) : null}
 
           {guestCode ? (
@@ -540,7 +555,7 @@ export function ProjectShareDialog({
                         <>
                           <RoleSelect value={member.role as ShareableRole} disabled={busy === member.principal_id} onChange={(nextRole) => void updateAccess({ principalId: member.principal_id }, nextRole)} />
                           {busy === member.principal_id ? <LoaderCircle className="size-4 animate-spin text-blue-900" /> : null}
-                          {isGuest ? (
+                          {isGuest && access?.canManageGuestCredentials ? (
                             <button type="button" title="Lag ny kode og logg ut aktive økter" onClick={() => void rotateGuest(member.principal_id)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
                               <RotateCcw className="size-4" />
                             </button>

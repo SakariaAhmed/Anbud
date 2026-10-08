@@ -70,6 +70,69 @@ const {
   validateRequirementResponseBatchRows,
 } = jiti(path.join(frontendRoot, "lib/server/ai.ts"));
 const { selectDocumentStructureEntries } = jiti(path.join(frontendRoot, "lib/server/ai/context.ts"));
+
+test("documented deadlines in every Norwegian month survive answer clarification", () => {
+  for (const month of ["januar", "februar", "mars", "april", "mai", "juni", "juli", "august", "september", "oktober", "november", "desember"]) {
+    const text = `Leveransefrist er 15. ${month} 2027.`;
+    const answer = `Atea setter løsningen i drift innen 15. ${month} 2027 og dokumenterer godkjent akseptansetest.`;
+    const result = normalizeRequirementAnswerResult(answer, requirement({ text, sourceExcerpt: text }), text);
+    assert.equal(result.source, "batch", month);
+    assert.doesNotMatch(result.answer, /ikke dokumentert|tilbudsforutsetninger/, month);
+    assert.match(result.answer, new RegExp(`15\\. ${month} 2027`));
+  }
+  const text = "Leveransefrist fastsettes etter akseptansetesten.";
+  const result = normalizeRequirementAnswerResult(
+    "Atea setter løsningen i drift etter gjennomført akseptansetest og dokumenterer resultatene sammen med kunden.",
+    requirement({ text, sourceExcerpt: text }), text,
+  );
+  assert.equal(result.source, "batch");
+  assert.match(result.answer, /ikke dokumentert/);
+});
+
+test("a maximum recovery duration before the noun remains a documented commitment", () => {
+  const text = "Maksimal gjenopprettingstid er 90 minutter for journalintegrasjonen. Andre systemer kan ha inntil 8 timer.";
+  const entry = requirement({ id: "L-10", text, sourceExcerpt: text });
+  const answer = "Atea gjenoppretter journalintegrasjonen innen 90 minutter og øvrige systemer innen 8 timer; gjenopprettingstiden måles og dokumenteres gjennom en kontrollert test før produksjonssetting.";
+  const result = normalizeRequirementAnswerResult(answer, entry, text);
+  assert.equal(result.source, "batch");
+  assert.doesNotMatch(result.answer, /ikke tallfestet|avklares som foreslåtte tjenestenivåer/);
+  assert.match(result.answer, /90 minutter/);
+
+  const unspecified = "Maksimal gjenopprettingstid skal fastsettes for journalintegrasjonen.";
+  const noTarget = normalizeRequirementAnswerResult(
+    "Atea dokumenterer gjenoppretting av journalintegrasjonen og verifiserer forløpet gjennom en kontrollert test før produksjonssetting.",
+    requirement({ id: "L-11", text: unspecified, sourceExcerpt: unspecified }),
+    unspecified,
+  );
+  assert.equal(noTarget.source, "batch");
+  assert.match(noTarget.answer, /ikke tallfestet/);
+
+  for (const source of [
+    "Maksimal gjenopprettingstid er fire timer.",
+    "Maksimal gjenopprettingstid: 4 timer.",
+    "Maksimal gjenopprettingstid skal være 4 timer.",
+  ]) {
+    const known = normalizeRequirementAnswerResult(
+      "Atea gjenoppretter tjenesten innen fire timer og dokumenterer målt gjenopprettingstid gjennom en kontrollert test før produksjonssetting.",
+      requirement({ text: source, sourceExcerpt: source }),
+      source,
+    );
+    assert.equal(known.source, "batch", source);
+    assert.doesNotMatch(known.answer, /ikke tallfestet/, source);
+  }
+  for (const source of [
+    "Maksimal gjenopprettingstid er ikke 90 minutter, men skal fastsettes senere.",
+    "Maksimal gjenopprettingstid er uavklart. Rapporten skal gjennomgås innen 90 minutter.",
+  ]) {
+    const unknown = normalizeRequirementAnswerResult(
+      "Atea dokumenterer gjenoppretting av tjenesten og verifiserer forløpet gjennom en kontrollert test før produksjonssetting.",
+      requirement({ text: source, sourceExcerpt: source }),
+      source,
+    );
+    assert.equal(unknown.source, "batch", source);
+    assert.match(unknown.answer, /ikke tallfestet/, source);
+  }
+});
 const { analyzeRequirementCoverageIntegrity } = jiti(
   path.join(
     frontendRoot,
@@ -195,6 +258,17 @@ test("foundation facts distribute a bounded budget across 100 documents", () => 
     ),
     "the last document must contribute its unique late risk",
   );
+});
+
+test("foundation facts preserve late qualifications and distinct clauses after a shared prefix", () => {
+  const prefix = "Leveranse av drift omfatter " + "dokumenterte rutiner og ansvar for kundens plattform, ".repeat(5);
+  const included = prefix + "men beredskap utenfor arbeidstid er ikke inkludert.";
+  const excluded = prefix + "og beredskap utenfor arbeidstid er inkludert i avtalen.";
+  assert.ok(included.length > 260 && included.length < 800);
+  const facts = collectArtifactFoundationFacts({ documents: [{ ...document("source"), raw_text: `${included}\n${excluded}` }], serviceDocuments: [] });
+  assert.ok(facts.some((fact) => fact.text === included));
+  assert.ok(facts.some((fact) => fact.text === excluded));
+  assert.ok(facts.every((fact) => fact.text.length <= 800));
 });
 
 test("8-19 character explicit source rows prevent false 100 percent coverage", () => {
@@ -2867,8 +2941,31 @@ test("explicit rejection of a mandatory requirement is always Dårlig", () => {
 
       assert.equal(corrected.assessment, "Dårlig");
       assert.match(corrected.rationale, /avslår|utenfor leveransen/i);
+      assert.equal(corrected.evidence, answerExcerpt);
+      assert.match(corrected.recommendation, /Bevar avslaget.*inntil leverandøren.*bekreftet/u);
+      assert.match(corrected.recommendation, /omfang og pris/u);
     }
   }
+});
+
+test("unconfirmed delivery advice preserves the reservation until supplier confirmation", () => {
+  const answer = "Endelig omfang og løsning må avklares før vi kan bekrefte leveransen.";
+  const corrected = correctCoverageAssessmentWithSourceEvidence({
+    entry: requirement({
+      text: "Leverandøren skal levere og dokumentere døgnberedskap.",
+      sourceExcerpt: `Kravgrunnlag: Leverandøren skal levere døgnberedskap. | Svarrad: ${answer}`,
+      answerExcerpt: answer,
+      answerDocumentId: "solution",
+    }),
+    assessment: "Godt",
+    rationale: "Modellen antar at leveransen er avklart.",
+    evidence: answer,
+    recommendation: "Fjern forbeholdet og lov døgnberedskap.",
+  });
+  assert.equal(corrected.assessment, "Uklart");
+  assert.equal(corrected.evidence, answer);
+  assert.match(corrected.recommendation, /Bevar forbeholdet inntil leveransen er bekreftet/u);
+  assert.match(corrected.recommendation, /forslag, ikke som en inngått forpliktelse/u);
 });
 
 test("mandatory requirement without a matched answer remains Mangler", () => {
@@ -4908,6 +5005,46 @@ test("proposal input metadata separates customer requirements from supplier evid
   ]);
 });
 
+test("proposed answers requiring confirmation retain review metadata per source row", () => {
+  const ledger = [
+    requirement({ id: "K-1", documentId: "source-a" }),
+    requirement({ id: "K-1", documentId: "source-b", heading: "Annet kildekrav" }),
+    requirement({ id: "K-2", documentId: "source-a" }),
+  ];
+  const answers = [
+    { answer: "Foreslått forbedring, som krever Atea-bekreftelse: Atea håndhever MFA for alle administratorer." },
+    { answer: "Foreslått leveranse må bekreftes av leverandøren: Atea dokumenterer alle tilgangsrettigheter." },
+    { answer: "Atea dokumenterer tilgangsstyring og kunden godkjenner testprotokollen." },
+  ];
+  const metadata = buildProposalInputRequiredMetadata({ ledger, answers });
+  assert.equal(metadata.proposal_input_required_count, 2);
+  assert.deepEqual(metadata.proposal_input_required_rows.map((row) => [row.order_index, row.source_document_id, row.reasons]), [
+    [0, "source-a", ["explicit_bid_decision"]],
+    [1, "source-b", ["explicit_bid_decision"]],
+  ]);
+  assert.throws(() => buildProposalInputRequiredMetadata({ ledger, answers: answers.slice(0, 1) }), /samme antall/);
+  assert.equal(buildProposalInputRequiredMetadata({ ledger: ledger.slice(0, 1), answers: [{ answer: "Foreslått forbedring er bekreftet av leverandøren og krever ikke ny bekreftelse." }] }).proposal_input_required_count, 0);
+  assert.equal(buildProposalInputRequiredMetadata({ ledger: ledger.slice(0, 1), answers: [{ answer: "Atea foreslår som forbedring at sikkerhetskopier lagres i Norge; endringen krever leverandørens bekreftelse." }] }).proposal_input_required_count, 1);
+  assert.equal(buildProposalInputRequiredMetadata({ ledger: ledger.slice(0, 1), answers: [{ answer: "Atea foreslår en dokumentert rutine som ikke krever ny bekreftelse." }] }).proposal_input_required_count, 0);
+});
+
+test("documented delivery gaps awaiting correction retain review metadata without proposal phrasing", () => {
+  const answers = [
+    "Dokumentert løsning bruker passord uten MFA; dette er et avvik som må lukkes før administrativ tilgang gis.",
+    "Dokumentert løsningsgrunnlag oppfyller derfor ikke RTO-kravet; en teknisk dimensjonering og leverandørbekreftelse må kompletteres før innlevering og produksjonssetting.",
+    "Dokumentert løsningsgrunnlag angir årlig test, og må derfor oppdateres til kvartalsvis gjennomføring før innlevering.",
+    "Dette avviker fra kravet og må erstattes av en bekreftet 24x7-modell før innlevering.",
+    "Atea dokumenterer tilgangsstyring og kunden godkjenner testprotokollen.",
+    "Eventuelle testavvik må lukkes og retestes som del av dokumentert produksjonsrutine.",
+    "Dokumentert løsning er bekreftet, og må ikke oppdateres før innlevering.",
+    "Ingen leverandørbekreftelse må kompletteres før innlevering.",
+  ];
+  const ledger = answers.map((_, index) => requirement({ id: `R-${index}`, documentId: "source-review" }));
+  const metadata = buildProposalInputRequiredMetadata({ ledger, answers: answers.map((answer) => ({ answer })) });
+  assert.deepEqual(metadata.proposal_input_required_rows.map((row) => row.order_index), [0, 1, 2, 3]);
+  assert.ok(metadata.proposal_input_required_rows.every((row) => row.source_document_id === "source-review"));
+});
+
 test("template provenance blocks only deterministic Uklart promotion, not AI Godt", () => {
   const entry = requirement({
     id: "R-035",
@@ -5567,6 +5704,20 @@ test("coverage batch maps reordered rows by exact nr and ref", () => {
   );
 });
 
+test("a parser location label cannot replace distinct coverage requirement identities", () => {
+  const entries = [1, 2].map((nr) => requirement({
+    id: `L-0${nr}`, tableId: "Dokumenttekst krav-ID",
+    text: `Leverandøren skal dokumentere kontroll ${nr}.`,
+  }));
+  const registry = buildRequirementCoverageBatchRegistry(entries);
+  assert.deepEqual(registry.map((row) => row.ref), ["L-01", "L-02"]);
+  assert.equal(registry[0].table_id, "Dokumenttekst krav-ID");
+  const rows = [{ nr: 2, ref: "L-02", assessment: "Dårlig" }, { nr: 1, ref: "L-01", assessment: "Godt" }];
+  assert.deepEqual(validateRequirementCoverageBatchRows({ entries, rows, startIndex: 0 }).map((row) => row.ref), ["L-01", "L-02"]);
+  assert.throws(() => validateRequirementCoverageBatchRows({ entries, rows: rows.map((row) => ({ ...row, ref: row.nr === 1 ? "L-02" : "L-01" })), startIndex: 0 }), /forventet/);
+  assert.equal(buildRequirementCoverageBatchRegistry([requirement({ id: "ID 2-22", tableId: "Tabell ID 2-22" })])[0].ref, "Tabell ID 2-22");
+});
+
 test("coverage batch rejects missing, swapped, duplicate, and extra identities", () => {
   const entries = [1, 2, 3].map((nr) =>
     requirement({
@@ -5933,6 +6084,46 @@ test("duplicate evidence is ambiguous and does not pick the first coverage row",
   assert.equal(normalized.reference_match, "section");
   assert.equal(normalized.matched_requirement_reference, null);
   assert.match(normalized.reference, /^Seksjonsfunn:/);
+});
+
+test("qualified document references disambiguate identical requirement IDs and quotes", () => {
+  const evidence = "Leverandøren overvåker tjenesten og dokumenterer hendelser i en felles driftslogg.";
+  const base = coverageFixture(2);
+  const items = base.items.map((item, index) => ({
+    ...item,
+    reference: "R-101",
+    full_reference: `Dokument ${index + 1} > Drift > R-101`,
+    source_reference: `Dokument ${index + 1}, R-101`,
+    source_document_id: `document-${index + 1}`,
+    evidence,
+    assessment: index === 0 ? "Godt" : "Dårlig",
+    rationale: index === 0 ? "Dekker normal drift." : "Døgnberedskap er ikke dokumentert.",
+    recommendation: index === 0 ? "Bevar beskrivelsen." : "Innhent bekreftelse på døgnberedskap.",
+  }));
+  const coverage = { ...base, items };
+  for (const reference of [items[1].full_reference, items[1].source_reference]) {
+    const [finding] = normalizeDocumentFindingsAgainstCoverage([
+      { reference, evidence, assessment: "Godt", finding: "Modellens forslag", recommendation: "Modellens råd" },
+    ], coverage);
+    assert.equal(finding.reference, items[1].full_reference);
+    assert.equal(finding.reference_match, "coverage");
+    assert.equal(finding.assessment, "Dårlig");
+    assert.equal(finding.finding, items[1].rationale);
+    assert.equal(finding.recommendation, items[1].recommendation);
+  }
+
+  const [ambiguous] = normalizeDocumentFindingsAgainstCoverage([
+    { reference: "R-101", evidence, assessment: "Godt", finding: "Ukjent dokument", recommendation: "Avklar kilden" },
+  ], coverage);
+  assert.equal(ambiguous.reference_match, "section");
+  assert.equal(ambiguous.matched_requirement_reference, null);
+
+  const different = { ...coverage, items: [items[0], { ...items[1], evidence: "Beredskap om natten inngår ikke i tilbudet og må prises separat." }] };
+  const [conflict] = normalizeDocumentFindingsAgainstCoverage([
+    { reference: items[1].full_reference, evidence, assessment: "Godt", finding: "Feil kilde", recommendation: "Kontroller henvisningen" },
+  ], different);
+  assert.equal(conflict.reference_match, "section", "A precise reference must never silently switch to another document because its quote matches.");
+  assert.equal(conflict.matched_requirement_reference, null);
 });
 
 test("explicit section findings stay sections even when evidence matches coverage", () => {

@@ -1,3 +1,4 @@
+import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { isArtifactType } from "@/lib/server/domain/project-documents";
@@ -22,6 +23,7 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "artifact.read");
     const artifactType = new URL(request.url).searchParams.get("artifact_type");
     const artifacts =
       artifactType && isArtifactType(artifactType)
@@ -29,6 +31,8 @@ export async function GET(
         : await listGeneratedArtifacts(id);
     return NextResponse.json({ artifacts }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke hente generatorresultatene."),
@@ -82,6 +86,8 @@ export async function POST(
 
     return NextResponse.json({ job }, { status: 202 });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke generere artefakt."),
@@ -97,6 +103,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "artifact.write");
     const body = (await request.json().catch(() => ({}))) as {
       artifact_id?: string;
       title?: string;
@@ -124,6 +131,8 @@ export async function PATCH(
 
     return NextResponse.json({ artifact, project: snapshot });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke oppdatere kravbesvarelsen."),
@@ -139,6 +148,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "artifact.write");
     const body = (await request.json().catch(() => ({}))) as {
       artifact_id?: string;
     };
@@ -158,6 +168,8 @@ export async function DELETE(
 
     return NextResponse.json({ project: snapshot });
   } catch (error) {
+    const authorizationResponse = authorizationErrorResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke slette artefakten."),

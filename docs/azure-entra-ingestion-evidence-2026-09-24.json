@@ -1,0 +1,624 @@
+{
+  "date": "2026-09-24",
+  "candidateBaseCommit": "dd3ae703ec2494ca55c74af11e203c2020e9c107",
+  "candidateChangesAtVerification": [
+    {
+      "path": "apps/frontend/lib/server/use-cases/project-workflows.ts",
+      "sha256": "dd8f073b496ccc7bc05b3f68447bffc0874c6f3a47da243e7568b07086b11c71"
+    },
+    {
+      "path": "apps/frontend/lib/server/audit-20260905/reproduction.test.mjs",
+      "sha256": "3a2b556617588c953bea2be392715723c125b4b6122a3de8b47ecf96164f5bde"
+    },
+    {
+      "path": "apps/frontend/lib/server/extensions-schema-access.sql.test.mjs",
+      "sha256": "f3c76a06298cd4efb18dfcd318440a6d43f7ee59eff4d5dc7d491ad676d17f3d"
+    },
+    {
+      "path": "database/schema.sql",
+      "sha256": "1bb6a786c3099aa9ee8da450cb9fd8a52a3712f7a15c5a13276bae6ecd8a1a89"
+    },
+    {
+      "path": "database/migrations/20260924183000_service_role_extensions_access.sql",
+      "sha256": "7a9fe0204520705868f5b18b78a00e2c01fc136f949a7ac05972401355a03612"
+    }
+  ],
+  "production": {
+    "observationsSource": "CLI and browser results from this task on 2026-09-24; credentials and customer content omitted",
+    "revision": "anbud--sha-74de89311ace741fc17733c3924ad16574315813",
+    "webAndWorkerImage": "anbudprod9841703.azurecr.io/anbud@sha256:93dd624a8ec2ddf0174ef7a701b4a21f023dfd51f235eb3b269801b5b996e537",
+    "trafficToRevisionPercent": 100,
+    "livenessHttpStatus": 200,
+    "anonymousProjectsStatus": 401,
+    "anonymousReadinessStatus": 401,
+    "microsoftBrowserLogin": {
+      "completed": true,
+      "accountTypeShown": "Microsoft-konto",
+      "roleShown": "Administrator",
+      "protectedProjectListLoaded": true,
+      "logoutReturnedToLogin": true,
+      "protectedPageAfterLogoutReturnedToLogin": true
+    },
+    "callbackNegativeChecks": {
+      "providerAccessDeniedRedirect": "microsoft_cancelled",
+      "invalidStateRedirect": "microsoft_callback_invalid",
+      "flowCookiesCleared": 3,
+      "cacheControlNoStore": true
+    },
+    "runtimeProbe": {
+      "managedIdentityTokenStatus": 200,
+      "storageContainerHeadStatus": 200,
+      "storageContainerPrivate": true,
+      "dataApiProjectsHeadStatus": 200
+    },
+    "vectorPermissionProbe": {
+      "httpStatus": 200,
+      "emptyResult": true,
+      "sourceIdFilter": [],
+      "mutations": false
+    },
+    "worker": {
+      "schedule": "*/5 * * * *",
+      "latestFiveObservedExecutions": "Succeeded",
+      "latestObservedStart": "2026-09-24T18:00:00+00:00",
+      "latestObservedEnd": "2026-09-24T18:00:31+00:00",
+      "newDocumentExecutionClaim": false
+    },
+    "storageRoleAssignments": "Both web and worker have Storage Blob Data Contributor scoped to the private document container",
+    "entraTenantDiffersFromAzureSubscriptionTenant": true,
+    "limits": [
+      "Live Microsoft login used an existing browser provider session; no new MFA challenge was tested.",
+      "Registration inventory through Azure CLI required MFA (AADSTS50076); no tenant policy audit was performed.",
+      "The browser blocked direct JSON-route navigation to authenticated production readiness. Separate live managed-identity/storage/data-API probes passed.",
+      "Production still runs main, not the candidate branch."
+    ]
+  },
+  "ingestionRuns": {
+    "ingestion-v7": {
+      "checks": [
+        "Actual password session persisted in disposable database",
+        "Primary-document metadata inference persisted before completed readiness",
+        "Restricted viewer can read project but cannot download or upload; revoked session denied",
+        "Authenticated readiness verifies database and live Azure container",
+        "Actual delete routes removed blobs, chunks, documents and own project"
+      ],
+      "documents": [
+        {
+          "role": "primary_customer_document",
+          "fileName": "fiktiv-kundekontroll.pdf",
+          "sha256": "5ce4df2a9e25c26b08e0a422411b9e700257a469d8392aee94a4fe65a073ab3c",
+          "uploadedStatus": "queued",
+          "finalStatus": "enhanced_ready",
+          "parser": "pdf-parse-local-layout-v3",
+          "chunkSourceRevision": 1,
+          "chunkCount": 9,
+          "allEmbeddingsPresent": true,
+          "encryptedAzureRoundTrip": true,
+          "downloadByteIdentical": true,
+          "anonymousBlobStatus": 409,
+          "deleted": true
+        },
+        {
+          "role": "primary_solution_document",
+          "fileName": "fiktiv-losning.txt",
+          "sha256": "4a30b3fbb3ab1073408d44e5e24d3d34a8a66ee07de67e713340cecf497684cb",
+          "uploadedStatus": "queued",
+          "finalStatus": "enhanced_ready",
+          "parser": "text",
+          "chunkSourceRevision": 1,
+          "chunkCount": 1,
+          "allEmbeddingsPresent": true,
+          "encryptedAzureRoundTrip": true,
+          "downloadByteIdentical": true,
+          "anonymousBlobStatus": 409,
+          "deleted": true
+        },
+        {
+          "role": "supporting_document",
+          "fileName": "fiktiv-vedlegg.docx",
+          "sha256": "f4e31450350df4818f9d72479aa58ea1cbe99ff4a0c742fa8997383afc338daf",
+          "uploadedStatus": "queued",
+          "finalStatus": "enhanced_ready",
+          "parser": "docx-xml",
+          "chunkSourceRevision": 1,
+          "chunkCount": 1,
+          "allEmbeddingsPresent": true,
+          "encryptedAzureRoundTrip": true,
+          "downloadByteIdentical": true,
+          "anonymousBlobStatus": 409,
+          "deleted": true
+        }
+      ],
+      "metadata": {
+        "name": "Fiktiv Azurekontroll 2026",
+        "customer_name": "Nordic Utilities",
+        "source_revision": 9
+      },
+      "readiness": {
+        "httpStatus": 200,
+        "model": {
+          "service": "bidsite-frontend",
+          "status": "healthy",
+          "checked_at": "2026-09-24T18:10:29.151Z",
+          "runtime": {
+            "node_env": "development",
+            "uptime_seconds": 0,
+            "region": null,
+            "stamp": null,
+            "version": null
+          },
+          "components": [
+            {
+              "name": "runtime",
+              "status": "healthy",
+              "description": "Next.js runtime is responding.",
+              "metadata": {
+                "uptime_seconds": 0
+              }
+            },
+            {
+              "name": "configuration",
+              "status": "healthy",
+              "description": "Required runtime configuration is present.",
+              "metadata": {
+                "missing_required_count": 0,
+                "docling_mode": "off",
+                "docling_auto_run": "off",
+                "data_backend": "azure_postgrest",
+                "file_storage_backend": "azure_blob"
+              }
+            },
+            {
+              "name": "data_api",
+              "status": "healthy",
+              "description": "The data API is reachable.",
+              "latency_ms": 4,
+              "metadata": {
+                "backend": "azure_postgrest"
+              }
+            },
+            {
+              "name": "file_storage",
+              "status": "healthy",
+              "description": "The private Azure Blob container is reachable with managed identity.",
+              "latency_ms": 385,
+              "metadata": {
+                "backend": "azure_blob"
+              }
+            },
+            {
+              "name": "openai",
+              "status": "healthy",
+              "description": "OpenAI configuration is present.",
+              "metadata": {
+                "model": "gpt-5.4"
+              }
+            },
+            {
+              "name": "project_job_worker",
+              "status": "healthy",
+              "description": "Project job worker authentication is configured."
+            }
+          ],
+          "flows": [
+            {
+              "name": "interactive_project_workspace",
+              "depends_on": [
+                "runtime",
+                "configuration",
+                "data_api",
+                "file_storage"
+              ],
+              "status": "healthy"
+            },
+            {
+              "name": "ai_generation",
+              "depends_on": [
+                "runtime",
+                "configuration",
+                "data_api",
+                "file_storage",
+                "openai"
+              ],
+              "status": "healthy"
+            },
+            {
+              "name": "async_project_jobs",
+              "depends_on": [
+                "runtime",
+                "configuration",
+                "data_api",
+                "file_storage",
+                "openai",
+                "project_job_worker"
+              ],
+              "status": "healthy"
+            }
+          ]
+        }
+      },
+      "completed": true
+    },
+    "ocr-v4": {
+      "checks": [
+        "Actual password session persisted in disposable database",
+        "Primary-document metadata inference persisted before completed readiness",
+        "Restricted viewer can read project but cannot download or upload; revoked session denied",
+        "Authenticated readiness verifies database and live Azure container",
+        "Actual delete routes removed blobs, chunks, documents and own project"
+      ],
+      "documents": [
+        {
+          "role": "primary_customer_document",
+          "fileName": "fiktiv-skannet.pdf",
+          "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87",
+          "uploadedStatus": "queued",
+          "ocrDiacriticsPreserved": false,
+          "finalStatus": "enhanced_ready",
+          "parser": "docling",
+          "chunkSourceRevision": 1,
+          "chunkCount": 1,
+          "allEmbeddingsPresent": true,
+          "encryptedAzureRoundTrip": true,
+          "downloadByteIdentical": true,
+          "anonymousBlobStatus": 409,
+          "deleted": true
+        }
+      ],
+      "metadata": {
+        "name": "Fiktiv Azurekontroll 2026",
+        "customer_name": "Nordlys Testkommune",
+        "source_revision": 4
+      },
+      "readiness": {
+        "httpStatus": 200,
+        "model": {
+          "service": "bidsite-frontend",
+          "status": "healthy",
+          "checked_at": "2026-09-24T18:16:02.602Z",
+          "runtime": {
+            "node_env": "development",
+            "uptime_seconds": 0,
+            "region": null,
+            "stamp": null,
+            "version": null
+          },
+          "components": [
+            {
+              "name": "runtime",
+              "status": "healthy",
+              "description": "Next.js runtime is responding.",
+              "metadata": {
+                "uptime_seconds": 0
+              }
+            },
+            {
+              "name": "configuration",
+              "status": "healthy",
+              "description": "Required runtime configuration is present.",
+              "metadata": {
+                "missing_required_count": 0,
+                "docling_mode": "async",
+                "docling_auto_run": "off",
+                "data_backend": "azure_postgrest",
+                "file_storage_backend": "azure_blob"
+              }
+            },
+            {
+              "name": "data_api",
+              "status": "healthy",
+              "description": "The data API is reachable.",
+              "latency_ms": 4,
+              "metadata": {
+                "backend": "azure_postgrest"
+              }
+            },
+            {
+              "name": "file_storage",
+              "status": "healthy",
+              "description": "The private Azure Blob container is reachable with managed identity.",
+              "latency_ms": 386,
+              "metadata": {
+                "backend": "azure_blob"
+              }
+            },
+            {
+              "name": "openai",
+              "status": "healthy",
+              "description": "OpenAI configuration is present.",
+              "metadata": {
+                "model": "gpt-5.4"
+              }
+            },
+            {
+              "name": "project_job_worker",
+              "status": "healthy",
+              "description": "Project job worker authentication is configured."
+            }
+          ],
+          "flows": [
+            {
+              "name": "interactive_project_workspace",
+              "depends_on": [
+                "runtime",
+                "configuration",
+                "data_api",
+                "file_storage"
+              ],
+              "status": "healthy"
+            },
+            {
+              "name": "ai_generation",
+              "depends_on": [
+                "runtime",
+                "configuration",
+                "data_api",
+                "file_storage",
+                "openai"
+              ],
+              "status": "healthy"
+            },
+            {
+              "name": "async_project_jobs",
+              "depends_on": [
+                "runtime",
+                "configuration",
+                "data_api",
+                "file_storage",
+                "openai",
+                "project_job_worker"
+              ],
+              "status": "healthy"
+            }
+          ]
+        }
+      },
+      "completed": true
+    }
+  },
+  "doclingRuntime": {
+    "version": "2.99.0",
+    "imageId": "sha256:f168a8e0229f22ef2127275dd068500e4520a3401985cd8eddcfd4e201eee137",
+    "network": "none",
+    "candidateWorkflow": "host Node 22.14.0; container supplies parser only"
+  },
+  "failedAttempts": [
+    {
+      "file": "tmp/integration/cloud-verification/ingestion-v1.json",
+      "completed": false,
+      "error": "{\"url\":\"/api/projects/dea2c4b8-d995-4175-afe7-f9651aa5959b/documents\",\"status\":500,\"body\":{\"error\":\"This request is not authorized to perform this operation using this permission.\\nRequestId:9195f934-d01e-0019-354e-4ce165000000\\nTime:2026-09-24T17:58:13.7879730Z\"}}"
+    },
+    {
+      "file": "tmp/integration/cloud-verification/ingestion-v2.json",
+      "completed": false,
+      "error": "{\"url\":\"/api/projects/2522bd50-8d92-4aa9-960c-b60b79445c0d/documents\",\"status\":500,\"body\":{\"error\":\"This request is not authorized to perform this operation using this permission.\\nRequestId:cf10ef14-b01e-0030-294f-4cdf11000000\\nTime:2026-09-24T18:03:31.1030408Z\"}}"
+    },
+    {
+      "file": "tmp/integration/cloud-verification/ingestion-v3.json",
+      "completed": false,
+      "error": "{\"url\":\"/api/projects/62cc1bc5-21f3-4de1-b4d0-7b888c7660cc/documents\",\"status\":500,\"body\":{\"error\":\"This request is not authorized to perform this operation using this permission.\\nRequestId:cf1177da-b01e-0030-3c4f-4cdf11000000\\nTime:2026-09-24T18:04:23.0904375Z\"}}"
+    },
+    {
+      "file": "tmp/integration/cloud-verification/ingestion-v4.json",
+      "completed": false,
+      "error": "Ingestion must complete: {\"status\":\"failed\",\"error\":\"Dokumentindeksering feilet: permission denied for schema extensions\"}\n+ actual - expected\n\n+ 'failed'\n- 'completed'\n"
+    },
+    {
+      "file": "tmp/integration/cloud-verification/ingestion-v5.json",
+      "completed": false,
+      "error": "The expression evaluated to a falsy value:\n\n  assert.ok([401,403,404].includes(anonymousBlob.status))\n"
+    },
+    {
+      "file": "tmp/integration/cloud-verification/ingestion-v6.json",
+      "completed": false,
+      "error": "Expected values to be strictly equal:\n\n404 !== 403\n"
+    },
+    {
+      "file": "tmp/integration/cloud-verification/ocr-v1.json",
+      "completed": false,
+      "error": "Ingestion must complete: {\"status\":\"failed\",\"error\":\"Dokumentbehandlingen er ikke ferdig. Vent til dokumentene er klare før du genererer.\"}\n+ actual - expected\n\n+ 'failed'\n- 'completed'\n"
+    },
+    {
+      "file": "tmp/integration/cloud-verification/ocr-v2.json",
+      "completed": false,
+      "error": "Ingestion must complete: {\"status\":\"failed\",\"error\":\"Dokumentbehandlingen er ikke ferdig. Vent til dokumentene er klare før du genererer.\"}\n+ actual - expected\n\n+ 'failed'\n- 'completed'\n"
+    },
+    {
+      "file": "tmp/integration/cloud-verification/ocr-v3.json",
+      "completed": false,
+      "error": "The input did not match the regular expression /14 måneder/u. Input:\n\n'FIKTIV OCR-VERIFISERING Nordlys Testkommune Krav K-42: Sikkerhetslogger lagres i 14 maneder. Krav K-43: Leverandoren holder fire kurs. Kontrollkode: VERIFIKASJON-84 Dette dokumentet inneholder kun testdata.'\n"
+    }
+  ],
+  "validation": {
+    "frontendTests": 930,
+    "repositoryTests": 129,
+    "workflowTests": 46,
+    "failures": 0,
+    "skips": 0,
+    "lintWarnings": 0,
+    "build": "passed",
+    "newSqlRegressionFailedBeforeFix": true,
+    "newOcrRegressionFailedBeforeFix": true
+  },
+  "budget": {
+    "capUsd": 2,
+    "priorRequests": 20,
+    "priorLedgerSha256": "ee651b8eb9344d99e5014ee48cec3fd711473bd6da5fe5695a7d6171a3beb6ad",
+    "inheritedRequestsUnchanged": true,
+    "newRequests": 17,
+    "newRequestModels": {
+      "gpt-5.4-mini": 7,
+      "text-embedding-3-small": 10
+    },
+    "priorAccountedUsd": 1.549892,
+    "additionalAccountedUsd": 0.012225,
+    "totalAccountedUsd": 1.562117,
+    "remainingUsd": 0.437883,
+    "pending": 0,
+    "proxyStopped": true
+  },
+  "cleanup": {
+    "application": {
+      "deletedProjects": [
+        "dea2c4b8-d995-4175-afe7-f9651aa5959b",
+        "2522bd50-8d92-4aa9-960c-b60b79445c0d",
+        "62cc1bc5-21f3-4de1-b4d0-7b888c7660cc",
+        "21458fe7-ee0e-4dea-a862-3032258c1a1a",
+        "77933fcd-1bd0-4c22-920b-d61a724efc07",
+        "4331d006-5208-4744-90d1-815c587ce777",
+        "15f20a98-f46d-4692-b29b-10d10a83f12a",
+        "8efaf767-39f7-4df8-a7f9-bb5a816c41f5",
+        "7895dd3b-efc7-4e96-898c-499cd238a642"
+      ],
+      "allProjectDocumentsGone": true
+    },
+    "azure": {
+      "projectBlobsDeletedByApplication": true,
+      "remainingProbeBlobRemovedWithContainer": true,
+      "containerAbsent": true,
+      "temporaryRoleAssignmentAbsent": true
+    },
+    "local": {
+      "databaseContainerAbsent": true,
+      "dataApiContainerAbsent": true,
+      "networkAbsent": true,
+      "localServerStopped": true,
+      "budgetProxyStopped": true
+    }
+  },
+  "artifacts": [
+    {
+      "path": "tmp/integration/cloud-verification/setup.mjs",
+      "sha256": "45de3d509063f6ee526acd964efd3ac660a97c9d5b506186b3ddaa720079434e"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/run-ingestion.mjs",
+      "sha256": "44ea930c2c6531bb6ef2574984df277c2fc7ba879672e89685a5ca7711229a70"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/docling-docker.py",
+      "sha256": "3208339583e730ab70656523e12e6d6723281fe6fc7f46abb82e01bded0652fa"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/production-probe-v3.py",
+      "sha256": "f69ad1b48863d0f1180e73eaf787b3207e929dfb1d461fa12f3e5caa9408e7dc"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/production-vector-probe.py",
+      "sha256": "7953a46e147e9be2d3de6e0797fa6c513cf615791031f535f9fc417a540d223b"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/production-observations.json",
+      "sha256": "7c2e0601307210c5ee6052e38498614f30919b288a2505b4cdc26047cc910be3"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/identity-check.json",
+      "sha256": "a929b4ce153680b8d4b70fe9d5a2194d49b7173f3738257d13217ef4b9de4096"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/scanned-fixture.pdf",
+      "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/solution.txt",
+      "sha256": "4a30b3fbb3ab1073408d44e5e24d3d34a8a66ee07de67e713340cecf497684cb"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/support.docx",
+      "sha256": "f4e31450350df4818f9d72479aa58ea1cbe99ff4a0c742fa8997383afc338daf"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ingestion-v1.json",
+      "sha256": "1a694fbfc33c926ba891dbef45fef676ae022f2779f8752c58219d8bb09c2b74"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ingestion-v2.json",
+      "sha256": "c347cdf1b3f2923976fba3bdd6935247098162ff08d29b924ae08a434976fb7c"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ingestion-v3.json",
+      "sha256": "01a0388586139f2a7cd077ee87dd4bf799344208785252ffc6708f692686fbb3"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ingestion-v4.json",
+      "sha256": "5b923d0c243c903e2334230f2eb48bf42f5acc5514df6a766138d9e993876d21"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ingestion-v5.json",
+      "sha256": "a96991bd372a27656188865beb3ebcf18cce455c2bc9e655f2c4ed2a74807a52"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ingestion-v6.json",
+      "sha256": "83acefd4b7aab09916091a4c6b6a73f4aaa9be2d85451408928ecad47caa8532"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ingestion-v7.json",
+      "sha256": "81585ec448355fe19e8369449c08f7ff2d51279969afcbfd5ad7643626d5247c"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ocr-v1.json",
+      "sha256": "2b7047aecb3eac65cd5bbd4b9a9d1f4114a6a4fbb3043c4676f4bb392bda6abb"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ocr-v2.json",
+      "sha256": "95fc25cb11ca509b94ae658248ef8be67864917809e6d75c1990f2927f8511ab"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ocr-v3.json",
+      "sha256": "45e980d06a0f802ffd252ac80c0bb99d1917cc956000136ac9571d180c9d2a67"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ocr-v4.json",
+      "sha256": "063c818172bf1205d4cf8334e489e61330c960faa2528fab38760179a5cd2ce0"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/api-budget.json",
+      "sha256": "50b1549199ef8db8189502833c1d2458414358b9d2bdefd3202bd0eccae188f5"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/final-tests.log",
+      "sha256": "ef47e3ce39e16083fd5fee8094ca6dc3975351d7080e44555e1c7e0e53863aae"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/final-lint.log",
+      "sha256": "bd14a45208cb5b99845ab3e2f57824e06d63d5d16c45a50b37f53694ba3cc3ff"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/final-build.log",
+      "sha256": "7e682479a37f43b94de5db60fb09002aef9de1800d7922d8a48fa7eb22175aa6"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/extensions-before.log",
+      "sha256": "d5e281191cdfea8327a8a70936d333eb6f88829c241f2c842a5ded1296b81be4"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/extensions-after.log",
+      "sha256": "6f0827c4206ae62f0c480e98d39d5741a8bff5db041b2d7b8e76990789f92ac2"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/extensions-harness-correction.log",
+      "sha256": "927ea74f161d93bc0afa8dfd7d769db3aa70b16047d90451b257f7464b5a1517"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/ocr-regression-before.log",
+      "sha256": "7338c964a3cb7204bc82e61d9b1651015292b4c6eb3779f2900035eea164bfa3"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/workflow-regressions-after.log",
+      "sha256": "3107bbb48b7e8212d608e264f2608bf8859220fc5a54470a3253639adaf1aada"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/application-cleanup.json",
+      "sha256": "4e8167c744734880cfb5b3e5c3e7b0d13e7252ff37ad47c723eee5b603f76fc2"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/azure-cleanup.json",
+      "sha256": "6ce37c1f8c0f739153097b23e05979a83b28c151178be89614072352eb8f21c5"
+    },
+    {
+      "path": "tmp/integration/cloud-verification/local-cleanup.json",
+      "sha256": "8cfe0f81e7fe83d4a1dad5ae8967abb01d9072ac8afac94453ffeb494639be08"
+    }
+  ],
+  "artifactNote": "Ignored task-local evidence and logs are hashed here. Credentials/environment files are intentionally excluded. Production observations are a structured transcription of tool results, not a raw log capture."
+}

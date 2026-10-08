@@ -756,6 +756,54 @@ test("customer analysis postprocessing preserves the established output rules", 
   );
 });
 
+test("critical-fact enrichment preserves higher-priority requirements at the list boundary", () => {
+  const critical = [
+    { requirement: "S-11: Administratorer skal bruke flerfaktorautentisering.", priority: "Kritisk", reason: "Absolutt sikkerhetskrav." },
+    { requirement: "S-12: Tilgang skal tilbakekalles ved fratredelse.", priority: "Kritisk", reason: "Absolutt tilgangskrav." },
+  ];
+  const normal = Array.from({ length: 3 }, (_, index) => ({
+    requirement: `Vanlig leveranseprioritet ${index + 1}.`, priority: "Viktig", reason: "Dokumentert behov.",
+  }));
+  const analysis = {
+    customer_profile_summary: "Fiktiv kunde", customer_goals_summary: "Sikker drift",
+    customer_profile: [], customer_goals: [], expected_solution_direction: [],
+    positioning_recommendations: [], high_level_solution_design: "", executive_summary: "",
+    prioritized_requirements: [...normal, ...critical],
+  };
+  const before = structuredClone(analysis);
+  const result = enrichCustomerAnalysisWithCriticalFacts(analysis, [{
+    documentId: "customer", title: "Kundekrav", role: "primary_customer_document", context: "",
+    sourceText: "Operativ kjerne skal ha RTO 3 timer og RPO 20 minutter.",
+  }]);
+  assert.deepEqual(result.prioritized_requirements.slice(0, 2), critical);
+  assert.equal(result.prioritized_requirements.length, MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS);
+  assert.match(JSON.stringify(result.expected_solution_direction), /RTO 3 timer/);
+  assert.deepEqual(analysis, before, "Enrichment must not mutate the model result.");
+});
+
+test("workday deadlines and month retention survive omissions from an otherwise full analysis", () => {
+  const priorities = Array.from({ length: 5 }, (_, index) => ({
+    requirement: `Sikkerhetskrav ${index + 1}`, priority: "Kritisk", reason: "Bindende krav.",
+  }));
+  const analysis = {
+    customer_profile: [], customer_goals: [], expected_solution_direction: [],
+    positioning_recommendations: [], high_level_solution_design: "Sikker drift og kontrollert exit.",
+    executive_summary: "Dokumentert overlevering.", prioritized_requirements: priorities,
+  };
+  const clauses = [
+    "D-61: Ved exit skal data og konfigurasjon eksporteres i åpne formater innen 17 arbeidsdager.",
+    "D-62: Sikkerhetslogger skal oppbevares i 13 måneder og være søkbare ved revisjon.",
+  ];
+  const source = { documentId: "customer", title: "Driftskrav", role: "primary_customer_document", context: "", sourceText: clauses.join("\n") };
+  const before = structuredClone(source);
+  const enriched = enrichCustomerAnalysisWithCriticalFacts(analysis, [source]);
+  for (const clause of clauses) assert.ok(enriched.expected_solution_direction.some(text => text.includes(clause.slice(0, -1))));
+  assert.deepEqual(enriched.prioritized_requirements, priorities, "Missing details must not evict critical requirements.");
+  assert.deepEqual(source, before, "Original source text stays intact.");
+  const english = buildCustomerAnalysisCriticalFactChecklist([{ ...source, sourceText: "Audit logs shall be retained for 6 months and remain searchable." }]);
+  assert.match(JSON.stringify(english), /6 måneder/u);
+});
+
 test("trusted local requirement rows replace only matching truncated generated text", () => {
   const generated = {
     id: "KR-063-34",

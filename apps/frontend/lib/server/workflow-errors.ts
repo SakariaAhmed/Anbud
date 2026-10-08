@@ -1,5 +1,6 @@
 // Only fixed domain messages may cross the production error boundary.
 const ERRORS: Record<string, { status: number; message: string }> = {
+  AI_OUTPUT_CORRUPT: { status: 502, message: "Den genererte teksten var skadet og ble ikke lagret. Prøv å generere på nytt." },
   INVALID_PDF_DOCUMENT: { status: 400, message: "PDF-filen er ugyldig eller skadet. Åpne filen i en PDF-leser og lagre en ny kopi før du laster opp igjen." },
   PASSWORD_PROTECTED_PDF: { status: 400, message: "PDF-filen er passordbeskyttet. Last opp en ulåst kopi." },
   CUSTOMER_ANALYSIS_CHANGED: { status: 409, message: "Analysen er endret siden du åpnet den. Utkastet ditt er beholdt. Last inn siste analyse før du lagrer igjen." },

@@ -143,3 +143,24 @@ test("page-view telemetry requires project read access without granting writes",
     false,
   );
 });
+
+test("noncanonical project routes fail closed across every sibling endpoint", () => {
+  const ids = [projectId.replaceAll("-", ""), `{${projectId}}`, "123e-4567-e89b-12d3-a456-4266-1417-4000", "-".repeat(36), `${projectId}%2Fchat`, `%257b${projectId}%257d`];
+  for (const id of ids) {
+    for (const suffix of ["", "/chat", "/generate", "/documents", "/service-descriptions", "/jobs", "/jobs/job/events", "/customer-analysis", "/solution-evaluation", "/executive-summary", "/artifact-authority", "/access"]) {
+      assert.equal(authorization.normalizeAuthorizationPathname(`/api/projects/${id}${suffix}`), null, `${id}${suffix}`);
+    }
+  }
+  assert.equal(normalized("/projects/new"), "/projects/new");
+  assert.equal(normalized("/projects/new/"), "/projects/new/");
+  assert.equal(normalized("/api/projects"), "/api/projects");
+  assert.equal(authorization.projectIdFromAuthorizationPath(normalized(`/api/projects/${projectId.toUpperCase()}/chat`)), projectId);
+});
+
+test("download checks cover alternative document IDs and trailing slash", () => {
+  for (const id of [documentId.replaceAll("-", ""), `{${documentId}}`, documentId]) {
+    for (const slash of ["", "/"]) {
+      assert.equal(authorization.projectRoleAllowsAuthorizationPath({ method: "GET", pathname: `/api/projects/${projectId}/documents/${id}${slash}`, role: "restricted_viewer", isAdmin: false }), false);
+    }
+  }
+});

@@ -28,10 +28,13 @@ import {
   DOCUMENT_ANALYSIS_MODEL,
   EVALUATION_REASONING_EFFORT,
   FAST_MODEL,
+  requirementResponseBatchModel,
+  requirementResponseRepairModel,
+  solutionEvaluationReasoningEffort,
   FAST_REASONING_EFFORT,
 } from "@/lib/server/ai/model-config";
 import { extractExactRetrievalTerms } from "@/lib/server/ai/retrieval-query";
-import { buildVerifiedFoundationControls } from "@/lib/server/ai/verified-foundation-controls";
+import { buildVerifiedFoundationControls, documentedMigrationControl } from "@/lib/server/ai/verified-foundation-controls";
 import {
   buildImmutableRequirementRowManifest,
   type ImmutableRequirementRowManifest,
@@ -103,6 +106,8 @@ import {
   requirementHandoffSystemPrompt,
 } from "@/lib/server/prompts/requirements";
 import {
+  buildDeclaredHeadingRequirementLedger,
+  restoreExplicitLineRequirementOrder,
   buildExplicitIdPdfLayoutRequirementLedger,
   buildExplicitIdPdfNarrativeRequirementLedger,
   buildExplicitIdTableRequirementLedger,
@@ -403,7 +408,7 @@ const CHUNK_CONCURRENCY = 3;
 const SINGLE_BATCH_REQUIREMENT_RESPONSE_MAX = 18;
 const REQUIREMENT_RESPONSE_BATCH_SIZE = parsePositiveIntegerEnv(
   "REQUIREMENT_RESPONSE_BATCH_SIZE",
-  24,
+  12,
 );
 const LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE = parsePositiveIntegerEnv(
   "LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE",
@@ -7994,8 +7999,10 @@ export async function buildRequirementSourceLedgerWithFiles(
   const pdfLayoutTableLedger = useGeneratedPdfLedger
     ? []
     : await buildPdfLayoutTableRequirementLedger(document);
+  const declaredHeadingLedger = buildDeclaredHeadingRequirementLedger(document);
   const ledger = filterSyntheticRequirementFallbacks(
     filterSyntheticRequirementDuplicates([
+      ...declaredHeadingLedger,
       ...unstructuredLedger,
       ...generatedPdfLedgerWithLocalTableText,
       ...mixedTextLedger,
@@ -8018,14 +8025,19 @@ export async function buildRequirementSourceLedgerWithFiles(
   const anchoredLines = document.file_format !== "pdf"
     ? buildPrefixedLineRequirementLedger(document, corpusParserContext)
     : [];
-  const sourceBoundLedger = ledger.filter((entry) => !anchoredLines.some((anchor) =>
+  const headingBoundLedger = ledger.filter((entry) => !declaredHeadingLedger.some((anchor) =>
+    entry !== anchor &&
+    (isSyntheticRequirementId(entry.id) || normalizeRequirementId(entry.id) === normalizeRequirementId(anchor.id)) &&
+    normalizeEvidenceText(anchor.text).includes(normalizeEvidenceText(entry.text))
+  ));
+  const sourceBoundLedger = headingBoundLedger.filter((entry) => !anchoredLines.some((anchor) =>
     normalizeEvidenceText(anchor.text) === normalizeEvidenceText(entry.text) &&
     normalizeRequirementId(anchor.id) !== normalizeRequirementId(entry.id) &&
     !entry.tableId && anchor.sourceExcerpt &&
     document.raw_text.includes(anchor.sourceExcerpt)
   ));
   const finalizedLedger = finalizeRequirementLedgerEntries(
-    sourceBoundLedger,
+    restoreExplicitLineRequirementOrder(document, sourceBoundLedger),
     sourceDocumentSha256,
   ).map((entry) => ({
     ...entry,
@@ -9459,15 +9471,6 @@ function shouldUseRequirementLedgerGeneration(input: {
   );
 }
 
-function requirementResponseBatchModel(model?: string) {
-  const normalized = model?.trim();
-  if (!normalized || /(?:mini|nano)$/i.test(normalized)) {
-    return ANALYSIS_MODEL;
-  }
-
-  return normalized;
-}
-
 function requirementCoverageBatchModel(model?: string) {
   const normalized = model?.trim();
   if (!normalized || /(?:mini|nano)$/i.test(normalized)) {
@@ -10081,7 +10084,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
         strictRow,
       }),
       temperature: 0.1,
-      model: requirementResponseBatchModel(input.model),
+      model: requirementResponseRepairModel(input.model),
       reasoningEffort: ANALYSIS_REASONING_EFFORT,
       timeoutMs:
         input.timeoutMs ?? REQUIREMENT_RESPONSE_STRICT_HANDOFF_TIMEOUT_MS,
@@ -10572,7 +10575,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
                 .filter(Boolean)
                 .join("\n\n"),
               temperature: 0.1,
-              model: requirementResponseBatchModel(input.model),
+              model: requirementResponseRepairModel(input.model),
               reasoningEffort: ANALYSIS_REASONING_EFFORT,
               timeoutMs: REQUIREMENT_RESPONSE_HANDOFF_TIMEOUT_MS,
               maxRetries: 1,
@@ -13588,6 +13591,19 @@ function extractDocumentedContinuityTargets(
       "max",
     );
   }
+  // Norwegian also places the bound before the noun: "maksimal
+  // gjenopprettingstid er 90 minutter". Require an adjacent duration so a
+  // later, unrelated number cannot turn an unspecified target into evidence.
+  for (const match of normalized.matchAll(
+    new RegExp(
+      `\\b(?:maksimal|maksimalt|maks\\.?)\\s+gjenopprettingstid\\s*(?:(?:er|på|skal\\s+være)\\s*|[:=]\\s*)?(\\d+(?:[,.]\\d+)?|${wordPattern})\\s*(${unitPattern})`,
+      "giu",
+    ),
+  )) {
+    const duration = numberWords[match[1].toLocaleLowerCase("nb")] ??
+      Number.parseFloat(match[1].replace(",", "."));
+    addTarget(match, duration, match[2], "RTO", "max");
+  }
   for (const match of normalized.matchAll(
     new RegExp(`${leadPattern}(\\d{1,3}):([0-5]\\d)\\b`, "gi"),
   )) {
@@ -14344,7 +14360,7 @@ function hasDocumentedExactContinuityValue(value: string) {
 }
 
 function hasDocumentedExactCommercialOrDeadlineValue(value: string) {
-  return /\b(?:NOK|EUR)\s*\d|(?:\d+[,.]\d+|\d+)\s*(?:million|mill\.|m\b)|\bNet\s*\d+|\b\d{1,2}\.?\s*(?:april|mai|juni|july|august|september|oktober|november|desember)\s*20\d{2}|\b20\d{2}-\d{2}-\d{2}\b/i.test(
+  return /\b(?:NOK|EUR)\s*\d|(?:\d+[,.]\d+|\d+)\s*(?:million|mill\.|m\b)|\bNet\s*\d+|\b\d{1,2}\.?\s*(?:januar|februar|mars|april|mai|juni|juli|july|august|september|oktober|november|desember)\s*20\d{2}|\b20\d{2}-\d{2}-\d{2}\b/i.test(
     value,
   );
 }
@@ -14970,10 +14986,14 @@ export function proposalEvidenceSupportsReason(
 
 export function buildProposalInputRequiredMetadata(input: {
   ledger: RequirementLedgerEntry[];
+  answers?: Array<Pick<RequirementAnswerResult, "answer">>;
   evidenceDocuments?: Array<
     Pick<ProjectDocumentDetail, "title" | "file_name" | "raw_text">
   >;
 }) {
+  if (input.answers && input.answers.length !== input.ledger.length) {
+    throw new Error("Svar og krav må ha samme antall rader ved kontroll av tilbudsvalg.");
+  }
   const evidenceCorpus = (input.evidenceDocuments ?? [])
     .map((document) => document.raw_text)
     .filter((value) => typeof value === "string" && value.trim())
@@ -14983,6 +15003,18 @@ export function buildProposalInputRequiredMetadata(input: {
       (reason) =>
         !proposalEvidenceSupportsReason(evidenceCorpus, reason, entry.text),
     );
+    const answer = normalizePageText(input.answers?.[orderIndex]?.answer ?? "");
+    const proposedDeliveryNeedsConfirmation =
+      /\b(?:foreslår|foreslås|foreslått(?:e)?)\b/iu.test(answer) &&
+      /(?<!ikke )\b(?:krever|forutsetter)\s+(?!(?:ikke|ingen|intet)\b)[^.?!]{0,100}(?:bekreftelse|godkjenning)|(?<!ikke )\bmå\s+(?!ikke\b)[^.?!]{0,100}(?:bekreftes|godkjennes)/iu.test(answer);
+    const pendingSupplierEvidence =
+      /(?<!ingen )(?<!ikke )\bleverandørbekreftelse\s+må\s+(?!ikke\b)(?:kompletteres|innhentes|avklares)/iu.test(answer);
+    const documentedGapNeedsCorrection =
+      /\b(?:dette\s+(?:er\s+et\s+avvik|avviker)|dokumentert\s+(?:løsning|løsningsgrunnlag))\b/iu.test(answer) &&
+      /\bmå\s+(?!ikke\b)(?:derfor\s+)?(?:lukkes|oppdateres|erstattes)\b[^.?!]{0,150}\bfør\b/iu.test(answer);
+    if ((proposedDeliveryNeedsConfirmation || pendingSupplierEvidence || documentedGapNeedsCorrection || supplierAnswerNeedsConfirmation(answer)) && !reasons.includes("explicit_bid_decision")) {
+      reasons.push("explicit_bid_decision");
+    }
     return reasons.length
       ? [
           {
@@ -15134,10 +15166,10 @@ const ARTIFACT_FOUNDATION_FACT_PATTERNS = [
   {
     label: "SLA og kontinuitet",
     pattern:
-      /\b(RTO|RPO|failover|disaster recovery|beredskap|gjenoppretting|tilgjengelighet)\b/i,
+      /\b(RTO|RPO|failover|disaster recovery|beredskap|gjenoppretting(?:stid)?|tilgjengelighet)\b/i,
   },
   {
-    label: "Leveransefrister",
+    label: "Leveransekrav og frister",
     pattern:
       /\b(deliverable|leveranse|frist|deadline|due|D[1-9]|april|mai|may|juni|june|september|desember|december|20\d{2})\b/i,
   },
@@ -15227,14 +15259,14 @@ export function collectArtifactFoundationFacts(input: {
       }
 
       const normalized = normalizeComparableText(fragment);
-      const dedupeKey = `${match.label}:${normalized.slice(0, 180)}`;
+      const dedupeKey = `${match.label}:${normalized}`;
       if (seen.has(dedupeKey)) {
         continue;
       }
       seen.add(dedupeKey);
       facts.push({
         label: match.label,
-        text: compactText(fragment, 260),
+        text: fragment,
         source: document.title,
       });
     }
@@ -15247,8 +15279,8 @@ export function collectArtifactFoundationFacts(input: {
         ? 8
         : label === "Omfang og migrering"
           ? 4
-        : label === "Leveransefrister" || label === "Kommersielle rammer"
-          ? label === "Leveransefrister"
+        : label === "Leveransekrav og frister" || label === "Kommersielle rammer"
+          ? label === "Leveransekrav og frister"
             ? 8
             : 6
           : 3;
@@ -15356,53 +15388,14 @@ function factsInclude(facts: ArtifactFoundationFact[], pattern: RegExp) {
   return pattern.test(factsText(facts));
 }
 
-function extractDocumentedContinuityMetric(
-  facts: ArtifactFoundationFact[],
-  label: "RTO" | "RPO",
-) {
-  const text = factsText(facts);
-  const unit = "(?:minutes?|minutter|hours?|timer|days|dager)";
-  const direct = new RegExp(
-    `\\b${label}\\b[^0-9]{0,50}(\\d+\\s*${unit})`,
-    "i",
-  ).exec(text);
-  if (direct?.[1]) {
-    return direct[1].replace(/\s+/g, " ").trim();
-  }
-  const reverse = new RegExp(
-    `(\\d+\\s*${unit})[^.\\n]{0,50}\\b${label}\\b`,
-    "i",
-  ).exec(text);
-  return reverse?.[1]?.replace(/\s+/g, " ").trim() ?? "";
-}
-
-function hasContinuitySignals(facts: ArtifactFoundationFact[]) {
-  return factsInclude(
-    facts,
-    /\b(SLA|RTO|RPO|failover|disaster recovery|beredskap|backup|gjenoppretting|tilgjengelighet|nedetid|tjenestenivå)\b/i,
-  );
-}
-
 function documentedContinuityControlText(facts: ArtifactFoundationFact[]) {
-  if (!hasContinuitySignals(facts)) {
-    return "";
-  }
-
-  const rto = extractDocumentedContinuityMetric(facts, "RTO");
-  const rpo = extractDocumentedContinuityMetric(facts, "RPO");
-  const targets = [
-    factsInclude(facts, /\bzero unplanned downtime\b/i)
-      ? "zero unplanned downtime"
-      : "",
-    rto ? `RTO ${rto}` : "",
-    rpo ? `RPO ${rpo}` : "",
-  ].filter(Boolean);
-
-  if (targets.length) {
-    return `Kontinuitet kontrolleres mot dokumenterte mål (${targets.join(", ")}), failover, backup/gjenoppretting og testbare runbooks.`;
-  }
-
-  return "Kontinuitet må kontrolleres mot dokumenterte krav om høy tilgjengelighet, begrenset nedetid, backup/gjenoppretting og foreslåtte tjenestenivåer; eksakte RTO/RPO-verdier må avklares før de forpliktes.";
+  const source = documentedFactText(
+    facts,
+    /\b(SLA|RTO|RPO|failover|disaster recovery|beredskap|backup|gjenoppretting(?:stid)?|tilgjengelighet|nedetid|tjenestenivå)\b/i,
+  );
+  // Keep each target with its scope instead of combining the first RTO and
+  // RPO from unrelated systems or inventing an unspecified-target warning.
+  return source ? `Kontinuitetskrav fra kildene: ${source}` : "";
 }
 
 function hasDocumentedCommercialTerms(facts: ArtifactFoundationFact[]) {
@@ -15415,7 +15408,7 @@ function hasDocumentedCommercialTerms(facts: ArtifactFoundationFact[]) {
 function documentedFactText(facts: ArtifactFoundationFact[], pattern: RegExp) {
   return facts
     .filter((fact) => pattern.test(fact.text))
-    .map((fact) => compactText(fact.text, 220))
+    .map((fact) => fact.text)
     .slice(0, 6)
     .join(" ");
 }
@@ -15429,7 +15422,7 @@ function documentedDeliverableControlText(facts: ArtifactFoundationFact[]) {
     return "";
   }
 
-  return `Dokumenterte leveransefrister må styre plan og evalueringsbevis: ${source}`;
+  return `Dokumenterte leveransekrav og rammer må styre plan og evalueringsbevis: ${source}`;
 }
 
 function documentedCommercialControlText(facts: ArtifactFoundationFact[]) {
@@ -15465,20 +15458,8 @@ function documentedRiskControlText(facts: ArtifactFoundationFact[]) {
   );
 
   return risks
-    ? `Avklarings- og risikodrivere fra verifisert kildegrunnlag: ${risks}`
+    ? `Dokumenterte avklarings- og risikoforhold: ${risks}`
     : "";
-}
-
-function documentedWaveControlText(facts: ArtifactFoundationFact[]) {
-  const source = documentedFactText(
-    facts,
-    /\b(\d+\s+(?:applications?|applikasjoner)|Wave\s*\d+|bølge\s*\d+|shared services|customer-facing|analytics|archive)\b/i,
-  );
-  if (!source) {
-    return "";
-  }
-
-  return `Migreringsplanen må styres mot dokumentert kildegrunnlag: ${source}`;
 }
 
 function appendUniqueTextItems(
@@ -15859,7 +15840,9 @@ function requirementCoverageRef(entry: RequirementLedgerEntry) {
 
 function requirementCoverageIdentityRef(entry: RequirementLedgerEntry) {
   const tableId = normalizedRequirementCoverageTableId(entry);
-  if (tableId) {
+  // These are parser location labels shared by many distinct source rows.
+  // Preserve them as locators, while matching answers by the actual row ID.
+  if (tableId && !/^Dokumenttekst(?: krav-ID)?$/iu.test(tableId)) {
     return tableId;
   }
 
@@ -17952,7 +17935,7 @@ export function correctCoverageAssessmentWithSourceEvidence(input: {
         "Svarutdraget avslår eller plasserer et obligatorisk krav utenfor leveransen. Det er et faktisk svar, men det oppfyller ikke kravet og kan derfor verken vurderes som Godt, Uklart eller Mangler.",
       evidence: compactText(answerEvidence, 420),
       recommendation:
-        "Erstatt avslaget med en tydelig leveranseforpliktelse som beskriver løsning, ansvar, kontroll og verifikasjon, eller registrer et eksplisitt kontraktsforbehold for tilbudsbeslutning.",
+        "Bevar avslaget som et dokumentert avvik inntil leverandøren har besluttet og bekreftet en endret leveranse, inkludert omfang og pris. Beskriv deretter løsning, ansvar, kontroll og verifikasjon, eller behold avviket for tilbudsbeslutning.",
     };
   }
 
@@ -18018,7 +18001,7 @@ export function correctCoverageAssessmentWithSourceEvidence(input: {
         "Svarutdraget sier at leveranse, omfang eller ansvar må avklares før kravet kan bekreftes. Det er et faktisk svar, men dekningen er ikke verifiserbar nok til å være Godt eller tydelig nok til å være et endelig avslag.",
       evidence: compactText(answerEvidence, 420),
       recommendation:
-        "Avklar omfang, ansvar og løsningsvalg, og erstatt forbeholdet med en testbar leveransebeskrivelse eller et eksplisitt forbehold.",
+        "Avklar omfang, ansvar, løsningsvalg og eventuell pris med leverandøren. Bevar forbeholdet inntil leveransen er bekreftet; beskriv en mulig endring som et forslag, ikke som en inngått forpliktelse.",
     };
   }
 
@@ -18230,7 +18213,7 @@ export function coverageItemFromBatchRow(input: {
 function normalizeCoverageEvidenceText(value: string) {
   return normalizePageText(value)
     .toLocaleLowerCase("nb")
-    .replace(/[“”"]/g, "")
+    .replace(/[“”"«»]/g, "")
     .trim();
 }
 
@@ -19909,7 +19892,7 @@ async function generateRequirementResponseFromLedger(input: {
   const responseLedger = sortRequirementLedgerInDocumentOrder(input.ledger);
   const chunks = chunkRequirements(responseLedger);
   const responseSystemPrompt = requirementBatchSystemPrompt();
-  const responseModel = requirementResponseBatchModel(input.model);
+  const responseModel = requirementResponseBatchModel(input.model, chunks.length > 1);
   const responseSharedPromptPrefix = [
     "Besvar kravene i JSON. Ikke legg til, fjern eller slå sammen krav.",
     input.baseContext,
@@ -20076,6 +20059,7 @@ async function generateRequirementResponseFromLedger(input: {
     });
   const proposalInputRequiredMetadata = buildProposalInputRequiredMetadata({
     ledger: responseLedger,
+    answers: answerResults,
     evidenceDocuments: [
       ...input.supportingDocuments,
       ...input.serviceDocuments,
@@ -20731,7 +20715,7 @@ function enrichHighLevelDesignTextWithFoundationFacts(
   }
 
   text = appendHighLevelDesignSection(text, "Målarkitektur", [
-    documentedWaveControlText(facts),
+    documentedMigrationControl(facts),
   ]);
   text = appendHighLevelDesignSection(text, "Drift og gjennomføring", [
     documentedDeliverableControlText(facts),
@@ -21023,11 +21007,25 @@ export function normalizeDocumentFindingsAgainstCoverage(
           : ("Uklart" as const);
       const explicitSectionFinding = isExplicitSectionFinding(item);
       const candidateEvidence = compactText(item.evidence ?? "", 500);
+      // Local requirement IDs and supplier quotes can repeat across documents.
+      // A precise source locator constrains evidence matching; it must not be
+      // silently replaced with another document's otherwise identical quote.
+      const normalizedReference = normalizedCoverageRef(item.reference ?? "");
+      const qualifiedReferenceMatches = coverage.items.filter((candidate) =>
+        [candidate.full_reference, candidate.source_reference].some((label) =>
+          typeof label === "string" && label.length > 0 &&
+          normalizedCoverageRef(label) !== normalizedCoverageRef(candidate.reference) &&
+          normalizedCoverageRef(label) === normalizedReference,
+        ),
+      );
+      const scopedEvidenceIndex = qualifiedReferenceMatches.length
+        ? evidenceIndex.filter((entry) => qualifiedReferenceMatches.includes(entry.item))
+        : evidenceIndex;
       const evidenceMatch = explicitSectionFinding
         ? null
         : matchFindingEvidenceToCoverageItem({
             evidence: candidateEvidence,
-            evidenceIndex,
+            evidenceIndex: scopedEvidenceIndex,
           });
       const directMatch =
         !explicitSectionFinding && !candidateEvidence
@@ -21866,13 +21864,14 @@ export async function regenerateCustomerAnalysisSection(input: {
     ...input.supportingDocuments.map((document) => document.raw_text),
   ].join("\n\n");
 
-  return normalizeCustomerAnalysisResult(
+  const normalized = normalizeCustomerAnalysisResult(
     mergeCustomerAnalysisSectionPatch({
       analysis: customerAnalysis,
       section: input.section,
       patch,
     }),
     {
+      generatedFields: contract.fields,
       signalSourceText,
       serviceCandidates: input.serviceCandidates,
       sourceDocuments: analysisDocuments.map((document) => ({
@@ -21882,6 +21881,16 @@ export async function regenerateCustomerAnalysisSection(input: {
       })),
     },
   );
+  const result = mergeCustomerAnalysisSectionPatch({
+    analysis: customerAnalysis,
+    section: input.section,
+    patch: normalized,
+  });
+  // Keyword occurrence counts are derived output owned by the same section,
+  // although only the keyword list is supplied by the model's schema.
+  return input.section === "keywords"
+    ? { ...result, signal_word_counts: normalized.signal_word_counts }
+    : result;
 }
 
 export async function generateHighLevelDesign(input: {
@@ -21892,11 +21901,6 @@ export async function generateHighLevelDesign(input: {
   model?: string;
 }) {
   const customerAnalysis = stripCustomerAnalysisHistory(input.customerAnalysis);
-  const customerDocumentDigest = await buildDocumentInsightDigest(
-    "Primært kundedokument",
-    input.customerDocument,
-    { maxChunks: 5 },
-  );
   const supportingContexts = input.supportingDocuments
     .slice(0, 4)
     .map((document, index) =>
@@ -21914,13 +21918,22 @@ export async function generateHighLevelDesign(input: {
     customerAnalysis,
     documents: documentsForCoverage,
   });
-  const coverageRetrieval = await retrieveDocumentSnippetsWithMetadata({
-    query: coverageSeed.query,
-    projectId: input.customerDocument.project_id,
-    documents: documentsForCoverage,
-    exactTerms: coverageSeed.exactTerms,
-    limit: 16,
-  });
+  // Both use the same frozen sources; retrieval does not depend on the digest.
+  // Start both together and wait for all evidence before composing the prompt.
+  const [customerDocumentDigest, coverageRetrieval] = await Promise.all([
+    buildDocumentInsightDigest(
+      "Primært kundedokument",
+      input.customerDocument,
+      { maxChunks: 5 },
+    ),
+    retrieveDocumentSnippetsWithMetadata({
+      query: coverageSeed.query,
+      projectId: input.customerDocument.project_id,
+      documents: documentsForCoverage,
+      exactTerms: coverageSeed.exactTerms,
+      limit: 16,
+    }),
+  ]);
   const coverageContext = buildOfferCoverageContext({
     mode: "high_level_design",
     customerAnalysis,
@@ -21980,19 +21993,9 @@ export async function generateHighLevelDesign(input: {
     promptCacheKey: "high-level-design",
   });
 
-  const highLevelSolutionDesign = dedupeSummary(
-    result.high_level_solution_design || "",
-    [
-      customerAnalysis.customer_profile_summary,
-      customerAnalysis.customer_goals_summary,
-      ...customerAnalysis.positioning_recommendations,
-      customerAnalysis.executive_summary,
-    ],
-  );
-
   const normalizedHighLevelSolutionDesign =
     enrichHighLevelDesignTextWithFoundationFacts(
-      highLevelSolutionDesign,
+      result.high_level_solution_design || "",
       designFoundationFacts,
     );
 
@@ -22110,10 +22113,7 @@ export async function evaluateSolutionDocument(input: {
           "Systemløsning som skal scores",
           [
             `Tittel: ${input.systemSolutionArtifact.title}`,
-            compactText(
-              input.systemSolutionArtifact.content_markdown,
-              hasRequirementCoverage ? 3800 : 4500,
-            ),
+            input.systemSolutionArtifact.content_markdown,
           ].join("\n\n"),
         )
       : "",
@@ -22156,6 +22156,7 @@ export async function evaluateSolutionDocument(input: {
     .filter(Boolean)
     .join("\n\n");
 
+  const evaluationModel = requirementCoverageBatchModel(input.model);
   let result: SolutionEvaluationResult;
   try {
     input.onProgress?.(
@@ -22170,11 +22171,13 @@ export async function evaluateSolutionDocument(input: {
       },
       () =>
         createJsonCompletion<SolutionEvaluationResult>({
-          system: buildSolutionEvaluationPrompt(),
+          system: buildSolutionEvaluationPrompt({
+            hasSystemSolutionArtifact: Boolean(input.systemSolutionArtifact),
+          }),
           user: userPrompt,
           temperature: 0.1,
-          model: requirementCoverageBatchModel(input.model),
-          reasoningEffort: EVALUATION_REASONING_EFFORT,
+          model: evaluationModel,
+          reasoningEffort: solutionEvaluationReasoningEffort(evaluationModel),
           timeoutMs: SOLUTION_EVALUATION_TIMEOUT_MS,
           maxRetries: 1,
           promptCacheKey: "solution-evaluation-holistic",

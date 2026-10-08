@@ -6,16 +6,29 @@ import {
 } from "@/lib/access-control";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-const PROJECT_ID_PATH = "[0-9a-f-]{36}";
+const PROJECT_ID_PATH = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
+export function canonicalProjectId(value: string) {
+  return new RegExp(`^${PROJECT_ID_PATH}$`, "iu").test(value)
+    ? value.toLowerCase()
+    : null;
+}
 
 export function normalizeAuthorizationPathname(pathname: string) {
   try {
+    if (/%(?:2f|5c)/iu.test(pathname)) return null;
     const normalized = decodeURIComponent(pathname);
     if (
       !normalized.startsWith("/") ||
       normalized.startsWith("//") ||
       /[\u0000-\u001f\u007f]/u.test(normalized)
     ) {
+      return null;
+    }
+    const projectSegment = normalized.match(/^\/(?:api\/)?projects\/([^/]+)(?:\/|$)/iu)?.[1];
+    // A dynamic project route must never become an unscoped authenticated route.
+    // /projects/new is the sole non-project page below this prefix.
+    if (projectSegment && !/^\/projects\/new\/?$/u.test(normalized) && !canonicalProjectId(projectSegment)) {
       return null;
     }
     return normalized;
@@ -28,7 +41,7 @@ export function projectIdFromAuthorizationPath(pathname: string) {
   const match = pathname.match(
     new RegExp(`^/(?:api/)?projects/(${PROJECT_ID_PATH})(?:/|$)`, "iu"),
   );
-  return match?.[1] ?? null;
+  return match ? canonicalProjectId(match[1]) : null;
 }
 
 export function requiredProjectPermission(
@@ -47,7 +60,7 @@ export function requiredProjectPermission(
   }
   if (SAFE_METHODS.has(method)) {
     if (
-      new RegExp(`/documents/${PROJECT_ID_PATH}$`, "iu").test(pathname)
+      new RegExp(`^/api/projects/${PROJECT_ID_PATH}/documents/[^/]+/?$`, "iu").test(pathname)
     ) {
       return "document.download";
     }
