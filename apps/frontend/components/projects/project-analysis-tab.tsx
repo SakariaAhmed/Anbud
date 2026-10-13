@@ -31,6 +31,7 @@ import {
   VALUE_LABELS,
   ValueTags,
 } from "@/components/projects/project-workspace-shared";
+import { findDocumentForReference } from "@/lib/customer-analysis-sources";
 import { customerAnalysisPositioningGroups } from "@/lib/customer-analysis-presentation";
 import { getCustomerAnalysisSectionSnapshot } from "@/lib/customer-analysis-history";
 import { getDisplayProfitShares, MAX_MANUAL_VALUE_OPPORTUNITIES } from "@/lib/value-opportunities";
@@ -1149,84 +1150,6 @@ function getNeedAsk(
   const lead = splitLeadSentence(requirement.description).lead;
   const text = lead || requirement.description || requirement.title;
   return text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
-}
-
-function normalizeReferenceText(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\.[a-z0-9]+$/i, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function tokenizeReferenceText(value: string) {
-  return normalizeReferenceText(value)
-    .split(" ")
-    .filter((token) => token.length >= 3);
-}
-
-function findDocumentForReference(
-  documents: ProjectDocument[],
-  sourceReference: string,
-) {
-  const normalizedReference = normalizeReferenceText(sourceReference);
-  if (!normalizedReference) {
-    return null;
-  }
-
-  if (
-    normalizedReference.includes("kundedokument") ||
-    normalizedReference.includes("customer document")
-  ) {
-    return documents[0] ?? null;
-  }
-
-  if (
-    normalizedReference.includes("losningsdokument") ||
-    normalizedReference.includes("solution document")
-  ) {
-    return documents[0] ?? null;
-  }
-
-  const referenceTokens = tokenizeReferenceText(sourceReference);
-  let bestMatch: { document: ProjectDocument; score: number } | null = null;
-
-  for (const document of documents) {
-    const candidates = [
-      document.title,
-      document.file_name,
-    ];
-    const normalizedCandidates = candidates
-      .map((candidate) => normalizeReferenceText(candidate))
-      .filter(Boolean);
-
-    let score = 0;
-
-    for (const candidate of normalizedCandidates) {
-      if (candidate === normalizedReference) {
-        score = Math.max(score, 100);
-      } else if (
-        candidate.includes(normalizedReference) ||
-        normalizedReference.includes(candidate)
-      ) {
-        score = Math.max(score, 70);
-      }
-
-      for (const token of referenceTokens) {
-        if (candidate.includes(token)) {
-          score += 12;
-        }
-      }
-    }
-
-    if (!bestMatch || score > bestMatch.score) {
-      bestMatch = { document, score };
-    }
-  }
-
-  return bestMatch && bestMatch.score >= 24 ? bestMatch.document : null;
 }
 
 function NeedSignalCard({

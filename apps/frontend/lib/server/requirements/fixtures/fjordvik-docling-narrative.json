@@ -1,0 +1,93 @@
+{
+  "raw_text": "## Bilag 1 - Fiktiv driftskontroll\n\nKontroll 13. oktober 2026. Dette er et syntetisk testdokument. Alle navn, krav og opplysninger er fiktive.\n\n## Kunde og formål\n\nFjordvik Testkommune ønsker en driftstjeneste for en liten skybasert arbeidsflate. Prosjektets navn er Fiktiv driftskontroll 2026. Formålet er sikker dokumentlagring, sporbar tilgang og stabil drift.\n\n## Krav\n\nKRAV-01: Dokumenter skal lagres privat i Norway East. Løsningen skal hindre anonym tilgang til kildedokumenter.\n\nKRAV-02: Administratorer skal kunne logge inn med Microsoft-konto. Andre brukere skal bare få tilgang til prosjekter de er tildelt.\n\nKRAV-03: Opplastede dokumenter skal behandles, indekseres og gjøres klare for analyse. Originalfilen og norske tegn som æ, ø og å skal bevares.\n\nKRAV-04: Driftsleverandøren skal rapportere hendelser månedlig. Avtaleperioden er 14 måneder.\n\n## Kontrollverdi\n\nDen syntetiske kontrollverdien er ANBUD-AZURE-MG-20261013. Dokumentet er laget kun for denne funksjonstesten og inneholder ingen kundedata.",
+  "structure_map": [
+    {
+      "reference": "Kundedokument – Docling section_header 1, side 1",
+      "text": "Bilag 1 - Fiktiv driftskontroll",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/0"
+    },
+    {
+      "reference": "Kundedokument – Docling text 2, side 1",
+      "text": "Kontroll 13. oktober 2026. Dette er et syntetisk testdokument. Alle navn, krav og opplysninger er fiktive.",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/1"
+    },
+    {
+      "reference": "Kundedokument – Docling section_header 3, side 1",
+      "text": "Kunde og formål",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/2"
+    },
+    {
+      "reference": "Kundedokument – Docling text 4, side 1",
+      "text": "Fjordvik Testkommune ønsker en driftstjeneste for en liten skybasert arbeidsflate. Prosjektets navn er Fiktiv driftskontroll 2026. Formålet er sikker dokumentlagring, sporbar tilgang og stabil drift.",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/3"
+    },
+    {
+      "reference": "Kundedokument – Docling section_header 5, side 1",
+      "text": "Krav",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/4"
+    },
+    {
+      "reference": "Kundedokument – Docling text 6, side 1",
+      "text": "KRAV-01: Dokumenter skal lagres privat i Norway East. Løsningen skal hindre anonym tilgang til kildedokumenter.",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/5"
+    },
+    {
+      "reference": "Kundedokument – Docling text 7, side 1",
+      "text": "KRAV-02: Administratorer skal kunne logge inn med Microsoft-konto. Andre brukere skal bare få tilgang til prosjekter de er tildelt.",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/6"
+    },
+    {
+      "reference": "Kundedokument – Docling text 8, side 1",
+      "text": "KRAV-03: Opplastede dokumenter skal behandles, indekseres og gjøres klare for analyse. Originalfilen og norske tegn som æ, ø og å skal bevares.",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/7"
+    },
+    {
+      "reference": "Kundedokument – Docling text 9, side 1",
+      "text": "KRAV-04: Driftsleverandøren skal rapportere hendelser månedlig. Avtaleperioden er 14 måneder.",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/8"
+    },
+    {
+      "reference": "Kundedokument – Docling section_header 10, side 1",
+      "text": "Kontrollverdi",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/9"
+    },
+    {
+      "reference": "Kundedokument – Docling text 11, side 1",
+      "text": "Den syntetiske kontrollverdien er ANBUD-AZURE-MG-20261013. Dokumentet er laget kun for denne funksjonstesten og inneholder ingen kundedata.",
+      "kind": "docling_text",
+      "parser": "docling",
+      "page": 1,
+      "docling_ref": "#/texts/10"
+    }
+  ]
+}

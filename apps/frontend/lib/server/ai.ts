@@ -109,6 +109,7 @@ import {
   buildDeclaredHeadingRequirementLedger,
   restoreExplicitLineRequirementOrder,
   buildExplicitIdPdfLayoutRequirementLedger,
+  buildExplicitIdDoclingTextRequirementLedger,
   buildExplicitIdPdfNarrativeRequirementLedger,
   buildExplicitIdTableRequirementLedger,
   buildGeneratedPdfRequirementLedger,
@@ -8000,8 +8001,17 @@ export async function buildRequirementSourceLedgerWithFiles(
     ? []
     : await buildPdfLayoutTableRequirementLedger(document);
   const declaredHeadingLedger = buildDeclaredHeadingRequirementLedger(document);
+  const doclingTextAnchors = buildExplicitIdDoclingTextRequirementLedger(document, corpusParserContext);
+  // Only replace prose projections of the same local ID/page. Table rows and
+  // repeated anchored units remain independent source requirements.
+  const preferDoclingTextAnchors = (entry: RequirementLedgerEntry) => !doclingTextAnchors.some((anchor) =>
+    (!entry.tableId || entry.tableId === "PDF krav-ID") &&
+    normalizeRequirementId(entry.id) === normalizeRequirementId(anchor.id) &&
+    (!entry.pages.length || !anchor.pages.length || entry.pages.some((page) => anchor.pages.includes(page)))
+  );
   const ledger = filterSyntheticRequirementFallbacks(
     filterSyntheticRequirementDuplicates([
+      ...doclingTextAnchors,
       ...declaredHeadingLedger,
       ...unstructuredLedger,
       ...generatedPdfLedgerWithLocalTableText,
@@ -8009,8 +8019,8 @@ export async function buildRequirementSourceLedgerWithFiles(
       ...serviceTableLedger,
       ...doclingStructureLedger,
       ...docxTableLedger,
-      ...baseLedger,
-      ...pdfFileTextLedger,
+      ...baseLedger.filter(preferDoclingTextAnchors),
+      ...pdfFileTextLedger.filter(preferDoclingTextAnchors),
       ...pdfLayoutTableLedger,
     ]),
   ).filter(
