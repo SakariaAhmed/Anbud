@@ -16,12 +16,14 @@ const fixtures = path.resolve(frontend, "../../test-data/ocr");
 // The release gate checks the built image without reinstalling app dependencies.
 // The default local mode additionally exercises the application parser adapter.
 let extractTextFromBuffer;
+let extractRequirementLedgerForDocument;
 if (!imageOnly) {
   const { createJiti } = await import("jiti");
   const jiti = createJiti(import.meta.url, {
     alias: { "@": frontend, "server-only": "/dev/null" },
   });
   ({ extractTextFromBuffer } = await jiti.import(path.join(frontend, "lib/server/documents.ts")));
+  ({ extractRequirementLedgerForDocument } = await jiti.import(path.join(frontend, "lib/server/requirements/extraction.ts")));
 }
 const normalizeSpacing = (value) => value.replace(/\s+/gu, " ").trim();
 const directory = await mkdtemp(path.join(tmpdir(), "anbud-ocr-evaluation-"));
@@ -44,6 +46,7 @@ args[args.length - 1] = "/input/source.pdf";
 const name = "anbud-ocr-evaluation-" + process.pid;
 try {
 const result = spawnSync("docker", ["run", "--rm", "--name", name, "--network", "none", "--user", "1001:1001",
+  "--env", "HOME=/home/node",
   "--mount", "type=bind,source=" + input + ",target=/input/source.pdf,readonly",
   "--mount", "type=bind,source=" + output + ",target=/output",
   "--entrypoint", "/opt/docling/bin/docling", ${JSON.stringify(imageId)}, ...args],
@@ -61,22 +64,25 @@ process.exitCode = result.status ?? 1;
     DOCLING_TABLE_MODE: "accurate", DOCLING_CLI_COMMAND: command,
   });
   const cases = JSON.parse(await readFile(path.join(fixtures, "expected.json"), "utf8"));
+  async function convertInImage(filePath) {
+    const output = path.join(directory, path.basename(filePath) + "-output");
+    await mkdir(output);
+    await chmod(output, 0o777);
+    execFileSync(process.execPath, [command,
+      "--to", "md", "--to", "json", "--output", output,
+      "--artifacts-path", "/opt/docling-models", "--num-threads", "2",
+      "--table-mode", "accurate", "--image-export-mode", "placeholder",
+      "--document-timeout", "180", "--ocr", "--ocr-engine", "tesseract",
+      "--ocr-lang", "nor,eng", filePath,
+    ], { stdio: "inherit", timeout: 230000 });
+    return JSON.parse(await readFile(path.join(output, "source.json"), "utf8"));
+  }
   for (const fixture of cases) {
     const buffer = await readFile(path.join(fixtures, fixture.file));
     assert.equal(createHash("sha256").update(buffer).digest("hex"), fixture.sha256);
     const start = Date.now();
     if (imageOnly) {
-      const output = path.join(directory, fixture.file + "-output");
-      await mkdir(output);
-      await chmod(output, 0o777);
-      execFileSync(process.execPath, [command,
-        "--to", "md", "--to", "json", "--output", output,
-        "--artifacts-path", "/opt/docling-models", "--num-threads", "2",
-        "--table-mode", "accurate", "--image-export-mode", "placeholder",
-        "--document-timeout", "180", "--ocr", "--ocr-engine", "tesseract",
-        "--ocr-lang", "nor,eng", path.join(fixtures, fixture.file),
-      ], { stdio: "inherit", timeout: 230000 });
-      const document = JSON.parse(await readFile(path.join(output, "source.json"), "utf8"));
+      const document = await convertInImage(path.join(fixtures, fixture.file));
       assert.deepEqual(Object.keys(document.pages).map(Number), fixture.pages.map((_, i) => i + 1));
       for (const [index, lines] of fixture.pages.entries()) {
         const source = document.texts.filter((entry) => entry.prov.some((item) => item.page_no === index + 1));
@@ -101,6 +107,28 @@ process.exitCode = result.status ?? 1;
     }
     console.info(JSON.stringify({ file: fixture.file, sha256: fixture.sha256, imageId, pages: fixture.pages.length, exactText: true, elapsedMs: Date.now() - start }));
   }
+  // Verify every marked requirement, whether Docling keeps separate paragraphs
+  // or merges them. The application ledger must still publish four exact units.
+  const requirementFixture = path.join(frontend, "lib/server/requirements/fixtures/fjordvik-docling-narrative.pdf");
+  const expected = JSON.parse(await readFile(requirementFixture.replace(/\.pdf$/u, ".json"), "utf8"));
+  const requirementTexts = expected.structure_map.filter((entry) => /^KRAV-\d+:/u.test(entry.text)).map((entry) => entry.text);
+  assert.equal(requirementTexts.length, 4);
+  const buffer = await readFile(requirementFixture);
+  assert.equal(createHash("sha256").update(buffer).digest("hex"), "2316a70538cceba83d0e498689bfbe79d95619080a4e6e1ec8cbad04203a2737");
+  const converted = await convertInImage(requirementFixture);
+  const paragraphs = converted.texts.filter((entry) => /^KRAV-\d+:/u.test(entry.text));
+  assert.equal(normalizeSpacing(paragraphs.map((entry) => entry.text).join(" ")), requirementTexts.join(" "));
+  assert.ok(paragraphs.every((entry) => entry.self_ref && entry.prov.some((item) => item.page_no === 1)));
+  if (!imageOnly) {
+    const parsed = await extractTextFromBuffer({ buffer, fileName: path.basename(requirementFixture), role: "primary_customer_document", useDocling: true, useDoclingOcr: true });
+    assert.equal(parsed.parserUsed, "docling");
+    assert.equal(parsed.fileBase64, buffer.toString("base64"));
+    const ledger = await extractRequirementLedgerForDocument({ id: "ocr-requirements", title: "Fjordvik", role: "primary_customer_document", file_format: "pdf", raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_base64: parsed.fileBase64 });
+    assert.deepEqual(ledger.map((entry) => entry.id.toUpperCase()), ["KRAV-01", "KRAV-02", "KRAV-03", "KRAV-04"]);
+    assert.deepEqual(ledger.map((entry) => entry.text), requirementTexts.map((text) => text.slice(text.indexOf(":") + 1).trim()));
+  }
+  assert.deepEqual(await readFile(requirementFixture), buffer);
+  console.info(JSON.stringify({ file: path.basename(requirementFixture), imageId, exactRequirements: 4, sourceParagraphs: paragraphs.length, markedRequirementBoundaries: true }));
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
