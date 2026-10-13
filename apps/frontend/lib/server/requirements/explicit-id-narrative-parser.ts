@@ -2,6 +2,47 @@ import { normalizePageText } from "@/lib/server/requirements/pdf-normalization";
 import type { RequirementCorpusParserContext } from "@/lib/server/requirements/corpus-parser-context";
 import type { ExplicitIdPdfLayoutPage } from "@/lib/server/requirements/explicit-id-table-parser";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
+import { explicitRequirementIdPattern } from "@/lib/server/requirements/id-detection";
+import type { ProjectDocumentDetail } from "@/lib/types";
+import { findRequirementOrderOffset, normalizedRequirementOrderSearchText } from "@/lib/server/requirements/mixed-corpus-rules";
+
+/** Docling paragraphs retain the ID/text boundary lost by flattened PDF scans. */
+export function buildExplicitIdDoclingTextRequirementLedger(
+  document: ProjectDocumentDetail,
+  context: RequirementCorpusParserContext,
+): RequirementLedgerEntry[] {
+  if (document.file_format !== "pdf") return [];
+  const requirements: RequirementLedgerEntry[] = [];
+  const sourceText = normalizedRequirementOrderSearchText(document.raw_text);
+  let sourceCursor = 0;
+  let heading = "";
+  for (const [order, entry] of document.structure_map.entries()) {
+    if (entry.kind !== "docling_text" || entry.parser !== "docling") continue;
+    if (/\bsection_header\b/iu.test(entry.reference)) {
+      heading = normalizePageText(entry.text);
+      continue;
+    }
+    const source = normalizePageText(entry.text).replace(/^[•*]\s*/u, "");
+    const match = explicitRequirementIdPattern().exec(source);
+    const ids = context.detectExplicitRequirementIds(source);
+    if (!match || match.index !== 0 || ids.length !== 1) continue;
+    const text = context.stripAnswerTextFromRequirement(context.stripRequirementChrome(
+      source.slice(match[0].length).replace(/^\s*[:–—-]\s*/u, "").trim(),
+    ));
+    if (text.length < 18 || !(context.hasRequirementSignal(text) || context.hasStandaloneRequirementLanguage(text))) continue;
+    const offset = findRequirementOrderOffset(sourceText, source, sourceCursor);
+    if (offset !== null) sourceCursor = offset + normalizedRequirementOrderSearchText(source).length;
+    requirements.push({
+      id: ids[0],
+      text,
+      pages: typeof entry.page === "number" ? [entry.page] : [],
+      heading: entry.heading_path?.join(" / ") || heading,
+      sourceExcerpt: entry.text,
+      documentEntryOrder: offset ?? 1_000_000 + order,
+    });
+  }
+  return requirements;
+}
 
 const NARRATIVE_SECTION_PATTERN =
   /(?:Ustrukturert\s+krav(?:beskrivelse|\s*-\s*krav\s*-\s*besvarelse|[\s-]*for[\s-]*krav[\s-]*besvarelse)|kravene\s+nedenfor\s+er\s+bevisst\s+skrevet\s+som\s+fritekst)/iu;
