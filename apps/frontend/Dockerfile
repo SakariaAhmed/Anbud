@@ -80,10 +80,12 @@ ENV DOCLING_PDF_CHUNKING=auto
 ENV DOCLING_PDF_CHUNK_PAGES=40
 ENV DOCLING_PDF_CHUNK_THRESHOLD_PAGES=120
 ENV PATH=/opt/docling/bin:$PATH
+# Docling 2.132 needs the recognizer vocabulary removed in RapidOCR 3.10.
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m venv /opt/docling \
     && /opt/docling/bin/pip install --no-cache-dir \
       "docling-slim[standard,models-local,feat-ocr-rapidocr]==2.132.0" \
+      "rapidocr==3.9.1" \
       --extra-index-url https://download.pytorch.org/whl/cpu \
     && /opt/docling/bin/pip install --force-reinstall --no-cache-dir --no-deps opencv-python-headless==4.13.0.92 \
     && find /opt/docling -type d \( -name __pycache__ -o -name test -o -name tests \) -prune -exec rm -rf '{}' + \
