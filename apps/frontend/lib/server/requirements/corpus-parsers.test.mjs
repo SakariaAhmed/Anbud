@@ -235,6 +235,26 @@ test("Docling paragraph anchors preserve wrapped text and repeated IDs in separa
   ]);
 });
 
+test("Docling 2.132 merged paragraph retains four exact requirements through the file ledger", async () => {
+  const fixture = JSON.parse(await readFile(new URL("./fixtures/fjordvik-docling-merged-narrative.json", import.meta.url), "utf8"));
+  const original = JSON.parse(await readFile(new URL("./fixtures/fjordvik-docling-narrative.json", import.meta.url), "utf8"));
+  const pdf = await readFile(new URL("./fixtures/fjordvik-docling-narrative.pdf", import.meta.url));
+  const ledger = await extractRequirementLedgerForDocument({ ...projectDocument({ fileFormat: "pdf", rawText: fixture.raw_text, structureMap: fixture.structure_map }), file_base64: pdf.toString("base64") });
+  assert.deepEqual(ledger.map((entry) => entry.id.toUpperCase()), ["KRAV-01", "KRAV-02", "KRAV-03", "KRAV-04"]);
+  assert.deepEqual(ledger.map((entry) => entry.text), original.structure_map.filter((entry) => /^KRAV-\d+:/u.test(entry.text)).map((entry) => entry.text.slice(entry.text.indexOf(":") + 1).trim()));
+  assert.ok(ledger.every((entry) => entry.pages.join(",") === "1" && entry.heading === "Krav" && entry.sourceExcerpt.startsWith(entry.id.toUpperCase())));
+});
+
+test("Docling paragraph cross-references do not become new marked requirements", () => {
+  for (const text of [
+    "KRAV-01: Leverandøren skal følge KRAV-02 ved opprettelse av nye brukere.",
+    "KRAV-01: Leverandøren skal kontrollere tilgang. Se KRAV-02: Leverandøren skal også logge endringer.",
+  ]) {
+    const ledger = parsers.buildExplicitIdDoclingTextRequirementLedger(projectDocument({ fileFormat: "pdf", rawText: text, structureMap: [{ kind: "docling_text", parser: "docling", reference: "Docling text 1", text, page: 1 }] }), testContext());
+    assert.deepEqual(ledger, [], "ambiguous paragraph stays with existing extraction paths");
+  }
+});
+
 test("Nordhavn explicit requirement table yields exactly 18 source-ordered rows", async () => {
   const rawText = await readFile(
     path.join(
