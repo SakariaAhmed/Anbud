@@ -46,6 +46,7 @@ args[args.length - 1] = "/input/source.pdf";
 const name = "anbud-ocr-evaluation-" + process.pid;
 try {
 const result = spawnSync("docker", ["run", "--rm", "--name", name, "--network", "none", "--user", "1001:1001",
+  "--env", "HOME=/home/node",
   "--mount", "type=bind,source=" + input + ",target=/input/source.pdf,readonly",
   "--mount", "type=bind,source=" + output + ",target=/output",
   "--entrypoint", "/opt/docling/bin/docling", ${JSON.stringify(imageId)}, ...args],
