@@ -92,8 +92,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && find /opt/docling -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.a' \) -delete \
     && rm -rf /opt/docling/lib/python*/site-packages/torch/include \
       /opt/docling/lib/python*/site-packages/torch/share
+# OCR uses the bundled Norwegian/English Tesseract data. Prefetch the other
+# standard pipeline models explicitly; unused RapidOCR checkpoints are not needed.
 RUN mkdir -p /opt/docling-models \
-    && /opt/docling/bin/docling-tools models download -o /opt/docling-models -q \
+    && /opt/docling/bin/docling-tools models download layout tableformer code_formula picture_classifier -o /opt/docling-models -q \
     && find /opt/docling-models -type d -name .cache -prune -exec rm -rf '{}' + \
     && chmod -R a+rX /opt/docling-models
 # The production Docling image does not use Debian package management at
