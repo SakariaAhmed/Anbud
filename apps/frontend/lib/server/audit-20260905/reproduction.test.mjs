@@ -388,7 +388,7 @@ test('REGRESSION UI5: delayed ingestion result refreshes current project and pre
   const { applyProjectSnapshot } = jiti(path.join(frontend, 'components/projects/project-workflow-status.ts'));
   let state = { id: P, documents: [], generated_artifacts: [], customer_analysis: analysisResult('Latest successful analysis'), customer_analysis_generated: true, solution_evaluation_generated: false };
   const { trackDocumentIngestionJob } = actual('components/projects/project-workspace-page.tsx', ['trackDocumentIngestionJob'], {
-    project: state, documentJobAbortControllersRef: { current: new Set() }, isProjectSnapshotOlder: jiti(path.join(frontend, "components/projects/project-workflow-status.ts")).isProjectSnapshotOlder, setNotice: noop, setBusyMessage: noop, fetchProjectState: async () => ({id:P}),
+    project: state, documentJobAbortControllersRef: { current: new Set() }, isProjectSnapshotOlder: jiti(path.join(frontend, "components/projects/project-workflow-status.ts")).isProjectSnapshotOlder, setNotice: noop, setBusyMessage: noop,
     watchProjectJob: async () => ({ result: { document: { id: D }, project: { customer_analysis_generated: false, solution_evaluation_generated: false } } }),
     documentFromJobResult: result => result.document, normalizeProjectState: value => value,
     fetchProjectState: async () => state, applyProjectSnapshot, dedupeDocuments: value => value, setProject: fn => state = fn(state),
