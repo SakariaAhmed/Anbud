@@ -40,6 +40,8 @@ function projectReadCacheKey(projectId: string, resource: string) {
   return `project-read:${projectId}:${resource}`;
 }
 
+// Mutations invalidate before sending and again when the response arrives, so a
+// read started during the request cannot cache pre-mutation state.
 function invalidateProjectReadCache(projectId: string) {
   clearClientCache(`project-read:${projectId}:`);
   clearClientCache(projectServicesCacheKey(projectId));
@@ -558,7 +560,7 @@ export async function uploadProjectDocument(input: {
   const response = await fetch(`/api/projects/${input.projectId}/documents`, {
     method: "POST",
     body: input.formData,
-  });
+  }).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
     document?: ProjectDocument;
@@ -586,7 +588,7 @@ export async function startProjectJob(input: {
     method: "POST",
     headers: { "Content-Type": "application/json", ...input.headers },
     body: JSON.stringify(input.body),
-  });
+  }).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
     job?: ProjectJobRecord;
@@ -616,7 +618,7 @@ export async function saveCustomerAnalysisSection(input: {
         expected_analysis_revision: input.revision,
       }),
     },
-  );
+  ).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
     analysis?: CustomerAnalysisResult;
@@ -650,7 +652,7 @@ export async function updateGeneratedArtifact(input: {
       acknowledge_deterministic_repairs:
         input.acknowledgeDeterministicRepairs === true,
     }),
-  });
+  }).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
     artifact?: GeneratedArtifact;
@@ -675,7 +677,7 @@ export async function deleteGeneratedArtifact(input: {
     method: "DELETE",
     headers: { "Content-Type": "application/json", ...input.headers },
     body: JSON.stringify({ artifact_id: input.artifactId }),
-  });
+  }).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
     project?: ProjectSnapshotPayload;
@@ -696,7 +698,7 @@ export async function deleteProjectDocument(input: {
   const response = await fetch(
     `/api/projects/${input.projectId}/documents/${input.documentId}`,
     { method: "DELETE" },
-  );
+  ).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
     project?: ProjectSnapshotPayload;

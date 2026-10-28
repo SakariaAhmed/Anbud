@@ -3624,3 +3624,25 @@ test("pdf flattened service-table header does not become bare krav id", async ()
     false,
   );
 });
+
+test("prose lines that start with an explicit ID are not an authoritative requirement table", () => {
+  const { explicitIdTableSourceIds } = jiti(
+    path.join(frontendRoot, "lib/server/requirements/explicit-id-table-parser.ts"),
+  );
+  assert.deepEqual(
+    explicitIdTableSourceIds([
+      "NORD-FUN-01 Alle brukere skal kunne logge inn med Entra ID.",
+      "NORD-FUN-02 Bruk av tjenesten skal logges.",
+      "NORD-FUN-03 Ci-pipelines skal være versjonert.",
+    ].join("\n")),
+    [],
+  );
+  assert.deepEqual(
+    explicitIdTableSourceIds([
+      "NORD-FUN-01 A Saksflyt Bekreft at løsningen støtter saksflyt.",
+      "FUN-A02ASaksbehandling Beskriv saksbehandlingen.",
+      "NORD-FUN-03 C",
+    ].join("\n")),
+    ["NORD-FUN-01", "FUN-A02", "NORD-FUN-03"],
+  );
+});

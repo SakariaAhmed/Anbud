@@ -79,7 +79,7 @@ and safe error code. Never log token responses, codes, cookies, credentials, or
 raw identity payloads. A failed discovery request is evicted from the shared
 cache so later logins can retry; discovery is bounded to ten seconds.
 
-Apply `database/migrations/20260905011500_preserve_disabled_principals_on_login.sql`
+Apply `database/migrations/20260905030000_preserve_disabled_principals_on_login.sql`
 through the database migration process. Login must not reactivate a disabled
 principal, including when it is found by email or alias. The regression runs
 against an isolated disposable database when

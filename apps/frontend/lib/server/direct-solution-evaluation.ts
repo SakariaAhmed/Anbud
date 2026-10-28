@@ -129,7 +129,8 @@ function isSolutionEvaluationJobResult(
   const result = value as Partial<SolutionEvaluationJobResult>;
   return (
     Boolean(result.evaluation && typeof result.evaluation === "object") &&
-    Boolean(result.project && typeof result.project === "object") &&
+    // The evaluation is committed even when the follow-up snapshot read fails.
+    (result.project === null || typeof result.project === "object") &&
     result.artifact === null &&
     result.used_generated_solution === false
   );

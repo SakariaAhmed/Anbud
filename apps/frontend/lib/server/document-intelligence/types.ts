@@ -5,7 +5,7 @@ import type {
 } from "@/lib/server/document-intelligence/canonical-document";
 
 export const DOCUMENT_INTELLIGENCE_SCHEMA_VERSION = "document-analysis.v3";
-export const DOCUMENT_INTELLIGENCE_COMPILER_VERSION = "document-analysis.3.0.0";
+export const DOCUMENT_INTELLIGENCE_COMPILER_VERSION = "document-analysis.3.0.1";
 
 export type DocumentEvidenceKind =
   | "requirement"

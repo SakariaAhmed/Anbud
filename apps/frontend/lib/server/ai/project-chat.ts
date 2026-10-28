@@ -37,13 +37,19 @@ const CHAT_ATTACHMENT_CONTEXT_LIMIT = 24_000;
 const CHAT_ATTACHMENT_STRUCTURED_CONTEXT_LIMIT = 18_000;
 const CHAT_ATTACHMENT_SEGMENT_CHARS = 1400;
 
+// Questions and attachment segments must share one normalization, or terms
+// such as "påminnelse" never match the segment text.
+function comparableChatText(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function chatAttachmentTerms(question: string) {
   return Array.from(
     new Set(
-      question
-        .toLowerCase()
-        .normalize("NFKD")
-        .replace(/[\u0300-\u036f]/g, "")
+      comparableChatText(question)
         .replace(/[^a-z0-9æøå\s-]+/g, " ")
         .split(/\s+/)
         .filter((term) => term.length >= 4)
@@ -97,7 +103,7 @@ function splitAttachmentSegments(rawText: string) {
   return segments.filter(Boolean);
 }
 
-function buildChatAttachmentText(input: {
+export function buildChatAttachmentText(input: {
   rawText: string;
   question: string;
   limit: number;
@@ -107,14 +113,15 @@ function buildChatAttachmentText(input: {
     return "";
   }
 
+  // Segment selection only exists to fit the limit; never drop text that fits.
   const terms = chatAttachmentTerms(input.question);
-  if (!terms.length) {
+  if (!terms.length || input.rawText.length <= input.limit) {
     return compactText(input.rawText, input.limit);
   }
 
   const scored = segments
     .map((segment, index) => {
-      const comparable = segment.toLowerCase().normalize("NFKD");
+      const comparable = comparableChatText(segment);
       const score = terms.reduce(
         (sum, term) => sum + (comparable.includes(term) ? 1 : 0),
         0,

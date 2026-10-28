@@ -196,6 +196,74 @@ function invalidPathJson(correlationId: string) {
   );
 }
 
+function backendUnavailableResponse(correlationId: string, pathname: string) {
+  const message = "Tjenesten er midlertidig utilgjengelig. Prøv igjen om litt.";
+  return applyResponseHeaders(
+    pathname.startsWith("/api/")
+      ? NextResponse.json({ error: message, reference: correlationId }, { status: 503 })
+      : new NextResponse(`${message} Referanse: ${correlationId}`, {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        }),
+    correlationId,
+  );
+}
+
+const DATA_API_TIMEOUT_MS = 5_000;
+
+// A failed lookup is not the same as a missing session or project role.
+class MiddlewareBackendError extends Error {
+  constructor(
+    readonly stage: "session" | "project_role",
+    readonly code: string,
+  ) {
+    super(`Middleware data API ${stage} lookup failed: ${code}`);
+    this.name = "MiddlewareBackendError";
+  }
+}
+
+function logBackendFailure(error: MiddlewareBackendError, correlationId: string) {
+  console.error(
+    JSON.stringify({
+      event: "middleware_backend_failure",
+      stage: error.stage,
+      code: error.code,
+      correlation_id: correlationId,
+    }),
+  );
+}
+
+async function postDataApiRpc(
+  configuration: NonNullable<ReturnType<typeof dataApiConfiguration>>,
+  rpc: string,
+  body: unknown,
+  stage: MiddlewareBackendError["stage"],
+): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(`${configuration.baseUrl}/rpc/${rpc}`, {
+      method: "POST",
+      headers: dataApiHeaders(configuration.serviceKey),
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(DATA_API_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new MiddlewareBackendError(
+      stage,
+      error instanceof Error && error.name === "TimeoutError" ? "timeout" : "network",
+    );
+  }
+  if (!response.ok) {
+    throw new MiddlewareBackendError(stage, `http_${response.status}`);
+  }
+  try {
+    return await response.json();
+  } catch {
+    throw new MiddlewareBackendError(stage, "invalid_json");
+  }
+}
+
 type MiddlewareIdentity = {
   principalId: string;
   identityType: "internal" | "guest";
@@ -210,36 +278,43 @@ async function resolveDatabaseSession(
   const parsed = parseDatabaseSessionToken(sessionToken);
   const configuration = dataApiConfiguration();
   if (!parsed || !configuration) return null;
-  const response = await fetch(
-    `${configuration.baseUrl}/rpc/resolve_app_session`,
+  const rows = await postDataApiRpc(
+    configuration,
+    "resolve_app_session",
     {
-      method: "POST",
-      headers: dataApiHeaders(configuration.serviceKey),
-      body: JSON.stringify({
-        p_session_id: parsed.sessionId,
-        p_token_hmac: await databaseSessionTokenHmac(
-          parsed.sessionId,
-          parsed.secret,
-        ),
-      }),
-      cache: "no-store",
+      p_session_id: parsed.sessionId,
+      p_token_hmac: await databaseSessionTokenHmac(
+        parsed.sessionId,
+        parsed.secret,
+      ),
     },
+    "session",
   );
-  if (!response.ok) return null;
-  const rows = (await response.json()) as Array<{
-    session_id: string;
-    principal_id: string;
-    identity_type: "internal" | "guest";
-    display_name: string | null;
-    global_roles: string[] | null;
-  }>;
-  const row = rows[0];
-  if (!row) return null;
+  if (!Array.isArray(rows)) {
+    throw new MiddlewareBackendError("session", "invalid_shape");
+  }
+  if (rows.length === 0) return null;
+  const row = rows[0] as Record<string, unknown> | null;
+  if (
+    !row ||
+    typeof row !== "object" ||
+    typeof row.session_id !== "string" ||
+    typeof row.principal_id !== "string" ||
+    (row.identity_type !== "internal" && row.identity_type !== "guest") ||
+    (row.display_name !== null && typeof row.display_name !== "string") ||
+    (row.global_roles !== null &&
+      !(
+        Array.isArray(row.global_roles) &&
+        row.global_roles.every((role) => typeof role === "string")
+      ))
+  ) {
+    throw new MiddlewareBackendError("session", "invalid_shape");
+  }
   return {
     principalId: row.principal_id,
     identityType: row.identity_type,
     displayName: row.display_name,
-    isAdmin: row.global_roles?.includes("admin") ?? false,
+    isAdmin: (row.global_roles as string[] | null)?.includes("admin") ?? false,
     sessionId: row.session_id,
   };
 }
@@ -250,20 +325,16 @@ async function resolveProjectRole(
 ) {
   const configuration = dataApiConfiguration();
   if (!configuration) return null;
-  const response = await fetch(
-    `${configuration.baseUrl}/rpc/resolve_project_role`,
-    {
-      method: "POST",
-      headers: dataApiHeaders(configuration.serviceKey),
-      body: JSON.stringify({
-        p_principal_id: identity.principalId,
-        p_project_id: projectId,
-      }),
-      cache: "no-store",
-    },
+  const role = await postDataApiRpc(
+    configuration,
+    "resolve_project_role",
+    { p_principal_id: identity.principalId, p_project_id: projectId },
+    "project_role",
   );
-  if (!response.ok) return null;
-  return (await response.json()) as string | null;
+  if (role !== null && typeof role !== "string") {
+    throw new MiddlewareBackendError("project_role", "invalid_shape");
+  }
+  return role;
 }
 
 async function recordRequestActivity(
@@ -418,7 +489,19 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     return invalidPathJson(correlationId);
   }
   const sessionToken = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-  const identity = await resolveIdentity(sessionToken);
+  let identity: MiddlewareIdentity | null;
+  try {
+    identity = await resolveIdentity(sessionToken);
+  } catch (error) {
+    if (!(error instanceof MiddlewareBackendError)) throw error;
+    logBackendFailure(error, correlationId);
+    // Login and health stay reachable as anonymous requests; protected paths
+    // report the outage instead of pretending the session is missing.
+    if (!isPublicPath(pathname)) {
+      return backendUnavailableResponse(correlationId, pathname);
+    }
+    identity = null;
+  }
   const authenticated = Boolean(identity);
   const workerToken = process.env.PROJECT_JOB_WORKER_TOKEN?.trim();
 
@@ -472,7 +555,14 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     }
     const projectId = projectIdFromAuthorizationPath(pathname);
     if (projectId && identity) {
-      const role = await resolveProjectRole(projectId, identity);
+      let role: string | null;
+      try {
+        role = await resolveProjectRole(projectId, identity);
+      } catch (error) {
+        if (!(error instanceof MiddlewareBackendError)) throw error;
+        logBackendFailure(error, correlationId);
+        return backendUnavailableResponse(correlationId, pathname);
+      }
       if (
         !projectRoleAllowsAuthorizationPath({
           method: request.method,

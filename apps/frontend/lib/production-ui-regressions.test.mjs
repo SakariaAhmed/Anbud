@@ -4,6 +4,10 @@ test('normal directed Mermaid graphs pass while HTML and directives stay blocked
  for(const chart of ['flowchart LR\n A[Brukere] --> B[Microsoft 365]','graph LR\n A <-- B','flowchart LR\n A ==> B']) assert.equal(sanitizeMermaidChart(chart).error,'');
  for(const chart of ['flowchart LR\n A[<script>alert(1)</script>]','flowchart LR\n click A "https://evil.test"','flowchart LR\n style A fill:red','flowchart LR\n A[javascript:alert(1)]']) assert.ok(sanitizeMermaidChart(chart).error);
 });
+test('Norwegian labels ending in data: render while real data URIs stay blocked',()=>{
+ for(const chart of ['flowchart TD\n A[Kundedata: CRM]','flowchart TD\n B[Metadata: arkiv]','flowchart TD\n C[Data: lagring]']) assert.equal(sanitizeMermaidChart(chart).error,'',chart);
+ for(const chart of ['flowchart TD\n A[data:text/html;base64,PHNjcmlwdD4=]','flowchart TD\n A["data:image/svg+xml,x"]','flowchart TD\n A[data:,payload]']) assert.ok(sanitizeMermaidChart(chart).error,chart);
+});
 test('rewrite suggestions do not acquire unrelated weaknesses by array position',()=>{
  const result=buildArchitectureActions({document_findings:[],rewrite_suggestions:[{target:'K-02',suggestion:'Clarify availability'}],weaknesses:['K-05 lacks 24/7'],missing_elements:[],improvement_recommendations:[],generic_sections:[]});
  assert.deepEqual(result,[{location:'K-02',action:'Clarify availability',reason:''}]);

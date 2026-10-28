@@ -71,7 +71,8 @@ const EVIDENCE_RULES: Array<{
   },
   {
     kind: "requirement",
-    pattern: /\b(?:krav|skal|må|shall|must|required|requirement)\b/iu,
+    // Unicode-aware boundaries: \b never matches after a trailing "å".
+    pattern: /(?<![\p{L}\p{N}_])(?:krav|skal|må|shall|must|required|requirement)(?![\p{L}\p{N}_])/iu,
     signal: "requirement-language",
   },
 ];

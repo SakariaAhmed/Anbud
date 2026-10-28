@@ -553,6 +553,7 @@ export function ProjectWorkspacePage({
       controller.abort();
       window.removeEventListener("project-services-updated", refresh);
       window.removeEventListener("focus", refresh);
+      window.removeEventListener("project-workflow-updated", refresh);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [refreshArtifactAuthority]);

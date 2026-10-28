@@ -81,7 +81,7 @@ export function evaluateDocumentParseQuality(input: {
     `${sourceText}\n${text}`,
   );
   const hasRequirementSignals =
-    /\b(?:krav|skal|må|shall|must|required|requirement)\b/iu.test(searchableText);
+    /(?<![\p{L}\p{N}_])(?:krav|skal|må|shall|must|required|requirement)(?![\p{L}\p{N}_])/iu.test(searchableText);
   const hasEvaluationSignals =
     /\b(?:evalueringskriter|tildelingskriter|award criteria|evaluation criteria|vekting)\b/iu.test(
       searchableText,

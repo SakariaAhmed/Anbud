@@ -12,6 +12,20 @@ end $$;
 
 drop table if exists generated_artifacts cascade;
 drop table if exists project_jobs cascade;
+drop table if exists project_job_claim_control cascade;
+drop table if exists stable_customer_analysis_context_sync cascade;
+drop table if exists stable_primary_document_authority cascade;
+drop table if exists artifact_source_state cascade;
+drop table if exists activity_events cascade;
+drop table if exists guest_credentials cascade;
+drop table if exists project_group_grants cascade;
+drop table if exists project_memberships cascade;
+drop table if exists app_group_members cascade;
+drop table if exists app_groups cascade;
+drop table if exists app_sessions cascade;
+drop table if exists app_principal_aliases cascade;
+drop table if exists app_principal_roles cascade;
+drop table if exists app_principals cascade;
 drop table if exists chat_messages cascade;
 drop table if exists chat_sessions cascade;
 drop table if exists app_rate_limits cascade;
@@ -6908,7 +6922,7 @@ drop function if exists public.grant_guest_project_access(
   text, text, text, text, text, uuid, text, timestamptz, text, text, text
 );
 
-create function public.grant_guest_project_access(
+create or replace function public.grant_guest_project_access(
   p_candidate_principal_id text,
   p_email_hmac text,
   p_email_encrypted text,

@@ -718,12 +718,18 @@ function getDocumentInsightCache() {
   return globalThis.__anbudDocumentInsightCache;
 }
 
-function rememberDocumentInsight(
+export function rememberDocumentInsight(
   key: string,
   value: Promise<string | null>,
 ) {
   const cache = getDocumentInsightCache();
   cache.set(key, value);
+  // A transient model failure must not be replayed for an unchanged document.
+  value.catch(() => {
+    if (cache.get(key) === value) {
+      cache.delete(key);
+    }
+  });
 
   if (cache.size > DOCUMENT_INSIGHT_CACHE_MAX_ENTRIES) {
     const oldestKey = cache.keys().next().value;
@@ -8780,11 +8786,11 @@ function splitRequirementIdParts(requirementId: string) {
       .replace(/\s+/g, "")
       .toUpperCase(),
     number: numericPath[numericPath.length - 1] ?? 0,
-    suffix: (match[4] ?? "").toUpperCase(),
+    suffix: (match[3] ?? "").toUpperCase(),
   };
 }
 
-function isImmediateNextRequirementId(previousId: string, currentId: string) {
+export function isImmediateNextRequirementId(previousId: string, currentId: string) {
   const previous = splitRequirementIdParts(previousId);
   const current = splitRequirementIdParts(currentId);
 

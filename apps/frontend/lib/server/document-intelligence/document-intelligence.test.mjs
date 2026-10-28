@@ -98,7 +98,7 @@ const {
     "lib/server/document-intelligence/customer-analysis-fields.ts",
   ),
 );
-const { chooseDocumentParserRoute } = await jiti.import(
+const { chooseDocumentParserRoute, evaluateDocumentParseQuality } = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/document-intelligence/quality-router.ts",
@@ -1289,7 +1289,7 @@ test("quality routing keeps clean documents fast and tries local structure befor
 });
 
 test("customer analysis rejects stale source revisions and compiler versions", () => {
-  const compilerVersion = "document-analysis.3.0.0";
+  const compilerVersion = "document-analysis.3.0.1";
   assert.equal(
     isCurrentDocumentIntelligenceContext({
       sourceRevision: 4,
@@ -1768,4 +1768,29 @@ test("production deployment keeps document intelligence opt-in and admin identit
   assert.match(workflow, /DOCUMENT_ANALYSIS_VERSION:.*'off'/u);
   assert.match(workflow, /OPENAI_DOCUMENT_ANALYSIS_MODEL:.*'gpt-5\.6-terra'/u);
   assert.match(workflow, /adminPrincipalId="\$APP_ADMIN_PRINCIPAL_ID"/u);
+});
+
+test("requirement language ending in å is recognised by routing and the document ledger", async () => {
+  const text = "Leverandøren må dokumentere logging.";
+  const quality = evaluateDocumentParseQuality({
+    rawText: text,
+    canonicalText: text,
+    sourceMap: [],
+    fileFormat: "pdf",
+    fileSizeBytes: text.length,
+  });
+  assert.equal(quality.hasRequirementSignals, true);
+
+  const { buildDocumentLedger } = await jiti.import(
+    path.join(frontendRoot, "lib/server/document-ledger.ts"),
+  );
+  const ledger = buildDocumentLedger({
+    id: "synthetic-ledger-document",
+    title: "Syntetisk dokument",
+    raw_text: "[[SIDE:1]]\n2.1 Leverandøren må dokumentere all logging i løsningen",
+  });
+  assert.deepEqual(
+    ledger.requirements.map((requirement) => requirement.ref),
+    ["2.1"],
+  );
 });

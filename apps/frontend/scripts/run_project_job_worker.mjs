@@ -24,14 +24,19 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function serverHasExited(server) {
+  // `killed` only records that a signal was sent, not that the process exited.
+  return server.exitCode !== null || server.signalCode !== null;
+}
+
 function stopServer(server) {
-  if (server.killed) {
+  if (serverHasExited(server)) {
     return;
   }
 
   server.kill("SIGTERM");
   setTimeout(() => {
-    if (!server.killed) {
+    if (!serverHasExited(server)) {
       server.kill("SIGKILL");
     }
   }, 5_000).unref();

@@ -840,7 +840,10 @@ async function runProject(project, options) {
   const projectId = `vurdering-full-${project.id}`;
   const artifactPath = path.join(options.artifactsRoot, "projects", `${project.id}.json`);
   if (options.resume && existsSync(artifactPath)) {
-    return JSON.parse(await readFile(artifactPath, "utf8"));
+    // Failure checkpoints carry `error` and must run again. A completed project
+    // can still have ok:false (for example an empty ledger), so `ok` is not used.
+    const previous = JSON.parse(await readFile(artifactPath, "utf8"));
+    if (!previous?.error) return previous;
   }
 
   const requirementDocument = await loadProjectDocument({
