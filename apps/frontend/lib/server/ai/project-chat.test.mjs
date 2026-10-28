@@ -16,7 +16,7 @@ const jiti = createJiti(path.join(frontendRoot, "project-chat-tests.cjs"), {
   interopDefault: true,
   alias: { "@": frontendRoot, "server-only": "/dev/null" },
 });
-const { inferProjectChatDomains } = jiti(
+const { buildChatAttachmentText, inferProjectChatDomains } = jiti(
   path.join(frontendRoot, "lib/server/ai/project-chat.ts"),
 );
 
@@ -158,4 +158,16 @@ test("chat keeps question-specific evidence, complete late qualifications and al
     delete globalThis.__projectChatEvidenceTest;
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("attachment segments with å match question terms after the same normalization", () => {
+  const filler = "Generell bakgrunnstekst om prosjektet. ".repeat(40);
+  const relevant = "Påminnelse sendes automatisk før fristen for hver søknad.";
+  const rawText = `${filler}\n\n${relevant}\n\n${filler}`;
+  const selected = buildChatAttachmentText({
+    rawText,
+    question: "Hvordan fungerer påminnelse?",
+    limit: 400,
+  });
+  assert.match(selected, /Påminnelse sendes automatisk/u);
 });

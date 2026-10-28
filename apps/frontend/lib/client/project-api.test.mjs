@@ -17,6 +17,7 @@ const jiti = createJiti(path.join(frontendRoot, "project-api-tests.cjs"), {
 });
 
 const {
+  deleteGeneratedArtifact,
   fetchCustomerAnalysis,
   fetchGeneratedArtifacts,
   fetchProjectServices,
@@ -541,5 +542,30 @@ test("terminal job states invalidate cached and pending project reads", async ()
     } else {
       globalThis.window = originalWindow;
     }
+  }
+});
+
+test("a read started during a mutation is not served from cache after the mutation", async () => {
+  const originalFetch = global.fetch;
+  let resolveMutation;
+  const mutation = new Promise((resolve) => { resolveMutation = resolve; });
+  let serverArtifacts = [{ id: "synthetic-artifact" }];
+  let reads = 0;
+  global.fetch = async (_url, options = {}) => {
+    if (options.method === "DELETE") return mutation;
+    reads += 1;
+    return Response.json({ artifacts: serverArtifacts });
+  };
+  try {
+    const projectId = "synthetic-mutation-race-project";
+    const pending = deleteGeneratedArtifact({ projectId, artifactId: "synthetic-artifact" });
+    assert.equal((await fetchGeneratedArtifacts(projectId)).length, 1);
+    serverArtifacts = [];
+    resolveMutation(Response.json({ project: { id: projectId } }));
+    await pending;
+    assert.deepEqual(await fetchGeneratedArtifacts(projectId), []);
+    assert.equal(reads, 2);
+  } finally {
+    global.fetch = originalFetch;
   }
 });

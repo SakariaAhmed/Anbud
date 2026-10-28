@@ -225,8 +225,7 @@ export function legacySolutionEvaluationPayload(job: TestJob) {
   if (
     !result.evaluation ||
     typeof result.evaluation !== "object" ||
-    !result.project ||
-    typeof result.project !== "object" ||
+    (result.project !== null && typeof result.project !== "object") ||
     result.artifact !== null ||
     result.used_generated_solution !== false
   ) {

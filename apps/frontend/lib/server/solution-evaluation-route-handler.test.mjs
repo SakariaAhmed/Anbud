@@ -236,3 +236,28 @@ test("direct wait timeout returns the explicit safe 504 response", async () => {
       "Løsningsvurderingen fortsetter i bakgrunnen. Prøv å hente resultatet igjen om litt.",
   });
 });
+
+test("a completed evaluation whose snapshot refresh failed is still a valid result", () => {
+  const realJiti = createJiti(path.join(frontendRoot, "direct-solution-evaluation-tests.cjs"), {
+    interopDefault: true,
+    alias: { "@": frontendRoot, "server-only": "/dev/null" },
+  });
+  const { legacySolutionEvaluationPayload } = realJiti(
+    path.join(frontendRoot, "lib/server/direct-solution-evaluation.ts"),
+  );
+  const evaluation = { summary: "Syntetisk vurdering" };
+  const job = {
+    status: "completed",
+    result: { evaluation, project: null, artifact: null, used_generated_solution: false },
+  };
+  assert.deepEqual(legacySolutionEvaluationPayload(job), {
+    evaluation,
+    project: null,
+    artifact: null,
+    used_generated_solution: false,
+  });
+  assert.throws(
+    () => legacySolutionEvaluationPayload({ ...job, result: { ...job.result, project: "ugyldig" } }),
+    /uten et gyldig resultat/u,
+  );
+});

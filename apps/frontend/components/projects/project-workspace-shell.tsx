@@ -520,8 +520,9 @@ function ProjectWorkspaceSidebar({
                         href={`/projects/${project.id}/chat`}
                         target={`bidsite-project-chat-${project.id}`}
                         rel="noopener noreferrer"
-                        onClick={() => {
-                          onOpenChatPopout();
+                        onClick={(event) => {
+                          // The anchor remains the fallback when the popup is blocked.
+                          if (onOpenChatPopout()) event.preventDefault();
                           if (isMobile) setOpenMobile(false);
                         }}
                       />

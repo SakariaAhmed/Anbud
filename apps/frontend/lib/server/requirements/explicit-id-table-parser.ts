@@ -5,8 +5,10 @@ import type { ProjectDocumentDetail } from "@/lib/types";
 
 const PIPE_EXPLICIT_ID_TABLE_ROW_PATTERN =
   /^([A-ZÆØÅ]{2,8}\s*-\s*[A-ZÆØÅ]{1,4}\s*-?\s*\d{1,5})\s*\|\s*([ABC])\s*\|\s*(\S.*)$/iu;
+// The priority must be an uppercase letter that stands alone or runs straight
+// into an uppercase category, so prose such as "NORD-FUN-01 Alle ..." is not a row.
 const FLATTENED_EXPLICIT_ID_TABLE_ROW_PATTERN =
-  /^([A-ZÆØÅ]{2,8}\s*-\s*[A-ZÆØÅ]{1,4}\s*-?\s*\d{1,5})\s*([ABC])\s*(.*)$/iu;
+  /^([A-ZÆØÅa-zæøå]{2,8}\s*-\s*[A-ZÆØÅa-zæøå]{1,4}\s*-?\s*\d{1,5})\s*([ABC])(?=\s|\||$|\p{Lu})\s*(.*)$/u;
 const ANSWER_INSTRUCTION_START_PATTERN =
   /(?:^|\s)(Bekreft|Beskriv|Oppgi|Angi|Redegjør|Dokumenter|Forklar|Skill)\b/iu;
 

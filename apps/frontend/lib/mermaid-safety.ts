@@ -2,7 +2,9 @@ const MAX_MERMAID_CHARS = 6000;
 const MAX_MERMAID_LINES = 120;
 const BLOCKED_MERMAID_LINE =
   /^\s*(%%\{|classDef\b|class\s+\S+\s+\S+|click\b|href\b|linkStyle\b|style\b|accTitle\b|accDescr\b)/i;
-const BLOCKED_MERMAID_CONTENT = /<\/?[a-z!]|javascript:|data:|@import|url\s*\(/i;
+// Match only real data URIs so labels such as "Kundedata: CRM" still render.
+const BLOCKED_MERMAID_CONTENT =
+  /<\/?[a-z!]|javascript:|(?<![\p{L}\p{N}])data:\s*(?:[a-z]+\/[a-z0-9.+-]+|[,;])|@import|url\s*\(/iu;
 
 export function isSafeRenderedMermaidCss(css: string) {
   // Mermaid's own theme references gradients inside the generated SVG.

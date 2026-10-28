@@ -364,20 +364,29 @@ export async function listProjectAccess(projectId: string) {
   const activeGroupGrants = activeAccessRows(groupGrants);
   const principalIds = activeMemberships.map((row) => row.principal_id);
   const groupIds = activeGroupGrants.map((row) => row.group_id);
+  const principalColumns =
+    "id, identity_type, display_name, guest_description, email_masked, disabled_at";
   const [
     { data: principals, error: principalError },
+    { data: memberPrincipals, error: memberPrincipalError },
     { data: groups, error: groupError },
     { data: groupMembers, error: groupMemberError },
     { data: principalRoles, error: roleError },
   ] = await Promise.all([
+    // Bounded candidate list for adding new members.
     dataApi
       .from("app_principals")
-      .select(
-        "id, identity_type, display_name, guest_description, email_masked, disabled_at",
-      )
+      .select(principalColumns)
       .is("disabled_at", null)
       .order("display_name")
       .limit(500),
+    principalIds.length
+      ? dataApi
+          .from("app_principals")
+          .select(principalColumns)
+          .is("disabled_at", null)
+          .in("id", principalIds)
+      : Promise.resolve({ data: [], error: null }),
     groupIds.length
       ? dataApi
           .from("app_groups")
@@ -392,16 +401,23 @@ export async function listProjectAccess(projectId: string) {
       : Promise.resolve({ data: [], error: null }),
     dataApi.from("app_principal_roles").select("principal_id, role"),
   ]);
-  if (principalError || groupError || groupMemberError || roleError) {
+  if (
+    principalError ||
+    memberPrincipalError ||
+    groupError ||
+    groupMemberError ||
+    roleError
+  ) {
     throw new Error(
       principalError?.message ||
+        memberPrincipalError?.message ||
         groupError?.message ||
         groupMemberError?.message ||
         roleError?.message,
     );
   }
   const principalMap = new Map(
-    (principals ?? []).map((principal) => [principal.id, principal]),
+    (memberPrincipals ?? []).map((principal) => [principal.id, principal]),
   );
   const groupMap = new Map((groups ?? []).map((group) => [group.id, group]));
   const adminIds = new Set(
@@ -457,13 +473,20 @@ export async function updateProjectMemberRole(input: {
     throw new Error("Eierrollen kan ikke endres fra delingsdialogen.");
   }
   const dataApi = createServiceClient();
-  const { error } = await dataApi
+  // The owner filter is part of the same UPDATE, so a concurrent owner change
+  // cannot be overwritten between a check and the write.
+  const { data, error } = await dataApi
     .from("project_memberships")
     .update({ role: input.role })
     .eq("project_id", input.projectId)
     .eq("principal_id", input.principalId)
-    .is("revoked_at", null);
+    .neq("role", "owner")
+    .is("revoked_at", null)
+    .select("principal_id");
   if (error) throw new Error(error.message);
+  if (!data?.length) {
+    throw new Error("Fant ingen aktiv medlemsrolle som kan endres.");
+  }
 }
 
 export async function revokeProjectMember(input: {

@@ -11,7 +11,7 @@ import type { ProjectCreateInput } from "@/lib/types";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const READ_CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+  "Cache-Control": "private, no-store",
 };
 
 export async function GET() {
