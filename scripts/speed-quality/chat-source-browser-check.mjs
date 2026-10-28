@@ -60,25 +60,35 @@ try {
   }
   assert.deepEqual(report.errors, []);
 } finally {
-  if (report.projectId) {
-    const removed = await context.request.delete(`${origin}/api/projects/${report.projectId}`);
-    report.cleanupStatus = removed.status();
-    report.cleanupVerified = (await context.request.get(`${origin}/api/projects/${report.projectId}`)).status() === 404;
-    if (!report.cleanupVerified) {
-      // No Azure credentials are loaded in this harness. Preserve the failed
-      // HTTP outcome while removing only this own, document-free local fixture.
-      const headers = { apikey: env.DATA_API_SERVICE_ROLE_KEY, authorization: `Bearer ${env.DATA_API_SERVICE_ROLE_KEY}` };
-      const read = table => fetch(`${env.DATA_API_URL}/${table}`, { headers }).then(response => response.json());
-      const projects = await read(`projects?id=eq.${report.projectId}`);
-      if (projects.length !== 1 || projects[0].title !== "Fiktiv kontroll av alle chatkilder" || (await read(`documents?project_id=eq.${report.projectId}`)).length) throw new Error("Unexpected cleanup scope.");
-      const deleted = await fetch(`${env.DATA_API_URL}/projects?id=eq.${report.projectId}`, { method: "DELETE", headers });
-      report.localDatabaseCleanupStatus = deleted.status;
-      report.localDatabaseCleanupVerified = deleted.ok && !(await read(`projects?id=eq.${report.projectId}`)).length && !(await read(`chat_messages?project_id=eq.${report.projectId}`)).length;
+  // Cleanup failures are recorded rather than thrown, so they cannot replace
+  // the original test failure or skip writing evidence and closing the browser.
+  try {
+    if (report.projectId) {
+      const removed = await context.request.delete(`${origin}/api/projects/${report.projectId}`);
+      report.cleanupStatus = removed.status();
+      report.cleanupVerified = (await context.request.get(`${origin}/api/projects/${report.projectId}`)).status() === 404;
+      if (!report.cleanupVerified) {
+        // No Azure credentials are loaded in this harness. Preserve the failed
+        // HTTP outcome while removing only this own, document-free local fixture.
+        const headers = { apikey: env.DATA_API_SERVICE_ROLE_KEY, authorization: `Bearer ${env.DATA_API_SERVICE_ROLE_KEY}` };
+        const read = table => fetch(`${env.DATA_API_URL}/${table}`, { headers }).then(response => response.json());
+        const projects = await read(`projects?id=eq.${report.projectId}`);
+        if (projects.length !== 1 || projects[0].title !== "Fiktiv kontroll av alle chatkilder" || (await read(`documents?project_id=eq.${report.projectId}`)).length) {
+          report.cleanupScopeError = "Unexpected cleanup scope; direct delete skipped.";
+        } else {
+          const deleted = await fetch(`${env.DATA_API_URL}/projects?id=eq.${report.projectId}`, { method: "DELETE", headers });
+          report.localDatabaseCleanupStatus = deleted.status;
+          report.localDatabaseCleanupVerified = deleted.ok && !(await read(`projects?id=eq.${report.projectId}`)).length && !(await read(`chat_messages?project_id=eq.${report.projectId}`)).length;
+        }
+      }
     }
+  } catch (error) {
+    report.cleanupError = error instanceof Error ? error.message : String(error);
+  } finally {
+    writeFileSync(path.join(dir, "checks.json"), JSON.stringify(report, null, 2));
+    await browser.close();
+    rmSync(temporary, { recursive: true, force: true });
   }
-  writeFileSync(path.join(dir, "checks.json"), JSON.stringify(report, null, 2));
-  await browser.close();
-  rmSync(temporary, { recursive: true, force: true });
 }
 assert.ok(report.cleanupVerified || report.localDatabaseCleanupVerified);
 console.log(JSON.stringify(report));

@@ -16,16 +16,16 @@ function loadRoute(relative, modules) {
   const source = ts.transpileModule(readFileSync(path.join(root, relative), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const module = { exports: {} };
+  const routeModule = { exports: {} };
   vm.runInNewContext(source, {
-    module, exports: module.exports, URL, Response, Request,
+    module: routeModule, exports: routeModule.exports, URL, Response, Request,
     require: (name) => {
       if (name === "next/server") return { NextResponse };
       if (name in modules) return modules[name];
       throw new Error(`Unexpected import ${name}`);
     },
   });
-  return module.exports;
+  return routeModule.exports;
 }
 
 function activityRoute(calls) {

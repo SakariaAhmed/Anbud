@@ -96,9 +96,18 @@ assertIncludes(
   "normalizeSourceDocumentIds(input.sourceDocumentIds)",
   "artifact job parser normalizes source document IDs",
 );
+const workflowParserStart = projectWorkflows.indexOf(
+  "export function parseProjectWorkflowInput",
+);
+const workflowParserEnd = projectWorkflows.indexOf(
+  "const DEFAULT_DOCLING_COMPLEXITY_MIN_CHARS",
+);
+if (workflowParserStart < 0 || workflowParserEnd <= workflowParserStart) {
+  throw new Error("project workflow parser block markers were not found in order");
+}
 const workflowParserBlock = projectWorkflows.slice(
-  projectWorkflows.indexOf("export function parseProjectWorkflowInput"),
-  projectWorkflows.indexOf("const DEFAULT_DOCLING_COMPLEXITY_MIN_CHARS"),
+  workflowParserStart,
+  workflowParserEnd,
 );
 assertNotIncludes(
   workflowParserBlock,

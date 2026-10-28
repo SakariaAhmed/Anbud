@@ -650,7 +650,8 @@ async function verifySyntheticStructuredCases() {
 }
 
 const args = process.argv.slice(2);
-const dumpFilter = args[args.indexOf("--dump") + 1] ?? "";
+const dumpIndex = args.indexOf("--dump");
+const dumpFilter = dumpIndex >= 0 ? (args[dumpIndex + 1] ?? "") : "";
 const dumpAll = args.includes("--dump-all");
 const strictFasit = args.includes("--strict-fasit");
 const aggregateFasit = args.includes("--aggregate-fasit");
