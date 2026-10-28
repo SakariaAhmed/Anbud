@@ -41,6 +41,11 @@ function backend(t, { session = "ok", role = "ok" } = {}) {
     }
     if (mode === "html") return Promise.resolve(new Response("<html>proxy</html>", { status: 200 }));
     if (mode === "status") return Promise.resolve(new Response("{}", { status: 503 }));
+    if (mode === "null-row") return Promise.resolve(Response.json([null]));
+    if (mode === "empty-row") return Promise.resolve(Response.json([{}]));
+    if (mode === "bad-roles") return Promise.resolve(Response.json([{
+      session_id: sessionId, principal_id: principalId, identity_type: "internal", display_name: "Test", global_roles: {},
+    }]));
     return null;
   };
   t.mock.method(globalThis, "fetch", async (input, init) => {
@@ -70,7 +75,7 @@ async function request(pathname) {
   return response;
 }
 
-for (const mode of ["network", "timeout", "html", "status"]) {
+for (const mode of ["network", "timeout", "html", "status", "null-row", "empty-row", "bad-roles"]) {
   test(`a ${mode} session lookup failure reports an outage, not a missing login`, async (t) => {
     const logs = backend(t, { session: mode });
     const api = await request("/api/projects");

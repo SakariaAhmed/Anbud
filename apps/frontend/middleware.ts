@@ -293,21 +293,28 @@ async function resolveDatabaseSession(
   if (!Array.isArray(rows)) {
     throw new MiddlewareBackendError("session", "invalid_shape");
   }
-  const row = rows[0] as
-    | {
-        session_id: string;
-        principal_id: string;
-        identity_type: "internal" | "guest";
-        display_name: string | null;
-        global_roles: string[] | null;
-      }
-    | undefined;
-  if (!row) return null;
+  if (rows.length === 0) return null;
+  const row = rows[0] as Record<string, unknown> | null;
+  if (
+    !row ||
+    typeof row !== "object" ||
+    typeof row.session_id !== "string" ||
+    typeof row.principal_id !== "string" ||
+    (row.identity_type !== "internal" && row.identity_type !== "guest") ||
+    (row.display_name !== null && typeof row.display_name !== "string") ||
+    (row.global_roles !== null &&
+      !(
+        Array.isArray(row.global_roles) &&
+        row.global_roles.every((role) => typeof role === "string")
+      ))
+  ) {
+    throw new MiddlewareBackendError("session", "invalid_shape");
+  }
   return {
     principalId: row.principal_id,
     identityType: row.identity_type,
     displayName: row.display_name,
-    isAdmin: row.global_roles?.includes("admin") ?? false,
+    isAdmin: (row.global_roles as string[] | null)?.includes("admin") ?? false,
     sessionId: row.session_id,
   };
 }
