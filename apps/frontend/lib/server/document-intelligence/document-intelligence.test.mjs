@@ -1289,7 +1289,7 @@ test("quality routing keeps clean documents fast and tries local structure befor
 });
 
 test("customer analysis rejects stale source revisions and compiler versions", () => {
-  const compilerVersion = "document-analysis.3.0.0";
+  const compilerVersion = "document-analysis.3.0.1";
   assert.equal(
     isCurrentDocumentIntelligenceContext({
       sourceRevision: 4,

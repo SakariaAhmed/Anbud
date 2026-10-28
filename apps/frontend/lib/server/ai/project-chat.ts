@@ -113,8 +113,9 @@ export function buildChatAttachmentText(input: {
     return "";
   }
 
+  // Segment selection only exists to fit the limit; never drop text that fits.
   const terms = chatAttachmentTerms(input.question);
-  if (!terms.length) {
+  if (!terms.length || input.rawText.length <= input.limit) {
     return compactText(input.rawText, input.limit);
   }
 

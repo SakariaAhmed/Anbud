@@ -12,6 +12,7 @@ test("postgres: the destructive baseline reset can run twice and restores projec
   const name = `schema_rerun_${randomUUID().replaceAll("-", "")}`;
   const target = new URL(databaseUrl);
   target.pathname = `/${name}`;
+  target.searchParams.delete("dbname");
   function sql(url, input) {
     const result = spawnSync("psql", [url, "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1"], {
       input, encoding: "utf8", timeout: 90_000, maxBuffer: 4 * 1024 * 1024,
@@ -33,6 +34,7 @@ test("postgres: the destructive baseline reset can run twice and restores projec
       select count(*) from pg_constraint c join pg_namespace n on n.oid = c.connamespace
       where c.contype = 'f' and n.nspname = 'public';
     `;
+    assert.equal(sql(target.toString(), "select current_database()"), name);
     sql(target.toString(), reset);
     assert.equal(Number(sql(target.toString(), projectForeignKeys)), 3);
     const totalAfterFirst = Number(sql(target.toString(), allForeignKeys));

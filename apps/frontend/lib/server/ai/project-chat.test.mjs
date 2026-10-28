@@ -171,3 +171,13 @@ test("attachment segments with å match question terms after the same normalizat
   });
   assert.match(selected, /Påminnelse sendes automatisk/u);
 });
+
+test("an attachment that fits the limit is kept whole even when one paragraph matches", () => {
+  const selected = buildChatAttachmentText({
+    rawText: "Påminnelse: se nedenfor.\n\n7 dager før fristen.",
+    question: "Påminnelse?",
+    limit: 4000,
+  });
+  assert.match(selected, /Påminnelse: se nedenfor\./u);
+  assert.match(selected, /7 dager før fristen\./u);
+});

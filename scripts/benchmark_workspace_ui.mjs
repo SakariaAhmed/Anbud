@@ -337,7 +337,7 @@ async function measureOnce({ baseUrl, routePath, sessionToken, tab }) {
       value: sessionToken,
       url: baseUrl,
       httpOnly: true,
-      secure: false,
+      secure: new URL(baseUrl).protocol === "https:",
       sameSite: "Lax",
     });
     await client.send("Page.addScriptToEvaluateOnNewDocument", {
@@ -461,9 +461,15 @@ async function measureOnce({ baseUrl, routePath, sessionToken, tab }) {
         })()
       `,
     );
-    if (new URL(pageMetrics.location).pathname === "/login") {
+    const finalPath = new URL(pageMetrics.location).pathname;
+    if (finalPath === "/login") {
       throw new Error(
         "Benchmarken ble sendt til /login. BENCHMARK_SESSION_COOKIE er ugyldig eller utløpt; målingene er forkastet.",
+      );
+    }
+    if (finalPath !== new URL(routePath, baseUrl).pathname) {
+      throw new Error(
+        `Benchmarken endte på ${finalPath} i stedet for den valgte siden; målingene er forkastet.`,
       );
     }
 
@@ -544,6 +550,14 @@ async function main() {
     throw new Error(
       "Sett BENCHMARK_SESSION_COOKIE til en gyldig bidsite_session-verdi (s4.*).",
     );
+  }
+  // The real session cookie must not travel over plain HTTP to another host.
+  const target = new URL(args.baseUrl);
+  if (
+    target.protocol !== "https:" &&
+    !["127.0.0.1", "localhost", "[::1]"].includes(target.hostname)
+  ) {
+    throw new Error("Bruk https:// for benchmark mot andre verter enn localhost.");
   }
   const routePath =
     args.path ||

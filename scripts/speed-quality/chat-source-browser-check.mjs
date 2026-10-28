@@ -85,9 +85,15 @@ try {
   } catch (error) {
     report.cleanupError = error instanceof Error ? error.message : String(error);
   } finally {
-    writeFileSync(path.join(dir, "checks.json"), JSON.stringify(report, null, 2));
-    await browser.close();
-    rmSync(temporary, { recursive: true, force: true });
+    try {
+      writeFileSync(path.join(dir, "checks.json"), JSON.stringify(report, null, 2));
+    } finally {
+      try {
+        await browser.close();
+      } finally {
+        rmSync(temporary, { recursive: true, force: true });
+      }
+    }
   }
 }
 assert.ok(report.cleanupVerified || report.localDatabaseCleanupVerified);

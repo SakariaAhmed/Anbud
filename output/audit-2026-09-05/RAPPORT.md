@@ -23,7 +23,7 @@ P1 betyr høy prioritet på grunn av tap av brukerarbeid. P2 betyr feil status, 
 
 ## F1 — Ferdige resultater slettes når kilden oppdateres senere
 
-**Kode:** [Docling publiserer nytt innhold](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1126), [dokumenttrigger og sletting](../../database/schema.sql#L234), [trigger uten innholdssammenligning](../../database/schema.sql#L295), [global tjenesteinvalidasjon](../../database/schema.sql#L654), [klientens ingestion-overvåking](../../apps/frontend/components/projects/project-workspace-page.tsx#L675).
+**Kode:** [Docling publiserer nytt innhold](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1126), [dokumenttrigger og sletting](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/database/schema.sql#L234), [trigger uten innholdssammenligning](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/database/schema.sql#L295), [global tjenesteinvalidasjon](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/database/schema.sql#L654), [klientens ingestion-overvåking](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workspace-page.tsx#L675).
 
 **Hendelsesforløp:** Et hoveddokument blir `basic_ready`. Brukeren genererer analyse, redigerer teksten og lager vurdering/oppsummering. Bakgrunns-Docling fullfører senere og oppdaterer `raw_text`/`structure_map`. Den faktiske workflowen holder dokumentet `basic_ready` mens parseren kjører. Triggeren sletter deretter radene i `customer_analyses`, `solution_evaluations` og `executive_summaries`. Historikken ligger i analyseraden og forsvinner sammen med den. Klienten følger første jobb, men ignorerer `docling_enhancement_job_id`.
 
@@ -33,13 +33,13 @@ P1 betyr høy prioritet på grunn av tap av brukerarbeid. P2 betyr feil status, 
 
 D4 viser at innsetting av en tjeneste med `inclusion_mode='selected'`, uten prosjektvalg, også sletter de tre radene. SQL-funksjonen gjør dette for alle prosjekter. Det kan være riktig å invalidere avledede resultater når tjenestekandidatene endres; tapet av manuelle bidrag er fortsatt problemet. Testen bekrefter databasereaksjonen, ikke hvor ofte en tjenesteendring utløses i produksjon.
 
-D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sletter alle resultater. D2B bruker den ekte analyselagringen med uendret brukerinnhold og sletter vurdering/oppsummering. [Analysens siste triggerdefinisjon](../../database/schema.sql#L4569) invalidiserer også uten semantisk endring.
+D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sletter alle resultater. D2B bruker den ekte analyselagringen med uendret brukerinnhold og sletter vurdering/oppsummering. [Analysens siste triggerdefinisjon](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/database/schema.sql#L4569) invalidiserer også uten semantisk endring.
 
 **Anbefalt løsning:** Bevar tidligere analyser og manuelle seksjonsversjoner som historikk; marker dem som utdaterte med kildeversjon. Definer eksplisitt om `basic_ready` er stabilt nok til autoritativ generering, eller la senere forbedring opprette en ny kildeversjon. Overvåk oppfølgingsjobben. Unngå no-op-invalidasjon med deterministisk innholdshash/sammenligning før kryptering; sammenligning av tilfeldig kryptert tekst alene er utilstrekkelig.
 
 ## F2 — Retry kan overskrive en manuell redigering, også med gyldig lease
 
-**Kode:** [hele kundeanalysen prøves på nytt](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1158), [`previousAnalysis: null`](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1224), [historikk ved manglende tidligere analyse](../../apps/frontend/lib/customer-analysis-history.ts#L226), [lease-RPC](../../database/schema.sql#L2620).
+**Kode:** [hele kundeanalysen prøves på nytt](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1158), [`previousAnalysis: null`](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1224), [historikk ved manglende tidligere analyse](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/customer-analysis-history.ts#L226), [lease-RPC](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/database/schema.sql#L2620).
 
 **Hendelsesforløp:** En full analyse starter på revisjon R. Under AI-kallet lagrer en bruker en manuell endring; revisjonen øker. Første AI-lagring avvises riktig. Workflowen tolker også denne konflikten som grunnlag for automatisk nytt forsøk, leser siste kilder og lagrer en ny full analyse med `previousAnalysis: null`.
 
@@ -51,7 +51,7 @@ D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sl
 
 ## F3 — Manuell lagring validerer ikke editorens opprinnelige versjon
 
-**Kode:** [PUT leser body](../../apps/frontend/app/api/projects/%5Bid%5D/customer-analysis/route.ts#L532), [serveren tar nytt snapshot](../../apps/frontend/app/api/projects/%5Bid%5D/customer-analysis/route.ts#L560), [denne revisjonen brukes ved lagring](../../apps/frontend/app/api/projects/%5Bid%5D/customer-analysis/route.ts#L601), [klientens payload](../../apps/frontend/lib/client/project-api.ts#L722).
+**Kode:** [PUT leser body](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/app/api/projects/%5Bid%5D/customer-analysis/route.ts#L532), [serveren tar nytt snapshot](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/app/api/projects/%5Bid%5D/customer-analysis/route.ts#L560), [denne revisjonen brukes ved lagring](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/app/api/projects/%5Bid%5D/customer-analysis/route.ts#L601), [klientens payload](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/client/project-api.ts#L722).
 
 **Hendelsesforløp:** A åpner en seksjon. B lagrer nyere tekst. A lagrer sitt gamle utkast etterpå. Serveren leser nå B sin revisjon og bruker den som forventet revisjon for A sin forespørsel.
 
@@ -63,7 +63,7 @@ D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sl
 
 ## F4 — Feilet lagring forkaster utkastet
 
-**Kode:** [`runAction` fanger feil uten å kaste videre](../../apps/frontend/components/projects/project-workspace-page.tsx#L1012), [editoren tømmer seg etter await](../../apps/frontend/components/projects/project-analysis-tab.tsx#L2996).
+**Kode:** [`runAction` fanger feil uten å kaste videre](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workspace-page.tsx#L1012), [editoren tømmer seg etter await](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-analysis-tab.tsx#L2996).
 
 **Hendelsesforløp:** Brukeren lagrer en seksjon mens nettverket eller serveren feiler. `runAction` setter feilmeldingen og returnerer som en vellykket Promise. `onSaveSectionEdit` fortsetter, lukker editoren og setter utkastet til null.
 
@@ -75,7 +75,7 @@ D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sl
 
 ## F5 — Dokumentet kan være «klart» før indeksoperasjonen er ferdig
 
-**Kode:** [status og tidsstempel lagres først](../../apps/frontend/lib/server/repositories/data-store.ts#L3071), [chunk-operasjonen kommer senere](../../apps/frontend/lib/server/repositories/data-store.ts#L3148).
+**Kode:** [status og tidsstempel lagres først](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/repositories/data-store.ts#L3071), [chunk-operasjonen kommer senere](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/repositories/data-store.ts#L3148).
 
 **Hendelsesforløp:** Ingestion/fullført Docling skriver dokumenttekst med `enhanced_ready` og `indexed_at`. En annen leser ser dette før `replaceProjectDocumentChunks` har fullført. Embedding-/chunk-operasjonen feiler, og dokumentet settes deretter til `failed`.
 
@@ -89,7 +89,7 @@ D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sl
 
 ## F6 — «Forbedre systemløsning» kan fullføre bare første fase
 
-**Kode:** [artefakt genereres og lagres](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1564), [revurdering starter etterpå](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1587), [tidlig suksess uten revurdering](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1593).
+**Kode:** [artefakt genereres og lagres](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1564), [revurdering starter etterpå](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1587), [tidlig suksess uten revurdering](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1593).
 
 **Hendelsesforløp:** Ny løsning lagres. Henting av revurderingsgrunnlag feiler eller en nødvendig kilde/analysen har forsvunnet før fase to.
 
@@ -103,7 +103,7 @@ D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sl
 
 ## F7 — Sluttlesning kan gjøre en lagret analyse til en feilrespons
 
-**Kode:** [snapshot hentes etter lagring](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1233), [arbeiderens feilklassifisering](../../apps/frontend/lib/server/project-jobs.ts#L796), [samme mønster i manuell PUT](../../apps/frontend/app/api/projects/%5Bid%5D/customer-analysis/route.ts#L617).
+**Kode:** [snapshot hentes etter lagring](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1233), [arbeiderens feilklassifisering](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/project-jobs.ts#L796), [samme mønster i manuell PUT](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/app/api/projects/%5Bid%5D/customer-analysis/route.ts#L617).
 
 **Hendelsesforløp:** Analyse-RPC-en committer. Den etterfølgende prosjektlesningen feiler med nett-/databasefeil. Workflowen kaster feil selv om analysen er lagret.
 
@@ -115,7 +115,7 @@ D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sl
 
 ## F8 — Busy-status og jobbgrenser beskytter ikke en samlet prosjektflyt
 
-**Kode:** [én busy-streng](../../apps/frontend/components/projects/project-workspace-page.tsx#L346), [handlingens finally nullstiller](../../apps/frontend/components/projects/project-workspace-page.tsx#L1027), [faner sjekker egen jobbtype](../../apps/frontend/components/projects/project-workspace-shell.tsx#L770), [egen kontroll for vurdering](../../apps/frontend/components/projects/project-workspace-shell.tsx#L808), [prosesslokal scheduler](../../apps/frontend/lib/server/project-jobs.ts#L113), [ingestion går utenom](../../apps/frontend/lib/server/project-jobs.ts#L158), [DB-deduplisering](../../database/schema.sql#L3273).
+**Kode:** [én busy-streng](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workspace-page.tsx#L346), [handlingens finally nullstiller](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workspace-page.tsx#L1027), [faner sjekker egen jobbtype](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workspace-shell.tsx#L770), [egen kontroll for vurdering](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workspace-shell.tsx#L808), [prosesslokal scheduler](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/project-jobs.ts#L113), [ingestion går utenom](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/project-jobs.ts#L158), [DB-deduplisering](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/database/schema.sql#L3273).
 
 **Hendelsesforløp:** A starter analyse. B starter en annen handling, via fane, bruker eller replika. Første handling fullfører mens den andre fortsatt kjører.
 
@@ -129,7 +129,7 @@ D2 viser at `SET title=title, raw_text=raw_text, structure_map=structure_map` sl
 
 ## F9 — Forutsetningsfeil oppdages etter at jobben er godtatt og skjules bak hash
 
-**Kode:** [API velger jobbtype](../../apps/frontend/app/api/projects/%5Bid%5D/jobs/route.ts#L62), [202-respons](../../apps/frontend/app/api/projects/%5Bid%5D/jobs/route.ts#L142), [vurderingens sene krav](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1322), [oppsummeringens sene krav](../../apps/frontend/lib/server/use-cases/project-workflows.ts#L1501), [produksjonsfeilmelding](../../apps/frontend/lib/server/safe-errors.ts#L66).
+**Kode:** [API velger jobbtype](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/app/api/projects/%5Bid%5D/jobs/route.ts#L62), [202-respons](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/app/api/projects/%5Bid%5D/jobs/route.ts#L142), [vurderingens sene krav](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1322), [oppsummeringens sene krav](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/use-cases/project-workflows.ts#L1501), [produksjonsfeilmelding](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/server/safe-errors.ts#L66).
 
 **Hendelsesforløp:** Prosjektet mangler kundeanalyse eller vurdering. Klienten kaller jobb-API direkte, fra gammel UI-tilstand eller etter samtidig invalidasjon. Serveren svarer 202; arbeideren finner først senere at forutsetningen mangler.
 
@@ -149,7 +149,7 @@ Dette verifiserer hash-mappingen, ikke hvem som utløste historiske logghendelse
 
 ## F10 — Transportfeil og gamle snapshots gir uriktig lokal dokument-/analysestatus
 
-**Kode:** [polling uten retry rundt fetch](../../apps/frontend/lib/client/project-api.ts#L283), [watcher markerer dokument failed ved catch](../../apps/frontend/components/projects/project-workspace-page.tsx#L775), [gammelt jobbsnapshot brukes på dagens state](../../apps/frontend/components/projects/project-workspace-page.tsx#L752), [snapshot overskriver flags og nuller analyse](../../apps/frontend/components/projects/project-workflow-status.ts#L125).
+**Kode:** [polling uten retry rundt fetch](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/lib/client/project-api.ts#L283), [watcher markerer dokument failed ved catch](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workspace-page.tsx#L775), [gammelt jobbsnapshot brukes på dagens state](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workspace-page.tsx#L752), [snapshot overskriver flags og nuller analyse](https://github.com/SakariaAhmed/Anbud/blob/0ba4e687cb310fcd7bee152f2841125c0aea3b66/apps/frontend/components/projects/project-workflow-status.ts#L125).
 
 **Hendelsesforløp A:** Én midlertidig polling-feil avbryter overvåkingen. Dokumentjobben kan fortsatt kjøre eller allerede være ferdig på serveren. Klienten markerer likevel dokumentet som `failed`.
 
