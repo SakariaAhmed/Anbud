@@ -279,25 +279,27 @@ test("one worker invocation has a 30-minute job plus startup allowance", () => {
     maximumJobSeconds + startupAndShutdownAllowanceSeconds;
 
   assert.match(workerRoute, /export const maxDuration = 2100;/u);
-  assert.match(workerRoute, /const limit = 1;/u);
-  assert.match(workerScript, /const limit = 1;/u);
-  assert.match(
-    workerScript,
-    /PROJECT_JOB_WORKER_LIMIT must be 1\./u,
-  );
+  // Later jobs are budgeted against the replica deadline, not a fixed limit.
+  assert.match(workerRoute, /runAvailableProjectJobs\(\{ limit, staleAfterMs, deadlineAt \}\)/u);
+  assert.match(workerScript, /const replicaTimeoutMs = 2_100_000;/u);
+  assert.match(workerScript, /const maximumLimit = 10;/u);
+  assert.match(workerScript, /\{ limit, deadline_at: deadlineAt \}/u);
+  assert.match(workerScript, /PROJECT_JOB_WORKER_PROCESS: "1"/u);
+  assert.doesNotMatch(workerScript, /await fetch\(workerUrl/u);
 
   const configuredTimeout = Number(
     bicep.match(/param projectJobWorkerReplicaTimeout int = (\d+)/u)?.[1],
   );
   assert.equal(configuredTimeout, requiredReplicaSeconds);
-  assert.match(bicep, /@maxValue\(1\)\s+param projectJobWorkerLimit int = 1/u);
+  assert.match(bicep, /@maxValue\(10\)\s+param projectJobWorkerLimit int = 10/u);
+  assert.match(bicep, /parallelism: 1\b/u);
   assert.match(
     bicep,
     /@minValue\(2100\)\s+param projectJobWorkerReplicaTimeout int = 2100/u,
   );
   assert.match(bicep, /replicaTimeout: projectJobWorkerReplicaTimeout/u);
 
-  assert.match(deployWorkflow, /PROJECT_JOB_WORKER_LIMIT: "1"/u);
+  assert.match(deployWorkflow, /PROJECT_JOB_WORKER_LIMIT: "10"/u);
   assert.match(
     deployWorkflow,
     /PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"/u,

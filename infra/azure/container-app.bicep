@@ -147,10 +147,10 @@ param doclingAsyncAutoRun string = 'off'
 @description('Cron schedule for the same-image project job worker. Evaluated in UTC.')
 param projectJobWorkerCron string = '*/5 * * * *'
 
-@description('Maximum project jobs processed by one scheduled worker execution.')
+@description('Maximum project jobs processed by one scheduled worker execution. A further job is claimed only while the remaining replica time covers its full workflow deadline.')
 @minValue(1)
-@maxValue(1)
-param projectJobWorkerLimit int = 1
+@maxValue(10)
+param projectJobWorkerLimit int = 10
 
 @description('CPU cores for the web container.')
 param webCpu string = '1.0'

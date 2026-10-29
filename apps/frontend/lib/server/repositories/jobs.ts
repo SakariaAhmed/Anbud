@@ -299,6 +299,34 @@ export async function listQueuedProjectJobIds(
   return (data ?? []).map((row) => row.id as string);
 }
 
+/** Oldest queued job in one project, in the order the database accepted it. */
+export async function findOldestQueuedProjectJob(
+  projectId: string,
+  options: { includeDoclingEnhancement: boolean },
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  let query = serviceClient(runtime)
+    .from("project_jobs")
+    .select("id,input_json")
+    .eq("project_id", projectId)
+    .eq("status", "queued");
+  if (!options.includeDoclingEnhancement) {
+    query = query.neq("kind", "document_docling_enhancement");
+  }
+  const { data, error } = await query
+    .order("submission_sequence", { ascending: true })
+    .limit(1)
+    .maybeSingle<Pick<JobRow, "id" | "input_json">>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data || data.input_json === null || data.input_json === undefined) {
+    return null;
+  }
+  return { id: data.id, input: data.input_json };
+}
+
 export async function resetStaleRunningProjectJobs(
   staleAfterMs = 15 * 60_000,
   runtime: ProjectJobRepositoryRuntime = {},

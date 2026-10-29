@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
+
+const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const require = createRequire(import.meta.url);
+const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
+const jiti = createJiti(path.join(frontendRoot, "project-job-worker-reporting-tests.cjs"), {
+  interopDefault: true,
+  alias: { "@": frontendRoot, "server-only": "/dev/null" },
+});
+const { runProjectJobsWithinBudget } = jiti(
+  path.join(frontendRoot, "lib/server/project-job-worker-budget.ts"),
+);
 
 // Execute the current worker functions with controlled queue/workflow IO.
 const source = ts.createSourceFile("project-jobs.ts", readFileSync(
@@ -20,6 +34,8 @@ function worker(overrides = {}) {
   const io = {
     resetStaleRunningProjectJobs: async () => {},
     listQueuedProjectJobIds: async () => ["job-1"],
+    runProjectJobsWithinBudget,
+    projectWorkflowTimeoutMs: () => 10 * 60_000,
     getQueuedProjectJobInput: async () => ({ kind: "executive_summary", projectId: "project-1" }),
     parseProjectWorkflowInput: value => value,
     claimQueuedProjectJob: async () => ({ leaseToken: "lease-1" }),
@@ -27,7 +43,8 @@ function worker(overrides = {}) {
     productionSafeErrorMessage: (_error, fallback) => fallback,
     ...overrides,
   };
-  return new Function(...Object.keys(io), `${code}\nreturn runAvailableProjectJobs;`)(...Object.values(io));
+  const runAvailableProjectJobs = new Function(...Object.keys(io), `${code}\nreturn runAvailableProjectJobs;`)(...Object.values(io));
+  return () => runAvailableProjectJobs({ limit: 1, deadlineAt: Date.now() + 60 * 60_000 });
 }
 
 test("competing workers report only the acquired job as processed", async () => {
@@ -55,7 +72,7 @@ test("missing queue input is skipped without claiming or running it", async () =
     claimQueuedProjectJob: async () => assert.fail("must not claim missing input"),
     runProjectJob: async () => assert.fail("must not execute missing input"),
   });
-  assert.deepEqual(await run(), [{ job_id: "job-1", status: "skipped" }]);
+  assert.deepEqual(await run(), [{ job_id: "job-1", status: "skipped", reason: "not_queued" }]);
 });
 
 test("claim failure remains failed and does not expose backend details", async () => {

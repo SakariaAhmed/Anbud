@@ -11,6 +11,7 @@ import {
 import {
   claimQueuedProjectJob,
   type ClaimedProjectJob,
+  findOldestQueuedProjectJob,
   findProjectJob,
   getQueuedProjectJobInput,
   heartbeatProjectJob,
@@ -43,8 +44,13 @@ import {
 } from "@/lib/server/project-workflow-cancellation";
 import {
   isProjectWorkflowDeadlineExceededError,
+  projectWorkflowTimeoutMs,
   runProjectWorkflowWithDeadline,
 } from "@/lib/server/project-workflow-deadline";
+import {
+  isProjectJobClaimsClosedError,
+  runProjectJobsWithinBudget,
+} from "@/lib/server/project-job-worker-budget";
 import {
   productionSafeErrorMessage,
   safeErrorTelemetry,
@@ -189,7 +195,8 @@ type AutorunClaimRuntime = {
     input: ProjectWorkflowInput,
     context: JobRunContext,
     activeLease?: ActiveProjectJobLease,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
+  drain?: (projectId: string) => Promise<unknown>;
 };
 
 /**
@@ -210,7 +217,7 @@ export async function claimAndScheduleProjectJobAutorun(
   } catch (error) {
     // The job is already durable. During release cutover, keep it queued for
     // the aligned worker instead of reporting a failed submission to the UI.
-    if (error instanceof Error && error.message.startsWith("PROJECT_JOB_CLAIMS_CLOSED:")) return;
+    if (isProjectJobClaimsClosedError(error)) return;
     throw error;
   }
   if (!claimed) return; // Another job owns the project; the durable worker will retry.
@@ -220,18 +227,66 @@ export async function claimAndScheduleProjectJobAutorun(
   const context = jobRunContextFromClaim(claimed);
   const startLease = runtime.startLease ?? startJobHeartbeat;
   const activeLease = startLease(jobId, context);
+  const drain = runtime.drain ?? drainNextQueuedProjectJob;
   try {
-    schedule(input, () => {
+    schedule(input, async () => {
       activeLease.assertActive();
       // Handoff the same guard and heartbeat to execution. runProjectJob owns
       // the single stop call, so there is no unprotected stop/start window.
-      return run(jobId, input, context, activeLease);
+      const terminalPersisted = await run(jobId, input, context, activeLease);
+      // Only a persisted terminal status frees the project for the database
+      // claim. Lease loss or a rejected terminal write leaves the next job to
+      // the durable worker. The drain receives no signal from the finished job.
+      if (terminalPersisted) {
+        void Promise.resolve()
+          .then(() => drain(input.projectId))
+          .catch((error: unknown) => {
+            console.error(JSON.stringify({
+              event: "project_job_autorun_drain_failed",
+              project_id: input.projectId,
+              ...safeErrorTelemetry(error),
+            }));
+          });
+      }
     });
   } catch (error) {
     activeLease.stop();
     throw error;
   }
   return claimed;
+}
+
+type QueuedProjectJobDrainRuntime = {
+  findNext?: typeof findOldestQueuedProjectJob;
+  autorun?: (
+    jobId: string,
+    input: ProjectWorkflowInput,
+  ) => Promise<ClaimedProjectJob | null | undefined>;
+};
+
+/**
+ * Start the oldest queued job of a project after the web process has finished
+ * that project's previous job. The database claim decides whether it may run;
+ * a refused claim leaves the job queued for the scheduled worker.
+ */
+export async function drainNextQueuedProjectJob(
+  projectId: string,
+  runtime: QueuedProjectJobDrainRuntime = {},
+) {
+  // The scheduled worker stops its server after the HTTP response, so work
+  // handed to its in-memory queue would be interrupted.
+  if (envFlag("PROJECT_JOB_WORKER_PROCESS")) return null;
+  const includeDoclingEnhancement = envFlag("DOCLING_ASYNC_AUTO_RUN", false);
+  const next = await (runtime.findNext ?? findOldestQueuedProjectJob)(
+    projectId,
+    { includeDoclingEnhancement },
+  );
+  if (!next) return null;
+  const input = parseProjectWorkflowInput(next.input);
+  if (input.kind === "document_docling_enhancement" && !includeDoclingEnhancement) {
+    return null;
+  }
+  return (await (runtime.autorun ?? claimAndScheduleProjectJobAutorun)(next.id, input)) ?? null;
 }
 
 function getStore() {
@@ -624,11 +679,11 @@ async function enqueueProjectJob(
       persisted: false,
     });
   } else if (shouldAutoRun) {
-    autoRunProjectJob(input, () =>
-      runProjectJob(record.id, input, {
+    autoRunProjectJob(input, async () => {
+      await runProjectJob(record.id, input, {
         persisted: false,
-      }),
-    );
+      });
+    });
   }
 
   return record;
@@ -670,7 +725,7 @@ async function runProjectJob(
   input: ProjectWorkflowInput,
   context: JobRunContext,
   activeLease?: ActiveProjectJobLease,
-) {
+): Promise<boolean> {
   const phaseTimer = createJobPhaseTimer(jobId, input.kind);
   if (context.persisted) {
     getLocallyManagedPersistedJobIds().add(jobId);
@@ -679,6 +734,7 @@ async function runProjectJob(
   let terminalPatch: Partial<ProjectJobRecord> | null = null;
   let failureTerminalMetadata: Record<string, unknown> = {};
   let acceptReportedTerminalMetadata = true;
+  let terminalPersisted = false;
 
   try {
     lease.assertActive();
@@ -784,7 +840,7 @@ async function runProjectJob(
           reason: "lease_lost",
         }),
       );
-      return;
+      return false;
     }
     const committed = context.persisted ? await recoverCommittedProjectJobResult(input.projectId, jobId).catch(() => null) : null;
     if (committed) {
@@ -839,7 +895,7 @@ async function runProjectJob(
   } finally {
     try {
       if (terminalPatch) {
-        await finishJob(
+        terminalPersisted = await finishJob(
           jobId,
           terminalPatch,
           context,
@@ -853,6 +909,7 @@ async function runProjectJob(
       getLocallyManagedPersistedJobIds().delete(jobId);
     }
   }
+  return terminalPersisted;
 }
 
 export async function getProjectJob(projectId: string, jobId: string) {
@@ -977,8 +1034,7 @@ export async function queueExecutiveSummaryJob(input: {
   );
 }
 
-async function runQueuedProjectJobInput(jobId: string, queuedInput: unknown) {
-  const input = parseProjectWorkflowInput(queuedInput);
+async function runQueuedProjectJobInput(jobId: string, input: ProjectWorkflowInput) {
   const claimed = await claimQueuedProjectJob(jobId);
   if (!claimed) {
     return false;
@@ -1001,42 +1057,30 @@ export async function runQueuedProjectJob(jobId: string) {
     return;
   }
 
-  await runQueuedProjectJobInput(jobId, queuedInput);
+  await runQueuedProjectJobInput(jobId, parseProjectWorkflowInput(queuedInput));
 }
 
-export async function runAvailableProjectJobs(options?: {
+export async function runAvailableProjectJobs(options: {
   limit?: number;
   staleAfterMs?: number;
+  deadlineAt: number;
+  now?: () => number;
 }) {
-  await resetStaleRunningProjectJobs(options?.staleAfterMs);
-  const jobIds = await listQueuedProjectJobIds(options?.limit ?? 1);
-  const results: Array<{
-    job_id: string;
-    status: "processed" | "skipped" | "failed";
-    error?: string;
-  }> = [];
-
-  for (const jobId of jobIds) {
-    try {
+  await resetStaleRunningProjectJobs(options.staleAfterMs);
+  return runProjectJobsWithinBudget({
+    deadlineAt: options.deadlineAt,
+    now: options.now ?? Date.now,
+    maxJobs: options.limit ?? 1,
+    listQueuedJobIds: listQueuedProjectJobIds,
+    async readQueuedInput(jobId) {
       const queuedInput = await getQueuedProjectJobInput(jobId);
-      if (!queuedInput) {
-        results.push({ job_id: jobId, status: "skipped" });
-        continue;
-      }
-
-      const processed = await runQueuedProjectJobInput(jobId, queuedInput);
-      results.push({ job_id: jobId, status: processed ? "processed" : "skipped" });
-    } catch (error) {
-      results.push({
-        job_id: jobId,
-        status: "failed",
-        error: productionSafeErrorMessage(
-          error,
-          "Jobben feilet. Kontakt support med feilreferansen.",
-        ),
-      });
-    }
-  }
-
-  return results;
+      return queuedInput ? parseProjectWorkflowInput(queuedInput) : null;
+    },
+    timeoutMsFor: (kind) => projectWorkflowTimeoutMs(kind),
+    claimAndRun: runQueuedProjectJobInput,
+    safeErrorMessage: (error) => productionSafeErrorMessage(
+      error,
+      "Jobben feilet. Kontakt support med feilreferansen.",
+    ),
+  });
 }
