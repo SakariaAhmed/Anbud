@@ -30,6 +30,43 @@ test("bounded multipart parser accepts a small file", async () => {
   assert.equal(parsed.get("file").size, 5);
 });
 
+test("bounded multipart parser keeps Norwegian UTF-8 file names intact", async () => {
+  // macOS file pickers deliver decomposed (NFD) letters such as "o" + U+0338.
+  const decomposed = "Bilag 2 - Leverandørens løsningsbeskrivelse på norsk.pdf".normalize("NFD");
+  const body = new FormData();
+  body.set("file", new File(["%PDF"], decomposed, { type: "application/pdf" }));
+  const parsed = await parseBoundedMultipartFormData(
+    new Request("http://localhost/upload", { method: "POST", body }),
+    { maxBodyBytes: 64 * 1024, maxFileBytes: 16, maxFiles: 1 },
+  );
+
+  const name = parsed.get("file").name;
+  assert.equal(name, "Bilag 2 - Leverandørens løsningsbeskrivelse på norsk.pdf");
+  assert.equal(name, name.normalize("NFC"));
+  assert.doesNotMatch(name, /Ã/u);
+});
+
+test("bounded multipart parser decodes a raw UTF-8 filename parameter", async () => {
+  const boundary = "anbud-boundary";
+  const head = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="`;
+  const tail = `"\r\nContent-Type: application/pdf\r\n\r\n%PDF\r\n--${boundary}--\r\n`;
+  const body = Buffer.concat([
+    Buffer.from(head, "latin1"),
+    Buffer.from("Leverandørens svar.pdf", "utf8"),
+    Buffer.from(tail, "latin1"),
+  ]);
+  const parsed = await parseBoundedMultipartFormData(
+    new Request("http://localhost/upload", {
+      method: "POST",
+      body,
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    }),
+    { maxBodyBytes: 64 * 1024, maxFileBytes: 16, maxFiles: 1 },
+  );
+
+  assert.equal(parsed.get("file").name, "Leverandørens svar.pdf");
+});
+
 test("bounded multipart parser rejects a streamed file at the hard limit", async () => {
   const body = new FormData();
   body.set("file", new File(["A".repeat(32)], "large.txt"));

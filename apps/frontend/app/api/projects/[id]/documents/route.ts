@@ -1,4 +1,5 @@
 import { requireProjectPermission } from "@/lib/server/authorization";
+import { suggestUploadDocumentRole } from "@/lib/document-processing";
 import { NextResponse } from "next/server";
 
 import {
@@ -68,23 +69,19 @@ function inferUploadRole(
     return explicitRole;
   }
 
-  const text = `${title} ${fileName}`.toLowerCase();
+  const suggested = suggestUploadDocumentRole(`${title} ${fileName}`, existingDocuments);
+  if (suggested !== "supporting_document") {
+    return suggested;
+  }
 
+  // Creating a project from one dropped file sends no role; that document is
+  // the customer's tender basis unless its name says otherwise.
   if (
     !existingDocuments.some(
       (document) => document.role === "primary_customer_document",
     )
   ) {
     return "primary_customer_document";
-  }
-
-  if (
-    /\b(solution|løsn|losn|arkitektur|architecture)\b/.test(text) &&
-    !existingDocuments.some(
-      (document) => document.role === "primary_solution_document",
-    )
-  ) {
-    return "primary_solution_document";
   }
 
   return "supporting_document";
@@ -228,7 +225,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     }
 
-    const role = await inferUploadRole(
+    const role = inferUploadRole(
       file.name,
       title,
       normalizeRole(formData.get("role")),

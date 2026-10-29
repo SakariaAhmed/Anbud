@@ -46,6 +46,7 @@ import {
   isDocumentReadyForEvaluation,
   isSolutionEvaluationCandidate,
   requirementDocumentIdsForGeneration,
+  suggestUploadDocumentRole,
 } from "@/lib/document-processing";
 import {
   ProjectWorkspaceShell,
@@ -319,6 +320,8 @@ export function ProjectWorkspacePage({
   const [file, setFile] = useState<File | null>(null);
   const [uploadRole, setUploadRole] =
     useState<ProjectDocumentRole>("supporting_document");
+  // A role the user picked is kept; otherwise each chosen file suggests one.
+  const uploadRoleChosenRef = useRef(false);
   const [activeTab, setActiveTab] = useState<ProjectWorkspaceTab>(initialTab);
   const [isTabPending, startTabTransition] = useTransition();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1073,6 +1076,7 @@ export function ProjectWorkspacePage({
       setDocTitle("");
       setFile(null);
       setUploadRole("supporting_document");
+      uploadRoleChosenRef.current = false;
       setDocumentFileInputKey((current) => current + 1);
       setProject((current) =>
         isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
@@ -1093,6 +1097,18 @@ export function ProjectWorkspacePage({
         ),
       );
     });
+  }
+
+  function onSelectUploadFile(selected: File | null) {
+    setFile(selected);
+    if (selected && !uploadRoleChosenRef.current) {
+      setUploadRole(suggestUploadDocumentRole(selected.name, project.documents));
+    }
+  }
+
+  function onChooseUploadRole(role: ProjectDocumentRole) {
+    uploadRoleChosenRef.current = true;
+    setUploadRole(role);
   }
 
   async function onUploadRequirementDocument(file: File) {
@@ -1932,8 +1948,8 @@ export function ProjectWorkspacePage({
         onToggleUploadOpen={() => setUploadOpen((open) => !open)}
         onServiceDescriptionsChange={updateServiceDescriptions}
         onDocTitleChange={setDocTitle}
-        onUploadRoleChange={setUploadRole}
-        onFileChange={setFile}
+        onUploadRoleChange={onChooseUploadRole}
+        onFileChange={onSelectUploadFile}
         onUploadDocument={onUploadDocument}
         onDeleteDocument={onDeleteDocument}
         onGenerateCustomerAnalysis={onGenerateCustomerAnalysis}
