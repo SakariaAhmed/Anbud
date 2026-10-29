@@ -1,5 +1,6 @@
 import type { ProjectWorkflowInput } from "@/lib/server/use-cases/project-workflows";
 import type { ProjectJobRecord } from "@/lib/types";
+import { WorkflowIncompleteError } from "@/lib/server/workflow-errors";
 
 type RequirementResponseHandoffTerminalMetadata = {
   outcome: "not_needed" | "completed" | "failed_closed";
@@ -137,14 +138,15 @@ function sanitizeRequirementResponseHandoffMetadata(
   };
 }
 
-export class ProjectWorkflowTerminalMetadataError extends Error {
+export class ProjectWorkflowTerminalMetadataError extends WorkflowIncompleteError {
   readonly projectJobTerminalMetadata: Record<string, unknown>;
 
   constructor(
-    message: string,
+    publicMessage: string,
     metadata: { requirement_response_handoff?: unknown },
+    detail?: string,
   ) {
-    super(message);
+    super(publicMessage, detail);
     this.name = "ProjectWorkflowTerminalMetadataError";
     const requirementResponseHandoff =
       sanitizeRequirementResponseHandoffMetadata(

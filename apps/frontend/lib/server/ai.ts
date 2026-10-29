@@ -28,7 +28,10 @@ import { performance } from "node:perf_hooks";
 
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 
-import { runStructuredJsonResponse } from "@/lib/server/ai/json-completion";
+import {
+  isAiCallTimeoutError,
+  runStructuredJsonResponse,
+} from "@/lib/server/ai/json-completion";
 import {
   stringList,
   stringFields,
@@ -101,10 +104,13 @@ import {
 } from "@/lib/server/offer-coverage";
 
 import { ProjectWorkflowTerminalMetadataError } from "@/lib/server/project-job-terminal-metadata";
+import { WorkflowIncompleteError } from "@/lib/server/workflow-errors";
 import {
   assertProjectWorkflowActive,
   bindProjectWorkflowTerminalMetadataReporter,
+  boundedByProjectWorkflowDeadline,
   getProjectWorkflowAbortSignal,
+  projectWorkflowRemainingMs,
 } from "@/lib/server/project-workflow-cancellation";
 import {
   buildCustomerAnalysisPrompt,
@@ -186,6 +192,8 @@ import {
 import { textCoverageScore } from "@/lib/server/requirements/unstructured-ledger";
 import {
   assertRequirementCoverageBatchesSucceeded,
+  bindVerifiedSolutionQuote,
+  retryRequirementCoverageBatches,
   assertRequirementCoverageItemsAreReviewable,
   buildDeterministicControlRepairMetadata,
   buildDeterministicFinalRequirementControlRepair,
@@ -214,7 +222,6 @@ import {
   type RequirementCoverageItem,
   type RequirementLedgerConfidence,
   requiresExpandedRequirementAnswer,
-  retryRequirementCoverageBatchesSequentially,
   selectRequirementsForSolutionCoverage,
   STANDARD_SUPPLIER_PERFORMANCE_BASELINE,
   supplierAnswerNeedsConfirmation,
@@ -404,9 +411,11 @@ const REQUIREMENT_RESPONSE_BATCH_SIZE = parsePositiveIntegerEnv(
   "REQUIREMENT_RESPONSE_BATCH_SIZE",
   12,
 );
+// Measured gpt-5.4 latency for 28-row batches (~70K chars) reached the
+// 120 s timeout; large ledgers now use the normal batch size.
 const LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE = parsePositiveIntegerEnv(
   "LARGE_REQUIREMENT_RESPONSE_BATCH_SIZE",
-  28,
+  12,
 );
 const REQUIREMENT_RESPONSE_BATCH_CONCURRENCY = parsePositiveIntegerEnv(
   "REQUIREMENT_RESPONSE_BATCH_CONCURRENCY",
@@ -416,10 +425,27 @@ const REQUIREMENT_RESPONSE_RETRIEVAL_CONCURRENCY = parsePositiveIntegerEnv(
   "REQUIREMENT_RESPONSE_RETRIEVAL_CONCURRENCY",
   REQUIREMENT_RESPONSE_BATCH_CONCURRENCY,
 );
-const REQUIREMENT_RESPONSE_BATCH_TIMEOUT_MS = 120_000;
+const REQUIREMENT_RESPONSE_BATCH_TIMEOUT_MS = boundedIntegerEnv(
+  process.env,
+  "REQUIREMENT_RESPONSE_BATCH_TIMEOUT_MS",
+  180_000,
+  30_000,
+  600_000,
+);
+// Time kept free for handoff, strict repair and persistence while batches run.
+const REQUIREMENT_RESPONSE_BATCH_DEADLINE_RESERVE_MS = 300_000;
+const REQUIREMENT_RESPONSE_SPLIT_RETRY_DEADLINE_RESERVE_MS = 240_000;
+const REQUIREMENT_RESPONSE_HANDOFF_DEADLINE_RESERVE_MS = 150_000;
+const REQUIREMENT_RESPONSE_STRICT_HANDOFF_DEADLINE_RESERVE_MS = 60_000;
 const REQUIREMENT_RESPONSE_FULL_DOCUMENT_TIMEOUT_MS = 220_000;
 const REQUIREMENT_RESPONSE_FILE_INPUT_TIMEOUT_MS = 240_000;
-const REQUIREMENT_RESPONSE_HANDOFF_TIMEOUT_MS = 120_000;
+const REQUIREMENT_RESPONSE_HANDOFF_TIMEOUT_MS = boundedIntegerEnv(
+  process.env,
+  "REQUIREMENT_RESPONSE_HANDOFF_TIMEOUT_MS",
+  150_000,
+  30_000,
+  600_000,
+);
 const REQUIREMENT_RESPONSE_STRICT_HANDOFF_TIMEOUT_MS = 45_000;
 const REQUIREMENT_RESPONSE_STRICT_HANDOFF_DEFAULT_MAX_CALLS = 12;
 const REQUIREMENT_RESPONSE_STRICT_HANDOFF_DEFAULT_DEADLINE_MS = 120_000;
@@ -432,12 +458,49 @@ const REQUIREMENT_RESPONSE_HANDOFF_CONCURRENCY = parsePositiveIntegerEnv(
   2,
 );
 const REQUIREMENT_RESPONSE_PROGRESS_HEARTBEAT_MS = 35_000;
-const REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS = 60_000;
-const REQUIREMENT_COVERAGE_BATCH_RETRY_TIMEOUT_MS = 90_000;
-const SOLUTION_EVALUATION_TIMEOUT_MS = 150_000;
+// Coverage batches of 17-18 rows took 54-73 s against a 60 s timeout.
+const REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS = boundedIntegerEnv(
+  process.env,
+  "REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS",
+  150_000,
+  30_000,
+  600_000,
+);
+const REQUIREMENT_COVERAGE_RETRY_CONCURRENCY = boundedIntegerEnv(
+  process.env,
+  "REQUIREMENT_COVERAGE_RETRY_CONCURRENCY",
+  3,
+  1,
+  6,
+);
+// Retries and the holistic call need time left after the first pass.
+const REQUIREMENT_COVERAGE_BATCH_DEADLINE_RESERVE_MS = 420_000;
+const REQUIREMENT_COVERAGE_RETRY_DEADLINE_RESERVE_MS = 240_000;
+const SOLUTION_EVALUATION_DEADLINE_RESERVE_MS = 45_000;
+const SOLUTION_EVALUATION_TIMEOUT_MS = boundedIntegerEnv(
+  process.env,
+  "SOLUTION_EVALUATION_TIMEOUT_MS",
+  180_000,
+  30_000,
+  600_000,
+);
+const CUSTOMER_ANALYSIS_TIMEOUT_MS = boundedIntegerEnv(
+  process.env,
+  "CUSTOMER_ANALYSIS_TIMEOUT_MS",
+  300_000,
+  60_000,
+  840_000,
+);
+const REQUIREMENT_COVERAGE_FULL_SOLUTION_MAX_CHARS = boundedIntegerEnv(
+  process.env,
+  "REQUIREMENT_COVERAGE_FULL_SOLUTION_MAX_CHARS",
+  45_000,
+  0,
+  120_000,
+);
 const REQUIREMENT_COVERAGE_BATCH_SIZE = parsePositiveIntegerEnv(
   "REQUIREMENT_COVERAGE_BATCH_SIZE",
-  18,
+  10,
 );
 const REQUIREMENT_COVERAGE_BATCH_CHAR_BUDGET = parsePositiveIntegerEnv(
   "REQUIREMENT_COVERAGE_BATCH_CHAR_BUDGET",
@@ -523,9 +586,16 @@ export function createRequirementResponseStrictHandoffGovernor(input?: {
   now?: () => number;
   signal?: AbortSignal;
   assertActive?: () => void;
+  /** Time left before the job deadline, minus a persistence reserve. */
+  workflowRemainingMs?: () => number;
 }) {
   const limits = input?.limits ?? resolveRequirementResponseStrictHandoffLimits();
   const now = input?.now ?? (() => performance.now());
+  const workflowRemainingMs =
+    input?.workflowRemainingMs ??
+    (() =>
+      projectWorkflowRemainingMs() -
+      REQUIREMENT_RESPONSE_STRICT_HANDOFF_DEADLINE_RESERVE_MS);
   const signal = input?.signal ?? getProjectWorkflowAbortSignal();
   const assertActive = input?.assertActive ?? assertProjectWorkflowActive;
   const waiters: Array<{
@@ -600,7 +670,10 @@ export function createRequirementResponseStrictHandoffGovernor(input?: {
         }
 
         const elapsedMs = Math.max(0, now() - deadlineStartedAt);
-        const remainingMs = limits.deadlineMs - elapsedMs;
+        const remainingMs = Math.min(
+          limits.deadlineMs - elapsedMs,
+          workflowRemainingMs(),
+        );
         if (remainingMs < limits.minCallWindowMs) {
           skippedDeadline += 1;
           return { status: "skipped", reason: "deadline_exceeded" };
@@ -1702,6 +1775,13 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
       });
 
       try {
+        const handoffTimeoutMs = boundedByProjectWorkflowDeadline(
+          REQUIREMENT_RESPONSE_HANDOFF_TIMEOUT_MS,
+          { reserveMs: REQUIREMENT_RESPONSE_HANDOFF_DEADLINE_RESERVE_MS },
+        );
+        if (handoffTimeoutMs === null) {
+          throw new Error("Full-dokument handoff ble ikke startet fordi jobbfristen nærmer seg.");
+        }
         const generated = await runWithProgressHeartbeat(
           {
             onProgress: input.onProgress,
@@ -1743,7 +1823,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
               temperature: 0.1,
               model: requirementResponseRepairModel(input.model),
               reasoningEffort: ANALYSIS_REASONING_EFFORT,
-              timeoutMs: REQUIREMENT_RESPONSE_HANDOFF_TIMEOUT_MS,
+              timeoutMs: handoffTimeoutMs,
               maxRetries: 1,
               promptCacheKey: "requirement-response-handoff",
             }),
@@ -1770,106 +1850,24 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
             }),
           );
         }
-        const repairedRows = await mapWithConcurrency(
-          chunk,
-          strictHandoffLimits.concurrency,
-          async (row) => {
-            let repaired = answerFromBatchRows({
-              rows,
+        // Strict single-row repair runs as its own phase after every
+        // full-document batch, so its deadline is not spent waiting for
+        // later batches.
+        const repairedRows = chunk.map((row) => {
+          let repaired = answerFromBatchRows({
+            rows,
+            entry: row.entry,
+            absoluteIndex: row.absoluteIndex,
+            batchError: handoffBatchError || undefined,
+          });
+          if (repaired.source === "deterministic_fallback") {
+            repaired = resolveRequirementAnswerBeforeStrictHandoff({
               entry: row.entry,
-              absoluteIndex: row.absoluteIndex,
-              batchError: handoffBatchError || undefined,
+              current: repaired,
             });
-
-            if (repaired.source === "deterministic_fallback") {
-              repaired = resolveRequirementAnswerBeforeStrictHandoff({
-                entry: row.entry,
-                current: repaired,
-              });
-            }
-
-            if (repaired.source === "deterministic_fallback") {
-              const strictAttempt = await strictHandoffGovernor.run(
-                (timeoutMs) =>
-                  repairSingleRequirementAnswerWithStrictHandoff({
-                    projectName: input.projectName,
-                    acceptedAnswerContext,
-                    row: {
-                      ...row,
-                      current: repaired,
-                    },
-                    rejectionReason: repaired.reason,
-                    model: input.model,
-                    timeoutMs,
-                    onProgress: input.onProgress,
-                  }),
-              );
-              const strictRepair =
-                strictAttempt.status === "completed"
-                  ? strictAttempt.value
-                  : null;
-              if (strictAttempt.status === "skipped") {
-                repaired = {
-                  ...repaired,
-                  reason: [
-                    repaired.reason,
-                    `strict_handoff_skipped:${strictAttempt.reason}`,
-                  ]
-                    .filter(Boolean)
-                    .join("; "),
-                };
-              }
-              repaired = resolveRequirementAnswerAfterStrictHandoff({
-                entry: row.entry,
-                current: repaired,
-                strictRepair,
-              });
-              if (
-                strictAttempt.status === "completed" &&
-                repaired.source !== "deterministic_fallback"
-              ) {
-                strictHandoffGovernor.recordAcceptedRepair();
-              }
-            }
-
-            if (repaired.source === "deterministic_fallback") {
-              return {
-                ...row,
-                repaired: {
-                  ...row.current,
-                  rejectedAnswer:
-                    repaired.rejectedAnswer ?? row.current.rejectedAnswer,
-                  reason: [
-                    row.current.reason,
-                    `handoff_unresolved: ${repaired.reason ?? "low_value_answer"}`,
-                  ]
-                    .filter(Boolean)
-                    .join("; "),
-                } satisfies RequirementAnswerResult,
-              };
-            }
-
-            return {
-              ...row,
-              repaired: {
-                answer: repaired.answer,
-                evidence: repaired.evidence,
-                source:
-                  repaired.source === "deterministic_template_repair"
-                    ? "deterministic_template_repair"
-                    : repaired.source === "deterministic_control_repair"
-                      ? "deterministic_control_repair"
-                    : "full_document_handoff",
-              } satisfies RequirementAnswerResult,
-            };
-          },
-        );
-
-        for (const row of repairedRows) {
-          if (row.repaired.source !== "deterministic_fallback") {
-            handoffProgress.markResolved(row.absoluteIndex);
           }
-        }
+          return { ...row, repaired };
+        });
         return repairedRows;
       } catch (error) {
         assertProjectWorkflowActive();
@@ -1909,7 +1907,79 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
     },
   );
 
-  for (const row of repairedChunks.flat()) {
+  const strictPhaseRows = await mapWithConcurrency(
+    repairedChunks.flat(),
+    strictHandoffLimits.concurrency,
+    async (row) => {
+      let repaired = row.repaired;
+      if (repaired.source === "deterministic_fallback") {
+        const strictAttempt = await strictHandoffGovernor.run((timeoutMs) =>
+          repairSingleRequirementAnswerWithStrictHandoff({
+            projectName: input.projectName,
+            acceptedAnswerContext,
+            row: { ...row, current: repaired },
+            rejectionReason: repaired.reason,
+            model: input.model,
+            timeoutMs,
+            onProgress: input.onProgress,
+          }),
+        );
+        const strictRepair =
+          strictAttempt.status === "completed" ? strictAttempt.value : null;
+        if (strictAttempt.status === "skipped") {
+          repaired = {
+            ...repaired,
+            reason: [repaired.reason, `strict_handoff_skipped:${strictAttempt.reason}`]
+              .filter(Boolean)
+              .join("; "),
+          };
+        }
+        repaired = resolveRequirementAnswerAfterStrictHandoff({
+          entry: row.entry,
+          current: repaired,
+          strictRepair,
+        });
+        if (
+          strictAttempt.status === "completed" &&
+          repaired.source !== "deterministic_fallback"
+        ) {
+          strictHandoffGovernor.recordAcceptedRepair();
+        }
+      }
+
+      if (repaired.source === "deterministic_fallback") {
+        return {
+          ...row,
+          repaired: {
+            ...row.current,
+            rejectedAnswer: repaired.rejectedAnswer ?? row.current.rejectedAnswer,
+            reason: [
+              row.current.reason,
+              `handoff_unresolved: ${repaired.reason ?? "low_value_answer"}`,
+            ]
+              .filter(Boolean)
+              .join("; "),
+          } satisfies RequirementAnswerResult,
+        };
+      }
+      handoffProgress.markResolved(row.absoluteIndex);
+      return {
+        ...row,
+        repaired: {
+          answer: repaired.answer,
+          evidence: repaired.evidence,
+          source:
+            repaired.source === "deterministic_template_repair"
+              ? "deterministic_template_repair"
+              : repaired.source === "deterministic_control_repair"
+                ? "deterministic_control_repair"
+                : "full_document_handoff",
+        } satisfies RequirementAnswerResult,
+      };
+    },
+  );
+
+  for (const row of strictPhaseRows) {
     if (row.repaired.source === "full_document_handoff") {
       repairedRequirements += 1;
     }
@@ -3217,6 +3287,16 @@ async function buildSolutionRequirementCoverage(input: {
   const chunks = chunkRequirementCoverage(requirements);
   const coverageSystemPrompt = requirementCoverageSystemPrompt();
   const coverageModel = requirementCoverageBatchModel(input.model);
+  // A solution document that fits is sent whole, once, in the cached shared
+  // prefix: answers under other headings or inside tables are then visible
+  // for every requirement, and retrieval excerpts would only repeat it.
+  const fullSolutionContext =
+    input.solutionDocument.raw_text.length <= REQUIREMENT_COVERAGE_FULL_SOLUTION_MAX_CHARS
+      ? buildDelimitedContext(
+          `Hele Bilag 2: ${input.solutionDocument.title}`,
+          input.solutionDocument.raw_text,
+        )
+      : "";
   const coverageSharedPromptPrefix = [
     "Vurder kravene i JSON. Ikke legg til, fjern eller slå sammen krav.",
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
@@ -3224,20 +3304,19 @@ async function buildSolutionRequirementCoverage(input: {
       "Kundekontekst for vurdering",
       summarizeCustomerAnalysisForRequirementCoverage(input.customerAnalysis),
     ),
+    fullSolutionContext,
   ]
     .filter(Boolean)
     .join("\n\n");
   let completedBatches = 0;
   let completedCoverageRequirements = 0;
-  const failedCoverageBatches: Array<{
-    startIndex: number;
-    count: number;
-    reason: string;
-  }> = [];
   input.onProgress?.(
     formatJobProgress(18, `Fant ${requirements.length} krav. Vurderer kravdekning i ${chunks.length} batcher ...`),
   );
 
+  // Requirements whose answer was bound to a verified Bilag 2 quote; the
+  // integrity check compares against these bound entries.
+  const verifiedAnswerEntries = new Map<number, RequirementLedgerEntry>();
   const evaluateCoverageChunk = async (
     chunk: (typeof chunks)[number],
     options: { timeoutMs: number; maxRetries: number },
@@ -3250,6 +3329,7 @@ async function buildSolutionRequirementCoverage(input: {
       entries: chunk.entries,
       solutionDocument: input.solutionDocument,
       startIndex: chunk.startIndex,
+      fullSolutionDocumentIncluded: Boolean(fullSolutionContext),
     });
     const generated = await createJsonCompletion<{
       rows?: RequirementCoverageBatchAnswer[];
@@ -3283,44 +3363,63 @@ async function buildSolutionRequirementCoverage(input: {
       entries: chunk.entries,
       startIndex: chunk.startIndex,
     });
-    const items = chunk.entries.map((entry, localIndex) =>
-      coverageItemFromBatchRow({
-        row: rows[localIndex],
+    const items = chunk.entries.map((entry, localIndex) => {
+      const row = rows[localIndex];
+      const orderIndex = chunk.startIndex + localIndex;
+      const verifiedEntry = bindVerifiedSolutionQuote({
         entry,
-        orderIndex: chunk.startIndex + localIndex,
-      }),
-    );
+        quote: row?.evidence ?? row?.bevis,
+        solutionDocument: input.solutionDocument,
+      });
+      if (verifiedEntry) {
+        verifiedAnswerEntries.set(orderIndex, verifiedEntry);
+      } else {
+        verifiedAnswerEntries.delete(orderIndex);
+      }
+      return coverageItemFromBatchRow({
+        row,
+        entry: verifiedEntry ?? entry,
+        orderIndex,
+      });
+    });
     assertRequirementCoverageItemsAreReviewable(items);
     return items;
   };
+
+  type CoverageChunk = (typeof chunks)[number];
+  type CoverageItems = Awaited<ReturnType<typeof evaluateCoverageChunk>>;
+  const evaluateWithinDeadline = (chunk: CoverageChunk, reserveMs: number) => {
+    const timeoutMs = boundedByProjectWorkflowDeadline(
+      REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS,
+      { reserveMs },
+    );
+    if (timeoutMs === null) {
+      throw new Error("Kravbatchen ble ikke startet fordi jobbfristen nærmer seg.");
+    }
+    return evaluateCoverageChunk(chunk, { timeoutMs, maxRetries: 1 });
+  };
+  const failedFirstPass: Array<{ chunk: CoverageChunk; timedOut: boolean }> = [];
 
   const batches = await mapWithConcurrency(
     chunks,
     REQUIREMENT_COVERAGE_BATCH_CONCURRENCY,
     async (chunk) => {
-      let items: Awaited<ReturnType<typeof evaluateCoverageChunk>> = [];
+      let items: CoverageItems = [];
       try {
-        items = await evaluateCoverageChunk(chunk, {
-          timeoutMs: REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS,
-          maxRetries: 2,
-        });
+        items = await evaluateWithinDeadline(
+          chunk,
+          REQUIREMENT_COVERAGE_BATCH_DEADLINE_RESERVE_MS,
+        );
       } catch (error) {
         assertProjectWorkflowActive();
-        const safeCoverageError = productionSafeErrorMessage(
-          error,
-          "Coverage-batch feilet.",
-        );
-        failedCoverageBatches.push({
-          startIndex: chunk.startIndex,
-          count: chunk.entries.length,
-          reason: safeCoverageError,
-        });
+        failedFirstPass.push({ chunk, timedOut: isAiCallTimeoutError(error) });
         console.info(
           JSON.stringify({
             event: "requirement_coverage_batch_fallback",
             ...safeErrorTelemetry(error),
             start_index: chunk.startIndex,
             count: chunk.entries.length,
+            timed_out: isAiCallTimeoutError(error),
           }),
         );
       }
@@ -3340,67 +3439,87 @@ async function buildSolutionRequirementCoverage(input: {
     },
   );
 
-  const recoveredBatches = new Map<
-    number,
-    Awaited<ReturnType<typeof evaluateCoverageChunk>>
-  >();
-  const retryFailures: typeof failedCoverageBatches = [];
-  const retryChunks = failedCoverageBatches.flatMap((failedBatch) => {
-    const chunk = chunks.find(
-      (candidate) => candidate.startIndex === failedBatch.startIndex,
+  // Retry each failed batch once, in parallel. A timed-out batch is retried
+  // as two halves, which are faster than the original call.
+  const retryChunks = failedFirstPass
+    .sort((left, right) => left.chunk.startIndex - right.chunk.startIndex)
+    .flatMap(({ chunk, timedOut }) => {
+      if (!timedOut || chunk.entries.length < 2) return [{ parent: chunk, chunk }];
+      const middle = Math.ceil(chunk.entries.length / 2);
+      return [
+        { parent: chunk, chunk: { ...chunk, entries: chunk.entries.slice(0, middle) } },
+        {
+          parent: chunk,
+          chunk: {
+            ...chunk,
+            startIndex: chunk.startIndex + middle,
+            entries: chunk.entries.slice(middle),
+          },
+        },
+      ];
+    });
+  if (retryChunks.length) {
+    input.onProgress?.(
+      formatJobProgress(
+        57,
+        `Prøver ${failedFirstPass.length} feilede kravbatcher på nytt (${retryChunks.reduce((sum, retry) => sum + retry.chunk.entries.length, 0)} krav) ...`,
+      ),
     );
-    if (!chunk) {
-      retryFailures.push(failedBatch);
-      return [];
-    }
-    return [chunk];
-  });
-  const retryResults = await retryRequirementCoverageBatchesSequentially(
+  }
+  const retryResults = await retryRequirementCoverageBatches(
     retryChunks,
-    async (chunk) => {
-      input.onProgress?.(
-        formatJobProgress(57, `Prøver én feilet kravbatch på nytt (${chunk.entries.length} krav) ...`),
-      );
-      return evaluateCoverageChunk(chunk, {
-        timeoutMs: REQUIREMENT_COVERAGE_BATCH_RETRY_TIMEOUT_MS,
-        maxRetries: 0,
-      });
+    (retry) =>
+      evaluateWithinDeadline(
+        retry.chunk,
+        REQUIREMENT_COVERAGE_RETRY_DEADLINE_RESERVE_MS,
+      ),
+    {
+      concurrency: REQUIREMENT_COVERAGE_RETRY_CONCURRENCY,
+      assertActive: assertProjectWorkflowActive,
     },
-    assertProjectWorkflowActive,
   );
-  for (const result of retryResults) {
-    const chunk = result.batch;
-    if (result.ok) {
-      recoveredBatches.set(
-        chunk.startIndex,
-        result.value,
-      );
-      console.info(
-        JSON.stringify({
-          event: "requirement_coverage_batch_retry_succeeded",
-          start_index: chunk.startIndex,
-          count: chunk.entries.length,
-        }),
-      );
-    } else {
-      const safeCoverageError = productionSafeErrorMessage(
-        result.error,
-        "Coverage-batch feilet også ved kontrollert nytt forsøk.",
-      );
+  const recoveredBatches = new Map<number, CoverageItems>();
+  const retryFailures: Array<{ startIndex: number; count: number; reason: string }> = [];
+  for (const { chunk: parent } of failedFirstPass) {
+    const parts = retryResults.filter((result) => result.batch.parent === parent);
+    const failedPart = parts.find((result) => !result.ok);
+    if (!parts.length || failedPart) {
       retryFailures.push({
-        startIndex: chunk.startIndex,
-        count: chunk.entries.length,
-        reason: safeCoverageError,
+        startIndex: parent.startIndex,
+        count: parent.entries.length,
+        reason: productionSafeErrorMessage(
+          failedPart && !failedPart.ok ? failedPart.error : null,
+          "Coverage-batch feilet også ved kontrollert nytt forsøk.",
+        ),
       });
-      console.info(
-        JSON.stringify({
-          event: "requirement_coverage_batch_retry_failed",
-          ...safeErrorTelemetry(result.error),
-          start_index: chunk.startIndex,
-          count: chunk.entries.length,
-        }),
-      );
+      for (const result of parts) {
+        if (!result.ok) {
+          console.info(
+            JSON.stringify({
+              event: "requirement_coverage_batch_retry_failed",
+              ...safeErrorTelemetry(result.error),
+              start_index: result.batch.chunk.startIndex,
+              count: result.batch.chunk.entries.length,
+            }),
+          );
+        }
+      }
+      continue;
     }
+    recoveredBatches.set(
+      parent.startIndex,
+      parts
+        .sort((left, right) => left.batch.chunk.startIndex - right.batch.chunk.startIndex)
+        .flatMap((result) => (result.ok ? result.value : [])),
+    );
+    console.info(
+      JSON.stringify({
+        event: "requirement_coverage_batch_retry_succeeded",
+        start_index: parent.startIndex,
+        count: parent.entries.length,
+        split: parts.length > 1,
+      }),
+    );
   }
 
   assertRequirementCoverageBatchesSucceeded(retryFailures, chunks.length);
@@ -3423,7 +3542,9 @@ async function buildSolutionRequirementCoverage(input: {
     items,
   });
   assertRequirementCoverageIntegrity({
-    sourceLedger: requirements,
+    sourceLedger: requirements.map(
+      (entry, index) => verifiedAnswerEntries.get(index) ?? entry,
+    ),
     coverage,
   });
   return coverage;
@@ -3630,88 +3751,160 @@ async function generateRequirementResponseFromLedger(input: {
       }),
   );
 
-  const batchAnswers = await mapWithConcurrency(
-    chunks,
-    REQUIREMENT_RESPONSE_BATCH_CONCURRENCY,
-    async (chunk, chunkIndex) => {
-      const krav = buildRequirementResponseBatchRegistry(
-        chunk.entries,
-        chunk.startIndex,
-      );
-      const relevantExcerpts = await awaitConcurrentTask(
-        retrievalContextTasks[chunkIndex],
-      );
-      let rows: RequirementBatchAnswer[] = [];
-      let batchError = "";
-      try {
-        const generated = await createJsonCompletion<{
-          rows?: RequirementBatchAnswer[];
-        }>({
-          system: responseSystemPrompt,
-          user: [
-            responseSharedPromptPrefix,
+  const runResponseBatch = async (
+    entries: RequirementLedgerEntry[],
+    startIndex: number,
+    relevantExcerpts: string,
+    reserveMs: number,
+  ) => {
+    const krav = buildRequirementResponseBatchRegistry(entries, startIndex);
+    const timeoutMs = boundedByProjectWorkflowDeadline(
+      REQUIREMENT_RESPONSE_BATCH_TIMEOUT_MS,
+      { reserveMs },
+    );
+    if (timeoutMs === null) {
+      // Leave the remaining time to handoff and persistence; these rows go
+      // to the handoff stage as ordinary fallbacks.
+      return {
+        rows: [] as RequirementBatchAnswer[],
+        batchError: "Kravsvar-batchen ble ikke startet fordi jobbfristen nærmer seg.",
+        timedOut: false,
+      };
+    }
+    try {
+      const generated = await createJsonCompletion<{
+        rows?: RequirementBatchAnswer[];
+      }>({
+        system: responseSystemPrompt,
+        user: [
+          responseSharedPromptPrefix,
+          relevantExcerpts,
+          buildDelimitedContext("Krav som skal besvares", JSON.stringify(krav)),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        userMessages: [
+          responseSharedPromptPrefix,
+          [
             relevantExcerpts,
             buildDelimitedContext("Krav som skal besvares", JSON.stringify(krav)),
           ]
             .filter(Boolean)
             .join("\n\n"),
-          userMessages: [
-            responseSharedPromptPrefix,
-            [
-              relevantExcerpts,
-              buildDelimitedContext("Krav som skal besvares", JSON.stringify(krav)),
-            ]
-              .filter(Boolean)
-              .join("\n\n"),
-          ].filter(Boolean),
-          temperature: 0.08,
-          model: responseModel,
-          reasoningEffort: EVALUATION_REASONING_EFFORT,
-          timeoutMs: REQUIREMENT_RESPONSE_BATCH_TIMEOUT_MS,
-          maxRetries: 1,
-          promptCacheKey: "requirement-response-batch",
-        });
-        rows = parseRequirementBatchRows(generated.rows);
-        validateRequirementResponseBatchRows({
-          rows,
-          entries: chunk.entries,
-          startIndex: chunk.startIndex,
-        });
-      } catch (error) {
-        assertProjectWorkflowActive();
-        batchError = productionSafeErrorMessage(
-          error,
-          "Kravsvar-batch feilet.",
-        );
-        console.info(
-          JSON.stringify({
-            event: "requirement_response_batch_fallback",
-            ...safeErrorTelemetry(error),
-            start_index: chunk.startIndex,
-            count: chunk.entries.length,
-          }),
-        );
-      }
+        ].filter(Boolean),
+        temperature: 0.08,
+        model: responseModel,
+        reasoningEffort: EVALUATION_REASONING_EFFORT,
+        timeoutMs,
+        maxRetries: 1,
+        promptCacheKey: "requirement-response-batch",
+      });
+      const rows = parseRequirementBatchRows(generated.rows);
+      validateRequirementResponseBatchRows({ rows, entries, startIndex });
+      return { rows, batchError: "", timedOut: false };
+    } catch (error) {
+      assertProjectWorkflowActive();
+      console.info(
+        JSON.stringify({
+          event: "requirement_response_batch_fallback",
+          ...safeErrorTelemetry(error),
+          start_index: startIndex,
+          count: entries.length,
+          timed_out: isAiCallTimeoutError(error),
+        }),
+      );
+      return {
+        rows: [] as RequirementBatchAnswer[],
+        batchError: productionSafeErrorMessage(error, "Kravsvar-batch feilet."),
+        timedOut: isAiCallTimeoutError(error),
+      };
+    }
+  };
+  const answersForBatch = (
+    entries: RequirementLedgerEntry[],
+    startIndex: number,
+    result: Awaited<ReturnType<typeof runResponseBatch>>,
+  ) =>
+    entries.map((entry, localIndex) =>
+      answerFromBatchRows({
+        rows: result.rows,
+        entry,
+        absoluteIndex: startIndex + localIndex,
+        batchError: result.batchError,
+      }),
+    );
+
+  const firstPass = await mapWithConcurrency(
+    chunks,
+    REQUIREMENT_RESPONSE_BATCH_CONCURRENCY,
+    async (chunk, chunkIndex) => {
+      const relevantExcerpts = await awaitConcurrentTask(
+        retrievalContextTasks[chunkIndex],
+      );
+      const result = await runResponseBatch(
+        chunk.entries,
+        chunk.startIndex,
+        relevantExcerpts,
+        REQUIREMENT_RESPONSE_BATCH_DEADLINE_RESERVE_MS,
+      );
       completedBatches += 1;
       completedRequirements += chunk.entries.length;
       const answeredSoFar = Math.min(responseLedger.length, completedRequirements);
       input.onProgress?.(
         formatJobProgress(
-          Math.min(78, 32 + Math.round((completedBatches / chunks.length) * 46)),
+          Math.min(72, 32 + Math.round((completedBatches / chunks.length) * 40)),
           `Besvart ${answeredSoFar} av ${responseLedger.length} krav ...`,
         ),
       );
-
-      return chunk.entries.map((entry, localIndex) =>
-        answerFromBatchRows({
-          rows,
-          entry,
-          absoluteIndex: chunk.startIndex + localIndex,
-          batchError,
-        }),
-      );
+      return { result, relevantExcerpts };
     },
   );
+
+  // A timeout is the one recognised recoverable batch failure: retry it once
+  // as two smaller halves, sharing the batch concurrency and the deadline.
+  const splitRetries = firstPass.flatMap(({ result, relevantExcerpts }, chunkIndex) => {
+    const chunk = chunks[chunkIndex];
+    if (!chunk || !result.timedOut || chunk.entries.length < 2) return [];
+    const middle = Math.ceil(chunk.entries.length / 2);
+    return [
+      { chunkIndex, startIndex: chunk.startIndex, entries: chunk.entries.slice(0, middle), relevantExcerpts },
+      { chunkIndex, startIndex: chunk.startIndex + middle, entries: chunk.entries.slice(middle), relevantExcerpts },
+    ];
+  });
+  if (splitRetries.length) {
+    input.onProgress?.(
+      formatJobProgress(
+        74,
+        `Prøver ${splitRetries.length / 2} tidsavbrutte svarbatcher på nytt i mindre deler ...`,
+      ),
+    );
+  }
+  const splitResults = await mapWithConcurrency(
+    splitRetries,
+    REQUIREMENT_RESPONSE_BATCH_CONCURRENCY,
+    async (retry) => ({
+      retry,
+      answers: answersForBatch(
+        retry.entries,
+        retry.startIndex,
+        await runResponseBatch(
+          retry.entries,
+          retry.startIndex,
+          retry.relevantExcerpts,
+          REQUIREMENT_RESPONSE_SPLIT_RETRY_DEADLINE_RESERVE_MS,
+        ),
+      ),
+    }),
+  );
+  const batchAnswers = firstPass.map(({ result }, chunkIndex) => {
+    const chunk = chunks[chunkIndex]!;
+    const halves = splitResults.filter(({ retry }) => retry.chunkIndex === chunkIndex);
+    return halves.length
+      ? halves
+          .sort((left, right) => left.retry.startIndex - right.retry.startIndex)
+          .flatMap(({ answers }) => answers)
+      : answersForBatch(chunk.entries, chunk.startIndex, result);
+  });
 
   const initialAnswerResults = batchAnswers.flat();
   const failedBatches = initialAnswerResults.filter((answer) =>
@@ -3854,10 +4047,25 @@ async function generateRequirementResponseFromLedger(input: {
     ]
       .filter(Boolean)
       .join(" ");
-    throw new ProjectWorkflowTerminalMetadataError(failureMessage, {
-      requirement_response_handoff:
-        handoffResult.metadata.strict_handoff,
-    });
+    const unresolvedRefs = unresolvedFallbackAnswers
+      .slice(0, 12)
+      .map((row) => row.ref)
+      .join(", ");
+    const publicMessage = [
+      `Kravbesvarelsen ble ikke lagret fordi ${fallbackAnswersAfterHandoff} av ${responseLedger.length} krav ikke kunne besvares automatisk, heller ikke etter reparasjon.`,
+      unresolvedRefs ? `Uavklarte krav: ${unresolvedRefs}${unresolvedFallbackAnswers.length > 12 ? " m.fl." : ""}.` : "",
+      "Prøv igjen om litt.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    throw new ProjectWorkflowTerminalMetadataError(
+      publicMessage,
+      {
+        requirement_response_handoff:
+          handoffResult.metadata.strict_handoff,
+      },
+      failureMessage,
+    );
   }
 
   input.onProgress?.(
@@ -5360,12 +5568,24 @@ async function analyzeCustomerDocumentsLegacy(
     .filter(Boolean)
     .join("\n\n");
 
+  // Without a timeout a hung call held the job for its whole 15 min deadline.
+  const timeoutMs = boundedByProjectWorkflowDeadline(
+    CUSTOMER_ANALYSIS_TIMEOUT_MS,
+    { reserveMs: 30_000 },
+  );
+  if (timeoutMs === null) {
+    throw new WorkflowIncompleteError(
+      "Kundeanalysen stoppet fordi jobbfristen var nådd før AI-analysen kunne starte. Prøv igjen.",
+    );
+  }
   const result = await createJsonCompletion<CustomerAnalysisResult>({
     system: buildCustomerAnalysisPrompt(),
     user: userPrompt,
     temperature: 0.1,
     model: input.model ?? ANALYSIS_MODEL,
     reasoningEffort: FAST_REASONING_EFFORT,
+    timeoutMs,
+    maxRetries: 1,
     promptCacheKey: "customer-analysis",
   });
 
@@ -5862,6 +6082,15 @@ export async function evaluateSolutionDocument(input: {
     .join("\n\n");
 
   const evaluationModel = requirementCoverageBatchModel(input.model);
+  const holisticTimeoutMs = boundedByProjectWorkflowDeadline(
+    SOLUTION_EVALUATION_TIMEOUT_MS,
+    { reserveMs: SOLUTION_EVALUATION_DEADLINE_RESERVE_MS },
+  );
+  if (holisticTimeoutMs === null) {
+    throw new WorkflowIncompleteError(
+      "Løsningsvurderingen stoppet fordi kravdekningen brukte opp tidsfristen før helhetsvurderingen kunne kjøres. Prøv igjen om litt.",
+    );
+  }
   let result: Untrusted<SolutionEvaluationResult>;
   try {
     input.onProgress?.(
@@ -5883,7 +6112,7 @@ export async function evaluateSolutionDocument(input: {
           temperature: 0.1,
           model: evaluationModel,
           reasoningEffort: solutionEvaluationReasoningEffort(evaluationModel),
-          timeoutMs: SOLUTION_EVALUATION_TIMEOUT_MS,
+          timeoutMs: holisticTimeoutMs,
           maxRetries: 1,
           promptCacheKey: "solution-evaluation-holistic",
         }),

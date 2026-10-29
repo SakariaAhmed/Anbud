@@ -15,6 +15,10 @@ const load = (file) => jiti.import(path.join(frontendRoot, file));
 const { routeErrorResponse } = await load("lib/server/api-responses.ts");
 const { AuthorizationError } = await load("lib/server/authorization.ts");
 const { WorkflowError, WorkflowPreconditionError } = await load("lib/server/workflow-errors.ts");
+const { productionSafeErrorMessage } = await load("lib/server/safe-errors.ts");
+const { ProjectWorkflowTerminalMetadataError } = await load(
+  "lib/server/project-job-terminal-metadata.ts",
+);
 const {
   RequestBodyError,
   optionalTextField,
@@ -85,4 +89,30 @@ test("request field readers reject wrong types instead of crashing later", () =>
   assert.deepEqual(stringListField({ ids: ["a"] }, "ids"), ["a"]);
   assert.throws(() => stringListField({ ids: ["a", 2] }, "ids"), RequestBodyError);
   assert.throws(() => stringListField({ ids: "a" }, "ids"), RequestBodyError);
+});
+
+test("production job errors keep user-facing workflow messages and hide raw failures", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    const incomplete = new ProjectWorkflowTerminalMetadataError(
+      "Kravbesvarelsen ble ikke lagret fordi 1 av 97 krav ikke kunne besvares automatisk. Uavklarte krav: KD-10.",
+      { requirement_response_handoff: null },
+      "KD-10 (batch_error: upstream detail) [avvist svar: modelltekst]",
+    );
+    const shown = productionSafeErrorMessage(incomplete, "Jobben feilet.");
+    assert.equal(shown, incomplete.publicMessage);
+    // Internal reasons and rejected model output stay in logs only.
+    assert.doesNotMatch(shown, /batch_error|avvist svar|modelltekst/u);
+
+    const hidden = productionSafeErrorMessage(
+      new Error("upstream host=internal.example timeout"),
+      "Jobben feilet.",
+    );
+    assert.match(hidden, /^Jobben feilet\. Referanse: [a-f0-9]{24}\.$/u);
+    assert.doesNotMatch(hidden, /internal\.example/u);
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
 });

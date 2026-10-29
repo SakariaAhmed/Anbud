@@ -3,7 +3,8 @@ import "server-only";
 // Requirement coverage evaluation: batch registries, evidence matching,
 // retrieval context and deterministic control repairs for solution evaluation.
 import { sortByRequirementOrder } from "@/lib/requirement-order";
-import { compactText, retrievedSnippetContext } from "@/lib/server/ai/context";
+import { compactText } from "@/lib/server/ai/context";
+import { WorkflowIncompleteError } from "@/lib/server/workflow-errors";
 import { retrieveDocumentSnippets } from "@/lib/server/document-chunks";
 import {
   isNearDuplicate,
@@ -102,7 +103,7 @@ import {
   requirementSubtitle,
   sortRequirementLedgerInDocumentOrder,
 } from "@/lib/server/requirements/presentation";
-import { extractRequirementLedgerForDocumentCore, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
+import { extractRequirementLedgerForDocumentCore, requirementSourceExcerptWithoutAnswer, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
 import { canonicalizeRequirementSourceLedger } from "@/lib/server/requirements/source-readiness";
 import { type RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import { filterSyntheticRequirementFallbacks } from "@/lib/server/requirements/unstructured-ledger";
@@ -165,7 +166,6 @@ const REQUIREMENT_COVERAGE_EVALUATION_REGISTRY_MAX_ROWS =
     500,
   );
 
-const REQUIREMENT_COVERAGE_RETRIEVAL_LIMIT = 4;
 
 export function parsePositiveIntegerEnv(name: string, fallback: number) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -772,13 +772,31 @@ function normalizeRequirementCoverageAssessment(
   return "Uklart";
 }
 
-function buildRequirementCoveragePageContext(input: {
+/** Pages of the solution document that hold an entry's answer. A merged
+ * entry keeps the *customer* document's pages, which must never be applied
+ * to Bilag 2 (DOCX requirements all report page 1, so Bilag 2's summary page
+ * was selected for every requirement). */
+function solutionAnswerPages(
+  entry: RequirementLedgerEntry,
+  document: ProjectDocumentDetail,
+) {
+  if (entry.documentId === document.id) return entry.pages;
+  const answer = normalizeQuoteMatchText(entry.answerExcerpt ?? "").slice(0, 60);
+  if (answer.length < 24 || document.file_format !== "pdf") return [];
+  return normalizedSolutionText(document)
+    .pages.filter((page) => page.text.includes(answer))
+    .map((page) => page.page);
+}
+
+// Exported for the page-selection regression test.
+// fallow-ignore-next-line unused-export
+export function buildRequirementCoveragePageContext(input: {
   document: ProjectDocumentDetail;
   entries: RequirementLedgerEntry[];
 }) {
   const wantedPages = new Set<number>();
   for (const entry of input.entries) {
-    for (const page of entry.pages) {
+    for (const page of solutionAnswerPages(entry, input.document)) {
       if (page > 1) {
         wantedPages.add(page - 1);
       }
@@ -845,39 +863,144 @@ function buildRequirementCoverageExactRowContext(
   );
 }
 
+function entryHasCompleteExactEvidence(entry: RequirementLedgerEntry) {
+  const sourceExcerpt = (entry.sourceExcerpt ?? "").replace(/\s+/g, " ").trim();
+  const answerExcerpt = (entry.answerExcerpt ?? "").replace(/\s+/g, " ").trim();
+  const substantiveAnswer = substantiveRequirementAnswerExcerpt(entry);
+
+  return (
+    sourceExcerpt.length >= 20 &&
+    answerExcerpt.length >= 24 &&
+    substantiveAnswer.length >= 24 &&
+    !/^(?:ja|nei|yes|no)[.!]?$/i.test(substantiveAnswer)
+  );
+}
+
 export function coverageBatchHasCompleteExactEvidence(
   entries: RequirementLedgerEntry[],
 ) {
-  return (
-    entries.length > 0 &&
-    entries.every((entry) => {
-      const sourceExcerpt = (entry.sourceExcerpt ?? "")
-        .replace(/\s+/g, " ")
-        .trim();
-      const answerExcerpt = (entry.answerExcerpt ?? "")
-        .replace(/\s+/g, " ")
-        .trim();
-      const substantiveAnswer = substantiveRequirementAnswerExcerpt(entry);
+  return entries.length > 0 && entries.every(entryHasCompleteExactEvidence);
+}
 
-      return (
-        sourceExcerpt.length >= 20 &&
-        answerExcerpt.length >= 24 &&
-        substantiveAnswer.length >= 24 &&
-        !/^(?:ja|nei|yes|no)[.!]?$/i.test(substantiveAnswer)
-      );
-    })
+const REQUIREMENT_COVERAGE_HITS_PER_REQUIREMENT = 2;
+const REQUIREMENT_COVERAGE_SNIPPET_CHARS = 900;
+const REQUIREMENT_COVERAGE_RETRIEVAL_CHAR_BUDGET = 12_000;
+const REQUIREMENT_COVERAGE_RETRIEVAL_CONCURRENCY = 3;
+
+function retrievalTerms(text: string) {
+  return [
+    ...new Set(
+      normalizeQuoteMatchText(text)
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((term) => term.length >= 4),
+    ),
+  ];
+}
+
+/**
+ * Returns whole sentences around the part of a chunk that best matches the
+ * requirement, instead of the chunk's first characters. Neighbouring
+ * sentences are kept so negations, numbers and qualifications survive.
+ */
+export function matchCenteredExcerpt(text: string, query: string, limit: number) {
+  const clean = text.replace(/\s+/gu, " ").trim();
+  if (clean.length <= limit) return clean;
+  const sentences = clean.match(/[^.!?]+(?:[.!?]+|$)/gu)?.map((part) => part.trim()).filter(Boolean) ?? [clean];
+  const terms = retrievalTerms(query);
+  const score = (sentence: string) => {
+    const normalized = normalizeQuoteMatchText(sentence);
+    return terms.reduce((sum, term) => sum + (normalized.includes(term) ? 1 : 0), 0);
+  };
+  let best = 0;
+  sentences.forEach((sentence, index) => {
+    if (score(sentence) > score(sentences[best]!)) best = index;
+  });
+  let start = Math.max(0, best - 1);
+  let end = best + 1;
+  const length = () => sentences.slice(start, end).join(" ").length;
+  while (end < sentences.length && length() + sentences[end]!.length + 1 <= limit) end += 1;
+  while (start > 0 && length() + sentences[start - 1]!.length + 1 <= limit) start -= 1;
+  const excerpt = sentences.slice(start, end).join(" ");
+  return excerpt.length > limit ? compactText(excerpt, limit) : excerpt;
+}
+
+async function buildPerRequirementRetrievalContext(input: {
+  entries: RequirementLedgerEntry[];
+  solutionDocument: ProjectDocumentDetail;
+  startIndex: number;
+}) {
+  const targets = input.entries
+    .map((entry, localIndex) => ({ entry, nr: input.startIndex + localIndex + 1 }))
+    .filter(({ entry }) => !entryHasCompleteExactEvidence(entry));
+  if (!targets.length) return "";
+  const results = await mapWithConcurrency(
+    targets,
+    REQUIREMENT_COVERAGE_RETRIEVAL_CONCURRENCY,
+    async ({ entry, nr }) => {
+      const query = [entry.id, entry.heading, entry.text].filter(Boolean).join(" ");
+      const snippets = await retrieveDocumentSnippets({
+        query,
+        documents: [input.solutionDocument],
+        exactTerms: entry.id && !isSyntheticRequirementId(entry.id) ? [entry.id] : [],
+        limit: REQUIREMENT_COVERAGE_HITS_PER_REQUIREMENT,
+      });
+      return { nr, query, snippets };
+    },
   );
+
+  // One block per distinct passage, listing every requirement it serves.
+  const passages = new Map<string, { nrs: number[]; label: string; text: string }>();
+  for (const { nr, query, snippets } of results) {
+    for (const snippet of snippets) {
+      const key = `${snippet.reference}|${normalizeQuoteMatchText(snippet.text).slice(0, 120)}`;
+      const existing = passages.get(key);
+      if (existing) {
+        if (!existing.nrs.includes(nr)) existing.nrs.push(nr);
+        continue;
+      }
+      const page = snippet.pageStart
+        ? `side ${snippet.pageEnd && snippet.pageEnd !== snippet.pageStart ? `${snippet.pageStart}-${snippet.pageEnd}` : snippet.pageStart}`
+        : "";
+      passages.set(key, {
+        nrs: [nr],
+        label: [
+          snippet.documentTitle,
+          page,
+          snippet.headingPath.length ? snippet.headingPath.join(" > ") : "",
+        ]
+          .filter(Boolean)
+          .join(" – "),
+        text: matchCenteredExcerpt(snippet.text, query, REQUIREMENT_COVERAGE_SNIPPET_CHARS),
+      });
+    }
+  }
+  if (!passages.size) return "";
+
+  const blocks: string[] = [];
+  let used = 0;
+  for (const passage of passages.values()) {
+    const block = `Krav nr ${passage.nrs.join(", ")} – ${passage.label}\n${passage.text}`;
+    if (used + block.length > REQUIREMENT_COVERAGE_RETRIEVAL_CHAR_BUDGET) break;
+    blocks.push(block);
+    used += block.length;
+  }
+  return buildDelimitedContext("Relevante Bilag 2-utdrag per krav", blocks.join("\n\n"));
 }
 
 export async function buildRequirementCoverageRetrievalContext(input: {
   entries: RequirementLedgerEntry[];
   solutionDocument: ProjectDocumentDetail;
   startIndex?: number;
+  /** The whole solution document is already in the prompt. */
+  fullSolutionDocumentIncluded?: boolean;
 }) {
   const exactContext = buildRequirementCoverageExactRowContext(
     input.entries,
     input.startIndex,
   );
+  if (input.fullSolutionDocumentIncluded) {
+    return exactContext;
+  }
 
   // Exact matched rows already contain both sides of the comparison. Re-running
   // semantic retrieval in that case only repeats the same answer text and nearby
@@ -886,26 +1009,13 @@ export async function buildRequirementCoverageRetrievalContext(input: {
     return exactContext;
   }
 
-  const query = input.entries
-    .map((entry) =>
-      [entry.id, entry.tableId, entry.service, entry.heading, entry.text]
-        .filter(Boolean)
-        .join(" "),
-    )
-    .join("\n");
-  const snippets = await retrieveDocumentSnippets({
-    query,
-    documents: [input.solutionDocument],
-    exactTerms: input.entries
-      .map((entry) => entry.id)
-      .filter((id) => id && !isSyntheticRequirementId(id)),
-    limit: REQUIREMENT_COVERAGE_RETRIEVAL_LIMIT,
+  // One query for a whole batch returned four 480-character snippets for
+  // up to 18 requirements; each incomplete requirement now gets its own hits.
+  const semanticContext = await buildPerRequirementRetrievalContext({
+    entries: input.entries,
+    solutionDocument: input.solutionDocument,
+    startIndex: input.startIndex ?? 0,
   });
-  const semanticContext = snippets.length
-    ? retrievedSnippetContext("Relevante Bilag 2-utdrag", snippets, {
-        textLimit: 480,
-      })
-    : "";
 
   return [
     exactContext,
@@ -2702,6 +2812,108 @@ export function validateRequirementCoverageBatchRows(input: {
   return expectedNumbers.map((expectedNr) => rowsByNumber.get(expectedNr)!);
 }
 
+function normalizeQuoteMatchText(value: string) {
+  return value
+    .normalize("NFC")
+    .replace(/\u00ad/gu, "")
+    // PDF text breaks words across lines with a hyphen.
+    .replace(/(\p{Ll})-\s+(\p{Ll})/gu, "$1$2")
+    .replace(/[«»“”"„]/gu, "")
+    .replace(/[‐‑–—]/gu, "-")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("nb");
+}
+
+const normalizedSolutionTextCache = new WeakMap<
+  ProjectDocumentDetail,
+  { whole: string; pages: Array<{ page: number; text: string }> }
+>();
+
+function normalizedSolutionText(document: ProjectDocumentDetail) {
+  const cached = normalizedSolutionTextCache.get(document);
+  if (cached) return cached;
+  const pages =
+    document.file_format === "pdf"
+      ? splitPdfPagesPreservingLines(document.raw_text)
+      : [{ page: 0, text: document.raw_text }];
+  const value = {
+    // Page markers ([[SIDE:n]]) must not break a quote that spans pages.
+    whole: normalizeQuoteMatchText(
+      document.raw_text.replace(/\[\[SIDE:\d{1,5}(?:-\d{1,5})?\]\]/gu, " "),
+    ),
+    pages: pages.map((page) => ({
+      page: page.page,
+      text: normalizeQuoteMatchText(page.text),
+    })),
+  };
+  normalizedSolutionTextCache.set(document, value);
+  return value;
+}
+
+const VERIFIED_QUOTE_MIN_CHARS = 30;
+const VERIFIED_QUOTE_MAX_CHARS = 900;
+
+/**
+ * Binds a requirement without a matched answer row to a quote the model took
+ * from the solution document, after checking that the quote occurs verbatim
+ * (modulo whitespace, line-break hyphens and quote marks) in that document.
+ * Prose solution descriptions rarely cite requirement IDs, so without this
+ * every such requirement was forced to "Mangler". The returned entry carries
+ * the quote as its answer, so all existing answer checks (declines, deferred
+ * confirmation, attachment references) apply to it unchanged.
+ */
+export function bindVerifiedSolutionQuote(input: {
+  entry: RequirementLedgerEntry;
+  quote: string | undefined;
+  solutionDocument: ProjectDocumentDetail;
+}): RequirementLedgerEntry | null {
+  if (substantiveRequirementAnswerExcerpt(input.entry)) return null;
+  const quote = String(input.quote ?? "").replace(/\s+/gu, " ").trim();
+  if (
+    quote.length < VERIFIED_QUOTE_MIN_CHARS ||
+    quote.length > VERIFIED_QUOTE_MAX_CHARS ||
+    /\.\.\.|…|\[\.\.\.\]/u.test(quote)
+  ) {
+    return null;
+  }
+  const normalizedQuote = normalizeQuoteMatchText(quote);
+  const requirementText = normalizeQuoteMatchText(input.entry.text);
+  // Restating the requirement is not evidence that it is answered.
+  if (
+    requirementText.includes(normalizedQuote) ||
+    normalizedQuote.includes(requirementText)
+  ) {
+    return null;
+  }
+  const solution = normalizedSolutionText(input.solutionDocument);
+  if (!solution.whole.includes(normalizedQuote)) return null;
+  const quotePrefix = normalizedQuote.slice(0, 60);
+  const page = solution.pages.find((candidate) =>
+    candidate.page > 0 && candidate.text.includes(quotePrefix),
+  )?.page;
+  const answerReference = page
+    ? `${input.solutionDocument.title}, side ${page}`
+    : input.solutionDocument.title;
+
+  return {
+    ...input.entry,
+    sourceExcerpt: compactText(
+      [
+        requirementSourceExcerptWithoutAnswer(input.entry).trim().replace(/\|\s*$/u, "").trim() ||
+          `Kravgrunnlag: ${input.entry.text}`,
+        `Svarrad: ${quote}`,
+      ].join(" | "),
+      1800,
+    ),
+    answerExcerpt: quote,
+    answerEvidenceExcerpt: quote,
+    answerDocumentId: input.solutionDocument.id,
+    answerDocumentTitle: input.solutionDocument.title,
+    answerReference,
+  };
+}
+
 export function coverageItemFromBatchRow(input: {
   row: RequirementCoverageBatchAnswer | undefined;
   entry: RequirementLedgerEntry;
@@ -3898,36 +4110,35 @@ export function assertRequirementCoverageBatchesSucceeded(
   totalBatches: number,
 ) {
   if (!failedBatches.length) return;
-  throw new Error(
-    `Kravvurderingen stoppet fordi ${failedBatches.length} av ${totalBatches} AI-batcher feilet. Første feil: ${compactText(
-      failedBatches[0]?.reason ?? "ukjent feil",
-      300,
-    )}`,
+  const failedRequirements = failedBatches.reduce(
+    (sum, batch) => sum + batch.count,
+    0,
+  );
+  // The batch reasons stay in the logs; users get counts they can act on.
+  throw new WorkflowIncompleteError(
+    `Løsningsvurderingen stoppet fordi ${failedBatches.length} av ${totalBatches} AI-batcher (${failedRequirements} krav) ikke ble fullført, heller ikke etter nytt forsøk. Ingen delvis vurdering er lagret. Prøv igjen om litt.`,
   );
 }
 
-// Exported for deterministic concurrency and lease-loss contract tests.
-// fallow-ignore-next-line unused-export
-export async function retryRequirementCoverageBatchesSequentially<TBatch, TValue>(
+/**
+ * Retries failed coverage batches once each with bounded concurrency. Results
+ * keep input order. A lost lease or cancellation aborts instead of being
+ * recorded as an ordinary batch failure.
+ */
+export async function retryRequirementCoverageBatches<TBatch, TValue>(
   batches: TBatch[],
   retry: (batch: TBatch) => Promise<TValue>,
-  assertActive: () => void = () => {},
+  options: { concurrency: number; assertActive?: () => void },
 ) {
-  const results: Array<
-    | { batch: TBatch; ok: true; value: TValue }
-    | { batch: TBatch; ok: false; error: unknown }
-  > = [];
-
-  for (const batch of batches) {
+  const assertActive = options.assertActive ?? (() => {});
+  return mapWithConcurrency(batches, Math.max(1, options.concurrency), async (batch) => {
     try {
-      results.push({ batch, ok: true, value: await retry(batch) });
+      return { batch, ok: true as const, value: await retry(batch) };
     } catch (error) {
       assertActive();
-      results.push({ batch, ok: false, error });
+      return { batch, ok: false as const, error };
     }
-  }
-
-  return results;
+  });
 }
 
 export function selectRequirementsForSolutionCoverage(input: {
