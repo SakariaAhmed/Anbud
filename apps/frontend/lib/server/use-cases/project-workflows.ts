@@ -1,6 +1,7 @@
 import "server-only";
 
 import { formatJobProgress } from "@/lib/project-job-progress";
+import { runWithElapsedProgress } from "@/lib/server/use-cases/elapsed-progress";
 
 import { WorkflowError, WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 import { projectJobDocumentSummary } from "@/lib/server/project-job-result-projection";
@@ -1197,25 +1198,37 @@ export async function generateCustomerAnalysis(input: {
     );
   }
 
-  input.onProgress?.(formatJobProgress(58, "Analyserer kundedokumentet med AI ...", 93));
-  const result =
-    section && previousAnalysis
-      ? await regenerateCustomerAnalysisSection({
-          section,
-          projectName: customerDocument.title,
-          customerDocument,
-          supportingDocuments,
-          customerAnalysis: previousAnalysis,
-          serviceCandidates,
-          model: input.model,
-        })
-      : await analyzeCustomerDocuments({
-          projectName: customerDocument.title,
-          customerDocument,
-          supportingDocuments,
-          serviceCandidates,
-          model: input.model,
-        });
+  const documentCount = 1 + supportingDocuments.length;
+  const result = await runWithElapsedProgress(
+    {
+      onProgress: input.onProgress,
+      label: section
+        ? "Oppdaterer seksjonen med AI"
+        : `Analyserer ${documentCount === 1 ? "kundedokumentet" : `${documentCount} dokumenter`} med AI`,
+      slowLabel: "AI-analysen tar lengre tid enn vanlig, men pågår fortsatt",
+      startPercent: 58,
+      ceiling: 88,
+      expectedMs: section ? 60_000 : 150_000,
+    },
+    () =>
+      section && previousAnalysis
+        ? regenerateCustomerAnalysisSection({
+            section,
+            projectName: customerDocument.title,
+            customerDocument,
+            supportingDocuments,
+            customerAnalysis: previousAnalysis,
+            serviceCandidates,
+            model: input.model,
+          })
+        : analyzeCustomerDocuments({
+            projectName: customerDocument.title,
+            customerDocument,
+            supportingDocuments,
+            serviceCandidates,
+            model: input.model,
+          }),
+  );
   input.onPhase?.("ai_analyse");
 
   input.onProgress?.(formatJobProgress(88, "Lagrer kundeanalysen ...", 97));

@@ -248,7 +248,7 @@ function estimatedJobDurationMs(job: Pick<ProjectJobRecord, "kind">) {
   const baseByKind: Record<ProjectJobRecord["kind"], number> = {
     document_ingestion: 45_000,
     document_docling_enhancement: 120_000,
-    customer_analysis: 75_000,
+    customer_analysis: 150_000,
     solution_evaluation: 80_000,
     artifact_generation: 95_000,
     high_level_design: 65_000,
