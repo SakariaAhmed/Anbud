@@ -37,6 +37,7 @@ import {
 } from "@/lib/types";
 import { routeErrorResponse } from "@/lib/server/api-responses";
 import { readJsonObject } from "@/lib/server/request-body";
+import { isRecord } from "@/lib/unknown-values";
 
 export const maxDuration = 60;
 
@@ -48,10 +49,6 @@ function isCustomerAnalysisSection(
   value: unknown,
 ): value is CustomerAnalysisSection {
   return CUSTOMER_ANALYSIS_SECTIONS.includes(value as CustomerAnalysisSection);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function isStringArray(value: unknown): value is string[] {

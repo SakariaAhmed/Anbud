@@ -5,7 +5,14 @@ import { createServiceClient } from "@/lib/server/data-api";
 import { decryptJson } from "@/lib/server/crypto";
 import { listGeneratedArtifactsFresh } from "@/lib/server/repositories/artifacts";
 import { getProjectSnapshotAfterCommit } from "@/lib/server/repositories/data-store";
-import type { GeneratedArtifact, ProjectJobResult } from "@/lib/types";
+import type {
+  CustomerAnalysisResult,
+  ExecutiveSummaryResult,
+  GeneratedArtifact,
+  PerfectSystemSolutionJobResult,
+  ProjectJobResult,
+  SolutionEvaluationResult,
+} from "@/lib/types";
 
 export async function findWorkflowArtifact(projectId: string, jobId?: string, artifactId?: string): Promise<GeneratedArtifact | null> {
   if (!jobId && !artifactId) return null;
@@ -13,12 +20,23 @@ export async function findWorkflowArtifact(projectId: string, jobId?: string, ar
   return artifacts.find(artifact => artifactId ? artifact.id === artifactId : artifact.generation_job_id === jobId) ?? null;
 }
 
-export function pendingEvaluationResult(artifact: GeneratedArtifact, detail: string) {
+export function pendingEvaluationResult(
+  artifact: GeneratedArtifact,
+  detail: string,
+): PerfectSystemSolutionJobResult {
   return {
     artifact, project: null, completion_status: "evaluation_pending",
     message: "Løsningsutkastet er lagret. Revurdering gjenstår. Du kan fortsette med samme utkast.",
     detail, resume_request: { kind: "perfect_system_solution", resume_artifact_id: artifact.id },
   };
+}
+
+// Results are written encrypted by this application; an unreadable one must
+// not be returned as an empty result.
+function storedResult<T>(value: unknown): T {
+  const result = decryptJson<T | null>(value, null);
+  if (!result) throw new Error("Det lagrede jobbresultatet kunne ikke leses.");
+  return result;
 }
 
 export async function recoverCommittedProjectJobResult(projectId: string, jobId: string): Promise<ProjectJobResult | null> {
@@ -45,9 +63,19 @@ export async function recoverCommittedProjectJobResult(projectId: string, jobId:
     .maybeSingle<{ revision?: string; updated_at: string; result_json: unknown; evaluated_generated_artifact_id?: string | null }>();
   if (readError) throw new Error(readError.message);
   if (!row || (checkpoint.revision ? row.revision !== checkpoint.revision : row.updated_at !== checkpoint.updated_at)) throw new WorkflowError("PROJECT_JOB_SUPERSEDED");
-  const content = decryptJson<Record<string, unknown>>(row.result_json, {});
+  const revision = row.revision ? { revision: row.revision } : {};
   const artifact = job?.kind === "perfect_system_solution" && checkpoint.kind === "solution_evaluation"
     ? (await listGeneratedArtifactsFresh(projectId)).find(item => item.id === row.evaluated_generated_artifact_id) : null;
   if (job?.kind === "perfect_system_solution" && checkpoint.kind === "solution_evaluation" && (!artifact || !artifact.is_current || !artifact.source_is_current)) throw new WorkflowError("PROJECT_JOB_SUPERSEDED");
-  return { ...(artifact ? { artifact } : checkpoint.kind === "solution_evaluation" ? { artifact: null, used_generated_solution: false } : {}), [target.field]: { ...content, ...(row.revision ? { revision: row.revision } : {}) }, project: await getProjectSnapshotAfterCommit(projectId) };
+  const project = await getProjectSnapshotAfterCommit(projectId);
+  if (checkpoint.kind === "customer_analysis") {
+    return { analysis: { ...storedResult<CustomerAnalysisResult>(row.result_json), ...revision }, project };
+  }
+  if (checkpoint.kind === "executive_summary") {
+    return { executive_summary: storedResult<ExecutiveSummaryResult>(row.result_json), project };
+  }
+  const evaluation = storedResult<SolutionEvaluationResult>(row.result_json);
+  return artifact
+    ? { artifact, evaluation, project }
+    : { artifact: null, used_generated_solution: false, evaluation, project };
 }

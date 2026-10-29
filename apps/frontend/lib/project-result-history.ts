@@ -4,6 +4,7 @@ import type {
   RecommendedService,
   ValueOpportunity,
 } from "@/lib/types";
+import { isRecord } from "@/lib/unknown-values";
 
 export type ProjectResultHistoryEntry = {
   id: string;
@@ -13,18 +14,14 @@ export type ProjectResultHistoryEntry = {
   result_json: Record<string, unknown>;
 };
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 export function parseProjectResultHistory(payload: unknown): ProjectResultHistoryEntry[] {
-  if (!record(payload) || !Array.isArray(payload.history)) {
+  if (!isRecord(payload) || !Array.isArray(payload.history)) {
     throw new Error("Kunne ikke lese historikken. Prøv å hente den på nytt.");
   }
   return payload.history.map((entry: unknown) => {
-    if (!record(entry) || typeof entry.id !== "string" || typeof entry.kind !== "string" ||
+    if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.kind !== "string" ||
       typeof entry.reason !== "string" || typeof entry.archived_at !== "string" ||
-      !Number.isFinite(Date.parse(entry.archived_at)) || !record(entry.result_json)) {
+      !Number.isFinite(Date.parse(entry.archived_at)) || !isRecord(entry.result_json)) {
       throw new Error("Kunne ikke lese historikken. Prøv å hente den på nytt.");
     }
     return { id: entry.id, kind: entry.kind, reason: entry.reason,
@@ -57,7 +54,7 @@ export function archivedCustomerAnalysis(value: Record<string, unknown>): Custom
   const profile = textList("customer_profile");
   const goals = textList("customer_goals");
   const counts = value.signal_word_counts;
-  if (counts != null && (!record(counts) || !Object.values(counts).every(isNumber))) throw invalidAnalysis();
+  if (counts != null && (!isRecord(counts) || !Object.values(counts).every(isNumber))) throw invalidAnalysis();
   return {
     customer_profile_summary: text("customer_profile_summary") || profile.join("\n\n"),
     customer_goals_summary: text("customer_goals_summary") || goals.join("\n\n"),
@@ -67,11 +64,11 @@ export function archivedCustomerAnalysis(value: Record<string, unknown>): Custom
     high_level_architecture_mermaid: text("high_level_architecture_mermaid"),
     executive_summary: text("executive_summary"),
     implicit_requirements: list(value.implicit_requirements, (item): item is AnalysisRequirement =>
-      record(item) && strings(item, ["title", "description", "category", "source_reference", "source_excerpt"]) &&
+      isRecord(item) && strings(item, ["title", "description", "category", "source_reference", "source_excerpt"]) &&
       importance(item.importance) && (item.kind === "Eksplisitt" || item.kind === "Implisitt")),
     prioritized_requirements: list(value.prioritized_requirements,
       (item): item is CustomerAnalysisResult["prioritized_requirements"][number] =>
-        record(item) && strings(item, ["requirement", "reason"]) && importance(item.priority)),
+        isRecord(item) && strings(item, ["requirement", "reason"]) && importance(item.priority)),
     ambiguities: textList("ambiguities"),
     risks: textList("risks"),
     risks_for_us: textList("risks_for_us"),
@@ -82,10 +79,10 @@ export function archivedCustomerAnalysis(value: Record<string, unknown>): Custom
     expected_solution_direction: textList("expected_solution_direction"),
     positioning_recommendations: textList("positioning_recommendations"),
     recommended_services: list(value.recommended_services, (item): item is RecommendedService =>
-      record(item) && strings(item, ["service_name", "customer_need", "recommendation_reason", "evidence", "risk_or_caveat"]) &&
+      isRecord(item) && strings(item, ["service_name", "customer_need", "recommendation_reason", "evidence", "risk_or_caveat"]) &&
       isNumber(item.usefulness_percent) && (item.service_id == null || isString(item.service_id))),
     value_opportunities: list(value.value_opportunities, (item): item is ValueOpportunity =>
-      record(item) && strings(item, ["title", "description"]) && isNumber(item.profit_share_percent) &&
+      isRecord(item) && strings(item, ["title", "description"]) && isNumber(item.profit_share_percent) &&
       Array.isArray(item.value_categories) && item.value_categories.every((category: unknown) =>
         ["Høyere produktivitet", "Lavere kostnader", "Redusert risiko", "Bedre brukeropplevelse"].includes(String(category)))),
     // The full archived version is the selected snapshot; nested section history

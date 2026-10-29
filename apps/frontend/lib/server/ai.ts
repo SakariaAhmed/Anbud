@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isRequirementDocument } from "@/lib/document-processing";
 import { isMarkdownTableDivider } from "@/lib/markdown-table-row";
 import { formatJobProgress } from "@/lib/project-job-progress";
 import {
@@ -215,7 +216,6 @@ import {
   assertExplicitRequirementLedgersComplete,
   canonicalRequirementSourceDocuments,
   canonicalizeRequirementSourceLedger,
-  isLikelyRequirementSourceDocument,
 } from "@/lib/server/use-cases/solution-evaluation-readiness";
 import { buildSolutionEvaluationProvenance } from "@/lib/server/workflow-boundaries";
 import type {
@@ -9462,7 +9462,7 @@ function assessRequirementLedgerConfidence(input: {
   );
   const hasRequirementDocumentSignal =
     input.hasExplicitRequirementDocuments ||
-    input.requirementDocuments.some(isLikelyRequirementSourceDocument);
+    input.requirementDocuments.some(isRequirementDocument);
   const explicitlyCompleteSmallLedger =
     hasExplicitlyCompleteSmallRequirementLedger({
       ledger: input.ledger,
@@ -9522,7 +9522,7 @@ function shouldUseRequirementLedgerGeneration(input: {
 
   return (
     input.hasExplicitRequirementDocuments ||
-    input.requirementDocuments.some(isLikelyRequirementSourceDocument) ||
+    input.requirementDocuments.some(isRequirementDocument) ||
     isReliableRequirementLedger(input.ledger) ||
     input.ledger.filter((entry) => !isSyntheticRequirementId(entry.id)).length >= 5
   );
@@ -19500,7 +19500,7 @@ async function buildSolutionRequirementCoverage(input: {
   const requirementDocumentCandidates = (input.requirementDocuments ?? []).filter(
     (document) =>
       document.id !== input.solutionDocument.id &&
-      isLikelyRequirementSourceDocument(document),
+      isRequirementDocument(document),
   );
   const sourceRequirementDocuments = canonicalRequirementSourceDocuments({
     customerDocument:
@@ -22636,7 +22636,7 @@ async function buildRequirementArtifactContext(
               document !== null &&
               (hasExplicitRequirementDocuments ||
                 document.id === primaryCustomerDocumentId ||
-                isLikelyRequirementSourceDocument(document)) &&
+                isRequirementDocument(document)) &&
               ["pdf", "xlsx", "xls"].includes(document.file_format) &&
               Boolean(document.file_base64),
           )

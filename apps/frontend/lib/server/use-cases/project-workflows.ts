@@ -20,6 +20,7 @@ import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import {
   hasReadableRequirementDocumentContent,
   isHistoricalSolutionDocument,
+  isRequirementDocument,
 } from "@/lib/document-processing";
 import { analyzeCustomerDocuments, evaluateSolutionDocument, generateHighLevelDesign } from "@/lib/server/ai";
 import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/extraction";
@@ -57,9 +58,13 @@ import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-s
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import {
   isGeneratableArtifactType,
+  type DocumentDoclingEnhancementJobResult,
+  type DocumentIngestionJobResult,
   type GeneratedArtifactType,
+  type PerfectSystemSolutionJobResult,
   type ProjectDocumentDetail,
   type ProjectJobResult,
+  type SolutionEvaluationJobResult,
 } from "@/lib/types";
 import {
   type ArtifactGenerationTiming,
@@ -83,7 +88,6 @@ import {
   canonicalRequirementSourceDocuments,
   canonicalizeRequirementSourceLedger,
   isExplicitRequirementSupportingSubtype,
-  isLikelyRequirementSourceDocument,
 } from "@/lib/server/use-cases/solution-evaluation-readiness";
 
 export type ProjectWorkflowInput =
@@ -270,7 +274,7 @@ export async function buildEvaluationLedgerContext(input: {
             ...safeErrorTelemetry(error),
           }),
         );
-        if (isLikelyRequirementSourceDocument(document)) {
+        if (isRequirementDocument(document)) {
           throw new Error(
             productionSafeErrorMessage(
               error,
@@ -623,7 +627,7 @@ async function recordParserSelectionEvents(input: {
 async function runDocumentIngestionWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "document_ingestion" }>,
   handlers: ProjectWorkflowHandlers,
-) {
+): Promise<DocumentIngestionJobResult> {
   try {
     handlers.setProgress(formatJobProgress(8, "Henter dokumentfil ..."));
     assertWorkflowActive(handlers);
@@ -1004,7 +1008,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     { kind: "document_docling_enhancement" }
   >,
   handlers: ProjectWorkflowHandlers,
-) {
+): Promise<DocumentDoclingEnhancementJobResult> {
   handlers.setProgress(formatJobProgress(8, "Henter dokument for Docling-forbedring ..."));
   const document = await getDocumentDetail(input.projectId, input.documentId);
   handlers.onPhase?.("filhenting");
@@ -1234,7 +1238,7 @@ function readStableEvaluationSources(projectId: string) {
 export async function runSolutionEvaluationWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "solution_evaluation" }>,
   handlers: ProjectWorkflowHandlers,
-) {
+): Promise<SolutionEvaluationJobResult> {
   handlers.setProgress(formatJobProgress(18, "Laster kundedokument, analyse og støttedokumenter ..."));
   const {
     documents: projectDocuments,
@@ -1501,7 +1505,7 @@ async function runExecutiveSummaryWorkflow(
 async function runPerfectSystemSolutionWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "perfect_system_solution" }>,
   handlers: ProjectWorkflowHandlers,
-) {
+): Promise<PerfectSystemSolutionJobResult> {
   handlers.setProgress(formatJobProgress(18, "Laster vurdering, dokumenter og siste løsningsbeskrivelse ..."));
   const project = await getProjectGenerationContext(input.projectId);
   const solutionEvaluation = project.solutionEvaluationSnapshot?.evaluation ?? null;

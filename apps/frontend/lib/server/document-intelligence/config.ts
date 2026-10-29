@@ -26,10 +26,3 @@ export function isDocumentAnalysisV3Enabled() {
 export function customerAnalysisPipeline(): "legacy" | "v3" {
   return isDocumentAnalysisV3Enabled() ? "v3" : "legacy";
 }
-
-/** @deprecated Use isDocumentAnalysisEnabled. */
-// Retained as a compatibility alias for older integrations.
-// fallow-ignore-next-line unused-export
-export function isDocumentIntelligenceV2Enabled() {
-  return isDocumentAnalysisEnabled();
-}

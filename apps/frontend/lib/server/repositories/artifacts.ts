@@ -379,13 +379,6 @@ export async function deleteGeneratedArtifact(input: {
   revalidateProjectCaches(input.projectId);
 }
 
-export async function listGeneratedArtifacts(
-  projectId: string,
-  options: { artifactType?: GeneratedArtifactType } = {},
-) {
-  return listGeneratedArtifactsFresh(projectId, options);
-}
-
 function decorateArtifactAuthority(
   artifacts: GeneratedArtifact[],
   authority: GeneratedArtifactAuthorityByType,

@@ -11,7 +11,7 @@ import {
   type ProjectSort,
   type ProjectStatusFilter,
 } from "@/components/projects/project-dashboard-sections";
-import { uploadProjectDocument as uploadDocument, watchProjectJob } from "@/lib/client/project-api";
+import { createProject, uploadProjectDocument as uploadDocument, watchProjectJob } from "@/lib/client/project-api";
 import type { ProjectSummary } from "@/lib/types";
 
 function fileTitle(file: File) {
@@ -114,24 +114,12 @@ export function ProjectDashboard({ projects }: { projects: ProjectSummary[] }) {
     setUploadError("");
     setUploading(true);
     try {
-      const response = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: fileTitle(file),
-          customer_name: "",
-          industry: "",
-          description: "",
-        }),
+      const projectId = await createProject({
+        name: fileTitle(file),
+        customer_name: "",
+        industry: "",
+        description: "",
       });
-      const payload = (await response.json()) as {
-        id?: string;
-        error?: string;
-      };
-      if (!response.ok || !payload.id) {
-        throw new Error(payload.error || "Kunne ikke opprette prosjekt.");
-      }
-      const projectId = payload.id;
       await uploadProjectDocument({ projectId, file });
 
       router.push(`/projects/${projectId}`);

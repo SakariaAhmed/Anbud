@@ -583,6 +583,22 @@ export interface ArtifactGenerationJobResult {
   project: ProjectSnapshotResult | null;
 }
 
+/** A finished re-evaluation, or a saved draft whose re-evaluation is pending. */
+export type PerfectSystemSolutionJobResult =
+  | {
+      artifact: GeneratedArtifact;
+      project: ProjectSnapshotResult | null;
+      evaluation: SolutionEvaluationResult;
+    }
+  | {
+      artifact: GeneratedArtifact;
+      project: null;
+      completion_status: "evaluation_pending";
+      message: string;
+      detail: string;
+      resume_request: { kind: "perfect_system_solution"; resume_artifact_id: string };
+    };
+
 export interface SolutionEvaluationJobResult {
   evaluation: SolutionEvaluationResult;
   project: ProjectSnapshotResult | null;
@@ -606,7 +622,8 @@ export interface ExecutiveSummaryJobResult {
 }
 
 export interface DocumentIngestionJobResult {
-  document: ProjectDocument;
+  // Null when a stored result's document can no longer be read.
+  document: ProjectDocument | null;
   document_id: string;
   status: DocumentProcessingStatus;
   parser_used: string | null;
@@ -615,14 +632,24 @@ export interface DocumentIngestionJobResult {
   docling_enhancement_job_id?: string;
 }
 
+export interface DocumentDoclingEnhancementJobResult {
+  document: ProjectDocument | null;
+  document_id: string;
+  status: DocumentProcessingStatus;
+  parser_used: string | null | undefined;
+  project: ProjectSnapshotResult | null;
+  skipped: boolean;
+}
+
 export type ProjectJobResult =
+  | PerfectSystemSolutionJobResult
   | DocumentIngestionJobResult
+  | DocumentDoclingEnhancementJobResult
   | ArtifactGenerationJobResult
   | SolutionEvaluationJobResult
   | HighLevelDesignJobResult
   | CustomerAnalysisJobResult
-  | ExecutiveSummaryJobResult
-  | Record<string, unknown>;
+  | ExecutiveSummaryJobResult;
 
 export interface ProjectJobRecord {
   id: string;

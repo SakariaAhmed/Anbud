@@ -209,9 +209,10 @@ test("service selection replacement is one locked, validated RPC with fail-close
       "utf8",
     );
     assert.match(bootstrapSql, /persisting_customer_analysis_context/u);
+    // The lease-fenced save delegates to the source-revision guarded save.
     assert.match(
       bootstrapSql,
-      /return public\.save_customer_analysis_if_source_revision\(p_project_id, p_payload\)/u,
+      /(?:return|v_result :=) public\.save_customer_analysis_if_source_revision\(p_project_id, p_payload\)/u,
     );
   }
 

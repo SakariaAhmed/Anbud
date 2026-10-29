@@ -22,6 +22,7 @@ import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cance
 import { parsePdf } from "@/lib/server/pdf-parser";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
+import { isRecord } from "@/lib/unknown-values";
 
 export interface SourceMapEntry {
   reference: string;
@@ -620,10 +621,6 @@ async function readDoclingJson(tempDir: string) {
   }
 
   return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeCellText(value: unknown) {

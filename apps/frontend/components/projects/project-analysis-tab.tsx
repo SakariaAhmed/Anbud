@@ -54,8 +54,26 @@ import {
   type ValueOpportunity,
 } from "@/lib/types";
 
-type EditableCustomerAnalysisSnapshot =
-  CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
+/** A section's draft; `value` always has the shape of `section`. */
+type SectionDraft = {
+  [S in CustomerAnalysisSection]: {
+    section: S;
+    value: CustomerAnalysisSectionSnapshotMap[S];
+  };
+}[CustomerAnalysisSection];
+
+type SectionEditor = SectionDraft & {
+  basis: CustomerAnalysisResult | null;
+  revision: string | undefined;
+};
+
+function sectionDraft<S extends CustomerAnalysisSection>(
+  section: S,
+  value: CustomerAnalysisSectionSnapshotMap[S],
+): SectionDraft {
+  // TypeScript cannot relate a generic key to the mapped union member.
+  return { section, value } as SectionDraft;
+}
 
 const REQUIREMENT_IMPORTANCE_OPTIONS: RequirementImportance[] = [
   "Kritisk",
@@ -109,81 +127,95 @@ function emptyRecommendedService(): RecommendedService {
   };
 }
 
-function sanitizeSectionDraft(
-  section: CustomerAnalysisSection,
-  snapshot: EditableCustomerAnalysisSnapshot,
-): EditableCustomerAnalysisSnapshot {
-  switch (section) {
+function sanitizeSectionDraft(draft: SectionDraft): SectionDraft {
+  switch (draft.section) {
     case "summary": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["summary"];
+      const value = draft.value;
       return {
-        customer_profile_summary: value.customer_profile_summary.trim(),
-        customer_goals_summary: value.customer_goals_summary.trim(),
+        section: "summary",
+        value: {
+          customer_profile_summary: value.customer_profile_summary.trim(),
+          customer_goals_summary: value.customer_goals_summary.trim(),
+        },
       };
     }
     case "strategy": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["strategy"];
+      const value = draft.value;
       return {
-        executive_summary: value.executive_summary.trim(),
-        positioning_recommendations: cleanStringList(
-          value.positioning_recommendations,
-        ),
+        section: "strategy",
+        value: {
+          executive_summary: value.executive_summary.trim(),
+          positioning_recommendations: cleanStringList(
+            value.positioning_recommendations,
+          ),
+        },
       };
     }
     case "clarifications": {
-      const value =
-        snapshot as CustomerAnalysisSectionSnapshotMap["clarifications"];
+      const value = draft.value;
       return {
-        ambiguities: cleanStringList(value.ambiguities),
-        expected_solution_direction: cleanStringList(
-          value.expected_solution_direction,
-        ),
-        likely_evaluation_criteria: cleanStringList(
-          value.likely_evaluation_criteria,
-        ),
+        section: "clarifications",
+        value: {
+          ambiguities: cleanStringList(value.ambiguities),
+          expected_solution_direction: cleanStringList(
+            value.expected_solution_direction,
+          ),
+          likely_evaluation_criteria: cleanStringList(
+            value.likely_evaluation_criteria,
+          ),
+        },
       };
     }
     case "design": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["design"];
+      const value = draft.value;
       return {
-        high_level_solution_design: value.high_level_solution_design.trim(),
-        high_level_architecture_mermaid:
-          value.high_level_architecture_mermaid.trim(),
+        section: "design",
+        value: {
+          high_level_solution_design: value.high_level_solution_design.trim(),
+          high_level_architecture_mermaid:
+            value.high_level_architecture_mermaid.trim(),
+        },
       };
     }
     case "risks": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["risks"];
+      const value = draft.value;
       return {
-        risks: cleanStringList(value.risks),
-        risks_for_us: cleanStringList(value.risks_for_us ?? []),
-        risks_for_customer: cleanStringList(value.risks_for_customer ?? []),
+        section: "risks",
+        value: {
+          risks: cleanStringList(value.risks),
+          risks_for_us: cleanStringList(value.risks_for_us ?? []),
+          risks_for_customer: cleanStringList(value.risks_for_customer ?? []),
+        },
       };
     }
     case "needs": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["needs"];
+      const value = draft.value;
       return {
-        implicit_requirements: value.implicit_requirements
-          .map((item) => ({
-            title: item.title.trim(),
-            description: item.description.trim(),
-            category: item.category.trim(),
-            importance: item.importance,
-            kind: item.kind,
-            source_reference: item.source_reference.trim(),
-            source_excerpt: item.source_excerpt.trim(),
-          }))
-          .filter((item) => item.title || item.description),
-        prioritized_requirements: value.prioritized_requirements
-          .map((item) => ({
-            requirement: item.requirement.trim(),
-            priority: item.priority,
-            reason: item.reason.trim(),
-          }))
-          .filter((item) => item.requirement || item.reason),
+        section: "needs",
+        value: {
+          implicit_requirements: value.implicit_requirements
+            .map((item) => ({
+              title: item.title.trim(),
+              description: item.description.trim(),
+              category: item.category.trim(),
+              importance: item.importance,
+              kind: item.kind,
+              source_reference: item.source_reference.trim(),
+              source_excerpt: item.source_excerpt.trim(),
+            }))
+            .filter((item) => item.title || item.description),
+          prioritized_requirements: value.prioritized_requirements
+            .map((item) => ({
+              requirement: item.requirement.trim(),
+              priority: item.priority,
+              reason: item.reason.trim(),
+            }))
+            .filter((item) => item.requirement || item.reason),
+        },
       };
     }
     case "keywords": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["keywords"];
+      const value = draft.value;
       const signalWords = normalizeTechnologySignalWords(value.signal_words);
       const counts = Object.fromEntries(
         Object.entries(value.signal_word_counts ?? {})
@@ -194,44 +226,53 @@ function sanitizeSectionDraft(
           ),
       );
       return {
-        signal_words: signalWords,
-        signal_word_counts: counts,
+        section: "keywords",
+        value: {
+          signal_words: signalWords,
+          signal_word_counts: counts,
+        },
       };
     }
     case "services": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["services"];
+      const value = draft.value;
       return {
-        recommended_services: value.recommended_services
-          .map((item) => ({
-            service_id: item.service_id?.trim() || null,
-            service_name: item.service_name.trim(),
-            usefulness_percent: Number.isFinite(item.usefulness_percent)
-              ? Math.max(0, Math.min(100, Math.round(item.usefulness_percent)))
-              : 0,
-            customer_need: item.customer_need.trim(),
-            recommendation_reason: item.recommendation_reason.trim(),
-            evidence: item.evidence.trim(),
-            risk_or_caveat: item.risk_or_caveat.trim(),
-          }))
-          .filter((item) => item.service_name && item.recommendation_reason),
+        section: "services",
+        value: {
+          recommended_services: value.recommended_services
+            .map((item) => ({
+              service_id: item.service_id?.trim() || null,
+              service_name: item.service_name.trim(),
+              usefulness_percent: Number.isFinite(item.usefulness_percent)
+                ? Math.max(0, Math.min(100, Math.round(item.usefulness_percent)))
+                : 0,
+              customer_need: item.customer_need.trim(),
+              recommendation_reason: item.recommendation_reason.trim(),
+              evidence: item.evidence.trim(),
+              risk_or_caveat: item.risk_or_caveat.trim(),
+            }))
+            .filter((item) => item.service_name && item.recommendation_reason),
+        },
       };
     }
     case "value": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["value"];
+      const value = draft.value;
       return {
-        value_opportunities: value.value_opportunities
-          .map((item) => ({
-            title: item.title.trim(),
-            description: item.description.trim(),
-            value_categories: item.value_categories.filter(
-              (category): category is ValueCategory =>
-                VALUE_LABELS.includes(category),
-            ),
-            profit_share_percent: Number.isFinite(item.profit_share_percent)
-              ? Math.max(0, Math.min(100, item.profit_share_percent))
-              : 0,
-          }))
-          .filter((item) => item.title || item.description),
+        section: "value",
+        value: {
+          value_opportunities: value.value_opportunities
+            .map((item) => ({
+              title: item.title.trim(),
+              description: item.description.trim(),
+              value_categories: item.value_categories.filter(
+                (category): category is ValueCategory =>
+                  VALUE_LABELS.includes(category),
+              ),
+              profit_share_percent: Number.isFinite(item.profit_share_percent)
+                ? Math.max(0, Math.min(100, item.profit_share_percent))
+                : 0,
+            }))
+            .filter((item) => item.title || item.description),
+        },
       };
     }
   }
@@ -1211,13 +1252,9 @@ export function ProjectAnalysisTab({
     revision?: string,
   ) => Promise<boolean>;
 }) {
-  const [editingSection, setEditingSection] =
-    useState<CustomerAnalysisSection | null>(null);
-  const [sectionDraft, setSectionDraft] =
-    useState<EditableCustomerAnalysisSnapshot | null>(null);
-  const [editingBasis, setEditingBasis] = useState<CustomerAnalysisResult | null>(null);
-  const customerAnalysis = latestCustomerAnalysis ?? (editingSection ? editingBasis : null);
-  const [sectionRevision, setSectionRevision] = useState<string | undefined>();
+  const [sectionEditor, setSectionEditor] = useState<SectionEditor | null>(null);
+  const editingSection = sectionEditor?.section ?? null;
+  const customerAnalysis = latestCustomerAnalysis ?? sectionEditor?.basis ?? null;
   const [sectionDraftError, setSectionDraftError] = useState("");
   const [activeSection, setActiveSection] =
     useState<(typeof SECTION_TABS)[number]["value"]>(
@@ -1235,8 +1272,7 @@ export function ProjectAnalysisTab({
   useEffect(() => {
     if (!customerAnalysis && !editingSection) {
       setActiveSection("summary");
-      setEditingSection(null);
-      setSectionDraft(null);
+      setSectionEditor(null);
       setSectionDraftError("");
     }
   }, [customerAnalysis, editingSection]);
@@ -1307,48 +1343,40 @@ export function ProjectAnalysisTab({
     return SECTION_TABS.find((tab) => tab.value === section)?.label ?? "Analyse";
   }
 
-  function makeSectionDraft(section: CustomerAnalysisSection) {
-    if (!customerAnalysis) {
-      return null;
-    }
-
-    return cloneEditableSnapshot(
-      getCustomerAnalysisSectionSnapshot(customerAnalysis, section),
-    );
-  }
-
   function onStartSectionEdit(section: CustomerAnalysisSection) {
-    if (readOnly || !onSaveAnalysis) return;
-    setEditingBasis(customerAnalysis);
-    setSectionRevision(customerAnalysis?.revision);
-    setEditingSection(section);
-    setSectionDraft(makeSectionDraft(section));
+    if (readOnly || !onSaveAnalysis || !customerAnalysis) return;
+    setSectionEditor({
+      ...sectionDraft(
+        section,
+        cloneEditableSnapshot(getCustomerAnalysisSectionSnapshot(customerAnalysis, section)),
+      ),
+      basis: customerAnalysis,
+      revision: customerAnalysis.revision,
+    });
     setSectionDraftError("");
   }
 
   function onCancelSectionEdit() {
-    setEditingSection(null);
-    setSectionDraft(null);
+    setSectionEditor(null);
     setSectionDraftError("");
   }
 
-  async function onSaveSectionEdit(section: CustomerAnalysisSection) {
+  async function onSaveSectionEdit() {
     if (readOnly || !onSaveAnalysis) return;
-    if (!sectionDraft) {
+    if (!sectionEditor) {
       setSectionDraftError("Ingen endringer å lagre.");
       return;
     }
 
     try {
-      const snapshot = sanitizeSectionDraft(section, sectionDraft);
+      const draft = sanitizeSectionDraft(sectionEditor);
       const saved = await onSaveAnalysis(
-        section,
-        snapshot as CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
-        sectionRevision,
+        draft.section,
+        draft.value,
+        sectionEditor.revision,
       );
       if (!saved) return;
-      setEditingSection(null);
-      setSectionDraft(null);
+      setSectionEditor(null);
       setSectionDraftError("");
     } catch {
       // runAction owns the user-facing error message in the parent.
@@ -1372,8 +1400,8 @@ export function ProjectAnalysisTab({
             Avbryt
           </Button>
           <Button
-            onClick={() => void onSaveSectionEdit(section)}
-            disabled={saveBusy || !sectionDraft}
+            onClick={() => void onSaveSectionEdit()}
+            disabled={saveBusy}
             variant="outline"
             size="sm"
           >
@@ -1405,12 +1433,12 @@ export function ProjectAnalysisTab({
     );
   }
 
-  function renderSectionActions(section: CustomerAnalysisSection) {
-    return renderEditButton(section);
-  }
-
-  function updateDraft(nextDraft: EditableCustomerAnalysisSnapshot) {
-    setSectionDraft(nextDraft);
+  function updateDraft(nextDraft: SectionDraft) {
+    setSectionEditor((current) =>
+      current?.section === nextDraft.section
+        ? { ...nextDraft, basis: current.basis, revision: current.revision }
+        : current,
+    );
     setSectionDraftError("");
   }
 
@@ -2105,10 +2133,10 @@ export function ProjectAnalysisTab({
     );
   }
 
-  function renderSectionDraftFields(section: CustomerAnalysisSection) {
-    switch (section) {
+  function renderSectionDraftFields(editor: SectionDraft) {
+    switch (editor.section) {
       case "summary": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["summary"];
+        const draft = editor.value;
         return (
           <>
             {renderTextEditField({
@@ -2116,7 +2144,7 @@ export function ProjectAnalysisTab({
               label: "Kundesituasjon",
               value: draft.customer_profile_summary,
               onChange: (value) =>
-                updateDraft({ ...draft, customer_profile_summary: value }),
+                updateDraft(sectionDraft("summary", { ...draft, customer_profile_summary: value })),
               placeholder: "Beskriv kundens nåsituasjon.",
               rows: 7,
             })}
@@ -2125,7 +2153,7 @@ export function ProjectAnalysisTab({
               label: "Kundens mål",
               value: draft.customer_goals_summary,
               onChange: (value) =>
-                updateDraft({ ...draft, customer_goals_summary: value }),
+                updateDraft(sectionDraft("summary", { ...draft, customer_goals_summary: value })),
               placeholder: "Beskriv kundens mål og ønskede retning.",
               rows: 7,
             })}
@@ -2133,14 +2161,14 @@ export function ProjectAnalysisTab({
         );
       }
       case "strategy": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["strategy"];
+        const draft = editor.value;
         return (
           <>
             {renderTextEditField({
               id: "edit-executive-summary",
               label: "Arbeidstekst",
               value: draft.executive_summary,
-              onChange: (value) => updateDraft({ ...draft, executive_summary: value }),
+              onChange: (value) => updateDraft(sectionDraft("strategy", { ...draft, executive_summary: value })),
               placeholder: "Skriv strategisk oppsummering.",
               rows: 8,
             })}
@@ -2149,22 +2177,21 @@ export function ProjectAnalysisTab({
               label: "Posisjoneringsspor",
               items: draft.positioning_recommendations,
               onChange: (items) =>
-                updateDraft({ ...draft, positioning_recommendations: items }),
+                updateDraft(sectionDraft("strategy", { ...draft, positioning_recommendations: items })),
               placeholder: "Skriv anbefaling eller posisjonering.",
             })}
           </>
         );
       }
       case "clarifications": {
-        const draft =
-          sectionDraft as CustomerAnalysisSectionSnapshotMap["clarifications"];
+        const draft = editor.value;
         return (
           <div>
             {renderStringListEditor({
               id: "edit-ambiguities",
               label: "Avklaringer",
               items: draft.ambiguities,
-              onChange: (items) => updateDraft({ ...draft, ambiguities: items }),
+              onChange: (items) => updateDraft(sectionDraft("clarifications", { ...draft, ambiguities: items })),
               placeholder: "Skriv avklaring eller usikkerhet.",
               maxItems: MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
             })}
@@ -2172,7 +2199,7 @@ export function ProjectAnalysisTab({
         );
       }
       case "design": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["design"];
+        const draft = editor.value;
         return (
           <>
             {renderTextEditField({
@@ -2180,7 +2207,7 @@ export function ProjectAnalysisTab({
               label: "Løsningsdesign",
               value: draft.high_level_solution_design,
               onChange: (value) =>
-                updateDraft({ ...draft, high_level_solution_design: value }),
+                updateDraft(sectionDraft("design", { ...draft, high_level_solution_design: value })),
               placeholder: "Beskriv overordnet løsning.",
               rows: 8,
             })}
@@ -2189,7 +2216,7 @@ export function ProjectAnalysisTab({
               label: "Arkitekturdiagram",
               value: draft.high_level_architecture_mermaid,
               onChange: (value) =>
-                updateDraft({ ...draft, high_level_architecture_mermaid: value }),
+                updateDraft(sectionDraft("design", { ...draft, high_level_architecture_mermaid: value })),
               placeholder: "Mermaid-diagram hvis det finnes.",
               rows: 8,
             })}
@@ -2197,21 +2224,21 @@ export function ProjectAnalysisTab({
         );
       }
       case "risks": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["risks"];
+        const draft = editor.value;
         return (
           <>
             {renderStringListEditor({
               id: "edit-risks",
               label: "Risikoer",
               items: draft.risks,
-              onChange: (items) => updateDraft({ ...draft, risks: items }),
+              onChange: (items) => updateDraft(sectionDraft("risks", { ...draft, risks: items })),
               placeholder: "Skriv risiko.",
             })}
             {renderStringListEditor({
               id: "edit-risks-for-us",
               label: "Risiko for oss",
               items: draft.risks_for_us ?? [],
-              onChange: (items) => updateDraft({ ...draft, risks_for_us: items }),
+              onChange: (items) => updateDraft(sectionDraft("risks", { ...draft, risks_for_us: items })),
               placeholder: "Skriv leverandørrisiko.",
             })}
             {renderStringListEditor({
@@ -2219,67 +2246,67 @@ export function ProjectAnalysisTab({
               label: "Risiko for kunden",
               items: draft.risks_for_customer ?? [],
               onChange: (items) =>
-                updateDraft({ ...draft, risks_for_customer: items }),
+                updateDraft(sectionDraft("risks", { ...draft, risks_for_customer: items })),
               placeholder: "Skriv kunderisiko.",
             })}
           </>
         );
       }
       case "needs": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["needs"];
+        const draft = editor.value;
         return (
           <>
             {renderRequirementListEditor({
               label: "Implisitte behov",
               items: draft.implicit_requirements,
               onChange: (items) =>
-                updateDraft({ ...draft, implicit_requirements: items }),
+                updateDraft(sectionDraft("needs", { ...draft, implicit_requirements: items })),
               defaultKind: "Implisitt",
             })}
             {renderPrioritizedRequirementsEditor(
               draft.prioritized_requirements,
-              (items) => updateDraft({ ...draft, prioritized_requirements: items }),
+              (items) => updateDraft(sectionDraft("needs", { ...draft, prioritized_requirements: items })),
             )}
           </>
         );
       }
       case "keywords": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["keywords"];
+        const draft = editor.value;
         return (
           <>
             {renderStringListEditor({
               id: "edit-signal-words",
               label: "Signalord",
               items: draft.signal_words,
-              onChange: (items) => updateDraft({ ...draft, signal_words: items }),
+              onChange: (items) => updateDraft(sectionDraft("keywords", { ...draft, signal_words: items })),
               placeholder: "Skriv signalord.",
             })}
             {renderKeywordCountsEditor(
               draft.signal_word_counts ?? {},
-              (counts) => updateDraft({ ...draft, signal_word_counts: counts }),
+              (counts) => updateDraft(sectionDraft("keywords", { ...draft, signal_word_counts: counts })),
             )}
           </>
         );
       }
       case "services": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["services"];
+        const draft = editor.value;
         return renderRecommendedServicesEditor(
           draft.recommended_services,
-          (items) => updateDraft({ ...draft, recommended_services: items }),
+          (items) => updateDraft(sectionDraft("services", { ...draft, recommended_services: items })),
         );
       }
       case "value": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["value"];
+        const draft = editor.value;
         return renderValueOpportunitiesEditor(
           draft.value_opportunities,
-          (items) => updateDraft({ ...draft, value_opportunities: items }),
+          (items) => updateDraft(sectionDraft("value", { ...draft, value_opportunities: items })),
         );
       }
     }
   }
 
   function renderSectionEditor(section: CustomerAnalysisSection) {
-    if (editingSection !== section || !sectionDraft) {
+    if (sectionEditor?.section !== section) {
       return null;
     }
 
@@ -2294,13 +2321,13 @@ export function ProjectAnalysisTab({
           </p>
         </div>
         <div className="space-y-4">
-          {customerAnalysis?.revision && sectionRevision !== customerAnalysis.revision && (
+          {customerAnalysis?.revision && sectionEditor.revision !== customerAnalysis.revision && (
             <div className="w-full text-sm text-amber-800">
               <p>Analysen er endret. Utkastet ditt er beholdt. Hvis du fortsetter, erstatter utkastet denne seksjonen i siste analyse.</p>
-              <Button variant="outline" size="sm" disabled={saveBusy} onClick={() => setSectionRevision(customerAnalysis.revision)}>Bruk siste analyse som grunnlag</Button>
+              <Button variant="outline" size="sm" disabled={saveBusy} onClick={() => setSectionEditor({ ...sectionEditor, revision: customerAnalysis.revision })}>Bruk siste analyse som grunnlag</Button>
             </div>
           )}
-          {renderSectionDraftFields(section)}
+          {renderSectionDraftFields(sectionEditor)}
         </div>
         {sectionDraftError ? (
           <p className="mt-2 text-sm text-destructive">{sectionDraftError}</p>
@@ -2365,7 +2392,7 @@ export function ProjectAnalysisTab({
                 {activeSection === "value" ? renderListToggleButton(showValueList, () =>
                   setShowValueList((isVisible) => !isVisible),
                 ) : null}
-                {renderSectionActions(activeSection)}
+                {renderEditButton(activeSection)}
               </div>
             ) : null}
             {(!customerAnalysis || sourceChanged) && !readOnly && onGenerate ? (
@@ -2409,7 +2436,7 @@ export function ProjectAnalysisTab({
               <section aria-label="Underliggende behov" className="analysis-needs mt-8 border-t border-slate-200 pt-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <h4 className="text-base font-semibold">Behov</h4>
-                  {renderSectionActions("needs")}
+                  {renderEditButton("needs")}
                 </div>
                 {renderSectionEditor("needs")}
                 {topImplicitRequirements.length ? (
@@ -2473,7 +2500,7 @@ export function ProjectAnalysisTab({
                   {renderListToggleButton(showKeywordList, () =>
                     setShowKeywordList((isVisible) => !isVisible),
                   )}
-                  {renderSectionActions("keywords")}
+                  {renderEditButton("keywords")}
                 </>
               }
             >

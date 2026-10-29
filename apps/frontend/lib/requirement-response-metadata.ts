@@ -1,3 +1,5 @@
+import { isRecord } from "@/lib/unknown-values";
+
 export type RequirementResponseArtifactMetadata = {
   ledgerConfidence?: {
     level?: string;
@@ -108,10 +110,6 @@ export function deterministicRepairStageLabel(
     : stage === "handoff"
       ? "Reparert under AI-handoff"
       : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function nonNegativeInteger(value: unknown) {

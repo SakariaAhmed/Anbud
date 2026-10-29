@@ -17,7 +17,7 @@ import {
 import { getFreshCustomerAnalysis } from "@/lib/server/repositories/analyses";
 import { getProjectGenerationContext } from "@/lib/server/repositories/data-store";
 import { checkRateLimit } from "@/lib/server/observability";
-import { listGeneratedArtifacts } from "@/lib/server/repositories/artifacts";
+import { listGeneratedArtifactsFresh } from "@/lib/server/repositories/artifacts";
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
 import {
   productionSafeErrorMessage,
@@ -418,7 +418,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       getProjectGenerationContext(id),
       getFreshCustomerAnalysis(id),
       listProjectDocumentsForAnalysis(id),
-      listGeneratedArtifacts(id),
+      listGeneratedArtifactsFresh(id),
       listChatMessages(id),
       listChatSessions(id),
     ]);

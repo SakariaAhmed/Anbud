@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import {
   deleteGeneratedArtifact,
-  listGeneratedArtifacts,
+  listGeneratedArtifactsFresh,
   updateGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
 import { normalizeArtifactInstructions } from "@/lib/server/artifact-generation-input";
@@ -28,8 +28,8 @@ export async function GET(
     const artifactType = new URL(request.url).searchParams.get("artifact_type");
     const artifacts =
       artifactType && isGeneratableArtifactType(artifactType)
-        ? await listGeneratedArtifacts(id, { artifactType })
-        : await listGeneratedArtifacts(id);
+        ? await listGeneratedArtifactsFresh(id, { artifactType })
+        : await listGeneratedArtifactsFresh(id);
     return NextResponse.json({ artifacts }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     return routeErrorResponse(error, "Kunne ikke hente generatorresultatene.");

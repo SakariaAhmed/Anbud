@@ -35,8 +35,8 @@ import {
   GenerationProgress,
   documentDropzoneClass,
 } from "@/components/projects/project-workspace-shared";
-import { selectSolutionEvaluationDocumentCandidates } from "@/components/projects/project-evaluation-documents";
 import {
+  isApprovedSolutionEvaluationDocument,
   isDocumentReadyForEvaluation,
   isSolutionEvaluationCandidate,
 } from "@/lib/document-processing";
@@ -774,7 +774,7 @@ export function ProjectEvaluationTab({
   onImportArchitectureDocument: (file: File) => Promise<ProjectDocument | null>;
 }) {
   const candidateDocuments = useMemo(
-    () => selectSolutionEvaluationDocumentCandidates(documents),
+    () => documents.filter(isApprovedSolutionEvaluationDocument),
     [documents],
   );
   const [selectedDocumentId, setSelectedDocumentId] = useState(

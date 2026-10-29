@@ -88,7 +88,6 @@ export {
   deleteGeneratedArtifact,
   getArtifactSourceRevisions,
   listArtifactKnowledgeCandidatesFresh,
-  listGeneratedArtifacts,
   listGeneratedArtifactsFresh,
   saveGeneratedArtifact,
   updateGeneratedArtifact,

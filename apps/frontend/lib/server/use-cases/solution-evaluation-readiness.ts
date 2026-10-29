@@ -29,12 +29,6 @@ export function hasRequirementSourceDocumentSignal(
   );
 }
 
-export function isLikelyRequirementSourceDocument(
-  document: ProjectDocumentDetail,
-) {
-  return isRequirementDocument(document);
-}
-
 export function canonicalRequirementSourceDocuments(input: {
   customerDocument: ProjectDocumentDetail | null;
   documents: ProjectDocumentDetail[];
@@ -635,7 +629,7 @@ function requirementSourceReadinessIssues(
   options: { requireReadableText?: boolean },
 ) {
   return documents
-    .filter(isLikelyRequirementSourceDocument)
+    .filter(isRequirementDocument)
     .flatMap((document) => {
       if (!isDocumentReadyForEvaluation(document)) {
         return [
@@ -702,12 +696,6 @@ export function assertSelectedSolutionDocumentReady(
   }
 }
 
-export function requiresNonEmptyRequirementLedger(
-  document: ProjectDocumentDetail,
-) {
-  return isFormalRequirementDocument(document);
-}
-
 export function assertExplicitRequirementLedgersComplete(
   sourceDocuments: ProjectDocumentDetail[],
   requirementLedgerResults: Array<{
@@ -720,7 +708,7 @@ export function assertExplicitRequirementLedgersComplete(
   );
   const emptyRequirementDocuments = sourceDocuments.filter(
     (document) =>
-      requiresNonEmptyRequirementLedger(document) &&
+      isFormalRequirementDocument(document) &&
       (resultByDocumentId.get(document.id)?.ledger.length ?? 0) === 0
   );
 
@@ -734,7 +722,7 @@ export function assertExplicitRequirementLedgersComplete(
 
   const corruptedAuthoritativeInventories = sourceDocuments.flatMap(
     (document) => {
-      if (!requiresNonEmptyRequirementLedger(document)) return [];
+      if (!isFormalRequirementDocument(document)) return [];
       const expected = explicitIdTableSourceIds(document.raw_text).map(
         explicitInventoryId,
       );
@@ -793,7 +781,7 @@ export function assertExplicitRequirementLedgersComplete(
   }
 
   const incompleteExplicitInventories = sourceDocuments.flatMap((document) => {
-    if (!requiresNonEmptyRequirementLedger(document)) return [];
+    if (!isFormalRequirementDocument(document)) return [];
     const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
     const expected = explicitRequirementSourceInventory(document.raw_text);
     if (expected.size === 0) return [];

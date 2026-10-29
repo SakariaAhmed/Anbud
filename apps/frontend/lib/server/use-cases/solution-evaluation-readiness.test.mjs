@@ -23,12 +23,14 @@ const {
   assertSelectedSolutionDocumentReady,
   canonicalRequirementSourceDocuments,
   canonicalizeRequirementSourceLedger,
-  isLikelyRequirementSourceDocument,
 } = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/use-cases/solution-evaluation-readiness.ts",
   ),
+);
+const { isRequirementDocument } = await jiti.import(
+  path.join(frontendRoot, "lib/document-processing.ts"),
 );
 const { buildSolutionEvaluationProvenance } = await jiti.import(
   path.join(frontendRoot, "lib/server/workflow-boundaries.ts"),
@@ -780,7 +782,7 @@ test("an explicit rfp subtype is a requirement source even with neutral metadata
     raw_text: "",
   });
 
-  assert.equal(isLikelyRequirementSourceDocument(rfp), true);
+  assert.equal(isRequirementDocument(rfp), true);
   assert.throws(
     () => assertEvaluationRequirementSourcesReady([rfp]),
     /Dokument A \(queued\)/u,
@@ -967,7 +969,7 @@ test("an explicitly selected generated requirement response is approved as solut
   assert.doesNotThrow(() =>
     assertSelectedSolutionDocumentReady(response, { requireReadableText: true }),
   );
-  assert.equal(isLikelyRequirementSourceDocument(response), false);
+  assert.equal(isRequirementDocument(response), false);
 });
 
 for (const metadata of [
@@ -992,7 +994,7 @@ for (const metadata of [
         requireReadableText: true,
       }),
     );
-    assert.equal(isLikelyRequirementSourceDocument(response), false);
+    assert.equal(isRequirementDocument(response), false);
   });
 }
 
@@ -1045,7 +1047,7 @@ test("a historical solution is never rediscovered as a requirement source from i
     file_name: "kravsvar.md",
   });
 
-  assert.equal(isLikelyRequirementSourceDocument(historicalSolution), false);
+  assert.equal(isRequirementDocument(historicalSolution), false);
   assert.doesNotThrow(() =>
     assertExplicitRequirementLedgersComplete([historicalSolution], [
       { document: historicalSolution, ledger: [] },

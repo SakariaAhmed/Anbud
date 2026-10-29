@@ -117,28 +117,28 @@ test('REGRESSION API1: stale manual editor is rejected without overwriting newer
 });
 
 test('REGRESSION UI1: failed save keeps editor open with unsaved draft', async () => {
-  let error = ''; let editing = 'strategy'; let draft = { executive_summary: 'Unsaved work' };
+  let error = ''; let editor = { section: 'strategy', value: { executive_summary: 'Unsaved work' }, basis: null, revision: 'original-revision' };
   const { runAction } = actual('components/projects/project-workspace-page.tsx', ['runAction'], {
     busyActionRef: { current: null }, setBusy: noop, setError: value => error = value, setNotice: noop, startProgressTicker: noop, setBusyProgress: noop, stopProgressTicker: noop,
   });
   const { onSaveSectionEdit } = actual('components/projects/project-analysis-tab.tsx', ['onSaveSectionEdit'], {
     readOnly: false,
-    sectionRevision: "original-revision", sectionDraft: draft, sanitizeSectionDraft: (_, value) => value,
+    sectionEditor: editor, sanitizeSectionDraft: value => value,
     onSaveAnalysis: () => runAction('save-analysis', async () => { throw new Error('Injected offline save'); }),
-    setEditingSection: value => editing = value, setSectionDraft: value => draft = value, setSectionDraftError: noop,
+    setSectionEditor: value => editor = value, setSectionDraftError: noop,
   });
-  await onSaveSectionEdit('strategy');
-  assert.equal(error, 'Injected offline save'); assert.equal(editing, 'strategy'); assert.equal(draft.executive_summary, 'Unsaved work');
+  await onSaveSectionEdit();
+  assert.equal(error, 'Injected offline save'); assert.equal(editor.section, 'strategy'); assert.equal(editor.value.executive_summary, 'Unsaved work');
 });
 
 test('REGRESSION UI HISTORY: historical analysis cannot start an edit or save a snapshot', async () => {
   const unexpected = () => assert.fail('Historical analysis must not edit or save');
   const { onStartSectionEdit, onSaveSectionEdit } = actual('components/projects/project-analysis-tab.tsx', ['onStartSectionEdit', 'onSaveSectionEdit'], {
-    readOnly: true, onSaveAnalysis: unexpected, setEditingSection: unexpected,
-    setSectionDraft: unexpected, setSectionDraftError: unexpected,
+    readOnly: true, onSaveAnalysis: unexpected, setSectionEditor: unexpected,
+    setSectionDraftError: unexpected,
   });
   onStartSectionEdit('strategy');
-  await onSaveSectionEdit('strategy');
+  await onSaveSectionEdit();
 });
 
 test('REGRESSION UI2: one local action holds busy state and rejects overlapping actions', async () => {
@@ -502,7 +502,7 @@ test('REVIEW VERSION: result-only changes advance UI revision without changing i
 
 function recovery() {
   const cryptoModule = jiti(path.join(frontend,'lib/server/crypto.ts'));
-  return actual('lib/server/project-job-results.ts', ['recoverCommittedProjectJobResult','pendingEvaluationResult'], {
+  return actual('lib/server/project-job-results.ts', ['recoverCommittedProjectJobResult','pendingEvaluationResult','storedResult'], {
     ...cryptoModule, WorkflowError: workflowErrors.WorkflowError, getProjectSnapshotAfterCommit: async () => null,
     listGeneratedArtifactsFresh: async () => JSON.parse(sql(`select coalesce(json_agg(a),'[]') from generated_artifacts a where project_id=${quote(P)}`)).map(a=>({...a,is_current:true,source_is_current:true})),
     createServiceClient: () => ({from(table) {

@@ -17,6 +17,7 @@ import {
   invalidateProjectServiceDescriptionCaches,
 } from "@/lib/client/service-descriptions-api";
 import type { ServiceDescription } from "@/lib/types";
+import { readJsonPayload } from "@/lib/client/project-api";
 
 function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "");
@@ -62,7 +63,7 @@ export function GlobalServiceDescriptionsPanel() {
         `/api/service-descriptions/${serviceId}/documents/${documentId}`,
         { method: "DELETE" },
       );
-      const payload = (await response.json()) as { error?: string };
+      const payload = await readJsonPayload(response, "Kunne ikke slette dokumentet.");
       if (!response.ok) {
         throw new Error(payload.error || "Kunne ikke slette dokumentet.");
       }
@@ -116,10 +117,10 @@ export function GlobalServiceDescriptionsPanel() {
         method: "POST",
         body: formData,
       });
-      const payload = (await response.json()) as {
-        services?: ServiceDescription[];
-        error?: string;
-      };
+      const payload = await readJsonPayload<{ services: ServiceDescription[] }>(
+        response,
+        "Kunne ikke lagre tjenestebeskrivelsen.",
+      );
       if (!response.ok || !payload.services) {
         throw new Error(
           payload.error || "Kunne ikke lagre tjenestebeskrivelsen.",
