@@ -12,7 +12,7 @@ import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
 import { queueArtifactGenerationJob } from "@/lib/server/project-jobs";
 import { routeErrorResponse } from "@/lib/server/api-responses";
 import { readJsonObject } from "@/lib/server/request-body";
-import { isGeneratableArtifactType } from "@/lib/types";
+import { isGeneratableArtifactType, isGeneratedArtifactType } from "@/lib/types";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "no-store",
@@ -27,7 +27,7 @@ export async function GET(
     await requireProjectPermission(id, "artifact.read");
     const artifactType = new URL(request.url).searchParams.get("artifact_type");
     const artifacts =
-      artifactType && isGeneratableArtifactType(artifactType)
+      isGeneratedArtifactType(artifactType)
         ? await listGeneratedArtifactsFresh(id, { artifactType })
         : await listGeneratedArtifactsFresh(id);
     return NextResponse.json({ artifacts }, { headers: READ_CACHE_HEADERS });

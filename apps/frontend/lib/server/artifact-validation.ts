@@ -214,10 +214,6 @@ function isRequirementTable(table: MarkdownTable) {
   );
 }
 
-function getColumnIndex(table: MarkdownTable, pattern: RegExp) {
-  return table.header.findIndex((cell) => pattern.test(cell));
-}
-
 function detectEmptySections(markdown: string) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   let emptySections = 0;
@@ -374,12 +370,8 @@ function renderedImmutableRequirementRows(contentMarkdown: string) {
   return parseMarkdownTables(contentMarkdown)
     .filter(isRequirementTable)
     .flatMap((table) => {
-      const refIndex = getColumnIndex(table, /kravref/i);
-      const requirementIndex = getColumnIndex(table, /^krav$/i);
-      const sourceIndex = getColumnIndex(
-        table,
-        /^(?:kildegrunnlag|kilde|source|source reference)$/i,
-      );
+      const { refIndex, requirementIndex, sourceIndex } =
+        requirementResponseTableColumns(table.header);
       return table.rows.map((row, orderIndex) =>
         immutableRequirementRowPayload({
           orderIndex,
@@ -396,12 +388,8 @@ function renderedRequirementAnswerRows(contentMarkdown: string) {
   return parseMarkdownTables(contentMarkdown)
     .filter(isRequirementTable)
     .flatMap((table) => {
-      const refIndex = getColumnIndex(table, /kravref/i);
-      const answerIndex = getColumnIndex(table, /^svar$/i);
-      const evidenceIndex = getColumnIndex(
-        table,
-        /^(?:svargrunnlag|answer evidence|evidence|bevis)$/i,
-      );
+      const { refIndex, answerIndex, evidenceIndex } =
+        requirementResponseTableColumns(table.header);
       return table.rows.map((row) => ({
         ref: normalize(row[refIndex] ?? ""),
         answer: normalize(row[answerIndex] ?? ""),
@@ -737,17 +725,8 @@ export function validateGeneratedArtifact(input: {
   const requirementRefValues: string[] = [];
 
   for (const table of requirementTables) {
-    const requirementIndex = getColumnIndex(table, /^krav$/i);
-    const refIndex = getColumnIndex(table, /kravref/i);
-    const answerIndex = getColumnIndex(table, /^svar$/i);
-    const evidenceIndex = getColumnIndex(
-      table,
-      /^(?:svargrunnlag|answer evidence|evidence|bevis)$/i,
-    );
-    const sourceIndex = getColumnIndex(
-      table,
-      /^(?:kildegrunnlag|kilde|source|source reference)$/i,
-    );
+    const { requirementIndex, refIndex, answerIndex, evidenceIndex, sourceIndex } =
+      requirementResponseTableColumns(table.header);
 
     for (const row of table.rows) {
       requirementRows += 1;

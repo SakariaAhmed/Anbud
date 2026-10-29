@@ -725,3 +725,23 @@ test("delivery milestone gate stays inactive without a dated go-live source", ()
   assert.equal(report.status, "pass");
   assert.deepEqual(report.issues, []);
 });
+
+test("kravsvar validation reads columns through the shared heading locator", () => {
+  // Emphasised headings must resolve to the same columns the table detector saw.
+  const report = validateGeneratedArtifact({
+    ...baseInput,
+    contentMarkdown: [
+      "## Status",
+      "",
+      "Ett krav er identifisert og besvart i kravtabellen.",
+      "",
+      "| **Kravref.** | **Krav** | **Svar** | **Svargrunnlag** | **Kildegrunnlag** |",
+      "|---|---|---|---|---|",
+      "| K-001 | Leverandøren skal dokumentere logging. | Atea dokumenterer logging med ansvar, kontroll og revisjonsspor. | Kravet ber om dokumentert logging. | Bilag 2, side 4, K-001 |",
+    ].join("\n"),
+  });
+
+  assert.equal(report.metrics.missingAnswerEvidence, 0);
+  assert.equal(report.metrics.missingSources, 0);
+  assert.equal(report.status, "pass");
+});

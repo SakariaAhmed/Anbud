@@ -60,6 +60,12 @@ export const GENERATABLE_ARTIFACT_TYPES = [
 ] as const satisfies readonly GeneratedArtifactType[];
 export type GeneratableArtifactType = (typeof GENERATABLE_ARTIFACT_TYPES)[number];
 
+export function isGeneratedArtifactType(
+  value: unknown,
+): value is GeneratedArtifactType {
+  return GENERATED_ARTIFACT_TYPES.some((type) => type === value);
+}
+
 export function isGeneratableArtifactType(
   value: unknown,
 ): value is GeneratableArtifactType {

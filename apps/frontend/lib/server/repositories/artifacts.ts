@@ -7,6 +7,7 @@ import { revalidateProjectCaches } from "@/lib/server/repositories/repository-ca
 import { createServiceClient } from "@/lib/server/data-api";
 import {
   GENERATED_ARTIFACT_TYPES,
+  isGeneratedArtifactType,
   type GeneratedArtifact,
   type GeneratedArtifactAuthorityByType,
   type GeneratedArtifactType,
@@ -55,12 +56,6 @@ export type ArtifactSourceRevisions = {
       | "legacy_unknown";
   } | null;
 };
-
-export function isGeneratedArtifactType(
-  value: unknown,
-): value is GeneratedArtifactType {
-  return GENERATED_ARTIFACT_TYPES.some((type) => type === value);
-}
 
 function mapArtifact(row: ArtifactRow): GeneratedArtifact {
   const artifactType = isGeneratedArtifactType(row.artifact_type)

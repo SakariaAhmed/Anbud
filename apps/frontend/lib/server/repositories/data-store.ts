@@ -71,7 +71,6 @@ import {
 import {
   currentArtifactTypesFromAuthority,
   getArtifactAuthoritySummary,
-  isGeneratedArtifactType,
   type ArtifactSourceRevisions,
 } from "@/lib/server/repositories/artifacts";
 
@@ -90,6 +89,7 @@ export {
   updateChatSessionMemory,
   upsertChatSession,
 } from "@/lib/server/repositories/chat";
+import { isGeneratedArtifactType } from "@/lib/types";
 import type {
   CustomerAnalysisHistorySource,
   CustomerAnalysisResult,
