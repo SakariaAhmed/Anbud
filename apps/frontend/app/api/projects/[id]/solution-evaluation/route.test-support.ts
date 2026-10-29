@@ -1,3 +1,5 @@
+import { readJsonObject } from "@/lib/server/request-body";
+
 type TestJob = {
   id: string;
   project_id: string;
@@ -84,7 +86,6 @@ export const NextResponse = {
 export async function prepareProjectAiJsonRoute(
   request: Request,
   context: { params: Promise<{ id: string }> },
-  input: { fallbackBody?: unknown },
 ) {
   const { id } = await context.params;
   if (state.preflightResponse) {
@@ -95,7 +96,8 @@ export async function prepareProjectAiJsonRoute(
       response: state.preflightResponse,
     };
   }
-  const body = await request.json().catch(() => input.fallbackBody ?? {});
+  // Same body contract as the real helper: malformed JSON is a 400.
+  const body = await readJsonObject(request);
   return {
     id,
     model: request.headers.get("x-openai-model") ?? undefined,

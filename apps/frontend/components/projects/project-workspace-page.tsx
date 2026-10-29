@@ -234,8 +234,9 @@ function progressCeilingForJobStatus(
 ) {
   if (job.status === "completed" || job.status === "failed") return 100;
   if (job.status === "queued") return 18;
-  const { percent } = parseJobProgress(job.message);
-  return percent === null ? 88 : Math.min(99, Math.max(3, percent) + 8);
+  const { percent, ceiling } = parseJobProgress(job.message);
+  if (percent === null) return 88;
+  return Math.min(99, ceiling ?? Math.max(3, percent) + 8);
 }
 
 function progressMessageLabel(message: string) {

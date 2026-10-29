@@ -104,7 +104,9 @@ export async function readJsonPayload<T>(
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     // The fields are only checked by callers; a failed request may carry none.
-    const payload = (await response.json()) as Partial<T> & { error?: string };
+    const payload = (await response.json().catch(() => ({ error: fallbackMessage }))) as Partial<T> & {
+      error?: string;
+    };
     const message = errorMessageFromPayload(payload, fallbackMessage);
     return message ? { ...payload, error: message } : payload;
   }

@@ -110,19 +110,8 @@ import type {
   SolutionEvaluationResult,
   SupportingDocumentSubtype,
 } from "@/lib/types";
-import {
-  decryptOptionalString,
-  fromUnknownProjectRow,
-  type Json,
-  keywordsFromText,
-  mergeKeywords,
-  pageCountFromRawText,
-  pageCountFromStructureMap,
-  type ProjectRow,
-  queryProjectRow,
-  setProjectServiceSelections,
-  storedFileDeletionPrefixes,
-} from "@/lib/server/repositories/service-descriptions";
+import { decryptOptionalString, fromUnknownProjectRow, type Json, keywordsFromText, mergeKeywords, pageCountFromRawText, pageCountFromStructureMap, type ProjectRow, queryProjectRow, storedFileDeletionPrefixes } from "@/lib/server/repositories/project-rows";
+import { setProjectServiceSelections } from "@/lib/server/repositories/service-descriptions";
 
 interface DocumentRow {
   id: string;

@@ -57,11 +57,7 @@ const eslintConfig = [
     },
   },
   {
-    files: [
-      "lib/server/repositories/**/*.ts",
-      "lib/server/domain/**/*.ts",
-      "lib/server/requirements/**/*.ts",
-    ],
+    files: ["lib/server/requirements/**/*.ts"],
     rules: {
       "@typescript-eslint/no-restricted-imports": [
         "error",

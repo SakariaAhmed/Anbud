@@ -14,7 +14,7 @@ const load = (file) => jiti.import(path.join(frontendRoot, file));
 
 const { routeErrorResponse } = await load("lib/server/api-responses.ts");
 const { AuthorizationError } = await load("lib/server/authorization.ts");
-const { WorkflowError } = await load("lib/server/workflow-errors.ts");
+const { WorkflowError, WorkflowPreconditionError } = await load("lib/server/workflow-errors.ts");
 const {
   RequestBodyError,
   optionalTextField,
@@ -44,6 +44,14 @@ test("route errors keep the status of known domain failures instead of a blanket
   );
   assert.equal(wrapped.status, 409);
   assert.match(wrapped.body.error, /Prosjektgrunnlaget ble endret/);
+});
+
+test("user-fixable workflow preconditions are a 422 with their own message", async () => {
+  const missingDocument = await responseOf(
+    new WorkflowPreconditionError("Last opp minst ett dokument først."),
+  );
+  assert.equal(missingDocument.status, 422);
+  assert.equal(missingDocument.body.error, "Last opp minst ett dokument først.");
 });
 
 test("route errors map request, authorization and unknown failures", async () => {
