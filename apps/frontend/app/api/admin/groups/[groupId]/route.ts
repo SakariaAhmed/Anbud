@@ -9,10 +9,10 @@ import {
 import { isProjectRole } from "@/lib/access-control";
 import { recordActivity } from "@/lib/server/activity";
 import {
-  authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
+import { readJsonObject } from "@/lib/server/request-body";
 
 export async function GET(
   _: Request,
@@ -23,10 +23,7 @@ export async function GET(
     const { groupId } = await context.params;
     return NextResponse.json(await getGroup(groupId));
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json({ error: "Kunne ikke hente gruppen." }, { status: 500 })
-    );
+    return routeErrorResponse(error, "Kunne ikke hente gruppen.");
   }
 }
 
@@ -37,10 +34,10 @@ export async function PATCH(
   try {
     const principal = await requireAdmin();
     const { groupId } = await context.params;
-    const body = (await request.json()) as {
+    const body: {
       principalIds?: unknown;
       projectGrants?: unknown;
-    };
+    } = await readJsonObject(request);
     const hasMembers = body.principalIds !== undefined;
     const hasProjects = body.projectGrants !== undefined;
     if (!hasMembers && !hasProjects) {
@@ -105,13 +102,7 @@ export async function PATCH(
     });
     return NextResponse.json(await getGroup(groupId));
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke endre gruppen.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke endre gruppen.", { status: 400 });
   }
 }
 
@@ -132,12 +123,6 @@ export async function DELETE(
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke slette gruppen.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke slette gruppen.", { status: 400 });
   }
 }

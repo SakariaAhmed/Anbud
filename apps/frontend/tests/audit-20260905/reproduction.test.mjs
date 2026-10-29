@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import { actual, frontend, jiti, dbUrl, sql, quote, json, P, D, S, reset, revision, document, save, saveCustomerAnalysis, freshAnalysis, analysisResult, downstream, counts, workflow, handlers, noop, storeFile } from './harness.mjs';
+import { actual, frontend, jiti, dbUrl, sql, quote, json, P, D, S, reset, revision, document, save, saveCustomerAnalysis, freshAnalysis, analysisResult, downstream, counts, workflow, handlers, noop, storeFile, workflowErrors, requestBody, routeErrorResponse } from './harness.mjs';
 
 // Regression assertions exercise the repaired behavior using real PostgreSQL and actual TS bodies.
 
@@ -45,7 +45,7 @@ test('CONTROL D5: stale analysis save is rejected atomically by the real RPC', a
 
 test('REGRESSION W1: full workflow rejects concurrent manual edit and preserves its history', async () => {
   reset(); await save('Before generation'); let attempts = 0;
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     analyzeCustomerDocuments: async () => {
       attempts++;
       if (attempts === 1) await save('Manual edit committed while AI runs');
@@ -60,7 +60,7 @@ test('REGRESSION W1: full workflow rejects concurrent manual edit and preserves 
 
 test('CONTROL W2: Docling replacement during analysis rejects stale output', async () => {
   reset(); const seen = [];
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     analyzeCustomerDocuments: async ({ customerDocument }) => {
       seen.push(customerDocument.raw_text);
       if (seen.length === 1) sql(`update documents set raw_text='Enhanced second version' where id=${quote(D)}`);
@@ -73,7 +73,7 @@ test('CONTROL W2: Docling replacement during analysis rejects stale output', asy
 
 test('CONTROL W3: input change fails without retrying or saving stale analysis', async () => {
   reset(); let attempts = 0;
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     analyzeCustomerDocuments: async () => {
       sql(`update documents set raw_text=${quote(`Version ${++attempts}`)} where id=${quote(D)}`);
       return analysisResult('Stale');
@@ -85,7 +85,7 @@ test('CONTROL W3: input change fails without retrying or saving stale analysis',
 
 test('REGRESSION W4: final snapshot failure preserves successful committed workflow', async () => {
   reset();
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     analyzeCustomerDocuments: async () => analysisResult('Successfully persisted'),
     getProjectSnapshotAfterCommit: actual(storeFile, ['getProjectSnapshotAfterCommit'], { getProjectSnapshot: async () => { throw new Error('Injected snapshot network timeout'); }, safeErrorTelemetry: () => ({}) }).getProjectSnapshotAfterCommit,
   });
@@ -100,13 +100,14 @@ test('REGRESSION API1: stale manual editor is rejected without overwriting newer
     requireProjectPermission: async (id, permission) => { assert.equal(id, P); assert.equal(permission, 'analysis.write'); },
     authorizationErrorResponse: () => null,
     CUSTOMER_ANALYSIS_SECTIONS: ['strategy'],
-    ...jiti(path.join(frontend, 'lib/server/use-cases/solution-evaluation-source-snapshot.ts')),
+    ...jiti(path.join(frontend, 'lib/server/source-revision-snapshot.ts')),
     ...jiti(path.join(frontend, 'lib/server/domain/project-documents.ts')),
     ...jiti(path.join(frontend, 'lib/service-description.ts')),
     workflowErrorStatus: jiti(path.join(frontend, 'lib/server/workflow-errors.ts')).workflowErrorStatus,
     NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) },
     getProjectSourceRevision: async () => revision(), listProjectDocumentsForAnalysis: async () => [document()], getFreshCustomerAnalysis: freshAnalysis,
     saveCustomerAnalysis, recordDocumentIntelligenceEvent: async () => false, getProjectSnapshot: async () => ({ id: P }), productionSafeErrorMessage: e => e.message,
+    ...workflowErrors, ...requestBody, routeErrorResponse,
   });
   const response = await PUT(new Request('http://localhost/audit', { method: 'PUT', body: JSON.stringify({ analysis_text: 'Stale editor text', expected_analysis_revision: editorRevision }) }), { params: Promise.resolve({ id: P }) });
   assert.equal(response.status, 409, response.body?.error); assert.equal((await freshAnalysis()).executive_summary, 'Other user newer text');
@@ -116,28 +117,28 @@ test('REGRESSION API1: stale manual editor is rejected without overwriting newer
 });
 
 test('REGRESSION UI1: failed save keeps editor open with unsaved draft', async () => {
-  let error = ''; let editing = 'strategy'; let draft = { executive_summary: 'Unsaved work' };
+  let error = ''; let editor = { section: 'strategy', value: { executive_summary: 'Unsaved work' }, basis: null, revision: 'original-revision' };
   const { runAction } = actual('components/projects/project-workspace-page.tsx', ['runAction'], {
     busyActionRef: { current: null }, setBusy: noop, setError: value => error = value, setNotice: noop, startProgressTicker: noop, setBusyProgress: noop, stopProgressTicker: noop,
   });
   const { onSaveSectionEdit } = actual('components/projects/project-analysis-tab.tsx', ['onSaveSectionEdit'], {
     readOnly: false,
-    sectionRevision: "original-revision", sectionDraft: draft, sanitizeSectionDraft: (_, value) => value,
+    sectionEditor: editor, sanitizeSectionDraft: value => value,
     onSaveAnalysis: () => runAction('save-analysis', async () => { throw new Error('Injected offline save'); }),
-    setEditingSection: value => editing = value, setSectionDraft: value => draft = value, setSectionDraftError: noop,
+    setSectionEditor: value => editor = value, setSectionDraftError: noop,
   });
-  await onSaveSectionEdit('strategy');
-  assert.equal(error, 'Injected offline save'); assert.equal(editing, 'strategy'); assert.equal(draft.executive_summary, 'Unsaved work');
+  await onSaveSectionEdit();
+  assert.equal(error, 'Injected offline save'); assert.equal(editor.section, 'strategy'); assert.equal(editor.value.executive_summary, 'Unsaved work');
 });
 
 test('REGRESSION UI HISTORY: historical analysis cannot start an edit or save a snapshot', async () => {
   const unexpected = () => assert.fail('Historical analysis must not edit or save');
   const { onStartSectionEdit, onSaveSectionEdit } = actual('components/projects/project-analysis-tab.tsx', ['onStartSectionEdit', 'onSaveSectionEdit'], {
-    readOnly: true, onSaveAnalysis: unexpected, setEditingSection: unexpected,
-    setSectionDraft: unexpected, setSectionDraftError: unexpected,
+    readOnly: true, onSaveAnalysis: unexpected, setSectionEditor: unexpected,
+    setSectionDraftError: unexpected,
   });
   onStartSectionEdit('strategy');
-  await onSaveSectionEdit('strategy');
+  await onSaveSectionEdit();
 });
 
 test('REGRESSION UI2: one local action holds busy state and rejects overlapping actions', async () => {
@@ -153,16 +154,20 @@ test('REGRESSION UI2: one local action holds busy state and rejects overlapping 
 
 test('REGRESSION ERR1: known preconditions/conflicts have safe actionable production messages', () => {
   const { productionSafeErrorMessage, errorHash } = jiti(path.join(frontend, 'lib/server/safe-errors.ts'));
+  const { WorkflowError } = jiti(path.join(frontend, 'lib/server/workflow-errors.ts'));
   const previous = process.env.NODE_ENV; process.env.NODE_ENV = 'production';
   try {
-    for (const [message, expected] of [
-      ['PROJECT_SOURCE_REVISION_CHANGED: project inputs changed while the analysis was running', '4df10a8f27dea78363160c57'],
-      ['Generer kundeanalyse før løsningsvurdering.', 'b408d4abe1e43f2086a8aabb'],
-      ['Generer vurdering før lederoppsummering.', 'b5ccf74d416a4f5a431e6f74'],
+    for (const [error, expected] of [
+      [new Error('PROJECT_SOURCE_REVISION_CHANGED: project inputs changed while the analysis was running'), '4df10a8f27dea78363160c57'],
+      [new WorkflowError('CUSTOMER_ANALYSIS_REQUIRED'), 'e3caf98297f8c759de6c72fe'],
+      [new WorkflowError('SOLUTION_EVALUATION_REQUIRED'), '94d70278abfad4b30cb2eaa3'],
     ]) {
-      const error = new Error(message); assert.equal(errorHash(error), expected);
+      assert.equal(errorHash(error), expected);
       const safe = productionSafeErrorMessage(error, 'Jobben feilet. Kontakt support med feilreferansen.');
       assert.ok(!safe.includes(expected)); assert.match(safe, /Generer|Prosjektgrunnlaget/);
+      // Re-wrapping with a cause, as workflow steps do, keeps the actionable message.
+      const wrapped = new Error(productionSafeErrorMessage(error, 'Steget feilet.'), { cause: error });
+      assert.match(productionSafeErrorMessage(wrapped, 'Jobben feilet. Kontakt support med feilreferansen.'), /Generer|Prosjektgrunnlaget/);
     }
   } finally { if (previous === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous; }
 });
@@ -408,13 +413,14 @@ for (const kind of ['solution_evaluation', 'executive_summary']) {
     NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) },
       enforceRateLimit: async () => null, withTiming: async (_, __, fn) => fn(),
       resolveOpenAIModelOverride: async () => undefined, auditEvent: async () => {}, productionSafeErrorMessage: error => error.message,
+      ...requestBody, routeErrorResponse, isRequestableJobKind: () => true,
     });
     const response = await POST(new Request('http://localhost/audit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind }) }), { params: Promise.resolve({ id: P }) });
     assert.equal(response.status, 422, response.body?.error); assert.equal(response.body.job, undefined);
     const runners = workflow(['runSolutionEvaluationWorkflow','runExecutiveSummaryWorkflow','readStableEvaluationSources'], {
       getProjectGenerationContext: async () => ({ name: 'Audit', solutionEvaluationSnapshot: null }),
     });
-    await assert.rejects(kind === 'solution_evaluation' ? runners.runSolutionEvaluationWorkflow({ kind, projectId: P }, handlers) : runners.runExecutiveSummaryWorkflow({ kind, projectId: P }, handlers), kind === 'solution_evaluation' ? /Generer kundeanalyse før løsningsvurdering/ : /Generer vurdering før lederoppsummering/);
+    await assert.rejects(kind === 'solution_evaluation' ? runners.runSolutionEvaluationWorkflow({ kind, projectId: P }, handlers) : runners.runExecutiveSummaryWorkflow({ kind, projectId: P }, handlers), kind === 'solution_evaluation' ? /CUSTOMER_ANALYSIS_REQUIRED/ : /SOLUTION_EVALUATION_REQUIRED/);
   });
 }
 
@@ -438,7 +444,7 @@ test('REGRESSION W1F: lease-fenced worker rejects a concurrent manual edit', asy
     runLeaseFencedCustomerAnalysisMutation: async (projectId, payload) => ({ fenced: true, data: JSON.parse(sql(`select public.lease_fenced_save_customer_analysis(${quote(J)},${quote(lease)},${quote(projectId)},${json(payload)})`)) }),
   });
   let attempts = 0;
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     saveCustomerAnalysis: saver.saveCustomerAnalysis,
     analyzeCustomerDocuments: async () => {
       if (++attempts === 1) await save('Manual edit during leased generation');
@@ -496,8 +502,8 @@ test('REVIEW VERSION: result-only changes advance UI revision without changing i
 
 function recovery() {
   const cryptoModule = jiti(path.join(frontend,'lib/server/crypto.ts'));
-  return actual('lib/server/project-job-results.ts', ['recoverCommittedProjectJobResult','pendingEvaluationResult'], {
-    ...cryptoModule, getProjectSnapshotAfterCommit: async () => null,
+  return actual('lib/server/project-job-results.ts', ['recoverCommittedProjectJobResult','pendingEvaluationResult','storedResult'], {
+    ...cryptoModule, WorkflowError: workflowErrors.WorkflowError, getProjectSnapshotAfterCommit: async () => null,
     listGeneratedArtifactsFresh: async () => JSON.parse(sql(`select coalesce(json_agg(a),'[]') from generated_artifacts a where project_id=${quote(P)}`)).map(a=>({...a,is_current:true,source_is_current:true})),
     createServiceClient: () => ({from(table) {
       assert.ok(['project_jobs','customer_analyses','solution_evaluations','executive_summaries'].includes(table));

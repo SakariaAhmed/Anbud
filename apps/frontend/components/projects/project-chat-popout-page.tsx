@@ -32,6 +32,7 @@ import type {
   ChatSessionSummary,
   ProjectSummary,
 } from "@/lib/types";
+import { readJsonPayload } from "@/lib/client/project-api";
 
 type ChatPayload = {
   messages?: ChatMessage[];
@@ -144,58 +145,6 @@ function promptAttachmentMetadata(file: File, fileName: string) {
     file_size_bytes: file.size,
     text_length: 0,
   };
-}
-
-async function readJsonPayload<T>(
-  response: Response,
-  fallbackMessage: string,
-): Promise<T & { error?: string }> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    const payload = (await response.json()) as T & {
-      detail?: unknown;
-      error?: string;
-      message?: unknown;
-    };
-    const message = [payload.error, payload.detail, payload.message].find(
-      (candidate): candidate is string =>
-        typeof candidate === "string" && candidate.trim().length > 0,
-    );
-    return message
-      ? {
-          ...payload,
-          error:
-            /^unsupported\s+content\s+type$/i.test(message.trim())
-              ? `${fallbackMessage} Serveren mottok en forespørsel med feil innholdstype. Last siden på nytt og prøv igjen.`
-              : message.trim(),
-        }
-      : payload;
-  }
-
-  const text = await response.text().catch(() => "");
-  try {
-    const payload = JSON.parse(text.trim()) as {
-      detail?: unknown;
-      error?: unknown;
-      message?: unknown;
-    };
-    const message = [payload.error, payload.detail, payload.message].find(
-      (candidate): candidate is string =>
-        typeof candidate === "string" && candidate.trim().length > 0,
-    );
-    if (message) {
-      return {
-        error:
-          /^unsupported\s+content\s+type$/i.test(message.trim())
-            ? `${fallbackMessage} Serveren mottok en forespørsel med feil innholdstype. Last siden på nytt og prøv igjen.`
-            : message.trim(),
-      } as T & { error?: string };
-    }
-  } catch {
-    // Not JSON; use the fallback below.
-  }
-
-  return { error: text.trim() || fallbackMessage } as T & { error?: string };
 }
 
 export function ProjectChatPopoutPage({

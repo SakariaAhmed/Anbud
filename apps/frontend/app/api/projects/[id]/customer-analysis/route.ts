@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
-import { workflowErrorStatus } from "@/lib/server/workflow-errors";
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { WorkflowError } from "@/lib/server/workflow-errors";
+import { requireProjectPermission } from "@/lib/server/authorization";
 
 import { isValidManualValueOpportunities, MANUAL_VALUE_OPPORTUNITIES_ERROR } from "@/lib/value-opportunities";
 
 import { CUSTOMER_ANALYSIS_SECTIONS } from "@/lib/customer-analysis-history";
-import {
-  analyzeCustomerDocuments,
-  regenerateCustomerAnalysisSection,
-} from "@/lib/server/ai";
 import {
   getFreshCustomerAnalysis,
   getProjectResultHistory,
@@ -17,15 +13,9 @@ import {
 import { listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
 import { recordDocumentIntelligenceEvent } from "@/lib/server/document-intelligence/repository";
 import { getProjectSnapshotAfterCommit, getProjectSourceRevision } from "@/lib/server/repositories/data-store";
-import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
 import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
-import { assertCustomerAnalysisRequirementSourcesReady } from "@/lib/server/use-cases/solution-evaluation-readiness";
-import {
-  readStableProjectSourceSnapshot,
-  readStableSolutionEvaluationSourceSnapshot,
-} from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
+import { readStableSolutionEvaluationSourceSnapshot } from "@/lib/server/source-revision-snapshot";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import {
   MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
@@ -33,8 +23,13 @@ import {
   type CustomerAnalysisResult,
   type CustomerAnalysisSection,
   type RecommendedService,
+  isRequirementImportance,
   type RequirementImportance,
 } from "@/lib/types";
+import { routeErrorResponse } from "@/lib/server/api-responses";
+import { readJsonObject } from "@/lib/server/request-body";
+import { isRecord } from "@/lib/unknown-values";
+import { generateCustomerAnalysis } from "@/lib/server/use-cases/project-workflows";
 
 export const maxDuration = 60;
 
@@ -48,18 +43,8 @@ function isCustomerAnalysisSection(
   return CUSTOMER_ANALYSIS_SECTIONS.includes(value as CustomerAnalysisSection);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function isRequirementImportance(
-  value: unknown,
-): value is RequirementImportance {
-  return value === "Kritisk" || value === "Viktig" || value === "Mindre viktig";
 }
 
 function isAnalysisRequirement(value: unknown): value is AnalysisRequirement {
@@ -350,7 +335,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const preflight = await prepareProjectAiJsonRoute<{ section?: unknown }>(
+    const preflight = await prepareProjectAiJsonRoute(
       request,
       context,
       {
@@ -358,7 +343,6 @@ export async function POST(
         message: "For mange analyser på kort tid.",
         limit: 8,
         windowMs: 5 * 60_000,
-        fallbackBody: {},
       },
     );
     if (preflight.response) {
@@ -380,93 +364,8 @@ export async function POST(
     const section = isCustomerAnalysisSection(body.section)
       ? body.section
       : null;
-    const sourceSnapshot = await readStableProjectSourceSnapshot({
-      readSourceRevision: () => getProjectSourceRevision(id),
-      readValue: async () => {
-        const [projectDocuments, existingAnalysis, serviceCandidates] =
-          await Promise.all([
-            listProjectDocumentsForAnalysis(id),
-            section ? getFreshCustomerAnalysis(id) : Promise.resolve(null),
-            listProjectServiceDescriptions(id, {
-              includeDocumentAiSummaries: true,
-            }),
-          ]);
-        return { projectDocuments, existingAnalysis, serviceCandidates };
-      },
-    });
-    const { projectDocuments, existingAnalysis, serviceCandidates } =
-      sourceSnapshot.value;
-    const { projectDocuments: analysisDocuments } =
-      splitServiceDescriptionDetails(projectDocuments);
-    const { customerDocument, supportingDocuments } =
-      selectProjectDocuments(analysisDocuments);
-
-    if (!customerDocument) {
-      return NextResponse.json(
-        { error: "Last opp minst ett dokument først." },
-        { status: 400 },
-      );
-    }
-
-    try {
-      assertCustomerAnalysisRequirementSourcesReady([
-        customerDocument,
-        ...supportingDocuments,
-      ]);
-    } catch (error) {
-      return NextResponse.json(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Dokumentgrunnlaget er ikke klart for kundeanalyse.",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (section && !existingAnalysis) {
-      return NextResponse.json(
-        { error: "Generer kundeanalyse før du redigerer en seksjon." },
-        { status: 400 },
-      );
-    }
-
-    const result =
-      section && existingAnalysis
-        ? await regenerateCustomerAnalysisSection({
-            section,
-            projectName: customerDocument.title,
-            customerDocument,
-            supportingDocuments,
-            customerAnalysis: existingAnalysis,
-            serviceCandidates,
-            model,
-          })
-        : await analyzeCustomerDocuments({
-            projectName: customerDocument.title,
-            customerDocument,
-            supportingDocuments,
-            serviceCandidates,
-            model,
-          });
-
-    const saved = await saveCustomerAnalysis(
-      id,
-      [
-        customerDocument.id,
-        ...supportingDocuments.map((document) => document.id),
-      ],
-      result,
-      {
-        expectedSourceRevision: sourceSnapshot.sourceRevision,
-        previousAnalysis: existingAnalysis,
-        updatedSections: section ? [section] : [...CUSTOMER_ANALYSIS_SECTIONS],
-        historySource: section
-          ? "section_regeneration"
-          : "full_regeneration",
-      },
-    );
+    const { analysis, project, customerDocument, supportingDocumentCount } =
+      await generateCustomerAnalysis({ projectId: id, model, section });
     await recordDocumentIntelligenceEvent({
       projectId: id,
       documentId: customerDocument.id,
@@ -474,22 +373,13 @@ export async function POST(
       sourceRevision: customerDocument.chunk_source_revision,
       metadata: {
         scope: section ?? "full_analysis",
-        supporting_document_count: supportingDocuments.length,
+        supporting_document_count: supportingDocumentCount,
       },
     }).catch(() => false);
 
-    const project = await getProjectSnapshotAfterCommit(id);
-    return NextResponse.json({ analysis: saved, project });
+    return NextResponse.json({ analysis, project });
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      {
-        error: productionSafeErrorMessage(
-          error,
-          "Kunne ikke generere kundeanalyse.",
-        ),
-      },
-      { status: workflowErrorStatus(error) },
-    );
+    return routeErrorResponse(error, "Kunne ikke generere kundeanalyse.");
   }
 }
 
@@ -508,12 +398,7 @@ export async function GET(
 
     return NextResponse.json({ analysis }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke hente kundeanalysen."),
-      },
-      { status: workflowErrorStatus(error) },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente kundeanalysen.");
   }
 }
 
@@ -524,12 +409,7 @@ export async function PUT(
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "analysis.write");
-    const body = (await request.json().catch(() => ({}))) as {
-      analysis_text?: string;
-      expected_analysis_revision?: unknown;
-      section?: unknown;
-      section_snapshot?: unknown;
-    };
+    const body = await readJsonObject(request);
 
     const section = isCustomerAnalysisSection(body.section)
       ? body.section
@@ -564,7 +444,7 @@ export async function PUT(
 
     if (typeof body.expected_analysis_revision !== "string" ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.expected_analysis_revision)) {
-      throw new Error("CUSTOMER_ANALYSIS_REVISION_REQUIRED");
+      throw new WorkflowError("CUSTOMER_ANALYSIS_REVISION_REQUIRED");
     }
     const sourceSnapshot = await readStableSolutionEvaluationSourceSnapshot({
       readSourceRevision: () => getProjectSourceRevision(id),
@@ -593,7 +473,7 @@ export async function PUT(
     }
 
     if (existingAnalysis.revision !== body.expected_analysis_revision) {
-      throw new Error("CUSTOMER_ANALYSIS_CHANGED");
+      throw new WorkflowError("CUSTOMER_ANALYSIS_CHANGED");
     }
     const nextAnalysis = section
       ? applySectionSnapshot(existingAnalysis, section, body.section_snapshot)
@@ -630,11 +510,6 @@ export async function PUT(
     const project = await getProjectSnapshotAfterCommit(id);
     return NextResponse.json({ analysis: saved, project });
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke lagre analysen."),
-      },
-      { status: workflowErrorStatus(error) },
-    );
+    return routeErrorResponse(error, "Kunne ikke lagre analysen.");
   }
 }

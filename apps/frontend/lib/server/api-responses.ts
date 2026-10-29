@@ -2,7 +2,12 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 
+import { authorizationErrorResponse } from "@/lib/server/authorization";
+import { MultipartRequestError } from "@/lib/server/multipart";
 import { checkRateLimit } from "@/lib/server/observability";
+import { RequestBodyError } from "@/lib/server/request-body";
+import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { workflowError } from "@/lib/server/workflow-errors";
 
 function rateLimitExceededResponse(
   message: string,
@@ -68,5 +73,32 @@ export function enforceServiceDescriptionWriteRateLimit(request: Request) {
       windowMs: 60_000,
     },
     "For mange tjenesteendringer på kort tid.",
+  );
+}
+
+/**
+ * Maps a route failure to a response: authorization and request errors keep
+ * their status, known domain errors use their own status, and anything else
+ * gets `status` (500 by default) with a production-safe message.
+ */
+export function routeErrorResponse(
+  error: unknown,
+  fallbackMessage: string,
+  options: { status?: number; headers?: HeadersInit } = {},
+) {
+  const authorizationResponse = authorizationErrorResponse(error);
+  if (authorizationResponse) return authorizationResponse;
+  if (error instanceof RequestBodyError || error instanceof MultipartRequestError) {
+    return NextResponse.json(
+      { error: error.message },
+      { status: error.status, headers: options.headers },
+    );
+  }
+  return NextResponse.json(
+    { error: productionSafeErrorMessage(error, fallbackMessage) },
+    {
+      status: workflowError(error)?.status ?? options.status ?? 500,
+      headers: options.headers,
+    },
   );
 }

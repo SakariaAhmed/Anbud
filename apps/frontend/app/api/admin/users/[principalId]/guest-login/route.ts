@@ -6,12 +6,11 @@ import {
 } from "@/lib/server/access-control-repository";
 import { recordActivity } from "@/lib/server/activity";
 import {
-  authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
 import { maskEmail } from "@/lib/server/identity-crypto";
 import { checkRateLimit } from "@/lib/server/observability";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const PRINCIPAL_ID_PATTERN = /^[A-Za-z0-9_-]{20,128}$/u;
 
@@ -65,17 +64,6 @@ export async function POST(
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        {
-          error: productionSafeErrorMessage(
-            error,
-            "Kunne ikke opprette ny gjestekode.",
-          ),
-        },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke opprette ny gjestekode.", { status: 400 });
   }
 }

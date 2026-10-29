@@ -3,7 +3,8 @@ import { timingSafeEqual } from "node:crypto";
 
 import { runAvailableProjectJobs } from "@/lib/server/project-jobs";
 import { checkRateLimit } from "@/lib/server/observability";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
+import { readJsonObject } from "@/lib/server/request-body";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,16 +54,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = (await request.json().catch(() => ({}))) as {
-      limit?: number;
-      stale_after_ms?: number;
-    };
+    const body = await readJsonObject(request);
     // A scheduled invocation must never claim a second job after spending most
     // of its replica lifetime on the first one.
     const limit = 1;
     const staleAfterMs =
-      Number.isFinite(body.stale_after_ms) && body.stale_after_ms
-        ? Math.max(60_000, Number(body.stale_after_ms))
+      typeof body.stale_after_ms === "number" &&
+      Number.isFinite(body.stale_after_ms) &&
+      body.stale_after_ms
+        ? Math.max(60_000, body.stale_after_ms)
         : undefined;
     const results = await runAvailableProjectJobs({ limit, staleAfterMs });
 
@@ -72,11 +72,6 @@ export async function POST(request: Request) {
       results,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke kjøre jobbkøen."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke kjøre jobbkøen.");
   }
 }

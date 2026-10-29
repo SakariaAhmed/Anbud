@@ -7,6 +7,7 @@ import {
   isRequirementDocument,
 } from "@/lib/document-processing";
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
+import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 import { explicitIdTableSourceIds } from "@/lib/server/requirements/explicit-id-table-parser";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
@@ -27,12 +28,6 @@ export function hasRequirementSourceDocumentSignal(
     isExplicitRequirementSupportingSubtype(document.supporting_subtype) ||
     hasRequirementDocumentSignal(document)
   );
-}
-
-export function isLikelyRequirementSourceDocument(
-  document: ProjectDocumentDetail,
-) {
-  return isRequirementDocument(document);
 }
 
 export function canonicalRequirementSourceDocuments(input: {
@@ -635,7 +630,7 @@ function requirementSourceReadinessIssues(
   options: { requireReadableText?: boolean },
 ) {
   return documents
-    .filter(isLikelyRequirementSourceDocument)
+    .filter(isRequirementDocument)
     .flatMap((document) => {
       if (!isDocumentReadyForEvaluation(document)) {
         return [
@@ -673,7 +668,7 @@ export function assertCustomerAnalysisRequirementSourcesReady(
 ) {
   const issues = requirementSourceReadinessIssues(documents, options);
   if (issues.length) {
-    throw new Error(
+    throw new WorkflowPreconditionError(
       `Dokumentgrunnlaget er ikke klart for kundeanalyse: ${issues.join(
         ", ",
       )}. Vent til dokumentbehandlingen er ferdig eller last opp dokumentet på nytt.`,
@@ -702,12 +697,6 @@ export function assertSelectedSolutionDocumentReady(
   }
 }
 
-export function requiresNonEmptyRequirementLedger(
-  document: ProjectDocumentDetail,
-) {
-  return isFormalRequirementDocument(document);
-}
-
 export function assertExplicitRequirementLedgersComplete(
   sourceDocuments: ProjectDocumentDetail[],
   requirementLedgerResults: Array<{
@@ -720,7 +709,7 @@ export function assertExplicitRequirementLedgersComplete(
   );
   const emptyRequirementDocuments = sourceDocuments.filter(
     (document) =>
-      requiresNonEmptyRequirementLedger(document) &&
+      isFormalRequirementDocument(document) &&
       (resultByDocumentId.get(document.id)?.ledger.length ?? 0) === 0
   );
 
@@ -734,7 +723,7 @@ export function assertExplicitRequirementLedgersComplete(
 
   const corruptedAuthoritativeInventories = sourceDocuments.flatMap(
     (document) => {
-      if (!requiresNonEmptyRequirementLedger(document)) return [];
+      if (!isFormalRequirementDocument(document)) return [];
       const expected = explicitIdTableSourceIds(document.raw_text).map(
         explicitInventoryId,
       );
@@ -793,7 +782,7 @@ export function assertExplicitRequirementLedgersComplete(
   }
 
   const incompleteExplicitInventories = sourceDocuments.flatMap((document) => {
-    if (!requiresNonEmptyRequirementLedger(document)) return [];
+    if (!isFormalRequirementDocument(document)) return [];
     const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
     const expected = explicitRequirementSourceInventory(document.raw_text);
     if (expected.size === 0) return [];

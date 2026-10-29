@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  PROJECT_SERVICES_CACHE_PREFIX,
   SERVICE_DESCRIPTIONS_CACHE_KEY,
   SERVICE_DESCRIPTIONS_CACHE_TTL_MS,
   clearClientCache,
@@ -19,7 +20,7 @@ export function cacheServiceDescriptions(services: ServiceDescription[]) {
 }
 
 export function invalidateProjectServiceDescriptionCaches() {
-  clearClientCache("project-service-descriptions:");
+  clearClientCache(PROJECT_SERVICES_CACHE_PREFIX);
 }
 
 export async function fetchServiceDescriptions(

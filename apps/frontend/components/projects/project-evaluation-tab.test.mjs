@@ -16,15 +16,10 @@ const jiti = createJiti(path.join(frontendRoot, "evaluation-ui-tests.cjs"), {
 const { summarizeRequirementCoverageCounters } = await jiti.import(
   path.join(frontendRoot, "lib/requirement-coverage-summary.ts"),
 );
-const { isSolutionEvaluationCandidate } = await jiti.import(
-  path.join(frontendRoot, "lib/document-processing.ts"),
-);
-const { selectSolutionEvaluationDocumentCandidates } = await jiti.import(
-  path.join(
-    frontendRoot,
-    "components/projects/project-evaluation-documents.ts",
-  ),
-);
+const {
+  isApprovedSolutionEvaluationDocument,
+  isSolutionEvaluationCandidate,
+} = await jiti.import(path.join(frontendRoot, "lib/document-processing.ts"));
 
 test("solution evaluation defaults only to a ready approved solution document", () => {
   const base = {
@@ -95,7 +90,7 @@ test("approved pending and failed primary solutions remain visible but are not r
     },
   ];
 
-  const visible = selectSolutionEvaluationDocumentCandidates(documents);
+  const visible = documents.filter(isApprovedSolutionEvaluationDocument);
 
   assert.deepEqual(
     visible.map((document) => document.id),

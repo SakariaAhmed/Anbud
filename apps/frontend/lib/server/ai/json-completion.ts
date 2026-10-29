@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
 import { redactedModelOutputError } from "@/lib/server/safe-errors";
+import { isRecord, type Untrusted } from "@/lib/unknown-values";
 import type { ProjectDocumentDetail } from "@/lib/types";
 
 export type ReasoningEffort = "low" | "medium" | "high";
@@ -62,15 +63,17 @@ type JsonCompletionRuntime = {
   supportsCustomTemperature: (model: string) => boolean;
 };
 
-function parseJson<T>(content: string, requestId: string): T {
+function parseJson<T>(content: string, requestId: string): Untrusted<T> {
   const trimmed = content.trim();
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]+?)```/i);
   const candidate = codeBlockMatch?.[1] ?? trimmed;
   try {
-    return JSON.parse(candidate) as T;
+    const parsed: unknown = JSON.parse(candidate);
+    if (isRecord(parsed)) return parsed;
   } catch {
-    throw redactedModelOutputError(candidate, requestId);
+    // Reported below without echoing model output.
   }
+  throw redactedModelOutputError(candidate, requestId);
 }
 
 function hashPromptPrefix(value: string) {
@@ -361,7 +364,7 @@ export async function runStructuredJsonResponse<T>(
     maxRetries?: number;
     promptCacheKey?: string;
   },
-): Promise<T> {
+): Promise<Untrusted<T>> {
   getProjectWorkflowAbortSignal()?.throwIfAborted();
   const client = await input.getClient();
   const model = input.model ?? input.defaultModel;
@@ -476,7 +479,7 @@ export async function runJsonCompletion<T>(
     maxRetries?: number;
     promptCacheKey?: string;
   },
-): Promise<T> {
+): Promise<Untrusted<T>> {
   getProjectWorkflowAbortSignal()?.throwIfAborted();
   const client = await input.getClient();
   const model = input.model ?? input.defaultModel;
@@ -607,7 +610,7 @@ export async function runJsonCompletionWithFileInputs<T>(
     maxRetries?: number;
     promptCacheKey?: string;
   },
-): Promise<T> {
+): Promise<Untrusted<T>> {
   getProjectWorkflowAbortSignal()?.throwIfAborted();
   const client = await input.getClient();
   const model = input.model ?? input.defaultModel;

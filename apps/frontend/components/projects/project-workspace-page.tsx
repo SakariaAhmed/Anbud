@@ -38,12 +38,11 @@ import {
   updateGeneratedArtifact,
   uploadProjectDocument,
   watchProjectJob,
-  type ProjectSnapshotPayload,
 } from "@/lib/client/project-api";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
-import { selectSolutionEvaluationDocumentCandidates } from "@/components/projects/project-evaluation-documents";
 import {
+  isApprovedSolutionEvaluationDocument,
   isDocumentReadyForEvaluation,
   isSolutionEvaluationCandidate,
   requirementDocumentIdsForGeneration,
@@ -71,6 +70,11 @@ import {
   solutionProposalWorkflowStatus,
 } from "@/components/projects/project-workflow-status";
 import { deriveProjectStatus } from "@/components/projects/project-workspace-shared";
+import { parseJobProgress } from "@/lib/project-job-progress";
+import {
+  GENERATABLE_ARTIFACT_TYPES,
+  isGeneratableArtifactType,
+} from "@/lib/types";
 import type {
   CustomerAnalysisResult,
   CustomerAnalysisSection,
@@ -160,13 +164,6 @@ const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
   "value",
 ];
 
-const WORKSPACE_ARTIFACT_TYPES: GeneratedArtifactType[] = [
-  "bilag1_rekonstruksjon",
-  "forbedret_kravsvar",
-  "gjennomforing_og_risiko",
-  "losningsutkast",
-];
-
 const ARTIFACT_TYPE_BY_TAB: Partial<
   Record<ProjectWorkspaceTab, GeneratedArtifactType>
 > = {
@@ -176,20 +173,12 @@ const ARTIFACT_TYPE_BY_TAB: Partial<
   requirements: "forbedret_kravsvar",
 };
 
-function mergeArtifactsForType(
-  current: GeneratedArtifact[],
-  incoming: GeneratedArtifact[],
-  artifactType: GeneratedArtifactType,
-) {
-  return mergeGeneratedArtifactsForType(current, incoming, artifactType);
-}
-
 function loadedArtifactTypesFromArtifacts(artifacts: GeneratedArtifact[]) {
   return Array.from(
     new Set(
       artifacts
         .map((artifact) => artifact.artifact_type)
-        .filter((type) => WORKSPACE_ARTIFACT_TYPES.includes(type)),
+        .filter(isGeneratableArtifactType),
     ),
   );
 }
@@ -203,12 +192,12 @@ function addLoadedArtifactType(
 
 function initialLoadedArtifactTypes(project: ProjectDetail) {
   if (project.artifact_count === 0) {
-    return WORKSPACE_ARTIFACT_TYPES;
+    return [...GENERATABLE_ARTIFACT_TYPES];
   }
 
   const loaded = new Set(loadedArtifactTypesFromArtifacts(project.generated_artifacts));
   if (project.artifact_counts_by_type) {
-    for (const artifactType of WORKSPACE_ARTIFACT_TYPES) {
+    for (const artifactType of GENERATABLE_ARTIFACT_TYPES) {
       if ((project.artifact_counts_by_type[artifactType] ?? 0) === 0) {
         loaded.add(artifactType);
       }
@@ -225,27 +214,19 @@ type ProgressDriverState = {
   ceiling: number;
 };
 
-function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "message">) {
-  if (job.status === "completed") return 100;
-  if (job.status === "failed") return 100;
+function savedArtifactResult(job: ProjectJobRecord) {
+  const result = job.result;
+  if (result && "artifact" in result && result.artifact) {
+    return { artifact: result.artifact, project: result.project };
+  }
+  throw new Error("Jobben returnerte ikke et lagret dokument.");
+}
+
+function progressForJobStatus(job: Pick<ProjectJobRecord, "status" | "message">) {
+  if (job.status === "completed" || job.status === "failed") return 100;
   if (job.status === "queued") return 8;
-
-  const message = job.message.toLowerCase();
-  const explicitProgress = message.match(/\[(\d{1,3})%\]/);
-  if (explicitProgress) {
-    return Math.min(99, Math.max(3, Number(explicitProgress[1])));
-  }
-
-  if (message.includes("laster")) return 18;
-  if (message.includes("køer")) return 8;
-  if (message.includes("genererer") || message.includes("analyserer") || message.includes("sammenligner") || message.includes("skriver")) {
-    return job.kind === "artifact_generation" ? 62 : 58;
-  }
-  if (message.includes("kjører ny vurdering")) return 78;
-  if (message.includes("lagrer")) return 88;
-  if (message.includes("ferdig")) return 100;
-
-  return 28;
+  const { percent } = parseJobProgress(job.message);
+  return percent === null ? 28 : Math.min(99, Math.max(3, percent));
 }
 
 function progressCeilingForJobStatus(
@@ -253,30 +234,13 @@ function progressCeilingForJobStatus(
 ) {
   if (job.status === "completed" || job.status === "failed") return 100;
   if (job.status === "queued") return 18;
-
-  const message = job.message.toLowerCase();
-  const explicitProgress = message.match(/\[(\d{1,3})%\]/);
-  if (explicitProgress) {
-    const progress = Math.min(99, Math.max(3, Number(explicitProgress[1])));
-    return Math.min(99, progress + 8);
-  }
-  if (message.includes("lagrer") || message.includes("validerer")) return 97;
-  if (
-    message.includes("genererer") ||
-    message.includes("analyserer") ||
-    message.includes("sammenligner") ||
-    message.includes("skriver")
-  ) {
-    return 93;
-  }
-  if (message.includes("henter") || message.includes("klargjør")) return 76;
-  if (message.includes("bygger") || message.includes("kartlegger")) return 66;
-
-  return 88;
+  const { percent, ceiling } = parseJobProgress(job.message);
+  if (percent === null) return 88;
+  return Math.min(99, ceiling ?? Math.max(3, percent) + 8);
 }
 
 function progressMessageLabel(message: string) {
-  return message.replace(/^\[\d{1,3}%\]\s*/, "");
+  return parseJobProgress(message).label;
 }
 
 function estimatedJobDurationMs(job: Pick<ProjectJobRecord, "kind">) {
@@ -401,7 +365,7 @@ export function ProjectWorkspacePage({
     loadedArtifactTypes,
   });
   const architectureDocumentCandidates = useMemo(
-    () => selectSolutionEvaluationDocumentCandidates(project.documents),
+    () => project.documents.filter(isApprovedSolutionEvaluationDocument),
     [project.documents],
   );
 
@@ -518,7 +482,7 @@ export function ProjectWorkspacePage({
             refreshedByType.reduce(
               (artifacts, refreshed) =>
                 refreshed
-                  ? mergeArtifactsForType(
+                  ? mergeGeneratedArtifactsForType(
                       artifacts,
                       refreshed.artifacts,
                       refreshed.artifactType,
@@ -1061,7 +1025,7 @@ export function ProjectWorkspacePage({
             normalizeProjectState(
               {
                 ...current,
-                generated_artifacts: mergeArtifactsForType(
+                generated_artifacts: mergeGeneratedArtifactsForType(
                   current.generated_artifacts,
                   artifacts,
                   artifactType,
@@ -1354,7 +1318,7 @@ export function ProjectWorkspacePage({
             {
               ...current,
               generated_artifacts: refreshedArtifacts
-                ? mergeArtifactsForType(
+                ? mergeGeneratedArtifactsForType(
                     current.generated_artifacts,
                     refreshedArtifacts,
                     artifact.artifact_type,
@@ -1521,10 +1485,7 @@ export function ProjectWorkspacePage({
           "Generatorjobben feilet.",
           job,
         );
-        const result = completedJob.result as {
-          artifact: GeneratedArtifact;
-          project: ProjectSnapshotPayload;
-        };
+        const result = savedArtifactResult(completedJob);
         setProject((current) =>
           isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
@@ -1567,10 +1528,7 @@ export function ProjectWorkspacePage({
           "Jobben for fremdriftsplanen feilet.",
           job,
         );
-        const result = completedJob.result as {
-          artifact: GeneratedArtifact;
-          project: ProjectSnapshotPayload;
-        };
+        const result = savedArtifactResult(completedJob);
         setProject((current) =>
           isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
@@ -1616,10 +1574,7 @@ export function ProjectWorkspacePage({
           "Jobben for Bilag 1 feilet.",
           job,
         );
-        const result = completedJob.result as {
-          artifact: GeneratedArtifact;
-          project: ProjectSnapshotPayload;
-        };
+        const result = savedArtifactResult(completedJob);
         setProject((current) =>
           isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(
@@ -1672,10 +1627,7 @@ export function ProjectWorkspacePage({
           "Jobben for kravbesvarelse feilet.",
           job,
         );
-        const result = completedJob.result as {
-          artifact: GeneratedArtifact;
-          project: ProjectSnapshotPayload;
-        };
+        const result = savedArtifactResult(completedJob);
         setProject((current) =>
           isProjectSnapshotOlder(current, result.project) ? current : normalizeProjectState(
             applyProjectSnapshot(

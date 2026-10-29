@@ -1,4 +1,8 @@
 import "server-only";
+
+import { formatJobProgress } from "@/lib/project-job-progress";
+
+import { WorkflowError, WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 import { projectJobDocumentSummary } from "@/lib/server/project-job-result-projection";
 import { findWorkflowArtifact, pendingEvaluationResult } from "@/lib/server/project-job-results";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
@@ -16,8 +20,14 @@ import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import {
   hasReadableRequirementDocumentContent,
   isHistoricalSolutionDocument,
+  isRequirementDocument,
 } from "@/lib/document-processing";
-import { analyzeCustomerDocuments, evaluateSolutionDocument, generateHighLevelDesign } from "@/lib/server/ai";
+import {
+  analyzeCustomerDocuments,
+  evaluateSolutionDocument,
+  generateHighLevelDesign,
+  regenerateCustomerAnalysisSection,
+} from "@/lib/server/ai";
 import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/extraction";
 import { generateExecutiveSummary } from "@/lib/server/ai/executive-summary";
 import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai/document-analysis";
@@ -49,12 +59,19 @@ import {
 import { assertExecutiveSummaryEvaluationReady } from "@/lib/server/executive-summary-readiness";
 import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState } from "@/lib/server/repositories/data-store";
 import { getProjectGenerationContext, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
-import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
+import { listProjectServiceDescriptions } from "@/lib/server/repositories/service-descriptions";
+
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
-import type {
-  GeneratedArtifactType,
-  ProjectDocumentDetail,
-  ProjectJobResult,
+import {
+  isGeneratableArtifactType,
+  type CustomerAnalysisSection,
+  type DocumentDoclingEnhancementJobResult,
+  type DocumentIngestionJobResult,
+  type GeneratedArtifactType,
+  type PerfectSystemSolutionJobResult,
+  type ProjectDocumentDetail,
+  type ProjectJobResult,
+  type SolutionEvaluationJobResult,
 } from "@/lib/types";
 import {
   type ArtifactGenerationTiming,
@@ -69,7 +86,7 @@ import {
 import {
   readStableProjectSourceSnapshot,
   readStableSolutionEvaluationSourceSnapshot,
-} from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
+} from "@/lib/server/source-revision-snapshot";
 import {
   assertCustomerAnalysisRequirementSourcesReady,
   assertExplicitRequirementLedgersComplete,
@@ -78,8 +95,7 @@ import {
   canonicalRequirementSourceDocuments,
   canonicalizeRequirementSourceLedger,
   isExplicitRequirementSupportingSubtype,
-  isLikelyRequirementSourceDocument,
-} from "@/lib/server/use-cases/solution-evaluation-readiness";
+} from "@/lib/server/requirements/source-readiness";
 
 export type ProjectWorkflowInput =
   | { kind: "document_ingestion"; projectId: string; documentId: string }
@@ -265,12 +281,13 @@ export async function buildEvaluationLedgerContext(input: {
             ...safeErrorTelemetry(error),
           }),
         );
-        if (isLikelyRequirementSourceDocument(document)) {
+        if (isRequirementDocument(document)) {
           throw new Error(
             productionSafeErrorMessage(
               error,
               `Kravledger kunne ikke bygges for ${document.title}.`,
             ),
+            { cause: error },
           );
         }
         return {
@@ -339,12 +356,7 @@ function optionalWorkflowString(value: unknown) {
 }
 
 function parseWorkflowArtifactType(value: unknown): GeneratedArtifactType {
-  if (
-    value === "losningsutkast" ||
-    value === "bilag1_rekonstruksjon" ||
-    value === "forbedret_kravsvar" ||
-    value === "gjennomforing_og_risiko"
-  ) {
+  if (isGeneratableArtifactType(value)) {
     return value;
   }
 
@@ -622,9 +634,9 @@ async function recordParserSelectionEvents(input: {
 async function runDocumentIngestionWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "document_ingestion" }>,
   handlers: ProjectWorkflowHandlers,
-) {
+): Promise<DocumentIngestionJobResult> {
   try {
-    handlers.setProgress("[8%] Henter dokumentfil ...");
+    handlers.setProgress(formatJobProgress(8, "Henter dokumentfil ..."));
     assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
@@ -642,7 +654,7 @@ async function runDocumentIngestionWorkflow(
 
     const buffer = Buffer.from(document.file_base64, "base64");
 
-    handlers.setProgress("[22%] Leser dokumentet med rask parser ...");
+    handlers.setProgress(formatJobProgress(22, "Leser dokumentet med rask parser ..."));
     assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
@@ -680,7 +692,7 @@ async function runDocumentIngestionWorkflow(
           }),
         }),
       onLocalStart: async () => {
-        handlers.setProgress("[34%] Prøver lokal strukturforbedring ...");
+        handlers.setProgress(formatJobProgress(34, "Prøver lokal strukturforbedring ..."));
         assertWorkflowActive(handlers);
         await updateDocumentProcessingState({
           projectId: input.projectId,
@@ -692,7 +704,7 @@ async function runDocumentIngestionWorkflow(
         });
       },
       onAzureStart: async () => {
-        handlers.setProgress("[36%] Forbedrer dokumentlayout og OCR ...");
+        handlers.setProgress(formatJobProgress(36, "Forbedrer dokumentlayout og OCR ..."));
         assertWorkflowActive(handlers);
         await updateDocumentProcessingState({
           projectId: input.projectId,
@@ -726,7 +738,7 @@ async function runDocumentIngestionWorkflow(
           fileSizeBytes: document.file_size_bytes,
       });
       if (!parseSelection.localAttempted && shouldAttemptDocling) {
-        handlers.setProgress("[48%] Prøver Docling for tekstuttrekk ...");
+        handlers.setProgress(formatJobProgress(48, "Prøver Docling for tekstuttrekk ..."));
         assertWorkflowActive(handlers);
         await updateDocumentProcessingState({
           projectId: input.projectId,
@@ -750,7 +762,7 @@ async function runDocumentIngestionWorkflow(
         });
 
         if (isUsableDoclingResult(enhanced)) {
-          handlers.setProgress("[90%] Bygger Docling-baserte chunks ...");
+          handlers.setProgress(formatJobProgress(90, "Bygger Docling-baserte chunks ..."));
           assertWorkflowActive(handlers);
           const enhancedDocument = await saveDocumentIngestionResult({
             projectId: input.projectId,
@@ -815,8 +827,8 @@ async function runDocumentIngestionWorkflow(
       document.role === "primary_customer_document" && !shouldRunInlineDocling;
     handlers.setProgress(
       shouldRunInlineDocling
-        ? "[48%] Lagrer raskt tekstgrunnlag ..."
-        : "[48%] Bygger chunks og embeddings ...",
+        ? formatJobProgress(48, "Lagrer raskt tekstgrunnlag ...")
+        : formatJobProgress(48, "Bygger chunks og embeddings ..."),
     );
     assertWorkflowActive(handlers);
     const basicDocument = await saveDocumentIngestionResult({
@@ -858,7 +870,7 @@ async function runDocumentIngestionWorkflow(
     );
 
     if (document.role === "primary_customer_document") {
-      handlers.setProgress("[62%] Oppdaterer prosjektmetadata ...");
+      handlers.setProgress(formatJobProgress(62, "Oppdaterer prosjektmetadata ..."));
       try {
         const inferredMetadata = await inferProjectMetadataFromCustomerDocument({
           fileName: parsed.fileName,
@@ -880,7 +892,7 @@ async function runDocumentIngestionWorkflow(
 
     let readyDocument = basicDocument;
     if (waitsForProjectMetadata) {
-      handlers.setProgress("[96%] Ferdigstiller dokumentgrunnlaget ...");
+      handlers.setProgress(formatJobProgress(96, "Ferdigstiller dokumentgrunnlaget ..."));
       assertWorkflowActive(handlers);
       readyDocument = await publishDocumentReadiness({
         projectId: input.projectId, documentId: input.documentId,
@@ -901,7 +913,7 @@ async function runDocumentIngestionWorkflow(
       };
     }
 
-    handlers.setProgress("[78%] Forbedrer struktur med Docling ...");
+    handlers.setProgress(formatJobProgress(78, "Forbedrer struktur med Docling ..."));
     assertWorkflowActive(handlers);
     await updateDocumentProcessingState({
       projectId: input.projectId,
@@ -926,7 +938,7 @@ async function runDocumentIngestionWorkflow(
     });
 
     if (isUsableDoclingResult(enhanced)) {
-      handlers.setProgress("[90%] Oppdaterer forbedrede chunks ...");
+      handlers.setProgress(formatJobProgress(90, "Oppdaterer forbedrede chunks ..."));
       assertWorkflowActive(handlers);
       const enhancedDocument = await saveDocumentIngestionResult({
         projectId: input.projectId,
@@ -1003,8 +1015,8 @@ async function runDocumentDoclingEnhancementWorkflow(
     { kind: "document_docling_enhancement" }
   >,
   handlers: ProjectWorkflowHandlers,
-) {
-  handlers.setProgress("Henter dokument for Docling-forbedring ...");
+): Promise<DocumentDoclingEnhancementJobResult> {
+  handlers.setProgress(formatJobProgress(8, "Henter dokument for Docling-forbedring ...", 76));
   const document = await getDocumentDetail(input.projectId, input.documentId);
   handlers.onPhase?.("filhenting");
 
@@ -1046,7 +1058,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     };
   }
 
-  handlers.setProgress("Forbedrer dokumentstruktur med Docling ...");
+  handlers.setProgress(formatJobProgress(58, "Forbedrer dokumentstruktur med Docling ...", 88));
   assertWorkflowActive(handlers);
   await updateDocumentProcessingState({
     projectId: input.projectId,
@@ -1104,7 +1116,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     };
   }
 
-  handlers.setProgress("Erstatter chunks med Docling-forbedret struktur ...");
+  handlers.setProgress(formatJobProgress(88, "Erstatter chunks med Docling-forbedret struktur ...", 88));
   assertWorkflowActive(handlers);
   const enhancedDocument = await saveDocumentIngestionResult({
     projectId: input.projectId,
@@ -1134,11 +1146,21 @@ async function runDocumentDoclingEnhancementWorkflow(
   };
 }
 
-async function runCustomerAnalysisWorkflow(
-  input: Extract<ProjectWorkflowInput, { kind: "customer_analysis" }>,
-  handlers: ProjectWorkflowHandlers,
-) {
-  handlers.setProgress("Laster dokumentgrunnlag ...");
+/**
+ * Generates the whole customer analysis, or regenerates one section of the
+ * saved analysis, from a stable project snapshot. Used by the analysis job
+ * and the synchronous analysis route.
+ */
+export async function generateCustomerAnalysis(input: {
+  projectId: string;
+  model?: string;
+  section?: CustomerAnalysisSection | null;
+  onProgress?: (message: string) => void;
+  onPhase?: ProjectWorkflowPhaseHandler;
+  assertActive?: () => void;
+}) {
+  const section = input.section ?? null;
+  input.onProgress?.(formatJobProgress(18, "Laster dokumentgrunnlag ...", 88));
   const sourceSnapshot = await readStableProjectSourceSnapshot({
     readSourceRevision: () => getProjectSourceRevision(input.projectId),
     readValue: async () => {
@@ -1152,15 +1174,16 @@ async function runCustomerAnalysisWorkflow(
       return { projectDocuments, serviceCandidates, previousAnalysis };
     },
   });
-  const { projectDocuments, serviceCandidates } = sourceSnapshot.value;
+  const { projectDocuments, serviceCandidates, previousAnalysis } =
+    sourceSnapshot.value;
   const { projectDocuments: analysisDocuments } =
     splitServiceDescriptionDetails(projectDocuments);
   const { customerDocument, supportingDocuments } =
     selectProjectDocuments(analysisDocuments);
-  handlers.onPhase?.("dokumenthenting");
+  input.onPhase?.("dokumenthenting");
 
   if (!customerDocument) {
-    throw new Error("Last opp minst ett dokument først.");
+    throw new WorkflowPreconditionError("Last opp minst ett dokument først.");
   }
 
   assertCustomerAnalysisRequirementSourcesReady([
@@ -1168,18 +1191,35 @@ async function runCustomerAnalysisWorkflow(
     ...supportingDocuments,
   ]);
 
-  handlers.setProgress("Analyserer kundedokumentet med AI ...");
-  const result = await analyzeCustomerDocuments({
-    projectName: customerDocument.title,
-    customerDocument,
-    supportingDocuments,
-    serviceCandidates,
-    model: input.model,
-  });
-  handlers.onPhase?.("ai_analyse");
+  if (section && !previousAnalysis) {
+    throw new WorkflowPreconditionError(
+      "Generer kundeanalyse før du redigerer en seksjon.",
+    );
+  }
 
-  handlers.setProgress("Lagrer kundeanalysen ...");
-  assertWorkflowActive(handlers);
+  input.onProgress?.(formatJobProgress(58, "Analyserer kundedokumentet med AI ...", 93));
+  const result =
+    section && previousAnalysis
+      ? await regenerateCustomerAnalysisSection({
+          section,
+          projectName: customerDocument.title,
+          customerDocument,
+          supportingDocuments,
+          customerAnalysis: previousAnalysis,
+          serviceCandidates,
+          model: input.model,
+        })
+      : await analyzeCustomerDocuments({
+          projectName: customerDocument.title,
+          customerDocument,
+          supportingDocuments,
+          serviceCandidates,
+          model: input.model,
+        });
+  input.onPhase?.("ai_analyse");
+
+  input.onProgress?.(formatJobProgress(88, "Lagrer kundeanalysen ...", 97));
+  input.assertActive?.();
   const analysis = await saveCustomerAnalysis(
     input.projectId,
     [
@@ -1189,17 +1229,33 @@ async function runCustomerAnalysisWorkflow(
     result,
     {
       expectedSourceRevision: sourceSnapshot.sourceRevision,
-      previousAnalysis: sourceSnapshot.value.previousAnalysis,
-      updatedSections: [...CUSTOMER_ANALYSIS_SECTIONS],
-      historySource: "full_regeneration",
+      previousAnalysis,
+      updatedSections: section ? [section] : [...CUSTOMER_ANALYSIS_SECTIONS],
+      historySource: section ? "section_regeneration" : "full_regeneration",
     },
   );
-  handlers.onPhase?.("lagring");
+  input.onPhase?.("lagring");
 
   return {
     analysis,
     project: await getProjectSnapshotAfterCommit(input.projectId),
+    customerDocument,
+    supportingDocumentCount: supportingDocuments.length,
   };
+}
+
+async function runCustomerAnalysisWorkflow(
+  input: Extract<ProjectWorkflowInput, { kind: "customer_analysis" }>,
+  handlers: ProjectWorkflowHandlers,
+) {
+  const { analysis, project } = await generateCustomerAnalysis({
+    projectId: input.projectId,
+    model: input.model,
+    onProgress: handlers.setProgress,
+    onPhase: handlers.onPhase,
+    assertActive: () => assertWorkflowActive(handlers),
+  });
+  return { analysis, project };
 }
 
 async function runArtifactGenerationWorkflow(
@@ -1233,8 +1289,8 @@ function readStableEvaluationSources(projectId: string) {
 export async function runSolutionEvaluationWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "solution_evaluation" }>,
   handlers: ProjectWorkflowHandlers,
-) {
-  handlers.setProgress("Laster kundedokument, analyse og støttedokumenter ...");
+): Promise<SolutionEvaluationJobResult> {
+  handlers.setProgress(formatJobProgress(18, "Laster kundedokument, analyse og støttedokumenter ...", 88));
   const {
     documents: projectDocuments,
     customerAnalysis,
@@ -1285,7 +1341,7 @@ export async function runSolutionEvaluationWorkflow(
   }
 
   if (!customerAnalysis) {
-    throw new Error("Generer kundeanalyse før løsningsvurdering.");
+    throw new WorkflowError("CUSTOMER_ANALYSIS_REQUIRED");
   }
 
   if (!solutionDocument) {
@@ -1315,7 +1371,7 @@ export async function runSolutionEvaluationWorkflow(
   });
 
   handlers.setProgress(
-    "Bygger evalueringsledger fra krav, kriterier og dokumentstruktur ...",
+    formatJobProgress(28, "Bygger evalueringsledger fra krav, kriterier og dokumentstruktur ...", 66),
   );
   const evaluationLedgerBundle = await buildEvaluationLedgerContext({
     artifactType: "gjennomforing_og_risiko",
@@ -1342,7 +1398,7 @@ export async function runSolutionEvaluationWorkflow(
   handlers.onPhase?.("ledgerbygging");
 
   handlers.setProgress(
-    "Sammenligner systemløsning og importert arkitektløsning ...",
+    formatJobProgress(58, "Sammenligner systemløsning og importert arkitektløsning ...", 93),
   );
   const result = await evaluateSolutionDocument({
     projectName: customerDocument.title,
@@ -1364,7 +1420,7 @@ export async function runSolutionEvaluationWorkflow(
   });
   handlers.onPhase?.("ai_vurdering");
 
-  handlers.setProgress("[96%] Lagrer sammenligning og vurdering ...");
+  handlers.setProgress(formatJobProgress(96, "Lagrer sammenligning og vurdering ..."));
   assertWorkflowActive(handlers);
   const evaluation = await saveSolutionEvaluation(input.projectId, {
     customerDocumentId: customerDocument.id,
@@ -1392,7 +1448,7 @@ async function runHighLevelDesignWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "high_level_design" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
-  handlers.setProgress("Laster kundedokument, analyse og støttedokumenter ...");
+  handlers.setProgress(formatJobProgress(18, "Laster kundedokument, analyse og støttedokumenter ...", 88));
   const {
     documents,
     customerAnalysis,
@@ -1414,7 +1470,7 @@ async function runHighLevelDesignWorkflow(
   }
 
   handlers.setProgress(
-    "Genererer oppdatert high-level design og arkitekturdiagram ...",
+    formatJobProgress(58, "Genererer oppdatert high-level design og arkitekturdiagram ...", 93),
   );
   const highLevelDesign = await generateHighLevelDesign({
     projectName: customerDocument.title,
@@ -1425,7 +1481,7 @@ async function runHighLevelDesignWorkflow(
   });
   handlers.onPhase?.("ai_design");
 
-  handlers.setProgress("Lagrer oppdatert high-level design i kundeanalysen ...");
+  handlers.setProgress(formatJobProgress(88, "Lagrer oppdatert high-level design i kundeanalysen ...", 97));
   assertWorkflowActive(handlers);
   const analysis = await saveCustomerAnalysis(
     input.projectId,
@@ -1455,7 +1511,7 @@ async function runExecutiveSummaryWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "executive_summary" }>,
   handlers: ProjectWorkflowHandlers,
 ) {
-  handlers.setProgress("Laster prosjekt, kundeanalyse og vurdering ...");
+  handlers.setProgress(formatJobProgress(18, "Laster prosjekt, kundeanalyse og vurdering ...", 88));
   const [project, customerAnalysis] = await Promise.all([
     getProjectGenerationContext(input.projectId),
     getFreshCustomerAnalysis(input.projectId),
@@ -1464,12 +1520,12 @@ async function runExecutiveSummaryWorkflow(
   handlers.onPhase?.("dokumenthenting");
 
   if (!evaluationSnapshot) {
-    throw new Error("Generer vurdering før lederoppsummering.");
+    throw new WorkflowError("SOLUTION_EVALUATION_REQUIRED");
   }
   const solutionEvaluation = evaluationSnapshot.evaluation;
   assertExecutiveSummaryEvaluationReady(solutionEvaluation);
 
-  handlers.setProgress("Genererer lederoppsummering ...");
+  handlers.setProgress(formatJobProgress(58, "Genererer lederoppsummering ...", 93));
   const generated = await generateExecutiveSummary({
     projectName: project.name,
     customerAnalysis,
@@ -1478,7 +1534,7 @@ async function runExecutiveSummaryWorkflow(
   });
   handlers.onPhase?.("ai_oppsummering");
 
-  handlers.setProgress("Lagrer lederoppsummeringen ...");
+  handlers.setProgress(formatJobProgress(88, "Lagrer lederoppsummeringen ...", 97));
   assertWorkflowActive(handlers);
   const executiveSummary = await saveExecutiveSummary(input.projectId, generated, {
     source: "solution_evaluation",
@@ -1500,14 +1556,14 @@ async function runExecutiveSummaryWorkflow(
 async function runPerfectSystemSolutionWorkflow(
   input: Extract<ProjectWorkflowInput, { kind: "perfect_system_solution" }>,
   handlers: ProjectWorkflowHandlers,
-) {
-  handlers.setProgress("Laster vurdering, dokumenter og siste løsningsbeskrivelse ...");
+): Promise<PerfectSystemSolutionJobResult> {
+  handlers.setProgress(formatJobProgress(18, "Laster vurdering, dokumenter og siste løsningsbeskrivelse ...", 88));
   const project = await getProjectGenerationContext(input.projectId);
   const solutionEvaluation = project.solutionEvaluationSnapshot?.evaluation ?? null;
   handlers.onPhase?.("prosjekthenting");
 
   if (!solutionEvaluation && !input.resumeArtifactId) {
-    throw new Error("Generer vurdering før du forbedrer systemløsningen.");
+    throw new WorkflowError("SOLUTION_EVALUATION_REQUIRED");
   }
 
   const systemScore =
@@ -1527,10 +1583,10 @@ async function runPerfectSystemSolutionWorkflow(
     "Hvis vurderingen peker på manglende overgangsmodell, beslutningspunkter, ansvar, risiko, bevis eller kundeverdi, skal dette konkret innarbeides i riktig seksjon.",
   ].join("\n");
 
-  handlers.setProgress("Skriver forbedret systemløsning med dokumenterte forutsetninger ...");
+  handlers.setProgress(formatJobProgress(58, "Skriver forbedret systemløsning med dokumenterte forutsetninger ...", 93));
   const savedArtifact = await findWorkflowArtifact(input.projectId, getProjectWorkflowLease()?.jobId, input.resumeArtifactId);
   if (input.resumeArtifactId && !savedArtifact) throw new Error("Fant ikke løsningsutkastet som skal revurderes.");
-  if (savedArtifact && (!savedArtifact.is_current || !savedArtifact.source_is_current)) throw new Error("ARTIFACT_SOURCE_REVISION_CHANGED");
+  if (savedArtifact && (!savedArtifact.is_current || !savedArtifact.source_is_current)) throw new WorkflowError("ARTIFACT_SOURCE_REVISION_CHANGED");
   const artifact = savedArtifact ?? (await generateAndSaveProjectArtifact({
     projectId: input.projectId,
     artifactType: "losningsutkast",
@@ -1550,7 +1606,7 @@ async function runPerfectSystemSolutionWorkflow(
   })).artifact;
 
   try {
-  handlers.setProgress("Laster dokumentgrunnlag for ny vurdering ...");
+  handlers.setProgress(formatJobProgress(18, "Laster dokumentgrunnlag for ny vurdering ...", 88));
   const {
     customerAnalysis,
     documents,
@@ -1611,7 +1667,7 @@ async function runPerfectSystemSolutionWorkflow(
       (entry) => entry.document.id === hydratedSolutionDocument.id,
     )?.ledger ?? [];
 
-  handlers.setProgress("Kjører ny vurdering av forbedret systemløsning ...");
+  handlers.setProgress(formatJobProgress(78, "Kjører ny vurdering av forbedret systemløsning ...", 88));
   const improvedEvaluation = await evaluateSolutionDocument({
     projectName: project.name,
     customerDocument: hydratedCustomerDocument,

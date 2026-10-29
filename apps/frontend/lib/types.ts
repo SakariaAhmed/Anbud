@@ -32,16 +32,45 @@ export type ValueCategory =
   | "Bedre brukeropplevelse";
 
 export type RequirementImportance = "Kritisk" | "Viktig" | "Mindre viktig";
+
+export function isRequirementImportance(
+  value: unknown,
+): value is RequirementImportance {
+  return value === "Kritisk" || value === "Viktig" || value === "Mindre viktig";
+}
 export type RequirementKind = "Eksplisitt" | "Implisitt";
 
-export type GeneratedArtifactType =
-  | "losningsutkast"
-  | "bilag1_rekonstruksjon"
-  | "forbedret_kravsvar"
-  | "tilbudsstrategi"
-  | "verdiargumentasjon"
-  | "anbefalt_arkitektur"
-  | "gjennomforing_og_risiko";
+export const GENERATED_ARTIFACT_TYPES = [
+  "losningsutkast",
+  "bilag1_rekonstruksjon",
+  "forbedret_kravsvar",
+  "tilbudsstrategi",
+  "verdiargumentasjon",
+  "anbefalt_arkitektur",
+  "gjennomforing_og_risiko",
+] as const;
+export type GeneratedArtifactType = (typeof GENERATED_ARTIFACT_TYPES)[number];
+
+/** Artifact types the API accepts for generation; all types stay readable. */
+export const GENERATABLE_ARTIFACT_TYPES = [
+  "bilag1_rekonstruksjon",
+  "forbedret_kravsvar",
+  "gjennomforing_og_risiko",
+  "losningsutkast",
+] as const satisfies readonly GeneratedArtifactType[];
+export type GeneratableArtifactType = (typeof GENERATABLE_ARTIFACT_TYPES)[number];
+
+export function isGeneratedArtifactType(
+  value: unknown,
+): value is GeneratedArtifactType {
+  return GENERATED_ARTIFACT_TYPES.some((type) => type === value);
+}
+
+export function isGeneratableArtifactType(
+  value: unknown,
+): value is GeneratableArtifactType {
+  return GENERATABLE_ARTIFACT_TYPES.some((type) => type === value);
+}
 
 export interface GeneratedArtifactAuthority {
   id: string;
@@ -560,6 +589,22 @@ export interface ArtifactGenerationJobResult {
   project: ProjectSnapshotResult | null;
 }
 
+/** A finished re-evaluation, or a saved draft whose re-evaluation is pending. */
+export type PerfectSystemSolutionJobResult =
+  | {
+      artifact: GeneratedArtifact;
+      project: ProjectSnapshotResult | null;
+      evaluation: SolutionEvaluationResult;
+    }
+  | {
+      artifact: GeneratedArtifact;
+      project: null;
+      completion_status: "evaluation_pending";
+      message: string;
+      detail: string;
+      resume_request: { kind: "perfect_system_solution"; resume_artifact_id: string };
+    };
+
 export interface SolutionEvaluationJobResult {
   evaluation: SolutionEvaluationResult;
   project: ProjectSnapshotResult | null;
@@ -583,7 +628,8 @@ export interface ExecutiveSummaryJobResult {
 }
 
 export interface DocumentIngestionJobResult {
-  document: ProjectDocument;
+  // Null when a stored result's document can no longer be read.
+  document: ProjectDocument | null;
   document_id: string;
   status: DocumentProcessingStatus;
   parser_used: string | null;
@@ -592,14 +638,24 @@ export interface DocumentIngestionJobResult {
   docling_enhancement_job_id?: string;
 }
 
+export interface DocumentDoclingEnhancementJobResult {
+  document: ProjectDocument | null;
+  document_id: string;
+  status: DocumentProcessingStatus;
+  parser_used: string | null | undefined;
+  project: ProjectSnapshotResult | null;
+  skipped: boolean;
+}
+
 export type ProjectJobResult =
+  | PerfectSystemSolutionJobResult
   | DocumentIngestionJobResult
+  | DocumentDoclingEnhancementJobResult
   | ArtifactGenerationJobResult
   | SolutionEvaluationJobResult
   | HighLevelDesignJobResult
   | CustomerAnalysisJobResult
-  | ExecutiveSummaryJobResult
-  | Record<string, unknown>;
+  | ExecutiveSummaryJobResult;
 
 export interface ProjectJobRecord {
   id: string;

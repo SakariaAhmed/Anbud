@@ -1,22 +1,14 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState } from "react";
 import {
-  Cloud,
-  Cpu,
-  Database,
-  KeyRound,
   ListChecks,
   PencilLine,
   Plus,
   RefreshCw,
   Save,
-  Shield,
   Trash2,
-  Workflow,
   X,
-  type LucideIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -53,9 +45,33 @@ import {
   type ValueCategory,
   type ValueOpportunity,
 } from "@/lib/types";
+import {
+  getKeywordIcon,
+  getKeywordMentionCount,
+  KeywordPieModule,
+  ValuePieModule,
+} from "@/components/projects/analysis-pie-charts";
 
-type EditableCustomerAnalysisSnapshot =
-  CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
+/** A section's draft; `value` always has the shape of `section`. */
+type SectionDraft = {
+  [S in CustomerAnalysisSection]: {
+    section: S;
+    value: CustomerAnalysisSectionSnapshotMap[S];
+  };
+}[CustomerAnalysisSection];
+
+type SectionEditor = SectionDraft & {
+  basis: CustomerAnalysisResult | null;
+  revision: string | undefined;
+};
+
+function sectionDraft<S extends CustomerAnalysisSection>(
+  section: S,
+  value: CustomerAnalysisSectionSnapshotMap[S],
+): SectionDraft {
+  // TypeScript cannot relate a generic key to the mapped union member.
+  return { section, value } as SectionDraft;
+}
 
 const REQUIREMENT_IMPORTANCE_OPTIONS: RequirementImportance[] = [
   "Kritisk",
@@ -109,81 +125,95 @@ function emptyRecommendedService(): RecommendedService {
   };
 }
 
-function sanitizeSectionDraft(
-  section: CustomerAnalysisSection,
-  snapshot: EditableCustomerAnalysisSnapshot,
-): EditableCustomerAnalysisSnapshot {
-  switch (section) {
+function sanitizeSectionDraft(draft: SectionDraft): SectionDraft {
+  switch (draft.section) {
     case "summary": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["summary"];
+      const value = draft.value;
       return {
-        customer_profile_summary: value.customer_profile_summary.trim(),
-        customer_goals_summary: value.customer_goals_summary.trim(),
+        section: "summary",
+        value: {
+          customer_profile_summary: value.customer_profile_summary.trim(),
+          customer_goals_summary: value.customer_goals_summary.trim(),
+        },
       };
     }
     case "strategy": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["strategy"];
+      const value = draft.value;
       return {
-        executive_summary: value.executive_summary.trim(),
-        positioning_recommendations: cleanStringList(
-          value.positioning_recommendations,
-        ),
+        section: "strategy",
+        value: {
+          executive_summary: value.executive_summary.trim(),
+          positioning_recommendations: cleanStringList(
+            value.positioning_recommendations,
+          ),
+        },
       };
     }
     case "clarifications": {
-      const value =
-        snapshot as CustomerAnalysisSectionSnapshotMap["clarifications"];
+      const value = draft.value;
       return {
-        ambiguities: cleanStringList(value.ambiguities),
-        expected_solution_direction: cleanStringList(
-          value.expected_solution_direction,
-        ),
-        likely_evaluation_criteria: cleanStringList(
-          value.likely_evaluation_criteria,
-        ),
+        section: "clarifications",
+        value: {
+          ambiguities: cleanStringList(value.ambiguities),
+          expected_solution_direction: cleanStringList(
+            value.expected_solution_direction,
+          ),
+          likely_evaluation_criteria: cleanStringList(
+            value.likely_evaluation_criteria,
+          ),
+        },
       };
     }
     case "design": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["design"];
+      const value = draft.value;
       return {
-        high_level_solution_design: value.high_level_solution_design.trim(),
-        high_level_architecture_mermaid:
-          value.high_level_architecture_mermaid.trim(),
+        section: "design",
+        value: {
+          high_level_solution_design: value.high_level_solution_design.trim(),
+          high_level_architecture_mermaid:
+            value.high_level_architecture_mermaid.trim(),
+        },
       };
     }
     case "risks": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["risks"];
+      const value = draft.value;
       return {
-        risks: cleanStringList(value.risks),
-        risks_for_us: cleanStringList(value.risks_for_us ?? []),
-        risks_for_customer: cleanStringList(value.risks_for_customer ?? []),
+        section: "risks",
+        value: {
+          risks: cleanStringList(value.risks),
+          risks_for_us: cleanStringList(value.risks_for_us ?? []),
+          risks_for_customer: cleanStringList(value.risks_for_customer ?? []),
+        },
       };
     }
     case "needs": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["needs"];
+      const value = draft.value;
       return {
-        implicit_requirements: value.implicit_requirements
-          .map((item) => ({
-            title: item.title.trim(),
-            description: item.description.trim(),
-            category: item.category.trim(),
-            importance: item.importance,
-            kind: item.kind,
-            source_reference: item.source_reference.trim(),
-            source_excerpt: item.source_excerpt.trim(),
-          }))
-          .filter((item) => item.title || item.description),
-        prioritized_requirements: value.prioritized_requirements
-          .map((item) => ({
-            requirement: item.requirement.trim(),
-            priority: item.priority,
-            reason: item.reason.trim(),
-          }))
-          .filter((item) => item.requirement || item.reason),
+        section: "needs",
+        value: {
+          implicit_requirements: value.implicit_requirements
+            .map((item) => ({
+              title: item.title.trim(),
+              description: item.description.trim(),
+              category: item.category.trim(),
+              importance: item.importance,
+              kind: item.kind,
+              source_reference: item.source_reference.trim(),
+              source_excerpt: item.source_excerpt.trim(),
+            }))
+            .filter((item) => item.title || item.description),
+          prioritized_requirements: value.prioritized_requirements
+            .map((item) => ({
+              requirement: item.requirement.trim(),
+              priority: item.priority,
+              reason: item.reason.trim(),
+            }))
+            .filter((item) => item.requirement || item.reason),
+        },
       };
     }
     case "keywords": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["keywords"];
+      const value = draft.value;
       const signalWords = normalizeTechnologySignalWords(value.signal_words);
       const counts = Object.fromEntries(
         Object.entries(value.signal_word_counts ?? {})
@@ -194,44 +224,53 @@ function sanitizeSectionDraft(
           ),
       );
       return {
-        signal_words: signalWords,
-        signal_word_counts: counts,
+        section: "keywords",
+        value: {
+          signal_words: signalWords,
+          signal_word_counts: counts,
+        },
       };
     }
     case "services": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["services"];
+      const value = draft.value;
       return {
-        recommended_services: value.recommended_services
-          .map((item) => ({
-            service_id: item.service_id?.trim() || null,
-            service_name: item.service_name.trim(),
-            usefulness_percent: Number.isFinite(item.usefulness_percent)
-              ? Math.max(0, Math.min(100, Math.round(item.usefulness_percent)))
-              : 0,
-            customer_need: item.customer_need.trim(),
-            recommendation_reason: item.recommendation_reason.trim(),
-            evidence: item.evidence.trim(),
-            risk_or_caveat: item.risk_or_caveat.trim(),
-          }))
-          .filter((item) => item.service_name && item.recommendation_reason),
+        section: "services",
+        value: {
+          recommended_services: value.recommended_services
+            .map((item) => ({
+              service_id: item.service_id?.trim() || null,
+              service_name: item.service_name.trim(),
+              usefulness_percent: Number.isFinite(item.usefulness_percent)
+                ? Math.max(0, Math.min(100, Math.round(item.usefulness_percent)))
+                : 0,
+              customer_need: item.customer_need.trim(),
+              recommendation_reason: item.recommendation_reason.trim(),
+              evidence: item.evidence.trim(),
+              risk_or_caveat: item.risk_or_caveat.trim(),
+            }))
+            .filter((item) => item.service_name && item.recommendation_reason),
+        },
       };
     }
     case "value": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["value"];
+      const value = draft.value;
       return {
-        value_opportunities: value.value_opportunities
-          .map((item) => ({
-            title: item.title.trim(),
-            description: item.description.trim(),
-            value_categories: item.value_categories.filter(
-              (category): category is ValueCategory =>
-                VALUE_LABELS.includes(category),
-            ),
-            profit_share_percent: Number.isFinite(item.profit_share_percent)
-              ? Math.max(0, Math.min(100, item.profit_share_percent))
-              : 0,
-          }))
-          .filter((item) => item.title || item.description),
+        section: "value",
+        value: {
+          value_opportunities: value.value_opportunities
+            .map((item) => ({
+              title: item.title.trim(),
+              description: item.description.trim(),
+              value_categories: item.value_categories.filter(
+                (category): category is ValueCategory =>
+                  VALUE_LABELS.includes(category),
+              ),
+              profit_share_percent: Number.isFinite(item.profit_share_percent)
+                ? Math.max(0, Math.min(100, item.profit_share_percent))
+                : 0,
+            }))
+            .filter((item) => item.title || item.description),
+        },
       };
     }
   }
@@ -255,700 +294,6 @@ function SectionSurface({
       ) : null}
       {children}
     </section>
-  );
-}
-
-const PIE_NEUTRAL = "rgb(203, 213, 225)";
-const VALUE_CATEGORY_COLORS = {
-  "Høyere produktivitet": "rgb(37, 99, 235)",
-  "Lavere kostnader": "rgb(5, 150, 105)",
-  "Redusert risiko": "rgb(217, 119, 6)",
-  "Bedre brukeropplevelse": "rgb(124, 58, 237)",
-} satisfies Record<(typeof VALUE_LABELS)[number], string>;
-
-const KEYWORD_COLORS = [
-  "rgb(30, 58, 138)",
-  "rgb(14, 116, 144)",
-  "rgb(5, 150, 105)",
-  "rgb(217, 119, 6)",
-  "rgb(124, 58, 237)",
-] as const;
-
-type PieDatum = {
-  id: string;
-  label: string;
-  value: number;
-  color: string;
-};
-
-function getPrimaryValueCategory(
-  item: CustomerAnalysisResult["value_opportunities"][number],
-) {
-  return (
-    item.value_categories.find((value) => VALUE_LABELS.includes(value)) ?? null
-  );
-}
-
-function normalizePieData(data: PieDatum[]) {
-  const sanitized = data.map((item) => ({
-    ...item,
-    value:
-      typeof item.value === "number" && Number.isFinite(item.value)
-        ? Math.max(0, item.value)
-        : 0,
-  }));
-  const total = sanitized.reduce((sum, item) => sum + item.value, 0);
-
-  if (total > 0) {
-    return { data: sanitized, total };
-  }
-
-  const fallback = sanitized.map((item) => ({ ...item, value: 1 }));
-  return {
-    data: fallback,
-    total: fallback.reduce((sum, item) => sum + item.value, 0),
-  };
-}
-
-type PieLabelDatum = {
-  index: number;
-  y: number;
-};
-
-function distributePieLabelYPositions(
-  labels: PieLabelDatum[],
-  minY: number,
-  maxY: number,
-  gap: number,
-) {
-  if (!labels.length) {
-    return new Map<number, number>();
-  }
-
-  const placed = [...labels]
-    .sort((left, right) => left.y - right.y)
-    .map((label) => ({ ...label }));
-  let cursor = minY;
-
-  for (const label of placed) {
-    label.y = Math.max(label.y, cursor);
-    cursor = label.y + gap;
-  }
-
-  const overflow = cursor - gap - maxY;
-
-  if (overflow > 0) {
-    for (let index = placed.length - 1; index >= 0; index -= 1) {
-      const nextY = index === placed.length - 1 ? maxY : placed[index + 1].y - gap;
-      placed[index].y = Math.min(placed[index].y - overflow, nextY);
-    }
-
-    for (let index = 0; index < placed.length; index += 1) {
-      const previousY = index === 0 ? minY : placed[index - 1].y + gap;
-      placed[index].y = Math.max(placed[index].y, previousY);
-    }
-  }
-
-  return new Map(placed.map((label) => [label.index, label.y]));
-}
-
-function polarEllipsePoint(
-  centerX: number,
-  centerY: number,
-  radiusX: number,
-  radiusY: number,
-  angleInDegrees: number,
-) {
-  const angleInRadians = (angleInDegrees * Math.PI) / 180;
-
-  return {
-    x: centerX + radiusX * Math.cos(angleInRadians),
-    y: centerY + radiusY * Math.sin(angleInRadians),
-  };
-}
-
-function describeEllipticalDonutSegment(
-  centerX: number,
-  centerY: number,
-  outerRadiusX: number,
-  outerRadiusY: number,
-  innerRadiusX: number,
-  innerRadiusY: number,
-  startAngle: number,
-  endAngle: number,
-) {
-  const safeEndAngle = Math.min(endAngle, startAngle + 359.99);
-  const outerStart = polarEllipsePoint(
-    centerX,
-    centerY,
-    outerRadiusX,
-    outerRadiusY,
-    startAngle,
-  );
-  const outerEnd = polarEllipsePoint(
-    centerX,
-    centerY,
-    outerRadiusX,
-    outerRadiusY,
-    safeEndAngle,
-  );
-  const innerStart = polarEllipsePoint(
-    centerX,
-    centerY,
-    innerRadiusX,
-    innerRadiusY,
-    startAngle,
-  );
-  const innerEnd = polarEllipsePoint(
-    centerX,
-    centerY,
-    innerRadiusX,
-    innerRadiusY,
-    safeEndAngle,
-  );
-  const largeArcFlag = safeEndAngle - startAngle > 180 ? 1 : 0;
-
-  return [
-    `M ${outerStart.x} ${outerStart.y}`,
-    `A ${outerRadiusX} ${outerRadiusY} 0 ${largeArcFlag} 1 ${outerEnd.x} ${outerEnd.y}`,
-    `L ${innerEnd.x} ${innerEnd.y}`,
-    `A ${innerRadiusX} ${innerRadiusY} 0 ${largeArcFlag} 0 ${innerStart.x} ${innerStart.y}`,
-    "Z",
-  ].join(" ");
-}
-
-function normalizeAngle(angle: number) {
-  return ((angle % 360) + 360) % 360;
-}
-
-function parseColorChannels(color: string) {
-  const rgbMatch = color.match(
-    /rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})/i,
-  );
-
-  if (rgbMatch) {
-    return rgbMatch.slice(1, 4).map((value) => Number(value)) as [
-      number,
-      number,
-      number,
-    ];
-  }
-
-  const hex = color.trim().replace("#", "");
-  if (hex.length === 3) {
-    return hex
-      .split("")
-      .map((value) => Number.parseInt(`${value}${value}`, 16)) as [
-      number,
-      number,
-      number,
-    ];
-  }
-
-  if (hex.length === 6) {
-    return [
-      Number.parseInt(hex.slice(0, 2), 16),
-      Number.parseInt(hex.slice(2, 4), 16),
-      Number.parseInt(hex.slice(4, 6), 16),
-    ];
-  }
-
-  return [148, 163, 184];
-}
-
-function withAlpha(color: string, alpha: number) {
-  const [red, green, blue] = parseColorChannels(color);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-}
-
-function DonutChart({
-  data,
-  selectedIndex,
-  onSelect,
-  valueSuffix,
-}: {
-  data: PieDatum[];
-  selectedIndex: number | null;
-  onSelect: (index: number | null) => void;
-  valueSuffix: string;
-}) {
-  const reduceMotion = useReducedMotion();
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const { data: normalizedData, total } = normalizePieData(data);
-  const centerX = 330;
-  const centerY = 190;
-  const outerRadius = 130;
-  const innerRadius = 76;
-  const labelOrbitRadius = outerRadius + 22;
-  const calloutRadius = outerRadius + 40;
-  const labelLeftX = 112;
-  const labelRightX = 668;
-  let accumulated = 0;
-  const activeIndex = hoveredIndex ?? selectedIndex;
-  const segments = normalizedData.map((item) => {
-    const share = item.value / total;
-    const startAngle = accumulated * 360 - 90;
-    const endAngle = (accumulated + share) * 360 - 90;
-    accumulated += share;
-
-    return {
-      ...item,
-      startAngle,
-      endAngle,
-      midAngle: startAngle + (endAngle - startAngle) / 2,
-    };
-  });
-  const labelPositions = segments.map((item, index) => {
-    const labelPoint = polarEllipsePoint(
-      centerX,
-      centerY,
-      labelOrbitRadius,
-      labelOrbitRadius,
-      item.midAngle,
-    );
-    const side = Math.cos((normalizeAngle(item.midAngle) * Math.PI) / 180) >= 0
-      ? "right"
-      : "left";
-
-    return {
-      index,
-      item,
-      side,
-      labelPoint,
-    };
-  });
-  const leftLabelMap = distributePieLabelYPositions(
-    labelPositions
-      .filter((label) => label.side === "left")
-      .map((label) => ({ index: label.index, y: label.labelPoint.y })),
-    48,
-    332,
-    34,
-  );
-  const rightLabelMap = distributePieLabelYPositions(
-    labelPositions
-      .filter((label) => label.side === "right")
-      .map((label) => ({ index: label.index, y: label.labelPoint.y })),
-    48,
-    332,
-    34,
-  );
-  function handlePointerLeave() {
-    setHoveredIndex(null);
-  }
-
-  function handleSliceClick(index: number) {
-    onSelect(selectedIndex === index ? null : index);
-  }
-
-  return (
-    <div
-      className="value-donut-frame mx-auto flex w-full max-w-[50rem] flex-col items-center"
-      onPointerLeave={handlePointerLeave}
-    >
-      <div className="relative w-full">
-        <motion.div className="relative">
-          <svg
-            viewBox="0 0 780 380"
-            className="w-full overflow-visible"
-            aria-label="Kakediagram"
-          >
-            <g>
-              {segments.map((item, index) => {
-                const isSelected = selectedIndex === index;
-                const isHovered = hoveredIndex === index;
-                const hasActive = activeIndex !== null;
-                const emphasis = isSelected ? 9 : isHovered ? 5 : 0;
-                const angleInRadians = (item.midAngle * Math.PI) / 180;
-                const translateX = Math.cos(angleInRadians) * emphasis;
-                const translateY = Math.sin(angleInRadians) * emphasis;
-
-                return (
-                  <motion.g
-                    key={item.id}
-                    animate={{
-                      x: reduceMotion ? 0 : translateX,
-                      y: reduceMotion ? 0 : translateY,
-                      scale: reduceMotion ? 1 : isSelected ? 1.015 : isHovered ? 1.008 : 1,
-                      opacity: !hasActive || isSelected || isHovered ? 1 : 0.48,
-                    }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 220,
-                      damping: 26,
-                      mass: 0.72,
-                    }}
-                  >
-                    <motion.path
-                      d={describeEllipticalDonutSegment(
-                        centerX,
-                        centerY,
-                        outerRadius,
-                        outerRadius,
-                        innerRadius,
-                        innerRadius,
-                        item.startAngle,
-                        item.endAngle,
-                      )}
-                      fill={item.color}
-                      stroke={isSelected || isHovered ? "rgb(15 23 42)" : "white"}
-                      strokeWidth={2}
-                      strokeLinejoin="round"
-                      className="cursor-pointer outline-none"
-                      role="button"
-                      aria-pressed={isSelected}
-                      tabIndex={0}
-                      focusable="true"
-                      aria-label={`${item.label}: ${item.value}${valueSuffix}`}
-                      onFocus={() => setHoveredIndex(index)}
-                      onBlur={() => setHoveredIndex(null)}
-                      onHoverStart={() => setHoveredIndex(index)}
-                      onHoverEnd={() => setHoveredIndex(null)}
-                      onClick={() => handleSliceClick(index)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          handleSliceClick(index);
-                        }
-                      }}
-                    />
-                  </motion.g>
-                );
-              })}
-            </g>
-            {labelPositions.map((label) => {
-              const outerPoint = polarEllipsePoint(
-                centerX,
-                centerY,
-                outerRadius + 4,
-                outerRadius + 4,
-                label.item.midAngle,
-              );
-              const elbowPoint = polarEllipsePoint(
-                centerX,
-                centerY,
-                calloutRadius,
-                calloutRadius,
-                label.item.midAngle,
-              );
-              const y =
-                label.side === "right"
-                  ? rightLabelMap.get(label.index) ?? label.labelPoint.y
-                  : leftLabelMap.get(label.index) ?? label.labelPoint.y;
-              const labelX = label.side === "right" ? labelRightX : labelLeftX;
-              const lineEndX = label.side === "right" ? labelX - 10 : labelX + 10;
-              const textAnchor = label.side === "right" ? "start" : "end";
-              const isActive = activeIndex === null || activeIndex === label.index;
-
-              return (
-                <g
-                  key={`${label.item.id}-label`}
-                  className="value-donut-callout"
-                  opacity={isActive ? 1 : 0.45}
-                  aria-hidden="true"
-                >
-                  <path
-                    d={`M ${outerPoint.x} ${outerPoint.y} L ${elbowPoint.x} ${y} L ${lineEndX} ${y}`}
-                    fill="none"
-                    stroke={withAlpha(label.item.color, isActive ? 0.88 : 0.5)}
-                    strokeWidth={1.5}
-                    strokeLinecap="round"
-                  />
-                  <circle
-                    cx={outerPoint.x}
-                    cy={outerPoint.y}
-                    r={3.5}
-                    fill={label.item.color}
-                    stroke="rgba(255,255,255,0.92)"
-                    strokeWidth={1.25}
-                  />
-                  <text
-                    x={labelX}
-                    y={y - 3}
-                    textAnchor={textAnchor}
-                    fill="rgb(15 23 42)"
-                    fontSize="12"
-                    fontWeight="600"
-                  >
-                    {label.item.label}
-                  </text>
-                  <text
-                    x={labelX}
-                    y={y + 12}
-                    textAnchor={textAnchor}
-                    fill="rgb(100 116 139)"
-                    fontSize="10.5"
-                    fontWeight="500"
-                  >
-                    {`${label.item.value}${valueSuffix}`}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-        </motion.div>
-      </div>
-    </div>
-  );
-}
-
-function PieLegend({
-  data,
-  selectedIndex,
-  onSelect,
-  valueSuffix,
-}: {
-  data: PieDatum[];
-  selectedIndex: number | null;
-  onSelect: (index: number | null) => void;
-  valueSuffix: string;
-}) {
-  return (
-    <div className="space-y-2">
-      {data.map((item, index) => (
-        <button
-          key={item.id}
-          type="button"
-          onClick={() => onSelect(selectedIndex === index ? null : index)}
-          aria-pressed={selectedIndex === index}
-          className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
-            selectedIndex === index
-              ? "border-primary/35 bg-primary/5"
-              : "border-border bg-background hover:bg-muted"
-          }`}
-        >
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <span
-              className="size-2.5 shrink-0 rounded-full shadow-sm"
-              style={{ backgroundColor: item.color }}
-            />
-            <span className="min-w-0 truncate text-[0.92rem] font-medium text-foreground">
-              {item.label}
-            </span>
-          </span>
-          <span className="shrink-0 text-[0.92rem] font-semibold tabular-nums text-foreground">
-            {item.value}
-            {valueSuffix}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ValuePieModule({
-  opportunities,
-  profitShares,
-  selectedIndex,
-  onSelect,
-}: {
-  opportunities: CustomerAnalysisResult["value_opportunities"];
-  profitShares: number[];
-  selectedIndex: number | null;
-  onSelect: (index: number | null) => void;
-}) {
-  const chartData = opportunities.map((item, index) => {
-    const category = getPrimaryValueCategory(item);
-    return {
-      id: `${item.title}-${index}`,
-      label: category ?? item.title,
-      value: profitShares[index] ?? 0,
-      color: category ? VALUE_CATEGORY_COLORS[category] : PIE_NEUTRAL,
-    };
-  });
-  const selected =
-    selectedIndex === null ? null : opportunities[selectedIndex] ?? null;
-  const selectedCategory = selected ? getPrimaryValueCategory(selected) : null;
-  const selectedShare =
-    selectedIndex === null ? 0 : profitShares[selectedIndex] ?? 0;
-  const selectedColor =
-    selectedIndex === null ? undefined : chartData[selectedIndex]?.color;
-
-  if (!opportunities.length) {
-    return null;
-  }
-
-  return (
-    <div className="mb-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-semibold text-foreground">
-            Profitteffekt per verdi
-          </h4>
-        </div>
-        <span className="text-xs font-medium text-muted-foreground">
-          Klikk på en verdi for detaljer
-        </span>
-      </div>
-
-      <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(13.5rem,0.45fr)] 2xl:items-start">
-        <div className="min-w-0 py-3">
-          <DonutChart
-            data={chartData}
-            selectedIndex={selectedIndex}
-            onSelect={onSelect}
-            valueSuffix="%"
-          />
-        </div>
-        <div className="min-w-0 space-y-3">
-          <PieLegend
-            data={chartData}
-            selectedIndex={selectedIndex}
-            onSelect={onSelect}
-            valueSuffix="%"
-          />
-          {selected ? (
-            <div className="rounded-lg border border-border/70 bg-card px-3.5 py-3.5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold tracking-normal text-muted-foreground">
-                    Valgt verdi
-                  </p>
-                  <p
-                    className="mt-1 text-lg font-semibold"
-                    style={{
-                      color: selectedColor,
-                    }}
-                  >
-                    {selectedCategory ?? selected.title}
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-[0.82rem] font-semibold text-primary">
-                  {selectedShare}% av profitteffekt
-                </span>
-              </div>
-              <details className="group mt-3">
-                <summary className="cursor-pointer list-none text-[0.82rem] font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-                  Les mer
-                </summary>
-                <div className="mt-3">
-                  <MarkdownViewer
-                    content={selected.description}
-                    className="analysis-prose text-[0.92rem] text-muted-foreground"
-                  />
-                </div>
-              </details>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-border/80 bg-card/60 px-3.5 py-3.5 text-[0.9rem] leading-6 text-muted-foreground">
-              Velg en verdi i kaken eller listen for å se detaljer.
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function KeywordPieModule({
-  analysis,
-  keywords,
-  selectedIndex,
-  onSelect,
-}: {
-  analysis: CustomerAnalysisResult;
-  keywords: string[];
-  selectedIndex: number | null;
-  onSelect: (index: number | null) => void;
-}) {
-  const chartData = keywords.map((keyword, index) => ({
-    id: `${keyword}-${index}`,
-    label: keyword,
-    value: getKeywordMentionCount(analysis, keyword),
-    color: KEYWORD_COLORS[index % KEYWORD_COLORS.length] ?? PIE_NEUTRAL,
-  }));
-  const selectedKeyword =
-    selectedIndex === null ? null : keywords[selectedIndex] ?? null;
-  const selectedCount = selectedKeyword
-    ? getKeywordMentionCount(analysis, selectedKeyword)
-    : 0;
-  const totalMentions = chartData.reduce((sum, item) => sum + item.value, 0);
-  const selectedShare =
-    totalMentions > 0 ? Math.round((selectedCount / totalMentions) * 100) : 0;
-
-  if (!keywords.length) {
-    return null;
-  }
-
-  const KeywordIcon = selectedKeyword ? getKeywordIcon(selectedKeyword) : null;
-
-  return (
-    <div className="mb-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-semibold text-foreground">
-            Nøkkelord etter antall nevnt
-          </h4>
-        </div>
-        <span className="text-xs font-medium text-muted-foreground">
-          Topp 5 signalord
-        </span>
-      </div>
-
-      <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(13.5rem,0.45fr)] 2xl:items-start">
-        <div className="min-w-0 py-3">
-          <DonutChart
-            data={chartData}
-            selectedIndex={selectedIndex}
-            onSelect={onSelect}
-            valueSuffix="x"
-          />
-        </div>
-        <div className="min-w-0 space-y-3">
-          <PieLegend
-            data={chartData}
-            selectedIndex={selectedIndex}
-            onSelect={onSelect}
-            valueSuffix="x"
-          />
-          {selectedKeyword && KeywordIcon ? (
-            <div className="rounded-lg border border-border/70 bg-card px-3.5 py-3.5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div
-                    className="flex size-10 shrink-0 items-center justify-center rounded-lg text-white"
-                    style={{
-                      backgroundColor:
-                        selectedIndex === null
-                          ? PIE_NEUTRAL
-                          : chartData[selectedIndex]?.color,
-                    }}
-                  >
-                    <KeywordIcon className="size-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold tracking-normal text-muted-foreground">
-                      Valgt nøkkelord
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-foreground">
-                      {selectedKeyword}
-                    </p>
-                  </div>
-                </div>
-                <span className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-[0.82rem] font-semibold text-primary">
-                  {selectedCount}x · {selectedShare}% av topp 5
-                </span>
-              </div>
-              <details className="group mt-3">
-                <summary className="cursor-pointer list-none text-[0.82rem] font-medium text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-                  Les mer
-                </summary>
-                <p className="mt-3 text-[0.9rem] leading-6 text-muted-foreground">
-                  Nøkkelordet er brukt {selectedCount} ganger i analysert
-                  grunnlag. Bruk dette som språk- og arkitektursignal i
-                  løsningsbeskrivelsen, spesielt der kunden forventer gjenkjennelig
-                  terminologi og tydelig kobling til dokumentgrunnlaget.
-                </p>
-              </details>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-border/80 bg-card/60 px-3.5 py-3.5 text-[0.9rem] leading-6 text-muted-foreground">
-              Velg et nøkkelord i kaken eller listen for å se detaljer.
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1047,65 +392,6 @@ function serviceFitTone(score: number) {
     badgeClassName: "bg-amber-500 text-white",
     barClassName: "bg-amber-500",
   };
-}
-
-function getKeywordIcon(keyword: string): LucideIcon {
-  const value = keyword.toLowerCase();
-
-  if (
-    value.includes("azure") ||
-    value.includes("cloud") ||
-    value.includes("sky")
-  ) {
-    return Cloud;
-  }
-
-  if (
-    value.includes("entra") ||
-    value.includes("id") ||
-    value.includes("auth") ||
-    value.includes("ident")
-  ) {
-    return KeyRound;
-  }
-
-  if (
-    value.includes("data") ||
-    value.includes("database") ||
-    value.includes("sql")
-  ) {
-    return Database;
-  }
-
-  if (
-    value.includes("security") ||
-    value.includes("sikker") ||
-    value.includes("zero trust") ||
-    value.includes("compliance")
-  ) {
-    return Shield;
-  }
-
-  if (
-    value.includes("api") ||
-    value.includes("integr") ||
-    value.includes("workflow") ||
-    value.includes("prosess")
-  ) {
-    return Workflow;
-  }
-
-  return Cpu;
-}
-
-function getKeywordMentionCount(
-  analysis: CustomerAnalysisResult,
-  keyword: string,
-) {
-  const count = analysis.signal_word_counts?.[keyword];
-  return typeof count === "number" && Number.isFinite(count)
-    ? Math.max(1, Math.round(count))
-    : 1;
 }
 
 function getTopSignalWords(analysis: CustomerAnalysisResult) {
@@ -1211,13 +497,9 @@ export function ProjectAnalysisTab({
     revision?: string,
   ) => Promise<boolean>;
 }) {
-  const [editingSection, setEditingSection] =
-    useState<CustomerAnalysisSection | null>(null);
-  const [sectionDraft, setSectionDraft] =
-    useState<EditableCustomerAnalysisSnapshot | null>(null);
-  const [editingBasis, setEditingBasis] = useState<CustomerAnalysisResult | null>(null);
-  const customerAnalysis = latestCustomerAnalysis ?? (editingSection ? editingBasis : null);
-  const [sectionRevision, setSectionRevision] = useState<string | undefined>();
+  const [sectionEditor, setSectionEditor] = useState<SectionEditor | null>(null);
+  const editingSection = sectionEditor?.section ?? null;
+  const customerAnalysis = latestCustomerAnalysis ?? sectionEditor?.basis ?? null;
   const [sectionDraftError, setSectionDraftError] = useState("");
   const [activeSection, setActiveSection] =
     useState<(typeof SECTION_TABS)[number]["value"]>(
@@ -1235,8 +517,7 @@ export function ProjectAnalysisTab({
   useEffect(() => {
     if (!customerAnalysis && !editingSection) {
       setActiveSection("summary");
-      setEditingSection(null);
-      setSectionDraft(null);
+      setSectionEditor(null);
       setSectionDraftError("");
     }
   }, [customerAnalysis, editingSection]);
@@ -1307,48 +588,40 @@ export function ProjectAnalysisTab({
     return SECTION_TABS.find((tab) => tab.value === section)?.label ?? "Analyse";
   }
 
-  function makeSectionDraft(section: CustomerAnalysisSection) {
-    if (!customerAnalysis) {
-      return null;
-    }
-
-    return cloneEditableSnapshot(
-      getCustomerAnalysisSectionSnapshot(customerAnalysis, section),
-    );
-  }
-
   function onStartSectionEdit(section: CustomerAnalysisSection) {
-    if (readOnly || !onSaveAnalysis) return;
-    setEditingBasis(customerAnalysis);
-    setSectionRevision(customerAnalysis?.revision);
-    setEditingSection(section);
-    setSectionDraft(makeSectionDraft(section));
+    if (readOnly || !onSaveAnalysis || !customerAnalysis) return;
+    setSectionEditor({
+      ...sectionDraft(
+        section,
+        cloneEditableSnapshot(getCustomerAnalysisSectionSnapshot(customerAnalysis, section)),
+      ),
+      basis: customerAnalysis,
+      revision: customerAnalysis.revision,
+    });
     setSectionDraftError("");
   }
 
   function onCancelSectionEdit() {
-    setEditingSection(null);
-    setSectionDraft(null);
+    setSectionEditor(null);
     setSectionDraftError("");
   }
 
-  async function onSaveSectionEdit(section: CustomerAnalysisSection) {
+  async function onSaveSectionEdit() {
     if (readOnly || !onSaveAnalysis) return;
-    if (!sectionDraft) {
+    if (!sectionEditor) {
       setSectionDraftError("Ingen endringer å lagre.");
       return;
     }
 
     try {
-      const snapshot = sanitizeSectionDraft(section, sectionDraft);
+      const draft = sanitizeSectionDraft(sectionEditor);
       const saved = await onSaveAnalysis(
-        section,
-        snapshot as CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
-        sectionRevision,
+        draft.section,
+        draft.value,
+        sectionEditor.revision,
       );
       if (!saved) return;
-      setEditingSection(null);
-      setSectionDraft(null);
+      setSectionEditor(null);
       setSectionDraftError("");
     } catch {
       // runAction owns the user-facing error message in the parent.
@@ -1372,8 +645,8 @@ export function ProjectAnalysisTab({
             Avbryt
           </Button>
           <Button
-            onClick={() => void onSaveSectionEdit(section)}
-            disabled={saveBusy || !sectionDraft}
+            onClick={() => void onSaveSectionEdit()}
+            disabled={saveBusy}
             variant="outline"
             size="sm"
           >
@@ -1405,12 +678,12 @@ export function ProjectAnalysisTab({
     );
   }
 
-  function renderSectionActions(section: CustomerAnalysisSection) {
-    return renderEditButton(section);
-  }
-
-  function updateDraft(nextDraft: EditableCustomerAnalysisSnapshot) {
-    setSectionDraft(nextDraft);
+  function updateDraft(nextDraft: SectionDraft) {
+    setSectionEditor((current) =>
+      current?.section === nextDraft.section
+        ? { ...nextDraft, basis: current.basis, revision: current.revision }
+        : current,
+    );
     setSectionDraftError("");
   }
 
@@ -2105,10 +1378,10 @@ export function ProjectAnalysisTab({
     );
   }
 
-  function renderSectionDraftFields(section: CustomerAnalysisSection) {
-    switch (section) {
+  function renderSectionDraftFields(editor: SectionDraft) {
+    switch (editor.section) {
       case "summary": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["summary"];
+        const draft = editor.value;
         return (
           <>
             {renderTextEditField({
@@ -2116,7 +1389,7 @@ export function ProjectAnalysisTab({
               label: "Kundesituasjon",
               value: draft.customer_profile_summary,
               onChange: (value) =>
-                updateDraft({ ...draft, customer_profile_summary: value }),
+                updateDraft(sectionDraft("summary", { ...draft, customer_profile_summary: value })),
               placeholder: "Beskriv kundens nåsituasjon.",
               rows: 7,
             })}
@@ -2125,7 +1398,7 @@ export function ProjectAnalysisTab({
               label: "Kundens mål",
               value: draft.customer_goals_summary,
               onChange: (value) =>
-                updateDraft({ ...draft, customer_goals_summary: value }),
+                updateDraft(sectionDraft("summary", { ...draft, customer_goals_summary: value })),
               placeholder: "Beskriv kundens mål og ønskede retning.",
               rows: 7,
             })}
@@ -2133,14 +1406,14 @@ export function ProjectAnalysisTab({
         );
       }
       case "strategy": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["strategy"];
+        const draft = editor.value;
         return (
           <>
             {renderTextEditField({
               id: "edit-executive-summary",
               label: "Arbeidstekst",
               value: draft.executive_summary,
-              onChange: (value) => updateDraft({ ...draft, executive_summary: value }),
+              onChange: (value) => updateDraft(sectionDraft("strategy", { ...draft, executive_summary: value })),
               placeholder: "Skriv strategisk oppsummering.",
               rows: 8,
             })}
@@ -2149,22 +1422,21 @@ export function ProjectAnalysisTab({
               label: "Posisjoneringsspor",
               items: draft.positioning_recommendations,
               onChange: (items) =>
-                updateDraft({ ...draft, positioning_recommendations: items }),
+                updateDraft(sectionDraft("strategy", { ...draft, positioning_recommendations: items })),
               placeholder: "Skriv anbefaling eller posisjonering.",
             })}
           </>
         );
       }
       case "clarifications": {
-        const draft =
-          sectionDraft as CustomerAnalysisSectionSnapshotMap["clarifications"];
+        const draft = editor.value;
         return (
           <div>
             {renderStringListEditor({
               id: "edit-ambiguities",
               label: "Avklaringer",
               items: draft.ambiguities,
-              onChange: (items) => updateDraft({ ...draft, ambiguities: items }),
+              onChange: (items) => updateDraft(sectionDraft("clarifications", { ...draft, ambiguities: items })),
               placeholder: "Skriv avklaring eller usikkerhet.",
               maxItems: MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
             })}
@@ -2172,7 +1444,7 @@ export function ProjectAnalysisTab({
         );
       }
       case "design": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["design"];
+        const draft = editor.value;
         return (
           <>
             {renderTextEditField({
@@ -2180,7 +1452,7 @@ export function ProjectAnalysisTab({
               label: "Løsningsdesign",
               value: draft.high_level_solution_design,
               onChange: (value) =>
-                updateDraft({ ...draft, high_level_solution_design: value }),
+                updateDraft(sectionDraft("design", { ...draft, high_level_solution_design: value })),
               placeholder: "Beskriv overordnet løsning.",
               rows: 8,
             })}
@@ -2189,7 +1461,7 @@ export function ProjectAnalysisTab({
               label: "Arkitekturdiagram",
               value: draft.high_level_architecture_mermaid,
               onChange: (value) =>
-                updateDraft({ ...draft, high_level_architecture_mermaid: value }),
+                updateDraft(sectionDraft("design", { ...draft, high_level_architecture_mermaid: value })),
               placeholder: "Mermaid-diagram hvis det finnes.",
               rows: 8,
             })}
@@ -2197,21 +1469,21 @@ export function ProjectAnalysisTab({
         );
       }
       case "risks": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["risks"];
+        const draft = editor.value;
         return (
           <>
             {renderStringListEditor({
               id: "edit-risks",
               label: "Risikoer",
               items: draft.risks,
-              onChange: (items) => updateDraft({ ...draft, risks: items }),
+              onChange: (items) => updateDraft(sectionDraft("risks", { ...draft, risks: items })),
               placeholder: "Skriv risiko.",
             })}
             {renderStringListEditor({
               id: "edit-risks-for-us",
               label: "Risiko for oss",
               items: draft.risks_for_us ?? [],
-              onChange: (items) => updateDraft({ ...draft, risks_for_us: items }),
+              onChange: (items) => updateDraft(sectionDraft("risks", { ...draft, risks_for_us: items })),
               placeholder: "Skriv leverandørrisiko.",
             })}
             {renderStringListEditor({
@@ -2219,67 +1491,67 @@ export function ProjectAnalysisTab({
               label: "Risiko for kunden",
               items: draft.risks_for_customer ?? [],
               onChange: (items) =>
-                updateDraft({ ...draft, risks_for_customer: items }),
+                updateDraft(sectionDraft("risks", { ...draft, risks_for_customer: items })),
               placeholder: "Skriv kunderisiko.",
             })}
           </>
         );
       }
       case "needs": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["needs"];
+        const draft = editor.value;
         return (
           <>
             {renderRequirementListEditor({
               label: "Implisitte behov",
               items: draft.implicit_requirements,
               onChange: (items) =>
-                updateDraft({ ...draft, implicit_requirements: items }),
+                updateDraft(sectionDraft("needs", { ...draft, implicit_requirements: items })),
               defaultKind: "Implisitt",
             })}
             {renderPrioritizedRequirementsEditor(
               draft.prioritized_requirements,
-              (items) => updateDraft({ ...draft, prioritized_requirements: items }),
+              (items) => updateDraft(sectionDraft("needs", { ...draft, prioritized_requirements: items })),
             )}
           </>
         );
       }
       case "keywords": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["keywords"];
+        const draft = editor.value;
         return (
           <>
             {renderStringListEditor({
               id: "edit-signal-words",
               label: "Signalord",
               items: draft.signal_words,
-              onChange: (items) => updateDraft({ ...draft, signal_words: items }),
+              onChange: (items) => updateDraft(sectionDraft("keywords", { ...draft, signal_words: items })),
               placeholder: "Skriv signalord.",
             })}
             {renderKeywordCountsEditor(
               draft.signal_word_counts ?? {},
-              (counts) => updateDraft({ ...draft, signal_word_counts: counts }),
+              (counts) => updateDraft(sectionDraft("keywords", { ...draft, signal_word_counts: counts })),
             )}
           </>
         );
       }
       case "services": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["services"];
+        const draft = editor.value;
         return renderRecommendedServicesEditor(
           draft.recommended_services,
-          (items) => updateDraft({ ...draft, recommended_services: items }),
+          (items) => updateDraft(sectionDraft("services", { ...draft, recommended_services: items })),
         );
       }
       case "value": {
-        const draft = sectionDraft as CustomerAnalysisSectionSnapshotMap["value"];
+        const draft = editor.value;
         return renderValueOpportunitiesEditor(
           draft.value_opportunities,
-          (items) => updateDraft({ ...draft, value_opportunities: items }),
+          (items) => updateDraft(sectionDraft("value", { ...draft, value_opportunities: items })),
         );
       }
     }
   }
 
   function renderSectionEditor(section: CustomerAnalysisSection) {
-    if (editingSection !== section || !sectionDraft) {
+    if (sectionEditor?.section !== section) {
       return null;
     }
 
@@ -2294,13 +1566,13 @@ export function ProjectAnalysisTab({
           </p>
         </div>
         <div className="space-y-4">
-          {customerAnalysis?.revision && sectionRevision !== customerAnalysis.revision && (
+          {customerAnalysis?.revision && sectionEditor.revision !== customerAnalysis.revision && (
             <div className="w-full text-sm text-amber-800">
               <p>Analysen er endret. Utkastet ditt er beholdt. Hvis du fortsetter, erstatter utkastet denne seksjonen i siste analyse.</p>
-              <Button variant="outline" size="sm" disabled={saveBusy} onClick={() => setSectionRevision(customerAnalysis.revision)}>Bruk siste analyse som grunnlag</Button>
+              <Button variant="outline" size="sm" disabled={saveBusy} onClick={() => setSectionEditor({ ...sectionEditor, revision: customerAnalysis.revision })}>Bruk siste analyse som grunnlag</Button>
             </div>
           )}
-          {renderSectionDraftFields(section)}
+          {renderSectionDraftFields(sectionEditor)}
         </div>
         {sectionDraftError ? (
           <p className="mt-2 text-sm text-destructive">{sectionDraftError}</p>
@@ -2365,7 +1637,7 @@ export function ProjectAnalysisTab({
                 {activeSection === "value" ? renderListToggleButton(showValueList, () =>
                   setShowValueList((isVisible) => !isVisible),
                 ) : null}
-                {renderSectionActions(activeSection)}
+                {renderEditButton(activeSection)}
               </div>
             ) : null}
             {(!customerAnalysis || sourceChanged) && !readOnly && onGenerate ? (
@@ -2409,7 +1681,7 @@ export function ProjectAnalysisTab({
               <section aria-label="Underliggende behov" className="analysis-needs mt-8 border-t border-slate-200 pt-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <h4 className="text-base font-semibold">Behov</h4>
-                  {renderSectionActions("needs")}
+                  {renderEditButton("needs")}
                 </div>
                 {renderSectionEditor("needs")}
                 {topImplicitRequirements.length ? (
@@ -2473,7 +1745,7 @@ export function ProjectAnalysisTab({
                   {renderListToggleButton(showKeywordList, () =>
                     setShowKeywordList((isVisible) => !isVisible),
                   )}
-                  {renderSectionActions("keywords")}
+                  {renderEditButton("keywords")}
                 </>
               }
             >

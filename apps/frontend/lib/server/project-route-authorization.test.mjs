@@ -37,6 +37,7 @@ function harness({ role = null, admin = false, active = true, roleError = false 
     if (name === "productionSafeErrorMessage") return (_, fallback) => fallback;
     if (name === "workflowErrorStatus") return () => 500;
     if (name === "withTiming") return (_, __, fn) => fn();
+    if (name === "DirectSolutionEvaluationWaitTimeoutError") return class extends Error {};
     return (...args) => { dataCalls.push({ name, args }); return String(name).startsWith("list") ? [] : null; };
   } });
   function load(relative) {
@@ -49,7 +50,8 @@ function harness({ role = null, admin = false, active = true, roleError = false 
       if (name === "next/headers") return { headers: async () => new Headers({ "x-principal": "principal", "x-session": "session" }) };
       if (name === "@/lib/password-auth") return { AUTH_PRINCIPAL_HEADER: "x-principal", AUTH_SESSION_HEADER: "x-session" };
       if (name === "@/lib/server/data-api") return { createServiceClient: () => db };
-      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses"].includes(name)) return load(`${name.slice(2)}.ts`);
+      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses", "@/lib/server/request-body", "@/lib/server/workflow-errors", "@/lib/unknown-values", "@/lib/types"].includes(name)) return load(`${name.slice(2)}.ts`);
+      if (name === "@/lib/server/multipart") return { MultipartRequestError: class MultipartRequestError extends Error {} };
       return service;
     };
     new vm.Script(`(function(require,exports){${source}\n})`, { filename: relative }).runInThisContext()(resolve, exports);
@@ -101,6 +103,15 @@ test("restricted viewers cannot delete artifacts; global admins and editors can"
     assert.equal(h.dataCalls.some(({ name }) => name === "deleteGeneratedArtifact"), allowed);
   }
 });
+test("artifact GET keeps a filter for every stored artifact type", async () => {
+  // Legacy types are readable even though they can no longer be generated.
+  const h = harness({ role: "viewer" });
+  const { GET } = h.load("app/api/projects/[id]/generate/route.ts");
+  await GET(new Request(`http://localhost/api/projects/${projectId}/generate?artifact_type=tilbudsstrategi`), { params: Promise.resolve({ id: projectId }) });
+  const listCall = h.dataCalls.find(({ name }) => name === "listGeneratedArtifactsFresh");
+  assert.deepEqual(listCall?.args[1], { artifactType: "tilbudsstrategi" });
+});
+
 test("permitted reads retain role and uppercase UUID compatibility", async () => {
   for (const options of [{ role: "restricted_viewer" }, { role: "viewer" }, { admin: true }]) {
     for (const route of ["chat", "generate"]) {

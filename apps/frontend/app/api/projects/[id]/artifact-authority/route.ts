@@ -1,8 +1,8 @@
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { currentArtifactTypesFromAuthority, getArtifactAuthoritySummary } from "@/lib/server/repositories/artifacts";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 export async function GET(
   _: Request,
@@ -21,13 +21,6 @@ export async function GET(
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke hente artefaktstatus."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente artefaktstatus.");
   }
 }

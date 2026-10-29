@@ -15,6 +15,7 @@ import { PROJECT_PAGE_LABELS } from "@/lib/project-page-activity";
 
 import { AdminMonitoring } from "./admin-monitoring";
 import type { MonitoringSnapshot } from "./monitoring-model";
+import { readJsonPayload } from "@/lib/client/project-api";
 
 type ShareableRole = "editor" | "viewer" | "restricted_viewer";
 type UserProject = { id: string; name: string; role: ShareableRole | "owner"; source: "direct" };
@@ -74,9 +75,10 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
-  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  const payload = await readJsonPayload<T>(response, "Forespørselen feilet.");
   if (!response.ok) throw new Error(payload.error || "Forespørselen feilet.");
-  return payload;
+  // A successful response from the admin routes matches T.
+  return payload as T;
 }
 
 export function AdminConsole({ monitoringSnapshot, initialSection = "overview" }: { monitoringSnapshot?: MonitoringSnapshot; initialSection?: Section } = {}) {

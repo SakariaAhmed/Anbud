@@ -20,8 +20,6 @@ import {
   projectServicesCacheKey,
 } from "@/lib/client-cache";
 
-export type ProjectSnapshotPayload = ProjectSnapshotResult;
-
 type ProjectWorkspaceTabName =
   | "documents"
   | "analysis"
@@ -102,21 +100,26 @@ function errorMessageFromText(text: string, fallbackMessage: string) {
 export async function readJsonPayload<T>(
   response: Response,
   fallbackMessage: string,
-): Promise<T & { error?: string }> {
+): Promise<Partial<T> & { error?: string }> {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    const payload = (await response.json()) as T & { error?: string };
+    // The fields are only checked by callers; a failed request may carry none.
+    const payload = (await response.json().catch(() => ({ error: fallbackMessage }))) as Partial<T> & {
+      error?: string;
+    };
     const message = errorMessageFromPayload(payload, fallbackMessage);
     return message ? { ...payload, error: message } : payload;
   }
 
   const text = await response.text().catch(() => "");
   const looksLikeHtml = /^\s*</.test(text);
+  const noFields: Partial<T> = {};
   return {
+    ...noFields,
     error: looksLikeHtml
       ? `${fallbackMessage} Serveren returnerte en HTML-feilside i stedet for JSON. Sjekk serverloggen for detaljer.`
       : errorMessageFromText(text, fallbackMessage),
-  } as T & { error?: string };
+  };
 }
 
 export function markClientPerformance(
@@ -335,11 +338,34 @@ export async function watchProjectJob({
   });
 }
 
+export async function createProject(input: {
+  name: string;
+  customer_name: string;
+  industry: string;
+  description: string;
+  selected_service_ids?: string[];
+}) {
+  const response = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const payload = await readJsonPayload<{ id: string }>(
+    response,
+    "Kunne ikke opprette prosjekt.",
+  );
+  if (!response.ok || !payload.id) {
+    throw new Error(payload.error || "Kunne ikke opprette prosjekt.");
+  }
+  return payload.id;
+}
+
 export async function fetchProjectState(projectId: string, signal?: AbortSignal): Promise<ProjectDetail> {
   const response = await fetch(`/api/projects/${projectId}`, { cache: "no-store", signal });
-  const payload = await readJsonPayload<ProjectDetail & { error?: string }>(response, "Kunne ikke oppdatere prosjektstatus.");
+  const payload = await readJsonPayload<ProjectDetail>(response, "Kunne ikke oppdatere prosjektstatus.");
   if (!response.ok || !payload.id) throw new Error(payload.error ?? "Kunne ikke oppdatere prosjektstatus.");
-  return payload;
+  // A successful response from this route is a complete project.
+  return payload as ProjectDetail;
 }
 
 export async function fetchProjectServices(
@@ -564,7 +590,7 @@ export async function uploadProjectDocument(input: {
   const payload = await readJsonPayload<{
     error?: string;
     document?: ProjectDocument;
-    project?: ProjectSnapshotPayload;
+    project?: ProjectSnapshotResult;
     job?: ProjectJobRecord;
   }>(response, input.fallbackMessage);
   if (!response.ok || !payload.document || !payload.project) {
@@ -622,7 +648,7 @@ export async function saveCustomerAnalysisSection(input: {
   const payload = await readJsonPayload<{
     error?: string;
     analysis?: CustomerAnalysisResult;
-    project?: ProjectSnapshotPayload;
+    project?: ProjectSnapshotResult;
   }>(response, "Kunne ikke lagre analysen.");
   if (!response.ok || !payload.analysis) {
     throw new Error(payload.error || "Kunne ikke lagre analysen.");
@@ -656,7 +682,7 @@ export async function updateGeneratedArtifact(input: {
   const payload = await readJsonPayload<{
     error?: string;
     artifact?: GeneratedArtifact;
-    project?: ProjectSnapshotPayload;
+    project?: ProjectSnapshotResult;
   }>(response, "Kunne ikke lagre kravbesvarelsen.");
   if (!response.ok || !payload.artifact || !payload.project) {
     throw new Error(payload.error || "Kunne ikke lagre kravbesvarelsen.");
@@ -680,7 +706,7 @@ export async function deleteGeneratedArtifact(input: {
   }).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
-    project?: ProjectSnapshotPayload;
+    project?: ProjectSnapshotResult;
   }>(response, "Kunne ikke slette artefakten.");
   if (!response.ok || !payload.project) {
     throw new Error(payload.error || "Kunne ikke slette artefakten.");
@@ -701,7 +727,7 @@ export async function deleteProjectDocument(input: {
   ).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
-    project?: ProjectSnapshotPayload;
+    project?: ProjectSnapshotResult;
   }>(response, "Kunne ikke slette dokumentet.");
   if (!response.ok || !payload.project) {
     throw new Error(payload.error || "Kunne ikke slette dokumentet.");

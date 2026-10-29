@@ -1,5 +1,5 @@
 // Only fixed domain messages may cross the production error boundary.
-const ERRORS: Record<string, { status: number; message: string }> = {
+const ERRORS = {
   AI_OUTPUT_CORRUPT: { status: 502, message: "Den genererte teksten var skadet og ble ikke lagret. Prøv å generere på nytt." },
   INVALID_PDF_DOCUMENT: { status: 400, message: "PDF-filen er ugyldig eller skadet. Åpne filen i en PDF-leser og lagre en ny kopi før du laster opp igjen." },
   PASSWORD_PROTECTED_PDF: { status: 400, message: "PDF-filen er passordbeskyttet. Last opp en ulåst kopi." },
@@ -13,17 +13,48 @@ const ERRORS: Record<string, { status: number; message: string }> = {
   CUSTOMER_ANALYSIS_REQUIRED: { status: 422, message: "Generer kundeanalyse før løsningsvurdering." },
   SOLUTION_EVALUATION_REQUIRED: { status: 422, message: "Generer vurdering før lederoppsummering eller forbedring av systemløsningen." },
   PROJECT_JOB_SUPERSEDED: { status: 409, message: "En nyere jobb har overtatt. Last inn prosjektet for å se siste resultat." },
-};
-const LEGACY: Record<string, string> = {
-  "Generer kundeanalyse før løsningsvurdering.": "CUSTOMER_ANALYSIS_REQUIRED",
-  "Generer vurdering før lederoppsummering.": "SOLUTION_EVALUATION_REQUIRED",
-  "Generer vurdering før du forbedrer systemløsningen.": "SOLUTION_EVALUATION_REQUIRED",
-};
+} satisfies Record<string, { status: number; message: string }>;
+export type WorkflowErrorCode = keyof typeof ERRORS;
+
+/** A domain failure with a fixed user message and HTTP status. */
+export class WorkflowError extends Error {
+  readonly code: WorkflowErrorCode;
+
+  constructor(code: WorkflowErrorCode, detail?: string, options?: ErrorOptions) {
+    super(detail ? `${code}: ${detail}` : code, options);
+    this.name = "WorkflowError";
+    this.code = code;
+  }
+}
+
+/** A precondition the user can fix; its message is written for them. */
+export class WorkflowPreconditionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowPreconditionError";
+  }
+}
+
+// PostgreSQL functions raise these codes as message text, so database
+// failures are recognised by the code prefix rather than by class.
+function codeFromMessage(message: string) {
+  return (Object.keys(ERRORS) as WorkflowErrorCode[]).find((key) =>
+    new RegExp(`(?:^|\\b)${key}(?=$|[:\\s])`, "u").test(message));
+}
+
 export function workflowError(error: unknown) {
-  const text = error instanceof Error ? error.message : "";
-  const code = LEGACY[text] ?? Object.keys(ERRORS).find(key =>
-    new RegExp(`(?:^|\\b)${key}(?=$|[:\\s])`, "u").test(text));
-  return code ? { code, ...ERRORS[code] } : null;
+  // Wrapping an error with `{ cause }` must not hide its domain code.
+  let current = error;
+  for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
+    if (current instanceof WorkflowPreconditionError) {
+      return { code: "WORKFLOW_PRECONDITION", status: 422, message: current.message };
+    }
+    const code =
+      current instanceof WorkflowError ? current.code : codeFromMessage(current.message);
+    if (code) return { code, ...ERRORS[code] };
+    current = current.cause;
+  }
+  return null;
 }
 export function workflowErrorStatus(error: unknown) {
   return workflowError(error)?.status ?? 500;

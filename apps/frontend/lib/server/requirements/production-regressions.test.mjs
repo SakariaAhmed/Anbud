@@ -8,7 +8,7 @@ const jiti = createJiti(import.meta.url, {alias: {'@':root, 'server-only':'/dev/
 const { extractRequirementLedgerForDocument } = jiti('./extraction.ts');
 const { narrativeAnswerEvidence } = jiti('./narrative-answer-evidence.ts');
 const { buildDeclaredHeadingRequirementLedger } = jiti('./legacy-corpus-parser.ts');
-const { supplierAnswerNeedsConfirmation, mergeRequirementCoverageLedgerWithSolutionAnswers, correctCoverageAssessmentWithSourceEvidence } = jiti('../ai.ts');
+const { supplierAnswerNeedsConfirmation, mergeRequirementCoverageLedgerWithSolutionAnswers, correctCoverageAssessmentWithSourceEvidence } = jiti('../ai/requirement-coverage.ts');
 function document(name, role) {
  return {id:name,title:name,role,file_format:'txt',structure_map:[],file_base64:null,
  raw_text:readFileSync(new URL(`./fixtures/production-regressions/${name}.txt`,import.meta.url),'utf8')};

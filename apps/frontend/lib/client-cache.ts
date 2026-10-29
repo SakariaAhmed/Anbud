@@ -20,8 +20,10 @@ export const SERVICE_DESCRIPTIONS_CACHE_KEY = "service-descriptions";
 export const SERVICE_DESCRIPTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
 export const PROJECT_SERVICES_CACHE_TTL_MS = 2 * 60 * 1000;
 
+export const PROJECT_SERVICES_CACHE_PREFIX = "project-service-descriptions:";
+
 export function projectServicesCacheKey(projectId: string) {
-  return `project-service-descriptions:${projectId}`;
+  return `${PROJECT_SERVICES_CACHE_PREFIX}${projectId}`;
 }
 
 export function setClientCache<T>(key: string, value: T, ttlMs: number) {

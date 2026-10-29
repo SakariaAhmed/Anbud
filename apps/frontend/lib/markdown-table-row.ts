@@ -56,3 +56,7 @@ export function splitMarkdownTableRow(line: string) {
   cells.push(current.trim());
   return cells;
 }
+
+export function isMarkdownTableDivider(line: string) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}

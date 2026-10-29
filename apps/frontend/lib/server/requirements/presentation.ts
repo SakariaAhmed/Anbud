@@ -1,6 +1,7 @@
 import "server-only";
 
 import { sortByRequirementOrder } from "@/lib/requirement-order";
+import { REQUIREMENT_RESPONSE_TABLE_HEADINGS } from "@/lib/requirement-response-table";
 import { toMarkdownTableRow } from "@/lib/server/requirements/markdown-table";
 import { lastHeadingSegment, normalizeRequirementId } from "@/lib/server/requirements/normalization";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
@@ -270,8 +271,8 @@ export function requirementDisplaySource(
 
 export function requirementTableMarkdown(rows: string[][]) {
   return [
-    "| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |",
-    "|---|---|---|---|---|",
+    `| ${REQUIREMENT_RESPONSE_TABLE_HEADINGS.join(" | ")} |`,
+    `|${REQUIREMENT_RESPONSE_TABLE_HEADINGS.map(() => "---").join("|")}|`,
     ...rows.map(toMarkdownTableRow),
   ];
 }

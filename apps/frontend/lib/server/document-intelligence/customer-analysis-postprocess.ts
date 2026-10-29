@@ -1,6 +1,15 @@
+import {
+  isRecord,
+  stringList,
+  stringOr,
+  untrustedRows,
+  type Untrusted,
+} from "@/lib/unknown-values";
 import { normalizeTechnologySignalWords } from "@/lib/signal-words";
 import {
   MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
+  isRequirementImportance,
+  type AnalysisRequirement,
   type CustomerAnalysisResult,
   type ProjectDocumentStructureEntry,
   type ProjectServiceDescription,
@@ -556,8 +565,7 @@ function includesSignal(signals: string[], pattern: RegExp) {
   return signals.some((signal) => pattern.test(signal));
 }
 
-function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
-  const signals = Array.isArray(result.signal_words) ? result.signal_words : [];
+function buildSimpleArchitectureDiagram(signals: string[]) {
 
   const hasMicrosoftIdentity = includesSignal(
     signals,
@@ -613,11 +621,11 @@ function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
 
 function preferSimpleArchitectureDiagram(
   rawDiagram: string,
-  result: CustomerAnalysisResult,
+  signalWords: string[],
 ) {
   const normalized = normalizeMermaidDiagram(rawDiagram);
   if (!normalized) {
-    return buildSimpleArchitectureDiagram(result);
+    return buildSimpleArchitectureDiagram(signalWords);
   }
 
   const complexity = countMermaidComplexity(normalized);
@@ -627,20 +635,20 @@ function preferSimpleArchitectureDiagram(
     complexity.subgraphCount > 5 ||
     complexity.lineCount > 28
   ) {
-    return buildSimpleArchitectureDiagram(result);
+    return buildSimpleArchitectureDiagram(signalWords);
   }
 
   return normalized;
 }
 
-function normalizeRequirementList(
-  requirements: CustomerAnalysisResult["implicit_requirements"],
-) {
+function normalizeRequirementList(requirements: unknown) {
   const result: CustomerAnalysisResult["implicit_requirements"] = [];
 
-  for (const requirement of requirements) {
-    const title = requirement.title.replace(/\s+/g, " ").trim();
-    const description = requirement.description.replace(/\s+/g, " ").trim();
+  for (const requirement of untrustedRows<AnalysisRequirement>(requirements)) {
+    const title = stringOr(requirement.title).replace(/\s+/g, " ").trim();
+    const description = stringOr(requirement.description)
+      .replace(/\s+/g, " ")
+      .trim();
 
     if (!title || !description) {
       continue;
@@ -657,13 +665,20 @@ function normalizeRequirementList(
     }
 
     result.push({
-      ...requirement,
       title,
       description,
-      source_reference: requirement.source_reference
+      category: stringOr(requirement.category),
+      // Model output without a valid enum value keeps the requirement.
+      importance: isRequirementImportance(requirement.importance)
+        ? requirement.importance
+        : "Viktig",
+      kind: requirement.kind === "Eksplisitt" ? "Eksplisitt" : "Implisitt",
+      source_reference: stringOr(requirement.source_reference)
         .replace(/\s+/g, " ")
         .trim(),
-      source_excerpt: requirement.source_excerpt.replace(/\s+/g, " ").trim(),
+      source_excerpt: stringOr(requirement.source_excerpt)
+        .replace(/\s+/g, " ")
+        .trim(),
     });
   }
 
@@ -679,7 +694,7 @@ function normalizeTextField(value: unknown) {
 }
 
 function normalizeRecommendedServices(
-  items: RecommendedService[],
+  items: unknown,
   serviceCandidates?: ProjectServiceDescription[],
 ): RecommendedService[] {
   const hasCandidateInput = Array.isArray(serviceCandidates);
@@ -698,14 +713,14 @@ function normalizeRecommendedServices(
   const constrainToCandidates = hasCandidateInput && candidateList.length > 0;
   const seen = new Set<string>();
 
-  return (Array.isArray(items) ? items : [])
-    .filter(
-      (item) =>
-        item &&
-        typeof item.service_name === "string" &&
-        typeof item.recommendation_reason === "string",
-    )
+  return untrustedRows<RecommendedService>(items)
     .flatMap((item): RecommendedService[] => {
+      if (
+        typeof item.service_name !== "string" ||
+        typeof item.recommendation_reason !== "string"
+      ) {
+        return [];
+      }
       const serviceId =
         typeof item.service_id === "string" ? item.service_id.trim() : "";
       const serviceName = item.service_name.replace(/\s+/g, " ").trim();
@@ -761,16 +776,12 @@ function inferRiskAudience(item: string): "us" | "customer" {
   return "customer";
 }
 
-function normalizeRiskGroups(result: CustomerAnalysisResult) {
-  const explicitForUs = capNormalizedList(
-    Array.isArray(result.risks_for_us) ? result.risks_for_us : [],
-  );
+function normalizeRiskGroups(result: Untrusted<CustomerAnalysisResult>) {
+  const explicitForUs = capNormalizedList(stringList(result.risks_for_us));
   const explicitForCustomer = capNormalizedList(
-    Array.isArray(result.risks_for_customer) ? result.risks_for_customer : [],
+    stringList(result.risks_for_customer),
   );
-  const legacyRisks = capNormalizedList(
-    Array.isArray(result.risks) ? result.risks : [],
-  );
+  const legacyRisks = capNormalizedList(stringList(result.risks));
 
   if (explicitForUs.length || explicitForCustomer.length) {
     const risks = capNormalizedList([...explicitForCustomer, ...explicitForUs]);
@@ -799,8 +810,25 @@ function normalizeRiskGroups(result: CustomerAnalysisResult) {
   };
 }
 
+type PrioritizedRequirement =
+  CustomerAnalysisResult["prioritized_requirements"][number];
+
+export function parsePrioritizedRequirements(
+  value: unknown,
+): PrioritizedRequirement[] {
+  return untrustedRows<PrioritizedRequirement>(value).flatMap((item) =>
+    typeof item.requirement === "string" &&
+    item.requirement &&
+    isRequirementImportance(item.priority) &&
+    typeof item.reason === "string" &&
+    item.reason
+      ? [{ requirement: item.requirement, priority: item.priority, reason: item.reason }]
+      : [],
+  );
+}
+
 export function normalizeCustomerAnalysisResult(
-  result: CustomerAnalysisResult,
+  result: Untrusted<CustomerAnalysisResult>,
   options?: {
     signalSourceText?: string;
     serviceCandidates?: ProjectServiceDescription[];
@@ -808,54 +836,32 @@ export function normalizeCustomerAnalysisResult(
     generatedFields?: readonly string[];
   },
 ): CustomerAnalysisResult {
-  const cleanProseList = (items: unknown[]) =>
+  const cleanProseList = (items: unknown) =>
     capNormalizedList(
-      items
-        .filter((item): item is string => typeof item === "string")
-        .map(stripFixtureDisclaimerText)
-        .filter(Boolean),
+      stringList(items).map(stripFixtureDisclaimerText).filter(Boolean),
     );
-  const customerProfile = cleanProseList(
-    Array.isArray(result.customer_profile) ? result.customer_profile : [],
-  );
-  const customerGoals = cleanProseList(
-    Array.isArray(result.customer_goals) ? result.customer_goals : [],
-  );
+  const customerProfile = cleanProseList(result.customer_profile);
+  const customerGoals = cleanProseList(result.customer_goals);
   const { risks, risksForUs, risksForCustomer } = normalizeRiskGroups(result);
-  const likelyEvaluationCriteria = cleanProseList(
-    Array.isArray(result.likely_evaluation_criteria)
-      ? result.likely_evaluation_criteria
-      : [],
-  );
-  const signalWords = normalizeSignalWords(
-    Array.isArray(result.signal_words) ? result.signal_words : [],
-  );
+  const likelyEvaluationCriteria = cleanProseList(result.likely_evaluation_criteria);
+  const signalWords = normalizeSignalWords(stringList(result.signal_words));
   const signalWordCounts = normalizeSignalWordCounts(signalWords, {
     sourceText: options?.signalSourceText,
-    existingCounts: result.signal_word_counts,
+    existingCounts: isRecord(result.signal_word_counts)
+      ? result.signal_word_counts
+      : undefined,
   });
-  const expectedSolutionDirection = cleanProseList(
-    Array.isArray(result.expected_solution_direction)
-      ? result.expected_solution_direction
-      : [],
-  );
-  const positioningRecommendations = cleanProseList(
-    Array.isArray(result.positioning_recommendations)
-      ? result.positioning_recommendations
-      : [],
-  );
+  const expectedSolutionDirection = cleanProseList(result.expected_solution_direction);
+  const positioningRecommendations = cleanProseList(result.positioning_recommendations);
   const ambiguities = capNormalizedList(
-    (Array.isArray(result.ambiguities) ? result.ambiguities : [])
+    stringList(result.ambiguities)
       .map(stripFixtureDisclaimerText)
       .filter(Boolean),
     { max: MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS },
   );
-  const prioritizedRequirements = (
-    Array.isArray(result.prioritized_requirements)
-      ? result.prioritized_requirements
-      : []
+  const prioritizedRequirements = parsePrioritizedRequirements(
+    result.prioritized_requirements,
   )
-    .filter((item) => item && item.requirement && item.priority && item.reason)
     .filter((item, index, array) => {
       return !array.some(
         (existing, existingIndex) =>
@@ -866,18 +872,14 @@ export function normalizeCustomerAnalysisResult(
     })
     .slice(0, MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS);
   const valueOpportunities = normalizeValueOpportunities(
-    Array.isArray(result.value_opportunities) ? result.value_opportunities : [],
+    result.value_opportunities,
   );
   const recommendedServices = normalizeRecommendedServices(
-    Array.isArray(result.recommended_services)
-      ? result.recommended_services
-      : [],
+    result.recommended_services,
     options?.serviceCandidates,
   );
   const implicitRequirements = normalizeRequirementList(
-    Array.isArray(result.implicit_requirements)
-      ? result.implicit_requirements
-      : [],
+    result.implicit_requirements,
   );
   const groundedImplicitRequirements = options?.sourceDocuments
     ? groundImplicitRequirementExcerpts({
@@ -887,23 +889,23 @@ export function normalizeCustomerAnalysisResult(
     : implicitRequirements;
 
   const customerProfileSummary = dedupeSummary(
-    stripFixtureDisclaimerText(result.customer_profile_summary) ||
+    stripFixtureDisclaimerText(stringOr(result.customer_profile_summary)) ||
       customerProfile.slice(0, 2).join(" "),
     [
       ...customerGoals,
-      result.customer_goals_summary || "",
+      stringOr(result.customer_goals_summary),
       ...positioningRecommendations,
     ],
   );
 
   const customerGoalsSummary = dedupeSummary(
-    stripFixtureDisclaimerText(result.customer_goals_summary) ||
+    stripFixtureDisclaimerText(stringOr(result.customer_goals_summary)) ||
       customerGoals.slice(0, 2).join(" "),
     [customerProfileSummary, ...customerProfile, ...positioningRecommendations],
   );
 
   const highLevelSolutionDesign = dedupeSummary(
-    stripFixtureDisclaimerText(result.high_level_solution_design) ||
+    stripFixtureDisclaimerText(stringOr(result.high_level_solution_design)) ||
       expectedSolutionDirection.slice(0, 2).join(" "),
     [
       customerProfileSummary,
@@ -915,12 +917,12 @@ export function normalizeCustomerAnalysisResult(
     ],
   );
   const highLevelArchitectureMermaid = preferSimpleArchitectureDiagram(
-    result.high_level_architecture_mermaid || "",
-    result,
+    stringOr(result.high_level_architecture_mermaid),
+    signalWords,
   );
 
   const executiveSummary = dedupeSummary(
-    stripFixtureDisclaimerText(result.executive_summary),
+    stripFixtureDisclaimerText(stringOr(result.executive_summary)),
     [
     customerProfileSummary,
     customerGoalsSummary,
@@ -933,7 +935,6 @@ export function normalizeCustomerAnalysisResult(
   );
 
   const normalizedResult = normalizeCustomerAnalysisNorwegianProse({
-    ...result,
     customer_profile_summary: customerProfileSummary,
     customer_goals_summary: customerGoalsSummary,
     high_level_solution_design: highLevelSolutionDesign,

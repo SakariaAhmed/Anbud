@@ -34,6 +34,7 @@ import type {
   ChatMessage,
   ChatSourceReference,
 } from "@/lib/types";
+import { isRecord } from "@/lib/unknown-values";
 
 const QUICK_PROMPTS = [
   "Hva er de største tilbudsrisikoene akkurat nå?",
@@ -56,10 +57,6 @@ type ChatPromptAttachmentMetadata = {
   file_size_bytes: number;
   text_length?: number;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
 
 function compactAttachmentSize(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) {

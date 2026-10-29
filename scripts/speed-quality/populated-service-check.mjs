@@ -35,7 +35,7 @@ const currentLoader = load(frontend);
 const { encryptString } = currentLoader(path.join(frontend, "lib/server/crypto.ts"));
 const owners = {
   before: load("/tmp/anbud-speed-quality-baseline-3779e6f2/apps/frontend")("/tmp/anbud-speed-quality-baseline-3779e6f2/apps/frontend/lib/server/repositories/data-store.ts"),
-  after: currentLoader(path.join(frontend, "lib/server/repositories/data-store.ts")),
+  after: currentLoader(path.join(frontend, "lib/server/repositories/service-descriptions.ts")),
 };
 async function db(route, method = "GET", body) {
   const response = await fetch(`${base}/${route}`, { method, headers: { authorization: `Bearer ${env.DATA_API_SERVICE_ROLE_KEY}`, "content-type": "application/json", prefer: "return=representation" }, body: body === undefined ? undefined : JSON.stringify(body) });

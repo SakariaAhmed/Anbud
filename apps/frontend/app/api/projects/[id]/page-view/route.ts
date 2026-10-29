@@ -6,9 +6,9 @@ import {
 } from "@/lib/project-page-activity";
 import { recordActivity } from "@/lib/server/activity";
 import {
-  authorizationErrorResponse,
   requireProjectPermission,
 } from "@/lib/server/authorization";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 export async function POST(
   request: Request,
@@ -36,9 +36,6 @@ export async function POST(
     });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json({ error: "Kunne ikke registrere sidevisning." }, { status: 500 })
-    );
+    return routeErrorResponse(error, "Kunne ikke registrere sidevisning.");
   }
 }

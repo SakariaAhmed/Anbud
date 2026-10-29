@@ -1,32 +1,14 @@
-import { splitMarkdownTableRow } from "@/lib/markdown-table-row";
-
-function normalizedHeaderCell(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/^[*_`]+|[*_`]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+import { isMarkdownTableDivider, splitMarkdownTableRow } from "@/lib/markdown-table-row";
+import { requirementResponseTableColumns } from "@/lib/requirement-response-table";
 
 function requirementColumnIndex(line: string) {
-  const cells = splitMarkdownTableRow(line).map(normalizedHeaderCell);
-  const refIndex = cells.findIndex((cell) => cell.includes("kravref"));
-  const requirementIndex = cells.findIndex((cell) => cell === "krav");
-  const answerIndex = cells.findIndex((cell) => cell === "svar");
-  const sourceIndex = cells.findIndex((cell) =>
-    /^(?:kildegrunnlag|kilde|source|source reference)$/.test(cell),
-  );
-
-  return refIndex >= 0 &&
-    requirementIndex >= 0 &&
-    answerIndex >= 0 &&
-    sourceIndex >= 0
-    ? requirementIndex
+  const columns = requirementResponseTableColumns(splitMarkdownTableRow(line));
+  return columns.refIndex >= 0 &&
+    columns.requirementIndex >= 0 &&
+    columns.answerIndex >= 0 &&
+    columns.sourceIndex >= 0
+    ? columns.requirementIndex
     : -1;
-}
-
-function isMarkdownDivider(line: string) {
-  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
 }
 
 export function requirementResponseRequirementCount(
@@ -40,7 +22,7 @@ export function requirementResponseRequirementCount(
     const requirementIndex = requirementColumnIndex(lines[index] ?? "");
     if (
       requirementIndex < 0 ||
-      !isMarkdownDivider(lines[index + 1] ?? "")
+      !isMarkdownTableDivider(lines[index + 1] ?? "")
     ) {
       continue;
     }

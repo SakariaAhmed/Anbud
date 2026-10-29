@@ -22,19 +22,21 @@ const parsers = jiti(
   path.join(frontendRoot, "lib/server/requirements/corpus-parsers.ts"),
 );
 const {
-  filterPdfTableDuplicateExtractionArtifacts,
-  filterDuplicateLegacyStandaloneNoteLines,
-  isMalformedPdfRequirementReference,
-  recoverAvailabilityFractionRequirement,
   stripAnswerTextFromRequirement: productionStripAnswerTextFromRequirement,
-} = jiti(
-  path.join(frontendRoot, "lib/server/ai.ts"),
-);
+} = jiti(path.join(frontendRoot, "lib/server/requirements/pdf-layout-ledger.ts"));
+const {
+  filterPdfTableDuplicateExtractionArtifacts,
+  isMalformedPdfRequirementReference,
+} = jiti(path.join(frontendRoot, "lib/server/requirements/unstructured-ledger.ts"));
+const {
+  filterDuplicateLegacyStandaloneNoteLines,
+  recoverAvailabilityFractionRequirement,
+} = jiti(path.join(frontendRoot, "lib/server/requirements/source-ledger.ts"));
 const { extractRequirementLedgerForDocument } = jiti(
   path.join(frontendRoot, "lib/server/requirements/extraction.ts"),
 );
 const { canonicalizeRequirementSourceLedger } = jiti(
-  path.join(frontendRoot, "lib/server/use-cases/solution-evaluation-readiness.ts"),
+  path.join(frontendRoot, "lib/server/requirements/source-readiness.ts"),
 );
 
 test("supplier-answer stripping preserves lowercase Norwegian relative clauses", () => {

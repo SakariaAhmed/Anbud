@@ -5,7 +5,7 @@ import {
   recoverAvailabilityFractionRequirement,
   recoverTruncatedRequirementLedgerEntries,
   recoverTruncatedRequirementLedgerEntryInline,
-} from "@/lib/server/ai";
+} from "@/lib/server/requirements/source-ledger";
 import {
   isLegacyMixedFofingerCorpus,
   repairLegacyFofingerTextArtifacts,

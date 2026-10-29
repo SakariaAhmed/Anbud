@@ -30,6 +30,68 @@ const eslintConfig = [
       ],
     },
   },
+  // Layer boundaries: dependencies point from routes and workflows toward
+  // domain and persistence code, never back, and browser code never loads
+  // server modules.
+  {
+    files: [
+      "components/**/*.ts",
+      "components/**/*.tsx",
+      "hooks/**/*.ts",
+      "hooks/**/*.tsx",
+      "lib/client/**/*.ts",
+    ],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/lib/server", "@/lib/server/*"],
+              allowTypeImports: true,
+              message: "Browser code must not import server modules.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["lib/server/requirements/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/lib/server/use-cases/*"],
+              message: "Domain and persistence code must not depend on workflows.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["lib/server/repositories/**/*.ts", "lib/server/domain/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/lib/server/use-cases/*"],
+              message: "Domain and persistence code must not depend on workflows.",
+            },
+            {
+              group: ["@/lib/server/ai", "@/lib/server/ai/*"],
+              message: "Domain and persistence code must not depend on the AI layer.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   {
     files: ["**/*.js", "**/*.cjs"],
     rules: {

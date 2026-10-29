@@ -7,23 +7,22 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = path.resolve(frontendRoot, "../..");
 
-function discover(directory, excludedDirectories = new Set()) {
+function discover(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const file = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      return excludedDirectories.has(file) ? [] : discover(file, excludedDirectories);
+      return discover(file);
     }
     return entry.isFile() && /\.test\.(?:mjs|cjs|js)$/.test(entry.name) ? [file] : [];
   }).sort();
 }
 
 export function discoverTestGroups() {
-  // This suite owns its disposable database and must run through run.mjs in CI.
-  // Loading it via ordinary discovery fails before that database can be set up.
-  const excluded = new Set([path.join(frontendRoot, "lib/server/audit-20260905")]);
+  // tests/audit-20260905 owns its disposable database and runs through its
+  // own run.mjs in CI, so it lives outside these discovered directories.
   return {
     frontend: ["app", "components", "lib", "scripts"].flatMap((directory) =>
-      discover(path.join(frontendRoot, directory), excluded)),
+      discover(path.join(frontendRoot, directory))),
     repository: discover(path.join(repositoryRoot, "scripts")),
   };
 }

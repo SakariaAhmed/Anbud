@@ -1,5 +1,7 @@
 import "server-only";
 
+import { WorkflowError } from "@/lib/server/workflow-errors";
+
 import { execFile } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,6 +22,7 @@ import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cance
 import { parsePdf } from "@/lib/server/pdf-parser";
 import type { ProjectDocumentRole } from "@/lib/types";
 import type { WorkBook, WorkSheet } from "@e965/xlsx";
+import { isRecord } from "@/lib/unknown-values";
 
 export interface SourceMapEntry {
   reference: string;
@@ -618,10 +621,6 @@ async function readDoclingJson(tempDir: string) {
   }
 
   return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeCellText(value: unknown) {
@@ -1970,7 +1969,7 @@ export function validateUploadFileSignature(
   };
 
   if (fileFormat === "pdf" && !buffer.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
-    throw new Error("INVALID_PDF_DOCUMENT");
+    throw new WorkflowError("INVALID_PDF_DOCUMENT");
   }
   if (
     (fileFormat === "docx" || fileFormat === "xlsx") &&

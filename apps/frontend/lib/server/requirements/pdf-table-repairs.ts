@@ -208,10 +208,6 @@ export function cleanTableRequirement(value: string) {
   return normalizeNorwegianRequirementRoleCasing(text);
 }
 
-function canonicalRequirementText(value: string) {
-  return cleanTableRequirement(value);
-}
-
 const PDF_TABLE_REPAIR_RULES: PdfTableRepairRule[] = [
   {
     reason: "SSA PDF Tabell ID 2-11 line-wrapped access row",
@@ -620,7 +616,7 @@ function knownPdfTableRequirementRepair(input: {
     ) {
       return {
         service: rule.service,
-        text: canonicalRequirementText(rule.text),
+        text: cleanTableRequirement(rule.text),
       };
     }
   }

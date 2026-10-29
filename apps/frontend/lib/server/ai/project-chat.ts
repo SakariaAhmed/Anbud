@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { Untrusted } from "@/lib/unknown-values";
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import { createJsonCompletion, createTextCompletionStream } from "@/lib/server/ai/completion";
 import { compactText, questionRetrievalTerms, retrievedSnippetContext } from "@/lib/server/ai/context";
@@ -276,7 +277,7 @@ function retrievalTermsForChatDomains(domains: ChatDomainHint[]) {
 }
 
 function normalizeRetrievalPlan(
-  raw: Partial<RetrievalPlan> | null | undefined,
+  raw: Untrusted<RetrievalPlan> | null | undefined,
   fallback: RetrievalPlan,
 ): RetrievalPlan {
   const standaloneQuery =

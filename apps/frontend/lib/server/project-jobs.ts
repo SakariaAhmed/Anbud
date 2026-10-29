@@ -358,10 +358,6 @@ function createJobPhaseTimer(jobId: string, kind: ProjectJobRecord["kind"]) {
   };
 }
 
-async function persistJob(record: ProjectJobRecord, input: ProjectWorkflowInput) {
-  return insertProjectJob(record, input);
-}
-
 function patchInMemoryJob(jobId: string, patch: Partial<ProjectJobRecord>) {
   const store = getStore();
   const current = store.get(jobId);
@@ -589,7 +585,7 @@ async function enqueueProjectJob(
           parentLease,
           options.idempotencyKey ?? `${input.kind}:${record.id}`,
         )
-      : await persistJob(record, input);
+      : await insertProjectJob(record, input);
     getStore().set(persistedRecord.id, persistedRecord);
     getLocalJobIds().delete(persistedRecord.id);
     options.onDisposition?.({

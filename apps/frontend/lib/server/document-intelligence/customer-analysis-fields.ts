@@ -1,3 +1,4 @@
+import type { Untrusted } from "@/lib/unknown-values";
 import {
   MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
   type CustomerAnalysisResult,
@@ -436,11 +437,22 @@ export function customerAnalysisRegenerationContract(
   };
 }
 
-export function mergeCustomerAnalysisSectionPatch(input: {
+type CustomerAnalysisSectionPatchInput<TPatch> = {
   analysis: CustomerAnalysisResult;
   section: CustomerAnalysisSection;
-  patch: Partial<CustomerAnalysisResult>;
-}) {
+  patch: TPatch;
+};
+
+/** Replaces one section's fields; a validated patch keeps the result valid. */
+export function mergeCustomerAnalysisSectionPatch(
+  input: CustomerAnalysisSectionPatchInput<CustomerAnalysisResult>,
+): CustomerAnalysisResult;
+export function mergeCustomerAnalysisSectionPatch(
+  input: CustomerAnalysisSectionPatchInput<Untrusted<CustomerAnalysisResult>>,
+): Untrusted<CustomerAnalysisResult>;
+export function mergeCustomerAnalysisSectionPatch(
+  input: CustomerAnalysisSectionPatchInput<Untrusted<CustomerAnalysisResult>>,
+): Untrusted<CustomerAnalysisResult> {
   const merged: Record<string, unknown> = { ...input.analysis };
   const patch: Record<string, unknown> = input.patch;
   for (const field of sectionFieldNames(input.section)) {
@@ -448,5 +460,5 @@ export function mergeCustomerAnalysisSectionPatch(input: {
       merged[field] = patch[field];
     }
   }
-  return merged as unknown as CustomerAnalysisResult;
+  return merged;
 }

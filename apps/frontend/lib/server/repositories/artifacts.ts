@@ -5,22 +5,15 @@ import { decryptJson, encryptJson } from "@/lib/server/crypto";
 import { runLeaseFencedGeneratedArtifactMutation } from "@/lib/server/repositories/lease-fenced-persistence";
 import { revalidateProjectCaches } from "@/lib/server/repositories/repository-cache";
 import { createServiceClient } from "@/lib/server/data-api";
-import type {
-  GeneratedArtifact,
-  GeneratedArtifactAuthorityByType,
-  GeneratedArtifactType,
+import {
+  GENERATED_ARTIFACT_TYPES,
+  isGeneratedArtifactType,
+  type GeneratedArtifact,
+  type GeneratedArtifactAuthorityByType,
+  type GeneratedArtifactType,
 } from "@/lib/types";
 
 const GENERATED_ARTIFACT_LIST_LIMIT = 250;
-export const GENERATED_ARTIFACT_TYPES: GeneratedArtifactType[] = [
-  "losningsutkast",
-  "bilag1_rekonstruksjon",
-  "forbedret_kravsvar",
-  "tilbudsstrategi",
-  "verdiargumentasjon",
-  "anbefalt_arkitektur",
-  "gjennomforing_og_risiko",
-];
 
 type ArtifactRow = {
   id: string;
@@ -63,12 +56,6 @@ export type ArtifactSourceRevisions = {
       | "legacy_unknown";
   } | null;
 };
-
-export function isGeneratedArtifactType(
-  value: unknown,
-): value is GeneratedArtifactType {
-  return GENERATED_ARTIFACT_TYPES.includes(value as GeneratedArtifactType);
-}
 
 function mapArtifact(row: ArtifactRow): GeneratedArtifact {
   const artifactType = isGeneratedArtifactType(row.artifact_type)
@@ -385,13 +372,6 @@ export async function deleteGeneratedArtifact(input: {
   });
   if (error) throw new Error(error.message || "Kunne ikke slette artefakten.");
   revalidateProjectCaches(input.projectId);
-}
-
-export async function listGeneratedArtifacts(
-  projectId: string,
-  options: { artifactType?: GeneratedArtifactType } = {},
-) {
-  return listGeneratedArtifactsFresh(projectId, options);
 }
 
 function decorateArtifactAuthority(

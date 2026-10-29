@@ -1,17 +1,18 @@
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
-import { isArtifactType } from "@/lib/server/domain/project-documents";
 import {
   deleteGeneratedArtifact,
-  listGeneratedArtifacts,
+  listGeneratedArtifactsFresh,
   updateGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
 import { normalizeArtifactInstructions } from "@/lib/server/artifact-generation-input";
 import { getProjectSnapshot } from "@/lib/server/repositories/data-store";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
 import { queueArtifactGenerationJob } from "@/lib/server/project-jobs";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
+import { readJsonObject } from "@/lib/server/request-body";
+import { isGeneratableArtifactType, isGeneratedArtifactType } from "@/lib/types";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "no-store",
@@ -26,19 +27,12 @@ export async function GET(
     await requireProjectPermission(id, "artifact.read");
     const artifactType = new URL(request.url).searchParams.get("artifact_type");
     const artifacts =
-      artifactType && isArtifactType(artifactType)
-        ? await listGeneratedArtifacts(id, { artifactType })
-        : await listGeneratedArtifacts(id);
+      isGeneratedArtifactType(artifactType)
+        ? await listGeneratedArtifactsFresh(id, { artifactType })
+        : await listGeneratedArtifactsFresh(id);
     return NextResponse.json({ artifacts }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke hente generatorresultatene."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente generatorresultatene.");
   }
 }
 
@@ -47,11 +41,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const preflight = await prepareProjectAiJsonRoute<{
-      artifact_type?: string;
-      instructions?: string;
-      use_solution_evaluation_context?: boolean;
-    }>(
+    const preflight = await prepareProjectAiJsonRoute(
       request,
       context,
       {
@@ -68,7 +58,7 @@ export async function POST(
     const { id, model, body } = preflight;
     const instructions = normalizeArtifactInstructions(body.instructions);
 
-    if (!body.artifact_type || !isArtifactType(body.artifact_type)) {
+    if (!isGeneratableArtifactType(body.artifact_type)) {
       return NextResponse.json(
         { error: "Ugyldig artefakttype." },
         { status: 400 },
@@ -86,14 +76,7 @@ export async function POST(
 
     return NextResponse.json({ job }, { status: 202 });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke generere artefakt."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke generere artefakt.");
   }
 }
 
@@ -104,14 +87,9 @@ export async function PATCH(
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "artifact.write");
-    const body = (await request.json().catch(() => ({}))) as {
-      artifact_id?: string;
-      title?: string;
-      content_markdown?: string;
-      acknowledge_deterministic_repairs?: boolean;
-    };
+    const body = await readJsonObject(request);
 
-    if (!body.artifact_id) {
+    if (typeof body.artifact_id !== "string" || !body.artifact_id) {
       return NextResponse.json(
         { error: "Mangler kravbesvarelse som skal oppdateres." },
         { status: 400 },
@@ -131,14 +109,7 @@ export async function PATCH(
 
     return NextResponse.json({ artifact, project: snapshot });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke oppdatere kravbesvarelsen."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke oppdatere kravbesvarelsen.");
   }
 }
 
@@ -149,11 +120,9 @@ export async function DELETE(
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "artifact.write");
-    const body = (await request.json().catch(() => ({}))) as {
-      artifact_id?: string;
-    };
+    const body = await readJsonObject(request);
 
-    if (!body.artifact_id) {
+    if (typeof body.artifact_id !== "string" || !body.artifact_id) {
       return NextResponse.json(
         { error: "Mangler artefakt som skal slettes." },
         { status: 400 },
@@ -168,13 +137,6 @@ export async function DELETE(
 
     return NextResponse.json({ project: snapshot });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke slette artefakten."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke slette artefakten.");
   }
 }

@@ -1,4 +1,4 @@
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import {
@@ -21,7 +21,7 @@ import {
   waitForDirectSolutionEvaluationJob,
   waitForDirectSolutionEvaluationTask,
 } from "@/lib/server/direct-solution-evaluation";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -37,25 +37,13 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
 
     return NextResponse.json({ evaluation }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(
-          error,
-          "Kunne ikke hente løsningsvurderingen.",
-        ),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente løsningsvurderingen.");
   }
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const preflight = await prepareProjectAiJsonRoute<{
-      solution_document_id?: string;
-    }>(
+    const preflight = await prepareProjectAiJsonRoute(
       request,
       context,
       {
@@ -63,7 +51,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         message: "For mange løsningsvurderinger på kort tid.",
         limit: 8,
         windowMs: 5 * 60_000,
-        fallbackBody: {},
       },
     );
     if (preflight.response) {
@@ -152,19 +139,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     return NextResponse.json(result);
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    const timedOut = error instanceof DirectSolutionEvaluationWaitTimeoutError;
-    return NextResponse.json(
-      {
-        error: timedOut
-          ? "Løsningsvurderingen fortsetter i bakgrunnen. Prøv å hente resultatet igjen om litt."
-          : productionSafeErrorMessage(
-              error,
-              "Kunne ikke generere løsningsvurdering.",
-            ),
-      },
-      { status: timedOut ? 504 : 500 },
-    );
+    if (error instanceof DirectSolutionEvaluationWaitTimeoutError) {
+      return NextResponse.json(
+        {
+          error:
+            "Løsningsvurderingen fortsetter i bakgrunnen. Prøv å hente resultatet igjen om litt.",
+        },
+        { status: 504 },
+      );
+    }
+    return routeErrorResponse(error, "Kunne ikke generere løsningsvurdering.");
   }
 }

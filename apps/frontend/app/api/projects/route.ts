@@ -2,13 +2,16 @@ import { NextResponse } from "next/server";
 
 import { createProject, listProjects } from "@/lib/server/repositories/data-store";
 import {
-  authorizationErrorResponse,
   requireRequestPrincipal,
 } from "@/lib/server/authorization";
 import { recordActivity } from "@/lib/server/activity";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
-import type { ProjectCreateInput } from "@/lib/types";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import {
+  optionalTextField,
+  readJsonObject,
+  stringListField,
+} from "@/lib/server/request-body";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -24,12 +27,7 @@ export async function GET() {
       return NextResponse.json(projects, { headers: READ_CACHE_HEADERS });
     });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke hente prosjekter.") },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente prosjekter.");
   }
 }
 
@@ -51,17 +49,15 @@ export async function POST(request: Request) {
   try {
     return await withTiming("POST /api/projects", {}, async () => {
       const principal = await requireRequestPrincipal();
-      const body = (await request.json()) as Partial<ProjectCreateInput>;
+      const body = await readJsonObject(request);
 
       const project = await createProject({
         owner_id: principal.id,
-        name: body.name?.trim() || null,
-        customer_name: body.customer_name?.trim() || null,
-        description: body.description?.trim() || null,
-        industry: body.industry?.trim() || null,
-        selected_service_ids: Array.isArray(body.selected_service_ids)
-          ? body.selected_service_ids
-          : [],
+        name: optionalTextField(body, "name"),
+        customer_name: optionalTextField(body, "customer_name"),
+        description: optionalTextField(body, "description"),
+        industry: optionalTextField(body, "industry"),
+        selected_service_ids: stringListField(body, "selected_service_ids"),
       });
 
       await auditEvent({
@@ -80,11 +76,6 @@ export async function POST(request: Request) {
       return NextResponse.json(project, { status: 201 });
     });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke opprette prosjekt.") },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke opprette prosjekt.");
   }
 }

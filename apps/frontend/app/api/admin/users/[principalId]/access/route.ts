@@ -7,10 +7,9 @@ import {
 } from "@/lib/server/access-control-repository";
 import { recordActivity } from "@/lib/server/activity";
 import {
-  authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -51,13 +50,7 @@ export async function PATCH(
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke endre tilgangen.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke endre tilgangen.", { status: 400 });
   }
 }
 
@@ -91,12 +84,6 @@ export async function DELETE(
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke fjerne tilgangen.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke fjerne tilgangen.", { status: 400 });
   }
 }

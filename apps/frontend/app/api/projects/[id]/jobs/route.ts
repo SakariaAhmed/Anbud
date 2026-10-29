@@ -1,7 +1,6 @@
 import { listRecentProjectJobs } from "@/lib/server/repositories/jobs";
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
-import { workflowErrorStatus } from "@/lib/server/workflow-errors";
 
 import {
   queueArtifactGenerationJob,
@@ -16,45 +15,27 @@ import {
   normalizeSourceDocumentIds,
 } from "@/lib/server/artifact-generation-input";
 import { resolveOpenAIModelOverride } from "@/lib/server/ai/model-config";
-import { enforceRateLimit } from "@/lib/server/api-responses";
+import { enforceRateLimit, routeErrorResponse } from "@/lib/server/api-responses";
 import { auditEvent, withTiming } from "@/lib/server/observability";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
-import type { GeneratedArtifactType, ProjectJobRecord } from "@/lib/types";
+import { RequestBodyError, readJsonObject } from "@/lib/server/request-body";
+import { isGeneratableArtifactType, type ProjectJobRecord } from "@/lib/types";
 
-function isArtifactType(value: string): value is GeneratedArtifactType {
-  return (
-    value === "losningsutkast" ||
-    value === "bilag1_rekonstruksjon" ||
-    value === "forbedret_kravsvar" ||
-    value === "gjennomforing_og_risiko"
-  );
+const REQUESTABLE_JOB_KINDS = [
+  "customer_analysis",
+  "solution_evaluation",
+  "high_level_design",
+  "perfect_system_solution",
+  "executive_summary",
+  "artifact_generation",
+] as const;
+type RequestableJobKind = (typeof REQUESTABLE_JOB_KINDS)[number];
+
+function isRequestableJobKind(value: unknown): value is RequestableJobKind {
+  return REQUESTABLE_JOB_KINDS.some((kind) => kind === value);
 }
 
-type ProjectJobRequestBody =
-  | {
-      kind?: "customer_analysis";
-    }
-  | {
-      kind?: "solution_evaluation";
-      solution_document_id?: string;
-    }
-  | {
-      kind?: "high_level_design";
-    }
-  | {
-      kind?: "perfect_system_solution";
-      resume_artifact_id?: string;
-    }
-  | {
-      kind?: "executive_summary";
-    }
-  | {
-      kind?: "artifact_generation";
-      artifact_type?: string;
-      instructions?: string;
-      source_document_ids?: string[];
-      use_solution_evaluation_context?: boolean;
-    };
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type QueuedJobResult = {
   job: ProjectJobRecord;
@@ -62,11 +43,11 @@ type QueuedJobResult = {
 };
 
 async function queueSimpleProjectJob(
-  kind: Exclude<ProjectJobRequestBody["kind"], "artifact_generation" | undefined>,
+  kind: Exclude<RequestableJobKind, "artifact_generation">,
   projectId: string,
   model: string | undefined,
-  body: ProjectJobRequestBody,
-): Promise<QueuedJobResult | null> {
+  body: Record<string, unknown>,
+): Promise<QueuedJobResult> {
   switch (kind) {
     case "customer_analysis":
       return {
@@ -77,7 +58,6 @@ async function queueSimpleProjectJob(
         job: await queueSolutionEvaluationJob({
           projectId,
           solutionDocumentId:
-            body.kind === "solution_evaluation" &&
             typeof body.solution_document_id === "string"
               ? body.solution_document_id
               : undefined,
@@ -88,14 +68,18 @@ async function queueSimpleProjectJob(
       return {
         job: await queueHighLevelDesignJob({ projectId, model }),
       };
-    case "perfect_system_solution":
-      if (body.kind === "perfect_system_solution" && body.resume_artifact_id !== undefined &&
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.resume_artifact_id)) {
-        throw new Error("Ugyldig løsningsutkast-ID.");
+    case "perfect_system_solution": {
+      const resumeArtifactId = body.resume_artifact_id;
+      if (
+        resumeArtifactId !== undefined &&
+        (typeof resumeArtifactId !== "string" || !UUID_PATTERN.test(resumeArtifactId))
+      ) {
+        throw new RequestBodyError("Ugyldig løsningsutkast-ID.");
       }
       return {
-        job: await queuePerfectSystemSolutionJob({ projectId, model, resumeArtifactId: body.kind === "perfect_system_solution" ? body.resume_artifact_id : undefined }),
+        job: await queuePerfectSystemSolutionJob({ projectId, model, resumeArtifactId }),
       };
+    }
     case "executive_summary":
       return {
         job: await queueExecutiveSummaryJob({ projectId, model }),
@@ -106,9 +90,9 @@ async function queueSimpleProjectJob(
 async function queueArtifactJob(
   projectId: string,
   model: string | undefined,
-  body: Extract<ProjectJobRequestBody, { kind?: "artifact_generation" }>,
+  body: Record<string, unknown>,
 ): Promise<QueuedJobResult | NextResponse> {
-  if (!body.artifact_type || !isArtifactType(body.artifact_type)) {
+  if (!isGeneratableArtifactType(body.artifact_type)) {
     return NextResponse.json(
       { error: "Ugyldig artefakttype." },
       { status: 400 },
@@ -133,7 +117,7 @@ async function queueArtifactJob(
 
 async function jobAcceptedResponse(input: {
   projectId: string;
-  kind: NonNullable<ProjectJobRequestBody["kind"]>;
+  kind: RequestableJobKind;
   queued: QueuedJobResult;
 }) {
   await auditEvent({
@@ -189,32 +173,25 @@ export async function POST(
           );
         }
 
-        const body = (await request.json().catch(() => ({}))) as ProjectJobRequestBody;
+        const body = await readJsonObject(request);
+        const kind = body.kind;
+        if (!isRequestableJobKind(kind)) {
+          return NextResponse.json({ error: "Ugyldig jobbtype." }, { status: 400 });
+        }
 
-        if (body.kind === "artifact_generation") {
+        if (kind === "artifact_generation") {
           const queued = await queueArtifactJob(id, model, body);
           return queued instanceof NextResponse
             ? queued
-            : jobAcceptedResponse({ projectId: id, kind: body.kind, queued });
+            : jobAcceptedResponse({ projectId: id, kind, queued });
         }
 
-        if (body.kind) {
-          const queued = await queueSimpleProjectJob(body.kind, id, model, body);
-          if (queued) {
-            return jobAcceptedResponse({ projectId: id, kind: body.kind, queued });
-          }
-        }
-
-        return NextResponse.json({ error: "Ugyldig jobbtype." }, { status: 400 });
+        const queued = await queueSimpleProjectJob(kind, id, model, body);
+        return jobAcceptedResponse({ projectId: id, kind, queued });
       },
     );
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke starte jobben."),
-      },
-      { status: workflowErrorStatus(error) },
-    );
+    return routeErrorResponse(error, "Kunne ikke starte jobben.");
   }
 }
 
@@ -224,6 +201,6 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     await requireProjectPermission(id, "project.read");
     return NextResponse.json({ jobs: await listRecentProjectJobs(id) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json({ error: productionSafeErrorMessage(error, "Kunne ikke hente jobbstatus.") }, { status: workflowErrorStatus(error) });
+    return routeErrorResponse(error, "Kunne ikke hente jobbstatus.");
   }
 }

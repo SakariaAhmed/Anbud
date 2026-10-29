@@ -12,6 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { fetchServiceDescriptions } from "@/lib/client/service-descriptions-api";
 import type { ServiceDescription } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { createProject } from "@/lib/client/project-api";
 
 export function ProjectNewPage() {
   const router = useRouter();
@@ -43,22 +44,14 @@ export function ProjectNewPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          customer_name: customerName,
-          industry,
-          description,
-          selected_service_ids: selectedServiceIds,
-        }),
+      const projectId = await createProject({
+        name,
+        customer_name: customerName,
+        industry,
+        description,
+        selected_service_ids: selectedServiceIds,
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Kunne ikke opprette prosjekt.");
-      }
-      router.push(`/projects/${payload.id}`);
+      router.push(`/projects/${projectId}`);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Kunne ikke opprette prosjekt.",

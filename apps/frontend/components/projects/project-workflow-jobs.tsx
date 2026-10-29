@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { startProjectJob } from "@/lib/client/project-api";
 import type { ProjectJobRecord } from "@/lib/types";
+import { parseJobProgress } from "@/lib/project-job-progress";
 
 export function ProjectWorkflowJobs({ projectId }: { projectId: string }) {
   const [jobs, setJobs] = useState<ProjectJobRecord[]>([]);
@@ -39,7 +40,7 @@ export function ProjectWorkflowJobs({ projectId }: { projectId: string }) {
   }
   if (!activeJobs.length && !pending && !error) return null;
   return <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm" aria-live="polite">
-    {activeJobs.map(job => <p key={job.id}>{job.status === "queued" ? "I kø" : "Pågår"}: {job.message}</p>)}
+    {activeJobs.map(job => <p key={job.id}>{job.status === "queued" ? "I kø" : "Pågår"}: {parseJobProgress(job.message).label}</p>)}
     {pending && <><p>Løsningsutkastet er lagret. Revurdering gjenstår.</p>
       <Button className="mt-2" size="sm" variant="outline" disabled={starting || activeJobs.length > 0} onClick={() => void resume()}>Fortsett revurdering</Button></>}
     {error && <p role="alert" className="mt-2 text-red-700">{error}</p>}

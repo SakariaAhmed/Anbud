@@ -15,7 +15,7 @@ import {
   projectServicesCacheKey,
   setClientCache,
 } from "@/lib/client-cache";
-import { fetchProjectServices } from "@/lib/client/project-api";
+import { fetchProjectServices, readJsonPayload } from "@/lib/client/project-api";
 import type { ProjectServiceDescription } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -88,10 +88,10 @@ export function ProjectServiceDescriptionTab({
           body: JSON.stringify({ selected_service_ids: nextIds }),
         },
       );
-      const payload = (await response.json()) as {
-        selected_service_ids?: string[];
-        error?: string;
-      };
+      const payload = await readJsonPayload<{ selected_service_ids: string[] }>(
+        response,
+        "Kunne ikke lagre tjenestevalg.",
+      );
       if (!response.ok || !Array.isArray(payload.selected_service_ids)) {
         throw new Error(payload.error || "Kunne ikke lagre tjenestevalg.");
       }

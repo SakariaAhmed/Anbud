@@ -50,7 +50,7 @@ for (const file of [
   assert.ok(discovered.repository.includes(path.resolve("scripts", file)), `CI test discovery omits ${file}`);
 }
 assert.ok(!discovered.frontend.some(file => file.includes("/audit-20260905/")), "Audit tests require their dedicated database runner.");
-assert.ok(ci.includes("node lib/server/audit-20260905/run.mjs"), "CI must retain the workflow regressions and additive upgrade test.");
+assert.ok(ci.includes("node tests/audit-20260905/run.mjs"), "CI must retain the workflow regressions and additive upgrade test.");
 
 assert.match(deploy, /workflow_dispatch:/u, "Production deploy must be manual.");
 assert.match(

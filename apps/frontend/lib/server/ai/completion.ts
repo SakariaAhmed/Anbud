@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { Untrusted } from "@/lib/unknown-values";
 import {
   runJsonCompletion,
   runJsonCompletionWithFileInputs,
@@ -162,7 +163,7 @@ export async function createJsonCompletion<T>(input: {
   timeoutMs?: number;
   maxRetries?: number;
   promptCacheKey?: string;
-}): Promise<T> {
+}): Promise<Untrusted<T>> {
   return runJsonCompletion<T>({
     ...input,
     getClient,
@@ -182,7 +183,7 @@ export async function createJsonCompletionWithFileInputs<T>(input: {
   timeoutMs?: number;
   maxRetries?: number;
   promptCacheKey?: string;
-}): Promise<T> {
+}): Promise<Untrusted<T>> {
   return runJsonCompletionWithFileInputs<T>({
     ...input,
     getClient,
