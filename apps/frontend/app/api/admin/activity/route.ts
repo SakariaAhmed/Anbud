@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 
 import { listActivity } from "@/lib/server/activity";
 import {
-  authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 export async function GET(request: Request) {
   try {
@@ -23,9 +23,6 @@ export async function GET(request: Request) {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json({ error: "Kunne ikke hente aktivitet." }, { status: 500 })
-    );
+    return routeErrorResponse(error, "Kunne ikke hente aktivitet.");
   }
 }

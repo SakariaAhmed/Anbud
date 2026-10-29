@@ -1,4 +1,6 @@
 import "server-only";
+
+import { WorkflowError } from "@/lib/server/workflow-errors";
 import { createServiceClient } from "@/lib/server/data-api";
 import { decryptJson } from "@/lib/server/crypto";
 import { listGeneratedArtifactsFresh } from "@/lib/server/repositories/artifacts";
@@ -28,7 +30,7 @@ export async function recoverCommittedProjectJobResult(projectId: string, jobId:
   if (!checkpoint) return null;
   if (checkpoint.kind === "artifact_generation") {
     const artifact = (await listGeneratedArtifactsFresh(projectId)).find(item => item.id === checkpoint.id);
-    if (!artifact || !artifact.source_is_current || !artifact.is_current) throw new Error("PROJECT_JOB_SUPERSEDED");
+    if (!artifact || !artifact.source_is_current || !artifact.is_current) throw new WorkflowError("PROJECT_JOB_SUPERSEDED");
     if (job?.kind === "perfect_system_solution") return pendingEvaluationResult(artifact, "Revurderingen ble avbrutt etter at utkastet ble lagret.");
     return { artifact, project: await getProjectSnapshotAfterCommit(projectId) };
   }
@@ -38,14 +40,14 @@ export async function recoverCommittedProjectJobResult(projectId: string, jobId:
     executive_summary: { table: "executive_summaries", field: "executive_summary" },
   };
   const target = tables[checkpoint.kind];
-  if (!target) throw new Error("PROJECT_JOB_SUPERSEDED");
+  if (!target) throw new WorkflowError("PROJECT_JOB_SUPERSEDED");
   const { data: row, error: readError } = await client.from(target.table).select("*").eq("project_id", projectId).eq("id", checkpoint.id)
     .maybeSingle<{ revision?: string; updated_at: string; result_json: unknown; evaluated_generated_artifact_id?: string | null }>();
   if (readError) throw new Error(readError.message);
-  if (!row || (checkpoint.revision ? row.revision !== checkpoint.revision : row.updated_at !== checkpoint.updated_at)) throw new Error("PROJECT_JOB_SUPERSEDED");
+  if (!row || (checkpoint.revision ? row.revision !== checkpoint.revision : row.updated_at !== checkpoint.updated_at)) throw new WorkflowError("PROJECT_JOB_SUPERSEDED");
   const content = decryptJson<Record<string, unknown>>(row.result_json, {});
   const artifact = job?.kind === "perfect_system_solution" && checkpoint.kind === "solution_evaluation"
     ? (await listGeneratedArtifactsFresh(projectId)).find(item => item.id === row.evaluated_generated_artifact_id) : null;
-  if (job?.kind === "perfect_system_solution" && checkpoint.kind === "solution_evaluation" && (!artifact || !artifact.is_current || !artifact.source_is_current)) throw new Error("PROJECT_JOB_SUPERSEDED");
+  if (job?.kind === "perfect_system_solution" && checkpoint.kind === "solution_evaluation" && (!artifact || !artifact.is_current || !artifact.source_is_current)) throw new WorkflowError("PROJECT_JOB_SUPERSEDED");
   return { ...(artifact ? { artifact } : checkpoint.kind === "solution_evaluation" ? { artifact: null, used_generated_solution: false } : {}), [target.field]: { ...content, ...(row.revision ? { revision: row.revision } : {}) }, project: await getProjectSnapshotAfterCommit(projectId) };
 }

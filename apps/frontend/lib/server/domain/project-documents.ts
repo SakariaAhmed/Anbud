@@ -8,15 +8,6 @@ import {
   isHistoricalSolutionDocument,
 } from "@/lib/document-processing";
 
-export function isArtifactType(value: string): value is GeneratedArtifactType {
-  return (
-    value === "losningsutkast" ||
-    value === "bilag1_rekonstruksjon" ||
-    value === "forbedret_kravsvar" ||
-    value === "gjennomforing_og_risiko"
-  );
-}
-
 function serviceDocumentLimitForArtifact(
   artifactType: GeneratedArtifactType,
 ) {

@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { enforceServiceDescriptionWriteRateLimit } from "@/lib/server/api-responses";
+import { enforceServiceDescriptionWriteRateLimit, routeErrorResponse } from "@/lib/server/api-responses";
 import {
-  authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
 import { deleteServiceDescription, getServiceDescriptionMetadata, upsertServiceDescription } from "@/lib/server/repositories/data-store";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { optionalTextField, readJsonObject, RequestBodyError } from "@/lib/server/request-body";
 
 export async function PATCH(
   request: Request,
@@ -21,23 +20,19 @@ export async function PATCH(
 
     const { serviceId } = await context.params;
     const current = await getServiceDescriptionMetadata(serviceId);
-    const body = (await request.json().catch(() => ({}))) as {
-      name?: string;
-      description?: string;
-    };
+    const body = await readJsonObject(request);
+    const description = body.description;
+    if (description !== undefined && typeof description !== "string") {
+      throw new RequestBodyError("Feltet description må være tekst.");
+    }
     const service = await upsertServiceDescription({
       serviceId,
-      name: body.name?.trim() || current.name,
-      description: body.description ?? current.description,
+      name: optionalTextField(body, "name") || current.name,
+      description: description ?? current.description,
     });
     return NextResponse.json({ service });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke oppdatere tjenesten.") },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke oppdatere tjenesten.");
   }
 }
 
@@ -56,11 +51,6 @@ export async function DELETE(
     await deleteServiceDescription(serviceId);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke slette tjenesten.") },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke slette tjenesten.");
   }
 }

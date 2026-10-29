@@ -1,4 +1,6 @@
 import type { CustomerAnalysisResult, ProjectDocumentRole } from "@/lib/types";
+import { stringList, type Untrusted } from "@/lib/unknown-values";
+import { parsePrioritizedRequirements } from "@/lib/server/document-intelligence/customer-analysis-postprocess";
 import {
   buildCustomerAnalysisFieldGuidance,
   buildCustomerAnalysisJsonSchema,
@@ -725,9 +727,9 @@ function missingCriticalFactText(
 }
 
 export function enrichCustomerAnalysisWithCriticalFacts(
-  result: CustomerAnalysisResult,
+  result: Untrusted<CustomerAnalysisResult>,
   documents: CustomerAnalysisV3DocumentContext[],
-): CustomerAnalysisResult {
+): Untrusted<CustomerAnalysisResult> {
   const facts = buildCustomerAnalysisCriticalFactChecklist(documents).filter(
     (item) => item.fact.startsWith("Dokumenterte "),
   );
@@ -758,6 +760,9 @@ export function enrichCustomerAnalysisWithCriticalFacts(
     result.value_opportunities,
     result.executive_summary,
   ]);
+  const prioritizedRequirements = parsePrioritizedRequirements(
+    result.prioritized_requirements,
+  );
   const timelineFacts = texts(["timeline"], result);
   const evaluationFacts = texts(["evaluation"], result);
   const operationalFacts = texts(["deadline", "commercial"], result);
@@ -766,46 +771,34 @@ export function enrichCustomerAnalysisWithCriticalFacts(
     ...result,
     customer_profile: [
       ...profileFacts,
-      ...(Array.isArray(result.customer_profile)
-        ? result.customer_profile
-        : []),
+      ...stringList(result.customer_profile),
     ],
     customer_goals: [
       ...outcomeFacts,
-      ...(Array.isArray(result.customer_goals) ? result.customer_goals : []),
+      ...stringList(result.customer_goals),
     ],
     prioritized_requirements: [
-      ...(Array.isArray(result.prioritized_requirements)
-        ? result.prioritized_requirements.filter((item) => item.priority === "Kritisk")
-        : []),
+      ...prioritizedRequirements.filter((item) => item.priority === "Kritisk"),
       ...requirementFacts.map((requirement) => ({
         requirement,
         priority: "Viktig" as const,
         reason:
           "Dokumentert nøkkelfakta fra kilden må bevares og spores i tilbudet.",
       })),
-      ...(Array.isArray(result.prioritized_requirements)
-        ? result.prioritized_requirements.filter((item) => item.priority !== "Kritisk")
-        : []),
+      ...prioritizedRequirements.filter((item) => item.priority !== "Kritisk"),
     ].slice(0, MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS),
     likely_evaluation_criteria: [
       ...evaluationFacts,
-      ...(Array.isArray(result.likely_evaluation_criteria)
-        ? result.likely_evaluation_criteria
-        : []),
+      ...stringList(result.likely_evaluation_criteria),
     ],
     positioning_recommendations: [
       ...timelineFacts,
       ...operationalFacts,
-      ...(Array.isArray(result.positioning_recommendations)
-        ? result.positioning_recommendations
-        : []),
+      ...stringList(result.positioning_recommendations),
     ],
     expected_solution_direction: [
       ...solutionFacts,
-      ...(Array.isArray(result.expected_solution_direction)
-        ? result.expected_solution_direction
-        : []),
+      ...stringList(result.expected_solution_direction),
     ],
   };
 }

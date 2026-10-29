@@ -12,12 +12,12 @@ import {
 } from "@/lib/access-control";
 import { recordActivity } from "@/lib/server/activity";
 import {
-  authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 import { createServiceClient } from "@/lib/server/data-api";
 import { checkRateLimit } from "@/lib/server/observability";
+import { routeErrorResponse } from "@/lib/server/api-responses";
+import { readJsonObject } from "@/lib/server/request-body";
 
 export async function GET() {
   try {
@@ -27,10 +27,7 @@ export async function GET() {
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json({ error: "Kunne ikke hente brukere." }, { status: 500 })
-    );
+    return routeErrorResponse(error, "Kunne ikke hente brukere.");
   }
 }
 
@@ -70,7 +67,7 @@ export async function POST(request: Request) {
         },
       );
     }
-    const body = (await request.json()) as {
+    const body: {
       email?: unknown;
       displayName?: unknown;
       guestDescription?: unknown;
@@ -78,7 +75,7 @@ export async function POST(request: Request) {
       role?: unknown;
       projectGrants?: unknown;
       groupIds?: unknown;
-    };
+    } = await readJsonObject(request);
     const rawProjectGrants = Array.isArray(body.projectGrants)
       ? body.projectGrants
       : typeof body.projectId === "string" &&
@@ -178,13 +175,7 @@ export async function POST(request: Request) {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke invitere brukeren.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke invitere brukeren.", { status: 400 });
   }
 }
 

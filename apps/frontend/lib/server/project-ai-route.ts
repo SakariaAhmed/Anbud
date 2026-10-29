@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { requireProjectPermission } from "@/lib/server/authorization";
 import { resolveOpenAIModelOverride } from "@/lib/server/ai/model-config";
 import { enforceProjectRouteRateLimit } from "@/lib/server/api-responses";
+import { readJsonObject } from "@/lib/server/request-body";
 
 type ProjectRouteContext = { params: Promise<{ id: string }> };
 
@@ -28,11 +29,11 @@ type ProjectAiRoutePreflight =
       response: NextResponse;
     };
 
-type ProjectAiJsonRoutePreflight<TBody> =
+type ProjectAiJsonRoutePreflight =
   | {
       id: string;
       model: string | undefined;
-      body: TBody;
+      body: Record<string, unknown>;
       response: null;
     }
   | {
@@ -68,13 +69,11 @@ export async function prepareProjectAiRoute(
   return { id, model, response: null };
 }
 
-export async function prepareProjectAiJsonRoute<TBody>(
+export async function prepareProjectAiJsonRoute(
   request: Request,
   context: ProjectRouteContext,
-  input: ProjectAiRouteRateLimit & {
-    fallbackBody?: TBody;
-  },
-): Promise<ProjectAiJsonRoutePreflight<TBody>> {
+  input: ProjectAiRouteRateLimit,
+): Promise<ProjectAiJsonRoutePreflight> {
   const preflight = await prepareProjectAiRoute(request, context, input);
   if (preflight.response) {
     return { ...preflight, body: undefined };
@@ -93,10 +92,5 @@ export async function prepareProjectAiJsonRoute<TBody>(
     };
   }
 
-  const body =
-    "fallbackBody" in input
-      ? ((await request.json().catch(() => input.fallbackBody)) as TBody)
-      : ((await request.json()) as TBody);
-
-  return { ...preflight, body };
+  return { ...preflight, body: await readJsonObject(request) };
 }

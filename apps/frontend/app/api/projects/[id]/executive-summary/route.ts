@@ -1,4 +1,4 @@
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import {
@@ -6,7 +6,7 @@ import {
 } from "@/lib/server/repositories/analyses";
 import { prepareProjectAiRoute } from "@/lib/server/project-ai-route";
 import { queueExecutiveSummaryJob } from "@/lib/server/project-jobs";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -25,14 +25,7 @@ export async function GET(
       { headers: READ_CACHE_HEADERS },
     );
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke hente lederoppsummeringen."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente lederoppsummeringen.");
   }
 }
 
@@ -59,13 +52,6 @@ export async function POST(
     const job = await queueExecutiveSummaryJob({ projectId: id, model });
     return NextResponse.json({ job }, { status: 202 });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke generere lederoppsummering."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke generere lederoppsummering.");
   }
 }

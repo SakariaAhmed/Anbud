@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
 import {
-  authorizationErrorResponse,
   requireRequestPrincipal,
 } from "@/lib/server/authorization";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 export async function GET() {
   try {
@@ -12,9 +12,6 @@ export async function GET() {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json({ error: "Kunne ikke hente bruker." }, { status: 500 })
-    );
+    return routeErrorResponse(error, "Kunne ikke hente bruker.");
   }
 }

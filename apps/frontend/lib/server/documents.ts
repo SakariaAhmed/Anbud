@@ -1,5 +1,7 @@
 import "server-only";
 
+import { WorkflowError } from "@/lib/server/workflow-errors";
+
 import { execFile } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1970,7 +1972,7 @@ export function validateUploadFileSignature(
   };
 
   if (fileFormat === "pdf" && !buffer.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
-    throw new Error("INVALID_PDF_DOCUMENT");
+    throw new WorkflowError("INVALID_PDF_DOCUMENT");
   }
   if (
     (fileFormat === "docx" || fileFormat === "xlsx") &&

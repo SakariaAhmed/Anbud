@@ -74,8 +74,12 @@ test("direct solution-evaluation POST preserves sync compatibility with explicit
     /NextResponse\.json\(\{ job: queuedJob \}, \{ status: 202 \}\)/u,
   );
   assert.match(solutionEvaluationRoute, /action: "project_job_accepted"/u);
-  assert.match(solutionEvaluationRoute, /productionSafeErrorMessage/u);
-  assert.match(solutionEvaluationRoute, /status: timedOut \? 504 : 500/u);
+  // routeErrorResponse redacts through productionSafeErrorMessage.
+  assert.match(solutionEvaluationRoute, /routeErrorResponse\(error/u);
+  assert.match(
+    solutionEvaluationRoute,
+    /instanceof DirectSolutionEvaluationWaitTimeoutError[\s\S]*?status: 504/u,
+  );
   assert.doesNotMatch(
     solutionEvaluationRoute,
     /action: "solution_evaluation_generated"/u,
@@ -305,9 +309,9 @@ test("one worker invocation has a 30-minute job plus startup allowance", () => {
 });
 
 test("job polling routes redact failures and polling delays release abort listeners", () => {
-  assert.match(projectJobStatusRoute, /productionSafeErrorMessage/u);
+  assert.match(projectJobStatusRoute, /productionSafeErrorMessage|routeErrorResponse\(error/u);
   assert.doesNotMatch(projectJobStatusRoute, /error\.message/u);
-  assert.match(projectJobEventsRoute, /productionSafeErrorMessage/u);
+  assert.match(projectJobEventsRoute, /productionSafeErrorMessage|routeErrorResponse\(error/u);
   assert.doesNotMatch(projectJobEventsRoute, /error\.message/u);
   assert.match(projectJobEventsRoute, /removeEventListener\("abort", onAbort\)/u);
   assert.match(projectApiClient, /removeEventListener\("abort", onAbort\)/u);

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { deleteProject, getProjectDetail } from "@/lib/server/repositories/data-store";
 import {
-  authorizationErrorResponse,
   requireProjectPermission,
 } from "@/lib/server/authorization";
 import {
@@ -11,7 +10,7 @@ import {
   checkRateLimit,
   withTiming,
 } from "@/lib/server/observability";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const READ_CACHE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -30,10 +29,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       },
     );
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke hente prosjektet.") },
-      { status: 404 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente prosjektet.", { status: 404 });
   }
 }
 
@@ -77,8 +73,6 @@ export async function DELETE(
       },
     );
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
     if (error instanceof AuditEventPersistenceError) {
       return NextResponse.json(
         {
@@ -91,11 +85,6 @@ export async function DELETE(
         { status: 500 },
       );
     }
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke slette prosjektet."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke slette prosjektet.");
   }
 }

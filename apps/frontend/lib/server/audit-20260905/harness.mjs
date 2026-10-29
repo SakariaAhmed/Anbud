@@ -54,6 +54,10 @@ const crypto = jiti(path.join(frontend, 'lib/server/crypto.ts'));
 const snapshots = jiti(path.join(frontend, 'lib/server/use-cases/solution-evaluation-source-snapshot.ts'));
 const domain = jiti(path.join(frontend, 'lib/server/domain/project-documents.ts'));
 const services = jiti(path.join(frontend, 'lib/service-description.ts'));
+export const workflowErrors = jiti(path.join(frontend, 'lib/server/workflow-errors.ts'));
+export const requestBody = jiti(path.join(frontend, 'lib/server/request-body.ts'));
+// Same mapping as routeErrorResponse, expressed with the audit's NextResponse stub.
+export const routeErrorResponse = error => ({ body: { error: error.message }, status: error.status ?? workflowErrors.workflowErrorStatus(error) });
 const readiness = jiti(path.join(frontend, 'lib/server/use-cases/solution-evaluation-readiness.ts'));
 process.env.APP_ENCRYPTION_KEY = 'disposable-audit-key-never-production';
 export const freshAnalysis = async () => {
@@ -80,7 +84,7 @@ export function downstream() {
 export const counts = () => JSON.parse(sql(`select jsonb_build_array((select count(*) from customer_analyses where project_id=${quote(P)}),(select count(*) from solution_evaluations where project_id=${quote(P)}),(select count(*) from executive_summaries where project_id=${quote(P)}))`));
 export function workflow(names, overrides = {}) {
   return actual(workflowFile, names, {
-    ...history, ...snapshots, ...domain, ...services, ...readiness,
+    ...history, ...snapshots, ...domain, ...services, ...readiness, WorkflowError: workflowErrors.WorkflowError,
     ...jiti(path.join(frontend, 'lib/server/project-job-result-projection.ts')),
     saveCustomerAnalysis, getFreshCustomerAnalysis: freshAnalysis,
     getProjectSourceRevision: async () => revision(), listProjectDocumentsForAnalysis: async () => [document()],

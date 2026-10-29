@@ -31,7 +31,7 @@ test("global service-description writes require an administrator", () => {
   ]) {
     const source = read(relativePath);
     assert.match(source, /requireAdmin\(\)/u, relativePath);
-    assert.match(source, /authorizationErrorResponse/u, relativePath);
+    assert.match(source, /authorizationErrorResponse|routeErrorResponse/u, relativePath);
   }
 });
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import { actual, frontend, jiti, dbUrl, sql, quote, json, P, D, S, reset, revision, document, save, saveCustomerAnalysis, freshAnalysis, analysisResult, downstream, counts, workflow, handlers, noop, storeFile } from './harness.mjs';
+import { actual, frontend, jiti, dbUrl, sql, quote, json, P, D, S, reset, revision, document, save, saveCustomerAnalysis, freshAnalysis, analysisResult, downstream, counts, workflow, handlers, noop, storeFile, workflowErrors, requestBody, routeErrorResponse } from './harness.mjs';
 
 // Regression assertions exercise the repaired behavior using real PostgreSQL and actual TS bodies.
 
@@ -107,6 +107,7 @@ test('REGRESSION API1: stale manual editor is rejected without overwriting newer
     NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) },
     getProjectSourceRevision: async () => revision(), listProjectDocumentsForAnalysis: async () => [document()], getFreshCustomerAnalysis: freshAnalysis,
     saveCustomerAnalysis, recordDocumentIntelligenceEvent: async () => false, getProjectSnapshot: async () => ({ id: P }), productionSafeErrorMessage: e => e.message,
+    ...workflowErrors, ...requestBody, routeErrorResponse,
   });
   const response = await PUT(new Request('http://localhost/audit', { method: 'PUT', body: JSON.stringify({ analysis_text: 'Stale editor text', expected_analysis_revision: editorRevision }) }), { params: Promise.resolve({ id: P }) });
   assert.equal(response.status, 409, response.body?.error); assert.equal((await freshAnalysis()).executive_summary, 'Other user newer text');
@@ -153,16 +154,20 @@ test('REGRESSION UI2: one local action holds busy state and rejects overlapping 
 
 test('REGRESSION ERR1: known preconditions/conflicts have safe actionable production messages', () => {
   const { productionSafeErrorMessage, errorHash } = jiti(path.join(frontend, 'lib/server/safe-errors.ts'));
+  const { WorkflowError } = jiti(path.join(frontend, 'lib/server/workflow-errors.ts'));
   const previous = process.env.NODE_ENV; process.env.NODE_ENV = 'production';
   try {
-    for (const [message, expected] of [
-      ['PROJECT_SOURCE_REVISION_CHANGED: project inputs changed while the analysis was running', '4df10a8f27dea78363160c57'],
-      ['Generer kundeanalyse før løsningsvurdering.', 'b408d4abe1e43f2086a8aabb'],
-      ['Generer vurdering før lederoppsummering.', 'b5ccf74d416a4f5a431e6f74'],
+    for (const [error, expected] of [
+      [new Error('PROJECT_SOURCE_REVISION_CHANGED: project inputs changed while the analysis was running'), '4df10a8f27dea78363160c57'],
+      [new WorkflowError('CUSTOMER_ANALYSIS_REQUIRED'), 'e3caf98297f8c759de6c72fe'],
+      [new WorkflowError('SOLUTION_EVALUATION_REQUIRED'), '94d70278abfad4b30cb2eaa3'],
     ]) {
-      const error = new Error(message); assert.equal(errorHash(error), expected);
+      assert.equal(errorHash(error), expected);
       const safe = productionSafeErrorMessage(error, 'Jobben feilet. Kontakt support med feilreferansen.');
       assert.ok(!safe.includes(expected)); assert.match(safe, /Generer|Prosjektgrunnlaget/);
+      // Re-wrapping with a cause, as workflow steps do, keeps the actionable message.
+      const wrapped = new Error(productionSafeErrorMessage(error, 'Steget feilet.'), { cause: error });
+      assert.match(productionSafeErrorMessage(wrapped, 'Jobben feilet. Kontakt support med feilreferansen.'), /Generer|Prosjektgrunnlaget/);
     }
   } finally { if (previous === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous; }
 });
@@ -408,13 +413,14 @@ for (const kind of ['solution_evaluation', 'executive_summary']) {
     NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) },
       enforceRateLimit: async () => null, withTiming: async (_, __, fn) => fn(),
       resolveOpenAIModelOverride: async () => undefined, auditEvent: async () => {}, productionSafeErrorMessage: error => error.message,
+      ...requestBody, routeErrorResponse, isRequestableJobKind: () => true,
     });
     const response = await POST(new Request('http://localhost/audit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind }) }), { params: Promise.resolve({ id: P }) });
     assert.equal(response.status, 422, response.body?.error); assert.equal(response.body.job, undefined);
     const runners = workflow(['runSolutionEvaluationWorkflow','runExecutiveSummaryWorkflow','readStableEvaluationSources'], {
       getProjectGenerationContext: async () => ({ name: 'Audit', solutionEvaluationSnapshot: null }),
     });
-    await assert.rejects(kind === 'solution_evaluation' ? runners.runSolutionEvaluationWorkflow({ kind, projectId: P }, handlers) : runners.runExecutiveSummaryWorkflow({ kind, projectId: P }, handlers), kind === 'solution_evaluation' ? /Generer kundeanalyse før løsningsvurdering/ : /Generer vurdering før lederoppsummering/);
+    await assert.rejects(kind === 'solution_evaluation' ? runners.runSolutionEvaluationWorkflow({ kind, projectId: P }, handlers) : runners.runExecutiveSummaryWorkflow({ kind, projectId: P }, handlers), kind === 'solution_evaluation' ? /CUSTOMER_ANALYSIS_REQUIRED/ : /SOLUTION_EVALUATION_REQUIRED/);
   });
 }
 
@@ -497,7 +503,7 @@ test('REVIEW VERSION: result-only changes advance UI revision without changing i
 function recovery() {
   const cryptoModule = jiti(path.join(frontend,'lib/server/crypto.ts'));
   return actual('lib/server/project-job-results.ts', ['recoverCommittedProjectJobResult','pendingEvaluationResult'], {
-    ...cryptoModule, getProjectSnapshotAfterCommit: async () => null,
+    ...cryptoModule, WorkflowError: workflowErrors.WorkflowError, getProjectSnapshotAfterCommit: async () => null,
     listGeneratedArtifactsFresh: async () => JSON.parse(sql(`select coalesce(json_agg(a),'[]') from generated_artifacts a where project_id=${quote(P)}`)).map(a=>({...a,is_current:true,source_is_current:true})),
     createServiceClient: () => ({from(table) {
       assert.ok(['project_jobs','customer_analyses','solution_evaluations','executive_summaries'].includes(table));

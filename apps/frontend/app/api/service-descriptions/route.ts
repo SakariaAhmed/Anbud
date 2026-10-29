@@ -1,20 +1,16 @@
 import { after, NextResponse } from "next/server";
 
 import { summarizeServiceDocumentForAi } from "@/lib/server/ai/document-analysis";
-import { enforceServiceDescriptionWriteRateLimit } from "@/lib/server/api-responses";
+import { enforceServiceDescriptionWriteRateLimit, routeErrorResponse } from "@/lib/server/api-responses";
 import {
-  authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
-  MultipartRequestError,
   parseBoundedMultipartFormData,
 } from "@/lib/server/multipart";
 import { getServiceDescriptionMetadata, listServiceDescriptions, saveServiceDocument, updateServiceDocumentAiSummary, upsertServiceDescription } from "@/lib/server/repositories/data-store";
 import type { ServiceDocument } from "@/lib/types";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
-import { workflowErrorStatus } from "@/lib/server/workflow-errors";
 
 const SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=300, stale-while-revalidate=1800",
@@ -27,15 +23,7 @@ export async function GET() {
     const services = await listServiceDescriptions();
     return NextResponse.json({ services }, { headers: SERVICE_CACHE_HEADERS });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(
-          error,
-          "Kunne ikke hente tjenestebeskrivelser.",
-        ),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente tjenestebeskrivelser.");
   }
 }
 
@@ -150,19 +138,6 @@ export async function POST(request: Request) {
     const services = await listServiceDescriptions();
     return NextResponse.json({ service, document, services }, { status: 201 });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    if (error instanceof MultipartRequestError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(
-          error,
-          "Kunne ikke lagre tjenestebeskrivelsen.",
-        ),
-      },
-      { status: workflowErrorStatus(error) },
-    );
+    return routeErrorResponse(error, "Kunne ikke lagre tjenestebeskrivelsen.");
   }
 }

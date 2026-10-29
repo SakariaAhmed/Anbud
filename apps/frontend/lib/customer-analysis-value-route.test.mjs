@@ -13,7 +13,7 @@ const aliases = Object.fromEntries([
   "@/lib/server/project-ai-route", "@/lib/server/use-cases/solution-evaluation-readiness",
   "@/lib/server/use-cases/solution-evaluation-source-snapshot", "@/lib/service-description",
 ].map((name) => [name, support]));
-const jiti = createJiti(import.meta.url, { alias: { ...aliases, "@": root } });
+const jiti = createJiti(import.meta.url, { alias: { ...aliases, "@": root, "server-only": "/dev/null" } });
 const { PUT } = jiti(`${root}app/api/projects/[id]/customer-analysis/route.ts`);
 const { state, revision } = jiti(support);
 const opportunity = { title: "Verdi", description: "Kildetekst", value_categories: [], profit_share_percent: 1 };

@@ -37,6 +37,7 @@ function harness({ role = null, admin = false, active = true, roleError = false 
     if (name === "productionSafeErrorMessage") return (_, fallback) => fallback;
     if (name === "workflowErrorStatus") return () => 500;
     if (name === "withTiming") return (_, __, fn) => fn();
+    if (name === "DirectSolutionEvaluationWaitTimeoutError") return class extends Error {};
     return (...args) => { dataCalls.push({ name, args }); return String(name).startsWith("list") ? [] : null; };
   } });
   function load(relative) {
@@ -49,7 +50,8 @@ function harness({ role = null, admin = false, active = true, roleError = false 
       if (name === "next/headers") return { headers: async () => new Headers({ "x-principal": "principal", "x-session": "session" }) };
       if (name === "@/lib/password-auth") return { AUTH_PRINCIPAL_HEADER: "x-principal", AUTH_SESSION_HEADER: "x-session" };
       if (name === "@/lib/server/data-api") return { createServiceClient: () => db };
-      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses"].includes(name)) return load(`${name.slice(2)}.ts`);
+      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses", "@/lib/server/request-body", "@/lib/server/workflow-errors", "@/lib/unknown-values"].includes(name)) return load(`${name.slice(2)}.ts`);
+      if (name === "@/lib/server/multipart") return { MultipartRequestError: class MultipartRequestError extends Error {} };
       return service;
     };
     new vm.Script(`(function(require,exports){${source}\n})`, { filename: relative }).runInThisContext()(resolve, exports);

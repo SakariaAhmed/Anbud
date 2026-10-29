@@ -15,13 +15,12 @@ import {
 } from "@/lib/server/access-control-repository";
 import { recordActivity } from "@/lib/server/activity";
 import {
-  authorizationErrorResponse,
   requireProjectPermission,
   requireAdmin,
 } from "@/lib/server/authorization";
 import { checkRateLimit } from "@/lib/server/observability";
 import { createServiceClient } from "@/lib/server/data-api";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 async function projectName(projectId: string) {
   const dataApi = createServiceClient();
@@ -66,13 +65,7 @@ export async function GET(
       },
     );
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke hente tilgang.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke hente tilgang.", { status: 400 });
   }
 }
 
@@ -181,13 +174,7 @@ export async function POST(
       status: command.action === "invite" ? 201 : 200,
     });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke endre tilgang.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke endre tilgang.", { status: 400 });
   }
 }
 
@@ -227,13 +214,7 @@ export async function PATCH(
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke endre rolle.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke endre rolle.", { status: 400 });
   }
 }
 
@@ -265,12 +246,6 @@ export async function DELETE(
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke fjerne tilgang.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke fjerne tilgang.", { status: 400 });
   }
 }

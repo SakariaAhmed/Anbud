@@ -5,10 +5,9 @@ import { deleteDocument, getDocumentDetail, markDocumentAsPrimarySolution } from
 import { getProjectSnapshot } from "@/lib/server/repositories/data-store";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import {
-  authorizationErrorResponse,
   requireProjectPermission,
 } from "@/lib/server/authorization";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 export async function GET(
   _request: Request,
@@ -39,10 +38,7 @@ export async function GET(
       },
     );
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke hente dokumentet.") },
-      { status: 404 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente dokumentet.", { status: 404 });
   }
 }
 
@@ -80,10 +76,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
       },
     );
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke slette dokumentet.") },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke slette dokumentet.");
   }
 }
 
@@ -119,9 +112,6 @@ export async function PATCH(
       },
     );
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke oppdatere dokumentet.") },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke oppdatere dokumentet.");
   }
 }

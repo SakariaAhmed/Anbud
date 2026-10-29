@@ -23,6 +23,15 @@ import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import { sortByRequirementOrder } from "@/lib/requirement-order";
 import { runStructuredJsonResponse } from "@/lib/server/ai/json-completion";
 import {
+  isRecord,
+  stringList,
+  stringFields,
+  stringOr,
+  untrustedObject,
+  untrustedRows,
+  type Untrusted,
+} from "@/lib/unknown-values";
+import {
   ANALYSIS_MODEL,
   ANALYSIS_REASONING_EFFORT,
   DOCUMENT_ANALYSIS_MODEL,
@@ -54,6 +63,7 @@ import {
 } from "@/lib/server/document-intelligence/customer-analysis-fields";
 import {
   normalizeCustomerAnalysisResult,
+  parsePrioritizedRequirements,
   normalizeMermaidDiagram,
   selectServiceRecommendationCandidates,
 } from "@/lib/server/document-intelligence/customer-analysis-postprocess";
@@ -246,6 +256,24 @@ type RequirementBatchAnswer = {
   kildegrunnlag?: string;
   source?: string;
 };
+
+function parseRequirementBatchRows(value: unknown): RequirementBatchAnswer[] {
+  return untrustedRows<RequirementBatchAnswer>(value).map((row) => ({
+    ...(typeof row.nr === "number" ? { nr: row.nr } : {}),
+    ...stringFields(row, [
+      "ref",
+      "svar",
+      "answer",
+      "svargrunnlag",
+      "evidence",
+      "bevis",
+      "source_ref",
+      "sourceReference",
+      "kildegrunnlag",
+      "source",
+    ]),
+  }));
+}
 type RequirementAnswerSource =
   | "batch"
   | "full_document_handoff"
@@ -379,6 +407,25 @@ type RequirementCoverageBatchAnswer = {
   recommendation?: string;
   anbefaling?: string;
 };
+
+function parseRequirementCoverageBatchRows(
+  value: unknown,
+): RequirementCoverageBatchAnswer[] {
+  return untrustedRows<RequirementCoverageBatchAnswer>(value).map((row) => ({
+    ...(typeof row.nr === "number" ? { nr: row.nr } : {}),
+    ...stringFields(row, [
+      "ref",
+      "assessment",
+      "vurdering",
+      "rationale",
+      "begrunnelse",
+      "evidence",
+      "bevis",
+      "recommendation",
+      "anbefaling",
+    ]),
+  }));
+}
 type MammothHtmlModule = {
   convertToHtml: (input: { buffer: Buffer }) => Promise<{ value: string }>;
 };
@@ -10107,7 +10154,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
       maxRetries: 0,
       promptCacheKey: "requirement-response-handoff",
     });
-    const rows = Array.isArray(generated.rows) ? generated.rows : [];
+    const rows = parseRequirementBatchRows(generated.rows);
     validateRequirementResponseBatchRows({
       rows,
       entries: [input.row.entry],
@@ -10598,7 +10645,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
               promptCacheKey: "requirement-response-handoff",
             }),
         );
-        const rows = Array.isArray(generated.rows) ? generated.rows : [];
+        const rows = parseRequirementBatchRows(generated.rows);
         let handoffBatchError = "";
         try {
           validateRequirementResponseBatchRows({
@@ -15535,9 +15582,9 @@ function appendPrioritizedRequirement(
 }
 
 function enrichCustomerAnalysisWithFoundationFacts(
-  result: CustomerAnalysisResult,
+  result: Untrusted<CustomerAnalysisResult>,
   facts: ArtifactFoundationFact[],
-): CustomerAnalysisResult {
+): Untrusted<CustomerAnalysisResult> {
   if (!facts.length) {
     return result;
   }
@@ -15547,9 +15594,9 @@ function enrichCustomerAnalysisWithFoundationFacts(
     return result;
   }
 
-  let prioritizedRequirements = Array.isArray(result.prioritized_requirements)
-    ? [...result.prioritized_requirements]
-    : [];
+  let prioritizedRequirements = parsePrioritizedRequirements(
+    result.prioritized_requirements,
+  );
   for (const control of documentedControls) {
     prioritizedRequirements = appendPrioritizedRequirement(
       prioritizedRequirements,
@@ -15566,21 +15613,17 @@ function enrichCustomerAnalysisWithFoundationFacts(
       MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
     ),
     likely_evaluation_criteria: appendUniqueTextItems(
-      Array.isArray(result.likely_evaluation_criteria)
-        ? result.likely_evaluation_criteria
-        : [],
+      stringList(result.likely_evaluation_criteria),
       documentedControls,
       { max: 6 },
     ),
     expected_solution_direction: appendUniqueTextItems(
-      Array.isArray(result.expected_solution_direction)
-        ? result.expected_solution_direction
-        : [],
+      stringList(result.expected_solution_direction),
       documentedControls,
       { max: 6 },
     ),
     risks_for_us: appendUniqueTextItems(
-      Array.isArray(result.risks_for_us) ? result.risks_for_us : [],
+      stringList(result.risks_for_us),
       [documentedRiskControlText(facts)].filter(Boolean),
       { max: 5 },
     ),
@@ -18368,11 +18411,13 @@ function filterSyntheticCoverageItems(items: RequirementCoverageItem[]) {
 }
 
 function normalizeCoverageLedgerConfidence(
-  value: RequirementCoverage["ledger_confidence"],
+  raw: unknown,
 ): RequirementCoverage["ledger_confidence"] {
-  if (!value) {
+  if (!isRecord(raw)) {
     return undefined;
   }
+  const value: Untrusted<NonNullable<RequirementCoverage["ledger_confidence"]>> =
+    raw;
 
   const level =
     value.level === "high" ||
@@ -18439,10 +18484,12 @@ function coverageConfidenceFromLedger(
 }
 
 function normalizeSolutionRequirementCoverage(
-  value: Partial<RequirementCoverage> | null | undefined,
+  value: unknown,
 ): RequirementCoverage {
-  const source = value ?? {};
-  const rawItems = Array.isArray(source.items) ? source.items : [];
+  const source = untrustedObject<RequirementCoverage>(value);
+  const rawItems = untrustedRows<RequirementCoverage["items"][number]>(
+    source.items,
+  );
   const sortedItems = sortByRequirementOrder(
     rawItems
       .map((item) => ({
@@ -19582,7 +19629,7 @@ async function buildSolutionRequirementCoverage(input: {
       promptCacheKey: "requirement-coverage-batch",
     });
     const rows = validateRequirementCoverageBatchRows({
-      rows: Array.isArray(generated.rows) ? generated.rows : [],
+      rows: parseRequirementCoverageBatchRows(generated.rows),
       entries: chunk.entries,
       startIndex: chunk.startIndex,
     });
@@ -19974,7 +20021,7 @@ async function generateRequirementResponseFromLedger(input: {
           maxRetries: 1,
           promptCacheKey: "requirement-response-batch",
         });
-        rows = Array.isArray(generated.rows) ? generated.rows : [];
+        rows = parseRequirementBatchRows(generated.rows);
         validateRequirementResponseBatchRows({
           rows,
           entries: chunk.entries,
@@ -20229,32 +20276,30 @@ async function generateRequirementResponseFromLedger(input: {
 }
 
 function normalizeDocumentInsightDigest(
-  value: Partial<DocumentInsightDigest> | null | undefined,
+  value: Untrusted<DocumentInsightDigest> | null | undefined,
 ): DocumentInsightDigest {
   const source = value ?? {};
   return {
-    document_summary: compactText(source.document_summary ?? "", 900),
-    important_requirements: capNormalizedList(source.important_requirements ?? [], {
+    document_summary: compactText(source.document_summary, 900),
+    important_requirements: capNormalizedList(stringList(source.important_requirements), {
       max: 10,
     }),
-    implicit_needs: capNormalizedList(source.implicit_needs ?? [], { max: 8 }),
-    risks: capNormalizedList(source.risks ?? [], { max: 8 }),
-    evaluation_criteria: capNormalizedList(source.evaluation_criteria ?? [], {
+    implicit_needs: capNormalizedList(stringList(source.implicit_needs), { max: 8 }),
+    risks: capNormalizedList(stringList(source.risks), { max: 8 }),
+    evaluation_criteria: capNormalizedList(stringList(source.evaluation_criteria), {
       max: 8,
     }),
-    architecture_and_solution_signals: capNormalizedList(
-      source.architecture_and_solution_signals ?? [],
+    architecture_and_solution_signals: capNormalizedList(stringList(source.architecture_and_solution_signals),
       { max: 10 },
     ),
-    technologies_and_standards: capNormalizedList(
-      source.technologies_and_standards ?? [],
+    technologies_and_standards: capNormalizedList(stringList(source.technologies_and_standards),
       { max: 12 },
     ),
-    value_signals: capNormalizedList(source.value_signals ?? [], { max: 8 }),
-    visual_or_table_notes: capNormalizedList(source.visual_or_table_notes ?? [], {
+    value_signals: capNormalizedList(stringList(source.value_signals), { max: 8 }),
+    visual_or_table_notes: capNormalizedList(stringList(source.visual_or_table_notes), {
       max: 8,
     }),
-    source_references: capNormalizedList(source.source_references ?? [], {
+    source_references: capNormalizedList(stringList(source.source_references), {
       max: 12,
     }),
   };
@@ -21301,42 +21346,62 @@ export function selectEvidenceGroundedDocumentFindings(
   return deterministic ? [deterministic] : [];
 }
 
+function parseModelDocumentFindings(
+  value: unknown,
+): SolutionEvaluationResult["document_findings"] {
+  type Finding = SolutionEvaluationResult["document_findings"][number];
+  return untrustedRows<Finding>(value).map((item) => ({
+    reference: stringOr(item.reference),
+    assessment:
+      item.assessment === "Godt" ||
+      item.assessment === "Dårlig" ||
+      item.assessment === "Mangler" ||
+      item.assessment === "Uklart"
+        ? item.assessment
+        : "Uklart",
+    finding: stringOr(item.finding),
+    evidence: stringOr(item.evidence),
+    recommendation: stringOr(item.recommendation),
+  }));
+}
+
 export function normalizeSolutionEvaluationResult(
-  result: SolutionEvaluationResult,
-  options: { evidenceDocumentText?: string } = {},
+  result: Untrusted<SolutionEvaluationResult>,
+  options: {
+    evidenceDocumentText?: string;
+    provenance?: Pick<
+      SolutionEvaluationResult,
+      "customer_document_id" | "solution_document_id" | "evaluation_context"
+    >;
+  } = {},
 ): SolutionEvaluationResult {
   const strengths = capNormalizedList(
-    Array.isArray(result.strengths) ? result.strengths : [],
+    stringList(result.strengths),
   );
   const weaknesses = capNormalizedList(
-    Array.isArray(result.weaknesses) ? result.weaknesses : [],
+    stringList(result.weaknesses),
   );
   const genericSections = capNormalizedList(
-    Array.isArray(result.generic_sections) ? result.generic_sections : [],
+    stringList(result.generic_sections),
   );
   const missingElements = capNormalizedList(
-    Array.isArray(result.missing_elements) ? result.missing_elements : [],
+    stringList(result.missing_elements),
   );
   const risksToCustomer = capNormalizedList(
-    Array.isArray(result.risks_to_customer) ? result.risks_to_customer : [],
+    stringList(result.risks_to_customer),
   );
   const trustSignals = capNormalizedList(
-    Array.isArray(result.trust_signals) ? result.trust_signals : [],
+    stringList(result.trust_signals),
   );
   const improvementRecommendations = capNormalizedList(
-    Array.isArray(result.improvement_recommendations)
-      ? result.improvement_recommendations
-      : [],
+    stringList(result.improvement_recommendations),
   );
   const valueAssessment = normalizeValueOpportunities(
-    Array.isArray(result.value_assessment) ? result.value_assessment : [],
+    result.value_assessment,
   );
-  const scoreAssessment = result.likely_score_assessment ?? {
-    quality: "",
-    delivery_confidence: "",
-    risk: "",
-    competitiveness: "",
-  };
+  const scoreAssessment = untrustedObject<
+    SolutionEvaluationResult["likely_score_assessment"]
+  >(result.likely_score_assessment);
   const likelyScoreAssessment = {
     quality: compactText(scoreAssessment.quality ?? "", 500),
     delivery_confidence: compactText(
@@ -21346,13 +21411,12 @@ export function normalizeSolutionEvaluationResult(
     risk: compactText(scoreAssessment.risk ?? "", 500),
     competitiveness: compactText(scoreAssessment.competitiveness ?? "", 500),
   };
-  const rewriteSuggestions = (Array.isArray(result.rewrite_suggestions)
-    ? result.rewrite_suggestions
-    : []
-  )
+  const rewriteSuggestions = untrustedRows<
+    SolutionEvaluationResult["rewrite_suggestions"][number]
+  >(result.rewrite_suggestions)
     .map((item) => ({
-      target: compactText(item?.target ?? "", 240),
-      suggestion: compactText(item?.suggestion ?? "", 700),
+      target: compactText(item.target, 240),
+      suggestion: compactText(item.suggestion, 700),
     }))
     .filter((item) => item.target || item.suggestion)
     .slice(0, 8);
@@ -21361,15 +21425,17 @@ export function normalizeSolutionEvaluationResult(
   );
   const documentFindings = selectEvidenceGroundedDocumentFindings(
     normalizeDocumentFindingsAgainstCoverage(
-      Array.isArray(result.document_findings) ? result.document_findings : [],
+      parseModelDocumentFindings(result.document_findings),
       requirementCoverage,
       { evidenceDocumentText: options.evidenceDocumentText },
     ),
     requirementCoverage,
   );
-  const rawComparison = result.architecture_comparison;
+  const rawComparison = untrustedObject<
+    NonNullable<SolutionEvaluationResult["architecture_comparison"]>
+  >(result.architecture_comparison);
   const rawArchitectSolutionScore = normalizeComparisonScore(
-    rawComparison?.architect_solution_score,
+    rawComparison.architect_solution_score,
   );
   const coverageWeightedMaximum = requirementCoverage.items.length
     ? Math.round(
@@ -21385,7 +21451,7 @@ export function normalizeSolutionEvaluationResult(
     coverageWeightedMaximum,
   );
   const systemSolutionScore = normalizeComparisonScore(
-    rawComparison?.system_solution_score,
+    rawComparison.system_solution_score,
   );
   const architectureComparison = {
     winner: reconcileArchitectureComparisonWinner(
@@ -21394,32 +21460,27 @@ export function normalizeSolutionEvaluationResult(
     ),
     architect_solution_score: architectSolutionScore,
     system_solution_score: systemSolutionScore,
-    verdict: (rawComparison?.verdict || "").replace(/\s+/g, " ").trim(),
+    verdict: stringOr(rawComparison.verdict).replace(/\s+/g, " ").trim(),
     strong_critique: capNormalizedList(
-      Array.isArray(rawComparison?.strong_critique)
-        ? rawComparison.strong_critique
-        : [],
+      stringList(rawComparison.strong_critique),
       { max: 6 },
     ),
     pragmatic_reflections: capNormalizedList(
-      Array.isArray(rawComparison?.pragmatic_reflections)
-        ? rawComparison.pragmatic_reflections
-        : [],
+      stringList(rawComparison.pragmatic_reflections),
       { max: 6 },
     ),
     strategy_improvement_advice: capNormalizedList(
-      Array.isArray(rawComparison?.strategy_improvement_advice)
-        ? rawComparison.strategy_improvement_advice
-        : [],
+      stringList(rawComparison.strategy_improvement_advice),
       { max: 6 },
     ),
   };
 
+  const fitToCustomerNeeds = stringOr(result.fit_to_customer_needs)
+    .replace(/\s+/g, " ")
+    .trim();
   return {
-    ...result,
-    fit_to_customer_needs: (result.fit_to_customer_needs || "")
-      .replace(/\s+/g, " ")
-      .trim(),
+    ...options.provenance,
+    fit_to_customer_needs: fitToCustomerNeeds,
     strengths,
     weaknesses,
     generic_sections: genericSections,
@@ -21433,8 +21494,8 @@ export function normalizeSolutionEvaluationResult(
     document_findings: documentFindings,
     requirement_coverage: requirementCoverage,
     architecture_comparison: architectureComparison,
-    executive_summary: dedupeSummary(result.executive_summary || "", [
-      result.fit_to_customer_needs,
+    executive_summary: dedupeSummary(stringOr(result.executive_summary), [
+      fitToCustomerNeeds,
       ...strengths,
       ...weaknesses,
       ...genericSections,
@@ -22011,14 +22072,14 @@ export async function generateHighLevelDesign(input: {
 
   const normalizedHighLevelSolutionDesign =
     enrichHighLevelDesignTextWithFoundationFacts(
-      result.high_level_solution_design || "",
+      stringOr(result.high_level_solution_design),
       designFoundationFacts,
     );
 
   return {
     high_level_solution_design: normalizedHighLevelSolutionDesign,
     high_level_architecture_mermaid: normalizeHighLevelDesignDiagram({
-      rawDiagram: result.high_level_architecture_mermaid || "",
+      rawDiagram: stringOr(result.high_level_architecture_mermaid),
       designText: normalizedHighLevelSolutionDesign,
       facts: designFoundationFacts,
     }),
@@ -22173,7 +22234,7 @@ export async function evaluateSolutionDocument(input: {
     .join("\n\n");
 
   const evaluationModel = requirementCoverageBatchModel(input.model);
-  let result: SolutionEvaluationResult;
+  let result: Untrusted<SolutionEvaluationResult>;
   try {
     input.onProgress?.(
       "[74%] Kjører helhetsvurdering mot kravdekning og arkitektens svar ...",
@@ -22212,6 +22273,7 @@ export async function evaluateSolutionDocument(input: {
         error,
         "Helhetsvurderingen feilet og ble ikke lagret som ferdig.",
       ),
+      { cause: error },
     );
   }
   input.onProgress?.("[94%] Normaliserer vurdering og kravrekkefølge ...");
@@ -22229,15 +22291,17 @@ export async function evaluateSolutionDocument(input: {
   const normalizedEvaluation = normalizeSolutionEvaluationResult(
       {
         ...result,
-        customer_document_id: input.customerDocument.id,
-        solution_document_id: input.solutionDocument.id,
-        evaluation_context: evaluationContext,
         requirement_coverage: requirementCoverage,
       },
       {
         evidenceDocumentText: solutionDocumentAnswerBearingText(
           input.solutionDocument.raw_text,
         ),
+        provenance: {
+          customer_document_id: input.customerDocument.id,
+          solution_document_id: input.solutionDocument.id,
+          evaluation_context: evaluationContext,
+        },
       },
     );
   assertSubstantiveSolutionEvaluationResult(normalizedEvaluation);
@@ -22274,6 +22338,16 @@ type GeneratedArtifactDraft = {
   content_markdown: string;
   generation_metadata?: unknown;
 };
+
+function parseGeneratedArtifactDraft(
+  value: Untrusted<GeneratedArtifactDraft>,
+): GeneratedArtifactDraft {
+  return {
+    title: stringOr(value.title),
+    content_markdown: stringOr(value.content_markdown),
+    generation_metadata: value.generation_metadata,
+  };
+}
 
 type RequirementArtifactContext = {
   requirementDocuments: ProjectDocumentDetail[];
@@ -23010,7 +23084,7 @@ async function runFullDocumentArtifactGeneration(
             fileDocuments: requirementContext.requirementFileDocuments,
             timeoutMs: REQUIREMENT_RESPONSE_FILE_INPUT_TIMEOUT_MS,
             maxRetries: 1,
-          }),
+          }).then(parseGeneratedArtifactDraft),
       );
 
       return withAlignedRequirementResponse(generated, requirementContext, {
@@ -23046,7 +23120,7 @@ async function runFullDocumentArtifactGeneration(
             ? REQUIREMENT_RESPONSE_FULL_DOCUMENT_TIMEOUT_MS
             : undefined,
         maxRetries: input.artifactType === "forbedret_kravsvar" ? 1 : undefined,
-      }),
+      }).then(parseGeneratedArtifactDraft),
   );
 
   return input.artifactType === "forbedret_kravsvar"

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { workflowErrorStatus } from "@/lib/server/workflow-errors";
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { WorkflowError } from "@/lib/server/workflow-errors";
+import { requireProjectPermission } from "@/lib/server/authorization";
 
 import { isValidManualValueOpportunities, MANUAL_VALUE_OPPORTUNITIES_ERROR } from "@/lib/value-opportunities";
 
@@ -20,7 +20,6 @@ import { getProjectSnapshotAfterCommit, getProjectSourceRevision } from "@/lib/s
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
 import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import { prepareProjectAiJsonRoute } from "@/lib/server/project-ai-route";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 import { assertCustomerAnalysisRequirementSourcesReady } from "@/lib/server/use-cases/solution-evaluation-readiness";
 import {
   readStableProjectSourceSnapshot,
@@ -33,8 +32,11 @@ import {
   type CustomerAnalysisResult,
   type CustomerAnalysisSection,
   type RecommendedService,
+  isRequirementImportance,
   type RequirementImportance,
 } from "@/lib/types";
+import { routeErrorResponse } from "@/lib/server/api-responses";
+import { readJsonObject } from "@/lib/server/request-body";
 
 export const maxDuration = 60;
 
@@ -54,12 +56,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function isRequirementImportance(
-  value: unknown,
-): value is RequirementImportance {
-  return value === "Kritisk" || value === "Viktig" || value === "Mindre viktig";
 }
 
 function isAnalysisRequirement(value: unknown): value is AnalysisRequirement {
@@ -350,7 +346,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const preflight = await prepareProjectAiJsonRoute<{ section?: unknown }>(
+    const preflight = await prepareProjectAiJsonRoute(
       request,
       context,
       {
@@ -358,7 +354,6 @@ export async function POST(
         message: "For mange analyser på kort tid.",
         limit: 8,
         windowMs: 5 * 60_000,
-        fallbackBody: {},
       },
     );
     if (preflight.response) {
@@ -481,15 +476,7 @@ export async function POST(
     const project = await getProjectSnapshotAfterCommit(id);
     return NextResponse.json({ analysis: saved, project });
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      {
-        error: productionSafeErrorMessage(
-          error,
-          "Kunne ikke generere kundeanalyse.",
-        ),
-      },
-      { status: workflowErrorStatus(error) },
-    );
+    return routeErrorResponse(error, "Kunne ikke generere kundeanalyse.");
   }
 }
 
@@ -508,12 +495,7 @@ export async function GET(
 
     return NextResponse.json({ analysis }, { headers: READ_CACHE_HEADERS });
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke hente kundeanalysen."),
-      },
-      { status: workflowErrorStatus(error) },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente kundeanalysen.");
   }
 }
 
@@ -524,12 +506,7 @@ export async function PUT(
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "analysis.write");
-    const body = (await request.json().catch(() => ({}))) as {
-      analysis_text?: string;
-      expected_analysis_revision?: unknown;
-      section?: unknown;
-      section_snapshot?: unknown;
-    };
+    const body = await readJsonObject(request);
 
     const section = isCustomerAnalysisSection(body.section)
       ? body.section
@@ -564,7 +541,7 @@ export async function PUT(
 
     if (typeof body.expected_analysis_revision !== "string" ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.expected_analysis_revision)) {
-      throw new Error("CUSTOMER_ANALYSIS_REVISION_REQUIRED");
+      throw new WorkflowError("CUSTOMER_ANALYSIS_REVISION_REQUIRED");
     }
     const sourceSnapshot = await readStableSolutionEvaluationSourceSnapshot({
       readSourceRevision: () => getProjectSourceRevision(id),
@@ -593,7 +570,7 @@ export async function PUT(
     }
 
     if (existingAnalysis.revision !== body.expected_analysis_revision) {
-      throw new Error("CUSTOMER_ANALYSIS_CHANGED");
+      throw new WorkflowError("CUSTOMER_ANALYSIS_CHANGED");
     }
     const nextAnalysis = section
       ? applySectionSnapshot(existingAnalysis, section, body.section_snapshot)
@@ -630,11 +607,6 @@ export async function PUT(
     const project = await getProjectSnapshotAfterCommit(id);
     return NextResponse.json({ analysis: saved, project });
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke lagre analysen."),
-      },
-      { status: workflowErrorStatus(error) },
-    );
+    return routeErrorResponse(error, "Kunne ikke lagre analysen.");
   }
 }

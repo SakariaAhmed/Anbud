@@ -1,3 +1,4 @@
+import { WorkflowError } from "@/lib/server/workflow-errors";
 import { normalizeGeneratedNorwegianProse } from "@/lib/server/document-intelligence/norwegian-language";
 import type { CustomerAnalysisResult } from "@/lib/types";
 
@@ -16,7 +17,7 @@ export function normalizeCustomerAnalysisNorwegianProse(
     // Never trim original quotations or validate unrelated stored sections.
     if (typeof value === "string") {
       if (/(?:[【】]|<\|[^|\n]{1,30}\|>)\s*assistant\s+(?:to\s*=|analysis\b)/iu.test(value)) {
-        throw new Error("AI_OUTPUT_CORRUPT: Modellsvaret inneholder ugyldige kontrollmarkører.");
+        throw new WorkflowError("AI_OUTPUT_CORRUPT", "Modellsvaret inneholder ugyldige kontrollmarkører.");
       }
     } else if (Array.isArray(value)) {
       value.forEach(validateProse);

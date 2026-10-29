@@ -1,4 +1,5 @@
 import type { ValueCategory, ValueOpportunity } from "@/lib/types";
+import { untrustedRows } from "@/lib/unknown-values";
 import {
   isNearDuplicate,
   splitIntoSentences,
@@ -65,7 +66,9 @@ function inferValueCategory(
   return "Redusert risiko";
 }
 
-function normalizeSingleValueCategory(item: ValueOpportunity): ValueCategory {
+function normalizeSingleValueCategory(
+  item: Pick<ValueOpportunity, "title" | "description"> & { value_categories?: unknown },
+): ValueCategory {
   const firstValidCategory = Array.isArray(item.value_categories)
     ? item.value_categories.find(isValueCategory)
     : null;
@@ -102,10 +105,24 @@ function mergeValueOpportunityDescriptions(descriptions: string[]) {
 }
 
 export function normalizeValueOpportunities(
-  items: ValueOpportunity[],
+  items: unknown,
 ): ValueOpportunity[] {
-  const normalizedItems = (Array.isArray(items) ? items : [])
-    .filter((item) => item && item.title && item.description)
+  const normalizedItems = untrustedRows<ValueOpportunity>(items)
+    .flatMap((item) =>
+      typeof item.title === "string" &&
+      item.title &&
+      typeof item.description === "string" &&
+      item.description
+        ? [
+            {
+              title: item.title,
+              description: item.description,
+              value_categories: item.value_categories,
+              profit_share_percent: item.profit_share_percent,
+            },
+          ]
+        : [],
+    )
     .filter((item, index, array) => {
       return !array.some(
         (existing, existingIndex) =>
@@ -118,11 +135,7 @@ export function normalizeValueOpportunities(
       title: item.title.replace(/\s+/g, " ").trim(),
       description: item.description.replace(/\s+/g, " ").trim(),
       value_categories: [normalizeSingleValueCategory(item)],
-      profit_share_percent:
-        normalizePercentShare(
-          (item as ValueOpportunity & { profit_share_percent?: unknown })
-            .profit_share_percent,
-        ) ?? 0,
+      profit_share_percent: normalizePercentShare(item.profit_share_percent) ?? 0,
     }));
 
   if (!normalizedItems.length) {

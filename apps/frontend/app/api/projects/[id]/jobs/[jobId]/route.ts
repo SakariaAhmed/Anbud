@@ -1,8 +1,8 @@
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { getProjectJob } from "@/lib/server/project-jobs";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 export async function GET(_: Request, context: { params: Promise<{ id: string; jobId: string }> }) {
   try {
@@ -16,14 +16,6 @@ export async function GET(_: Request, context: { params: Promise<{ id: string; j
 
     return NextResponse.json({ job });
   } catch (error) {
-    return authorizationErrorResponse(error) ?? NextResponse.json(
-      {
-        error: productionSafeErrorMessage(
-          error,
-          "Kunne ikke hente jobbstatus.",
-        ),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente jobbstatus.");
   }
 }

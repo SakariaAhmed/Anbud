@@ -71,6 +71,10 @@ import {
   solutionProposalWorkflowStatus,
 } from "@/components/projects/project-workflow-status";
 import { deriveProjectStatus } from "@/components/projects/project-workspace-shared";
+import {
+  GENERATABLE_ARTIFACT_TYPES,
+  isGeneratableArtifactType,
+} from "@/lib/types";
 import type {
   CustomerAnalysisResult,
   CustomerAnalysisSection,
@@ -160,13 +164,6 @@ const CUSTOMER_ANALYSIS_SECTIONS: CustomerAnalysisSection[] = [
   "value",
 ];
 
-const WORKSPACE_ARTIFACT_TYPES: GeneratedArtifactType[] = [
-  "bilag1_rekonstruksjon",
-  "forbedret_kravsvar",
-  "gjennomforing_og_risiko",
-  "losningsutkast",
-];
-
 const ARTIFACT_TYPE_BY_TAB: Partial<
   Record<ProjectWorkspaceTab, GeneratedArtifactType>
 > = {
@@ -189,7 +186,7 @@ function loadedArtifactTypesFromArtifacts(artifacts: GeneratedArtifact[]) {
     new Set(
       artifacts
         .map((artifact) => artifact.artifact_type)
-        .filter((type) => WORKSPACE_ARTIFACT_TYPES.includes(type)),
+        .filter(isGeneratableArtifactType),
     ),
   );
 }
@@ -203,12 +200,12 @@ function addLoadedArtifactType(
 
 function initialLoadedArtifactTypes(project: ProjectDetail) {
   if (project.artifact_count === 0) {
-    return WORKSPACE_ARTIFACT_TYPES;
+    return [...GENERATABLE_ARTIFACT_TYPES];
   }
 
   const loaded = new Set(loadedArtifactTypesFromArtifacts(project.generated_artifacts));
   if (project.artifact_counts_by_type) {
-    for (const artifactType of WORKSPACE_ARTIFACT_TYPES) {
+    for (const artifactType of GENERATABLE_ARTIFACT_TYPES) {
       if ((project.artifact_counts_by_type[artifactType] ?? 0) === 0) {
         loaded.add(artifactType);
       }

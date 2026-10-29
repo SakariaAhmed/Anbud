@@ -10,32 +10,29 @@ import {
 import { isProjectRole } from "@/lib/access-control";
 import { recordActivity } from "@/lib/server/activity";
 import {
-  authorizationErrorResponse,
   requireAdmin,
 } from "@/lib/server/authorization";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
+import { readJsonObject } from "@/lib/server/request-body";
 
 export async function GET() {
   try {
     await requireAdmin();
     return NextResponse.json({ groups: await listGroups() });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json({ error: "Kunne ikke hente grupper." }, { status: 500 })
-    );
+    return routeErrorResponse(error, "Kunne ikke hente grupper.");
   }
 }
 
 export async function POST(request: Request) {
   try {
     const principal = await requireAdmin();
-    const body = (await request.json()) as {
+    const body: {
       name?: unknown;
       description?: unknown;
       principalIds?: unknown;
       projectGrants?: unknown;
-    };
+    } = await readJsonObject(request);
     if (typeof body.name !== "string") {
       return NextResponse.json({ error: "Gruppenavn mangler." }, { status: 400 });
     }
@@ -107,12 +104,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(group, { status: 201 });
   } catch (error) {
-    return (
-      authorizationErrorResponse(error) ??
-      NextResponse.json(
-        { error: productionSafeErrorMessage(error, "Kunne ikke opprette gruppe.") },
-        { status: 400 },
-      )
-    );
+    return routeErrorResponse(error, "Kunne ikke opprette gruppe.", { status: 400 });
   }
 }

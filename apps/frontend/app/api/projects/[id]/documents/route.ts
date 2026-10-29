@@ -1,4 +1,4 @@
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import {
@@ -7,15 +7,14 @@ import {
   validateUploadFileSignature,
 } from "@/lib/server/documents";
 import {
-  MultipartRequestError,
   parseBoundedMultipartFormData,
 } from "@/lib/server/multipart";
 import { queueDocumentIngestionJob } from "@/lib/server/project-jobs";
 import { listProjectDocumentSummaries, savePendingDocument } from "@/lib/server/repositories/data-store";
 import { getProjectSnapshot } from "@/lib/server/repositories/data-store";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 import type { ProjectDocumentRole, SupportingDocumentSubtype } from "@/lib/types";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
@@ -284,14 +283,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     );
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    if (error instanceof MultipartRequestError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke lagre dokumentet.") },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke lagre dokumentet.");
   }
 }

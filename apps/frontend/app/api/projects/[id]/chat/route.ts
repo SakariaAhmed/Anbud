@@ -1,11 +1,10 @@
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { CHAT_SESSION_MEMORY_STORAGE_LIMIT, inferProjectChatDomains, streamProjectChat, type ChatPromptAttachment } from "@/lib/server/ai/project-chat";
 import { resolveOpenAIModelOverride } from "@/lib/server/ai/model-config";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
-  MultipartRequestError,
   parseBoundedMultipartFormData,
 } from "@/lib/server/multipart";
 import {
@@ -29,6 +28,8 @@ import type {
   ChatMessage,
   ChatSessionSummary,
 } from "@/lib/types";
+import { routeErrorResponse } from "@/lib/server/api-responses";
+import { optionalTextField, readJsonObject } from "@/lib/server/request-body";
 
 const MAX_CHAT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_CHAT_MULTIPART_BYTES = MAX_CHAT_ATTACHMENT_BYTES + 1024 * 1024;
@@ -71,15 +72,11 @@ async function parseChatRequest(request: Request): Promise<{
       throw new ChatRequestError("Chatmeldingen må sendes som JSON eller skjemadata.", 415);
     }
 
-    const body = (await request.json().catch(() => ({}))) as {
-      message?: string;
-      session_id?: string;
-      session_title?: string;
-    };
+    const body = await readJsonObject(request);
     return {
-      message: body.message?.trim() ?? "",
-      sessionId: body.session_id ?? null,
-      sessionTitle: body.session_title ?? null,
+      message: optionalTextField(body, "message") ?? "",
+      sessionId: optionalTextField(body, "session_id"),
+      sessionTitle: optionalTextField(body, "session_title"),
       attachments: [],
       attachmentMetadata: [],
     };
@@ -370,12 +367,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       active_session_id: activeSessionId,
     });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      { error: productionSafeErrorMessage(error, "Kunne ikke hente chatten.") },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente chatten.");
   }
 }
 
@@ -585,22 +577,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     );
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
     if (error instanceof ChatRequestError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    if (error instanceof MultipartRequestError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(
-          error,
-          "Kunne ikke sende chatmelding.",
-        ),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke sende chatmelding.");
   }
 }

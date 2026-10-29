@@ -1,4 +1,6 @@
 import "server-only";
+
+import { WorkflowError } from "@/lib/server/workflow-errors";
 import { readStableProjectSourceSnapshot } from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
 import { safeErrorTelemetry } from "@/lib/server/safe-errors";
 import { analysisContentEqual, withoutAnalysisRevision } from "@/lib/customer-analysis-version";
@@ -3073,7 +3075,7 @@ export async function publishDocumentReadiness(input: {
     rethrowAuthoritativeLeaseLoss(new Error(error.message));
     throw new Error(error.message);
   }
-  if (!data) throw new Error("DOCUMENT_INDEX_NOT_READY");
+  if (!data) throw new WorkflowError("DOCUMENT_INDEX_NOT_READY");
   revalidateProjectCaches(input.projectId);
   return mapDocumentSummary(fromUnknownDocumentRow(data));
 }

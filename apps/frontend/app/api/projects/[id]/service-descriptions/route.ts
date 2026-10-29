@@ -1,8 +1,8 @@
-import { requireProjectPermission, authorizationErrorResponse } from "@/lib/server/authorization";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
 import { listProjectServiceDescriptions, setProjectServiceSelections } from "@/lib/server/repositories/data-store";
-import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const PROJECT_SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
@@ -21,14 +21,7 @@ export async function GET(
       { headers: PROJECT_SERVICE_CACHE_HEADERS },
     );
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke hente prosjektets tjenester."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke hente prosjektets tjenester.");
   }
 }
 
@@ -61,13 +54,6 @@ export async function PATCH(
     await setProjectServiceSelections(id, selectedServiceIds);
     return NextResponse.json({ selected_service_ids: selectedServiceIds });
   } catch (error) {
-    const authorizationResponse = authorizationErrorResponse(error);
-    if (authorizationResponse) return authorizationResponse;
-    return NextResponse.json(
-      {
-        error: productionSafeErrorMessage(error, "Kunne ikke lagre prosjektets tjenester."),
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse(error, "Kunne ikke lagre prosjektets tjenester.");
   }
 }

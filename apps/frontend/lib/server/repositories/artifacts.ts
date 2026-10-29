@@ -5,22 +5,14 @@ import { decryptJson, encryptJson } from "@/lib/server/crypto";
 import { runLeaseFencedGeneratedArtifactMutation } from "@/lib/server/repositories/lease-fenced-persistence";
 import { revalidateProjectCaches } from "@/lib/server/repositories/repository-cache";
 import { createServiceClient } from "@/lib/server/data-api";
-import type {
-  GeneratedArtifact,
-  GeneratedArtifactAuthorityByType,
-  GeneratedArtifactType,
+import {
+  GENERATED_ARTIFACT_TYPES,
+  type GeneratedArtifact,
+  type GeneratedArtifactAuthorityByType,
+  type GeneratedArtifactType,
 } from "@/lib/types";
 
 const GENERATED_ARTIFACT_LIST_LIMIT = 250;
-export const GENERATED_ARTIFACT_TYPES: GeneratedArtifactType[] = [
-  "losningsutkast",
-  "bilag1_rekonstruksjon",
-  "forbedret_kravsvar",
-  "tilbudsstrategi",
-  "verdiargumentasjon",
-  "anbefalt_arkitektur",
-  "gjennomforing_og_risiko",
-];
 
 type ArtifactRow = {
   id: string;
@@ -67,7 +59,7 @@ export type ArtifactSourceRevisions = {
 export function isGeneratedArtifactType(
   value: unknown,
 ): value is GeneratedArtifactType {
-  return GENERATED_ARTIFACT_TYPES.includes(value as GeneratedArtifactType);
+  return GENERATED_ARTIFACT_TYPES.some((type) => type === value);
 }
 
 function mapArtifact(row: ArtifactRow): GeneratedArtifact {

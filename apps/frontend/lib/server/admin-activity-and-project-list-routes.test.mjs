@@ -28,10 +28,13 @@ function loadRoute(relative, modules) {
   return routeModule.exports;
 }
 
+const routeErrorResponse = (_, fallback) => NextResponse.json({ error: fallback }, { status: 500 });
+
 function activityRoute(calls) {
   return loadRoute("app/api/admin/activity/route.ts", {
     "@/lib/server/activity": { listActivity: async (input) => { calls.push(input); return []; } },
-    "@/lib/server/authorization": { requireAdmin: async () => ({}), authorizationErrorResponse: () => null },
+    "@/lib/server/authorization": { requireAdmin: async () => ({}) },
+    "@/lib/server/api-responses": { routeErrorResponse },
   });
 }
 
@@ -50,13 +53,13 @@ test("the identity-specific project list is never stored by the browser cache", 
     "@/lib/server/repositories/data-store": { listProjects: async () => [], createProject: async () => null },
     "@/lib/server/authorization": {
       requireRequestPrincipal: async () => ({ id: "synthetic-principal", isAdmin: false }),
-      authorizationErrorResponse: () => null,
     },
     "@/lib/server/activity": { recordActivity: async () => undefined },
     "@/lib/server/observability": {
       auditEvent: () => undefined, checkRateLimit: async () => ({ allowed: true }), withTiming: (_, __, fn) => fn(),
     },
-    "@/lib/server/safe-errors": { productionSafeErrorMessage: (_, fallback) => fallback },
+    "@/lib/server/api-responses": { routeErrorResponse },
+    "@/lib/server/request-body": {},
   });
   const response = await GET();
   assert.equal(response.status, 200);

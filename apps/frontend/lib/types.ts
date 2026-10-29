@@ -32,16 +32,39 @@ export type ValueCategory =
   | "Bedre brukeropplevelse";
 
 export type RequirementImportance = "Kritisk" | "Viktig" | "Mindre viktig";
+
+export function isRequirementImportance(
+  value: unknown,
+): value is RequirementImportance {
+  return value === "Kritisk" || value === "Viktig" || value === "Mindre viktig";
+}
 export type RequirementKind = "Eksplisitt" | "Implisitt";
 
-export type GeneratedArtifactType =
-  | "losningsutkast"
-  | "bilag1_rekonstruksjon"
-  | "forbedret_kravsvar"
-  | "tilbudsstrategi"
-  | "verdiargumentasjon"
-  | "anbefalt_arkitektur"
-  | "gjennomforing_og_risiko";
+export const GENERATED_ARTIFACT_TYPES = [
+  "losningsutkast",
+  "bilag1_rekonstruksjon",
+  "forbedret_kravsvar",
+  "tilbudsstrategi",
+  "verdiargumentasjon",
+  "anbefalt_arkitektur",
+  "gjennomforing_og_risiko",
+] as const;
+export type GeneratedArtifactType = (typeof GENERATED_ARTIFACT_TYPES)[number];
+
+/** Artifact types the API accepts for generation; all types stay readable. */
+export const GENERATABLE_ARTIFACT_TYPES = [
+  "bilag1_rekonstruksjon",
+  "forbedret_kravsvar",
+  "gjennomforing_og_risiko",
+  "losningsutkast",
+] as const satisfies readonly GeneratedArtifactType[];
+export type GeneratableArtifactType = (typeof GENERATABLE_ARTIFACT_TYPES)[number];
+
+export function isGeneratableArtifactType(
+  value: unknown,
+): value is GeneratableArtifactType {
+  return GENERATABLE_ARTIFACT_TYPES.some((type) => type === value);
+}
 
 export interface GeneratedArtifactAuthority {
   id: string;

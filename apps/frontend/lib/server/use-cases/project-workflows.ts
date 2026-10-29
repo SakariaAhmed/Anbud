@@ -1,4 +1,6 @@
 import "server-only";
+
+import { WorkflowError } from "@/lib/server/workflow-errors";
 import { projectJobDocumentSummary } from "@/lib/server/project-job-result-projection";
 import { findWorkflowArtifact, pendingEvaluationResult } from "@/lib/server/project-job-results";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
@@ -51,10 +53,11 @@ import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngesti
 import { getProjectGenerationContext, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
-import type {
-  GeneratedArtifactType,
-  ProjectDocumentDetail,
-  ProjectJobResult,
+import {
+  isGeneratableArtifactType,
+  type GeneratedArtifactType,
+  type ProjectDocumentDetail,
+  type ProjectJobResult,
 } from "@/lib/types";
 import {
   type ArtifactGenerationTiming,
@@ -271,6 +274,7 @@ export async function buildEvaluationLedgerContext(input: {
               error,
               `Kravledger kunne ikke bygges for ${document.title}.`,
             ),
+            { cause: error },
           );
         }
         return {
@@ -339,12 +343,7 @@ function optionalWorkflowString(value: unknown) {
 }
 
 function parseWorkflowArtifactType(value: unknown): GeneratedArtifactType {
-  if (
-    value === "losningsutkast" ||
-    value === "bilag1_rekonstruksjon" ||
-    value === "forbedret_kravsvar" ||
-    value === "gjennomforing_og_risiko"
-  ) {
+  if (isGeneratableArtifactType(value)) {
     return value;
   }
 
@@ -1285,7 +1284,7 @@ export async function runSolutionEvaluationWorkflow(
   }
 
   if (!customerAnalysis) {
-    throw new Error("Generer kundeanalyse før løsningsvurdering.");
+    throw new WorkflowError("CUSTOMER_ANALYSIS_REQUIRED");
   }
 
   if (!solutionDocument) {
@@ -1464,7 +1463,7 @@ async function runExecutiveSummaryWorkflow(
   handlers.onPhase?.("dokumenthenting");
 
   if (!evaluationSnapshot) {
-    throw new Error("Generer vurdering før lederoppsummering.");
+    throw new WorkflowError("SOLUTION_EVALUATION_REQUIRED");
   }
   const solutionEvaluation = evaluationSnapshot.evaluation;
   assertExecutiveSummaryEvaluationReady(solutionEvaluation);
@@ -1507,7 +1506,7 @@ async function runPerfectSystemSolutionWorkflow(
   handlers.onPhase?.("prosjekthenting");
 
   if (!solutionEvaluation && !input.resumeArtifactId) {
-    throw new Error("Generer vurdering før du forbedrer systemløsningen.");
+    throw new WorkflowError("SOLUTION_EVALUATION_REQUIRED");
   }
 
   const systemScore =
@@ -1530,7 +1529,7 @@ async function runPerfectSystemSolutionWorkflow(
   handlers.setProgress("Skriver forbedret systemløsning med dokumenterte forutsetninger ...");
   const savedArtifact = await findWorkflowArtifact(input.projectId, getProjectWorkflowLease()?.jobId, input.resumeArtifactId);
   if (input.resumeArtifactId && !savedArtifact) throw new Error("Fant ikke løsningsutkastet som skal revurderes.");
-  if (savedArtifact && (!savedArtifact.is_current || !savedArtifact.source_is_current)) throw new Error("ARTIFACT_SOURCE_REVISION_CHANGED");
+  if (savedArtifact && (!savedArtifact.is_current || !savedArtifact.source_is_current)) throw new WorkflowError("ARTIFACT_SOURCE_REVISION_CHANGED");
   const artifact = savedArtifact ?? (await generateAndSaveProjectArtifact({
     projectId: input.projectId,
     artifactType: "losningsutkast",
