@@ -1,19 +1,11 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  AlertTriangle,
-  BadgeCheck,
-  BriefcaseBusiness,
-  Building2,
   Cloud,
-  Compass,
   Cpu,
   Database,
-  FilePenLine,
-  History,
   KeyRound,
   ListChecks,
   PencilLine,
@@ -21,22 +13,13 @@ import {
   RefreshCw,
   Save,
   Shield,
-  Target,
   Trash2,
-  TrendingUp,
   Workflow,
   X,
   type LucideIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,7 +31,10 @@ import {
   VALUE_LABELS,
   ValueTags,
 } from "@/components/projects/project-workspace-shared";
+import { findDocumentForReference } from "@/lib/customer-analysis-sources";
+import { customerAnalysisPositioningGroups } from "@/lib/customer-analysis-presentation";
 import { getCustomerAnalysisSectionSnapshot } from "@/lib/customer-analysis-history";
+import { getDisplayProfitShares, MAX_MANUAL_VALUE_OPPORTUNITIES } from "@/lib/value-opportunities";
 import {
   isDocumentReadyForEvaluation,
   isHistoricalSolutionDocument,
@@ -56,10 +42,8 @@ import {
 import { normalizeTechnologySignalWords } from "@/lib/signal-words";
 import {
   MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS,
-  type CustomerAnalysisHistorySource,
   type CustomerAnalysisResult,
   type CustomerAnalysisSection,
-  type CustomerAnalysisSectionHistoryEntry,
   type CustomerAnalysisSectionSnapshotMap,
   type AnalysisRequirement,
   type ProjectDocument,
@@ -69,7 +53,6 @@ import {
   type ValueCategory,
   type ValueOpportunity,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 type EditableCustomerAnalysisSnapshot =
   CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection];
@@ -254,507 +237,25 @@ function sanitizeSectionDraft(
   }
 }
 
-const MermaidDiagram = dynamic(
-  () =>
-    import("@/components/projects/mermaid-diagram").then(
-      (module) => module.MermaidDiagram,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 text-sm text-muted-foreground">
-        Laster arkitekturdiagram ...
-      </div>
-    ),
-  },
-);
-
 function SectionSurface({
   title,
-  description,
-  icon: Icon,
   action,
   children,
 }: {
   title: string;
-  description: string;
-  icon: LucideIcon;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section className="max-w-full overflow-hidden rounded-b-lg border border-t-0 border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.055)]">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-6 py-6 md:px-7">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(135deg,rgb(239,246,255),rgb(219,234,254)_52%,rgb(224,242,254))] text-blue-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_12px_24px_rgba(37,99,235,0.12)] ring-1 ring-blue-100/80">
-            <Icon className="size-5 drop-shadow-[0_1px_1px_rgba(255,255,255,0.55)]" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-[1.08rem] font-semibold leading-6 text-slate-950">{title}</h3>
-            <p className="mt-2 max-w-3xl text-[0.94rem] leading-6 text-slate-500">
-              {description}
-            </p>
-          </div>
+    <section aria-label={title} className="min-w-0 py-3">
+      {action ? (
+        <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+          {action}
         </div>
-        {action ? (
-          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-            {action}
-          </div>
-        ) : null}
-      </div>
-      <div className="px-6 py-6 md:px-7 md:py-7">{children}</div>
+      ) : null}
+      {children}
     </section>
   );
-}
-
-function formatHistoryTimestamp(value: string) {
-  return new Intl.DateTimeFormat("nb-NO", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Oslo",
-  }).format(new Date(value));
-}
-
-function historySourceLabel(source: CustomerAnalysisHistorySource) {
-  switch (source) {
-    case "full_regeneration":
-      return "Full redigering";
-    case "section_regeneration":
-      return "Seksjon redigert";
-    case "manual_edit":
-      return "Manuell lagring";
-    case "high_level_design_update":
-      return "Designoppdatering";
-  }
-}
-
-function HistoryCopyCard({
-  title,
-  content,
-}: {
-  title: string;
-  content: string;
-}) {
-  if (!content.trim()) {
-    return null;
-  }
-
-  return (
-    <div className="rounded-lg border border-border/70 bg-background/80 px-4 py-4">
-      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {title}
-      </p>
-      <MarkdownViewer
-        content={content}
-        className="analysis-prose mt-3 max-w-none text-[0.98rem] text-foreground"
-      />
-    </div>
-  );
-}
-
-function HistoryBulletList({
-  title,
-  items,
-  emptyText,
-}: {
-  title: string;
-  items: string[];
-  emptyText: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border/70 bg-background/80 px-4 py-4">
-      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {title}
-      </p>
-      {items.length ? (
-        <div className="mt-3 space-y-2.5">
-          {items.map((item, index) => (
-            <div
-              key={`${title}-${index}`}
-              className="rounded-md border border-border/60 bg-card px-3 py-3"
-            >
-              <MarkdownViewer
-                content={item}
-                className="analysis-prose max-w-none text-[0.97rem] text-foreground"
-              />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          {emptyText}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function SectionHistoryContent({
-  section,
-  snapshot,
-}: {
-  section: CustomerAnalysisSection;
-  snapshot: CustomerAnalysisSectionHistoryEntry["snapshot"];
-}) {
-  switch (section) {
-    case "summary": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["summary"];
-      return (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <HistoryCopyCard
-            title="Kundesituasjon"
-            content={value.customer_profile_summary}
-          />
-          <HistoryCopyCard
-            title="Kundens mål"
-            content={value.customer_goals_summary}
-          />
-        </div>
-      );
-    }
-    case "strategy": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["strategy"];
-      return (
-        <div className="space-y-4">
-          <HistoryCopyCard
-            title="Arbeidstekst"
-            content={value.executive_summary}
-          />
-          <HistoryBulletList
-            title="Posisjoneringsspor"
-            items={value.positioning_recommendations}
-            emptyText="Ingen posisjoneringsspor var lagret i denne versjonen."
-          />
-        </div>
-      );
-    }
-    case "clarifications": {
-      const value =
-        snapshot as CustomerAnalysisSectionSnapshotMap["clarifications"];
-      return (
-        <div className="space-y-4">
-          <HistoryBulletList
-            title="Avklaringer"
-            items={value.ambiguities}
-            emptyText="Ingen avklaringer var lagret i denne versjonen."
-          />
-        </div>
-      );
-    }
-    case "design": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["design"];
-      return (
-        <div className="space-y-4">
-          <HistoryCopyCard
-            title="High-level design"
-            content={value.high_level_solution_design}
-          />
-          {value.high_level_architecture_mermaid.trim() ? (
-            <div className="rounded-lg border border-border/70 bg-background/80 px-4 py-4">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Arkitekturdiagram
-              </p>
-              <div className="mt-4 rounded-lg border border-border/60 bg-white p-3">
-                <MermaidDiagram
-                  chart={value.high_level_architecture_mermaid}
-                  title="Tidligere arkitekturdiagram"
-                  downloadName="tidligere-arkitekturdiagram"
-                />
-              </div>
-            </div>
-          ) : null}
-        </div>
-      );
-    }
-    case "risks": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["risks"];
-      return (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <HistoryBulletList
-            title="Risiko for oss"
-            items={value.risks_for_us ?? []}
-            emptyText="Ingen leverandør-/tilbudsrisiko i denne versjonen."
-          />
-          <HistoryBulletList
-            title="Risiko for kunden"
-            items={value.risks_for_customer ?? value.risks}
-            emptyText="Ingen kunderisiko i denne versjonen."
-          />
-        </div>
-      );
-    }
-    case "needs": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["needs"];
-      return (
-        <div className="space-y-4">
-          {value.implicit_requirements.length ? (
-            <div className="space-y-3">
-              {value.implicit_requirements.map((item, index) => (
-                <article
-                  key={`${item.title}-${index}`}
-                  className="rounded-lg border border-border/70 bg-background/80 px-4 py-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
-                      {item.importance}
-                    </span>
-                    <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">
-                      {item.category}
-                    </span>
-                  </div>
-                  <h4 className="mt-3 text-base font-semibold text-foreground">
-                    {item.title}
-                  </h4>
-                  <MarkdownViewer
-                    content={item.description}
-                    className="analysis-prose mt-2 max-w-none text-[0.97rem] text-muted-foreground"
-                  />
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm leading-6 text-muted-foreground">
-              Ingen underliggende behov var lagret i denne versjonen.
-            </p>
-          )}
-        </div>
-      );
-    }
-    case "keywords": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["keywords"];
-      const signalWords = normalizeTechnologySignalWords(value.signal_words);
-      return (
-        <div className="flex flex-wrap gap-2">
-          {signalWords.length ? (
-            signalWords.map((item, index) => (
-              <span
-                key={`${item}-${index}`}
-                className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-2 text-sm font-medium text-foreground"
-              >
-                <span>{item}</span>
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                  {value.signal_word_counts?.[item] ?? 1}x
-                </span>
-              </span>
-            ))
-          ) : (
-            <p className="text-sm leading-6 text-muted-foreground">
-              Ingen nøkkelord var lagret i denne versjonen.
-            </p>
-          )}
-        </div>
-      );
-    }
-    case "services": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["services"];
-      return (
-        <div className="space-y-3">
-          {value.recommended_services.length ? (
-            value.recommended_services.map((item, index) => (
-              <article
-                key={`${item.service_name}-${index}`}
-                className="rounded-lg border border-border/70 bg-background/80 px-4 py-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h4 className="text-base font-semibold text-foreground">
-                      {item.service_name}
-                    </h4>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      {item.customer_need}
-                    </p>
-                  </div>
-                  <span className="rounded-md bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary">
-                    {item.usefulness_percent}% nyttig
-                  </span>
-                </div>
-                <MarkdownViewer
-                  content={item.recommendation_reason}
-                  className="analysis-prose mt-3 max-w-none text-[0.98rem] text-muted-foreground"
-                />
-              </article>
-            ))
-          ) : (
-            <p className="text-sm leading-6 text-muted-foreground">
-              Ingen anbefalte tjenester var lagret i denne versjonen.
-            </p>
-          )}
-        </div>
-      );
-    }
-    case "value": {
-      const value = snapshot as CustomerAnalysisSectionSnapshotMap["value"];
-      return (
-        <div className="space-y-4">
-          {value.value_opportunities.length ? (
-            value.value_opportunities.map((item, index) => (
-              <article
-                key={`${item.title}-${index}`}
-                className="rounded-lg border border-border/70 bg-background/80 px-4 py-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <h4 className="text-base font-semibold text-foreground">
-                    {item.title}
-                  </h4>
-                  <ValueTags values={item.value_categories} />
-                </div>
-                <MarkdownViewer
-                  content={item.description}
-                  className="analysis-prose mt-3 max-w-none text-[0.98rem] text-muted-foreground"
-                />
-              </article>
-            ))
-          ) : (
-            <p className="text-sm leading-6 text-muted-foreground">
-              Ingen verdimuligheter var lagret i denne versjonen.
-            </p>
-          )}
-        </div>
-      );
-    }
-  }
-}
-
-function SectionHistoryPanel({
-  analysis,
-  section,
-}: {
-  analysis: CustomerAnalysisResult;
-  section: CustomerAnalysisSection;
-}) {
-  const entries = useMemo(
-    () => analysis.section_histories?.[section] ?? [],
-    [analysis.section_histories, section],
-  );
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(
-    null,
-  );
-
-  useEffect(() => {
-    if (
-      selectedHistoryId &&
-      !entries.some((entry) => entry.id === selectedHistoryId)
-    ) {
-      setSelectedHistoryId(null);
-    }
-  }, [entries, selectedHistoryId]);
-
-  if (!entries.length) {
-    return null;
-  }
-
-  const selectedEntry =
-    entries.find((entry) => entry.id === selectedHistoryId) ?? null;
-
-  return (
-    <details className="group mt-6 overflow-hidden rounded-xl border border-border/70 bg-slate-50/80">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:text-slate-950 [&::-webkit-details-marker]:hidden">
-        <span className="inline-flex items-center gap-2">
-          <History className="size-4" />
-          Tidligere seksjoner
-        </span>
-        <span className="text-xs font-medium tabular-nums text-slate-500">
-          ({entries.length})
-        </span>
-      </summary>
-      <div className="border-t border-border/70 px-4 py-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0 flex-1">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Velg lagret versjon
-            </p>
-            <Select
-              value={selectedHistoryId ?? undefined}
-              onValueChange={setSelectedHistoryId}
-            >
-              <SelectTrigger className="mt-2 h-10 w-full max-w-full bg-white">
-                <SelectValue placeholder="Velg en tidligere seksjon">
-                  {selectedEntry ? `${formatHistoryTimestamp(selectedEntry.created_at)} · ${historySourceLabel(selectedEntry.source)}` : "Velg en tidligere seksjon"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent align="start" className="max-h-80">
-                {entries.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {`${formatHistoryTimestamp(entry.created_at)} · ${historySourceLabel(entry.source)}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button
-            type="button"
-            variant={selectedEntry ? "outline" : "secondary"}
-            size="sm"
-            onClick={() => setSelectedHistoryId(null)}
-            disabled={!selectedEntry}
-          >
-            Nyeste seksjon
-          </Button>
-        </div>
-
-        {selectedEntry ? (
-          <div className="mt-4 rounded-xl border border-border/70 bg-white/90 p-4 shadow-sm">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  {formatHistoryTimestamp(selectedEntry.created_at)}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {historySourceLabel(selectedEntry.source)}
-                </p>
-              </div>
-            </div>
-            <SectionHistoryContent
-              section={section}
-              snapshot={selectedEntry.snapshot}
-            />
-          </div>
-        ) : (
-          <p className="mt-4 text-sm leading-6 text-muted-foreground">
-            Nyeste seksjon vises allerede over. Velg en tidligere versjon i
-            listen for å se innholdet.
-          </p>
-        )}
-      </div>
-    </details>
-  );
-}
-
-function getDisplayProfitShares(
-  opportunities: CustomerAnalysisResult["value_opportunities"],
-) {
-  if (!opportunities.length) {
-    return [];
-  }
-
-  const rawValues = opportunities.map((item) =>
-    typeof item.profit_share_percent === "number" &&
-    Number.isFinite(item.profit_share_percent)
-      ? Math.max(1, Math.round(item.profit_share_percent))
-      : 0,
-  );
-
-  const total = rawValues.reduce((sum, value) => sum + value, 0);
-  const normalized =
-    total > 0
-      ? rawValues.map((value) => Math.max(1, Math.round((value / total) * 100)))
-      : opportunities.map(() => Math.floor(100 / opportunities.length));
-
-  let currentTotal = normalized.reduce((sum, value) => sum + value, 0);
-  let index = 0;
-  while (currentTotal !== 100 && normalized.length > 0) {
-    const direction = currentTotal < 100 ? 1 : -1;
-    const targetIndex = index % normalized.length;
-    if (direction > 0 || normalized[targetIndex] > 1) {
-      normalized[targetIndex] += direction;
-      currentTotal += direction;
-    }
-    index += 1;
-  }
-
-  return normalized;
 }
 
 const PIE_NEUTRAL = "rgb(203, 213, 225)";
@@ -772,87 +273,6 @@ const KEYWORD_COLORS = [
   "rgb(217, 119, 6)",
   "rgb(124, 58, 237)",
 ] as const;
-
-const POSITIONING_LANES = [
-  {
-    title: "Budskap",
-    eyebrow: "Hva vi skal eie",
-    icon: Target,
-    className: "border-blue-200/80 bg-blue-50/80 text-blue-950",
-    iconClassName: "bg-blue-600 text-white",
-    badgeClassName: "bg-blue-600/10 text-blue-800",
-  },
-  {
-    title: "Trygghet",
-    eyebrow: "Hva kunden må tro på",
-    icon: Shield,
-    className: "border-emerald-200/80 bg-emerald-50/75 text-emerald-950",
-    iconClassName: "bg-emerald-600 text-white",
-    badgeClassName: "bg-emerald-600/10 text-emerald-800",
-  },
-  {
-    title: "Bevis",
-    eyebrow: "Hva tilbudet må vise",
-    icon: ListChecks,
-    className: "border-amber-200/80 bg-amber-50/75 text-amber-950",
-    iconClassName: "bg-amber-500 text-white",
-    badgeClassName: "bg-amber-500/12 text-amber-800",
-  },
-  {
-    title: "Leveranse",
-    eyebrow: "Hvordan det landes",
-    icon: Workflow,
-    className: "border-cyan-200/80 bg-cyan-50/75 text-cyan-950",
-    iconClassName: "bg-cyan-700 text-white",
-    badgeClassName: "bg-cyan-700/10 text-cyan-800",
-  },
-] satisfies Array<{
-  title: string;
-  eyebrow: string;
-  icon: LucideIcon;
-  className: string;
-  iconClassName: string;
-  badgeClassName: string;
-}>;
-
-const NEED_CARD_STYLES = [
-  {
-    railClassName: "from-blue-600 via-blue-500 to-cyan-500",
-    iconClassName: "bg-blue-600 text-white",
-    shellClassName: "border-blue-200 bg-blue-50/70 text-blue-950",
-  },
-  {
-    railClassName: "from-emerald-600 via-emerald-500 to-teal-500",
-    iconClassName: "bg-emerald-600 text-white",
-    shellClassName: "border-emerald-200 bg-emerald-50/70 text-emerald-950",
-  },
-  {
-    railClassName: "from-amber-500 via-orange-400 to-rose-400",
-    iconClassName: "bg-amber-500 text-white",
-    shellClassName: "border-amber-200 bg-amber-50/72 text-amber-950",
-  },
-] as const;
-
-const RISK_AUDIENCE_STYLES = [
-  {
-    eyebrow: "Leveranserisiko",
-    iconClassName: "bg-red-600 text-white",
-    shellClassName:
-      "border-red-200/75 bg-[linear-gradient(135deg,rgba(254,242,242,0.82),rgba(255,255,255,0.94)_42%,rgba(248,250,252,0.88))]",
-    numberClassName: "bg-red-600/10 text-red-800",
-    accentClassName: "bg-red-600",
-  },
-  {
-    eyebrow: "Kunderisiko",
-    iconClassName: "bg-orange-500 text-white",
-    shellClassName:
-      "border-orange-200/75 bg-[linear-gradient(135deg,rgba(255,247,237,0.84),rgba(255,255,255,0.94)_42%,rgba(255,251,235,0.7))]",
-    numberClassName: "bg-orange-500/12 text-orange-800",
-    accentClassName: "bg-orange-500",
-  },
-] as const;
-
-const MAX_RISKS_PER_AUDIENCE = 3;
 
 type PieDatum = {
   id: string;
@@ -1036,21 +456,6 @@ function parseColorChannels(color: string) {
   return [148, 163, 184];
 }
 
-function mixColor(
-  color: string,
-  target: [number, number, number],
-  amount: number,
-) {
-  const [red, green, blue] = parseColorChannels(color);
-  const mix = Math.min(1, Math.max(0, amount));
-
-  const blended = [red, green, blue].map((channel, index) =>
-    Math.round(channel + (target[index] - channel) * mix),
-  );
-
-  return `rgb(${blended[0]}, ${blended[1]}, ${blended[2]})`;
-}
-
 function withAlpha(color: string, alpha: number) {
   const [red, green, blue] = parseColorChannels(color);
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
@@ -1067,7 +472,6 @@ function DonutChart({
   onSelect: (index: number | null) => void;
   valueSuffix: string;
 }) {
-  const chartId = useId().replace(/:/g, "");
   const reduceMotion = useReducedMotion();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const { data: normalizedData, total } = normalizePieData(data);
@@ -1143,82 +547,13 @@ function DonutChart({
       onPointerLeave={handlePointerLeave}
     >
       <div className="relative w-full">
-        <div className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.98),rgba(239,246,255,0.56)_45%,rgba(255,255,255,0)_74%)]" />
-        <div className="pointer-events-none absolute inset-x-16 top-4 h-12 rounded-full bg-slate-200/35 blur-3xl" />
         <motion.div className="relative">
           <svg
             viewBox="0 0 780 380"
             className="w-full overflow-visible"
             aria-label="Kakediagram"
           >
-            <defs>
-              <filter
-                id={`${chartId}-slice-shadow`}
-                x="-30%"
-                y="-30%"
-                width="180%"
-                height="180%"
-              >
-                <feDropShadow
-                  dx="0"
-                  dy="10"
-                  stdDeviation="10"
-                  floodColor="rgba(15, 23, 42, 0.16)"
-                />
-              </filter>
-              <radialGradient id={`${chartId}-backdrop`} cx="50%" cy="50%" r="65%">
-                <stop offset="0%" stopColor="rgba(255, 255, 255, 0.98)" />
-                <stop offset="68%" stopColor="rgba(241, 245, 249, 0.78)" />
-                <stop offset="100%" stopColor="rgba(226, 232, 240, 0.12)" />
-              </radialGradient>
-              <linearGradient
-                id={`${chartId}-track`}
-                x1="0%"
-                y1="0%"
-                x2="100%"
-                y2="100%"
-              >
-                <stop offset="0%" stopColor="rgba(255, 255, 255, 0.95)" />
-                <stop offset="100%" stopColor="rgba(226, 232, 240, 0.94)" />
-              </linearGradient>
-              {segments.map((item, index) => (
-                <linearGradient
-                  key={`${item.id}-gradient`}
-                  id={`${chartId}-top-${index}`}
-                  x1="10%"
-                  y1="0%"
-                  x2="90%"
-                  y2="100%"
-                >
-                  <stop
-                    offset="0%"
-                    stopColor={mixColor(item.color, [255, 255, 255], 0.22)}
-                  />
-                  <stop offset="56%" stopColor={item.color} />
-                  <stop
-                    offset="100%"
-                    stopColor={mixColor(item.color, [15, 23, 42], 0.16)}
-                  />
-                </linearGradient>
-              ))}
-            </defs>
-
-            <circle
-              cx={centerX}
-              cy={centerY}
-              r={outerRadius + 40}
-              fill={`url(#${chartId}-backdrop)`}
-            />
-            <circle
-              cx={centerX}
-              cy={centerY}
-              r={(outerRadius + innerRadius) / 2}
-              fill="none"
-              stroke={`url(#${chartId}-track)`}
-              strokeWidth={outerRadius - innerRadius}
-            />
-
-            <g filter={`url(#${chartId}-slice-shadow)`}>
+            <g>
               {segments.map((item, index) => {
                 const isSelected = selectedIndex === index;
                 const isHovered = hoveredIndex === index;
@@ -1255,26 +590,13 @@ function DonutChart({
                         item.startAngle,
                         item.endAngle,
                       )}
-                      fill={`url(#${chartId}-top-${index})`}
-                      stroke={mixColor(item.color, [255, 255, 255], 0.68)}
+                      fill={item.color}
+                      stroke={isSelected || isHovered ? "rgb(15 23 42)" : "white"}
                       strokeWidth={2}
                       strokeLinejoin="round"
                       className="cursor-pointer outline-none"
-                      style={{
-                        filter:
-                          isSelected || isHovered
-                            ? `drop-shadow(0 10px 18px ${withAlpha(item.color, 0.2)})`
-                            : undefined,
-                      }}
-                      whileHover={
-                        reduceMotion
-                          ? undefined
-                          : {
-                              scale: 1.01,
-                              filter: `drop-shadow(0 12px 22px ${withAlpha(item.color, 0.22)})`,
-                            }
-                      }
                       role="button"
+                      aria-pressed={isSelected}
                       tabIndex={0}
                       focusable="true"
                       aria-label={`${item.label}: ${item.value}${valueSuffix}`}
@@ -1294,20 +616,6 @@ function DonutChart({
                 );
               })}
             </g>
-            <circle
-              cx={centerX}
-              cy={centerY}
-              r={innerRadius - 8}
-              fill="rgba(255, 255, 255, 0.88)"
-              stroke="rgba(255, 255, 255, 0.96)"
-              strokeWidth={2}
-            />
-            <circle
-              cx={centerX}
-              cy={centerY}
-              r={innerRadius - 14}
-              fill="rgba(248, 250, 252, 0.88)"
-            />
             {labelPositions.map((label) => {
               const outerPoint = polarEllipsePoint(
                 centerX,
@@ -1402,10 +710,11 @@ function PieLegend({
           key={item.id}
           type="button"
           onClick={() => onSelect(selectedIndex === index ? null : index)}
-          className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left shadow-[0_10px_24px_rgba(15,23,42,0.03)] transition-all ${
+          aria-pressed={selectedIndex === index}
+          className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
             selectedIndex === index
-              ? "border-primary/35 bg-[linear-gradient(135deg,rgba(239,246,255,0.9),rgba(255,255,255,0.98))] shadow-[0_12px_28px_rgba(37,99,235,0.08)]"
-              : "border-white/80 bg-white/80 hover:-translate-y-0.5 hover:bg-white"
+              ? "border-primary/35 bg-primary/5"
+              : "border-border bg-background hover:bg-muted"
           }`}
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -1460,23 +769,20 @@ function ValuePieModule({
   }
 
   return (
-    <div className="mb-5 rounded-xl border border-border/70 bg-background/75 p-4">
+    <div className="mb-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Kakefordeling
-          </p>
-          <h4 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-foreground">
+          <h4 className="text-sm font-semibold text-foreground">
             Profitteffekt per verdi
           </h4>
         </div>
-        <span className="text-[0.72rem] font-medium text-muted-foreground">
+        <span className="text-xs font-medium text-muted-foreground">
           Klikk på en verdi for detaljer
         </span>
       </div>
 
       <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(13.5rem,0.45fr)] 2xl:items-start">
-        <div className="min-w-0 rounded-[1.4rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,246,255,0.62)_60%,rgba(248,250,252,0.82))] px-3 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.045)] md:px-5">
+        <div className="min-w-0 py-3">
           <DonutChart
             data={chartData}
             selectedIndex={selectedIndex}
@@ -1495,7 +801,7 @@ function ValuePieModule({
             <div className="rounded-lg border border-border/70 bg-card px-3.5 py-3.5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  <p className="text-xs font-semibold tracking-normal text-muted-foreground">
                     Valgt verdi
                   </p>
                   <p
@@ -1567,23 +873,20 @@ function KeywordPieModule({
   const KeywordIcon = selectedKeyword ? getKeywordIcon(selectedKeyword) : null;
 
   return (
-    <div className="mb-5 rounded-xl border border-border/70 bg-background/75 p-4">
+    <div className="mb-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Kakefordeling
-          </p>
-          <h4 className="mt-1 text-[1.02rem] font-semibold tracking-[-0.02em] text-foreground">
+          <h4 className="text-sm font-semibold text-foreground">
             Nøkkelord etter antall nevnt
           </h4>
         </div>
-        <span className="text-[0.72rem] font-medium text-muted-foreground">
+        <span className="text-xs font-medium text-muted-foreground">
           Topp 5 signalord
         </span>
       </div>
 
       <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1.55fr)_minmax(13.5rem,0.45fr)] 2xl:items-start">
-        <div className="min-w-0 rounded-[1.4rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(240,253,250,0.68)_58%,rgba(248,250,252,0.82))] px-3 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.045)] md:px-5">
+        <div className="min-w-0 py-3">
           <DonutChart
             data={chartData}
             selectedIndex={selectedIndex}
@@ -1614,7 +917,7 @@ function KeywordPieModule({
                     <KeywordIcon className="size-5" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    <p className="text-xs font-semibold tracking-normal text-muted-foreground">
                       Valgt nøkkelord
                     </p>
                     <p className="mt-1 text-lg font-semibold text-foreground">
@@ -1649,721 +952,40 @@ function KeywordPieModule({
   );
 }
 
-type DeliveryPhase = {
-  title: string;
-  label: string;
-  bullets: string[];
-};
-
-function compactDeliverySignal(value: string | undefined, fallback: string) {
-  const normalized = value
-    ?.replace(/\s+/g, " ")
-    .replace(/^(eksplisitt|implisitt):\s*/i, "")
-    .trim();
-  if (!normalized) {
-    return fallback;
-  }
-
-  if (normalized.length <= 130) {
-    return normalized;
-  }
-
-  const shortened = normalized.slice(0, 127);
-  const lastWordBoundary = shortened.lastIndexOf(" ");
-  return `${shortened.slice(0, lastWordBoundary > 95 ? lastWordBoundary : 127).trim()}…`;
-}
-
-type DeliveryProfileKey =
-  | "takeover"
-  | "transformation"
-  | "newbuild"
-  | "partnership"
-  | "balanced";
-
-type DeliveryStrategy = {
-  profileKey: DeliveryProfileKey;
-  profileLabel: string;
-  rationale: string;
-  tempo: string;
-  governance: string;
-  firstProof: string;
-  phases: DeliveryPhase[];
-};
-
-const DELIVERY_PROFILE_KEYWORDS: Record<
-  Exclude<DeliveryProfileKey, "balanced">,
-  string[]
-> = {
-  takeover: [
-    "overta",
-    "overtakelse",
-    "transisjon",
-    "kontinuitet",
-    "drift",
-    "forvaltning",
-    "sla",
-    "videreføre",
-    "eksisterende",
-    "stabil",
-    "underleverandør",
-  ],
-  transformation: [
-    "moderniser",
-    "migrer",
-    "sky",
-    "azure",
-    "plattform",
-    "transformasjon",
-    "utfas",
-    "konsolider",
-    "oppgrader",
-    "arkitektur",
-  ],
-  newbuild: [
-    "etabler",
-    "nyutvikling",
-    "innfør",
-    "implementer",
-    "ny løsning",
-    "nytt system",
-    "anskaff",
-    "utvikle",
-  ],
-  partnership: [
-    "rammeavtale",
-    "avrop",
-    "videreutvikling",
-    "kapasitet",
-    "team",
-    "smidig",
-    "kontinuerlig forbedring",
-    "bistand",
-    "konsulent",
-  ],
-};
-
-function detectDeliveryProfile(analysis: CustomerAnalysisResult): {
-  key: DeliveryProfileKey;
-  matched: string[];
-} {
-  const haystack = [
-    analysis.signal_words.join(" "),
-    analysis.expected_solution_direction.join(" "),
-    analysis.customer_profile_summary,
-    analysis.customer_goals_summary,
-    analysis.high_level_solution_design,
-    analysis.customer_goals.join(" "),
-  ]
-    .join(" ")
-    .toLocaleLowerCase("nb-NO");
-
-  let bestKey: DeliveryProfileKey = "balanced";
-  let bestMatches: string[] = [];
-  for (const [key, keywords] of Object.entries(DELIVERY_PROFILE_KEYWORDS)) {
-    const matched = keywords.filter((keyword) => haystack.includes(keyword));
-    if (matched.length > bestMatches.length) {
-      bestKey = key as DeliveryProfileKey;
-      bestMatches = matched;
-    }
-  }
-
-  if (bestMatches.length < 2) {
-    return { key: "balanced", matched: bestMatches };
-  }
-  return { key: bestKey, matched: bestMatches };
-}
-
-function buildDeliveryStrategy(
-  analysis: CustomerAnalysisResult,
-): DeliveryStrategy {
-  const { key, matched } = detectDeliveryProfile(analysis);
-
-  const req1 = compactDeliverySignal(
-    analysis.prioritized_requirements[0]?.requirement ||
-      analysis.implicit_requirements[0]?.title,
-    "det viktigste formelle kravet",
-  );
-  const req2 = compactDeliverySignal(
-    analysis.prioritized_requirements[1]?.requirement ||
-      analysis.implicit_requirements[1]?.title,
-    "de neste prioriterte kravene",
-  );
-  const goal1 = compactDeliverySignal(
-    analysis.customer_goals[0] || analysis.customer_goals_summary,
-    "den forretningseffekten kunden må se først",
-  );
-  const crit1 = compactDeliverySignal(
-    analysis.likely_evaluation_criteria[0],
-    "kundens viktigste akseptkriterium",
-  );
-  const riskUs = compactDeliverySignal(
-    analysis.risks_for_us?.[0] || analysis.risks[0],
-    "den største leveranserisikoen",
-  );
-  const riskCust = compactDeliverySignal(
-    analysis.risks_for_customer?.[0] || analysis.risks[1] || analysis.risks[0],
-    "den risikoen kunden selv er mest utsatt for",
-  );
-  const direction = compactDeliverySignal(
-    analysis.expected_solution_direction[0] ||
-      analysis.high_level_solution_design,
-    "den leveransemodellen kunden forventer",
-  );
-  const signalText = analysis.signal_words.slice(0, 3).join(", ");
-  const matchedText = matched.slice(0, 3).join(", ");
-
-  if (key === "takeover") {
-    return {
-      profileKey: key,
-      profileLabel: "Kontrollert overtakelse",
-      rationale: `Analysen peker mot en transisjonstung leveranse (signaler: ${matchedText}). Kunden vil ha kontinuitet foran endring — planen prioriterer trygg overtakelse før forbedring.`,
-      tempo: "Lavt endringstempo i overgang, forbedringer som opsjoner i driftsfasen.",
-      governance: "Tett transisjonsstyring med eksplisitt ansvarsdeling per tjeneste.",
-      firstProof: `Stabil drift uten avvik, målt mot ${crit1}`,
-      phases: [
-        {
-          title: "Fase 1",
-          label: "Mobilisering og innsikt",
-          bullets: [
-            `Gjennomfør due diligence av dagens miljø før ansvar flyttes. Avklar først ${req1}.`,
-            "Kartlegg avhengigheter til eksisterende underleverandører og avtaler som skal videreføres, og hvem som eier hvert grensesnitt.",
-            `Etabler målbar baseline for dagens tjenestenivå, slik at ${crit1} kan dokumenteres fra dag én.`,
-          ],
-        },
-        {
-          title: "Fase 2",
-          label: "Transisjonsplan og ansvarsdeling",
-          bullets: [
-            `${riskUs} må eies eksplisitt i transisjonsplanen, med fallback per overtakelsestrinn.`,
-            "Definer kundens bidrag i hvert trinn: tilganger, nøkkelpersoner og beslutningspunkter med frister.",
-            "Avtal exit- og reverseringskriterier per tjeneste før overtakelsen starter.",
-          ],
-        },
-        {
-          title: "Fase 3",
-          label: "Overtakelse i kontrollerte trinn",
-          bullets: [
-            "Overta tjeneste for tjeneste med parallellkjøring der konsekvensen av avvik er høy.",
-            `Verifiser hvert trinn mot ${req2} før neste tjeneste flyttes.`,
-            "Hold endringer utenfor overtakelsesvinduet — logg forbedringsidéer som opsjoner i stedet.",
-          ],
-        },
-        {
-          title: "Fase 4",
-          label: "Stabilisering og normalisering",
-          bullets: [
-            `Mål tjenestenivå mot ${crit1} og lukk restanser fra transisjonen med tydelige eiere.`,
-            `${riskCust} følges opp med konkrete tiltak i de første driftsmånedene.`,
-            "Normaliser styringen fra transisjonsregime til ordinær driftsgovernance.",
-          ],
-        },
-        {
-          title: "Fase 5",
-          label: "Forbedring som opsjoner",
-          bullets: [
-            `Først når driften er stabil: foreslå forbedringer som støtter ${goal1} — som prisede opsjoner, ikke som premiss.`,
-            "Prioriter opsjonene sammen med kunden basert på gevinst, risiko og modenhet.",
-            "Dokumenter gevinstuttak slik at forbedringene kan spores tilbake til kundens mål.",
-          ],
-        },
-      ],
-    };
-  }
-
-  if (key === "transformation") {
-    return {
-      profileKey: key,
-      profileLabel: "Transformasjon i etapper",
-      rationale: `Analysen peker mot modernisering og plattformendring (signaler: ${matchedText}). Planen balanserer endringstakt mot kontinuitet i eksisterende tjenester.`,
-      tempo: "Etappevis migrering med verdiuttak per etappe — ingen «big bang».",
-      governance: "Arkitekturstyring med tydelige beslutningsporter mellom etappene.",
-      firstProof: `Første migrerte område i produksjon, verifisert mot ${crit1}`,
-      phases: [
-        {
-          title: "Fase 1",
-          label: "Forankring av målbildet",
-          bullets: [
-            `Konkretiser målbildet: ${goal1}. Avklar hva som er i og utenfor transformasjonen.`,
-            `Avklar først ${req1} — det styrer rekkefølgen på etappene.`,
-            "Etabler beslutningsporter: hvem godkjenner overgang til neste etappe, og på hvilket grunnlag.",
-          ],
-        },
-        {
-          title: "Fase 2",
-          label: "Fundament og arkitektur",
-          bullets: [
-            `${direction} brytes ned i en måldrevet arkitektur med navngitte byggeklosser og avhengigheter.`,
-            `${riskUs} adresseres i fundamentet — ikke som en oppdagelse midt i migreringen.`,
-            "Etabler landingssone, sikkerhetsmodell og integrasjonsmønstre før første flytting.",
-          ],
-        },
-        {
-          title: "Fase 3",
-          label: "Migrering i etapper",
-          bullets: [
-            "Velg første etappe der gevinsten er synlig og risikoen håndterbar — bruk den som referanse for resten.",
-            `Verifiser hver etappe mot ${req2} før neste startes.`,
-            "Hold gammel og ny løsning styrt parallelt med tydelige kriterier for utfasing.",
-          ],
-        },
-        {
-          title: "Fase 4",
-          label: "Verifisering og gevinstuttak",
-          bullets: [
-            `Dokumenter effekt per etappe mot ${crit1} — ikke bare teknisk ferdigstillelse.`,
-            `${riskCust} følges med målinger som kunden selv kan lese.`,
-            "Juster rekkefølge og omfang basert på faktiske funn fra gjennomførte etapper.",
-          ],
-        },
-        {
-          title: "Fase 5",
-          label: "Skalering og videreutvikling",
-          bullets: [
-            "Industrialiser mønstrene fra de første etappene: automatiser, standardiser og dokumenter.",
-            `Koble videre utvikling til ${goal1}, slik at porteføljen styres av effekt, ikke aktivitet.`,
-            "Overfør kompetanse og eierskap til kundens organisasjon underveis, ikke til slutt.",
-          ],
-        },
-      ],
-    };
-  }
-
-  if (key === "newbuild") {
-    return {
-      profileKey: key,
-      profileLabel: "Etablering av ny løsning",
-      rationale: `Analysen peker mot etablering av noe nytt (signaler: ${matchedText}). Planen prioriterer tidlig verifisering av behov før full utbygging.`,
-      tempo: "Inkrementell bygging med pilot før bred innføring.",
-      governance: "Produktstyring med prioritert backlog og hyppige demonstrasjoner.",
-      firstProof: `En pilot i reell bruk, akseptert mot ${crit1}`,
-      phases: [
-        {
-          title: "Fase 1",
-          label: "Behovspresisering og design",
-          bullets: [
-            `Avklar først ${req1} sammen med de som faktisk skal bruke løsningen.`,
-            "Lukk de viktigste åpne avklaringene før design låses — antakelser merkes eksplisitt.",
-            `Design mot målbildet: ${goal1}.`,
-          ],
-        },
-        {
-          title: "Fase 2",
-          label: "Inkrementell bygging",
-          bullets: [
-            "Bygg det minste som kan verifisere kjerneverdien først, og demonstrer jevnlig for kunden.",
-            `${req2} planlegges inn i tidlige inkrementer slik at kritiske krav ikke skyves til slutten.`,
-            `${riskUs} overvåkes per inkrement med tydelige stopp-kriterier.`,
-          ],
-        },
-        {
-          title: "Fase 3",
-          label: "Pilot og aksept",
-          bullets: [
-            `Kjør pilot med reelle brukere og reelle data, målt mot ${crit1}.`,
-            "Bruk pilotfunnene til å justere omfang og rekkefølge før bred utrulling.",
-            "Formaliser akseptbeviset: hvem godkjenner, hva godkjennes, på hvilket grunnlag.",
-          ],
-        },
-        {
-          title: "Fase 4",
-          label: "Innføring og opplæring",
-          bullets: [
-            `${riskCust} håndteres med en innføringsplan som dekker opplæring, støtte og gevinstoppfølging.`,
-            "Etabler forvaltningsmodell og eierskap hos kunden før prosjektorganisasjonen trappes ned.",
-            `Mål effekt mot ${goal1} etter innføring — ikke bare leveransefullførelse.`,
-          ],
-        },
-      ],
-    };
-  }
-
-  if (key === "partnership") {
-    return {
-      profileKey: key,
-      profileLabel: "Kontinuerlig partnerskap",
-      rationale: `Analysen peker mot et løpende samarbeid (signaler: ${matchedText}). Planen etablerer samhandlingsmodellen først og lar leveransene bevise verdien syklus for syklus.`,
-      tempo: "Faste leveransesykluser med prioritering per syklus.",
-      governance: "Felles prioriteringsforum med målbar verdi per leveranse.",
-      firstProof: `Første leveransesyklus fullført med målbar effekt mot ${crit1}`,
-      phases: [
-        {
-          title: "Fase 1",
-          label: "Etablering av team og samhandling",
-          bullets: [
-            "Sett teamet med kompetanseprofilene kunden faktisk etterspør, og avtal samhandlingsrytme og roller.",
-            `Avklar først ${req1} — det definerer teamets første oppdrag.`,
-            "Etabler felles definisjoner av «klar» og «ferdig», og hvordan avrop/endringer håndteres.",
-          ],
-        },
-        {
-          title: "Fase 2",
-          label: "Første leveransesyklus",
-          bullets: [
-            "Velg et avgrenset, verdifullt første oppdrag som beviser samhandlingen i praksis.",
-            `${riskUs} testes bevisst i første syklus mens konsekvensen fortsatt er lav.`,
-            `Demonstrer resultatet mot ${crit1} og juster arbeidsform basert på erfaringen.`,
-          ],
-        },
-        {
-          title: "Fase 3",
-          label: "Styring og prioritering",
-          bullets: [
-            `Etabler backlog-styring der kunden prioriterer mot ${goal1}, ikke mot aktivitetslister.`,
-            "Rapporter verdi og fremdrift per syklus i et format kunden kan bruke i egen styring.",
-            `${riskCust} har fast plass i prioriteringsmøtene til den er lukket.`,
-          ],
-        },
-        {
-          title: "Fase 4",
-          label: "Skalering og forbedring",
-          bullets: [
-            "Skaler kapasitet basert på dokumentert verdi, ikke på plan alene.",
-            `Utvid omfanget mot ${req2} når samhandlingsmodellen har bevist seg.`,
-            "Gjennomfør jevnlige forbedringspunkter på selve samarbeidet — ikke bare på leveransene.",
-          ],
-        },
-      ],
-    };
-  }
-
-  return {
-    profileKey: "balanced",
-    profileLabel: "Balansert leveranse",
-    rationale: `Analysen gir ikke ett entydig leveransemønster${signalText ? ` (sterkeste signaler: ${signalText})` : ""}. Planen holder derfor avklaring, styring og kontrollert gjennomføring i balanse til retningen er tydeligere.`,
-    tempo: "Kontrollert fremdrift med avgrenset første spor.",
-    governance: "Tydelige beslutningspunkter med dokumentert akseptbevis.",
-    firstProof: `Første avgrensede spor levert og akseptert mot ${crit1}`,
-    phases: buildBalancedDeliveryPhases(analysis),
-  };
-}
-
-function buildBalancedDeliveryPhases(
-  analysis: CustomerAnalysisResult,
-): DeliveryPhase[] {
-  const topRequirement = compactDeliverySignal(
-    analysis.prioritized_requirements[0]?.requirement ||
-      analysis.implicit_requirements[0]?.title,
-    "hvilke krav og avhengigheter som faktisk skal styre første leveranserekkefølge",
-  );
-  const topGoal = compactDeliverySignal(
-    analysis.customer_goals[0] || analysis.customer_goals_summary,
-    "hvilken forretningseffekt kunden må se først",
-  );
-  const evaluationSignal = compactDeliverySignal(
-    analysis.likely_evaluation_criteria[0],
-    "hvilke akseptkriterier som avgjør om leveransen oppfattes som god nok",
-  );
-  const deliveryRisk = compactDeliverySignal(
-    analysis.risks_for_us?.[0] ||
-      analysis.risks_for_customer?.[0] ||
-      analysis.risks[0],
-    "hvilken risiko som kan endre omfang, rekkefølge eller ansvar",
-  );
-  const direction = compactDeliverySignal(
-    analysis.expected_solution_direction[0] ||
-      analysis.high_level_solution_design,
-    "hvilken leveransemodell kunden faktisk forventer",
-  );
-  const topSignals = analysis.signal_words.slice(0, 3);
-  const signalText = topSignals.length
-    ? topSignals.join(", ")
-    : "kundens dokumenterte føringer";
-
-  return [
-    {
-      title: "Fase 1",
-      label: "Forankring og avklaringer",
-      bullets: [
-        `Avklar først ${topRequirement}. Knytt punktet til en eier, kundebidrag og et konkret akseptbevis.`,
-        `Målbildet peker mot ${topGoal}. Før oppstart bør det være tydelig hvem som godkjenner neste steg, hva de godkjenner og hvilket grunnlag de bruker.`,
-        "Definer ansvarslinje, eskaleringsvei og første dokumenterte leveransebevis før leverandøren tar operasjonelt ansvar.",
-      ],
-    },
-    {
-      title: "Fase 2",
-      label: "Leveransemodell og styring",
-      bullets: [
-        `${direction} må konkretiseres før modellen prises eller bemannes. Bryt det ned i arbeidspakker, eiere og avhengigheter.`,
-        `Bruk ${evaluationSignal} som styringspunkt. Avklar hvilke kontroller som viser reell fremdrift, ikke bare aktivitet.`,
-        `${deliveryRisk} bør lukkes eller eies eksplisitt. La det styre rekkefølge, forbehold og kundens bidrag.`,
-      ],
-    },
-    {
-      title: "Fase 3",
-      label: "Kontrollert gjennomføring",
-      bullets: [
-        "Start med et avgrenset spor der premissene er sterke nok. Bruk det til å teste ansvar, samhandling og beslutningsflyt før mer komplekse deler tas inn.",
-        `Valider prioriteringene med kunden mot ${signalText}. Hvis signalene ikke kan kobles til konkrete krav, bør de behandles som antakelser.`,
-        "Avklar hvilke funn som skal stoppe, endre eller eskalere leveransen. Da blir fremdrift koblet til krav, ikke bare tempo.",
-      ],
-    },
-    {
-      title: "Fase 4",
-      label: "Stabilisering og overlevering",
-      bullets: [
-        "Før overlevering må det være tydelig hvem som eier rutiner, målinger og drifts- eller forvaltningsansvar etter prosjektet.",
-        `Koble aksept tilbake til ${evaluationSignal}. Ellers kan leveransen se ferdig ut uten at kundens viktigste bekymring er lukket.`,
-        "Kvalifiser restanser tydelig: hva kan vente, hvem eier det, hvilken konsekvens har det, og hva må løses før ordinær leveranse starter?",
-      ],
-    },
-  ];
-}
-
-function DeliveryBlueprint({
-  strategy,
-}: {
-  strategy: DeliveryStrategy;
-}) {
-  const phases = strategy.phases;
-  return (
-    <article className="border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-5 py-5">
-        <div>
-          <div className="min-w-0">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Leveransestrategi for denne kunden
-            </p>
-            <h6 className="mt-1 text-base font-semibold tracking-tight text-slate-950">
-              {strategy.profileLabel}
-            </h6>
-          </div>
-        </div>
-        <p className="mt-3 text-sm leading-6 text-slate-700">
-          {strategy.rationale}
-        </p>
-        <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-          {[
-            { label: "Tempo", value: strategy.tempo },
-            { label: "Styring", value: strategy.governance },
-            { label: "Første bevis", value: strategy.firstProof },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="border-l-2 border-blue-800 bg-slate-50 px-3.5 py-3"
-            >
-              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                {item.label}
-              </p>
-              <p className="mt-1 text-[0.85rem] leading-5 text-slate-700">
-                {item.value}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <ol className="grid gap-px bg-slate-200 lg:grid-cols-2">
-        {phases.map((phase, phaseIndex) => (
-          <li
-            key={phase.title}
-            className="bg-white px-5 py-5"
-          >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-800">
-                {String(phaseIndex + 1).padStart(2, "0")} · {phase.title}
-              </span>
-              <span className="text-sm font-semibold text-slate-900">
-                {phase.label}
-              </span>
-            </div>
-            <ul className="space-y-2.5 text-[0.94rem] leading-6 text-slate-700">
-              {phase.bullets.map((bullet, bulletIndex) => (
-                <li
-                  key={`${phase.title}-${bulletIndex}`}
-                  className="flex items-start gap-2.5"
-                >
-                  <span className="mt-2 size-1.5 shrink-0 bg-blue-800" />
-                  <span>{bullet}</span>
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ol>
-    </article>
-  );
-}
-
-function PositioningKanban({
+function PositioningOverview({
   items,
-  analysis,
   worktext,
 }: {
   items: string[];
-  analysis: CustomerAnalysisResult;
-  worktext?: string;
+  worktext: string;
 }) {
-  const deliveryStrategy = buildDeliveryStrategy(analysis);
-  const hasWorktext = Boolean(worktext?.trim());
-  const lanes = useMemo(() => {
-    const worktextLane = {
-      title: "Arbeidstekst",
-      eyebrow: "Tilbudsfortelling",
-      icon: FilePenLine,
-      className: "border-indigo-200/80 bg-indigo-50/70 text-indigo-950",
-      iconClassName: "bg-indigo-600 text-white",
-      badgeClassName: "bg-indigo-600/10 text-indigo-800",
-      items: [] as Array<{ content: string; index: number }>,
-    };
-    return [
-      ...(hasWorktext ? [worktextLane] : []),
-      ...POSITIONING_LANES.map((lane, laneIndex) => ({
-        ...lane,
-        items: items
-          .map((content, index) => ({ content, index }))
-          .filter(({ index }) => index % POSITIONING_LANES.length === laneIndex),
-      })).filter(
-        (lane) => lane.items.length > 0 || lane.title === "Leveranse",
-      ),
-    ];
-  }, [hasWorktext, items]);
-  const [activeLaneTitle, setActiveLaneTitle] = useState<string>(
-    () => lanes[0]?.title ?? "Leveranse",
-  );
-
-  useEffect(() => {
-    if (!lanes.some((lane) => lane.title === activeLaneTitle)) {
-      setActiveLaneTitle(lanes[0]?.title ?? "Leveranse");
-    }
-  }, [activeLaneTitle, lanes]);
-
-  const activeLane =
-    lanes.find((lane) => lane.title === activeLaneTitle) ?? lanes[0] ?? null;
-
-  if (!activeLane) {
-    return null;
-  }
-
-  const ActiveLaneIcon = activeLane.icon;
-  const hasDeliveryBlueprint = activeLane.title === "Leveranse";
-  const isWorktextLane = activeLane.title === "Arbeidstekst";
-
+  const groups = customerAnalysisPositioningGroups(items);
   return (
-    <div className="min-w-0 space-y-4">
-      <div className="pb-1">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {lanes.map((lane) => {
-            const Icon = lane.icon;
-            const isActive = lane.title === activeLane.title;
-            const itemCount =
-              lane.items.length +
-              (lane.title === "Leveranse" || lane.title === "Arbeidstekst"
-                ? 1
-                : 0);
-
-            return (
-              <button
-                key={lane.title}
-                type="button"
-                onClick={() => setActiveLaneTitle(lane.title)}
-                className={cn(
-                  "group flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60",
-                  lane.className,
-                  isActive
-                    ? "ring-2 ring-current/20 shadow-[0_14px_34px_rgba(15,23,42,0.10)]"
-                    : "opacity-80 hover:opacity-100",
-                )}
-                aria-pressed={isActive}
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <div
-                    className={cn(
-                      "flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm",
-                      lane.iconClassName,
-                    )}
-                  >
-                    <Icon className="size-4.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[0.66rem] font-bold uppercase tracking-[0.16em] opacity-65">
-                      {lane.eyebrow}
-                    </p>
-                    <h5 className="mt-1 text-sm font-semibold tracking-[-0.02em] sm:text-[0.98rem]">
-                      {lane.title}
-                    </h5>
-                  </div>
-                </div>
-                <span
-                  className={cn(
-                    "rounded-md px-2 py-1 text-xs font-semibold",
-                    lane.badgeClassName,
-                  )}
-                >
-                  {itemCount}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+    <div className="space-y-6">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-3">
+        {groups.map((group) => (
+          <section key={group.title} aria-label={group.title} className="analysis-insight min-w-0">
+            <h4 className="mb-3 text-base font-semibold">{group.title}</h4>
+            {group.items.length ? (
+              <ul className="space-y-3">
+                {group.items.map((content, index) => (
+                  <li key={`${group.title}-${index}`} className="border-t border-slate-200 pt-3">
+                    <MarkdownViewer content={content} className="analysis-prose max-w-none text-sm leading-7 text-slate-700" />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">Ingen anbefalinger i dette sporet ennå.</p>
+            )}
+          </section>
+        ))}
       </div>
-
-      <section
-        className={cn(
-          "flex min-h-64 flex-col rounded-2xl border p-4 shadow-sm sm:p-5",
-          activeLane.className,
-        )}
-      >
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div
-              className={cn(
-                "flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm",
-                activeLane.iconClassName,
-              )}
-            >
-              <ActiveLaneIcon className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] opacity-65">
-                {activeLane.eyebrow}
-              </p>
-              <h5 className="mt-1 text-lg font-semibold tracking-[-0.025em]">
-                {activeLane.title}
-              </h5>
-            </div>
-          </div>
-          <span className="min-w-0 max-w-xl text-sm leading-6 text-slate-600">
-            {isWorktextLane
-              ? "Bruk teksten som grunnrytme for tilbudet, og konkretiser retningen i sporene ved siden av."
-              : "Ett spor om gangen, slik at teamet kan lese og jobbe med innholdet uten å miste oversikten."}
-          </span>
-        </div>
-
-        <div className="flex flex-1 flex-col gap-4">
-          {isWorktextLane && worktext ? (
-            <article className="rounded-xl border border-white/70 bg-white/88 px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-sm">
-              <MarkdownViewer
-                content={worktext}
-                className="artifact-markdown max-w-none text-slate-900"
-              />
-            </article>
-          ) : null}
-
-          {hasDeliveryBlueprint ? (
-            <DeliveryBlueprint strategy={deliveryStrategy} />
-          ) : null}
-
-          {activeLane.items.map(({ content, index }) => (
-            <article
-              key={`positioning-kanban-${index}`}
-              className="rounded-xl border border-white/70 bg-white/88 px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-sm"
-            >
-              <MarkdownViewer
-                content={content}
-                className="analysis-prose max-w-none text-[1rem] leading-7 text-slate-800"
-              />
-            </article>
-          ))}
-
-          {activeLane.items.length === 0 && !hasDeliveryBlueprint && !isWorktextLane ? (
-            <div className="rounded-xl border border-dashed border-white/80 bg-white/70 px-5 py-5 text-sm leading-6 text-slate-600">
-              Ingen prosjektspesifikke anbefalinger er generert for dette sporet
-              ennå. Lag fremdriftsplan i egen fane for en konkret
-              gjennomføringsplan basert på prosjektgrunnlaget.
-            </div>
-          ) : null}
-        </div>
-      </section>
+      {worktext.trim() ? (
+        <details className="border-t border-slate-200 pt-4">
+          <summary className="cursor-pointer text-sm font-medium text-slate-600 focus-visible:outline-2 focus-visible:outline-blue-600">Strategisk bakgrunn</summary>
+          <MarkdownViewer content={worktext} className="analysis-prose mt-4 max-w-none text-sm leading-7 text-slate-700" />
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -2387,28 +1009,10 @@ function splitLeadSentence(content: string) {
   };
 }
 
-function extractSummaryHighlights(content: string) {
-  const trimmed = content.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  const explicitItems = trimmed
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .map((line) => line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/)?.[1]?.trim() ?? "")
-    .filter(Boolean);
-
-  return explicitItems.length >= 2 ? explicitItems.slice(0, 5) : [];
-}
-
 const SECTION_TABS = [
   { value: "summary", label: "Oppsummering" },
   { value: "strategy", label: "Strategi" },
   { value: "clarifications", label: "Avklaringer" },
-  { value: "design", label: "Design" },
-  { value: "risks", label: "Risiko" },
-  { value: "needs", label: "Behov" },
   { value: "services", label: "Anbefalt tjeneste" },
   { value: "value", label: "Verdi" },
 ] as const;
@@ -2429,8 +1033,6 @@ function serviceFitTone(score: number) {
     return {
       badgeClassName: "bg-emerald-600 text-white",
       barClassName: "bg-emerald-600",
-      shellClassName:
-        "border-emerald-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.92),rgba(255,255,255,0.94)_46%,rgba(240,253,250,0.76))]",
     };
   }
 
@@ -2438,16 +1040,12 @@ function serviceFitTone(score: number) {
     return {
       badgeClassName: "bg-blue-600 text-white",
       barClassName: "bg-blue-600",
-      shellClassName:
-        "border-blue-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.92),rgba(255,255,255,0.94)_46%,rgba(236,254,255,0.72))]",
     };
   }
 
   return {
     badgeClassName: "bg-amber-500 text-white",
     barClassName: "bg-amber-500",
-    shellClassName:
-      "border-amber-200 bg-[linear-gradient(135deg,rgba(255,251,235,0.92),rgba(255,255,255,0.94)_46%,rgba(255,247,237,0.72))]",
   };
 }
 
@@ -2523,114 +1121,6 @@ function getTopSignalWords(analysis: CustomerAnalysisResult) {
     .map((item) => item.keyword);
 }
 
-function getRiskGroups(analysis: CustomerAnalysisResult) {
-  const risksForUs = analysis.risks_for_us ?? [];
-  const risksForCustomer = analysis.risks_for_customer ?? [];
-
-  if (risksForUs.length || risksForCustomer.length) {
-    return { risksForUs, risksForCustomer };
-  }
-
-  return analysis.risks.reduce(
-    (groups, risk) => {
-      if (
-        /tilbud|leverandør|leveranse|team|ressurs|kompetanse|kapasitet|scope|omfang|pris|margin|kontrakt|avklaring|posisjonering|forplikt|ansvar/i.test(
-          risk,
-        )
-      ) {
-        groups.risksForUs.push(risk);
-      } else {
-        groups.risksForCustomer.push(risk);
-      }
-      return groups;
-    },
-    { risksForUs: [] as string[], risksForCustomer: [] as string[] },
-  );
-}
-
-function RiskAudienceGroup({
-  title,
-  description,
-  items,
-  emptyText,
-  tone,
-}: {
-  title: string;
-  description: string;
-  items: string[];
-  emptyText: string;
-  tone: 0 | 1;
-}) {
-  const style = RISK_AUDIENCE_STYLES[tone];
-  const visibleItems = items.slice(0, MAX_RISKS_PER_AUDIENCE);
-
-  return (
-    <div
-      className={`min-w-0 overflow-hidden rounded-xl border shadow-[0_14px_36px_rgba(15,23,42,0.06)] ${style.shellClassName}`}
-    >
-      <div className="flex items-start gap-3 border-b border-white/80 px-5 py-5 md:px-6">
-        <div
-          className={`flex size-11 shrink-0 items-center justify-center rounded-lg shadow-sm ${style.iconClassName}`}
-        >
-          <AlertTriangle className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
-            {style.eyebrow}
-          </p>
-          <h4 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">
-            {title}
-          </h4>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            {description}
-          </p>
-        </div>
-      </div>
-      {visibleItems.length ? (
-        <div className="space-y-3 px-5 py-5 md:px-6">
-          {visibleItems.map((item, index) => {
-            const riskText = splitLeadSentence(item);
-
-            return (
-              <article
-                key={`${title}-${index}`}
-                className="relative overflow-hidden rounded-lg border border-slate-200/80 bg-white/88 px-4 py-4"
-              >
-                <span
-                  className={`absolute inset-y-0 left-0 w-1 ${style.accentClassName}`}
-                />
-                <div className="mb-3 flex min-w-0 items-center gap-2 pl-2">
-                  <span
-                    className={`rounded-md px-2.5 py-1 text-[0.74rem] font-bold ${style.numberClassName}`}
-                  >
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    Risiko
-                  </span>
-                </div>
-                <p className="pl-2 text-[1.08rem] font-semibold leading-7 tracking-[-0.02em] text-slate-950">
-                  {riskText.lead}
-                </p>
-                {riskText.body ? (
-                  <MarkdownViewer
-                    content={riskText.body}
-                    className="analysis-prose mt-2 max-w-none pl-2 text-[1.01rem] leading-[1.85] text-slate-600"
-                  />
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="mx-5 my-5 rounded-lg border border-dashed border-slate-300 bg-white/70 px-4 py-4 text-sm text-slate-500 md:mx-6">
-          {emptyText}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function getRequirementImportanceRank(
   requirement: CustomerAnalysisResult["implicit_requirements"][number],
 ) {
@@ -2662,152 +1152,30 @@ function getNeedAsk(
   return text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
 }
 
-function normalizeReferenceText(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\.[a-z0-9]+$/i, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function tokenizeReferenceText(value: string) {
-  return normalizeReferenceText(value)
-    .split(" ")
-    .filter((token) => token.length >= 3);
-}
-
-function findDocumentForReference(
-  documents: ProjectDocument[],
-  sourceReference: string,
-) {
-  const normalizedReference = normalizeReferenceText(sourceReference);
-  if (!normalizedReference) {
-    return null;
-  }
-
-  if (
-    normalizedReference.includes("kundedokument") ||
-    normalizedReference.includes("customer document")
-  ) {
-    return documents[0] ?? null;
-  }
-
-  if (
-    normalizedReference.includes("losningsdokument") ||
-    normalizedReference.includes("solution document")
-  ) {
-    return documents[0] ?? null;
-  }
-
-  const referenceTokens = tokenizeReferenceText(sourceReference);
-  let bestMatch: { document: ProjectDocument; score: number } | null = null;
-
-  for (const document of documents) {
-    const candidates = [
-      document.title,
-      document.file_name,
-    ];
-    const normalizedCandidates = candidates
-      .map((candidate) => normalizeReferenceText(candidate))
-      .filter(Boolean);
-
-    let score = 0;
-
-    for (const candidate of normalizedCandidates) {
-      if (candidate === normalizedReference) {
-        score = Math.max(score, 100);
-      } else if (
-        candidate.includes(normalizedReference) ||
-        normalizedReference.includes(candidate)
-      ) {
-        score = Math.max(score, 70);
-      }
-
-      for (const token of referenceTokens) {
-        if (candidate.includes(token)) {
-          score += 12;
-        }
-      }
-    }
-
-    if (!bestMatch || score > bestMatch.score) {
-      bestMatch = { document, score };
-    }
-  }
-
-  return bestMatch && bestMatch.score >= 24 ? bestMatch.document : null;
-}
-
 function NeedSignalCard({
   requirement,
-  index,
   projectId,
   documents,
 }: {
-  requirement: CustomerAnalysisResult["implicit_requirements"][number];
-  index: number;
+  requirement: AnalysisRequirement;
   projectId: string;
   documents: ProjectDocument[];
 }) {
-  const style = NEED_CARD_STYLES[index % NEED_CARD_STYLES.length];
-  const referencedDocument = findDocumentForReference(
-    documents,
-    requirement.source_reference,
-  );
+  const referencedDocument = findDocumentForReference(documents, requirement.source_reference);
   const documentHref = referencedDocument
     ? `/api/projects/${projectId}/documents/${referencedDocument.id}?disposition=inline`
     : null;
-
   return (
-    <article className="relative flex h-full min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white/88 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
-      <div
-        className={`absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b ${style.railClassName}`}
-      />
-      <div className="flex min-w-0 flex-1 px-5 py-5 md:px-6">
-        <div className="flex min-w-0 flex-1 flex-col items-start gap-4">
-          <div
-            className={`flex size-12 shrink-0 items-center justify-center rounded-lg shadow-sm ${style.iconClassName}`}
-          >
-            <span className="text-base font-black">{index + 1}</span>
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <h4 className="text-lg font-semibold leading-7 tracking-[-0.025em] text-slate-950">
-              {requirement.title}
-            </h4>
-            <div className={`mt-4 flex-1 rounded-lg border px-4 py-4 ${style.shellClassName}`}>
-              <div className="mb-2 flex min-w-0 items-center gap-2">
-                <Target className="size-4 shrink-0" />
-                <p className="text-[0.72rem] font-bold uppercase tracking-[0.16em] opacity-70">
-                  Behovet
-                </p>
-              </div>
-              <MarkdownViewer
-                content={getNeedAsk(requirement)}
-                className="analysis-prose max-w-none text-[0.96rem] font-medium leading-7"
-              />
-            </div>
-            {requirement.source_reference ? (
-              <p className="mt-3 text-sm leading-6 text-slate-500">
-                Kilde:{" "}
-                {documentHref ? (
-                  <a
-                    href={documentHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
-                  >
-                    {requirement.source_reference || referencedDocument?.title}
-                  </a>
-                ) : (
-                  requirement.source_reference
-                )}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
+    <article className="analysis-need min-w-0">
+      <h5 className="text-sm font-semibold text-slate-950">{requirement.title}</h5>
+      <MarkdownViewer content={getNeedAsk(requirement)} className="analysis-prose mt-2 max-w-none text-sm leading-7 text-slate-700" />
+      {requirement.source_reference ? (
+        <p className="mt-2 text-xs leading-5 text-slate-500">
+          Kilde: {documentHref ? (
+            <a href={documentHref} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">{requirement.source_reference}</a>
+          ) : requirement.source_reference}
+        </p>
+      ) : null}
     </article>
   );
 }
@@ -2823,6 +1191,8 @@ export function ProjectAnalysisTab({
   busyProgress,
   onGenerate,
   onSaveAnalysis,
+  readOnly = false,
+  sourceChanged = false,
 }: {
   projectId: string;
   documents: ProjectDocument[];
@@ -2832,8 +1202,10 @@ export function ProjectAnalysisTab({
   sectionBusy: CustomerAnalysisSection | null;
   busyMessage: string;
   busyProgress: number;
-  onGenerate: () => void;
-  onSaveAnalysis: (
+  readOnly?: boolean;
+  sourceChanged?: boolean;
+  onGenerate?: () => void;
+  onSaveAnalysis?: (
     section: CustomerAnalysisSection,
     snapshot: CustomerAnalysisSectionSnapshotMap[CustomerAnalysisSection],
     revision?: string,
@@ -2888,51 +1260,11 @@ export function ProjectAnalysisTab({
     }
   }, [customerAnalysis, selectedKeywordIndex]);
 
-  const customerSummary = customerAnalysis
-    ? [
-        customerAnalysis.customer_profile_summary || "",
-        customerAnalysis.customer_goals_summary || "",
-      ]
-        .filter(Boolean)
-        .join("\n\n")
-    : "";
   const summaryPanels = customerAnalysis
     ? [
-        {
-          key: "profile",
-          title: "Kundesituasjon",
-          eyebrow: "Nåsituasjon",
-          description:
-            "Hva slags virksomhet dette er, hva som preger dagens plattform og hvorfor kompleksiteten betyr noe.",
-          icon: Building2,
-          content: customerAnalysis.customer_profile_summary || "",
-          bullets: extractSummaryHighlights(
-            customerAnalysis.customer_profile_summary || "",
-          ),
-          accentClassName:
-            "border-emerald-200 bg-[linear-gradient(180deg,rgba(237,253,245,0.92),rgba(247,254,251,0.82))]",
-          iconClassName: "bg-[linear-gradient(135deg,rgb(16,185,129),rgb(5,150,105)_58%,rgb(4,120,87))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_14px_28px_rgba(5,150,105,0.24)] ring-1 ring-emerald-300/40",
-          chipClassName: "bg-emerald-600/10 text-emerald-800",
-          expandedLeadClassName: "font-normal",
-        },
-        {
-          key: "goals",
-          title: "Kundens mål og retning",
-          eyebrow: "Ønsket retning",
-          description:
-            "Hva kunden prøver å oppnå, hvilken utviklingsretning virksomheten peker mot, og hvordan dette kan brukes til å forme en mer rettet løsning.",
-          icon: Compass,
-          content: customerAnalysis.customer_goals_summary || "",
-          bullets: extractSummaryHighlights(
-            customerAnalysis.customer_goals_summary || "",
-          ),
-          accentClassName:
-            "border-sky-200 bg-[linear-gradient(180deg,rgba(239,246,255,0.94),rgba(248,250,252,0.86))]",
-          iconClassName: "bg-[linear-gradient(135deg,rgb(59,130,246),rgb(37,99,235)_56%,rgb(29,78,216))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_14px_28px_rgba(37,99,235,0.22)] ring-1 ring-blue-300/40",
-          chipClassName: "bg-emerald-600/10 text-emerald-800",
-          expandedLeadClassName: "font-normal",
-        },
-      ].filter((item) => item.content.trim().length > 0)
+        { key: "profile", title: "Kundesituasjon", content: customerAnalysis.customer_profile_summary },
+        { key: "goals", title: "Kundens mål og retning", content: customerAnalysis.customer_goals_summary },
+      ].filter((panel) => panel.content.trim())
     : [];
   const profitShares = customerAnalysis
     ? getDisplayProfitShares(customerAnalysis.value_opportunities)
@@ -2950,11 +1282,6 @@ export function ProjectAnalysisTab({
             left.originalIndex - right.originalIndex,
         )
     : [];
-  const riskGroups = customerAnalysis ? getRiskGroups(customerAnalysis) : null;
-  const visibleRiskCount = riskGroups
-    ? Math.min(riskGroups.risksForUs.length, MAX_RISKS_PER_AUDIENCE) +
-      Math.min(riskGroups.risksForCustomer.length, MAX_RISKS_PER_AUDIENCE)
-    : Math.min(customerAnalysis?.risks.length ?? 0, MAX_RISKS_PER_AUDIENCE * 2);
   const topImplicitRequirements = customerAnalysis
     ? getTopImplicitRequirements(customerAnalysis.implicit_requirements)
     : [];
@@ -2974,7 +1301,10 @@ export function ProjectAnalysisTab({
     hasDocuments && analysisDocuments.every(isDocumentReadyForEvaluation);
 
   function getSectionLabel(section: CustomerAnalysisSection) {
-    return SECTION_TABS.find((tab) => tab.value === section)?.label ?? section;
+    if (section === "needs") return "Behov";
+    if (section === "risks") return "Risiko";
+    if (section === "keywords") return "Nøkkelord";
+    return SECTION_TABS.find((tab) => tab.value === section)?.label ?? "Analyse";
   }
 
   function makeSectionDraft(section: CustomerAnalysisSection) {
@@ -2988,6 +1318,7 @@ export function ProjectAnalysisTab({
   }
 
   function onStartSectionEdit(section: CustomerAnalysisSection) {
+    if (readOnly || !onSaveAnalysis) return;
     setEditingBasis(customerAnalysis);
     setSectionRevision(customerAnalysis?.revision);
     setEditingSection(section);
@@ -3002,6 +1333,7 @@ export function ProjectAnalysisTab({
   }
 
   async function onSaveSectionEdit(section: CustomerAnalysisSection) {
+    if (readOnly || !onSaveAnalysis) return;
     if (!sectionDraft) {
       setSectionDraftError("Ingen endringer å lagre.");
       return;
@@ -3024,6 +1356,7 @@ export function ProjectAnalysisTab({
   }
 
   function renderEditButton(section: CustomerAnalysisSection) {
+    if (readOnly || !onSaveAnalysis) return null;
     const isEditing = editingSection === section;
 
     if (isEditing) {
@@ -3051,12 +1384,7 @@ export function ProjectAnalysisTab({
             )}
             Lagre
           </Button>
-          {customerAnalysis?.revision && sectionRevision !== customerAnalysis.revision && (
-            <div className="w-full text-sm text-amber-800">
-              <p>Analysen er endret. Utkastet ditt er beholdt. Hvis du fortsetter, erstatter utkastet denne seksjonen i siste analyse.</p>
-              <Button variant="outline" size="sm" disabled={saveBusy} onClick={() => setSectionRevision(customerAnalysis.revision)}>Bruk siste analyse som grunnlag</Button>
-            </div>
-          )}
+
         </>
       );
     }
@@ -3069,7 +1397,7 @@ export function ProjectAnalysisTab({
         }
         variant="outline"
         size="sm"
-        className="h-12 rounded-md border-slate-200 px-4 text-[0.94rem] text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+        className="text-slate-600"
       >
         <PencilLine data-icon="inline-start" />
         Rediger
@@ -3105,7 +1433,7 @@ export function ProjectAnalysisTab({
       <div className="space-y-2">
         <Label
           htmlFor={id}
-          className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground"
+          className="text-xs font-bold tracking-normal text-muted-foreground"
         >
           {label}
         </Label>
@@ -3139,7 +1467,7 @@ export function ProjectAnalysisTab({
     return (
       <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <Label className="text-xs font-bold tracking-normal text-muted-foreground">
             {label}
           </Label>
           <Button
@@ -3211,7 +1539,7 @@ export function ProjectAnalysisTab({
     return (
       <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <Label className="text-xs font-bold tracking-normal text-muted-foreground">
             {label}
           </Label>
           <Button
@@ -3239,7 +1567,7 @@ export function ProjectAnalysisTab({
                 className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  <p className="text-xs font-bold tracking-normal text-slate-500">
                     Behov {index + 1}
                   </p>
                   <Button
@@ -3351,7 +1679,7 @@ export function ProjectAnalysisTab({
     return (
       <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <Label className="text-xs font-bold tracking-normal text-muted-foreground">
             Prioriterte behov
           </Label>
           <Button
@@ -3384,7 +1712,7 @@ export function ProjectAnalysisTab({
                 className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  <p className="text-xs font-bold tracking-normal text-slate-500">
                     Prioritet {index + 1}
                   </p>
                   <Button
@@ -3462,7 +1790,7 @@ export function ProjectAnalysisTab({
     return (
       <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <Label className="text-xs font-bold tracking-normal text-muted-foreground">
             Frekvens
           </Label>
           <Button
@@ -3531,7 +1859,7 @@ export function ProjectAnalysisTab({
     return (
       <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <Label className="text-xs font-bold tracking-normal text-muted-foreground">
             Anbefalte tjenester
           </Label>
           <Button
@@ -3559,7 +1887,7 @@ export function ProjectAnalysisTab({
                 className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  <p className="text-xs font-bold tracking-normal text-slate-500">
                     Tjeneste {index + 1}
                   </p>
                   <Button
@@ -3654,19 +1982,26 @@ export function ProjectAnalysisTab({
     return (
       <div className="space-y-3 rounded-lg border border-border/70 bg-white px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Label className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <Label className="text-xs font-bold tracking-normal text-muted-foreground">
             Verdimuligheter
           </Label>
           <Button
             type="button"
             variant="outline"
             size="sm"
+            disabled={items.length >= MAX_MANUAL_VALUE_OPPORTUNITIES}
             onClick={() => onChange([...items, emptyValueOpportunity()])}
           >
             <Plus data-icon="inline-start" />
             Legg til
           </Button>
         </div>
+        {items.length >= MAX_MANUAL_VALUE_OPPORTUNITIES ? (
+          <p className="text-sm text-muted-foreground">
+            Maksimalt {MAX_MANUAL_VALUE_OPPORTUNITIES} verdimuligheter kan lagres.
+            Fjern noen punkter før du legger til flere eller lagrer en lengre liste.
+          </p>
+        ) : null}
         <div className="space-y-3">
           {items.map((item, index) => {
             const updateItem = (nextItem: ValueOpportunity) =>
@@ -3682,7 +2017,7 @@ export function ProjectAnalysisTab({
                 className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  <p className="text-xs font-bold tracking-normal text-slate-500">
                     Verdi {index + 1}
                   </p>
                   <Button
@@ -3955,11 +2290,16 @@ export function ProjectAnalysisTab({
             Rediger {getSectionLabel(section).toLowerCase()}
           </p>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Rediger teksten i vanlige felt. Endringen lagres i historikken som
-            manuell lagring.
+            Rediger teksten og lagre endringene.
           </p>
         </div>
         <div className="space-y-4">
+          {customerAnalysis?.revision && sectionRevision !== customerAnalysis.revision && (
+            <div className="w-full text-sm text-amber-800">
+              <p>Analysen er endret. Utkastet ditt er beholdt. Hvis du fortsetter, erstatter utkastet denne seksjonen i siste analyse.</p>
+              <Button variant="outline" size="sm" disabled={saveBusy} onClick={() => setSectionRevision(customerAnalysis.revision)}>Bruk siste analyse som grunnlag</Button>
+            </div>
+          )}
           {renderSectionDraftFields(section)}
         </div>
         {sectionDraftError ? (
@@ -4000,27 +2340,35 @@ export function ProjectAnalysisTab({
         defaultValue="summary"
         className="min-w-0 gap-0"
       >
-        <div className="overflow-hidden border-b border-slate-200 bg-transparent pb-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="analysis-tab-rail overflow-hidden border-b border-slate-200 bg-transparent">
+          <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1 overflow-hidden">
               <div className="no-scrollbar overflow-x-auto overflow-y-hidden touch-pan-x">
                 <TabsList
                   variant="line"
-                  className="h-auto min-w-max gap-0 rounded-none p-0"
+                  className="analysis-tab-list h-auto min-w-max gap-0 rounded-none p-0"
                 >
                   {SECTION_TABS.map((tab) => (
                     <TabsTrigger
                       key={tab.value}
                       value={tab.value}
-                      className="h-16 flex-none rounded-none border-y-0 border-l-0 border-r border-slate-200/80 px-6 text-[1.18rem] font-medium text-slate-500 after:bottom-0 after:h-[2px] after:rounded-none after:bg-blue-600 data-active:bg-transparent data-active:text-blue-700 last:border-r-0 lg:px-7"
+                      className="analysis-tab flex-none"
                     >
-                      {tab.label}
+                      <span className="analysis-tab-label">{tab.label}</span>
                     </TabsTrigger>
                   ))}
                 </TabsList>
               </div>
             </div>
-            {!customerAnalysis ? (
+            {customerAnalysis ? (
+              <div className="analysis-toolbar-actions flex shrink-0 items-center gap-2 py-1.5">
+                {activeSection === "value" ? renderListToggleButton(showValueList, () =>
+                  setShowValueList((isVisible) => !isVisible),
+                ) : null}
+                {renderSectionActions(activeSection)}
+              </div>
+            ) : null}
+            {(!customerAnalysis || sourceChanged) && !readOnly && onGenerate ? (
               <Button
                 onClick={onGenerate}
                 disabled={busy || Boolean(sectionBusy) || !documentsReady}
@@ -4035,7 +2383,7 @@ export function ProjectAnalysisTab({
               </Button>
             ) : null}
           </div>
-          {!customerAnalysis && hasDocuments && !documentsReady ? (
+          {(!customerAnalysis || sourceChanged) && hasDocuments && !documentsReady ? (
             <p className="mt-2 text-sm text-slate-500">
               Dokumentgrunnlaget klargjøres. Kundeanalysen kan startes så snart
               dokumentbehandlingen er ferdig.
@@ -4048,309 +2396,78 @@ export function ProjectAnalysisTab({
           <TabsContent value="summary" className="mt-0">
             <SectionSurface
               title="Oppsummering av kunden"
-              description="En lettere lederlesning som deler kundens nåsituasjon og ønsket retning i korte, tydelige spor."
-              icon={Building2}
-              action={renderSectionActions("summary")}
             >
               {renderSectionEditor("summary")}
-              {summaryPanels.length > 0 ? (
-                <div className="space-y-5">
-                  <div className="grid min-w-0 gap-5">
-                    {summaryPanels.map((panel) => {
-                      const Icon = panel.icon;
-                      const summaryText = splitLeadSentence(panel.content);
-
-                      return (
-                        <div
-                          key={panel.key}
-                          className={`min-w-0 overflow-hidden rounded-lg border px-5 py-6 shadow-[0_14px_34px_rgba(15,23,42,0.045)] md:px-6 ${panel.accentClassName}`}
-                        >
-                          <div className="mb-6 flex items-start gap-4">
-                            <div
-                              className={`flex size-12 shrink-0 items-center justify-center rounded-lg ${panel.iconClassName}`}
-                            >
-                              <Icon className="size-5 drop-shadow-[0_1px_1px_rgba(255,255,255,0.28)]" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[0.72rem] font-bold uppercase tracking-[0.24em] text-slate-500">
-                                {panel.eyebrow}
-                              </p>
-                              <h4 className="mt-1 text-[1.08rem] font-semibold leading-6 text-slate-950">
-                                {panel.title}
-                              </h4>
-                              <p className="mt-2 text-[0.94rem] leading-6 text-slate-500">
-                                {panel.description}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="space-y-4">
-                            {panel.bullets.length ? (
-                              <div className="rounded-lg border border-white/85 bg-white/72 px-4 py-4">
-                                <p className="mb-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
-                                  Punktoppsummering
-                                </p>
-                                <div className="grid gap-2">
-                                  {panel.bullets.map((bullet, index) => (
-                                    <div
-                                      key={`${panel.key}-bullet-${index}`}
-                                      className="flex items-start gap-3 rounded-md bg-white/80 px-3 py-3"
-                                    >
-                                      <span
-                                        className={`mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[0.72rem] font-bold ${panel.chipClassName}`}
-                                      >
-                                        {index + 1}
-                                      </span>
-                                      <p className="text-sm leading-6 text-slate-700">
-                                        {bullet}
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="rounded-lg border border-white/85 bg-white/90 px-5 py-5 shadow-[0_10px_26px_rgba(15,23,42,0.045)]">
-                                <p
-                                  className={`text-[1.08rem] leading-7 text-slate-950 ${panel.expandedLeadClassName}`}
-                                >
-                                  {summaryText.lead || panel.content}
-                                </p>
-                                {summaryText.body ? (
-                                  <MarkdownViewer
-                                    content={summaryText.body}
-                                    className="analysis-prose mt-4 max-w-none text-[0.98rem] leading-8 text-slate-600"
-                                  />
-                                ) : null}
-                              </div>
-                            )}
-
-                            {panel.bullets.length ? (
-                              <details className="group rounded-lg border border-white/85 bg-white/90 px-5 py-5 shadow-[0_10px_26px_rgba(15,23,42,0.045)]">
-                                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-left [&::-webkit-details-marker]:hidden">
-                                  <div>
-                                    <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
-                                      Full oppsummering
-                                    </p>
-                                    <p className="mt-1 text-sm font-semibold text-slate-900">
-                                      Vis hovedteksten bak punktene
-                                    </p>
-                                  </div>
-                                  <span className="text-sm font-semibold text-slate-500 transition-transform group-open:rotate-180">
-                                    ↓
-                                  </span>
-                                </summary>
-
-                                <div className="mt-4 border-t border-slate-200/80 pt-4">
-                                  <p
-                                    className={`text-[1.08rem] leading-7 text-slate-950 ${panel.expandedLeadClassName}`}
-                                  >
-                                    {summaryText.lead || panel.content}
-                                  </p>
-                                  {summaryText.body ? (
-                                    <MarkdownViewer
-                                      content={summaryText.body}
-                                      className="analysis-prose mt-4 max-w-none text-[0.98rem] leading-8 text-slate-600"
-                                    />
-                                  ) : null}
-                                </div>
-                              </details>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+              <div className="analysis-summary-columns grid min-w-0 gap-4 lg:grid-cols-2">
+                {summaryPanels.map((panel) => (
+                  <section key={panel.key} aria-label={panel.title} className="analysis-summary-column min-w-0">
+                    <h4 className="mb-3 text-base font-semibold">{panel.title}</h4>
+                    <MarkdownViewer content={panel.content} className="analysis-prose max-w-none text-sm leading-7 text-slate-700" />
+                  </section>
+                ))}
+              </div>
+              <section aria-label="Underliggende behov" className="analysis-needs mt-8 border-t border-slate-200 pt-6">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="text-base font-semibold">Behov</h4>
+                  {renderSectionActions("needs")}
                 </div>
-              ) : (
-                <MarkdownViewer
-                  content={customerSummary}
-                  className="artifact-markdown text-foreground"
-                />
-              )}
-              <SectionHistoryPanel analysis={customerAnalysis} section="summary" />
+                {renderSectionEditor("needs")}
+                {topImplicitRequirements.length ? (
+                  <div className="grid min-w-0 gap-5 xl:grid-cols-3">
+                    {topImplicitRequirements.map((requirement, index) => (
+                      <NeedSignalCard key={`need-${index}`} requirement={requirement} projectId={projectId} documents={documents} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">Ingen underliggende behov er identifisert ennå.</p>
+                )}
+
+              </section>
+
             </SectionSurface>
           </TabsContent>
 
           <TabsContent value="strategy" className="mt-0">
             <SectionSurface
               title="Strategi og posisjonering"
-              description="Fra innsikt til vinnende tilbudsfortelling. Én samlet arbeidsflate for tilbudsfortellingen, fra strategisk innledning til konkrete posisjoneringsspor."
-              icon={FilePenLine}
-              action={renderSectionActions("strategy")}
+
             >
               {renderSectionEditor("strategy")}
               <div className="min-w-0">
-                <PositioningKanban
+                <PositioningOverview
                   items={customerAnalysis.positioning_recommendations}
-                  analysis={customerAnalysis}
                   worktext={customerAnalysis.executive_summary}
                 />
               </div>
-              <SectionHistoryPanel analysis={customerAnalysis} section="strategy" />
+
             </SectionSurface>
           </TabsContent>
 
           <TabsContent value="clarifications" className="mt-0">
             <SectionSurface
               title="Avklaringer"
-              description="Spørsmål som må avklares med kunden før strategien gjøres om til endelig løsningsdesign."
-              icon={Compass}
-              action={renderSectionActions("clarifications")}
+
             >
               {renderSectionEditor("clarifications")}
-              <div className="space-y-5">
-                <div className="rounded-[1.35rem] border border-amber-300/80 bg-[#fffdf3] px-5 py-6 shadow-[0_18px_45px_rgba(15,23,42,0.08)] md:px-7">
-                  <div className="mb-6 flex items-start gap-4">
-                    <div className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)]">
-                      <ListChecks className="size-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[0.78rem] font-bold uppercase tracking-[0.28em] text-amber-800/75">
-                        Kundespørsmål
-                      </p>
-                      <h4 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
-                        Åpne avklaringer
-                      </h4>
-                    </div>
-                  </div>
-                  {customerAnalysis.ambiguities.length ? (
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      {customerAnalysis.ambiguities
-                        .slice(0, MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS)
-                        .map((item, index) => (
-                          <div
-                            key={`ambiguity-${index}`}
-                            className="rounded-xl border border-white/85 bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
-                          >
-                            <p className="mb-3 text-sm font-bold uppercase tracking-[0.22em] text-amber-700">
-                              Avklaring {index + 1}
-                            </p>
-                            <MarkdownViewer
-                              content={item}
-                              className="analysis-prose max-w-none text-[1.02rem] leading-8 text-slate-700"
-                            />
-                          </div>
-                        ))}
-                    </div>
-                  ) : (
-                    <p className="rounded-lg border border-dashed border-amber-300 bg-white/55 px-4 py-4 text-sm leading-6 text-amber-900/70">
-                      Ingen åpne avklaringer er identifisert ennå.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </SectionSurface>
-          </TabsContent>
-
-          <TabsContent value="design" className="mt-0">
-            <SectionSurface
-              title="High-level design av løsningen"
-              description="Vis og rediger anbefalt overordnet arkitektur når denne delen er klar."
-              icon={Compass}
-              action={renderSectionActions("design")}
-            >
-              {renderSectionEditor("design")}
-              {customerAnalysis.high_level_solution_design.trim() ||
-              customerAnalysis.high_level_architecture_mermaid.trim() ? (
-                <div className="space-y-5">
-                  {customerAnalysis.high_level_solution_design.trim() ? (
-                    <div className="rounded-xl border border-border/70 bg-background/80 px-5 py-5">
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                        Arkitekturretning
-                      </p>
-                      <MarkdownViewer
-                        content={customerAnalysis.high_level_solution_design}
-                        className="analysis-prose mt-3 max-w-none text-[1rem] text-foreground"
-                      />
-                    </div>
-                  ) : null}
-                  {customerAnalysis.high_level_architecture_mermaid.trim() ? (
-                    <div className="rounded-xl border border-border/70 bg-white p-4 shadow-sm">
-                      <MermaidDiagram
-                        chart={customerAnalysis.high_level_architecture_mermaid}
-                        title="Overordnet arkitekturdiagram"
-                        downloadName="high-level-arkitektur"
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-12 text-center">
-                  <p className="text-lg font-semibold text-foreground">
-                    Ingen design lagret ennå
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Rediger design-delen når du vil legge inn anbefaling og
-                    diagram.
-                  </p>
-                </div>
-              )}
-              <SectionHistoryPanel analysis={customerAnalysis} section="design" />
-            </SectionSurface>
-          </TabsContent>
-
-          <TabsContent value="risks" className="mt-0">
-            <SectionSurface
-              title={`Risiko og usikkerhet (${visibleRiskCount})`}
-              description="Risikobildet er delt mellom hva som kan treffe tilbudsteamet og hva som kan treffe kunden."
-              icon={AlertTriangle}
-              action={renderSectionActions("risks")}
-            >
-              {renderSectionEditor("risks")}
-              <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
-                <RiskAudienceGroup
-                  title="Risiko for oss"
-                  description="Hva som kan påvirke leveranse, tilbud, kommersiell presisjon eller teamets evne til å vinne og gjennomføre."
-                  items={riskGroups?.risksForUs ?? []}
-                  emptyText="Ingen tydelig leverandør-/tilbudsrisiko er identifisert i eksisterende analyse."
-                  tone={0}
-                />
-                <RiskAudienceGroup
-                  title="Risiko for kunden"
-                  description="Hva som kan påvirke kundens drift, sikkerhet, overgang, kostnader, brukeradopsjon eller forvaltning."
-                  items={riskGroups?.risksForCustomer ?? []}
-                  emptyText="Ingen tydelig kunderisiko er identifisert i eksisterende analyse."
-                  tone={1}
-                />
-              </div>
-              <SectionHistoryPanel analysis={customerAnalysis} section="risks" />
-            </SectionSurface>
-          </TabsContent>
-
-          <TabsContent value="needs" className="mt-0">
-            <SectionSurface
-              title={`Underliggende behov (${topImplicitRequirements.length} viktigste)`}
-              description="De skjulte beslutningsdriverne bak kundens krav, oversatt til tydelige signaler for tilbudsarbeidet."
-              icon={ListChecks}
-              action={renderSectionActions("needs")}
-            >
-              {renderSectionEditor("needs")}
-              {topImplicitRequirements.length ? (
-                <div className="grid min-w-0 gap-4 xl:grid-cols-3">
-                  {topImplicitRequirements.map((req, index) => (
-                    <NeedSignalCard
-                      key={`implicit-${req.title}-${index}`}
-                      requirement={req}
-                      index={index}
-                      projectId={projectId}
-                      documents={documents}
-                    />
+              {customerAnalysis.ambiguities.length ? (
+                <ol className="grid min-w-0 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  {customerAnalysis.ambiguities.slice(0, MAX_CUSTOMER_ANALYSIS_CLARIFICATIONS).map((item, index) => (
+                    <li key={`ambiguity-${index}`} className="analysis-insight min-w-0">
+                      <h4 className="mb-3 text-base font-semibold">Avklaring {String(index + 1).padStart(2, "0")}</h4>
+                      <MarkdownViewer content={item} className="analysis-prose min-w-0 max-w-none text-sm leading-7 text-slate-700" />
+                    </li>
                   ))}
-                </div>
+                </ol>
               ) : (
-                <AnalysisTabEmptyState>
-                  Ingen underliggende behov er identifisert ennå.
-                </AnalysisTabEmptyState>
+                <p className="text-sm text-slate-500">Ingen åpne avklaringer er identifisert ennå.</p>
               )}
-              <SectionHistoryPanel analysis={customerAnalysis} section="needs" />
             </SectionSurface>
           </TabsContent>
 
           <TabsContent value="keywords" className="mt-0">
             <SectionSurface
               title={`Gjenbrukte nøkkelord (${topSignalWords.length} mest brukte)`}
-              description="De mest gjentatte signalordene og tekniske føringene som bør gjenspeiles i språk, løsning og arkitektur."
-              icon={Cpu}
+
               action={
                 <>
                   {renderListToggleButton(showKeywordList, () =>
@@ -4401,16 +2518,14 @@ export function ProjectAnalysisTab({
                   Ingen gjenbrukte nøkkelord er identifisert ennå.
                 </AnalysisTabEmptyState>
               )}
-              <SectionHistoryPanel analysis={customerAnalysis} section="keywords" />
+
             </SectionSurface>
           </TabsContent>
 
           <TabsContent value="services" className="mt-0">
             <SectionSurface
               title={`Anbefalte tjenester (${recommendedServices.length})`}
-              description="Tjenester som passer kundens faktiske behov, med nytteprosent, begrunnelse, grunnlag og avklaringer."
-              icon={BriefcaseBusiness}
-              action={renderSectionActions("services")}
+
             >
               {renderSectionEditor("services")}
               {recommendedServices.length ? (
@@ -4425,30 +2540,24 @@ export function ProjectAnalysisTab({
                     return (
                       <article
                         key={`${service.service_name}-${index}`}
-                        className={`min-w-0 overflow-hidden rounded-xl border px-5 py-5 shadow-[0_16px_34px_rgba(15,23,42,0.055)] ${tone.shellClassName}`}
+                        className="analysis-service min-w-0 border-t border-slate-200 py-4"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="flex min-w-0 items-start gap-3">
-                            <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
-                              <BadgeCheck className="size-5" />
-                            </div>
                             <div className="min-w-0">
-                              <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
-                                Anbefaling {index + 1}
-                              </p>
-                              <h4 className="mt-1 text-lg font-semibold text-slate-950">
+                              <h4 className="text-base font-semibold text-slate-950">
                                 {service.service_name}
                               </h4>
                             </div>
                           </div>
                           <span
-                            className={`shrink-0 rounded-md px-3 py-1.5 text-sm font-bold ${tone.badgeClassName}`}
+                            className={`shrink-0 rounded-md px-2 py-1 text-xs font-semibold ${tone.badgeClassName}`}
                           >
                             {score}% nyttig
                           </span>
                         </div>
 
-                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/85">
+                        <div className="mt-3 h-1 overflow-hidden rounded-full bg-slate-200">
                           <div
                             className={`h-full rounded-full ${tone.barClassName}`}
                             style={{ width: `${score}%` }}
@@ -4456,8 +2565,8 @@ export function ProjectAnalysisTab({
                         </div>
 
                         {service.customer_need.trim() ? (
-                          <div className="mt-4 rounded-lg border border-white/85 bg-white/72 px-4 py-3">
-                            <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          <div className="mt-3">
+                            <p className="text-xs font-bold tracking-normal text-slate-500">
                               Kundebehov
                             </p>
                             <p className="mt-1 text-sm leading-6 text-slate-700">
@@ -4466,8 +2575,8 @@ export function ProjectAnalysisTab({
                           </div>
                         ) : null}
 
-                        <div className="mt-4 rounded-lg border border-white/85 bg-white/78 px-4 py-4">
-                          <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                        <div className="mt-3">
+                          <p className="text-xs font-bold tracking-normal text-slate-500">
                             Hvorfor
                           </p>
                           <MarkdownViewer
@@ -4477,16 +2586,16 @@ export function ProjectAnalysisTab({
                         </div>
 
                         <div className="mt-4 grid gap-3 md:grid-cols-2">
-                          <div className="rounded-lg border border-white/85 bg-white/68 px-4 py-3">
-                            <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold tracking-normal text-slate-500">
                               Grunnlag
                             </p>
                             <p className="mt-1 text-sm leading-6 text-slate-700">
                               {service.evidence || "Ikke angitt."}
                             </p>
                           </div>
-                          <div className="rounded-lg border border-white/85 bg-white/68 px-4 py-3">
-                            <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold tracking-normal text-slate-500">
                               Forutsetning
                             </p>
                             <p className="mt-1 text-sm leading-6 text-slate-700">
@@ -4503,23 +2612,14 @@ export function ProjectAnalysisTab({
                   Ingen anbefalte tjenester er identifisert ennå.
                 </AnalysisTabEmptyState>
               )}
-              <SectionHistoryPanel analysis={customerAnalysis} section="services" />
+
             </SectionSurface>
           </TabsContent>
 
           <TabsContent value="value" className="mt-0">
             <SectionSurface
               title={`Verdimuligheter (${customerAnalysis.value_opportunities.length})`}
-              description="Hvor løsningen kan skape tydelig effekt for kunden i form av gevinst, risiko eller opplevelse."
-              icon={TrendingUp}
-              action={
-                <>
-                  {renderListToggleButton(showValueList, () =>
-                    setShowValueList((isVisible) => !isVisible),
-                  )}
-                  {renderSectionActions("value")}
-                </>
-              }
+
             >
               {renderSectionEditor("value")}
               {customerAnalysis.value_opportunities.length ? (
@@ -4577,7 +2677,7 @@ export function ProjectAnalysisTab({
                   Ingen verdimuligheter er identifisert ennå.
                 </AnalysisTabEmptyState>
               )}
-              <SectionHistoryPanel analysis={customerAnalysis} section="value" />
+
             </SectionSurface>
           </TabsContent>
           </>

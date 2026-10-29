@@ -1,0 +1,40 @@
+[
+  {
+    "file": "norwegian-regression.pdf",
+    "pages": [
+      [
+        "FIKTIV OCR-VERIFISERING",
+        "Nordlys Testkommune",
+        "Krav K-42: Sikkerhetslogger lagres i 14 måneder.",
+        "Krav K-43: Leverandøren holder fire kurs.",
+        "Kontrollkode: VERIFIKASJON-84",
+        "Dette dokumentet inneholder kun testdata."
+      ]
+    ],
+    "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87"
+  },
+  {
+    "file": "norwegian-holdout.pdf",
+    "pages": [
+      [
+        "FIKTIV NORSK SPRÅKPRØVE",
+        "Ærlig vurdering av Østfold og Ålesund.",
+        "Før oppstart må løsningen støtte særnorske tegn.",
+        "Leverandøren skal tilby opplæring og døgnvakt.",
+        "Sikkerhetslogger lagres i 14 måneder.",
+        "Krav K-42: Fire kurs før overgang til drift.",
+        "Pris 1 250 000 NOK. RTO 60 minutter. RPO 15 minutter."
+      ],
+      [
+        "NORSK OG ENGELSK KONTROLL",
+        "Bærum kommune ønsker å fornye løsningen.",
+        "Årlig møte med Øyvind og Ægir.",
+        "Far får svar. Bare bære. For før.",
+        "Supplier must preserve 14 months of security logs.",
+        "Original code: ABC-42. Reference: XYZ-73."
+      ]
+    ],
+    "scope": "Synthetic image-only PDF; Helvetica and Times; second page rotated 0.3 degrees",
+    "sha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2"
+  }
+]

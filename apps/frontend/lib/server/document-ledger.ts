@@ -29,7 +29,8 @@ export type DocumentLedger = {
 };
 
 const REQUIREMENT_WORD_PATTERN =
-  /\b(skal|må|must|shall|required|requirement|krav|leverandør(?:en)?\s+skal|supplier\s+shall)\b/i;
+  // Unicode-aware boundaries: \b never matches after a trailing "å".
+  /(?<![\p{L}\p{N}_])(skal|må|must|shall|required|requirement|krav|leverandør(?:en)?\s+skal|supplier\s+shall)(?![\p{L}\p{N}_])/iu;
 const DOT_LEADER_PATTERN = /\.{4,}\s*\d{1,4}\s*$/;
 const SECTION_PATTERN =
   /^(?<ref>(?:\d{1,3}\.)+\d{1,3}|[A-ZÆØÅ]{1,6}-?\d{1,4}(?:\.\d{1,3})?|ID\s*\d+(?:\.\d+)*|Krav\s*\d+(?:\.\d+)*)\s+(?<title>\S.{2,})$/i;

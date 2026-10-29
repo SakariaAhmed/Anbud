@@ -96,14 +96,15 @@ export function globalAccessAllows(
   isAdmin: boolean,
   permission: ProjectPermission,
 ) {
-  return isAdmin && (isReadPermission(permission) || permission === "project.share");
+  return isAdmin && PROJECT_PERMISSIONS.includes(permission);
 }
 
-export function effectiveProjectPermissions(isAdmin: boolean, role: ProjectRole | null): ProjectPermission[] {
-  return [...new Set([
-    ...PROJECT_ROLE_PERMISSIONS.owner.filter((permission) => globalAccessAllows(isAdmin, permission)),
-    ...(role ? PROJECT_ROLE_PERMISSIONS[role] : []),
-  ])];
+export function effectiveProjectPermissions(
+  isAdmin: boolean,
+  role: ProjectRole | null,
+): ProjectPermission[] {
+  if (isAdmin) return [...PROJECT_PERMISSIONS];
+  return role ? [...PROJECT_ROLE_PERMISSIONS[role]] : [];
 }
 
 export function isProjectRole(value: unknown): value is ProjectRole {
@@ -131,13 +132,6 @@ export function projectRoleAllows(
   permission: ProjectPermission,
 ) {
   return PROJECT_ROLE_PERMISSIONS[role].includes(permission);
-}
-
-export function isReadPermission(permission: ProjectPermission) {
-  return (
-    permission.endsWith(".read") ||
-    permission.endsWith(".download")
-  );
 }
 
 export const PROJECT_ROLE_LABELS: Record<ProjectRole, string> = {

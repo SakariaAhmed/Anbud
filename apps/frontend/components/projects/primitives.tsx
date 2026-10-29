@@ -19,7 +19,7 @@ function buttonClasses(variant: ButtonVariant, size: ButtonSize) {
     variant === "default" && "border-primary bg-primary text-primary-foreground hover:bg-primary-hover shadow-sm",
     variant === "outline" && "border-input bg-card text-foreground hover:bg-muted",
     variant === "ghost" && "border-transparent bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-    variant === "destructive" && "border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20",
+    variant === "destructive" && "border border-input bg-transparent text-muted-foreground hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive",
     size === "default" && "h-9 px-4",
     size === "sm" && "h-8 px-3 text-[13px]",
     size === "lg" && "h-10 px-5 text-sm",

@@ -98,7 +98,7 @@ const {
     "lib/server/document-intelligence/customer-analysis-fields.ts",
   ),
 );
-const { chooseDocumentParserRoute } = await jiti.import(
+const { chooseDocumentParserRoute, evaluateDocumentParseQuality } = await jiti.import(
   path.join(
     frontendRoot,
     "lib/server/document-intelligence/quality-router.ts",
@@ -508,6 +508,10 @@ test("customer analysis postprocessing preserves the established output rules", 
     100,
   );
   assert.match(normalized.high_level_architecture_mermaid, /^flowchart LR/u);
+  const diagram = normalized.high_level_architecture_mermaid;
+  const groups = [...diagram.matchAll(/^\s*subgraph\s+(\w+)\[/gm)].map((match) => match[1]);
+  const nodes = [...diagram.matchAll(/^\s*(\w+)\[/gm)].map((match) => match[1]);
+  assert.ok(groups.every((group) => !nodes.includes(group)), "fallback groups cannot be their own child nodes");
   assert.equal(normalized.recommended_services.length, 1);
 
   const enriched = enrichCustomerAnalysisWithCriticalFacts(analysis, [
@@ -750,6 +754,54 @@ test("customer analysis postprocessing preserves the established output rules", 
       .length,
     MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
   );
+});
+
+test("critical-fact enrichment preserves higher-priority requirements at the list boundary", () => {
+  const critical = [
+    { requirement: "S-11: Administratorer skal bruke flerfaktorautentisering.", priority: "Kritisk", reason: "Absolutt sikkerhetskrav." },
+    { requirement: "S-12: Tilgang skal tilbakekalles ved fratredelse.", priority: "Kritisk", reason: "Absolutt tilgangskrav." },
+  ];
+  const normal = Array.from({ length: 3 }, (_, index) => ({
+    requirement: `Vanlig leveranseprioritet ${index + 1}.`, priority: "Viktig", reason: "Dokumentert behov.",
+  }));
+  const analysis = {
+    customer_profile_summary: "Fiktiv kunde", customer_goals_summary: "Sikker drift",
+    customer_profile: [], customer_goals: [], expected_solution_direction: [],
+    positioning_recommendations: [], high_level_solution_design: "", executive_summary: "",
+    prioritized_requirements: [...normal, ...critical],
+  };
+  const before = structuredClone(analysis);
+  const result = enrichCustomerAnalysisWithCriticalFacts(analysis, [{
+    documentId: "customer", title: "Kundekrav", role: "primary_customer_document", context: "",
+    sourceText: "Operativ kjerne skal ha RTO 3 timer og RPO 20 minutter.",
+  }]);
+  assert.deepEqual(result.prioritized_requirements.slice(0, 2), critical);
+  assert.equal(result.prioritized_requirements.length, MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS);
+  assert.match(JSON.stringify(result.expected_solution_direction), /RTO 3 timer/);
+  assert.deepEqual(analysis, before, "Enrichment must not mutate the model result.");
+});
+
+test("workday deadlines and month retention survive omissions from an otherwise full analysis", () => {
+  const priorities = Array.from({ length: 5 }, (_, index) => ({
+    requirement: `Sikkerhetskrav ${index + 1}`, priority: "Kritisk", reason: "Bindende krav.",
+  }));
+  const analysis = {
+    customer_profile: [], customer_goals: [], expected_solution_direction: [],
+    positioning_recommendations: [], high_level_solution_design: "Sikker drift og kontrollert exit.",
+    executive_summary: "Dokumentert overlevering.", prioritized_requirements: priorities,
+  };
+  const clauses = [
+    "D-61: Ved exit skal data og konfigurasjon eksporteres i åpne formater innen 17 arbeidsdager.",
+    "D-62: Sikkerhetslogger skal oppbevares i 13 måneder og være søkbare ved revisjon.",
+  ];
+  const source = { documentId: "customer", title: "Driftskrav", role: "primary_customer_document", context: "", sourceText: clauses.join("\n") };
+  const before = structuredClone(source);
+  const enriched = enrichCustomerAnalysisWithCriticalFacts(analysis, [source]);
+  for (const clause of clauses) assert.ok(enriched.expected_solution_direction.some(text => text.includes(clause.slice(0, -1))));
+  assert.deepEqual(enriched.prioritized_requirements, priorities, "Missing details must not evict critical requirements.");
+  assert.deepEqual(source, before, "Original source text stays intact.");
+  const english = buildCustomerAnalysisCriticalFactChecklist([{ ...source, sourceText: "Audit logs shall be retained for 6 months and remain searchable." }]);
+  assert.match(JSON.stringify(english), /6 måneder/u);
 });
 
 test("trusted local requirement rows replace only matching truncated generated text", () => {
@@ -1237,7 +1289,7 @@ test("quality routing keeps clean documents fast and tries local structure befor
 });
 
 test("customer analysis rejects stale source revisions and compiler versions", () => {
-  const compilerVersion = "document-analysis.3.0.0";
+  const compilerVersion = "document-analysis.3.0.1";
   assert.equal(
     isCurrentDocumentIntelligenceContext({
       sourceRevision: 4,
@@ -1716,4 +1768,29 @@ test("production deployment keeps document intelligence opt-in and admin identit
   assert.match(workflow, /DOCUMENT_ANALYSIS_VERSION:.*'off'/u);
   assert.match(workflow, /OPENAI_DOCUMENT_ANALYSIS_MODEL:.*'gpt-5\.6-terra'/u);
   assert.match(workflow, /adminPrincipalId="\$APP_ADMIN_PRINCIPAL_ID"/u);
+});
+
+test("requirement language ending in å is recognised by routing and the document ledger", async () => {
+  const text = "Leverandøren må dokumentere logging.";
+  const quality = evaluateDocumentParseQuality({
+    rawText: text,
+    canonicalText: text,
+    sourceMap: [],
+    fileFormat: "pdf",
+    fileSizeBytes: text.length,
+  });
+  assert.equal(quality.hasRequirementSignals, true);
+
+  const { buildDocumentLedger } = await jiti.import(
+    path.join(frontendRoot, "lib/server/document-ledger.ts"),
+  );
+  const ledger = buildDocumentLedger({
+    id: "synthetic-ledger-document",
+    title: "Syntetisk dokument",
+    raw_text: "[[SIDE:1]]\n2.1 Leverandøren må dokumentere all logging i løsningen",
+  });
+  assert.deepEqual(
+    ledger.requirements.map((requirement) => requirement.ref),
+    ["2.1"],
+  );
 });

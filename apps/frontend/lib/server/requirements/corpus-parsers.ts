@@ -9,9 +9,12 @@ export {
   explicitIdTableSourceIds,
 } from "@/lib/server/requirements/explicit-id-table-parser";
 export {
+  buildExplicitIdDoclingTextRequirementLedger,
   buildExplicitIdPdfNarrativeRequirementLedger,
 } from "@/lib/server/requirements/explicit-id-narrative-parser";
 export {
+  buildDeclaredHeadingRequirementLedger,
+  restoreExplicitLineRequirementOrder,
   buildPrefixedLineRequirementLedger,
   isLegacyMixedFofingerCorpus,
   repairLegacyFofingerTextArtifacts,

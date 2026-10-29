@@ -49,7 +49,7 @@ RUN rm -rf \
     fi \
     && rm -rf /usr/share/perl5 /var/lib/apt/lists/*
 
-FROM python:3.14-slim-bookworm@sha256:4ff4b92a68355dbdb52584ab3391dff8d371a61d4e063468bfd0130e3189c6d9 AS docling-os
+FROM python:3.14-slim-bookworm@sha256:416f0db2a2b561945630cef9877a7ea0581b27449eb9fd9df42f03e1b74b5b63 AS docling-os
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -80,24 +80,33 @@ ENV DOCLING_PDF_CHUNKING=auto
 ENV DOCLING_PDF_CHUNK_PAGES=40
 ENV DOCLING_PDF_CHUNK_THRESHOLD_PAGES=120
 ENV PATH=/opt/docling/bin:$PATH
+# Docling 2.132 needs the recognizer vocabulary removed in RapidOCR 3.10.
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m venv /opt/docling \
     && /opt/docling/bin/pip install --no-cache-dir \
-      "docling-slim[standard,models-local,feat-ocr-rapidocr]==2.99.0" \
+      "docling-slim[standard,models-local,feat-ocr-rapidocr]==2.132.0" \
+      "rapidocr==3.9.1" \
       --extra-index-url https://download.pytorch.org/whl/cpu \
     && /opt/docling/bin/pip install --force-reinstall --no-cache-dir --no-deps opencv-python-headless==4.13.0.92 \
     && find /opt/docling -type d \( -name __pycache__ -o -name test -o -name tests \) -prune -exec rm -rf '{}' + \
     && find /opt/docling -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.a' \) -delete \
     && rm -rf /opt/docling/lib/python*/site-packages/torch/include \
       /opt/docling/lib/python*/site-packages/torch/share
+# OCR uses the bundled Norwegian/English Tesseract data. Prefetch the other
+# standard pipeline models explicitly; unused RapidOCR checkpoints are not needed.
 RUN mkdir -p /opt/docling-models \
-    && /opt/docling/bin/docling-tools models download -o /opt/docling-models -q \
+    && /opt/docling/bin/docling-tools models download layout tableformer code_formula picture_classifier -o /opt/docling-models -q \
     && find /opt/docling-models -type d -name .cache -prune -exec rm -rf '{}' + \
     && chmod -R a+rX /opt/docling-models
 # The production Docling image does not use Debian package management at
 # runtime. Remove Perl after build-time tooling has finished to keep the final
 # image free of the current unfixed Perl CVEs in Debian slim bases.
-RUN if dpkg-query -W perl-base >/dev/null 2>&1; then \
+# Norwegian and English OCR data are installed at build time for offline use.
+# Refresh PCRE2 explicitly: the pinned base predates Debian's security fix.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpcre2-8-0 tesseract-ocr tesseract-ocr-nor tesseract-ocr-eng \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpcre2-8-0)" ge '10.42-1+deb12u1' \
+    && if dpkg-query -W perl-base >/dev/null 2>&1; then \
       dpkg --purge --force-depends --force-remove-essential perl-base; \
     fi \
     && rm -rf /usr/share/perl5 /var/lib/apt/lists/*

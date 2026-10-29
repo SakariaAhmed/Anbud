@@ -1,7 +1,8 @@
 import "server-only";
 
-import { createRequire } from "node:module";
 import { Worker } from "node:worker_threads";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 type PdfTextItem = {
   str: string;
@@ -20,67 +21,153 @@ type ParsedPdfPages = {
   pages: Array<{ page: number; items: PdfTextItem[] }>;
 };
 
-const require = createRequire(import.meta.url);
-const LEGACY_PARSER_PATH = require.resolve("pdf-parse/lib/pdf-parse.js");
-const LEGACY_PARSE_TIMEOUT_MS = 120_000;
+// Node workers need filesystem paths, not webpack module IDs. Resolve from the
+// running app first (including standalone), repository-root scripts second, and
+// the source module for direct imports from another working directory.
+const runtimeRequire = process.getBuiltinModule("module").createRequire(import.meta.url);
+const parserSearchPaths = [
+  process.cwd(),
+  path.join(process.cwd(), "apps/frontend"),
+  path.dirname(fileURLToPath(import.meta.url)),
+];
+const LEGACY_PARSER_PATH = runtimeRequire.resolve("pdf-parse/lib/pdf-parse.js", {
+  paths: parserSearchPaths,
+});
+const MODERN_PARSER_PATH = runtimeRequire.resolve("pdfjs-dist/legacy/build/pdf.mjs", {
+  paths: parserSearchPaths,
+});
+const CANVAS_PATH = runtimeRequire.resolve("@napi-rs/canvas", {
+  paths: parserSearchPaths,
+});
+const PDF_PARSE_TIMEOUT_MS = 120_000;
+const PDF_LIMITS = {
+  inputBytes: 25 * 1024 * 1024,
+  pages: 2_000,
+  items: 250_000,
+  textCharacters: 10_000_000,
+};
 
-const LEGACY_WORKER_SOURCE = String.raw`
+// PDF.js uses a fake worker under Node. Both engines must therefore run inside
+// our worker, including imports, extraction, and accumulated output validation.
+const PDF_WORKER_SOURCE = String.raw`
   const { parentPort, workerData } = require("node:worker_threads");
-  const parse = require(workerData.parserPath);
+  const { pathToFileURL } = require("node:url");
+  const { limits } = workerData;
   const pages = [];
-  let pageNumber = 0;
-  parse(Buffer.from(workerData.bytes), {
-    version: "v1.10.100",
-    max: 0,
-    pagerender: async (pageData) => {
-      pageNumber += 1;
-      const content = await pageData.getTextContent({
-        normalizeWhitespace: false,
-        disableCombineTextItems: false,
+  let itemCount = 0;
+  let textCharacters = 0;
+  let limitError;
+  function rejectLimit() {
+    limitError = Object.assign(new Error("PDF_RESOURCE_LIMIT"), { code: "PDF_RESOURCE_LIMIT" });
+    throw limitError;
+  }
+  function checkPages(count) {
+    if (!Number.isSafeInteger(count) || count < 0 || count > limits.pages) rejectLimit();
+  }
+  function collect(page, items) {
+    checkPages(page);
+    const accepted = [];
+    for (const item of items) {
+      if (!item || typeof item.str !== "string" || !Array.isArray(item.transform)) continue;
+      // Keep only the six affine coordinates; arbitrary parser metadata must not
+      // become an unbounded structured-clone payload in the parent process.
+      if (item.transform.length !== 6 || !item.transform.every(Number.isFinite)) continue;
+      itemCount += 1;
+      textCharacters += item.str.length;
+      if (itemCount > limits.items || textCharacters > limits.textCharacters) rejectLimit();
+      accepted.push({
+        str: item.str,
+        transform: item.transform,
+        width: typeof item.width === "number" ? item.width : undefined,
+        height: typeof item.height === "number" ? item.height : undefined,
       });
-      pages.push({
-        page: pageNumber,
-        items: content.items
-          .filter((item) => item && typeof item.str === "string" && Array.isArray(item.transform))
-          .map((item) => ({
-            str: item.str,
-            transform: item.transform,
-            width: typeof item.width === "number" ? item.width : undefined,
-            height: typeof item.height === "number" ? item.height : undefined,
-          })),
-      });
-      return "";
-    },
-  }).then(
-    (result) => parentPort.postMessage({ ok: true, numpages: result.numpages, pages }),
+    }
+    pages.push({ page, items: accepted });
+  }
+  async function parseLegacy() {
+    const parse = require(workerData.parserPath);
+    let pageNumber = 0;
+    const result = await parse(Buffer.from(workerData.bytes), {
+      version: "v1.10.100",
+      max: limits.pages + 1,
+      pagerender: async (pageData) => {
+        if (limitError) throw limitError;
+        checkPages(++pageNumber);
+        const content = await pageData.getTextContent({
+          normalizeWhitespace: false,
+          disableCombineTextItems: false,
+        });
+        collect(pageNumber, content.items);
+        return "";
+      },
+    });
+    // pdf-parse swallows pagerender failures. Preserve budget failures explicitly.
+    if (limitError) throw limitError;
+    checkPages(result.numpages);
+    return result.numpages;
+  }
+  async function parseModern() {
+    const canvas = require(workerData.canvasPath);
+    for (const name of ["DOMMatrix", "ImageData", "Path2D"]) {
+      if (!(name in globalThis)) globalThis[name] = canvas[name];
+    }
+    const pdfJs = await import(pathToFileURL(workerData.parserPath).href);
+    const loadingTask = pdfJs.getDocument({
+      data: workerData.bytes,
+      isEvalSupported: false,
+      useSystemFonts: true,
+    });
+    try {
+      const document = await loadingTask.promise;
+      checkPages(document.numPages);
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        try {
+          const content = await page.getTextContent({
+            includeMarkedContent: false,
+            disableNormalization: false,
+          });
+          collect(pageNumber, content.items);
+        } finally {
+          page.cleanup();
+        }
+      }
+      return document.numPages;
+    } finally {
+      await loadingTask.destroy();
+    }
+  }
+  (workerData.engine === "legacy" ? parseLegacy() : parseModern()).then(
+    (numpages) => parentPort.postMessage({ ok: true, numpages, pages }),
     (error) => parentPort.postMessage({
       ok: false,
-      message: error && error.message ? String(error.message) : "Legacy PDF parsing failed",
+      name: error && typeof error.name === "string" ? error.name.slice(0, 100) : "Error",
+      code: limitError ? "PDF_RESOURCE_LIMIT" : error && error.code,
+      message: error && error.message ? String(error.message).slice(0, 500) : "PDF parsing failed",
     }),
   );
 `;
 
-let pdfJsPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null =
-  null;
+class PdfCompatibilityError extends Error {}
 
-async function getPdfJs() {
-  pdfJsPromise ??= (async () => {
-    const canvas = await import("@napi-rs/canvas");
-    for (const name of ["DOMMatrix", "ImageData", "Path2D"] as const) {
-      if (!(name in globalThis)) Object.assign(globalThis, { [name]: canvas[name] });
-    }
-    return import("pdfjs-dist/legacy/build/pdf.mjs");
-  })();
-  return pdfJsPromise;
-}
-
-function parseWithIsolatedLegacyWorker(buffer: Buffer): Promise<ParsedPdfPages> {
+function parseWithIsolatedWorker(
+  buffer: Buffer,
+  engine: "legacy" | "modern",
+): Promise<ParsedPdfPages> {
   return new Promise((resolve, reject) => {
     const bytes = Uint8Array.from(buffer);
-    const worker = new Worker(LEGACY_WORKER_SOURCE, {
+    const worker = new Worker(PDF_WORKER_SOURCE, {
       eval: true,
-      workerData: { parserPath: LEGACY_PARSER_PATH, bytes },
+      workerData: {
+        engine,
+        parserPath: engine === "legacy" ? LEGACY_PARSER_PATH : MODERN_PARSER_PATH,
+        canvasPath: CANVAS_PATH,
+        bytes,
+        limits: PDF_LIMITS,
+      },
       transferList: [bytes.buffer],
+      // V8 heap limits do not cap native allocations; byte, page, output and
+      // execution bounds complement them, rather than claiming a total RSS cap.
       resourceLimits: {
         maxOldGenerationSizeMb: 192,
         maxYoungGenerationSizeMb: 32,
@@ -88,87 +175,42 @@ function parseWithIsolatedLegacyWorker(buffer: Buffer): Promise<ParsedPdfPages> 
       },
     });
     let settled = false;
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      void worker.terminate();
-      reject(new Error("Legacy PDF parsing timed out."));
-    }, LEGACY_PARSE_TIMEOUT_MS);
-
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      callback();
+      // Await termination before settling, so a compatibility retry cannot
+      // overlap the old worker's cleanup or continue its rejected workload.
+      void worker.terminate().then(callback, callback);
     };
+    const timeout = setTimeout(() => {
+      finish(() => reject(new Error("PDF_PARSE_TIMEOUT")));
+    }, PDF_PARSE_TIMEOUT_MS);
     worker.once("message", (message: unknown) => {
       finish(() => {
         const result = message as ParsedPdfPages & {
           ok?: boolean;
+          name?: string;
+          code?: string;
           message?: string;
         };
         if (result.ok) {
           resolve({ numpages: result.numpages, pages: result.pages });
+        } else if (result.code === "PDF_RESOURCE_LIMIT") {
+          reject(new Error("PDF_RESOURCE_LIMIT"));
         } else {
-          reject(new Error(result.message || "Legacy PDF parsing failed."));
+          const error = new PdfCompatibilityError(result.message || "PDF parsing failed.");
+          error.name = result.name || "Error";
+          reject(error);
         }
       });
     });
+    // Worker OOM, startup and exit failures are terminal, never compatibility.
     worker.once("error", (error) => finish(() => reject(error)));
     worker.once("exit", (code) => {
-      if (!settled && code !== 0) {
-        finish(() => reject(new Error(`Legacy PDF worker exited with code ${code}.`)));
-      }
+      finish(() => reject(new Error(`PDF worker exited before returning a result (code ${code}).`)));
     });
   });
-}
-
-function isPdfTextItem(value: unknown): value is PdfTextItem {
-  if (!value || typeof value !== "object" || !("str" in value)) return false;
-  const item = value as {
-    str?: unknown;
-    transform?: unknown;
-    width?: unknown;
-    height?: unknown;
-  };
-  return (
-    typeof item.str === "string" &&
-    Array.isArray(item.transform) &&
-    item.transform.every((part) => typeof part === "number") &&
-    (item.width === undefined || typeof item.width === "number") &&
-    (item.height === undefined || typeof item.height === "number")
-  );
-}
-
-async function parseWithModernPdfJs(buffer: Buffer): Promise<ParsedPdfPages> {
-  const pdfJs = await getPdfJs();
-  const loadingTask = pdfJs.getDocument({
-    data: new Uint8Array(buffer),
-    isEvalSupported: false,
-    useSystemFonts: true,
-  });
-  try {
-    const document = await loadingTask.promise;
-    const pages: ParsedPdfPages["pages"] = [];
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      const page = await document.getPage(pageNumber);
-      try {
-        const content = await page.getTextContent({
-          includeMarkedContent: false,
-          disableNormalization: false,
-        });
-        pages.push({
-          page: pageNumber,
-          items: content.items.filter(isPdfTextItem) as PdfTextItem[],
-        });
-      } finally {
-        page.cleanup();
-      }
-    }
-    return { numpages: document.numPages, pages };
-  } finally {
-    await loadingTask.destroy();
-  }
 }
 
 function defaultPageText(items: PdfTextItem[]) {
@@ -184,19 +226,21 @@ function defaultPageText(items: PdfTextItem[]) {
 
 /**
  * Runs the production-compatible parser in a fresh, memory-bounded worker for
- * every document. Unsupported modern PDFs fall back to maintained pdf.js with
- * dynamic code evaluation disabled.
+ * every document. Compatibility failures retry maintained pdf.js in an equally
+ * bounded worker; resource failures are terminal.
  */
 export async function parsePdf(
   buffer: Buffer,
   renderPage: PageRenderer = (_pageNumber, items) => defaultPageText(items),
 ) {
+  if (buffer.length > PDF_LIMITS.inputBytes) throw new Error("PDF_RESOURCE_LIMIT");
   let parsed: ParsedPdfPages;
   try {
-    parsed = await parseWithIsolatedLegacyWorker(buffer);
-  } catch {
+    parsed = await parseWithIsolatedWorker(buffer, "legacy");
+  } catch (error) {
+    if (!(error instanceof PdfCompatibilityError)) throw error;
     try {
-      parsed = await parseWithModernPdfJs(buffer);
+      parsed = await parseWithIsolatedWorker(buffer, "modern");
     } catch (error) {
       if (error instanceof Error && error.name === "InvalidPDFException") {
         throw new Error("INVALID_PDF_DOCUMENT");

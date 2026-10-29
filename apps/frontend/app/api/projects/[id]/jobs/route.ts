@@ -170,6 +170,7 @@ export async function POST(
 
   try {
     const { id } = await context.params;
+    await requireProjectPermission(id, "job.run");
     return await withTiming(
       "POST /api/projects/[id]/jobs",
       { project_id: id },
@@ -208,7 +209,7 @@ export async function POST(
       },
     );
   } catch (error) {
-    return NextResponse.json(
+    return authorizationErrorResponse(error) ?? NextResponse.json(
       {
         error: productionSafeErrorMessage(error, "Kunne ikke starte jobben."),
       },

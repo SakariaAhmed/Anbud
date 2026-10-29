@@ -94,15 +94,24 @@ export async function parseBoundedMultipartFormData(
     }
   });
 
+  let streamError: unknown = null;
   const completed = new Promise<void>((resolve, reject) => {
     parser.once("close", resolve);
-    parser.once("error", reject);
+    // Busboy can emit more than one error after a malformed part; keep listening
+    // so later errors do not become uncaught exceptions.
+    parser.on("error", (error) => {
+      if (streamError) return;
+      streamError = error;
+      reject(error);
+    });
   });
+  // The loop may still be awaiting reader.read() when the parser fails.
+  completed.catch(() => undefined);
   const reader = request.body.getReader();
   let receivedBytes = 0;
 
   try {
-    while (true) {
+    while (!streamError) {
       const { done, value } = await reader.read();
       if (done) break;
       receivedBytes += value.byteLength;
@@ -114,7 +123,9 @@ export async function parseBoundedMultipartFormData(
       }
       parser.write(Buffer.from(value));
     }
-    if (receivedBytes <= limits.maxBodyBytes) {
+    if (streamError) {
+      await reader.cancel().catch(() => undefined);
+    } else if (receivedBytes <= limits.maxBodyBytes) {
       parser.end();
     }
     await completed;

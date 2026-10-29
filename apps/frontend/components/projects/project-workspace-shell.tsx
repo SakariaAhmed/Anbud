@@ -1,6 +1,8 @@
 "use client";
 
-import { ProjectResultHistory } from "@/components/projects/project-result-history";
+import "./project-workspace.css";
+
+import { ProjectAnalysisResult } from "@/components/projects/project-analysis-result";
 import { ProjectWorkflowJobs } from "@/components/projects/project-workflow-jobs";
 import dynamic from "next/dynamic";
 import type {
@@ -16,16 +18,12 @@ import {
   MessageSquareText,
 } from "lucide-react";
 
-import {
-  formatDate,
-  GenerationProgress,
-} from "@/components/projects/project-workspace-shared";
+import { GenerationProgress } from "@/components/projects/project-workspace-shared";
 import { ProjectShareDialog } from "@/components/projects/project-share-dialog";
 import { isDocumentReadyForEvaluation } from "@/lib/document-processing";
 import type {
   ProjectWorkspaceTab,
   WorkflowStepItem,
-  WorkflowStepStatus,
   WorkspaceNavItem,
 } from "@/components/projects/project-workspace-types";
 import { Button } from "@/components/ui/button";
@@ -185,15 +183,6 @@ const ProjectGeneratorTab = dynamic(
   },
 );
 
-const WORKFLOW_SIDEBAR_STATUS_STYLES: Record<WorkflowStepStatus, string> = {
-  "Ikke startet": "border-slate-200 bg-slate-50 text-slate-600",
-  Venter: "border-amber-200 bg-amber-50 text-amber-800",
-  Klar: "border-sky-200 bg-sky-50 text-sky-700",
-  Generert: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  "Må sjekkes": "border-orange-200 bg-orange-50 text-orange-800",
-  Ferdig: "border-emerald-200 bg-emerald-50 text-emerald-800",
-};
-
 export type SecondaryNavGroup = {
   label: string;
   items: WorkspaceNavItem[];
@@ -263,6 +252,8 @@ export type ProjectWorkspaceTabContentProps = {
   executiveSummary: ExecutiveSummaryResult | null;
   analysisLoaded: boolean;
   analysisLoading: boolean;
+  analysisLoadError: string;
+  onRetryAnalysisLoad: () => void;
   evaluationLoaded: boolean;
   evaluationLoading: boolean;
   evaluationLoadError: string;
@@ -349,7 +340,7 @@ export function ProjectWorkspaceShell({
   children,
 }: ProjectWorkspaceShellProps) {
   return (
-    <div className="min-h-[calc(100dvh-var(--app-header-height))] w-full overflow-x-hidden">
+    <div className="project-workspace min-h-[calc(100dvh-var(--app-header-height))] w-full overflow-x-hidden">
       <SidebarProvider
         open={sidebarOpen}
         onOpenChange={onSidebarOpenChange}
@@ -359,17 +350,9 @@ export function ProjectWorkspaceShell({
             "--sidebar-width-icon": "3.5rem",
             "--sidebar-offset-top": "var(--app-header-height)",
             "--sidebar-offset-bottom": "0px",
-            "--sidebar": "rgb(255, 255, 255)",
-            "--sidebar-foreground": "rgb(71, 85, 105)",
-            "--sidebar-primary": "rgb(37, 99, 235)",
-            "--sidebar-primary-foreground": "rgb(255, 255, 255)",
-            "--sidebar-accent": "rgb(248, 250, 252)",
-            "--sidebar-accent-foreground": "rgb(15, 23, 42)",
-            "--sidebar-border": "rgb(226, 232, 240)",
-            "--sidebar-ring": "rgb(37, 99, 235)",
           } as CSSProperties
         }
-        className="min-h-[calc(100dvh-var(--app-header-height))] bg-slate-50/35 max-md:flex-col"
+        className="min-h-[calc(100dvh-var(--app-header-height))] bg-transparent max-md:flex-col"
       >
         <ProjectWorkspaceSidebar
           project={project}
@@ -386,7 +369,7 @@ export function ProjectWorkspaceShell({
         <SidebarInset className="min-w-0 overflow-x-hidden bg-transparent">
           <div
             className={cn(
-              "relative w-full max-w-full overflow-x-hidden px-5 py-6 md:px-9 md:py-9",
+              "workspace-content relative mx-auto w-full max-w-[1440px] px-5 py-6 md:px-10 md:py-8",
               !sidebarOpen && "mx-auto",
             )}
           >
@@ -434,6 +417,7 @@ function ProjectWorkspaceSidebar({
   onOpenChatPopout,
 }: ProjectWorkspaceSidebarProps) {
   const { isMobile, setOpenMobile } = useSidebar();
+  const showLabels = isMobile || sidebarOpen;
   function navigate(tab: ProjectWorkspaceTab) {
     onSetWorkspaceTab(tab);
     if (isMobile) setOpenMobile(false);
@@ -441,32 +425,27 @@ function ProjectWorkspaceSidebar({
   return (
     <Sidebar
       collapsible="icon"
-      className="bg-white md:border-r md:border-slate-200"
+      className="bg-sidebar md:border-r md:border-sidebar-border"
     >
       <SidebarHeader
         className={cn(
-          "flex min-h-20 flex-row items-center border-b border-slate-200 bg-white px-5 py-4 transition-[padding] duration-150 ease-out",
-          sidebarOpen ? "justify-between gap-3" : "justify-center px-2",
+          "flex min-h-20 flex-row items-center border-b border-sidebar-border bg-sidebar px-5 py-4 transition-[padding] duration-150 ease-out",
+          showLabels ? "justify-between gap-3" : "justify-center px-2",
         )}
       >
-        {sidebarOpen ? (
+        {showLabels ? (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[1.02rem] font-semibold leading-6 text-slate-950">
+            <p className="font-display text-sm font-semibold leading-6 text-sidebar-foreground">
               {project.name}
             </p>
-            {project.customer_name ? (
-              <p className="mt-1 truncate text-[0.88rem] font-medium leading-5 text-slate-500">
-                {project.customer_name}
-              </p>
-            ) : null}
           </div>
         ) : null}
         <SidebarTrigger
-          aria-label={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
-          title={sidebarOpen ? "Kollaps sidemeny" : "Utvid sidemeny"}
-          className="size-12 shrink-0 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+          aria-label={isMobile ? "Lukk sidemeny" : showLabels ? "Kollaps sidemeny" : "Utvid sidemeny"}
+          title={isMobile ? "Lukk sidemeny" : showLabels ? "Kollaps sidemeny" : "Utvid sidemeny"}
+          className="size-12 shrink-0 rounded-md text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
-          {sidebarOpen ? (
+          {showLabels ? (
             <ChevronLeft className="size-4.5" />
           ) : (
             <ChevronRight className="size-4.5" />
@@ -476,50 +455,41 @@ function ProjectWorkspaceSidebar({
 
       <SidebarContent
         className={cn(
-          "min-h-0 flex-1 bg-white px-4 py-3 transition-[padding] duration-150 ease-out",
-          !sidebarOpen && "px-1.5",
+          "min-h-0 flex-1 bg-sidebar px-3 py-4 transition-[padding] duration-150 ease-out",
+          !showLabels && "px-1.5",
         )}
       >
-        <SidebarGroup className={cn("gap-2 px-1 py-2.5", !sidebarOpen && "px-0")}>
+        <SidebarGroup className={cn("gap-2 px-1 py-2.5", !showLabels && "px-0")}>
           <SidebarGroupContent>
-            <SidebarMenu className={cn("gap-2", !sidebarOpen && "items-center")}>
+            <SidebarMenu className={cn("gap-2", !showLabels && "items-center")}>
               {primaryWorkflowSteps.map((item) => (
                 <SidebarMenuItem
                   key={item.value}
-                  className={cn(!sidebarOpen && "flex justify-center")}
+                  className={cn(!showLabels && "flex justify-center")}
                 >
                   <SidebarMenuButton
                     isActive={activeTab === item.value}
+                    aria-label={item.label}
                     size="lg"
-                    tooltip={`${item.step}. ${item.label}: ${item.status}`}
+                    tooltip={item.label}
                     className={cn(
-                      "relative h-auto min-h-[4.65rem] gap-3 overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-3 text-[0.94rem] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-all duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 data-active:border-slate-200 data-active:bg-blue-50/60 data-active:text-blue-950 data-active:shadow-[0_8px_22px_rgba(37,99,235,0.08)] data-active:before:absolute data-active:before:inset-y-0 data-active:before:left-0 data-active:before:w-0.5 data-active:before:bg-blue-600",
-                      !sidebarOpen &&
+                      "workspace-nav-button relative h-auto min-h-11 gap-3 rounded-md border border-transparent px-3 py-2 text-sm font-medium",
+                      !showLabels &&
                         "mx-auto size-10 min-h-10 justify-center rounded-md px-0 py-0",
                     )}
                     onPointerDown={() => onPreloadWorkspaceTab(item.value)}
                     onFocus={() => onPreloadWorkspaceTab(item.value)}
                     onClick={() => navigate(item.value)}
                   >
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-[0.86rem] font-semibold text-blue-600 shadow-sm group-data-active/menu-button:border-blue-200 group-data-active/menu-button:bg-white group-data-active/menu-button:text-blue-700">
-                      {item.step}
-                    </span>
-                    {sidebarOpen ? (
+                    <item.icon className="size-4 shrink-0" aria-hidden="true" />
+                    {showLabels ? (
                       <span className="flex min-w-0 flex-1 items-center gap-3">
                         <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
                           <span className="min-w-0 break-words text-left leading-5 hyphens-auto">
                             {item.label}
                           </span>
-                          <span
-                            className={cn(
-                              "shrink-0 rounded-full border px-2 py-0.5 text-[0.68rem] font-bold leading-4",
-                              WORKFLOW_SIDEBAR_STATUS_STYLES[item.status],
-                            )}
-                          >
-                            {item.status}
-                          </span>
                         </span>
-                        <ChevronRight className="size-4 shrink-0 text-slate-400 transition-colors group-data-active/menu-button:text-slate-600" />
+                        <ChevronRight className="size-4 shrink-0 text-current transition-colors" />
                       </span>
                     ) : null}
                   </SidebarMenuButton>
@@ -532,17 +502,17 @@ function ProjectWorkspaceSidebar({
         {secondaryNavGroups.map((group) => (
           <SidebarGroup
             key={group.label}
-            className={cn("gap-2 px-1 py-2.5", !sidebarOpen && "px-0")}
+            className={cn("gap-2 px-1 py-2.5", !showLabels && "px-0")}
           >
-            {sidebarOpen ? (
-              <p className="px-2 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-slate-600">
+            {showLabels ? (
+              <p className="px-2 text-xs font-bold tracking-normal text-slate-400">
                 {group.label}
               </p>
             ) : null}
             <SidebarGroupContent>
-              <SidebarMenu className={cn("gap-1.5", !sidebarOpen && "items-center")}>
+              <SidebarMenu className={cn("gap-1.5", !showLabels && "items-center")}>
                 <SidebarMenuItem
-                  className={cn(!sidebarOpen && "flex justify-center")}
+                  className={cn(!showLabels && "flex justify-center")}
                 >
                   <SidebarMenuButton
                     render={
@@ -550,8 +520,9 @@ function ProjectWorkspaceSidebar({
                         href={`/projects/${project.id}/chat`}
                         target={`bidsite-project-chat-${project.id}`}
                         rel="noopener noreferrer"
-                        onClick={() => {
-                          onOpenChatPopout();
+                        onClick={(event) => {
+                          // The anchor remains the fallback when the popup is blocked.
+                          if (onOpenChatPopout()) event.preventDefault();
                           if (isMobile) setOpenMobile(false);
                         }}
                       />
@@ -559,35 +530,36 @@ function ProjectWorkspaceSidebar({
                     size="lg"
                     tooltip="Åpne AI Chat i pop-out vindu"
                     className={cn(
-                      "h-11 gap-3 rounded-lg border border-transparent px-2 text-[0.94rem] font-medium text-slate-600 transition-colors duration-150 ease-out hover:bg-slate-50 hover:text-slate-950",
-                      !sidebarOpen &&
+                      "workspace-nav-button h-11 gap-3 rounded-md border border-transparent px-3 text-sm font-medium",
+                      !showLabels &&
                         "mx-auto size-10 justify-center rounded-md px-0",
                     )}
                   >
-                    <MessageSquareText className="size-4.5 text-slate-500" />
-                    {sidebarOpen ? <span>AI Chat</span> : null}
+                    <MessageSquareText className="size-4.5 text-current" />
+                    {showLabels ? <span>AI Chat</span> : null}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 {group.items.map((item) => (
                   <SidebarMenuItem
                     key={item.value}
-                    className={cn(!sidebarOpen && "flex justify-center")}
+                    className={cn(!showLabels && "flex justify-center")}
                   >
                     <SidebarMenuButton
                       isActive={activeTab === item.value}
+                    aria-label={item.label}
                       size="lg"
                       tooltip={`${group.label}: ${item.label}`}
                       className={cn(
-                        "h-11 gap-3 rounded-lg border border-transparent px-2 text-[0.94rem] font-medium text-slate-600 transition-colors duration-150 ease-out hover:bg-slate-50 hover:text-slate-950 data-active:bg-blue-50 data-active:text-blue-950",
-                        !sidebarOpen &&
+                        "workspace-nav-button h-11 gap-3 rounded-md border border-transparent px-3 text-sm font-medium",
+                        !showLabels &&
                           "mx-auto size-10 justify-center rounded-md px-0",
                       )}
                       onPointerDown={() => onPreloadWorkspaceTab(item.value)}
                       onFocus={() => onPreloadWorkspaceTab(item.value)}
                       onClick={() => navigate(item.value)}
                     >
-                      <item.icon className="size-4.5 text-slate-500" />
-                      {sidebarOpen ? <span>{item.label}</span> : null}
+                      <item.icon className="size-4.5 text-current" />
+                      {showLabels ? <span>{item.label}</span> : null}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -596,10 +568,10 @@ function ProjectWorkspaceSidebar({
           </SidebarGroup>
         ))}
       </SidebarContent>
-      {sidebarOpen ? (
+      {showLabels ? (
         <button
           type="button"
-          aria-label="Resize sidebar"
+          aria-label="Endre bredden på sidemenyen"
           onPointerDown={onSidebarResizeStart}
           className="absolute top-0 right-[-6px] bottom-0 hidden w-3 cursor-col-resize touch-none bg-transparent md:block"
         >
@@ -617,31 +589,17 @@ function WorkspaceHeader({
   readOnly,
 }: WorkspaceHeaderProps) {
   return (
-    <section className="mb-6">
+    <section className="workspace-heading mb-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          <SidebarTrigger className="mt-0.5 size-12 shrink-0 md:hidden" />
+          <SidebarTrigger aria-label="Åpne sidemeny" className="mt-0.5 size-12 shrink-0 md:hidden" />
           <div className="min-w-0">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.26em] text-slate-500">
+            <p className="workspace-eyebrow text-xs font-semibold">
               {activeTabLabel}
             </p>
-            <h2 className="mt-2 text-[2rem] font-semibold leading-tight tracking-[-0.015em] text-slate-950">
+            <h2 className="mt-2 font-display text-[1.45rem] font-semibold leading-tight tracking-[-0.035em] text-slate-950 sm:text-[1.75rem]">
               {project.name}
             </h2>
-            <p className="mt-2 text-left text-[1rem] text-slate-500">
-              Oppdatert {formatDate(project.last_activity_at)}
-            </p>
-            {project.customer_name || project.industry ? (
-              <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[1rem] text-slate-500">
-                {project.customer_name ? (
-                  <span className="font-medium">{project.customer_name}</span>
-                ) : null}
-                {project.customer_name && project.industry ? (
-                  <span className="text-border">·</span>
-                ) : null}
-                {project.industry ? <span>{project.industry}</span> : null}
-              </div>
-            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -707,6 +665,8 @@ export function ProjectWorkspaceTabContent({
   executiveSummary,
   analysisLoaded,
   analysisLoading,
+  analysisLoadError,
+  onRetryAnalysisLoad,
   evaluationLoaded,
   evaluationLoading,
   evaluationLoadError,
@@ -749,7 +709,6 @@ export function ProjectWorkspaceTabContent({
   return (
     <>
       <ProjectWorkflowJobs key={`jobs-${project.id}`} projectId={project.id} />
-      {activeTab === "analysis" && <ProjectResultHistory key={`history-${project.id}`} projectId={project.id} />}
       {activeTab === "documents" ? (
         <ProjectDocumentsTab
           projectId={project.id}
@@ -774,22 +733,30 @@ export function ProjectWorkspaceTabContent({
       ) : null}
 
       {activeTab === "analysis" ? (
-        !analysisLoaded || analysisLoading ? (
-          <DeferredSectionLoader label="Laster kundeanalyse ..." />
-        ) : (
-          <ProjectAnalysisTab
-            projectId={project.id}
-            documents={project.documents}
-            customerAnalysis={customerAnalysis}
-            busy={Boolean(busy)}
-            saveBusy={busy === "save-analysis"}
-            sectionBusy={analysisSectionBusy}
-            busyMessage={analysisSectionBusy ? busyMessage : ""}
-            busyProgress={busyProgress}
-            onGenerate={onGenerateCustomerAnalysis}
-            onSaveAnalysis={onSaveAnalysis}
-          />
-        )
+        <ProjectAnalysisResult key={`analysis-${project.id}`} projectId={project.id} currentAnalysis={customerAnalysis} hasCurrentAnalysis={project.customer_analysis_generated} snapshotRevision={project.snapshot_revision}>
+          {(fallback) => !customerAnalysis && !fallback && (!analysisLoaded || analysisLoading) ? (
+            <DeferredSectionLoader label="Laster kundeanalyse ..." />
+          ) : analysisLoadError && !customerAnalysis && !fallback ? (
+            <div role="alert" className="rounded-lg border p-4">
+              <p className="text-sm text-red-700">{analysisLoadError}</p>
+              <Button variant="outline" className="mt-3" onClick={onRetryAnalysisLoad}>Prøv igjen</Button>
+            </div>
+          ) : (
+            <ProjectAnalysisTab
+              projectId={project.id}
+              documents={project.documents}
+              customerAnalysis={customerAnalysis ?? fallback}
+              sourceChanged={Boolean(fallback)}
+              busy={Boolean(busy)}
+              saveBusy={busy === "save-analysis"}
+              sectionBusy={analysisSectionBusy}
+              busyMessage={analysisSectionBusy ? busyMessage : ""}
+              busyProgress={busyProgress}
+              onGenerate={onGenerateCustomerAnalysis}
+              onSaveAnalysis={fallback ? undefined : onSaveAnalysis}
+            />
+          )}
+        </ProjectAnalysisResult>
       ) : null}
 
       {activeTab === "evaluation" ? (

@@ -33,6 +33,9 @@ const {
 const { extractRequirementLedgerForDocument } = jiti(
   path.join(frontendRoot, "lib/server/requirements/extraction.ts"),
 );
+const { canonicalizeRequirementSourceLedger } = jiti(
+  path.join(frontendRoot, "lib/server/use-cases/solution-evaluation-readiness.ts"),
+);
 
 test("supplier-answer stripping preserves lowercase Norwegian relative clauses", () => {
   const requirement =
@@ -198,6 +201,59 @@ function projectDocument({ rawText, fileFormat = "docx", structureMap = [] }) {
     structure_map: structureMap,
   };
 }
+
+test("live Fjordvik Docling PDF binds every ID to its requirement, excluding introduction and footer", async () => {
+  const fixture = JSON.parse(await readFile(new URL("./fixtures/fjordvik-docling-narrative.json", import.meta.url), "utf8"));
+  const pdf = await readFile(new URL("./fixtures/fjordvik-docling-narrative.pdf", import.meta.url));
+  const document = { ...projectDocument({ rawText: fixture.raw_text, fileFormat: "pdf", structureMap: fixture.structure_map }), file_base64: pdf.toString("base64"), role: "primary_customer_document" };
+  const expected = fixture.structure_map.filter((entry) => /^KRAV-\d+:/.test(entry.text)).map((entry) => ({
+    id: entry.text.split(":")[0].toUpperCase(), text: entry.text.slice(entry.text.indexOf(":") + 1).trim(), pages: [1], heading: "Krav",
+  }));
+  const ledger = await extractRequirementLedgerForDocument(document);
+  assert.deepEqual(expected.map((entry) => entry.id), ["KRAV-01", "KRAV-02", "KRAV-03", "KRAV-04"]);
+  assert.deepEqual(ledger.map((entry) => ({ id: entry.id.toUpperCase(), text: entry.text, pages: entry.pages, heading: entry.heading })), expected);
+  assert.ok(ledger.every((entry) => entry.sourceExcerpt.startsWith(entry.id.toUpperCase())));
+  const formalDocument = { ...projectDocument({ rawText: fixture.structure_map.filter((entry) => /^KRAV-\d+:/.test(entry.text)).map((entry) => entry.text).join("\n\n"), fileFormat: "txt" }), id: "formal-requirements" };
+  const formalLedger = await extractRequirementLedgerForDocument(formalDocument);
+  const canonical = canonicalizeRequirementSourceLedger({ sourceDocuments: [document, formalDocument], requirementLedgerResults: [{ document, ledger }, { document: formalDocument, ledger: formalLedger }] });
+  assert.deepEqual(canonical.map((entry) => entry.id.toUpperCase()), expected.map((entry) => entry.id));
+  assert.ok(canonical.every((entry) => entry.documentId === formalDocument.id), "exact duplicate requirements retain the existing formal-document authority");
+});
+
+test("Docling paragraph anchors preserve wrapped text and repeated IDs in separate sections", () => {
+  const document = projectDocument({ fileFormat: "pdf", rawText: "", structureMap: [
+    { kind: "docling_text", parser: "docling", reference: "Docling section_header 1", text: "Drift", page: 1 },
+    { kind: "docling_text", parser: "docling", reference: "Docling text 2", text: "KRAV-01: Leverandøren skal logge hendelser.\nLoggene skal bevares i 14 måneder.", page: 1 },
+    { kind: "docling_text", parser: "docling", reference: "Docling section_header 3", text: "Tilgang", page: 2 },
+    { kind: "docling_text", parser: "docling", reference: "Docling text 4", text: "KRAV-01: Leverandøren skal hindre anonym tilgang.", page: 2 },
+    { kind: "docling_text", parser: "docling", reference: "Docling text 5", text: "Bakgrunnen omtaler KRAV-02 uten å stille et krav.", page: 2 },
+  ] });
+  const ledger = parsers.buildExplicitIdDoclingTextRequirementLedger(document, testContext());
+  assert.deepEqual(ledger.map(({ id, text, pages, heading }) => ({ id: id.toUpperCase(), text, pages, heading })), [
+    { id: "KRAV-01", text: "Leverandøren skal logge hendelser. Loggene skal bevares i 14 måneder.", pages: [1], heading: "Drift" },
+    { id: "KRAV-01", text: "Leverandøren skal hindre anonym tilgang.", pages: [2], heading: "Tilgang" },
+  ]);
+});
+
+test("Docling 2.132 merged paragraph retains four exact requirements through the file ledger", async () => {
+  const fixture = JSON.parse(await readFile(new URL("./fixtures/fjordvik-docling-merged-narrative.json", import.meta.url), "utf8"));
+  const original = JSON.parse(await readFile(new URL("./fixtures/fjordvik-docling-narrative.json", import.meta.url), "utf8"));
+  const pdf = await readFile(new URL("./fixtures/fjordvik-docling-narrative.pdf", import.meta.url));
+  const ledger = await extractRequirementLedgerForDocument({ ...projectDocument({ fileFormat: "pdf", rawText: fixture.raw_text, structureMap: fixture.structure_map }), file_base64: pdf.toString("base64") });
+  assert.deepEqual(ledger.map((entry) => entry.id.toUpperCase()), ["KRAV-01", "KRAV-02", "KRAV-03", "KRAV-04"]);
+  assert.deepEqual(ledger.map((entry) => entry.text), original.structure_map.filter((entry) => /^KRAV-\d+:/u.test(entry.text)).map((entry) => entry.text.slice(entry.text.indexOf(":") + 1).trim()));
+  assert.ok(ledger.every((entry) => entry.pages.join(",") === "1" && entry.heading === "Krav" && entry.sourceExcerpt.startsWith(entry.id.toUpperCase())));
+});
+
+test("Docling paragraph cross-references do not become new marked requirements", () => {
+  for (const text of [
+    "KRAV-01: Leverandøren skal følge KRAV-02 ved opprettelse av nye brukere.",
+    "KRAV-01: Leverandøren skal kontrollere tilgang. Se KRAV-02: Leverandøren skal også logge endringer.",
+  ]) {
+    const ledger = parsers.buildExplicitIdDoclingTextRequirementLedger(projectDocument({ fileFormat: "pdf", rawText: text, structureMap: [{ kind: "docling_text", parser: "docling", reference: "Docling text 1", text, page: 1 }] }), testContext());
+    assert.deepEqual(ledger, [], "ambiguous paragraph stays with existing extraction paths");
+  }
+});
 
 test("Nordhavn explicit requirement table yields exactly 18 source-ordered rows", async () => {
   const rawText = await readFile(
@@ -3566,5 +3622,27 @@ test("pdf flattened service-table header does not become bare krav id", async ()
       (entry) => !entry.tableId && entry.pages.length > 1 && /Applikasjonsforvaltning/i.test(entry.text),
     ),
     false,
+  );
+});
+
+test("prose lines that start with an explicit ID are not an authoritative requirement table", () => {
+  const { explicitIdTableSourceIds } = jiti(
+    path.join(frontendRoot, "lib/server/requirements/explicit-id-table-parser.ts"),
+  );
+  assert.deepEqual(
+    explicitIdTableSourceIds([
+      "NORD-FUN-01 Alle brukere skal kunne logge inn med Entra ID.",
+      "NORD-FUN-02 Bruk av tjenesten skal logges.",
+      "NORD-FUN-03 Ci-pipelines skal være versjonert.",
+    ].join("\n")),
+    [],
+  );
+  assert.deepEqual(
+    explicitIdTableSourceIds([
+      "NORD-FUN-01 A Saksflyt Bekreft at løsningen støtter saksflyt.",
+      "FUN-A02ASaksbehandling Beskriv saksbehandlingen.",
+      "NORD-FUN-03 C",
+    ].join("\n")),
+    ["NORD-FUN-01", "FUN-A02", "NORD-FUN-03"],
   );
 });

@@ -3,6 +3,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 
 import { PROJECT_ROLE_LABELS, isProjectRole, type ProjectRole } from "@/lib/access-control";
+import { AuthorizationError, requireAdmin, requireRequestPrincipal } from "@/lib/server/authorization";
 import { decryptString } from "@/lib/server/crypto";
 import { createServiceClient } from "@/lib/server/data-api";
 import { sendGuestAccessEmail } from "@/lib/server/guest-email";
@@ -95,6 +96,8 @@ export async function inviteEmailToProject(input: {
   expiresAt?: string | null;
   createdBy: string;
 }) {
+  const actor = await requireRequestPrincipal();
+  if (actor.id !== input.createdBy) throw new AuthorizationError("Ugyldig avsender.");
   const email = validateEmail(input.email);
   if (!isShareableProjectRole(input.role)) {
     throw new Error("Ugyldig rolle for invitert bruker.");
@@ -178,7 +181,7 @@ export async function inviteEmailToProject(input: {
     principalId: row.principal_id,
     identityType: row.identity_type,
     credentialCreated: row.credential_created,
-    guestCode,
+    guestCode: actor.isAdmin ? guestCode : null,
     email: maskEmail(email),
     emailDelivery: emailResult,
   };
@@ -189,6 +192,10 @@ export async function rotateGuestCode(input: {
   rotatedBy: string;
   projectName?: string;
 }) {
+  const administrator = await requireAdmin();
+  if (administrator.id !== input.rotatedBy) {
+    throw new AuthorizationError("Ugyldig administrator.");
+  }
   const dataApi = createServiceClient();
   const { data: principal, error: principalError } = await dataApi
     .from("app_principals")
@@ -357,20 +364,29 @@ export async function listProjectAccess(projectId: string) {
   const activeGroupGrants = activeAccessRows(groupGrants);
   const principalIds = activeMemberships.map((row) => row.principal_id);
   const groupIds = activeGroupGrants.map((row) => row.group_id);
+  const principalColumns =
+    "id, identity_type, display_name, guest_description, email_masked, disabled_at";
   const [
     { data: principals, error: principalError },
+    { data: memberPrincipals, error: memberPrincipalError },
     { data: groups, error: groupError },
     { data: groupMembers, error: groupMemberError },
     { data: principalRoles, error: roleError },
   ] = await Promise.all([
+    // Bounded candidate list for adding new members.
     dataApi
       .from("app_principals")
-      .select(
-        "id, identity_type, display_name, guest_description, email_masked, disabled_at",
-      )
+      .select(principalColumns)
       .is("disabled_at", null)
       .order("display_name")
       .limit(500),
+    principalIds.length
+      ? dataApi
+          .from("app_principals")
+          .select(principalColumns)
+          .is("disabled_at", null)
+          .in("id", principalIds)
+      : Promise.resolve({ data: [], error: null }),
     groupIds.length
       ? dataApi
           .from("app_groups")
@@ -385,16 +401,23 @@ export async function listProjectAccess(projectId: string) {
       : Promise.resolve({ data: [], error: null }),
     dataApi.from("app_principal_roles").select("principal_id, role"),
   ]);
-  if (principalError || groupError || groupMemberError || roleError) {
+  if (
+    principalError ||
+    memberPrincipalError ||
+    groupError ||
+    groupMemberError ||
+    roleError
+  ) {
     throw new Error(
       principalError?.message ||
+        memberPrincipalError?.message ||
         groupError?.message ||
         groupMemberError?.message ||
         roleError?.message,
     );
   }
   const principalMap = new Map(
-    (principals ?? []).map((principal) => [principal.id, principal]),
+    (memberPrincipals ?? []).map((principal) => [principal.id, principal]),
   );
   const groupMap = new Map((groups ?? []).map((group) => [group.id, group]));
   const adminIds = new Set(
@@ -450,13 +473,20 @@ export async function updateProjectMemberRole(input: {
     throw new Error("Eierrollen kan ikke endres fra delingsdialogen.");
   }
   const dataApi = createServiceClient();
-  const { error } = await dataApi
+  // The owner filter is part of the same UPDATE, so a concurrent owner change
+  // cannot be overwritten between a check and the write.
+  const { data, error } = await dataApi
     .from("project_memberships")
     .update({ role: input.role })
     .eq("project_id", input.projectId)
     .eq("principal_id", input.principalId)
-    .is("revoked_at", null);
+    .neq("role", "owner")
+    .is("revoked_at", null)
+    .select("principal_id");
   if (error) throw new Error(error.message);
+  if (!data?.length) {
+    throw new Error("Fant ingen aktiv medlemsrolle som kan endres.");
+  }
 }
 
 export async function revokeProjectMember(input: {

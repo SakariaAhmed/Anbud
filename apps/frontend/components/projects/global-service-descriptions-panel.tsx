@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   FileText,
-  Layers3,
   Plus,
   Trash2,
   Upload,
@@ -146,29 +145,14 @@ export function GlobalServiceDescriptionsPanel() {
   }
 
   return (
-    <section className="mt-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+    <section className="overflow-hidden rounded-md border border-slate-200 bg-white">
       <div className="grid gap-0 lg:grid-cols-[23rem_minmax(0,1fr)]">
-        <div className="border-b border-slate-200 bg-slate-50/80 p-6 lg:border-b-0 lg:border-r">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white">
-              <Layers3 className="size-5" />
-            </span>
-            <div>
-              <p className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                Tjenestebeskrivelser
-              </p>
-              <h2 className="mt-1 text-lg font-bold text-slate-950">
-                Global tjenestekatalog
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Dokumenter her brukes som firmaets tjenestegrunnlag på tvers av
-                prosjekter. Velg hvilke tjenester som skal brukes inne på hvert
-                prosjekt.
-              </p>
-            </div>
-          </div>
+        <div className="border-b border-slate-200 p-4 lg:border-b-0 lg:border-r">
+          <p className="text-sm text-slate-600">
+            Tjenestene er tilgjengelige for alle prosjekter.
+          </p>
 
-          <form onSubmit={onSubmit} className="mt-5 space-y-3">
+          <form onSubmit={onSubmit} className="mt-3 space-y-3">
             <select
               aria-label="Velg tjeneste"
               value={targetServiceId}
@@ -190,12 +174,14 @@ export function GlobalServiceDescriptionsPanel() {
             </select>
 
             <input
+              aria-label="Tjenestenavn"
               value={serviceName}
               onChange={(event) => setServiceName(event.target.value)}
               placeholder="Tjenestenavn"
               className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
             />
             <textarea
+              aria-label="Beskrivelse"
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Kort beskrivelse av når tjenesten er relevant"
@@ -205,6 +191,15 @@ export function GlobalServiceDescriptionsPanel() {
 
             <label
               htmlFor="home-service-file"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  const input = document.getElementById(event.currentTarget.htmlFor);
+                  if (input instanceof HTMLInputElement) input.click();
+                }
+              }}
               onDragEnter={(event) => {
                 event.preventDefault();
                 setDragActive(true);
@@ -220,7 +215,7 @@ export function GlobalServiceDescriptionsPanel() {
                 setDragActive(false);
                 setFile(event.dataTransfer.files?.[0] ?? null);
               }}
-              className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center ${
+              className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center ${
                 dragActive
                   ? "border-slate-950 bg-slate-100"
                   : "border-slate-300 bg-white hover:border-blue-300 hover:bg-blue-50/40"
@@ -237,6 +232,8 @@ export function GlobalServiceDescriptionsPanel() {
             <input
               key={fileInputKey}
               id="home-service-file"
+              tabIndex={-1}
+              aria-hidden="true"
               type="file"
               accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
               className="sr-only"
@@ -245,7 +242,7 @@ export function GlobalServiceDescriptionsPanel() {
 
             <Button
               type="submit"
-              className="h-10 w-full rounded-lg"
+              className="w-full"
               disabled={busy === "upload" || (!file && !serviceName.trim())}
             >
               {busy === "upload" ? <Spinner className="size-4" /> : <Plus data-icon="inline-start" />}
@@ -254,7 +251,7 @@ export function GlobalServiceDescriptionsPanel() {
           </form>
         </div>
 
-        <div className="min-w-0 p-6">
+        <div className="min-w-0 p-4">
           {error ? (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
               {error}
@@ -264,15 +261,12 @@ export function GlobalServiceDescriptionsPanel() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-slate-950">Alle tjenestedokumenter</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Alle tjenester kan hukes av per prosjekt før de blir del av prosjektkonteksten.
-              </p>
             </div>
             <div className="shrink-0 text-right">
-              <p className="text-xl font-bold leading-none tracking-[-0.02em] text-slate-950">
+              <p className="text-sm font-semibold text-slate-950">
                 {services.reduce((sum, service) => sum + service.documents.length, 0)}
               </p>
-              <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+              <p className="mt-1 text-xs text-slate-500">
                 dokument
               </p>
             </div>
@@ -341,8 +335,8 @@ export function GlobalServiceDescriptionsPanel() {
               ))}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center">
-              <FileText className="mx-auto size-8 text-slate-400" />
+            <div className="py-4">
+              <FileText className="size-4 text-slate-400" />
               <p className="mt-3 text-sm font-semibold text-slate-950">
                 Ingen tjenestebeskrivelser ennå
               </p>

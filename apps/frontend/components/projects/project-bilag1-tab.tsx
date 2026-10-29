@@ -50,28 +50,17 @@ export function ProjectBilag1Tab({
 
   return (
     <div className="space-y-5">
-      <section className="rounded-xl border border-border/70 bg-white px-5 py-5 shadow-sm md:px-6">
+      <section>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 max-w-3xl">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Rekonstruert Bilag 1
-            </p>
-            <h3 className="mt-2 text-xl font-semibold tracking-tight text-foreground">
-              Generer Bilag 1 fra prosjektets dokumenter
-            </h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Bruker opplastede kundedokumenter, Bilag 2, kravgrunnlag og
-              kundeanalyse for å lage et ryddig utkast med behov,
-              smertepunkter, krav, avklaringer og kildeindikasjoner.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-background px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-2">
                 <FileText className="size-4" />
                 {documents.length} dokument{documents.length === 1 ? "" : "er"} i
                 prosjektet
               </span>
               {latestArtifact ? (
-                <span className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-background px-3 py-2">
+                <span className="inline-flex items-center gap-2">
                   <CalendarClock className="size-4" />
                   Sist generert {formatDate(latestArtifact.created_at)}
                 </span>
@@ -87,7 +76,7 @@ export function ProjectBilag1Tab({
             />
             <Button
               type="submit"
-              className="h-11 w-full rounded-lg"
+              className="w-full"
               disabled={busy || documents.length === 0}
             >
               {busy ? (
@@ -114,14 +103,14 @@ export function ProjectBilag1Tab({
       </section>
 
       {latestArtifact ? (
-        <section className="rounded-xl border border-border/70 bg-white shadow-sm">
+        <section className="border-t border-border">
           <details open className="group">
             <summary className="flex cursor-pointer list-none items-start justify-between gap-3 border-b border-border/70 px-5 py-4 text-left transition-colors hover:bg-muted/30 md:px-6">
               <div className="min-w-0">
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <p className="text-xs font-semibold tracking-normal text-muted-foreground">
                   Generert Bilag 1
                 </p>
-                <h3 className="mt-2 text-xl font-semibold leading-8 text-foreground">
+                <h3 className="mt-2 text-base font-semibold leading-6 text-foreground">
                   {latestArtifact.title || "Rekonstruert Bilag 1"}
                 </h3>
               </div>
@@ -153,7 +142,7 @@ export function ProjectBilag1Tab({
           </details>
         </section>
       ) : documents.length > 0 ? (
-        <section className="rounded-xl border border-dashed border-border bg-muted/20 px-5 py-12 text-center">
+        <section className="py-4">
           <p className="text-sm font-medium text-foreground">
             Ingen Bilag 1-utkast er generert ennå.
           </p>
@@ -163,7 +152,7 @@ export function ProjectBilag1Tab({
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-950 shadow-sm md:px-6">
+      <section className="border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-amber-950">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 size-5 shrink-0" />
           <div>
@@ -176,45 +165,7 @@ export function ProjectBilag1Tab({
         </div>
       </section>
 
-      {bilag1Artifacts.length > 1 ? (
-        <section className="rounded-xl border border-border/70 bg-card px-4 py-4">
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-            Tidligere Bilag 1-utkast
-          </p>
-          <div className="space-y-2">
-            {bilag1Artifacts.slice(1).map((artifact) => (
-              <details key={artifact.id} className="group rounded-lg border bg-background">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/40">
-                  <span className="min-w-0 truncate">
-                    {artifact.title || "Rekonstruert Bilag 1"} ·{" "}
-                    {formatDate(artifact.created_at)}
-                  </span>
-                  <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                </summary>
-                <div className="border-t px-4 py-4">
-                  <div className="mb-4 flex justify-end">
-                    <DeleteConfirmDialog
-                      title="Slett Bilag 1-utkast?"
-                      description={`Dette sletter "${artifact.title || "Bilag 1-utkast"}" fra prosjektet. Handlingen kan ikke angres.`}
-                      confirmLabel="Slett utkast"
-                      onConfirm={() => onDeleteArtifact(artifact)}
-                    >
-                      <Button type="button" variant="destructive" size="sm">
-                        <Trash2 data-icon="inline-start" />
-                        Slett
-                      </Button>
-                    </DeleteConfirmDialog>
-                  </div>
-                  <MarkdownViewer
-                    content={artifact.content_markdown}
-                    className="artifact-markdown text-[0.98rem] text-foreground"
-                  />
-                </div>
-              </details>
-            ))}
-          </div>
-        </section>
-      ) : null}
+
     </div>
   );
 }

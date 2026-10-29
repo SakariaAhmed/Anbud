@@ -45,7 +45,7 @@ export function DeleteConfirmDialog({
       <DialogTrigger asChild disabled={disabled}>
         {children}
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="app-reading">
         <DialogHeader>
           <span className="flex size-10 items-center justify-center rounded-lg bg-red-50 text-red-700">
             <AlertTriangle className="size-5" />

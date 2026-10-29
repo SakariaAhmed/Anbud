@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -69,22 +69,6 @@ async function loadEnvFile(filePath) {
       .trim()
       .replace(/^(['"])(.*)\1$/, "$2");
   }
-}
-
-function base64Url(input) {
-  return Buffer.from(input)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-function createSessionToken(secret) {
-  const payload = `v1:${Date.now()}`;
-  const signature = base64Url(
-    createHmac("sha256", secret).update(payload).digest(),
-  );
-  return `${payload}.${signature}`;
 }
 
 async function waitForJson(url, timeoutMs = 10_000) {
@@ -353,7 +337,7 @@ async function measureOnce({ baseUrl, routePath, sessionToken, tab }) {
       value: sessionToken,
       url: baseUrl,
       httpOnly: true,
-      secure: false,
+      secure: new URL(baseUrl).protocol === "https:",
       sameSite: "Lax",
     });
     await client.send("Page.addScriptToEvaluateOnNewDocument", {
@@ -477,6 +461,17 @@ async function measureOnce({ baseUrl, routePath, sessionToken, tab }) {
         })()
       `,
     );
+    const finalPath = new URL(pageMetrics.location).pathname;
+    if (finalPath === "/login") {
+      throw new Error(
+        "Benchmarken ble sendt til /login. BENCHMARK_SESSION_COOKIE er ugyldig eller utløpt; målingene er forkastet.",
+      );
+    }
+    if (finalPath !== new URL(routePath, baseUrl).pathname) {
+      throw new Error(
+        `Benchmarken endte på ${finalPath} i stedet for den valgte siden; målingene er forkastet.`,
+      );
+    }
 
     const networkResources = [...resources.values()].filter((resource) =>
       resource.url.startsWith(baseUrl) ||
@@ -548,12 +543,22 @@ async function main() {
   const args = parseArgs();
   await loadEnvFile(path.join(repoRoot, ".env"));
   await loadEnvFile(path.join(frontendRoot, ".env.local"));
-  const sessionSecret = process.env.APP_SESSION_SECRET?.trim();
-  if (!sessionSecret) {
-    throw new Error("Missing APP_SESSION_SECRET in env.");
+  // Use a real database session (s4.*) from a signed-in browser. The value is
+  // only passed to the local Chrome instance and is never written to output.
+  const sessionToken = process.env.BENCHMARK_SESSION_COOKIE?.trim();
+  if (!sessionToken?.startsWith("s4.")) {
+    throw new Error(
+      "Sett BENCHMARK_SESSION_COOKIE til en gyldig bidsite_session-verdi (s4.*).",
+    );
   }
-
-  const sessionToken = createSessionToken(sessionSecret);
+  // The real session cookie must not travel over plain HTTP to another host.
+  const target = new URL(args.baseUrl);
+  if (
+    target.protocol !== "https:" &&
+    !["127.0.0.1", "localhost", "[::1]"].includes(target.hostname)
+  ) {
+    throw new Error("Bruk https:// for benchmark mot andre verter enn localhost.");
+  }
   const routePath =
     args.path ||
     `/projects/${encodeURIComponent(args.projectId)}`;

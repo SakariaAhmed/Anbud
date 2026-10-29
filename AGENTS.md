@@ -69,6 +69,11 @@ credentials or copy tokens, session values, or confidential documents into logs.
   The accepted button direction is blue primary actions, quiet outlined secondary
   actions, and restrained delete controls that become red on hover. Prefer shared
   component styles over individual overrides.
+- The accepted working-app design is the gallery’s Elektrisk blå palette: navy
+  header `#14245C` with border `#233774`, light sidebar `#EEF2FF`, primary
+  `#294BD3`, Schibsted Grotesk headings and IBM Plex Sans body text. Keep its
+  tokens in `components/layout/app-theme.css`. Preserve original login/error
+  styling; gallery controls and synthetic data do not belong in the application.
 - Make workspaces compact, readable, and useful. Avoid promotional landing panels,
   decorative card layers, intro animations, and artificial delays before work.
 - Show actionable processing and failure states. Check desktop and mobile layout,
@@ -107,9 +112,13 @@ credentials or copy tokens, session values, or confidential documents into logs.
 
 - Microsoft Entra authenticates internal users; guest codes are application-managed
   credentials. Entra tenant membership and application project grants are distinct.
+- Signed-in guests can create projects and become their owner. Global admin
+  access includes guest-owned projects; other users still need project access.
 - Enforce current session and project permissions server-side. Global `admin`
-  manages access and can read projects; it does not imply global content-write
-  permission. `restricted_viewer` must not gain source-document downloads.
+  has full access to every project, including content changes, generation,
+  downloads, sharing, and deletion, without a project-specific grant.
+  Non-admin users remain limited by their project roles; `restricted_viewer`
+  must not gain source-document downloads.
 - Preserve the single global administrator invariant. The password fallback and
   intended Microsoft administrator use the same configured principal. Microsoft
   login must not grant admin by email; do not restore retired `APP_ADMIN_EMAILS`.

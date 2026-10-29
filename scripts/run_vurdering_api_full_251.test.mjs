@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import {
   mkdir,
@@ -7,6 +8,7 @@ import {
   readFile,
   readdir,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import os from "node:os";
@@ -33,6 +35,8 @@ import {
   buildIntegrityLedgerFromGeneratedSolutionArtifact,
   buildSyntheticCustomerDocument,
   checkpointArtifactHashes,
+  checkpointArtifactPaths,
+  discoverRekkefolgeProjects,
   checkpointConfigurationRevision,
   checkpointIdentity,
   checkpointIdentityMismatch,
@@ -3524,4 +3528,106 @@ test("cleanup storage verification delegates normalized prefixes to Azure storag
       bucket: "anbud-documents",
     },
   ]);
+});
+
+
+test("corpus workbook traversal IDs are rejected with nonnumeric paired Bilag files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "corpus-paths-"));
+  const xlsx = createRequire(import.meta.url)("../apps/frontend/node_modules/@e965/xlsx");
+  const workbookPath = path.join(root, "Fasit_100_skyprosjekter_rekkefolge_ekstraksjon.xlsx");
+  const documentName = "x_Bilag_2_Krav_case.pdf";
+  const writeWorkbook = (id) => {
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([
+      { "Prosjekt ID": id, "Bilag 2-fil": documentName, Kunde: "Kunde Æ" },
+    ]), "Alle krav");
+    xlsx.writeFile(workbook, workbookPath);
+  };
+  try {
+    await writeFile(path.join(root, documentName), "fixture");
+    await writeFile(path.join(root, "x_Bilag_1_case.pdf"), "fixture");
+    for (const id of ["x/../../../target", "x\\..\\target", "/tmp/target", "..", "x%2f..%2ftarget", "x|alternate", "x".repeat(147)]) {
+      writeWorkbook(id);
+      await assert.rejects(discoverRekkefolgeProjects({ root }), /Unsafe corpus project ID/);
+    }
+    writeWorkbook("customer_A-12");
+    const projects = await discoverRekkefolgeProjects({ root });
+    assert.equal(projects.length, 1);
+    assert.equal(projects[0].id, "rekkefolge-100-customer_A-12");
+    assert.equal(projects[0].name, "Kunde Æ");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("all project artifact reads and success/failure writes reject escaping IDs and preserve unrelated files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "artifact-paths-"));
+  const options = { artifactsRoot: path.join(root, "artifacts") };
+  const sentinel = path.join(root, "target.json");
+  try {
+    await writeFile(sentinel, "unrelated");
+    for (const id of ["rekkefolge-100-x/../../../target", "../target", "x\\..\\target", "x%2F..%2Ftarget", "x\0target"]) {
+      const project = { id, name: "Kunde" };
+      for (const ok of [true, false]) {
+        await assert.rejects(async () => {
+          const paths = checkpointArtifactPaths(project, options);
+          await writeJson(paths.projectCheckpointJson, { ok });
+          await writeJson(paths.solutionEvaluationJson, { ok });
+          await writeFile(paths.requirementResponseMarkdown, "result");
+        }, /Unsafe corpus project ID/);
+      }
+      await assert.rejects(checkpointArtifactHashes(project, options), /Unsafe corpus project ID/);
+      await assert.rejects(mergeExistingProjectArtifacts({ options, projects: [project] }), /Unsafe corpus project ID/);
+    }
+    assert.equal(await readFile(sentinel, "utf8"), "unrelated");
+    assert.deepEqual(await readdir(root), ["target.json"]);
+
+    const project = { id: "rekkefolge-100-customer_A-12", name: "Kunde Æ/../../" };
+    const paths = checkpointArtifactPaths(project, options);
+    for (const filePath of Object.values(paths)) {
+      assert.ok(filePath.startsWith(`${options.artifactsRoot}${path.sep}`));
+      await mkdir(path.dirname(filePath), { recursive: true });
+    }
+    for (const ok of [true, false]) {
+      await writeJson(paths.projectCheckpointJson, { ok });
+      assert.deepEqual((await readJsonCheckpoint(paths.projectCheckpointJson)).checkpoint, { ok });
+    }
+    await writeJson(paths.solutionEvaluationJson, { score: 100 });
+    await writeFile(paths.requirementResponseMarkdown, "# Svar");
+    const hashes = await checkpointArtifactHashes(project, options);
+    assert.equal(hashes.requirementResponseMarkdownSha256, createHash("sha256").update("# Svar").digest("hex"));
+    assert.equal(await readFile(sentinel, "utf8"), "unrelated");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("artifact containment rejects symlinked directories and existing destination symlinks", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "artifact-symlinks-"));
+  const options = { artifactsRoot: path.join(root, "artifacts") };
+  const project = { id: "safe-id", name: "Kunde" };
+  try {
+    await mkdir(options.artifactsRoot);
+    const outside = path.join(root, "outside");
+    await mkdir(outside);
+    const sentinel = path.join(outside, "safe-id.json");
+    await writeFile(sentinel, "unrelated");
+    for (const directory of ["projects", "evaluations", "kravsvar"]) {
+      const link = path.join(options.artifactsRoot, directory);
+      await symlink(outside, link, "dir");
+      assert.throws(() => checkpointArtifactPaths(project, options), /symbolic links/);
+      await assert.rejects(checkpointArtifactHashes(project, options), /symbolic links/);
+      await rm(link);
+    }
+    const paths = checkpointArtifactPaths(project, options);
+    for (const filePath of Object.values(paths)) {
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await symlink(sentinel, filePath);
+      assert.throws(() => checkpointArtifactPaths(project, options), /symbolic links/);
+      await rm(filePath);
+    }
+    assert.equal(await readFile(sentinel, "utf8"), "unrelated");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

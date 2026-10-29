@@ -49,10 +49,21 @@ test("office ZIP preflight accepts a small archive and rejects extreme expansion
 test("upload signatures reject executable content disguised as documents", () => {
   assert.throws(
     () => validateUploadFileSignature(Buffer.from("<script>alert(1)</script>"), "pdf"),
-    /samsvarer ikke/u,
+    /INVALID_PDF_DOCUMENT/u,
   );
   assert.doesNotThrow(() =>
     validateUploadFileSignature(Buffer.from("%PDF-1.7\n"), "pdf"),
   );
   assert.equal(contentTypeForUploadFormat("pdf"), "application/pdf");
+});
+
+
+test("invalid PDF signatures cross the safe error boundary as actionable HTTP 400 errors", async () => {
+  const {workflowErrorStatus} = await jiti.import(path.join(frontendRoot,"lib/server/workflow-errors.ts"));
+  const {productionSafeErrorMessage} = await jiti.import(path.join(frontendRoot,"lib/server/safe-errors.ts"));
+  assert.throws(()=>validateUploadFileSignature(Buffer.from("not a pdf"),"pdf"),error=>{
+    assert.equal(workflowErrorStatus(error),400);
+    assert.match(productionSafeErrorMessage(error,"fallback"),/lagre en ny kopi/);
+    return true;
+  });
 });

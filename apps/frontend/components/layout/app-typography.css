@@ -1,0 +1,51 @@
+/* Reading scale for the working app. Original login/error compositions are excluded. */
+.app-reading:not(:has(.error-stage)) {
+  --text-xs: .8125rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: .9375rem;
+  --text-sm--line-height: 1.5;
+  --reading-measure: 72ch;
+  --muted-foreground: var(--app-muted, #526278);
+  font-kerning: normal;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+/* Light-surface supporting text must remain readable, including in themed previews. */
+.app-reading:not(:has(.error-stage)) :where(main,.bg-white,.bg-card,[role="dialog"]) :is(p,span,label,small,a,div).text-slate-400 {
+  color: var(--palette-muted, var(--app-muted, #526278));
+}
+.app-reading:not(:has(.error-stage)) :is(.analysis-prose,.artifact-markdown,.chat-markdown) {
+  font-size: 1rem;
+  line-height: 1.7;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-align: start;
+  overflow-wrap: break-word;
+}
+.app-reading:not(:has(.error-stage)) .markdown-viewer :is(p,ul,ol,blockquote) {
+  max-width: var(--reading-measure);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+.app-reading:not(:has(.error-stage)) .markdown-viewer :is(p,blockquote) {margin-block: .8em}
+.app-reading:not(:has(.error-stage)) .markdown-viewer > :first-child {margin-top:0}
+.app-reading:not(:has(.error-stage)) .markdown-viewer > :last-child {margin-bottom:0}
+.app-reading:not(:has(.error-stage)) .markdown-viewer li {margin-block:.35em}
+.app-reading:not(:has(.error-stage)) .markdown-viewer :is(h1,h2,h3,h4) {line-height:1.35;letter-spacing:-.015em}
+.app-reading:not(:has(.error-stage)) .markdown-viewer :is(th,td) {font-size:.9375rem;line-height:1.6;overflow-wrap:break-word}
+.app-reading:not(:has(.error-stage)) .markdown-viewer a {text-underline-offset:.2em}
+.app-reading:not(:has(.error-stage)) :is(input:not([type="checkbox"]):not([type="radio"]),textarea,select) {
+  font-size:1rem;
+  line-height:1.5;
+}
+.app-reading:not(:has(.error-stage)) :is(input,textarea)::placeholder {color:var(--muted-foreground);opacity:1}
+.app-reading:not(:has(.error-stage)) :is(.analysis-service,.analysis-need) p {font-size:1rem;line-height:1.65}
+.app-reading:not(:has(.error-stage)) :is(.analysis-service,.analysis-need) p.text-xs {font-size:.8125rem;line-height:1.5}
+.app-reading:not(:has(.error-stage)) [aria-label^="Kravtabell:"] table {min-width:900px;overflow-wrap:break-word}
+.app-reading:not(:has(.error-stage)) [aria-label^="Kravtabell:"] th {font-size:.875rem;line-height:1.5;letter-spacing:0;text-transform:none}
+.app-reading:not(:has(.error-stage)) [aria-label^="Kravtabell:"] td p {font-size:.9375rem;line-height:1.6}
+.app-reading:not(:has(.error-stage)) [aria-label^="Kravtabell:"] td:nth-child(n+4) p {font-size:.875rem;line-height:1.6;color:var(--palette-muted,var(--app-muted,#526278))}
+@media(min-width:1280px){.app-reading:not(:has(.error-stage)) [aria-label^="Kravtabell:"] table {min-width:0}}
+@media print {
+  .app-reading:not(:has(.error-stage)) {--reading-measure:100%}
+}

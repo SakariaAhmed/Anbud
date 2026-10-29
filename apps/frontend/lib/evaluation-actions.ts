@@ -1,8 +1,19 @@
 import type { SolutionEvaluationResult } from "@/lib/types";
 
 export function buildArchitectureActions(evaluation: SolutionEvaluationResult) {
+  const coverageItems = (evaluation.requirement_coverage?.items ?? [])
+    .filter((item) => item.assessment !== "Godt");
+  const coveredReferences = new Set(coverageItems.flatMap((item) =>
+    [item.reference, item.full_reference, item.source_reference].filter(Boolean)));
+  const coverageActions = coverageItems.map((item) => ({
+    location: item.full_reference || item.reference || item.source_reference,
+    action: item.recommendation || "Avklar og rett dette kravet før innlevering.",
+    reason: item.rationale || item.evidence,
+  }));
   const referencedFindings = evaluation.document_findings
-    .filter((finding) => finding.assessment !== "Godt")
+    .filter((finding) => finding.assessment !== "Godt" &&
+      !coveredReferences.has(finding.reference) &&
+      !coveredReferences.has(finding.matched_requirement_reference ?? ""))
     .map((finding) => ({
       location: finding.reference || "Arkitektløsningen generelt",
       action:
@@ -11,8 +22,9 @@ export function buildArchitectureActions(evaluation: SolutionEvaluationResult) {
       reason: finding.finding || finding.evidence,
     }));
 
-  const sourceItems = referencedFindings.length
-    ? referencedFindings
+  const groundedActions = [...coverageActions, ...referencedFindings];
+  const sourceItems = groundedActions.length
+    ? groundedActions
     : evaluation.rewrite_suggestions.length
     ? evaluation.rewrite_suggestions.map((suggestion) => ({
         location: suggestion.target || "Arkitektløsningen generelt",

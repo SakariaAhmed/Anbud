@@ -11,7 +11,7 @@ import type { ProjectCreateInput } from "@/lib/types";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
 
 const READ_CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+  "Cache-Control": "private, no-store",
 };
 
 export async function GET() {
@@ -51,12 +51,6 @@ export async function POST(request: Request) {
   try {
     return await withTiming("POST /api/projects", {}, async () => {
       const principal = await requireRequestPrincipal();
-      if (principal.identityType === "guest") {
-        return NextResponse.json(
-          { error: "Gjester kan ikke opprette nye prosjekter." },
-          { status: 403 },
-        );
-      }
       const body = (await request.json()) as Partial<ProjectCreateInput>;
 
       const project = await createProject({

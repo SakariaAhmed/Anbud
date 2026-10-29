@@ -2,6 +2,65 @@ import { normalizePageText } from "@/lib/server/requirements/pdf-normalization";
 import type { RequirementCorpusParserContext } from "@/lib/server/requirements/corpus-parser-context";
 import type { ExplicitIdPdfLayoutPage } from "@/lib/server/requirements/explicit-id-table-parser";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
+import { explicitRequirementIdPattern } from "@/lib/server/requirements/id-detection";
+import type { ProjectDocumentDetail } from "@/lib/types";
+import { findRequirementOrderOffset, normalizedRequirementOrderSearchText } from "@/lib/server/requirements/mixed-corpus-rules";
+
+function splitDoclingRequirementParagraph(source: string, context: RequirementCorpusParserContext) {
+  const ids = context.detectExplicitRequirementIds(source).map((id) => normalizePageText(id).toUpperCase());
+  const matches = [...source.matchAll(explicitRequirementIdPattern())].filter((match) =>
+    context.detectExplicitRequirementIds(match[0]).some((id) => ids.includes(normalizePageText(id).toUpperCase()))
+  );
+  if (!matches.length || matches[0].index !== 0) return [];
+  // A reference inside a sentence is not a new row. Merged rows need an ID
+  // separator at a sentence/line boundary; otherwise leave the paragraph to
+  // the existing parsers rather than guessing its units.
+  if (matches.slice(1).some((match) =>
+    !/(?:[.!?;]|\n)\s*$/u.test(source.slice(0, match.index)) ||
+    !/^\s*[:–—-]\s+/u.test(source.slice(match.index + match[0].length))
+  )) return [];
+  const units = matches.map((match, index) => {
+    const excerpt = source.slice(match.index, matches[index + 1]?.index ?? source.length).trim();
+    const text = context.stripAnswerTextFromRequirement(context.stripRequirementChrome(
+      excerpt.slice(match[0].length).replace(/^\s*[:–—-]\s*/u, "").trim(),
+    ));
+    return { id: context.detectExplicitRequirementIds(match[0])[0], text, sourceExcerpt: excerpt };
+  });
+  return units.every((unit) => unit.text.length >= 18 &&
+    (context.hasRequirementSignal(unit.text) || context.hasStandaloneRequirementLanguage(unit.text))) ? units : [];
+}
+
+/** Keep explicit ID/text boundaries in both separate and merged Docling paragraphs. */
+export function buildExplicitIdDoclingTextRequirementLedger(
+  document: ProjectDocumentDetail,
+  context: RequirementCorpusParserContext,
+): RequirementLedgerEntry[] {
+  if (document.file_format !== "pdf") return [];
+  const requirements: RequirementLedgerEntry[] = [];
+  const sourceText = normalizedRequirementOrderSearchText(document.raw_text);
+  let sourceCursor = 0;
+  let heading = "";
+  for (const [order, entry] of document.structure_map.entries()) {
+    if (entry.kind !== "docling_text" || entry.parser !== "docling") continue;
+    if (/\bsection_header\b/iu.test(entry.reference)) {
+      heading = normalizePageText(entry.text);
+      continue;
+    }
+    const source = entry.text.trim().replace(/^[•*]\s*/u, "");
+    const units = splitDoclingRequirementParagraph(source, context);
+    for (const [unitIndex, unit] of units.entries()) {
+      const offset = findRequirementOrderOffset(sourceText, unit.sourceExcerpt, sourceCursor);
+      if (offset !== null) sourceCursor = offset + normalizedRequirementOrderSearchText(unit.sourceExcerpt).length;
+      requirements.push({
+        ...unit,
+        pages: typeof entry.page === "number" ? [entry.page] : [],
+        heading: entry.heading_path?.join(" / ") || heading,
+        documentEntryOrder: offset ?? 1_000_000 + order + unitIndex / units.length,
+      });
+    }
+  }
+  return requirements;
+}
 
 const NARRATIVE_SECTION_PATTERN =
   /(?:Ustrukturert\s+krav(?:beskrivelse|\s*-\s*krav\s*-\s*besvarelse|[\s-]*for[\s-]*krav[\s-]*besvarelse)|kravene\s+nedenfor\s+er\s+bevisst\s+skrevet\s+som\s+fritekst)/iu;

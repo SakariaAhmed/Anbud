@@ -52,9 +52,9 @@ type RequirementCoverage = NonNullable<
 type RequirementCoverageItem = RequirementCoverage["items"][number];
 
 const eyebrowClass =
-  "text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500";
+  "text-xs font-semibold tracking-normal text-slate-500";
 const eyebrowAccentClass =
-  "text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-blue-700";
+  "text-xs font-semibold tracking-normal text-blue-700";
 
 function cleanEvaluationTypography(value: string) {
   let text = value
@@ -106,8 +106,7 @@ function ArchitectScoreCard({ score }: { score: number }) {
     <section className="border border-slate-200 bg-white px-5 py-5 md:px-7 md:py-6">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
           <div className="min-w-0">
-            <p className={eyebrowClass}>Arkitektløsning</p>
-            <h4 className="mt-2 text-2xl font-semibold leading-tight tracking-tight text-slate-900">
+            <h4 className="text-base font-semibold leading-tight text-slate-900">
               Løsningsscore
             </h4>
             <p className="mt-2 max-w-[38rem] text-sm leading-6 text-slate-600">
@@ -117,7 +116,7 @@ function ArchitectScoreCard({ score }: { score: number }) {
           </div>
           <div className="shrink-0 text-left md:text-right">
             <div
-              className={`text-5xl font-semibold leading-none tracking-tight tabular-nums md:text-6xl ${scoreTone.text}`}
+              className={`text-3xl font-semibold leading-none tracking-tight tabular-nums ${scoreTone.text}`}
             >
               {safeScore}%
             </div>
@@ -131,7 +130,7 @@ function ArchitectScoreCard({ score }: { score: number }) {
               style={{ width: `${safeScore}%` }}
             />
           </div>
-          <div className="mt-2 grid grid-cols-3 text-[0.68rem] font-medium tabular-nums text-slate-400">
+          <div className="mt-2 grid grid-cols-3 text-xs font-medium tabular-nums text-slate-400">
             <span>0%</span>
             <span className="text-center">50%</span>
             <span className="text-right">100%</span>
@@ -164,7 +163,7 @@ function ComparisonList({
           className="grid grid-cols-[1.4rem_minmax(0,1fr)] gap-2.5 rounded-lg bg-slate-50/80 px-3 py-2.5"
         >
           <span
-            className={`mt-1 flex size-5 items-center justify-center rounded-full text-[0.65rem] font-semibold text-white ${markerClassName}`}
+            className={`mt-1 flex size-5 items-center justify-center rounded-full text-xs font-semibold text-white ${markerClassName}`}
           >
             {index + 1}
           </span>
@@ -356,7 +355,7 @@ function RequirementCoveragePanel({
   );
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section className="overflow-hidden border-t border-slate-200">
       <div className="border-b border-slate-200 px-5 py-4 md:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
@@ -433,7 +432,7 @@ function RequirementCoveragePanel({
               key={stat.label}
               className="rounded-lg border border-slate-200 bg-white px-3 py-3"
             >
-              <p className="flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <p className="flex items-center gap-1.5 text-xs font-semibold tracking-normal text-slate-500">
                 <span className={`size-1.5 rounded-full ${stat.dot}`} />
                 {stat.label}
               </p>
@@ -455,7 +454,7 @@ function RequirementCoveragePanel({
               return (
                 <article
                   key={`${item.reference}-${index}`}
-                  className={`rounded-xl border border-slate-200 border-l-[3px] bg-white px-4 py-4 shadow-sm ${tone.accent}`}
+                  className={`border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
                 >
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
@@ -495,21 +494,21 @@ function RequirementCoveragePanel({
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-lg bg-slate-50 px-3 py-3">
+                  <div className="min-w-0">
                     <p className={`mb-1.5 ${eyebrowClass}`}>Vurdering</p>
                     <MarkdownViewer
                       content={item.rationale || "Ikke angitt."}
                       className="analysis-prose text-sm leading-6 text-slate-700"
                     />
                   </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-3">
+                  <div className="min-w-0">
                     <p className={`mb-1.5 ${eyebrowClass}`}>Bevis</p>
                     <MarkdownViewer
                       content={item.evidence || "Ikke angitt."}
                       className="analysis-prose text-sm leading-6 text-slate-700"
                     />
                   </div>
-                  <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-3">
+                  <div className="min-w-0">
                     <p className={`mb-1.5 ${eyebrowAccentClass}`}>Retting</p>
                     <MarkdownViewer
                       content={item.recommendation || "Ikke angitt."}
@@ -542,7 +541,7 @@ function DocumentFindingsPanel({
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section className="overflow-hidden border-t border-slate-200">
       <div className="border-b border-slate-200 px-5 py-4 md:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
@@ -565,7 +564,7 @@ function DocumentFindingsPanel({
           return (
             <article
               key={`${finding.reference}-${finding.finding}-${index}`}
-              className={`rounded-xl border border-slate-200 border-l-[3px] bg-white px-4 py-4 shadow-sm ${tone.accent}`}
+              className={`border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
             >
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
@@ -599,14 +598,14 @@ function DocumentFindingsPanel({
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-lg bg-slate-50 px-3 py-3">
+                <div className="min-w-0">
                   <p className={`mb-1.5 ${eyebrowClass}`}>Bevis i Bilag 2</p>
                   <MarkdownViewer
                     content={finding.evidence || "Ikke angitt."}
                     className="analysis-prose text-sm leading-6 text-slate-700"
                   />
                 </div>
-                <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-3">
+                <div className="min-w-0">
                   <p className={`mb-1.5 ${eyebrowAccentClass}`}>
                     Anbefalt retting
                   </p>
@@ -727,7 +726,7 @@ function ArchitectureCallToAction({
             </div>
             {item.reason ? (
               <div className="mb-3 rounded-lg border-l-2 border-rose-300 bg-rose-50/50 px-3 py-3">
-                <p className="mb-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-rose-600">
+                <p className="mb-1.5 text-xs font-semibold tracking-normal text-rose-600">
                   Svakhet
                 </p>
                 <MarkdownViewer
@@ -852,7 +851,7 @@ export function ProjectEvaluationTab({
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <section
-        className="mb-5 border border-slate-200 bg-white px-5 py-5"
+        className="mb-5"
       >
         <form className="space-y-5" onSubmit={handleGenerateSubmit}>
           <div className="grid gap-6 lg:grid-cols-2">
@@ -931,7 +930,7 @@ export function ProjectEvaluationTab({
             disabled={
               actionBusy || !selectedDocumentId || !selectedDocumentRunnable
             }
-            className="h-11 w-full justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-[180ms] hover:bg-primary-hover disabled:bg-slate-200 disabled:text-slate-500"
+
           >
             {busy || importBusy ? (
               <Spinner className="size-4" />
@@ -959,7 +958,7 @@ export function ProjectEvaluationTab({
               <section className="space-y-4">
                 <ArchitectScoreCard score={comparison.architect_solution_score} />
 
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-sm md:px-7 md:py-7">
+                <div className="border-t border-slate-200 py-4">
                   <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
                     <div className="flex min-w-0 items-center gap-3.5">
                       <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-900 text-white">
@@ -967,7 +966,7 @@ export function ProjectEvaluationTab({
                       </span>
                       <div className="min-w-0">
                         <p className={eyebrowClass}>Konklusjon</p>
-                        <h3 className="mt-1 font-serif text-3xl font-bold tracking-tight text-slate-900">
+                        <h3 className="mt-1 text-base font-semibold text-slate-900">
                           {comparison.winner}
                         </h3>
                       </div>
@@ -982,7 +981,7 @@ export function ProjectEvaluationTab({
                         : "Arkitektløsning vurdert"}
                     </span>
                   </div>
-                  <div className="rounded-lg border-l-4 border-blue-900 bg-slate-50 px-4 py-4">
+                  <div className="border-l-2 border-blue-900 pl-3">
                     <MarkdownViewer
                       content={comparison.verdict}
                       className="analysis-prose max-w-none text-[0.95rem] leading-7 text-slate-700"

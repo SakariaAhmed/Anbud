@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
+import { resolveExistingFixturePath } from "./fixture_paths.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
@@ -59,13 +61,26 @@ const { analyzeRequirementCoverageIntegrity } = jiti(
   ),
 );
 
+function resolveFixturePath(relativePath) {
+  const filePath = resolveExistingFixturePath(relativePath);
+  if (!filePath) {
+    throw new Error(
+      `Fant ikke fixture ${relativePath}. Sett REQUIREMENT_VERIFY_FIXTURE_ROOT til katalogen som inneholder testkorpuset.`,
+    );
+  }
+
+  return filePath;
+}
+
 const project = {
   id: "11",
   name: "PolarNett Feltservice AS - requirement quality gate",
-  customer:
-    "/Users/sakariaahmed/Downloads/sky_10_unike_ustrukturerte_prosjekter/DOCX/11_Bilag_1_PolarNett_Feltservice_AS.docx",
-  requirements:
-    "/Users/sakariaahmed/Downloads/sky_10_unike_ustrukturerte_prosjekter/DOCX/11_Bilag_2_Krav_PolarNett_Feltservice_AS.docx",
+  customer: resolveFixturePath(
+    "sky_10_unike_ustrukturerte_prosjekter/DOCX/11_Bilag_1_PolarNett_Feltservice_AS.docx",
+  ),
+  requirements: resolveFixturePath(
+    "sky_10_unike_ustrukturerte_prosjekter/DOCX/11_Bilag_2_Krav_PolarNett_Feltservice_AS.docx",
+  ),
 };
 
 const extractionScoreThresholds = {

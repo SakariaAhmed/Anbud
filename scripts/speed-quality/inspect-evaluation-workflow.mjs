@@ -1,0 +1,32 @@
+import { createRequire } from "node:module";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import path from "node:path";
+import { hashInput } from "./generation-input.mjs";
+const root = path.resolve(import.meta.dirname, "../..");
+const frontend = path.join(root, "apps/frontend");
+const require = createRequire(path.join(frontend, "package.json"));
+const jiti = require("jiti").createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });
+const { buildEvaluationLedgerContext } = jiti(path.join(frontend, "lib/server/use-cases/project-workflows.ts"));
+const { canonicalRequirementSourceDocuments, canonicalizeRequirementSourceLedger } = jiti(path.join(frontend, "lib/server/use-cases/solution-evaluation-readiness.ts"));
+const { mergeRequirementCoverageLedgerWithSolutionAnswers } = jiti(path.join(frontend, "lib/server/ai.ts"));
+const { narrativeAnswerEvidence } = jiti(path.join(frontend, "lib/server/requirements/narrative-answer-evidence.ts"));
+const frozen = JSON.parse(readFileSync(path.join(root, "output/speed-quality-2026-09-08/generation-inputs.json"), "utf8"));
+const label = process.argv.find((arg) => arg.startsWith("--label="))?.slice(8) ?? "before";
+if (!/^[a-z0-9-]+$/.test(label)) throw new Error("Invalid diagnostic label.");
+const output = path.join(root, `output/speed-quality-2026-09-08/evaluation-workflow-evidence-${label}.json`);
+if (existsSync(output)) throw new Error("Preserve existing evidence; use a new explicit label.");
+const results = [];
+globalThis.fetch = async () => { throw new Error("This read-only extraction diagnostic must not access network or paid models."); };
+for (const fixture of frozen.cases.filter((f) => f.split === "development" || f.split === "large-regression")) {
+  const { customerDocument, solutionDocument, supportingDocuments } = fixture.input;
+  const documents = [customerDocument, solutionDocument, ...supportingDocuments];
+  const bundle = await buildEvaluationLedgerContext({ artifactType: "gjennomforing_og_risiko", documents });
+  const sourceDocuments = canonicalRequirementSourceDocuments({ customerDocument, documents: supportingDocuments });
+  const source = canonicalizeRequirementSourceLedger({ sourceDocuments, requirementLedgerResults: bundle.requirementLedgerResults });
+  const solution = bundle.requirementLedgerResults.find((r) => r.document.id === solutionDocument.id)?.ledger ?? [];
+  const prose = narrativeAnswerEvidence(solutionDocument, source);
+  const merged = mergeRequirementCoverageLedgerWithSolutionAnswers({ sourceRequirements: source, solutionEntries: [...solution, ...prose] });
+  results.push({ caseId: fixture.caseId, boundary: "Actual workflow ledger preparation owners, before model or persistence. Diagnostic merged counts are not an end-to-end evaluation.", sourceCount: source.length, solutionCount: solution.length, proseCount: prose.length, matchedAnswerCount: merged.filter((r) => r.answerExcerpt?.trim()).length, source, solution, prose, merged, ledgerContextSha256: hashInput(bundle.context) });
+}
+writeFileSync(output, JSON.stringify(results, null, 2));
+console.log(JSON.stringify(results.map(({ caseId, sourceCount, solutionCount, proseCount, matchedAnswerCount }) => ({ caseId, sourceCount, solutionCount, proseCount, matchedAnswerCount })), null, 2));

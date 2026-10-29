@@ -87,22 +87,34 @@ test("malformed percent-encoding and decoded control characters fail closed", ()
   );
 });
 
-test("administrator can read and share globally but cannot mutate project content", () => {
-  for (const [method, suffix, allowed] of [
-    ["GET", "", true],
-    ["POST", "/access", true],
-    ["PATCH", "", false],
-    ["DELETE", "", false],
+test("administrator can read, generate, edit, delete and share across projects", () => {
+  for (const [method, suffix] of [
+    ["GET", ""],
+    ["POST", "/access"],
+    ["PATCH", ""],
+    ["DELETE", ""],
+    ["POST", "/jobs"],
+    ["PATCH", "/customer-analysis"],
+    ["POST", "/documents"],
+    ["GET", `/documents/${documentId}`],
+    ["DELETE", `/documents/${documentId}`],
+    ["POST", "/chat"],
   ]) {
-    assert.equal(
-      authorization.projectRoleAllowsAuthorizationPath({
-        method,
-        pathname: `/api/projects/${projectId}${suffix}`,
-        role: null,
-        isAdmin: true,
-      }),
-      allowed,
-    );
+    for (const role of [null, "restricted_viewer", "viewer"]) {
+      const request = { method, pathname: `/api/projects/${projectId}${suffix}`, role };
+      assert.equal(
+        authorization.projectRoleAllowsAuthorizationPath({ ...request, isAdmin: true }),
+        true,
+        `${method} ${suffix} must allow admin with role ${role}`,
+      );
+      if (method !== "GET") {
+        assert.equal(
+          authorization.projectRoleAllowsAuthorizationPath({ ...request, isAdmin: false }),
+          false,
+          `${method} ${suffix} must deny non-admin with role ${role}`,
+        );
+      }
+    }
   }
 });
 
@@ -130,4 +142,25 @@ test("page-view telemetry requires project read access without granting writes",
     }),
     false,
   );
+});
+
+test("noncanonical project routes fail closed across every sibling endpoint", () => {
+  const ids = [projectId.replaceAll("-", ""), `{${projectId}}`, "123e-4567-e89b-12d3-a456-4266-1417-4000", "-".repeat(36), `${projectId}%2Fchat`, `%257b${projectId}%257d`];
+  for (const id of ids) {
+    for (const suffix of ["", "/chat", "/generate", "/documents", "/service-descriptions", "/jobs", "/jobs/job/events", "/customer-analysis", "/solution-evaluation", "/executive-summary", "/artifact-authority", "/access"]) {
+      assert.equal(authorization.normalizeAuthorizationPathname(`/api/projects/${id}${suffix}`), null, `${id}${suffix}`);
+    }
+  }
+  assert.equal(normalized("/projects/new"), "/projects/new");
+  assert.equal(normalized("/projects/new/"), "/projects/new/");
+  assert.equal(normalized("/api/projects"), "/api/projects");
+  assert.equal(authorization.projectIdFromAuthorizationPath(normalized(`/api/projects/${projectId.toUpperCase()}/chat`)), projectId);
+});
+
+test("download checks cover alternative document IDs and trailing slash", () => {
+  for (const id of [documentId.replaceAll("-", ""), `{${documentId}}`, documentId]) {
+    for (const slash of ["", "/"]) {
+      assert.equal(authorization.projectRoleAllowsAuthorizationPath({ method: "GET", pathname: `/api/projects/${projectId}/documents/${id}${slash}`, role: "restricted_viewer", isAdmin: false }), false);
+    }
+  }
 });

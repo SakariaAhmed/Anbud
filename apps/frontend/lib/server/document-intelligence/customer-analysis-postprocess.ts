@@ -580,7 +580,7 @@ function buildSimpleArchitectureDiagram(result: CustomerAnalysisResult) {
     "    Users[Forretningsbrukere og fagmiljø]",
     "    Apps[Applikasjoner og arbeidsflater]",
     "  end",
-    '  subgraph Identity["Identitet"]',
+    '  subgraph IdentityLayer["Identitet"]',
     hasMicrosoftIdentity
       ? "    Identity[Microsoft Entra ID]"
       : "    Identity[Identitet og tilgang]",
@@ -805,6 +805,7 @@ export function normalizeCustomerAnalysisResult(
     signalSourceText?: string;
     serviceCandidates?: ProjectServiceDescription[];
     sourceDocuments?: CustomerAnalysisSourceDocument[];
+    generatedFields?: readonly string[];
   },
 ): CustomerAnalysisResult {
   const cleanProseList = (items: unknown[]) =>
@@ -953,7 +954,7 @@ export function normalizeCustomerAnalysisResult(
     value_opportunities: valueOpportunities,
     positioning_recommendations: positioningRecommendations,
     executive_summary: executiveSummary,
-  });
+  }, { generatedFields: options?.generatedFields });
   if (!options?.sourceDocuments) {
     return normalizedResult;
   }

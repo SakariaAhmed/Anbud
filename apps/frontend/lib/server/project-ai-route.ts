@@ -2,6 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { resolveOpenAIModelOverride } from "@/lib/server/ai/model-config";
 import { enforceProjectRouteRateLimit } from "@/lib/server/api-responses";
 
@@ -46,6 +47,8 @@ export async function prepareProjectAiRoute(
   context: ProjectRouteContext,
   rateLimit: ProjectAiRouteRateLimit,
 ): Promise<ProjectAiRoutePreflight> {
+  const { id: projectId } = await context.params;
+  await requireProjectPermission(projectId, "project.update");
   const { id, response } = await enforceProjectRouteRateLimit(
     request,
     context,

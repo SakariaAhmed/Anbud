@@ -65,6 +65,11 @@ function normalizeExportStyles(container: HTMLElement) {
 
   for (const element of elements) {
     const computed = window.getComputedStyle(element);
+    if (computed.textOverflow === "ellipsis") {
+      element.style.overflow = "visible";
+      element.style.textOverflow = "clip";
+      element.style.whiteSpace = "normal";
+    }
     for (const property of EXPORT_COLOR_PROPERTIES) {
       const value = computed[property];
       if (value) {
@@ -162,6 +167,13 @@ function createExportContainer({
   const clone = element.cloneNode(true) as HTMLElement;
   Object.assign(clone.style, {
     background: "#ffffff",
+    position: "static",
+    left: "auto",
+    top: "auto",
+    zIndex: "auto",
+    height: "auto",
+    maxHeight: "none",
+    transform: "none",
     maxWidth: "none",
     overflow: "visible",
     padding: "0",
@@ -173,16 +185,22 @@ function createExportContainer({
   return container;
 }
 
-function collectSafePageBreaks(container: HTMLElement, scale: number) {
+export function collectSafePageBreaks(container: HTMLElement, scale: number) {
   const rootTop = container.getBoundingClientRect().top;
   return Array.from(
     container.querySelectorAll<HTMLElement>(
-      "tr, h1, h2, h3, h4, p, li, [data-pdf-page-break]",
+      "tr, h1, h2, h3, h4, h5, h6, p, li, [data-pdf-page-break]",
     ),
   )
-    .map((element) =>
-      Math.round((element.getBoundingClientRect().bottom - rootTop) * scale),
-    )
+    // A paragraph ending in one table cell is not a safe break for adjacent
+    // cells. Keep ordinary rows together by using only their shared boundary.
+    .filter((element) => element.tagName === "TR" || !element.closest("tr"))
+    .map((element) => {
+      const bounds = element.getBoundingClientRect();
+      // Start the next page before a heading, keeping it with its content.
+      const boundary = /^H[1-6]$/.test(element.tagName) ? bounds.top : bounds.bottom;
+      return Math.floor((boundary - rootTop) * scale);
+    })
     .filter((offset) => offset > 0)
     .sort((left, right) => left - right);
 }
@@ -219,7 +237,7 @@ function addCanvasToPdf(
       const safeEnd = safePageBreaks
         .filter((candidate) => candidate >= minimumUsefulBreak && candidate <= maximumEnd)
         .at(-1);
-      const pageEnd = safeEnd ?? maximumEnd;
+      const pageEnd = maximumEnd === canvas.height ? maximumEnd : safeEnd ?? maximumEnd;
       const currentSliceHeight = Math.max(1, pageEnd - offsetY);
       pageCanvas.height = currentSliceHeight;
       pageContext.fillStyle = "#ffffff";
@@ -280,9 +298,13 @@ export async function downloadElementAsPdf({
       preferredScale,
       MAX_CANVAS_HEIGHT_PX / Math.max(1, exportHeight),
     );
-    const safePageBreaks = collectSafePageBreaks(exportContainer, scale);
+    let safePageBreaks: number[] = [];
     const canvas = await html2canvas(exportContainer, {
       backgroundColor: "#ffffff",
+      // Measure the layout actually painted by html2canvas, after cloning.
+      onclone: (_document, clonedElement) => {
+        safePageBreaks = collectSafePageBreaks(clonedElement, scale);
+      },
       height: exportHeight,
       logging: false,
       scale,

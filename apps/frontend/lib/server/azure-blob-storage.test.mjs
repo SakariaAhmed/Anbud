@@ -14,6 +14,9 @@ const jiti = createJiti(path.join(frontendRoot, "azure-blob-storage-tests.cjs"),
 const { createAzureBlobStorageBackend } = jiti(
   path.join(frontendRoot, "lib/server/azure-blob-storage.ts"),
 );
+const { runStorageFirstDeletion } = jiti(
+  path.join(frontendRoot, "lib/server/storage-deletion.ts"),
+);
 
 function mockContainer() {
   const blobs = new Map();
@@ -130,4 +133,84 @@ test("Azure Blob adapter deduplicates idempotent deletes and rejects other conta
     backend.downloadEncryptedBase64File({ bucket: "other", path: "x" }),
     /ikke tillatt/u,
   );
+});
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+test("Azure deletes overlap within a fixed bound and include snapshots exactly once", async () => {
+  const gate = deferred();
+  const started = [];
+  let active = 0, maxActive = 0;
+  const backend = createAzureBlobStorageBackend({ getContainerClient: () => ({
+    getBlockBlobClient: (name) => ({ async deleteIfExists(options) {
+      assert.deepEqual(options, { deleteSnapshots: "include" });
+      started.push(name); active++; maxActive = Math.max(maxActive, active);
+      await gate.promise; active--; return { succeeded: true };
+    } }),
+  }) });
+  const files = Array.from({ length: 9 }, (_, i) => ({ path: `projects/p/${i}` }));
+  let databaseDeletes = 0;
+  const operation = runStorageFirstDeletion({
+    removeStorage: () => backend.removeStoredFiles([...files, files[0], { path: null }]),
+    deleteDatabaseRows: async () => { assert.equal(active, 0); assert.equal(started.length, 9); databaseDeletes++; },
+  });
+  try { assert.equal(started.length, 4); }
+  finally { gate.resolve(); await operation; }
+  assert.equal(maxActive, 4);
+  assert.equal(active, 0);
+  assert.equal(databaseDeletes, 1);
+  assert.deepEqual([...started].sort(), files.map((f) => f.path).sort());
+});
+
+for (const reason of [new Error("delete failed"), undefined, null, false]) {
+  test(`Azure deletion drains started work and stops queue after rejection: ${String(reason)}`, async () => {
+    const first = deferred(), others = deferred();
+    const started = [], finished = [];
+    let outcome;
+    let databaseDeletes = 0;
+    const backend = createAzureBlobStorageBackend({ getContainerClient: () => ({
+      getBlockBlobClient: (name) => ({ async deleteIfExists() {
+        started.push(name);
+        if (name === "projects/p/0") return first.promise;
+        await others.promise; finished.push(name); return { succeeded: true };
+      } }),
+    }) });
+    const operation = runStorageFirstDeletion({
+      removeStorage: () => backend.removeStoredFiles(Array.from({ length: 9 }, (_, i) => ({ path: `projects/p/${i}` }))),
+      deleteDatabaseRows: async () => { databaseDeletes++; },
+    })
+      .then(() => { outcome = { status: "resolved" }; }, (error) => { outcome = { status: "rejected", error }; });
+    try {
+      assert.equal(started.length, 4);
+      assert.equal(databaseDeletes, 0);
+      first.reject(reason);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(outcome, undefined, "Started deletes must drain before rejection reaches the caller.");
+      assert.equal(started.length, 4, "No queued file starts after the observed failure.");
+      others.resolve(); await operation;
+      assert.equal(outcome.status, "rejected");
+      assert.equal(outcome.error, reason);
+      assert.equal(databaseDeletes, 0);
+      assert.equal(finished.length, 3);
+      assert.equal(started.length, 4);
+    } finally { first.reject(reason); others.resolve(); await operation; }
+  });
+}
+
+test("Azure deletion validates every path and bucket before mutating any file", async () => {
+  const deleted = [];
+  const backend = createAzureBlobStorageBackend({ getContainerClient: () => ({
+    getBlockBlobClient: (name) => ({ async deleteIfExists() { deleted.push(name); } }),
+  }) });
+  for (const invalid of [{ path: "/absolute" }, { path: "nul\0path" }, { bucket: "other", path: "valid" }]) {
+    await assert.rejects(backend.removeStoredFiles([{ path: "projects/p/valid" }, invalid]));
+    assert.deepEqual(deleted, []);
+  }
+  await backend.removeStoredFiles([]);
+  await backend.removeStoredFiles([{ path: null }, { path: "" }]);
+  assert.deepEqual(deleted, []);
 });

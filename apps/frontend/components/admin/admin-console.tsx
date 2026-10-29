@@ -13,6 +13,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PROJECT_PAGE_LABELS } from "@/lib/project-page-activity";
 
+import { AdminMonitoring } from "./admin-monitoring";
+import type { MonitoringSnapshot } from "./monitoring-model";
+
 type ShareableRole = "editor" | "viewer" | "restricted_viewer";
 type UserProject = { id: string; name: string; role: ShareableRole | "owner"; source: "direct" };
 type AdminUser = {
@@ -49,7 +52,7 @@ type ActivityEvent = {
   metadata: { path?: string; method?: string; page?: string; pageLabel?: string } | null;
 };
 type ActivityPayload = { events: ActivityEvent[]; summary: { total: number; uniqueUsers: number; downloads: number; writes: number } };
-type Section = "overview" | "people" | "groups" | "activity";
+type Section = "overview" | "people" | "groups" | "activity" | "monitoring";
 
 const ROLE_LABELS: Record<ShareableRole | "owner", string> = {
   owner: "Full tilgang",
@@ -64,7 +67,7 @@ const SELECT_CLASS =
 const PRIMARY_BUTTON_CLASS =
   "bg-primary text-primary-foreground shadow-sm transition-all duration-180 hover:bg-primary-hover hover:shadow";
 
-const EYEBROW_CLASS = "text-[0.68rem] font-semibold uppercase tracking-[0.14em]";
+const EYEBROW_CLASS = "text-xs font-semibold tracking-normal";
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -76,8 +79,8 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-export function AdminConsole() {
-  const [section, setSection] = useState<Section>("overview");
+export function AdminConsole({ monitoringSnapshot, initialSection = "overview" }: { monitoringSnapshot?: MonitoringSnapshot; initialSection?: Section } = {}) {
+  const [section, setSection] = useState<Section>(initialSection);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -115,7 +118,7 @@ export function AdminConsole() {
     <div className="min-h-[calc(100dvh-var(--app-header-height))] bg-slate-50 text-slate-950">
       <header className="border-b border-slate-300 bg-white">
         <div className="mx-auto max-w-[1480px] px-5 py-7 lg:px-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <p className="text-xs font-semibold tracking-normal text-slate-500">
             Global styring
           </p>
           <div className="mt-3">
@@ -133,8 +136,8 @@ export function AdminConsole() {
       </header>
 
       <div className="mx-auto grid max-w-[1480px] gap-8 px-5 py-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:px-10 lg:py-10">
-        <aside>
-          <nav className="grid gap-1.5 sm:grid-cols-4 lg:sticky lg:top-[calc(var(--app-header-height)+1.5rem)] lg:grid-cols-1">
+        <aside className="admin-navigation">
+          <nav className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:sticky lg:top-[calc(var(--app-header-height)+1.5rem)] lg:grid-cols-1">
             <NavButton
               active={section === "overview"}
               icon={<ShieldCheck />}
@@ -163,6 +166,12 @@ export function AdminConsole() {
               detail={pageViewCount === 1 ? "1 sidevisning" : `${pageViewCount} sidevisninger`}
               onClick={() => setSection("activity")}
             />
+            <NavButton
+              active={section === "monitoring"}
+              icon={<Activity />}
+              label="Overvåking"
+              onClick={() => setSection("monitoring")}
+            />
           </nav>
         </aside>
 
@@ -180,7 +189,8 @@ export function AdminConsole() {
               </button>
             </div>
           ) : null}
-          {loading ? <LoadingPanel /> : null}
+          {section === "monitoring" ? <AdminMonitoring snapshot={monitoringSnapshot} /> : null}
+          {loading && section !== "monitoring" ? <LoadingPanel /> : null}
           {!loading && section === "overview" && activity ? (
             <OverviewSection admin={admin} users={people} groups={groups} projects={projects} activity={activity} onNavigate={setSection} />
           ) : null}
@@ -216,7 +226,7 @@ function NavButton({ active, icon, label, onClick }: {
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold transition-colors ${
+      className={`flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${
         active
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-slate-600 hover:bg-white hover:text-slate-950"
@@ -568,7 +578,7 @@ function InviteUserPanel({ groups, projects, onCreated }: {
                       <span className="mt-0.5 block truncate text-xs text-slate-500">{project.customer_name}</span>
                     ) : null}
                     {!selectedRole ? (
-                      <span className="mt-1 block text-[0.68rem] font-semibold text-amber-800">Velg rolle for å aktivere tilgangen</span>
+                      <span className="mt-1 block text-xs font-semibold text-amber-800">Velg rolle for å aktivere tilgangen</span>
                     ) : null}
                   </div>
                   <div className="col-span-2 sm:col-span-1">
@@ -619,7 +629,7 @@ function InviteUserPanel({ groups, projects, onCreated }: {
             rows={3}
             required
           />
-          <p className="mt-1 text-right text-[0.68rem] text-slate-400">
+          <p className="mt-1 text-right text-xs text-slate-400">
             {guestDescription.length}/240 tegn
           </p>
         </Field>
@@ -775,7 +785,7 @@ function UserAccessRow({ user, projects, onReload }: {
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-sm font-semibold">{user.display_name}</p>
             {user.identity_type === "guest" ? (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-amber-800">
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold tracking-normal text-amber-800">
                 Gjest
               </span>
             ) : null}
@@ -789,14 +799,14 @@ function UserAccessRow({ user, projects, onReload }: {
         </div>
         <div className="hidden items-center gap-2 sm:flex">
           {user.groups.slice(0, 2).map((group) => (
-            <span key={group.id} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[0.68rem] font-medium text-slate-600">
+            <span key={group.id} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
               {group.name}
             </span>
           ))}
         </div>
         <div className="w-24 text-right">
           <p className="text-sm font-semibold tabular-nums">{user.projectCount}</p>
-          <p className="text-[0.65rem] text-slate-500">prosjekter</p>
+          <p className="text-xs text-slate-500">prosjekter</p>
         </div>
         <ChevronDown className={`size-4 text-slate-400 transition-transform duration-180 ${expanded ? "rotate-180" : ""}`} />
       </button>
@@ -814,7 +824,7 @@ function UserAccessRow({ user, projects, onReload }: {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-semibold text-amber-950">Gjestinnlogging</p>
-                      <span className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.1em] ${
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold tracking-normal ${
                         user.guestLogin?.active
                           ? "bg-emerald-100 text-emerald-800"
                           : "bg-slate-200 text-slate-600"
@@ -830,7 +840,7 @@ function UserAccessRow({ user, projects, onReload }: {
                         ? ` · sist brukt ${formatDateTime(user.guestLogin.lastUsedAt)}`
                         : ""}
                     </p>
-                    <p className="mt-1 text-[0.68rem] text-amber-700">
+                    <p className="mt-1 text-xs text-amber-700">
                       En ny kode erstatter den gamle og logger ut aktive gjesteøkter.
                     </p>
                   </div>
@@ -882,14 +892,14 @@ function UserAccessRow({ user, projects, onReload }: {
                           <FolderKanban className="size-4" />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-blue-900">
+                          <span className="block truncate text-xs font-semibold tracking-normal text-blue-900">
                             {ROLE_LABELS[project.role]}
                           </span>
                           <span className="mt-0.5 block truncate text-xs font-semibold text-slate-900 sm:text-sm">
                             {project.name}
                           </span>
                         </span>
-                        <span className="shrink-0 text-[0.68rem] font-semibold text-slate-500 sm:text-xs">
+                        <span className="shrink-0 text-xs font-semibold text-slate-500 sm:text-xs">
                           Rediger
                         </span>
                         <ChevronDown className={`size-4 shrink-0 text-slate-400 transition-transform duration-180 ${projectExpanded ? "rotate-180" : ""}`} />
@@ -1078,7 +1088,7 @@ function GroupsSection({ groups, users, projects, onReload }: {
                         className="size-3.5 rounded border-slate-300 accent-blue-900"
                       />
                       <span className="min-w-0 flex-1 truncate font-medium">{user.display_name}</span>
-                      {user.identity_type === "guest" ? <span className="text-[0.6rem] uppercase text-amber-700">Gjest</span> : null}
+                      {user.identity_type === "guest" ? <span className="text-xs uppercase text-amber-700">Gjest</span> : null}
                     </label>
                   );
                 })}
@@ -1214,7 +1224,7 @@ function GroupPanel({ group, users, projects, onReload }: {
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-serif text-lg font-semibold tracking-tight">{group.name}</h3>
           <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-slate-500">{group.description || "Ingen beskrivelse"}</p>
-          <div className="mt-3 flex gap-3 text-[0.68rem] font-semibold text-slate-500">
+          <div className="mt-3 flex gap-3 text-xs font-semibold text-slate-500">
             <span>{group.memberCount} medlemmer</span>
             <span aria-hidden>·</span>
             <span>{group.projectCount} prosjekter</span>
@@ -1255,7 +1265,7 @@ function GroupPanel({ group, users, projects, onReload }: {
                         />
                         <span className="min-w-0 flex-1 truncate font-medium">{user.display_name}</span>
                         {user.identity_type === "guest" ? (
-                          <span className="text-[0.6rem] uppercase text-amber-700">Gjest</span>
+                          <span className="text-xs uppercase text-amber-700">Gjest</span>
                         ) : null}
                       </label>
                     );
@@ -1380,16 +1390,16 @@ function ActivitySection({ payload }: { payload: ActivityPayload }) {
                 <Avatar name={event.actor?.display_name ?? "System"} guest={event.actor?.identity_type === "guest"} small />
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold">{event.actor?.display_name ?? "System"}</p>
-                  <p className="text-[0.65rem] text-slate-500">{event.actor?.identity_type === "guest" ? "Gjest" : "Intern"}</p>
+                  <p className="text-xs text-slate-500">{event.actor?.identity_type === "guest" ? "Gjest" : "Intern"}</p>
                 </div>
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-800">{humanAction(event)}</p>
-                <p className="truncate text-[0.65rem] text-slate-400">{event.action}</p>
+                <p className="truncate text-xs text-slate-400">{event.action}</p>
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm text-slate-700">{event.project?.name ?? "Global handling"}</p>
-                <p className="truncate text-[0.65rem] text-slate-400">{activityPageLabel(event)}</p>
+                <p className="truncate text-xs text-slate-400">{activityPageLabel(event)}</p>
               </div>
               <div className="flex items-center justify-between gap-2 md:justify-end">
                 <span className="whitespace-nowrap text-xs text-slate-500">{formatDateTime(event.occurred_at)}</span>
@@ -1426,7 +1436,7 @@ function GuestCodePanel({ value }: { value: GuestCodeReveal }) {
               : `Kopier den og send den sikkert til ${value.emailMasked}.`}
           </p>
           {!value.emailDelivered && value.emailReason ? (
-            <p className="mt-1 text-[0.68rem] text-amber-700">
+            <p className="mt-1 text-xs text-amber-700">
               E-post ble ikke sendt: {value.emailReason}
             </p>
           ) : null}
@@ -1550,7 +1560,7 @@ function Avatar({ name, admin = false, guest = false, small = false }: {
 }) {
   return (
     <span
-      className={`grid shrink-0 place-items-center rounded-xl font-bold ${small ? "size-8 text-[0.65rem]" : "size-10 text-xs"} ${
+      className={`grid shrink-0 place-items-center rounded-xl font-bold ${small ? "size-8 text-xs" : "size-10 text-xs"} ${
         admin ? "bg-slate-950 text-cyan-300" : guest ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-700"
       }`}
     >

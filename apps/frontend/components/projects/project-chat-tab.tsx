@@ -526,7 +526,7 @@ export function ProjectChatTab({
                         {domains.map((domain) => (
                           <span
                             key={domain}
-                            className="inline-flex min-h-7 items-center rounded-md bg-background px-2 text-[0.7rem] font-medium text-muted-foreground"
+                            className="inline-flex min-h-7 items-center rounded-md bg-background px-2 text-xs font-medium text-muted-foreground"
                           >
                             {domain}
                           </span>
@@ -540,7 +540,7 @@ export function ProjectChatTab({
                           {sources.length} kilde{sources.length === 1 ? "" : "r"}
                         </summary>
                         <div className="mt-2 grid gap-1.5">
-                          {sources.slice(0, 5).map((source, index) => (
+                          {sources.map((source, index) => (
                             <div
                               key={`${source.source_id}-${source.reference}-${index}`}
                               className="leading-5"

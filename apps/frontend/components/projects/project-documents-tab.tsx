@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { Download, FileText, FolderOpen, Trash2, Upload } from "lucide-react";
+import { Download, FileText, Trash2, Upload } from "lucide-react";
 
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import { Input } from "@/components/projects/primitives";
@@ -79,7 +79,7 @@ function documentProcessingLabel(document: ProjectDocument) {
     case "basic_ready":
       return "RAG klar";
     case "enhanced_ready":
-      return "RAG forbedret";
+      return null;
     case "failed":
       return "Indeksering feilet";
   }
@@ -93,8 +93,6 @@ function documentProcessingClassName(document: ProjectDocument) {
       return "bg-blue-100 text-blue-700";
     case "basic_ready":
       return "bg-emerald-100 text-emerald-700";
-    case "enhanced_ready":
-      return "bg-teal-100 text-teal-700";
     case "failed":
       return "bg-red-100 text-red-700";
   }
@@ -121,25 +119,14 @@ export function ProjectDocumentsTab({
   const serviceDocuments = listSelectedServiceDocuments(services);
 
   return (
-    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section className="min-w-0 space-y-4">
       <button
         type="button"
         onClick={onToggleUploadOpen}
-        className="flex w-full items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-5 text-left transition-colors hover:bg-slate-100/80"
+        aria-expanded={uploadOpen}
+        className="flex w-full items-center justify-between gap-3 rounded-md py-2 text-left text-sm transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="flex min-w-0 items-center gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-            <FolderOpen className="size-5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-xl font-bold text-slate-950">
-              Dokumenter
-            </span>
-            <span className="mt-1 block text-sm text-slate-500">
-              Prosjektdokumenter og tjenestebeskrivelser som brukes som grunnlag.
-            </span>
-          </span>
-        </span>
+        <span className="flex min-w-0 items-center gap-2 font-medium"><Upload className="size-4" />Legg til dokument</span>
         <span className="text-sm font-medium tabular-nums text-slate-500">
           {documents.length} dokumenter
         </span>
@@ -148,9 +135,10 @@ export function ProjectDocumentsTab({
       {uploadOpen ? (
         <form
           onSubmit={onUploadDocument}
-          className="grid gap-3 border-b border-slate-200 bg-white px-5 py-5 lg:grid-cols-[minmax(14rem,1fr)_minmax(12rem,16rem)_minmax(12rem,1fr)_auto]"
+          className="grid min-w-0 gap-3 border-b border-slate-200 pb-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
         >
           <Input
+            aria-label="Dokumenttittel"
             value={docTitle}
             onChange={(event) => onDocTitleChange(event.target.value)}
             placeholder="Dokumenttittel"
@@ -170,16 +158,27 @@ export function ProjectDocumentsTab({
           </select>
           <label
             htmlFor="workspace-document-file"
-            className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 text-center text-sm font-semibold text-slate-600 hover:border-primary/60 hover:bg-primary/5"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  const input = document.getElementById(event.currentTarget.htmlFor);
+                  if (input instanceof HTMLInputElement) input.click();
+                }
+              }}
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 text-center text-sm font-semibold text-slate-600 hover:border-primary/60 hover:bg-primary/5"
           >
             <Upload className="size-4" />
             <span className="min-w-0 truncate">
               {selectedDocumentName || "Velg dokument"}
             </span>
           </label>
-          <Input
+          <input
             key={documentFileInputKey}
             id="workspace-document-file"
+              tabIndex={-1}
+              aria-hidden="true"
             type="file"
             accept=".pdf,.docx,.xlsx,.xls,.txt,.md"
             className="sr-only"
@@ -196,9 +195,9 @@ export function ProjectDocumentsTab({
         </form>
       ) : null}
 
-      <div className="grid min-w-0 gap-6 px-5 py-5 xl:grid-cols-2">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-2">
         <div>
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+          <p className="mb-3 text-xs font-bold tracking-normal text-slate-500">
             Prosjektdokumenter
           </p>
           {documents.length ? (
@@ -206,29 +205,31 @@ export function ProjectDocumentsTab({
               {documents.map((document) => (
                 <div
                   key={document.id}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+                  className="border-t border-slate-200 py-3"
                 >
                   <div className="flex min-w-0 items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="break-words text-base font-semibold leading-6 text-slate-950">
                         {document.title}
                       </p>
-                      <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                      <p className="mt-2 text-xs font-bold tracking-normal text-slate-500">
                         {projectDocumentRoleLabel(document)}
                       </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[0.68rem] font-bold",
-                            documentProcessingClassName(document),
-                          )}
-                        >
-                          {documentProcessingLabel(document)}
-                        </span>
-                        {document.processing_status === "processing" ? (
-                          <Spinner className="size-3 text-blue-600" />
-                        ) : null}
-                      </div>
+                      {documentProcessingLabel(document) ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-xs font-bold",
+                              documentProcessingClassName(document),
+                            )}
+                          >
+                            {documentProcessingLabel(document)}
+                          </span>
+                          {document.processing_status === "processing" ? (
+                            <Spinner className="size-3 text-blue-600" />
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <a
@@ -301,7 +302,7 @@ export function ProjectDocumentsTab({
         </div>
 
         <div>
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+          <p className="mb-3 text-xs font-bold tracking-normal text-slate-500">
             Tjenestebeskrivelser
           </p>
           {serviceDocuments.length ? (
@@ -324,7 +325,7 @@ export function ProjectDocumentsTab({
                   </div>
                   {service.recommended ? (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold text-amber-900">
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900">
                         Anbefalt
                       </span>
                     </div>

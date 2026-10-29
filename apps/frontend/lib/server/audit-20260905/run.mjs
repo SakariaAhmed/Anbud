@@ -12,9 +12,11 @@ const output = path.join(root, 'output/remediation-2026-09-05');
 mkdirSync(output, { recursive: true });
 const container = `anbud-audit-${randomUUID().slice(0, 8)}`;
 let started = false;
+// Test suites can legitimately outlast the 120 s limit used for short commands.
+const TEST_TIMEOUT_MS = 30 * 60_000;
 function run(command, args, options = {}) {
   const { log, ...spawnOptions } = options;
-  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, timeout: 120_000, ...spawnOptions });
+  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 120_000, ...spawnOptions });
   if (log) writeFileSync(path.join(output, log), `${result.stdout ?? ''}${result.stderr ?? ''}`);
   if (result.error || result.status !== 0) throw new Error(`${command} failed; ${log ? `see ${log}` : result.stderr ?? result.error}`);
   return result.stdout.trim();
@@ -60,11 +62,11 @@ try {
   }, null, 2));
   if (process.argv.includes('--full')) {
     console.log('Running existing tests against disposable PostgreSQL...');
-    run('npm', ['test'], { cwd: frontend, env, log: 'existing-tests.log' });
-    run(process.execPath, ['--test', 'scripts/validate_project_jobs_schema.test.mjs', 'scripts/azure_containerapp_rollout.test.mjs', 'scripts/async_worker_boundaries.test.mjs', 'scripts/azure_migration_guardrails.test.mjs'], { cwd: root, env, log: 'contracts-tests.log' });
+    run('npm', ['test'], { cwd: frontend, env, log: 'existing-tests.log', timeout: TEST_TIMEOUT_MS });
+    run(process.execPath, ['--test', 'scripts/validate_project_jobs_schema.test.mjs', 'scripts/azure_containerapp_rollout.test.mjs', 'scripts/async_worker_boundaries.test.mjs', 'scripts/azure_migration_guardrails.test.mjs'], { cwd: root, env, log: 'contracts-tests.log', timeout: TEST_TIMEOUT_MS });
   }
   console.log('Running audit reproductions and regression controls...');
-  run(process.execPath, ['--test', path.join(folder, 'reproduction.test.mjs')], { cwd: root, env, log: 'reproduction-tests.log' });
+  run(process.execPath, ['--test', path.join(folder, 'reproduction.test.mjs')], { cwd: root, env, log: 'reproduction-tests.log', timeout: TEST_TIMEOUT_MS });
   console.log(`Passed. Logs: ${output}`);
 } finally {
   if (started) run('docker', ['rm', '-f', container]);

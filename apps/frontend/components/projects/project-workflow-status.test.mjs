@@ -15,6 +15,7 @@ const jiti = createJiti(path.join(frontendRoot, "project-workflow-status-tests.c
 });
 const {
   applyProjectSnapshot,
+  mergeProjectRefresh,
   canEditGeneratedArtifact,
   createLatestArtifactAuthorityRequestGate,
   hasAuthoritativeCurrentArtifact,
@@ -327,4 +328,19 @@ test("analysis readiness does not claim that a solution description was generate
     }),
     "Venter",
   );
+});
+
+
+test("background refresh preserves complete counts when artifact bodies are not loaded", () => {
+  const current = projectDetail({snapshot_revision: 4, artifact_count: 5, generated_artifacts: []});
+  const fresh = projectDetail({snapshot_revision: 5, artifact_count: 5, artifact_counts_by_type: {forbedret_kravsvar: 2, losningsutkast: 1, gjennomforing_og_risiko: 1, bilag1_rekonstruksjon: 1}, generated_artifacts: []});
+  const refreshed = mergeProjectRefresh(current, fresh);
+  assert.equal(refreshed.artifact_count, 5);
+  assert.equal(refreshed.artifact_counts_by_type.forbedret_kravsvar, 2);
+  assert.deepEqual(refreshed.generated_artifacts, []);
+  const loaded = {...refreshed, generated_artifacts: [{id: "qa-v2", artifact_type: "forbedret_kravsvar", artifact_version: 2}]};
+  const again = mergeProjectRefresh(loaded, {...fresh, snapshot_revision: 6});
+  assert.equal(again.artifact_count, 5);
+  assert.equal(again.generated_artifacts[0].id, "qa-v2");
+  assert.equal(mergeProjectRefresh(again, {...fresh, snapshot_revision: 3}), again);
 });

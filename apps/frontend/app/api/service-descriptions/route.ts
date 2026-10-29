@@ -14,6 +14,7 @@ import {
 import { getServiceDescriptionMetadata, listServiceDescriptions, saveServiceDocument, updateServiceDocumentAiSummary, upsertServiceDescription } from "@/lib/server/repositories/data-store";
 import type { ServiceDocument } from "@/lib/types";
 import { productionSafeErrorMessage } from "@/lib/server/safe-errors";
+import { workflowErrorStatus } from "@/lib/server/workflow-errors";
 
 const SERVICE_CACHE_HEADERS = {
   "Cache-Control": "private, max-age=300, stale-while-revalidate=1800",
@@ -161,7 +162,7 @@ export async function POST(request: Request) {
           "Kunne ikke lagre tjenestebeskrivelsen.",
         ),
       },
-      { status: 500 },
+      { status: workflowErrorStatus(error) },
     );
   }
 }

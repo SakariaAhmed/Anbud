@@ -17,6 +17,7 @@ import { recordActivity } from "@/lib/server/activity";
 import {
   authorizationErrorResponse,
   requireProjectPermission,
+  requireAdmin,
 } from "@/lib/server/authorization";
 import { checkRateLimit } from "@/lib/server/observability";
 import { createServiceClient } from "@/lib/server/data-api";
@@ -53,11 +54,12 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    await authorize(id);
+    const authorization = await authorize(id);
     return NextResponse.json(
       {
         ...(await listProjectAccess(id)),
         availableGroups: await listGroups(),
+        canManageGuestCredentials: authorization.principal.isAdmin,
       },
       {
       headers: { "Cache-Control": "private, no-store" },
@@ -153,6 +155,7 @@ export async function POST(
       });
       result = { ok: true };
     } else {
+      await requireAdmin();
       const access = await listProjectAccess(id);
       const member = access.members.find(
         (row) =>

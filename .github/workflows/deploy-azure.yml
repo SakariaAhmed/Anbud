@@ -14,7 +14,7 @@ env:
   POSTGREST_APP: anbud-postgrest
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
-  MIN_REPLICAS: "0"
+  MIN_REPLICAS: "1"
   PROJECT_JOB_WORKER_LIMIT: "1"
   PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"
   NODE_VERSION: "22.14.0"
@@ -54,12 +54,12 @@ jobs:
           echo "Using successful CI run $run_id for $GITHUB_SHA."
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Azure login
-        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -133,11 +133,11 @@ jobs:
         run: az acr login --name "$ACR_NAME"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
 
       - name: Build and push candidate image
         id: build_image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:
           context: .
           file: apps/frontend/Dockerfile
@@ -177,6 +177,13 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
           vuln-type: os,library
+
+      - name: Verify Norwegian OCR in candidate image
+        timeout-minutes: 10
+        run: |
+          docker pull --platform linux/amd64 "$CANDIDATE_IMAGE"
+          test "$(docker image inspect "$CANDIDATE_IMAGE" --format '{{.Architecture}}')" = amd64
+          node apps/frontend/scripts/verify_norwegian_ocr.mjs "$CANDIDATE_IMAGE" --image-only
 
       - name: Validate production database contract from the Azure network
         env:

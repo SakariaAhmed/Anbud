@@ -1,6 +1,6 @@
 "use client";
 
-import { sanitizeMermaidChart } from "@/lib/mermaid-safety";
+import { isSafeRenderedMermaidCss, sanitizeMermaidChart } from "@/lib/mermaid-safety";
 
 import { useEffect, useId, useState } from "react";
 import { Download, ImageDown, Sparkles } from "lucide-react";
@@ -581,7 +581,7 @@ function sanitizeRenderedSvg(root: Element) {
 
   root.querySelectorAll("style").forEach((element) => {
     const css = element.textContent ?? "";
-    if (/@import|url\s*\(|expression\s*\(|javascript:|data:/i.test(css)) {
+    if (!isSafeRenderedMermaidCss(css)) {
       element.remove();
     }
   });
@@ -658,9 +658,9 @@ export function MermaidDiagram({
           securityLevel: "strict",
           theme: "neutral",
           fontFamily: "inherit",
+          htmlLabels: false,
           flowchart: {
             useMaxWidth: true,
-            htmlLabels: false,
             curve: "basis",
           },
         });
@@ -680,12 +680,20 @@ export function MermaidDiagram({
         }
 
         const renderContainer = document.createElement("div");
-
-        const { svg: rendered } = await mermaid.render(
-          `mermaid-${renderId}`,
-          normalizedChart,
-          renderContainer,
-        );
+        Object.assign(renderContainer.style, {
+          position: "absolute", left: "-10000px", top: "0", visibility: "hidden",
+        });
+        document.body.appendChild(renderContainer);
+        let rendered: string;
+        try {
+          ({ svg: rendered } = await mermaid.render(
+            `mermaid-${renderId}`,
+            normalizedChart,
+            renderContainer,
+          ));
+        } finally {
+          renderContainer.remove();
+        }
         const enhanced = enhanceRenderedSvg(rendered);
         if (!cancelled) {
           setSvg(enhanced.svg);
