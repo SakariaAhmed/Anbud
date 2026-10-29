@@ -59,7 +59,8 @@ import {
 import { assertExecutiveSummaryEvaluationReady } from "@/lib/server/executive-summary-readiness";
 import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState } from "@/lib/server/repositories/data-store";
 import { getProjectGenerationContext, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
-import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-store";
+import { listProjectServiceDescriptions } from "@/lib/server/repositories/service-descriptions";
+
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import {
   isGeneratableArtifactType,

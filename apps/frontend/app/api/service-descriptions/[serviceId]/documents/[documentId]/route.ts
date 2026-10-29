@@ -4,7 +4,7 @@ import { enforceServiceDescriptionWriteRateLimit, routeErrorResponse } from "@/l
 import {
   requireAdmin,
 } from "@/lib/server/authorization";
-import { deleteServiceDocument } from "@/lib/server/repositories/data-store";
+import { deleteServiceDocument } from "@/lib/server/repositories/service-descriptions";
 
 export async function DELETE(
   request: Request,

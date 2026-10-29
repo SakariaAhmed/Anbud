@@ -40,7 +40,8 @@ import {
 } from "@/lib/server/repositories/artifacts";
 import { getDocumentDetail, listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
 import { getProjectSnapshot, getProjectSnapshotAfterCommit } from "@/lib/server/repositories/data-store";
-import { listServiceDocumentDetailsForProject, listServiceDocumentSummariesForProject } from "@/lib/server/repositories/data-store";
+import { listServiceDocumentDetailsForProject, listServiceDocumentSummariesForProject } from "@/lib/server/repositories/service-descriptions";
+
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import {
   hasReadableRequirementDocumentContent,

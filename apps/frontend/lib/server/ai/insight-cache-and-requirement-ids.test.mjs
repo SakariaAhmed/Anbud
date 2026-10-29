@@ -13,8 +13,11 @@ const jiti = createJiti(path.join(frontendRoot, "insight-cache-and-requirement-i
   alias: { "@": frontendRoot, "server-only": "/dev/null" },
 });
 
-const { isImmediateNextRequirementId, rememberDocumentInsight } = await jiti.import(
+const { rememberDocumentInsight } = await jiti.import(
   path.join(frontendRoot, "lib/server/ai.ts"),
+);
+const { isImmediateNextRequirementId } = await jiti.import(
+  path.join(frontendRoot, "lib/server/requirements/source-ledger.ts"),
 );
 
 test("a rejected document insight is evicted so the next attempt runs again", async () => {

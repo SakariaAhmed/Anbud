@@ -4,7 +4,8 @@ import { enforceServiceDescriptionWriteRateLimit, routeErrorResponse } from "@/l
 import {
   requireAdmin,
 } from "@/lib/server/authorization";
-import { deleteServiceDescription, getServiceDescriptionMetadata, upsertServiceDescription } from "@/lib/server/repositories/data-store";
+import { deleteServiceDescription, getServiceDescriptionMetadata, upsertServiceDescription } from "@/lib/server/repositories/service-descriptions";
+
 import { optionalTextField, readJsonObject, RequestBodyError } from "@/lib/server/request-body";
 
 export async function PATCH(

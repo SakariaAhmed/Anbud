@@ -16,7 +16,7 @@ const migrationSql = readFileSync(migrationPath, "utf8");
 const storeSource = readFileSync(
   path.join(
     repositoryRoot,
-    "apps/frontend/lib/server/repositories/data-store.ts",
+    "apps/frontend/lib/server/repositories/service-descriptions.ts",
   ),
   "utf8",
 );

@@ -9,7 +9,8 @@ import { extractTextFromUpload } from "@/lib/server/documents";
 import {
   parseBoundedMultipartFormData,
 } from "@/lib/server/multipart";
-import { getServiceDescriptionMetadata, listServiceDescriptions, saveServiceDocument, updateServiceDocumentAiSummary, upsertServiceDescription } from "@/lib/server/repositories/data-store";
+import { getServiceDescriptionMetadata, listServiceDescriptions, saveServiceDocument, updateServiceDocumentAiSummary, upsertServiceDescription } from "@/lib/server/repositories/service-descriptions";
+
 import type { ServiceDocument } from "@/lib/types";
 
 const SERVICE_CACHE_HEADERS = {

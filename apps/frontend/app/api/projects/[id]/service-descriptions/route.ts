@@ -1,7 +1,8 @@
 import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
-import { listProjectServiceDescriptions, setProjectServiceSelections } from "@/lib/server/repositories/data-store";
+import { listProjectServiceDescriptions, setProjectServiceSelections } from "@/lib/server/repositories/service-descriptions";
+
 import { routeErrorResponse } from "@/lib/server/api-responses";
 
 const PROJECT_SERVICE_CACHE_HEADERS = {

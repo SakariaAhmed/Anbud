@@ -174,7 +174,7 @@ test("service selection replacement is one locked, validated RPC with fail-close
   const storeSource = readFileSync(
     path.join(
       frontendRoot,
-      "lib/server/repositories/data-store.ts",
+      "lib/server/repositories/service-descriptions.ts",
     ),
     "utf8",
   );

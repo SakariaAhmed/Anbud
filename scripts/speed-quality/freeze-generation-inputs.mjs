@@ -16,7 +16,8 @@ if (env.DATA_API_URL !== "http://127.0.0.1:55440" || env.OPENAI_BASE_URL !== "ht
 Object.assign(process.env, env);
 const require = createRequire(path.join(frontend, "package.json"));
 const jiti = require("jiti").createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null", "next/cache": path.join(import.meta.dirname, "next-cache-fixture.cjs") } });
-const { getProjectDetail, listProjectDocumentsForAnalysis, listProjectServiceDescriptions, getProjectSourceRevision } = jiti(path.join(frontend, "lib/server/repositories/data-store.ts"));
+const { getProjectDetail, listProjectDocumentsForAnalysis, getProjectSourceRevision } = jiti(path.join(frontend, "lib/server/repositories/data-store.ts"));
+const { listProjectServiceDescriptions } = jiti(path.join(frontend, "lib/server/repositories/service-descriptions.ts"));
 const { selectProjectDocuments } = jiti(path.join(frontend, "lib/server/domain/project-documents.ts"));
 const fixtures = JSON.parse(readFileSync(path.join(dir, "live-fixtures.json"), "utf8"));
 const existing = appendLarge ? JSON.parse(readFileSync(file, "utf8")) : null;
