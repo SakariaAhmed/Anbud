@@ -7,6 +7,7 @@ import {
   isRequirementDocument,
 } from "@/lib/document-processing";
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
+import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 import { explicitIdTableSourceIds } from "@/lib/server/requirements/explicit-id-table-parser";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
@@ -667,7 +668,7 @@ export function assertCustomerAnalysisRequirementSourcesReady(
 ) {
   const issues = requirementSourceReadinessIssues(documents, options);
   if (issues.length) {
-    throw new Error(
+    throw new WorkflowPreconditionError(
       `Dokumentgrunnlaget er ikke klart for kundeanalyse: ${issues.join(
         ", ",
       )}. Vent til dokumentbehandlingen er ferdig eller last opp dokumentet på nytt.`,

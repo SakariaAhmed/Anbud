@@ -216,7 +216,7 @@ import {
   assertExplicitRequirementLedgersComplete,
   canonicalRequirementSourceDocuments,
   canonicalizeRequirementSourceLedger,
-} from "@/lib/server/use-cases/solution-evaluation-readiness";
+} from "@/lib/server/requirements/source-readiness";
 import { buildSolutionEvaluationProvenance } from "@/lib/server/workflow-boundaries";
 import type {
   CustomerAnalysisResult,

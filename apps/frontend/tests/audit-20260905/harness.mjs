@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { createJiti } from 'jiti';
 
-export const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+export const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const root = path.resolve(frontend, '../..');
 export const jiti = createJiti(import.meta.url, { alias: { '@': frontend, 'server-only': '/dev/null' }, interopDefault: true });
 export const workflowFile = 'lib/server/use-cases/project-workflows.ts';
@@ -51,14 +51,14 @@ export function analysisResult(summary = 'AI baseline') {
 }
 const history = jiti(path.join(frontend, 'lib/customer-analysis-history.ts'));
 const crypto = jiti(path.join(frontend, 'lib/server/crypto.ts'));
-const snapshots = jiti(path.join(frontend, 'lib/server/use-cases/solution-evaluation-source-snapshot.ts'));
+const snapshots = jiti(path.join(frontend, 'lib/server/source-revision-snapshot.ts'));
 const domain = jiti(path.join(frontend, 'lib/server/domain/project-documents.ts'));
 const services = jiti(path.join(frontend, 'lib/service-description.ts'));
 export const workflowErrors = jiti(path.join(frontend, 'lib/server/workflow-errors.ts'));
 export const requestBody = jiti(path.join(frontend, 'lib/server/request-body.ts'));
 // Same mapping as routeErrorResponse, expressed with the audit's NextResponse stub.
 export const routeErrorResponse = error => ({ body: { error: error.message }, status: error.status ?? workflowErrors.workflowErrorStatus(error) });
-const readiness = jiti(path.join(frontend, 'lib/server/use-cases/solution-evaluation-readiness.ts'));
+const readiness = jiti(path.join(frontend, 'lib/server/requirements/source-readiness.ts'));
 process.env.APP_ENCRYPTION_KEY = 'disposable-audit-key-never-production';
 export const freshAnalysis = async () => {
   const value = sql(`select row_to_json(a) from customer_analyses a where project_id=${quote(P)}`);
@@ -85,6 +85,7 @@ export const counts = () => JSON.parse(sql(`select jsonb_build_array((select cou
 export function workflow(names, overrides = {}) {
   return actual(workflowFile, names, {
     ...history, ...snapshots, ...domain, ...services, ...readiness, WorkflowError: workflowErrors.WorkflowError,
+    WorkflowPreconditionError: workflowErrors.WorkflowPreconditionError,
     ...jiti(path.join(frontend, 'lib/project-job-progress.ts')),
     ...jiti(path.join(frontend, 'lib/server/project-job-result-projection.ts')),
     saveCustomerAnalysis, getFreshCustomerAnalysis: freshAnalysis,

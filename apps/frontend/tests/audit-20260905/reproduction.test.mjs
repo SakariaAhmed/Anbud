@@ -45,7 +45,7 @@ test('CONTROL D5: stale analysis save is rejected atomically by the real RPC', a
 
 test('REGRESSION W1: full workflow rejects concurrent manual edit and preserves its history', async () => {
   reset(); await save('Before generation'); let attempts = 0;
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     analyzeCustomerDocuments: async () => {
       attempts++;
       if (attempts === 1) await save('Manual edit committed while AI runs');
@@ -60,7 +60,7 @@ test('REGRESSION W1: full workflow rejects concurrent manual edit and preserves 
 
 test('CONTROL W2: Docling replacement during analysis rejects stale output', async () => {
   reset(); const seen = [];
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     analyzeCustomerDocuments: async ({ customerDocument }) => {
       seen.push(customerDocument.raw_text);
       if (seen.length === 1) sql(`update documents set raw_text='Enhanced second version' where id=${quote(D)}`);
@@ -73,7 +73,7 @@ test('CONTROL W2: Docling replacement during analysis rejects stale output', asy
 
 test('CONTROL W3: input change fails without retrying or saving stale analysis', async () => {
   reset(); let attempts = 0;
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     analyzeCustomerDocuments: async () => {
       sql(`update documents set raw_text=${quote(`Version ${++attempts}`)} where id=${quote(D)}`);
       return analysisResult('Stale');
@@ -85,7 +85,7 @@ test('CONTROL W3: input change fails without retrying or saving stale analysis',
 
 test('REGRESSION W4: final snapshot failure preserves successful committed workflow', async () => {
   reset();
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     analyzeCustomerDocuments: async () => analysisResult('Successfully persisted'),
     getProjectSnapshotAfterCommit: actual(storeFile, ['getProjectSnapshotAfterCommit'], { getProjectSnapshot: async () => { throw new Error('Injected snapshot network timeout'); }, safeErrorTelemetry: () => ({}) }).getProjectSnapshotAfterCommit,
   });
@@ -100,7 +100,7 @@ test('REGRESSION API1: stale manual editor is rejected without overwriting newer
     requireProjectPermission: async (id, permission) => { assert.equal(id, P); assert.equal(permission, 'analysis.write'); },
     authorizationErrorResponse: () => null,
     CUSTOMER_ANALYSIS_SECTIONS: ['strategy'],
-    ...jiti(path.join(frontend, 'lib/server/use-cases/solution-evaluation-source-snapshot.ts')),
+    ...jiti(path.join(frontend, 'lib/server/source-revision-snapshot.ts')),
     ...jiti(path.join(frontend, 'lib/server/domain/project-documents.ts')),
     ...jiti(path.join(frontend, 'lib/service-description.ts')),
     workflowErrorStatus: jiti(path.join(frontend, 'lib/server/workflow-errors.ts')).workflowErrorStatus,
@@ -444,7 +444,7 @@ test('REGRESSION W1F: lease-fenced worker rejects a concurrent manual edit', asy
     runLeaseFencedCustomerAnalysisMutation: async (projectId, payload) => ({ fenced: true, data: JSON.parse(sql(`select public.lease_fenced_save_customer_analysis(${quote(J)},${quote(lease)},${quote(projectId)},${json(payload)})`)) }),
   });
   let attempts = 0;
-  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow'], {
+  const { runCustomerAnalysisWorkflow } = workflow(['runCustomerAnalysisWorkflow', 'generateCustomerAnalysis'], {
     saveCustomerAnalysis: saver.saveCustomerAnalysis,
     analyzeCustomerDocuments: async () => {
       if (++attempts === 1) await save('Manual edit during leased generation');

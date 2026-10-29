@@ -46,7 +46,7 @@ import {
   hasReadableRequirementDocumentContent,
   isFormalRequirementDocument,
 } from "@/lib/document-processing";
-import { canonicalRequirementSourceDocuments } from "@/lib/server/use-cases/solution-evaluation-readiness";
+import { canonicalRequirementSourceDocuments } from "@/lib/server/requirements/source-readiness";
 import {
   shouldUseSolutionEvaluationForArtifact,
   solutionEvaluationContextModeForArtifact,

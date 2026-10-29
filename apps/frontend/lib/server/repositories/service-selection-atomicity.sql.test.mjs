@@ -223,8 +223,9 @@ test("service selection replacement is one locked, validated RPC with fail-close
     ),
     "utf8",
   );
+  // Both the analysis job and the analysis route run this use-case.
   const workflowAnalysisBody = workflowSource.match(
-    /async function runCustomerAnalysisWorkflow\((?<body>[\s\S]*?)\n\}/u,
+    /async function generateCustomerAnalysis\((?<body>[\s\S]*?)\n\}\n/u,
   )?.groups?.body;
   assert.ok(workflowAnalysisBody);
   assert.match(workflowAnalysisBody, /readStableProjectSourceSnapshot/u);

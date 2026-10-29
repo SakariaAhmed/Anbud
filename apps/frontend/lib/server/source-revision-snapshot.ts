@@ -1,3 +1,5 @@
+import { workflowError } from "@/lib/server/workflow-errors";
+
 export type StableSolutionEvaluationSourceSnapshot<Documents, Analysis> = {
   documents: Documents;
   customerAnalysis: Analysis;
@@ -9,14 +11,12 @@ export type StableProjectSourceSnapshot<Value> = {
   sourceRevision: number;
 };
 
-const PROJECT_SOURCE_REVISION_CHANGED = "PROJECT_SOURCE_REVISION_CHANGED";
-
 export function isProjectSourceRevisionChangedError(
   error: unknown,
 ): error is Error {
   return (
     error instanceof Error &&
-    error.message.includes(PROJECT_SOURCE_REVISION_CHANGED)
+    workflowError(error)?.code === "PROJECT_SOURCE_REVISION_CHANGED"
   );
 }
 

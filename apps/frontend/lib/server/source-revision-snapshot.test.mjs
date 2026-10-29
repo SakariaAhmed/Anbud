@@ -7,7 +7,7 @@ import { createJiti } from "jiti";
 
 const frontendRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../..",
+  "../..",
 );
 const jiti = createJiti(
   path.join(frontendRoot, "solution-evaluation-source-snapshot-tests.cjs"),
@@ -21,7 +21,7 @@ const {
 } = await jiti.import(
   path.join(
     frontendRoot,
-    "lib/server/use-cases/solution-evaluation-source-snapshot.ts",
+    "lib/server/source-revision-snapshot.ts",
   ),
 );
 

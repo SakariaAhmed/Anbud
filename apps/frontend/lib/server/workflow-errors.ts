@@ -27,6 +27,14 @@ export class WorkflowError extends Error {
   }
 }
 
+/** A precondition the user can fix; its message is written for them. */
+export class WorkflowPreconditionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowPreconditionError";
+  }
+}
+
 // PostgreSQL functions raise these codes as message text, so database
 // failures are recognised by the code prefix rather than by class.
 function codeFromMessage(message: string) {
@@ -38,6 +46,9 @@ export function workflowError(error: unknown) {
   // Wrapping an error with `{ cause }` must not hide its domain code.
   let current = error;
   for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
+    if (current instanceof WorkflowPreconditionError) {
+      return { code: "WORKFLOW_PRECONDITION", status: 422, message: current.message };
+    }
     const code =
       current instanceof WorkflowError ? current.code : codeFromMessage(current.message);
     if (code) return { code, ...ERRORS[code] };

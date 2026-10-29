@@ -7,11 +7,11 @@ const { createJiti } = require("jiti");
 const root = fileURLToPath(new URL("../", import.meta.url));
 const support = `${root}app/api/projects/[id]/customer-analysis/route.test-support.ts`;
 const aliases = Object.fromEntries([
-  "next/server", "@/lib/server/authorization", "@/lib/server/ai",
+  "next/server", "@/lib/server/authorization", "@/lib/server/use-cases/project-workflows",
   "@/lib/server/repositories/analyses", "@/lib/server/repositories/data-store",
   "@/lib/server/document-intelligence/repository", "@/lib/server/domain/project-documents",
-  "@/lib/server/project-ai-route", "@/lib/server/use-cases/solution-evaluation-readiness",
-  "@/lib/server/use-cases/solution-evaluation-source-snapshot", "@/lib/service-description",
+  "@/lib/server/project-ai-route", "@/lib/server/requirements/source-readiness",
+  "@/lib/server/source-revision-snapshot", "@/lib/service-description",
 ].map((name) => [name, support]));
 const jiti = createJiti(import.meta.url, { alias: { ...aliases, "@": root, "server-only": "/dev/null" } });
 const { PUT } = jiti(`${root}app/api/projects/[id]/customer-analysis/route.ts`);

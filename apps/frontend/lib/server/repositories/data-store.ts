@@ -1,7 +1,7 @@
 import "server-only";
 
 import { WorkflowError } from "@/lib/server/workflow-errors";
-import { readStableProjectSourceSnapshot } from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
+import { readStableProjectSourceSnapshot } from "@/lib/server/source-revision-snapshot";
 import { safeErrorTelemetry } from "@/lib/server/safe-errors";
 import { analysisContentEqual, withoutAnalysisRevision } from "@/lib/customer-analysis-version";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
@@ -1534,6 +1534,10 @@ async function queryProjectRow(projectId: string) {
   }
 
   throw new Error("Fant ikke prosjektet.");
+}
+
+export async function getProjectName(projectId: string) {
+  return (await queryProjectRow(projectId)).name.trim() || "Bidsite-prosjekt";
 }
 
 export async function getProjectSourceRevision(projectId: string) {

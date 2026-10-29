@@ -34,7 +34,7 @@ const { extractRequirementLedgerForDocument } = jiti(
   path.join(frontendRoot, "lib/server/requirements/extraction.ts"),
 );
 const { canonicalizeRequirementSourceLedger } = jiti(
-  path.join(frontendRoot, "lib/server/use-cases/solution-evaluation-readiness.ts"),
+  path.join(frontendRoot, "lib/server/requirements/source-readiness.ts"),
 );
 
 test("supplier-answer stripping preserves lowercase Norwegian relative clauses", () => {

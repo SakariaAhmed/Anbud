@@ -66,7 +66,7 @@ jobs:
           npm run build
 
       - name: Workflow consistency regressions and additive upgrade
-        run: node lib/server/audit-20260905/run.mjs
+        run: node tests/audit-20260905/run.mjs
 
       - name: Repository contracts
         working-directory: .

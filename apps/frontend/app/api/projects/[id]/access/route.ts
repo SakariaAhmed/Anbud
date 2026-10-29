@@ -19,29 +19,8 @@ import {
   requireAdmin,
 } from "@/lib/server/authorization";
 import { checkRateLimit } from "@/lib/server/observability";
-import { createServiceClient } from "@/lib/server/data-api";
 import { routeErrorResponse } from "@/lib/server/api-responses";
-
-async function projectName(projectId: string) {
-  const dataApi = createServiceClient();
-  const modern = await dataApi
-    .from("projects")
-    .select("name")
-    .eq("id", projectId)
-    .single<{ name: string | null }>();
-  if (!modern.error && modern.data) {
-    return modern.data.name?.trim() || "Bidsite-prosjekt";
-  }
-  const legacy = await dataApi
-    .from("projects")
-    .select("title")
-    .eq("id", projectId)
-    .single<{ title: string | null }>();
-  if (legacy.error || !legacy.data) {
-    throw new Error(legacy.error?.message || "Fant ikke prosjektet.");
-  }
-  return legacy.data.title?.trim() || "Bidsite-prosjekt";
-}
+import { getProjectName } from "@/lib/server/repositories/data-store";
 
 async function authorize(projectId: string) {
   return requireProjectPermission(projectId, "project.share");
@@ -122,7 +101,7 @@ export async function POST(
       }
       result = await inviteEmailToProject({
         projectId: id,
-        projectName: await projectName(id),
+        projectName: await getProjectName(id),
         email: command.email,
         displayName: command.displayName,
         guestDescription: command.guestDescription,
@@ -161,7 +140,7 @@ export async function POST(
       result = await rotateGuestCode({
         principalId: command.principalId,
         rotatedBy: authorization.principal.id,
-        projectName: await projectName(id),
+        projectName: await getProjectName(id),
       });
     }
     await recordActivity({

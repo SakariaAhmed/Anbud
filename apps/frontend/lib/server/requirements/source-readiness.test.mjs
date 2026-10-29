@@ -26,7 +26,7 @@ const {
 } = await jiti.import(
   path.join(
     frontendRoot,
-    "lib/server/use-cases/solution-evaluation-readiness.ts",
+    "lib/server/requirements/source-readiness.ts",
   ),
 );
 const { isRequirementDocument } = await jiti.import(

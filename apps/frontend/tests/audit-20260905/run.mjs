@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const folder = path.dirname(fileURLToPath(import.meta.url));
-const frontend = path.resolve(folder, '../../..');
+const frontend = path.resolve(folder, '../..');
 const root = path.resolve(frontend, '../..');
 const output = path.join(root, 'output/remediation-2026-09-05');
 mkdirSync(output, { recursive: true });

@@ -2,7 +2,7 @@ import "server-only";
 
 import { formatJobProgress } from "@/lib/project-job-progress";
 
-import { WorkflowError } from "@/lib/server/workflow-errors";
+import { WorkflowError, WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 import { projectJobDocumentSummary } from "@/lib/server/project-job-result-projection";
 import { findWorkflowArtifact, pendingEvaluationResult } from "@/lib/server/project-job-results";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
@@ -22,7 +22,12 @@ import {
   isHistoricalSolutionDocument,
   isRequirementDocument,
 } from "@/lib/document-processing";
-import { analyzeCustomerDocuments, evaluateSolutionDocument, generateHighLevelDesign } from "@/lib/server/ai";
+import {
+  analyzeCustomerDocuments,
+  evaluateSolutionDocument,
+  generateHighLevelDesign,
+  regenerateCustomerAnalysisSection,
+} from "@/lib/server/ai";
 import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/extraction";
 import { generateExecutiveSummary } from "@/lib/server/ai/executive-summary";
 import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai/document-analysis";
@@ -58,6 +63,7 @@ import { listProjectServiceDescriptions } from "@/lib/server/repositories/data-s
 import { splitServiceDescriptionDetails } from "@/lib/service-description";
 import {
   isGeneratableArtifactType,
+  type CustomerAnalysisSection,
   type DocumentDoclingEnhancementJobResult,
   type DocumentIngestionJobResult,
   type GeneratedArtifactType,
@@ -79,7 +85,7 @@ import {
 import {
   readStableProjectSourceSnapshot,
   readStableSolutionEvaluationSourceSnapshot,
-} from "@/lib/server/use-cases/solution-evaluation-source-snapshot";
+} from "@/lib/server/source-revision-snapshot";
 import {
   assertCustomerAnalysisRequirementSourcesReady,
   assertExplicitRequirementLedgersComplete,
@@ -88,7 +94,7 @@ import {
   canonicalRequirementSourceDocuments,
   canonicalizeRequirementSourceLedger,
   isExplicitRequirementSupportingSubtype,
-} from "@/lib/server/use-cases/solution-evaluation-readiness";
+} from "@/lib/server/requirements/source-readiness";
 
 export type ProjectWorkflowInput =
   | { kind: "document_ingestion"; projectId: string; documentId: string }
@@ -1139,11 +1145,21 @@ async function runDocumentDoclingEnhancementWorkflow(
   };
 }
 
-async function runCustomerAnalysisWorkflow(
-  input: Extract<ProjectWorkflowInput, { kind: "customer_analysis" }>,
-  handlers: ProjectWorkflowHandlers,
-) {
-  handlers.setProgress(formatJobProgress(18, "Laster dokumentgrunnlag ..."));
+/**
+ * Generates the whole customer analysis, or regenerates one section of the
+ * saved analysis, from a stable project snapshot. Used by the analysis job
+ * and the synchronous analysis route.
+ */
+export async function generateCustomerAnalysis(input: {
+  projectId: string;
+  model?: string;
+  section?: CustomerAnalysisSection | null;
+  onProgress?: (message: string) => void;
+  onPhase?: ProjectWorkflowPhaseHandler;
+  assertActive?: () => void;
+}) {
+  const section = input.section ?? null;
+  input.onProgress?.(formatJobProgress(18, "Laster dokumentgrunnlag ..."));
   const sourceSnapshot = await readStableProjectSourceSnapshot({
     readSourceRevision: () => getProjectSourceRevision(input.projectId),
     readValue: async () => {
@@ -1157,15 +1173,16 @@ async function runCustomerAnalysisWorkflow(
       return { projectDocuments, serviceCandidates, previousAnalysis };
     },
   });
-  const { projectDocuments, serviceCandidates } = sourceSnapshot.value;
+  const { projectDocuments, serviceCandidates, previousAnalysis } =
+    sourceSnapshot.value;
   const { projectDocuments: analysisDocuments } =
     splitServiceDescriptionDetails(projectDocuments);
   const { customerDocument, supportingDocuments } =
     selectProjectDocuments(analysisDocuments);
-  handlers.onPhase?.("dokumenthenting");
+  input.onPhase?.("dokumenthenting");
 
   if (!customerDocument) {
-    throw new Error("Last opp minst ett dokument først.");
+    throw new WorkflowPreconditionError("Last opp minst ett dokument først.");
   }
 
   assertCustomerAnalysisRequirementSourcesReady([
@@ -1173,18 +1190,35 @@ async function runCustomerAnalysisWorkflow(
     ...supportingDocuments,
   ]);
 
-  handlers.setProgress(formatJobProgress(58, "Analyserer kundedokumentet med AI ..."));
-  const result = await analyzeCustomerDocuments({
-    projectName: customerDocument.title,
-    customerDocument,
-    supportingDocuments,
-    serviceCandidates,
-    model: input.model,
-  });
-  handlers.onPhase?.("ai_analyse");
+  if (section && !previousAnalysis) {
+    throw new WorkflowPreconditionError(
+      "Generer kundeanalyse før du redigerer en seksjon.",
+    );
+  }
 
-  handlers.setProgress(formatJobProgress(88, "Lagrer kundeanalysen ..."));
-  assertWorkflowActive(handlers);
+  input.onProgress?.(formatJobProgress(58, "Analyserer kundedokumentet med AI ..."));
+  const result =
+    section && previousAnalysis
+      ? await regenerateCustomerAnalysisSection({
+          section,
+          projectName: customerDocument.title,
+          customerDocument,
+          supportingDocuments,
+          customerAnalysis: previousAnalysis,
+          serviceCandidates,
+          model: input.model,
+        })
+      : await analyzeCustomerDocuments({
+          projectName: customerDocument.title,
+          customerDocument,
+          supportingDocuments,
+          serviceCandidates,
+          model: input.model,
+        });
+  input.onPhase?.("ai_analyse");
+
+  input.onProgress?.(formatJobProgress(88, "Lagrer kundeanalysen ..."));
+  input.assertActive?.();
   const analysis = await saveCustomerAnalysis(
     input.projectId,
     [
@@ -1194,17 +1228,33 @@ async function runCustomerAnalysisWorkflow(
     result,
     {
       expectedSourceRevision: sourceSnapshot.sourceRevision,
-      previousAnalysis: sourceSnapshot.value.previousAnalysis,
-      updatedSections: [...CUSTOMER_ANALYSIS_SECTIONS],
-      historySource: "full_regeneration",
+      previousAnalysis,
+      updatedSections: section ? [section] : [...CUSTOMER_ANALYSIS_SECTIONS],
+      historySource: section ? "section_regeneration" : "full_regeneration",
     },
   );
-  handlers.onPhase?.("lagring");
+  input.onPhase?.("lagring");
 
   return {
     analysis,
     project: await getProjectSnapshotAfterCommit(input.projectId),
+    customerDocument,
+    supportingDocumentCount: supportingDocuments.length,
   };
+}
+
+async function runCustomerAnalysisWorkflow(
+  input: Extract<ProjectWorkflowInput, { kind: "customer_analysis" }>,
+  handlers: ProjectWorkflowHandlers,
+) {
+  const { analysis, project } = await generateCustomerAnalysis({
+    projectId: input.projectId,
+    model: input.model,
+    onProgress: handlers.setProgress,
+    onPhase: handlers.onPhase,
+    assertActive: () => assertWorkflowActive(handlers),
+  });
+  return { analysis, project };
 }
 
 async function runArtifactGenerationWorkflow(

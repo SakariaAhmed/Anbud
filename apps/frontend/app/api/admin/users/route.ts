@@ -14,10 +14,10 @@ import { recordActivity } from "@/lib/server/activity";
 import {
   requireAdmin,
 } from "@/lib/server/authorization";
-import { createServiceClient } from "@/lib/server/data-api";
 import { checkRateLimit } from "@/lib/server/observability";
 import { routeErrorResponse } from "@/lib/server/api-responses";
 import { readJsonObject } from "@/lib/server/request-body";
+import { getProjectName } from "@/lib/server/repositories/data-store";
 
 export async function GET() {
   try {
@@ -29,25 +29,6 @@ export async function GET() {
   } catch (error) {
     return routeErrorResponse(error, "Kunne ikke hente brukere.");
   }
-}
-
-async function projectName(projectId: string) {
-  const dataApi = createServiceClient();
-  const modern = await dataApi
-    .from("projects")
-    .select("name")
-    .eq("id", projectId)
-    .single<{ name: string | null }>();
-  if (!modern.error && modern.data) return modern.data.name || "Bidsite-prosjekt";
-  const legacy = await dataApi
-    .from("projects")
-    .select("title")
-    .eq("id", projectId)
-    .single<{ title: string | null }>();
-  if (legacy.error || !legacy.data) {
-    throw new Error(legacy.error?.message || "Fant ikke prosjektet.");
-  }
-  return legacy.data.title || "Bidsite-prosjekt";
 }
 
 export async function POST(request: Request) {
@@ -140,7 +121,7 @@ export async function POST(request: Request) {
     const namedProjectGrants = await Promise.all(
       projectGrants.map(async (grant) => ({
         ...grant,
-        projectName: await projectName(grant.projectId),
+        projectName: await getProjectName(grant.projectId),
       })),
     );
     const [firstProjectGrant, ...additionalProjectGrants] = namedProjectGrants;
