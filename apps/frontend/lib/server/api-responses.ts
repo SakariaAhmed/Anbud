@@ -94,10 +94,16 @@ export function routeErrorResponse(
       { status: error.status, headers: options.headers },
     );
   }
+  const known = workflowError(error);
+  // The code lets clients react to a known conflict (for example by
+  // refreshing project jobs) without parsing the Norwegian message.
   return NextResponse.json(
-    { error: productionSafeErrorMessage(error, fallbackMessage) },
     {
-      status: workflowError(error)?.status ?? options.status ?? 500,
+      error: productionSafeErrorMessage(error, fallbackMessage),
+      ...(known ? { code: known.code } : {}),
+    },
+    {
+      status: known?.status ?? options.status ?? 500,
       headers: options.headers,
     },
   );

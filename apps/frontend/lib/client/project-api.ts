@@ -603,6 +603,45 @@ export async function uploadProjectDocument(input: {
   };
 }
 
+// Short enough that a poll always reads fresh state, long enough to share one
+// request between callers that refresh at the same moment.
+const PROJECT_JOBS_CACHE_TTL_MS = 2_000;
+
+export async function fetchProjectJobs(projectId: string) {
+  return readClientCache(
+    projectReadCacheKey(projectId, "jobs"),
+    async () => {
+      const response = await fetch(`/api/projects/${projectId}/jobs`, { cache: "no-store" });
+      const payload = await readJsonPayload<{ jobs?: ProjectJobRecord[] }>(
+        response,
+        "Kunne ikke hente jobbstatus.",
+      );
+      if (!response.ok || !Array.isArray(payload.jobs)) {
+        throw new Error(payload.error || "Kunne ikke hente jobbstatus.");
+      }
+      return payload.jobs;
+    },
+    PROJECT_JOBS_CACHE_TTL_MS,
+  );
+}
+
+/** A refused API request; `code` is the server's workflow error code, if any. */
+export class ProjectApiError extends Error {
+  readonly code: string | null;
+  readonly status: number;
+
+  constructor(message: string, status: number, code: string | null) {
+    super(message);
+    this.name = "ProjectApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+export function isProjectWorkflowBusyError(error: unknown) {
+  return error instanceof ProjectApiError && error.code === "PROJECT_WORKFLOW_BUSY";
+}
+
 export async function startProjectJob(input: {
   projectId: string;
   body: unknown;
@@ -617,10 +656,15 @@ export async function startProjectJob(input: {
   }).finally(() => invalidateProjectReadCache(input.projectId));
   const payload = await readJsonPayload<{
     error?: string;
+    code?: unknown;
     job?: ProjectJobRecord;
   }>(response, input.fallbackMessage);
   if (!response.ok || !payload.job) {
-    throw new Error(payload.error || input.fallbackMessage);
+    throw new ProjectApiError(
+      payload.error || input.fallbackMessage,
+      response.status,
+      typeof payload.code === "string" ? payload.code : null,
+    );
   }
   return payload.job;
 }

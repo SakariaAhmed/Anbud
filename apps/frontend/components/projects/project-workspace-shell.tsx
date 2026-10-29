@@ -51,6 +51,7 @@ import type {
   ProjectDetail,
   ProjectDocument,
   ProjectDocumentRole,
+  ProjectJobRecord,
   ProjectServiceDescription,
   SolutionEvaluationResult,
 } from "@/lib/types";
@@ -262,6 +263,11 @@ export type ProjectWorkspaceTabContentProps = {
   busy: string | null;
   busyMessage: string;
   busyProgress: number;
+  projectJobs: ProjectJobRecord[];
+  /** Set while the server would refuse a new generation (busy or indexing). */
+  workflowBlockedReason: string | null;
+  onProjectJobRecorded: (job: ProjectJobRecord) => void;
+  onRefreshProjectJobs: () => Promise<void>;
   analysisSectionBusy: CustomerAnalysisSection | null;
   uploadOpen: boolean;
   docTitle: string;
@@ -675,6 +681,10 @@ export function ProjectWorkspaceTabContent({
   busy,
   busyMessage,
   busyProgress,
+  projectJobs,
+  workflowBlockedReason,
+  onProjectJobRecorded,
+  onRefreshProjectJobs,
   analysisSectionBusy,
   uploadOpen,
   docTitle,
@@ -708,7 +718,13 @@ export function ProjectWorkspaceTabContent({
 }: ProjectWorkspaceTabContentProps) {
   return (
     <>
-      <ProjectWorkflowJobs key={`jobs-${project.id}`} projectId={project.id} />
+      <ProjectWorkflowJobs
+        key={`jobs-${project.id}`}
+        projectId={project.id}
+        jobs={projectJobs}
+        onJobStarted={onProjectJobRecorded}
+        onRefreshJobs={onRefreshProjectJobs}
+      />
       {activeTab === "documents" ? (
         <ProjectDocumentsTab
           projectId={project.id}
@@ -753,6 +769,7 @@ export function ProjectWorkspaceTabContent({
               busyMessage={analysisSectionBusy ? busyMessage : ""}
               busyProgress={busyProgress}
               onGenerate={onGenerateCustomerAnalysis}
+              workflowBlockedReason={workflowBlockedReason}
               onSaveAnalysis={fallback ? undefined : onSaveAnalysis}
             />
           )}
@@ -790,6 +807,7 @@ export function ProjectWorkspaceTabContent({
             busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
             busyProgress={busyProgress}
             onGenerate={onGenerateSolutionEvaluation}
+            workflowBlockedReason={workflowBlockedReason}
             importBusy={busy === "upload-architecture-document"}
             onImportArchitectureDocument={onUploadArchitectureDocument}
           />
@@ -803,6 +821,7 @@ export function ProjectWorkspaceTabContent({
           busy={Boolean(busy)}
           busyMessage={busy === "bilag1-artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
+          workflowBlockedReason={workflowBlockedReason}
           onDeleteArtifact={onDeleteArtifact}
           onSubmit={onGenerateBilag1Artifact}
         />
@@ -814,6 +833,7 @@ export function ProjectWorkspaceTabContent({
           busy={Boolean(busy)}
           busyMessage={busy === "delivery-artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
+          workflowBlockedReason={workflowBlockedReason}
           hasCustomerAnalysis={
             Boolean(customerAnalysis) || project.customer_analysis_generated
           }
@@ -839,6 +859,7 @@ export function ProjectWorkspaceTabContent({
           generateBusy={Boolean(busy)}
           busyMessage={busy === "requirement-response" ? busyMessage : ""}
           busyProgress={busyProgress}
+          workflowBlockedReason={workflowBlockedReason}
           deletingDocumentId={
             busy?.startsWith("delete-") ? busy.slice("delete-".length) : null
           }
@@ -862,6 +883,7 @@ export function ProjectWorkspaceTabContent({
             busy={Boolean(busy)}
             busyMessage={busy === "executive-summary" ? busyMessage : ""}
             busyProgress={busyProgress}
+            workflowBlockedReason={workflowBlockedReason}
             onGenerate={onGenerateExecutiveSummary}
           />
         )
@@ -873,6 +895,7 @@ export function ProjectWorkspaceTabContent({
           busy={Boolean(busy)}
           busyMessage={busy === "artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
+          workflowBlockedReason={workflowBlockedReason}
           onDeleteArtifact={onDeleteArtifact}
           onSubmit={onGenerateArtifact}
         />

@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
+import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import {
   AnalysisTabEmptyState,
   DocumentSourceMeta,
@@ -759,6 +760,7 @@ export function ProjectEvaluationTab({
   onGenerate,
   importBusy,
   onImportArchitectureDocument,
+  workflowBlockedReason = null,
 }: {
   documents: ProjectDocument[];
   solutionEvaluation: SolutionEvaluationResult | null;
@@ -772,6 +774,8 @@ export function ProjectEvaluationTab({
   ) => Promise<void>;
   importBusy: boolean;
   onImportArchitectureDocument: (file: File) => Promise<ProjectDocument | null>;
+  /** Set while the server would refuse a new evaluation job. */
+  workflowBlockedReason?: string | null;
 }) {
   const candidateDocuments = useMemo(
     () => documents.filter(isApprovedSolutionEvaluationDocument),
@@ -927,10 +931,11 @@ export function ProjectEvaluationTab({
           <div className="border-t border-slate-100 pt-5">
           <Button
             type="submit"
+            aria-describedby={workflowBlockedReason && !actionBusy ? "evaluation-workflow-blocked" : undefined}
             disabled={
-              actionBusy || !selectedDocumentId || !selectedDocumentRunnable
+              actionBusy || !selectedDocumentId || !selectedDocumentRunnable ||
+              Boolean(workflowBlockedReason)
             }
-
           >
             {busy || importBusy ? (
               <Spinner className="size-4" />
@@ -939,6 +944,11 @@ export function ProjectEvaluationTab({
             )}
             Generer sammenligning
           </Button>
+          {!actionBusy ? (
+            <div className="mt-2">
+              <WorkflowBlockedHint id="evaluation-workflow-blocked" reason={workflowBlockedReason} />
+            </div>
+          ) : null}
           </div>
         </form>
       </section>

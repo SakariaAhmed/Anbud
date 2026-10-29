@@ -35,6 +35,8 @@ test("route errors keep the status of known domain failures instead of a blanket
   // PostgreSQL raises codes as message text through PostgREST.
   const busy = await responseOf(new Error("PROJECT_WORKFLOW_BUSY: another job holds the lease"));
   assert.equal(busy.status, 409);
+  assert.equal(busy.body.code, "PROJECT_WORKFLOW_BUSY", "clients react to the code, not the text");
+  assert.doesNotMatch(busy.body.error, /lease/u);
 
   // Workflow steps re-wrap failures; the code must survive the wrapping.
   const wrapped = await responseOf(
@@ -85,4 +87,10 @@ test("request field readers reject wrong types instead of crashing later", () =>
   assert.deepEqual(stringListField({ ids: ["a"] }, "ids"), ["a"]);
   assert.throws(() => stringListField({ ids: ["a", 2] }, "ids"), RequestBodyError);
   assert.throws(() => stringListField({ ids: "a" }, "ids"), RequestBodyError);
+});
+
+test("unknown route failures carry no workflow code", async () => {
+  const unknown = await responseOf(new Error("private backend detail"));
+  assert.equal(unknown.status, 500);
+  assert.equal("code" in unknown.body, false);
 });

@@ -17,6 +17,7 @@ import {
   formatDate,
   GenerationProgress,
 } from "@/components/projects/project-workspace-shared";
+import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +29,7 @@ export function ProjectBilag1Tab({
   busy,
   busyMessage,
   busyProgress,
+  workflowBlockedReason,
   onDeleteArtifact,
   onSubmit,
 }: {
@@ -36,6 +38,7 @@ export function ProjectBilag1Tab({
   busy: boolean;
   busyMessage: string;
   busyProgress: number;
+  workflowBlockedReason?: string | null;
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -77,7 +80,8 @@ export function ProjectBilag1Tab({
             <Button
               type="submit"
               className="w-full"
-              disabled={busy || documents.length === 0}
+              aria-describedby={workflowBlockedReason && !busy ? "bilag1-workflow-blocked" : undefined}
+              disabled={busy || documents.length === 0 || Boolean(workflowBlockedReason)}
             >
               {busy ? (
                 <Spinner className="size-4" />
@@ -86,6 +90,7 @@ export function ProjectBilag1Tab({
               )}
               Generer Bilag 1
             </Button>
+            {!busy ? <WorkflowBlockedHint id="bilag1-workflow-blocked" reason={workflowBlockedReason} /> : null}
           </form>
         </div>
 

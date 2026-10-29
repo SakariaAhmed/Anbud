@@ -32,6 +32,7 @@ import {
   fetchProjectServices,
   fetchProjectState,
   fetchSolutionEvaluation,
+  isProjectWorkflowBusyError,
   markClientPerformance,
   saveCustomerAnalysisSection,
   startProjectJob,
@@ -39,6 +40,7 @@ import {
   uploadProjectDocument,
   watchProjectJob,
 } from "@/lib/client/project-api";
+import { useProjectActivity } from "@/hooks/use-project-activity";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
 import {
@@ -618,10 +620,27 @@ export function ProjectWorkspacePage({
     };
   }, []);
 
+  const {
+    jobs: projectJobs,
+    blockingReason: workflowBlockedReason,
+    recordJob,
+    refreshJobs,
+  } = useProjectActivity({
+    projectId: project.id,
+    documents: project.documents,
+    async refreshProject() {
+      // A transport failure never changes authoritative document status; the
+      // activity loop keeps the last state and retries on its next run.
+      const fresh = await fetchProjectState(project.id);
+      setProject((current) => mergeProjectRefresh(current, fresh));
+    },
+  });
+
   const { waitForProjectJob } = useProjectJobRunner({
     projectId: project.id,
     onStart: startEstimatedProgress,
     onStatus(jobStatus) {
+      recordJob(jobStatus);
       setBusyMessage(progressMessageLabel(jobStatus.message));
       const nextProgress = progressForJobStatus(jobStatus);
       const nextCeiling = progressCeilingForJobStatus(jobStatus);
@@ -646,26 +665,6 @@ export function ProjectWorkspacePage({
     },
   });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = false;
-    const refresh = async () => {
-      if (active || document.visibilityState === "hidden") return;
-      active = true;
-      try {
-        const fresh = await fetchProjectState(project.id, controller.signal);
-        if (!controller.signal.aborted) setProject(current => {
-          return mergeProjectRefresh(current, fresh);
-        });
-      } catch { /* A transport failure never changes authoritative document status. */ }
-      finally { active = false; }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 15_000);
-    window.addEventListener("focus", refresh);
-    window.addEventListener("project-workflow-updated", refresh);
-    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener("focus", refresh); window.removeEventListener("project-workflow-updated", refresh); };
-  }, [project.id]);
 
   async function trackDocumentIngestionJob(
     job: ProjectJobRecord | null | undefined,
@@ -998,7 +997,12 @@ export function ProjectWorkspacePage({
       await action();
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Noe gikk galt.");
+      // A busy project is a reason to wait, not a failure (see startWorkspaceJob).
+      if (err instanceof Error && (err as Error & { code?: unknown }).code === "PROJECT_WORKFLOW_BUSY") {
+        setNotice(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : "Noe gikk galt.");
+      }
       return false;
     } finally {
       setBusyProgress(100);
@@ -1424,12 +1428,20 @@ export function ProjectWorkspacePage({
     });
   }
 
-  function startWorkspaceJob(body: unknown, fallbackMessage: string) {
-    return startProjectJob({
-      projectId: project.id,
-      body,
-      fallbackMessage,
-    });
+  async function startWorkspaceJob(body: unknown, fallbackMessage: string) {
+    try {
+      const job = await startProjectJob({
+        projectId: project.id,
+        body,
+        fallbackMessage,
+      });
+      recordJob(job);
+      return job;
+    } catch (error) {
+      // Another user's job may hold the project; show it instead of guessing.
+      if (isProjectWorkflowBusyError(error)) void refreshJobs();
+      throw error;
+    }
   }
 
   async function refreshProjectAfterMutation() {
@@ -1935,6 +1947,10 @@ export function ProjectWorkspacePage({
         busy={busy}
         busyMessage={busyMessage}
         busyProgress={busyProgress}
+        projectJobs={projectJobs}
+        workflowBlockedReason={readOnly ? null : workflowBlockedReason}
+        onProjectJobRecorded={recordJob}
+        onRefreshProjectJobs={refreshJobs}
         analysisSectionBusy={analysisSectionBusy}
         uploadOpen={uploadOpen}
         docTitle={docTitle}

@@ -4,6 +4,7 @@ import { FormEvent } from "react";
 import { ChevronDown, Sparkles, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import { Spinner } from "@/components/ui/spinner";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { ArtifactActions } from "@/components/projects/artifact-actions";
@@ -19,6 +20,7 @@ export function ProjectGeneratorTab({
   busy,
   busyMessage,
   busyProgress,
+  workflowBlockedReason,
   onDeleteArtifact,
   onSubmit,
 }: {
@@ -26,6 +28,7 @@ export function ProjectGeneratorTab({
   busy: boolean;
   busyMessage: string;
   busyProgress: number;
+  workflowBlockedReason?: string | null;
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -40,8 +43,8 @@ export function ProjectGeneratorTab({
           <form onSubmit={onSubmit} className="flex flex-wrap items-center justify-end gap-3">
             <Button
               type="submit"
-
-              disabled={busy}
+              aria-describedby={workflowBlockedReason && !busy ? "generator-workflow-blocked" : undefined}
+              disabled={busy || Boolean(workflowBlockedReason)}
             >
               {busy ? (
                 <Spinner className="size-4" />
@@ -50,6 +53,11 @@ export function ProjectGeneratorTab({
               )}
               Generer ny løsningsbeskrivelse
             </Button>
+            {!busy && workflowBlockedReason ? (
+              <div className="w-full text-right">
+                <WorkflowBlockedHint id="generator-workflow-blocked" reason={workflowBlockedReason} />
+              </div>
+            ) : null}
             {busy && busyMessage ? (
               <div className="w-full">
                 <GenerationProgress message={busyMessage} progress={busyProgress} />
