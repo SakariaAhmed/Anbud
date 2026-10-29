@@ -68,3 +68,21 @@ test("legacy project creation preserves the authenticated owner", () => {
     /if \(insertResult\.error && isMissingLegacyProjectColumn\(insertResult\.error\)\)[\s\S]*?\.insert\(\{\s*owner_id: input\.owner_id,/u,
   );
 });
+
+test("project writes retry with the other column set only for a missing projects column", () => {
+  assert.equal(
+    isMissingRelationColumn(
+      { message: "Could not find the 'customer_name' column of 'projects' in the schema cache" },
+      "projects",
+    ),
+    true,
+  );
+  // A constraint or permission failure that merely mentions "name" is a real error.
+  for (const message of [
+    'null value in column "name" of relation "projects" violates not-null constraint',
+    'new row violates row-level security policy for table "projects"',
+    "permission denied for table projects",
+  ]) {
+    assert.equal(isMissingRelationColumn({ message }, "projects"), false, message);
+  }
+});

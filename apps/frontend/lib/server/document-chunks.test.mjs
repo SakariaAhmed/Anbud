@@ -362,3 +362,28 @@ test("chunk replacement retries only lock/deadlock conflicts", () => {
     false,
   );
 });
+
+test("a transient missing-storage error does not disable chunk storage for the process", async () => {
+  resetDocumentChunksTestRuntime();
+  // PostgREST reports the table as missing while it reloads its schema cache.
+  assert.equal(
+    shouldReuseChunksAfterCompletenessQueryError({
+      message: "Could not find the table 'public.document_chunks' in the schema cache",
+    }),
+    true,
+  );
+  const document = projectDocument({ id: "00000000-0000-4000-8000-000000000077" });
+  await replaceProjectDocumentChunks({
+    documentId: document.id,
+    projectId: document.project_id,
+    role: document.role,
+    supportingSubtype: document.supporting_subtype,
+    title: document.title,
+    fileName: document.file_name,
+    fileFormat: document.file_format,
+    rawText: document.raw_text,
+    structureMap: document.structure_map,
+    sourceRevision: document.chunk_source_revision,
+  });
+  assert.notEqual(getDocumentChunksTestManifest("project_document", document.id), null);
+});

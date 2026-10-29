@@ -1,5 +1,12 @@
 import "server-only";
 
+import { isMarkdownTableDivider } from "@/lib/markdown-table-row";
+import { formatJobProgress } from "@/lib/project-job-progress";
+import {
+  REQUIREMENT_RESPONSE_TABLE_HEADINGS,
+  requirementResponseTableColumns,
+} from "@/lib/requirement-response-table";
+
 import { narrativeAnswerEvidence } from "@/lib/server/requirements/narrative-answer-evidence";
 
 import {
@@ -164,7 +171,6 @@ import {
   assertRequirementLedgerQualityForEvaluation,
 } from "@/lib/server/requirements/ledger-quality";
 import {
-  isMarkdownSeparatorRow,
   markdownTableCell,
   splitMarkdownTableRow,
   toMarkdownTableRow,
@@ -9041,24 +9047,20 @@ function mergeContinuationRowsInRequirementTable(
     }
 
     const headerCells = splitMarkdownTableRow(line);
-    const sourceIndex = headerCells.findIndex((cell) =>
-      /kildegrunnlag/i.test(cell),
-    );
-    const refIndex = headerCells.findIndex((cell) => /kravref/i.test(cell));
-    const requirementIndex = headerCells.findIndex((cell) =>
-      /^krav$/i.test(cell),
-    );
-    const answerIndex = headerCells.findIndex((cell) => /^svar$/i.test(cell));
-    const evidenceIndex = headerCells.findIndex((cell) =>
-      /^(?:svargrunnlag|answer evidence|evidence|bevis)$/i.test(cell),
-    );
+    const {
+      sourceIndex,
+      refIndex,
+      requirementIndex,
+      answerIndex,
+      evidenceIndex,
+    } = requirementResponseTableColumns(headerCells);
 
     if (
       sourceIndex < 0 ||
       refIndex < 0 ||
       requirementIndex < 0 ||
       answerIndex < 0 ||
-      !isMarkdownSeparatorRow(lines[index + 1] ?? "")
+      !isMarkdownTableDivider(lines[index + 1] ?? "")
     ) {
       nextLines.push(line);
       index += 1;
@@ -9199,24 +9201,16 @@ function alignRequirementRowsWithLedger(
     }
 
     const headerCells = splitMarkdownTableRow(line);
-    let sourceIndex = headerCells.findIndex((cell) =>
-      /kildegrunnlag/i.test(cell),
-    );
-    const refIndex = headerCells.findIndex((cell) => /kravref/i.test(cell));
-    const requirementIndex = headerCells.findIndex((cell) =>
-      /^krav$/i.test(cell),
-    );
-    const answerIndex = headerCells.findIndex((cell) => /^svar$/i.test(cell));
-    let evidenceIndex = headerCells.findIndex((cell) =>
-      /^(?:svargrunnlag|answer evidence|evidence|bevis)$/i.test(cell),
-    );
+    const columns = requirementResponseTableColumns(headerCells);
+    let { sourceIndex, evidenceIndex } = columns;
+    const { refIndex, requirementIndex, answerIndex } = columns;
 
     if (
       sourceIndex < 0 ||
       refIndex < 0 ||
       requirementIndex < 0 ||
       answerIndex < 0 ||
-      !isMarkdownSeparatorRow(lines[index + 1] ?? "")
+      !isMarkdownTableDivider(lines[index + 1] ?? "")
     ) {
       nextLines.push(line);
       index += 1;
@@ -9226,7 +9220,7 @@ function alignRequirementRowsWithLedger(
     const insertedEvidenceColumn = evidenceIndex < 0;
     if (insertedEvidenceColumn) {
       evidenceIndex = sourceIndex;
-      headerCells.splice(evidenceIndex, 0, "Svargrunnlag");
+      headerCells.splice(evidenceIndex, 0, REQUIREMENT_RESPONSE_TABLE_HEADINGS[3]);
       sourceIndex += 1;
     }
 
@@ -10107,7 +10101,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
   onProgress?: (message: string) => void;
 }) {
   input.onProgress?.(
-    "[82%] Full-dokument handoff gjør målrettet retry for svakt kravsvar ...",
+    formatJobProgress(82, "Full-dokument handoff gjør målrettet retry for svakt kravsvar ..."),
   );
 
   const heading = requirementGroupHeading(input.row.entry);
@@ -10557,7 +10551,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
   let deterministicTemplateRepairedRequirements = 0;
 
   input.onProgress?.(
-    `[78%] Ledger-batch trenger full-dokument handoff for ${candidates.length} krav. Fortsetter med resten av jobben ...`,
+    formatJobProgress(78, `Ledger-batch trenger full-dokument handoff for ${candidates.length} krav. Fortsetter med resten av jobben ...`),
   );
 
   const repairedChunks = await mapWithConcurrency(
@@ -10603,7 +10597,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
           {
             onProgress: input.onProgress,
             message:
-              "[80%] Full-dokument handoff jobber fortsatt med svake kravsvar ...",
+              formatJobProgress(80, "Full-dokument handoff jobber fortsatt med svake kravsvar ..."),
           },
           () =>
             createJsonCompletion<{
@@ -10797,10 +10791,10 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
       } finally {
         completedChunks += 1;
         input.onProgress?.(
-          `[${Math.min(
-            84,
-            78 + Math.round((completedChunks / chunks.length) * 6),
-          )}%] Full-dokument handoff ferdig med ${completedChunks} av ${chunks.length} reparasjonsbatcher ...`,
+          formatJobProgress(
+            Math.min(84, 78 + Math.round((completedChunks / chunks.length) * 6)),
+            `Full-dokument handoff ferdig med ${completedChunks} av ${chunks.length} reparasjonsbatcher ...`,
+          ),
         );
       }
     },
@@ -19585,7 +19579,7 @@ async function buildSolutionRequirementCoverage(input: {
     reason: string;
   }> = [];
   input.onProgress?.(
-    `[18%] Fant ${requirements.length} krav. Vurderer kravdekning i ${chunks.length} batcher ...`,
+    formatJobProgress(18, `Fant ${requirements.length} krav. Vurderer kravdekning i ${chunks.length} batcher ...`),
   );
 
   const evaluateCoverageChunk = async (
@@ -19677,13 +19671,13 @@ async function buildSolutionRequirementCoverage(input: {
       completedBatches += 1;
       completedCoverageRequirements += chunk.entries.length;
       input.onProgress?.(
-        `[${Math.min(
-          56,
-          18 + Math.round((completedBatches / chunks.length) * 38),
-        )}%] Vurdert ${Math.min(
-          requirements.length,
-          completedCoverageRequirements,
-        )} av ${requirements.length} krav ...`,
+        formatJobProgress(
+          Math.min(56, 18 + Math.round((completedBatches / chunks.length) * 38)),
+          `Vurdert ${Math.min(
+            requirements.length,
+            completedCoverageRequirements,
+          )} av ${requirements.length} krav ...`,
+        ),
       );
 
       return items;
@@ -19709,7 +19703,7 @@ async function buildSolutionRequirementCoverage(input: {
     retryChunks,
     async (chunk) => {
       input.onProgress?.(
-        `[57%] Prøver én feilet kravbatch på nytt (${chunk.entries.length} krav) ...`,
+        formatJobProgress(57, `Prøver én feilet kravbatch på nytt (${chunk.entries.length} krav) ...`),
       );
       return evaluateCoverageChunk(chunk, {
         timeoutMs: REQUIREMENT_COVERAGE_BATCH_RETRY_TIMEOUT_MS,
@@ -19966,7 +19960,7 @@ async function generateRequirementResponseFromLedger(input: {
   let completedRequirements = 0;
 
   input.onProgress?.(
-    `[32%] Fant ${responseLedger.length} krav. Starter ${chunks.length} parallelle svarbatcher ...`,
+    formatJobProgress(32, `Fant ${responseLedger.length} krav. Starter ${chunks.length} parallelle svarbatcher ...`),
   );
 
   const retrievalContextTasks = startConcurrentTasks(
@@ -20046,10 +20040,10 @@ async function generateRequirementResponseFromLedger(input: {
       completedRequirements += chunk.entries.length;
       const answeredSoFar = Math.min(responseLedger.length, completedRequirements);
       input.onProgress?.(
-        `[${Math.min(
-          78,
-          32 + Math.round((completedBatches / chunks.length) * 46),
-        )}%] Besvart ${answeredSoFar} av ${responseLedger.length} krav ...`,
+        formatJobProgress(
+          Math.min(78, 32 + Math.round((completedBatches / chunks.length) * 46)),
+          `Besvart ${answeredSoFar} av ${responseLedger.length} krav ...`,
+        ),
       );
 
       return chunk.entries.map((entry, localIndex) =>
@@ -20211,7 +20205,7 @@ async function generateRequirementResponseFromLedger(input: {
   }
 
   input.onProgress?.(
-    `[84%] Kontrollerer dekning for ${responseLedger.length} krav og bygger kravtabell ...`,
+    formatJobProgress(84, `Kontrollerer dekning for ${responseLedger.length} krav og bygger kravtabell ...`),
   );
 
   const contentMarkdown = buildRequirementResponseMarkdown({
@@ -21203,7 +21197,7 @@ export function solutionDocumentAnswerBearingText(value: string) {
     if (
       referenceIndex < 0 ||
       answerIndex < 0 ||
-      !isMarkdownSeparatorRow(lines[index + 1])
+      !isMarkdownTableDivider(lines[index + 1])
     ) {
       continue;
     }
@@ -22129,7 +22123,7 @@ export async function evaluateSolutionDocument(input: {
     })),
   );
   input.onProgress?.(
-    `[62%] Kravdekning ferdig med ${requirementCoverage.items.length} krav. Bygger vurderingsgrunnlag ...`,
+    formatJobProgress(62, `Kravdekning ferdig med ${requirementCoverage.items.length} krav. Bygger vurderingsgrunnlag ...`),
   );
   const hasRequirementCoverage = requirementCoverage.items.length > 0;
   const evaluationFoundationFacts = collectArtifactFoundationFacts({
@@ -22237,13 +22231,13 @@ export async function evaluateSolutionDocument(input: {
   let result: Untrusted<SolutionEvaluationResult>;
   try {
     input.onProgress?.(
-      "[74%] Kjører helhetsvurdering mot kravdekning og arkitektens svar ...",
+      formatJobProgress(74, "Kjører helhetsvurdering mot kravdekning og arkitektens svar ..."),
     );
     result = await runWithProgressHeartbeat(
       {
         onProgress: input.onProgress,
         message:
-          "[88%] Helhetsvurderingen jobber fortsatt med kravdekning, score og anbefalinger ...",
+          formatJobProgress(88, "Helhetsvurderingen jobber fortsatt med kravdekning, score og anbefalinger ..."),
         intervalMs: 15_000,
       },
       () =>
@@ -22276,7 +22270,7 @@ export async function evaluateSolutionDocument(input: {
       { cause: error },
     );
   }
-  input.onProgress?.("[94%] Normaliserer vurdering og kravrekkefølge ...");
+  input.onProgress?.(formatJobProgress(94, "Normaliserer vurdering og kravrekkefølge ..."));
   const evaluationContext = buildSolutionEvaluationProvenance({
     customerDocument: input.customerDocument,
     solutionDocument: input.solutionDocument,
@@ -22589,7 +22583,7 @@ async function buildRequirementArtifactContext(
     });
 
     input.onProgress?.(
-      `[24%] Kravledger klar med ${requirementLedger.length} krav fra ${requirementDocuments.length} dokument(er), tillit ${requirementLedgerConfidence.level}.`,
+      formatJobProgress(24, `Kravledger klar med ${requirementLedger.length} krav fra ${requirementDocuments.length} dokument(er), tillit ${requirementLedgerConfidence.level}.`),
     );
   }
 
@@ -23072,7 +23066,7 @@ async function runFullDocumentArtifactGeneration(
         {
           onProgress: input.onProgress,
           message:
-            "[62%] Full-dokumentgenerering med filinput jobber fortsatt ...",
+            formatJobProgress(62, "Full-dokumentgenerering med filinput jobber fortsatt ..."),
         },
         () =>
           createJsonCompletionWithFileInputs<GeneratedArtifactDraft>({
@@ -23101,7 +23095,7 @@ async function runFullDocumentArtifactGeneration(
         }),
       );
       input.onProgress?.(
-        "[64%] Filinput feilet eller tok for lang tid. Fortsetter med tekstbasert full-dokumentgenerering ...",
+        formatJobProgress(64, "Filinput feilet eller tok for lang tid. Fortsetter med tekstbasert full-dokumentgenerering ..."),
       );
     }
   }
@@ -23110,7 +23104,7 @@ async function runFullDocumentArtifactGeneration(
     {
       onProgress:
         input.artifactType === "forbedret_kravsvar" ? input.onProgress : undefined,
-      message: "[68%] Tekstbasert full-dokumentgenerering jobber fortsatt ...",
+      message: formatJobProgress(68, "Tekstbasert full-dokumentgenerering jobber fortsatt ..."),
     },
     () =>
       createJsonCompletion<GeneratedArtifactDraft>({

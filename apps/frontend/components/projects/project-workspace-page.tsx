@@ -71,6 +71,7 @@ import {
   solutionProposalWorkflowStatus,
 } from "@/components/projects/project-workflow-status";
 import { deriveProjectStatus } from "@/components/projects/project-workspace-shared";
+import { parseJobProgress } from "@/lib/project-job-progress";
 import {
   GENERATABLE_ARTIFACT_TYPES,
   isGeneratableArtifactType,
@@ -222,27 +223,11 @@ type ProgressDriverState = {
   ceiling: number;
 };
 
-function progressForJobStatus(job: Pick<ProjectJobRecord, "kind" | "status" | "message">) {
-  if (job.status === "completed") return 100;
-  if (job.status === "failed") return 100;
+function progressForJobStatus(job: Pick<ProjectJobRecord, "status" | "message">) {
+  if (job.status === "completed" || job.status === "failed") return 100;
   if (job.status === "queued") return 8;
-
-  const message = job.message.toLowerCase();
-  const explicitProgress = message.match(/\[(\d{1,3})%\]/);
-  if (explicitProgress) {
-    return Math.min(99, Math.max(3, Number(explicitProgress[1])));
-  }
-
-  if (message.includes("laster")) return 18;
-  if (message.includes("køer")) return 8;
-  if (message.includes("genererer") || message.includes("analyserer") || message.includes("sammenligner") || message.includes("skriver")) {
-    return job.kind === "artifact_generation" ? 62 : 58;
-  }
-  if (message.includes("kjører ny vurdering")) return 78;
-  if (message.includes("lagrer")) return 88;
-  if (message.includes("ferdig")) return 100;
-
-  return 28;
+  const { percent } = parseJobProgress(job.message);
+  return percent === null ? 28 : Math.min(99, Math.max(3, percent));
 }
 
 function progressCeilingForJobStatus(
@@ -250,30 +235,12 @@ function progressCeilingForJobStatus(
 ) {
   if (job.status === "completed" || job.status === "failed") return 100;
   if (job.status === "queued") return 18;
-
-  const message = job.message.toLowerCase();
-  const explicitProgress = message.match(/\[(\d{1,3})%\]/);
-  if (explicitProgress) {
-    const progress = Math.min(99, Math.max(3, Number(explicitProgress[1])));
-    return Math.min(99, progress + 8);
-  }
-  if (message.includes("lagrer") || message.includes("validerer")) return 97;
-  if (
-    message.includes("genererer") ||
-    message.includes("analyserer") ||
-    message.includes("sammenligner") ||
-    message.includes("skriver")
-  ) {
-    return 93;
-  }
-  if (message.includes("henter") || message.includes("klargjør")) return 76;
-  if (message.includes("bygger") || message.includes("kartlegger")) return 66;
-
-  return 88;
+  const { percent } = parseJobProgress(job.message);
+  return percent === null ? 88 : Math.min(99, Math.max(3, percent) + 8);
 }
 
 function progressMessageLabel(message: string) {
-  return message.replace(/^\[\d{1,3}%\]\s*/, "");
+  return parseJobProgress(message).label;
 }
 
 function estimatedJobDurationMs(job: Pick<ProjectJobRecord, "kind">) {

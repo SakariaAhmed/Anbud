@@ -182,7 +182,9 @@ const RETRIEVAL_STOP_WORDS = new Set([
 ]);
 
 let cachedEmbeddingClient: OpenAI | null = null;
-let cachedChunkStorageAvailable: boolean | null = null;
+// Only a successful probe is cached: a missing-table error can be transient
+// (for example while PostgREST reloads its schema cache).
+let chunkStorageConfirmed = false;
 
 function getEmbeddingClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -821,13 +823,9 @@ function isChunkStorageUnavailable(error: { message?: string } | null | undefine
 
 export function shouldReuseChunksAfterCompletenessQueryError(error: unknown) {
   rethrowAuthoritativeLeaseLoss(error);
-  const storageUnavailable = isChunkStorageUnavailable(
+  return isChunkStorageUnavailable(
     error as { message?: string } | null | undefined,
   );
-  if (storageUnavailable) {
-    cachedChunkStorageAvailable = false;
-  }
-  return storageUnavailable;
 }
 
 function isRetrievalStorageUnavailable(error: { message?: string } | null | undefined) {
@@ -842,10 +840,7 @@ function isRetrievalStorageUnavailable(error: { message?: string } | null | unde
 }
 
 async function hasChunkStorage() {
-  if (cachedChunkStorageAvailable === false) {
-    return false;
-  }
-  if (cachedChunkStorageAvailable === true) {
+  if (chunkStorageConfirmed) {
     return true;
   }
 
@@ -855,14 +850,10 @@ async function hasChunkStorage() {
     .select("id", { head: true, count: "exact" })
     .limit(1);
   if (error) {
-    if (isChunkStorageUnavailable(error)) {
-      cachedChunkStorageAvailable = false;
-      return false;
-    }
-    return true;
+    return !isChunkStorageUnavailable(error);
   }
 
-  cachedChunkStorageAvailable = true;
+  chunkStorageConfirmed = true;
   return true;
 }
 

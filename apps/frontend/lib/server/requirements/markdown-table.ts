@@ -39,7 +39,3 @@ export function splitMarkdownTableRow(line: string) {
 export function toMarkdownTableRow(cells: string[]) {
   return `| ${cells.map(markdownTableCell).join(" | ")} |`;
 }
-
-export function isMarkdownSeparatorRow(line: string) {
-  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
-}

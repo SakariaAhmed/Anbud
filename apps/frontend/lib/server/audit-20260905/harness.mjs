@@ -85,6 +85,7 @@ export const counts = () => JSON.parse(sql(`select jsonb_build_array((select cou
 export function workflow(names, overrides = {}) {
   return actual(workflowFile, names, {
     ...history, ...snapshots, ...domain, ...services, ...readiness, WorkflowError: workflowErrors.WorkflowError,
+    ...jiti(path.join(frontend, 'lib/project-job-progress.ts')),
     ...jiti(path.join(frontend, 'lib/server/project-job-result-projection.ts')),
     saveCustomerAnalysis, getFreshCustomerAnalysis: freshAnalysis,
     getProjectSourceRevision: async () => revision(), listProjectDocumentsForAnalysis: async () => [document()],

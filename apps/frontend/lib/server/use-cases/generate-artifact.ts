@@ -1,5 +1,7 @@
 import "server-only";
 
+import { formatJobProgress } from "@/lib/project-job-progress";
+
 import { createHash } from "node:crypto";
 
 import {
@@ -424,7 +426,7 @@ export async function generateAndSaveProjectArtifact(
   input: GenerateAndSaveArtifactInput,
 ): Promise<GenerateAndSaveArtifactResult> {
   input.assertActive?.();
-  input.onProgress?.("[12%] Laster prosjektkontekst og relevante dokumenter ...");
+  input.onProgress?.(formatJobProgress(12, "Laster prosjektkontekst og relevante dokumenter ..."));
   const sourceRevisions = await getArtifactSourceRevisions(input.projectId);
   const usesSolutionEvaluation = shouldUseSolutionEvaluationForArtifact({
     artifactType: input.artifactType,
@@ -535,8 +537,8 @@ export async function generateAndSaveProjectArtifact(
 
   input.onProgress?.(
     input.artifactType === "forbedret_kravsvar"
-      ? "[16%] Bygger kravledger fra valgt dokumentgrunnlag ..."
-      : "[16%] Bygger dokumentledger for struktur, krav og kildegrunnlag ...",
+      ? formatJobProgress(16, "Bygger kravledger fra valgt dokumentgrunnlag ...")
+      : formatJobProgress(16, "Bygger dokumentledger for struktur, krav og kildegrunnlag ..."),
   );
   const ledgerDocuments =
     input.artifactType === "forbedret_kravsvar" &&
@@ -559,14 +561,14 @@ export async function generateAndSaveProjectArtifact(
     documents: ledgerDocuments,
   });
   if (ledgerCacheHit) {
-    input.onProgress?.("[18%] Gjenbruker dokumentledger fra hurtigbuffer ...");
+    input.onProgress?.(formatJobProgress(18, "Gjenbruker dokumentledger fra hurtigbuffer ..."));
   }
   input.onPhase?.("ledgerbygging");
 
   input.onProgress?.(
     input.artifactType === "forbedret_kravsvar"
-      ? "[18%] Kartlegger kravdokumenter og forbereder kravbesvarelse ..."
-      : "[38%] Henter relevante tjenestedokumenter ...",
+      ? formatJobProgress(18, "Kartlegger kravdokumenter og forbereder kravbesvarelse ...")
+      : formatJobProgress(38, "Henter relevante tjenestedokumenter ..."),
   );
   const serviceDescriptionDocuments =
     input.artifactType === "bilag1_rekonstruksjon"
@@ -587,8 +589,8 @@ export async function generateAndSaveProjectArtifact(
   if (input.ensureSemanticChunks) {
     input.onProgress?.(
       input.artifactType === "forbedret_kravsvar"
-        ? "[22%] Klargjør semantiske dokumentutdrag ..."
-        : "[40%] Klargjør semantiske dokumentutdrag ...",
+        ? formatJobProgress(22, "Klargjør semantiske dokumentutdrag ...")
+        : formatJobProgress(40, "Klargjør semantiske dokumentutdrag ..."),
     );
     input.assertActive?.();
     const indexingTasks = [
@@ -637,8 +639,8 @@ export async function generateAndSaveProjectArtifact(
 
   input.onProgress?.(
     input.artifactType === "forbedret_kravsvar"
-      ? "[42%] Genererer kravbesvarelse med AI ..."
-      : "[42%] Genererer nytt utkast med AI ...",
+      ? formatJobProgress(42, "Genererer kravbesvarelse med AI ...")
+      : formatJobProgress(42, "Genererer nytt utkast med AI ..."),
   );
   const solutionEvaluationContextMode = solutionEvaluationContextModeForArtifact({
     artifactType: input.artifactType,
@@ -714,7 +716,7 @@ export async function generateAndSaveProjectArtifact(
       : undefined;
   input.onPhase?.("ai_batcher");
 
-  input.onProgress?.("[86%] Validerer og reparerer generatorresultatet ...");
+  input.onProgress?.(formatJobProgress(86, "Validerer og reparerer generatorresultatet ..."));
   const repaired = repairGeneratedArtifactContent({
     artifactType: input.artifactType,
     contentMarkdown: generated.content_markdown,
@@ -740,7 +742,7 @@ export async function generateAndSaveProjectArtifact(
   }
   input.onPhase?.("validering");
 
-  input.onProgress?.("[90%] Lagrer validert generatorresultat i prosjektet ...");
+  input.onProgress?.(formatJobProgress(90, "Lagrer validert generatorresultat i prosjektet ..."));
   const sourceDocuments =
     input.artifactType === "forbedret_kravsvar" &&
     requirementDocumentsForArtifact.length

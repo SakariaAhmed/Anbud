@@ -2,10 +2,9 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import {
-  isMarkdownSeparatorRow,
-  splitMarkdownTableRow,
-} from "@/lib/server/requirements/markdown-table";
+import { isMarkdownTableDivider } from "@/lib/markdown-table-row";
+import { requirementResponseTableColumns } from "@/lib/requirement-response-table";
+import { splitMarkdownTableRow } from "@/lib/server/requirements/markdown-table";
 import { deliveryPlanMilestoneCoverage } from "@/lib/server/delivery-plan-validation";
 import type { GeneratedArtifactType } from "@/lib/types";
 
@@ -183,7 +182,7 @@ function parseMarkdownTables(markdown: string) {
       return;
     }
 
-    const nonDivider = current.filter((line) => !isMarkdownSeparatorRow(line));
+    const nonDivider = current.filter((line) => !isMarkdownTableDivider(line));
     if (nonDivider.length >= 2) {
       tables.push({
         header: splitMarkdownTableRow(nonDivider[0]),
@@ -207,11 +206,11 @@ function parseMarkdownTables(markdown: string) {
 }
 
 function isRequirementTable(table: MarkdownTable) {
-  const header = table.header.map((cell) => cell.toLowerCase());
+  const columns = requirementResponseTableColumns(table.header);
   return (
-    header.some((cell) => cell.includes("kravref")) &&
-    header.some((cell) => cell === "krav") &&
-    header.some((cell) => cell === "svar")
+    columns.refIndex >= 0 &&
+    columns.requirementIndex >= 0 &&
+    columns.answerIndex >= 0
   );
 }
 
@@ -1055,11 +1054,10 @@ export function repairGeneratedArtifactContent(input: {
   function flushTable() {
     if (!tableBuffer.length) return;
     const header = splitMarkdownTableRow(
-      tableBuffer.find((line) => !isMarkdownSeparatorRow(line)) ?? "",
+      tableBuffer.find((line) => !isMarkdownTableDivider(line)) ?? "",
     );
-    const isReqTable =
-      header.some((cell) => cell.toLowerCase().includes("kravref")) &&
-      header.some((cell) => cell.toLowerCase() === "krav");
+    const columns = requirementResponseTableColumns(header);
+    const isReqTable = columns.refIndex >= 0 && columns.requirementIndex >= 0;
 
     if (!isReqTable) {
       output.push(...tableBuffer);
@@ -1068,7 +1066,7 @@ export function repairGeneratedArtifactContent(input: {
     }
 
     const cleaned = tableBuffer.filter((line, index) => {
-      if (index < 2 || isMarkdownSeparatorRow(line)) return true;
+      if (index < 2 || isMarkdownTableDivider(line)) return true;
       const row = splitMarkdownTableRow(line);
       if (!isRepairableRequirementRow(row)) return true;
       repairedRows += 1;

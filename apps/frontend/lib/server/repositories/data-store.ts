@@ -48,6 +48,7 @@ import {
 } from "@/lib/server/documents";
 import {
   isMissingRelationColumn,
+  type PostgRESTErrorLike,
   isMissingSchemaColumn,
   missingColumnNameFromError,
   removeMissingStorageColumns,
@@ -593,16 +594,10 @@ function mapProjectStatus(row: ProjectRow): ProjectStatus {
   return "Venter på dokument";
 }
 
-function isMissingLegacyProjectColumn(error: { message?: string } | null) {
-  const message = error?.message ?? "";
-  return (
-    message.includes("column projects.") ||
-    message.includes("name") ||
-    message.includes("customer_name") ||
-    message.includes("industry") ||
-    message.includes("client_name") ||
-    message.includes("title")
-  );
+// Databases differ in which project name columns exist. Fall back only when
+// a projects column is missing; other failures must not be retried.
+function isMissingLegacyProjectColumn(error: PostgRESTErrorLike) {
+  return isMissingRelationColumn(error, "projects");
 }
 
 function fromUnknownProjectRow(row: Record<string, unknown>): ProjectRow {

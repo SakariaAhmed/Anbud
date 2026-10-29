@@ -42,7 +42,8 @@ import {
   isDocumentReadyForEvaluation,
   isFormalRequirementDocument,
 } from "@/lib/document-processing";
-import { splitMarkdownTableRow } from "@/lib/markdown-table-row";
+import { isMarkdownTableDivider, splitMarkdownTableRow } from "@/lib/markdown-table-row";
+import { requirementResponseTableColumns } from "@/lib/requirement-response-table";
 import { compareRequirementOrder, sortByRequirementOrder } from "@/lib/requirement-order";
 import { requirementResponseRequirementCount } from "@/lib/requirement-response-count";
 import {
@@ -91,38 +92,14 @@ function isRequirementTableHeader(line: string) {
   return Boolean(columns);
 }
 
-function normalizedHeaderCell(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/^[*_`]+|[*_`]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function requirementTableColumns(line: string) {
-  const cells = splitMarkdownTableRow(line).map(normalizedHeaderCell);
-  const refIndex = cells.findIndex((cell) => cell.includes("kravref"));
-  const requirementIndex = cells.findIndex((cell) => cell === "krav");
-  const answerIndex = cells.findIndex((cell) => cell === "svar");
-  const evidenceIndex = cells.findIndex((cell) =>
-    /^(?:svargrunnlag|answer evidence|evidence|bevis)$/.test(cell),
-  );
-  const sourceIndex = cells.findIndex((cell) =>
-    /^(?:kildegrunnlag|kilde|source|source reference)$/.test(cell),
-  );
-
-  return (
-    refIndex >= 0 &&
-    requirementIndex >= 0 &&
-    answerIndex >= 0 &&
-    sourceIndex >= 0
-      ? { refIndex, requirementIndex, answerIndex, evidenceIndex, sourceIndex }
-      : null
-  );
-}
-
-function isMarkdownDivider(line: string) {
-  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+  const columns = requirementResponseTableColumns(splitMarkdownTableRow(line));
+  return columns.refIndex >= 0 &&
+    columns.requirementIndex >= 0 &&
+    columns.answerIndex >= 0 &&
+    columns.sourceIndex >= 0
+    ? columns
+    : null;
 }
 
 function tableIdFromRef(ref: string) {
@@ -324,7 +301,7 @@ function parseRequirementContent(content: string): RequirementContentSegment[] {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    if (!isRequirementTableHeader(line) || !isMarkdownDivider(lines[index + 1] ?? "")) {
+    if (!isRequirementTableHeader(line) || !isMarkdownTableDivider(lines[index + 1] ?? "")) {
       markdownBuffer.push(line);
       continue;
     }
