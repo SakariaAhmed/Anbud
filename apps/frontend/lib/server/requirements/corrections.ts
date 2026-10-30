@@ -538,7 +538,9 @@ export function applyRequirementCorrections(
         // parenthesis may qualify a pronoun ordinal ("Den siste (logger) får").
         const ordinalMatch = [...sentence.text.slice(0, renumberMatch.index).matchAll(
           /(?<![\p{L}\p{N}])(?:(første|andre|tredje|siste)\s+(?:kravet|kravraden|raden|rad|forekomsten)|(?:det|dette)\s+(første|andre|tredje|siste)\s+krav|(?:den|det|denne|dette)\s+(første|andre|tredje|siste)(?=\s*(?:\([^()]{1,80}\)\s*)?(?:(?:får|beholder|skal|gis|endres|blir|er)(?![\p{L}\p{N}])|[,.:;]|$)))(?![\p{L}\p{N}])/giu,
-        )].at(-1);
+        )].filter((match) => !inAside(match.index!)).at(-1);
+        // An ordinal inside an aside ("K-3 (det andre kravet er K-2) får …")
+        // describes something else and selects no occurrence.
         const ordinal = (ordinalMatch?.[1] ?? ordinalMatch?.[2] ?? ordinalMatch?.[3])?.toLocaleLowerCase("nb");
         // A bare pronoun ordinal ("den siste") after several requirements in
         // the sentence ("K-2 og K-3 er brukt to ganger, og den siste får …")
