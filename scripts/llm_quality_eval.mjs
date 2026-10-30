@@ -342,7 +342,10 @@ function factScore(text) {
 
 // A queued job can wait for the scheduled worker; without a limit a stuck
 // job held the script until someone killed it, skipping its cleanup.
-const JOB_WAIT_TIMEOUT_MS = Number(process.env.LLM_EVAL_JOB_TIMEOUT_MS ?? 25 * 60_000);
+const JOB_WAIT_TIMEOUT_MS = Number(process.env.LLM_EVAL_JOB_TIMEOUT_MS || 25 * 60_000);
+if (!Number.isFinite(JOB_WAIT_TIMEOUT_MS) || JOB_WAIT_TIMEOUT_MS < 1_000) {
+  throw new Error("LLM_EVAL_JOB_TIMEOUT_MS must be a number of milliseconds of at least 1000.");
+}
 
 // Every project and service this run creates, so they are removed even when
 // a scenario fails, the run is interrupted, or a DELETE has to be retried.
@@ -357,7 +360,10 @@ async function deleteResource(resource) {
     resource.type === "service" ? `/api/service-descriptions/${resource.id}` : `/api/projects/${resource.id}`;
   for (let attempt = 1; attempt <= 3 && !resource.deleted; attempt += 1) {
     try {
-      const { response } = await resource.client.request("DELETE", route);
+      // Bounded, so a DELETE that never answers cannot block cleanup.
+      const { response } = await resource.client.request("DELETE", route, {
+        signal: AbortSignal.timeout(30_000),
+      });
       resource.attempts.push(response.status);
       // 404: already gone.
       if (response.ok || response.status === 404) resource.deleted = true;
