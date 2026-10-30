@@ -717,6 +717,22 @@ test("a withdrawn formal requirement cannot survive through its customer-documen
   const { buildEvaluationLedgerContext } = await load("lib/server/use-cases/project-workflows.ts");
   const bundle = await buildEvaluationLedgerContext({ artifactType: "forbedret_kravsvar", documents });
   assert.deepEqual(canonicalizeRequirementSourceLedger({ sourceDocuments: documents, requirementLedgerResults: bundle.requirementLedgerResults }).map((entry) => entry.id), ["K-2", "K-3"]);
+  assert.doesNotMatch(bundle.context, /levere en driftsplan/u, "the evaluation text context must use the same corrected source identities");
+  assert.match(bundle.context, /levere en exitplan/u);
+  const narrativeCustomer = { ...customer, raw_text: "4 Krav\nK-1 Leverandøren skal levere en driftsplan.\nK-2 Leverandøren skal levere en exitplan." };
+  const narrativeFormal = { ...formal, raw_text: "4 Krav\nK-1 Leverandøren skal levere en driftsplan.\nK-3 Leverandøren skal levere døgnvakt.\n\n9 Rettelser\nK-1 utgår." };
+  const narrativeBundle = await buildEvaluationLedgerContext({ artifactType: "gjennomforing_og_risiko", documents: [narrativeCustomer, narrativeFormal] });
+  assert.deepEqual(canonicalizeRequirementSourceLedger({ sourceDocuments: [narrativeCustomer, narrativeFormal], requirementLedgerResults: narrativeBundle.requirementLedgerResults }).map((entry) => entry.id), ["K-2", "K-3"]);
+  assert.doesNotMatch(narrativeBundle.context, /levere en driftsplan/u, "generic section titles must not reintroduce withdrawn requirement text");
+  const rewritten = { ...narrativeFormal, raw_text: narrativeFormal.raw_text.replace("K-1 utgår.", "K-1 endres til: «Leverandøren skal levere en årlig kapasitetsprognose.»") };
+  const rewrittenBundle = await buildEvaluationLedgerContext({ artifactType: "gjennomforing_og_risiko", documents: [narrativeCustomer, rewritten] });
+  assert.doesNotMatch(rewrittenBundle.context, /levere en driftsplan/u);
+  assert.match(rewrittenBundle.context, /årlig kapasitetsprognose/u);
+  const solution = { ...common, id: "solution", role: "primary_solution_document", file_format: "md",
+    raw_text: "| Krav-ID | Kravtekst | Svar |\n| K-1 | Leverandøren skal levere en driftsplan. | Ja, leveres årlig. |" };
+  const withAnswer = await buildEvaluationLedgerContext({ artifactType: "gjennomforing_og_risiko", documents: [narrativeCustomer, solution, narrativeFormal] });
+  assert.ok(withAnswer.requirementLedgerResults.find((entry) => entry.document.id === solution.id).ledger.length > 0);
+  assert.doesNotMatch(withAnswer.context, /levere en driftsplan/u, "a solution answer is not an active source requirement");
   // Equal IDs with different obligations remain distinct.
   customer.raw_text = customer.raw_text.replace("levere en driftsplan", "kryptere alle kundedata");
   assert.ok((await buildRequirementCoverageLedgerFromDocuments(documents)).some((entry) => entry.id === "K-1"));
@@ -744,6 +760,11 @@ test("a withdrawal cannot silently remove distinct source rows that share an ID"
   const renumbered = applyRequirementCorrections(threeOccurrences, `${chapter}\n\n9 Rettelser\nK-1 er brukt flere ganger. Det andre kravet får ny ID K-9.`).ledger;
   assert.deepEqual(renumbered.map((entry) => entry.id), ["K-1", "K-9", "K-1"]);
   assert.equal(renumbered[1].text, source[1].text);
+  const competingOrdinals = applyRequirementCorrections(threeOccurrences, `${chapter}\n\n9 Rettelser\nDet første kravet beholder K-1, det andre kravet får ny ID K-9.`).ledger;
+  assert.deepEqual(competingOrdinals.map((entry) => entry.id), ["K-1", "K-9", "K-1"]);
+  const multipleSubjects = applyRequirementCorrections([...threeOccurrences, source[2]], `${chapter}\n\n9 Rettelser\nK-2 beholder sin ID, K-1 endres: Det andre kravet får ny ID K-9.`).ledger;
+  assert.deepEqual(multipleSubjects.map((entry) => entry.id), ["K-1", "K-9", "K-1", "K-2"]);
+  assert.throws(() => applyRequirementCorrections([source[0]], `${chapter}\n\n9 Rettelser\nK-1: Det andre kravet får ny ID K-9.`), /forekomst som ikke finnes/u);
   const document = { id: "formal", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "pdf",
     raw_text: `${chapter}\n\n9 Rettelser\nK-1 (Drift) utgår.`,
     structure_map: source.map((entry, index) => ({ kind: "docling_text", parser: "docling", reference: `Docling text ${index}`, text: `${entry.id}: ${entry.text}`, page: entry.pages[0], heading_path: [entry.heading] })),
@@ -764,6 +785,20 @@ test("a withdrawal cannot silently remove distinct source rows that share an ID"
   assert.throws(() => allRequirementsWithdrawn(onlyRepeatedRows), error);
   assert.throws(() => assertExplicitRequirementLedgersComplete([onlyRepeatedRows], [{ document: onlyRepeatedRows, ledger: [] }]), error);
   assert.deepEqual(source, original, "failed correction leaves the source rows intact");
+});
+
+test("completeness requires the ordinal-renumbered Docling row as well as its repeated sibling", async () => {
+  const paragraphs = ["K-1: Leverandøren skal levere en driftsplan.", "K-1: Leverandøren skal kryptere kundedata."];
+  const document = { id: "formal", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "pdf",
+    raw_text: `${paragraphs.join("\n\n")}\n\n9 Rettelser\nK-1 er brukt to ganger. Det andre kravet får ny ID K-2.`,
+    structure_map: paragraphs.map((text, index) => ({ kind: "docling_text", parser: "docling", reference: `Docling text ${index}`, text, page: index + 1 })),
+  };
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const result = await extractRequirementLedgerWithCorrections(document);
+  assert.deepEqual(result.ledger.map((entry) => entry.id), ["K-1", "K-2"]);
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ...result }]));
+  assert.throws(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: result.ledger.slice(0, 1) }]), /mangler.*k2/iu);
+  assert.throws(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: result.ledger.slice(1) }]), /mangler.*k1/iu);
 });
 
 test("evaluation returns empty coverage when every original requirement is withdrawn", async () => {

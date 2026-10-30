@@ -490,16 +490,23 @@ export function applyRequirementCorrections(
         renumberMatch && !/\b(?:ikke|aldri)\b/iu.test(sentence.text.slice(Math.max(0, renumberMatch.index - 15), renumberMatch.index))
           ? renumberMatch[1]
           : undefined;
-      const renumberTarget = own.find((id) => id !== renumber);
-      if (renumber && renumberTarget && !known().has(renumber)) {
+      const renumberTarget = renumberMatch
+        ? subjects({ text: sentence.text, ids: sentence.ids.filter(({ at }) => at < renumberMatch.index) }, known()).at(-1) ?? own.find((id) => id !== renumber)
+        : undefined;
+      if (renumberMatch && renumber && renumberTarget && !known().has(renumber)) {
         const occurrences = entries.filter((entry) => entry.id === renumberTarget);
         // An explicit ordinal can disambiguate a renumbering. Without it,
         // choosing the last occurrence would silently rename the wrong row.
-        const ordinal = /\b(første|andre|tredje|siste)\b[^.]*\bny\s+(?:krav-?)?id\b/iu.exec(sentence.text)?.[1]?.toLocaleLowerCase("nb");
+        const ordinal = [...sentence.text.slice(0, renumberMatch.index).matchAll(/\b(første|andre|tredje|siste)\b/giu)]
+          .at(-1)?.[1]?.toLocaleLowerCase("nb");
         if (occurrences.length > 1 && !ordinal) assertUniqueTargets([renumberTarget]);
         const at = ordinal === "første" ? 0 : ordinal === "andre" ? 1 : ordinal === "tredje" ? 2 : occurrences.length - 1;
-        const renamed = occurrences[occurrences.length > 1 ? at : 0];
-        if (!renamed) assertUniqueTargets([renumberTarget]);
+        const renamed = occurrences[at];
+        if (!renamed) {
+          throw new WorkflowPreconditionError(
+            `Kravrettelsen for ${renumberTarget} viser til en forekomst som ikke finnes. Avklar rekkefølgen før du bruker ny krav-ID.`,
+          );
+        }
         entries = entries.map((entry) =>
           entry === renamed
             ? { ...entry, id: renumber, sourceExcerpt: [entry.sourceExcerpt, `Ny ID i rettelse (tidligere ${renumberTarget}): ${statement}`].filter(Boolean).join(" | ") }

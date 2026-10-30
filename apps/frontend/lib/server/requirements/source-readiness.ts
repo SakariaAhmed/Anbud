@@ -819,7 +819,7 @@ export function assertExplicitRequirementLedgersComplete(
           const key = explicitInventoryId(id);
           return key ? counts.set(key, (counts.get(key) ?? 0) + 1) : counts;
         }, new Map<string, number>())
-      : correctedExplicitRequirementSourceInventory(document.raw_text);
+      : correctedExplicitRequirementSourceInventory(document);
     if (expected.size === 0) return [];
 
     const actual = new Map<string, number>();
@@ -949,10 +949,8 @@ export function allCanonicalRequirementsWithdrawn(input: RequirementSourceLedger
 
 /** The generic explicit-ID inventory after the document's corrections
  * chapter, so an intended withdrawal or renumbering is not a lost row. */
-function correctedExplicitRequirementSourceInventory(rawText: string) {
-  const { expected, rawIds } = explicitRequirementSourceInventoryWithRawIds(withoutCorrectionsSection(rawText));
-  const raw = [...expected].flatMap(([id, count]) => Array.from({ length: count }, () => rawIds.get(id) ?? id));
-  return correctedRequirementIds(raw, rawText).reduce((counts, id) => {
+function correctedExplicitRequirementSourceInventory(document: ProjectDocumentDetail) {
+  return correctedRequirementIds(originalRequirementSourceIds(document), document.raw_text).reduce((counts, id) => {
     const key = explicitInventoryId(id);
     return key ? counts.set(key, (counts.get(key) ?? 0) + 1) : counts;
   }, new Map<string, number>());
