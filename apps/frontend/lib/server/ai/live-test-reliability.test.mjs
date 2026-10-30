@@ -815,3 +815,25 @@ test("council: far-apart stitching and number-led wrapped lines never bind as ce
   assert.notEqual(wrapped?.uncertain, false);
   assert.match(wrapped.entry.answerExcerpt, /lagres ikke i Norge/u);
 });
+
+test("review bots: skipped restrictions, Markdown section ends and empty IDs", () => {
+  const doc = (lines) => ({ ...solutionDocument, raw_text: ["[[SIDE:7]]", ...lines].join("\n") });
+  const req = (id, text) => ({ ...unansweredRequirement, id, text, heading: "" });
+  const bind = (entry, quote, lines) => bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc(lines) });
+  // A restriction between two joined sentences keeps the binding uncertain.
+  const backup = req("DAT-02", "Sikkerhetskopier skal oppbevares i 90 dager, og produksjonsmiljøet skal gjenopprettes innen fire timer.");
+  const joined = bind(backup, "Sikkerhetskopier oppbevares i 90 dager i et separat datasenter. Gjenoppretting tar under fire timer og testes kvartalsvis.", [
+    "Sikkerhetskopier oppbevares i 90 dager i et separat datasenter. Dette gjelder kun testmiljøet. Gjenoppretting tar under fire timer og testes kvartalsvis.",
+  ]);
+  assert.notEqual(joined?.uncertain, false);
+  // An answer without a final full stop ends at the next Markdown section.
+  const storage = req("ARK-01", "Alle kundedata skal lagres kryptert i Norge.");
+  const sectioned = bind(storage, "Alle kundedata lagres kryptert i datasentre i Norge", [
+    "## 4 Lagring", "", "Alle kundedata lagres kryptert i datasentre i Norge", "", "## 5 Support", "", "Telefonstøtte tilbys ikke.",
+  ]);
+  assert.ok(sectioned);
+  assert.doesNotMatch(sectioned.entry.answerExcerpt, /Support|Telefonstøtte/u);
+  // An empty ID never makes a numbered heading relevant.
+  const anonymous = req("", "Leverandøren skal beskrive sin supportmodell.");
+  assert.equal(bind(anonymous, "Vi tilbyr support på norsk hele døgnet via portal og telefon.", ["## 6.1 Kontraktsforhold", "", "Vi tilbyr support på norsk hele døgnet via portal og telefon."])?.entry.answerExcerpt ?? null, bind(anonymous, "Vi tilbyr support på norsk hele døgnet via portal og telefon.", ["Vi tilbyr support på norsk hele døgnet via portal og telefon."])?.entry.answerExcerpt ?? null);
+});

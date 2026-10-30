@@ -2908,7 +2908,9 @@ function flattenQuoteText(value: string) {
     .replace(/\[\[SIDE:\d{1,5}(?:-\d{1,5})?\]\]/gu, " ")
     // Docling writes headings as Markdown ("## 6.1 Styringssystem"); a quote
     // that runs from a heading into its text omits the marker.
-    .replace(/(^|\n)[ \t]*#{1,6}[ \t]+/gu, "$1")
+    // The heading itself is a boundary, so an answer never runs into the
+    // next section; quote matching ignores boundaries.
+    .replace(/(^|\n)[ \t]*#{1,6}[ \t]+([^\n]*)/gu, "$1 ¦ $2 ¦ ")
     // A hyphen or asterisk bullet at line start is a boundary too.
     .replace(/(?:^|\n)[ \t]*[-–*][ \t]+/gu, " ¦ ")
     // PDF text breaks words across lines with a hyphen.
@@ -3323,11 +3325,15 @@ function cellFreeSolutionText(document: ProjectDocumentDetail) {
   const { whole } = normalizedSolutionText(document);
   let text = "";
   const offsets: number[] = [];
+  // A run of boundaries ("¦ ¦", a heading next to a row) is one space.
+  const boundaryRun = /\s*¦[\s¦]*/uy;
   for (let index = 0; index < whole.length; index += 1) {
-    if (whole.startsWith(" ¦ ", index)) {
+    boundaryRun.lastIndex = index;
+    const run = whole[index] === " " || whole[index] === "¦" ? boundaryRun.exec(whole) : null;
+    if (run && run[0].includes("¦")) {
       text += " ";
       offsets.push(index);
-      index += 2;
+      index += run[0].length - 1;
       continue;
     }
     text += whole[index];
@@ -3357,7 +3363,7 @@ function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentD
       if (unique && whole.indexOf(needle, direct + 1) >= 0) return null;
       return { start: direct, end: direct + needle.length };
     }
-    const plain = needle.replace(/\s*¦\s*/gu, " ");
+    const plain = needle.replace(/\s*¦[\s¦]*/gu, " ");
     const at = cellFree.text.indexOf(plain);
     if (at < 0 || (unique && cellFree.text.indexOf(plain, at + 1) >= 0)) return null;
     return { start: cellFree.offsets[at]!, end: cellFree.offsets[at + plain.length]! };
@@ -3391,7 +3397,11 @@ function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentD
         span!.start >= previous.end &&
         gap.length <= VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS &&
         !sectionStarts.some((at) => at > previous.end && at <= span!.start) &&
-        !/¦\s*\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Ll}/u.test(gap)
+        !/¦\s*\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Ll}/u.test(gap) &&
+        // A restriction in the skipped text ("Dette gjelder kun
+        // testmiljøet.") may apply to the parts around it.
+        !NEGATION.test(gap) &&
+        !LIMITING.test(gap)
       );
     }) &&
     !parts.some((part) => NEGATION.test(part) || LIMITING.test(part));
@@ -3511,9 +3521,10 @@ function bindSolutionQuoteSpan(
   // ikke |" is another row's answer, not a heading).
   const idPattern = (id: string) =>
     new RegExp(`(?<![\\p{L}\\p{N}-])${id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}]|\\.\\d)`, "u");
-  const ownId = idPattern(input.entry.id);
+  // An empty or generated ID cannot be named by a heading.
+  const ownId = input.entry.id.trim().length >= 2 ? idPattern(input.entry.id.trim()) : null;
   let heading = "";
-  if (ownAt > 0) {
+  if (ownId && ownAt > 0) {
     const cells = solution.flat
       .slice(Math.max(0, ownAt - 400), ownAt)
       .split("¦")

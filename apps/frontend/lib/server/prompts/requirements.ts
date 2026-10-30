@@ -137,6 +137,6 @@ export function requirementCoverageSystemPrompt() {
       "nr skal være samme nummer som i input. ref skal være samme kravreferanse som i input.",
     ],
     exampleOutput:
-      '{"rows":[{"nr":1,"ref":"ID2-11 - Tilgang","assessment":"Dårlig","rationale":"Svaret omtaler tilgangsstyring, men mangler konkret prosess for periodiske kontroller.","evidence":"least privilege og tilgangsreview","recommendation":"Legg til ansvar, frekvens og dokumentasjon for tilgangsreview."}]}',
+      '{"rows":[{"nr":1,"ref":"ID2-11 - Tilgang","assessment":"Dårlig","rationale":"Svaret omtaler tilgangsstyring, men mangler konkret prosess for periodiske kontroller.","evidence":"Tilgang tildeles etter prinsippet om minste privilegium og gjennomgås av kundens IT-ansvarlige ved behov.","recommendation":"Legg til ansvar, frekvens og dokumentasjon for tilgangsreview."}]}',
   });
 }
