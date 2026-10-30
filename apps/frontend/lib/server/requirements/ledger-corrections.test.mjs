@@ -915,6 +915,16 @@ test("review bots on #70: 'andre' as 'other' is no ordinal; an ID-less customer 
     () => applyRequirementCorrections(bothTwice, `4 Krav\n${bothTwice.map((entry) => `${entry.id} ${entry.text}`).join("\n")}\n\n9 Rettelser\nK-2 og K-3 er brukt to ganger. Den siste (sikkerhetsrapport fra K-2) får ny ID K-9.`),
     /ny krav-ID K-9 kan gjelde K-2, K-3/u,
   );
+  // The same within one sentence; a single named requirement still works.
+  const oneSentence = `4 Krav\n${bothTwice.map((entry) => `${entry.id} ${entry.text}`).join("\n")}\n\n9 Rettelser\n`;
+  assert.throws(
+    () => applyRequirementCorrections(bothTwice, `${oneSentence}K-2 og K-3 er brukt to ganger, og den siste får ny ID K-9.`),
+    /ny krav-ID K-9 kan gjelde K-2, K-3/u,
+  );
+  assert.deepEqual(
+    applyRequirementCorrections(bothTwice, `${oneSentence}K-3 er brukt to ganger, og den siste får ny ID K-9.`).ledger.map((entry) => entry.id),
+    ["K-3", "K-9", "K-2", "K-2"],
+  );
   // Plural "andre krav" names no occurrence: one K-3 is renamed, two stay ambiguous.
   assert.deepEqual(
     applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nI tillegg til andre krav får K-3 ny ID K-9.`).ledger.map((entry) => entry.id),

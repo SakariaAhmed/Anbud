@@ -536,12 +536,22 @@ export function applyRequirementCorrections(
         // "krav" is also plural ("andre krav" = "other requirements"), so it
         // counts only after a determiner ("det andre krav"). A short
         // parenthesis may qualify a pronoun ordinal ("Den siste (logger) får").
-        const ordinal = [...sentence.text.slice(0, renumberMatch.index).matchAll(
+        const ordinalMatch = [...sentence.text.slice(0, renumberMatch.index).matchAll(
           /(?<![\p{L}\p{N}])(?:(første|andre|tredje|siste)\s+(?:kravet|kravraden|raden|rad|forekomsten)|(?:det|dette)\s+(første|andre|tredje|siste)\s+krav|(?:den|det|denne|dette)\s+(første|andre|tredje|siste)(?=\s*(?:\([^()]{1,80}\)\s*)?(?:(?:får|beholder|skal|gis|endres|blir|er)(?![\p{L}\p{N}])|[,.:;]|$)))(?![\p{L}\p{N}])/giu,
-        )]
-          .map((match) => match[1] ?? match[2] ?? match[3])
-          .at(-1)
-          ?.toLocaleLowerCase("nb");
+        )].at(-1);
+        const ordinal = (ordinalMatch?.[1] ?? ordinalMatch?.[2] ?? ordinalMatch?.[3])?.toLocaleLowerCase("nb");
+        // A bare pronoun ordinal ("den siste") after several requirements in
+        // the sentence ("K-2 og K-3 er brukt to ganger, og den siste får …")
+        // does not show which requirement it belongs to.
+        const namedBefore = new Set(subjects({
+          text: sentence.text,
+          ids: sentence.ids.filter(({ at }) => at < renumberMatch.index && !inAside(at)),
+        }, known()));
+        if (ordinalMatch?.[3] && namedBefore.size > 1) {
+          throw new WorkflowPreconditionError(
+            `Kravrettelsen kan ikke brukes entydig: ny krav-ID ${renumber} kan gjelde ${[...namedBefore].join(", ")}. Avklar hvilket krav rettelsen gjelder.`,
+          );
+        }
         if (occurrences.length > 1 && !ordinal) assertUniqueTargets([renumberTarget]);
         const at = ordinal === "første" ? 0 : ordinal === "andre" ? 1 : ordinal === "tredje" ? 2 : occurrences.length - 1;
         const renamed = occurrences[at];
