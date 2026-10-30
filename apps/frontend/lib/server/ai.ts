@@ -151,8 +151,11 @@ import {
   sortRequirementLedgerInDocumentOrder,
 } from "@/lib/server/requirements/presentation";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
+import { correctedRequirementIds, withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
+import { spreadsheetRequirementIds } from "@/lib/server/requirements/spreadsheet-ledger";
 import { productionSafeErrorMessage, safeErrorTelemetry } from "@/lib/server/safe-errors";
 import {
+  allRequirementsWithdrawn,
   assertExplicitRequirementLedgersComplete,
   canonicalRequirementSourceDocuments,
   canonicalizeRequirementSourceLedger,
@@ -181,7 +184,7 @@ import {
   buildContinuationPageMap,
   buildRequirementPageEvidence,
   buildRequirementSourceLedgerContext,
-  extractRequirementLedgerForDocument,
+  extractRequirementLedgerWithCorrections,
   isReliableRequirementLedger,
   mergeContinuationRowsInRequirementTable,
   requirementAnswerEvidence,
@@ -1061,10 +1064,14 @@ export function hasExplicitlyCompleteSmallRequirementLedger(input: {
       (entry) => entry.documentId === document.id,
     );
     if (!documentEntries.length) {
-      return false;
+      return allRequirementsWithdrawn(document);
     }
 
-    const detectedIds = detectExplicitRequirementIds(document.raw_text)
+    const sourceIds = spreadsheetRequirementIds(document);
+    const detectedIds = correctedRequirementIds(
+      sourceIds.length ? sourceIds : detectExplicitRequirementIds(withoutCorrectionsSection(document.raw_text)),
+      document.raw_text,
+    )
       .map(normalizedExplicitCompletenessId)
       .filter(Boolean);
     if (detectedIds.length !== documentEntries.length) {
@@ -3252,6 +3259,9 @@ export async function buildSolutionRequirementCoverage(input: {
       ? await buildRequirementCoverageLedgerFromDocuments(sourceRequirementDocuments)
       : [];
   if (sourceRequirementDocuments.length && !sourceLedger.length) {
+    if (sourceRequirementDocuments.every(allRequirementsWithdrawn)) {
+      return emptyRequirementCoverage("Alle krav i kravgrunnlaget er trukket tilbake ved rettelse.");
+    }
     throw new Error(
       "Kravdekningen stoppet fordi originale kravdokumenter finnes, men ingen krav kunne ekstraheres fra dem.",
     );
@@ -6502,7 +6512,7 @@ async function buildRequirementArtifactContext(
             document,
             // The same extractor as the evaluation (including the
             // document's corrections chapter), so both see one register.
-            ledger: await extractRequirementLedgerForDocument(document),
+            ...await extractRequirementLedgerWithCorrections(document),
           }),
         )
       : [];

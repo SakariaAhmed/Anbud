@@ -2470,26 +2470,20 @@ export function recoverAvailabilityFractionRequirement<
  * ledger, truncation repairs, and the document's corrections chapter. */
 export async function extractRequirementLedgerForDocument(
   document: ProjectDocumentDetail,
-): Promise<
-  Array<{
-    id: string;
-    text: string;
-    pages: number[];
-    heading: string;
-    documentTitle?: string;
-    tableId?: string;
-    service?: string;
-    sourceExcerpt?: string;
-    answerExcerpt?: string;
-  }>
-> {
+): Promise<RequirementLedgerEntry[]> {
+  return (await extractRequirementLedgerWithCorrections(document)).ledger;
+}
+
+/** Preserve original identities for duplicate suppression across documents,
+ * including requirements removed or rewritten by the corrections chapter. */
+export async function extractRequirementLedgerWithCorrections(document: ProjectDocumentDetail) {
   const ledger = recoverTruncatedRequirementLedgerEntries(
     await buildRequirementSourceLedgerWithFiles(document),
   )
     .map(recoverTruncatedRequirementLedgerEntryInline)
     .map(recoverAvailabilityFractionRequirement);
   if (!isLegacyMixedFofingerCorpus(document)) {
-    return applyRequirementCorrections(ledger, document.raw_text).ledger;
+    return applyRequirementCorrections(ledger, document.raw_text);
   }
 
   return applyRequirementCorrections(
@@ -2502,7 +2496,7 @@ export async function extractRequirementLedgerForDocument(
       .map(recoverTruncatedRequirementLedgerEntryInline)
       .map(recoverAvailabilityFractionRequirement),
     document.raw_text,
-  ).ledger;
+  );
 }
 
 export function isReliableRequirementLedger(ledger: RequirementLedgerEntry[]) {

@@ -527,6 +527,7 @@ export function canonicalizeRequirementSourceLedger(input: {
   requirementLedgerResults: Array<{
     document: Pick<ProjectDocumentDetail, "id">;
     ledger: RequirementLedgerEntry[];
+    originalLedger?: RequirementLedgerEntry[];
   }>;
 }) {
   const blankEntries = input.requirementLedgerResults.flatMap((result) =>
@@ -548,7 +549,10 @@ export function canonicalizeRequirementSourceLedger(input: {
   const formalDescriptors = input.sourceDocuments
     .filter(isFormalRequirementDocument)
     .flatMap(
-      (document) => resultByDocumentId.get(document.id)?.ledger ?? [],
+      (document) => {
+        const result = resultByDocumentId.get(document.id);
+        return [...(result?.ledger ?? []), ...(result?.originalLedger ?? [])];
+      },
     )
     .map(requirementMatchDescriptor);
   const formalIndexes = {
@@ -868,7 +872,7 @@ function explicitLedgerEntryIds(entry: RequirementLedgerEntry) {
 /** Whether the document's corrections chapter withdraws every requirement
  * it had: an empty ledger is then the intended result, not a failed
  * extraction. */
-function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
+export function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
   const rawText = document.raw_text ?? "";
   const matrixIds = spreadsheetRequirementIds(document);
   const original = matrixIds.length

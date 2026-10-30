@@ -660,6 +660,46 @@ test("a numbered section label stays outside the matrix requirement inventory", 
   assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger }]));
 });
 
+test("supplier wishes never withdraw requirements and rewrites retain existing provenance", () => {
+  const source = [{ id: "K-4", text: "Leverandøren skal levere en driftsplan.", pages: [1], heading: "4 Krav", sourceExcerpt: "Ark Krav, Rad 8 | Type: Minstekrav | Vekt: 10 %" }];
+  const chapter = `4 Krav\nK-4 ${source[0].text}\n\n9 Rettelser\n`;
+  for (const request of ["Leverandøren ønsker at K-4 utgår.", "Vi ønsker å endre K-4 til: «Leverandøren skal levere rapporter.»"]) {
+    assert.equal(applyRequirementCorrections(source, chapter + request).ledger[0].text, source[0].text);
+  }
+  const changed = applyRequirementCorrections(source, chapter + "Svar: K-4 gjelder hele døgnet.\nK-4 endres til: «Leverandøren skal levere en årlig driftsplan.»").ledger[0];
+  assert.match(changed.sourceExcerpt, /Ark Krav, Rad 8 \| Type: Minstekrav \| Vekt: 10 %/u);
+  assert.match(changed.sourceExcerpt, /gjelder hele døgnet/u);
+  assert.match(changed.sourceExcerpt, /Opprinnelig tekst/u);
+});
+
+test("a withdrawn formal requirement cannot survive through its customer-document duplicate", async () => {
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const { canonicalizeRequirementSourceLedger } = await load("lib/server/requirements/source-readiness.ts");
+  const { buildRequirementCoverageLedgerFromDocuments } = await load("lib/server/ai/requirement-coverage.ts");
+  const common = { title: "Krav", file_format: "docx", structure_map: [] };
+  const customer = { ...common, id: "customer", role: "primary_customer_document", raw_text: "4 Krav\n| Krav-ID | Kravtekst |\n| K-1 | Leverandøren skal levere en driftsplan. |\n| K-2 | Leverandøren skal levere en exitplan. |" };
+  const formal = { ...common, id: "formal", role: "supporting_document", supporting_subtype: "kravdokument", raw_text: "4 Krav\n| Krav-ID | Kravtekst |\n| K-1 | Leverandøren skal levere en driftsplan. |\n| K-3 | Leverandøren skal levere døgnvakt. |\n\n9 Rettelser\nK-1 utgår." };
+  const documents = [customer, formal];
+  const results = await Promise.all(documents.map(async (document) => ({ document, ...await extractRequirementLedgerWithCorrections(document) })));
+  assert.deepEqual(canonicalizeRequirementSourceLedger({ sourceDocuments: documents, requirementLedgerResults: results }).map((entry) => entry.id), ["K-2", "K-3"]);
+  assert.deepEqual((await buildRequirementCoverageLedgerFromDocuments(documents)).map((entry) => entry.id), ["K-2", "K-3"]);
+  // Equal IDs with different obligations remain distinct.
+  customer.raw_text = customer.raw_text.replace("levere en driftsplan", "kryptere alle kundedata");
+  assert.ok((await buildRequirementCoverageLedgerFromDocuments(documents)).some((entry) => entry.id === "K-1"));
+});
+
+test("evaluation returns empty coverage when every original requirement is withdrawn", async () => {
+  const { buildSolutionRequirementCoverage } = await load("lib/server/ai.ts");
+  const source = { id: "formal", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "docx", structure_map: [], raw_text: "4 Krav\n| Krav-ID | Kravtekst |\n| K-1 | Leverandøren skal levere en driftsplan. |\n\n9 Rettelser\nK-1 utgår." };
+  const coverage = await buildSolutionRequirementCoverage({ projectName: "Test", customerAnalysis: null,
+    requirementDocuments: [source], sourceRequirementLedger: [],
+    solutionDocument: { ...source, id: "solution", role: "primary_solution_document", raw_text: "K-1 Leverandøren leverer en driftsplan." },
+    solutionRequirementLedger: [{ id: "K-1", text: "Leverandøren leverer en driftsplan.", pages: [1], heading: "4 Krav" }],
+  });
+  assert.deepEqual(coverage.items, []);
+  assert.match(coverage.coverage_summary, /trukket tilbake/u);
+});
+
 test("review bots: several correction notices, kept notes, Unicode section rows, withdrawn documents", async () => {
   const k = (id, text) => ({ id, text, pages: [1], heading: "4 Krav" });
   // Rettelse nr. 1 and nr. 2 both apply, in order; a table of contents does not.

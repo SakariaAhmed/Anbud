@@ -1698,6 +1698,20 @@ test("small explicit ledgers are accepted only when every detected ID is account
   );
 });
 
+test("small-ledger completeness uses corrected source IDs and still rejects missing live requirements", () => {
+  const source = { ...document("small-corrected"), raw_text: [
+    "4 Krav", "| Krav-ID | Kravtekst |", "|---|---|",
+    ...[1, 2, 3, 4, 5].map((id) => `| K-${id} | Leverandøren skal dokumentere kontroll nummer ${id}. |`),
+    "", "9 Rettelser", "K-5 utgår.",
+  ].join("\n") };
+  const ledger = [1, 2, 3, 4].map((id) => requirement({
+    id: `K-${id}`, documentId: source.id, documentTitle: source.title,
+    text: `Leverandøren skal dokumentere kontroll nummer ${id}.`,
+  }));
+  assert.equal(hasExplicitlyCompleteSmallRequirementLedger({ ledger, requirementDocuments: [source] }), true);
+  assert.equal(hasExplicitlyCompleteSmallRequirementLedger({ ledger: ledger.slice(0, 3), requirementDocuments: [source] }), false);
+});
+
 test("forbedret kravsvar fails closed without a verified requirement ledger", () => {
   assert.throws(
     () =>

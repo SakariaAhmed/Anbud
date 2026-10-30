@@ -310,10 +310,10 @@ export function applyRequirementCorrections(
   ledger: RequirementLedgerEntry[],
   rawText: string,
   options: { removeCorrectionRows?: boolean } = {},
-): { ledger: RequirementLedgerEntry[]; report: RequirementCorrectionReport } {
+): { ledger: RequirementLedgerEntry[]; originalLedger: RequirementLedgerEntry[]; report: RequirementCorrectionReport } {
   const report: RequirementCorrectionReport = { changed: [], withdrawn: [], added: [], renumbered: [], clarified: [] };
   const section = findCorrectionsSection(rawText);
-  if (!section) return { ledger, report };
+  if (!section) return { ledger, originalLedger: ledger, report };
 
   // Rows extracted from the chapter itself (the change rows, bidder
   // questions, a "K-1 får ny ID" fragment) are not requirements; they are
@@ -342,6 +342,7 @@ export function applyRequirementCorrections(
   };
   let entries =
     options.removeCorrectionRows === false ? ledger : ledger.filter((entry) => !isCorrectionRow(entry));
+  const originalLedger = entries;
   const known = () => new Set(entries.map((entry) => entry.id));
   const sourceIds = new Set(entries.map((entry) => entry.id));
   const note = (id: string, label: string, statement: string) => {
@@ -393,7 +394,7 @@ export function applyRequirementCorrections(
     const isQuestion = (text: string) =>
       /\?\s*$/u.test(text.trim()) ||
       /^\s*spørsmål\b/iu.test(text) ||
-      /\b(?:vi\s+ber\s+om|ber\s+om\s+at|ønsker\s+(?:at|å)|foreslår\s+at|anmoder\s+om)\b/iu.test(text);
+      /(?<![\p{L}\p{N}])(?:vi\s+ber\s+om|ber\s+om\s+at|ønsker\s+(?:at|å)|foreslår\s+at|anmoder\s+om)(?![\p{L}\p{N}])/iu.test(text);
     if (isQuestion(masked)) continue;
     for (const sentence of sentences(masked)) {
       if (isQuestion(sentence.text)) continue;
@@ -552,7 +553,7 @@ export function applyRequirementCorrections(
             ? {
                 ...entry,
                 text,
-                sourceExcerpt: [`Endret ved rettelse: ${statement}`, `Opprinnelig tekst: ${entry.text}`].join(" | "),
+                sourceExcerpt: [entry.sourceExcerpt, `Endret ved rettelse: ${statement}`, `Opprinnelig tekst: ${entry.text}`].filter(Boolean).join(" | "),
               }
             : entry,
         );
@@ -583,7 +584,7 @@ export function applyRequirementCorrections(
   // naming an action on a requirement are attached, so an unplaced change
   // is never lost without a trace.
   if (!applied && !report.clarified.length) {
-    if (!pendingNotes.length) return { ledger, report };
+    if (!pendingNotes.length) return { ledger, originalLedger, report };
     return {
       ledger: ledger.map((entry) => {
         const statements = pendingNotes.filter((pending) => pending.id === entry.id).map((pending) => `Rettelse: ${pending.statement}`);
@@ -591,11 +592,12 @@ export function applyRequirementCorrections(
           ? { ...entry, sourceExcerpt: [entry.sourceExcerpt, ...statements].filter(Boolean).join(" | ") }
           : entry;
       }),
+      originalLedger,
       report,
     };
   }
 
-  return { ledger: entries, report };
+  return { ledger: entries, originalLedger, report };
 }
 
 /**
