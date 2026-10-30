@@ -15,6 +15,9 @@ const { buildSpreadsheetRequirementLedger } = await load("lib/server/requirement
 const { applyRequirementCorrections, findCorrectionsSection } = await load(
   "lib/server/requirements/corrections.ts",
 );
+const { assertExplicitRequirementLedgersComplete } = await load(
+  "lib/server/requirements/source-readiness.ts",
+);
 
 // The spreadsheet parser's row format (lib/server/documents.ts).
 const matrix = [
@@ -112,4 +115,33 @@ test("corrections change, withdraw, renumber and add requirements and keep the o
 test("documents without a corrections chapter are unchanged", () => {
   const plain = "4 Drift\nOPS-1 Leverandøren skal svare på hendelser innen én time.";
   assert.equal(applyRequirementCorrections(ledger, plain).ledger, ledger);
+});
+
+test("award criteria rows in another sheet do not count as missing requirements", () => {
+  const raw_text = [
+    matrix,
+    "",
+    "Ark: Tildelingskriterier",
+    "Rad 1: A1: Nr. | B1: Kriterium | C1: Vekt",
+    "Rad 2: A2: K1 | B2: Pris | C2: 40 %",
+    "Rad 3: A3: K2 | B3: Kvalitet | C3: 60 %",
+  ].join("\n");
+  const document = {
+    id: "matrix-doc",
+    role: "supporting_document",
+    supporting_subtype: "kravdokument",
+    title: "Kravdokument",
+    file_format: "xlsx",
+    raw_text,
+    structure_map: [],
+  };
+  const ledger = buildSpreadsheetRequirementLedger(document);
+  assert.doesNotThrow(() =>
+    assertExplicitRequirementLedgersComplete([document], [{ document, ledger }]),
+  );
+  // Losing matrix rows downstream is still caught.
+  assert.throws(
+    () => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: ledger.slice(0, 1) }]),
+    /mangler eksplisitte kilderader|tom for kravdokument/u,
+  );
 });

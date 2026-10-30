@@ -1,3 +1,4 @@
+import { buildSpreadsheetRequirementLedger } from "@/lib/server/requirements/spreadsheet-ledger";
 import {
   hasReadableRequirementDocumentContent,
   hasRequirementDocumentSignal,
@@ -784,13 +785,26 @@ export function assertExplicitRequirementLedgersComplete(
   const incompleteExplicitInventories = sourceDocuments.flatMap((document) => {
     if (!isFormalRequirementDocument(document)) return [];
     const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
-    const expected = explicitRequirementSourceInventory(document.raw_text);
+    // A spreadsheet's inventory is its requirement matrix's ID column; other
+    // sheets (award criteria such as "K1") are not requirements. Matrix IDs
+    // are counted as written on both sides, so lost rows are caught even for
+    // prefixed IDs ("KD-01") that the generic ID detector does not read.
+    const matrix = buildSpreadsheetRequirementLedger(document);
+    const entryIds = (entry: RequirementLedgerEntry) =>
+      matrix.length
+        ? [explicitInventoryId(entry.id)].filter(Boolean)
+        : explicitLedgerEntryIds(entry);
+    const expected = matrix.length
+      ? matrix.reduce((counts, entry) => {
+          for (const id of entryIds(entry)) counts.set(id, (counts.get(id) ?? 0) + 1);
+          return counts;
+        }, new Map<string, number>())
+      : explicitRequirementSourceInventory(document.raw_text);
     if (expected.size === 0) return [];
 
     const actual = new Map<string, number>();
     for (const entry of ledger) {
-      const ids = explicitLedgerEntryIds(entry);
-      for (const id of ids) {
+      for (const id of entryIds(entry)) {
         actual.set(id, (actual.get(id) ?? 0) + 1);
       }
     }
