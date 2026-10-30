@@ -121,11 +121,13 @@ export function requirementCoverageSystemPrompt() {
       "Mangler betyr at du ikke finner et reelt svar på kravet i utdragene.",
       "Uklart betyr at et svar finnes, men dekningen eller dokumentgrunnlaget er for uklart til å gi Godt eller Dårlig.",
       "Når konteksten inneholder eksakte kravradutdrag, skal disse være primærkilde for både krav og arkitektens svar.",
+      "Når hele Bilag 2 er med i konteksten, skal du lete gjennom hele dokumentet etter svaret på hvert krav, også under andre overskrifter, i tabeller og i vedleggskapitler, og ta med forbehold eller motstridende opplysninger andre steder i dokumentet. Et sammendrag eller en generell påstand om at alle krav er oppfylt, er ikke svar på et konkret krav.",
       "Hvis konteksten inneholder answer_excerpt, Detailed response, Leverandørens besvarelse eller annet faktisk svarinnhold for raden, er Mangler forbudt. Bruk Godt, Dårlig eller Uklart ut fra kvaliteten på svaret.",
       "Hvis svarutdraget overlater nødvendig kravdekning til et vedlegg/bilag/annex som ikke finnes i vurderingskonteksten, skal kravet vurderes som Uklart inntil dokumentet og beviset er kontrollert. Ikke gi goodwill-dekning eller Godt bare på grunnlag av en uverifisert vedleggsreferanse. Hvis hovedsvaret derimot er konkret og selvstendig, skal det vurderes uten den supplerende vedleggssetningen og kan beholde Godt.",
       "Hvis svarutdraget sier at leveranse, omfang, ansvar eller løsning må avklares før leverandøren kan bekrefte dekning, skal det normalt vurderes som Uklart, ikke Mangler.",
       "Vurder hele kravraden: kravtekst, svar, forbehold, avklaringer og om svaret faktisk er operasjonelt nok for kundens kontekst.",
-      "evidence skal være et kort tekstnært utdrag fra Bilag 2, helst ordrett fra kravrad, svarutdrag eller radutdrag. Ikke bruk kundeanalysen som evidence og ikke skriv fri parafrase.",
+      "evidence skal være et ordrett sitat fra Bilag 2-teksten i konteksten (kravrad, svarutdrag, sideutdrag eller Bilag 2-utdrag): én eller to hele setninger, 30–600 tegn, uten utelatelsestegn. Ikke bruk kundeanalysen eller kravteksten som evidence og ikke skriv fri parafrase.",
+      "Når raden mangler svarutdrag, er evidence det eneste grunnlaget for en annen vurdering enn Mangler. Sitatet kontrolleres ordrett mot Bilag 2; et sitat som ikke finnes der, gir Mangler. Finnes det ikke tekst i Bilag 2 som svarer på kravet, skal assessment være Mangler.",
       "recommendation skal beskrive en konkret retting og nødvendig leverandørbeslutning eller dokumentasjon. Bevar reelle avvik, manglende prising og forbehold inntil leverandøren har bekreftet endringen; en omskriving alene lukker ikke avviket.",
       "Ikke overdriv svakheter. Vær konservativ når utdragene ikke gir sikkert grunnlag.",
     ],
@@ -135,6 +137,6 @@ export function requirementCoverageSystemPrompt() {
       "nr skal være samme nummer som i input. ref skal være samme kravreferanse som i input.",
     ],
     exampleOutput:
-      '{"rows":[{"nr":1,"ref":"ID2-11 - Tilgang","assessment":"Dårlig","rationale":"Svaret omtaler tilgangsstyring, men mangler konkret prosess for periodiske kontroller.","evidence":"least privilege og tilgangsreview","recommendation":"Legg til ansvar, frekvens og dokumentasjon for tilgangsreview."}]}',
+      '{"rows":[{"nr":1,"ref":"ID2-11 - Tilgang","assessment":"Dårlig","rationale":"Svaret omtaler tilgangsstyring, men mangler konkret prosess for periodiske kontroller.","evidence":"Tilgang tildeles etter prinsippet om minste privilegium og gjennomgås av kundens IT-ansvarlige ved behov.","recommendation":"Legg til ansvar, frekvens og dokumentasjon for tilgangsreview."}]}',
   });
 }

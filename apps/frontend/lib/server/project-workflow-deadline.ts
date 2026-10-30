@@ -87,7 +87,7 @@ export async function runProjectWorkflowWithDeadline<T>(input: {
   kind: ProjectJobKind;
   workflowSignal?: AbortSignal;
   timeoutMs?: number;
-  run: (signal: AbortSignal) => Promise<T>;
+  run: (signal: AbortSignal, deadlineAt: number) => Promise<T>;
   runtime?: ProjectWorkflowDeadlineRuntime;
 }) {
   const timeoutMs = input.timeoutMs ?? projectWorkflowTimeoutMs(input.kind);
@@ -121,12 +121,13 @@ export async function runProjectWorkflowWithDeadline<T>(input: {
     input.kind,
     timeoutMs,
   );
+  const deadlineAt = Date.now() + timeoutMs;
   const timeoutHandle = runtime.setTimeout(() => {
     workflowController.abort(timeoutError);
   }, timeoutMs);
 
   try {
-    const workflow = input.run(workflowController.signal);
+    const workflow = input.run(workflowController.signal, deadlineAt);
     return await Promise.race([workflow, aborted]);
   } finally {
     runtime.clearTimeout(timeoutHandle);
