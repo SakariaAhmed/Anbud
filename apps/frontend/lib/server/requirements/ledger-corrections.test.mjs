@@ -754,6 +754,37 @@ test("withdrawing every explicit ID does not prove unnumbered requirements were 
   await assert.rejects(buildRequirementCoverageLedgerFromDocuments([document]), /ingen krav kunne ekstraheres/u);
 });
 
+test("a withdrawn Docling paragraph includes its anchored obligation continuations", async () => {
+  const paragraph = "KRAV-01: Leverandøren skal logge hendelser.\nLoggene skal bevares i 14 måneder.";
+  const document = { id: "formal", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "pdf",
+    raw_text: `4 Krav\n${paragraph}\n\n9 Rettelser\nKRAV-01 utgår.`,
+    structure_map: [{ kind: "docling_text", parser: "docling", reference: "Docling text 1", text: paragraph, page: 1 }],
+  };
+  const { allRequirementsWithdrawn } = await load("lib/server/requirements/source-readiness.ts");
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const { buildRequirementCoverageLedgerFromDocuments } = await load("lib/server/ai/requirement-coverage.ts");
+  const result = await extractRequirementLedgerWithCorrections(document);
+  assert.deepEqual(result.ledger, []);
+  assert.equal(result.originalLedger.length, 1);
+  assert.match(result.originalLedger[0].text, /Loggene skal bevares i 14 måneder/u);
+  assert.equal(allRequirementsWithdrawn(document), true);
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ...result }]));
+  assert.deepEqual(await buildRequirementCoverageLedgerFromDocuments([document]), []);
+  const { buildSolutionRequirementCoverage } = await load("lib/server/ai.ts");
+  const coverage = await buildSolutionRequirementCoverage({ projectName: "Test", customerAnalysis: null,
+    requirementDocuments: [document], sourceRequirementLedger: [],
+    solutionDocument: { ...document, id: "solution", role: "primary_solution_document", raw_text: "KRAV-01 Leverandøren logger hendelser." },
+    solutionRequirementLedger: [{ id: "KRAV-01", text: "Leverandøren logger hendelser.", pages: [1], heading: "4 Krav" }],
+  });
+  assert.deepEqual(coverage.items, []);
+  // The same obligation in a separate paragraph or outside its source anchor
+  // is not proof of a continuation belonging to the withdrawn requirement.
+  const separate = { ...document, structure_map: [{ ...document.structure_map[0], text: paragraph.split("\n")[0] },
+    { ...document.structure_map[0], reference: "Docling text 2", text: paragraph.split("\n")[1] }] };
+  assert.equal(allRequirementsWithdrawn(separate), false);
+  assert.equal(allRequirementsWithdrawn({ ...document, raw_text: document.raw_text.replace("\n\n9 Rettelser", "\n\nLoggene skal bevares i 14 måneder.\n\n9 Rettelser") }), false);
+});
+
 test("review bots: several correction notices, kept notes, Unicode section rows, withdrawn documents", async () => {
   const k = (id, text) => ({ id, text, pages: [1], heading: "4 Krav" });
   // Rettelse nr. 1 and nr. 2 both apply, in order; a table of contents does not.
