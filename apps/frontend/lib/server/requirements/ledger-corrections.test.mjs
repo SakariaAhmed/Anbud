@@ -550,3 +550,30 @@ test("round 10: a scope clarification never replaces an obligation", () => {
   assert.deepEqual(report.changed, []);
   assert.match(result[0].sourceExcerpt ?? "", /gjelder kun produksjonsmiljøet/u);
 });
+
+test("round 11: modal scope statements, generic stems, a closing scope sentence", () => {
+  const storage = { id: "K-1", text: "Alle kundedata skal ha kryptert lagring i Norge.", pages: [1], heading: "4 Krav" };
+  const other = { id: "K-2", text: "Leverandøren skal levere månedlig driftsrapport.", pages: [1], heading: "4 Krav" };
+  const run = (row) =>
+    applyRequirementCorrections(
+      [storage, other],
+      `4 Krav\nK-1 ${storage.text}\nK-2 ${other.text}\n\n9 Rettelser\n| Krav-ID | Endring | Ny tekst |\n${row}\n| K-2 | Rettelse | Utgår |`,
+    ).ledger.find((entry) => entry.id === "K-1").text;
+  for (const scope of ["Kryptert lagring skal kun gjelde produksjonsmiljøet.", "Kravet skal kun gjelde produksjonsmiljøet."]) {
+    assert.equal(run(`| K-1 | Presisering | ${scope} |`), storage.text, scope);
+  }
+  // Full new wording followed by a scope sentence still applies, whole.
+  assert.equal(
+    run("| K-1 | Endring | Alle kundedata skal ha kryptert lagring innenfor EØS. Kravet gjelder kun produksjonsmiljøet. |"),
+    "Alle kundedata skal ha kryptert lagring innenfor EØS. Kravet gjelder kun produksjonsmiljøet.",
+  );
+  // A generic stem ("lever") or a bare obligation does not continue the wording.
+  const ledger = [{ id: "K-3", text: "Leverandøren skal levere kvartalsvis driftsrapport.", pages: [1], heading: "4 Krav" }];
+  const text = (corrections) => applyRequirementCorrections(ledger, `4 Krav\nK-3 ${ledger[0].text}\n\n9 Rettelser\n${corrections}`).ledger[0].text;
+  for (const unclear of [
+    "K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Leverandørkonferansen avholdes 3. oktober.",
+    "K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Tilbud skal leveres innen 15. november.",
+  ]) {
+    assert.equal(text(unclear), ledger[0].text, unclear);
+  }
+});

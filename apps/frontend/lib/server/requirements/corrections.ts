@@ -18,6 +18,9 @@ const QUOTED = /[«“"]([^«»“”"]{1,1500})[»”"]/gu;
 const WITHDRAW_VERB =
   /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|er\s+utgått|slettes|frafalles|annulleres)\b|\b(?:fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
 const CHANGE_VERB = /\b(?:endres|er\s+endret\s+til|erstattes(?!\s+av\s+(?:et\s+)?nytt)|ny\s+tekst|lyder\s+nå|skal\s+(?:nå\s+)?lyde)(?![\p{L}\p{N}])/giu;
+// A sentence limiting where a requirement applies, with or without a modal.
+const SCOPE_STATEMENT =
+  /(?<![\p{L}\p{N}])(?:(?:gjelder|omfatter)\s+(?:kun|bare|ikke|også|heller\s+ikke)|(?:skal|må|vil)\s+(?:kun|bare|ikke|også)\s+(?:gjelde|omfatte))(?![\p{L}\p{N}])/iu;
 // "må" and "bør" end in letters JavaScript's \b does not treat as word letters.
 const OBLIGATION = /(?<![\p{L}\p{N}])(?:skal|må|bør)(?![\p{L}\p{N}])/iu;
 const ADDED = /\b(?:nytt\s+krav|legges(?:\s+ikke)?\s+til|tilføyes)\b/iu;
@@ -234,31 +237,38 @@ function correctedWording(original: string, quote: string, replaced: string | un
   const oldWords = words(original);
   const newWords = [...words(quote)];
   const restates = newWords.length > 0 && newWords.filter((word) => oldWords.has(word)).length >= newWords.length / 2;
-  // A scope statement ("Kryptert lagring gjelder kun produksjonsmiljøet.")
-  // qualifies the requirement; replacing it would drop the obligation.
-  const scope = /(?<![\p{L}\p{N}])(?:gjelder|omfatter)\s+(?:kun|bare|ikke|også|heller\s+ikke)(?![\p{L}\p{N}])/iu.test(quote);
-  if (!old || obligation(quote)) return quote;
-  if (scope || obligation(original)) return null;
+  // A scope statement ("Kryptert lagring gjelder kun produksjonsmiljøet.",
+  // "Kravet skal kun gjelde …") qualifies the requirement; replacing it
+  // would drop the obligation. New wording applies when a sentence that is
+  // not a scope statement carries the obligation.
+  const parts = quote.split(/(?<=[.!])\s+(?=[A-ZÆØÅ])/u);
+  const obliges = parts.some((part) => obligation(part) && !SCOPE_STATEMENT.test(part));
+  if (!old || obliges) return quote;
+  if (parts.some((part) => SCOPE_STATEMENT.test(part)) || obligation(original)) return null;
   return sentence && restates && normalized(quote).length >= old.length * 0.6 ? quote : null;
 }
 
+// Stems shared by most tender sentences; they say nothing about continuity.
+const GENERIC_STEMS = new Set(["lever", "løsni", "kunde", "tilbu", "oppdr", "krave", "kravs", "tjene", "gjeld"]);
+
 /** Unquoted new wording: the first sentence, and each following one that
- * continues it (an obligation, a back-reference, or a word stem of the
- * wording so far: "Rapporten publiseres i portalen."), up to an explicit
+ * continues it (a back-reference such as "Rapporten …"/"Kravet …"/"Dette …",
+ * or a specific word stem of the wording so far), up to an explicit
  * rationale ("Bakgrunnen er …"). Null when a following sentence is neither
  * ("Responstiden er maksimalt 30 minutter.", "Svarfristen forlenges …"):
  * an incomplete rewrite would silently drop a condition. */
 function unquotedWording(text: string) {
   const parts = text.trim().split(/(?<=[.!])\s+(?=[A-ZÆØÅ])/u);
-  const stems = (value: string) => (normalized(value).match(/\p{L}{5,}/gu) ?? []).map((word) => word.slice(0, 5));
+  const stems = (value: string) =>
+    (normalized(value).match(/\p{L}{5,}/gu) ?? []).map((word) => word.slice(0, 5)).filter((stem) => !GENERIC_STEMS.has(stem));
   let kept = 1;
   while (kept < parts.length) {
     const part = parts[kept]!;
     if (/^(?:bakgrunn(?:en)?|begrunnelse(?:n)?|årsak(?:en)?|grunnen|hensikten|formålet|endringen|rettelsen|dette\s+(?:skyldes|er\s+(?:gjort|endret))|det\s+vises\s+til|jf\.)(?![\p{L}\p{N}])/iu.test(part)) break;
+    // A substring match, so "Rapporten" continues "driftsrapport".
     const wording = normalized(parts.slice(0, kept).join(" "));
     const continues =
-      OBLIGATION.test(part) ||
-      /^(?:den|denne|dette|disse)(?![\p{L}\p{N}])/iu.test(part) ||
+      /^(?:den|denne|dette|disse|kravet)(?![\p{L}\p{N}])/iu.test(part) ||
       stems(part).some((stem) => wording.includes(stem));
     if (!continues) return null;
     kept += 1;
