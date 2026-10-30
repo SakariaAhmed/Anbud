@@ -35,6 +35,7 @@ writeFileSync(dataApi, `exports.createServiceClient = () => ({ from: () => ({ in
 const retrieval = path.join(directory, "retrieval.cjs");
 writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async (input) => {
   globalThis.__analysisRetrievalCalls = (globalThis.__analysisRetrievalCalls ?? 0) + 1;
+  globalThis.__analysisRetrievalDocuments = input.documents.map((document) => document.id);
   return { snippets: [], telemetry: { durationMs: 0, usedHybridSearch: false, quality: { sufficient: false } } };
 };`);
 const jiti = createJiti(path.join(frontendRoot, "customer-analysis-context-tests.cjs"), {
@@ -87,4 +88,18 @@ test("a customer document that does not fit keeps the head and adds retrieval", 
     supportingDocuments: [],
   });
   assert.equal(globalThis.__analysisRetrievalCalls, 1);
+});
+
+test("supporting documents beyond the fourth stay reachable through retrieval", async () => {
+  globalThis.__analysisRetrievalCalls = 0;
+  const supports = Array.from({ length: 5 }, (_, index) =>
+    document(`Støtte ${index + 1}`, "supporting_document", `Støttedokument ${index + 1} med korte opplysninger.`, "txt"),
+  );
+  await analyzeCustomerDocuments({
+    projectName: "Fiktiv",
+    customerDocument: document("Bilag 1", "primary_customer_document", "Kunden beskriver behov."),
+    supportingDocuments: supports,
+  });
+  assert.equal(globalThis.__analysisRetrievalCalls, 1);
+  assert.deepEqual(globalThis.__analysisRetrievalDocuments, ["Støtte 5"]);
 });

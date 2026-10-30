@@ -5576,11 +5576,13 @@ async function analyzeCustomerDocumentsLegacy(
   const primaryInFull =
     input.customerDocument.raw_text.length <= CUSTOMER_ANALYSIS_FULL_DOCUMENT_MAX_CHARS;
   let supportingBudget = CUSTOMER_ANALYSIS_SUPPORTING_FULL_BUDGET_CHARS;
-  const supportingPlan = input.supportingDocuments.slice(0, 4).map((document) => {
-    const full = document.raw_text.length <= supportingBudget;
+  const supportingPlan = input.supportingDocuments.map((document, index) => {
+    // At most four supporting documents get their own prompt section.
+    const full = index < 4 && document.raw_text.length <= supportingBudget;
     if (full) supportingBudget -= document.raw_text.length;
-    return { document, full };
+    return { document, full, shown: index < 4 };
   });
+  // Every document not sent whole stays reachable through retrieval.
   const retrievalDocuments = [
     ...(primaryInFull ? [] : [input.customerDocument]),
     ...supportingPlan.filter((plan) => !plan.full).map((plan) => plan.document),
@@ -5598,6 +5600,7 @@ async function analyzeCustomerDocumentsLegacy(
       })
     : null;
   const supportingContexts = supportingPlan
+    .filter((plan) => plan.shown)
     .map(({ document, full }, index) =>
       documentContext(`Støttedokument ${index + 1}`, document, {
         textLimit: full ? document.raw_text.length : 4000,

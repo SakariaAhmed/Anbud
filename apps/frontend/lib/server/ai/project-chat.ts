@@ -687,17 +687,25 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     (useStructuredCoverage &&
       retrievalQuality.sourceCount >= 8 &&
       (retrievalQuality.topScore ?? 0) >= 180);
+  // Exactly the documents the prompt can carry whole: the main documents
+  // and the first four supporting documents.
+  const promptDocuments = [
+    input.customerDocument,
+    input.solutionDocument,
+    ...(input.supportingDocuments ?? []).slice(0, 4),
+  ].filter((document): document is ProjectDocumentDetail => Boolean(document));
   const fullDocumentsInContext =
-    projectDocumentsForRetrieval.reduce((sum, document) => sum + document.raw_text.length, 0) <=
+    promptDocuments.reduce((sum, document) => sum + document.raw_text.length, 0) <=
     CHAT_FULL_DOCUMENTS_MAX_CHARS;
   // With the whole documents included, an excerpt whose text is already in
   // them only anchors its reference; any other excerpt keeps its full text.
   const includedText = fullDocumentsInContext
-    ? projectDocumentsForRetrieval.map((document) => document.raw_text.replace(/\s+/gu, " ")).join("\n")
+    ? promptDocuments.map((document) => document.raw_text.replace(/\s+/gu, " ")).join("\n")
     : "";
   const promptSnippets = fullDocumentsInContext
     ? retrievedSnippets.map((snippet) =>
-        includedText.includes(snippet.text.replace(/\s+/gu, " ").trim().slice(0, 240))
+        // Only an excerpt whose whole text is in the prompt is shortened.
+        includedText.includes(snippet.text.replace(/\s+/gu, " ").trim())
           ? { ...snippet, text: compactText(snippet.text, 280) }
           : snippet,
       )
@@ -763,8 +771,37 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
       ),
     );
 
+  const documentSections = [
+    fullDocumentsInContext
+      ? buildDelimitedContext(
+          "Dokumentregel",
+          "Hele kundedokumentet, løsningsdokumentet og støttedokumentene står nedenfor. Let gjennom hele dokumentene, også senere kapitler, tabeller og rettelser, før du sier at noe ikke er beskrevet. Et sammendrag eller en generell påstand om at alle krav er oppfylt, er ikke svar på et konkret krav. Påpek motstridende tall eller frister med begge verdiene og kildene.",
+        )
+      : "",
+    input.customerDocument
+      ? buildDelimitedContext(
+          "Kundedokument",
+          fullDocumentsInContext
+            ? input.customerDocument.raw_text
+            : compactText(input.customerDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
+        )
+      : "",
+    input.solutionDocument
+      ? buildDelimitedContext(
+          "Løsningsdokument",
+          fullDocumentsInContext
+            ? input.solutionDocument.raw_text
+            : compactText(input.solutionDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
+        )
+      : "",
+    ...(fullDocumentsInContext || !hasStrongRetrieval ? supportingDocuments : supportingDocuments.slice(0, 2)),
+  ];
+
   const userPrompt = [
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
+    // Whole documents come first: they are the same every turn, so the
+    // provider's prompt cache can reuse them.
+    ...(fullDocumentsInContext ? documentSections : []),
     buildDelimitedContext("Tolkede chatdomener", domainHints.join(", ")),
     buildDelimitedContext(
       "Retrieval-plan og kvalitet",
@@ -824,29 +861,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
           compactSolutionEvaluationForChat(input.solutionEvaluation),
         )
       : "",
-    fullDocumentsInContext
-      ? buildDelimitedContext(
-          "Dokumentregel",
-          "Hele kundedokumentet, løsningsdokumentet og støttedokumentene står nedenfor. Let gjennom hele dokumentene, også senere kapitler, tabeller og rettelser, før du sier at noe ikke er beskrevet. Et sammendrag eller en generell påstand om at alle krav er oppfylt, er ikke svar på et konkret krav. Påpek motstridende tall eller frister med begge verdiene og kildene.",
-        )
-      : "",
-    input.customerDocument
-      ? buildDelimitedContext(
-          "Kundedokument",
-          fullDocumentsInContext
-            ? input.customerDocument.raw_text
-            : compactText(input.customerDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
-        )
-      : "",
-    input.solutionDocument
-      ? buildDelimitedContext(
-          "Løsningsdokument",
-          fullDocumentsInContext
-            ? input.solutionDocument.raw_text
-            : compactText(input.solutionDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
-        )
-      : "",
-    ...(fullDocumentsInContext || !hasStrongRetrieval ? supportingDocuments : supportingDocuments.slice(0, 2)),
+    ...(fullDocumentsInContext ? [] : documentSections),
     retrievalContext,
     ...generatedArtifacts,
     history ? buildDelimitedContext("Samtalehistorikk", history) : "",

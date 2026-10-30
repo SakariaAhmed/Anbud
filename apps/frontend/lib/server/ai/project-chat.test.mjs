@@ -224,6 +224,8 @@ test("chat answers from the whole documents when they fit, with a compact per-re
     });
     for await (const chunk of result.stream) assert.equal(chunk, "ok");
     const prompt = state.prompts.at(-1).user;
+    // The whole documents come before the per-turn sections (prompt cache).
+    assert.ok(prompt.indexOf(lateAnswer) < prompt.indexOf("### Løsningsvurdering"));
     // The late chapter (beyond the former 2,800/9,000-character head) is in.
     assert.ok(prompt.includes(lateAnswer));
     // Every requirement row, including the last, survives in compact form.
@@ -232,6 +234,51 @@ test("chat answers from the whole documents when they fit, with a compact per-re
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
     delete globalThis.__projectChatFullTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("chat keeps the full text of excerpts from documents the prompt does not carry", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-fifth-"));
+  const state = { prompts: [] };
+  globalThis.__projectChatFifthTest = state;
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const exception = `Unntak for tilgjengelighet: ${"vedlikeholdsvinduer avtales skriftlig og varsles i forkant, ".repeat(8)}ellers gjelder full tilgjengelighet.`;
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatFifthTest.prompts.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async () => ({
+      snippets: [{ sourceType: "project_document", sourceId: "s5", documentTitle: "Støtte 5", reference: "Støtte 5, side 2",
+        text: ${JSON.stringify(exception)}, headingPath: [], pageStart: 2, pageEnd: 2, lexicalScore: 1, score: 100, similarity: 0.8 }],
+      telemetry: { durationMs: 0, usedHybridSearch: true, quality: { sufficient: true, sourceCount: 1, topScore: 200 } },
+    });`);
+    const { createJiti: createLoader } = require("jiti");
+    const load = createLoader(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const supports = Array.from({ length: 5 }, (_, index) =>
+      document(`s${index + 1}`, "supporting_document", index === 4 ? `Innledning.\n${exception}` : `Støtte ${index + 1}.`),
+    );
+    const result = await streamProjectChat({
+      projectName: "Fiktiv", question: "Hvilke unntak gjelder for tilgjengelighet?",
+      customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+      customerDocument: document("customer", "primary_customer_document", "Kunden krever høy tilgjengelighet."),
+      solutionDocument: document("supplier", "primary_solution_document", "Leverandøren tilbyr drift."),
+      supportingDocuments: supports,
+    });
+    for await (const chunk of result.stream) assert.equal(chunk, "ok");
+    assert.ok(state.prompts.at(-1).user.includes(exception), "the fifth document is not in the prompt, so its excerpt keeps its full text");
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatFifthTest;
     rmSync(directory, { recursive: true, force: true });
   }
 });
