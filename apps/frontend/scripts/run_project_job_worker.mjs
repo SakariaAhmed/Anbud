@@ -6,15 +6,20 @@ import http from "node:http";
 
 // Measured from process start, which is the replica start in the scheduled job.
 const processStartedAt = Date.now() - Math.round(process.uptime() * 1000);
-// Matches projectJobWorkerReplicaTimeout in infra/azure/container-app.bicep.
-const replicaTimeoutMs = 2_100_000;
 const shutdownAllowanceMs = 60_000;
-const deadlineAt = processStartedAt + replicaTimeoutMs - shutdownAllowanceMs;
-const maximumLimit = 10;
+const maximumJobs = 10;
 
 const port = process.env.PORT || "3000";
 const token = process.env.PROJECT_JOB_WORKER_TOKEN || "";
-const limit = Number(process.env.PROJECT_JOB_WORKER_LIMIT || "1");
+// Worker images before the replica budget read only PROJECT_JOB_WORKER_LIMIT
+// and exit unless it is 1. Rollback restores just the image, so that variable
+// stays 1 and the job count has its own variable that older images ignore.
+const legacyLimit = Number(process.env.PROJECT_JOB_WORKER_LIMIT || "1");
+const maxJobs = Number(process.env.PROJECT_JOB_WORKER_MAX_JOBS || "1");
+const replicaTimeoutSeconds = Number(
+  process.env.PROJECT_JOB_WORKER_REPLICA_TIMEOUT_SECONDS || "2100",
+);
+const deadlineAt = processStartedAt + replicaTimeoutSeconds * 1000 - shutdownAllowanceMs;
 const healthUrl = `http://127.0.0.1:${port}/api/health/live`;
 
 if (!token && process.env.NODE_ENV === "production") {
@@ -22,8 +27,18 @@ if (!token && process.env.NODE_ENV === "production") {
   process.exit(1);
 }
 
-if (!Number.isSafeInteger(limit) || limit < 1 || limit > maximumLimit) {
-  console.error(`PROJECT_JOB_WORKER_LIMIT must be an integer from 1 to ${maximumLimit}.`);
+if (legacyLimit !== 1) {
+  console.error("PROJECT_JOB_WORKER_LIMIT must be 1.");
+  process.exit(1);
+}
+
+if (!Number.isSafeInteger(maxJobs) || maxJobs < 1 || maxJobs > maximumJobs) {
+  console.error(`PROJECT_JOB_WORKER_MAX_JOBS must be an integer from 1 to ${maximumJobs}.`);
+  process.exit(1);
+}
+
+if (!Number.isSafeInteger(replicaTimeoutSeconds) || replicaTimeoutSeconds < 60) {
+  console.error("PROJECT_JOB_WORKER_REPLICA_TIMEOUT_SECONDS must be an integer of at least 60.");
   process.exit(1);
 }
 
@@ -100,6 +115,20 @@ const server = spawn("node", serverArgs, {
 server.stdout.on("data", (chunk) => process.stdout.write(chunk));
 server.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
+// The replica is stopped with SIGTERM; pass it on so the server stops too
+// instead of being left behind when this process exits.
+let stopSignal = null;
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.once(signal, () => {
+    stopSignal = signal;
+    stopServer(server);
+    const exit = () => process.exit(signal === "SIGTERM" ? 143 : 130);
+    if (serverHasExited(server)) exit();
+    server.once("exit", exit);
+    setTimeout(exit, 6_000).unref();
+  });
+}
+
 try {
   const deadline = Date.now() + 120_000;
   let ready = false;
@@ -117,7 +146,7 @@ try {
   }
 
   const response = await postWorkerRequest(
-    { limit, deadline_at: deadlineAt },
+    { limit: maxJobs, deadline_at: deadlineAt },
     deadlineAt + shutdownAllowanceMs / 2 - Date.now(),
   );
   const body = response.body;
@@ -126,6 +155,11 @@ try {
   }
 
   console.info(body);
+} catch (error) {
+  // Stopping the server ends the pending request; the signal handler owns
+  // the exit once the server is gone.
+  if (stopSignal) await new Promise(() => {});
+  throw error;
 } finally {
   stopServer(server);
 }

@@ -25,6 +25,10 @@ const {
 } = jiti(
   path.join(frontendRoot, "lib/server/direct-solution-evaluation.ts"),
 );
+const {
+  projectJobWorkerPlan,
+  projectJobWorkerReplicaTimeoutMs,
+} = jiti(path.join(frontendRoot, "lib/server/project-job-worker-budget.ts"));
 
 function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
@@ -43,9 +47,6 @@ const projectApiClient = read("apps/frontend/lib/client/project-api.ts");
 const workerRoute = read(
   "apps/frontend/app/api/project-jobs/worker/route.ts",
 );
-const workerScript = read(
-  "apps/frontend/scripts/run_project_job_worker.mjs",
-);
 const bicep = read("infra/azure/container-app.bicep");
 const deployWorkflow = read(".github/workflows/deploy-azure.yml");
 
@@ -61,7 +62,7 @@ test("direct solution-evaluation POST preserves sync compatibility with explicit
     /if \(!queueCoalesced \|\| queuedJob\.status === "queued"\)/u,
   );
   assert.match(solutionEvaluationRoute, /directDeadline - Date\.now\(\)/u);
-  assert.match(solutionEvaluationRoute, /runQueuedProjectJob\(queuedJob\.id\)/u);
+  assert.match(solutionEvaluationRoute, /runQueuedProjectJob\(queuedJob\.id, \{ drainNext: true \}\)/u);
   assert.match(solutionEvaluationRoute, /getProjectJob\(id, queuedJob\.id\)/u);
   assert.match(
     solutionEvaluationRoute,
@@ -277,33 +278,45 @@ test("one worker invocation has a 30-minute job plus startup allowance", () => {
   const startupAndShutdownAllowanceSeconds = 5 * 60;
   const requiredReplicaSeconds =
     maximumJobSeconds + startupAndShutdownAllowanceSeconds;
+  const replicaTimeoutMs = projectJobWorkerReplicaTimeoutMs({
+    PROJECT_JOB_WORKER_REPLICA_TIMEOUT_SECONDS: String(requiredReplicaSeconds),
+  });
 
+  // A request started after the slowest startup still leaves the longest
+  // workflow its full deadline as the first job.
+  const requestStartedAt = 0;
+  const { deadlineAt } = projectJobWorkerPlan({}, {
+    requestStartedAt,
+    environment: { PROJECT_JOB_WORKER_REPLICA_TIMEOUT_SECONDS: String(requiredReplicaSeconds) },
+  });
+  assert.ok(deadlineAt - requestStartedAt >= maximumJobSeconds * 1000);
+  assert.ok(deadlineAt <= requestStartedAt + replicaTimeoutMs);
+  // A worker cannot plan past its replica by sending a later deadline.
+  assert.equal(
+    projectJobWorkerPlan({ deadline_at: Number.MAX_SAFE_INTEGER, limit: 50 }, {
+      requestStartedAt,
+      environment: {},
+    }).deadlineAt,
+    requiredReplicaSeconds * 1000 - 60_000,
+  );
+  assert.equal(projectJobWorkerPlan({ limit: 50 }, { requestStartedAt }).limit, 10);
+  assert.equal(projectJobWorkerPlan({ limit: "3" }, { requestStartedAt }).limit, 1);
+
+  // Infrastructure has no executable form in tests; these pin its contract.
+  // The release-compatibility behaviour is exercised in
+  // apps/frontend/scripts/run_project_job_worker.test.mjs.
   assert.match(workerRoute, /export const maxDuration = 2100;/u);
-  // Later jobs are budgeted against the replica deadline, not a fixed limit.
-  assert.match(workerRoute, /runAvailableProjectJobs\(\{ limit, staleAfterMs, deadlineAt \}\)/u);
-  assert.match(workerScript, /const replicaTimeoutMs = 2_100_000;/u);
-  assert.match(workerScript, /const maximumLimit = 10;/u);
-  assert.match(workerScript, /\{ limit, deadline_at: deadlineAt \}/u);
-  assert.match(workerScript, /PROJECT_JOB_WORKER_PROCESS: "1"/u);
-  assert.doesNotMatch(workerScript, /await fetch\(workerUrl/u);
-
   const configuredTimeout = Number(
     bicep.match(/param projectJobWorkerReplicaTimeout int = (\d+)/u)?.[1],
   );
   assert.equal(configuredTimeout, requiredReplicaSeconds);
-  assert.match(bicep, /@maxValue\(10\)\s+param projectJobWorkerLimit int = 10/u);
+  assert.match(bicep, /@maxValue\(1\)\s+param projectJobWorkerLimit int = 1/u);
   assert.match(bicep, /parallelism: 1\b/u);
   assert.match(
     bicep,
     /@minValue\(2100\)\s+param projectJobWorkerReplicaTimeout int = 2100/u,
   );
   assert.match(bicep, /replicaTimeout: projectJobWorkerReplicaTimeout/u);
-
-  assert.match(deployWorkflow, /PROJECT_JOB_WORKER_LIMIT: "10"/u);
-  assert.match(
-    deployWorkflow,
-    /PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"/u,
-  );
   assert.match(
     deployWorkflow,
     /projectJobWorkerReplicaTimeout="\$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"/u,

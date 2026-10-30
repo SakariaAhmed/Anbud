@@ -30,7 +30,7 @@ const code = ts.transpileModule(source.statements
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
 
-function worker(overrides = {}) {
+function worker(overrides = {}, limit = 1) {
   const io = {
     resetStaleRunningProjectJobs: async () => {},
     listQueuedProjectJobIds: async () => ["job-1"],
@@ -39,12 +39,12 @@ function worker(overrides = {}) {
     getQueuedProjectJobInput: async () => ({ kind: "executive_summary", projectId: "project-1" }),
     parseProjectWorkflowInput: value => value,
     claimQueuedProjectJob: async () => ({ leaseToken: "lease-1" }),
-    runProjectJob: async () => {},
+    runProjectJob: async () => ({ terminalPersisted: true, workflowAbandoned: false }),
     productionSafeErrorMessage: (_error, fallback) => fallback,
     ...overrides,
   };
   const runAvailableProjectJobs = new Function(...Object.keys(io), `${code}\nreturn runAvailableProjectJobs;`)(...Object.values(io));
-  return () => runAvailableProjectJobs({ limit: 1, deadlineAt: Date.now() + 60 * 60_000 });
+  return () => runAvailableProjectJobs({ limit, deadlineAt: Date.now() + 60 * 60_000 });
 }
 
 test("competing workers report only the acquired job as processed", async () => {
@@ -56,7 +56,10 @@ test("competing workers report only the acquired job as processed", async () => 
       claimed = true;
       return { leaseToken: "winning-lease" };
     },
-    runProjectJob: async (...args) => { executions.push(args); },
+    runProjectJob: async (...args) => {
+      executions.push(args);
+      return { terminalPersisted: true, workflowAbandoned: false };
+    },
   });
   const results = (await Promise.all([run(), run()])).flat();
   assert.equal(results.filter(result => result.status === "processed").length, 1);
@@ -83,4 +86,18 @@ test("claim failure remains failed and does not expose backend details", async (
   const [result] = await run();
   assert.equal(result.status, "failed");
   assert.doesNotMatch(result.error, /private backend details/u);
+});
+
+test("a workflow released at its deadline ends the worker run", async () => {
+  const claimed = [];
+  const run = worker({
+    listQueuedProjectJobIds: async () => ["deadline-job", "next-job"],
+    getQueuedProjectJobInput: async (jobId) => ({ kind: "executive_summary", projectId: jobId }),
+    claimQueuedProjectJob: async (jobId) => { claimed.push(jobId); return { leaseToken: `lease-${jobId}` }; },
+    runProjectJob: async () => ({ terminalPersisted: true, workflowAbandoned: true }),
+  }, 10);
+  assert.deepEqual(await run(), [
+    { job_id: "deadline-job", status: "processed", reason: "workflow_abandoned" },
+  ]);
+  assert.deepEqual(claimed, ["deadline-job"]);
 });

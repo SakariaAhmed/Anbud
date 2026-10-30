@@ -220,7 +220,9 @@ test("accepting server owns the durable lease before autorun is scheduled", asyn
           `run:${jobId}:${input.sourceDocumentIds.join(",")}:${context.leaseToken}`,
         );
         handedOffLease.stop();
+        return { terminalPersisted: true, workflowAbandoned: false };
       },
+      async drain() {},
     },
   );
 
@@ -291,7 +293,7 @@ test("a persisted terminal status drains the next queued job of the same project
     schedule(_input, task) { scheduledTask = task; },
     async run(jobId) {
       events.push(`run:${jobId}`);
-      return true;
+      return { terminalPersisted: true, workflowAbandoned: false };
     },
     async drain(projectId) { events.push(`drain:${projectId}`); },
   });
@@ -302,19 +304,26 @@ test("a persisted terminal status drains the next queued job of the same project
   assert.deepEqual(events, ["run:first-upload", "drain:project-with-second-upload"]);
 });
 
-test("lease loss or a rejected terminal write leaves the next job to the worker", async () => {
-  let drained = 0;
-  let scheduledTask;
-  await claimAndScheduleProjectJobAutorun("lost-lease", { kind: "customer_analysis", projectId: "p1" }, {
-    async claim() { return { leaseToken: "lease" }; },
-    startLease: inertLease,
-    schedule(_input, task) { scheduledTask = task; },
-    async run() { return false; },
-    async drain() { drained += 1; },
-  });
-  await scheduledTask();
-  await settleMicrotasks();
-  assert.equal(drained, 0);
+test("lease loss, a rejected terminal write or an abandoned workflow leave the next job to the worker", async () => {
+  for (const outcome of [
+    { terminalPersisted: false, workflowAbandoned: true },
+    { terminalPersisted: false, workflowAbandoned: false },
+    // The deadline released the runner; the old workflow may still be running here.
+    { terminalPersisted: true, workflowAbandoned: true },
+  ]) {
+    let drained = 0;
+    let scheduledTask;
+    await claimAndScheduleProjectJobAutorun("finished", { kind: "customer_analysis", projectId: "p1" }, {
+      async claim() { return { leaseToken: "lease" }; },
+      startLease: inertLease,
+      schedule(_input, task) { scheduledTask = task; },
+      async run() { return outcome; },
+      async drain() { drained += 1; },
+    });
+    await scheduledTask();
+    await settleMicrotasks();
+    assert.equal(drained, 0, JSON.stringify(outcome));
+  }
 });
 
 test("a failing drain is logged and does not fail the finished job's task", async () => {
@@ -327,7 +336,7 @@ test("a failing drain is logged and does not fail the finished job's task", asyn
       async claim() { return { leaseToken: "lease" }; },
       startLease: inertLease,
       schedule(_input, task) { scheduledTask = task; },
-      async run() { return true; },
+      async run() { return { terminalPersisted: true, workflowAbandoned: false }; },
       async drain() { throw new Error("private backend details"); },
     });
     await assert.doesNotReject(scheduledTask());

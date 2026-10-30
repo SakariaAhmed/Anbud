@@ -15,7 +15,8 @@ env:
   ACR_NAME: anbudprod9841703
   IMAGE_NAME: anbud
   MIN_REPLICAS: "1"
-  PROJECT_JOB_WORKER_LIMIT: "10"
+  PROJECT_JOB_WORKER_LIMIT: "1"
+  PROJECT_JOB_WORKER_MAX_JOBS: "10"
   PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"
   NODE_VERSION: "22.14.0"
 
@@ -313,6 +314,7 @@ jobs:
             projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
             projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON"
             projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT"
+            projectJobWorkerMaxJobs="$PROJECT_JOB_WORKER_MAX_JOBS"
             projectJobWorkerReplicaTimeout="$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"
             doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE"
             doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN"

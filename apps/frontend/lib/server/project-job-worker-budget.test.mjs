@@ -24,10 +24,11 @@ const timeouts = {
 };
 
 /** A queue whose jobs advance a fake clock by their run time when claimed. */
-function fakeQueue(jobs, { deadlineInMinutes, blocked = new Set() }) {
+function fakeQueue(jobs, { deadlineInMinutes, blocked = new Set(), abandoned = new Set() }) {
   let clock = 0;
   const queued = new Map(jobs.map((job) => [job.id, job]));
   const events = [];
+  const warnings = [];
   const runtime = {
     deadlineAt: deadlineInMinutes * minute,
     now: () => clock,
@@ -43,20 +44,21 @@ function fakeQueue(jobs, { deadlineInMinutes, blocked = new Set() }) {
     timeoutMsFor: (kind) => timeouts[kind],
     async claimAndRun(jobId) {
       events.push(`claim:${jobId}`);
-      if (blocked.has(jobId)) return false;
+      if (blocked.has(jobId)) return "claim_refused";
       const job = queued.get(jobId);
       queued.delete(jobId);
       clock += job.runMinutes * minute;
       events.push(`ran:${jobId}`);
-      return true;
+      return abandoned.has(jobId) ? "workflow_abandoned" : "ran";
     },
     safeErrorMessage: () => "Jobben feilet.",
+    warn: (entry) => warnings.push(entry),
   };
-  return { runtime, events, advance: (ms) => { clock += ms; } };
+  return { runtime, events, warnings, advance: (ms) => { clock += ms; } };
 }
 
 test("worker keeps claiming jobs while the remaining budget covers each full deadline", async () => {
-  // Each candidate needs its 15-minute deadline plus the 1-minute margin.
+  // Later candidates need their 15-minute deadline plus the 1-minute margin.
   // After 3 + 16 minutes of work, 15 minutes remain and the third must wait.
   const { runtime, events } = fakeQueue([
     { id: "a", kind: "customer_analysis", projectId: "p1", runMinutes: 3 },
@@ -74,25 +76,71 @@ test("worker keeps claiming jobs while the remaining budget covers each full dea
   assert.deepEqual(events, ["list", "claim:a", "ran:a", "list", "claim:b", "ran:b", "list"]);
 });
 
-test("worker requires the job margin on top of the workflow deadline", async () => {
-  const { runtime, events } = fakeQueue([
-    { id: "a", kind: "executive_summary", projectId: "p1", runMinutes: 1 },
-  ], { deadlineInMinutes: 10 });
-  runtime.deadlineAt += PROJECT_JOB_WORKER_JOB_MARGIN_MS - 1;
-
-  assert.deepEqual(await runProjectJobsWithinBudget(runtime), [
-    { job_id: "a", status: "skipped", reason: "insufficient_time" },
+test("jobs after the first need the margin on top of their workflow deadline", async () => {
+  const jobs = () => [
+    { id: "first", kind: "executive_summary", projectId: "p1", runMinutes: 1 },
+    { id: "second", kind: "executive_summary", projectId: "p2", runMinutes: 1 },
+  ];
+  const tight = fakeQueue(jobs(), { deadlineInMinutes: 11 });
+  tight.runtime.deadlineAt += PROJECT_JOB_WORKER_JOB_MARGIN_MS - 1;
+  assert.deepEqual(await runProjectJobsWithinBudget(tight.runtime), [
+    { job_id: "first", status: "processed" },
+    { job_id: "second", status: "skipped", reason: "insufficient_time" },
   ]);
-  assert.deepEqual(events, ["list"], "a job that does not fit is never claimed");
+  assert.ok(!tight.events.includes("claim:second"), "a job that does not fit is never claimed");
+  assert.deepEqual(tight.warnings, [], "only a skipped first job is worth a warning");
 
-  runtime.deadlineAt += 1;
-  assert.deepEqual(await runProjectJobsWithinBudget(runtime), [
-    { job_id: "a", status: "processed" },
+  const enough = fakeQueue(jobs(), { deadlineInMinutes: 11 });
+  enough.runtime.deadlineAt += PROJECT_JOB_WORKER_JOB_MARGIN_MS;
+  assert.deepEqual((await runProjectJobsWithinBudget(enough.runtime)).map((result) => result.status), [
+    "processed",
+    "processed",
   ]);
 });
 
+test("the first job may use the whole remaining budget, so a 30-minute job still starts late", async () => {
+  // 2100 s replica, 60 s shutdown allowance, 239 s of slow startup.
+  const queue = fakeQueue([
+    { id: "perfect", kind: "perfect_system_solution", projectId: "p1", runMinutes: 30 },
+    { id: "summary", kind: "executive_summary", projectId: "p2", runMinutes: 1 },
+  ], { deadlineInMinutes: 0 });
+  queue.runtime.deadlineAt = (2100 - 60 - 239) * 1000;
+  assert.deepEqual(await runProjectJobsWithinBudget(queue.runtime), [
+    { job_id: "perfect", status: "processed" },
+    { job_id: "summary", status: "skipped", reason: "insufficient_time" },
+  ]);
+  assert.deepEqual(queue.warnings, []);
+});
+
+test("a first job whose deadline exceeds the remaining replica time is skipped with a warning", async () => {
+  const queue = fakeQueue([
+    { id: "too-long", kind: "perfect_system_solution", projectId: "p1", runMinutes: 1 },
+  ], { deadlineInMinutes: 29 });
+  assert.deepEqual(await runProjectJobsWithinBudget(queue.runtime), [
+    { job_id: "too-long", status: "skipped", reason: "insufficient_time" },
+  ]);
+  assert.deepEqual(queue.warnings, [{
+    event: "project_job_worker_first_job_exceeds_budget",
+    job_id: "too-long",
+    kind: "perfect_system_solution",
+    timeout_ms: 30 * minute,
+    remaining_ms: 29 * minute,
+  }]);
+});
+
+test("an abandoned workflow stops the worker from claiming more jobs", async () => {
+  const queue = fakeQueue([
+    { id: "deadline", kind: "executive_summary", projectId: "p1", runMinutes: 10 },
+    { id: "next", kind: "executive_summary", projectId: "p2", runMinutes: 1 },
+  ], { deadlineInMinutes: 60, abandoned: new Set(["deadline"]) });
+  assert.deepEqual(await runProjectJobsWithinBudget(queue.runtime), [
+    { job_id: "deadline", status: "processed", reason: "workflow_abandoned" },
+  ]);
+  assert.ok(!queue.events.includes("claim:next"));
+});
+
 test("a long head-of-line job that no longer fits does not block a shorter job", async () => {
-  const { runtime } = fakeQueue([
+  const { runtime, warnings } = fakeQueue([
     { id: "long", kind: "perfect_system_solution", projectId: "p1", runMinutes: 1 },
     { id: "short", kind: "executive_summary", projectId: "p2", runMinutes: 1 },
   ], { deadlineInMinutes: 20 });
@@ -101,6 +149,7 @@ test("a long head-of-line job that no longer fits does not block a shorter job",
     { job_id: "long", status: "skipped", reason: "insufficient_time" },
     { job_id: "short", status: "processed" },
   ]);
+  assert.equal(warnings.length, 1);
 });
 
 test("a refused claim in a busy project is skipped and the next project still runs", async () => {
@@ -139,7 +188,7 @@ test("a job queued while another ran is picked up after re-reading the queue", a
       queue.splice(queue.indexOf(jobId), 1);
       // Finishing the first job lets an upload's queued job claim the project.
       if (jobId === "first") queue.push("second");
-      return true;
+      return "ran";
     },
     safeErrorMessage: () => "Jobben feilet.",
   });
@@ -164,7 +213,7 @@ test("the scan is bounded and every row is considered at most once", async () =>
       return { kind: "executive_summary", projectId: jobId };
     },
     timeoutMsFor: () => 10 * minute,
-    claimAndRun: async () => false,
+    claimAndRun: async () => "claim_refused",
     safeErrorMessage: () => "Jobben feilet.",
   });
 

@@ -147,10 +147,15 @@ param doclingAsyncAutoRun string = 'off'
 @description('Cron schedule for the same-image project job worker. Evaluated in UTC.')
 param projectJobWorkerCron string = '*/5 * * * *'
 
-@description('Maximum project jobs processed by one scheduled worker execution. A further job is claimed only while the remaining replica time covers its full workflow deadline.')
+@description('Legacy per-execution job limit (PROJECT_JOB_WORKER_LIMIT). Worker images without the replica-time budget exit unless it is 1, and a rollback restores only the image, so it stays 1.')
+@minValue(1)
+@maxValue(1)
+param projectJobWorkerLimit int = 1
+
+@description('Maximum project jobs one scheduled worker execution may run (PROJECT_JOB_WORKER_MAX_JOBS, ignored by older images). After the first job, another is claimed only while the remaining replica time covers its full workflow deadline plus a margin.')
 @minValue(1)
 @maxValue(10)
-param projectJobWorkerLimit int = 10
+param projectJobWorkerMaxJobs int = 10
 
 @description('CPU cores for the web container.')
 param webCpu string = '1.0'
@@ -164,7 +169,7 @@ param projectJobWorkerCpu string = '2.0'
 @description('Memory for the scheduled project job worker.')
 param projectJobWorkerMemory string = '4Gi'
 
-@description('Maximum seconds a scheduled worker replica can run. Covers one 30-minute job plus five minutes of startup and shutdown allowance.')
+@description('Maximum seconds a scheduled worker replica can run, also passed to the worker as its job budget. Covers one 30-minute job plus five minutes of startup and shutdown allowance.')
 @minValue(2100)
 param projectJobWorkerReplicaTimeout int = 2100
 
@@ -651,6 +656,14 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'PROJECT_JOB_WORKER_LIMIT'
               value: string(projectJobWorkerLimit)
+            }
+            {
+              name: 'PROJECT_JOB_WORKER_MAX_JOBS'
+              value: string(projectJobWorkerMaxJobs)
+            }
+            {
+              name: 'PROJECT_JOB_WORKER_REPLICA_TIMEOUT_SECONDS'
+              value: string(projectJobWorkerReplicaTimeout)
             }
             {
               name: 'DOCLING_ENHANCEMENT_MODE'
