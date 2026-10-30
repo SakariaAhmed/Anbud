@@ -3193,7 +3193,9 @@ function answerPassage(
     // budget: "Dette er standard. Gjelder kun produksjonsmiljøet."
     let cursor = next.end;
     let budget = VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS - next.text.length;
-    while (complete && !next.isCell && !newParagraph && budget > 0) {
+    // Within the follow-up's own paragraph: an accepted back-reference
+    // paragraph ("Dette gjelder …") is read to its end.
+    while (complete && !next.isCell && budget > 0) {
       if (/^\s*¦/u.test(flat.slice(cursor))) break;
       const further = nextSegment(flat, boundaries, cursor);
       if (!further || !further.adjacent) break;

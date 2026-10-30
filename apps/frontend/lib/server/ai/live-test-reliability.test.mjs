@@ -582,6 +582,11 @@ test("a restriction in a later section does not qualify the answer", () => {
   // A bare "Det"/"Dette" paragraph is a new statement.
   assert.notEqual(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nDet tilbys ikke telefonstøtte.`)?.uncertain, true);
   assert.notEqual(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nDette kapittelet beskriver supportmodellen. Telefonstøtte tilbys ikke i helger.`)?.uncertain, true);
+  // An accepted back-reference paragraph is read to its end.
+  assert.equal(
+    bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nDette gjelder leverandørens standardplattform. Kundedata i testmiljøet krypteres ikke.`)?.uncertain,
+    true,
+  );
   // A paragraph restricting the requirement itself still qualifies it.
   assert.equal(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nKundedata i testmiljøet krypteres ikke.`)?.uncertain, true);
   // A new paragraph that refers back still qualifies the answer.
