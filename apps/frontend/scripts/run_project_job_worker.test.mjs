@@ -138,10 +138,11 @@ async function standInBindError(worker) {
 async function runWorker(script, environment, options = {}) {
   for (let attempt = 1; ; attempt += 1) {
     const worker = startWorker(script, environment, options, await freePort());
-    if (attempt === 3 || await standInBindError(worker) !== "EADDRINUSE") return worker;
+    if (await standInBindError(worker) !== "EADDRINUSE") return worker;
     worker.child.kill("SIGTERM");
     await worker.exited;
     worker.cleanup();
+    if (attempt === 3) assert.fail("the stand-in server could not bind a free port in three attempts");
   }
 }
 
