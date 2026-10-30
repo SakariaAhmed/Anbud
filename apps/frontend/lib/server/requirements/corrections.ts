@@ -234,8 +234,12 @@ function correctedWording(original: string, quote: string, replaced: string | un
   const oldWords = words(original);
   const newWords = [...words(quote)];
   const restates = newWords.length > 0 && newWords.filter((word) => oldWords.has(word)).length >= newWords.length / 2;
-  if (!old || obligation(quote) || (sentence && restates && normalized(quote).length >= old.length * 0.6)) return quote;
-  return null;
+  // A scope statement ("Kryptert lagring gjelder kun produksjonsmiljøet.")
+  // qualifies the requirement; replacing it would drop the obligation.
+  const scope = /(?<![\p{L}\p{N}])(?:gjelder|omfatter)\s+(?:kun|bare|ikke|også|heller\s+ikke)(?![\p{L}\p{N}])/iu.test(quote);
+  if (!old || obligation(quote)) return quote;
+  if (scope || obligation(original)) return null;
+  return sentence && restates && normalized(quote).length >= old.length * 0.6 ? quote : null;
 }
 
 /** Unquoted new wording up to a following rationale ("Bakgrunnen er …",

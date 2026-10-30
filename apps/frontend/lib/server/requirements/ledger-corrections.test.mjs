@@ -529,3 +529,16 @@ test("round 9 (second member): clarifying and removing new-text cells", () => {
   ).ledger;
   assert.deepEqual(result.map((entry) => [entry.id, entry.text]), [["K-5", ledger[0].text]]);
 });
+
+test("round 10: a scope clarification never replaces an obligation", () => {
+  const ledger = [
+    { id: "K-1", text: "Alle kundedata skal ha kryptert lagring i Norge.", pages: [1], heading: "4 Krav" },
+    { id: "K-2", text: "Leverandøren skal levere månedlig driftsrapport.", pages: [1], heading: "4 Krav" },
+  ];
+  const chapter = ledger.map((entry) => `${entry.id} ${entry.text}`).join("\n");
+  const raw = `4 Krav\n${chapter}\n\n9 Rettelser\n| Krav-ID | Endring | Ny tekst |\n| K-1 | Presisering | Kryptert lagring gjelder kun produksjonsmiljøet. |\n| K-2 | Rettelse | Utgår |`;
+  const { ledger: result, report } = applyRequirementCorrections(ledger, raw);
+  assert.deepEqual(result.map((entry) => [entry.id, entry.text]), [["K-1", ledger[0].text]]);
+  assert.deepEqual(report.changed, []);
+  assert.match(result[0].sourceExcerpt ?? "", /gjelder kun produksjonsmiljøet/u);
+});
