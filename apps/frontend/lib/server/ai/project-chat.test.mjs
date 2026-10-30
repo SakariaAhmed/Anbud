@@ -217,7 +217,11 @@ test("chat answers from the whole documents when they fit, with a compact per-re
     const result = await streamProjectChat({
       projectName: "Fiktiv", question: "Hvilke krav dekker Bilag 2 ikke?",
       customerAnalysis: null,
-      solutionEvaluation: { fit_to_customer_needs: "Delvis.", weaknesses: ["Responstid"], requirement_coverage: { coverage_summary: "59 gode, 1 mangler.", items } },
+      solutionEvaluation: {
+        fit_to_customer_needs: "Delvis.", weaknesses: ["Responstid"],
+        strengths: ["Kundeeid IaC-repository"], trust_signals: ["Navngitte nøkkelpersoner"], improvement_recommendations: ["Lukk avviket på responstid"],
+        requirement_coverage: { coverage_summary: "59 gode, 1 mangler.", items },
+      },
       recentMessages: [],
       customerDocument: document("customer", "primary_customer_document", "KRAV-60 Hendelser med prioritet 1 skal ha responstid på høyst 15 minutter."),
       solutionDocument: document("supplier", "primary_solution_document", solutionText),
@@ -230,6 +234,10 @@ test("chat answers from the whole documents when they fit, with a compact per-re
     assert.ok(prompt.includes(lateAnswer));
     // Every requirement row, including the last, survives in compact form.
     assert.match(prompt, /KRAV-60 \| Mangler \| Vurdering 60\./u);
+    // The saved judgments beyond the requirement rows survive too.
+    for (const finding of ["Kundeeid IaC-repository", "Navngitte nøkkelpersoner", "Lukk avviket på responstid"]) {
+      assert.ok(prompt.includes(finding), finding);
+    }
     assert.ok(prompt.includes("Referanse: Bilag 2, side 1"));
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
@@ -276,6 +284,9 @@ test("chat keeps the full text of excerpts from documents the prompt does not ca
     });
     for await (const chunk of result.stream) assert.equal(chunk, "ok");
     assert.ok(state.prompts.at(-1).user.includes(exception), "the fifth document is not in the prompt, so its excerpt keeps its full text");
+    // The document rule says which documents are whole and which only excerpted.
+    assert.match(state.prompts.at(-1).user, /«s5» er bare med som utdrag/u);
+    assert.match(state.prompts.at(-1).user, /Hele «customer», «supplier», «s1», «s2», «s3», «s4» står nedenfor\./u);
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
     delete globalThis.__projectChatFifthTest;

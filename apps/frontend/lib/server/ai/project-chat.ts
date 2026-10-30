@@ -52,9 +52,12 @@ function compactSolutionEvaluationForChat(evaluation: SolutionEvaluationResult) 
   const summary = {
     fit_to_customer_needs: compactText(String(evaluation.fit_to_customer_needs ?? ""), 700),
     likely_score_assessment: compactText(JSON.stringify(evaluation.likely_score_assessment ?? ""), 500),
+    strengths: list(evaluation.strengths, 4),
     weaknesses: list(evaluation.weaknesses, 6),
     missing_elements: list(evaluation.missing_elements, 6),
     risks_to_customer: list(evaluation.risks_to_customer, 6),
+    trust_signals: list(evaluation.trust_signals, 4),
+    improvement_recommendations: list(evaluation.improvement_recommendations, 4),
     coverage_summary: coverage?.coverage_summary ?? "",
   };
   const items = (coverage?.items ?? []).map((item) =>
@@ -771,11 +774,22 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
       ),
     );
 
+  // Name what is included whole; a fifth or later supporting document is
+  // represented by excerpts only.
+  const omittedSupporting = (input.supportingDocuments ?? []).slice(4);
+  const documentRuleScope = [
+    `Hele ${promptDocuments.map((document) => `«${document.title}»`).join(", ")} står nedenfor.`,
+    omittedSupporting.length
+      ? `${omittedSupporting.map((document) => `«${document.title}»`).join(", ")} er bare med som utdrag; si fra at svaret kan stå der før du sier at noe ikke er beskrevet.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const documentSections = [
     fullDocumentsInContext
       ? buildDelimitedContext(
           "Dokumentregel",
-          "Hele kundedokumentet, løsningsdokumentet og støttedokumentene står nedenfor. Let gjennom hele dokumentene, også senere kapitler, tabeller og rettelser, før du sier at noe ikke er beskrevet. Et sammendrag eller en generell påstand om at alle krav er oppfylt, er ikke svar på et konkret krav. Påpek motstridende tall eller frister med begge verdiene og kildene.",
+          `${documentRuleScope} Let gjennom hele dokumentene, også senere kapitler, tabeller og rettelser, før du sier at noe ikke er beskrevet. Et sammendrag eller en generell påstand om at alle krav er oppfylt, er ikke svar på et konkret krav. Påpek motstridende tall eller frister med begge verdiene og kildene.`,
         )
       : "",
     input.customerDocument
