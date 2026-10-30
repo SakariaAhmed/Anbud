@@ -1916,13 +1916,13 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const exactTerms = (input.exactTerms ?? []).filter(Boolean);
   const limit = Math.min(Math.max(input.limit ?? 8, 1), 16);
   const coveredText = new Map([...input.promptDocumentText ?? []].map(([id, text]) =>
-    [documentChunkSourceKey("project_document", id), text.replace(/\s+/gu, " ").trim()],
+    [documentChunkSourceKey("project_document", id), normalizeChunkText(text).replace(/\s+/gu, " ")],
   ));
   const hasUncoveredText = (candidate: RetrievedDocumentSnippet) => {
     const covered = coveredText.get(documentChunkSourceKey(candidate.sourceType, candidate.sourceId));
     // Keep a whole boundary chunk when any of its evidence is outside the
     // prompt. Removing a partially overlapping chunk could hide a qualifier.
-    return !covered || !covered.includes(candidate.text.replace(/\s+/gu, " ").trim());
+    return !covered || !covered.includes(normalizeChunkText(candidate.text).replace(/\s+/gu, " "));
   };
   let hybridCandidates: RetrievedDocumentSnippet[] = [];
   let vectorCandidates: RetrievedDocumentSnippet[] = [];

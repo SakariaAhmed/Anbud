@@ -88,7 +88,7 @@ function serviceDocument(overrides = {}) {
 
 test("prompt-covered chunks do not consume retrieval slots or hide other source identities", async () => {
   resetDocumentChunksTestRuntime();
-  const text = "K-1 Leverandøren skal dokumentere sikkerhet og kapasitet.";
+  const text = "K-1 Leverandøren skal dokumentere sikkerhet og kapasitet – inklu\u0000dert i tjenesten.";
   const first = projectDocument({ raw_text: text, structure_map: [] });
   const second = projectDocument({ id: "project-document-2", raw_text: text, structure_map: [] });
   const service = serviceDocument({ id: first.id, raw_text: text, structure_map: [] });
@@ -97,7 +97,7 @@ test("prompt-covered chunks do not consume retrieval slots or hide other source 
   assert.equal(baseline.snippets.length, 3);
   const covered = baseline.snippets.find((snippet) => snippet.sourceType === "project_document" && snippet.sourceId === first.id);
   assert.ok(covered);
-  assert.ok(first.raw_text.includes(covered.text));
+  assert.match(covered.text, /kapasitet - inkludert/u);
   const result = await retrieveDocumentSnippetsWithMetadata({ ...input, limit: 2,
     promptDocumentText: new Map([[first.id, first.raw_text.replace(/ /gu, "  ")]]) });
   assert.equal(result.snippets.length, 2, "filtering runs before the final result limit");
@@ -107,6 +107,7 @@ test("prompt-covered chunks do not consume retrieval slots or hide other source 
     promptDocumentText: new Map([[first.id, covered.text.slice(0, 25)]]) });
   assert.ok(partial.snippets.some((snippet) => snippet.sourceType === "project_document" && snippet.sourceId === first.id && snippet.text === covered.text),
     "a chunk crossing the covered boundary retains its full evidence");
+  assert.equal(first.raw_text, text, "coverage comparison does not change original source text");
 });
 
 test("project chunk fingerprint changes for same-length source content", () => {
