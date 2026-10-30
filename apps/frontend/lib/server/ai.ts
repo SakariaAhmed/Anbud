@@ -5698,7 +5698,7 @@ async function analyzeCustomerDocumentsLegacy(
       document_count: analysisDocuments.length,
       compiled_document_count: 0,
       legacy_fallback_count: analysisDocuments.length,
-      retrieval_used: true,
+      retrieval_used: analysisRetrieval !== null,
       prompt_chars: userPrompt.length,
       model: input.model ?? ANALYSIS_MODEL,
     },

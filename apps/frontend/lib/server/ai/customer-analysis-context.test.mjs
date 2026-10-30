@@ -31,7 +31,10 @@ delete process.env.DOCUMENT_ANALYSIS_VERSION;
 
 const directory = mkdtempSync(path.join(tmpdir(), "anbud-analysis-context-"));
 const dataApi = path.join(directory, "data-api.cjs");
-writeFileSync(dataApi, `exports.createServiceClient = () => ({ from: () => ({ insert: async () => ({ error: null }) }) });`);
+writeFileSync(dataApi, `exports.createServiceClient = () => ({ from: (table) => ({ insert: async (row) => {
+  if (table === "document_intelligence_events") (globalThis.__analysisEvents ??= []).push(row);
+  return { error: null };
+} }) });`);
 const retrieval = path.join(directory, "retrieval.cjs");
 writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async (input) => {
   globalThis.__analysisRetrievalCalls = (globalThis.__analysisRetrievalCalls ?? 0) + 1;
@@ -48,6 +51,10 @@ const jiti = createJiti(path.join(frontendRoot, "customer-analysis-context-tests
   interopDefault: true,
 });
 const { analyzeCustomerDocuments } = await jiti.import(path.join(frontendRoot, "lib/server/ai.ts"));
+
+test.beforeEach(() => {
+  globalThis.__analysisEvents = [];
+});
 
 test.after(() => {
   server.close();
@@ -74,6 +81,7 @@ test("a customer document that fits is analysed whole, without duplicate retriev
   assert.ok(user.includes(lateChapter), "the end of the customer document must reach the model");
   assert.ok(user.includes("Rad 2: A2: K1 | B2: Pris | C2: 40 %"), "a small supporting document is included whole");
   assert.equal(globalThis.__analysisRetrievalCalls, 0, "nothing is left for retrieval to add");
+  assert.equal(globalThis.__analysisEvents.at(-1).metadata.retrieval_used, false);
   assert.match(user, /påpeke motstriden eksplisitt/u);
 });
 
@@ -88,6 +96,7 @@ test("a customer document that does not fit keeps the head and adds retrieval", 
     supportingDocuments: [],
   });
   assert.equal(globalThis.__analysisRetrievalCalls, 1);
+  assert.equal(globalThis.__analysisEvents.at(-1).metadata.retrieval_used, true);
 });
 
 test("supporting documents beyond the fourth stay reachable through retrieval", async () => {
@@ -102,4 +111,5 @@ test("supporting documents beyond the fourth stay reachable through retrieval", 
   });
   assert.equal(globalThis.__analysisRetrievalCalls, 1);
   assert.deepEqual(globalThis.__analysisRetrievalDocuments, ["Støtte 5"]);
+  assert.equal(globalThis.__analysisEvents.at(-1).metadata.retrieval_used, true);
 });
