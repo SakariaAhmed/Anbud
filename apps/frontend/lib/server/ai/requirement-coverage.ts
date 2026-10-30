@@ -2934,6 +2934,7 @@ function normalizedSolutionText(document: ProjectDocumentDetail) {
 }
 
 const VERIFIED_QUOTE_MIN_CHARS = 30;
+const VERIFIED_QUOTE_MIN_WORDS = 6;
 const VERIFIED_QUOTE_MAX_CHARS = 900;
 const VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS = 300;
 const BLANKET_COMPLIANCE_CLAIM =
@@ -3250,13 +3251,88 @@ export type VerifiedSolutionQuote = {
 
 /** Whether a quote occurs verbatim in the solution document, so a quote
  * that could not be bound is not reported as an absent answer. */
+/** Bilag 2 without table-cell markers, with each position mapped back to
+ * the flattened text: a model quoting a table row ("P1 Kritisk 15 minutter
+ * 4 timer") leaves the cell boundaries out. */
+const cellFreeSolutionTextCache = new WeakMap<ProjectDocumentDetail, { text: string; offsets: number[] }>();
+
+function cellFreeSolutionText(document: ProjectDocumentDetail) {
+  const cached = cellFreeSolutionTextCache.get(document);
+  if (cached) return cached;
+  const { whole } = normalizedSolutionText(document);
+  let text = "";
+  const offsets: number[] = [];
+  for (let index = 0; index < whole.length; index += 1) {
+    if (whole.startsWith(" ¦ ", index)) {
+      text += " ";
+      offsets.push(index);
+      index += 2;
+      continue;
+    }
+    text += whole[index];
+    offsets.push(index);
+  }
+  offsets.push(whole.length);
+  const value = { text, offsets };
+  cellFreeSolutionTextCache.set(document, value);
+  return value;
+}
+
+/**
+ * Where a model quote occurs verbatim in Bilag 2, as a span of the
+ * flattened text: the whole quote, else the quote ignoring table-cell
+ * boundaries, else its longest sentence or cell that occurs verbatim (a
+ * model often joins two sentences that are not adjacent). The stored
+ * answer is always cut from Bilag 2 itself, never from the quote.
+ */
+function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentDetail) {
+  const { whole } = normalizedSolutionText(document);
+  const cellFree = cellFreeSolutionText(document);
+  const find = (needle: string) => {
+    const direct = whole.indexOf(needle);
+    if (direct >= 0) return { start: direct, end: direct + needle.length };
+    const plain = needle.replace(/\s*¦\s*/gu, " ");
+    const at = cellFree.text.indexOf(plain);
+    return at >= 0 ? { start: cellFree.offsets[at]!, end: cellFree.offsets[at + plain.length]! } : null;
+  };
+  const exact = find(normalizedQuote);
+  if (exact) {
+    yield exact;
+    return;
+  }
+  const fragments = normalizedQuote
+    .split(/\s*(?:\[\.\.\.\]|\.\.\.|…)\s*|(?<=[.!?])\s+|\s*¦\s*/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= VERIFIED_QUOTE_MIN_CHARS)
+    .sort((left, right) => right.length - left.length);
+  for (const fragment of fragments) {
+    const found = find(fragment);
+    if (found) yield found;
+  }
+  // A table row run into a sentence without punctuation: the longest
+  // verbatim run of words from either end of the quote.
+  const words = normalizedQuote.replace(/\s*¦\s*/gu, " ").split(" ");
+  const longestRun = (take: (count: number) => string) => {
+    for (let count = words.length - 1; count >= VERIFIED_QUOTE_MIN_WORDS; count -= 1) {
+      const run = take(count);
+      if (run.length < VERIFIED_QUOTE_MIN_CHARS) break;
+      const found = find(run);
+      if (found) return found;
+    }
+    return null;
+  };
+  const prefix = longestRun((count) => words.slice(0, count).join(" "));
+  if (prefix) yield prefix;
+  const suffix = longestRun((count) => words.slice(-count).join(" "));
+  if (suffix) yield suffix;
+}
+
 export function solutionDocumentContainsQuote(
   quote: string | undefined,
   solutionDocument: ProjectDocumentDetail,
 ) {
   const normalized = normalizeQuoteMatchText(String(quote ?? ""));
-  return normalized.length >= VERIFIED_QUOTE_MIN_CHARS &&
-    normalizedSolutionText(solutionDocument).whole.includes(normalized);
+  return normalized.length >= VERIFIED_QUOTE_MIN_CHARS && !solutionQuoteSpans(normalized, solutionDocument).next().done;
 }
 
 /**
@@ -3283,17 +3359,26 @@ export function bindVerifiedSolutionQuote(input: {
   // A model that finds no answer must not be turned into a weak answer.
   if (normalizeRequirementCoverageAssessment(input.assessment) === "Mangler") return null;
   const quote = String(input.quote ?? "").replace(/\s+/gu, " ").trim();
-  if (
-    quote.length < VERIFIED_QUOTE_MIN_CHARS ||
-    quote.length > VERIFIED_QUOTE_MAX_CHARS ||
-    /\.\.\.|…|\[\.\.\.\]/u.test(quote)
-  ) {
+  if (quote.length < VERIFIED_QUOTE_MIN_CHARS || quote.length > VERIFIED_QUOTE_MAX_CHARS) {
     return null;
   }
-  const normalizedQuote = normalizeQuoteMatchText(quote);
+  // The first verbatim span of the quote that binds: the whole quote, else
+  // its parts in order of length.
+  for (const span of solutionQuoteSpans(normalizeQuoteMatchText(quote), input.solutionDocument)) {
+    const bound = bindSolutionQuoteSpan(input, span);
+    if (bound) return bound;
+  }
+  return null;
+}
+
+function bindSolutionQuoteSpan(
+  input: Parameters<typeof bindVerifiedSolutionQuote>[0],
+  span: { start: number; end: number },
+): VerifiedSolutionQuote | null {
   const solution = normalizedSolutionText(input.solutionDocument);
-  const start = solution.whole.indexOf(normalizedQuote);
-  if (start < 0) return null;
+  const { start } = span;
+  // The verified part of the quote, as it stands in Bilag 2.
+  const normalizedQuote = solution.whole.slice(span.start, span.end);
 
   const requirementSource = `${input.entry.text} ${input.entry.heading}`;
   // Binding is decided on the general vocabulary only; tender-wide frequent
@@ -3304,7 +3389,7 @@ export function bindVerifiedSolutionQuote(input: {
   const located = answerPassage(
     solution.flat,
     start,
-    start + normalizedQuote.length,
+    span.end,
     baseTerms,
     solution.paragraphStarts,
     solution.sectionStarts,

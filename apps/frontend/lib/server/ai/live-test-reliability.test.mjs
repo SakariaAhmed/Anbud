@@ -76,10 +76,46 @@ test("a verbatim Bilag 2 quote binds a prose answer, including PDF line-break hy
   assert.match(bound.sourceExcerpt, /^Kravgrunnlag: KD-10 .* \| Svarrad: /u);
 });
 
-test("fabricated, elided or restated quotes are not accepted as answers", () => {
+test("an elided quote binds to its complete Bilag 2 sentence, never to the elided text", () => {
+  const bound = bindVerifiedSolutionQuote({
+    entry: unansweredRequirement,
+    quote: "Alle virksomhetskritiske systemer sikkerhetskopieres ... testes kvartalsvis.",
+    solutionDocument,
+  });
+  assert.match(bound.entry.answerExcerpt, /hver time til en separat lokasjon, og gjenoppretting testes kvartalsvis/u);
+});
+
+test("a table row quoted without cell boundaries, or two stitched sentences, bind verbatim", () => {
+  const doc = {
+    ...solutionDocument,
+    raw_text: [
+      "[[SIDE:7]]",
+      "7.2 Responstider",
+      "| Prioritet | Responstid | Løsningstid | Tilgjengelighet |",
+      "| P1 Kritisk | 15 minutter | 4 timer | Hele døgnet |",
+      "P1-hendelser meldes på egen vakttelefon som er betjent hele døgnet.",
+      "",
+      "5.3 Kundeportal",
+      "Kundeportalen gir oppdragsgiver mulighet til å bestille tjenester og følge saker. Portalen støtter føderert pålogging. Leveringstid for standardleveranser fremgår av tjenestekatalogen, som avtales i etableringsfasen.",
+    ].join("\n"),
+  };
+  const response = { ...unansweredRequirement, id: "TJN-03", text: "Hendelser med prioritet 1 skal ha responstid på høyst 15 minutter hele døgnet.", heading: "" };
+  const row = bindVerifiedSolutionQuote({ entry: response, quote: "P1 Kritisk 15 minutter 4 timer Hele døgnet", assessment: "Godt", solutionDocument: doc });
+  assert.ok(row, "the row binds without its cell markers");
+  const portal = { ...unansweredRequirement, id: "DRI-03", text: "Standardleveranser fra tjenestekatalogen bør leveres innen 1 virkedag.", heading: "" };
+  const stitched = bindVerifiedSolutionQuote({
+    entry: portal,
+    quote: "Kundeportalen gir oppdragsgiver mulighet til å bestille tjenester og følge saker. Leveringstid for standardleveranser fremgår av tjenestekatalogen, som avtales i etableringsfasen.",
+    assessment: "Godt",
+    solutionDocument: doc,
+  });
+  // The part that is verbatim and relevant, as it stands in Bilag 2.
+  assert.match(stitched.entry.answerExcerpt, /^Leveringstid for standardleveranser fremgår av tjenestekatalogen/u);
+});
+
+test("fabricated or restated quotes are not accepted as answers", () => {
   for (const quote of [
     "Alle systemer sikkerhetskopieres hvert kvarter til to datasentre i Norge med full replikering.",
-    "Alle virksomhetskritiske systemer sikkerhetskopieres ... testes kvartalsvis.",
     "For kritiske systemer skal RPO ikke overstige 1 time.",
     "kort",
     undefined,
