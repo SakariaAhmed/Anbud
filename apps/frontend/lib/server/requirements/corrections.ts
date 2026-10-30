@@ -553,9 +553,15 @@ export function applyRequirementCorrections(
           text: sentence.text,
           ids: sentence.ids.filter(({ at }) => at >= from && at < to && !inAside(at)),
         }, known()));
+        // Commas inside an aside ("K-2, som gjelder drift, og K-3 er begge …")
+        // do not split a shared subject list into clauses.
+        const clauseText = asides.reduce(
+          (text, [from, to]) => `${text.slice(0, from)}${" ".repeat(to - from)}${text.slice(to)}`,
+          sentence.text,
+        );
         let namedBefore = new Set<string>();
         for (let end = ordinalAt; end > 0 && namedBefore.size === 0;) {
-          const start = sentence.text.lastIndexOf(",", end - 1) + 1;
+          const start = clauseText.lastIndexOf(",", end - 1) + 1;
           namedBefore = clauseIds(start, end);
           end = start - 1;
         }

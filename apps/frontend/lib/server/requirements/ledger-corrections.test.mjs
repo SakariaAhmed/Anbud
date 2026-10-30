@@ -930,6 +930,11 @@ test("review bots on #70: 'andre' as 'other' is no ordinal; an ID-less customer 
     () => applyRequirementCorrections(withK2, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\nK-2 ${withK2[2].text}\n\n9 Rettelser\nK-3 (det andre kravet er K-2) får ny ID K-9.`),
     /kan ikke brukes entydig: K-3/u,
   );
+  // A subject list joined across an aside stays one clause: still ambiguous.
+  assert.throws(
+    () => applyRequirementCorrections(bothTwice, `${oneSentence}K-2, som gjelder drift, og K-3 er begge brukt to ganger, og den siste får ny ID K-9.`),
+    /ny krav-ID K-9 kan gjelde K-2, K-3/u,
+  );
   // Another requirement in an earlier clause does not make it ambiguous.
   assert.deepEqual(
     applyRequirementCorrections(withK2, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\nK-2 ${withK2[2].text}\n\n9 Rettelser\nK-2 beholder sin ID, K-3 er brukt to ganger, og den siste får ny ID K-9.`).ledger.map((entry) => entry.id),
