@@ -497,7 +497,11 @@ export function applyRequirementCorrections(
         const occurrences = entries.filter((entry) => entry.id === renumberTarget);
         // An explicit ordinal can disambiguate a renumbering. Without it,
         // choosing the last occurrence would silently rename the wrong row.
-        const ordinal = [...sentence.text.slice(0, renumberMatch.index).matchAll(/\b(første|andre|tredje|siste)\b/giu)]
+        // Only an ordinal naming an occurrence ("det andre kravet"): "andre"
+        // also means "other" ("I tillegg til andre endringer får K-3 …").
+        const ordinal = [...sentence.text.slice(0, renumberMatch.index).matchAll(
+          /(?<![\p{L}\p{N}])(første|andre|tredje|siste)\s+(?:kravet|krav|kravraden|raden|rad|forekomsten)(?![\p{L}\p{N}])/giu,
+        )]
           .at(-1)?.[1]?.toLocaleLowerCase("nb");
         if (occurrences.length > 1 && !ordinal) assertUniqueTargets([renumberTarget]);
         const at = ordinal === "første" ? 0 : ordinal === "andre" ? 1 : ordinal === "tredje" ? 2 : occurrences.length - 1;

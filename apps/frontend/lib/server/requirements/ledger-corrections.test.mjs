@@ -886,3 +886,33 @@ test("review bots: several correction notices, kept notes, Unicode section rows,
   const supporting = { id: "s", title: "Tilleggskrav", role: "supporting_document", supporting_subtype: "kravdokument", file_name: "tilleggskrav.docx", file_format: "docx", raw_text: "4 Krav\nK-1 Leverandøren skal levere kursing.\nK-2 Leverandøren skal levere dokumentasjon.\n\n9 Rettelser\nKravene K-1 og K-2 utgår." };
   assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([supporting], [{ document: supporting, ledger: [] }]));
 });
+
+test("review bots on #70: 'andre' as 'other' is no ordinal; an ID-less customer document does not block withdrawn coverage", async () => {
+  const { allCanonicalRequirementsWithdrawn } = await load("lib/server/requirements/source-readiness.ts");
+  const k3 = { id: "K-3", text: "Leverandøren skal levere månedlig driftsrapport.", pages: [1], heading: "4 Krav" };
+  // A single K-3: "andre endringer" must neither throw nor pick a second row.
+  const renamed = applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nI tillegg til andre endringer får K-3 ny ID K-9.`).ledger;
+  assert.deepEqual(renamed.map((entry) => entry.id), ["K-9"]);
+  // An explicit reference to a missing occurrence still stops the workflow.
+  assert.throws(
+    () => applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nK-3: Det andre kravet får ny ID K-9.`),
+    /forekomst som ikke finnes/u,
+  );
+  // A customer document without requirement IDs or requirement text next to a
+  // fully withdrawn requirement document: coverage is empty, not blocked.
+  const customer = { id: "c", title: "Bilag 1", role: "primary_customer_document", file_name: "bilag1.docx", file_format: "docx",
+    raw_text: "Om oppdragsgiver\nKommunen har 12 000 innbyggere og to driftslokasjoner." };
+  const formal = { id: "f", title: "Tilleggskrav", role: "supporting_document", supporting_subtype: "kravdokument", file_name: "tilleggskrav.docx", file_format: "docx",
+    raw_text: "4 Krav\nK-1 Leverandøren skal levere kursing.\nK-2 Leverandøren skal levere dokumentasjon.\n\n9 Rettelser\nKravene K-1 og K-2 utgår." };
+  const original = [
+    { id: "K-1", text: "Leverandøren skal levere kursing.", pages: [1], heading: "4 Krav", documentId: "f" },
+    { id: "K-2", text: "Leverandøren skal levere dokumentasjon.", pages: [1], heading: "4 Krav", documentId: "f" },
+  ];
+  assert.equal(allCanonicalRequirementsWithdrawn({
+    sourceDocuments: [customer, formal],
+    requirementLedgerResults: [
+      { document: customer, ledger: [], originalLedger: [] },
+      { document: formal, ledger: [], originalLedger: original },
+    ],
+  }), true);
+});
