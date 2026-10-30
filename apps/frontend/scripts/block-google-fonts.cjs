@@ -5,17 +5,23 @@ const https = require("node:https");
 
 const googleFonts = /(^|\.)fonts\.(googleapis|gstatic)\.com$/u;
 
+// Lower-case, without port or trailing dot: "FONTS.googleapis.com.:443"
+// reaches the same host.
+function normalizeHost(host) {
+  return host.replace(/:\d+$/u, "").replace(/\.$/u, "").toLowerCase();
+}
+
 function hostOf(target) {
   if (typeof target === "string" || target instanceof URL) {
     try {
-      return new URL(String(target)).hostname;
+      return normalizeHost(new URL(String(target)).hostname);
     } catch {
       return "";
     }
   }
   if (target && typeof target === "object") {
     if (typeof target.url === "string") return hostOf(target.url);
-    return String(target.hostname ?? target.host ?? "").replace(/:\d+$/u, "");
+    return normalizeHost(String(target.hostname ?? target.host ?? ""));
   }
   return "";
 }
