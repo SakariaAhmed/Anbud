@@ -490,8 +490,17 @@ export function applyRequirementCorrections(
         renumberMatch && !/\b(?:ikke|aldri)\b/iu.test(sentence.text.slice(Math.max(0, renumberMatch.index - 15), renumberMatch.index))
           ? renumberMatch[1]
           : undefined;
+      // The renumbered requirement is the subject before "ny ID", not one named
+      // in an aside: a parenthesis or a comma-delimited insertion ("K-3, som
+      // erstatter K-2, får ny ID K-9", "K-3 får, i likhet med K-2, ny ID …").
+      const asides = renumberMatch
+        ? [...sentence.text.slice(0, renumberMatch.index).matchAll(/\([^()]*\)|,[^,]*,/gu)].map((match) => [match.index!, match.index! + match[0].length] as const)
+        : [];
       const renumberTarget = renumberMatch
-        ? subjects({ text: sentence.text, ids: sentence.ids.filter(({ at }) => at < renumberMatch.index) }, known()).at(-1) ?? own.find((id) => id !== renumber)
+        ? subjects({
+            text: sentence.text,
+            ids: sentence.ids.filter(({ at }) => at < renumberMatch.index && !asides.some(([from, to]) => at >= from && at < to)),
+          }, known()).at(-1) ?? own.find((id) => id !== renumber)
         : undefined;
       if (renumberMatch && renumber && renumberTarget && !known().has(renumber)) {
         const occurrences = entries.filter((entry) => entry.id === renumberTarget);
