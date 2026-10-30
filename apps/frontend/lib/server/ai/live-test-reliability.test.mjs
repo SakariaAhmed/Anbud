@@ -560,6 +560,18 @@ test("a decline names the delivery, not an option the requirement may forbid", a
     assert.equal(declines(compliant, "Løsningen skal ikke støtte usikre protokoller."), false, compliant);
   }
   // A prohibition clause excuses only what it forbids.
+  // An option the requirement does not ask for is not a decline.
+  for (const [answer, requirement] of [
+    ["Løsningen støtter Chrome, Edge, Firefox og Safari. Internet Explorer støttes ikke.", "Løsningen skal støtte moderne nettlesere."],
+    ["Varsling sendes på e-post og som push-varsel. SMS-varsling tilbys ikke.", "Løsningen skal varsle brukere på e-post."],
+    ["Alle data lagres i Azure Norway East. Lokal lagring leveres ikke.", "Alle data skal lagres i Norge."],
+  ]) {
+    assert.equal(declines(answer, requirement), false, answer);
+  }
+  // "ikke" in a relative clause or a later clause does not make it a prohibition.
+  assert.equal(declines("Støttes ikke.", "Løsningen skal varsle om lisenser som ikke brukes."), true);
+  assert.equal(declines("Leveres ikke.", "Leverandøren skal levere 24/7 support. Planlagt vedlikehold skal ikke skje i kontortid."), true);
+  assert.equal(declines("Nei, dette støttes ikke.", "Løsningen skal kunne integreres med ID-porten og skal ikke kreve lokal klientinstallasjon."), true);
   const mixed = "Løsningen skal støtte SSO via Entra ID og skal ikke tillate lokale kontoer.";
   assert.equal(declines("Dette støttes ikke i vår plattform. Vi bruker lokale brukerkontoer.", mixed), true);
   assert.equal(declines("Lokale kontoer støttes ikke.", mixed), false);
@@ -579,6 +591,8 @@ test("a restriction in a later section does not qualify the answer", () => {
   const separate = bind(`## 4 Lagring\n\n${answer}\n\n## 5 Tilleggstjenester\n\nTelefonstøtte tilbys ikke.`);
   assert.ok(separate);
   assert.notEqual(separate.uncertain, true);
+  // A new paragraph that refers back still qualifies the answer.
+  assert.equal(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nDette gjelder kun produksjonsmiljøet.`)?.uncertain, true);
   // Nor right after a blank line or a heading.
   assert.notEqual(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nTelefonstøtte tilbys ikke.`)?.uncertain, true);
   assert.notEqual(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\n## 5 Support\n\nTelefonstøtte tilbys ikke.`)?.uncertain, true);

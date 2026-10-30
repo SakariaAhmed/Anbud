@@ -2879,6 +2879,7 @@ const normalizedSolutionTextCache = new WeakMap<
     flat: string;
     whole: string;
     paragraphStarts: number[];
+    sectionStarts: number[];
     pages: Array<{ page: number; text: string }>;
   }
 >();
@@ -2889,6 +2890,7 @@ const normalizedSolutionTextCache = new WeakMap<
  * it (Docling separates "Vi leverer:" from its bullets by a blank line). */
 function paragraphStartOffsets(rawText: string, flat: string) {
   const starts: number[] = [];
+  const sections: number[] = [];
   let cursor = 0;
   let previous = "";
   for (const paragraph of rawText.split(/\n[ \t]*\n|\n(?=[ \t]*#{1,6}[ \t])/u)) {
@@ -2900,10 +2902,11 @@ function paragraphStartOffsets(rawText: string, flat: string) {
       /^\s*(?:[-–*•]|\d{1,2}[.)])\s/u.test(paragraph) && !/^\s*#/u.test(paragraph) ||
       (/:\s*$/u.test(previous) && !/^\s*#/u.test(paragraph));
     if (!continues) starts.push(at);
+    if (/^\s*#/u.test(paragraph)) sections.push(at);
     cursor = at + head.length;
     previous = paragraph;
   }
-  return starts;
+  return { starts, sections };
 }
 
 function normalizedSolutionText(document: ProjectDocumentDetail) {
@@ -2917,7 +2920,10 @@ function normalizedSolutionText(document: ProjectDocumentDetail) {
   const value = {
     flat,
     whole: flat.toLocaleLowerCase("nb"),
-    paragraphStarts: paragraphStartOffsets(document.raw_text, flat),
+    ...(() => {
+      const { starts, sections } = paragraphStartOffsets(document.raw_text, flat);
+      return { paragraphStarts: starts, sectionStarts: sections };
+    })(),
     pages: pages.map((page) => ({
       page: page.page,
       text: normalizeQuoteMatchText(page.text),
@@ -3092,6 +3098,7 @@ function answerPassage(
   end: number,
   requirement: TermSet,
   paragraphStarts: number[] = [],
+  sectionStarts: number[] = [],
 ) {
   const boundaries = sentenceBoundaries(flat);
   const before = boundaries.filter((at) => at < start).at(-1);
@@ -3147,9 +3154,16 @@ function answerPassage(
 
   let passage = own;
   const following = nextSegment(flat, boundaries, sentenceEnd);
-  // A new paragraph or section is another answer, not a qualification.
+  // A new section is another answer. So is a new paragraph, unless it refers
+  // back to this one ("Dette gjelder kun …", "Merk: …").
+  const crosses = (starts: number[]) =>
+    following !== null && starts.some((at) => at >= sentenceEnd && at < following.end);
   const next =
-    following && !paragraphStarts.some((at) => at >= sentenceEnd && at < following.end) ? following : null;
+    following &&
+    !crosses(sectionStarts) &&
+    (!crosses(paragraphStarts) || REFERRING_START.test(following.text))
+      ? following
+      : null;
   if (next) {
     // A follow-up that refers back qualifies the answer even without a
     // negation ("Dette gjelder kun produksjonsmiljøet"); one that names the
@@ -3282,6 +3296,7 @@ export function bindVerifiedSolutionQuote(input: {
     start + normalizedQuote.length,
     baseTerms,
     solution.paragraphStarts,
+    solution.sectionStarts,
   );
   const { complete, setAsideNegation } = located;
   let { own, passage } = located;

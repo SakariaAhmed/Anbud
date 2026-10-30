@@ -3728,9 +3728,11 @@ export function answerHasSelfContainedCoverage(
 // "Støttes ikke." or "X støttes ikke" declines the delivery itself when X is
 // absent, a pronoun or a delivery noun ("Nei, dette støttes ikke"), unless
 // the requirement only forbids something ("Løsningen skal ikke støtte usikre
-// protokoller"): then the answer complies. A noun subject ("Telefonstøtte
-// tilbys ikke") declines given the requirement, unless it names what a
-// prohibition clause forbids ("Usikre protokoller støttes ikke").
+// protokoller"): then the answer complies. A noun subject declines only when
+// the requirement asks for it ("Telefonstøtte tilbys ikke" for "… levere
+// telefonstøtte"); an option the requirement does not name ("Internet
+// Explorer støttes ikke", "SMS-varsling tilbys ikke") or one a prohibition
+// forbids ("Usikre protokoller støttes ikke") is not a decline.
 // A versioned option ("TLS 1.0 og 1.1 støttes ikke"), a scope limit
 // ("leveres ikke utenfor EU") and "ikke bare" never decline.
 const SUBJECT_DECLINE =
@@ -3739,38 +3741,40 @@ const DELIVERY_SUBJECT =
   /^(?:dette|det|denne|disse|kravet|funksjonen|funksjonaliteten|tjenesten|leveransen|kontrollen)$/iu;
 const NOT_LETTER = "(?<![\\p{L}\\p{N}])";
 const NOT_LETTER_AFTER = "(?![\\p{L}\\p{N}])";
-const PROHIBITION = new RegExp(
-  `${NOT_LETTER}(?:(?:skal|må|kan|bør)\\s+ikke|ikke\\s+(?:tillatt|tillates|benyttes|brukes|forekomme)|forbudt|uakseptabelt)${NOT_LETTER_AFTER}`,
-  "iu",
-);
-const OBLIGATION = new RegExp(`${NOT_LETTER}(?:skal|må|bør)${NOT_LETTER_AFTER}`, "iu");
+const MODAL = new RegExp(`${NOT_LETTER}(skal|må|bør|kan)${NOT_LETTER_AFTER}(\\s+ikke${NOT_LETTER_AFTER})?`, "iu");
+const BARE_PROHIBITION = new RegExp(`${NOT_LETTER}(?:ikke\\s+(?:tillatt|tillates)|forbudt|uakseptabelt)${NOT_LETTER_AFTER}`, "iu");
 
-/** Word stems of a text, for matching a declined subject to a clause. */
+/** Whether a requirement clause forbids rather than obliges: its first modal
+ * is negated ("skal ikke støtte"), or it has none and states a ban. "Skal
+ * varsle om lisenser som ikke brukes" obliges. */
+function clauseForbids(clause: string) {
+  const modal = MODAL.exec(clause);
+  return modal ? Boolean(modal[2]) : BARE_PROHIBITION.test(clause);
+}
+
+/** Word stems of a text, for matching a declined subject to a clause. A
+ * hyphenated compound ("SMS-varsling") stays one word. */
 function wordStems(text: string) {
   return new Set(
-    (text.toLocaleLowerCase("nb").match(/[\p{L}]{4,}/gu) ?? []).map((word) => word.slice(0, 5)),
+    (text.toLocaleLowerCase("nb").match(/\p{L}[\p{L}-]{3,}/gu) ?? []).map((word) => word.slice(0, 5)),
   );
 }
 
 function answerDeclinesWithSubject(text: string, requirement: string | undefined) {
-  // A requirement clause that forbids something ("… og skal ikke tillate
-  // lokale kontoer") makes declining that thing compliant, not the rest.
   const clauses = requirement
     ? normalizePageText(requirement).split(/[.;]\s+|,\s*(?=men\s)|\s+og\s+(?=(?:skal|må|bør)\s)/u)
     : [];
-  const prohibited = clauses.filter((clause) => PROHIBITION.test(clause));
-  const obliged = clauses.some((clause) => OBLIGATION.test(clause) && !PROHIBITION.test(clause));
-  const prohibitedStems = wordStems(prohibited.join(" "));
+  const forbidden = clauses.filter(clauseForbids);
+  const obliged = clauses.filter((clause) => MODAL.test(clause) && !clauseForbids(clause));
+  const forbiddenStems = wordStems(forbidden.join(" "));
+  const obligedStems = wordStems(obliged.join(" "));
   return Array.from(text.matchAll(SUBJECT_DECLINE)).some((match) => {
     const subject = (match[1] ?? "").trim();
     if (/\b(?:og|eller|men|samt)\b/iu.test(subject)) return false;
-    if (!subject || DELIVERY_SUBJECT.test(subject)) {
-      // "Støttes ikke." answering only a prohibition complies.
-      return !prohibited.length || obliged;
-    }
-    if (requirement === undefined) return false;
-    const subjectStems = wordStems(subject);
-    return ![...subjectStems].some((stem) => prohibitedStems.has(stem));
+    // "Støttes ikke." answering only a prohibition complies.
+    if (!subject || DELIVERY_SUBJECT.test(subject)) return !forbidden.length || obliged.length > 0;
+    const stems = [...wordStems(subject)];
+    return stems.some((stem) => obligedStems.has(stem)) && !stems.some((stem) => forbiddenStems.has(stem));
   });
 }
 
