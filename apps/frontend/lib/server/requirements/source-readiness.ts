@@ -11,6 +11,7 @@ import {
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 import { explicitIdTableSourceIds } from "@/lib/server/requirements/explicit-id-table-parser";
+import { hasRequirementSignal } from "@/lib/server/requirements/pdf-layout-ledger";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
 
@@ -522,14 +523,16 @@ function requirementMatchCandidates(
   return candidates;
 }
 
-export function canonicalizeRequirementSourceLedger(input: {
+type RequirementSourceLedgerInput = {
   sourceDocuments: ProjectDocumentDetail[];
   requirementLedgerResults: Array<{
     document: Pick<ProjectDocumentDetail, "id">;
     ledger: RequirementLedgerEntry[];
     originalLedger?: RequirementLedgerEntry[];
   }>;
-}) {
+};
+
+export function canonicalizeRequirementSourceLedger(input: RequirementSourceLedgerInput) {
   const blankEntries = input.requirementLedgerResults.flatMap((result) =>
     result.ledger
       .filter((entry) => !entry.text.trim())
@@ -869,9 +872,7 @@ function explicitLedgerEntryIds(entry: RequirementLedgerEntry) {
   ];
 }
 
-/** Whether the document's corrections chapter withdraws every requirement
- * it had: an empty ledger is then the intended result, not a failed
- * extraction. */
+/** Original explicit IDs, without references in the corrections chapter. */
 export function originalRequirementSourceIds(document: ProjectDocumentDetail) {
   const rawText = document.raw_text ?? "";
   const matrixIds = spreadsheetRequirementIds(document);
@@ -885,7 +886,36 @@ export function originalRequirementSourceIds(document: ProjectDocumentDetail) {
 
 export function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
   const original = originalRequirementSourceIds(document);
-  return original.length > 0 && correctedRequirementIds(original, document.raw_text ?? "").length === 0;
+  if (!original.length || correctedRequirementIds(original, document.raw_text ?? "").length > 0) return false;
+  // The matrix inventory includes its source rows. An explicit-ID inventory
+  // for prose/PDF does not: an obligation on an ID-less line may be another
+  // row or wrapped text. Either way, IDs alone cannot prove full withdrawal.
+  return spreadsheetRequirementIds(document).length > 0 ||
+    !withoutCorrectionsSection(document.raw_text ?? "").split(/\r?\n/u)
+      .some((line) => hasRequirementSignal(line) && !detectExplicitRequirementIds(line).length);
+}
+
+/** Apply the same identity matching before and after corrections, so a
+ * customer copy of a withdrawn formal row does not become an active source. */
+export function allCanonicalRequirementsWithdrawn(input: RequirementSourceLedgerInput) {
+  const originals = input.requirementLedgerResults.map((result) => ({
+    ...result,
+    ledger: result.originalLedger ?? result.ledger,
+  }));
+  const originalByDocument = new Map(originals.map((result) => [result.document.id, result.ledger]));
+  // No parsed evidence cannot establish that explicit or unnumbered source
+  // requirements were withdrawn, even if the corrected ledger is empty.
+  if (input.sourceDocuments.some((document) =>
+    !originalByDocument.get(document.id)?.length &&
+    (isFormalRequirementDocument(document) || originalRequirementSourceIds(document).length > 0 ||
+      withoutCorrectionsSection(document.raw_text ?? "").split(/\r?\n/u).some(hasRequirementSignal))
+  )) return false;
+  const canonicalOriginals = canonicalizeRequirementSourceLedger({ ...input, requirementLedgerResults: originals });
+  const documents = new Map(input.sourceDocuments.map((document) => [document.id, document]));
+  return canonicalOriginals.length > 0 && canonicalOriginals.every((entry) => {
+    const document = documents.get(entry.documentId ?? "");
+    return document !== undefined && allRequirementsWithdrawn(document);
+  });
 }
 
 /** The generic explicit-ID inventory after the document's corrections

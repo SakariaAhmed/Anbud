@@ -33,10 +33,10 @@ const CONTEXT_BEFORE_ID =
 // "Kravene K-4 og K-5 utgår", "Kravet utgår", a cell "Utgår"), not to a
 // relative or subordinate clause ("Data som utgår av arkivet").
 const WITHDRAW_BINDING_GAP = /^[\s,:;()–-]*(?:(?:og|samt|eller)\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}[\s,]*|\([^)]{0,40}\)\s*|(?:skal|må|vil)\s+)*$/iu;
-// A new statement starts at a table row, a blank line, a bullet or numbered
-// line, a Markdown table row, or a line led by a requirement ID.
-const STATEMENT_START =
-  /\n(?=Rad \d+:)|\n\s*\n|\n(?=[ \t]*(?:[-•*–]|\d{1,2}[.)])\s)|\n(?=[ \t]*\|)|\n(?=[ \t]*(?:(?:nytt\s+)?krav(?:et|ene)?\s+|for\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\b)/iu;
+// A paragraph, list item or table row starts a separate correction block.
+// ID-led continuation lines remain in that block's bidder-request context.
+const BLOCK_START = /\n(?=Rad \d+:)|\n\s*\n|\n(?=[ \t]*(?:[-•*–]|\d{1,2}[.)])\s)|\n(?=[ \t]*\|)/iu;
+const ID_LINE_START = /\n(?=[ \t]*(?:(?:nytt\s+)?krav(?:et|ene)?\s+|for\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\b)/iu;
 
 /** A line without Markdown heading or bold markers: Docling writes
  * "## 9 Rettelser og presiseringer" and "**Vedlegg A**". */
@@ -107,22 +107,23 @@ export function withoutCorrectionsSection(rawText: string) {
   return findCorrectionsSections(rawText).reduce((text, section) => text.replace(section, ""), rawText);
 }
 
-/** One statement per table row, list item or ID-led line; wrapped
- * continuation lines stay with their statement. */
+/** One statement per ID-led line within a structural correction block;
+ * wrapped continuation lines stay with their statement. */
 function statements(section: string) {
   return tableAwareLines(section.split("\n").slice(1))
     .join("\n")
-    .split(STATEMENT_START)
-    .map((part) =>
-      part
+    .split(BLOCK_START)
+    .flatMap((block, scope) => block.split(ID_LINE_START).map((part) => ({
+      scope,
+      text: part
         .replace(/^\s*Rad \d+:\s*/u, "")
         .replace(/^\s*(?:[-•*–]|\d{1,2}[.)])\s+/u, "")
         .replace(/^\s*\|\s*|\s*\|\s*$/gu, "")
         .replace(/\s*\|\s*/gu, " | ")
         .replace(/\s+/gu, " ")
         .trim(),
-    )
-    .filter((part) => part.length > 0);
+    })))
+    .filter(({ text }) => text.length > 0);
 }
 
 const TABLE_ROW = /^\s*(?:Rad \d+:\s*|\|)/u;
@@ -357,7 +358,8 @@ export function applyRequirementCorrections(
   // place safely): kept as notes even when nothing else applies.
   const pendingNotes: Array<{ id: string; statement: string }> = [];
 
-  for (const statement of statements(section)) {
+  let requestScope: number | undefined;
+  for (const { text: statement, scope } of statements(section)) {
     // "Ny tekst: Leverandøren skal …" without quotation marks: the rest of the
     // cell is the new wording.
     const quotedStatement = statement.replace(
@@ -374,6 +376,7 @@ export function applyRequirementCorrections(
     const { masked: maskedRaw, quotes } = maskQuotes(quotedStatement);
     const masked = expandIdRanges(maskedRaw);
     if (ANSWER.test(masked)) {
+      requestScope = undefined;
       // Answers to bidder questions clarify, they do not rewrite requirements.
       for (const { id } of sentences(masked).flatMap((sentence) => sentence.ids)) {
         if (known().has(id)) {
@@ -395,8 +398,19 @@ export function applyRequirementCorrections(
       /\?\s*$/u.test(text.trim()) ||
       /^\s*spørsmål\b/iu.test(text) ||
       /(?<![\p{L}\p{N}])(?:vi\s+ber\s+om|ber\s+om\s+at|ønsker\s+(?:at|å)|foreslår\s+at|anmoder\s+om)(?![\p{L}\p{N}])/iu.test(text);
+    const affirmative = [];
     for (const sentence of sentences(masked)) {
-      if (isQuestion(sentence.text)) continue;
+      if (isQuestion(sentence.text)) requestScope = scope;
+      // "Vi ber om følgende endring. K-4 utgår." is one request, including
+      // an ID-led continuation on the next line. Earlier corrections in the
+      // block still apply; later independent blocks start with fresh context.
+      if (requestScope === scope) {
+        // A closing question ends the request before a later affirmative
+        // correction ("Kan K-4 strykes? K-7 utgår.").
+        if (/\?\s*$/u.test(sentence.text.trim())) requestScope = undefined;
+        continue;
+      }
+      affirmative.push(sentence);
       const ids = subjects(sentence, known());
       // A sentence naming no requirement ("Kravene utgår.", "Ny tekst: …")
       // refers back to all requirements named before it in the statement.
@@ -568,9 +582,10 @@ export function applyRequirementCorrections(
       // Statements naming a requirement without an affirmative action.
       // A change, a withdrawal or a scope clarification ("OPS-1 gjelder kun
       // produksjonsmiljøet.") is kept even when nothing else applies.
+      const affirmativeText = affirmative.map((sentence) => sentence.text).join(" ");
       const namesAction =
-        masked.search(CHANGE_VERB) >= 0 || masked.search(WITHDRAW_VERB) >= 0 || SCOPE_STATEMENT.test(masked);
-      for (const id of subjects({ text: masked, ids: sentences(masked).flatMap((sentence) => sentence.ids) }, known())) {
+        affirmativeText.search(CHANGE_VERB) >= 0 || affirmativeText.search(WITHDRAW_VERB) >= 0 || SCOPE_STATEMENT.test(affirmativeText);
+      for (const id of subjects({ text: affirmativeText, ids: sentences(affirmativeText).flatMap((sentence) => sentence.ids) }, known())) {
         if (noted.has(id)) continue;
         note(id, "Rettelse", statement);
         if (namesAction) pendingNotes.push({ id, statement });
