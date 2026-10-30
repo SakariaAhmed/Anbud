@@ -23,7 +23,7 @@ if (!imageOnly) {
     alias: { "@": frontend, "server-only": "/dev/null" },
   });
   ({ extractTextFromBuffer } = await jiti.import(path.join(frontend, "lib/server/documents.ts")));
-  ({ extractRequirementLedgerForDocument } = await jiti.import(path.join(frontend, "lib/server/requirements/extraction.ts")));
+  ({ extractRequirementLedgerForDocument } = await jiti.import(path.join(frontend, "lib/server/requirements/source-ledger.ts")));
 }
 const normalizeSpacing = (value) => value.replace(/\s+/gu, " ").trim();
 const directory = await mkdtemp(path.join(tmpdir(), "anbud-ocr-evaluation-"));

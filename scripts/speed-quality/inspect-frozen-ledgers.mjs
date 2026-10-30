@@ -5,7 +5,7 @@ const root = path.resolve(import.meta.dirname, "../..");
 const frontend = path.join(root, "apps/frontend");
 const require = createRequire(path.join(frontend, "package.json"));
 const jiti = require("jiti").createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });
-const { extractRequirementLedgerForDocument } = jiti(path.join(frontend, "lib/server/requirements/extraction.ts"));
+const { extractRequirementLedgerForDocument } = jiti(path.join(frontend, "lib/server/requirements/source-ledger.ts"));
 const frozen = JSON.parse(readFileSync(path.join(root, "output/speed-quality-2026-09-08/generation-inputs.json"), "utf8"));
 const label = process.argv.find((arg) => arg.startsWith("--label="))?.slice(8);
 if (!label || !/^[a-z0-9-]+$/.test(label)) throw new Error("Use a new explicit diagnostic label.");

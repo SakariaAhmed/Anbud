@@ -6,7 +6,7 @@ const frontend = path.join(root, "apps/frontend");
 const require = createRequire(path.join(frontend, "package.json"));
 const jiti = require("jiti").createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });
 const { extractTextFromBuffer } = jiti(path.join(frontend, "lib/server/documents.ts"));
-const { extractRequirementLedgerForDocument } = jiti(path.join(frontend, "lib/server/requirements/extraction.ts"));
+const { extractRequirementLedgerForDocument } = jiti(path.join(frontend, "lib/server/requirements/source-ledger.ts"));
 // No paid fallback or remote file access is allowed during fixture inspection.
 globalThis.fetch = async () => { throw new Error("Network is disabled during fixture inspection."); };
 const scenario = JSON.parse(readFileSync(path.join(import.meta.dirname, "fixtures/large-explicit-tender-case.json"), "utf8")).cases[0];

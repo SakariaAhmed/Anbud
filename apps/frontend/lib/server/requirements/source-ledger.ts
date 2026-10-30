@@ -2455,7 +2455,9 @@ export function recoverAvailabilityFractionRequirement<
   };
 }
 
-export async function extractRequirementLedgerForDocumentCore(
+/** The one requirement-ledger extractor for a document: structure-based
+ * ledger, truncation repairs, and the document's corrections chapter. */
+export async function extractRequirementLedgerForDocument(
   document: ProjectDocumentDetail,
 ): Promise<
   Array<{

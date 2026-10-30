@@ -28,7 +28,7 @@ import {
   generateHighLevelDesign,
   regenerateCustomerAnalysisSection,
 } from "@/lib/server/ai";
-import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/extraction";
+import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/source-ledger";
 import { generateExecutiveSummary } from "@/lib/server/ai/executive-summary";
 import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai/document-analysis";
 import {

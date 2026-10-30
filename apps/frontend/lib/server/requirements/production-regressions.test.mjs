@@ -5,7 +5,7 @@ import { createJiti } from 'jiti';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const jiti = createJiti(import.meta.url, {alias: {'@':root, 'server-only':'/dev/null'}});
-const { extractRequirementLedgerForDocument } = jiti('./extraction.ts');
+const { extractRequirementLedgerForDocument } = jiti('./source-ledger.ts');
 const { narrativeAnswerEvidence } = jiti('./narrative-answer-evidence.ts');
 const { buildDeclaredHeadingRequirementLedger } = jiti('./legacy-corpus-parser.ts');
 const { supplierAnswerNeedsConfirmation, mergeRequirementCoverageLedgerWithSolutionAnswers, correctCoverageAssessmentWithSourceEvidence } = jiti('../ai/requirement-coverage.ts');

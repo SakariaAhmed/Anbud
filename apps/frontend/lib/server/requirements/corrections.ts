@@ -6,8 +6,11 @@ import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 // and evaluated, changed requirements were judged on their old wording, and
 // the correction rows themselves became requirements.
 
+// Only a real heading: a capitalised title (optionally numbered) naming a
+// corrections chapter. A wrapped table line such as "endringer relatert til"
+// must not open a section.
 const CORRECTIONS_HEADING =
-  /^(?:(\d{1,2})(?:\.\d{1,2})*\.?\s+)?(?:rettelser?|endringer|presiseringer|korrigeringer|errata)\b[^\n]{0,120}$/imu;
+  /^(?:(\d{1,2})(?:\.\d{1,2})*\.?\s+)?(?:Rettelser?|RETTELSER?|Errata|Endringer i (?:konkurransegrunnlaget|kravspesifikasjonen|kravene|bilag\s*\d+))\b[^\n]{0,80}(?<![.!?:;,])$/u;
 const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}-\d{1,4}(?:\.\d{1,3})?(?:\.[a-z])?\b/gu;
 const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/u;
 const WITHDRAWN = /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|slettes|fjernes)\b/iu;
@@ -80,12 +83,25 @@ export function applyRequirementCorrections(
   const report: RequirementCorrectionReport = { changed: [], withdrawn: [], added: [], renumbered: [], clarified: [] };
   const section = findCorrectionsSection(rawText);
   if (!section) return { ledger, report };
-  const sectionText = normalized(section);
+  const ledgerIds = new Set(ledger.map((entry) => entry.id));
+  const correctionStatements = statements(section).filter((statement) => {
+    const ids = statement.match(REQUIREMENT_ID) ?? [];
+    return (
+      (ids.some((id) => ledgerIds.has(id)) &&
+        (WITHDRAWN.test(statement) || CHANGED.test(statement) || RENUMBERED.test(statement) || ANSWER.test(statement))) ||
+      (ADDED.test(statement) && QUOTED.test(statement))
+    );
+  });
+  // Without a single statement that corrects a known requirement this is
+  // not a corrections chapter for this ledger.
+  if (!correctionStatements.length) return { ledger, report };
+  const correctionText = normalized(correctionStatements.join("\n"));
 
-  // Correction rows and Q&A text are not requirements of their own.
+  // Correction rows and answers to bidder questions are not requirements of
+  // their own; only text that appears in a correction statement is dropped.
   let entries = ledger.filter((entry) => {
     const text = normalized(entry.text);
-    return !(text.length >= 12 && sectionText.includes(text));
+    return !(text.length >= 12 && correctionText.includes(text));
   });
   const known = () => new Set(entries.map((entry) => entry.id));
   const note = (id: string, label: string, statement: string) => {
@@ -96,6 +112,8 @@ export function applyRequirementCorrections(
     );
   };
 
+  // The section qualified through a real correction, so other statements
+  // naming a requirement may be attached to it as notes.
   for (const statement of statements(section)) {
     const ids = [...new Set(statement.match(REQUIREMENT_ID) ?? [])];
     const target = ids.find((id) => known().has(id));

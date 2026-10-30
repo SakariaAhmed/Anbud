@@ -145,3 +145,21 @@ test("award criteria rows in another sheet do not count as missing requirements"
     /mangler eksplisitte kilderader|tom for kravdokument/u,
   );
 });
+
+test("wrapped table text and chapters without real corrections are not a corrections chapter", () => {
+  const wrapped = [
+    "4 Krav",
+    "K-022 Tilgang Må Leverandøren skal logge",
+    "endringer relatert til",
+    "saksmottak og statusvisning. Tilgang skal kunne revideres og dokumenteres ved behov.",
+    "K-023 Integrasjon Må Leverandøren skal beskrive begrensninger og forutsetninger.",
+  ].join("\n");
+  assert.equal(findCorrectionsSection(wrapped), null);
+  const ledgerWithK = [
+    { id: "K-022", text: "Leverandøren skal logge endringer relatert til saksmottak og statusvisning.", pages: [1], heading: "4 Krav" },
+  ];
+  assert.equal(applyRequirementCorrections(ledgerWithK, wrapped).ledger, ledgerWithK);
+  // A real heading whose content corrects nothing in this ledger is ignored.
+  const unrelated = "8 Rettelser\nDenne versjonen retter skrivefeil i innledningen og oppdaterer kontaktinformasjonen til saksbehandler.";
+  assert.equal(applyRequirementCorrections(ledgerWithK, unrelated).ledger, ledgerWithK);
+});

@@ -103,7 +103,7 @@ import {
   requirementSubtitle,
   sortRequirementLedgerInDocumentOrder,
 } from "@/lib/server/requirements/presentation";
-import { extractRequirementLedgerForDocumentCore, requirementSourceExcerptWithoutAnswer, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
+import { extractRequirementLedgerForDocument, requirementSourceExcerptWithoutAnswer, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
 import { canonicalizeRequirementSourceLedger } from "@/lib/server/requirements/source-readiness";
 import { type RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import { filterSyntheticRequirementFallbacks } from "@/lib/server/requirements/unstructured-ledger";
@@ -4327,7 +4327,7 @@ export async function buildRequirementCoverageLedger(document: ProjectDocumentDe
   // canonical extraction path. Re-running generic dedupe after the PDF's
   // source-bound finalization can rehydrate an uncorrected pre-answer excerpt
   // and make the same source document produce different requirement text.
-  return withTitle(await extractRequirementLedgerForDocumentCore(document));
+  return withTitle(await extractRequirementLedgerForDocument(document));
 }
 
 export async function buildRequirementCoverageLedgerFromDocuments(
