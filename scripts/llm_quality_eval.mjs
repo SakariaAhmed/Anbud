@@ -338,10 +338,87 @@ function factScore(text) {
   return { hits, total: checks.length, score: hits.length / checks.length };
 }
 
+// A queued job can wait for the scheduled worker; without a limit a stuck
+// job held the script until someone killed it, skipping its cleanup.
+const JOB_WAIT_TIMEOUT_MS = Number(process.env.LLM_EVAL_JOB_TIMEOUT_MS ?? 25 * 60_000);
+
+// Every project and service this run creates, so they are removed even when
+// a scenario fails, the run is interrupted, or a DELETE has to be retried.
+const createdResources = [];
+
+function trackResource(client, type, id) {
+  if (id) createdResources.push({ client, type, id, deleted: false, attempts: [] });
+}
+
+async function deleteResource(resource) {
+  const route =
+    resource.type === "service" ? `/api/service-descriptions/${resource.id}` : `/api/projects/${resource.id}`;
+  for (let attempt = 1; attempt <= 3 && !resource.deleted; attempt += 1) {
+    try {
+      const { response } = await resource.client.request("DELETE", route);
+      resource.attempts.push(response.status);
+      // 404: already gone.
+      if (response.ok || response.status === 404) resource.deleted = true;
+    } catch (error) {
+      resource.attempts.push(String(error));
+    }
+    if (!resource.deleted) await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+  }
+  return resource;
+}
+
+/** Deletes every tracked resource not yet deleted; services first, since
+ * a project can have them selected. Safe to call more than once. */
+async function cleanupResources(filter = () => true) {
+  const pending = createdResources
+    .filter((resource) => !resource.deleted && filter(resource))
+    .sort((left, right) => (left.type === "service" ? -1 : 0) - (right.type === "service" ? -1 : 0));
+  for (const resource of pending) await deleteResource(resource);
+  const failed = pending.filter((resource) => !resource.deleted);
+  for (const resource of failed) {
+    console.error(`Cleanup failed for ${resource.type} ${resource.id}: ${resource.attempts.join(", ")}`);
+    process.exitCode = 1;
+  }
+  return pending;
+}
+
+/** Removes services left by this run that were never tracked, e.g. when
+ * the create response could not be read. Matches only this run's ID. */
+async function sweepRunServices(client) {
+  try {
+    const { payload } = await client.json("GET", "/api/service-descriptions");
+    for (const service of payload.services ?? []) {
+      if (typeof service.name === "string" && service.name.endsWith(` ${runId}`) && service.name.startsWith("LLM eval service ")) {
+        if (!createdResources.some((resource) => resource.type === "service" && resource.id === service.id)) {
+          trackResource(client, "service", service.id);
+        }
+      }
+    }
+    await cleanupResources((resource) => resource.client === client);
+  } catch (error) {
+    console.error(`Cleanup sweep failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
+}
+
+let interrupted = false;
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, async () => {
+    if (interrupted) process.exit(1);
+    interrupted = true;
+    console.error(`${signal}: removing evaluation resources before exit ...`);
+    await cleanupResources();
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  });
+}
+
 async function waitForJob(client, projectId, job, kind) {
   const started = performance.now();
   let latest = job;
   for (;;) {
+    if (performance.now() - started > JOB_WAIT_TIMEOUT_MS) {
+      throw new Error(`${kind} did not finish within ${JOB_WAIT_TIMEOUT_MS} ms (status ${latest.status}).`);
+    }
     const { payload } = await client.json(
       "GET",
       `/api/projects/${projectId}/jobs/${job.id}`,
@@ -486,7 +563,6 @@ async function runScenario(label, baseUrl) {
   };
   const scenarioStartedAt = Date.now();
   let projectId = null;
-  let serviceId = null;
 
   try {
     await client.json("GET", "/api/health/live");
@@ -499,6 +575,7 @@ async function runScenario(label, baseUrl) {
       selected_service_ids: [],
     });
     projectId = created.payload.id;
+    trackResource(client, "project", projectId);
     result.project_id = projectId;
 
     result.uploads.push(
@@ -529,7 +606,8 @@ async function runScenario(label, baseUrl) {
     const serviceCreated = await client.request("POST", "/api/service-descriptions", {
       body: serviceForm,
     });
-    const servicePayload = await serviceCreated.response.json();
+    const servicePayload = await serviceCreated.response.json().catch(() => ({}));
+    trackResource(client, "service", servicePayload.service?.id ?? null);
     if (!serviceCreated.response.ok) {
       throw new Error(
         `service description failed ${serviceCreated.response.status}: ${
@@ -537,7 +615,6 @@ async function runScenario(label, baseUrl) {
         }`,
       );
     }
-    serviceId = servicePayload.service?.id ?? null;
 
     const jobBodies = [
       { kind: "customer_analysis" },
@@ -621,32 +698,15 @@ async function runScenario(label, baseUrl) {
   } catch (error) {
     result.errors.push(error instanceof Error ? error.message : String(error));
   } finally {
-    if (serviceId) {
-      try {
-        const deletedService = await client.request(
-          "DELETE",
-          `/api/service-descriptions/${serviceId}`,
-        );
-        result.cleanup.push({
-          target: "service",
-          id: serviceId,
-          status: deletedService.response.status,
-        });
-      } catch (error) {
-        result.cleanup.push({ target: "service", id: serviceId, error: String(error) });
-      }
-    }
-    if (projectId) {
-      try {
-        const deletedProject = await client.request("DELETE", `/api/projects/${projectId}`);
-        result.cleanup.push({
-          target: "project",
-          id: projectId,
-          status: deletedProject.response.status,
-        });
-      } catch (error) {
-        result.cleanup.push({ target: "project", id: projectId, error: String(error) });
-      }
+    // Also sweeps services whose create response could not be read.
+    await sweepRunServices(client);
+    for (const resource of createdResources.filter((candidate) => candidate.client === client)) {
+      result.cleanup.push({
+        target: resource.type,
+        id: resource.id,
+        deleted: resource.deleted,
+        attempts: resource.attempts,
+      });
     }
     result.finished_at = new Date().toISOString();
     result.total_duration_ms = Date.now() - scenarioStartedAt;
@@ -1113,6 +1173,7 @@ const report = {
   summary: null,
 };
 
+try {
 for (let roundIndex = 1; roundIndex <= rounds; roundIndex += 1) {
   const roundReport = {
     round: roundIndex,
@@ -1146,6 +1207,10 @@ for (let roundIndex = 1; roundIndex <= rounds; roundIndex += 1) {
   report.judgments = allJudgments(report);
   report.summary = summarize(report);
   await writeFile(outPath, JSON.stringify(report, null, 2));
+}
+} finally {
+  // Covers scenarios that threw before their own cleanup ran.
+  await cleanupResources();
 }
 
 report.finished_at = new Date().toISOString();
