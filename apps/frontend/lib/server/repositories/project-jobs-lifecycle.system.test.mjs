@@ -884,6 +884,24 @@ test("the job list keeps an old queued job visible behind newer finished history
   assert.ok(jobs.every((job) => job.project_id === project));
 });
 
+test("the job list orders by instant, not by timestamp text", async () => {
+  const client = inMemoryPostgREST();
+  const project = "00000000-0000-4000-8000-000000000001";
+  const row = (id, createdAt, status) => ({
+    id, project_id: project, kind: "document_ingestion", status, message: "", error: null,
+    input_json: {}, result_json: null, created_at: createdAt, updated_at: createdAt,
+  });
+  client.rows.push(
+    // 08:30 UTC written with an offset sorts after 09:00Z as text.
+    row("older-with-offset", "2026-07-10T10:30:00+02:00", "queued"),
+    row("newer-utc", "2026-07-10T09:00:00.000Z", "completed"),
+  );
+
+  const jobs = await listRecentProjectJobs(project, { client });
+
+  assert.deepEqual(jobs.map((job) => job.id), ["newer-utc", "older-with-offset"]);
+});
+
 test("durable persistence fails closed instead of retrying a legacy payload", async () => {
   const inserts = [];
   const client = {

@@ -381,6 +381,7 @@ export async function listRecentProjectJobs(projectId: string, runtime: ProjectJ
     rows.set(row.id, row);
   }
   return [...rows.values()]
-    .sort((left, right) => right.created_at.localeCompare(left.created_at))
+    // PostgREST may render offsets differently, so compare instants.
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
     .map(mapJobRow);
 }
