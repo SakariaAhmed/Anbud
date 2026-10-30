@@ -949,6 +949,8 @@ test("a renumbering targets its subject, not a requirement named in an aside", (
       "K-3, som erstatter K-2, får ny ID K-9.",
       "K-3 får, i likhet med K-2, ny ID K-9.",
       "K-3 (tidligere omtalt sammen med K-2) får ny ID K-9.",
+      // A comma between clauses is no aside.
+      "K-2 beholder sin ID, K-3 får, som avtalt, ny ID K-9.",
     ]) {
       const result = applyRequirementCorrections(ledger, `4 Krav\n${chapter}\n\n9 Rettelser\n${line}`).ledger;
       assert.equal(result.find((entry) => entry.text === "Leverandøren skal levere drift.")?.id, "K-9", line);
