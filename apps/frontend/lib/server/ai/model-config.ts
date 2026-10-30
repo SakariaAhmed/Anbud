@@ -23,14 +23,19 @@ const WORKSPACE_MODEL_IDS = [
   "gpt-5.4-nano",
   "gpt-5.2",
   "gpt-5-mini",
+  "gpt-6.1-sol",
+  "gpt-6.1-terra",
+  "gpt-6-luna",
 ] as const;
 
 export const ANALYSIS_MODEL = DEFAULT_ANALYSIS_MODEL;
-export const FAST_MODEL = "gpt-5.4-mini";
+export const FAST_MODEL = process.env.OPENAI_FAST_MODEL?.trim() || "gpt-5.4-mini";
 export const ANALYSIS_REASONING_EFFORT: ReasoningEffort = "medium";
 export const EVALUATION_REASONING_EFFORT: ReasoningEffort = "medium";
 export const FAST_REASONING_EFFORT: ReasoningEffort = "low";
-export const GPT_MODELS_USE_DEFAULT_TEMPERATURE = /^gpt-5/i;
+// GPT-5 and GPT-6 models accept only the default temperature; sending 0 is
+// rejected with HTTP 400 ("Only the default (1) value is supported").
+export const GPT_MODELS_USE_DEFAULT_TEMPERATURE = /^gpt-(?:5|6)(?![\d])/i;
 
 export function solutionEvaluationReasoningEffort(model: string): ReasoningEffort {
   // Paired source-grounded evaluations support this change for GPT-5.4 only.

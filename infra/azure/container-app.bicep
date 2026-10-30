@@ -103,6 +103,9 @@ param openAiModel string = 'gpt-5.4'
 @description('OpenAI model used only by the v3 customer-document analysis path.')
 param openAiDocumentAnalysisModel string = 'gpt-5.6-terra'
 
+@description('OpenAI model for fast tasks: chat, executive summary and small document checks.')
+param openAiFastModel string = 'gpt-5.4-mini'
+
 @description('Selects the versioned document parsing and analysis pipeline.')
 @allowed([
   'off'
@@ -417,6 +420,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               value: openAiDocumentAnalysisModel
             }
             {
+              name: 'OPENAI_FAST_MODEL'
+              value: openAiFastModel
+            }
+            {
               name: 'PROJECT_JOB_WORKER_TOKEN'
               secretRef: 'project-job-worker-token'
             }
@@ -643,6 +650,10 @@ resource projectJobWorker 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'OPENAI_DOCUMENT_ANALYSIS_MODEL'
               value: openAiDocumentAnalysisModel
+            }
+            {
+              name: 'OPENAI_FAST_MODEL'
+              value: openAiFastModel
             }
             {
               name: 'PROJECT_JOB_WORKER_TOKEN'
