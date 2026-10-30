@@ -64,6 +64,12 @@ test("GPT-6 models can be configured and are never sent a custom temperature", a
     for (const model of ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]) {
       assert.equal(await config.resolveOpenAIModelOverride(model), model);
     }
+    // Unset or blank, the fast model keeps its default.
+    for (const value of [undefined, "  "]) {
+      if (value === undefined) delete process.env.OPENAI_FAST_MODEL;
+      else process.env.OPENAI_FAST_MODEL = value;
+      assert.equal(load().FAST_MODEL, "gpt-5.4-mini");
+    }
   } finally {
     for (const name of names) {
       if (original[name] === undefined) delete process.env[name];

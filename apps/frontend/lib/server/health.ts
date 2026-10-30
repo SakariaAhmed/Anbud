@@ -225,8 +225,11 @@ function openAiComponent(): HealthComponent {
     description: configured
       ? "OpenAI configuration is present."
       : "OpenAI configuration is missing.",
+    // Model IDs, not secrets: a release smoke test can confirm what is live.
     metadata: {
       model: process.env.OPENAI_MODEL?.trim() || "gpt-5.4",
+      fast_model: process.env.OPENAI_FAST_MODEL?.trim() || "gpt-5.4-mini",
+      document_analysis_model: process.env.OPENAI_DOCUMENT_ANALYSIS_MODEL?.trim() || "gpt-5.6-terra",
     },
   };
 }

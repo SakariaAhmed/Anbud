@@ -460,3 +460,20 @@ test("JSON completion timeout emits one failed terminal event and no success", a
   assert.equal(failures[0].request_id, starts[0].request_id);
   assert.equal(failures[0].provider_response_received, false);
 });
+
+test("GPT-6 JSON completions keep 24-hour prompt caching and omit temperature", async () => {
+  const { GPT_MODELS_USE_DEFAULT_TEMPERATURE } = jiti(path.join(frontendRoot, "lib/server/ai/model-config.ts"));
+  const calls = [];
+  await runJsonCompletion({
+    ...chatJsonRuntime('{"ok":true}', calls),
+    // The production check (completion.ts supportsCustomTemperature).
+    supportsCustomTemperature: (model) => !GPT_MODELS_USE_DEFAULT_TEMPERATURE.test(model),
+    system: "Return JSON.",
+    user: "Analyze.",
+    model: "gpt-6.1-sol",
+    temperature: 0,
+    promptCacheKey: "requirement-coverage-batch",
+  });
+  assert.equal(calls[0].prompt_cache_retention, "24h");
+  assert.equal("temperature" in calls[0], false);
+});

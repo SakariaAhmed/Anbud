@@ -103,7 +103,7 @@ param openAiModel string = 'gpt-5.4'
 @description('OpenAI model used only by the v3 customer-document analysis path.')
 param openAiDocumentAnalysisModel string = 'gpt-5.6-terra'
 
-@description('OpenAI model for fast tasks: chat, executive summary and small document checks.')
+@description('OpenAI model for fast tasks: chat, executive summary, document checks and digests, and most artifact generation.')
 param openAiFastModel string = 'gpt-5.4-mini'
 
 @description('Selects the versioned document parsing and analysis pipeline.')

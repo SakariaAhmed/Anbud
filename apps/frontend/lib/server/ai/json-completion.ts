@@ -142,8 +142,10 @@ function systemPromptWithStablePrefix(system: string) {
   return `${STABLE_JSON_SYSTEM_PREFIX}\n\n### Task-Specific Contract\n${system}`;
 }
 
+// GPT-5 and GPT-6 models accept 24-hour prompt cache retention (checked
+// against the API for gpt-6.1-sol, gpt-6.1-terra and gpt-6-luna).
 function promptCacheRetentionPayload(model: string) {
-  if (!/^gpt-5(?:[.\-]|$)/i.test(model)) {
+  if (!/^gpt-(?:5|6)(?:[.\-]|$)/i.test(model)) {
     return {};
   }
 
