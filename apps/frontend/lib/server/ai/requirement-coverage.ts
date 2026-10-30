@@ -3082,6 +3082,10 @@ const LIMITING = /\b(?:kun|bare|begrenset\s+til|opsjon|forutsatt|med\s+mindre)\b
 // ikke", "men kun for produksjon") qualifies it and belongs to the answer.
 const REFERRING_CLAUSE = /^(?:(?:men|mens|samt|derimot)\s+)?(?:dette|det|disse|den|denne|kun|bare|ikke|unntatt|med\s+unntak)\b/iu;
 // A follow-up that refers back to the answer ("Dette ...", "Unntatt ...").
+// Across a blank line only an explicit back-reference qualifies the answer;
+// a bare "Det"/"Dette" opens a new statement as often as it refers back.
+const PARAGRAPH_BACK_REFERENCE =
+  /^(?:dette\s+gjelder|det\s+gjelder|dette\s+omfatter|merk|merknad|unntatt|unntak|med\s+unntak|forbehold|forutsatt|gjelder|omfatter)\b/iu;
 const REFERRING_START = /^(?:dette|det|denne|disse|dette gjelder|unntatt|unntak|men|merk|forutsatt|forbehold|med\s+unntak|merknad|leveres|gjelder|omfatter)\b/iu;
 
 /**
@@ -3154,14 +3158,19 @@ function answerPassage(
 
   let passage = own;
   const following = nextSegment(flat, boundaries, sentenceEnd);
-  // A new section is another answer. So is a new paragraph, unless it refers
-  // back to this one ("Dette gjelder kun …", "Merk: …").
+  // A new section is another answer. So is a new paragraph, unless it
+  // refers back to this one ("Dette gjelder kun …", "Merk: …") or restricts
+  // the requirement itself ("Kundedata i testmiljøet krypteres ikke.").
   const crosses = (starts: number[]) =>
     following !== null && starts.some((at) => at >= sentenceEnd && at < following.end);
+  const newParagraph = crosses(paragraphStarts);
   const next =
     following &&
     !crosses(sectionStarts) &&
-    (!crosses(paragraphStarts) || REFERRING_START.test(following.text))
+    (!newParagraph ||
+      PARAGRAPH_BACK_REFERENCE.test(following.text) ||
+      ((NEGATION.test(following.text) || LIMITING.test(following.text)) &&
+        sharedTerms(requirement, following.text).shared > 0))
       ? following
       : null;
   if (next) {
@@ -3184,7 +3193,7 @@ function answerPassage(
     // budget: "Dette er standard. Gjelder kun produksjonsmiljøet."
     let cursor = next.end;
     let budget = VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS - next.text.length;
-    while (complete && !next.isCell && budget > 0) {
+    while (complete && !next.isCell && !newParagraph && budget > 0) {
       if (/^\s*¦/u.test(flat.slice(cursor))) break;
       const further = nextSegment(flat, boundaries, cursor);
       if (!further || !further.adjacent) break;

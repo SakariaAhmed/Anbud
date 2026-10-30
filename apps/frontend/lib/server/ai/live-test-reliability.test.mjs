@@ -558,6 +558,9 @@ test("a decline names the delivery, not an option the requirement may forbid", a
   assert.equal(declines("Støttes ikke.", "Løsningen skal varsle om lisenser som ikke brukes."), true);
   assert.equal(declines("Leveres ikke.", "Leverandøren skal levere 24/7 support. Planlagt vedlikehold skal ikke skje i kontortid."), true);
   assert.equal(declines("Nei, dette støttes ikke.", "Løsningen skal kunne integreres med ID-porten og skal ikke kreve lokal klientinstallasjon."), true);
+  for (const declined of ["Dette kravet støttes ikke.", "Denne funksjonaliteten leveres ikke.", "Slik funksjonalitet tilbys ikke."]) {
+    assert.equal(declines(declined, positive), true, declined);
+  }
   const mixed = "Løsningen skal støtte SSO via Entra ID og skal ikke tillate lokale kontoer.";
   assert.equal(declines("Dette støttes ikke i vår plattform. Vi bruker lokale brukerkontoer.", mixed), true);
 });
@@ -576,6 +579,11 @@ test("a restriction in a later section does not qualify the answer", () => {
   const separate = bind(`## 4 Lagring\n\n${answer}\n\n## 5 Tilleggstjenester\n\nTelefonstøtte tilbys ikke.`);
   assert.ok(separate);
   assert.notEqual(separate.uncertain, true);
+  // A bare "Det"/"Dette" paragraph is a new statement.
+  assert.notEqual(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nDet tilbys ikke telefonstøtte.`)?.uncertain, true);
+  assert.notEqual(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nDette kapittelet beskriver supportmodellen. Telefonstøtte tilbys ikke i helger.`)?.uncertain, true);
+  // A paragraph restricting the requirement itself still qualifies it.
+  assert.equal(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nKundedata i testmiljøet krypteres ikke.`)?.uncertain, true);
   // A new paragraph that refers back still qualifies the answer.
   assert.equal(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nDette gjelder kun produksjonsmiljøet.`)?.uncertain, true);
   // Nor right after a blank line or a heading.

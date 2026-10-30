@@ -3736,7 +3736,7 @@ export function answerHasSelfContainedCoverage(
 const SUBJECT_DECLINE =
   /(?:^|[.;:!?]\s+|\bnei\s*[,.:–-]\s*)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+\s+)?(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via)\b)/giu;
 const DELIVERY_SUBJECT =
-  /^(?:dette|det|denne|disse|kravet|funksjonen|funksjonaliteten|tjenesten|leveransen|kontrollen)$/iu;
+  /^(?:(?:dette|denne|disse|det|slik|slike)\s+)?(?:dette|det|denne|disse|krav(?:et)?|funksjon(?:en|alitet(?:en)?)?|tjenesten|leveransen|kontrollen)$/iu;
 const NOT_LETTER = "(?<![\\p{L}\\p{N}])";
 const NOT_LETTER_AFTER = "(?![\\p{L}\\p{N}])";
 const MODAL = new RegExp(`${NOT_LETTER}(skal|må|bør|kan)${NOT_LETTER_AFTER}(\\s+ikke${NOT_LETTER_AFTER})?`, "iu");
