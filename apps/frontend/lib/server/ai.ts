@@ -181,7 +181,7 @@ import {
   buildContinuationPageMap,
   buildRequirementPageEvidence,
   buildRequirementSourceLedgerContext,
-  buildRequirementSourceLedgerWithFiles,
+  extractRequirementLedgerForDocument,
   isReliableRequirementLedger,
   mergeContinuationRowsInRequirementTable,
   requirementAnswerEvidence,
@@ -6461,7 +6461,9 @@ async function buildRequirementArtifactContext(
           3,
           async (document) => ({
             document,
-            ledger: await buildRequirementSourceLedgerWithFiles(document),
+            // The same extractor as the evaluation (including the
+            // document's corrections chapter), so both see one register.
+            ledger: await extractRequirementLedgerForDocument(document),
           }),
         )
       : [];
