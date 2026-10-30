@@ -135,9 +135,10 @@ async function standInBindError(worker) {
 
 /** Another test can still take the free port before the stand-in binds it, so
  * that collision gets a fresh port, up to three attempts. */
-async function runWorker(script, environment, options = {}) {
+async function runWorker(script, environment, options = {}, { pickPort = freePort, started = [] } = {}) {
   for (let attempt = 1; ; attempt += 1) {
-    const worker = startWorker(script, environment, options, await freePort());
+    const worker = startWorker(script, environment, options, await pickPort());
+    started.push(worker);
     if (await standInBindError(worker) !== "EADDRINUSE") return worker;
     worker.child.kill("SIGTERM");
     await worker.exited;
@@ -163,6 +164,26 @@ function processAlive(pid) {
     return false;
   }
 }
+
+test("a stand-in that cannot bind in three attempts fails at once and leaves nothing behind", { timeout: 30_000 }, async () => {
+  // Drop connections at once: the workers' health checks reach this port.
+  const held = createServer((socket) => socket.destroy());
+  await new Promise((resolve) => held.listen(0, "127.0.0.1", resolve));
+  const started = [];
+  try {
+    await assert.rejects(
+      runWorker(candidateScript, deployedWorkerEnvironment(), {}, { pickPort: async () => held.address().port, started }),
+      /could not bind a free port in three attempts/u,
+    );
+    assert.equal(started.length, 3);
+    for (const worker of started) {
+      assert.notEqual(worker.child.exitCode ?? worker.child.signalCode, null, "the worker has exited");
+      assert.equal(existsSync(worker.directory), false, "its directory is removed");
+    }
+  } finally {
+    await new Promise((resolve) => held.close(resolve));
+  }
+});
 
 test("the deployed worker env keeps the legacy limit at 1 and sets the new budget variables", () => {
   const environment = deployedWorkerEnvironment();
