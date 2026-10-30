@@ -400,3 +400,45 @@ test("round 7 probes: earlier predicates, question columns, unquoted new wording
   const columns = run("| Nr. | Krav | Opprinnelig tekst | Ny tekst |\n| 1 | K-2 | Leverandøren skal oppfylle krav nummer 2 fullt ut. | Leverandøren skal oppfylle krav nummer 2 innen 30 dager. |");
   assert.equal(columns.find((entry) => entry.id === "K-2").text, "Leverandøren skal oppfylle krav nummer 2 innen 30 dager.");
 });
+
+test("round 7 Opus: Docling headings, partial rewording, row numbers, cell withdrawals", () => {
+  const k = (n, text = `Leverandøren skal oppfylle krav nummer ${n} innen fem virkedager.`) => ({
+    id: `K-${n}`,
+    text,
+    pages: [1],
+    heading: "4 Krav",
+  });
+  const ledger = [k(1), k(2), k(3), k(4)];
+  const chapter = ledger.map((entry) => `| ${entry.id} | ${entry.text} |`).join("\n");
+  const run = (corrections) =>
+    applyRequirementCorrections(ledger, `## 4 Krav\n| ID | Krav |\n|---|---|\n${chapter}\n\n${corrections}\n\n## Vedlegg A\nK-9 Leverandøren skal levere vedlegg.`);
+  const byId = (result) => Object.fromEntries(result.ledger.map((entry) => [entry.id, entry.text]));
+
+  // Docling markdown: "## 9 …" heading, a separator row and a table.
+  // Docling markdown (2.132 output shape): "## 9 …" heading, bold header
+  // cells, a separator row and "### 9.1" subsections inside the chapter.
+  const docling = run(
+    "## 9 Rettelser og presiseringer (Rettelse nr. 1 av 15.10.2026)\n\n### 9.1 Endringer i krav\n\n" +
+      "| **Nr.** | **Gjelder** | **Endring** |\n|---|---|---|\n" +
+      "| R1 | K-1 (tabell 4) | Kravet endres. Ny tekst: «Leverandøren skal oppfylle krav nummer 1 innen tre virkedager.» |\n" +
+      "| R2 | K-4 (tabell 4) | Kravet utgår. |",
+  );
+  assert.deepEqual(docling.ledger.map((entry) => entry.id), ["K-1", "K-2", "K-3"]);
+  assert.equal(byId(docling)["K-1"], "Leverandøren skal oppfylle krav nummer 1 innen tre virkedager.");
+
+  // A partial rewording swaps only the quoted phrase; a bare fragment is a note.
+  const partial = run("## 9 Rettelser\nI K-3 endres «fem virkedager» til «tre virkedager».\nFor K-2: Fristen endres til «tre virkedager».");
+  assert.equal(byId(partial)["K-3"], "Leverandøren skal oppfylle krav nummer 3 innen tre virkedager.");
+  assert.equal(byId(partial)["K-2"], k(2).text);
+  assert.match(partial.ledger.find((entry) => entry.id === "K-2").sourceExcerpt ?? "", /Rettelse/u);
+  const type = run("## 9 Rettelser\nFor K-1 endres kravtypen fra «Evalueringskrav» til «Absolutt krav».");
+  assert.equal(byId(type)["K-1"], k(1).text);
+
+  // A row number is not a new requirement replacing the wording.
+  const rows = run("## 9 Rettelser\n| R-1 | K-2 | Kravet utgår og erstattes av: «Leverandøren skal oppfylle krav nummer 2 innen tre virkedager.» |");
+  assert.equal(byId(rows)["K-2"], "Leverandøren skal oppfylle krav nummer 2 innen tre virkedager.");
+
+  // "Utgår" in its own cell after a sentence, and further withdrawal verbs.
+  const cell = run("## 9 Rettelser\n| K-1 | Leverandøren skal oppfylle krav nummer 1 innen fem virkedager. | Utgår |\nK-2 frafalles.\nK-3 beholdes uendret, K-4 utgår.");
+  assert.deepEqual(cell.ledger.map((entry) => entry.id), ["K-3"]);
+});

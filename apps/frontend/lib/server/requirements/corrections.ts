@@ -16,7 +16,7 @@ const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{
 const REQUIREMENT_ID_SINGLE = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\b/u;
 const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/gu;
 const WITHDRAW_VERB =
-  /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|er\s+utgått|slettes)\b|\b(?:fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
+  /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|er\s+utgått|slettes|frafalles|annulleres)\b|\b(?:fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
 const CHANGE_VERB = /\b(?:endres|er\s+endret\s+til|erstattes(?!\s+av\s+(?:et\s+)?nytt)|ny\s+tekst|lyder\s+nå|skal\s+(?:nå\s+)?lyde)\b/giu;
 const ADDED = /\b(?:nytt\s+krav|legges(?:\s+ikke)?\s+til|tilføyes)\b/iu;
 const RENUMBERED = /\bny\s+(?:krav-?)?id\s*:?\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4})\b/iu;
@@ -32,6 +32,16 @@ const WITHDRAW_BINDING_GAP = /^[\s,:;()–-]*(?:(?:og|samt|eller)\s+[A-ZÆØÅ]{
 // line, a Markdown table row, or a line led by a requirement ID.
 const STATEMENT_START =
   /\n(?=Rad \d+:)|\n\s*\n|\n(?=[ \t]*(?:[-•*–]|\d{1,2}[.)])\s)|\n(?=[ \t]*\|)|\n(?=[ \t]*(?:(?:nytt\s+)?krav(?:et|ene)?\s+|for\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\b)/iu;
+
+/** A line without Markdown heading or bold markers: Docling writes
+ * "## 9 Rettelser og presiseringer" and "**Vedlegg A**". */
+function headingText(line: string) {
+  return line
+    .trim()
+    .replace(/^#{1,6}\s+/u, "")
+    .replace(/^\*\*(.+)\*\*$/u, "$1")
+    .trim();
+}
 
 function normalized(value: string) {
   return value.replace(/\s+/gu, " ").trim().toLocaleLowerCase("nb");
@@ -55,7 +65,7 @@ export function findCorrectionsSection(rawText: string) {
   let start = -1;
   let chapter: string | undefined;
   lines.forEach((line, index) => {
-    const match = CORRECTIONS_HEADING.exec(line.trim());
+    const match = CORRECTIONS_HEADING.exec(headingText(line));
     if (match && lines.slice(index + 1).some((next) => next.trim())) {
       start = index;
       chapter = match[1];
@@ -64,7 +74,7 @@ export function findCorrectionsSection(rawText: string) {
   if (start < 0) return null;
   let end = lines.length;
   for (let index = start + 1; index < lines.length; index += 1) {
-    const line = lines[index]!.trim();
+    const line = headingText(lines[index]!);
     const topLevel = /^(\d{1,2})\s+[A-ZÆØÅ]/u.exec(line);
     if (/^vedlegg\s+[A-Z0-9]\b/iu.test(line) || (topLevel && topLevel[1] !== chapter)) {
       end = index;
@@ -108,7 +118,8 @@ function tableCells(line: string) {
   return line
     .replace(/^\s*Rad \d+:\s*/u, "")
     .replace(/^\s*\|\s*|\s*\|\s*$/gu, "")
-    .split(/\s*\|\s*/u);
+    .split(/\s*\|\s*/u)
+    .map((cell) => cell.replace(/^\*\*(.*)\*\*$/u, "$1"));
 }
 
 /**
@@ -123,6 +134,8 @@ function tableAwareLines(lines: string[]) {
       header = null;
       return line;
     }
+    // A Markdown separator row ("|---|---|") carries no statement.
+    if (/^\s*\|[\s:|-]+\|\s*$/u.test(line)) return "";
     const cells = tableCells(line);
     const isHeader =
       !REQUIREMENT_ID_SINGLE.test(line) &&
@@ -166,7 +179,7 @@ function sentences(masked: string) {
   // Sentences, table cells and contrasting clauses ("K-1 beholdes, mens K-2
   // utgår") each carry their own subjects; a list ("K-4, K-6 og K-7") stays.
   return masked
-    .split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«|])|\s+\|\s+|,\s*(?=(?:men|mens|samtidig\s+som|derimot)\b)|;\s*/u)
+    .split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«])|\s+\|\s+|,\s*(?=(?:men|mens|samtidig\s+som|derimot)\b)|;\s*/u)
     .map((text) => ({
       text,
       ids: [...text.matchAll(REQUIREMENT_ID)].map((match) => ({ id: match[0], at: match.index! })),
@@ -187,6 +200,27 @@ function subjects(sentence: { text: string; ids: Array<{ id: string; at: number 
   return sentence.ids
     .filter(({ id, at }) => known.has(id) && !CONTEXT_BEFORE_ID.test(sentence.text.slice(Math.max(0, at - 30), at)))
     .map(({ id }) => id);
+}
+
+/**
+ * The requirement text after a wording change, or null when the change
+ * cannot be placed. A quote reads as the whole new requirement when it
+ * states an obligation or is most of the old text; otherwise it replaces
+ * only the quoted old phrase ("«fem virkedager» til «tre virkedager»").
+ */
+function correctedWording(original: string, quote: string, replaced: string | undefined) {
+  const old = normalized(original);
+  const obligation = (text: string) => /\b(?:skal|må|bør)\b/iu.test(text);
+  if (replaced) {
+    if (normalized(replaced) === old) return quote;
+    const at = original.toLocaleLowerCase("nb").indexOf(replaced.trim().toLocaleLowerCase("nb"));
+    if (at >= 0) return `${original.slice(0, at)}${quote}${original.slice(at + replaced.trim().length)}`;
+    // Whole old and new sentences that differ from the parsed text only in
+    // layout (hyphenation, spacing) still replace the requirement.
+    return obligation(replaced) && obligation(quote) ? quote : null;
+  }
+  if (!old || obligation(quote) || normalized(quote).length >= old.length * 0.6) return quote;
+  return null;
 }
 
 export type RequirementCorrectionReport = {
@@ -291,9 +325,12 @@ export function applyRequirementCorrections(
       if (ids.length) context = ids;
 
       // "K-6 utgår og erstattes av: «…»" replaces the wording: a change.
+      // An unknown ID after "erstattes av" is a new requirement, not new
+      // wording; a row number ("R-1") elsewhere does not count.
+      const replacement = /\berstattes\s+av\s*:?\s*«#\d+»/u.exec(sentence.text);
       const replacesWording =
-        /\berstattes\s+av\s*:?\s*«#\d+»/u.test(sentence.text) &&
-        !statementIds.some((id) => !sourceIds.has(id));
+        replacement !== null &&
+        ![...sentence.text.slice(replacement.index).matchAll(REQUIREMENT_ID)].some((match) => !sourceIds.has(match[0]));
       for (const verb of replacesWording ? [] : sentence.text.matchAll(WITHDRAW_VERB)) {
         if (negatedAt(sentence.text, verb.index!, verb[0].length)) continue;
         // Bound to the subject right before the verb, or opening the cell.
@@ -395,17 +432,33 @@ export function applyRequirementCorrections(
         const marked = placeholders.find((placeholder) =>
           /\b(?:til|ny\s+tekst|lyder(?:\s+nå)?|skal\s+nå\s+lyde)\s*:?\s*$/iu.test(sentence.text.slice(0, placeholder.index)),
         );
-        const quote = quotes[Number((marked ?? placeholders.at(-1))![1])]!;
+        const markedIndex = marked ?? placeholders.at(-1)!;
+        const quote = quotes[Number(markedIndex[1])]!;
+        // "endres fra «fem virkedager» til «tre virkedager»": the quote before
+        // the new one names the wording it replaces.
+        const previous = placeholders[placeholders.indexOf(markedIndex) - 1];
+        const replaced =
+          previous &&
+          /^\s*(?:(?:endres|erstattes)\s+)?(?:til|med)\s*:?\s*$/iu.test(
+            sentence.text.slice(previous.index! + previous[0].length, markedIndex.index),
+          )
+            ? quotes[Number(previous[1])]
+            : undefined;
         // The change belongs to the subject named last before its verb.
         const target =
           subjects({ text: sentence.text, ids: sentence.ids.filter(({ at }) => at < verb.index!) }, known()).at(-1) ??
           own[0];
         if (!target || !known().has(target)) continue;
+        const original = entries.find((entry) => entry.id === target)?.text ?? "";
+        const text = correctedWording(original, quote, replaced);
+        // A fragment ("Fristen endres til «tre virkedager»") whose place in
+        // the requirement is unknown stays a note on the original wording.
+        if (text === null) continue;
         entries = entries.map((entry) =>
           entry.id === target
             ? {
                 ...entry,
-                text: quote,
+                text,
                 sourceExcerpt: [`Endret ved rettelse: ${statement}`, `Opprinnelig tekst: ${entry.text}`].join(" | "),
               }
             : entry,
