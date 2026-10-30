@@ -3019,6 +3019,9 @@ function nextSegment(flat: string, boundaries: number[], from: number) {
   return { text: flat.slice(start, stop).trim(), end: stop, isCell: end !== undefined && flat[end] === "¦" };
 }
 
+// A clause that refers back to the quoted assertion ("men dette inngår
+// ikke", "men kun for produksjon") qualifies it and belongs to the answer.
+const REFERRING_CLAUSE = /^(?:(?:men|mens|samt|derimot)\s+)?(?:dette|det|disse|den|denne|kun|bare|ikke|unntatt|med\s+unntak)\b/iu;
 // A follow-up that refers back to the answer ("Dette ...", "Unntatt ...").
 const REFERRING_START = /^(?:dette|det|dette gjelder|unntatt|unntak|men|merk|forutsatt|forbehold|med\s+unntak|merknad)\b/iu;
 
@@ -3064,6 +3067,7 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
     const text = flat.slice(clause.from, clause.to);
     const overlapsQuote = clause.to > start && clause.from < end;
     if (overlapsQuote || sharedTerms(requirement, text).shared > 0) return true;
+    if (REFERRING_CLAUSE.test(text.trim())) return true;
     if (NEGATION.test(text)) setAsideNegation = true;
     return false;
   });
@@ -3086,7 +3090,11 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
     setAsideNegation,
     // The cell after the quote's own cell, for a row whose first cells only
     // restate the requirement.
-    nextCell: after !== undefined && flat[after] === "¦" ? next?.text : undefined,
+    // Also when a full stop ends the cell before its "|".
+    nextCell:
+      after !== undefined && (flat[after] === "¦" || /^\s*¦/u.test(flat.slice(sentenceEnd)))
+        ? next?.text
+        : undefined,
   };
 }
 

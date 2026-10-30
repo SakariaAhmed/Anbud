@@ -436,3 +436,23 @@ test("council round 3 probes", () => {
   const row = bind(req("Løsningen skal støtte SSO via Entra ID."), "Løsningen skal støtte SSO via Entra ID", "Løsningen skal støtte SSO via Entra ID | Oppfylt, standard i plattformen |");
   assert.equal(row?.uncertain, true);
 });
+
+test("council round 4 probes: referring clauses stay, cell answers survive a full stop", () => {
+  const doc = (text) => ({ ...solutionDocument, raw_text: `[[SIDE:8]]\n${text}` });
+  const req = (text) => ({ ...unansweredRequirement, id: "W-1", heading: "", text });
+  const referring = bindVerifiedSolutionQuote({
+    entry: req("Alle kundedata skal ha kryptert lagring i Norge."),
+    quote: "Kryptert lagring av alle kundedata leveres i Norge",
+    assessment: "Godt",
+    solutionDocument: doc("Kryptert lagring av alle kundedata leveres i Norge, men dette inngår ikke i leveransen."),
+  });
+  assert.match(referring.entry.answerExcerpt, /men dette inngår ikke i leveransen/u);
+  const row = bindVerifiedSolutionQuote({
+    entry: req("Løsningen skal støtte SSO via Entra ID."),
+    quote: "Løsningen skal støtte SSO via Entra ID.",
+    assessment: "Godt",
+    solutionDocument: doc("Løsningen skal støtte SSO via Entra ID. | Oppfylt, standard i plattformen |"),
+  });
+  assert.equal(row?.uncertain, true);
+  assert.match(row.entry.answerExcerpt, /Oppfylt/u);
+});
