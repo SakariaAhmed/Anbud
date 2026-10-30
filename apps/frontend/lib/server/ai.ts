@@ -1866,16 +1866,16 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
               current: repaired,
             });
           }
+          if (repaired.source !== "deterministic_fallback") {
+            // Counted now, so an interrupted job reports accepted repairs.
+            handoffProgress.markResolved(row.absoluteIndex);
+          }
           return { ...row, repaired };
         });
         return repairedRows;
       } catch (error) {
         assertProjectWorkflowActive();
         failedBatches += 1;
-        const safeHandoffError = productionSafeErrorMessage(
-          error,
-          "Full-dokument handoff feilet.",
-        );
         console.warn(
           JSON.stringify({
             event: "requirement_response_full_document_handoff_failed",
@@ -1887,10 +1887,9 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
           ...row,
           repaired: {
             ...row.current,
-            reason: [
-              row.current.reason,
-              `handoff_failed: ${safeHandoffError}`,
-            ]
+            // The reason is shown to the strict-repair model; keep error
+            // text (raw outside production) in the logs only.
+            reason: [row.current.reason, "handoff_failed"]
               .filter(Boolean)
               .join("; "),
           } satisfies RequirementAnswerResult,
@@ -3208,7 +3207,9 @@ export function chunkRequirementCoverage(
   return chunks;
 }
 
-async function buildSolutionRequirementCoverage(input: {
+// Exported for the coverage orchestration regression test.
+// fallow-ignore-next-line unused-export
+export async function buildSolutionRequirementCoverage(input: {
   projectName: string;
   solutionDocument: ProjectDocumentDetail;
   solutionRequirementLedger?: RequirementLedgerEntry[];
@@ -3319,7 +3320,7 @@ async function buildSolutionRequirementCoverage(input: {
   const verifiedAnswerEntries = new Map<number, RequirementLedgerEntry>();
   const evaluateCoverageChunk = async (
     chunk: (typeof chunks)[number],
-    options: { timeoutMs: number; maxRetries: number },
+    options: { reserveMs: number; maxRetries: number },
   ) => {
     const krav = buildRequirementCoverageBatchRegistry(
       chunk.entries,
@@ -3331,6 +3332,14 @@ async function buildSolutionRequirementCoverage(input: {
       startIndex: chunk.startIndex,
       fullSolutionDocumentIncluded: Boolean(fullSolutionContext),
     });
+    // Retrieval time counts against the deadline: size the model call after it.
+    const timeoutMs = boundedByProjectWorkflowDeadline(
+      REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS,
+      { reserveMs: options.reserveMs },
+    );
+    if (timeoutMs === null) {
+      throw new Error("Kravbatchen ble ikke startet fordi jobbfristen nærmer seg.");
+    }
     const generated = await createJsonCompletion<{
       rows?: RequirementCoverageBatchAnswer[];
     }>({
@@ -3354,7 +3363,7 @@ async function buildSolutionRequirementCoverage(input: {
       temperature: 0,
       model: coverageModel,
       reasoningEffort: EVALUATION_REASONING_EFFORT,
-      timeoutMs: options.timeoutMs,
+      timeoutMs,
       maxRetries: options.maxRetries,
       promptCacheKey: "requirement-coverage-batch",
     });
@@ -3369,6 +3378,7 @@ async function buildSolutionRequirementCoverage(input: {
       const verifiedEntry = bindVerifiedSolutionQuote({
         entry,
         quote: row?.evidence ?? row?.bevis,
+        assessment: row?.assessment ?? row?.vurdering,
         solutionDocument: input.solutionDocument,
       });
       if (verifiedEntry) {
@@ -3388,16 +3398,8 @@ async function buildSolutionRequirementCoverage(input: {
 
   type CoverageChunk = (typeof chunks)[number];
   type CoverageItems = Awaited<ReturnType<typeof evaluateCoverageChunk>>;
-  const evaluateWithinDeadline = (chunk: CoverageChunk, reserveMs: number) => {
-    const timeoutMs = boundedByProjectWorkflowDeadline(
-      REQUIREMENT_COVERAGE_BATCH_TIMEOUT_MS,
-      { reserveMs },
-    );
-    if (timeoutMs === null) {
-      throw new Error("Kravbatchen ble ikke startet fordi jobbfristen nærmer seg.");
-    }
-    return evaluateCoverageChunk(chunk, { timeoutMs, maxRetries: 1 });
-  };
+  const evaluateWithinDeadline = (chunk: CoverageChunk, reserveMs: number) =>
+    evaluateCoverageChunk(chunk, { reserveMs, maxRetries: 1 });
   const failedFirstPass: Array<{ chunk: CoverageChunk; timedOut: boolean }> = [];
 
   const batches = await mapWithConcurrency(
@@ -4049,7 +4051,7 @@ async function generateRequirementResponseFromLedger(input: {
       .join(" ");
     const unresolvedRefs = unresolvedFallbackAnswers
       .slice(0, 12)
-      .map((row) => row.ref)
+      .map((row) => compactText(row.ref, 60))
       .join(", ");
     const publicMessage = [
       `Kravbesvarelsen ble ikke lagret fordi ${fallbackAnswersAfterHandoff} av ${responseLedger.length} krav ikke kunne besvares automatisk, heller ikke etter reparasjon.`,

@@ -101,7 +101,8 @@ test("production job errors keep user-facing workflow messages and hide raw fail
       "KD-10 (batch_error: upstream detail) [avvist svar: modelltekst]",
     );
     const shown = productionSafeErrorMessage(incomplete, "Jobben feilet.");
-    assert.equal(shown, incomplete.publicMessage);
+    assert.ok(shown.startsWith(incomplete.publicMessage));
+    assert.match(shown, / Referanse: [a-f0-9]{24}\.$/u);
     // Internal reasons and rejected model output stay in logs only.
     assert.doesNotMatch(shown, /batch_error|avvist svar|modelltekst/u);
 

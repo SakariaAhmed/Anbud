@@ -202,3 +202,89 @@ test("Bilag 2 page context never uses the customer document's page numbers", () 
   assert.match(context, /side 2/u);
   assert.match(context, /sikkerhetskopieres hver time/u);
 });
+
+const { APIConnectionTimeoutError } = await import("openai/error");
+
+test("a quote is widened to its whole sentence, so a dropped negation still counts", () => {
+  const declining = {
+    ...solutionDocument,
+    raw_text: "[[SIDE:3]]\nOm lagring. Vi kan ikke levere kryptert lagring av alle kundedata i Norge og Sverige. Andre tjenester leveres som beskrevet.",
+  };
+  const entry = {
+    ...unansweredRequirement,
+    id: "SIK-07",
+    text: "Alle kundedata skal ha kryptert lagring i Norge og Sverige.",
+  };
+  const bound = bindVerifiedSolutionQuote({
+    entry,
+    quote: "kryptert lagring av alle kundedata i Norge og Sverige.",
+    assessment: "Godt",
+    solutionDocument: declining,
+  });
+  assert.equal(bound.answerExcerpt, "Vi kan ikke levere kryptert lagring av alle kundedata i Norge og Sverige.");
+  const item = coverageItemFromBatchRow({
+    row: { nr: 1, ref: "SIK-07", assessment: "Godt", rationale: "Dekket.", evidence: bound.answerExcerpt, recommendation: "Ingen." },
+    entry: bound,
+    orderIndex: 0,
+  });
+  assert.notEqual(item.assessment, "Godt");
+});
+
+test("irrelevant, blanket or missing-answer quotes are not bound", () => {
+  const document = {
+    ...solutionDocument,
+    raw_text: `${solutionDocument.raw_text}\n[[SIDE:3]]\nVi har lang erfaring med drift av Microsoft-plattformer for offentlige virksomheter i Norge. Leverandøren oppfyller alle krav i konkurransegrunnlaget.`,
+  };
+  const bind = (quote, assessment = "Godt") =>
+    bindVerifiedSolutionQuote({ entry: unansweredRequirement, quote, assessment, solutionDocument: document });
+  assert.equal(bind("Vi har lang erfaring med drift av Microsoft-plattformer for offentlige virksomheter i Norge."), null);
+  assert.equal(bind("Leverandøren oppfyller alle krav i konkurransegrunnlaget."), null);
+  assert.equal(bind(verbatimQuote, "Mangler"), null);
+  assert.ok(bind(verbatimQuote, "Dårlig"));
+});
+
+test("an answer may repeat the requirement before saying how it is met", () => {
+  const document = {
+    ...solutionDocument,
+    raw_text: "[[SIDE:4]]\nFor kritiske systemer skal RPO ikke overstige 1 time. Dette oppnås med kontinuerlig replikering til et sekundært datasenter og timesvis sikkerhetskopi.",
+  };
+  const bound = bindVerifiedSolutionQuote({
+    entry: unansweredRequirement,
+    quote: "For kritiske systemer skal RPO ikke overstige 1 time. Dette oppnås med kontinuerlig replikering til et sekundært datasenter og timesvis sikkerhetskopi.",
+    assessment: "Godt",
+    solutionDocument: document,
+  });
+  assert.ok(bound);
+  assert.match(bound.answerExcerpt, /kontinuerlig replikering/u);
+});
+
+test("PDF ligatures and typographic apostrophes do not block a verbatim quote", () => {
+  const document = {
+    ...solutionDocument,
+    raw_text: "[[SIDE:2]]\nKritiske systemer har deﬁnert RPO på én time gjennom timesvis sikkerhetskopi til leverandørens sekundære datasenter.",
+  };
+  const bound = bindVerifiedSolutionQuote({
+    entry: unansweredRequirement,
+    quote: "Kritiske systemer har definert RPO på én time gjennom timesvis sikkerhetskopi til leverandørens sekundære datasenter.",
+    assessment: "Godt",
+    solutionDocument: document,
+  });
+  assert.ok(bound);
+});
+
+test("the OpenAI SDK's own timeout error is recognised", () => {
+  const sdkTimeout = new APIConnectionTimeoutError();
+  // Its name is the plain "Error"; detection must not depend on it.
+  assert.equal(sdkTimeout.name, "Error");
+  assert.equal(isAiCallTimeoutError(sdkTimeout), true);
+});
+
+test("a long matching sentence is windowed around the match", () => {
+  const preceding = `${"Innledende tekst om plattformen og dens drift ".repeat(10)}uten punktum`;
+  const text = `${preceding}. Hendelser med prioritet 1 har en responstid på høyst 15 minutter og løses innen fire timer hele døgnet. Slutt.`;
+  const excerpt = matchCenteredExcerpt(text, "responstid prioritet hendelser", 150);
+  assert.ok(excerpt.length <= 150);
+  assert.match(excerpt, /responstid på høyst 15 minutter/u);
+  const longSentence = `${"Plattformen har mange egenskaper og funksjoner, ".repeat(8)}inkludert responstid på 15 minutter for kritiske hendelser og ${"mer tekst ".repeat(20)}.`;
+  assert.match(matchCenteredExcerpt(longSentence, "responstid kritiske hendelser", 160), /responstid på 15 minutter/u);
+});

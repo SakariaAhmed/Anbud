@@ -2,6 +2,8 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
+import { APIConnectionTimeoutError } from "openai/error";
+
 import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
 import { redactedModelOutputError } from "@/lib/server/safe-errors";
 import { isRecord, type Untrusted } from "@/lib/unknown-values";
@@ -239,10 +241,12 @@ export class AiCallTimeoutError extends Error {
 export function isAiCallTimeoutError(error: unknown) {
   let current = error;
   for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
-    // The SDK may time out first when its timeout equals ours.
+    // The SDK may time out first when its timeout equals ours. Its error's
+    // `name` is plain "Error", so match the class (absent in test doubles).
     if (
       current instanceof AiCallTimeoutError ||
-      current.name === "APIConnectionTimeoutError"
+      (typeof APIConnectionTimeoutError === "function" &&
+        current instanceof APIConnectionTimeoutError)
     ) {
       return true;
     }

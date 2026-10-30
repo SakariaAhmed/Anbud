@@ -915,13 +915,23 @@ export function matchCenteredExcerpt(text: string, query: string, limit: number)
   sentences.forEach((sentence, index) => {
     if (score(sentence) > score(sentences[best]!)) best = index;
   });
-  let start = Math.max(0, best - 1);
+  const bestSentence = sentences[best]!;
+  if (bestSentence.length >= limit) {
+    // One long sentence: centre the window on its first matching term.
+    const normalized = normalizeQuoteMatchText(bestSentence);
+    const hit = Math.max(0, Math.min(...terms.map((term) => normalized.indexOf(term)).filter((at) => at >= 0), normalized.length));
+    const from = Math.max(0, Math.min(hit - Math.floor(limit / 3), bestSentence.length - limit));
+    return bestSentence.slice(from, from + limit).trim();
+  }
+  // Grow around the matching sentence: the preceding sentence first (it often
+  // carries a negation or condition), then following ones, while they fit.
+  let start = best;
   let end = best + 1;
   const length = () => sentences.slice(start, end).join(" ").length;
+  if (start > 0 && length() + sentences[start - 1]!.length + 1 <= limit) start -= 1;
   while (end < sentences.length && length() + sentences[end]!.length + 1 <= limit) end += 1;
   while (start > 0 && length() + sentences[start - 1]!.length + 1 <= limit) start -= 1;
-  const excerpt = sentences.slice(start, end).join(" ");
-  return excerpt.length > limit ? compactText(excerpt, limit) : excerpt;
+  return sentences.slice(start, end).join(" ");
 }
 
 async function buildPerRequirementRetrievalContext(input: {
@@ -944,46 +954,47 @@ async function buildPerRequirementRetrievalContext(input: {
         exactTerms: entry.id && !isSyntheticRequirementId(entry.id) ? [entry.id] : [],
         limit: REQUIREMENT_COVERAGE_HITS_PER_REQUIREMENT,
       });
-      return { nr, query, snippets };
+      // Centre each hit on this requirement before any deduplication, so a
+      // shared chunk still shows the part that answers each requirement.
+      return snippets.map((snippet) => {
+        const page = snippet.pageStart
+          ? `side ${snippet.pageEnd && snippet.pageEnd !== snippet.pageStart ? `${snippet.pageStart}-${snippet.pageEnd}` : snippet.pageStart}`
+          : "";
+        return {
+          nr,
+          label: [snippet.documentTitle, page, snippet.headingPath.length ? snippet.headingPath.join(" > ") : ""]
+            .filter(Boolean)
+            .join(" – "),
+          text: matchCenteredExcerpt(snippet.text, query, REQUIREMENT_COVERAGE_SNIPPET_CHARS),
+        };
+      });
     },
   );
 
-  // One block per distinct passage, listing every requirement it serves.
+  // Every requirement gets its best hit before any requirement gets a second
+  // one; identical excerpts are shown once, listing every requirement.
   const passages = new Map<string, { nrs: number[]; label: string; text: string }>();
-  for (const { nr, query, snippets } of results) {
-    for (const snippet of snippets) {
-      const key = `${snippet.reference}|${normalizeQuoteMatchText(snippet.text).slice(0, 120)}`;
+  let used = 0;
+  for (let rank = 0; rank < REQUIREMENT_COVERAGE_HITS_PER_REQUIREMENT; rank += 1) {
+    for (const hits of results) {
+      const hit = hits[rank];
+      if (!hit) continue;
+      const key = normalizeQuoteMatchText(hit.text);
       const existing = passages.get(key);
       if (existing) {
-        if (!existing.nrs.includes(nr)) existing.nrs.push(nr);
+        if (!existing.nrs.includes(hit.nr)) existing.nrs.push(hit.nr);
         continue;
       }
-      const page = snippet.pageStart
-        ? `side ${snippet.pageEnd && snippet.pageEnd !== snippet.pageStart ? `${snippet.pageStart}-${snippet.pageEnd}` : snippet.pageStart}`
-        : "";
-      passages.set(key, {
-        nrs: [nr],
-        label: [
-          snippet.documentTitle,
-          page,
-          snippet.headingPath.length ? snippet.headingPath.join(" > ") : "",
-        ]
-          .filter(Boolean)
-          .join(" – "),
-        text: matchCenteredExcerpt(snippet.text, query, REQUIREMENT_COVERAGE_SNIPPET_CHARS),
-      });
+      const blockChars = hit.label.length + hit.text.length + 24;
+      if (used + blockChars > REQUIREMENT_COVERAGE_RETRIEVAL_CHAR_BUDGET) continue;
+      passages.set(key, { nrs: [hit.nr], label: hit.label, text: hit.text });
+      used += blockChars;
     }
   }
   if (!passages.size) return "";
-
-  const blocks: string[] = [];
-  let used = 0;
-  for (const passage of passages.values()) {
-    const block = `Krav nr ${passage.nrs.join(", ")} – ${passage.label}\n${passage.text}`;
-    if (used + block.length > REQUIREMENT_COVERAGE_RETRIEVAL_CHAR_BUDGET) break;
-    blocks.push(block);
-    used += block.length;
-  }
+  const blocks = [...passages.values()]
+    .sort((left, right) => left.nrs[0]! - right.nrs[0]!)
+    .map((passage) => `Krav nr ${passage.nrs.join(", ")} – ${passage.label}\n${passage.text}`);
   return buildDelimitedContext("Relevante Bilag 2-utdrag per krav", blocks.join("\n\n"));
 }
 
@@ -2812,22 +2823,33 @@ export function validateRequirementCoverageBatchRows(input: {
   return expectedNumbers.map((expectedNr) => rowsByNumber.get(expectedNr)!);
 }
 
-function normalizeQuoteMatchText(value: string) {
+/**
+ * Flattens text for quote matching while keeping a one-to-one character
+ * mapping between the flat text and its lower-cased form, so a match can be
+ * mapped back to the original wording.
+ */
+function flattenQuoteText(value: string) {
   return value
-    .normalize("NFC")
+    .normalize("NFKC")
     .replace(/\u00ad/gu, "")
+    .replace(/\[\[SIDE:\d{1,5}(?:-\d{1,5})?\]\]/gu, " ")
     // PDF text breaks words across lines with a hyphen.
     .replace(/(\p{Ll})-\s+(\p{Ll})/gu, "$1$2")
     .replace(/[«»“”"„]/gu, "")
+    .replace(/[’‘`]/gu, "'")
     .replace(/[‐‑–—]/gu, "-")
+    .replace(/[|•·▪]/gu, " ")
     .replace(/\s+/gu, " ")
-    .trim()
-    .toLocaleLowerCase("nb");
+    .trim();
+}
+
+function normalizeQuoteMatchText(value: string) {
+  return flattenQuoteText(value).toLocaleLowerCase("nb");
 }
 
 const normalizedSolutionTextCache = new WeakMap<
   ProjectDocumentDetail,
-  { whole: string; pages: Array<{ page: number; text: string }> }
+  { flat: string; whole: string; pages: Array<{ page: number; text: string }> }
 >();
 
 function normalizedSolutionText(document: ProjectDocumentDetail) {
@@ -2837,11 +2859,10 @@ function normalizedSolutionText(document: ProjectDocumentDetail) {
     document.file_format === "pdf"
       ? splitPdfPagesPreservingLines(document.raw_text)
       : [{ page: 0, text: document.raw_text }];
+  const flat = flattenQuoteText(document.raw_text);
   const value = {
-    // Page markers ([[SIDE:n]]) must not break a quote that spans pages.
-    whole: normalizeQuoteMatchText(
-      document.raw_text.replace(/\[\[SIDE:\d{1,5}(?:-\d{1,5})?\]\]/gu, " "),
-    ),
+    flat,
+    whole: flat.toLocaleLowerCase("nb"),
     pages: pages.map((page) => ({
       page: page.page,
       text: normalizeQuoteMatchText(page.text),
@@ -2853,22 +2874,66 @@ function normalizedSolutionText(document: ProjectDocumentDetail) {
 
 const VERIFIED_QUOTE_MIN_CHARS = 30;
 const VERIFIED_QUOTE_MAX_CHARS = 900;
+const VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS = 300;
+const BLANKET_COMPLIANCE_CLAIM =
+  /\b(?:oppfyller|dekker|imøtekommer|ivaretar)\s+(?:alle|samtlige)\s+(?:krav|kravene|behov)\b|\balle\s+krav(?:ene)?\s+(?:er|blir)\s+(?:oppfylt|dekket|ivaretatt)\b/iu;
+// Words that appear in almost every requirement and answer and therefore
+// do not show that a passage is about this requirement.
+const GENERIC_REQUIREMENT_TERM =
+  /^(?:leverandør|oppdragsgiver|løsning|tilbyder|tilbud|kunde|krav|skal|kunne|gjennom|eventuel|herunder|samtlig|avtale|minimum|minst|følgende|andre|annet|eller|ved|være|blir)/u;
+
+/** Distinctive words of a requirement, as stems for Norwegian inflection. */
+function requirementKeyStems(entry: RequirementLedgerEntry) {
+  return [
+    ...new Set(
+      normalizeQuoteMatchText(entry.text)
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((word) => word.length >= 5 && !GENERIC_REQUIREMENT_TERM.test(word))
+        .map((word) => word.slice(0, Math.max(5, word.length - 2))),
+    ),
+  ];
+}
+
+/** Extends a matched span to whole sentences, so a quote cannot drop an
+ * adjacent negation or qualification ("Vi kan ikke levere ..."). */
+function expandToSentences(flat: string, start: number, end: number) {
+  const boundary = /[.!?](?=\s|$)/gu;
+  let sentenceStart = 0;
+  for (const match of flat.slice(0, start).matchAll(boundary)) {
+    sentenceStart = match.index! + 1;
+  }
+  sentenceStart = Math.max(sentenceStart, start - VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS);
+  // A quote that already ends a sentence is not extended into the next one.
+  const after = /[.!?]$/u.test(flat.slice(start, end))
+    ? -2
+    : flat.slice(end).search(/[.!?](?=\s|$)/u);
+  if (after === -2) return flat.slice(sentenceStart, end).trim();
+  const sentenceEnd =
+    after < 0
+      ? Math.min(flat.length, end + VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS)
+      : Math.min(end + after + 1, end + VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS);
+  return flat.slice(sentenceStart, sentenceEnd).trim();
+}
 
 /**
- * Binds a requirement without a matched answer row to a quote the model took
- * from the solution document, after checking that the quote occurs verbatim
- * (modulo whitespace, line-break hyphens and quote marks) in that document.
- * Prose solution descriptions rarely cite requirement IDs, so without this
- * every such requirement was forced to "Mangler". The returned entry carries
- * the quote as its answer, so all existing answer checks (declines, deferred
- * confirmation, attachment references) apply to it unchanged.
+ * Binds a requirement without a matched answer row to a passage of the
+ * solution document that the model quoted. The quote must occur verbatim
+ * (modulo whitespace, line-break hyphens, ligatures and quote marks), is
+ * widened to whole sentences, must share distinctive terms with the
+ * requirement, and may not be a blanket compliance claim or a restatement
+ * of the requirement. The returned entry carries the widened passage as its
+ * answer, so the existing answer checks (declines, deferred confirmation,
+ * attachment references) judge the full sentence, not the model's excerpt.
  */
 export function bindVerifiedSolutionQuote(input: {
   entry: RequirementLedgerEntry;
   quote: string | undefined;
+  assessment?: string;
   solutionDocument: ProjectDocumentDetail;
 }): RequirementLedgerEntry | null {
   if (substantiveRequirementAnswerExcerpt(input.entry)) return null;
+  // A model that finds no answer must not be turned into a weak answer.
+  if (normalizeRequirementCoverageAssessment(input.assessment) === "Mangler") return null;
   const quote = String(input.quote ?? "").replace(/\s+/gu, " ").trim();
   if (
     quote.length < VERIFIED_QUOTE_MIN_CHARS ||
@@ -2878,17 +2943,28 @@ export function bindVerifiedSolutionQuote(input: {
     return null;
   }
   const normalizedQuote = normalizeQuoteMatchText(quote);
+  const solution = normalizedSolutionText(input.solutionDocument);
+  const start = solution.whole.indexOf(normalizedQuote);
+  if (start < 0) return null;
+  const passage = expandToSentences(solution.flat, start, start + normalizedQuote.length);
+  const normalizedPassage = normalizeQuoteMatchText(passage);
+  if (BLANKET_COMPLIANCE_CLAIM.test(normalizedPassage)) return null;
+
+  // Restating the requirement is not evidence that it is answered, but an
+  // answer may repeat it before saying how it is met.
   const requirementText = normalizeQuoteMatchText(input.entry.text);
-  // Restating the requirement is not evidence that it is answered.
   if (
-    requirementText.includes(normalizedQuote) ||
-    normalizedQuote.includes(requirementText)
+    requirementText.includes(normalizedPassage) ||
+    (normalizedPassage.includes(requirementText) &&
+      normalizedPassage.length - requirementText.length < 40)
   ) {
     return null;
   }
-  const solution = normalizedSolutionText(input.solutionDocument);
-  if (!solution.whole.includes(normalizedQuote)) return null;
-  const quotePrefix = normalizedQuote.slice(0, 60);
+  const stems = requirementKeyStems(input.entry);
+  const sharedStems = stems.filter((stem) => normalizedPassage.includes(stem)).length;
+  if (!stems.length || sharedStems < Math.min(2, stems.length)) return null;
+
+  const quotePrefix = normalizedPassage.slice(0, 60);
   const page = solution.pages.find((candidate) =>
     candidate.page > 0 && candidate.text.includes(quotePrefix),
   )?.page;
@@ -2902,12 +2978,12 @@ export function bindVerifiedSolutionQuote(input: {
       [
         requirementSourceExcerptWithoutAnswer(input.entry).trim().replace(/\|\s*$/u, "").trim() ||
           `Kravgrunnlag: ${input.entry.text}`,
-        `Svarrad: ${quote}`,
+        `Svarrad: ${passage}`,
       ].join(" | "),
       1800,
     ),
-    answerExcerpt: quote,
-    answerEvidenceExcerpt: quote,
+    answerExcerpt: passage,
+    answerEvidenceExcerpt: passage,
     answerDocumentId: input.solutionDocument.id,
     answerDocumentTitle: input.solutionDocument.title,
     answerReference,
