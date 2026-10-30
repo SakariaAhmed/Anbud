@@ -56,7 +56,10 @@ test("customer analysis stays unavailable until document preparation publishes r
 
 test("analysis CTA checks readiness instead of document count only", () => {
   assert.match(source, /analysisDocuments\.every\(isDocumentReadyForEvaluation\)/u);
-  assert.match(source, /disabled=\{busy \|\| Boolean\(sectionBusy\) \|\| !documentsReady\}/u);
+  assert.match(
+    source,
+    /disabled=\{busy \|\| Boolean\(sectionBusy\) \|\| !documentsReady \|\| Boolean\(workflowBlockedReason\)\}/u,
+  );
   assert.doesNotMatch(
     source,
     /disabled=\{busy \|\| Boolean\(sectionBusy\) \|\| !hasDocuments\}/u,

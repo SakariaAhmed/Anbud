@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   FormEvent,
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -32,6 +33,7 @@ import {
   fetchProjectServices,
   fetchProjectState,
   fetchSolutionEvaluation,
+  isProjectWorkflowBusyError,
   markClientPerformance,
   saveCustomerAnalysisSection,
   startProjectJob,
@@ -39,6 +41,7 @@ import {
   uploadProjectDocument,
   watchProjectJob,
 } from "@/lib/client/project-api";
+import { useProjectActivity } from "@/hooks/use-project-activity";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
 import {
@@ -46,6 +49,7 @@ import {
   isDocumentReadyForEvaluation,
   isSolutionEvaluationCandidate,
   requirementDocumentIdsForGeneration,
+  suggestUploadDocumentRole,
 } from "@/lib/document-processing";
 import {
   ProjectWorkspaceShell,
@@ -247,7 +251,7 @@ function estimatedJobDurationMs(job: Pick<ProjectJobRecord, "kind">) {
   const baseByKind: Record<ProjectJobRecord["kind"], number> = {
     document_ingestion: 45_000,
     document_docling_enhancement: 120_000,
-    customer_analysis: 75_000,
+    customer_analysis: 150_000,
     solution_evaluation: 80_000,
     artifact_generation: 95_000,
     high_level_design: 65_000,
@@ -319,6 +323,8 @@ export function ProjectWorkspacePage({
   const [file, setFile] = useState<File | null>(null);
   const [uploadRole, setUploadRole] =
     useState<ProjectDocumentRole>("supporting_document");
+  // A role the user picked is kept; otherwise each chosen file suggests one.
+  const uploadRoleChosenRef = useRef(false);
   const [activeTab, setActiveTab] = useState<ProjectWorkspaceTab>(initialTab);
   const [isTabPending, startTabTransition] = useTransition();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -615,10 +621,29 @@ export function ProjectWorkspacePage({
     };
   }, []);
 
+  const {
+    jobs: projectJobs,
+    blockingReason: workflowBlockedReason,
+    recordJob,
+    refreshJobs,
+  } = useProjectActivity({
+    projectId: project.id,
+    documents: project.documents,
+    async refreshProject() {
+      // A transport failure never changes authoritative document status; the
+      // activity loop keeps the last state and retries on its next run.
+      const fresh = await fetchProjectState(project.id);
+      // A background refresh must not force a lazy tab that is still
+      // hydrating back to its loading fallback.
+      startTransition(() => setProject((current) => mergeProjectRefresh(current, fresh)));
+    },
+  });
+
   const { waitForProjectJob } = useProjectJobRunner({
     projectId: project.id,
     onStart: startEstimatedProgress,
     onStatus(jobStatus) {
+      recordJob(jobStatus);
       setBusyMessage(progressMessageLabel(jobStatus.message));
       const nextProgress = progressForJobStatus(jobStatus);
       const nextCeiling = progressCeilingForJobStatus(jobStatus);
@@ -643,26 +668,6 @@ export function ProjectWorkspacePage({
     },
   });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = false;
-    const refresh = async () => {
-      if (active || document.visibilityState === "hidden") return;
-      active = true;
-      try {
-        const fresh = await fetchProjectState(project.id, controller.signal);
-        if (!controller.signal.aborted) setProject(current => {
-          return mergeProjectRefresh(current, fresh);
-        });
-      } catch { /* A transport failure never changes authoritative document status. */ }
-      finally { active = false; }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 15_000);
-    window.addEventListener("focus", refresh);
-    window.addEventListener("project-workflow-updated", refresh);
-    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener("focus", refresh); window.removeEventListener("project-workflow-updated", refresh); };
-  }, [project.id]);
 
   async function trackDocumentIngestionJob(
     job: ProjectJobRecord | null | undefined,
@@ -995,7 +1000,12 @@ export function ProjectWorkspacePage({
       await action();
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Noe gikk galt.");
+      // A busy project is a reason to wait, not a failure (see startWorkspaceJob).
+      if (isProjectWorkflowBusyError(err)) {
+        setNotice(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : "Noe gikk galt.");
+      }
       return false;
     } finally {
       setBusyProgress(100);
@@ -1064,15 +1074,29 @@ export function ProjectWorkspacePage({
       formData.append("file", file);
       formData.append("title", docTitle);
       formData.append("role", uploadRole);
+      // Only the user's own choice may replace a current primary document.
+      const roleSource = uploadRoleChosenRef.current ? "explicit" : "suggested";
+      formData.append("role_source", roleSource);
       const payload = await uploadProjectDocument({
         projectId: project.id,
         formData,
         fallbackMessage: "Kunne ikke laste opp dokumentet.",
       });
+      // The server keeps a suggested primary role only while it is vacant.
+      if (
+        roleSource === "suggested" &&
+        uploadRole !== "supporting_document" &&
+        payload.document.role === "supporting_document"
+      ) {
+        setNotice(
+          `Prosjektet har allerede et ${uploadRole === "primary_customer_document" ? "kundedokument" : "løsningsdokument"}, så dokumentet ble lagret som støttedokument. Velg rollen selv hvis det skal erstatte det.`,
+        );
+      }
       void trackDocumentIngestionJob(payload.job, payload.document.id);
       setDocTitle("");
       setFile(null);
       setUploadRole("supporting_document");
+      uploadRoleChosenRef.current = false;
       setDocumentFileInputKey((current) => current + 1);
       setProject((current) =>
         isProjectSnapshotOlder(current, payload.project) ? current : normalizeProjectState(
@@ -1093,6 +1117,28 @@ export function ProjectWorkspacePage({
         ),
       );
     });
+  }
+
+  // Same input as the server's suggestion: the title and the file name.
+  function suggestUploadRole(title: string, selected: File | null) {
+    if (selected && !uploadRoleChosenRef.current) {
+      setUploadRole(suggestUploadDocumentRole(`${title} ${selected.name}`, project.documents));
+    }
+  }
+
+  function onSelectUploadFile(selected: File | null) {
+    setFile(selected);
+    suggestUploadRole(docTitle, selected);
+  }
+
+  function onUploadTitleChange(title: string) {
+    setDocTitle(title);
+    suggestUploadRole(title, file);
+  }
+
+  function onChooseUploadRole(role: ProjectDocumentRole) {
+    uploadRoleChosenRef.current = true;
+    setUploadRole(role);
   }
 
   async function onUploadRequirementDocument(file: File) {
@@ -1408,12 +1454,20 @@ export function ProjectWorkspacePage({
     });
   }
 
-  function startWorkspaceJob(body: unknown, fallbackMessage: string) {
-    return startProjectJob({
-      projectId: project.id,
-      body,
-      fallbackMessage,
-    });
+  async function startWorkspaceJob(body: unknown, fallbackMessage: string) {
+    try {
+      const job = await startProjectJob({
+        projectId: project.id,
+        body,
+        fallbackMessage,
+      });
+      recordJob(job);
+      return job;
+    } catch (error) {
+      // Another user's job may hold the project; show it instead of guessing.
+      if (isProjectWorkflowBusyError(error)) void refreshJobs();
+      throw error;
+    }
   }
 
   async function refreshProjectAfterMutation() {
@@ -1919,6 +1973,10 @@ export function ProjectWorkspacePage({
         busy={busy}
         busyMessage={busyMessage}
         busyProgress={busyProgress}
+        projectJobs={projectJobs}
+        workflowBlockedReason={readOnly ? null : workflowBlockedReason}
+        onProjectJobRecorded={recordJob}
+        onRefreshProjectJobs={refreshJobs}
         analysisSectionBusy={analysisSectionBusy}
         uploadOpen={uploadOpen}
         docTitle={docTitle}
@@ -1931,9 +1989,9 @@ export function ProjectWorkspacePage({
         bilag1Artifacts={bilag1Artifacts}
         onToggleUploadOpen={() => setUploadOpen((open) => !open)}
         onServiceDescriptionsChange={updateServiceDescriptions}
-        onDocTitleChange={setDocTitle}
-        onUploadRoleChange={setUploadRole}
-        onFileChange={setFile}
+        onDocTitleChange={onUploadTitleChange}
+        onUploadRoleChange={onChooseUploadRole}
+        onFileChange={onSelectUploadFile}
         onUploadDocument={onUploadDocument}
         onDeleteDocument={onDeleteDocument}
         onGenerateCustomerAnalysis={onGenerateCustomerAnalysis}

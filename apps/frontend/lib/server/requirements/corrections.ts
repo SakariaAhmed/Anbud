@@ -538,15 +538,39 @@ export function applyRequirementCorrections(
         // parenthesis may qualify a pronoun ordinal ("Den siste (logger) får").
         const ordinalMatch = [...sentence.text.slice(0, renumberMatch.index).matchAll(
           /(?<![\p{L}\p{N}])(?:(første|andre|tredje|siste)\s+(?:kravet|kravraden|raden|rad|forekomsten)|(?:det|dette)\s+(første|andre|tredje|siste)\s+krav|(?:den|det|denne|dette)\s+(første|andre|tredje|siste)(?=\s*(?:\([^()]{1,80}\)\s*)?(?:(?:får|beholder|skal|gis|endres|blir|er)(?![\p{L}\p{N}])|[,.:;]|$)))(?![\p{L}\p{N}])/giu,
-        )].at(-1);
+        )].filter((match) => !inAside(match.index!)).at(-1);
+        // An ordinal inside an aside ("K-3 (det andre kravet er K-2) får …")
+        // describes something else and selects no occurrence.
         const ordinal = (ordinalMatch?.[1] ?? ordinalMatch?.[2] ?? ordinalMatch?.[3])?.toLocaleLowerCase("nb");
         // A bare pronoun ordinal ("den siste") after several requirements in
         // the sentence ("K-2 og K-3 er brukt to ganger, og den siste får …")
         // does not show which requirement it belongs to.
-        const namedBefore = new Set(subjects({
+        // Only the clause the ordinal refers to: the nearest comma-separated
+        // clause before it that names a requirement ("K-2 beholder sin ID, K-3
+        // er brukt to ganger, og den siste …" refers to K-3 alone).
+        const ordinalAt = ordinalMatch?.index ?? 0;
+        const clauseIds = (from: number, to: number) => new Set(subjects({
           text: sentence.text,
-          ids: sentence.ids.filter(({ at }) => at < renumberMatch.index && !inAside(at)),
+          ids: sentence.ids.filter(({ at }) => at >= from && at < to && !inAside(at)),
         }, known()));
+        // An aside inside a subject list ("K-2, som gjelder drift, og K-3 er
+        // begge …") does not split the list: the text before it holds only
+        // requirement IDs and list words. Any other word ("K-2 beholdes, som
+        // avtalt, og K-3 …", "K-2 videreføres, …") makes it its own clause.
+        const clauseText = asides.reduce((text, [from, to]) => {
+          const lead = text.slice(text.lastIndexOf(",", from - 1) + 1, from);
+          const subjectOnly = lead
+            .replace(REQUIREMENT_ID, " ")
+            .replace(/(?<![\p{L}\p{N}])(?:og|samt|eller|både|enten|verken|hverken|begge|kravet|kravene|krav)(?![\p{L}\p{N}])/giu, " ")
+            .trim() === "";
+          return `${text.slice(0, from)}${subjectOnly ? " " : ","}${" ".repeat(to - from - 1)}${text.slice(to)}`;
+        }, sentence.text);
+        let namedBefore = new Set<string>();
+        for (let end = ordinalAt; end > 0 && namedBefore.size === 0;) {
+          const start = clauseText.lastIndexOf(",", end - 1) + 1;
+          namedBefore = clauseIds(start, end);
+          end = start - 1;
+        }
         if (ordinalMatch?.[3] && namedBefore.size > 1) {
           throw new WorkflowPreconditionError(
             `Kravrettelsen kan ikke brukes entydig: ny krav-ID ${renumber} kan gjelde ${[...namedBefore].join(", ")}. Avklar hvilket krav rettelsen gjelder.`,

@@ -16,6 +16,7 @@ env:
   IMAGE_NAME: anbud
   MIN_REPLICAS: "1"
   PROJECT_JOB_WORKER_LIMIT: "1"
+  PROJECT_JOB_WORKER_MAX_JOBS: "10"
   PROJECT_JOB_WORKER_REPLICA_TIMEOUT: "2100"
   NODE_VERSION: "22.14.0"
 
@@ -265,6 +266,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
           OPENAI_DOCUMENT_ANALYSIS_MODEL: ${{ vars.OPENAI_DOCUMENT_ANALYSIS_MODEL || 'gpt-5.6-terra' }}
+          OPENAI_FAST_MODEL: ${{ vars.OPENAI_FAST_MODEL || 'gpt-5.4-mini' }}
           DOCUMENT_ANALYSIS_VERSION: ${{ vars.DOCUMENT_ANALYSIS_VERSION || 'off' }}
           AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: ${{ vars.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT }}
           AZURE_DOCUMENT_INTELLIGENCE_KEY: ${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_KEY }}
@@ -306,6 +308,7 @@ jobs:
             openAiApiKey="$OPENAI_API_KEY"
             openAiModel="$OPENAI_MODEL"
             openAiDocumentAnalysisModel="$OPENAI_DOCUMENT_ANALYSIS_MODEL"
+            openAiFastModel="$OPENAI_FAST_MODEL"
             documentAnalysisVersion="$DOCUMENT_ANALYSIS_VERSION"
             azureDocumentIntelligenceEndpoint="$AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"
             azureDocumentIntelligenceKey="$AZURE_DOCUMENT_INTELLIGENCE_KEY"
@@ -313,6 +316,7 @@ jobs:
             projectJobWorkerToken="$PROJECT_JOB_WORKER_TOKEN"
             projectJobWorkerCron="$PROJECT_JOB_WORKER_CRON"
             projectJobWorkerLimit="$PROJECT_JOB_WORKER_LIMIT"
+            projectJobWorkerMaxJobs="$PROJECT_JOB_WORKER_MAX_JOBS"
             projectJobWorkerReplicaTimeout="$PROJECT_JOB_WORKER_REPLICA_TIMEOUT"
             doclingEnhancementMode="$DOCLING_ENHANCEMENT_MODE"
             doclingAsyncAutoRun="$DOCLING_ASYNC_AUTO_RUN"

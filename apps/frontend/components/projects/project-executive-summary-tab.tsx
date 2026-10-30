@@ -3,6 +3,7 @@
 import { ArrowUpRight, ClipboardCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import {
   AnalysisTabEmptyState,
@@ -34,6 +35,7 @@ export function ProjectExecutiveSummaryTab({
   busy,
   busyMessage,
   busyProgress,
+  workflowBlockedReason,
   onGenerate,
 }: {
   executiveSummary: ExecutiveSummaryResult | null;
@@ -41,6 +43,7 @@ export function ProjectExecutiveSummaryTab({
   busy: boolean;
   busyMessage: string;
   busyProgress: number;
+  workflowBlockedReason?: string | null;
   onGenerate: () => void;
 }) {
   const score = summary?.likely_score_assessment;
@@ -53,11 +56,17 @@ export function ProjectExecutiveSummaryTab({
 
   return (
     <div className="min-w-0 space-y-5">
-      <div className="flex justify-end">
-        <Button variant={summary ? "outline" : "default"} onClick={onGenerate} disabled={busy || !hasSolutionEvaluation}>
+      <div className="flex flex-col items-end gap-2 text-right">
+        <Button
+          variant={summary ? "outline" : "default"}
+          onClick={onGenerate}
+          aria-describedby={workflowBlockedReason && !busy ? "summary-workflow-blocked" : undefined}
+          disabled={busy || !hasSolutionEvaluation || Boolean(workflowBlockedReason)}
+        >
           {busy ? <Spinner className="size-4" /> : summary ? <ArrowUpRight data-icon="inline-start" /> : <ClipboardCheck data-icon="inline-start" />}
           {summary ? "Regenerer" : "Generer lederoppsummering"}
         </Button>
+        {!busy ? <WorkflowBlockedHint id="summary-workflow-blocked" reason={workflowBlockedReason} /> : null}
       </div>
       {busy && busyMessage ? <GenerationProgress message={busyMessage} progress={busyProgress} /> : null}
       {summary ? (

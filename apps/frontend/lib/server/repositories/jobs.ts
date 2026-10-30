@@ -299,6 +299,34 @@ export async function listQueuedProjectJobIds(
   return (data ?? []).map((row) => row.id as string);
 }
 
+/** Oldest queued job in one project, in the order the database accepted it. */
+export async function findOldestQueuedProjectJob(
+  projectId: string,
+  options: { includeDoclingEnhancement: boolean },
+  runtime: ProjectJobRepositoryRuntime = {},
+) {
+  let query = serviceClient(runtime)
+    .from("project_jobs")
+    .select("id,input_json")
+    .eq("project_id", projectId)
+    .eq("status", "queued");
+  if (!options.includeDoclingEnhancement) {
+    query = query.neq("kind", "document_docling_enhancement");
+  }
+  const { data, error } = await query
+    .order("submission_sequence", { ascending: true })
+    .limit(1)
+    .maybeSingle<Pick<JobRow, "id" | "input_json">>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data || data.input_json === null || data.input_json === undefined) {
+    return null;
+  }
+  return { id: data.id, input: data.input_json };
+}
+
 export async function resetStaleRunningProjectJobs(
   staleAfterMs = 15 * 60_000,
   runtime: ProjectJobRepositoryRuntime = {},
@@ -329,9 +357,31 @@ export async function resetStaleRunningProjectJobs(
   return reset.data?.length ?? 0;
 }
 
+const RECENT_PROJECT_JOB_HISTORY = 20;
+
+/**
+ * Recent job history plus every queued or running job, however old. The
+ * client derives whether generation is blocked from the active jobs, so an
+ * old queued job must not disappear behind newer finished ones.
+ */
 export async function listRecentProjectJobs(projectId: string, runtime: ProjectJobRepositoryRuntime = {}) {
-  const { data, error } = await serviceClient(runtime).from("project_jobs").select("*")
-    .eq("project_id", projectId).order("created_at", { ascending: false }).limit(20);
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as JobRow[]).map(mapJobRow);
+  const dataApi = serviceClient(runtime);
+  const [recent, active] = await Promise.all([
+    dataApi.from("project_jobs").select("*")
+      .eq("project_id", projectId).order("created_at", { ascending: false })
+      .limit(RECENT_PROJECT_JOB_HISTORY),
+    dataApi.from("project_jobs").select("*")
+      .eq("project_id", projectId).in("status", ["queued", "running"])
+      .order("created_at", { ascending: false }),
+  ]);
+  if (recent.error) throw new Error(recent.error.message);
+  if (active.error) throw new Error(active.error.message);
+  const rows = new Map<string, JobRow>();
+  for (const row of [...((recent.data ?? []) as JobRow[]), ...((active.data ?? []) as JobRow[])]) {
+    rows.set(row.id, row);
+  }
+  return [...rows.values()]
+    // PostgREST may render offsets differently, so compare instants.
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    .map(mapJobRow);
 }

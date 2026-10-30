@@ -36,6 +36,8 @@ create or replace function public.prepare_stable_main_rollback() returns jsonb l
 create or replace function public.stable_main_rollback_bridge_preflight() returns text language sql as 'select';
 create or replace function public.insert_service_document_with_keywords(uuid, jsonb, text[]) returns void language sql as 'select';
 create or replace function public.atomic_service_document_write_preflight() returns text language sql as 'select';
+create or replace function public.insert_vacant_primary_project_document(uuid, text, jsonb) returns jsonb language sql as 'select';
+create or replace function public.vacant_primary_document_insert_preflight() returns text language sql as 'select';
 `;
 
 const versions = new Map([
@@ -43,6 +45,7 @@ const versions = new Map([
   ["project_job_terminal_audit_preflight", "transactional-project-job-terminal-audit-v2"],
   ["stable_main_rollback_bridge_preflight", "stable-main-rollback-bridge-v1"],
   ["atomic_service_document_write_preflight", "atomic-service-document-write-v1"],
+  ["vacant_primary_document_insert_preflight", "vacant-primary-document-insert-v1"],
 ]);
 
 function successfulFetch(calls, failureName = null) {
@@ -79,6 +82,13 @@ test("canonical migration requires every durable column and index", () => {
       ),
     /column:lease_token/u,
   );
+  assert.throws(
+    () =>
+      validateCanonicalProjectJobMigration(
+        completeMigration.replace(/^.*insert_vacant_primary_project_document.*$/mu, ""),
+      ),
+    /function:insert_vacant_primary_project_document/u,
+  );
 });
 
 test("remote preflight checks only the internal PostgREST contract", async () => {
@@ -103,6 +113,22 @@ test("remote preflight checks only the internal PostgREST contract", async () =>
   assert.equal(
     result.terminalAuditVersion,
     "transactional-project-job-terminal-audit-v2",
+  );
+  assert.equal(result.vacantPrimaryInsertVersion, "vacant-primary-document-insert-v1");
+  assert.ok(calls.some((call) =>
+    call.url.pathname === "/rpc/vacant_primary_document_insert_preflight" &&
+    call.options.method === "POST"));
+});
+
+test("remote preflight stops a release when the vacant primary-document insert is not migrated or not reloaded", async () => {
+  // PostgREST answers 404 both before the migration and while its schema
+  // cache predates it.
+  await assert.rejects(
+    preflightRemoteProjectJobSchema({
+      ...configuration,
+      fetchImpl: successfulFetch([], "vacant_primary_document_insert_preflight"),
+    }),
+    /Vacant primary-document insert preflight failed with HTTP 404/u,
   );
 });
 

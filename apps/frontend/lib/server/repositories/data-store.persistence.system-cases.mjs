@@ -463,6 +463,24 @@ function persistenceDatabase(overrides = {}) {
         options: null,
       });
 
+      if (name === "insert_vacant_primary_project_document") {
+        const forcedError = database.operationErrors.get(
+          "insert_vacant_primary_project_document:rpc",
+        );
+        if (forcedError) {
+          return { data: null, error: forcedError };
+        }
+        const occupied = database.tables.documents.some(
+          (document) =>
+            document.project_id === args.p_project_id &&
+            document.role === args.p_primary_role,
+        );
+        if (occupied) {
+          return { data: null, error: null };
+        }
+        return database.client.rpc("insert_primary_project_document", args);
+      }
+
       if (name === "insert_primary_project_document") {
         const forcedError = database.operationErrors.get(
           "insert_primary_project_document:rpc",
@@ -1641,6 +1659,177 @@ test("primary customer upload still refreshes project context keywords", async (
   );
   assert.ok(directProjectContextKeywordUpdates(database).length > 0);
   assert.ok(fencedProjectContextKeywordMutations().length > 0);
+});
+
+function suggestedUpload(role, title) {
+  return savePendingDocument({
+    projectId: PROJECT_ID,
+    title,
+    role,
+    roleSource: "suggested",
+    supportingSubtype: "vedlegg",
+    fileName: `${title}.txt`,
+    fileFormat: "txt",
+    contentType: "text/plain",
+    fileSizeBytes: 4,
+    fileBase64: Buffer.from("test").toString("base64"),
+  });
+}
+
+test("a suggested primary role never demotes the current primary document", async () => {
+  const database = persistenceDatabase({
+    documents: [documentRow(CUSTOMER_DOCUMENT_ID, "primary_customer_document")],
+  });
+
+  const uploaded = await suggestedUpload("primary_customer_document", "Bilag 1 fra en annen bruker");
+
+  assert.equal(uploaded.role, "supporting_document");
+  assert.equal(
+    database.tables.documents.find((document) => document.id === CUSTOMER_DOCUMENT_ID).role,
+    "primary_customer_document",
+  );
+  const stored = database.tables.documents.find((document) => document.id === uploaded.id);
+  assert.equal(stored.role, "supporting_document");
+  assert.equal(stored.supporting_subtype, "vedlegg");
+  assert.ok(!database.operations.some((operation) => operation.table === "insert_primary_project_document"),
+    "the demoting insert is never reached");
+});
+
+test("a suggested primary role fills a vacant role through the vacancy-only insert", async () => {
+  const database = persistenceDatabase({ documents: [] });
+
+  const uploaded = await suggestedUpload("primary_solution_document", "Bilag 2");
+
+  assert.equal(uploaded.role, "primary_solution_document");
+  assert.deepEqual(
+    database.operations.filter((operation) => operation.operation === "rpc").map((operation) => operation.table).slice(0, 2),
+    ["insert_vacant_primary_project_document", "insert_primary_project_document"],
+  );
+});
+
+function withoutVacantPrimaryRpc(database) {
+  database.operationErrors.set("insert_vacant_primary_project_document:rpc", {
+    message: "Could not find the function public.insert_vacant_primary_project_document",
+    code: "PGRST202",
+  });
+}
+
+async function quietly(run) {
+  const originalWarn = console.warn;
+  console.warn = () => undefined;
+  try {
+    return await run();
+  } finally {
+    console.warn = originalWarn;
+  }
+}
+
+const demotingInserts = (database) =>
+  database.operations.filter((operation) => operation.table === "insert_primary_project_document");
+
+test("before the vacancy-only insert is deployed, a suggestion for a vacant role is refused without saving", async () => {
+  const database = persistenceDatabase({ documents: [] });
+  withoutVacantPrimaryRpc(database);
+
+  await quietly(() => assert.rejects(
+    suggestedUpload("primary_customer_document", "Konkurransegrunnlag"),
+    (error) => error.code === "DATABASE_UPDATE_REQUIRED" && error.status === 503,
+  ));
+
+  assert.deepEqual(database.tables.documents, [], "nothing is saved");
+  assert.deepEqual(demotingInserts(database), [], "the demoting insert is never called");
+  const removedFiles = getRemovedStoredFilesForPersistenceTest();
+  assert.equal(removedFiles.length, 1, "the uploaded blob is removed");
+  assert.match(removedFiles[0].path, /Konkurransegrunnlag\.txt$/u);
+});
+
+test("before the vacancy-only insert is deployed, a suggestion cannot demote a primary that lands concurrently", async () => {
+  // Another user's explicit upload becomes primary while this suggestion is
+  // being handled: the vacancy re-read sees no primary yet, then the explicit
+  // insert commits. The suggestion must neither demote it nor be saved.
+  const database = persistenceDatabase({ documents: [] });
+  withoutVacantPrimaryRpc(database);
+  const originalFrom = database.client.from;
+  database.client.from = (table) => {
+    const query = originalFrom(table);
+    if (table !== "documents") return query;
+    return {
+      ...query,
+      select(columns) {
+        const selected = query.select(columns);
+        const then = selected.then.bind(selected);
+        selected.then = (onFulfilled, onRejected) => then((result) => {
+          database.tables.documents.push(
+            documentRow(CUSTOMER_DOCUMENT_ID, "primary_customer_document"),
+          );
+          return onFulfilled(result);
+        }, onRejected);
+        return selected;
+      },
+    };
+  };
+
+  await quietly(() => assert.rejects(
+    suggestedUpload("primary_customer_document", "Bilag 1"),
+    (error) => error.code === "DATABASE_UPDATE_REQUIRED",
+  ));
+
+  assert.deepEqual(demotingInserts(database), []);
+  assert.deepEqual(
+    database.tables.documents.map((document) => [document.id, document.role]),
+    [[CUSTOMER_DOCUMENT_ID, "primary_customer_document"]],
+    "the concurrent explicit primary keeps its role",
+  );
+});
+
+test("before the vacancy-only insert is deployed, a suggestion still yields to the current primary", async () => {
+  const database = persistenceDatabase({
+    documents: [documentRow(CUSTOMER_DOCUMENT_ID, "primary_customer_document")],
+  });
+  withoutVacantPrimaryRpc(database);
+
+  const uploaded = await quietly(() => suggestedUpload("primary_customer_document", "Bilag 1"));
+
+  assert.equal(uploaded.role, "supporting_document");
+  assert.equal(
+    database.tables.documents.find((document) => document.id === CUSTOMER_DOCUMENT_ID).role,
+    "primary_customer_document",
+  );
+  assert.deepEqual(demotingInserts(database), [], "the demoting insert is never reached");
+});
+
+test("other vacancy-only insert failures still reject the upload", async () => {
+  const database = persistenceDatabase({ documents: [] });
+  database.operationErrors.set("insert_vacant_primary_project_document:rpc", {
+    message: "forced vacancy check failure",
+    code: "P0001",
+  });
+  await assert.rejects(suggestedUpload("primary_customer_document", "Bilag 1"), /forced vacancy check failure/u);
+  assert.deepEqual(database.tables.documents, []);
+});
+
+test("an explicitly chosen primary role still replaces the current primary document", async () => {
+  const database = persistenceDatabase({
+    documents: [documentRow(CUSTOMER_DOCUMENT_ID, "primary_customer_document")],
+  });
+
+  const uploaded = await savePendingDocument({
+    projectId: PROJECT_ID,
+    title: "Ny kravspesifikasjon",
+    role: "primary_customer_document",
+    roleSource: "explicit",
+    fileName: "ny.txt",
+    fileFormat: "txt",
+    contentType: "text/plain",
+    fileSizeBytes: 4,
+    fileBase64: Buffer.from("test").toString("base64"),
+  });
+
+  assert.equal(uploaded.role, "primary_customer_document");
+  assert.equal(
+    database.tables.documents.find((document) => document.id === CUSTOMER_DOCUMENT_ID).role,
+    "supporting_document",
+  );
 });
 
 test("failed atomic primary upload leaves no row and removes the stored blob", async () => {

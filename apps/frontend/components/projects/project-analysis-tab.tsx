@@ -16,6 +16,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
+import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import { Input, Label } from "@/components/projects/primitives";
 import {
   AnalysisTabEmptyState,
@@ -479,6 +480,7 @@ export function ProjectAnalysisTab({
   onSaveAnalysis,
   readOnly = false,
   sourceChanged = false,
+  workflowBlockedReason = null,
 }: {
   projectId: string;
   documents: ProjectDocument[];
@@ -490,6 +492,8 @@ export function ProjectAnalysisTab({
   busyProgress: number;
   readOnly?: boolean;
   sourceChanged?: boolean;
+  /** Set while the server would refuse a new analysis job. */
+  workflowBlockedReason?: string | null;
   onGenerate?: () => void;
   onSaveAnalysis?: (
     section: CustomerAnalysisSection,
@@ -580,6 +584,10 @@ export function ProjectAnalysisTab({
   const hasDocuments = analysisDocuments.length > 0;
   const documentsReady =
     hasDocuments && analysisDocuments.every(isDocumentReadyForEvaluation);
+  // Unready analysis documents already have their own explanation below.
+  const showWorkflowBlocked =
+    Boolean(workflowBlockedReason) && documentsReady && !busy &&
+    (!customerAnalysis || sourceChanged) && !readOnly && Boolean(onGenerate);
 
   function getSectionLabel(section: CustomerAnalysisSection) {
     if (section === "needs") return "Behov";
@@ -1643,7 +1651,8 @@ export function ProjectAnalysisTab({
             {(!customerAnalysis || sourceChanged) && !readOnly && onGenerate ? (
               <Button
                 onClick={onGenerate}
-                disabled={busy || Boolean(sectionBusy) || !documentsReady}
+                aria-describedby={showWorkflowBlocked ? "analysis-workflow-blocked" : undefined}
+                disabled={busy || Boolean(sectionBusy) || !documentsReady || Boolean(workflowBlockedReason)}
                 className="mb-2 max-w-full shrink-0"
               >
                 {busy ? (
@@ -1655,6 +1664,11 @@ export function ProjectAnalysisTab({
               </Button>
             ) : null}
           </div>
+          {showWorkflowBlocked ? (
+            <div className="mt-2">
+              <WorkflowBlockedHint id="analysis-workflow-blocked" reason={workflowBlockedReason} />
+            </div>
+          ) : null}
           {(!customerAnalysis || sourceChanged) && hasDocuments && !documentsReady ? (
             <p className="mt-2 text-sm text-slate-500">
               Dokumentgrunnlaget klargjøres. Kundeanalysen kan startes så snart

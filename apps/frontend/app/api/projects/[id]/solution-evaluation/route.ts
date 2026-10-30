@@ -110,7 +110,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       await waitForDirectSolutionEvaluationTask({
         task: scheduleHeavyProjectJobAutorun(async () => {
           try {
-            await runQueuedProjectJob(queuedJob.id);
+            await runQueuedProjectJob(queuedJob.id, { drainNext: true });
           } catch (error) {
             directRunFailed = true;
             directRunError = error;

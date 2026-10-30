@@ -38,6 +38,10 @@ function fakeClient() {
     update(value) { payload = value; return this; },
     async maybeSingle() { return { data: row, error: null }; },
     async limit() { return { data: [row], error: null }; },
+    // The active-job read of the job list is awaited without a limit.
+    in() {
+      return { order: () => ({ then: (resolve) => resolve({ data: [], error: null }) }) };
+    },
   };
   return { from: () => query, payload: () => payload };
 }

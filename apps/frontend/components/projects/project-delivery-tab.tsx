@@ -14,6 +14,7 @@ import {
   formatDate,
   GenerationProgress,
 } from "@/components/projects/project-workspace-shared";
+import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { GeneratedArtifact } from "@/lib/types";
@@ -46,6 +47,7 @@ export function ProjectDeliveryTab({
   busy,
   busyMessage,
   busyProgress,
+  workflowBlockedReason,
   hasCustomerAnalysis,
   onDeleteArtifact,
   onSubmit,
@@ -54,6 +56,7 @@ export function ProjectDeliveryTab({
   busy: boolean;
   busyMessage: string;
   busyProgress: number;
+  workflowBlockedReason?: string | null;
   hasCustomerAnalysis: boolean;
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -85,11 +88,11 @@ export function ProjectDeliveryTab({
               </div>
             ) : null}
           </div>
-          <form onSubmit={onSubmit}>
+          <form onSubmit={onSubmit} className="max-w-sm space-y-2">
             <Button
               type="submit"
-
-              disabled={busy || !hasCustomerAnalysis}
+              aria-describedby={workflowBlockedReason && !busy ? "delivery-workflow-blocked" : undefined}
+              disabled={busy || !hasCustomerAnalysis || Boolean(workflowBlockedReason)}
             >
               {busy ? (
                 <Spinner className="size-4" />
@@ -98,6 +101,7 @@ export function ProjectDeliveryTab({
               )}
               Lag fremdriftsplan
             </Button>
+            {!busy ? <WorkflowBlockedHint id="delivery-workflow-blocked" reason={workflowBlockedReason} /> : null}
           </form>
         </div>
 

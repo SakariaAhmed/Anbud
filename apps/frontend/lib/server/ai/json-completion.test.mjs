@@ -460,3 +460,34 @@ test("JSON completion timeout emits one failed terminal event and no success", a
   assert.equal(failures[0].request_id, starts[0].request_id);
   assert.equal(failures[0].provider_response_received, false);
 });
+
+test("GPT-6 Chat and file-input Responses use the supported cache lifetime and omit temperature", async () => {
+  const { GPT_MODELS_USE_DEFAULT_TEMPERATURE } = jiti(path.join(frontendRoot, "lib/server/ai/model-config.ts"));
+  const originalRetention = process.env.OPENAI_PROMPT_CACHE_RETENTION;
+  try {
+    for (const model of ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]) {
+      for (const fileInputs of [false, true]) {
+        for (const retention of ["24h", "in_memory"]) {
+          process.env.OPENAI_PROMPT_CACHE_RETENTION = retention;
+          const calls = [];
+          await (fileInputs ? runJsonCompletionWithFileInputs : runJsonCompletion)({
+            ...(fileInputs ? jsonRuntime('{"ok":true}', calls) : chatJsonRuntime('{"ok":true}', calls)),
+            supportsCustomTemperature: (name) => !GPT_MODELS_USE_DEFAULT_TEMPERATURE.test(name),
+            system: "Return JSON.",
+            user: "Analyze.",
+            model,
+            fileDocuments: [],
+            temperature: 0,
+            promptCacheKey: "requirement-coverage-batch",
+          });
+          assert.equal("prompt_cache_retention" in calls[0], false);
+          assert.deepEqual(calls[0].prompt_cache_options, { ttl: "30m" });
+          assert.equal("temperature" in calls[0], false);
+        }
+      }
+    }
+  } finally {
+    if (originalRetention === undefined) delete process.env.OPENAI_PROMPT_CACHE_RETENTION;
+    else process.env.OPENAI_PROMPT_CACHE_RETENTION = originalRetention;
+  }
+});
