@@ -617,6 +617,36 @@ test("matrix rows with unusual ID forms are kept under their ID, end to end", as
   assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger }]));
 });
 
+test("a new requirement extracted from a corrections table is restored after removing correction rows", async () => {
+  const { extractRequirementLedgerForDocument } = await load("lib/server/requirements/source-ledger.ts");
+  const document = {
+    id: "d", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "docx", structure_map: [],
+    raw_text: [
+      "4 Krav", "| Krav-ID | Kravtekst |", "| K-1 | Leverandøren skal levere en driftsplan. |",
+      "", "9 Rettelser", "| Krav-ID | Kravtekst |",
+      "| K-9 | Nytt krav K-9: «Leverandøren skal levere en exitplan.» |",
+      "K-1 endres til: «Leverandøren skal levere en årlig driftsplan.»",
+    ].join("\n"),
+  };
+  const extracted = await extractRequirementLedgerForDocument(document);
+  assert.deepEqual(extracted.map((entry) => entry.id), ["K-1", "K-9"]);
+  assert.equal(extracted[1].text, "Leverandøren skal levere en exitplan.");
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: extracted }]));
+});
+
+test("an unusual spreadsheet ID without wording stays in the completeness inventory", () => {
+  const document = {
+    id: "d", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "xlsx",
+    raw_text: ["Ark: Krav", "Rad 1: A1: Krav-ID | B1: Kravtekst",
+      "Rad 2: A2: K-2 | B2: Leverandøren skal tilby døgnvakt.",
+      "Rad 3: A3: REQ_001"].join("\n"),
+  };
+  const ledger = buildSpreadsheetRequirementLedger(document);
+  assert.deepEqual(ledger.map((entry) => entry.id), ["K-2"]);
+  assert.deepEqual(spreadsheetRequirementIds(document), ["K-2", "REQ_001"]);
+  assert.throws(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger }]), /req001/u);
+});
+
 test("review bots: several correction notices, kept notes, Unicode section rows, withdrawn documents", async () => {
   const k = (id, text) => ({ id, text, pages: [1], heading: "4 Krav" });
   // Rettelse nr. 1 and nr. 2 both apply, in order; a table of contents does not.
