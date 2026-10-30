@@ -1,4 +1,6 @@
 import "server-only";
+import { applyRequirementCorrections } from "@/lib/server/requirements/corrections";
+import { buildSpreadsheetRequirementLedger } from "@/lib/server/requirements/spreadsheet-ledger";
 
 // Builds the requirement source ledger for a document from DOCX, Markdown,
 // table and layout structure, and repairs truncated entries.
@@ -1978,6 +1980,14 @@ export async function buildRequirementSourceLedgerWithFiles(
       })),
     );
   }
+  const spreadsheetLedger = buildSpreadsheetRequirementLedger(document);
+  if (spreadsheetLedger.length > 0) {
+    return finalizeRequirementLedgerEntries(spreadsheetLedger, sourceDocumentSha256).map((entry) => ({
+      ...entry,
+      documentId: document.id,
+      documentTitle: document.title,
+    }));
+  }
   const explicitIdTableLedger = buildExplicitIdTableRequirementLedger(
     document,
     corpusParserContext,
@@ -2466,17 +2476,20 @@ export async function extractRequirementLedgerForDocumentCore(
     .map(recoverTruncatedRequirementLedgerEntryInline)
     .map(recoverAvailabilityFractionRequirement);
   if (!isLegacyMixedFofingerCorpus(document)) {
-    return ledger;
+    return applyRequirementCorrections(ledger, document.raw_text).ledger;
   }
 
-  return recoverTruncatedRequirementLedgerEntries(
-    ledger.map((entry) => ({
-      ...entry,
-      text: repairLegacyFofingerTextArtifacts(entry.text),
-    })),
-  )
-    .map(recoverTruncatedRequirementLedgerEntryInline)
-    .map(recoverAvailabilityFractionRequirement);
+  return applyRequirementCorrections(
+    recoverTruncatedRequirementLedgerEntries(
+      ledger.map((entry) => ({
+        ...entry,
+        text: repairLegacyFofingerTextArtifacts(entry.text),
+      })),
+    )
+      .map(recoverTruncatedRequirementLedgerEntryInline)
+      .map(recoverAvailabilityFractionRequirement),
+    document.raw_text,
+  ).ledger;
 }
 
 export function isReliableRequirementLedger(ledger: RequirementLedgerEntry[]) {
