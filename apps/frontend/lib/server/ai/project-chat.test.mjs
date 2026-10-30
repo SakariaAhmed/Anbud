@@ -216,6 +216,11 @@ test("chat answers from the whole documents when they fit, with a compact per-re
       reference: `KRAV-${index + 1}`, assessment: index === 59 ? "Mangler" : "Godt",
       rationale: `Vurdering ${index + 1}.`, evidence: "Sitat fra Bilag 2.",
     }));
+    // Two documents share the short reference R-005.
+    items.push(
+      { reference: "R-005", source_document_title: "Bilag 1", assessment: "Godt", rationale: "Dekket.", evidence: "Sitat A." },
+      { reference: "R-005", source_document_title: "Tilleggskrav", assessment: "Mangler", rationale: "Ikke dekket.", evidence: "" },
+    );
     const result = await streamProjectChat({
       projectName: "Fiktiv", question: "Hvilke krav dekker Bilag 2 ikke?",
       customerAnalysis: null,
@@ -236,6 +241,9 @@ test("chat answers from the whole documents when they fit, with a compact per-re
     assert.ok(prompt.includes(lateAnswer));
     // Every requirement row, including the last, survives in compact form.
     assert.match(prompt, /KRAV-60 \| Mangler \| Vurdering 60\./u);
+    // Rows sharing a reference keep their own document.
+    assert.match(prompt, /R-005 \[Bilag 1\] \| Godt/u);
+    assert.match(prompt, /R-005 \[Tilleggskrav\] \| Mangler/u);
     // The saved judgments beyond the requirement rows survive too.
     for (const finding of ["Kundeeid IaC-repository", "Navngitte nøkkelpersoner", "Lukk avviket på responstid"]) {
       assert.ok(prompt.includes(finding), finding);

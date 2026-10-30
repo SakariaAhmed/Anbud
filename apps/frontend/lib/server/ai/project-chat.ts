@@ -60,9 +60,11 @@ function compactSolutionEvaluationForChat(evaluation: SolutionEvaluationResult) 
     improvement_recommendations: list(evaluation.improvement_recommendations, 4),
     coverage_summary: coverage?.coverage_summary ?? "",
   };
+  // Documents can share a short reference ("R-005"): each row names its
+  // source document, so chat never credits an assessment to the wrong one.
   const items = (coverage?.items ?? []).map((item) =>
     [
-      item.reference,
+      item.source_document_title ? `${item.reference} [${compactText(item.source_document_title, 80)}]` : item.reference,
       item.assessment,
       compactText(item.rationale ?? "", 200),
       item.evidence ? `Bevis: ${compactText(item.evidence, 180)}` : "",
@@ -81,7 +83,7 @@ function compactSolutionEvaluationForChat(evaluation: SolutionEvaluationResult) 
     rows.push(row);
     used += row.length + 1;
   }
-  return [head, "Kravdekning per krav (ref | vurdering | begrunnelse | bevis):", ...rows].join("\n");
+  return [head, "Kravdekning per krav (ref [dokument] | vurdering | begrunnelse | bevis):", ...rows].join("\n");
 }
 const CHAT_ATTACHMENT_STRUCTURED_CONTEXT_LIMIT = 18_000;
 const CHAT_ATTACHMENT_SEGMENT_CHARS = 1400;
