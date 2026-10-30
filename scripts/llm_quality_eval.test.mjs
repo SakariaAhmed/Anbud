@@ -13,7 +13,7 @@ const repoRoot = path.resolve(path.dirname(scriptPath), "..");
 /** A stand-in for the app API holding projects and services in memory.
  * `onUpload` and `onProjectDelete` may return a promise to hold the response;
  * `onProjectDelete` resolving to headers answers 429 with them. */
-async function startFakeApi({ onUpload = () => undefined, onProjectDelete = () => undefined, onServiceCreate } = {}) {
+async function startFakeApi({ onUpload = () => undefined, onProjectDelete = () => undefined, onServiceCreate, onServiceResponse } = {}) {
   const projects = new Map();
   const services = new Map();
   const requests = [];
@@ -56,7 +56,8 @@ async function startFakeApi({ onUpload = () => undefined, onProjectDelete = () =
       const id = `service-${nextId++}`;
       services.set(id, { id, name: form.get("name") });
       listeners.serviceCreated();
-      if (onServiceCreate) return send(201, { service: { id } });
+      if (onServiceResponse) await onServiceResponse();
+      if (onServiceCreate || onServiceResponse) return send(201, { service: { id } });
       // Never answers: a service that exists on the server before the
       // script has seen its ID.
       return;
@@ -194,6 +195,30 @@ test("shutdown waits for a creation committing after the old 30-second sweep dea
   assert.deepEqual([...api.projects.keys()], []);
   assert.ok(api.requests.some((request) => request.startsWith("DELETE /api/service-descriptions/")));
   assert.ok(!api.requests.some((request) => /^POST .*\/jobs$/u.test(request)), api.requests.join("\n"));
+});
+
+test("shutdown removes committed resources while a creation response is still stalled", async (t) => {
+  let creationStarted;
+  let finishResponse;
+  let cleanupBeforeResponse = false;
+  const interruptWhen = new Promise((resolve) => { creationStarted = resolve; });
+  const api = await startFakeApi({
+    onServiceResponse: () => new Promise((resolve) => {
+      finishResponse = resolve;
+      creationStarted();
+    }),
+    onProjectDelete: () => {
+      cleanupBeforeResponse = true;
+      assert.equal(api.services.size, 0, "the service is swept before its response finishes");
+      finishResponse();
+    },
+  });
+  t.after(() => api.close());
+  const { code, stderr } = await runInterrupted(t, api.baseUrl, interruptWhen);
+  assert.equal(code, 130, stderr);
+  assert.equal(cleanupBeforeResponse, true);
+  assert.equal(api.services.size, 0);
+  assert.equal(api.projects.size, 0);
 });
 
 test("cleanup waits for the DELETE limiter's Retry-After before retrying", async (t) => {

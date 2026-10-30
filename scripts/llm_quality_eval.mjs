@@ -457,11 +457,27 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     interrupted = true;
     shutdownPromise = (async () => {
       console.error(`${signal}: removing evaluation resources before exit ...`);
-      // A request can commit after any client timeout. Wait for its outcome
-      // before the final sweep; another signal must not abandon this cleanup.
-      await Promise.allSettled([...pendingCreations]);
-      for (const client of runClients) await sweepRun(client);
-      await cleanupResources();
+      // Clean known and already-committed resources immediately, even if a
+      // creation never finishes its response. Keep sweeping while it may
+      // still commit, and only exit after its outcome and the final sweep.
+      let creationsFinished = false;
+      const creationsSettled = Promise.allSettled([...pendingCreations]).then(() => {
+        creationsFinished = true;
+      });
+      const sweep = async () => {
+        for (const client of runClients) await sweepRun(client);
+        await cleanupResources();
+      };
+      do {
+        await sweep();
+        if (!creationsFinished) {
+          await Promise.race([
+            creationsSettled,
+            new Promise((resolve) => setTimeout(resolve, 30_000)),
+          ]);
+        }
+      } while (!creationsFinished);
+      await sweep();
       process.exit(process.exitCode === 1 ? 1 : signal === "SIGINT" ? 130 : 143);
     })();
   });
