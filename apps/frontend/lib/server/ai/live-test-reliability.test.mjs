@@ -529,14 +529,7 @@ test("a decline names the delivery, not an option the requirement may forbid", a
     "lib/server/requirements/answer-quality.ts",
   );
   const positive = "Leverandøren skal levere dokumentasjon og telefonstøtte.";
-  for (const excluded of [
-    "TLS 1.0 og 1.1 støttes ikke.",
-    "Data leveres ikke utenfor EU/EØS.",
-    "Kravet dekkes ikke bare av X, men også av Y.",
-  ]) {
-    assert.equal(declines(excluded, positive), false, excluded);
-  }
-  // Matrix answer cells: with or without the requirement at hand.
+  // Matrix answer cells declining the delivery itself.
   for (const declined of [
     "Dette leveres ikke som opsjon.",
     "Kravet inngår ikke i leveransen.",
@@ -547,34 +540,26 @@ test("a decline names the delivery, not an option the requirement may forbid", a
     assert.equal(declines(declined), true, declined);
     assert.equal(declines(declined, positive), true, declined);
   }
-  for (const declined of [
-    "Dokumentasjon leveres ikke.",
-    "Vi har vurdert behovet. Telefonstøtte tilbys ikke.",
-  ]) {
-    assert.equal(declines(declined, positive), true, declined);
-    // Without the requirement, a noun subject may be an excluded option.
-    assert.equal(declines(declined), false, declined);
-  }
-  // The requirement asks for the exclusion: answering it is compliance.
-  for (const compliant of ["Usikre protokoller støttes ikke.", "Støttes ikke."]) {
-    assert.equal(declines(compliant, "Løsningen skal ikke støtte usikre protokoller."), false, compliant);
-  }
-  // A prohibition clause excuses only what it forbids.
-  // An option the requirement does not ask for is not a decline.
+  // A noun subject may be the requested thing or an excluded option: the
+  // model judges it, the deterministic override does not.
   for (const [answer, requirement] of [
+    ["TLS 1.0 og 1.1 støttes ikke.", positive],
+    ["Data leveres ikke utenfor EU/EØS.", positive],
+    ["Kravet dekkes ikke bare av X, men også av Y.", positive],
     ["Løsningen støtter Chrome, Edge, Firefox og Safari. Internet Explorer støttes ikke.", "Løsningen skal støtte moderne nettlesere."],
-    ["Varsling sendes på e-post og som push-varsel. SMS-varsling tilbys ikke.", "Løsningen skal varsle brukere på e-post."],
-    ["Alle data lagres i Azure Norway East. Lokal lagring leveres ikke.", "Alle data skal lagres i Norge."],
+    ["Varsling på SMS støttes ikke. Varsler sendes automatisk på e-post ved alle hendelser.", "Løsningen skal støtte varsling på e-post."],
+    ["Usikre protokoller støttes ikke.", "Løsningen skal ikke støtte usikre protokoller."],
   ]) {
     assert.equal(declines(answer, requirement), false, answer);
   }
-  // "ikke" in a relative clause or a later clause does not make it a prohibition.
+  // A bare decline of a requirement that only forbids complies.
+  assert.equal(declines("Støttes ikke.", "Løsningen skal ikke støtte usikre protokoller."), false);
+  // "ikke" in a relative or later clause does not make it a prohibition.
   assert.equal(declines("Støttes ikke.", "Løsningen skal varsle om lisenser som ikke brukes."), true);
   assert.equal(declines("Leveres ikke.", "Leverandøren skal levere 24/7 support. Planlagt vedlikehold skal ikke skje i kontortid."), true);
   assert.equal(declines("Nei, dette støttes ikke.", "Løsningen skal kunne integreres med ID-porten og skal ikke kreve lokal klientinstallasjon."), true);
   const mixed = "Løsningen skal støtte SSO via Entra ID og skal ikke tillate lokale kontoer.";
   assert.equal(declines("Dette støttes ikke i vår plattform. Vi bruker lokale brukerkontoer.", mixed), true);
-  assert.equal(declines("Lokale kontoer støttes ikke.", mixed), false);
 });
 
 test("a restriction in a later section does not qualify the answer", () => {

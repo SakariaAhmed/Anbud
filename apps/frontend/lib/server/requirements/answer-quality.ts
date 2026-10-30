@@ -3725,16 +3725,14 @@ export function answerHasSelfContainedCoverage(
   );
 }
 
-// "Støttes ikke." or "X støttes ikke" declines the delivery itself when X is
-// absent, a pronoun or a delivery noun ("Nei, dette støttes ikke"), unless
-// the requirement only forbids something ("Løsningen skal ikke støtte usikre
-// protokoller"): then the answer complies. A noun subject declines only when
-// the requirement asks for it ("Telefonstøtte tilbys ikke" for "… levere
-// telefonstøtte"); an option the requirement does not name ("Internet
-// Explorer støttes ikke", "SMS-varsling tilbys ikke") or one a prohibition
-// forbids ("Usikre protokoller støttes ikke") is not a decline.
-// A versioned option ("TLS 1.0 og 1.1 støttes ikke"), a scope limit
-// ("leveres ikke utenfor EU") and "ikke bare" never decline.
+// "Støttes ikke." declines the delivery itself when its subject is absent,
+// a pronoun or a delivery noun ("Nei, dette støttes ikke", "Kravet dekkes
+// ikke"), unless the requirement only forbids something ("Løsningen skal
+// ikke støtte usikre protokoller"): then the answer complies. This decline
+// overrides the model's assessment, so a noun subject ("SSO støttes ikke",
+// "Internet Explorer støttes ikke") is left to the model: whether it is the
+// requested thing or an excluded option depends on the whole answer.
+// A scope limit ("leveres ikke utenfor EU") and "ikke bare" never decline.
 const SUBJECT_DECLINE =
   /(?:^|[.;:!?]\s+|\bnei\s*[,.:–-]\s*)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+\s+)?(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via)\b)/giu;
 const DELIVERY_SUBJECT =
@@ -3752,29 +3750,20 @@ function clauseForbids(clause: string) {
   return modal ? Boolean(modal[2]) : BARE_PROHIBITION.test(clause);
 }
 
-/** Word stems of a text, for matching a declined subject to a clause. A
- * hyphenated compound ("SMS-varsling") stays one word. */
-function wordStems(text: string) {
-  return new Set(
-    (text.toLocaleLowerCase("nb").match(/\p{L}[\p{L}-]{3,}/gu) ?? []).map((word) => word.slice(0, 5)),
-  );
+/** Whether a requirement only forbids: then declining is compliance. */
+function requirementOnlyForbids(requirement: string | undefined) {
+  if (requirement === undefined) return false;
+  const clauses = normalizePageText(requirement).split(/[.;]\s+|,\s*(?=men\s)|\s+og\s+(?=(?:skal|må|bør)\s)/u);
+  const forbids = clauses.some(clauseForbids);
+  const obliges = clauses.some((clause) => MODAL.test(clause) && !clauseForbids(clause));
+  return forbids && !obliges;
 }
 
-function answerDeclinesWithSubject(text: string, requirement: string | undefined) {
-  const clauses = requirement
-    ? normalizePageText(requirement).split(/[.;]\s+|,\s*(?=men\s)|\s+og\s+(?=(?:skal|må|bør)\s)/u)
-    : [];
-  const forbidden = clauses.filter(clauseForbids);
-  const obliged = clauses.filter((clause) => MODAL.test(clause) && !clauseForbids(clause));
-  const forbiddenStems = wordStems(forbidden.join(" "));
-  const obligedStems = wordStems(obliged.join(" "));
+function answerDeclinesDelivery(text: string, requirement: string | undefined) {
+  if (requirementOnlyForbids(requirement)) return false;
   return Array.from(text.matchAll(SUBJECT_DECLINE)).some((match) => {
     const subject = (match[1] ?? "").trim();
-    if (/\b(?:og|eller|men|samt)\b/iu.test(subject)) return false;
-    // "Støttes ikke." answering only a prohibition complies.
-    if (!subject || DELIVERY_SUBJECT.test(subject)) return !forbidden.length || obliged.length > 0;
-    const stems = [...wordStems(subject)];
-    return stems.some((stem) => obligedStems.has(stem)) && !stems.some((stem) => forbiddenStems.has(stem));
+    return !subject || DELIVERY_SUBJECT.test(subject);
   });
 }
 
@@ -3782,7 +3771,7 @@ function answerDeclinesWithSubject(text: string, requirement: string | undefined
  * when known: without it, only a decline of the delivery itself counts. */
 export function answerExplicitlyDeclinesRequirement(value: string, requirement?: string) {
   const text = normalizePageText(value);
-  if (answerDeclinesWithSubject(text, requirement)) return true;
+  if (answerDeclinesDelivery(text, requirement)) return true;
   return /\b(?:(?:kravet|leveransen|funksjonen|funksjonaliteten|tjenesten|kontrollen|løsningen)\s+(?:inngår\s+ikke|er\s+ikke\s+inkludert)|(?:inngår\s+ikke|er\s+ikke\s+inkludert)\s+i\s+(?:leveransen|tilbudet|scope|omfanget)|ikke\s+leveres|kan\s+ikke\s+(?:levere|støtte|oppfylle|tilby)|utenfor\s+scope|må\s+håndteres\s+av\s+kunden|not\s+included\s+in\s+(?:the\s+)?(?:delivery|offer|scope)|out\s+of\s+scope|cannot\s+(?:deliver|support|meet))\b/i.test(
     text,
   );
