@@ -11,7 +11,10 @@ import {
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 import { explicitIdTableSourceIds } from "@/lib/server/requirements/explicit-id-table-parser";
-import { hasRequirementSignal } from "@/lib/server/requirements/pdf-layout-ledger";
+import { hasRequirementSignal, hasStandaloneRequirementLanguage, stripAnswerTextFromRequirement } from "@/lib/server/requirements/pdf-layout-ledger";
+import { buildExplicitIdDoclingTextRequirementLedger } from "@/lib/server/requirements/explicit-id-narrative-parser";
+import { stripRequirementChrome } from "@/lib/server/requirements/heading-detection";
+import { escapeRegExp } from "@/lib/server/document-intelligence/text-normalization";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
 
@@ -888,11 +891,26 @@ export function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
   const original = originalRequirementSourceIds(document);
   if (!original.length || correctedRequirementIds(original, document.raw_text ?? "").length > 0) return false;
   // The matrix inventory includes its source rows. An explicit-ID inventory
-  // for prose/PDF does not: an obligation on an ID-less line may be another
-  // row or wrapped text. Either way, IDs alone cannot prove full withdrawal.
-  return spreadsheetRequirementIds(document).length > 0 ||
-    !withoutCorrectionsSection(document.raw_text ?? "").split(/\r?\n/u)
-      .some((line) => hasRequirementSignal(line) && !detectExplicitRequirementIds(line).length);
+  // for prose/PDF does not. Docling paragraph anchors prove which wrapped
+  // obligations belong to an explicit requirement; reuse the extraction
+  // parser rather than assigning every following ID-less line to that ID.
+  if (spreadsheetRequirementIds(document).length > 0) return true;
+  let unanchoredSource = withoutCorrectionsSection(document.raw_text ?? "");
+  const anchors = document.structure_map?.length
+    ? buildExplicitIdDoclingTextRequirementLedger(document, {
+        detectExplicitRequirementIds, stripAnswerTextFromRequirement, stripRequirementChrome,
+        hasRequirementSignal, hasStandaloneRequirementLanguage,
+      })
+    : [];
+  for (const anchor of anchors) {
+    // Remove only the complete source-bound excerpt, so an identical clause
+    // in a separate unnumbered row still prevents an empty-ledger success.
+    if (!anchor.sourceExcerpt) continue;
+    const pattern = anchor.sourceExcerpt.split(/\s+/u).map(escapeRegExp).join("\\s+");
+    unanchoredSource = unanchoredSource.replace(new RegExp(pattern, "gu"), "");
+  }
+  return !unanchoredSource.split(/\r?\n/u)
+    .some((line) => hasRequirementSignal(line) && !detectExplicitRequirementIds(line).length);
 }
 
 /** Apply the same identity matching before and after corrections, so a
