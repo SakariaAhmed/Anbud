@@ -674,6 +674,35 @@ test("supplier wishes never withdraw requirements and rewrites retain existing p
   assert.match(changed.sourceExcerpt, /Opprinnelig tekst/u);
 });
 
+test("bidder request context spans sentences and wrapped IDs but ends at separate correction blocks", async () => {
+  const source = ["K-1", "K-2", "K-4"].map((id) => ({ id, text: `Leverandøren skal dokumentere ${id}.`, pages: [1], heading: "4 Krav" }));
+  const chapter = `4 Krav\n${source.map((entry) => `${entry.id} ${entry.text}`).join("\n")}\n\n9 Rettelser\n`;
+  const requests = [
+    "Spørsmål: Vi ber om følgende endring. K-4 utgår. Kan dette aksepteres?",
+    "Spørsmål: Vi ber om følgende endring.\nK-4 utgår.\nKan dette aksepteres?",
+    "Vi foreslår at kravene endres. K-4 får ny ID K-9. Nytt krav K-8 legges til: «Leverandøren skal levere rapporter.»",
+    "Spørsmål: Vi ber om følgende endring. K-4 endres til: «Leverandøren skal levere rapporter.»",
+  ];
+  for (const request of requests) {
+    const raw = chapter + request;
+    assert.deepEqual(applyRequirementCorrections(source, raw).ledger, source, request);
+    assert.deepEqual(correctedRequirementIds(source.map((entry) => entry.id), raw), ["K-1", "K-2", "K-4"], request);
+    for (const separate of ["\n\nK-2 utgår.", "\n- K-2 utgår.", "\n| K-2 | Utgår |", "\nRad 2: K-2 | Utgår"]) {
+      const mixed = chapter + "K-1 utgår. " + request + separate;
+      assert.deepEqual(applyRequirementCorrections(source, mixed).ledger.map((entry) => entry.id), ["K-4"], mixed);
+      assert.deepEqual(correctedRequirementIds(source.map((entry) => entry.id), mixed), ["K-4"], mixed);
+    }
+  }
+  // A closed question does not suppress a following affirmative correction.
+  assert.deepEqual(applyRequirementCorrections(source, chapter + requests[0] + " K-2 utgår.").ledger.map((entry) => entry.id), ["K-1", "K-4"]);
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const document = { id: "d", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "docx", structure_map: [],
+    raw_text: `4 Krav\n| Krav-ID | Kravtekst |\n| K-4 | Leverandøren skal levere en driftsplan. |\n\n9 Rettelser\n${requests[1]}` };
+  const result = await extractRequirementLedgerWithCorrections(document);
+  assert.deepEqual(result.ledger.map((entry) => entry.id), ["K-4"]);
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ...result }]));
+});
+
 test("a withdrawn formal requirement cannot survive through its customer-document duplicate", async () => {
   const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
   const { canonicalizeRequirementSourceLedger } = await load("lib/server/requirements/source-readiness.ts");
