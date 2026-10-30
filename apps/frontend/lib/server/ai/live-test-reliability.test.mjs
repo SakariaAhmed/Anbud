@@ -544,3 +544,18 @@ test("a decline names the delivery, not an option the requirement may forbid", a
     assert.equal(declines(declined), true, declined);
   }
 });
+
+test("a quote matches Docling Markdown text across a heading marker", async () => {
+  const { solutionDocumentContainsQuote } = await load("lib/server/ai/requirement-coverage.ts");
+  const document = {
+    id: "solution",
+    file_format: "pdf",
+    title: "Bilag 2",
+    raw_text: "## 6 Informasjonssikkerhet\n\n## 6.1 Styringssystem (SIK-01)\n\nSkarvhavn Digital AS er sertifisert etter ISO/IEC 27001.",
+  };
+  assert.equal(
+    solutionDocumentContainsQuote("6 Informasjonssikkerhet 6.1 Styringssystem (SIK-01) Skarvhavn Digital AS er sertifisert etter ISO/IEC 27001.", document),
+    true,
+  );
+  assert.equal(solutionDocumentContainsQuote("Skarvhavn Digital AS er sertifisert etter ISO/IEC 27001.", document), true);
+});

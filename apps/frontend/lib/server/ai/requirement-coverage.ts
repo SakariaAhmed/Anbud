@@ -2852,6 +2852,9 @@ function flattenQuoteText(value: string) {
     .normalize("NFKC")
     .replace(/\u00ad/gu, "")
     .replace(/\[\[SIDE:\d{1,5}(?:-\d{1,5})?\]\]/gu, " ")
+    // Docling writes headings as Markdown ("## 6.1 Styringssystem"); a quote
+    // that runs from a heading into its text omits the marker.
+    .replace(/(^|\n)[ \t]*#{1,6}[ \t]+/gu, "$1")
     // A hyphen or asterisk bullet at line start is a boundary too.
     .replace(/(?:^|\n)[ \t]*[-–*][ \t]+/gu, " ¦ ")
     // PDF text breaks words across lines with a hyphen.
