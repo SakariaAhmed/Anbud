@@ -875,16 +875,33 @@ function explicitLedgerEntryIds(entry: RequirementLedgerEntry) {
   ];
 }
 
-/** Original explicit IDs, without references in the corrections chapter. */
+/** Docling paragraphs must be present in the original source, not merely
+ * mentioned in a correction, before they can establish row identities. */
+function doclingRequirementSourceAnchors(document: ProjectDocumentDetail) {
+  if (!document.structure_map?.length) return [];
+  const source = withoutCorrectionsSection(document.raw_text ?? "").replace(/\s+/gu, " ");
+  return buildExplicitIdDoclingTextRequirementLedger(document, {
+    detectExplicitRequirementIds, stripAnswerTextFromRequirement, stripRequirementChrome,
+    hasRequirementSignal, hasStandaloneRequirementLanguage,
+  }).filter((entry) => entry.sourceExcerpt && source.includes(entry.sourceExcerpt.replace(/\s+/gu, " ").trim()));
+}
+
+/** Original explicit IDs and anchored multiplicity, without correction references. */
 export function originalRequirementSourceIds(document: ProjectDocumentDetail) {
   const rawText = document.raw_text ?? "";
   const matrixIds = spreadsheetRequirementIds(document);
-  return matrixIds.length
-    ? matrixIds
-    : (() => {
-        const { expected, rawIds } = explicitRequirementSourceInventoryWithRawIds(withoutCorrectionsSection(rawText));
-        return [...expected].flatMap(([id, count]) => Array.from({ length: count }, () => rawIds.get(id) ?? id));
-      })();
+  if (matrixIds.length) return matrixIds;
+  const { expected, rawIds } = explicitRequirementSourceInventoryWithRawIds(withoutCorrectionsSection(rawText));
+  const anchored = new Map<string, number>();
+  for (const entry of doclingRequirementSourceAnchors(document)) {
+    const id = explicitInventoryId(entry.id);
+    anchored.set(id, (anchored.get(id) ?? 0) + 1);
+    rawIds.set(id, entry.id);
+  }
+  // Generic narrative scanning deduplicates references. Separate anchored
+  // paragraphs prove distinct rows even when they repeat the same ID.
+  for (const [id, count] of anchored) expected.set(id, Math.max(expected.get(id) ?? 0, count));
+  return [...expected].flatMap(([id, count]) => Array.from({ length: count }, () => rawIds.get(id) ?? id));
 }
 
 export function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
@@ -896,13 +913,7 @@ export function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
   // parser rather than assigning every following ID-less line to that ID.
   if (spreadsheetRequirementIds(document).length > 0) return true;
   let unanchoredSource = withoutCorrectionsSection(document.raw_text ?? "");
-  const anchors = document.structure_map?.length
-    ? buildExplicitIdDoclingTextRequirementLedger(document, {
-        detectExplicitRequirementIds, stripAnswerTextFromRequirement, stripRequirementChrome,
-        hasRequirementSignal, hasStandaloneRequirementLanguage,
-      })
-    : [];
-  for (const anchor of anchors) {
+  for (const anchor of doclingRequirementSourceAnchors(document)) {
     // Remove only the complete source-bound excerpt, so an identical clause
     // in a separate unnumbered row still prevents an empty-ledger success.
     if (!anchor.sourceExcerpt) continue;

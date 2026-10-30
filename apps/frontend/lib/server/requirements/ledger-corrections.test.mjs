@@ -758,6 +758,11 @@ test("a withdrawal cannot silently remove distinct source rows that share an ID"
   });
   await assert.rejects(buildRequirementCoverageLedgerFromDocuments([document]), error);
   assert.throws(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: [] }]), /Kravledgeren er tom|flere krav/u);
+  const onlyRepeatedRows = { ...document, raw_text: `${source.slice(0, 2).map((entry) => `${entry.heading}\n${entry.id}: ${entry.text}`).join("\n\n")}\n\n9 Rettelser\nK-1 (Drift) utgår.`, structure_map: document.structure_map.slice(0, 2) };
+  const { originalRequirementSourceIds, allRequirementsWithdrawn } = await load("lib/server/requirements/source-readiness.ts");
+  assert.deepEqual(originalRequirementSourceIds(onlyRepeatedRows), ["K-1", "K-1"]);
+  assert.throws(() => allRequirementsWithdrawn(onlyRepeatedRows), error);
+  assert.throws(() => assertExplicitRequirementLedgersComplete([onlyRepeatedRows], [{ document: onlyRepeatedRows, ledger: [] }]), error);
   assert.deepEqual(source, original, "failed correction leaves the source rows intact");
 });
 
