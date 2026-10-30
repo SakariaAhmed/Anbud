@@ -6,12 +6,15 @@ Sámi letters ČŠŊŦŽĐ).
 
 Source: the families in [google/fonts](https://github.com/google/fonts) (`ofl/ibmplexsans`,
 `ofl/schibstedgrotesk`, `ofl/ibmplexmono`), licensed under the SIL Open Font
-License 1.1 (`OFL-*.txt`). Built with fontTools:
+License 1.1. The licence texts are in `public/fonts/OFL-*.txt`, so they ship
+in the image and are served at `/fonts/`; each font also keeps its
+copyright and licence name records. Built with fontTools:
 
 ```sh
 fonttools varLib.instancer "IBMPlexSans[wdth,wght].ttf" wdth=100 wght=400:700 -o sans.ttf
 fonttools varLib.instancer "SchibstedGrotesk[wght].ttf" wght=400:800 -o display.ttf
 pyftsubset <font>.ttf --unicodes="<latin and latin-ext ranges>" \
+  --name-IDs='*' --name-languages='*' \
   --layout-features='*' --no-hinting --desubroutinize --flavor=woff2
 ```
 
