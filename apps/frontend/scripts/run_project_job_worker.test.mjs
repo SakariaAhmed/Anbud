@@ -75,7 +75,9 @@ http.createServer((request, response) => {
     }
   });
 }).on("error", (error) => {
-  fs.writeFileSync("server.error", String(error.code));
+  // Rename so a reader never sees the file before its code is written.
+  fs.writeFileSync("server.error.tmp", String(error.code));
+  fs.renameSync("server.error.tmp", "server.error");
   process.exit(1);
 }).listen(Number(process.env.PORT), "127.0.0.1", () => fs.writeFileSync("server.listening", ""));
 `);
