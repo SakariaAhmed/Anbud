@@ -727,3 +727,34 @@ test("council: a wrapped refusal, a neighbouring row and an invented quote never
   const invented = bind(storage, "Kundedata lagres kryptert i vårt datasenter i Norge med garantert norsk datalagring.", [prose, "oppdragsgiver.", "Kundedata lagres kryptert i vårt datasenter. Datasenteret ligger i USA."]);
   assert.notEqual(invented?.uncertain, false);
 });
+
+test("council: repeated cells are ambiguous, fully verbatim stitching stays certain, boundaries render as cells", () => {
+  const doc = (lines) => ({ ...solutionDocument, raw_text: ["[[SIDE:4]]", ...lines].join("\n") });
+  const req = (id, text) => ({ ...unansweredRequirement, id, text, heading: "" });
+  const bind = (entry, quote, lines) => bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc(lines) });
+  // The same cell in two rows: a quote recovered only from it is not bound.
+  const prices = [
+    "| Overvåking | Inngår i den faste månedsprisen uten tillegg |",
+    "| Penetrasjonstest | Faktureres etter medgått tid |",
+    "| Sårbarhetsskanning | Inngår i den faste månedsprisen uten tillegg |",
+  ];
+  const pentest = req("SIK-06", "Årlig penetrasjonstest skal inngå i den faste månedsprisen.");
+  assert.equal(bind(pentest, "Penetrasjonstest er inkludert. Inngår i den faste månedsprisen uten tillegg", prices), null);
+  // Two real, non-adjacent sentences joined: nothing invented, so certain.
+  const backup = req("DAT-02", "Sikkerhetskopier skal oppbevares i 90 dager og gjenopprettes på under fire timer.");
+  const lines = [
+    "Sikkerhetskopier oppbevares i 90 dager i et separat datasenter.",
+    "Datasenteret er sertifisert etter ISO 27001.",
+    "Gjenoppretting av et system tar under fire timer og testes kvartalsvis.",
+  ];
+  const stitched = bind(backup, "Sikkerhetskopier oppbevares i 90 dager i et separat datasenter. Gjenoppretting av et system tar under fire timer og testes kvartalsvis.", lines);
+  assert.equal(stitched?.uncertain, false);
+  // Stored answers never show the internal boundary marker.
+  const table = bind(req("TJN-03.2", "Hendelser med prioritet 2 skal ha responstid på høyst 1 time."), "P2 Høy 1 time 12 timer Hele døgnet", [
+    "Leverandøren beskriver her hvordan tjenestene leveres, driftes og følges opp gjennom hele avtaleperioden med",
+    "oppdragsgiver.",
+    "P1 Kritisk 15 minutter 4 timer Hele døgnet",
+    "P2 Høy 1 time 12 timer Hele døgnet",
+  ]);
+  assert.doesNotMatch(table.entry.answerExcerpt, /¦/u);
+});

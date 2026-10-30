@@ -2977,6 +2977,7 @@ function normalizedSolutionText(document: ProjectDocumentDetail) {
 
 const VERIFIED_QUOTE_MIN_CHARS = 30;
 const VERIFIED_QUOTE_MIN_WORDS = 6;
+const VERIFIED_QUOTE_RUN_ATTEMPTS = 40;
 const VERIFIED_QUOTE_MAX_CHARS = 900;
 const VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS = 300;
 const BLANKET_COMPLIANCE_CLAIM =
@@ -3080,13 +3081,19 @@ export function requirementGenericStems(entries: RequirementLedgerEntry[]) {
 
 /** Sentence and cell boundaries of flattened text; a full stop after an
  * abbreviation ("f.eks.", "pr.") or a list number ("3.2.") is not one. */
+// Boundaries of the last document's flattened text: each candidate quote
+// span of a requirement is bound against the same text.
+let sentenceBoundaryCache: { flat: string; boundaries: number[] } | null = null;
+
 function sentenceBoundaries(flat: string) {
+  if (sentenceBoundaryCache?.flat === flat) return sentenceBoundaryCache.boundaries;
   const boundaries: number[] = [];
   for (const match of flat.matchAll(/[.!?](?=\s|$)|¦/gu)) {
     const at = match.index!;
     if (match[0] !== "¦" && ABBREVIATION_BEFORE_DOT.test(flat.slice(Math.max(0, at - 12), at))) continue;
     boundaries.push(at);
   }
+  sentenceBoundaryCache = { flat, boundaries };
   return boundaries;
 }
 
@@ -3330,35 +3337,51 @@ function cellFreeSolutionText(document: ProjectDocumentDetail) {
 function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentDetail) {
   const { whole } = normalizedSolutionText(document);
   const cellFree = cellFreeSolutionText(document);
-  const find = (needle: string) => {
+  // A verbatim occurrence; a part of the quote must also be unique, since a
+  // repeated cell ("Inngår i den faste månedsprisen") may sit in another row.
+  const find = (needle: string, unique = false) => {
     const direct = whole.indexOf(needle);
-    if (direct >= 0) return { start: direct, end: direct + needle.length, partial: false };
+    if (direct >= 0) {
+      if (unique && whole.indexOf(needle, direct + 1) >= 0) return null;
+      return { start: direct, end: direct + needle.length };
+    }
     const plain = needle.replace(/\s*¦\s*/gu, " ");
     const at = cellFree.text.indexOf(plain);
-    return at >= 0 ? { start: cellFree.offsets[at]!, end: cellFree.offsets[at + plain.length]!, partial: false } : null;
+    if (at < 0 || (unique && cellFree.text.indexOf(plain, at + 1) >= 0)) return null;
+    return { start: cellFree.offsets[at]!, end: cellFree.offsets[at + plain.length]! };
   };
   const exact = find(normalizedQuote);
   if (exact) {
-    yield exact;
+    yield { ...exact, partial: false };
     return;
   }
-  const fragments = normalizedQuote
+  const parts = normalizedQuote
     .split(/\s*(?:\[\.\.\.\]|\.\.\.|…)\s*|(?<=[.!?])\s+|\s*¦\s*/u)
     .map((part) => part.trim())
+    .filter(Boolean);
+  // Every substantial part verbatim (two real sentences joined, or an
+  // elision between real text): nothing was invented.
+  const verbatim = parts.filter((part) => part.length >= 12 && find(part) !== null);
+  const covered = verbatim.reduce((total, part) => total + part.length, 0);
+  const allVerbatim =
+    parts.every((part) => part.length < 12 || verbatim.includes(part)) &&
+    covered >= 0.9 * parts.reduce((total, part) => total + part.length, 0);
+  const fragments = parts
     .filter((part) => part.length >= VERIFIED_QUOTE_MIN_CHARS)
     .sort((left, right) => right.length - left.length);
   for (const fragment of fragments) {
-    const found = find(fragment);
-    if (found) yield { ...found, partial: true };
+    const found = find(fragment, true);
+    if (found) yield { ...found, partial: !allVerbatim };
   }
   // A table row run into a sentence without punctuation: the longest
-  // verbatim run of words from either end of the quote.
+  // verbatim run of words from either end of the quote, always partial.
   const words = normalizedQuote.replace(/\s*¦\s*/gu, " ").split(" ");
   const longestRun = (take: (count: number) => string) => {
-    for (let count = words.length - 1; count >= VERIFIED_QUOTE_MIN_WORDS; count -= 1) {
+    const shortest = Math.max(VERIFIED_QUOTE_MIN_WORDS, words.length - VERIFIED_QUOTE_RUN_ATTEMPTS);
+    for (let count = words.length - 1; count >= shortest; count -= 1) {
       const run = take(count);
       if (run.length < VERIFIED_QUOTE_MIN_CHARS) break;
-      const found = find(run);
+      const found = find(run, true);
       if (found) return found;
     }
     return null;
@@ -3488,6 +3511,8 @@ function bindSolutionQuoteSpan(
     (tenderOverlap.strong === 0 &&
       (tenderOverlap.total === 0 || tenderOverlap.shared < Math.min(2, tenderOverlap.total)));
 
+  // Boundaries are shown the way table cells are joined elsewhere.
+  const shownPassage = passage.replace(/\s*¦\s*/gu, " | ").replace(/^\s*\|\s*|\s*\|\s*$/gu, "");
   const quotePrefix = normalizedPassage.slice(0, 60);
   const page = solution.pages.find((candidate) =>
     candidate.page > 0 && candidate.text.includes(quotePrefix),
@@ -3504,12 +3529,12 @@ function bindSolutionQuoteSpan(
         [
           requirementSourceExcerptWithoutAnswer(input.entry).trim().replace(/\|\s*$/u, "").trim() ||
             `Kravgrunnlag: ${input.entry.text}`,
-          `Svarrad: ${passage}`,
+          `Svarrad: ${shownPassage}`,
         ].join(" | "),
         1800,
       ),
-      answerExcerpt: passage,
-      answerEvidenceExcerpt: passage,
+      answerExcerpt: shownPassage,
+      answerEvidenceExcerpt: shownPassage,
       answerDocumentId: input.solutionDocument.id,
       answerDocumentTitle: input.solutionDocument.title,
       answerReference,
