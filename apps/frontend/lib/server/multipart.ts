@@ -48,6 +48,9 @@ export async function parseBoundedMultipartFormData(
 
   const parser = Busboy({
     headers: { "content-type": contentType },
+    // Browsers send raw UTF-8 in filename parameters; Busboy's latin1 default
+    // turns "Leverandørens" into "LeverandÃ¸rens".
+    defParamCharset: "utf8",
     limits: {
       fileSize: limits.maxFileBytes,
       files: limits.maxFiles ?? 1,
@@ -66,7 +69,8 @@ export async function parseBoundedMultipartFormData(
   parser.on("file", (fieldName, stream, info) => {
     const file = {
       fieldName,
-      fileName: info.filename || "upload.bin",
+      // macOS pickers send decomposed letters; store one canonical spelling.
+      fileName: info.filename?.normalize("NFC") || "upload.bin",
       mimeType: info.mimeType || "application/octet-stream",
       chunks: [] as Buffer[],
     };

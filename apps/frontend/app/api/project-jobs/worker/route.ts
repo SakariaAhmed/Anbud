@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 
 import { runAvailableProjectJobs } from "@/lib/server/project-jobs";
+import { projectJobWorkerPlan } from "@/lib/server/project-job-worker-budget";
 import { checkRateLimit } from "@/lib/server/observability";
 import { routeErrorResponse } from "@/lib/server/api-responses";
 import { readJsonObject } from "@/lib/server/request-body";
@@ -53,18 +54,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Ikke autorisert." }, { status: 401 });
   }
 
+  const requestStartedAt = Date.now();
   try {
     const body = await readJsonObject(request);
-    // A scheduled invocation must never claim a second job after spending most
-    // of its replica lifetime on the first one.
-    const limit = 1;
+    // Further jobs are claimed only while the remaining replica time covers
+    // the candidate's full workflow deadline (runProjectJobsWithinBudget).
+    const { limit, deadlineAt } = projectJobWorkerPlan(body, { requestStartedAt });
     const staleAfterMs =
       typeof body.stale_after_ms === "number" &&
       Number.isFinite(body.stale_after_ms) &&
       body.stale_after_ms
         ? Math.max(60_000, body.stale_after_ms)
         : undefined;
-    const results = await runAvailableProjectJobs({ limit, staleAfterMs });
+    const results = await runAvailableProjectJobs({ limit, staleAfterMs, deadlineAt });
 
     return NextResponse.json({
       processed: results.filter((result) => result.status === "processed")

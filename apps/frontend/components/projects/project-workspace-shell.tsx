@@ -5,7 +5,9 @@ import "./project-workspace.css";
 import { ProjectAnalysisResult } from "@/components/projects/project-analysis-result";
 import { ProjectWorkflowJobs } from "@/components/projects/project-workflow-jobs";
 import dynamic from "next/dynamic";
+import { lazy, Suspense } from "react";
 import type {
+  ComponentType,
   CSSProperties,
   FormEvent,
   PointerEvent as ReactPointerEvent,
@@ -51,37 +53,48 @@ import type {
   ProjectDetail,
   ProjectDocument,
   ProjectDocumentRole,
+  ProjectJobRecord,
   ProjectServiceDescription,
   SolutionEvaluationResult,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const ProjectEvaluationTab = dynamic(
-  () =>
-    import("@/components/projects/project-evaluation-tab").then(
-      (module) => module.ProjectEvaluationTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster vurdering ...
-      </div>
-    ),
-  },
+function WorkspaceTabLoading({ label }: { label: string }) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
+      {label}
+    </div>
+  );
+}
+
+/**
+ * Server-rendered workspace tabs load through React.lazy, not next/dynamic:
+ * next/dynamic writes <link rel="preload" as="script"> without the CSP nonce,
+ * which 'strict-dynamic' blocks. Chunks fetched by the nonced runtime are allowed.
+ */
+function lazyWorkspaceTab<Props extends object>(
+  load: () => Promise<ComponentType<Props>>,
+  loadingLabel: string,
+) {
+  const LazyTab = lazy(async () => ({ default: await load() }));
+  function WorkspaceTab(props: Props) {
+    return (
+      <Suspense fallback={<WorkspaceTabLoading label={loadingLabel} />}>
+        <LazyTab {...props} />
+      </Suspense>
+    );
+  }
+  return WorkspaceTab;
+}
+
+const ProjectEvaluationTab = lazyWorkspaceTab(
+  () => import("@/components/projects/project-evaluation-tab").then((module) => module.ProjectEvaluationTab),
+  "Laster vurdering ...",
 );
 
-const ProjectDocumentsTab = dynamic(
-  () =>
-    import("@/components/projects/project-documents-tab").then(
-      (module) => module.ProjectDocumentsTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster dokumenter ...
-      </div>
-    ),
-  },
+const ProjectDocumentsTab = lazyWorkspaceTab(
+  () => import("@/components/projects/project-documents-tab").then((module) => module.ProjectDocumentsTab),
+  "Laster dokumenter ...",
 );
 
 const ProjectAnalysisTab = dynamic(
@@ -99,88 +112,34 @@ const ProjectAnalysisTab = dynamic(
   },
 );
 
-const ProjectDeliveryTab = dynamic(
-  () =>
-    import("@/components/projects/project-delivery-tab").then(
-      (module) => module.ProjectDeliveryTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster fremdriftsplan ...
-      </div>
-    ),
-  },
+const ProjectDeliveryTab = lazyWorkspaceTab(
+  () => import("@/components/projects/project-delivery-tab").then((module) => module.ProjectDeliveryTab),
+  "Laster fremdriftsplan ...",
 );
 
-const ProjectExecutiveSummaryTab = dynamic(
-  () =>
-    import("@/components/projects/project-executive-summary-tab").then(
-      (module) => module.ProjectExecutiveSummaryTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster leder oppsummering ...
-      </div>
-    ),
-  },
+const ProjectExecutiveSummaryTab = lazyWorkspaceTab(
+  () => import("@/components/projects/project-executive-summary-tab").then((module) => module.ProjectExecutiveSummaryTab),
+  "Laster leder oppsummering ...",
 );
 
-const ProjectServiceDescriptionTab = dynamic(
-  () =>
-    import("@/components/projects/project-service-description-tab").then(
-      (module) => module.ProjectServiceDescriptionTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster tjenestebeskrivelse ...
-      </div>
-    ),
-  },
+const ProjectServiceDescriptionTab = lazyWorkspaceTab(
+  () => import("@/components/projects/project-service-description-tab").then((module) => module.ProjectServiceDescriptionTab),
+  "Laster tjenestebeskrivelse ...",
 );
 
-const ProjectBilag1Tab = dynamic(
-  () =>
-    import("@/components/projects/project-bilag1-tab").then(
-      (module) => module.ProjectBilag1Tab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster Bilag 1 ...
-      </div>
-    ),
-  },
+const ProjectBilag1Tab = lazyWorkspaceTab(
+  () => import("@/components/projects/project-bilag1-tab").then((module) => module.ProjectBilag1Tab),
+  "Laster Bilag 1 ...",
 );
 
-const ProjectRequirementResponseTab = dynamic(
-  () =>
-    import("@/components/projects/project-requirement-response-tab").then(
-      (module) => module.ProjectRequirementResponseTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster kravbesvarelse ...
-      </div>
-    ),
-  },
+const ProjectRequirementResponseTab = lazyWorkspaceTab(
+  () => import("@/components/projects/project-requirement-response-tab").then((module) => module.ProjectRequirementResponseTab),
+  "Laster kravbesvarelse ...",
 );
 
-const ProjectGeneratorTab = dynamic(
-  () =>
-    import("@/components/projects/project-generator-tab").then(
-      (module) => module.ProjectGeneratorTab,
-    ),
-  {
-    loading: () => (
-      <div className="rounded-xl border border-border/70 bg-card px-5 py-6 text-sm text-muted-foreground">
-        Laster løsningsbeskrivelse ...
-      </div>
-    ),
-  },
+const ProjectGeneratorTab = lazyWorkspaceTab(
+  () => import("@/components/projects/project-generator-tab").then((module) => module.ProjectGeneratorTab),
+  "Laster løsningsbeskrivelse ...",
 );
 
 export type SecondaryNavGroup = {
@@ -262,6 +221,11 @@ export type ProjectWorkspaceTabContentProps = {
   busy: string | null;
   busyMessage: string;
   busyProgress: number;
+  projectJobs: ProjectJobRecord[];
+  /** Set while the server would refuse a new generation (busy or indexing). */
+  workflowBlockedReason: string | null;
+  onProjectJobRecorded: (job: ProjectJobRecord) => void;
+  onRefreshProjectJobs: () => Promise<void>;
   analysisSectionBusy: CustomerAnalysisSection | null;
   uploadOpen: boolean;
   docTitle: string;
@@ -675,6 +639,10 @@ export function ProjectWorkspaceTabContent({
   busy,
   busyMessage,
   busyProgress,
+  projectJobs,
+  workflowBlockedReason,
+  onProjectJobRecorded,
+  onRefreshProjectJobs,
   analysisSectionBusy,
   uploadOpen,
   docTitle,
@@ -708,7 +676,14 @@ export function ProjectWorkspaceTabContent({
 }: ProjectWorkspaceTabContentProps) {
   return (
     <>
-      <ProjectWorkflowJobs key={`jobs-${project.id}`} projectId={project.id} />
+      <ProjectWorkflowJobs
+        key={`jobs-${project.id}`}
+        projectId={project.id}
+        jobs={projectJobs}
+        blockedReason={workflowBlockedReason}
+        onJobStarted={onProjectJobRecorded}
+        onRefreshJobs={onRefreshProjectJobs}
+      />
       {activeTab === "documents" ? (
         <ProjectDocumentsTab
           projectId={project.id}
@@ -753,6 +728,7 @@ export function ProjectWorkspaceTabContent({
               busyMessage={analysisSectionBusy ? busyMessage : ""}
               busyProgress={busyProgress}
               onGenerate={onGenerateCustomerAnalysis}
+              workflowBlockedReason={workflowBlockedReason}
               onSaveAnalysis={fallback ? undefined : onSaveAnalysis}
             />
           )}
@@ -790,6 +766,7 @@ export function ProjectWorkspaceTabContent({
             busyMessage={busy === "solution-evaluation" ? busyMessage : ""}
             busyProgress={busyProgress}
             onGenerate={onGenerateSolutionEvaluation}
+            workflowBlockedReason={workflowBlockedReason}
             importBusy={busy === "upload-architecture-document"}
             onImportArchitectureDocument={onUploadArchitectureDocument}
           />
@@ -803,6 +780,7 @@ export function ProjectWorkspaceTabContent({
           busy={Boolean(busy)}
           busyMessage={busy === "bilag1-artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
+          workflowBlockedReason={workflowBlockedReason}
           onDeleteArtifact={onDeleteArtifact}
           onSubmit={onGenerateBilag1Artifact}
         />
@@ -814,6 +792,7 @@ export function ProjectWorkspaceTabContent({
           busy={Boolean(busy)}
           busyMessage={busy === "delivery-artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
+          workflowBlockedReason={workflowBlockedReason}
           hasCustomerAnalysis={
             Boolean(customerAnalysis) || project.customer_analysis_generated
           }
@@ -839,6 +818,7 @@ export function ProjectWorkspaceTabContent({
           generateBusy={Boolean(busy)}
           busyMessage={busy === "requirement-response" ? busyMessage : ""}
           busyProgress={busyProgress}
+          workflowBlockedReason={workflowBlockedReason}
           deletingDocumentId={
             busy?.startsWith("delete-") ? busy.slice("delete-".length) : null
           }
@@ -862,6 +842,7 @@ export function ProjectWorkspaceTabContent({
             busy={Boolean(busy)}
             busyMessage={busy === "executive-summary" ? busyMessage : ""}
             busyProgress={busyProgress}
+            workflowBlockedReason={workflowBlockedReason}
             onGenerate={onGenerateExecutiveSummary}
           />
         )
@@ -873,6 +854,7 @@ export function ProjectWorkspaceTabContent({
           busy={Boolean(busy)}
           busyMessage={busy === "artifact" ? busyMessage : ""}
           busyProgress={busyProgress}
+          workflowBlockedReason={workflowBlockedReason}
           onDeleteArtifact={onDeleteArtifact}
           onSubmit={onGenerateArtifact}
         />

@@ -1,4 +1,8 @@
-import type { ProjectDocument, ProjectDocumentDetail } from "@/lib/types";
+import type {
+  ProjectDocument,
+  ProjectDocumentDetail,
+  ProjectDocumentRole,
+} from "@/lib/types";
 
 type DocumentScopeMetadata = Pick<
   ProjectDocument,
@@ -168,4 +172,37 @@ export function isSolutionEvaluationCandidate(
     isApprovedSolutionEvaluationDocument(document) &&
     isDocumentReadyForEvaluation(document)
   );
+}
+
+// Upload names use free text, so match within words ("Bilag1_Kravspesifikasjon")
+// but never let "Bilag 10" or "Bilag 20" pass for the primary appendices.
+const CUSTOMER_APPENDIX_NAME_PATTERN = /bilag[\s_.-]*0?1(?!\d)/u;
+const SOLUTION_APPENDIX_NAME_PATTERN = /bilag[\s_.-]*0?2(?!\d)/u;
+const CUSTOMER_DOCUMENT_NAME_PATTERN = /kravspesifikasjon|kundens|konkurransegrunnlag/u;
+const SOLUTION_DOCUMENT_NAME_PATTERN = /l[øo]sningsbeskrivelse|leverand[øo]rens|solution/u;
+
+function suggestedPrimaryRoleFromName(name: string): ProjectDocumentRole | null {
+  const text = name.normalize("NFC").toLowerCase();
+  if (CUSTOMER_APPENDIX_NAME_PATTERN.test(text)) return "primary_customer_document";
+  if (SOLUTION_APPENDIX_NAME_PATTERN.test(text)) return "primary_solution_document";
+  const customer = CUSTOMER_DOCUMENT_NAME_PATTERN.test(text);
+  const solution = SOLUTION_DOCUMENT_NAME_PATTERN.test(text);
+  if (customer === solution) return null;
+  return customer ? "primary_customer_document" : "primary_solution_document";
+}
+
+/**
+ * Suggest a document role from an upload's title or file name. A primary role
+ * that another project document already holds is never suggested, so a
+ * suggestion cannot silently replace the current customer or solution document.
+ */
+export function suggestUploadDocumentRole(
+  name: string,
+  existingDocuments: ReadonlyArray<Pick<ProjectDocument, "role">>,
+): ProjectDocumentRole {
+  const suggested = suggestedPrimaryRoleFromName(name);
+  if (!suggested || existingDocuments.some((document) => document.role === suggested)) {
+    return "supporting_document";
+  }
+  return suggested;
 }

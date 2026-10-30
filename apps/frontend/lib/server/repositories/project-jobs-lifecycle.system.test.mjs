@@ -19,7 +19,9 @@ const jiti = createJiti(path.join(frontendRoot, "project-jobs-lifecycle-tests.cj
 
 const {
   claimQueuedProjectJob,
+  findOldestQueuedProjectJob,
   getQueuedProjectJobInput,
+  listRecentProjectJobs,
   heartbeatProjectJob,
   insertProjectJob,
   resetStaleRunningProjectJobs,
@@ -59,6 +61,7 @@ const {
 );
 const {
   claimAndScheduleProjectJobAutorun,
+  drainNextQueuedProjectJob,
   scheduleHeavyProjectJobAutorun,
 } = jiti(
   path.join(frontendRoot, "lib/server/project-jobs.ts"),
@@ -218,7 +221,9 @@ test("accepting server owns the durable lease before autorun is scheduled", asyn
           `run:${jobId}:${input.sourceDocumentIds.join(",")}:${context.leaseToken}`,
         );
         handedOffLease.stop();
+        return { terminalPersisted: true, workflowAbandoned: false };
       },
+      async drain() {},
     },
   );
 
@@ -263,6 +268,164 @@ test("autorun leaves work queued without scheduling when another worker owns the
     ),
   );
   assert.equal(scheduled, false);
+});
+
+function inertLease() {
+  const controller = new AbortController();
+  return {
+    signal: controller.signal,
+    assertActive() { controller.signal.throwIfAborted(); },
+    abort(cause) { controller.abort(cause); },
+    stop() {},
+  };
+}
+
+async function settleMicrotasks() {
+  for (let index = 0; index < 5; index += 1) await new Promise((resolve) => setImmediate(resolve));
+}
+
+test("a persisted terminal status drains the next queued job of the same project", async () => {
+  const events = [];
+  let scheduledTask;
+  const workflow = { kind: "document_ingestion", projectId: "project-with-second-upload", documentId: "doc-1" };
+  await claimAndScheduleProjectJobAutorun("first-upload", workflow, {
+    async claim() { return { leaseToken: "first-lease" }; },
+    startLease: inertLease,
+    schedule(_input, task) { scheduledTask = task; },
+    async run(jobId) {
+      events.push(`run:${jobId}`);
+      return { terminalPersisted: true, workflowAbandoned: false };
+    },
+    async drain(projectId) { events.push(`drain:${projectId}`); },
+  });
+
+  assert.deepEqual(events, [], "nothing drains before the first job has run");
+  await scheduledTask();
+  await settleMicrotasks();
+  assert.deepEqual(events, ["run:first-upload", "drain:project-with-second-upload"]);
+});
+
+test("lease loss, a rejected terminal write or an abandoned workflow leave the next job to the worker", async () => {
+  for (const outcome of [
+    { terminalPersisted: false, workflowAbandoned: true },
+    { terminalPersisted: false, workflowAbandoned: false },
+    // The deadline released the runner; the old workflow may still be running here.
+    { terminalPersisted: true, workflowAbandoned: true },
+  ]) {
+    let drained = 0;
+    let scheduledTask;
+    await claimAndScheduleProjectJobAutorun("finished", { kind: "customer_analysis", projectId: "p1" }, {
+      async claim() { return { leaseToken: "lease" }; },
+      startLease: inertLease,
+      schedule(_input, task) { scheduledTask = task; },
+      async run() { return outcome; },
+      async drain() { drained += 1; },
+    });
+    await scheduledTask();
+    await settleMicrotasks();
+    assert.equal(drained, 0, JSON.stringify(outcome));
+  }
+});
+
+test("a failing drain is logged and does not fail the finished job's task", async () => {
+  let scheduledTask;
+  const logged = [];
+  const originalError = console.error;
+  console.error = (line) => logged.push(line);
+  try {
+    await claimAndScheduleProjectJobAutorun("finished", { kind: "customer_analysis", projectId: "p1" }, {
+      async claim() { return { leaseToken: "lease" }; },
+      startLease: inertLease,
+      schedule(_input, task) { scheduledTask = task; },
+      async run() { return { terminalPersisted: true, workflowAbandoned: false }; },
+      async drain() { throw new Error("private backend details"); },
+    });
+    await assert.doesNotReject(scheduledTask());
+    await settleMicrotasks();
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /project_job_autorun_drain_failed/u);
+});
+
+function withEnv(values, run) {
+  const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  return Promise.resolve().then(run).finally(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+}
+
+test("drain claims the oldest queued job through the autorun path", async () => {
+  await withEnv({ PROJECT_JOB_WORKER_PROCESS: undefined, DOCLING_ASYNC_AUTO_RUN: undefined }, async () => {
+    const lookups = [];
+    const started = [];
+    const claimed = await drainNextQueuedProjectJob("p1", {
+      async findNext(projectId, options) {
+        lookups.push([projectId, options]);
+        return { id: "second-upload", input: { kind: "document_ingestion", projectId, documentId: "doc-2" } };
+      },
+      async autorun(jobId, input) {
+        started.push([jobId, input]);
+        return { leaseToken: "second-lease" };
+      },
+    });
+    assert.deepEqual(lookups, [["p1", { includeDoclingEnhancement: false }]]);
+    assert.deepEqual(started, [["second-upload", { kind: "document_ingestion", projectId: "p1", documentId: "doc-2" }]]);
+    assert.deepEqual(claimed, { leaseToken: "second-lease" });
+  });
+});
+
+test("drain leaves Docling enhancement to the worker unless async autorun is on", async () => {
+  const docling = { id: "docling", input: { kind: "document_docling_enhancement", projectId: "p1", documentId: "doc-1" } };
+  await withEnv({ PROJECT_JOB_WORKER_PROCESS: undefined, DOCLING_ASYNC_AUTO_RUN: undefined }, async () => {
+    const result = await drainNextQueuedProjectJob("p1", {
+      findNext: async () => docling,
+      autorun: async () => assert.fail("Docling enhancement must stay queued"),
+    });
+    assert.equal(result, null);
+  });
+  await withEnv({ PROJECT_JOB_WORKER_PROCESS: undefined, DOCLING_ASYNC_AUTO_RUN: "on" }, async () => {
+    const options = [];
+    const started = [];
+    await drainNextQueuedProjectJob("p1", {
+      async findNext(_projectId, lookup) { options.push(lookup); return docling; },
+      async autorun(jobId) { started.push(jobId); return { leaseToken: "lease" }; },
+    });
+    assert.deepEqual(options, [{ includeDoclingEnhancement: true }]);
+    assert.deepEqual(started, ["docling"]);
+  });
+});
+
+test("drain does nothing inside the scheduled worker process", async () => {
+  await withEnv({ PROJECT_JOB_WORKER_PROCESS: "1" }, async () => {
+    const result = await drainNextQueuedProjectJob("p1", {
+      findNext: async () => assert.fail("worker server must not look up follow-up work"),
+      autorun: async () => assert.fail("worker server must not schedule follow-up work"),
+    });
+    assert.equal(result, null);
+  });
+});
+
+test("drain respects release claim gating by leaving the job queued", async () => {
+  await withEnv({ PROJECT_JOB_WORKER_PROCESS: undefined }, async () => {
+    const result = await drainNextQueuedProjectJob("p1", {
+      findNext: async () => ({ id: "queued", input: { kind: "customer_analysis", projectId: "p1" } }),
+      autorun: (jobId, input) => claimAndScheduleProjectJobAutorun(jobId, input, {
+        async claim() { throw new Error("PROJECT_JOB_CLAIMS_CLOSED: project-job claims are disabled for deployment cutover"); },
+        schedule() { assert.fail("closed claims must not schedule"); },
+        startLease() { assert.fail("closed claims must not start a heartbeat"); },
+      }),
+    });
+    assert.equal(result, null);
+  });
 });
 
 test("autorun fails closed before execution when its queue-wait lease is lost", async () => {
@@ -504,6 +667,16 @@ class FakeQuery {
     return this;
   }
 
+  neq(column, value) {
+    this.filters.push((row) => row[column] !== value);
+    return this;
+  }
+
+  in(column, values) {
+    this.filters.push((row) => values.includes(row[column]));
+    return this;
+  }
+
   or(expression) {
     const prefix = "locked_at.is.null,locked_at.lt.";
     assert.ok(expression.startsWith(prefix), `unexpected OR filter: ${expression}`);
@@ -650,6 +823,84 @@ function record(id, now = "2026-07-10T08:00:00.000Z") {
 function at(iso) {
   return () => new Date(iso);
 }
+
+test("oldest queued lookup follows submission order within one project", async () => {
+  const client = inMemoryPostgREST();
+  const project = "00000000-0000-4000-8000-000000000001";
+  const row = (id, sequence, kind, extra = {}) => ({
+    id, project_id: project, kind, status: "queued", submission_sequence: sequence,
+    // Created timestamps deliberately disagree with the accepted order.
+    created_at: `2026-07-10T08:0${9 - sequence}:00.000Z`,
+    input_json: { kind, projectId: project, documentId: id }, ...extra,
+  });
+  client.rows.push(
+    row("running-job", 1, "document_ingestion", { status: "running" }),
+    row("docling", 2, "document_docling_enhancement"),
+    row("second-upload", 3, "document_ingestion"),
+    row("third-upload", 4, "document_ingestion"),
+    { ...row("other-project", 0, "document_ingestion"), project_id: "00000000-0000-4000-8000-000000000002" },
+  );
+
+  assert.deepEqual(
+    await findOldestQueuedProjectJob(project, { includeDoclingEnhancement: false }, { client }),
+    { id: "second-upload", input: { kind: "document_ingestion", projectId: project, documentId: "second-upload" } },
+  );
+  assert.equal(
+    (await findOldestQueuedProjectJob(project, { includeDoclingEnhancement: true }, { client }))?.id,
+    "docling",
+  );
+  client.rows.splice(0, client.rows.length);
+  assert.equal(await findOldestQueuedProjectJob(project, { includeDoclingEnhancement: true }, { client }), null);
+});
+
+test("the job list keeps an old queued job visible behind newer finished history", async () => {
+  const client = inMemoryPostgREST();
+  const project = "00000000-0000-4000-8000-000000000001";
+  const at = (minute) => `2026-07-10T08:${String(minute).padStart(2, "0")}:00.000Z`;
+  client.rows.push({
+    id: "old-queued-docling", project_id: project, kind: "document_docling_enhancement",
+    status: "queued", message: "Køer Docling-forbedring ...", error: null,
+    input_json: {}, result_json: null, created_at: at(0), updated_at: at(0),
+  });
+  for (let minute = 1; minute <= 25; minute += 1) {
+    client.rows.push({
+      id: `finished-${minute}`, project_id: project, kind: "document_ingestion",
+      status: "completed", message: "Ferdig.", error: null,
+      input_json: {}, result_json: null, created_at: at(minute), updated_at: at(minute),
+    });
+  }
+  client.rows.push({
+    id: "other-project-running", project_id: "00000000-0000-4000-8000-000000000002",
+    kind: "customer_analysis", status: "running", message: "", error: null,
+    input_json: {}, result_json: null, created_at: at(0), updated_at: at(0),
+  });
+
+  const jobs = await listRecentProjectJobs(project, { client });
+
+  assert.equal(jobs.length, 21, "20 rows of history plus the older active job");
+  assert.equal(jobs[0].id, "finished-25", "newest first");
+  assert.equal(jobs.at(-1).id, "old-queued-docling");
+  assert.equal(jobs.filter((job) => job.status === "queued").length, 1);
+  assert.ok(jobs.every((job) => job.project_id === project));
+});
+
+test("the job list orders by instant, not by timestamp text", async () => {
+  const client = inMemoryPostgREST();
+  const project = "00000000-0000-4000-8000-000000000001";
+  const row = (id, createdAt, status) => ({
+    id, project_id: project, kind: "document_ingestion", status, message: "", error: null,
+    input_json: {}, result_json: null, created_at: createdAt, updated_at: createdAt,
+  });
+  client.rows.push(
+    // 08:30 UTC written with an offset sorts after 09:00Z as text.
+    row("older-with-offset", "2026-07-10T10:30:00+02:00", "queued"),
+    row("newer-utc", "2026-07-10T09:00:00.000Z", "completed"),
+  );
+
+  const jobs = await listRecentProjectJobs(project, { client });
+
+  assert.deepEqual(jobs.map((job) => job.id), ["newer-utc", "older-with-offset"]);
+});
 
 test("durable persistence fails closed instead of retrying a legacy payload", async () => {
   const inserts = [];

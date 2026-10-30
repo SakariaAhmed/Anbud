@@ -30,6 +30,7 @@ import {
   documentDropzoneClass,
 } from "@/components/projects/project-workspace-shared";
 import { Input } from "@/components/projects/primitives";
+import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -544,6 +545,7 @@ export function ProjectRequirementResponseTab({
   generateBusy,
   busyMessage,
   busyProgress,
+  workflowBlockedReason = null,
   onUpload,
   onUpdateArtifact,
   onDeleteArtifact,
@@ -557,6 +559,8 @@ export function ProjectRequirementResponseTab({
   generateBusy: boolean;
   busyMessage: string;
   busyProgress: number;
+  /** Set while the server would refuse a new requirement response job. */
+  workflowBlockedReason?: string | null;
   deletingDocumentId: string | null;
   onUpload: (file: File) => Promise<ProjectDocument | null>;
   onDeleteDocument: (document: ProjectDocument) => Promise<void>;
@@ -585,6 +589,10 @@ export function ProjectRequirementResponseTab({
   );
   const unreadyRequirementDocumentCount =
     requirementDocuments.length - readyRequirementDocuments.length;
+  // Missing or unready sources already explain the disabled button below.
+  const showWorkflowBlocked =
+    Boolean(workflowBlockedReason) && !generateBusy &&
+    unreadyRequirementDocumentCount === 0 && readyFormalRequirementDocuments.length > 0;
   const requirementResponses = artifacts
     .filter((artifact) => artifact.artifact_type === "forbedret_kravsvar")
     .sort(
@@ -595,6 +603,7 @@ export function ProjectRequirementResponseTab({
     );
   const canGenerate =
     readyFormalRequirementDocuments.length > 0 &&
+    !workflowBlockedReason &&
     canStartRequirementResponseGeneration(requirementDocuments, {
       uploadBusy,
       generateBusy,
@@ -1206,7 +1215,11 @@ export function ProjectRequirementResponseTab({
             <Button
               type="submit"
               className="max-w-full whitespace-normal"
-              aria-describedby={!canGenerate && !generateBusy ? "requirement-generation-help" : undefined}
+              aria-describedby={
+                showWorkflowBlocked
+                  ? "requirement-workflow-blocked"
+                  : !canGenerate && !generateBusy ? "requirement-generation-help" : undefined
+              }
               disabled={!canGenerate}
             >
               {generateBusy ? (
@@ -1216,6 +1229,9 @@ export function ProjectRequirementResponseTab({
               )}
               Generer kravbesvarelse
             </Button>
+            {showWorkflowBlocked ? (
+              <WorkflowBlockedHint id="requirement-workflow-blocked" reason={workflowBlockedReason} />
+            ) : null}
             {unreadyRequirementDocumentCount > 0 && !generateBusy ? (
               <p id="requirement-generation-help" className="text-sm text-slate-600">
                 {unreadyRequirementDocumentCount} kravkilde

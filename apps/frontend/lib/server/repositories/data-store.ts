@@ -1,4 +1,5 @@
 import "server-only";
+import { DatabaseUpdateRequiredError } from "@/lib/server/database-update-required";
 
 import { WorkflowError } from "@/lib/server/workflow-errors";
 import { readStableProjectSourceSnapshot } from "@/lib/server/source-revision-snapshot";
@@ -1772,6 +1773,12 @@ export async function savePendingDocument(input: {
   projectId: string;
   title: string;
   role: ProjectDocumentRole;
+  /**
+   * "suggested" (inferred from the file name) fills a primary role only while
+   * it is vacant and otherwise stores the upload as supporting; "explicit"
+   * (the user's choice) replaces the current primary document.
+   */
+  roleSource?: "explicit" | "suggested";
   supportingSubtype?: SupportingDocumentSubtype | null;
   fileName: string;
   fileFormat: DocumentFileFormat;
@@ -1829,14 +1836,56 @@ export async function savePendingDocument(input: {
     indexed_at: null,
   };
 
+  const suggestedPrimaryRole = Boolean(requestedPrimaryRole) && input.roleSource === "suggested";
   if (requestedPrimaryRole) {
-    const { data: insertedPrimary, error: insertPrimaryError } =
-      await dataApi.rpc("insert_primary_project_document", {
-        p_project_id: input.projectId,
-        p_primary_role: requestedPrimaryRole,
-        p_payload: insertPayload,
-      });
-    if (insertPrimaryError || !insertedPrimary) {
+    const primaryRpcArgs = {
+      p_project_id: input.projectId,
+      p_primary_role: requestedPrimaryRole,
+      p_payload: insertPayload,
+    };
+    const { data: insertedPrimary, error: insertPrimaryError } = await dataApi.rpc(
+      suggestedPrimaryRole
+        ? "insert_vacant_primary_project_document"
+        : "insert_primary_project_document",
+      primaryRpcArgs,
+    );
+    // A suggestion yields to a primary document set meanwhile.
+    let roleOccupied = suggestedPrimaryRole && !insertPrimaryError && !insertedPrimary;
+    if (suggestedPrimaryRole && insertPrimaryError?.code === "PGRST202") {
+      // The release preflight requires the vacancy-only insert. Without it a
+      // suggestion may still yield to a current primary document, but it must
+      // never fill a vacant role through the demoting insert: a concurrent
+      // explicit upload could land between the check and that insert.
+      console.warn(JSON.stringify({
+        event: "suggested_primary_document_rpc_missing",
+        project_id: input.projectId,
+      }));
+      const existing = await dataApi
+        .from("documents")
+        .select("id")
+        .eq("project_id", input.projectId)
+        .eq("role", requestedPrimaryRole)
+        .limit(1);
+      if (!existing.error && (existing.data ?? []).length > 0) {
+        roleOccupied = true;
+      } else {
+        await removeStoredFiles([storedFile]).catch((error: unknown) => {
+          console.warn(JSON.stringify({
+            event: "suggested_primary_document_cleanup_failed",
+            project_id: input.projectId,
+            ...safeErrorTelemetry(error),
+          }));
+        });
+        throw existing.error
+          ? new Error(existing.error.message)
+          : new DatabaseUpdateRequiredError("insert_vacant_primary_project_document");
+      }
+    }
+    if (roleOccupied) {
+      insertPayload.role = "supporting_document";
+      insertPayload.supporting_subtype = input.supportingSubtype ?? null;
+      insertPayload.subtype = input.supportingSubtype ?? null;
+    } else if (insertPrimaryError || !insertedPrimary) {
       let cleanupError: string | null = null;
       try {
         await removeStoredFiles([storedFile]);
@@ -1854,16 +1903,16 @@ export async function savePendingDocument(input: {
           .filter(Boolean)
           .join(" "),
       );
+    } else {
+      const inserted = fromUnknownDocumentRow(
+        insertedPrimary as unknown as Record<string, unknown>,
+      );
+      if (requestedPrimaryRole !== "primary_solution_document") {
+        await updateProjectContextKeywords(input.projectId);
+      }
+      revalidateProjectCaches(input.projectId);
+      return mapDocumentSummary(inserted);
     }
-
-    const inserted = fromUnknownDocumentRow(
-      insertedPrimary as unknown as Record<string, unknown>,
-    );
-    if (requestedPrimaryRole !== "primary_solution_document") {
-      await updateProjectContextKeywords(input.projectId);
-    }
-    revalidateProjectCaches(input.projectId);
-    return mapDocumentSummary(inserted);
   }
 
   let insertResult: {

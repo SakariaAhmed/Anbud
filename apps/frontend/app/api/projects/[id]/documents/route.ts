@@ -1,4 +1,5 @@
 import { requireProjectPermission } from "@/lib/server/authorization";
+import { suggestUploadDocumentRole } from "@/lib/document-processing";
 import { NextResponse } from "next/server";
 
 import {
@@ -68,23 +69,19 @@ function inferUploadRole(
     return explicitRole;
   }
 
-  const text = `${title} ${fileName}`.toLowerCase();
+  const suggested = suggestUploadDocumentRole(`${title} ${fileName}`, existingDocuments);
+  if (suggested !== "supporting_document") {
+    return suggested;
+  }
 
+  // Creating a project from one dropped file sends no role; that document is
+  // the customer's tender basis unless its name says otherwise.
   if (
     !existingDocuments.some(
       (document) => document.role === "primary_customer_document",
     )
   ) {
     return "primary_customer_document";
-  }
-
-  if (
-    /\b(solution|løsn|losn|arkitektur|architecture)\b/.test(text) &&
-    !existingDocuments.some(
-      (document) => document.role === "primary_solution_document",
-    )
-  ) {
-    return "primary_solution_document";
   }
 
   return "supporting_document";
@@ -228,20 +225,25 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     }
 
-    const role = await inferUploadRole(
+    const requestedRole = normalizeRole(formData.get("role"));
+    const role = inferUploadRole(
       file.name,
       title,
-      normalizeRole(formData.get("role")),
+      requestedRole,
       existingDocuments,
     );
-    const supportingSubtype =
-      role === "supporting_document"
-        ? inferSupportingSubtype(
-            file.name,
-            title,
-            normalizeSubtype(formData.get("supporting_subtype")),
-          )
-        : null;
+    // Only a role the user picked may replace a current primary document. A
+    // client suggestion or a role inferred here fills a vacant role only.
+    const roleSource =
+      requestedRole && formData.get("role_source") !== "suggested"
+        ? "explicit"
+        : "suggested";
+    // Also used when a suggested primary role is already taken.
+    const supportingSubtype = inferSupportingSubtype(
+      file.name,
+      title,
+      normalizeSubtype(formData.get("supporting_subtype")),
+    );
 
     const fileFormat = inferUploadFileFormat({
       fileName: file.name || "document.txt",
@@ -253,6 +255,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       projectId: id,
       title: title || file.name.replace(/\.[^.]+$/, ""),
       role,
+      roleSource,
       supportingSubtype,
       fileName: file.name || "document.txt",
       fileFormat,
@@ -272,7 +275,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       entityType: "document",
       entityId: document.id,
       metadata: {
-        role,
+        role: document.role,
+        role_source: roleSource,
         file_format: document.file_format,
         file_size_bytes: document.file_size_bytes,
         ingestion_job_id: job.id,

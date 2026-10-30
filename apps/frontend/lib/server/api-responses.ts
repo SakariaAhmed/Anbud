@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { authorizationErrorResponse } from "@/lib/server/authorization";
+import { DatabaseUpdateRequiredError } from "@/lib/server/database-update-required";
 import { MultipartRequestError } from "@/lib/server/multipart";
 import { checkRateLimit } from "@/lib/server/observability";
 import { RequestBodyError } from "@/lib/server/request-body";
@@ -94,10 +95,22 @@ export function routeErrorResponse(
       { status: error.status, headers: options.headers },
     );
   }
+  if (error instanceof DatabaseUpdateRequiredError) {
+    return NextResponse.json(
+      { error: error.userMessage, code: error.code },
+      { status: error.status, headers: options.headers },
+    );
+  }
+  const known = workflowError(error);
+  // The code lets clients react to a known conflict (for example by
+  // refreshing project jobs) without parsing the Norwegian message.
   return NextResponse.json(
-    { error: productionSafeErrorMessage(error, fallbackMessage) },
     {
-      status: workflowError(error)?.status ?? options.status ?? 500,
+      error: productionSafeErrorMessage(error, fallbackMessage),
+      ...(known ? { code: known.code } : {}),
+    },
+    {
+      status: known?.status ?? options.status ?? 500,
       headers: options.headers,
     },
   );
