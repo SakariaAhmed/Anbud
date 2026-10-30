@@ -17,7 +17,9 @@ const REQUIREMENT_ID_SINGLE = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\
 const QUOTED = /[«“"]([^«»“”"]{1,1500})[»”"]/gu;
 const WITHDRAW_VERB =
   /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|er\s+utgått|slettes|frafalles|annulleres)\b|\b(?:fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
-const CHANGE_VERB = /\b(?:endres|er\s+endret\s+til|erstattes(?!\s+av\s+(?:et\s+)?nytt)|ny\s+tekst|lyder\s+nå|skal\s+(?:nå\s+)?lyde)\b/giu;
+const CHANGE_VERB = /\b(?:endres|er\s+endret\s+til|erstattes(?!\s+av\s+(?:et\s+)?nytt)|ny\s+tekst|lyder\s+nå|skal\s+(?:nå\s+)?lyde)(?![\p{L}\p{N}])/giu;
+// "må" and "bør" end in letters JavaScript's \b does not treat as word letters.
+const OBLIGATION = /(?<![\p{L}\p{N}])(?:skal|må|bør)(?![\p{L}\p{N}])/iu;
 const ADDED = /\b(?:nytt\s+krav|legges(?:\s+ikke)?\s+til|tilføyes)\b/iu;
 const RENUMBERED = /\bny\s+(?:krav-?)?id\s*:?\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4})\b/iu;
 const ANSWER = /^\s*svar\s*:/iu;
@@ -214,7 +216,7 @@ function subjects(sentence: { text: string; ids: Array<{ id: string; at: number 
  */
 function correctedWording(original: string, quote: string, replaced: string | undefined) {
   const old = normalized(original);
-  const obligation = (text: string) => /\b(?:skal|må|bør)\b/iu.test(text);
+  const obligation = (text: string) => OBLIGATION.test(text);
   if (replaced) {
     if (normalized(replaced) === old) return quote;
     const at = original.toLocaleLowerCase("nb").indexOf(replaced.trim().toLocaleLowerCase("nb"));
@@ -231,14 +233,13 @@ function correctedWording(original: string, quote: string, replaced: string | un
 }
 
 /** Unquoted new wording up to a following rationale ("Bakgrunnen er …",
- * "Endringen skyldes …") or a sentence that states no obligation. */
+ * "Endringen skyldes …"); every sentence before it is new wording. */
 function unquotedWording(text: string) {
   const parts = text.trim().split(/(?<=[.!])\s+(?=[A-ZÆØÅ])/u);
   let kept = 1;
   while (
     kept < parts.length &&
-    /\b(?:skal|må|bør)\b/iu.test(parts[kept]!) &&
-    !/^(?:bakgrunn(?:en)?|begrunnelse(?:n)?|årsak(?:en)?|endringen|dette\s+skyldes|formålet)\b/iu.test(parts[kept]!)
+    !/^(?:bakgrunn(?:en)?|begrunnelse(?:n)?|årsak(?:en)?|grunnen|hensikten|formålet|endringen|rettelsen|dette\s+(?:skyldes|er\s+(?:gjort|endret))|det\s+vises\s+til|jf\.)(?![\p{L}\p{N}])/iu.test(parts[kept]!)
   ) {
     kept += 1;
   }

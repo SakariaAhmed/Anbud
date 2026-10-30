@@ -499,3 +499,19 @@ test("spreadsheet matrices: solution answers kept, unreadable source rows never 
   // As before the matrix extractor: the solution row keeps its answer cell.
   assert.ok(solution.some((entry) => /35 dagers oppbevaring/u.test(`${entry.text} ${entry.answerExcerpt ?? ""}`)), JSON.stringify(solution));
 });
+
+test("round 9 probes: unquoted new wording keeps every sentence before its rationale", () => {
+  const ledger = [{ id: "K-3", text: "Leverandøren skal levere kvartalsvis driftsrapport.", pages: [1], heading: "4 Krav" }];
+  const raw = (corrections) => `4 Krav\nK-3 ${ledger[0].text}\n\n9 Rettelser\n${corrections}`;
+  const text = (corrections) => applyRequirementCorrections(ledger, raw(corrections)).ledger[0].text;
+  assert.equal(
+    text("K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Rapporten må være tilgjengelig i portalen."),
+    "Leverandøren skal levere månedlig driftsrapport. Rapporten må være tilgjengelig i portalen.",
+  );
+  assert.equal(
+    text("K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Rapporten publiseres i portalen. Bakgrunnen er behov for tettere oppfølging."),
+    "Leverandøren skal levere månedlig driftsrapport. Rapporten publiseres i portalen.",
+  );
+  // "lyder nå" ends in a letter \b does not see.
+  assert.equal(text("K-3 lyder nå: «Leverandøren skal levere månedlig driftsrapport.»"), "Leverandøren skal levere månedlig driftsrapport.");
+});
