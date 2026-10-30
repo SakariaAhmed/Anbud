@@ -80,11 +80,14 @@ ENV DOCLING_PDF_CHUNKING=auto
 ENV DOCLING_PDF_CHUNK_PAGES=40
 ENV DOCLING_PDF_CHUNK_THRESHOLD_PAGES=120
 ENV PATH=/opt/docling/bin:$PATH
-# Docling 2.132 needs the recognizer vocabulary removed in RapidOCR 3.10.
+# Docling 2.142 is the first release that supports Pillow 13, which fixes
+# the Pillow CVEs the image scan blocks on. RapidOCR stays on 3.9: Docling
+# 2.132 needed the recognizer vocabulary that RapidOCR 3.10 removed.
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m venv /opt/docling \
     && /opt/docling/bin/pip install --no-cache-dir \
-      "docling-slim[standard,models-local,feat-ocr-rapidocr]==2.132.0" \
+      "docling-slim[standard,models-local,feat-ocr-rapidocr]==2.142.1" \
+      "pillow>=13.0.0" \
       "rapidocr==3.9.1" \
       --extra-index-url https://download.pytorch.org/whl/cpu \
     && /opt/docling/bin/pip install --force-reinstall --no-cache-dir --no-deps opencv-python-headless==4.13.0.92 \
@@ -98,14 +101,23 @@ RUN mkdir -p /opt/docling-models \
     && /opt/docling/bin/docling-tools models download layout tableformer code_formula picture_classifier -o /opt/docling-models -q \
     && find /opt/docling-models -type d -name .cache -prune -exec rm -rf '{}' + \
     && chmod -R a+rX /opt/docling-models
+# The runtime never installs Python packages. pip bundles its own copies of
+# certifi, msgpack, urllib3 and pkg_resources, which lag the fixed versions
+# the scan requires, so remove it from both interpreters as for npm above.
+RUN /opt/docling/bin/python -m pip uninstall --yes pip \
+    && python -m pip uninstall --yes pip \
+    && rm -f /usr/local/bin/pip /usr/local/bin/pip3*
 # The production Docling image does not use Debian package management at
 # runtime. Remove Perl after build-time tooling has finished to keep the final
 # image free of the current unfixed Perl CVEs in Debian slim bases.
 # Norwegian and English OCR data are installed at build time for offline use.
-# Refresh PCRE2 explicitly: the pinned base predates Debian's security fix.
+# Refresh PCRE2 and OpenSSL explicitly: the pinned base predates Debian's
+# security fixes.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpcre2-8-0 tesseract-ocr tesseract-ocr-nor tesseract-ocr-eng \
+    && apt-get install -y --no-install-recommends libpcre2-8-0 libssl3 openssl tesseract-ocr tesseract-ocr-nor tesseract-ocr-eng \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpcre2-8-0)" ge '10.42-1+deb12u1' \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libssl3)" ge '3.0.22-1~deb12u2' \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' openssl)" ge '3.0.22-1~deb12u2' \
     && if dpkg-query -W perl-base >/dev/null 2>&1; then \
       dpkg --purge --force-depends --force-remove-essential perl-base; \
     fi \
