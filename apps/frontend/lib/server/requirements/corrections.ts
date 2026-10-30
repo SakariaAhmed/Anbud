@@ -264,7 +264,7 @@ function unquotedWording(text: string) {
   let kept = 1;
   while (kept < parts.length) {
     const part = parts[kept]!;
-    if (/^(?:bakgrunn(?:en)?|begrunnelse(?:n)?|årsak(?:en)?|grunnen|hensikten|formålet|endringen|rettelsen|dette\s+(?:skyldes|er\s+(?:gjort|endret))|det\s+vises\s+til|jf\.)(?![\p{L}\p{N}])/iu.test(part)) break;
+    if (/^(?:bakgrunn(?:en)?|begrunnelse(?:n)?|årsak(?:en)?|grunnen|hensikten|formålet|endringen|rettelsen|(?:dette|kravet|kravteksten)\s+(?:skyldes|(?:er|ble)\s+(?:gjort|endret|justert|presisert|oppdatert|korrigert|omformulert))|det\s+vises\s+til|jf\.)(?![\p{L}\p{N}])/iu.test(part)) break;
     // A substring match, so "Rapporten" continues "driftsrapport".
     const wording = normalized(parts.slice(0, kept).join(" "));
     const continues =

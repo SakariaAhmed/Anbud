@@ -584,6 +584,19 @@ test("round 12: an unplaced change keeps its note when nothing else applies", ()
   const { ledger: result } = applyRequirementCorrections(ledger, raw);
   assert.equal(result[0].text, ledger[0].text);
   assert.match(result[0].sourceExcerpt ?? "", /Responstiden er maksimalt 30 minutter/u);
+  // A single scope clarification row keeps its note too.
+  const scoped = applyRequirementCorrections(
+    ledger,
+    `4 Krav\nK-3 ${ledger[0].text}\n\n9 Rettelser\n| Krav-ID | Endring | Ny tekst |\n| K-3 | Presisering | Kravet skal kun gjelde produksjonsmiljøet. |`,
+  ).ledger[0];
+  assert.equal(scoped.text, ledger[0].text);
+  assert.match(scoped.sourceExcerpt ?? "", /kun gjelde produksjonsmiljøet/u);
+  // An administrative "Kravet er justert …" ends the new wording.
+  const adjusted = applyRequirementCorrections(
+    ledger,
+    `4 Krav\nK-3 ${ledger[0].text}\n\n9 Rettelser\nK-3 endres. Ny tekst: Leverandøren skal tilby brukerstøtte hele døgnet. Kravet er justert etter innspill i spørsmålsrunden.`,
+  ).ledger[0];
+  assert.equal(adjusted.text, "Leverandøren skal tilby brukerstøtte hele døgnet.");
   // The IDs are unchanged, so completeness checks are unaffected.
   assert.deepEqual(correctedRequirementIds(["K-3"], raw), ["K-3"]);
 });
