@@ -7,27 +7,33 @@ import {
   AUTH_VERIFIED_HEADER,
 } from "@/lib/password-auth";
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Schibsted_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
 import "./globals.css";
 
-const ibmPlexSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+// Served from the repository: fetching from Google Fonts at build time
+// failed intermittently on CI runners and blocked releases. Latin subsets
+// as Google Fonts serves them; licences in ./fonts.
+const ibmPlexSans = localFont({
+  src: "./fonts/ibm-plex-sans-latin-variable.woff2",
+  weight: "400 700",
   variable: "--font-ibm-plex-sans",
 });
 
-const displayFont = Schibsted_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+const displayFont = localFont({
+  src: "./fonts/schibsted-grotesk-latin-variable.woff2",
+  weight: "400 800",
   variable: "--font-schibsted-grotesk",
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const ibmPlexMono = localFont({
+  src: [
+    { path: "./fonts/ibm-plex-mono-latin-400.woff2", weight: "400" },
+    { path: "./fonts/ibm-plex-mono-latin-500.woff2", weight: "500" },
+    { path: "./fonts/ibm-plex-mono-latin-600.woff2", weight: "600" },
+  ],
   variable: "--font-ibm-plex-mono",
 });
 
