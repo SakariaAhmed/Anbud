@@ -561,7 +561,7 @@ export function applyRequirementCorrections(
           const lead = text.slice(text.lastIndexOf(",", from - 1) + 1, from);
           const subjectOnly = lead
             .replace(REQUIREMENT_ID, " ")
-            .replace(/(?<![\p{L}\p{N}])(?:og|samt|eller|kravet|kravene|krav)(?![\p{L}\p{N}])/giu, " ")
+            .replace(/(?<![\p{L}\p{N}])(?:og|samt|eller|både|enten|verken|hverken|begge|kravet|kravene|krav)(?![\p{L}\p{N}])/giu, " ")
             .trim() === "";
           return `${text.slice(0, from)}${subjectOnly ? " " : ","}${" ".repeat(to - from - 1)}${text.slice(to)}`;
         }, sentence.text);
