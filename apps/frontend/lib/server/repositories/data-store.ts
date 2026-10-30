@@ -1837,29 +1837,46 @@ export async function savePendingDocument(input: {
 
   const suggestedPrimaryRole = Boolean(requestedPrimaryRole) && input.roleSource === "suggested";
   if (requestedPrimaryRole) {
-    const { data: insertedPrimary, error: insertPrimaryError } =
-      await dataApi.rpc(
-        suggestedPrimaryRole
-          ? "insert_vacant_primary_project_document"
-          : "insert_primary_project_document",
-        {
-          p_project_id: input.projectId,
-          p_primary_role: requestedPrimaryRole,
-          p_payload: insertPayload,
-        },
-      );
-    // A suggestion yields to a primary document set meanwhile. Before the
-    // vacancy-only RPC is deployed, a suggestion never risks a demotion.
-    const vacantRpcMissing = suggestedPrimaryRole && insertPrimaryError?.code === "PGRST202";
-    if (vacantRpcMissing) {
+    const primaryRpcArgs = {
+      p_project_id: input.projectId,
+      p_primary_role: requestedPrimaryRole,
+      p_payload: insertPayload,
+    };
+    let { data: insertedPrimary, error: insertPrimaryError } = await dataApi.rpc(
+      suggestedPrimaryRole
+        ? "insert_vacant_primary_project_document"
+        : "insert_primary_project_document",
+      primaryRpcArgs,
+    );
+    // A suggestion yields to a primary document set meanwhile.
+    let roleOccupied = suggestedPrimaryRole && !insertPrimaryError && !insertedPrimary;
+    if (suggestedPrimaryRole && insertPrimaryError?.code === "PGRST202") {
+      // Before the vacancy-only RPC is migrated, check the role here so a new
+      // project's first upload still becomes its customer document. Only the
+      // migrated RPC closes the race with a concurrent primary upload.
       console.warn(JSON.stringify({
         event: "suggested_primary_document_rpc_missing",
         project_id: input.projectId,
       }));
+      const existing = await dataApi
+        .from("documents")
+        .select("id")
+        .eq("project_id", input.projectId)
+        .eq("role", requestedPrimaryRole)
+        .limit(1);
+      if (existing.error) {
+        insertPrimaryError = existing.error;
+      } else if ((existing.data ?? []).length > 0) {
+        roleOccupied = true;
+        insertPrimaryError = null;
+      } else {
+        ({ data: insertedPrimary, error: insertPrimaryError } = await dataApi.rpc(
+          "insert_primary_project_document",
+          primaryRpcArgs,
+        ));
+      }
     }
-    const keepAsSupporting = suggestedPrimaryRole &&
-      ((!insertPrimaryError && !insertedPrimary) || vacantRpcMissing);
-    if (keepAsSupporting) {
+    if (roleOccupied) {
       insertPayload.role = "supporting_document";
       insertPayload.supporting_subtype = input.supportingSubtype ?? null;
       insertPayload.subtype = input.supportingSubtype ?? null;

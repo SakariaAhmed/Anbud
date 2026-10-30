@@ -1075,17 +1075,21 @@ export function ProjectWorkspacePage({
       formData.append("title", docTitle);
       formData.append("role", uploadRole);
       // Only the user's own choice may replace a current primary document.
-      formData.append("role_source", uploadRoleChosenRef.current ? "explicit" : "suggested");
+      const roleSource = uploadRoleChosenRef.current ? "explicit" : "suggested";
+      formData.append("role_source", roleSource);
       const payload = await uploadProjectDocument({
         projectId: project.id,
         formData,
         fallbackMessage: "Kunne ikke laste opp dokumentet.",
       });
-      if (payload.document.role !== uploadRole) {
+      // The server keeps a suggested primary role only while it is vacant.
+      if (
+        roleSource === "suggested" &&
+        uploadRole !== "supporting_document" &&
+        payload.document.role === "supporting_document"
+      ) {
         setNotice(
-          uploadRole === "primary_customer_document"
-            ? "Prosjektet har allerede et kundedokument, så dokumentet ble lagret som støttedokument."
-            : "Prosjektet har allerede et løsningsdokument, så dokumentet ble lagret som støttedokument.",
+          `Prosjektet har allerede et ${uploadRole === "primary_customer_document" ? "kundedokument" : "løsningsdokument"}, så dokumentet ble lagret som støttedokument. Velg rollen selv hvis det skal erstatte det.`,
         );
       }
       void trackDocumentIngestionJob(payload.job, payload.document.id);

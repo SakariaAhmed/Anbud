@@ -1707,20 +1707,50 @@ test("a suggested primary role fills a vacant role through the vacancy-only inse
   );
 });
 
-test("before the vacancy-only insert is deployed a suggestion is stored as supporting", async () => {
-  const database = persistenceDatabase({ documents: [] });
+function withoutVacantPrimaryRpc(database) {
   database.operationErrors.set("insert_vacant_primary_project_document:rpc", {
     message: "Could not find the function public.insert_vacant_primary_project_document",
     code: "PGRST202",
   });
+}
+
+async function quietly(run) {
   const originalWarn = console.warn;
   console.warn = () => undefined;
   try {
-    const uploaded = await suggestedUpload("primary_customer_document", "Bilag 1");
-    assert.equal(uploaded.role, "supporting_document");
+    return await run();
   } finally {
     console.warn = originalWarn;
   }
+}
+
+test("before the vacancy-only insert is deployed, a new project's suggested customer upload becomes primary", async () => {
+  const database = persistenceDatabase({ documents: [] });
+  withoutVacantPrimaryRpc(database);
+
+  const uploaded = await quietly(() => suggestedUpload("primary_customer_document", "Konkurransegrunnlag"));
+
+  assert.equal(uploaded.role, "primary_customer_document");
+  assert.equal(database.tables.documents.length, 1);
+  assert.equal(database.tables.documents[0].role, "primary_customer_document");
+  assert.equal(database.tables.projects[0].customer_document_uploaded, true);
+});
+
+test("before the vacancy-only insert is deployed, a suggestion still yields to the current primary", async () => {
+  const database = persistenceDatabase({
+    documents: [documentRow(CUSTOMER_DOCUMENT_ID, "primary_customer_document")],
+  });
+  withoutVacantPrimaryRpc(database);
+
+  const uploaded = await quietly(() => suggestedUpload("primary_customer_document", "Bilag 1"));
+
+  assert.equal(uploaded.role, "supporting_document");
+  assert.equal(
+    database.tables.documents.find((document) => document.id === CUSTOMER_DOCUMENT_ID).role,
+    "primary_customer_document",
+  );
+  assert.ok(!database.operations.some((operation) => operation.table === "insert_primary_project_document"),
+    "the demoting insert is never reached");
 });
 
 test("other vacancy-only insert failures still reject the upload", async () => {
