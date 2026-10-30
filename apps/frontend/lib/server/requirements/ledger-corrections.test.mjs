@@ -925,3 +925,22 @@ test("review bots on #70: 'andre' as 'other' is no ordinal; an ID-less customer 
     ],
   }), true);
 });
+
+test("a renumbering targets its subject, not a requirement named in an aside", () => {
+  const k = (id, text) => ({ id, text, pages: [1], heading: "4 Krav" });
+  for (const ledger of [
+    [k("K-2", "Leverandøren skal levere kursing."), k("K-3", "Leverandøren skal levere drift.")],
+    [k("K-2", "Leverandøren skal levere kursing."), k("K-2", "Leverandøren skal levere opplæring."), k("K-3", "Leverandøren skal levere drift.")],
+  ]) {
+    const chapter = ledger.map((entry) => `${entry.id} ${entry.text}`).join("\n");
+    for (const line of [
+      "K-3, som erstatter K-2, får ny ID K-9.",
+      "K-3 får, i likhet med K-2, ny ID K-9.",
+      "K-3 (tidligere omtalt sammen med K-2) får ny ID K-9.",
+    ]) {
+      const result = applyRequirementCorrections(ledger, `4 Krav\n${chapter}\n\n9 Rettelser\n${line}`).ledger;
+      assert.equal(result.find((entry) => entry.text === "Leverandøren skal levere drift.")?.id, "K-9", line);
+      assert.ok(result.filter((entry) => entry.id === "K-2").length === ledger.filter((entry) => entry.id === "K-2").length, line);
+    }
+  }
+});
