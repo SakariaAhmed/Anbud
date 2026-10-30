@@ -10,12 +10,16 @@ import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 // corrections chapter. A wrapped table line such as "endringer relatert til"
 // must not open a section.
 const CORRECTIONS_HEADING =
-  /^(?:(\d{1,2})(?:\.\d{1,2})*\.?\s+)?(?:Rettelser?|RETTELSER?|Errata|Endringer i (?:konkurransegrunnlaget|kravspesifikasjonen|kravene|bilag\s*\d+))\b[^\n]{0,80}(?<![.!?:;,])$/u;
+  /^(?:(\d{1,2})(?:\.\d{1,2})*\.?\s+)?(?:Rettelser?|RETTELSER?|Errata|Endringer i (?:konkurransegrunnlaget|kravspesifikasjonen|kravene|bilag\s*\d+))\b(?![^\n]*\b(?:etter|under)\s+kontrakts)[^\n]{0,80}(?<![.!?:;,])$/u;
 const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}-\d{1,4}(?:\.\d{1,3})?(?:\.[a-z])?\b/gu;
 const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/gu;
 // Stateless twin of QUOTED for `.test()`; a global regex keeps lastIndex.
 const HAS_QUOTE = /[«“"][^«»“”"]{12,1500}[»”"]/u;
-const WITHDRAWN = /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|slettes|fjernes)\b/iu;
+// A withdrawal must be said of the requirement itself ("K-6 utgår",
+// "Kravet bortfaller"); "slettes"/"fjernes" are ordinary words in security
+// requirements and only count with "fra kravspesifikasjonen" and the like.
+const WITHDRAWN =
+  /(?:\b[A-ZÆØÅ]{1,8}-\d{1,4}\b|\bkravet\b)[^.;]{0,30}?\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?)\b|\b(?:slettes|fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/iu;
 const WITHDRAWN_NEGATED =
   /\b(?:utgår|bortfaller|strykes|trekkes|slettes|fjernes)\s+(?:likevel\s+)?ikke\b|\bikke\s+(?:utgå|bortfalle|strykes|trekkes|slettes|fjernes)\b/iu;
 const CHANGED = /\b(?:endres|erstattes|ny\s+tekst|lyder\s+nå|skal\s+nå\s+lyde)\b/iu;
@@ -201,9 +205,16 @@ export function applyRequirementCorrections(
       report.withdrawn.push(target);
       continue;
     }
+    // The change belongs to the ID named last before the new wording
+    // ("K-6 og K-5 endres. K-5 skal nå lyde: «…»" changes K-5).
+    const quoteAt = quote ? statement.indexOf(quote) : -1;
+    const changeTarget =
+      quoteAt > 0
+        ? [...statement.slice(0, quoteAt).matchAll(REQUIREMENT_ID)].map((match) => match[0]).filter((id) => known().has(id)).at(-1) ?? target
+        : target;
     if (changes(statement) && quote) {
       entries = entries.map((entry) =>
-        entry.id === target
+        entry.id === changeTarget
           ? {
               ...entry,
               text: quote,
@@ -211,7 +222,7 @@ export function applyRequirementCorrections(
             }
           : entry,
       );
-      report.changed.push(target);
+      report.changed.push(changeTarget);
       continue;
     }
     note(target, "Rettelse", statement);

@@ -217,3 +217,27 @@ test("matrices with a repeated layout or a two-row header keep every row", () =>
   assert.deepEqual(buildSpreadsheetRequirementLedger(document).map((entry) => entry.id), ["A-1", "A-2", "7", "B-2"]);
   assert.equal(buildSpreadsheetRequirementLedger(document)[1].text, "Andre krav i ny layout skal oppfylles.");
 });
+
+test("second member's probes: scoped withdrawals, change targets, contract headings, text column priority", () => {
+  const ledgerK = [
+    { id: "K-5", text: "Leverandøren skal levere månedlige rapporter.", pages: [1], heading: "4" },
+    { id: "K-6", text: "Leverandøren skal tilby norskspråklig support.", pages: [1], heading: "4" },
+    { id: "SIK-1", text: "Krypteringsnøkler skal roteres årlig.", pages: [1], heading: "5" },
+  ];
+  const run = (text) => applyRequirementCorrections(ledgerK, text).ledger;
+  assert.ok(ids(run("8 Rettelser\nNei, K-6 utgår ikke og skal besvares.\nK-5 utgår.")).includes("K-6"));
+  assert.ok(ids(run("8 Rettelser\nSIK-1: Kravet om at nøkler slettes etter bruk presiseres.\nK-5 utgår.")).includes("SIK-1"));
+  const retargeted = run("8 Rettelser\nK-6 og K-5 endres. K-5 skal nå lyde: «Leverandøren skal levere ukentlige rapporter.»");
+  assert.equal(retargeted.find((entry) => entry.id === "K-5").text, "Leverandøren skal levere ukentlige rapporter.");
+  assert.equal(retargeted.find((entry) => entry.id === "K-6").text, "Leverandøren skal tilby norskspråklig support.");
+  assert.equal(findCorrectionsSection("9 Endringer i kravspesifikasjonen etter kontraktsinngåelse\nVed opphør slettes data i henhold til SIK-1."), null);
+
+  const matrixWithTitle = [
+    "Ark: Krav",
+    "Rad 1: A1: Nr | B1: Krav | C1: Beskrivelse (av krav) | D1: Svar",
+    "Rad 2: A2: K-1 | B2: Språk | C2: Brukergrensesnittet skal være på norsk bokmål og nynorsk. | D2: Ja",
+  ].join("\n");
+  const [row] = buildSpreadsheetRequirementLedger({ file_format: "xlsx", raw_text: matrixWithTitle });
+  assert.equal(row.text, "Språk: Brukergrensesnittet skal være på norsk bokmål og nynorsk.");
+  assert.doesNotMatch(row.sourceExcerpt, /\| Ja/u);
+});

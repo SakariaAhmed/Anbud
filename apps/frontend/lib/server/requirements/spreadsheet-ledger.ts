@@ -9,7 +9,8 @@ const ROW_PATTERN = /^Rad (\d{1,6}): (.*)$/u;
 
 const HEADER_MATCHERS = {
   id: /^(?:krav[\s-]*id|krav[\s-]*nr\.?|kravnummer|krav[\s-]*ref(?:eranse)?|id|nr\.?|ref\.?|requirement\s+id)$/iu,
-  text: /^(?:kravtekst|krav|kravbeskrivelse|beskrivelse(?:\s+av\s+krav)?|requirement(?:\s+text)?)$/iu,
+  text: /^(?:kravtekst|kravbeskrivelse|beskrivelse(?:\s+(?:av\s+)?krav(?:et)?)?|requirement(?:\s+text)?|krav)$/iu,
+  title: /^(?:krav|kravtittel|tittel|overskrift)$/iu,
   type: /^(?:type|kravtype|krav\s*type|absolutt\s*\/\s*evaluert|prioritet|requirement\s+type)$/iu,
   category: /^(?:kategori|område|tema|kapittel|seksjon)$/iu,
   weight: /^vekt\b/iu,
@@ -53,6 +54,15 @@ function parseSheets(rawText: string) {
   return sheets;
 }
 
+// Which column holds the requirement text when several qualify: the full
+// wording beats a description, which beats a short "Krav" title.
+function textPriority(label: string) {
+  if (/^kravtekst$|^requirement\s+text$/iu.test(label)) return 4;
+  if (/^(?:kravbeskrivelse|beskrivelse\s+(?:av\s+)?krav(?:et)?)$/iu.test(label)) return 3;
+  if (/^(?:beskrivelse|requirement)$/iu.test(label)) return 2;
+  return 1;
+}
+
 function headerColumns(row: SheetRow, continuation?: SheetRow) {
   const columns: Partial<Record<Column, string>> = {};
   // A header may span two rows ("Krav-" / "ID", or ID and text labels on
@@ -63,18 +73,30 @@ function headerColumns(row: SheetRow, continuation?: SheetRow) {
     const first = labels.get(column)?.[0];
     labels.set(column, first ? [first, value, `${first} ${value}`, `${first}${value}`] : [value]);
   }
+  const clean = (label: string) => label.replace(/[()]/gu, " ").replace(/\s+/gu, " ").trim();
+  const textCandidates: Array<{ column: string; priority: number }> = [];
   for (const [column, candidates] of labels) {
+    const textLabel = candidates.map(clean).find((label) => HEADER_MATCHERS.text.test(label));
+    if (textLabel) {
+      textCandidates.push({ column, priority: textPriority(textLabel) });
+      continue;
+    }
     for (const key of Object.keys(HEADER_MATCHERS) as Column[]) {
+      if (key === "text" || key === "title") continue;
       if (
         !columns[key] &&
         !Object.values(columns).includes(column) &&
-        candidates.some((label) => HEADER_MATCHERS[key].test(label.replace(/\s+/gu, " ").trim()))
+        candidates.some((label) => HEADER_MATCHERS[key].test(clean(label)))
       ) {
         columns[key] = column;
         break;
       }
     }
   }
+  textCandidates.sort((left, right) => right.priority - left.priority);
+  const [text, title] = textCandidates.filter((candidate) => candidate.column !== columns.id);
+  if (text) columns.text = text.column;
+  if (title && title.priority === 1) columns.title = title.column;
   return columns.id && columns.text && columns.id !== columns.text ? columns : null;
 }
 
@@ -148,7 +170,10 @@ export function buildSpreadsheetRequirementLedger(
       .map(([, text]) => text)
       .filter((text) => text !== id)
       .join(" ");
-    const text = (value("text") || fallback).replace(/\s+/gu, " ").trim();
+    const body = (value("text") || fallback).replace(/\s+/gu, " ").trim();
+    // A short title column ("Krav") is kept with the full description.
+    const title = value("title").replace(/\s+/gu, " ").trim();
+    const text = title && body && !body.startsWith(title) ? `${title}: ${body}` : body || title;
     if (text.length < MIN_REQUIREMENT_TEXT_CHARS) return [];
     const category = value("category");
     return [{
