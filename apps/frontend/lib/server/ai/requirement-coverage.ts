@@ -104,7 +104,7 @@ import {
   sortRequirementLedgerInDocumentOrder,
 } from "@/lib/server/requirements/presentation";
 import { extractRequirementLedgerForDocument, extractRequirementLedgerWithCorrections, requirementSourceExcerptWithoutAnswer, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
-import { canonicalizeRequirementSourceLedger } from "@/lib/server/requirements/source-readiness";
+import { allCanonicalRequirementsWithdrawn, canonicalizeRequirementSourceLedger } from "@/lib/server/requirements/source-readiness";
 import { type RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import { filterSyntheticRequirementFallbacks } from "@/lib/server/requirements/unstructured-ledger";
 import { type ProjectDocumentDetail, type SolutionEvaluationResult } from "@/lib/types";
@@ -4342,12 +4342,12 @@ export async function buildRequirementCoverageLedgerFromDocuments(
     }),
   );
 
-  return sortRequirementLedgerInDocumentOrder(
-    canonicalizeRequirementSourceLedger({
-      sourceDocuments: documents,
-      requirementLedgerResults,
-    }),
-  );
+  const source = { sourceDocuments: documents, requirementLedgerResults };
+  const ledger = sortRequirementLedgerInDocumentOrder(canonicalizeRequirementSourceLedger(source));
+  if (documents.length && !ledger.length && !allCanonicalRequirementsWithdrawn(source)) {
+    throw new Error("Kravdekningen stoppet fordi originale kravdokumenter finnes, men ingen krav kunne ekstraheres fra dem.");
+  }
+  return ledger;
 }
 
 function normalizeCoverageRequirementEntry(entry: RequirementLedgerEntry) {

@@ -732,6 +732,26 @@ test("evaluation returns empty coverage when every original requirement is withd
   });
   assert.deepEqual(coverage.items, []);
   assert.match(coverage.coverage_summary, /trukket tilbake/u);
+  const duplicate = { ...source, id: "customer", role: "primary_customer_document", supporting_subtype: null,
+    raw_text: "4 Krav\n| Krav-ID | Kravtekst |\n| K-1 | Leverandøren skal levere en driftsplan. |" };
+  const repeated = await buildSolutionRequirementCoverage({ projectName: "Test", customerAnalysis: null,
+    requirementDocuments: [source, duplicate], sourceRequirementLedger: [],
+    solutionDocument: { ...source, id: "solution", role: "primary_solution_document", raw_text: "K-1 Leverandøren leverer en driftsplan." },
+    solutionRequirementLedger: [{ id: "K-1", text: "Leverandøren leverer en driftsplan.", pages: [1], heading: "4 Krav" }],
+  });
+  assert.deepEqual(repeated.items, []);
+  assert.match(repeated.coverage_summary, /trukket tilbake/u);
+});
+
+test("withdrawing every explicit ID does not prove unnumbered requirements were withdrawn", async () => {
+  const document = { id: "formal", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "pdf", structure_map: [],
+    raw_text: ["Bilag 2 - Kravspesifikasjon", "Prosjektkode: P057", "Krav registrert i tabell", "ID/markering Prioritet Kravtekst Leverandørens svar",
+      "Leverandøren skal kryptere kundedata under overføring.", "K-1 Må Leverandøren skal levere en driftsplan.", "", "9 Rettelser", "K-1 utgår."].join("\n") };
+  const { allRequirementsWithdrawn } = await load("lib/server/requirements/source-readiness.ts");
+  assert.equal(allRequirementsWithdrawn(document), false);
+  assert.throws(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: [] }]), /Kravledgeren er tom/u);
+  const { buildRequirementCoverageLedgerFromDocuments } = await load("lib/server/ai/requirement-coverage.ts");
+  await assert.rejects(buildRequirementCoverageLedgerFromDocuments([document]), /ingen krav kunne ekstraheres/u);
 });
 
 test("review bots: several correction notices, kept notes, Unicode section rows, withdrawn documents", async () => {
