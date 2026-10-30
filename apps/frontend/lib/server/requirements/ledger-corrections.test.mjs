@@ -512,6 +512,11 @@ test("round 9 probes: unquoted new wording keeps every sentence before its ratio
     text("K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Rapporten publiseres i portalen. Bakgrunnen er behov for tettere oppfølging."),
     "Leverandøren skal levere månedlig driftsrapport. Rapporten publiseres i portalen.",
   );
+  // An administrative sentence after the wording is not part of it.
+  assert.equal(
+    text("K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Svarfristen forlenges til 15. november."),
+    "Leverandøren skal levere månedlig driftsrapport.",
+  );
   // "lyder nå" ends in a letter \b does not see.
   assert.equal(text("K-3 lyder nå: «Leverandøren skal levere månedlig driftsrapport.»"), "Leverandøren skal levere månedlig driftsrapport.");
 });

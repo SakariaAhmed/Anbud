@@ -242,15 +242,23 @@ function correctedWording(original: string, quote: string, replaced: string | un
   return sentence && restates && normalized(quote).length >= old.length * 0.6 ? quote : null;
 }
 
-/** Unquoted new wording up to a following rationale ("Bakgrunnen er …",
- * "Endringen skyldes …"); every sentence before it is new wording. */
+/** Unquoted new wording: the first sentence, and each following one that
+ * continues it (an obligation, a back-reference, or a word stem of the
+ * wording so far: "Rapporten publiseres i portalen."). A rationale or an
+ * administrative sentence ("Svarfristen forlenges …") ends it. */
 function unquotedWording(text: string) {
   const parts = text.trim().split(/(?<=[.!])\s+(?=[A-ZÆØÅ])/u);
+  const stems = (value: string) => (normalized(value).match(/\p{L}{5,}/gu) ?? []).map((word) => word.slice(0, 5));
   let kept = 1;
-  while (
-    kept < parts.length &&
-    !/^(?:bakgrunn(?:en)?|begrunnelse(?:n)?|årsak(?:en)?|grunnen|hensikten|formålet|endringen|rettelsen|dette\s+(?:skyldes|er\s+(?:gjort|endret))|det\s+vises\s+til|jf\.)(?![\p{L}\p{N}])/iu.test(parts[kept]!)
-  ) {
+  while (kept < parts.length) {
+    const part = parts[kept]!;
+    if (/^(?:bakgrunn(?:en)?|begrunnelse(?:n)?|årsak(?:en)?|grunnen|hensikten|formålet|endringen|rettelsen|dette\s+(?:skyldes|er\s+(?:gjort|endret))|det\s+vises\s+til|jf\.)(?![\p{L}\p{N}])/iu.test(part)) break;
+    const wording = normalized(parts.slice(0, kept).join(" "));
+    const continues =
+      OBLIGATION.test(part) ||
+      /^(?:den|denne|dette|disse)(?![\p{L}\p{N}])/iu.test(part) ||
+      stems(part).some((stem) => wording.includes(stem));
+    if (!continues) break;
     kept += 1;
   }
   return {
