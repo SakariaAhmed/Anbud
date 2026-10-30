@@ -553,12 +553,14 @@ export function applyRequirementCorrections(
           text: sentence.text,
           ids: sentence.ids.filter(({ at }) => at >= from && at < to && !inAside(at)),
         }, known()));
-        // Commas inside an aside ("K-2, som gjelder drift, og K-3 er begge …")
-        // do not split a shared subject list into clauses.
-        const clauseText = asides.reduce(
-          (text, [from, to]) => `${text.slice(0, from)}${" ".repeat(to - from)}${text.slice(to)}`,
-          sentence.text,
-        );
+        // An aside inside a subject list ("K-2, som gjelder drift, og K-3 er
+        // begge …") does not split the list; an aside after a clause with its
+        // own verb ("K-2 beholdes, som avtalt, og K-3 er …") still ends it.
+        const clauseText = asides.reduce((text, [from, to]) => {
+          const lead = text.slice(text.lastIndexOf(",", from - 1) + 1, from);
+          const ownVerb = /(?<![\p{L}\p{N}])(?:er|var|blir|ble|får|fikk|beholder|beholdes|utgår|bortfaller|strykes|endres|erstattes|gjelder|skal|må|kan|vil|brukes|benyttes|flyttes|slås)(?![\p{L}\p{N}])/iu.test(lead);
+          return `${text.slice(0, from)}${ownVerb ? "," : " "}${" ".repeat(to - from - 1)}${text.slice(to)}`;
+        }, sentence.text);
         let namedBefore = new Set<string>();
         for (let end = ordinalAt; end > 0 && namedBefore.size === 0;) {
           const start = clauseText.lastIndexOf(",", end - 1) + 1;
