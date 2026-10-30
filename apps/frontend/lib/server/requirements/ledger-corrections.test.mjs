@@ -666,6 +666,8 @@ test("supplier wishes never withdraw requirements and rewrites retain existing p
   for (const request of ["Leverandøren ønsker at K-4 utgår.", "Vi ønsker å endre K-4 til: «Leverandøren skal levere rapporter.»"]) {
     assert.equal(applyRequirementCorrections(source, chapter + request).ledger[0].text, source[0].text);
   }
+  const second = { ...source[0], id: "K-2", text: "Leverandøren skal levere døgnvakt." };
+  assert.deepEqual(applyRequirementCorrections([...source, second], chapter + "K-4 utgår. Leverandøren ønsker at K-2 utgår.").ledger.map((entry) => entry.id), ["K-2"]);
   const changed = applyRequirementCorrections(source, chapter + "Svar: K-4 gjelder hele døgnet.\nK-4 endres til: «Leverandøren skal levere en årlig driftsplan.»").ledger[0];
   assert.match(changed.sourceExcerpt, /Ark Krav, Rad 8 \| Type: Minstekrav \| Vekt: 10 %/u);
   assert.match(changed.sourceExcerpt, /gjelder hele døgnet/u);
@@ -683,6 +685,9 @@ test("a withdrawn formal requirement cannot survive through its customer-documen
   const results = await Promise.all(documents.map(async (document) => ({ document, ...await extractRequirementLedgerWithCorrections(document) })));
   assert.deepEqual(canonicalizeRequirementSourceLedger({ sourceDocuments: documents, requirementLedgerResults: results }).map((entry) => entry.id), ["K-2", "K-3"]);
   assert.deepEqual((await buildRequirementCoverageLedgerFromDocuments(documents)).map((entry) => entry.id), ["K-2", "K-3"]);
+  const { buildEvaluationLedgerContext } = await load("lib/server/use-cases/project-workflows.ts");
+  const bundle = await buildEvaluationLedgerContext({ artifactType: "forbedret_kravsvar", documents });
+  assert.deepEqual(canonicalizeRequirementSourceLedger({ sourceDocuments: documents, requirementLedgerResults: bundle.requirementLedgerResults }).map((entry) => entry.id), ["K-2", "K-3"]);
   // Equal IDs with different obligations remain distinct.
   customer.raw_text = customer.raw_text.replace("levere en driftsplan", "kryptere alle kundedata");
   assert.ok((await buildRequirementCoverageLedgerFromDocuments(documents)).some((entry) => entry.id === "K-1"));
@@ -692,7 +697,7 @@ test("evaluation returns empty coverage when every original requirement is withd
   const { buildSolutionRequirementCoverage } = await load("lib/server/ai.ts");
   const source = { id: "formal", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "docx", structure_map: [], raw_text: "4 Krav\n| Krav-ID | Kravtekst |\n| K-1 | Leverandøren skal levere en driftsplan. |\n\n9 Rettelser\nK-1 utgår." };
   const coverage = await buildSolutionRequirementCoverage({ projectName: "Test", customerAnalysis: null,
-    requirementDocuments: [source], sourceRequirementLedger: [],
+    requirementDocuments: [source, { ...source, id: "customer", role: "primary_customer_document", raw_text: "Kunden trenger en sikker og moderne skyplattform." }], sourceRequirementLedger: [],
     solutionDocument: { ...source, id: "solution", role: "primary_solution_document", raw_text: "K-1 Leverandøren leverer en driftsplan." },
     solutionRequirementLedger: [{ id: "K-1", text: "Leverandøren leverer en driftsplan.", pages: [1], heading: "4 Krav" }],
   });

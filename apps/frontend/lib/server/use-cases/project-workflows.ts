@@ -28,7 +28,7 @@ import {
   generateHighLevelDesign,
   regenerateCustomerAnalysisSection,
 } from "@/lib/server/ai";
-import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/source-ledger";
+import { extractRequirementLedgerForDocument, extractRequirementLedgerWithCorrections } from "@/lib/server/requirements/source-ledger";
 import { generateExecutiveSummary } from "@/lib/server/ai/executive-summary";
 import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai/document-analysis";
 import {
@@ -262,10 +262,11 @@ export async function buildEvaluationLedgerContext(input: {
     3,
     async (document) => {
       try {
-        const ledger = await extractRequirementLedgerForDocument(document);
+        const { ledger, originalLedger } = await extractRequirementLedgerWithCorrections(document);
         return {
           document,
           ledger,
+          originalLedger,
           context: formatEvaluationRequirementLedger({
             document,
             ledger,
