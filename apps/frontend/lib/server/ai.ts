@@ -3373,9 +3373,14 @@ export async function buildSolutionRequirementCoverage(input: {
       entries: chunk.entries,
       startIndex: chunk.startIndex,
     });
+    // Why rows end up without a bound answer, as counts only: a quote the
+    // model did not give, one not found verbatim in Bilag 2, or one found
+    // but not tied to the requirement.
+    const binding = { model_mangler: 0, no_quote: 0, quote_not_found: 0, quote_unbound: 0, bound: 0, bound_uncertain: 0 };
     const items = chunk.entries.map((entry, localIndex) => {
       const modelRow = rows[localIndex];
       const orderIndex = chunk.startIndex + localIndex;
+      const modelQuote = modelRow?.evidence ?? modelRow?.bevis;
       const verified = bindVerifiedSolutionQuote({
         entry,
         quote: modelRow?.evidence ?? modelRow?.bevis,
@@ -3385,8 +3390,13 @@ export async function buildSolutionRequirementCoverage(input: {
       });
       if (verified) {
         verifiedAnswerEntries.set(orderIndex, verified.entry);
+        binding[verified.uncertain ? "bound_uncertain" : "bound"] += 1;
       } else {
         verifiedAnswerEntries.delete(orderIndex);
+        if ((modelRow?.assessment ?? modelRow?.vurdering) === "Mangler") binding.model_mangler += 1;
+        else if (!String(modelQuote ?? "").trim()) binding.no_quote += 1;
+        else if (!solutionDocumentContainsQuote(modelQuote, input.solutionDocument)) binding.quote_not_found += 1;
+        else binding.quote_unbound += 1;
       }
       // An uncertain link (weak overlap or cut context) cannot carry "Godt".
       const row =
@@ -3420,6 +3430,14 @@ export async function buildSolutionRequirementCoverage(input: {
       }
       return item;
     });
+    console.info(
+      JSON.stringify({
+        event: "requirement_coverage_quote_binding",
+        start_index: chunk.startIndex,
+        count: chunk.entries.length,
+        ...binding,
+      }),
+    );
     assertRequirementCoverageItemsAreReviewable(items);
     return items;
   };
