@@ -523,3 +523,24 @@ test("a restriction later in the same paragraph still makes the link uncertain",
   });
   assert.equal(bound.uncertain, true);
 });
+
+test("a decline names the delivery, not an option the requirement may forbid", async () => {
+  const { answerExplicitlyDeclinesRequirement: declines } = await load(
+    "lib/server/requirements/answer-quality.ts",
+  );
+  for (const excluded of [
+    "TLS 1.0 og 1.1 støttes ikke.",
+    "Data leveres ikke utenfor EU/EØS.",
+    "Kravet dekkes ikke bare av X, men også av Y.",
+  ]) {
+    assert.equal(declines(excluded), false, excluded);
+  }
+  for (const declined of [
+    "Dette leveres ikke som opsjon.",
+    "Dokumentasjon leveres ikke.",
+    "Vi har vurdert behovet. Telefonstøtte tilbys ikke.",
+    "Kravet inngår ikke i leveransen.",
+  ]) {
+    assert.equal(declines(declined), true, declined);
+  }
+});
