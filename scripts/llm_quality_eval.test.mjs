@@ -13,7 +13,7 @@ const repoRoot = path.resolve(path.dirname(scriptPath), "..");
 /** A stand-in for the app API holding projects and services in memory.
  * `onUpload` and `onProjectDelete` may return a promise to hold the response;
  * `onProjectDelete` resolving to headers answers 429 with them. */
-async function startFakeApi({ onUpload = () => undefined, onProjectDelete = () => undefined } = {}) {
+async function startFakeApi({ onUpload = () => undefined, onProjectDelete = () => undefined, onServiceCreate } = {}) {
   const projects = new Map();
   const services = new Map();
   const requests = [];
@@ -52,9 +52,11 @@ async function startFakeApi({ onUpload = () => undefined, onProjectDelete = () =
       const form = await new Response(body, {
         headers: { "content-type": request.headers["content-type"] },
       }).formData();
+      if (onServiceCreate) await onServiceCreate();
       const id = `service-${nextId++}`;
       services.set(id, { id, name: form.get("name") });
       listeners.serviceCreated();
+      if (onServiceCreate) return send(201, { service: { id } });
       // Never answers: a service that exists on the server before the
       // script has seen its ID.
       return;
@@ -130,7 +132,7 @@ async function runInterrupted(t, baseUrl, interruptWhen) {
     stderr += chunk;
   });
   const exited = new Promise((resolve) => child.on("exit", (code) => resolve(code)));
-  const watchdog = setTimeout(() => child.kill("SIGKILL"), 30_000);
+  const watchdog = setTimeout(() => child.kill("SIGKILL"), 45_000);
   try {
     const early = await Promise.race([interruptWhen, exited.then((code) => ({ code }))]);
     assert.equal(early?.code, undefined, `exited ${early?.code} before the interrupt point: ${stderr}`);
@@ -174,6 +176,24 @@ test("an interrupted run polls upload jobs and creates nothing after cleanup sta
   assert.ok(!api.requests.includes("POST /api/service-descriptions"), api.requests.join("\n"));
   assert.deepEqual([...api.services.keys()], []);
   assert.deepEqual([...api.projects.keys()], []);
+});
+
+test("shutdown waits for a creation committing after the old 30-second sweep deadline", async (t) => {
+  let creationStarted;
+  const interruptWhen = new Promise((resolve) => { creationStarted = resolve; });
+  const api = await startFakeApi({
+    onServiceCreate: async () => {
+      creationStarted();
+      await new Promise((resolve) => setTimeout(resolve, 31_000));
+    },
+  });
+  t.after(() => api.close());
+  const { code, stderr } = await runInterrupted(t, api.baseUrl, interruptWhen);
+  assert.equal(code, 130, stderr);
+  assert.deepEqual([...api.services.keys()], []);
+  assert.deepEqual([...api.projects.keys()], []);
+  assert.ok(api.requests.some((request) => request.startsWith("DELETE /api/service-descriptions/")));
+  assert.ok(!api.requests.some((request) => /^POST .*\/jobs$/u.test(request)), api.requests.join("\n"));
 });
 
 test("cleanup waits for the DELETE limiter's Retry-After before retrying", async (t) => {

@@ -402,6 +402,7 @@ async function cleanupResources(filter = () => true) {
 const runClients = new Set();
 const pendingCreations = new Set();
 let interrupted = false;
+let shutdownPromise;
 
 /** Runs `create`, which must issue the request and track what it created.
  * Refused once interrupted, so nothing is created after the shutdown wait
@@ -411,7 +412,9 @@ async function trackedCreation(create) {
   const promise = create();
   pendingCreations.add(promise);
   try {
-    return await promise;
+    const result = await promise;
+    if (interrupted) throw new Error("Interrupted: not starting further evaluation work.");
+    return result;
   } finally {
     pendingCreations.delete(promise);
   }
@@ -446,18 +449,21 @@ async function sweepRun(client) {
 }
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, async () => {
-    if (interrupted) process.exit(1);
+  process.on(signal, () => {
+    if (interrupted) {
+      console.error(`${signal}: cleanup is still waiting for evaluation resources.`);
+      return;
+    }
     interrupted = true;
-    console.error(`${signal}: removing evaluation resources before exit ...`);
-    // Let in-flight creates finish (bounded) so their resources are known.
-    await Promise.race([
-      Promise.allSettled([...pendingCreations]),
-      new Promise((resolve) => setTimeout(resolve, 30_000)),
-    ]);
-    for (const client of runClients) await sweepRun(client);
-    await cleanupResources();
-    process.exit(signal === "SIGINT" ? 130 : 143);
+    shutdownPromise = (async () => {
+      console.error(`${signal}: removing evaluation resources before exit ...`);
+      // A request can commit after any client timeout. Wait for its outcome
+      // before the final sweep; another signal must not abandon this cleanup.
+      await Promise.allSettled([...pendingCreations]);
+      for (const client of runClients) await sweepRun(client);
+      await cleanupResources();
+      process.exit(process.exitCode === 1 ? 1 : signal === "SIGINT" ? 130 : 143);
+    })();
   });
 }
 
@@ -1268,6 +1274,11 @@ for (let roundIndex = 1; roundIndex <= rounds; roundIndex += 1) {
   report.summary = summarize(report);
   await writeFile(outPath, JSON.stringify(report, null, 2));
 }
+} catch (error) {
+  if (!interrupted) throw error;
+  // A scenario interrupted while creating must not crash the process before
+  // the signal handler finishes its final sweep.
+  await shutdownPromise;
 } finally {
   // Covers scenarios that threw before their own cleanup ran.
   await cleanupResources();
