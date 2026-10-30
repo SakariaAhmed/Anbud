@@ -872,16 +872,20 @@ function explicitLedgerEntryIds(entry: RequirementLedgerEntry) {
 /** Whether the document's corrections chapter withdraws every requirement
  * it had: an empty ledger is then the intended result, not a failed
  * extraction. */
-export function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
+export function originalRequirementSourceIds(document: ProjectDocumentDetail) {
   const rawText = document.raw_text ?? "";
   const matrixIds = spreadsheetRequirementIds(document);
-  const original = matrixIds.length
+  return matrixIds.length
     ? matrixIds
     : (() => {
         const { expected, rawIds } = explicitRequirementSourceInventoryWithRawIds(withoutCorrectionsSection(rawText));
         return [...expected].flatMap(([id, count]) => Array.from({ length: count }, () => rawIds.get(id) ?? id));
       })();
-  return original.length > 0 && correctedRequirementIds(original, rawText).length === 0;
+}
+
+export function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
+  const original = originalRequirementSourceIds(document);
+  return original.length > 0 && correctedRequirementIds(original, document.raw_text ?? "").length === 0;
 }
 
 /** The generic explicit-ID inventory after the document's corrections

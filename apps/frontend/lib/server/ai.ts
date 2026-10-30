@@ -159,6 +159,7 @@ import {
   assertExplicitRequirementLedgersComplete,
   canonicalRequirementSourceDocuments,
   canonicalizeRequirementSourceLedger,
+  originalRequirementSourceIds,
 } from "@/lib/server/requirements/source-readiness";
 import { buildSolutionEvaluationProvenance } from "@/lib/server/workflow-boundaries";
 import type {
@@ -3251,7 +3252,8 @@ export async function buildSolutionRequirementCoverage(input: {
       ? await buildRequirementCoverageLedgerFromDocuments(sourceRequirementDocuments)
       : [];
   if (sourceRequirementDocuments.length && !sourceLedger.length) {
-    if (sourceRequirementDocuments.every(allRequirementsWithdrawn)) {
+    const inventoriedSources = sourceRequirementDocuments.filter((document) => originalRequirementSourceIds(document).length > 0);
+    if (inventoriedSources.length > 0 && inventoriedSources.every(allRequirementsWithdrawn)) {
       return emptyRequirementCoverage("Alle krav i kravgrunnlaget er trukket tilbake ved rettelse.");
     }
     throw new Error(

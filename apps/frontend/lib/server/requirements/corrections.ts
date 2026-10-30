@@ -395,7 +395,6 @@ export function applyRequirementCorrections(
       /\?\s*$/u.test(text.trim()) ||
       /^\s*spørsmål\b/iu.test(text) ||
       /(?<![\p{L}\p{N}])(?:vi\s+ber\s+om|ber\s+om\s+at|ønsker\s+(?:at|å)|foreslår\s+at|anmoder\s+om)(?![\p{L}\p{N}])/iu.test(text);
-    if (isQuestion(masked)) continue;
     for (const sentence of sentences(masked)) {
       if (isQuestion(sentence.text)) continue;
       const ids = subjects(sentence, known());
