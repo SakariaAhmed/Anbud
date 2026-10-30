@@ -171,7 +171,7 @@ function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_t
           continue;
         }
         rows.push({ sheet: sheet.name, row, columns, section, continuation: [] });
-      } else if (ID_LIKE.test(id) && text) {
+      } else if (ID_LIKE.test(id)) {
         // An unusual ID form ("1.1a", "K1-A", "REQ_001") is still the
         // matrix's ID: the row is kept under it, never dropped.
         rows.push({ sheet: sheet.name, row, columns, section, continuation: [] });

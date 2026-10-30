@@ -343,7 +343,7 @@ export function applyRequirementCorrections(
   let entries =
     options.removeCorrectionRows === false ? ledger : ledger.filter((entry) => !isCorrectionRow(entry));
   const known = () => new Set(entries.map((entry) => entry.id));
-  const sourceIds = new Set(ledger.map((entry) => entry.id));
+  const sourceIds = new Set(entries.map((entry) => entry.id));
   const note = (id: string, label: string, statement: string) => {
     entries = entries.map((entry) =>
       entry.id === id
