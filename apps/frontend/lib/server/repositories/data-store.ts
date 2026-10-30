@@ -1772,6 +1772,12 @@ export async function savePendingDocument(input: {
   projectId: string;
   title: string;
   role: ProjectDocumentRole;
+  /**
+   * "suggested" (inferred from the file name) fills a primary role only while
+   * it is vacant and otherwise stores the upload as supporting; "explicit"
+   * (the user's choice) replaces the current primary document.
+   */
+  roleSource?: "explicit" | "suggested";
   supportingSubtype?: SupportingDocumentSubtype | null;
   fileName: string;
   fileFormat: DocumentFileFormat;
@@ -1829,14 +1835,35 @@ export async function savePendingDocument(input: {
     indexed_at: null,
   };
 
+  const suggestedPrimaryRole = Boolean(requestedPrimaryRole) && input.roleSource === "suggested";
   if (requestedPrimaryRole) {
     const { data: insertedPrimary, error: insertPrimaryError } =
-      await dataApi.rpc("insert_primary_project_document", {
-        p_project_id: input.projectId,
-        p_primary_role: requestedPrimaryRole,
-        p_payload: insertPayload,
-      });
-    if (insertPrimaryError || !insertedPrimary) {
+      await dataApi.rpc(
+        suggestedPrimaryRole
+          ? "insert_vacant_primary_project_document"
+          : "insert_primary_project_document",
+        {
+          p_project_id: input.projectId,
+          p_primary_role: requestedPrimaryRole,
+          p_payload: insertPayload,
+        },
+      );
+    // A suggestion yields to a primary document set meanwhile. Before the
+    // vacancy-only RPC is deployed, a suggestion never risks a demotion.
+    const vacantRpcMissing = suggestedPrimaryRole && insertPrimaryError?.code === "PGRST202";
+    if (vacantRpcMissing) {
+      console.warn(JSON.stringify({
+        event: "suggested_primary_document_rpc_missing",
+        project_id: input.projectId,
+      }));
+    }
+    const keepAsSupporting = suggestedPrimaryRole &&
+      ((!insertPrimaryError && !insertedPrimary) || vacantRpcMissing);
+    if (keepAsSupporting) {
+      insertPayload.role = "supporting_document";
+      insertPayload.supporting_subtype = input.supportingSubtype ?? null;
+      insertPayload.subtype = input.supportingSubtype ?? null;
+    } else if (insertPrimaryError || !insertedPrimary) {
       let cleanupError: string | null = null;
       try {
         await removeStoredFiles([storedFile]);
@@ -1854,16 +1881,16 @@ export async function savePendingDocument(input: {
           .filter(Boolean)
           .join(" "),
       );
+    } else {
+      const inserted = fromUnknownDocumentRow(
+        insertedPrimary as unknown as Record<string, unknown>,
+      );
+      if (requestedPrimaryRole !== "primary_solution_document") {
+        await updateProjectContextKeywords(input.projectId);
+      }
+      revalidateProjectCaches(input.projectId);
+      return mapDocumentSummary(inserted);
     }
-
-    const inserted = fromUnknownDocumentRow(
-      insertedPrimary as unknown as Record<string, unknown>,
-    );
-    if (requestedPrimaryRole !== "primary_solution_document") {
-      await updateProjectContextKeywords(input.projectId);
-    }
-    revalidateProjectCaches(input.projectId);
-    return mapDocumentSummary(inserted);
   }
 
   let insertResult: {

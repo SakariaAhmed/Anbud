@@ -1071,11 +1071,20 @@ export function ProjectWorkspacePage({
       formData.append("file", file);
       formData.append("title", docTitle);
       formData.append("role", uploadRole);
+      // Only the user's own choice may replace a current primary document.
+      formData.append("role_source", uploadRoleChosenRef.current ? "explicit" : "suggested");
       const payload = await uploadProjectDocument({
         projectId: project.id,
         formData,
         fallbackMessage: "Kunne ikke laste opp dokumentet.",
       });
+      if (payload.document.role !== uploadRole) {
+        setNotice(
+          uploadRole === "primary_customer_document"
+            ? "Prosjektet har allerede et kundedokument, så dokumentet ble lagret som støttedokument."
+            : "Prosjektet har allerede et løsningsdokument, så dokumentet ble lagret som støttedokument.",
+        );
+      }
       void trackDocumentIngestionJob(payload.job, payload.document.id);
       setDocTitle("");
       setFile(null);
@@ -1103,11 +1112,21 @@ export function ProjectWorkspacePage({
     });
   }
 
+  // Same input as the server's suggestion: the title and the file name.
+  function suggestUploadRole(title: string, selected: File | null) {
+    if (selected && !uploadRoleChosenRef.current) {
+      setUploadRole(suggestUploadDocumentRole(`${title} ${selected.name}`, project.documents));
+    }
+  }
+
   function onSelectUploadFile(selected: File | null) {
     setFile(selected);
-    if (selected && !uploadRoleChosenRef.current) {
-      setUploadRole(suggestUploadDocumentRole(selected.name, project.documents));
-    }
+    suggestUploadRole(docTitle, selected);
+  }
+
+  function onUploadTitleChange(title: string) {
+    setDocTitle(title);
+    suggestUploadRole(title, file);
   }
 
   function onChooseUploadRole(role: ProjectDocumentRole) {
@@ -1963,7 +1982,7 @@ export function ProjectWorkspacePage({
         bilag1Artifacts={bilag1Artifacts}
         onToggleUploadOpen={() => setUploadOpen((open) => !open)}
         onServiceDescriptionsChange={updateServiceDescriptions}
-        onDocTitleChange={setDocTitle}
+        onDocTitleChange={onUploadTitleChange}
         onUploadRoleChange={onChooseUploadRole}
         onFileChange={onSelectUploadFile}
         onUploadDocument={onUploadDocument}
