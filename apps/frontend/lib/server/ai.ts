@@ -3339,7 +3339,9 @@ export async function buildSolutionRequirementCoverage(input: {
       { reserveMs: options.reserveMs },
     );
     if (timeoutMs === null) {
-      throw new Error("Kravbatchen ble ikke startet fordi jobbfristen nærmer seg.");
+      throw new WorkflowIncompleteError(
+        "Kravdekningen stoppet fordi jobbfristen nærmet seg før alle kravbatcher kunne vurderes. Prøv igjen om litt.",
+      );
     }
     const generated = await createJsonCompletion<{
       rows?: RequirementCoverageBatchAnswer[];
