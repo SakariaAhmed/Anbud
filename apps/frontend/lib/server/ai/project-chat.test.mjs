@@ -328,7 +328,8 @@ test("chat keeps the full text of excerpts from documents the prompt does not ca
     const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
     const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
     const supports = Array.from({ length: 5 }, (_, index) =>
-      document(`s${index + 1}`, "supporting_document", index === 4 ? `Innledning.\n${exception}` : `Støtte ${index + 1}.`),
+      // The first, included document repeats the fifth document's passage.
+      document(`s${index + 1}`, "supporting_document", index === 4 ? `Innledning.\n${exception}` : index === 0 ? `Støtte 1.\n${exception}` : `Støtte ${index + 1}.`),
     );
     const result = await streamProjectChat({
       projectName: "Fiktiv", question: "Hvilke unntak gjelder for tilgjengelighet?",
@@ -338,7 +339,9 @@ test("chat keeps the full text of excerpts from documents the prompt does not ca
       supportingDocuments: supports,
     });
     for await (const chunk of result.stream) assert.equal(chunk, "ok");
-    assert.ok(state.prompts.at(-1).user.includes(exception), "the fifth document is not in the prompt, so its excerpt keeps its full text");
+    const user = state.prompts.at(-1).user;
+    const excerpt = user.slice(user.indexOf("Støtte 5, side 2"), user.indexOf("Støtte 5, side 2") + exception.length + 400);
+    assert.ok(excerpt.includes(exception), "the fifth document's own excerpt keeps its full text, even when an included document repeats it");
     // The document rule says which documents are whole and which only excerpted.
     assert.match(state.prompts.at(-1).user, /«s5» er bare med som utdrag/u);
     assert.match(state.prompts.at(-1).user, /Hele «customer», «supplier», «s1», «s2», «s3», «s4» står nedenfor\./u);

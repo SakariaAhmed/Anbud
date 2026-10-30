@@ -702,14 +702,18 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     promptDocuments.reduce((sum, document) => sum + document.raw_text.length, 0) <=
     CHAT_FULL_DOCUMENTS_MAX_CHARS;
   // With the whole documents included, an excerpt whose text is already in
-  // them only anchors its reference; any other excerpt keeps its full text.
-  const includedText = fullDocumentsInContext
-    ? promptDocuments.map((document) => document.raw_text.replace(/\s+/gu, " ")).join("\n")
-    : "";
+  // its own document only anchors its reference; any other excerpt keeps its
+  // full text. Coverage is checked per source: a document available only
+  // through excerpts may repeat a passage of an included one.
+  const includedText = new Map(
+    fullDocumentsInContext
+      ? promptDocuments.map((document) => [document.id, document.raw_text.replace(/\s+/gu, " ")] as const)
+      : [],
+  );
   const promptSnippets = fullDocumentsInContext
     ? retrievedSnippets.map((snippet) =>
-        // Only an excerpt whose whole text is in the prompt is shortened.
-        includedText.includes(snippet.text.replace(/\s+/gu, " ").trim())
+        snippet.sourceType === "project_document" &&
+        includedText.get(snippet.sourceId)?.includes(snippet.text.replace(/\s+/gu, " ").trim())
           ? { ...snippet, text: compactText(snippet.text, 280) }
           : snippet,
       )
