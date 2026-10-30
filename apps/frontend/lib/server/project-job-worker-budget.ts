@@ -76,6 +76,27 @@ type ProjectJobWorkerBudgetRuntime<Input extends { kind: ProjectJobKind }> = {
   maxScan?: number;
 };
 
+export type ProjectJobRunOutcome = {
+  /** The terminal status was written under this run's lease. */
+  terminalPersisted: boolean;
+  /**
+   * The deadline or a lost lease released the runner while the workflow may
+   * still be running in this process (runProjectWorkflowWithDeadline races it).
+   */
+  workflowAbandoned: boolean;
+};
+
+/** A run that failed after it started, carrying what it left behind. */
+export class ProjectJobRunError extends Error {
+  readonly outcome: ProjectJobRunOutcome;
+
+  constructor(cause: unknown, outcome: ProjectJobRunOutcome) {
+    super(cause instanceof Error ? cause.message : "Prosjektjobben feilet.", { cause });
+    this.name = "ProjectJobRunError";
+    this.outcome = outcome;
+  }
+}
+
 export function isProjectJobClaimsClosedError(error: unknown) {
   return error instanceof Error && error.message.startsWith("PROJECT_JOB_CLAIMS_CLOSED:");
 }
@@ -151,8 +172,10 @@ export async function runProjectJobsWithinBudget<Input extends { kind: ProjectJo
           error: runtime.safeErrorMessage(error),
         });
         // Release cutover closes claims for every job; stop instead of
-        // reporting the same refusal for the remaining queue.
+        // reporting the same refusal for the remaining queue. Abandoned work
+        // still occupies the process even when its terminal write failed.
         if (isProjectJobClaimsClosedError(error)) return results;
+        if (error instanceof ProjectJobRunError && error.outcome.workflowAbandoned) return results;
       }
     }
 

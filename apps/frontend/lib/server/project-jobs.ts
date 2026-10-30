@@ -49,6 +49,8 @@ import {
 } from "@/lib/server/project-workflow-deadline";
 import {
   isProjectJobClaimsClosedError,
+  ProjectJobRunError,
+  type ProjectJobRunOutcome,
   runProjectJobsWithinBudget,
 } from "@/lib/server/project-job-worker-budget";
 import {
@@ -91,15 +93,7 @@ type ActiveProjectJobLease = ProjectJobLeaseGuard & {
   stop: () => void;
 };
 
-export type ProjectJobRunOutcome = {
-  /** The terminal status was written under this run's lease. */
-  terminalPersisted: boolean;
-  /**
-   * The deadline or a lost lease released the runner while the workflow may
-   * still be running in this process (runProjectWorkflowWithDeadline races it).
-   */
-  workflowAbandoned: boolean;
-};
+export type { ProjectJobRunOutcome } from "@/lib/server/project-job-worker-budget";
 
 declare global {
   var __anbudProjectJobs: JobStore | undefined;
@@ -870,6 +864,9 @@ async function runProjectJob(
       );
       return { terminalPersisted: false, workflowAbandoned: true };
     }
+    // Decide this before checkpoint recovery: a workflow that saved a
+    // checkpoint and then hung until its deadline is still running here.
+    workflowAbandoned = isProjectWorkflowDeadlineExceededError(error);
     const committed = context.persisted ? await recoverCommittedProjectJobResult(input.projectId, jobId).catch(() => null) : null;
     if (committed) {
       terminalPatch = { status: "completed", message: "completion_status" in committed
@@ -880,7 +877,6 @@ async function runProjectJob(
       failureTerminalMetadata = errorTerminalMetadata;
     }
     if (isProjectWorkflowDeadlineExceededError(error)) {
-      workflowAbandoned = true;
       console.warn(
         JSON.stringify({
           event: "project_job_execution_timeout",
@@ -924,13 +920,22 @@ async function runProjectJob(
   } finally {
     try {
       if (terminalPatch) {
-        terminalPersisted = await finishJob(
-          jobId,
-          terminalPatch,
-          context,
-          input,
-          failureTerminalMetadata,
-        );
+        try {
+          terminalPersisted = await finishJob(
+            jobId,
+            terminalPatch,
+            context,
+            input,
+            failureTerminalMetadata,
+          );
+        } catch (error) {
+          // Callers still need to know whether abandoned work occupies this
+          // process when the terminal write itself fails.
+          throw new ProjectJobRunError(error, {
+            terminalPersisted: false,
+            workflowAbandoned,
+          });
+        }
         lease.stop();
       }
     } finally {
