@@ -193,6 +193,7 @@ import { textCoverageScore } from "@/lib/server/requirements/unstructured-ledger
 import {
   assertRequirementCoverageBatchesSucceeded,
   bindVerifiedSolutionQuote,
+  requirementGenericStems,
   retryRequirementCoverageBatches,
   assertRequirementCoverageItemsAreReviewable,
   buildDeterministicControlRepairMetadata,
@@ -1837,10 +1838,8 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
             expectedNumbers: chunk.map((row) => row.absoluteIndex + 1),
           });
         } catch (error) {
-          handoffBatchError = productionSafeErrorMessage(
-            error,
-            "Handoff-batchen hadde ugyldig format.",
-          );
+          // A closed code: this reason is shown to the strict-repair model.
+          handoffBatchError = "Handoff-batchen hadde ugyldig format.";
           failedBatches += 1;
           console.warn(
             JSON.stringify({
@@ -3318,6 +3317,7 @@ export async function buildSolutionRequirementCoverage(input: {
   // Requirements whose answer was bound to a verified Bilag 2 quote; the
   // integrity check compares against these bound entries.
   const verifiedAnswerEntries = new Map<number, RequirementLedgerEntry>();
+  const tenderGenericStems = requirementGenericStems(requirements);
   const evaluateCoverageChunk = async (
     chunk: (typeof chunks)[number],
     options: { reserveMs: number; maxRetries: number },
@@ -3373,22 +3373,34 @@ export async function buildSolutionRequirementCoverage(input: {
       startIndex: chunk.startIndex,
     });
     const items = chunk.entries.map((entry, localIndex) => {
-      const row = rows[localIndex];
+      const modelRow = rows[localIndex];
       const orderIndex = chunk.startIndex + localIndex;
-      const verifiedEntry = bindVerifiedSolutionQuote({
+      const verified = bindVerifiedSolutionQuote({
         entry,
-        quote: row?.evidence ?? row?.bevis,
-        assessment: row?.assessment ?? row?.vurdering,
+        quote: modelRow?.evidence ?? modelRow?.bevis,
+        assessment: modelRow?.assessment ?? modelRow?.vurdering,
         solutionDocument: input.solutionDocument,
+        genericStems: tenderGenericStems,
       });
-      if (verifiedEntry) {
-        verifiedAnswerEntries.set(orderIndex, verifiedEntry);
+      if (verified) {
+        verifiedAnswerEntries.set(orderIndex, verified.entry);
       } else {
         verifiedAnswerEntries.delete(orderIndex);
       }
+      // An uncertain link (weak overlap or cut context) cannot carry "Godt".
+      const row =
+        verified?.uncertain &&
+        (modelRow?.assessment ?? modelRow?.vurdering) === "Godt"
+          ? {
+              ...modelRow,
+              assessment: "Uklart",
+              vurdering: undefined,
+              rationale: `Bilag 2-sitatet berører kravet, men koblingen er usikker og må kontrolleres. ${modelRow?.rationale ?? modelRow?.begrunnelse ?? ""}`.trim(),
+            }
+          : modelRow;
       return coverageItemFromBatchRow({
         row,
-        entry: verifiedEntry ?? entry,
+        entry: verified?.entry ?? entry,
         orderIndex,
       });
     });
@@ -3817,7 +3829,10 @@ async function generateRequirementResponseFromLedger(input: {
       );
       return {
         rows: [] as RequirementBatchAnswer[],
-        batchError: productionSafeErrorMessage(error, "Kravsvar-batch feilet."),
+        // Closed codes only: this reason reaches repair prompts.
+        batchError: isAiCallTimeoutError(error)
+          ? "Kravsvar-batchen fikk ikke svar innen tidsfristen."
+          : "Kravsvar-batch feilet.",
         timedOut: isAiCallTimeoutError(error),
       };
     }

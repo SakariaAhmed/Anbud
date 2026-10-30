@@ -13,6 +13,8 @@ const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 
 const batches = [];
 let behaviour = () => "ok";
+let inFlight = 0;
+let maxRetryInFlight = 0;
 const server = createServer(async (request, response) => {
   let body = "";
   let payload;
@@ -33,14 +35,30 @@ const server = createServer(async (request, response) => {
   const rows = JSON.parse(registry[1]);
   const key = rows.map((row) => row.nr).join(",");
   batches.push(key);
-  if (behaviour(key, batches.filter((seen) => seen === key).length) === "fail") {
+  const attempt = batches.filter((seen) => seen === key).length;
+  inFlight += 1;
+  if (attempt > 2) maxRetryInFlight = Math.max(maxRetryInFlight, inFlight);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  inFlight -= 1;
+  if (behaviour(key, attempt) === "fail") {
     response.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "upstream" } }));
     return;
   }
-  const answered = (row) => /RPO/u.test(row.requirement ?? row.kravtekst ?? JSON.stringify(row));
+  const text = (row) => JSON.stringify(row);
+  const answered = (row) => /RPO/u.test(text(row));
+  const sso = (row) => /SSO/u.test(text(row));
   const content = JSON.stringify({
     rows: rows.map((row) =>
-      answered(row)
+      sso(row)
+        ? {
+            nr: row.nr,
+            ref: row.ref,
+            assessment: "Godt",
+            rationale: "MFA via SSO er beskrevet.",
+            evidence: "All administrativ pålogging krever MFA via oppdragsgivers SSO.",
+            recommendation: "Ingen.",
+          }
+        : answered(row)
         ? {
             nr: row.nr,
             ref: row.ref,
@@ -97,6 +115,7 @@ const solutionDocument = {
     "Sammendrag: Leverandøren oppfyller alle krav i konkurransegrunnlaget.",
     "[[SIDE:2]]",
     "Kontinuitet. Vi har lang erfaring med drift. Alle virksomhetskritiske systemer sikkerhetskopieres hver time til en separat lokasjon, og gjenoppretting testes kvartalsvis.",
+    "Tilgang. All administrativ pålogging krever MFA via oppdragsgivers SSO.",
   ].join("\n"),
   structure_map: [],
 };
@@ -111,6 +130,15 @@ const ledger = [
     documentTitle: "Bilag 1",
     sourceExcerpt: `Kravgrunnlag: DRI-${String(index + 1).padStart(2, "0")} Leverandøren skal beskrive rutiner for ${topic}.`,
   })),
+  {
+    id: "SIK-02",
+    text: "Administrativ tilgang skal kreve MFA og SSO.",
+    pages: [1],
+    heading: "6.3 Sikkerhet",
+    documentId: "customer-doc",
+    documentTitle: "Bilag 1",
+    sourceExcerpt: "Kravgrunnlag: SIK-02 Administrativ tilgang skal kreve MFA og SSO.",
+  },
   {
     id: "DAT-02",
     text: "For kritiske systemer skal RPO ikke overstige 1 time.",
@@ -144,14 +172,21 @@ test("failed coverage batches are retried in parallel and merged in requirement 
   );
   assert.ok(new Set(batches).size >= 2, "the ledger should span several batches");
 
-  const rpo = coverage.items.at(-1);
+  // Failed batches are retried concurrently, not one after another.
+  assert.ok(maxRetryInFlight >= 2, `retries in flight: ${maxRetryInFlight}`);
+  const byRef = (ref) => coverage.items.find((item) => item.reference.startsWith(ref));
+  const sso = byRef("SIK-02");
+  assert.equal(sso.assessment, "Godt");
+  assert.equal(sso.answer_document_id, "solution-doc");
+
+  const rpo = byRef("DAT-02");
   assert.equal(rpo.assessment, "Godt");
   assert.equal(rpo.answer_document_id, "solution-doc");
   // The stored evidence is the whole source sentence, not the model's excerpt.
   assert.match(rpo.evidence, /^Alle virksomhetskritiske systemer .* testes kvartalsvis\./u);
 
   // "Mangler" stays "Mangler" even though a verbatim (blanket) quote was given.
-  for (const item of coverage.items.slice(0, -1)) {
+  for (const item of coverage.items.filter((candidate) => candidate !== sso && candidate !== rpo)) {
     assert.equal(item.assessment, "Mangler", item.reference);
     assert.equal(item.answer_document_id, null);
   }
@@ -159,7 +194,7 @@ test("failed coverage batches are retried in parallel and merged in requirement 
 
 test("a batch that keeps failing stops the evaluation with a user-facing message", async () => {
   batches.length = 0;
-  behaviour = (key) => (key.split(",").includes("12") ? "fail" : "ok");
+  behaviour = (key) => (key.split(",").includes("13") ? "fail" : "ok");
   await assert.rejects(buildSolutionRequirementCoverage(coverageInput()), (error) => {
     assert.equal(error.name, "WorkflowIncompleteError");
     assert.match(error.publicMessage, /1 av \d+ AI-batcher \(\d+ krav\) ikke ble fullført/u);

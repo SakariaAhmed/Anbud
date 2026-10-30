@@ -18,6 +18,7 @@ const load = (file) => jiti.import(path.join(frontendRoot, file));
 const {
   bindVerifiedSolutionQuote,
   buildRequirementCoveragePageContext,
+  requirementGenericStems,
   coverageItemFromBatchRow,
   matchCenteredExcerpt,
 } = await load("lib/server/ai/requirement-coverage.ts");
@@ -64,12 +65,12 @@ const verbatimQuote =
   "Alle virksomhetskritiske systemer sikkerhetskopieres hver time til en separat lokasjon, og gjenoppretting testes kvartalsvis med dokumentert tidsmåling mot avtalt gjenopprettingstid.";
 
 test("a verbatim Bilag 2 quote binds a prose answer, including PDF line-break hyphens", () => {
-  const bound = bindVerifiedSolutionQuote({
+  const { entry: bound, uncertain } = bindVerifiedSolutionQuote({
     entry: unansweredRequirement,
     quote: `«${verbatimQuote}»`,
     solutionDocument,
   });
-  assert.ok(bound);
+  assert.equal(uncertain, false);
   assert.equal(bound.answerDocumentId, "solution-doc");
   assert.equal(bound.answerReference, "Bilag 2 - Løsningsbeskrivelse, side 2");
   assert.match(bound.sourceExcerpt, /^Kravgrunnlag: KD-10 .* \| Svarrad: /u);
@@ -111,7 +112,7 @@ test("a verified quote lets the model's assessment stand and passes the integrit
     evidence: verbatimQuote,
     recommendation: "Bekreft RPO eksplisitt i avtalen.",
   };
-  const bound = bindVerifiedSolutionQuote({ entry: unansweredRequirement, quote: row.evidence, solutionDocument });
+  const { entry: bound } = bindVerifiedSolutionQuote({ entry: unansweredRequirement, quote: row.evidence, solutionDocument });
   const item = coverageItemFromBatchRow({ row, entry: bound, orderIndex: 0 });
   assert.equal(item.assessment, "Godt");
   assert.equal(item.answer_document_id, "solution-doc");
@@ -215,7 +216,7 @@ test("a quote is widened to its whole sentence, so a dropped negation still coun
     id: "SIK-07",
     text: "Alle kundedata skal ha kryptert lagring i Norge og Sverige.",
   };
-  const bound = bindVerifiedSolutionQuote({
+  const { entry: bound } = bindVerifiedSolutionQuote({
     entry,
     quote: "kryptert lagring av alle kundedata i Norge og Sverige.",
     assessment: "Godt",
@@ -255,7 +256,7 @@ test("an answer may repeat the requirement before saying how it is met", () => {
     solutionDocument: document,
   });
   assert.ok(bound);
-  assert.match(bound.answerExcerpt, /kontinuerlig replikering/u);
+  assert.match(bound.entry.answerExcerpt, /kontinuerlig replikering/u);
 });
 
 test("PDF ligatures and typographic apostrophes do not block a verbatim quote", () => {
@@ -287,4 +288,108 @@ test("a long matching sentence is windowed around the match", () => {
   assert.match(excerpt, /responstid på høyst 15 minutter/u);
   const longSentence = `${"Plattformen har mange egenskaper og funksjoner, ".repeat(8)}inkludert responstid på 15 minutter for kritiske hendelser og ${"mer tekst ".repeat(20)}.`;
   assert.match(matchCenteredExcerpt(longSentence, "responstid kritiske hendelser", 160), /responstid på 15 minutter/u);
+});
+
+test("relevance tiers: paraphrases bind, generic overlap does not, weak overlap is uncertain", () => {
+  const document = (text) => ({ ...solutionDocument, raw_text: `[[SIDE:5]]\n${text}` });
+  const requirement = (text) => ({ ...unansweredRequirement, id: "X-1", heading: "", text });
+  const bind = (entry, quote, raw = quote) =>
+    bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: document(raw) });
+
+  // A paraphrase sharing only one stem is bound, but not as certain.
+  const daily = bind(
+    requirement("Sikkerhetskopiering skal utføres daglig."),
+    "Vi sikkerhetskopierer alle data hver dag til et separat datasenter.",
+  );
+  assert.ok(daily);
+  assert.equal(daily.uncertain, true);
+  // Inflection, compounds and acronyms count as shared terms.
+  const encrypted = bind(
+    requirement("Logging og kryptering skal gjelde alle kundedata."),
+    "Alle kundedata logges og krypteres automatisk med AES-256 ved lagring.",
+  );
+  assert.equal(encrypted?.uncertain, false);
+  assert.equal(
+    bind(requirement("Administrativ tilgang skal kreve MFA og SSO."), "All administrativ tilgang krever MFA via oppdragsgivers SSO-løsning.")?.uncertain,
+    false,
+  );
+  // Overlap on generic verbs only is not evidence.
+  assert.equal(
+    bind(
+      requirement("Leverandøren skal dokumentere logging av administratorhandlinger."),
+      "Vi dokumenterer rutiner for løpende kundedialog og årlige statusmøter.",
+    ),
+    null,
+  );
+  // Paraphrased blanket compliance claims are rejected.
+  assert.equal(
+    bind(requirement("Sikkerhetskopiering skal utføres daglig."), "Løsningen tilfredsstiller samtlige krav til sikkerhetskopiering og drift."),
+    null,
+  );
+});
+
+test("a following qualifying sentence is part of the answer; cut context is uncertain", () => {
+  const entry = { ...unansweredRequirement, id: "SIK-07", heading: "", text: "Alle kundedata skal ha kryptert lagring i Norge." };
+  const qualified = bindVerifiedSolutionQuote({
+    entry,
+    quote: "Kryptert lagring av alle kundedata leveres i Norge.",
+    assessment: "Godt",
+    solutionDocument: { ...solutionDocument, raw_text: "[[SIDE:2]]\nKryptert lagring av alle kundedata leveres i Norge. Dette inngår ikke i fastprisen. Neste tema." },
+  });
+  assert.match(qualified.entry.answerExcerpt, /Dette inngår ikke i fastprisen\.$/u);
+
+  const filler = "og plattformen driftes med faste rutiner ".repeat(12);
+  const cut = bindVerifiedSolutionQuote({
+    entry,
+    quote: "kryptert lagring av alle kundedata leveres i Norge",
+    assessment: "Godt",
+    solutionDocument: { ...solutionDocument, raw_text: `[[SIDE:2]]\nVi tilbyr ikke dette ${filler}kryptert lagring av alle kundedata leveres i Norge ${filler}` },
+  });
+  assert.equal(cut.uncertain, true);
+});
+
+test("council round 2 probes: acronyms, cells, abbreviations and bare confirmations", () => {
+  const doc = (text) => ({ ...solutionDocument, raw_text: `[[SIDE:6]]\n${text}` });
+  const req = (text) => ({ ...unansweredRequirement, id: "Y-1", heading: "", text });
+  const bind = (entry, quote, raw) =>
+    bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc(raw ?? quote) });
+
+  // One shared acronym is enough.
+  assert.equal(
+    bind(req("Løsningen skal støtte MFA og SSO."), "Pålogging skjer med MFA via oppdragsgivers identitetsplattform.")?.uncertain,
+    false,
+  );
+  // A neighbouring table row cannot supply the relevance or the evidence.
+  const table = "KRAV-1 | Overvåking hele døgnet | Ja, vi overvåker alle servere døgnet rundt | KRAV-3 | Månedlig rapportering av SLA | Rapport leveres kvartalsvis";
+  assert.equal(bind(req("Leverandøren skal levere månedlig rapportering av SLA-oppnåelse."), "Ja, vi overvåker alle servere døgnet rundt", table), null);
+  const reported = bind(req("Leverandøren skal levere månedlig rapportering av SLA-oppnåelse."), "Rapport leveres kvartalsvis", table);
+  assert.ok(!reported || !/overvåker/u.test(reported.entry.answerExcerpt));
+  // "f.eks." does not end the sentence, so the negation before it is seen.
+  const abbreviated = bind(
+    req("Alle kundedata skal ha kryptert lagring i Norge."),
+    "kryptert lagring av alle kundedata i Norge.",
+    "Vi leverer ikke alle tjenester, f.eks. kryptert lagring av alle kundedata i Norge.",
+  );
+  assert.match(abbreviated.entry.answerExcerpt, /^Vi leverer ikke/u);
+  assert.equal(abbreviated.uncertain, true);
+  // Restating the requirement and confirming it says nothing about how.
+  assert.equal(
+    bind(
+      req("For kritiske systemer skal RPO ikke overstige 1 time."),
+      "For kritiske systemer skal RPO ikke overstige 1 time. Leverandøren bekrefter at dette kravet er oppfylt.",
+    ),
+    null,
+  );
+});
+
+test("stems common to many requirements in a tender are treated as generic", () => {
+  const entries = Array.from({ length: 10 }, (_, index) => ({
+    id: `M-${index}`,
+    text: index < 5 ? `Migreringen av plattformen skal dokumenteres for system ${index}.` : `Rapportering nummer ${index} leveres månedlig.`,
+    pages: [],
+    heading: "",
+  }));
+  const generic = requirementGenericStems(entries);
+  assert.ok(generic.has("plattform"));
+  assert.ok(!generic.has("rapportering"));
 });

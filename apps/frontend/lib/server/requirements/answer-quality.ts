@@ -3727,7 +3727,7 @@ export function answerHasSelfContainedCoverage(
 
 export function answerExplicitlyDeclinesRequirement(value: string) {
   const text = normalizePageText(value);
-  return /\b(?:(?:kravet|leveransen|funksjonen|funksjonaliteten|tjenesten|kontrollen|løsningen)\s+(?:inngår\s+ikke|er\s+ikke\s+inkludert)|(?:inngår\s+ikke|er\s+ikke\s+inkludert)\s+i\s+(?:leveransen|tilbudet|scope|omfanget)|ikke\s+leveres|kan\s+ikke\s+(?:levere|støtte|oppfylle)|utenfor\s+scope|må\s+håndteres\s+av\s+kunden|not\s+included\s+in\s+(?:the\s+)?(?:delivery|offer|scope)|out\s+of\s+scope|cannot\s+(?:deliver|support|meet))\b/i.test(
+  return /\b(?:(?:kravet|leveransen|funksjonen|funksjonaliteten|tjenesten|kontrollen|løsningen)\s+(?:inngår\s+ikke|er\s+ikke\s+inkludert)|(?:inngår\s+ikke|er\s+ikke\s+inkludert)\s+i\s+(?:leveransen|tilbudet|scope|omfanget)|ikke\s+leveres|(?:støttes|tilbys|leveres|dekkes)\s+ikke|kan\s+ikke\s+(?:levere|støtte|oppfylle|tilby)|utenfor\s+scope|må\s+håndteres\s+av\s+kunden|not\s+included\s+in\s+(?:the\s+)?(?:delivery|offer|scope)|out\s+of\s+scope|cannot\s+(?:deliver|support|meet))\b/i.test(
     text,
   );
 }
