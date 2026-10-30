@@ -244,8 +244,10 @@ function correctedWording(original: string, quote: string, replaced: string | un
 
 /** Unquoted new wording: the first sentence, and each following one that
  * continues it (an obligation, a back-reference, or a word stem of the
- * wording so far: "Rapporten publiseres i portalen."). A rationale or an
- * administrative sentence ("Svarfristen forlenges …") ends it. */
+ * wording so far: "Rapporten publiseres i portalen."), up to an explicit
+ * rationale ("Bakgrunnen er …"). Null when a following sentence is neither
+ * ("Responstiden er maksimalt 30 minutter.", "Svarfristen forlenges …"):
+ * an incomplete rewrite would silently drop a condition. */
 function unquotedWording(text: string) {
   const parts = text.trim().split(/(?<=[.!])\s+(?=[A-ZÆØÅ])/u);
   const stems = (value: string) => (normalized(value).match(/\p{L}{5,}/gu) ?? []).map((word) => word.slice(0, 5));
@@ -258,7 +260,7 @@ function unquotedWording(text: string) {
       OBLIGATION.test(part) ||
       /^(?:den|denne|dette|disse)(?![\p{L}\p{N}])/iu.test(part) ||
       stems(part).some((stem) => wording.includes(stem));
-    if (!continues) break;
+    if (!continues) return null;
     kept += 1;
   }
   return {
@@ -336,7 +338,11 @@ export function applyRequirementCorrections(
     const quotedStatement = statement.replace(
       /\b((?:ny\s+tekst|skal\s+(?:nå\s+)?lyde)\s*:?\s*)(?![«“"])([^|«»“”"]{12,1500}?)(\s*(?:\||$))/giu,
       (_match, lead: string, text: string, tail: string) => {
-        const { wording, rest } = unquotedWording(text);
+        const segmented = unquotedWording(text);
+        // Where the wording ends is unclear: no rewrite, the statement stays
+        // a note on the unchanged requirement.
+        if (!segmented) return `${lead}${text}${tail}`;
+        const { wording, rest } = segmented;
         return `${lead}«${wording}»${rest ? ` ${rest}` : ""}${tail}`;
       },
     );

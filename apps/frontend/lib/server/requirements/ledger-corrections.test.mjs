@@ -512,11 +512,14 @@ test("round 9 probes: unquoted new wording keeps every sentence before its ratio
     text("K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Rapporten publiseres i portalen. Bakgrunnen er behov for tettere oppfølging."),
     "Leverandøren skal levere månedlig driftsrapport. Rapporten publiseres i portalen.",
   );
-  // An administrative sentence after the wording is not part of it.
-  assert.equal(
-    text("K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Svarfristen forlenges til 15. november."),
-    "Leverandøren skal levere månedlig driftsrapport.",
-  );
+  // Where unquoted wording ends is unclear: no rewrite, never a dropped
+  // condition or an administrative sentence stored as requirement text.
+  for (const unclear of [
+    "K-3 endres. Ny tekst: Leverandøren skal levere månedlig driftsrapport. Svarfristen forlenges til 15. november.",
+    "K-3 endres. Ny tekst: Leverandøren skal levere døgnkontinuerlig brukerstøtte. Responstiden er maksimalt 30 minutter.",
+  ]) {
+    assert.equal(text(unclear), ledger[0].text, unclear);
+  }
   // "lyder nå" ends in a letter \b does not see.
   assert.equal(text("K-3 lyder nå: «Leverandøren skal levere månedlig driftsrapport.»"), "Leverandøren skal levere månedlig driftsrapport.");
 });
