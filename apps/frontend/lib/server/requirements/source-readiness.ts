@@ -1,4 +1,4 @@
-import { correctedRequirementIds } from "@/lib/server/requirements/corrections";
+import { correctedRequirementIds, withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
 import { spreadsheetRequirementIds } from "@/lib/server/requirements/spreadsheet-ledger";
 import {
   hasReadableRequirementDocumentContent,
@@ -728,10 +728,13 @@ export function assertExplicitRequirementLedgersComplete(
       if (!isFormalRequirementDocument(document)) return [];
       // Expected after the document's own corrections chapter, so a
       // withdrawn or renumbered row is not a corruption.
-      const expected = correctedRequirementIds(
-        explicitIdTableSourceIds(document.raw_text),
-        document.raw_text,
-      ).map(explicitInventoryId);
+      // Counted without the corrections chapter (its reference rows are not
+      // requirements); an inventory exists only if the original text has
+      // one, and corrections then adjust it.
+      const sourceIds = explicitIdTableSourceIds(withoutCorrectionsSection(document.raw_text));
+      const expected = sourceIds.length
+        ? correctedRequirementIds(sourceIds, document.raw_text).map(explicitInventoryId)
+        : [];
       if (!expected.length) return [];
 
       const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
@@ -864,7 +867,7 @@ function explicitLedgerEntryIds(entry: RequirementLedgerEntry) {
 /** The generic explicit-ID inventory after the document's corrections
  * chapter, so an intended withdrawal or renumbering is not a lost row. */
 function correctedExplicitRequirementSourceInventory(rawText: string) {
-  const { expected, rawIds } = explicitRequirementSourceInventoryWithRawIds(rawText);
+  const { expected, rawIds } = explicitRequirementSourceInventoryWithRawIds(withoutCorrectionsSection(rawText));
   const raw = [...expected].flatMap(([id, count]) => Array.from({ length: count }, () => rawIds.get(id) ?? id));
   return correctedRequirementIds(raw, rawText).reduce((counts, id) => {
     const key = explicitInventoryId(id);

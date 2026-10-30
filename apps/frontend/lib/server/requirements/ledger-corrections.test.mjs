@@ -298,3 +298,48 @@ test("matrix guards: numbered sections, price forms, continuations, answer colum
   // the completeness guard reports them instead of losing them.
   assert.deepEqual(spreadsheetRequirementIds(document), ["1.1", "1.2", "SIK-ARK-01", "7a/II"]);
 });
+
+test("round 6 probes: clause-bound withdrawals, negated additions and renumbering, inventories", () => {
+  const k = (n) => ({ id: `K-${n}`, text: `Leverandøren skal oppfylle krav nummer ${n} fullt ut.`, pages: [1], heading: "4" });
+  const ledger = [k(1), k(2), k(3)];
+  const run = (text) => applyRequirementCorrections(ledger, `8 Rettelser\n${text}`).ledger.map((entry) => entry.id);
+  assert.deepEqual(run("K-1 beholdes uendret, mens K-2 utgår."), ["K-1", "K-3"]);
+  assert.deepEqual(run("K-1 utgår ikke, men K-2 utgår."), ["K-1", "K-3"]);
+  assert.deepEqual(run("K-1 får ikke ny ID K-9.\nK-3 utgår."), ["K-1", "K-2"]);
+  assert.deepEqual(
+    run("Det legges ikke til nytt krav K-9: «Leverandøren skal levere månedlig sikkerhetsrapport.»\nK-3 utgår."),
+    ["K-1", "K-2"],
+  );
+
+  // Inventories come from the original text: a correction table adding K-9
+  // or referring to K-1 does not distort what the guard expects.
+  const text = [
+    "4 Krav",
+    "| Krav-ID | Kravtekst |",
+    "| K-1 | Leverandøren skal oppfylle krav nummer 1 fullt ut. |",
+    "| K-2 | Leverandøren skal oppfylle krav nummer 2 fullt ut. |",
+    "| K-3 | Leverandøren skal oppfylle krav nummer 3 fullt ut. |",
+    "",
+    "8 Rettelser",
+    "| Nr. | Krav | Endring |",
+    "| 1 | K-1 | Kravet endres. Ny tekst: «Leverandøren skal oppfylle krav nummer 1 innen fristen.» |",
+    "| 2 | Nytt krav K-9 | Følgende krav legges til: «Leverandøren skal levere en exitplan.» |",
+  ].join("\n");
+  const document = { id: "doc", role: "primary_customer_document", title: "Bilag 1", file_format: "md", raw_text: text, structure_map: [] };
+  const corrected = applyRequirementCorrections(ledger, text).ledger;
+  assert.deepEqual(corrected.map((entry) => entry.id), ["K-1", "K-2", "K-3", "K-9"]);
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: corrected }]));
+});
+
+test("supplier answer columns never stand in for missing requirement text", () => {
+  const raw_text = [
+    "Ark: Krav",
+    "Rad 1: A1: Krav-ID | B1: Kravtekst | C1: Svar | D1: Leverandørens besvarelse | E1: Oppfylt (Ja/Nei)",
+    "Rad 2: A2: K-1 | C2: Ja | D2: Vi har standard backup i Azure. | E2: Ja",
+    "Rad 3: A3: K-2 | B3: Leverandøren skal ta daglig backup. | E3: Ja",
+  ].join("\n");
+  const document = { file_format: "xlsx", raw_text };
+  assert.deepEqual(buildSpreadsheetRequirementLedger(document).map((entry) => [entry.id, entry.text]), [["K-2", "Leverandøren skal ta daglig backup."]]);
+  // The row without readable requirement text stays in the inventory.
+  assert.deepEqual(spreadsheetRequirementIds(document), ["K-1", "K-2"]);
+});

@@ -17,7 +17,7 @@ const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/gu;
 const WITHDRAW_VERB =
   /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?)\b|\b(?:slettes|fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
 const CHANGE_VERB = /\b(?:endres|erstattes(?!\s+av\s+(?:et\s+)?nytt)|ny\s+tekst|lyder\s+nå|skal\s+nå\s+lyde)\b/giu;
-const ADDED = /\b(?:nytt\s+krav|legges\s+til|tilføyes)\b/iu;
+const ADDED = /\b(?:nytt\s+krav|legges(?:\s+ikke)?\s+til|tilføyes)\b/iu;
 const RENUMBERED = /\bny\s+(?:krav-?)?id\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4})\b/iu;
 const ANSWER = /^\s*svar\s*:/iu;
 // An ID named as context rather than as the subject of the action.
@@ -69,6 +69,13 @@ export function findCorrectionsSection(rawText: string) {
   return lines.slice(start, end).join("\n");
 }
 
+/** The document without its corrections chapter: source inventories are
+ * counted from the original requirement text, then corrected. */
+export function withoutCorrectionsSection(rawText: string) {
+  const section = findCorrectionsSection(rawText);
+  return section ? rawText.replace(section, "") : rawText;
+}
+
 /** One statement per table row, list item or ID-led line; wrapped
  * continuation lines stay with their statement. */
 function statements(section: string) {
@@ -95,8 +102,10 @@ function idPrefix(id: string) {
 
 /** Sentences of a masked statement, each with its IDs and their positions. */
 function sentences(masked: string) {
+  // Sentences, table cells and contrasting clauses ("K-1 beholdes, mens K-2
+  // utgår") each carry their own subjects; a list ("K-4, K-6 og K-7") stays.
   return masked
-    .split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«|])|\s+\|\s+/u)
+    .split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«|])|\s+\|\s+|,\s*(?=(?:men|mens|samtidig\s+som|derimot)\b)|;\s*/u)
     .map((text) => ({
       text,
       ids: [...text.matchAll(REQUIREMENT_ID)].map((match) => ({ id: match[0], at: match.index! })),
@@ -207,7 +216,11 @@ export function applyRequirementCorrections(
         }
       }
 
-      const renumber = RENUMBERED.exec(sentence.text)?.[1];
+      const renumberMatch = RENUMBERED.exec(sentence.text);
+      const renumber =
+        renumberMatch && !/\b(?:ikke|aldri)\b/iu.test(sentence.text.slice(Math.max(0, renumberMatch.index - 15), renumberMatch.index))
+          ? renumberMatch[1]
+          : undefined;
       const renumberTarget = own.find((id) => id !== renumber);
       if (renumber && renumberTarget && !known().has(renumber)) {
         const occurrences = entries.filter((entry) => entry.id === renumberTarget);
@@ -226,7 +239,10 @@ export function applyRequirementCorrections(
       }
 
       const placeholders = [...sentence.text.matchAll(/«#(\d+)»/gu)];
-      if (ADDED.test(sentence.text) && placeholders.length) {
+      const addition = ADDED.exec(sentence.text);
+      const additionNegated =
+        addition && /\b(?:ikke|aldri)\b/iu.test(sentence.text.slice(Math.max(0, addition.index - 20), addition.index + addition[0].length));
+      if (addition && !additionNegated && placeholders.length) {
         // The ID after "nytt krav", else one that never was in the source.
         const named = /\bnytt\s+krav\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4})\b/iu.exec(masked)?.[1];
         const newId = [named, ...statementIds].find((id) => id && !sourceIds.has(id) && !known().has(id));

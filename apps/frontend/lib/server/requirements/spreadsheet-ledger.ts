@@ -17,7 +17,7 @@ const HEADER_MATCHERS = {
   criterion: /^(?:evalueringskriterium|tildelingskriterium|evaluering)$/iu,
   reference: /^(?:ref\.?\s*bilag\s*\d*|referanse\s+til\s+.+|henvisning\s+til\s+krav)$/iu,
   // Columns the supplier fills in; never part of the source requirement.
-  answer: /^(?:leverandørens\s+(?:svar|besvarelse|kommentar)|tilbyders\s+(?:svar|besvarelse|kommentar)|svar|besvarelse|henvisning\s+i\s+tilbudet|oppfylt(?:\s*\(ja\/nei\))?)$/iu,
+  answer: /^(?:leverandørens\s+(?:svar|besvarelse|kommentar)|tilbyders\s+(?:svar|besvarelse|kommentar)|svar|besvarelse|henvisning\s+i\s+tilbudet|oppfylt(?:\s*\(?\s*ja\s*\/\s*nei\s*\)?)?)$/iu,
 } as const;
 // A sheet with price or quantity columns is a price form, not a matrix.
 const PRICE_HEADER = /^(?:pris|enhetspris|antall|enhet|sum|beløp|totalpris|timepris)\b/iu;
@@ -202,13 +202,10 @@ export function buildSpreadsheetRequirementLedger(
     if (unsupportedId) return [];
     const value = (column: Column) => (columns[column] ? row.cells.get(columns[column]!) ?? "" : "");
     const id = value("id").replace(/\s+/gu, " ").trim();
-    const known = new Set(Object.values(columns));
-    const fallback = [...row.cells]
-      .filter(([column]) => !known.has(column) || column === columns.text)
-      .map(([, text]) => text)
-      .filter((text) => text !== id)
-      .join(" ");
-    const body = [value("text") || fallback, ...continuation].join(" ").replace(/\s+/gu, " ").trim();
+    // Only the requirement text column (and its continuation rows): other
+    // cells, often supplier answers, never stand in for missing wording;
+    // such a row stays in the inventory so the completeness guard reports it.
+    const body = [value("text"), ...continuation].join(" ").replace(/\s+/gu, " ").trim();
     // A short title column ("Krav") is kept with the full description.
     const title = value("title").replace(/\s+/gu, " ").trim();
     const text = title && body && !body.startsWith(title) ? `${title}: ${body}` : body || title;
