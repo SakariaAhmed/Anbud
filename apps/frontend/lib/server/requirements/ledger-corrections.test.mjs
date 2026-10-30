@@ -909,6 +909,12 @@ test("review bots on #70: 'andre' as 'other' is no ordinal; an ID-less customer 
   const withK2 = [...twice, { id: "K-2", text: "Leverandøren skal levere kursing.", pages: [1], heading: "4 Krav" }];
   const qualifiedAside = applyRequirementCorrections(withK2, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\nK-2 ${withK2[2].text}\n\n9 Rettelser\nK-3 er brukt to ganger. Den siste (sikkerhetsrapport fra K-2) får ny ID K-9.`).ledger;
   assert.deepEqual(qualifiedAside.map((entry) => entry.id), ["K-3", "K-9", "K-2"]);
+  // Two requirements named before a pronoun ordinal: which one is meant is unclear.
+  const bothTwice = [...twice, withK2[2], { ...withK2[2], text: "Leverandøren skal levere opplæring." }];
+  assert.throws(
+    () => applyRequirementCorrections(bothTwice, `4 Krav\n${bothTwice.map((entry) => `${entry.id} ${entry.text}`).join("\n")}\n\n9 Rettelser\nK-2 og K-3 er brukt to ganger. Den siste (sikkerhetsrapport fra K-2) får ny ID K-9.`),
+    /ny krav-ID K-9 kan gjelde K-2, K-3/u,
+  );
   // Plural "andre krav" names no occurrence: one K-3 is renamed, two stay ambiguous.
   assert.deepEqual(
     applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nI tillegg til andre krav får K-3 ny ID K-9.`).ledger.map((entry) => entry.id),

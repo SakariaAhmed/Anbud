@@ -508,13 +508,23 @@ export function applyRequirementCorrections(
       const fallbackSubjects = ids.length
         ? ids.filter((id) => sentence.ids.some((entry) => entry.id === id && !inAside(entry.at)))
         : own;
-      const renumberTarget = renumberMatch
+      const fallbackCandidates = [
+        ...new Set((fallbackSubjects.length ? fallbackSubjects : priorContext ?? []).filter((id) => id !== renumber)),
+      ];
+      const directTarget = renumberMatch
         ? subjects({
             text: sentence.text,
             ids: sentence.ids.filter(({ at }) => at < renumberMatch.index && !inAside(at)),
-          }, known()).at(-1) ??
-          (fallbackSubjects.length ? fallbackSubjects : priorContext ?? []).find((id) => id !== renumber)
+          }, known()).at(-1)
         : undefined;
+      // A fallback naming several requirements ("K-2 og K-3 er brukt to
+      // ganger. Den siste … får ny ID K-9.") cannot show which one is meant.
+      if (renumberMatch && renumber && !directTarget && fallbackCandidates.length > 1 && !known().has(renumber)) {
+        throw new WorkflowPreconditionError(
+          `Kravrettelsen kan ikke brukes entydig: ny krav-ID ${renumber} kan gjelde ${fallbackCandidates.join(", ")}. Avklar hvilket krav rettelsen gjelder.`,
+        );
+      }
+      const renumberTarget = renumberMatch ? directTarget ?? fallbackCandidates[0] : undefined;
       if (renumberMatch && renumber && renumberTarget && !known().has(renumber)) {
         const occurrences = entries.filter((entry) => entry.id === renumberTarget);
         // An explicit ordinal can disambiguate a renumbering. Without it,
