@@ -7623,3 +7623,32 @@ end;
 $$;
 revoke all on function public.insert_vacant_primary_project_document(uuid, text, jsonb) from public, anon, authenticated;
 grant execute on function public.insert_vacant_primary_project_document(uuid, text, jsonb) to service_role;
+
+-- Release preflight: the rollout calls this through PostgREST before
+-- promotion, so an unmigrated database or a stale PostgREST schema cache
+-- (HTTP 404) stops the release instead of reaching suggested uploads.
+create or replace function public.vacant_primary_document_insert_preflight()
+returns text
+language plpgsql
+stable
+security invoker
+set search_path = ''
+as $$
+declare
+  v_function regprocedure := pg_catalog.to_regprocedure(
+    'public.insert_vacant_primary_project_document(uuid,text,jsonb)'
+  );
+begin
+  if v_function is null then
+    raise exception 'insert_vacant_primary_project_document is missing';
+  end if;
+  if not pg_catalog.has_function_privilege('service_role', v_function, 'execute')
+     or pg_catalog.has_function_privilege('anon', v_function, 'execute')
+     or pg_catalog.has_function_privilege('authenticated', v_function, 'execute') then
+    raise exception 'insert_vacant_primary_project_document has unexpected grants';
+  end if;
+  return 'vacant-primary-document-insert-v1';
+end;
+$$;
+revoke all on function public.vacant_primary_document_insert_preflight() from public, anon, authenticated;
+grant execute on function public.vacant_primary_document_insert_preflight() to service_role;

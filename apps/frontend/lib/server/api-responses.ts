@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { authorizationErrorResponse } from "@/lib/server/authorization";
+import { DatabaseUpdateRequiredError } from "@/lib/server/database-update-required";
 import { MultipartRequestError } from "@/lib/server/multipart";
 import { checkRateLimit } from "@/lib/server/observability";
 import { RequestBodyError } from "@/lib/server/request-body";
@@ -91,6 +92,12 @@ export function routeErrorResponse(
   if (error instanceof RequestBodyError || error instanceof MultipartRequestError) {
     return NextResponse.json(
       { error: error.message },
+      { status: error.status, headers: options.headers },
+    );
+  }
+  if (error instanceof DatabaseUpdateRequiredError) {
+    return NextResponse.json(
+      { error: error.userMessage, code: error.code },
       { status: error.status, headers: options.headers },
     );
   }

@@ -1,4 +1,5 @@
 import "server-only";
+import { DatabaseUpdateRequiredError } from "@/lib/server/database-update-required";
 
 import { WorkflowError } from "@/lib/server/workflow-errors";
 import { readStableProjectSourceSnapshot } from "@/lib/server/source-revision-snapshot";
@@ -1842,7 +1843,7 @@ export async function savePendingDocument(input: {
       p_primary_role: requestedPrimaryRole,
       p_payload: insertPayload,
     };
-    let { data: insertedPrimary, error: insertPrimaryError } = await dataApi.rpc(
+    const { data: insertedPrimary, error: insertPrimaryError } = await dataApi.rpc(
       suggestedPrimaryRole
         ? "insert_vacant_primary_project_document"
         : "insert_primary_project_document",
@@ -1851,9 +1852,10 @@ export async function savePendingDocument(input: {
     // A suggestion yields to a primary document set meanwhile.
     let roleOccupied = suggestedPrimaryRole && !insertPrimaryError && !insertedPrimary;
     if (suggestedPrimaryRole && insertPrimaryError?.code === "PGRST202") {
-      // Before the vacancy-only RPC is migrated, check the role here so a new
-      // project's first upload still becomes its customer document. Only the
-      // migrated RPC closes the race with a concurrent primary upload.
+      // The release preflight requires the vacancy-only insert. Without it a
+      // suggestion may still yield to a current primary document, but it must
+      // never fill a vacant role through the demoting insert: a concurrent
+      // explicit upload could land between the check and that insert.
       console.warn(JSON.stringify({
         event: "suggested_primary_document_rpc_missing",
         project_id: input.projectId,
@@ -1864,16 +1866,19 @@ export async function savePendingDocument(input: {
         .eq("project_id", input.projectId)
         .eq("role", requestedPrimaryRole)
         .limit(1);
-      if (existing.error) {
-        insertPrimaryError = existing.error;
-      } else if ((existing.data ?? []).length > 0) {
+      if (!existing.error && (existing.data ?? []).length > 0) {
         roleOccupied = true;
-        insertPrimaryError = null;
       } else {
-        ({ data: insertedPrimary, error: insertPrimaryError } = await dataApi.rpc(
-          "insert_primary_project_document",
-          primaryRpcArgs,
-        ));
+        await removeStoredFiles([storedFile]).catch((error: unknown) => {
+          console.warn(JSON.stringify({
+            event: "suggested_primary_document_cleanup_failed",
+            project_id: input.projectId,
+            ...safeErrorTelemetry(error),
+          }));
+        });
+        throw existing.error
+          ? new Error(existing.error.message)
+          : new DatabaseUpdateRequiredError("insert_vacant_primary_project_document");
       }
     }
     if (roleOccupied) {

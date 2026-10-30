@@ -100,6 +100,29 @@ candidate web revision. The candidate is smoke-tested before traffic moves, and
 the scheduled worker is updated only after promotion. A failed rollout restores
 the last healthy web revision and worker image.
 
+### Database migrations come first
+
+The workflow does not apply migrations. Before dispatching a release that
+adds files under `database/migrations`:
+
+1. Apply each new migration to the production database, in file-name order.
+   If a migration adds or changes functions or tables and does not end with
+   `notify pgrst, 'reload schema'`, run that statement afterwards.
+2. Confirm that PostgREST has reloaded its schema cache. For example, call the
+   migration's preflight RPC through the internal data API as the service
+   role and expect HTTP 200. If it still answers 404, restart the
+   `anbud-postgrest` revision.
+3. Dispatch the release.
+
+The step "Validate production database contract from the Azure network" runs
+`scripts/validate_project_jobs_schema.mjs` with the candidate image. It calls
+the required preflight RPCs and stops the release before infrastructure,
+revisions or the worker change if any is missing or not yet visible to
+PostgREST. For example, `20261030120000_vacant_primary_document_insert.sql`
+provides `vacant_primary_document_insert_preflight`. Without that migration,
+the application refuses suggested primary uploads for vacant roles rather
+than risk demoting another user's primary document.
+
 Verify after deployment:
 
 ```bash

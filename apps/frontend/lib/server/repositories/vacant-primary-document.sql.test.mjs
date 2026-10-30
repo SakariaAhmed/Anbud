@@ -72,6 +72,19 @@ ${regression}`);
     "f",
     "the API roles cannot call it",
   );
+  // The release preflight confirms the function and its grants.
+  assert.equal(
+    sql(url, "set role service_role; select public.vacant_primary_document_insert_preflight();"),
+    "vacant-primary-document-insert-v1",
+  );
+  const missing = spawnSync("psql", [url, "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1"], {
+    input: `drop function public.insert_vacant_primary_project_document(uuid, text, jsonb);
+set role service_role;
+select public.vacant_primary_document_insert_preflight();`,
+    encoding: "utf8",
+  });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /insert_vacant_primary_project_document is missing/u);
 }));
 
 test("postgres: concurrent suggested uploads leave exactly one primary customer document", {

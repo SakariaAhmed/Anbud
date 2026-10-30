@@ -1724,16 +1724,62 @@ async function quietly(run) {
   }
 }
 
-test("before the vacancy-only insert is deployed, a new project's suggested customer upload becomes primary", async () => {
+const demotingInserts = (database) =>
+  database.operations.filter((operation) => operation.table === "insert_primary_project_document");
+
+test("before the vacancy-only insert is deployed, a suggestion for a vacant role is refused without saving", async () => {
   const database = persistenceDatabase({ documents: [] });
   withoutVacantPrimaryRpc(database);
 
-  const uploaded = await quietly(() => suggestedUpload("primary_customer_document", "Konkurransegrunnlag"));
+  await quietly(() => assert.rejects(
+    suggestedUpload("primary_customer_document", "Konkurransegrunnlag"),
+    (error) => error.code === "DATABASE_UPDATE_REQUIRED" && error.status === 503,
+  ));
 
-  assert.equal(uploaded.role, "primary_customer_document");
-  assert.equal(database.tables.documents.length, 1);
-  assert.equal(database.tables.documents[0].role, "primary_customer_document");
-  assert.equal(database.tables.projects[0].customer_document_uploaded, true);
+  assert.deepEqual(database.tables.documents, [], "nothing is saved");
+  assert.deepEqual(demotingInserts(database), [], "the demoting insert is never called");
+  const removedFiles = getRemovedStoredFilesForPersistenceTest();
+  assert.equal(removedFiles.length, 1, "the uploaded blob is removed");
+  assert.match(removedFiles[0].path, /Konkurransegrunnlag\.txt$/u);
+});
+
+test("before the vacancy-only insert is deployed, a suggestion cannot demote a primary that lands concurrently", async () => {
+  // Another user's explicit upload becomes primary while this suggestion is
+  // being handled: the vacancy re-read sees no primary yet, then the explicit
+  // insert commits. The suggestion must neither demote it nor be saved.
+  const database = persistenceDatabase({ documents: [] });
+  withoutVacantPrimaryRpc(database);
+  const originalFrom = database.client.from;
+  database.client.from = (table) => {
+    const query = originalFrom(table);
+    if (table !== "documents") return query;
+    return {
+      ...query,
+      select(columns) {
+        const selected = query.select(columns);
+        const then = selected.then.bind(selected);
+        selected.then = (onFulfilled, onRejected) => then((result) => {
+          database.tables.documents.push(
+            documentRow(CUSTOMER_DOCUMENT_ID, "primary_customer_document"),
+          );
+          return onFulfilled(result);
+        }, onRejected);
+        return selected;
+      },
+    };
+  };
+
+  await quietly(() => assert.rejects(
+    suggestedUpload("primary_customer_document", "Bilag 1"),
+    (error) => error.code === "DATABASE_UPDATE_REQUIRED",
+  ));
+
+  assert.deepEqual(demotingInserts(database), []);
+  assert.deepEqual(
+    database.tables.documents.map((document) => [document.id, document.role]),
+    [[CUSTOMER_DOCUMENT_ID, "primary_customer_document"]],
+    "the concurrent explicit primary keeps its role",
+  );
 });
 
 test("before the vacancy-only insert is deployed, a suggestion still yields to the current primary", async () => {
@@ -1749,8 +1795,7 @@ test("before the vacancy-only insert is deployed, a suggestion still yields to t
     database.tables.documents.find((document) => document.id === CUSTOMER_DOCUMENT_ID).role,
     "primary_customer_document",
   );
-  assert.ok(!database.operations.some((operation) => operation.table === "insert_primary_project_document"),
-    "the demoting insert is never reached");
+  assert.deepEqual(demotingInserts(database), [], "the demoting insert is never reached");
 });
 
 test("other vacancy-only insert failures still reject the upload", async () => {

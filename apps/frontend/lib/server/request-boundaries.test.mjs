@@ -15,6 +15,7 @@ const load = (file) => jiti.import(path.join(frontendRoot, file));
 const { routeErrorResponse } = await load("lib/server/api-responses.ts");
 const { AuthorizationError } = await load("lib/server/authorization.ts");
 const { WorkflowError, WorkflowPreconditionError } = await load("lib/server/workflow-errors.ts");
+const { DatabaseUpdateRequiredError } = await load("lib/server/database-update-required.ts");
 const {
   RequestBodyError,
   optionalTextField,
@@ -93,4 +94,17 @@ test("unknown route failures carry no workflow code", async () => {
   const unknown = await responseOf(new Error("private backend detail"));
   assert.equal(unknown.status, 500);
   assert.equal("code" in unknown.body, false);
+});
+
+test("a missing database update is a fixed Norwegian 503 with its code", async () => {
+  const missing = await responseOf(
+    new DatabaseUpdateRequiredError("insert_vacant_primary_project_document"),
+  );
+  assert.equal(missing.status, 503);
+  assert.equal(missing.body.code, "DATABASE_UPDATE_REQUIRED");
+  assert.equal(
+    missing.body.error,
+    "Databasen mangler en nødvendig oppdatering, så dokumentet ble ikke lagret. Kontakt administrator.",
+  );
+  assert.doesNotMatch(missing.body.error, /insert_vacant/u, "internal names stay in logs");
 });

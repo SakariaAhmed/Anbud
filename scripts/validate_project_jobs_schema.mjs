@@ -39,6 +39,9 @@ const REQUIRED_FUNCTIONS = [
   "stable_main_rollback_bridge_preflight",
   "insert_service_document_with_keywords",
   "atomic_service_document_write_preflight",
+  // Suggested upload roles depend on it; without it the app refuses them.
+  "insert_vacant_primary_project_document",
+  "vacant_primary_document_insert_preflight",
 ];
 
 const FENCING_VERSION = "authoritative-lease-fencing-v1";
@@ -47,6 +50,8 @@ const TERMINAL_AUDIT_VERSION =
 const STABLE_ROLLBACK_BRIDGE_VERSION = "stable-main-rollback-bridge-v1";
 const ATOMIC_SERVICE_DOCUMENT_WRITE_VERSION =
   "atomic-service-document-write-v1";
+const VACANT_PRIMARY_DOCUMENT_INSERT_VERSION =
+  "vacant-primary-document-insert-v1";
 
 export function validateCanonicalProjectJobMigration(input) {
   const missing = [];
@@ -257,6 +262,33 @@ export async function preflightRemoteProjectJobSchema({
     );
   }
 
+  // HTTP 404 here means the migration is missing or PostgREST has not
+  // reloaded its schema cache since it was applied.
+  const vacantPrimaryInsertUrl = new URL(
+    `${rootUrl}/rpc/vacant_primary_document_insert_preflight`,
+  );
+  const vacantPrimaryInsertResponse = await fetchImpl(vacantPrimaryInsertUrl, {
+    method: "POST",
+    headers: {
+      apikey: serviceRoleKey,
+      authorization: `Bearer ${serviceRoleKey}`,
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: "{}",
+  });
+  if (!vacantPrimaryInsertResponse.ok) {
+    throw new Error(
+      `Vacant primary-document insert preflight failed with HTTP ${vacantPrimaryInsertResponse.status}.`,
+    );
+  }
+  const vacantPrimaryInsertVersion = await vacantPrimaryInsertResponse.json();
+  if (vacantPrimaryInsertVersion !== VACANT_PRIMARY_DOCUMENT_INSERT_VERSION) {
+    throw new Error(
+      "Vacant primary-document insert version is missing or unexpected.",
+    );
+  }
+
   return {
     host: url.host,
     columns: [...REQUIRED_PROJECT_JOB_COLUMNS],
@@ -265,6 +297,7 @@ export async function preflightRemoteProjectJobSchema({
     terminalAuditVersion,
     rollbackBridgeVersion,
     serviceDocumentWriteVersion,
+    vacantPrimaryInsertVersion,
   };
 }
 
@@ -300,6 +333,8 @@ async function main() {
         stable_rollback_bridge_version: result.rollbackBridgeVersion,
         atomic_service_document_write_version:
           result.serviceDocumentWriteVersion,
+        vacant_primary_document_insert_version:
+          result.vacantPrimaryInsertVersion,
       }),
     );
     return;
