@@ -791,3 +791,27 @@ test("council: wrapped prose, ID rows, repeated exact quotes and stitched refusa
   ]);
   assert.notEqual(stitched?.uncertain, false);
 });
+
+test("council: far-apart stitching and number-led wrapped lines never bind as certain", () => {
+  const doc = (lines) => ({ ...solutionDocument, raw_text: ["[[SIDE:6]]", ...lines].join("\n") });
+  const req = (id, text) => ({ ...unansweredRequirement, id, text, heading: "" });
+  const bind = (entry, quote, lines) => bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc(lines) });
+  const prose = "Leverandøren beskriver her hvordan tjenestene leveres, driftes og følges opp gjennom hele avtaleperioden med";
+  const backup = req("DAT-02", "Sikkerhetskopier skal oppbevares i 90 dager, og produksjonsmiljøet skal gjenopprettes innen fire timer.");
+  const sections = [
+    "## 8 Sikkerhetskopi", "", "Sikkerhetskopier oppbevares i 90 dager i et separat datasenter.", "",
+    "Gjenoppretting av produksjonsmiljøet tar normalt opptil to døgn.", "",
+    "## 9 Testmiljø", "", "Gjenoppretting av testmiljøet tar under fire timer.",
+  ];
+  // Sentences from another section, or joined across an elision.
+  assert.notEqual(bind(backup, "Sikkerhetskopier oppbevares i 90 dager i et separat datasenter. Gjenoppretting av testmiljøet tar under fire timer.", sections)?.uncertain, false);
+  assert.notEqual(bind(backup, "Sikkerhetskopier oppbevares i 90 dager … tar under fire timer.", sections)?.uncertain, false);
+  // A wrapped line starting with a number is not a heading.
+  const storage = req("ARK-01", "Alle sikkerhetskopier skal lagres i Norge.");
+  // Quoting only the first part: the refusal stays in the answer.
+  const wrapped = bind(storage, "Sikkerhetskopier replikeres mellom 2 Azure-regioner i Norge", [
+    prose, "oppdragsgiver. Sikkerhetskopier replikeres mellom", "2 Azure-regioner i Norge, men kopier eldre enn", "30 dager flyttes til Sverige og lagres ikke i Norge.",
+  ]);
+  assert.notEqual(wrapped?.uncertain, false);
+  assert.match(wrapped.entry.answerExcerpt, /lagres ikke i Norge/u);
+});

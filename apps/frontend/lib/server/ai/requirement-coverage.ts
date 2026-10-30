@@ -2847,6 +2847,10 @@ export function validateRequirementCoverageBatchRows(input: {
  * mapping between the flat text and its lower-cased form, so a match can be
  * mapped back to the original wording.
  */
+// A line or passage ending in a word that needs a continuation.
+const CONTINUATION_WORD_END =
+  /(?<![\p{L}\p{N}])(?:i|og|av|til|for|med|på|som|at|en|et|ei|den|det|de|er|skal|må|kan|vil|om|fra|ved|eller|samt|innen|under|over|etter|før|hos|mot|per|uten|mellom|ikke|via)$/iu;
+
 /**
  * Marks boundaries around reliable structure as the PDF and DOCX parsers
  * write it: a numbered heading line ("9.6 Kontraktsforhold") and a run of
@@ -2868,19 +2872,27 @@ function markShortLines(value: string) {
     text.length < 80 &&
     !/[.:;!?,¦|-]$/u.test(text) &&
     !/^\[\[SIDE:/u.test(text) &&
-    !/(?<![\p{L}\p{N}])(?:i|og|av|til|for|med|på|som|at|en|et|ei|den|det|de|er|skal|må|kan|vil|om|fra|ved|eller|samt|innen|under|over|etter|før|hos|mot|per|uten|mellom|ikke)$/iu.test(text);
-  const heading = (text: string) => structural(text) && /^\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Lu}/u.test(text) && text.split(/\s+/u).length <= 10;
+    !CONTINUATION_WORD_END.test(text);
+  // A numbered line is a heading only after a finished line ("… månedlig.",
+  // a page marker, a heading or a row) and without a sentence end of its
+  // own: "replikeres mellom\n2 Azure-regioner i Norge, men …" wraps prose.
+  const numbered = (text: string) =>
+    structural(text) && /^\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Lu}/u.test(text) && !/[.!?]\s/u.test(text) && text.split(/\s+/u).length <= 10;
   const row = lines.map((line, index) => {
     const text = line.trim();
     const next = lines[index + 1]?.trim() ?? "";
-    return !narrow && structural(text) && !heading(text) && /\d/u.test(text) && /^[\p{Lu}\d]/u.test(next);
+    return !narrow && structural(text) && !numbered(text) && /\d/u.test(text) && /^[\p{Lu}\d]/u.test(next);
   });
   let previousMarked = false;
+  let previousText = "";
   return lines
     .map((line, index) => {
       const text = line.trim();
       const tableRow = row[index]! && (row[index - 1] === true || row[index + 1] === true);
-      const marked = heading(text) || tableRow;
+      const heading =
+        numbered(text) && (index === 0 || previousMarked || /(?:[.:!?]|\]\])$/u.test(previousText) || previousText === "");
+      const marked = heading || tableRow;
+      if (text) previousText = text;
       // One boundary between two marked lines, never an empty cell.
       const result = marked ? `${index > 0 && !previousMarked ? "¦ " : ""}${line} ¦` : line;
       previousMarked = marked;
@@ -3361,15 +3373,27 @@ function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentD
     .split(/\s*(?:\[\.\.\.\]|\.\.\.|…)\s*|(?<=[.!?])\s+|\s*¦\s*/u)
     .map((part) => part.trim())
     .filter(Boolean);
-  // Every substantial part verbatim (two real sentences joined, or an
-  // elision between real text): nothing was invented.
-  const verbatim = parts.filter((part) => part.length >= 12 && find(part) !== null);
-  const covered = verbatim.reduce((total, part) => total + part.length, 0);
-  // Only one part is bound, so a refusal or limit in another ("…
-  // Gjenoppretting innen fire timer tilbys ikke.") must keep it uncertain.
+  // Nothing invented: adjacent real sentences or cells (a cell or sentence
+  // skipped between them at most), each unique, in quote order and within
+  // one section. An elision may hide a qualifier, and a refusal or limit in
+  // an unbound part ("… Gjenoppretting innen fire timer tilbys ikke.") must
+  // keep the binding uncertain.
+  const { sectionStarts } = normalizedSolutionText(document);
+  const located = parts.map((part) => find(part, true));
   const allVerbatim =
-    parts.every((part) => part.length < 12 || verbatim.includes(part)) &&
-    covered >= 0.9 * parts.reduce((total, part) => total + part.length, 0) &&
+    !/\.\.\.|…|\[\.\.\.\]/u.test(normalizedQuote) &&
+    parts.every((part, index) => part.length >= 12 && located[index] !== null) &&
+    located.every((span, index) => {
+      if (index === 0) return true;
+      const previous = located[index - 1]!;
+      const gap = whole.slice(previous.end, span!.start);
+      return (
+        span!.start >= previous.end &&
+        gap.length <= VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS &&
+        !sectionStarts.some((at) => at > previous.end && at <= span!.start) &&
+        !/¦\s*\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Ll}/u.test(gap)
+      );
+    }) &&
     !parts.some((part) => NEGATION.test(part) || LIMITING.test(part));
   const fragments = parts
     .filter((part) => part.length >= VERIFIED_QUOTE_MIN_CHARS)
@@ -3514,8 +3538,11 @@ function bindSolutionQuoteSpan(
   const newNegation = NEGATION.test(normalizedPassage) && !NEGATION.test(normalizedQuote);
   // Only part of the model's quote was found: the rest may be invented, so
   // the recovered passage can support at most "Uklart".
+  // An answer cut off mid-sentence ("… replikeres mellom") misses its end.
+  const cutOff = CONTINUATION_WORD_END.test(own.replace(/[\s¦|]+$/u, ""));
   const uncertain =
     span.partial ||
+    cutOff ||
     !complete ||
     newNegation ||
     setAsideNegation ||
