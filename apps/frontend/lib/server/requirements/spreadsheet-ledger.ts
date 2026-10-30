@@ -164,7 +164,8 @@ function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_t
           !cell(columns.type) &&
           !cell(columns.weight) &&
           text.length <= 80 &&
-          !/\b(?:skal|bør|må)\b/iu.test(text);
+          // Unicode-aware: \b does not end "må" or "bør".
+          !/(?<![\p{L}\p{N}])(?:skal|bør|må)(?![\p{L}\p{N}])/iu.test(text);
         if (isNumberedSection) {
           section = [id, text || cell(columns.title)].filter(Boolean).join(" ");
           continue;

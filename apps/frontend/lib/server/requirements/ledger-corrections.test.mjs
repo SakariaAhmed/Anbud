@@ -616,3 +616,26 @@ test("matrix rows with unusual ID forms are kept under their ID, end to end", as
   assert.deepEqual(ledger.map((entry) => entry.id), ["1.1a", "K1-A", "REQ_001", "K-2"]);
   assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger }]));
 });
+
+test("review bots: several correction notices, kept notes, Unicode section rows, withdrawn documents", async () => {
+  const k = (id, text) => ({ id, text, pages: [1], heading: "4 Krav" });
+  // Rettelse nr. 1 and nr. 2 both apply, in order; a table of contents does not.
+  const ledger = [k("K-1", "Leverandøren skal levere månedlig rapport."), k("K-2", "Leverandøren skal tilby døgnvakt."), k("K-3", "Leverandøren skal ha ISO 27001.")];
+  const chapter = ledger.map((entry) => `${entry.id} ${entry.text}`).join("\n");
+  const raw = `Innhold\nRettelse nr. 1\nRettelse nr. 2\n4 Krav\n${chapter}\n\nRettelse nr. 1\nK-1 utgår.\n\nRettelse nr. 2\nK-2 utgår.`;
+  assert.deepEqual(applyRequirementCorrections(ledger, raw).ledger.map((entry) => entry.id), ["K-3"]);
+  // An unplaced change keeps its note when another correction in the same statement applies.
+  const ops = [k("OPS-1", "Responstid skal være høyst 60 minutter."), k("OPS-2", "Leverandøren skal tilby døgnvakt.")];
+  const mixed = applyRequirementCorrections(ops, "8 Rettelser\nOPS-2 utgår. OPS-1 endres til: «30 minutter».").ledger;
+  assert.deepEqual(mixed.map((entry) => entry.id), ["OPS-1"]);
+  assert.match(mixed[0].sourceExcerpt ?? "", /30 minutter/u);
+  // A chapter with only a scope clarification keeps it as a note.
+  const scoped = applyRequirementCorrections(ops, "8 Rettelser\nOPS-1 gjelder kun produksjonsmiljøet.").ledger;
+  assert.match(scoped[0].sourceExcerpt ?? "", /gjelder kun produksjonsmiljøet/u);
+  // A numbered parent row stating an obligation with "må" is a requirement.
+  const matrix = { file_format: "xlsx", raw_text: ["Ark: Krav", "Rad 1: A1: Nr | B1: Kravtekst", "Rad 2: A2: 1 | B2: Løsningen må støtte norsk.", "Rad 3: A3: 1.1 | B3: Brukergrensesnittet skal være på norsk."].join("\n") };
+  assert.deepEqual(buildSpreadsheetRequirementLedger(matrix).map((entry) => entry.id), ["1", "1.1"]);
+  // A supporting requirement document whose requirements are all withdrawn is not an empty-ledger failure.
+  const supporting = { id: "s", title: "Tilleggskrav", role: "supporting_document", supporting_subtype: "kravdokument", file_name: "tilleggskrav.docx", file_format: "docx", raw_text: "4 Krav\nK-1 Leverandøren skal levere kursing.\nK-2 Leverandøren skal levere dokumentasjon.\n\n9 Rettelser\nKravene K-1 og K-2 utgår." };
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([supporting], [{ document: supporting, ledger: [] }]));
+});

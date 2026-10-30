@@ -63,37 +63,48 @@ function maskQuotes(text: string) {
   return { masked, quotes };
 }
 
-/** The last corrections heading (a table of contents also lists it) up to
- * the next top-level chapter or appendix. */
-export function findCorrectionsSection(rawText: string) {
+/**
+ * Every corrections section in document order ("Rettelse nr. 1", later
+ * "Rettelse nr. 2"), each from its heading up to the next top-level
+ * chapter, appendix or corrections heading. A table-of-contents entry ends
+ * at the next chapter with no content of its own and is skipped.
+ */
+export function findCorrectionsSections(rawText: string) {
   const lines = rawText.split("\n");
-  let start = -1;
-  let chapter: string | undefined;
-  lines.forEach((line, index) => {
+  const sections: string[] = [];
+  lines.forEach((line, start) => {
     const match = CORRECTIONS_HEADING.exec(headingText(line));
-    if (match && lines.slice(index + 1).some((next) => next.trim())) {
-      start = index;
-      chapter = match[1];
+    if (!match) return;
+    const chapter = match[1];
+    let end = lines.length;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      const next = headingText(lines[index]!);
+      const topLevel = /^(\d{1,2})\s+[A-ZÆØÅ]/u.exec(next);
+      if (
+        /^vedlegg\s+[A-Z0-9]\b/iu.test(next) ||
+        (topLevel && topLevel[1] !== chapter) ||
+        CORRECTIONS_HEADING.test(next)
+      ) {
+        end = index;
+        break;
+      }
     }
+    const body = lines.slice(start + 1, end).join("\n").trim();
+    if (body.length > 0) sections.push(lines.slice(start, end).join("\n"));
   });
-  if (start < 0) return null;
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    const line = headingText(lines[index]!);
-    const topLevel = /^(\d{1,2})\s+[A-ZÆØÅ]/u.exec(line);
-    if (/^vedlegg\s+[A-Z0-9]\b/iu.test(line) || (topLevel && topLevel[1] !== chapter)) {
-      end = index;
-      break;
-    }
-  }
-  return lines.slice(start, end).join("\n");
+  return sections;
 }
 
-/** The document without its corrections chapter: source inventories are
+/** All corrections sections joined in order, or null without any. */
+export function findCorrectionsSection(rawText: string) {
+  const sections = findCorrectionsSections(rawText);
+  return sections.length ? sections.join("\n\n") : null;
+}
+
+/** The document without its corrections chapters: source inventories are
  * counted from the original requirement text, then corrected. */
 export function withoutCorrectionsSection(rawText: string) {
-  const section = findCorrectionsSection(rawText);
-  return section ? rawText.replace(section, "") : rawText;
+  return findCorrectionsSections(rawText).reduce((text, section) => text.replace(section, ""), rawText);
 }
 
 /** One statement per table row, list item or ID-led line; wrapped
@@ -315,7 +326,7 @@ export function applyRequirementCorrections(
   const maskedSection = unquoted(section);
   // Text that also occurs outside the chapter is an original requirement,
   // even when an "Opprinnelig tekst" column repeats it unquoted.
-  const outsideSection = normalized(rawText.replace(section, " "));
+  const outsideSection = normalized(withoutCorrectionsSection(rawText));
   const isCorrectionRow = (entry: RequirementLedgerEntry) => {
     const plain = normalized(entry.text);
     if (plain.length >= 12 && outsideSection.includes(plain)) return false;
@@ -375,6 +386,8 @@ export function applyRequirementCorrections(
     const statementIds = sentences(masked).flatMap((sentence) => sentence.ids.map(({ id }) => id));
     let context: string[] | undefined;
     let acted = false;
+    // Requirements this statement already noted (an unplaced change).
+    const noted = new Set<string>();
     // A bidder question ("Kan K-4 strykes …?") asks; it never acts.
     // A request ("Vi ber om at K-1 strykes") is not a correction either.
     const isQuestion = (text: string) =>
@@ -524,7 +537,16 @@ export function applyRequirementCorrections(
         const text = namesPart && !replaced ? null : correctedWording(original, quote, replaced);
         // A fragment ("Fristen endres til «tre virkedager»") whose place in
         // the requirement is unknown stays a note on the original wording.
-        if (text === null) continue;
+        if (text === null) {
+          // Kept as a note even when another part of the statement applied
+          // ("OPS-2 utgår. OPS-1 endres til: «30 minutter».").
+          if (!noted.has(target)) {
+            note(target, "Rettelse", statement);
+            pendingNotes.push({ id: target, statement });
+            noted.add(target);
+          }
+          continue;
+        }
         entries = entries.map((entry) =>
           entry.id === target
             ? {
@@ -544,8 +566,12 @@ export function applyRequirementCorrections(
       applied += 1;
     } else {
       // Statements naming a requirement without an affirmative action.
-      const namesAction = masked.search(CHANGE_VERB) >= 0 || masked.search(WITHDRAW_VERB) >= 0;
+      // A change, a withdrawal or a scope clarification ("OPS-1 gjelder kun
+      // produksjonsmiljøet.") is kept even when nothing else applies.
+      const namesAction =
+        masked.search(CHANGE_VERB) >= 0 || masked.search(WITHDRAW_VERB) >= 0 || SCOPE_STATEMENT.test(masked);
       for (const id of subjects({ text: masked, ids: sentences(masked).flatMap((sentence) => sentence.ids) }, known())) {
+        if (noted.has(id)) continue;
         note(id, "Rettelse", statement);
         if (namesAction) pendingNotes.push({ id, statement });
       }
