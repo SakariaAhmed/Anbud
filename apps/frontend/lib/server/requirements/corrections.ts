@@ -341,6 +341,9 @@ export function applyRequirementCorrections(
     );
   };
   let applied = 0;
+  // Unapplied statements that name an action (a change the code could not
+  // place safely): kept as notes even when nothing else applies.
+  const pendingNotes: Array<{ id: string; statement: string }> = [];
 
   for (const statement of statements(section)) {
     // "Ny tekst: Leverandøren skal …" without quotation marks: the rest of the
@@ -541,15 +544,30 @@ export function applyRequirementCorrections(
       applied += 1;
     } else {
       // Statements naming a requirement without an affirmative action.
+      const namesAction = masked.search(CHANGE_VERB) >= 0 || masked.search(WITHDRAW_VERB) >= 0;
       for (const id of subjects({ text: masked, ids: sentences(masked).flatMap((sentence) => sentence.ids) }, known())) {
         note(id, "Rettelse", statement);
+        if (namesAction) pendingNotes.push({ id, statement });
       }
     }
   }
 
-  // Without a single applied correction this is not a corrections chapter
-  // for this ledger: leave it untouched.
-  if (!applied && !report.clarified.length) return { ledger, report };
+  // Without a single applied correction this may not be a corrections
+  // chapter for this ledger: rows stay as they are, and only statements
+  // naming an action on a requirement are attached, so an unplaced change
+  // is never lost without a trace.
+  if (!applied && !report.clarified.length) {
+    if (!pendingNotes.length) return { ledger, report };
+    return {
+      ledger: ledger.map((entry) => {
+        const statements = pendingNotes.filter((pending) => pending.id === entry.id).map((pending) => `Rettelse: ${pending.statement}`);
+        return statements.length
+          ? { ...entry, sourceExcerpt: [entry.sourceExcerpt, ...statements].filter(Boolean).join(" | ") }
+          : entry;
+      }),
+      report,
+    };
+  }
 
   return { ledger: entries, report };
 }

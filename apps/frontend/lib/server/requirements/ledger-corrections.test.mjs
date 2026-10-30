@@ -577,3 +577,13 @@ test("round 11: modal scope statements, generic stems, a closing scope sentence"
     assert.equal(text(unclear), ledger[0].text, unclear);
   }
 });
+
+test("round 12: an unplaced change keeps its note when nothing else applies", () => {
+  const ledger = [{ id: "K-3", text: "Leverandøren skal tilby brukerstøtte i kontortid.", pages: [1], heading: "4 Krav" }];
+  const raw = `4 Krav\nK-3 ${ledger[0].text}\n\n9 Rettelser\nK-3 endres. Ny tekst: Leverandøren skal levere døgnkontinuerlig brukerstøtte. Responstiden er maksimalt 30 minutter.`;
+  const { ledger: result } = applyRequirementCorrections(ledger, raw);
+  assert.equal(result[0].text, ledger[0].text);
+  assert.match(result[0].sourceExcerpt ?? "", /Responstiden er maksimalt 30 minutter/u);
+  // The IDs are unchanged, so completeness checks are unaffected.
+  assert.deepEqual(correctedRequirementIds(["K-3"], raw), ["K-3"]);
+});
