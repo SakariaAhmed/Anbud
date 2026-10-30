@@ -153,6 +153,7 @@ class Client {
       method,
       headers,
       body: options.body,
+      signal: options.signal,
     });
     const elapsedMs = Math.round(performance.now() - started);
     const setCookie =
@@ -172,6 +173,7 @@ class Client {
     }
     const { response, elapsedMs } = await this.request(method, route, {
       headers,
+      signal: options.signal,
       body:
         body === undefined
           ? undefined
@@ -338,13 +340,164 @@ function factScore(text) {
   return { hits, total: checks.length, score: hits.length / checks.length };
 }
 
+// A queued job can wait for the scheduled worker; without a limit a stuck
+// job held the script until someone killed it, skipping its cleanup.
+const JOB_WAIT_TIMEOUT_MS = Number(process.env.LLM_EVAL_JOB_TIMEOUT_MS || 25 * 60_000);
+if (!Number.isFinite(JOB_WAIT_TIMEOUT_MS) || JOB_WAIT_TIMEOUT_MS < 1_000) {
+  throw new Error("LLM_EVAL_JOB_TIMEOUT_MS must be a number of milliseconds of at least 1000.");
+}
+
+// Every project and service this run creates, so they are removed even when
+// a scenario fails, the run is interrupted, or a DELETE has to be retried.
+const createdResources = [];
+
+function trackResource(client, type, id) {
+  if (id) createdResources.push({ client, type, id, deleted: false, attempts: [] });
+}
+
+async function deleteResource(resource) {
+  const route =
+    resource.type === "service" ? `/api/service-descriptions/${resource.id}` : `/api/projects/${resource.id}`;
+  for (let attempt = 1; attempt <= 3 && !resource.deleted; attempt += 1) {
+    let retryDelayMs = attempt * 1000;
+    try {
+      // Bounded, so a DELETE that never answers cannot block cleanup.
+      const { response } = await resource.client.request("DELETE", route, {
+        signal: AbortSignal.timeout(30_000),
+      });
+      resource.attempts.push(response.status);
+      // 404: already gone.
+      if (response.ok || response.status === 404) resource.deleted = true;
+      // The project DELETE limiter (10 per 60 s) says when to retry; wait for
+      // it, capped at its window, instead of spending the attempts too early.
+      const retryAfterSeconds = Number(response.headers.get("retry-after"));
+      if (response.status === 429 && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+        retryDelayMs = Math.min(60_000, Math.ceil(retryAfterSeconds * 1000));
+      }
+    } catch (error) {
+      resource.attempts.push(String(error));
+    }
+    if (!resource.deleted && attempt < 3) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+  }
+  return resource;
+}
+
+/** Deletes every tracked resource not yet deleted; services first, since
+ * a project can have them selected. Safe to call more than once. */
+async function cleanupResources(filter = () => true) {
+  const pending = createdResources
+    .filter((resource) => !resource.deleted && filter(resource))
+    .sort((left, right) => (left.type === "service" ? -1 : 0) - (right.type === "service" ? -1 : 0));
+  for (const resource of pending) await deleteResource(resource);
+  const failed = pending.filter((resource) => !resource.deleted);
+  for (const resource of failed) {
+    console.error(`Cleanup failed for ${resource.type} ${resource.id}: ${resource.attempts.join(", ")}`);
+    process.exitCode = 1;
+  }
+  return pending;
+}
+
+// Clients that may hold resources, and create requests still in flight: a
+// project or service can exist on the server before its response arrives.
+const runClients = new Set();
+const pendingCreations = new Set();
+let interrupted = false;
+let shutdownPromise;
+
+/** Runs `create`, which must issue the request and track what it created.
+ * Refused once interrupted, so nothing is created after the shutdown wait
+ * has taken its snapshot of pendingCreations. */
+async function trackedCreation(create) {
+  if (interrupted) throw new Error("Interrupted: not creating further resources.");
+  const promise = create();
+  pendingCreations.add(promise);
+  try {
+    const result = await promise;
+    if (interrupted) throw new Error("Interrupted: not starting further evaluation work.");
+    return result;
+  } finally {
+    pendingCreations.delete(promise);
+  }
+}
+
+/** Finds projects and services named with this run's ID that were never
+ * tracked (e.g. a create response that was lost), then deletes everything
+ * tracked for the client. Cleanup runs even when a listing fails. */
+async function sweepRun(client) {
+  const adopt = async (route, type, listOf, prefix) => {
+    try {
+      const { payload } = await client.json("GET", route, undefined, { signal: AbortSignal.timeout(30_000) });
+      for (const item of listOf(payload)) {
+        const name = item?.name ?? item?.title;
+        if (
+          typeof name === "string" &&
+          name.startsWith(prefix) &&
+          name.endsWith(` ${runId}`) &&
+          !createdResources.some((resource) => resource.type === type && resource.id === item.id)
+        ) {
+          trackResource(client, type, item.id);
+        }
+      }
+    } catch (error) {
+      console.error(`Cleanup sweep of ${route} failed: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+  };
+  await adopt("/api/service-descriptions", "service", (payload) => payload.services ?? [], "LLM eval service ");
+  await adopt("/api/projects", "project", (payload) => (Array.isArray(payload) ? payload : payload.projects ?? []), "LLM kvalitets-eval ");
+  await cleanupResources((resource) => resource.client === client);
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    if (interrupted) {
+      console.error(`${signal}: cleanup is still waiting for evaluation resources.`);
+      return;
+    }
+    interrupted = true;
+    shutdownPromise = (async () => {
+      console.error(`${signal}: removing evaluation resources before exit ...`);
+      // Clean known and already-committed resources immediately, even if a
+      // creation never finishes its response. Keep sweeping while it may
+      // still commit, and only exit after its outcome and the final sweep.
+      let creationsFinished = false;
+      const creationsSettled = Promise.allSettled([...pendingCreations]).then(() => {
+        creationsFinished = true;
+      });
+      const sweep = async () => {
+        for (const client of runClients) await sweepRun(client);
+        await cleanupResources();
+      };
+      do {
+        await sweep();
+        if (!creationsFinished) {
+          await Promise.race([
+            creationsSettled,
+            new Promise((resolve) => setTimeout(resolve, 30_000)),
+          ]);
+        }
+      } while (!creationsFinished);
+      await sweep();
+      process.exit(process.exitCode === 1 ? 1 : signal === "SIGINT" ? 130 : 143);
+    })();
+  });
+}
+
 async function waitForJob(client, projectId, job, kind) {
   const started = performance.now();
   let latest = job;
   for (;;) {
+    if (performance.now() - started > JOB_WAIT_TIMEOUT_MS) {
+      throw new Error(`${kind} did not finish within ${JOB_WAIT_TIMEOUT_MS} ms (status ${latest.status}).`);
+    }
+    // The deadline also bounds a status request that never answers.
+    // AbortSignal.timeout requires an integer delay.
+    const remainingMs = Math.max(1_000, Math.ceil(JOB_WAIT_TIMEOUT_MS - (performance.now() - started)));
     const { payload } = await client.json(
       "GET",
       `/api/projects/${projectId}/jobs/${job.id}`,
+      undefined,
+      { signal: AbortSignal.timeout(remainingMs) },
     );
     latest = payload.job;
     if (latest.status === "failed") {
@@ -471,6 +624,7 @@ function outputForJob(kind, result) {
 
 async function runScenario(label, baseUrl) {
   const client = new Client(baseUrl);
+  runClients.add(client);
   const result = {
     label,
     baseUrl,
@@ -486,19 +640,21 @@ async function runScenario(label, baseUrl) {
   };
   const scenarioStartedAt = Date.now();
   let projectId = null;
-  let serviceId = null;
 
   try {
     await client.json("GET", "/api/health/live");
     await client.json("POST", "/api/auth/login", { password });
-    const created = await client.json("POST", "/api/projects", {
-      name: `LLM kvalitets-eval ${label} ${runId}`,
-      customer_name: fixture.customer_name,
-      description: fixture.description,
-      industry: fixture.industry,
-      selected_service_ids: [],
+    projectId = await trackedCreation(async () => {
+      const created = await client.json("POST", "/api/projects", {
+        name: `LLM kvalitets-eval ${label} ${runId}`,
+        customer_name: fixture.customer_name,
+        description: fixture.description,
+        industry: fixture.industry,
+        selected_service_ids: [],
+      });
+      trackResource(client, "project", created.payload.id);
+      return created.payload.id;
     });
-    projectId = created.payload.id;
     result.project_id = projectId;
 
     result.uploads.push(
@@ -526,10 +682,14 @@ async function runScenario(label, baseUrl) {
       description: "Temporary service description for LLM-as-judge evaluation.",
       title: "Hybrid cloud service description",
     });
-    const serviceCreated = await client.request("POST", "/api/service-descriptions", {
-      body: serviceForm,
+    const { serviceCreated, servicePayload } = await trackedCreation(async () => {
+      const created = await client.request("POST", "/api/service-descriptions", {
+        body: serviceForm,
+      });
+      const payload = await created.response.json().catch(() => ({}));
+      trackResource(client, "service", payload.service?.id ?? null);
+      return { serviceCreated: created, servicePayload: payload };
     });
-    const servicePayload = await serviceCreated.response.json();
     if (!serviceCreated.response.ok) {
       throw new Error(
         `service description failed ${serviceCreated.response.status}: ${
@@ -537,7 +697,6 @@ async function runScenario(label, baseUrl) {
         }`,
       );
     }
-    serviceId = servicePayload.service?.id ?? null;
 
     const jobBodies = [
       { kind: "customer_analysis" },
@@ -621,32 +780,15 @@ async function runScenario(label, baseUrl) {
   } catch (error) {
     result.errors.push(error instanceof Error ? error.message : String(error));
   } finally {
-    if (serviceId) {
-      try {
-        const deletedService = await client.request(
-          "DELETE",
-          `/api/service-descriptions/${serviceId}`,
-        );
-        result.cleanup.push({
-          target: "service",
-          id: serviceId,
-          status: deletedService.response.status,
-        });
-      } catch (error) {
-        result.cleanup.push({ target: "service", id: serviceId, error: String(error) });
-      }
-    }
-    if (projectId) {
-      try {
-        const deletedProject = await client.request("DELETE", `/api/projects/${projectId}`);
-        result.cleanup.push({
-          target: "project",
-          id: projectId,
-          status: deletedProject.response.status,
-        });
-      } catch (error) {
-        result.cleanup.push({ target: "project", id: projectId, error: String(error) });
-      }
+    // Also sweeps resources whose create response could not be read.
+    await sweepRun(client);
+    for (const resource of createdResources.filter((candidate) => candidate.client === client)) {
+      result.cleanup.push({
+        target: resource.type,
+        id: resource.id,
+        deleted: resource.deleted,
+        attempts: resource.attempts,
+      });
     }
     result.finished_at = new Date().toISOString();
     result.total_duration_ms = Date.now() - scenarioStartedAt;
@@ -1113,6 +1255,7 @@ const report = {
   summary: null,
 };
 
+try {
 for (let roundIndex = 1; roundIndex <= rounds; roundIndex += 1) {
   const roundReport = {
     round: roundIndex,
@@ -1146,6 +1289,15 @@ for (let roundIndex = 1; roundIndex <= rounds; roundIndex += 1) {
   report.judgments = allJudgments(report);
   report.summary = summarize(report);
   await writeFile(outPath, JSON.stringify(report, null, 2));
+}
+} catch (error) {
+  if (!interrupted) throw error;
+  // A scenario interrupted while creating must not crash the process before
+  // the signal handler finishes its final sweep.
+  await shutdownPromise;
+} finally {
+  // Covers scenarios that threw before their own cleanup ran.
+  await cleanupResources();
 }
 
 report.finished_at = new Date().toISOString();
