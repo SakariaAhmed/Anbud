@@ -74,7 +74,10 @@ http.createServer((request, response) => {
       response.end(JSON.stringify({ processed: 0, results: [] }));
     }
   });
-}).listen(Number(process.env.PORT), "127.0.0.1");
+}).on("error", (error) => {
+  fs.writeFileSync("server.error", String(error.code));
+  process.exit(1);
+}).listen(Number(process.env.PORT), "127.0.0.1", () => fs.writeFileSync("server.listening", ""));
 `);
   return directory;
 }
@@ -90,8 +93,7 @@ async function freePort() {
   return port;
 }
 
-async function runWorker(script, environment, options = {}) {
-  const port = await freePort();
+function startWorker(script, environment, options, port) {
   const directory = fakeServerDirectory(options);
   const child = spawn(process.execPath, [script], {
     cwd: directory,
@@ -118,6 +120,29 @@ async function runWorker(script, environment, options = {}) {
       : null,
     cleanup: () => rmSync(directory, { recursive: true, force: true }),
   };
+}
+
+/** The bind failure the stand-in reported, once it is listening, failed, or the worker exited. */
+async function standInBindError(worker) {
+  let done = false;
+  worker.exited.then(() => { done = true; });
+  const file = (name) => path.join(worker.directory, name);
+  while (!done && !existsSync(file("server.listening")) && !existsSync(file("server.error"))) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return existsSync(file("server.error")) ? readFileSync(file("server.error"), "utf8") : null;
+}
+
+/** Another test can still take the free port before the stand-in binds it, so
+ * that collision gets a fresh port, up to three attempts. */
+async function runWorker(script, environment, options = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    const worker = startWorker(script, environment, options, await freePort());
+    if (attempt === 3 || await standInBindError(worker) !== "EADDRINUSE") return worker;
+    worker.child.kill("SIGTERM");
+    await worker.exited;
+    worker.cleanup();
+  }
 }
 
 async function waitFor(condition, timeoutMs = 10_000) {
