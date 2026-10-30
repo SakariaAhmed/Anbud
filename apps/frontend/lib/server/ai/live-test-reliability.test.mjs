@@ -672,3 +672,39 @@ test("a quote matches Docling Markdown text across a heading marker", async () =
   );
   assert.equal(solutionDocumentContainsQuote("Skarvhavn Digital AS er sertifisert etter ISO/IEC 27001.", document), true);
 });
+
+test("PDF-parser headings and table rows are boundaries, wrapped prose is not", () => {
+  // As the PDF parser writes it: headings and table rows as short lines.
+  const doc = {
+    ...solutionDocument,
+    raw_text: [
+      "[[SIDE:7]]",
+      "Tilgjengeligheten måles 24/7 og rapporteres månedlig.",
+      "7.2 Respons- og løsningstider (TJN-03)",
+      "Prioritet Responstid Løsning Tilgjengelighet",
+      "P1 Kritisk 15 minutter 4 timer Hele døgnet",
+      "P2 Høy 1 time 12 timer Hele døgnet",
+      "9.5 Revisjon",
+      "Oppdragsgiver gis rett til å gjennomføre én årlig revisjon hos leverandøren og underleverandører, med 30 dagers",
+      "varsel. Alle kundedata og sikkerhetskopier lagres i",
+      "Norge.",
+      "9.6 Kontraktsforhold",
+      "Leverandøren aksepterer avtalen med følgende forbehold: ansvaret begrenses.",
+    ].join("\n"),
+  };
+  const req = (id, text) => ({ ...unansweredRequirement, id, text, heading: "" });
+  const bind = (entry, quote) => bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc });
+  // A table row is its own answer.
+  const p2 = bind(req("TJN-03.2", "Hendelser med prioritet 2 skal ha responstid på høyst 1 time."), "P2 Høy 1 time 12 timer Hele døgnet");
+  assert.equal(p2.entry.answerExcerpt, "P2 Høy 1 time 12 timer Hele døgnet");
+  // A parent requirement is tied to its table by the heading naming it.
+  const parent = bind(req("TJN-03", "Leverandøren skal overholde følgende respons- og løsningstider for hendelser:"), "Prioritet Responstid Løsning Tilgjengelighet P1 Kritisk 15 minutter 4 timer Hele døgnet");
+  assert.ok(parent, "the heading ties the table to TJN-03");
+  // The next section's "forbehold" does not qualify the answer before it.
+  const audit = bind(req("SIK-09", "Oppdragsgiver skal ha rett til årlig revisjon hos leverandøren og underleverandører."), "Oppdragsgiver gis rett til å gjennomføre én årlig revisjon hos leverandøren og underleverandører, med 30 dagers varsel.");
+  assert.equal(audit.uncertain, false);
+  assert.doesNotMatch(audit.entry.answerExcerpt, /^9\.5/u);
+  // A line ending in "i" continues onto "Norge.".
+  const storage = bind(req("ARK-01", "Data skal lagres innenfor EØS, fortrinnsvis i Norge."), "Alle kundedata og sikkerhetskopier lagres i Norge.");
+  assert.equal(storage.entry.answerExcerpt, "Alle kundedata og sikkerhetskopier lagres i Norge.");
+});

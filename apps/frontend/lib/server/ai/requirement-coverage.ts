@@ -2847,8 +2847,36 @@ export function validateRequirementCoverageBatchRows(input: {
  * mapping between the flat text and its lower-cased form, so a match can be
  * mapped back to the original wording.
  */
+/** Marks the end of a short line without closing punctuation that is
+ * followed by a capitalised or numbered line: a heading ("9.6
+ * Kontraktsforhold") or a table row ("P2 Høy 1 time 12 timer") as the PDF
+ * and DOCX parsers write them. Wrapped prose lines are long, and a line
+ * ending in a function word continues its sentence. */
+function markShortLines(value: string) {
+  const lines = value.split("\n");
+  let previousMarked = false;
+  return lines
+    .map((line, index) => {
+      const text = line.trim();
+      const next = lines[index + 1]?.trim() ?? "";
+      const short = text.length > 0 &&
+        text.length < 80 &&
+        !/[.:;!?,¦|-]$/u.test(text) &&
+        // A sentence continuing onto the next line ("lagres i\nNorge").
+        !/(?<![\p{L}\p{N}])(?:i|og|av|til|for|med|på|som|at|en|et|ei|den|det|de|er|skal|må|kan|vil|om|fra|ved|eller|samt|innen|under|over|etter|før|hos|mot|per|uten)$/iu.test(text) &&
+        !/^\[\[SIDE:/u.test(text) &&
+        /^[\p{Lu}\d]/u.test(next) &&
+        !/^\[\[SIDE:/u.test(next);
+      // One boundary between two marked lines, never an empty cell.
+      const marked = short ? `${index > 0 && !previousMarked ? "¦ " : ""}${line} ¦` : line;
+      previousMarked = short;
+      return marked;
+    })
+    .join("\n");
+}
+
 function flattenQuoteText(value: string) {
-  return value
+  return markShortLines(value)
     .normalize("NFKC")
     .replace(/\u00ad/gu, "")
     .replace(/\[\[SIDE:\d{1,5}(?:-\d{1,5})?\]\]/gu, " ")
@@ -3407,10 +3435,32 @@ function bindSolutionQuoteSpan(
   const normalizedPassage = normalizeQuoteMatchText(passage);
   if (BLANKET_COMPLIANCE_CLAIM.test(normalizedPassage)) return null;
   const bareConfirmation = remainder.length < 20 || CONFIRMATION_ONLY.test(remainder);
-  if (sharedTerms(baseTerms, own).shared === 0) return null;
+  // The heading right above the passage ("7.2 Respons- og løsningstider
+  // (TJN-03)") can tie a table or paragraph to its requirement.
+  const ownAt = solution.flat.indexOf(own, Math.max(0, start - VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS));
+  // Up to three cells back: a table's header row sits between its rows and
+  // the section heading.
+  const namesRequirement = (cell: string) =>
+    cell.length <= 120 &&
+    (new RegExp(`(?<![\\p{L}\\p{N}-])${input.entry.id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}]|\\.\\d)`, "u").test(cell) ||
+      sharedTerms(baseTerms, cell).shared > 0);
+  const heading =
+    ownAt > 0
+      ? (solution.flat
+          .slice(Math.max(0, ownAt - 400), ownAt)
+          .split("¦")
+          .map((cell) => cell.trim())
+          .filter(Boolean)
+          .slice(-3)
+          .reverse()
+          .find(namesRequirement) ?? "")
+      : "";
+  const headingNamesRequirement = heading.length > 0;
+  const ownShared = sharedTerms(baseTerms, own).shared;
+  if (ownShared === 0 && !headingNamesRequirement) return null;
 
   // Certainty is judged on what the passage adds beyond the restatement.
-  const tenderOverlap = sharedTerms(tenderTerms, remainder);
+  const tenderOverlap = sharedTerms(tenderTerms, ownShared === 0 ? `${heading} ${remainder}` : remainder);
   const newNegation = NEGATION.test(normalizedPassage) && !NEGATION.test(normalizedQuote);
   const uncertain =
     !complete ||
