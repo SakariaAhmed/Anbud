@@ -570,7 +570,9 @@ test("a decline names the delivery, not an option the requirement may forbid", a
   ]) {
     assert.equal(declines(answer, requirement), false, answer);
   }
-  assert.equal(declines("Det støttes ikke.", positive), true);
+  for (const declined of ["Det støttes ikke.", "Det støttes ikke i vår plattform.", "Nei, det støttes ikke i vår plattform."]) {
+    assert.equal(declines(declined, "Løsningen skal støtte SSO via Entra ID."), true, declined);
+  }
   const mixed = "Løsningen skal støtte SSO via Entra ID og skal ikke tillate lokale kontoer.";
   assert.equal(declines("Dette støttes ikke i vår plattform. Vi bruker lokale brukerkontoer.", mixed), true);
 });

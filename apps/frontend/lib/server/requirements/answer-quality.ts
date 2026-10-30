@@ -3741,7 +3741,10 @@ const SUBJECT_DECLINE =
 // sikkerhetshensyn."). A placeholder "Det" with its real subject after
 // "ikke" ("Det støttes ikke lokale kontoer") names an option.
 const BARE_PRONOUN = /^(?:dette|det|denne|disse)$/iu;
-const CLAUSE_END_AFTER_DECLINE = /^\s*(?:i\s+dag|foreløpig|lenger)?\s*(?:[.;:!?]|$)/u;
+// After "Det støttes ikke": the clause ends or goes on with a preposition
+// ("i vår plattform", "per i dag"). A noun there is the real subject.
+const CLAUSE_END_AFTER_DECLINE =
+  /^\s*(?:(?:foreløpig|lenger|per\s+i\s+dag)\s*)?(?:[.;:!?,]|$|(?:i|på|av|for|med|per|ved|hos|innen|gjennom|fra|under)\s)/iu;
 const DELIVERY_SUBJECT =
   /^(?:(?:dette|denne|disse|det|slik|slike)\s+)?(?:dette|det|denne|disse|krav(?:et)?|funksjon(?:en|alitet(?:en)?)?|tjenesten|leveransen|kontrollen)$/iu;
 const NOT_LETTER = "(?<![\\p{L}\\p{N}])";
@@ -3773,8 +3776,9 @@ function answerDeclinesDelivery(text: string, requirement: string | undefined) {
     if (!subject) return true;
     if (!DELIVERY_SUBJECT.test(subject)) return false;
     if (!BARE_PRONOUN.test(subject)) return true;
-    const opening = match.index === 0 || /\bnei\s*[,.:–-]\s*$/iu.test(text.slice(0, match.index! + match[0].indexOf(subject)));
-    if (!opening) return false;
+    // An explicit "Nei," refusal declines whatever follows.
+    if (/\bnei\s*[,.:–-]\s*$/iu.test(text.slice(0, match.index! + match[0].indexOf(subject)))) return true;
+    if (match.index !== 0) return false;
     if (/^det$/iu.test(subject)) return CLAUSE_END_AFTER_DECLINE.test(text.slice(match.index! + match[0].length));
     return true;
   });
