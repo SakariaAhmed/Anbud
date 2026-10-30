@@ -3125,6 +3125,19 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
     // negation) may apply to it even without naming it, whether it ends in
     // punctuation or at a cell boundary: never "Godt".
     if (restricts) complete = false;
+    // Look further through the same paragraph or cell, within the context
+    // budget: "Dette er standard. Gjelder kun produksjonsmiljøet."
+    let cursor = next.end;
+    let budget = VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS - next.text.length;
+    while (complete && !next.isCell && budget > 0) {
+      if (/^\s*(?:¦|\n\s*\n)/u.test(flat.slice(cursor))) break;
+      const further = nextSegment(flat, boundaries, cursor);
+      if (!further || !further.adjacent) break;
+      if (NEGATION.test(further.text) || LIMITING.test(further.text)) complete = false;
+      if (further.isCell) break;
+      budget -= further.text.length;
+      cursor = further.end;
+    }
   }
   return {
     own,

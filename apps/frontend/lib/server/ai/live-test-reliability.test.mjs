@@ -513,3 +513,13 @@ test("a restriction that ends at a cell boundary still makes the link uncertain"
     assert.equal(bound.uncertain, true, raw);
   }
 });
+
+test("a restriction later in the same paragraph still makes the link uncertain", () => {
+  const bound = bindVerifiedSolutionQuote({
+    entry: { ...unansweredRequirement, id: "S-1", heading: "", text: "Alle kundedata skal ha kryptert lagring i Norge." },
+    quote: "Kryptert lagring av alle kundedata leveres i Norge.",
+    assessment: "Godt",
+    solutionDocument: { ...solutionDocument, raw_text: "[[SIDE:12]]\nKryptert lagring av alle kundedata leveres i Norge. Dette er standardfunksjonalitet. Gjelder kun produksjonsmiljøet." },
+  });
+  assert.equal(bound.uncertain, true);
+});
