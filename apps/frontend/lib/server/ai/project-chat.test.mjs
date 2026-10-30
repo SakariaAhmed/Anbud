@@ -181,3 +181,57 @@ test("an attachment that fits the limit is kept whole even when one paragraph ma
   assert.match(selected, /Påminnelse: se nedenfor\./u);
   assert.match(selected, /7 dager før fristen\./u);
 });
+
+test("chat answers from the whole documents when they fit, with a compact per-requirement evaluation", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-full-"));
+  const state = { prompts: [] };
+  globalThis.__projectChatFullTest = state;
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatFullTest.prompts.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    // Retrieval only finds the summary page, as in the production test.
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async () => ({
+      snippets: [{ sourceType: "project_document", sourceId: "supplier", documentTitle: "Bilag 2", reference: "Bilag 2, side 1",
+        text: "Sammendrag: Leverandøren oppfyller alle krav.", headingPath: [], pageStart: 1, pageEnd: 1, lexicalScore: 1, score: 100, similarity: 0.8 }],
+      telemetry: { durationMs: 0, usedHybridSearch: true, quality: { sufficient: true, sourceCount: 1, topScore: 200 } },
+    });`);
+    const { createJiti: createLoader } = require("jiti");
+    const load = createLoader(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const lateAnswer = "Kapittel 7: Hendelser med prioritet 1 har responstid på 30 minutter.";
+    const solutionText = `Sammendrag: Leverandøren oppfyller alle krav.\n${"Generell beskrivelse av plattformen. ".repeat(400)}\n${lateAnswer}`;
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const items = Array.from({ length: 60 }, (_, index) => ({
+      reference: `KRAV-${index + 1}`, assessment: index === 59 ? "Mangler" : "Godt",
+      rationale: `Vurdering ${index + 1}.`, evidence: "Sitat fra Bilag 2.",
+    }));
+    const result = await streamProjectChat({
+      projectName: "Fiktiv", question: "Hvilke krav dekker Bilag 2 ikke?",
+      customerAnalysis: null,
+      solutionEvaluation: { fit_to_customer_needs: "Delvis.", weaknesses: ["Responstid"], requirement_coverage: { coverage_summary: "59 gode, 1 mangler.", items } },
+      recentMessages: [],
+      customerDocument: document("customer", "primary_customer_document", "KRAV-60 Hendelser med prioritet 1 skal ha responstid på høyst 15 minutter."),
+      solutionDocument: document("supplier", "primary_solution_document", solutionText),
+    });
+    for await (const chunk of result.stream) assert.equal(chunk, "ok");
+    const prompt = state.prompts.at(-1).user;
+    // The late chapter (beyond the former 2,800/9,000-character head) is in.
+    assert.ok(prompt.includes(lateAnswer));
+    // Every requirement row, including the last, survives in compact form.
+    assert.match(prompt, /KRAV-60 \| Mangler \| Vurdering 60\./u);
+    assert.ok(prompt.includes("Referanse: Bilag 2, side 1"));
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatFullTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

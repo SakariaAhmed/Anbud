@@ -486,6 +486,14 @@ const SOLUTION_EVALUATION_TIMEOUT_MS = boundedIntegerEnv(
   30_000,
   600_000,
 );
+const CUSTOMER_ANALYSIS_FULL_DOCUMENT_MAX_CHARS = boundedIntegerEnv(
+  process.env,
+  "CUSTOMER_ANALYSIS_FULL_DOCUMENT_MAX_CHARS",
+  60_000,
+  12_000,
+  150_000,
+);
+const CUSTOMER_ANALYSIS_SUPPORTING_FULL_BUDGET_CHARS = 30_000;
 const CUSTOMER_ANALYSIS_TIMEOUT_MS = boundedIntegerEnv(
   process.env,
   "CUSTOMER_ANALYSIS_TIMEOUT_MS",
@@ -5561,21 +5569,38 @@ async function analyzeCustomerDocumentsLegacy(
     documents: analysisDocuments,
     serviceDocuments: [],
   });
-  const analysisRetrieval = await retrieveDocumentSnippetsWithMetadata({
-    query: [
-      input.projectName,
-      "kundens behov mål krav risiko evalueringskriterier forutsetninger arkitektur løsning verdi",
-    ].join("\n"),
-    projectId: input.customerDocument.project_id,
-    documents: analysisDocuments,
-    exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål"],
-    limit: 10,
+  // Only the first 12,000 characters of the customer document were sent, so
+  // budgets, options, award criteria and a late corrections chapter were
+  // never seen. Documents that fit are sent whole; retrieval then covers
+  // only what is not already included, so no text is sent twice.
+  const primaryInFull =
+    input.customerDocument.raw_text.length <= CUSTOMER_ANALYSIS_FULL_DOCUMENT_MAX_CHARS;
+  let supportingBudget = CUSTOMER_ANALYSIS_SUPPORTING_FULL_BUDGET_CHARS;
+  const supportingPlan = input.supportingDocuments.slice(0, 4).map((document) => {
+    const full = document.raw_text.length <= supportingBudget;
+    if (full) supportingBudget -= document.raw_text.length;
+    return { document, full };
   });
-  const supportingContexts = input.supportingDocuments
-    .slice(0, 2)
-    .map((document, index) =>
+  const retrievalDocuments = [
+    ...(primaryInFull ? [] : [input.customerDocument]),
+    ...supportingPlan.filter((plan) => !plan.full).map((plan) => plan.document),
+  ];
+  const analysisRetrieval = retrievalDocuments.length
+    ? await retrieveDocumentSnippetsWithMetadata({
+        query: [
+          input.projectName,
+          "kundens behov mål krav risiko evalueringskriterier tildelingskriterier forutsetninger budsjett økonomisk ramme tidsplan frister opsjoner rettelser arkitektur løsning verdi",
+        ].join("\n"),
+        projectId: input.customerDocument.project_id,
+        documents: retrievalDocuments,
+        exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål", "budsjett", "opsjon", "frist"],
+        limit: 10,
+      })
+    : null;
+  const supportingContexts = supportingPlan
+    .map(({ document, full }, index) =>
       documentContext(`Støttedokument ${index + 1}`, document, {
-        textLimit: 4000,
+        textLimit: full ? document.raw_text.length : 4000,
         structureLimit: 6,
         structureTextLimit: 160,
       }),
@@ -5592,22 +5617,33 @@ async function analyzeCustomerDocumentsLegacy(
     ),
     buildCustomerAnalysisFactsContext(analysisFoundationFacts),
     documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: 12000,
-      structureLimit: 10,
+      textLimit: primaryInFull ? input.customerDocument.raw_text.length : 12000,
+      structureLimit: primaryInFull ? 4 : 10,
+      structureSelection: primaryInFull ? "head" : "distributed",
       structureTextLimit: 180,
     }),
-    retrievedSnippetContext(
-      "Semantisk dokumentdekning",
-      analysisRetrieval.snippets,
-      { textLimit: 1200 },
-    ),
-    buildDelimitedContext(
-      "Retrieval-kvalitet",
-      JSON.stringify(analysisRetrieval.telemetry.quality),
-    ),
+    analysisRetrieval
+      ? retrievedSnippetContext(
+          "Semantisk dokumentdekning",
+          analysisRetrieval.snippets,
+          { textLimit: 1200 },
+        )
+      : "",
+    analysisRetrieval
+      ? buildDelimitedContext(
+          "Retrieval-kvalitet",
+          JSON.stringify(analysisRetrieval.telemetry.quality),
+        )
+      : "",
     buildDelimitedContext(
       "Dokumentdekningsregel",
-      "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
+      [
+        primaryInFull
+          ? "Hele det primære kundedokumentet er med. Bruk hele dokumentet, også senere kapitler om økonomiske rammer, opsjoner, tidsplan, evaluering og rettelser. Ikke skriv at deler av dokumentet ikke er synlige."
+          : "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
+        "Når et rettelses- eller endringskapittel endrer tidligere tekst, gjelder den nyeste teksten; nevn endringen.",
+        "Når tall, frister eller krav er motstridende mellom kapitler eller dokumenter, skal du påpeke motstriden eksplisitt med begge verdiene og kildene i stedet for å velge én av dem.",
+      ].join(" "),
     ),
     serviceRecommendationContext(input.serviceCandidates),
     supportingContexts
