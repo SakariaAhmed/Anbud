@@ -451,6 +451,21 @@ export function documentSourceKeysForMemoryFallback(
   );
 }
 
+const MAX_RETRIEVAL_LIMIT = 16;
+
+/** Occurrences of `needle` in `haystack` that stand as a whole value: not
+ * preceded or followed by a letter or digit. */
+function wholeValueOccurrences(haystack: string, needle: string) {
+  if (!needle) return 0;
+  let count = 0;
+  for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
+    const before = at > 0 ? haystack[at - 1]! : "";
+    const after = haystack[at + needle.length] ?? "";
+    if (!/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after)) count += 1;
+  }
+  return count;
+}
+
 const queryEmbeddingCache = new Map<string, number[]>();
 
 function queryEmbeddingCacheKey(query: string) {
@@ -1870,6 +1885,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   serviceDocuments?: ServiceDocumentDetail[];
   exactTerms?: string[];
   limit?: number;
+  /** Exact document text already sent in this prompt, keyed by project document ID. */
+  promptDocumentText?: ReadonlyMap<string, string>;
 }): Promise<DocumentSnippetRetrievalResult> {
   const startedAt = Date.now();
   const query = normalizeChunkText(input.query);
@@ -1912,7 +1929,35 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   ]);
   const queryTokens = tokenizeForRetrieval(query);
   const exactTerms = (input.exactTerms ?? []).filter(Boolean);
-  const limit = Math.min(Math.max(input.limit ?? 8, 1), 16);
+  const limit = Math.min(Math.max(input.limit ?? 8, 1), MAX_RETRIEVAL_LIMIT);
+  const comparable = (text: string) => normalizeChunkText(text).replace(/\s+/gu, " ");
+  const coveredText = new Map([...input.promptDocumentText ?? []].map(([id, text]) =>
+    [documentChunkSourceKey("project_document", id), comparable(text)],
+  ));
+  const sourceText = new Map(documents.map((document) =>
+    [documentChunkSourceKey("project_document", document.id), comparable(document.raw_text)],
+  ));
+  const hasUncoveredText = (candidate: RetrievedDocumentSnippet) => {
+    const key = documentChunkSourceKey(candidate.sourceType, candidate.sourceId);
+    const covered = coveredText.get(key);
+    if (!covered) return true;
+    const text = comparable(candidate.text);
+    // Covered only when the chunk's place in the source is unambiguous: it
+    // occurs once there as a whole value ("30%" inside "130%" does not count),
+    // and the prompt carries that occurrence. Keep a whole boundary chunk
+    // when any of its evidence is outside the prompt.
+    const source = sourceText.get(key);
+    if (!source || wholeValueOccurrences(source, text) !== 1) return true;
+    return wholeValueOccurrences(covered, text) === 0;
+  };
+  // Prompt-covered hits can fill a bounded stored search: search once more
+  // with the widest bound when filtering left too few results.
+  const withRefill = async (search: (bound: number) => Promise<RetrievedDocumentSnippet[]>) => {
+    const first = await search(limit);
+    const kept = first.filter(hasUncoveredText);
+    if (kept.length >= limit || kept.length === first.length || limit >= MAX_RETRIEVAL_LIMIT) return kept;
+    return (await search(MAX_RETRIEVAL_LIMIT)).filter(hasUncoveredText);
+  };
   let hybridCandidates: RetrievedDocumentSnippet[] = [];
   let vectorCandidates: RetrievedDocumentSnippet[] = [];
   let usedHybridSearch = false;
@@ -1930,7 +1975,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   });
 
   try {
-    hybridCandidates = await storedHybridCandidates({
+    hybridCandidates = await withRefill((bound) => storedHybridCandidates({
       query,
       getEmbedding: getQueryEmbedding,
       queryTokens,
@@ -1939,8 +1984,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
       sourceIds,
       sourceFingerprints,
       staleFilteredSourceKeys,
-      limit,
-    });
+      limit: bound,
+    }));
     usedHybridSearch = hybridCandidates.length > 0;
   } catch (error) {
     assertEmbeddingFallbackAllowed(error);
@@ -1949,7 +1994,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
 
   if (!hybridCandidates.length && !queryEmbeddingFailed) {
     try {
-      vectorCandidates = await storedVectorCandidates({
+      vectorCandidates = await withRefill((bound) => storedVectorCandidates({
         getEmbedding: getQueryEmbedding,
         queryTokens,
         exactTerms,
@@ -1957,8 +2002,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
         sourceIds,
         sourceFingerprints,
         staleFilteredSourceKeys,
-        limit,
-      });
+        limit: bound,
+      }));
       usedVectorSearch = vectorCandidates.length > 0;
     } catch (error) {
       assertEmbeddingFallbackAllowed(error);
@@ -1986,7 +2031,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
           documentChunkSourceKey("service_document", document.id),
         ),
     ),
-  });
+  }).filter(hasUncoveredText);
   usedMemoryFallback = fallbackCandidates.length > 0;
 
   const snippets = rerankSnippets({

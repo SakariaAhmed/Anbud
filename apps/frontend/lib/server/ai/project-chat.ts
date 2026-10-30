@@ -35,6 +35,56 @@ type RetrievalPlan = {
 
 
 const CHAT_ATTACHMENT_CONTEXT_LIMIT = 24_000;
+// Projects whose documents fit are answered from the whole documents: the
+// first 2,800-9,000 characters were usually a summary page, so answers about
+// later chapters relied on a few retrieved chunks.
+const CHAT_FULL_DOCUMENTS_MAX_CHARS = 90_000;
+const CHAT_SOLUTION_EVALUATION_LIMIT = 16_000;
+
+/** The parts of a stored evaluation a chat answer needs, per requirement,
+ * instead of a JSON dump cut off before the coverage items. */
+function compactSolutionEvaluationForChat(evaluation: SolutionEvaluationResult) {
+  const list = (value: unknown, max: number) =>
+    Array.isArray(value)
+      ? value.slice(0, max).map((item) => compactText(typeof item === "string" ? item : JSON.stringify(item), 260))
+      : [];
+  const coverage = evaluation.requirement_coverage;
+  const summary = {
+    fit_to_customer_needs: compactText(String(evaluation.fit_to_customer_needs ?? ""), 700),
+    likely_score_assessment: compactText(JSON.stringify(evaluation.likely_score_assessment ?? ""), 500),
+    strengths: list(evaluation.strengths, 4),
+    weaknesses: list(evaluation.weaknesses, 6),
+    missing_elements: list(evaluation.missing_elements, 6),
+    risks_to_customer: list(evaluation.risks_to_customer, 6),
+    trust_signals: list(evaluation.trust_signals, 4),
+    improvement_recommendations: list(evaluation.improvement_recommendations, 4),
+    coverage_summary: coverage?.coverage_summary ?? "",
+  };
+  // Documents can share a short reference ("R-005"): each row names its
+  // source document, so chat never credits an assessment to the wrong one.
+  const items = (coverage?.items ?? []).map((item) =>
+    [
+      item.source_document_title ? `${item.reference} [${compactText(item.source_document_title, 80)}]` : item.reference,
+      item.assessment,
+      compactText(item.rationale ?? "", 200),
+      item.evidence ? `Bevis: ${compactText(item.evidence, 180)}` : "",
+    ]
+      .filter(Boolean)
+      .join(" | "),
+  );
+  const head = JSON.stringify(summary);
+  const rows: string[] = [];
+  let used = head.length;
+  for (const row of items) {
+    if (used + row.length + 1 > CHAT_SOLUTION_EVALUATION_LIMIT) {
+      rows.push(`… ${items.length - rows.length} flere kravrader er utelatt.`);
+      break;
+    }
+    rows.push(row);
+    used += row.length + 1;
+  }
+  return [head, "Kravdekning per krav (ref [dokument] | vurdering | begrunnelse | bevis):", ...rows].join("\n");
+}
 const CHAT_ATTACHMENT_STRUCTURED_CONTEXT_LIMIT = 18_000;
 const CHAT_ATTACHMENT_SEGMENT_CHARS = 1400;
 
@@ -642,9 +692,42 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     (useStructuredCoverage &&
       retrievalQuality.sourceCount >= 8 &&
       (retrievalQuality.topScore ?? 0) >= 180);
+  // Exactly the documents the prompt can carry whole: the main documents
+  // and the first four supporting documents.
+  const promptDocuments = [
+    input.customerDocument,
+    input.solutionDocument,
+    ...(input.supportingDocuments ?? []).slice(0, 4),
+  ].filter((document): document is ProjectDocumentDetail => Boolean(document));
+  const fullDocumentsInContext =
+    promptDocuments.length > 0 &&
+    promptDocuments.reduce((sum, document) => sum + document.raw_text.length, 0) <=
+    CHAT_FULL_DOCUMENTS_MAX_CHARS;
+  // With the whole documents included, an excerpt whose text is already in
+  // its own document only anchors its reference; any other excerpt keeps its
+  // full text. Coverage is checked per source: a document available only
+  // through excerpts may repeat a passage of an included one. Stored chunks
+  // fold dashes and drop NUL characters, so both sides are compared that way.
+  const comparable = (text: string) =>
+    text.replace(/\u0000/gu, "").replace(/[‐‑‒–—]/gu, "-").replace(/\s+/gu, " ").trim();
+  const includedText = new Map(
+    fullDocumentsInContext
+      ? promptDocuments.map((document) => [document.id, comparable(document.raw_text)] as const)
+      : [],
+  );
+  const promptSnippets = fullDocumentsInContext
+    ? retrievedSnippets.map((snippet) =>
+        snippet.sourceType === "project_document" &&
+        includedText.get(snippet.sourceId)?.includes(comparable(snippet.text))
+          ? { ...snippet, text: compactText(snippet.text, 280) }
+          : snippet,
+      )
+    : retrievedSnippets;
   const retrievalContext = retrievedSnippetContext(
-    "Mest relevante dokumentutdrag for spørsmålet",
-    retrievedSnippets,
+    fullDocumentsInContext
+      ? "Kildehenvisninger til de mest relevante stedene"
+      : "Mest relevante dokumentutdrag for spørsmålet",
+    promptSnippets,
     // Retrieval already bounds the number and size of chunks. Keep their
     // complete text: a later section can qualify an earlier commitment.
     { textLimit: null },
@@ -685,7 +768,9 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     .map((document, index) =>
       buildDelimitedContext(
         `Støttedokument ${index + 1}: ${document.title}`,
-        compactText(document.raw_text, useStructuredCoverage ? 2200 : 3500),
+        fullDocumentsInContext
+          ? document.raw_text
+          : compactText(document.raw_text, useStructuredCoverage ? 2200 : 3500),
       ),
     );
   const generatedArtifactLimit = useStructuredCoverage ? 3 : 5;
@@ -699,8 +784,48 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
       ),
     );
 
+  // Name what is included whole; a fifth or later supporting document is
+  // represented by excerpts only.
+  const omittedSupporting = (input.supportingDocuments ?? []).slice(4);
+  const documentRuleScope = [
+    `Hele ${promptDocuments.map((document) => `«${document.title}»`).join(", ")} står nedenfor.`,
+    omittedSupporting.length
+      ? `${omittedSupporting.map((document) => `«${document.title}»`).join(", ")} er bare med som utdrag; si fra at svaret kan stå der før du sier at noe ikke er beskrevet.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const documentSections = [
+    fullDocumentsInContext
+      ? buildDelimitedContext(
+          "Dokumentregel",
+          `${documentRuleScope} Let gjennom hele dokumentene, også senere kapitler, tabeller og rettelser, før du sier at noe ikke er beskrevet. Et sammendrag eller en generell påstand om at alle krav er oppfylt, er ikke svar på et konkret krav. Påpek motstridende tall eller frister med begge verdiene og kildene.`,
+        )
+      : "",
+    input.customerDocument
+      ? buildDelimitedContext(
+          "Kundedokument",
+          fullDocumentsInContext
+            ? input.customerDocument.raw_text
+            : compactText(input.customerDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
+        )
+      : "",
+    input.solutionDocument
+      ? buildDelimitedContext(
+          "Løsningsdokument",
+          fullDocumentsInContext
+            ? input.solutionDocument.raw_text
+            : compactText(input.solutionDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
+        )
+      : "",
+    ...(fullDocumentsInContext || !hasStrongRetrieval ? supportingDocuments : supportingDocuments.slice(0, 2)),
+  ];
+
   const userPrompt = [
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
+    // Whole documents come first: they are the same every turn, so the
+    // provider's prompt cache can reuse them.
+    ...(fullDocumentsInContext ? documentSections : []),
     buildDelimitedContext("Tolkede chatdomener", domainHints.join(", ")),
     buildDelimitedContext(
       "Retrieval-plan og kvalitet",
@@ -757,26 +882,11 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     input.solutionEvaluation
       ? buildDelimitedContext(
           "Løsningsvurdering",
-          compactText(
-            JSON.stringify(input.solutionEvaluation),
-            useStructuredCoverage ? 6500 : 10000,
-          ),
+          compactSolutionEvaluationForChat(input.solutionEvaluation),
         )
       : "",
-    input.customerDocument
-      ? buildDelimitedContext(
-          "Kundedokument",
-          compactText(input.customerDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
-        )
-      : "",
-    input.solutionDocument
-      ? buildDelimitedContext(
-          "Løsningsdokument",
-          compactText(input.solutionDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
-        )
-      : "",
+    ...(fullDocumentsInContext ? [] : documentSections),
     retrievalContext,
-    ...(hasStrongRetrieval ? supportingDocuments.slice(0, 2) : supportingDocuments),
     ...generatedArtifacts,
     history ? buildDelimitedContext("Samtalehistorikk", history) : "",
     buildDelimitedContext("Nytt spørsmål", input.question),

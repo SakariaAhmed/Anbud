@@ -489,6 +489,14 @@ const SOLUTION_EVALUATION_TIMEOUT_MS = boundedIntegerEnv(
   30_000,
   600_000,
 );
+const CUSTOMER_ANALYSIS_FULL_DOCUMENT_MAX_CHARS = boundedIntegerEnv(
+  process.env,
+  "CUSTOMER_ANALYSIS_FULL_DOCUMENT_MAX_CHARS",
+  60_000,
+  12_000,
+  150_000,
+);
+const CUSTOMER_ANALYSIS_SUPPORTING_FULL_BUDGET_CHARS = 30_000;
 const CUSTOMER_ANALYSIS_TIMEOUT_MS = boundedIntegerEnv(
   process.env,
   "CUSTOMER_ANALYSIS_TIMEOUT_MS",
@@ -5568,21 +5576,50 @@ async function analyzeCustomerDocumentsLegacy(
     documents: analysisDocuments,
     serviceDocuments: [],
   });
-  const analysisRetrieval = await retrieveDocumentSnippetsWithMetadata({
-    query: [
-      input.projectName,
-      "kundens behov mål krav risiko evalueringskriterier forutsetninger arkitektur løsning verdi",
-    ].join("\n"),
-    projectId: input.customerDocument.project_id,
-    documents: analysisDocuments,
-    exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål"],
-    limit: 10,
+  // Only the first 12,000 characters of the customer document were sent, so
+  // budgets, options, award criteria and a late corrections chapter were
+  // never seen. Documents that fit are sent whole. For the remaining
+  // documents, retrieval skips fully covered chunks and preserves boundary
+  // chunks that contain additional evidence.
+  const primaryInFull =
+    input.customerDocument.raw_text.length <= CUSTOMER_ANALYSIS_FULL_DOCUMENT_MAX_CHARS;
+  const primaryTextLimit = primaryInFull ? input.customerDocument.raw_text.length : 12000;
+  let supportingBudget = CUSTOMER_ANALYSIS_SUPPORTING_FULL_BUDGET_CHARS;
+  const supportingPlan = input.supportingDocuments.map((document, index) => {
+    // At most four supporting documents get their own prompt section.
+    const full = index < 4 && document.raw_text.length <= supportingBudget;
+    if (full) supportingBudget -= document.raw_text.length;
+    return { document, full, shown: index < 4, textLimit: full ? document.raw_text.length : 4000 };
   });
-  const supportingContexts = input.supportingDocuments
-    .slice(0, 2)
-    .map((document, index) =>
+  // Every document not sent whole stays reachable through retrieval.
+  const retrievalDocuments = [
+    ...(primaryInFull ? [] : [input.customerDocument]),
+    ...supportingPlan.filter((plan) => !plan.full).map((plan) => plan.document),
+  ];
+  const promptDocumentText = new Map([
+    [input.customerDocument.id, compactText(input.customerDocument.raw_text, primaryTextLimit).slice(0, primaryTextLimit)],
+    ...supportingPlan.filter((plan) => plan.shown).map(({ document, textLimit }) =>
+      [document.id, compactText(document.raw_text, textLimit).slice(0, textLimit)] as const,
+    ),
+  ]);
+  const analysisRetrieval = retrievalDocuments.length
+    ? await retrieveDocumentSnippetsWithMetadata({
+        query: [
+          input.projectName,
+          "kundens behov mål krav risiko evalueringskriterier tildelingskriterier forutsetninger budsjett økonomisk ramme tidsplan frister opsjoner rettelser arkitektur løsning verdi",
+        ].join("\n"),
+        projectId: input.customerDocument.project_id,
+        documents: retrievalDocuments,
+        exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål", "budsjett", "opsjon", "frist"],
+        limit: 10,
+        promptDocumentText,
+      })
+    : null;
+  const supportingContexts = supportingPlan
+    .filter((plan) => plan.shown)
+    .map(({ document, textLimit }, index) =>
       documentContext(`Støttedokument ${index + 1}`, document, {
-        textLimit: 4000,
+        textLimit,
         structureLimit: 6,
         structureTextLimit: 160,
       }),
@@ -5599,22 +5636,35 @@ async function analyzeCustomerDocumentsLegacy(
     ),
     buildCustomerAnalysisFactsContext(analysisFoundationFacts),
     documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: 12000,
-      structureLimit: 10,
+      textLimit: primaryTextLimit,
+      structureLimit: primaryInFull ? 4 : 10,
+      structureSelection: primaryInFull ? "head" : "distributed",
       structureTextLimit: 180,
     }),
-    retrievedSnippetContext(
-      "Semantisk dokumentdekning",
-      analysisRetrieval.snippets,
-      { textLimit: 1200 },
-    ),
-    buildDelimitedContext(
-      "Retrieval-kvalitet",
-      JSON.stringify(analysisRetrieval.telemetry.quality),
-    ),
+    analysisRetrieval
+      ? retrievedSnippetContext(
+          "Semantisk dokumentdekning",
+          analysisRetrieval.snippets,
+          // A boundary chunk may repeat the head before adding a later
+          // qualification; keep the new evidence at its end as well.
+          { textLimit: null },
+        )
+      : "",
+    analysisRetrieval
+      ? buildDelimitedContext(
+          "Retrieval-kvalitet",
+          JSON.stringify(analysisRetrieval.telemetry.quality),
+        )
+      : "",
     buildDelimitedContext(
       "Dokumentdekningsregel",
-      "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
+      [
+        primaryInFull
+          ? "Hele det primære kundedokumentet er med. Bruk hele dokumentet, også senere kapitler om økonomiske rammer, opsjoner, tidsplan, evaluering og rettelser. Ikke skriv at deler av dokumentet ikke er synlige."
+          : "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
+        "Når et rettelses- eller endringskapittel endrer tidligere tekst, gjelder den nyeste teksten; nevn endringen.",
+        "Når tall, frister eller krav er motstridende mellom kapitler eller dokumenter, skal du påpeke motstriden eksplisitt med begge verdiene og kildene i stedet for å velge én av dem.",
+      ].join(" "),
     ),
     serviceRecommendationContext(input.serviceCandidates),
     supportingContexts
@@ -5659,7 +5709,7 @@ async function analyzeCustomerDocumentsLegacy(
       document_count: analysisDocuments.length,
       compiled_document_count: 0,
       legacy_fallback_count: analysisDocuments.length,
-      retrieval_used: true,
+      retrieval_used: analysisRetrieval !== null,
       prompt_chars: userPrompt.length,
       model: input.model ?? ANALYSIS_MODEL,
     },

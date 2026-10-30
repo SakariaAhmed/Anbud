@@ -89,6 +89,8 @@ test("adaptive first questions skip rewriting while prior context and forced rew
       assert.ok(state.retrieval[0].exactTerms.includes("K-42"), item.name);
       assert.match(state.retrieval[0].query, /K-42/);
       assert.deepEqual(history, item.messages, "The history sent to the final answer must not be mutated.");
+      assert.doesNotMatch(state.answers[0].user, /### Dokumentregel|Hele\s+står nedenfor/u,
+        "A chat without documents must not claim whole documents are included.");
       if (item.rewrites) assert.match(result.retrievalPlan.standalone_query, /^Omskrevet/);
       else assert.ok(result.retrievalPlan.standalone_query.includes(question), item.name);
       if (item.summary?.trim()) assert.ok(state.answers[0].user.includes(item.summary));
@@ -180,4 +182,226 @@ test("an attachment that fits the limit is kept whole even when one paragraph ma
   });
   assert.match(selected, /Påminnelse: se nedenfor\./u);
   assert.match(selected, /7 dager før fristen\./u);
+});
+
+test("chat answers from the whole documents when they fit, with a compact per-requirement evaluation", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-full-"));
+  const state = { prompts: [] };
+  globalThis.__projectChatFullTest = state;
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatFullTest.prompts.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    // Retrieval only finds the summary page, as in the production test.
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async () => ({
+      snippets: [{ sourceType: "project_document", sourceId: "supplier", documentTitle: "Bilag 2", reference: "Bilag 2, side 1",
+        text: "Sammendrag: Leverandøren oppfyller alle krav.", headingPath: [], pageStart: 1, pageEnd: 1, lexicalScore: 1, score: 100, similarity: 0.8 }],
+      telemetry: { durationMs: 0, usedHybridSearch: true, quality: { sufficient: true, sourceCount: 1, topScore: 200 } },
+    });`);
+    const { createJiti: createLoader } = require("jiti");
+    const load = createLoader(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const lateAnswer = "Kapittel 7: Hendelser med prioritet 1 har responstid på 30 minutter.";
+    const solutionText = `Sammendrag: Leverandøren oppfyller alle krav.\n${"Generell beskrivelse av plattformen. ".repeat(400)}\n${lateAnswer}`;
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const items = Array.from({ length: 60 }, (_, index) => ({
+      reference: `KRAV-${index + 1}`, assessment: index === 59 ? "Mangler" : "Godt",
+      rationale: `Vurdering ${index + 1}.`, evidence: "Sitat fra Bilag 2.",
+    }));
+    // Two documents share the short reference R-005.
+    items.push(
+      { reference: "R-005", source_document_title: "Bilag 1", assessment: "Godt", rationale: "Dekket.", evidence: "Sitat A." },
+      { reference: "R-005", source_document_title: "Tilleggskrav", assessment: "Mangler", rationale: "Ikke dekket.", evidence: "" },
+    );
+    const result = await streamProjectChat({
+      projectName: "Fiktiv", question: "Hvilke krav dekker Bilag 2 ikke?",
+      customerAnalysis: null,
+      solutionEvaluation: {
+        fit_to_customer_needs: "Delvis.", weaknesses: ["Responstid"],
+        strengths: ["Kundeeid IaC-repository"], trust_signals: ["Navngitte nøkkelpersoner"], improvement_recommendations: ["Lukk avviket på responstid"],
+        requirement_coverage: { coverage_summary: "59 gode, 1 mangler.", items },
+      },
+      recentMessages: [],
+      customerDocument: document("customer", "primary_customer_document", "KRAV-60 Hendelser med prioritet 1 skal ha responstid på høyst 15 minutter."),
+      solutionDocument: document("supplier", "primary_solution_document", solutionText),
+    });
+    for await (const chunk of result.stream) assert.equal(chunk, "ok");
+    const prompt = state.prompts.at(-1).user;
+    // The whole documents come before the per-turn sections (prompt cache).
+    assert.ok(prompt.indexOf(lateAnswer) < prompt.indexOf("### Løsningsvurdering"));
+    // The late chapter (beyond the former 2,800/9,000-character head) is in.
+    assert.ok(prompt.includes(lateAnswer));
+    // Every requirement row, including the last, survives in compact form.
+    assert.match(prompt, /KRAV-60 \| Mangler \| Vurdering 60\./u);
+    // Rows sharing a reference keep their own document.
+    assert.match(prompt, /R-005 \[Bilag 1\] \| Godt/u);
+    assert.match(prompt, /R-005 \[Tilleggskrav\] \| Mangler/u);
+    // The saved judgments beyond the requirement rows survive too.
+    for (const finding of ["Kundeeid IaC-repository", "Navngitte nøkkelpersoner", "Lukk avviket på responstid"]) {
+      assert.ok(prompt.includes(finding), finding);
+    }
+    assert.ok(prompt.includes("Referanse: Bilag 2, side 1"));
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatFullTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the chat route selects each fallback document once before building the real prompt", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-route-scope-"));
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  const state = { documents: [], prompts: [], retrieval: [] };
+  globalThis.__projectChatRouteScopeTest = state;
+  try {
+    const dependencies = path.join(directory, "dependencies.cjs");
+    writeFileSync(dependencies, `
+      exports.requireProjectPermission = async () => {};
+      exports.checkRateLimit = async () => ({ allowed: true });
+      exports.getProjectGenerationContext = async () => ({ name: "Fiktiv", solutionEvaluationSnapshot: null });
+      exports.listProjectDocumentsForAnalysis = async () => globalThis.__projectChatRouteScopeTest.documents;
+      exports.getFreshCustomerAnalysis = async () => null;
+      for (const name of ["listGeneratedArtifactsFresh", "listChatMessages", "listChatSessions"]) exports[name] = async () => [];
+      for (const name of ["appendChatMessage", "upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
+      exports.createTextCompletionStream = async input => {
+        globalThis.__projectChatRouteScopeTest.prompts.push(input);
+        return (async function* () { yield "Lokalt testsvar."; })();
+      };
+      exports.retrieveDocumentSnippetsWithMetadata = async input => {
+        globalThis.__projectChatRouteScopeTest.retrieval.push(input);
+        return { snippets: [], telemetry: { durationMs: 0, quality: { sufficient: false, sourceCount: 0 } } };
+      };
+    `);
+    const aliases = Object.fromEntries([
+      "authorization", "observability", "repositories/data-store", "repositories/analyses", "repositories/artifacts", "repositories/chat", "ai/completion", "document-chunks",
+    ].map((name) => [`@/lib/server/${name}`, dependencies]));
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false,
+      alias: { ...aliases, "@": frontendRoot, "server-only": "/dev/null" } });
+    const { POST } = await load.import(path.join(frontendRoot, "app/api/projects/[id]/chat/route.ts"));
+    const document = (id, role, text) => ({ id, project_id: "fictional", role, title: id,
+      file_name: `${id}.txt`, file_format: "txt", supporting_subtype: null, raw_text: text, structure_map: [] });
+    for (const [source, marker] of [
+      [document("solution", "primary_solution_document", `${"x".repeat(45001)}SENT_KAPITTEL_SVAR`), "SENT_KAPITTEL_SVAR"],
+      [document("note", "supporting_document", "UNIKT_KUNDENOTAT"), "UNIKT_KUNDENOTAT"],
+    ]) {
+      state.documents = [source]; state.prompts = []; state.retrieval = [];
+      const response = await POST(new Request("http://localhost/api/projects/fictional/chat", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Hva er beskrevet?" }),
+      }), { params: Promise.resolve({ id: "fictional" }) });
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), "Lokalt testsvar.");
+      assert.equal(state.prompts[0].user.split(marker).length - 1, 1, "the complete source is sent once");
+      assert.deepEqual(state.retrieval[0].documents.map((item) => item.id), [source.id]);
+    }
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatRouteScopeTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an excerpt shortens against its whole document despite folded dashes", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-dash-"));
+  const state = { prompts: [] };
+  globalThis.__projectChatDashTest = state;
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const tail = "Siste ledd: beredskapen dekker også helligdager.";
+    const source = `Kapittel 4 – Beredskap\u0000: ${"vakten svarer innen avtalt tid og eskalerer ved behov, ".repeat(8)}${tail}`;
+    // Stored chunks fold dashes and drop NUL characters.
+    const chunk = source.replace(/\u0000/gu, "").replace(/[‐‑‒–—]/gu, "-");
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatDashTest.prompts.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async () => ({
+      snippets: [{ sourceType: "project_document", sourceId: "supplier", documentTitle: "Bilag 2", reference: "Bilag 2, side 4",
+        text: ${JSON.stringify(chunk)}, headingPath: [], pageStart: 4, pageEnd: 4, lexicalScore: 1, score: 100, similarity: 0.8 }],
+      telemetry: { durationMs: 0, usedHybridSearch: true, quality: { sufficient: true, sourceCount: 1, topScore: 200 } },
+    });`);
+    const { createJiti: createLoader } = require("jiti");
+    const load = createLoader(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const result = await streamProjectChat({
+      projectName: "Fiktiv", question: "Hva gjelder for beredskap?",
+      customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+      customerDocument: document("customer", "primary_customer_document", "Kunden krever beredskap."),
+      solutionDocument: document("supplier", "primary_solution_document", source),
+    });
+    for await (const part of result.stream) assert.equal(part, "ok");
+    const user = state.prompts.at(-1).user;
+    assert.equal(user.split(tail).length - 1, 1, "the passage appears once, in the whole document");
+    assert.ok(user.includes("Referanse: Bilag 2, side 4"));
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatDashTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("chat keeps the full text of excerpts from documents the prompt does not carry", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-fifth-"));
+  const state = { prompts: [] };
+  globalThis.__projectChatFifthTest = state;
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const exception = `Unntak for tilgjengelighet: ${"vedlikeholdsvinduer avtales skriftlig og varsles i forkant, ".repeat(8)}ellers gjelder full tilgjengelighet.`;
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatFifthTest.prompts.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async () => ({
+      snippets: [{ sourceType: "project_document", sourceId: "s5", documentTitle: "Støtte 5", reference: "Støtte 5, side 2",
+        text: ${JSON.stringify(exception)}, headingPath: [], pageStart: 2, pageEnd: 2, lexicalScore: 1, score: 100, similarity: 0.8 }],
+      telemetry: { durationMs: 0, usedHybridSearch: true, quality: { sufficient: true, sourceCount: 1, topScore: 200 } },
+    });`);
+    const { createJiti: createLoader } = require("jiti");
+    const load = createLoader(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const supports = Array.from({ length: 5 }, (_, index) =>
+      // The first, included document repeats the fifth document's passage.
+      document(`s${index + 1}`, "supporting_document", index === 4 ? `Innledning.\n${exception}` : index === 0 ? `Støtte 1.\n${exception}` : `Støtte ${index + 1}.`),
+    );
+    const result = await streamProjectChat({
+      projectName: "Fiktiv", question: "Hvilke unntak gjelder for tilgjengelighet?",
+      customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+      customerDocument: document("customer", "primary_customer_document", "Kunden krever høy tilgjengelighet."),
+      solutionDocument: document("supplier", "primary_solution_document", "Leverandøren tilbyr drift."),
+      supportingDocuments: supports,
+    });
+    for await (const chunk of result.stream) assert.equal(chunk, "ok");
+    const user = state.prompts.at(-1).user;
+    const excerpt = user.slice(user.indexOf("Støtte 5, side 2"), user.indexOf("Støtte 5, side 2") + exception.length + 400);
+    assert.ok(excerpt.includes(exception), "the fifth document's own excerpt keeps its full text, even when an included document repeats it");
+    // The document rule says which documents are whole and which only excerpted.
+    assert.match(state.prompts.at(-1).user, /«s5» er bare med som utdrag/u);
+    assert.match(state.prompts.at(-1).user, /Hele «customer», «supplier», «s1», «s2», «s3», «s4» står nedenfor\./u);
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatFifthTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
