@@ -144,8 +144,8 @@ function systemPromptWithStablePrefix(system: string) {
   return `${STABLE_JSON_SYSTEM_PREFIX}\n\n### Task-Specific Contract\n${system}`;
 }
 
-// GPT-5 and GPT-6 models accept 24-hour prompt cache retention (checked
-// against the API for gpt-6.1-sol, gpt-6.1-terra and gpt-6-luna).
+// GPT-6 uses the cache-lifetime API shared by Chat and Responses. Legacy
+// retention settings do not select a GPT-6 cache lifetime.
 function promptCacheRetentionPayload(model: string) {
   if (!/^gpt-(?:5|6)(?:[.\-]|$)/i.test(model)) {
     return {};
@@ -155,6 +155,10 @@ function promptCacheRetentionPayload(model: string) {
     process.env.OPENAI_PROMPT_CACHE_RETENTION?.trim().toLowerCase() || "24h";
   if (configured === "off" || configured === "false" || configured === "0") {
     return {};
+  }
+
+  if (/^gpt-6(?:[.\-]|$)/i.test(model)) {
+    return { prompt_cache_options: { ttl: "30m" as const } };
   }
 
   const retention = configured === "in-memory" ? "in_memory" : configured;

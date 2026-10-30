@@ -46,10 +46,11 @@ test("requirement batch policy changes only the default workload and preserves e
 });
 
 test("GPT-6 models can be configured and are never sent a custom temperature", async () => {
-  const names = ["OPENAI_MODEL", "OPENAI_FAST_MODEL"];
+  const names = ["OPENAI_MODEL", "OPENAI_ANALYSIS_MODEL", "OPENAI_FAST_MODEL"];
   const original = Object.fromEntries(names.map((name) => [name, process.env[name]]));
   const load = () => createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: { "@": frontend, "server-only": "/dev/null" } })(path.join(import.meta.dirname, "model-config.ts"));
   try {
+    delete process.env.OPENAI_ANALYSIS_MODEL;
     process.env.OPENAI_MODEL = "gpt-6.1-sol";
     process.env.OPENAI_FAST_MODEL = " gpt-6-luna ";
     const config = load();
