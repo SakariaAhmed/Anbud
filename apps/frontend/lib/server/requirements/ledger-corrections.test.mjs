@@ -515,3 +515,17 @@ test("round 9 probes: unquoted new wording keeps every sentence before its ratio
   // "lyder nå" ends in a letter \b does not see.
   assert.equal(text("K-3 lyder nå: «Leverandøren skal levere månedlig driftsrapport.»"), "Leverandøren skal levere månedlig driftsrapport.");
 });
+
+test("round 9 (second member): clarifying and removing new-text cells", () => {
+  const ledger = [
+    { id: "K-5", text: "Responstid for A-feil skal være maks 2 timer.", pages: [1], heading: "4 Krav" },
+    { id: "K-6", text: "Leverandøren skal levere månedlig driftsrapport.", pages: [1], heading: "4 Krav" },
+    { id: "K-7", text: "Leverandøren skal tilby døgnkontinuerlig vakt.", pages: [1], heading: "4 Krav" },
+  ];
+  const chapter = ledger.map((entry) => `${entry.id} ${entry.text}`).join("\n");
+  const result = applyRequirementCorrections(
+    ledger,
+    `4 Krav\n${chapter}\n\n9 Rettelser\n| Krav-ID | Endring | Ny tekst |\n| K-5 | Presisering | Gjelder kun produksjonsmiljøet. |\n| K-6 | Rettelse | Fjernes |\n| K-7 | Rettelse | Kravet tas ut. |`,
+  ).ledger;
+  assert.deepEqual(result.map((entry) => [entry.id, entry.text]), [["K-5", ledger[0].text]]);
+});

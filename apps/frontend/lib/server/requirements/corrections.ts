@@ -154,6 +154,7 @@ function tableAwareLines(lines: string[]) {
       if (NEW_TEXT_COLUMN.test(label) && cell.trim()) {
         // "Utgår" or "Kravet utgår." in the new-text column withdraws.
         if (/^(?:kravet\s+)?(?:utgår|bortfaller|strykes|frafalles|annulleres|slettes)\b/iu.test(cell.trim())) return [cell];
+        if (/^(?:kravet\s+)?(?:fjernes|tas\s+ut)\s*\.?$/iu.test(cell.trim())) return ["Utgår"];
         return [/^[«“"]/u.test(cell.trim()) ? `Ny tekst: ${cell.trim()}` : `Ny tekst: «${cell.trim()}»`];
       }
       return [cell];
@@ -225,10 +226,15 @@ function correctedWording(original: string, quote: string, replaced: string | un
     // layout (hyphenation, spacing) still replace the requirement.
     return obligation(replaced) && obligation(quote) ? quote : null;
   }
-  // A long replacement must read as a whole requirement sentence, not a
-  // value ("99,9 % målt per kalendermåned.").
+  // Without an obligation, a long replacement must read as a sentence
+  // restating the requirement, not a value ("99,9 % målt per
+  // kalendermåned.") or a clarification ("Gjelder kun produksjonsmiljøet.").
   const sentence = /^[A-ZÆØÅ]/u.test(quote.trim()) && /[.!]$/u.test(quote.trim());
-  if (!old || obligation(quote) || (sentence && normalized(quote).length >= old.length * 0.6)) return quote;
+  const words = (text: string) => new Set(normalized(text).match(/\p{L}{4,}/gu) ?? []);
+  const oldWords = words(original);
+  const newWords = [...words(quote)];
+  const restates = newWords.length > 0 && newWords.filter((word) => oldWords.has(word)).length >= newWords.length / 2;
+  if (!old || obligation(quote) || (sentence && restates && normalized(quote).length >= old.length * 0.6)) return quote;
   return null;
 }
 
