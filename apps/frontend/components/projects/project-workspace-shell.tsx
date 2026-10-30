@@ -680,6 +680,7 @@ export function ProjectWorkspaceTabContent({
         key={`jobs-${project.id}`}
         projectId={project.id}
         jobs={projectJobs}
+        blockedReason={workflowBlockedReason}
         onJobStarted={onProjectJobRecorded}
         onRefreshJobs={onRefreshProjectJobs}
       />

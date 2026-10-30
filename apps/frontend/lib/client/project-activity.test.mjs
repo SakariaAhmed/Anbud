@@ -23,6 +23,7 @@ const {
 const {
   ProjectApiError,
   fetchProjectJobs,
+  invalidateProjectJobsCache,
   isProjectWorkflowBusyError,
   startProjectJob,
 } = jiti(path.join(frontendRoot, "lib/client/project-api.ts"));
@@ -205,6 +206,7 @@ test("an older job-list read cannot overwrite a job the user just started or a n
       reads.push(read);
       return read.promise;
     },
+    invalidate() {},
     onChange: (jobs) => applied.push(jobs.map((job) => `${job.id}:${job.status}`)),
   });
 
@@ -266,4 +268,69 @@ test("a busy refusal carries the server's workflow code to the client", async ()
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("a cached job list read before a recorded status cannot bring the old status back", async () => {
+  const originalFetch = globalThis.fetch;
+  const served = [
+    [{ id: "job-1", status: "running" }],
+    [{ id: "job-1", status: "completed" }],
+  ];
+  let requests = 0;
+  globalThis.fetch = async () => new Response(JSON.stringify({ jobs: served[requests++] }), {
+    headers: { "content-type": "application/json" },
+  });
+  const applied = [];
+  const source = createProjectJobsSource({
+    read: () => fetchProjectJobs("recorded-project"),
+    invalidate: () => invalidateProjectJobsCache("recorded-project"),
+    onChange: (jobs) => applied.push(jobs.map((job) => job.status).join(",")),
+  });
+  try {
+    await source.refresh();
+    // The page's own job watcher sees completion before the next poll.
+    source.record({ id: "job-1", status: "completed" });
+    await source.refresh();
+    assert.deepEqual(applied, ["running", "completed", "completed"]);
+    assert.equal(requests, 2, "the poll after a recorded status reads the server again");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("hiding the page cancels a pending follow-up refresh until the page is shown again", async () => {
+  const clock = fakeTimers();
+  let hidden = false;
+  const reads = [];
+  const poller = createProjectActivityPoller({
+    refresh() {
+      const read = deferred();
+      reads.push(read);
+      return read.promise;
+    },
+    delayMs: () => ACTIVE_PROJECT_POLL_MS,
+    isHidden: () => hidden,
+    timers: clock.timers,
+  });
+
+  void poller.refreshNow();
+  void poller.refreshNow(); // follow-up requested while the first is in flight
+  hidden = true;
+  poller.sleep();
+  reads[0].resolve();
+  await flush();
+  assert.equal(reads.length, 1, "no refresh runs while the page is hidden");
+  void poller.refreshNow();
+  await flush();
+  assert.equal(reads.length, 1, "explicit refreshes also wait for the page");
+  assert.deepEqual(clock.delays(), []);
+
+  hidden = false;
+  poller.wake();
+  await clock.advance(PROJECT_WAKE_DEBOUNCE_MS);
+  assert.equal(reads.length, 2, "showing the page runs the deferred refresh once");
+  reads[1].resolve();
+  await flush();
+  assert.deepEqual(clock.delays(), [ACTIVE_PROJECT_POLL_MS]);
+  poller.stop();
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   createProjectActivityPoller,
@@ -9,7 +9,7 @@ import {
   projectActivityPollDelayMs,
   projectWorkflowBlockingReason,
 } from "@/lib/client/project-activity";
-import { fetchProjectJobs } from "@/lib/client/project-api";
+import { fetchProjectJobs, invalidateProjectJobsCache } from "@/lib/client/project-api";
 import type { ProjectDocument, ProjectJobRecord } from "@/lib/types";
 
 type ActivityControls = {
@@ -43,9 +43,12 @@ export function useProjectActivity(input: {
     let disposed = false;
     const source = createProjectJobsSource({
       read: () => fetchProjectJobs(projectId),
+      invalidate: () => invalidateProjectJobsCache(projectId),
       onChange(next) {
         jobsRef.current = next;
-        if (!disposed) setJobs(next);
+        // The first job read lands while server-rendered tabs may still be
+        // hydrating; as a transition it cannot force them back to "Laster ...".
+        if (!disposed) startTransition(() => setJobs(next));
       },
     });
     const poller = createProjectActivityPoller({

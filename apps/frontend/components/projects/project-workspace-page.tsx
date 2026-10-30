@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   FormEvent,
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -632,7 +633,9 @@ export function ProjectWorkspacePage({
       // A transport failure never changes authoritative document status; the
       // activity loop keeps the last state and retries on its next run.
       const fresh = await fetchProjectState(project.id);
-      setProject((current) => mergeProjectRefresh(current, fresh));
+      // A background refresh must not force a lazy tab that is still
+      // hydrating back to its loading fallback.
+      startTransition(() => setProject((current) => mergeProjectRefresh(current, fresh)));
     },
   });
 
@@ -998,7 +1001,7 @@ export function ProjectWorkspacePage({
       return true;
     } catch (err) {
       // A busy project is a reason to wait, not a failure (see startWorkspaceJob).
-      if (err instanceof Error && (err as Error & { code?: unknown }).code === "PROJECT_WORKFLOW_BUSY") {
+      if (isProjectWorkflowBusyError(err)) {
         setNotice(err.message);
       } else {
         setError(err instanceof Error ? err.message : "Noe gikk galt.");

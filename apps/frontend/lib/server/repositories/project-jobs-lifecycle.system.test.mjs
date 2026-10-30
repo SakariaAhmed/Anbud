@@ -21,6 +21,7 @@ const {
   claimQueuedProjectJob,
   findOldestQueuedProjectJob,
   getQueuedProjectJobInput,
+  listRecentProjectJobs,
   heartbeatProjectJob,
   insertProjectJob,
   resetStaleRunningProjectJobs,
@@ -671,6 +672,11 @@ class FakeQuery {
     return this;
   }
 
+  in(column, values) {
+    this.filters.push((row) => values.includes(row[column]));
+    return this;
+  }
+
   or(expression) {
     const prefix = "locked_at.is.null,locked_at.lt.";
     assert.ok(expression.startsWith(prefix), `unexpected OR filter: ${expression}`);
@@ -845,6 +851,37 @@ test("oldest queued lookup follows submission order within one project", async (
   );
   client.rows.splice(0, client.rows.length);
   assert.equal(await findOldestQueuedProjectJob(project, { includeDoclingEnhancement: true }, { client }), null);
+});
+
+test("the job list keeps an old queued job visible behind newer finished history", async () => {
+  const client = inMemoryPostgREST();
+  const project = "00000000-0000-4000-8000-000000000001";
+  const at = (minute) => `2026-07-10T08:${String(minute).padStart(2, "0")}:00.000Z`;
+  client.rows.push({
+    id: "old-queued-docling", project_id: project, kind: "document_docling_enhancement",
+    status: "queued", message: "Køer Docling-forbedring ...", error: null,
+    input_json: {}, result_json: null, created_at: at(0), updated_at: at(0),
+  });
+  for (let minute = 1; minute <= 25; minute += 1) {
+    client.rows.push({
+      id: `finished-${minute}`, project_id: project, kind: "document_ingestion",
+      status: "completed", message: "Ferdig.", error: null,
+      input_json: {}, result_json: null, created_at: at(minute), updated_at: at(minute),
+    });
+  }
+  client.rows.push({
+    id: "other-project-running", project_id: "00000000-0000-4000-8000-000000000002",
+    kind: "customer_analysis", status: "running", message: "", error: null,
+    input_json: {}, result_json: null, created_at: at(0), updated_at: at(0),
+  });
+
+  const jobs = await listRecentProjectJobs(project, { client });
+
+  assert.equal(jobs.length, 21, "20 rows of history plus the older active job");
+  assert.equal(jobs[0].id, "finished-25", "newest first");
+  assert.equal(jobs.at(-1).id, "old-queued-docling");
+  assert.equal(jobs.filter((job) => job.status === "queued").length, 1);
+  assert.ok(jobs.every((job) => job.project_id === project));
 });
 
 test("durable persistence fails closed instead of retrying a legacy payload", async () => {

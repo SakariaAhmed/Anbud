@@ -357,9 +357,30 @@ export async function resetStaleRunningProjectJobs(
   return reset.data?.length ?? 0;
 }
 
+const RECENT_PROJECT_JOB_HISTORY = 20;
+
+/**
+ * Recent job history plus every queued or running job, however old. The
+ * client derives whether generation is blocked from the active jobs, so an
+ * old queued job must not disappear behind newer finished ones.
+ */
 export async function listRecentProjectJobs(projectId: string, runtime: ProjectJobRepositoryRuntime = {}) {
-  const { data, error } = await serviceClient(runtime).from("project_jobs").select("*")
-    .eq("project_id", projectId).order("created_at", { ascending: false }).limit(20);
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as JobRow[]).map(mapJobRow);
+  const dataApi = serviceClient(runtime);
+  const [recent, active] = await Promise.all([
+    dataApi.from("project_jobs").select("*")
+      .eq("project_id", projectId).order("created_at", { ascending: false })
+      .limit(RECENT_PROJECT_JOB_HISTORY),
+    dataApi.from("project_jobs").select("*")
+      .eq("project_id", projectId).in("status", ["queued", "running"])
+      .order("created_at", { ascending: false }),
+  ]);
+  if (recent.error) throw new Error(recent.error.message);
+  if (active.error) throw new Error(active.error.message);
+  const rows = new Map<string, JobRow>();
+  for (const row of [...((recent.data ?? []) as JobRow[]), ...((active.data ?? []) as JobRow[])]) {
+    rows.set(row.id, row);
+  }
+  return [...rows.values()]
+    .sort((left, right) => right.created_at.localeCompare(left.created_at))
+    .map(mapJobRow);
 }

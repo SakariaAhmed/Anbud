@@ -72,10 +72,12 @@ export function projectWorkflowBlockingReason(input: {
 /**
  * Orders job-list reads and local writes. A read applies only if no newer read
  * or local write (a job the user just started) has been applied since it
- * began, so a slow older response cannot hide a newer job.
+ * began, so a slow older response cannot hide a newer job. A local write also
+ * drops the shared cached list, which may predate it.
  */
 export function createProjectJobsSource(input: {
   read: () => Promise<ProjectJobRecord[]>;
+  invalidate: () => void;
   onChange: (jobs: ProjectJobRecord[]) => void;
 }) {
   let sequence = 0;
@@ -93,6 +95,7 @@ export function createProjectJobsSource(input: {
       return true;
     },
     record(job: ProjectJobRecord) {
+      input.invalidate();
       applied = ++sequence;
       jobs = [job, ...jobs.filter((current) => current.id !== job.id)];
       input.onChange(jobs);
@@ -147,7 +150,8 @@ export function createProjectActivityPoller(input: {
   };
   async function run(): Promise<void> {
     clearTimer();
-    if (stopped) return;
+    // A hidden page is refreshed by wake() when it is shown again.
+    if (stopped || input.isHidden()) return;
     if (inFlight) {
       // A refresh requested mid-flight may concern newer state; run it after.
       rerun = true;
@@ -161,7 +165,7 @@ export function createProjectActivityPoller(input: {
     } finally {
       inFlight = false;
     }
-    if (rerun && !stopped) {
+    if (rerun) {
       rerun = false;
       return run();
     }
@@ -184,6 +188,9 @@ export function createProjectActivityPoller(input: {
       }, input.wakeDebounceMs ?? PROJECT_WAKE_DEBOUNCE_MS);
     },
     sleep() {
+      // wake() refreshes once anyway, so a follow-up requested before the
+      // page was hidden is dropped rather than run in the background.
+      rerun = false;
       clearTimer();
       clearWakeTimer();
     },

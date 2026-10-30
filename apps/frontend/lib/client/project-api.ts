@@ -607,6 +607,11 @@ export async function uploadProjectDocument(input: {
 // request between callers that refresh at the same moment.
 const PROJECT_JOBS_CACHE_TTL_MS = 2_000;
 
+/** Drops a cached or in-flight job list, e.g. after applying a newer status. */
+export function invalidateProjectJobsCache(projectId: string) {
+  clearClientCache(projectReadCacheKey(projectId, "jobs"));
+}
+
 export async function fetchProjectJobs(projectId: string) {
   return readClientCache(
     projectReadCacheKey(projectId, "jobs"),
@@ -638,7 +643,7 @@ export class ProjectApiError extends Error {
   }
 }
 
-export function isProjectWorkflowBusyError(error: unknown) {
+export function isProjectWorkflowBusyError(error: unknown): error is ProjectApiError {
   return error instanceof ProjectApiError && error.code === "PROJECT_WORKFLOW_BUSY";
 }
 

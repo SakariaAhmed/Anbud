@@ -119,7 +119,7 @@ test('REGRESSION API1: stale manual editor is rejected without overwriting newer
 test('REGRESSION UI1: failed save keeps editor open with unsaved draft', async () => {
   let error = ''; let editor = { section: 'strategy', value: { executive_summary: 'Unsaved work' }, basis: null, revision: 'original-revision' };
   const { runAction } = actual('components/projects/project-workspace-page.tsx', ['runAction'], {
-    busyActionRef: { current: null }, setBusy: noop, setError: value => error = value, setNotice: noop, startProgressTicker: noop, setBusyProgress: noop, stopProgressTicker: noop,
+    busyActionRef: { current: null }, setBusy: noop, setError: value => error = value, setNotice: noop, startProgressTicker: noop, setBusyProgress: noop, stopProgressTicker: noop, isProjectWorkflowBusyError: () => false,
   });
   const { onSaveSectionEdit } = actual('components/projects/project-analysis-tab.tsx', ['onSaveSectionEdit'], {
     readOnly: false,
@@ -145,7 +145,7 @@ test('REGRESSION UI2: one local action holds busy state and rejects overlapping 
   let busy; let resolveA; let resolveB;
   const a = new Promise(resolve => resolveA = resolve); const b = new Promise(resolve => resolveB = resolve);
   const { runAction } = actual('components/projects/project-workspace-page.tsx', ['runAction'], {
-    busyActionRef: { current: null }, setBusy: value => busy = value, setError: noop, setNotice: noop, startProgressTicker: noop, setBusyProgress: noop, stopProgressTicker: noop,
+    busyActionRef: { current: null }, setBusy: value => busy = value, setError: noop, setNotice: noop, startProgressTicker: noop, setBusyProgress: noop, stopProgressTicker: noop, isProjectWorkflowBusyError: () => false,
   });
   const first = runAction('analysis', () => a); const second = runAction('executive-summary', () => b);
   assert.equal(busy, 'analysis'); assert.equal(await second, false); resolveA(); await first;

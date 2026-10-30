@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import { Button } from "@/components/ui/button";
 import { isProjectWorkflowBusyError, startProjectJob } from "@/lib/client/project-api";
 import type { ProjectJobRecord } from "@/lib/types";
@@ -9,11 +10,14 @@ import { parseJobProgress } from "@/lib/project-job-progress";
 export function ProjectWorkflowJobs({
   projectId,
   jobs,
+  blockedReason,
   onJobStarted,
   onRefreshJobs,
 }: {
   projectId: string;
   jobs: ProjectJobRecord[];
+  /** Why the server would refuse a new job now (active jobs or unfinished documents). */
+  blockedReason: string | null;
   onJobStarted: (job: ProjectJobRecord) => void;
   onRefreshJobs: () => Promise<void>;
 }) {
@@ -44,7 +48,8 @@ export function ProjectWorkflowJobs({
   return <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm" aria-live="polite">
     {activeJobs.map(job => <p key={job.id}>{job.status === "queued" ? "I kø" : "Pågår"}: {parseJobProgress(job.message).label}</p>)}
     {pending && <><p>Løsningsutkastet er lagret. Revurdering gjenstår.</p>
-      <Button className="mt-2" size="sm" variant="outline" disabled={starting || activeJobs.length > 0} onClick={() => void resume()}>Fortsett revurdering</Button></>}
+      <Button className="mt-2" size="sm" variant="outline" aria-describedby={blockedReason && !activeJobs.length ? "resume-workflow-blocked" : undefined} disabled={starting || Boolean(blockedReason)} onClick={() => void resume()}>Fortsett revurdering</Button>
+      {!activeJobs.length ? <div className="mt-2"><WorkflowBlockedHint id="resume-workflow-blocked" reason={blockedReason} /></div> : null}</>}
     {notice && !activeJobs.length && <p className="mt-2">{notice}</p>}
     {error && <p role="alert" className="mt-2 text-red-700">{error}</p>}
   </div>;
