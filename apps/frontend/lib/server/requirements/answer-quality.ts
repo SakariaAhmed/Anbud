@@ -3734,7 +3734,7 @@ export function answerHasSelfContainedCoverage(
 // requested thing or an excluded option depends on the whole answer.
 // A scope limit ("leveres ikke utenfor EU") and "ikke bare" never decline.
 const SUBJECT_DECLINE =
-  /(?:^|[.;:!?]\s+|\bnei\s*[,.:–-]\s*)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+\s+)?(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via|som\s+standard|i\s+standard)(?![\p{L}\p{N}]))/giu;
+  /(?:^|[.;:!?]\s+|\bnei\s*[,.:–-]\s*)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+\s+)?(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via|(?:som|i)\s+(?:en\s+del\s+av\s+)?(?:dagens\s+)?standard\p{L}*)(?![\p{L}\p{N}]))/giu;
 // A bare pronoun ("Dette", "Det") refers to the requirement only in the
 // answer's opening sentence or after "Nei,"; later it usually points back to
 // an excluded option ("SMS er deaktivert. Dette støttes ikke av
