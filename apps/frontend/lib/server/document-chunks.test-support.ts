@@ -6,6 +6,7 @@ type StoredChunkManifest = {
 
 const manifests = new Map<string, StoredChunkManifest>();
 let embeddingRequestCount = 0;
+let retrievalRows: Array<Record<string, unknown>> | null = null;
 
 function sourceKey(sourceType: string, sourceId: string) {
   return `${sourceType}:${sourceId}`;
@@ -14,6 +15,11 @@ function sourceKey(sourceType: string, sourceId: string) {
 export function resetDocumentChunksTestRuntime() {
   manifests.clear();
   embeddingRequestCount = 0;
+  retrievalRows = null;
+}
+
+export function setDocumentChunksTestRetrievalRows(rows: Array<Record<string, unknown>>) {
+  retrievalRows = structuredClone(rows);
 }
 
 export function getDocumentChunksTestEmbeddingRequestCount() {
@@ -54,11 +60,19 @@ export function createServiceClient() {
             async limit() {
               return { data: [], error: null };
             },
+            async in(_column: string, ids: string[]) {
+              return { data: (retrievalRows ?? []).filter((row) => ids.includes(String(row.id))), error: null };
+            },
           };
         },
       };
     },
     async rpc(name: string, args: Record<string, unknown>) {
+      if (retrievalRows && (name === "hybrid_match_document_chunks" || name === "match_document_chunks")) {
+        return { data: retrievalRows.slice(0, Number(args.match_count)).map((row, index) => ({
+          id: row.id, similarity: 0.9, keyword_rank: index + 1, semantic_rank: index + 1, rrf_score: 1 / (60 + index),
+        })), error: null };
+      }
       if (name === "replace_document_chunks_atomic") {
         const sourceType = String(args.p_source_type);
         const sourceId = String(args.p_source_id);

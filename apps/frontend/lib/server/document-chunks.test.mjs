@@ -45,7 +45,9 @@ const {
   getDocumentChunksTestEmbeddingRequestCount,
   getDocumentChunksTestManifest,
   resetDocumentChunksTestRuntime,
+  setDocumentChunksTestRetrievalRows,
 } = jiti(testSupportPath);
+const { encryptString } = jiti(path.join(frontendRoot, "lib/server/crypto.ts"));
 
 function projectDocument(overrides = {}) {
   return {
@@ -108,6 +110,57 @@ test("prompt-covered chunks do not consume retrieval slots or hide other source 
   assert.ok(partial.snippets.some((snippet) => snippet.sourceType === "project_document" && snippet.sourceId === first.id && snippet.text === covered.text),
     "a chunk crossing the covered boundary retains its full evidence");
   assert.equal(first.raw_text, text, "coverage comparison does not change original source text");
+});
+
+function storedSnippetRow(document, text, reference, id) {
+  return { id, source_type: "project_document", source_id: document.id, document_title: document.title,
+    kind: "requirement", reference, heading_path: [], page_start: null, page_end: null,
+    text_encrypted: encryptString(text), metadata: withDocumentChunkSourceFingerprint({}, projectDocumentChunkSourceFingerprint(document)) };
+}
+
+test("a bounded stored search refills uncovered evidence after most hits are prompt-covered", async () => {
+  resetDocumentChunksTestRuntime();
+  try {
+    const coveredParagraphs = Array.from({ length: 11 }, (_, index) => `Leverandøren skal dokumentere sikkerhet for dekket område nummer ${index + 1}.`);
+    const first = projectDocument({ id: "covered", title: "Dekket", raw_text: coveredParagraphs.join("\n\n"),
+      structure_map: coveredParagraphs.map((text, index) => ({ reference: `A-${index}`, text })) });
+    const secondText = "Leverandøren skal dokumentere sikkerhet for avdeling B.";
+    const thirdText = "Leverandøren skal dokumentere sikkerhet for avdeling C og eksterne brukere.";
+    const second = projectDocument({ id: "uncovered-b", title: "B", raw_text: secondText, structure_map: [{ reference: "B-1", text: secondText }] });
+    const third = projectDocument({ id: "uncovered-c", title: "C", raw_text: thirdText, structure_map: [{ reference: "C-1", text: thirdText }] });
+    setDocumentChunksTestRetrievalRows([
+      ...coveredParagraphs.map((text, index) => storedSnippetRow(first, text, `A-${index}`, `a-${index}`)),
+      storedSnippetRow(second, secondText, "B-1", "b-1"), storedSnippetRow(third, thirdText, "C-1", "c-1"),
+    ]);
+    // limit 2 asks the stored search for its bounded minimum of 12 hits:
+    // eleven covered passages and one uncovered passage. C is outside it.
+    const result = await retrieveDocumentSnippetsWithMetadata({ query: "sikkerhet", documents: [first, second, third], limit: 2,
+      promptDocumentText: new Map([[first.id, first.raw_text]]) });
+    assert.equal(result.telemetry.usedHybridSearch, true);
+    assert.equal(result.snippets.length, 2);
+    assert.deepEqual(new Set(result.snippets.map((snippet) => snippet.sourceId)), new Set([second.id, third.id]));
+    assert.ok(result.snippets.some((snippet) => snippet.text.includes("eksterne brukere")));
+  } finally { resetDocumentChunksTestRuntime(); }
+});
+
+test("coverage retains stored chunks when their source occurrence is ambiguous or inside another value", async () => {
+  const repeated = "Leverandøren skal dokumentere et særskilt sikkerhetskrav.";
+  for (const fixture of [
+    { source: "Rammen er 130%.\n\nSatsen er 30%.", prefix: "Rammen er 130%.", text: "30%" },
+    { source: "Rammen er 130%.", prefix: "Rammen er 130%.", text: "30%" },
+    { source: `${repeated}\n\nEt annet kapittel\n\n${repeated}`, prefix: repeated, text: repeated },
+  ]) {
+    resetDocumentChunksTestRuntime();
+    try {
+      const document = projectDocument({ id: "ambiguous", raw_text: fixture.source,
+        structure_map: [{ reference: "Særskilt sted", text: fixture.text }] });
+      setDocumentChunksTestRetrievalRows([storedSnippetRow(document, fixture.text, "Særskilt sted", "ambiguous-row")]);
+      const result = await retrieveDocumentSnippetsWithMetadata({ query: "sikkerhet ramme", documents: [document], limit: 1,
+        promptDocumentText: new Map([[document.id, fixture.prefix]]) });
+      assert.equal(result.snippets[0]?.text, fixture.text);
+      assert.equal(result.snippets[0]?.reference, "Særskilt sted");
+    } finally { resetDocumentChunksTestRuntime(); }
+  }
 });
 
 test("project chunk fingerprint changes for same-length source content", () => {
