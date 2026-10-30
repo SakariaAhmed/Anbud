@@ -902,6 +902,18 @@ test("review bots on #70: 'andre' as 'other' is no ordinal; an ID-less customer 
   const twice = [k3, { ...k3, text: "Leverandøren skal levere årlig sikkerhetsrapport." }];
   const pronoun = applyRequirementCorrections(twice, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\n\n9 Rettelser\nK-3 er brukt to ganger. Den siste får ny ID K-9.`).ledger;
   assert.deepEqual(pronoun.map((entry) => [entry.id, entry.text]), [["K-3", twice[0].text], ["K-9", twice[1].text]]);
+  // A parenthetical qualifier after a pronoun ordinal still selects it.
+  const qualified = applyRequirementCorrections(twice, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\n\n9 Rettelser\nK-3 er brukt to ganger. Den siste (sikkerhetsrapport) får ny ID K-9.`).ledger;
+  assert.deepEqual(qualified.map((entry) => entry.id), ["K-3", "K-9"]);
+  // Plural "andre krav" names no occurrence: one K-3 is renamed, two stay ambiguous.
+  assert.deepEqual(
+    applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nI tillegg til andre krav får K-3 ny ID K-9.`).ledger.map((entry) => entry.id),
+    ["K-9"],
+  );
+  assert.throws(
+    () => applyRequirementCorrections(twice, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\n\n9 Rettelser\nI tillegg til andre krav får K-3 ny ID K-9.`),
+    /kan ikke brukes entydig/u,
+  );
   // "i andre kvartal" names no occurrence.
   assert.deepEqual(
     applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nK-3 om rapportering i andre kvartal får ny ID K-9.`).ledger.map((entry) => entry.id),
@@ -937,6 +949,8 @@ test("a renumbering targets its subject, not a requirement named in an aside", (
       "K-3, som erstatter K-2, får ny ID K-9.",
       "K-3 får, i likhet med K-2, ny ID K-9.",
       "K-3 (tidligere omtalt sammen med K-2) får ny ID K-9.",
+      // A comma between clauses is no aside.
+      "K-2 beholder sin ID, K-3 får, som avtalt, ny ID K-9.",
     ]) {
       const result = applyRequirementCorrections(ledger, `4 Krav\n${chapter}\n\n9 Rettelser\n${line}`).ledger;
       assert.equal(result.find((entry) => entry.text === "Leverandøren skal levere drift.")?.id, "K-9", line);

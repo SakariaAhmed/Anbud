@@ -491,10 +491,14 @@ export function applyRequirementCorrections(
           ? renumberMatch[1]
           : undefined;
       // The renumbered requirement is the subject before "ny ID", not one named
-      // in an aside: a parenthesis or a comma-delimited insertion ("K-3, som
-      // erstatter K-2, får ny ID K-9", "K-3 får, i likhet med K-2, ny ID …").
+      // in an aside: a parenthesis, or a comma-delimited insertion opened by an
+      // aside marker ("K-3, som erstatter K-2, får ny ID K-9", "K-3 får, i
+      // likhet med K-2, ny ID …"). A comma between clauses is no aside ("K-2
+      // beholder sin ID, K-3 får, som avtalt, ny ID K-9").
       const asides = renumberMatch
-        ? [...sentence.text.slice(0, renumberMatch.index).matchAll(/\([^()]*\)|,[^,]*,/gu)].map((match) => [match.index!, match.index! + match[0].length] as const)
+        ? [...sentence.text.slice(0, renumberMatch.index).matchAll(
+            /\([^()]*\)|,\s*(?:som|i\s+likhet\s+med|sammen\s+med|på\s+linje\s+med|i\s+motsetning\s+til|jf\.?|jfr\.?|herunder|inkludert|unntatt|med\s+unntak\s+av)(?![\p{L}\p{N}])[^,]*,/giu,
+          )].map((match) => [match.index!, match.index! + match[0].length] as const)
         : [];
       const renumberTarget = renumberMatch
         ? subjects({
@@ -510,10 +514,13 @@ export function applyRequirementCorrections(
         // andre kravet") or used as a pronoun after a determiner ("Den siste
         // får ny ID"). "andre" also means "other" ("andre endringer", "i andre
         // kvartal"), which names no occurrence.
+        // "krav" is also plural ("andre krav" = "other requirements"), so it
+        // counts only after a determiner ("det andre krav"). A short
+        // parenthesis may qualify a pronoun ordinal ("Den siste (logger) får").
         const ordinal = [...sentence.text.slice(0, renumberMatch.index).matchAll(
-          /(?<![\p{L}\p{N}])(?:(første|andre|tredje|siste)\s+(?:kravet|krav|kravraden|raden|rad|forekomsten)|(?:den|det|denne|dette)\s+(første|andre|tredje|siste)(?=\s+(?:får|beholder|skal|gis|endres|blir|er)(?![\p{L}\p{N}])|\s*[,.:;]|\s*$))(?![\p{L}\p{N}])/giu,
+          /(?<![\p{L}\p{N}])(?:(første|andre|tredje|siste)\s+(?:kravet|kravraden|raden|rad|forekomsten)|(?:det|dette)\s+(første|andre|tredje|siste)\s+krav|(?:den|det|denne|dette)\s+(første|andre|tredje|siste)(?=\s*(?:\([^()]{1,80}\)\s*)?(?:(?:får|beholder|skal|gis|endres|blir|er)(?![\p{L}\p{N}])|[,.:;]|$)))(?![\p{L}\p{N}])/giu,
         )]
-          .map((match) => match[1] ?? match[2])
+          .map((match) => match[1] ?? match[2] ?? match[3])
           .at(-1)
           ?.toLocaleLowerCase("nb");
         if (occurrences.length > 1 && !ordinal) assertUniqueTargets([renumberTarget]);
