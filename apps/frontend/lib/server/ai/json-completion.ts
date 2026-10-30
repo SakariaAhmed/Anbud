@@ -2,6 +2,8 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
+import { APIConnectionTimeoutError } from "openai/error";
+
 import { getProjectWorkflowAbortSignal } from "@/lib/server/project-workflow-cancellation";
 import { redactedModelOutputError } from "@/lib/server/safe-errors";
 import { isRecord, type Untrusted } from "@/lib/unknown-values";
@@ -224,6 +226,35 @@ function requestOptions(input: {
     : undefined;
 }
 
+/** An AI call that produced no response within its timeout. Recoverable:
+ * callers may retry with a smaller input when the job deadline allows. */
+export class AiCallTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(message: string, timeoutMs: number) {
+    super(message);
+    this.name = "AiCallTimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export function isAiCallTimeoutError(error: unknown) {
+  let current = error;
+  for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
+    // The SDK may time out first when its timeout equals ours. Its error's
+    // `name` is plain "Error", so match the class (absent in test doubles).
+    if (
+      current instanceof AiCallTimeoutError ||
+      (typeof APIConnectionTimeoutError === "function" &&
+        current instanceof APIConnectionTimeoutError)
+    ) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+
 function timeoutPromise(input: {
   timeoutMs?: number;
   abortController: AbortController | null;
@@ -235,7 +266,12 @@ function timeoutPromise(input: {
         input.setHandle(
           setTimeout(() => {
             input.abortController?.abort();
-            reject(new Error(`${input.message} etter ${input.timeoutMs} ms.`));
+            reject(
+              new AiCallTimeoutError(
+                `${input.message} etter ${input.timeoutMs} ms.`,
+                input.timeoutMs!,
+              ),
+            );
           }, input.timeoutMs),
         );
       })

@@ -210,7 +210,9 @@ test("production failures are redacted before the handler returns 500", async ()
 
     assert.equal(response.status, 500);
     assert.match(body.error, /^Kunne ikke generere løsningsvurdering\. Referanse:/u);
-    assert.match(body.error, /Feilhash: [a-f0-9]{24}\.$/u);
+    // Without a provider request id the hash is the single reference.
+    assert.match(body.error, /Referanse: [a-f0-9]{24}\.$/u);
+    assert.doesNotMatch(body.error, /Feilhash/u);
     assert.doesNotMatch(body.error, /do-not-leak|internal\.example|password=/u);
   } finally {
     if (previousNodeEnv === undefined) {

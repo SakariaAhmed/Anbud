@@ -66,13 +66,20 @@ export function productionSafeErrorMessage(
   requestId?: string | null,
 ) {
   const known = workflowError(error);
-  if (known) return known.message;
+  if (known) {
+    // An incomplete workflow is not user-fixable; give a reference for support.
+    return known.code === "WORKFLOW_INCOMPLETE"
+      ? `${known.message} Referanse: ${errorHash(error)}.`
+      : known.message;
+  }
   if (process.env.NODE_ENV !== "production") {
     return error instanceof Error ? error.message : String(error ?? fallback);
   }
 
   const reference = safeErrorTelemetry(error, requestId);
-  return `${fallback} Referanse: ${reference.request_id ?? reference.error_hash}. Feilhash: ${reference.error_hash}.`;
+  return reference.request_id
+    ? `${fallback} Referanse: ${reference.request_id}. Feilhash: ${reference.error_hash}.`
+    : `${fallback} Referanse: ${reference.error_hash}.`;
 }
 
 export function redactedModelOutputError(
