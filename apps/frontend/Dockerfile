@@ -105,7 +105,7 @@ RUN mkdir -p /opt/docling-models \
 # certifi, msgpack, urllib3 and pkg_resources, which lag the fixed versions
 # the scan requires, so remove it from both interpreters as for npm above.
 RUN /opt/docling/bin/python -m pip uninstall --yes pip \
-    && python -m pip uninstall --yes pip \
+    && /usr/local/bin/python -m pip uninstall --yes pip \
     && rm -f /usr/local/bin/pip /usr/local/bin/pip3*
 # The production Docling image does not use Debian package management at
 # runtime. Remove Perl after build-time tooling has finished to keep the final
