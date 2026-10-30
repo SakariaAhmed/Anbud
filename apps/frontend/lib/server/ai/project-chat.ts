@@ -706,16 +706,19 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   // With the whole documents included, an excerpt whose text is already in
   // its own document only anchors its reference; any other excerpt keeps its
   // full text. Coverage is checked per source: a document available only
-  // through excerpts may repeat a passage of an included one.
+  // through excerpts may repeat a passage of an included one. Stored chunks
+  // fold dashes and drop NUL characters, so both sides are compared that way.
+  const comparable = (text: string) =>
+    text.replace(/\u0000/gu, "").replace(/[‐‑‒–—]/gu, "-").replace(/\s+/gu, " ").trim();
   const includedText = new Map(
     fullDocumentsInContext
-      ? promptDocuments.map((document) => [document.id, document.raw_text.replace(/\s+/gu, " ")] as const)
+      ? promptDocuments.map((document) => [document.id, comparable(document.raw_text)] as const)
       : [],
   );
   const promptSnippets = fullDocumentsInContext
     ? retrievedSnippets.map((snippet) =>
         snippet.sourceType === "project_document" &&
-        includedText.get(snippet.sourceId)?.includes(snippet.text.replace(/\s+/gu, " ").trim())
+        includedText.get(snippet.sourceId)?.includes(comparable(snippet.text))
           ? { ...snippet, text: compactText(snippet.text, 280) }
           : snippet,
       )

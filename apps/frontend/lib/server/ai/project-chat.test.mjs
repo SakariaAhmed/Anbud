@@ -309,6 +309,52 @@ test("the chat route selects each fallback document once before building the rea
   }
 });
 
+test("an excerpt shortens against its whole document despite folded dashes", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-dash-"));
+  const state = { prompts: [] };
+  globalThis.__projectChatDashTest = state;
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const tail = "Siste ledd: beredskapen dekker også helligdager.";
+    const source = `Kapittel 4 – Beredskap\u0000: ${"vakten svarer innen avtalt tid og eskalerer ved behov, ".repeat(8)}${tail}`;
+    // Stored chunks fold dashes and drop NUL characters.
+    const chunk = source.replace(/\u0000/gu, "").replace(/[‐‑‒–—]/gu, "-");
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatDashTest.prompts.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async () => ({
+      snippets: [{ sourceType: "project_document", sourceId: "supplier", documentTitle: "Bilag 2", reference: "Bilag 2, side 4",
+        text: ${JSON.stringify(chunk)}, headingPath: [], pageStart: 4, pageEnd: 4, lexicalScore: 1, score: 100, similarity: 0.8 }],
+      telemetry: { durationMs: 0, usedHybridSearch: true, quality: { sufficient: true, sourceCount: 1, topScore: 200 } },
+    });`);
+    const { createJiti: createLoader } = require("jiti");
+    const load = createLoader(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const result = await streamProjectChat({
+      projectName: "Fiktiv", question: "Hva gjelder for beredskap?",
+      customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+      customerDocument: document("customer", "primary_customer_document", "Kunden krever beredskap."),
+      solutionDocument: document("supplier", "primary_solution_document", source),
+    });
+    for await (const part of result.stream) assert.equal(part, "ok");
+    const user = state.prompts.at(-1).user;
+    assert.equal(user.split(tail).length - 1, 1, "the passage appears once, in the whole document");
+    assert.ok(user.includes("Referanse: Bilag 2, side 4"));
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatDashTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("chat keeps the full text of excerpts from documents the prompt does not carry", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-fifth-"));
   const state = { prompts: [] };
