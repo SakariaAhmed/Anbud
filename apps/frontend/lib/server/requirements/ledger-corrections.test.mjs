@@ -291,7 +291,7 @@ test("matrix guards: numbered sections, price forms, continuations, answer colum
   ].join("\n");
   const document = { file_format: "xlsx", raw_text };
   const ledger = buildSpreadsheetRequirementLedger(document);
-  assert.deepEqual(ledger.map((entry) => entry.id), ["1.1", "SIK-ARK-01"]);
+  assert.deepEqual(ledger.map((entry) => entry.id), ["1.1", "SIK-ARK-01", "7a/II"]);
   assert.equal(ledger[0].heading, "1 Generelle krav");
   assert.match(ledger[0].text, /gjelder også underleverandører/u);
   // The empty requirement cell and the unread ID stay in the inventory, so
@@ -599,4 +599,20 @@ test("round 12: an unplaced change keeps its note when nothing else applies", ()
   assert.equal(adjusted.text, "Leverandøren skal tilby brukerstøtte hele døgnet.");
   // The IDs are unchanged, so completeness checks are unaffected.
   assert.deepEqual(correctedRequirementIds(["K-3"], raw), ["K-3"]);
+});
+
+test("matrix rows with unusual ID forms are kept under their ID, end to end", async () => {
+  const { extractRequirementLedgerForDocument } = await load("lib/server/requirements/source-ledger.ts");
+  const raw_text = [
+    "Ark: Krav",
+    "Rad 1: A1: Krav-ID | B1: Kravtekst",
+    "Rad 2: A2: 1.1a | B2: Leverandøren skal levere en driftsplan.",
+    "Rad 3: A3: K1-A | B3: Leverandøren skal levere en exitplan.",
+    "Rad 4: A4: REQ_001 | B4: Leverandøren skal ha ISO 27001.",
+    "Rad 5: A5: K-2 | B5: Leverandøren skal tilby døgnvakt.",
+  ].join("\n");
+  const document = { id: "d", project_id: "p", role: "primary_customer_document", title: "Krav", file_name: "krav.xlsx", file_format: "xlsx", raw_text, structure_map: [] };
+  const ledger = await extractRequirementLedgerForDocument(document);
+  assert.deepEqual(ledger.map((entry) => entry.id), ["1.1a", "K1-A", "REQ_001", "K-2"]);
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger }]));
 });

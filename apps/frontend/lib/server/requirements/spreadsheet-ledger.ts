@@ -116,8 +116,6 @@ type MatrixRow = {
   section: string;
   /** Text-column cells of following rows without an ID. */
   continuation: string[];
-  /** The ID cell does not have a supported ID form. */
-  unsupportedId: boolean;
 };
 
 /** Every data row of every requirement matrix: a header row (possibly over
@@ -171,11 +169,11 @@ function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_t
           section = [id, text || cell(columns.title)].filter(Boolean).join(" ");
           continue;
         }
-        rows.push({ sheet: sheet.name, row, columns, section, continuation: [], unsupportedId: false });
+        rows.push({ sheet: sheet.name, row, columns, section, continuation: [] });
       } else if (ID_LIKE.test(id) && text) {
-        // An ID the extractor does not read: kept for the completeness
-        // check so the row cannot vanish silently.
-        rows.push({ sheet: sheet.name, row, columns, section, continuation: [], unsupportedId: true });
+        // An unusual ID form ("1.1a", "K1-A", "REQ_001") is still the
+        // matrix's ID: the row is kept under it, never dropped.
+        rows.push({ sheet: sheet.name, row, columns, section, continuation: [] });
       } else if (row.cells.size === 1) {
         // A lone label ("1 Krav til tilbyder") opens a section.
         section = [...row.cells.values()][0]!.trim();
@@ -207,8 +205,9 @@ export function spreadsheetRequirementIds(
 export function buildSpreadsheetRequirementLedger(
   document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">,
 ): RequirementLedgerEntry[] {
-  return matrixRows(document).flatMap(({ sheet, row, columns, section, continuation, unsupportedId }) => {
-    if (unsupportedId) return [];
+  // A readable row keeps its ID as written, also an unusual form ("1.1a",
+  // "K1-A", "REQ_001"): dropping it lost the requirement.
+  return matrixRows(document).flatMap(({ sheet, row, columns, section, continuation }) => {
     const value = (column: Column) => (columns[column] ? row.cells.get(columns[column]!) ?? "" : "");
     const id = value("id").replace(/\s+/gu, " ").trim();
     // Only the requirement text column (and its continuation rows): other
