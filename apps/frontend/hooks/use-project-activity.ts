@@ -29,7 +29,8 @@ export function useProjectActivity(input: {
   refreshProject: () => Promise<void>;
 }) {
   const { projectId, documents } = input;
-  const [jobs, setJobs] = useState<ProjectJobRecord[]>([]);
+  const [jobState, setJobState] = useState<{ projectId: string; jobs: ProjectJobRecord[] }>({ projectId, jobs: [] });
+  const jobs = jobState.projectId === projectId ? jobState.jobs : [];
   const jobsRef = useRef(jobs);
   const documentsRef = useRef(documents);
   const refreshProjectRef = useRef(input.refreshProject);
@@ -41,14 +42,16 @@ export function useProjectActivity(input: {
 
   useEffect(() => {
     let disposed = false;
+    jobsRef.current = [];
     const source = createProjectJobsSource({
       read: () => fetchProjectJobs(projectId),
       invalidate: () => invalidateProjectJobsCache(projectId),
       onChange(next) {
+        if (disposed) return;
         jobsRef.current = next;
         // The first job read lands while server-rendered tabs may still be
         // hydrating; as a transition it cannot force them back to "Laster ...".
-        if (!disposed) startTransition(() => setJobs(next));
+        startTransition(() => setJobState({ projectId, jobs: next }));
       },
     });
     const poller = createProjectActivityPoller({

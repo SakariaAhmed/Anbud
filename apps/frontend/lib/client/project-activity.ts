@@ -16,7 +16,7 @@ const JOB_KIND_LABELS: Record<ProjectJobKind, string> = {
   customer_analysis: "Kundeanalysen",
   solution_evaluation: "Løsningsvurderingen",
   artifact_generation: "En generering",
-  high_level_design: "High-level design",
+  high_level_design: "Overordnet løsningsdesign",
   perfect_system_solution: "Forbedringen av systemløsningen",
   executive_summary: "Lederoppsummeringen",
 };
