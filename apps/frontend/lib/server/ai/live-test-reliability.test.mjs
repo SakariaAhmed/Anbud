@@ -561,6 +561,16 @@ test("a decline names the delivery, not an option the requirement may forbid", a
   for (const declined of ["Dette kravet støttes ikke.", "Denne funksjonaliteten leveres ikke.", "Slik funksjonalitet tilbys ikke."]) {
     assert.equal(declines(declined, positive), true, declined);
   }
+  // A placeholder "Det", a later pronoun or "som standard" names an option.
+  for (const [answer, requirement] of [
+    ["Det støttes ikke lokale kontoer; all pålogging går via Entra ID med MFA.", "Løsningen skal håndheve MFA for alle brukere."],
+    ["Det leveres ikke egen mobilapp. Løsningen er responsiv og fungerer på mobil.", "Løsningen skal kunne brukes på mobil."],
+    ["Dette støttes ikke som standard, men leveres som tilpasning inkludert i fastprisen.", positive],
+    ["Løsningen krever MFA for alle brukere. SMS som andrefaktor er deaktivert. Dette støttes ikke av sikkerhetshensyn.", "Løsningen skal håndheve MFA for alle brukere."],
+  ]) {
+    assert.equal(declines(answer, requirement), false, answer);
+  }
+  assert.equal(declines("Det støttes ikke.", positive), true);
   const mixed = "Løsningen skal støtte SSO via Entra ID og skal ikke tillate lokale kontoer.";
   assert.equal(declines("Dette støttes ikke i vår plattform. Vi bruker lokale brukerkontoer.", mixed), true);
 });

@@ -3734,7 +3734,14 @@ export function answerHasSelfContainedCoverage(
 // requested thing or an excluded option depends on the whole answer.
 // A scope limit ("leveres ikke utenfor EU") and "ikke bare" never decline.
 const SUBJECT_DECLINE =
-  /(?:^|[.;:!?]\s+|\bnei\s*[,.:–-]\s*)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+\s+)?(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via)\b)/giu;
+  /(?:^|[.;:!?]\s+|\bnei\s*[,.:–-]\s*)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+\s+)?(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via|som\s+standard|i\s+standard)(?![\p{L}\p{N}]))/giu;
+// A bare pronoun ("Dette", "Det") refers to the requirement only in the
+// answer's opening sentence or after "Nei,"; later it usually points back to
+// an excluded option ("SMS er deaktivert. Dette støttes ikke av
+// sikkerhetshensyn."). A placeholder "Det" with its real subject after
+// "ikke" ("Det støttes ikke lokale kontoer") names an option.
+const BARE_PRONOUN = /^(?:dette|det|denne|disse)$/iu;
+const CLAUSE_END_AFTER_DECLINE = /^\s*(?:i\s+dag|foreløpig|lenger)?\s*(?:[.;:!?]|$)/u;
 const DELIVERY_SUBJECT =
   /^(?:(?:dette|denne|disse|det|slik|slike)\s+)?(?:dette|det|denne|disse|krav(?:et)?|funksjon(?:en|alitet(?:en)?)?|tjenesten|leveransen|kontrollen)$/iu;
 const NOT_LETTER = "(?<![\\p{L}\\p{N}])";
@@ -3763,7 +3770,13 @@ function answerDeclinesDelivery(text: string, requirement: string | undefined) {
   if (requirementOnlyForbids(requirement)) return false;
   return Array.from(text.matchAll(SUBJECT_DECLINE)).some((match) => {
     const subject = (match[1] ?? "").trim();
-    return !subject || DELIVERY_SUBJECT.test(subject);
+    if (!subject) return true;
+    if (!DELIVERY_SUBJECT.test(subject)) return false;
+    if (!BARE_PRONOUN.test(subject)) return true;
+    const opening = match.index === 0 || /\bnei\s*[,.:–-]\s*$/iu.test(text.slice(0, match.index! + match[0].indexOf(subject)));
+    if (!opening) return false;
+    if (/^det$/iu.test(subject)) return CLAUSE_END_AFTER_DECLINE.test(text.slice(match.index! + match[0].length));
+    return true;
   });
 }
 
