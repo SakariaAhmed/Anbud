@@ -103,7 +103,7 @@ import {
   requirementSubtitle,
   sortRequirementLedgerInDocumentOrder,
 } from "@/lib/server/requirements/presentation";
-import { extractRequirementLedgerForDocument, requirementSourceExcerptWithoutAnswer, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
+import { extractRequirementLedgerForDocument, extractRequirementLedgerWithCorrections, requirementSourceExcerptWithoutAnswer, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
 import { canonicalizeRequirementSourceLedger } from "@/lib/server/requirements/source-readiness";
 import { type RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import { filterSyntheticRequirementFallbacks } from "@/lib/server/requirements/unstructured-ledger";
@@ -4338,7 +4338,7 @@ export async function buildRequirementCoverageLedgerFromDocuments(
     3,
     async (document) => ({
       document,
-      ledger: await buildRequirementCoverageLedger(document),
+      ...await extractRequirementLedgerWithCorrections(document),
     }),
   );
 
