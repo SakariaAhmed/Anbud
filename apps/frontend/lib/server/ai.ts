@@ -194,6 +194,7 @@ import {
   assertRequirementCoverageBatchesSucceeded,
   bindVerifiedSolutionQuote,
   requirementGenericStems,
+  solutionDocumentContainsQuote,
   retryRequirementCoverageBatches,
   assertRequirementCoverageItemsAreReviewable,
   buildDeterministicControlRepairMetadata,
@@ -3398,11 +3399,26 @@ export async function buildSolutionRequirementCoverage(input: {
               rationale: `Bilag 2-sitatet berører kravet, men koblingen er usikker og må kontrolleres. ${modelRow?.rationale ?? modelRow?.begrunnelse ?? ""}`.trim(),
             }
           : modelRow;
-      return coverageItemFromBatchRow({
+      const item = coverageItemFromBatchRow({
         row,
         entry: verified?.entry ?? entry,
         orderIndex,
       });
+      // A quote found in Bilag 2 that could not be tied to the requirement
+      // is not evidence that no answer exists; say what was checked.
+      if (
+        !verified &&
+        item.assessment === "Mangler" &&
+        (modelRow?.assessment ?? modelRow?.vurdering) !== "Mangler" &&
+        solutionDocumentContainsQuote(modelRow?.evidence ?? modelRow?.bevis, input.solutionDocument)
+      ) {
+        return {
+          ...item,
+          rationale:
+            "AI-vurderingen viste til et sitat som finnes i Bilag 2, men sitatet kunne ikke knyttes til dette kravet. Kontroller om kravet er besvart et annet sted.",
+        };
+      }
+      return item;
     });
     assertRequirementCoverageItemsAreReviewable(items);
     return items;

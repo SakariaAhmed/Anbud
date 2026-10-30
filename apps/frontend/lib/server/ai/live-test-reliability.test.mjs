@@ -372,14 +372,14 @@ test("council round 2 probes: acronyms, cells, abbreviations and bare confirmati
   );
   assert.match(abbreviated.entry.answerExcerpt, /^Vi leverer ikke/u);
   assert.equal(abbreviated.uncertain, true);
-  // Restating the requirement and confirming it says nothing about how.
-  assert.equal(
-    bind(
-      req("For kritiske systemer skal RPO ikke overstige 1 time."),
-      "For kritiske systemer skal RPO ikke overstige 1 time. Leverandøren bekrefter at dette kravet er oppfylt.",
-    ),
-    null,
-  );
+  // Restating the requirement and confirming it says nothing about how: it
+  // is a real but thin answer, so it binds as uncertain ("Uklart").
+  for (const confirmation of [
+    "For kritiske systemer skal RPO ikke overstige 1 time. Leverandøren bekrefter at dette kravet er oppfylt.",
+    "For kritiske systemer skal RPO ikke overstige 1 time; leverandøren bekrefter at dette kravet er oppfylt.",
+  ]) {
+    assert.equal(bind(req("For kritiske systemer skal RPO ikke overstige 1 time."), confirmation)?.uncertain, true, confirmation);
+  }
 });
 
 test("stems common to many requirements in a tender are treated as generic", () => {
@@ -392,4 +392,47 @@ test("stems common to many requirements in a tender are treated as generic", () 
   const generic = requirementGenericStems(entries);
   assert.ok(generic.has("plattform"));
   assert.ok(!generic.has("rapportering"));
+});
+
+test("council round 3 probes", () => {
+  const doc = (text) => ({ ...solutionDocument, raw_text: `[[SIDE:7]]\n${text}` });
+  const req = (text) => ({ ...unansweredRequirement, id: "Z-1", heading: "", text });
+  const bind = (entry, quote, raw, genericStems) =>
+    bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc(raw ?? quote), genericStems });
+  const storage = req("Alle kundedata skal ha kryptert lagring i Norge.");
+
+  // A following qualification without final punctuation or with "f.eks." counts.
+  for (const raw of [
+    "Kryptert lagring av alle kundedata leveres i Norge. Dette inngår ikke i leveransen",
+    "Kryptert lagring av alle kundedata leveres i Norge. Dette gjelder f.eks. ikke kundedata fra testmiljøet.",
+  ]) {
+    const bound = bind(storage, "Kryptert lagring av alle kundedata leveres i Norge.", raw);
+    assert.match(bound.entry.answerExcerpt, /Dette/u, raw);
+  }
+  // An unrelated refusal in the same sentence or the next one is not this
+  // requirement's answer, but it does make the link uncertain.
+  const unrelated = bind(storage, "Kryptert lagring av alle kundedata leveres i Norge", "Kryptert lagring av alle kundedata leveres i Norge, men telefonstøtte tilbys ikke.");
+  assert.doesNotMatch(unrelated.entry.answerExcerpt, /telefonstøtte/u);
+  assert.equal(unrelated.uncertain, true);
+  const separate = bind(storage, "Kryptert lagring av alle kundedata leveres i Norge.", "Kryptert lagring av alle kundedata leveres i Norge. Telefonstøtte tilbys ikke i helger.");
+  assert.doesNotMatch(separate.entry.answerExcerpt, /Telefonstøtte/u);
+  // Generic actor and solution words do not bind an unrelated sentence.
+  assert.equal(
+    bind(req("Tilbyderen skal beskrive hvordan løsningen logger alle administratorhandlinger."), "Tilbyderen har utviklet løsningen for enkel registrering av fravær og ferie."),
+    null,
+  );
+  // Upper-case function words are not acronyms; an acronym must match whole.
+  assert.equal(
+    bind(req("Leverandøren SKAL varsle kunden om sikkerhetsbrudd innen 24 timer."), "Leverandøren skal sørge for opplæring av superbrukere hos kunden."),
+    null,
+  );
+  assert.equal(bind(req("Løsningen skal støtte SSO."), "Vi benytter SSD-disker og SSOT som prinsipp for datamodellen."), null);
+  // A topic word frequent in the tender lowers certainty but still binds.
+  const generic = new Set(["sikkerhetskopi"]);
+  const backup = bind(req("Leverandøren skal beskrive løsningen for sikkerhetskopiering."), "Sikkerhetskopiering skjer hver natt til et separat datasenter.", undefined, generic);
+  assert.ok(backup);
+  assert.equal(backup.uncertain, true);
+  // A table row that restates the requirement and only says "Oppfylt".
+  const row = bind(req("Løsningen skal støtte SSO via Entra ID."), "Løsningen skal støtte SSO via Entra ID", "Løsningen skal støtte SSO via Entra ID | Oppfylt, standard i plattformen |");
+  assert.equal(row?.uncertain, true);
 });
