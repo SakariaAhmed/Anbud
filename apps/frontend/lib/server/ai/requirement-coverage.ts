@@ -2847,30 +2847,44 @@ export function validateRequirementCoverageBatchRows(input: {
  * mapping between the flat text and its lower-cased form, so a match can be
  * mapped back to the original wording.
  */
-/** Marks the end of a short line without closing punctuation that is
- * followed by a capitalised or numbered line: a heading ("9.6
- * Kontraktsforhold") or a table row ("P2 Høy 1 time 12 timer") as the PDF
- * and DOCX parsers write them. Wrapped prose lines are long, and a line
- * ending in a function word continues its sentence. */
+/**
+ * Marks boundaries around reliable structure as the PDF and DOCX parsers
+ * write it: a numbered heading line ("9.6 Kontraktsforhold") and a run of
+ * two or more short unpunctuated lines (table rows such as "P2 Høy 1 time
+ * 12 timer"). A single short line is a wrapped sentence ("Vi tilbyr ikke
+ * integrasjon mellom\nMicrosoft Entra ID …") and stays joined, as does
+ * every line of a narrow-column document.
+ */
 function markShortLines(value: string) {
   const lines = value.split("\n");
+  // Lines followed by a lower-case line wrap prose; their length is the
+  // column width.
+  const wraps = lines
+    .flatMap((line, index) => (/^\p{Ll}/u.test(lines[index + 1]?.trim() ?? "") ? [line.trim().length] : []))
+    .sort((a, b) => a - b);
+  const narrow = wraps.length > 0 && wraps[Math.floor(wraps.length / 2)]! < 70;
+  const structural = (text: string) =>
+    text.length > 0 &&
+    text.length < 80 &&
+    !/[.:;!?,¦|-]$/u.test(text) &&
+    !/^\[\[SIDE:/u.test(text) &&
+    !/(?<![\p{L}\p{N}])(?:i|og|av|til|for|med|på|som|at|en|et|ei|den|det|de|er|skal|må|kan|vil|om|fra|ved|eller|samt|innen|under|over|etter|før|hos|mot|per|uten|mellom|ikke)$/iu.test(text);
+  const heading = (text: string) => structural(text) && /^\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Lu}/u.test(text) && text.split(/\s+/u).length <= 10;
+  const row = lines.map((line, index) => {
+    const text = line.trim();
+    const next = lines[index + 1]?.trim() ?? "";
+    return !narrow && structural(text) && !heading(text) && /^[\p{Lu}\d]/u.test(next);
+  });
   let previousMarked = false;
   return lines
     .map((line, index) => {
       const text = line.trim();
-      const next = lines[index + 1]?.trim() ?? "";
-      const short = text.length > 0 &&
-        text.length < 80 &&
-        !/[.:;!?,¦|-]$/u.test(text) &&
-        // A sentence continuing onto the next line ("lagres i\nNorge").
-        !/(?<![\p{L}\p{N}])(?:i|og|av|til|for|med|på|som|at|en|et|ei|den|det|de|er|skal|må|kan|vil|om|fra|ved|eller|samt|innen|under|over|etter|før|hos|mot|per|uten)$/iu.test(text) &&
-        !/^\[\[SIDE:/u.test(text) &&
-        /^[\p{Lu}\d]/u.test(next) &&
-        !/^\[\[SIDE:/u.test(next);
+      const tableRow = row[index]! && (row[index - 1] === true || row[index + 1] === true);
+      const marked = heading(text) || tableRow;
       // One boundary between two marked lines, never an empty cell.
-      const marked = short ? `${index > 0 && !previousMarked ? "¦ " : ""}${line} ¦` : line;
-      previousMarked = short;
-      return marked;
+      const result = marked ? `${index > 0 && !previousMarked ? "¦ " : ""}${line} ¦` : line;
+      previousMarked = marked;
+      return result;
     })
     .join("\n");
 }
@@ -3318,10 +3332,10 @@ function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentD
   const cellFree = cellFreeSolutionText(document);
   const find = (needle: string) => {
     const direct = whole.indexOf(needle);
-    if (direct >= 0) return { start: direct, end: direct + needle.length };
+    if (direct >= 0) return { start: direct, end: direct + needle.length, partial: false };
     const plain = needle.replace(/\s*¦\s*/gu, " ");
     const at = cellFree.text.indexOf(plain);
-    return at >= 0 ? { start: cellFree.offsets[at]!, end: cellFree.offsets[at + plain.length]! } : null;
+    return at >= 0 ? { start: cellFree.offsets[at]!, end: cellFree.offsets[at + plain.length]!, partial: false } : null;
   };
   const exact = find(normalizedQuote);
   if (exact) {
@@ -3335,7 +3349,7 @@ function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentD
     .sort((left, right) => right.length - left.length);
   for (const fragment of fragments) {
     const found = find(fragment);
-    if (found) yield found;
+    if (found) yield { ...found, partial: true };
   }
   // A table row run into a sentence without punctuation: the longest
   // verbatim run of words from either end of the quote.
@@ -3350,9 +3364,9 @@ function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentD
     return null;
   };
   const prefix = longestRun((count) => words.slice(0, count).join(" "));
-  if (prefix) yield prefix;
+  if (prefix) yield { ...prefix, partial: true };
   const suffix = longestRun((count) => words.slice(-count).join(" "));
-  if (suffix) yield suffix;
+  if (suffix) yield { ...suffix, partial: true };
 }
 
 export function solutionDocumentContainsQuote(
@@ -3401,7 +3415,7 @@ export function bindVerifiedSolutionQuote(input: {
 
 function bindSolutionQuoteSpan(
   input: Parameters<typeof bindVerifiedSolutionQuote>[0],
-  span: { start: number; end: number },
+  span: { start: number; end: number; partial: boolean },
 ): VerifiedSolutionQuote | null {
   const solution = normalizedSolutionText(input.solutionDocument);
   const { start } = span;
@@ -3440,10 +3454,11 @@ function bindSolutionQuoteSpan(
   const ownAt = solution.flat.indexOf(own, Math.max(0, start - VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS));
   // Up to three cells back: a table's header row sits between its rows and
   // the section heading.
+  // Only a cell naming the requirement's own ID: shared vocabulary in a
+  // neighbouring row ("SSO via Entra ID | Støttes ikke") is another answer.
   const namesRequirement = (cell: string) =>
     cell.length <= 120 &&
-    (new RegExp(`(?<![\\p{L}\\p{N}-])${input.entry.id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}]|\\.\\d)`, "u").test(cell) ||
-      sharedTerms(baseTerms, cell).shared > 0);
+    new RegExp(`(?<![\\p{L}\\p{N}-])${input.entry.id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}]|\\.\\d)`, "u").test(cell);
   const heading =
     ownAt > 0
       ? (solution.flat
@@ -3460,9 +3475,12 @@ function bindSolutionQuoteSpan(
   if (ownShared === 0 && !headingNamesRequirement) return null;
 
   // Certainty is judged on what the passage adds beyond the restatement.
-  const tenderOverlap = sharedTerms(tenderTerms, ownShared === 0 ? `${heading} ${remainder}` : remainder);
+  const tenderOverlap = sharedTerms(tenderTerms, remainder);
   const newNegation = NEGATION.test(normalizedPassage) && !NEGATION.test(normalizedQuote);
+  // Only part of the model's quote was found: the rest may be invented, so
+  // the recovered passage can support at most "Uklart".
   const uncertain =
+    span.partial ||
     !complete ||
     newNegation ||
     setAsideNegation ||

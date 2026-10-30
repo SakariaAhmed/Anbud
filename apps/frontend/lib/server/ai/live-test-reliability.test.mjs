@@ -708,3 +708,22 @@ test("PDF-parser headings and table rows are boundaries, wrapped prose is not", 
   const storage = bind(req("ARK-01", "Data skal lagres innenfor EØS, fortrinnsvis i Norge."), "Alle kundedata og sikkerhetskopier lagres i Norge.");
   assert.equal(storage.entry.answerExcerpt, "Alle kundedata og sikkerhetskopier lagres i Norge.");
 });
+
+test("council: a wrapped refusal, a neighbouring row and an invented quote never bind as certain", () => {
+  const doc = (lines) => ({ ...solutionDocument, raw_text: ["[[SIDE:3]]", ...lines].join("\n") });
+  const bind = (entry, quote, lines) => bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc(lines) });
+  const req = (id, text) => ({ ...unansweredRequirement, id, text, heading: "" });
+  const prose = "Leverandøren beskriver her hvordan tjenestene leveres, driftes og følges opp gjennom hele avtaleperioden med";
+  // A single short line wraps a sentence: the refusal stays with it.
+  const sso = req("SIK-02", "Løsningen skal støtte integrasjon mellom Microsoft Entra ID og SSO-portalen for administratorer.");
+  const wrapped = bind(sso, "Microsoft Entra ID og SSO-portalen for administratorer.", [prose, "oppdragsgiver.", "Vi tilbyr ikke integrasjon mellom", "Microsoft Entra ID og SSO-portalen for administratorer."]);
+  assert.notEqual(wrapped?.uncertain, false);
+  // Another row's subject does not tie an answer to the requirement.
+  const login = req("SIK-03", "Løsningen skal støtte SSO via Entra ID.");
+  const neighbour = bind(login, "Vi svarer på henvendelser på telefon hele døgnet.", [prose, "oppdragsgiver.", "| SSO via Entra ID | Støttes ikke |", "| Telefonstøtte | Vi svarer på henvendelser på telefon hele døgnet. |"]);
+  assert.equal(neighbour, null);
+  // Only part of the quote exists: at most "Uklart".
+  const storage = req("ARK-01", "Kundedata skal lagres kryptert i Norge.");
+  const invented = bind(storage, "Kundedata lagres kryptert i vårt datasenter i Norge med garantert norsk datalagring.", [prose, "oppdragsgiver.", "Kundedata lagres kryptert i vårt datasenter. Datasenteret ligger i USA."]);
+  assert.notEqual(invented?.uncertain, false);
+});
