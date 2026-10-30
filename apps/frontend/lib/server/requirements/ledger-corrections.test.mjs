@@ -12,9 +12,10 @@ const jiti = createJiti(path.join(frontendRoot, "ledger-corrections-tests.cjs"),
 });
 const load = (file) => jiti.import(path.join(frontendRoot, file));
 const { buildSpreadsheetRequirementLedger } = await load("lib/server/requirements/spreadsheet-ledger.ts");
-const { applyRequirementCorrections, findCorrectionsSection } = await load(
+const { applyRequirementCorrections, correctedRequirementIds, findCorrectionsSection } = await load(
   "lib/server/requirements/corrections.ts",
 );
+const { spreadsheetRequirementIds } = await load("lib/server/requirements/spreadsheet-ledger.ts");
 const { assertExplicitRequirementLedgersComplete } = await load(
   "lib/server/requirements/source-readiness.ts",
 );
@@ -162,4 +163,57 @@ test("wrapped table text and chapters without real corrections are not a correct
   // A real heading whose content corrects nothing in this ledger is ignored.
   const unrelated = "8 Rettelser\nDenne versjonen retter skrivefeil i innledningen og oppdaterer kontaktinformasjonen til saksbehandler.";
   assert.equal(applyRequirementCorrections(ledgerWithK, unrelated).ledger, ledgerWithK);
+});
+
+const base = [
+  { id: "OPS-1", text: "Leverandøren skal svare på hendelser innen én time.", pages: [3], heading: "4 Drift" },
+  { id: "OPS-2", text: "Leverandøren bør tilby en kvartalsvis driftsrapport.", pages: [3], heading: "4 Drift" },
+];
+const ids = (ledger) => ledger.map((entry) => entry.id);
+
+test("council probes: old-to-new wording, negated withdrawal, consecutive lines, unique renumbering, short chapter", () => {
+  const fromTo = applyRequirementCorrections(
+    base,
+    "8 Rettelser\nOPS-1 endres fra «Leverandøren skal svare på hendelser innen én time.» til «Leverandøren skal svare på hendelser innen 15 minutter.»",
+  ).ledger;
+  assert.deepEqual(ids(fromTo), ["OPS-1", "OPS-2"]);
+  assert.equal(fromTo[0].text, "Leverandøren skal svare på hendelser innen 15 minutter.");
+
+  const negated = applyRequirementCorrections(
+    base,
+    "8 Rettelser\nOPS-1 utgår ikke. Kravet opprettholdes, men OPS-2 endres. Ny tekst: «Leverandøren bør tilby en månedlig driftsrapport.»",
+  ).ledger;
+  assert.ok(ids(negated).includes("OPS-1"));
+
+  const consecutive = applyRequirementCorrections(
+    base,
+    "8 Rettelser\nOPS-1 endres. Ny tekst: «Leverandøren skal svare på hendelser innen 30 minutter.»\nOPS-2 utgår.",
+  ).ledger;
+  assert.deepEqual(ids(consecutive), ["OPS-1"]);
+  assert.match(consecutive[0].text, /30 minutter/u);
+
+  assert.deepEqual(ids(applyRequirementCorrections(base, "8 Rettelser\nOPS-1 får ny ID OPS-9.").ledger), ["OPS-9", "OPS-2"]);
+  assert.deepEqual(ids(applyRequirementCorrections(base, "8 Rettelser\nOPS-2 utgår.").ledger), ["OPS-1"]);
+  // The completeness inventory follows the same corrections.
+  assert.deepEqual(correctedRequirementIds(["OPS-1", "OPS-2"], "8 Rettelser\nOPS-2 utgår.\nOPS-1 får ny ID OPS-9."), ["OPS-9"]);
+});
+
+test("matrices with a repeated layout or a two-row header keep every row", () => {
+  const raw_text = [
+    "Ark: Krav",
+    "Rad 1: A1: ID | B1: Kravtekst",
+    "Rad 2: A2: A-1 | B2: Første krav i første layout skal oppfylles.",
+    "Rad 3: A3: ID | B3: Område | C3: Kravtekst",
+    "Rad 4: A4: A-2 | B4: Drift | C4: Andre krav i ny layout skal oppfylles.",
+    "",
+    "Ark: Flere",
+    "Rad 1: A1: Krav-ID | B1: Merknad",
+    "Rad 2: B2: Kravtekst",
+    "Rad 3: A3: 7 | B3: Et krav med bare tallnummer skal også med.",
+    "Rad 4: A4: B-2 | B4: Kort",
+  ].join("\n");
+  const document = { file_format: "xlsx", raw_text };
+  assert.deepEqual(spreadsheetRequirementIds(document), ["A-1", "A-2", "7", "B-2"]);
+  assert.deepEqual(buildSpreadsheetRequirementLedger(document).map((entry) => entry.id), ["A-1", "A-2", "7", "B-2"]);
+  assert.equal(buildSpreadsheetRequirementLedger(document)[1].text, "Andre krav i ny layout skal oppfylles.");
 });

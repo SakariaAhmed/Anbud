@@ -12,26 +12,33 @@ import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 const CORRECTIONS_HEADING =
   /^(?:(\d{1,2})(?:\.\d{1,2})*\.?\s+)?(?:Rettelser?|RETTELSER?|Errata|Endringer i (?:konkurransegrunnlaget|kravspesifikasjonen|kravene|bilag\s*\d+))\b[^\n]{0,80}(?<![.!?:;,])$/u;
 const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}-\d{1,4}(?:\.\d{1,3})?(?:\.[a-z])?\b/gu;
-const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/u;
+const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/gu;
+// Stateless twin of QUOTED for `.test()`; a global regex keeps lastIndex.
+const HAS_QUOTE = /[«“"][^«»“”"]{12,1500}[»”"]/u;
 const WITHDRAWN = /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|slettes|fjernes)\b/iu;
+const WITHDRAWN_NEGATED =
+  /\b(?:utgår|bortfaller|strykes|trekkes|slettes|fjernes)\s+(?:likevel\s+)?ikke\b|\bikke\s+(?:utgå|bortfalle|strykes|trekkes|slettes|fjernes)\b/iu;
 const CHANGED = /\b(?:endres|erstattes|ny\s+tekst|lyder\s+nå|skal\s+nå\s+lyde)\b/iu;
+const CHANGED_NEGATED = /\b(?:endres|erstattes)\s+ikke\b|\bikke\s+(?:endres|erstattes)\b/iu;
 const ADDED = /\b(?:nytt\s+krav|legges\s+til|tilføyes)\b/iu;
 const RENUMBERED = /\bny\s+(?:krav-?)?id\s+([A-ZÆØÅ]{1,8}-\d{1,4})\b/iu;
 const ANSWER = /^\s*svar\s*:/iu;
+// A new statement starts at a table row or at a line led by a requirement ID.
+const STATEMENT_START = /\n(?=Rad \d+:)|\n\s*\n|\n(?=[ \t]*(?:(?:nytt\s+)?krav\s+)?[A-ZÆØÅ]{1,8}-\d{1,4}\b)/iu;
 
 function normalized(value: string) {
   return value.replace(/\s+/gu, " ").trim().toLocaleLowerCase("nb");
 }
 
-/** The last corrections heading that is followed by content (a table of
- * contents also lists it), up to the next top-level chapter or appendix. */
+/** The last corrections heading (a table of contents also lists it) up to
+ * the next top-level chapter or appendix. */
 export function findCorrectionsSection(rawText: string) {
   const lines = rawText.split("\n");
   let start = -1;
   let chapter: string | undefined;
   lines.forEach((line, index) => {
     const match = CORRECTIONS_HEADING.exec(line.trim());
-    if (match && lines.slice(index + 1, index + 6).some((next) => next.trim().length > 40)) {
+    if (match && lines.slice(index + 1).some((next) => next.trim())) {
       start = index;
       chapter = match[1];
     }
@@ -49,10 +56,11 @@ export function findCorrectionsSection(rawText: string) {
   return lines.slice(start, end).join("\n");
 }
 
-/** Table rows become one statement each; other text splits on blank lines. */
+/** Table rows and ID-led lines become one statement each; wrapped
+ * continuation lines stay with their statement. */
 function statements(section: string) {
   return section
-    .split(/\n(?=Rad \d+:)|\n\s*\n/u)
+    .split(STATEMENT_START)
     .map((part) => part.replace(/^Rad \d+:\s*/u, "").replace(/\s*\|\s*/gu, " | ").replace(/\s+/gu, " ").trim())
     .filter((part) => part.length > 0);
 }
@@ -60,6 +68,20 @@ function statements(section: string) {
 function idPrefix(id: string) {
   return id.replace(/-\d.*$/u, "");
 }
+
+/** The new wording of a change: the quote after "til"/"ny tekst"/"lyder",
+ * else the last quote ("endres fra «gammel» til «ny»"). */
+function replacementQuote(statement: string) {
+  const quotes = [...statement.matchAll(QUOTED)];
+  if (!quotes.length) return undefined;
+  const marked = quotes.find((quote) =>
+    /\b(?:til|ny\s+tekst|lyder(?:\s+nå)?|skal\s+nå\s+lyde)\s*:?\s*$/iu.test(statement.slice(0, quote.index)),
+  );
+  return (marked ?? quotes.at(-1))![1]!.trim();
+}
+
+const withdraws = (statement: string) => WITHDRAWN.test(statement) && !WITHDRAWN_NEGATED.test(statement);
+const changes = (statement: string) => CHANGED.test(statement) && !CHANGED_NEGATED.test(statement);
 
 export type RequirementCorrectionReport = {
   changed: string[];
@@ -71,10 +93,10 @@ export type RequirementCorrectionReport = {
 
 /**
  * Applies a corrections chapter to a document's requirement ledger. Only
- * statements naming a requirement ID that exists in the ledger (or, for new
- * requirements, quoting the new text) are applied; anything ambiguous is
- * attached to the requirement as a note instead of changing it. Original
- * wording is kept in the source excerpt for audit.
+ * affirmative statements naming a requirement ID that exists in the ledger
+ * (or, for new requirements, quoting the new text) are applied; negated or
+ * ambiguous statements are attached to the requirement as notes instead.
+ * Original wording is kept in the source excerpt for audit.
  */
 export function applyRequirementCorrections(
   ledger: RequirementLedgerEntry[],
@@ -84,24 +106,30 @@ export function applyRequirementCorrections(
   const section = findCorrectionsSection(rawText);
   if (!section) return { ledger, report };
   const ledgerIds = new Set(ledger.map((entry) => entry.id));
-  const correctionStatements = statements(section).filter((statement) => {
+  const sectionStatements = statements(section);
+  const correctionStatements = sectionStatements.filter((statement) => {
     const ids = statement.match(REQUIREMENT_ID) ?? [];
     return (
       (ids.some((id) => ledgerIds.has(id)) &&
-        (WITHDRAWN.test(statement) || CHANGED.test(statement) || RENUMBERED.test(statement) || ANSWER.test(statement))) ||
-      (ADDED.test(statement) && QUOTED.test(statement))
+        (withdraws(statement) || changes(statement) || RENUMBERED.test(statement) || ANSWER.test(statement))) ||
+      (ADDED.test(statement) && HAS_QUOTE.test(statement))
     );
   });
   // Without a single statement that corrects a known requirement this is
   // not a corrections chapter for this ledger.
   if (!correctionStatements.length) return { ledger, report };
-  const correctionText = normalized(correctionStatements.join("\n"));
+  const sectionText = normalized(section);
 
-  // Correction rows and answers to bidder questions are not requirements of
-  // their own; only text that appears in a correction statement is dropped.
+  // Rows extracted from the corrections chapter itself (the change rows and
+  // bidder questions) are not requirements. Original requirement rows stay,
+  // even when a correction quotes their old wording.
   let entries = ledger.filter((entry) => {
     const text = normalized(entry.text);
-    return !(text.length >= 12 && correctionText.includes(text));
+    if (text.length < 12 || !sectionText.includes(text)) return true;
+    const isCorrectionRow =
+      WITHDRAWN.test(text) || CHANGED.test(text) || ADDED.test(text) || RENUMBERED.test(text) ||
+      /\bny\s+id\b|\?$/u.test(text);
+    return !isCorrectionRow;
   });
   const known = () => new Set(entries.map((entry) => entry.id));
   const note = (id: string, label: string, statement: string) => {
@@ -114,10 +142,9 @@ export function applyRequirementCorrections(
 
   // The section qualified through a real correction, so other statements
   // naming a requirement may be attached to it as notes.
-  for (const statement of statements(section)) {
+  for (const statement of sectionStatements) {
     const ids = [...new Set(statement.match(REQUIREMENT_ID) ?? [])];
     const target = ids.find((id) => known().has(id));
-    const quote = QUOTED.exec(statement)?.[1]?.trim();
 
     if (ANSWER.test(statement)) {
       // Answers to bidder questions clarify, they do not rewrite requirements.
@@ -131,19 +158,22 @@ export function applyRequirementCorrections(
     const renumber = RENUMBERED.exec(statement)?.[1];
     if (target && renumber && !known().has(renumber)) {
       const occurrences = entries.filter((entry) => entry.id === target);
-      if (occurrences.length >= 2) {
-        // "Det andre kravet får ny ID ..."; the first keeps the original ID.
-        const renamed = /\bførste\b[^.]*\bny\s+id\b/iu.test(statement) ? occurrences[0]! : occurrences.at(-1)!;
-        entries = entries.map((entry) =>
-          entry === renamed
-            ? { ...entry, id: renumber, sourceExcerpt: [entry.sourceExcerpt, `Ny ID i rettelse (tidligere ${target}): ${statement}`].filter(Boolean).join(" | ") }
-            : entry,
-        );
-        report.renumbered.push(`${target}->${renumber}`);
-        continue;
-      }
+      // A repeated ID: "Det andre kravet får ny ID ..." renames that one;
+      // the first keeps the original ID unless the statement says otherwise.
+      const renamed =
+        occurrences.length >= 2
+          ? /\bførste\b[^.]*\bny\s+id\b/iu.test(statement) ? occurrences[0]! : occurrences.at(-1)!
+          : occurrences[0]!;
+      entries = entries.map((entry) =>
+        entry === renamed
+          ? { ...entry, id: renumber, sourceExcerpt: [entry.sourceExcerpt, `Ny ID i rettelse (tidligere ${target}): ${statement}`].filter(Boolean).join(" | ") }
+          : entry,
+      );
+      report.renumbered.push(`${target}->${renumber}`);
+      continue;
     }
 
+    const quote = replacementQuote(statement);
     if (ADDED.test(statement) && quote) {
       const newId = ids.find((id) => !known().has(id));
       if (newId) {
@@ -166,12 +196,12 @@ export function applyRequirementCorrections(
     }
 
     if (!target) continue;
-    if (WITHDRAWN.test(statement) && !CHANGED.test(statement)) {
+    if (withdraws(statement) && !changes(statement)) {
       entries = entries.filter((entry) => entry.id !== target);
       report.withdrawn.push(target);
       continue;
     }
-    if (CHANGED.test(statement) && quote) {
+    if (changes(statement) && quote) {
       entries = entries.map((entry) =>
         entry.id === target
           ? {
@@ -188,4 +218,17 @@ export function applyRequirementCorrections(
   }
 
   return { ledger: entries, report };
+}
+
+/**
+ * The requirement IDs a document should yield after its corrections chapter
+ * is applied, in order and with multiplicity: completeness checks compare
+ * against this, so an intended withdrawal or renumbering is not reported as
+ * a lost row.
+ */
+export function correctedRequirementIds(ids: string[], rawText: string) {
+  return applyRequirementCorrections(
+    ids.map((id) => ({ id, text: "", pages: [], heading: "" })),
+    rawText,
+  ).ledger.map((entry) => entry.id);
 }

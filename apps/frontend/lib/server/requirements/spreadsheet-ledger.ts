@@ -18,9 +18,11 @@ const HEADER_MATCHERS = {
 } as const;
 type Column = keyof typeof HEADER_MATCHERS;
 
+// The ID column is known from its header, so plain numbers ("7", "3.2") are
+// IDs there too.
 const REQUIREMENT_ID_PATTERN =
-  /^(?:[A-ZÆØÅ]{1,8}[-.\s]?\d{1,4}(?:[.-]\d{1,3})*[a-z]?|\d{1,3}(?:\.\d{1,3}){1,4})$/u;
-const MIN_REQUIREMENT_TEXT_CHARS = 15;
+  /^(?:[A-ZÆØÅ]{1,8}[-.\s]?\d{1,4}(?:[.-]\d{1,3})*[a-z]?|\d{1,4}(?:\.\d{1,3}){0,4})$/u;
+const MIN_REQUIREMENT_TEXT_CHARS = 1;
 
 type SheetRow = { number: number; cells: Map<string, string> };
 
@@ -51,12 +53,23 @@ function parseSheets(rawText: string) {
   return sheets;
 }
 
-function headerColumns(row: SheetRow) {
+function headerColumns(row: SheetRow, continuation?: SheetRow) {
   const columns: Partial<Record<Column, string>> = {};
-  for (const [column, value] of row.cells) {
-    const label = value.replace(/\s+/gu, " ").trim();
+  // A header may span two rows ("Krav-" / "ID", or ID and text labels on
+  // separate rows): each column's label is tried from either row and joined.
+  const labels = new Map<string, string[]>();
+  for (const [column, value] of row.cells) labels.set(column, [value]);
+  for (const [column, value] of continuation?.cells ?? []) {
+    const first = labels.get(column)?.[0];
+    labels.set(column, first ? [first, value, `${first} ${value}`, `${first}${value}`] : [value]);
+  }
+  for (const [column, candidates] of labels) {
     for (const key of Object.keys(HEADER_MATCHERS) as Column[]) {
-      if (!columns[key] && HEADER_MATCHERS[key].test(label)) {
+      if (
+        !columns[key] &&
+        !Object.values(columns).includes(column) &&
+        candidates.some((label) => HEADER_MATCHERS[key].test(label.replace(/\s+/gu, " ").trim()))
+      ) {
         columns[key] = column;
         break;
       }
@@ -65,55 +78,97 @@ function headerColumns(row: SheetRow) {
   return columns.id && columns.text && columns.id !== columns.text ? columns : null;
 }
 
+type MatrixRow = { sheet: string; row: SheetRow; columns: Partial<Record<Column, string>>; section: string };
+
+/** Every data row of every requirement matrix: a header row (possibly over
+ * two rows, possibly repeated with another layout further down) followed by
+ * rows whose ID column holds an ID. */
+function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">) {
+  if (document.file_format !== "xlsx" && document.file_format !== "xls") return [];
+  const rows: MatrixRow[] = [];
+  for (const sheet of parseSheets(document.raw_text)) {
+    let columns: Partial<Record<Column, string>> | null = null;
+    let section = "";
+    for (let index = 0; index < sheet.rows.length; index += 1) {
+      const row = sheet.rows[index]!;
+      // A two-row header starts on a row that carries a header label and no
+      // ID; a data row followed by another layout's header is not one.
+      const values = [...row.cells.values()].map((value) => value.trim());
+      const startsHeader =
+        values.some((value) => Object.values(HEADER_MATCHERS).some((matcher) => matcher.test(value))) &&
+        !values.some((value) => REQUIREMENT_ID_PATTERN.test(value));
+      const header =
+        headerColumns(row) ??
+        (startsHeader && sheet.rows[index + 1] ? headerColumns(row, sheet.rows[index + 1]) : null);
+      if (header) {
+        columns = header;
+        if (!headerColumns(row)) index += 1;
+        continue;
+      }
+      if (!columns) continue;
+      const id = (row.cells.get(columns.id!) ?? "").replace(/\s+/gu, " ").trim();
+      if (REQUIREMENT_ID_PATTERN.test(id)) {
+        rows.push({ sheet: sheet.name, row, columns, section });
+      } else if (row.cells.size === 1) {
+        // A lone label ("1 Krav til tilbyder") opens a section.
+        section = [...row.cells.values()][0]!.trim();
+      }
+    }
+  }
+  return rows;
+}
+
+/** The IDs of all matrix data rows, whether or not their text could be
+ * read: completeness checks use this, so no row disappears silently. */
+export function spreadsheetRequirementIds(
+  document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">,
+) {
+  return matrixRows(document).map(({ row, columns }) =>
+    (row.cells.get(columns.id!) ?? "").replace(/\s+/gu, " ").trim(),
+  );
+}
+
 /**
  * Extracts one requirement per data row of a spreadsheet requirement matrix
  * (a header row with a requirement-ID column and a requirement-text column).
  * Rows with only a first-column label are section headings. Supplier answer
- * columns are not part of the source requirement. Returns [] when no sheet
- * holds a matrix with at least two requirement rows, so other extractors run.
+ * columns are not part of the source requirement; a row whose text cell is
+ * empty keeps its other source cells as text instead of being dropped.
+ * Returns [] when no sheet holds a matrix, so other extractors run.
  */
 export function buildSpreadsheetRequirementLedger(
   document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">,
 ): RequirementLedgerEntry[] {
-  if (document.file_format !== "xlsx" && document.file_format !== "xls") return [];
-  const entries: RequirementLedgerEntry[] = [];
-  for (const sheet of parseSheets(document.raw_text)) {
-    const headerIndex = sheet.rows.findIndex((row) => headerColumns(row));
-    if (headerIndex < 0) continue;
-    const columns = headerColumns(sheet.rows[headerIndex]!)!;
-    const sheetEntries: RequirementLedgerEntry[] = [];
-    let section = "";
-    for (const row of sheet.rows.slice(headerIndex + 1)) {
-      const value = (column: Column) => (columns[column] ? row.cells.get(columns[column]!) ?? "" : "");
-      const id = value("id").replace(/\s+/gu, " ").trim();
-      const text = value("text").replace(/\s+/gu, " ").trim();
-      if (!REQUIREMENT_ID_PATTERN.test(id) || text.length < MIN_REQUIREMENT_TEXT_CHARS) {
-        // A lone label in the first used column ("1 Krav til tilbyder") opens a section.
-        if (row.cells.size === 1 && !text) section = [...row.cells.values()][0]!.trim();
-        continue;
-      }
-      const category = value("category");
-      sheetEntries.push({
-        id,
-        text,
-        pages: [],
-        heading: section || category || sheet.name,
-        ...(category ? { service: category } : {}),
-        sourceExcerpt: [
-          `Ark ${sheet.name}, Rad ${row.number}`,
-          `Krav-ID: ${id}`,
-          category ? `Kategori: ${category}` : "",
-          `Kravtekst: ${text}`,
-          value("type") ? `Type: ${value("type")}` : "",
-          value("weight") ? `Vekt: ${value("weight")}` : "",
-          value("criterion") ? `Evalueringskriterium: ${value("criterion")}` : "",
-          value("reference") ? `Referanse: ${value("reference")}` : "",
-        ]
-          .filter(Boolean)
-          .join(" | "),
-      });
-    }
-    if (sheetEntries.length >= 2) entries.push(...sheetEntries);
-  }
-  return entries;
+  return matrixRows(document).flatMap(({ sheet, row, columns, section }) => {
+    const value = (column: Column) => (columns[column] ? row.cells.get(columns[column]!) ?? "" : "");
+    const id = value("id").replace(/\s+/gu, " ").trim();
+    const known = new Set(Object.values(columns));
+    const fallback = [...row.cells]
+      .filter(([column]) => !known.has(column) || column === columns.text)
+      .map(([, text]) => text)
+      .filter((text) => text !== id)
+      .join(" ");
+    const text = (value("text") || fallback).replace(/\s+/gu, " ").trim();
+    if (text.length < MIN_REQUIREMENT_TEXT_CHARS) return [];
+    const category = value("category");
+    return [{
+      id,
+      text,
+      pages: [],
+      heading: section || category || sheet,
+      ...(category ? { service: category } : {}),
+      sourceExcerpt: [
+        `Ark ${sheet}, Rad ${row.number}`,
+        `Krav-ID: ${id}`,
+        category ? `Kategori: ${category}` : "",
+        `Kravtekst: ${text}`,
+        value("type") ? `Type: ${value("type")}` : "",
+        value("weight") ? `Vekt: ${value("weight")}` : "",
+        value("criterion") ? `Evalueringskriterium: ${value("criterion")}` : "",
+        value("reference") ? `Referanse: ${value("reference")}` : "",
+      ]
+        .filter(Boolean)
+        .join(" | "),
+    }];
+  });
 }

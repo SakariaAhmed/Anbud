@@ -1,4 +1,5 @@
-import { buildSpreadsheetRequirementLedger } from "@/lib/server/requirements/spreadsheet-ledger";
+import { correctedRequirementIds } from "@/lib/server/requirements/corrections";
+import { spreadsheetRequirementIds } from "@/lib/server/requirements/spreadsheet-ledger";
 import {
   hasReadableRequirementDocumentContent,
   hasRequirementDocumentSignal,
@@ -725,9 +726,12 @@ export function assertExplicitRequirementLedgersComplete(
   const corruptedAuthoritativeInventories = sourceDocuments.flatMap(
     (document) => {
       if (!isFormalRequirementDocument(document)) return [];
-      const expected = explicitIdTableSourceIds(document.raw_text).map(
-        explicitInventoryId,
-      );
+      // Expected after the document's own corrections chapter, so a
+      // withdrawn or renumbered row is not a corruption.
+      const expected = correctedRequirementIds(
+        explicitIdTableSourceIds(document.raw_text),
+        document.raw_text,
+      ).map(explicitInventoryId);
       if (!expected.length) return [];
 
       const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
@@ -785,19 +789,21 @@ export function assertExplicitRequirementLedgersComplete(
   const incompleteExplicitInventories = sourceDocuments.flatMap((document) => {
     if (!isFormalRequirementDocument(document)) return [];
     const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
-    // A spreadsheet's inventory is its requirement matrix's ID column; other
-    // sheets (award criteria such as "K1") are not requirements. Matrix IDs
-    // are counted as written on both sides, so lost rows are caught even for
-    // prefixed IDs ("KD-01") that the generic ID detector does not read.
-    const matrix = buildSpreadsheetRequirementLedger(document);
+    // A spreadsheet's inventory is its requirement matrix's ID column (every
+    // data row, also one whose text could not be read); other sheets (award
+    // criteria such as "K1") are not requirements. Matrix IDs are counted as
+    // written on both sides, so lost rows are caught even for prefixed IDs
+    // ("KD-01") that the generic ID detector does not read. The inventory is
+    // taken after the document's corrections chapter.
+    const matrixIds = spreadsheetRequirementIds(document);
     const entryIds = (entry: RequirementLedgerEntry) =>
-      matrix.length
+      matrixIds.length
         ? [explicitInventoryId(entry.id)].filter(Boolean)
         : explicitLedgerEntryIds(entry);
-    const expected = matrix.length
-      ? matrix.reduce((counts, entry) => {
-          for (const id of entryIds(entry)) counts.set(id, (counts.get(id) ?? 0) + 1);
-          return counts;
+    const expected = matrixIds.length
+      ? correctedRequirementIds(matrixIds, document.raw_text).reduce((counts, id) => {
+          const key = explicitInventoryId(id);
+          return key ? counts.set(key, (counts.get(key) ?? 0) + 1) : counts;
         }, new Map<string, number>())
       : explicitRequirementSourceInventory(document.raw_text);
     if (expected.size === 0) return [];
