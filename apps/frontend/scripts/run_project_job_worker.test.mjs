@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -78,16 +79,26 @@ http.createServer((request, response) => {
   return directory;
 }
 
-let nextPort = 39100 + Math.floor(Math.random() * 500);
+/** A port the OS reports free. A fixed range collided with ephemeral ports
+ * taken by parallel test servers (`listen(0)`), so the stand-in server could
+ * not start and the worker waited for its health check until the timeout. */
+async function freePort() {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
 
-function runWorker(script, environment, options = {}) {
+async function runWorker(script, environment, options = {}) {
+  const port = await freePort();
   const directory = fakeServerDirectory(options);
   const child = spawn(process.execPath, [script], {
     cwd: directory,
     env: {
       PATH: process.env.PATH,
       NODE_ENV: "production",
-      PORT: String(nextPort++),
+      PORT: String(port),
       PROJECT_JOB_WORKER_TOKEN: "worker-test-token",
       ...environment,
     },
@@ -139,7 +150,7 @@ for (const [label, script, expectedLimit] of [
   ["the candidate worker image", candidateScript, 10],
 ]) {
   test(`${label} runs with the deployed worker env`, { timeout: 30_000 }, async () => {
-    const worker = runWorker(script, deployedWorkerEnvironment());
+    const worker = await runWorker(script, deployedWorkerEnvironment());
     try {
       const { code } = await worker.exited;
       assert.equal(code, 0, worker.output());
@@ -155,7 +166,7 @@ for (const [label, script, expectedLimit] of [
 
 test("the candidate plans against the replica timeout it is given", { timeout: 30_000 }, async () => {
   const startedAt = Date.now();
-  const worker = runWorker(candidateScript, {
+  const worker = await runWorker(candidateScript, {
     ...deployedWorkerEnvironment(),
     PROJECT_JOB_WORKER_REPLICA_TIMEOUT_SECONDS: "3600",
   });
@@ -172,7 +183,7 @@ test("the candidate plans against the replica timeout it is given", { timeout: 3
 
 test("both images refuse a legacy limit other than 1", { timeout: 30_000 }, async () => {
   for (const script of [releasedScript, candidateScript]) {
-    const worker = runWorker(script, { ...deployedWorkerEnvironment(), PROJECT_JOB_WORKER_LIMIT: "10" });
+    const worker = await runWorker(script, { ...deployedWorkerEnvironment(), PROJECT_JOB_WORKER_LIMIT: "10" });
     try {
       assert.equal((await worker.exited).code, 1);
       assert.match(worker.output(), /PROJECT_JOB_WORKER_LIMIT must be 1\./u);
@@ -184,7 +195,7 @@ test("both images refuse a legacy limit other than 1", { timeout: 30_000 }, asyn
 });
 
 test("the candidate rejects an out-of-range job count before starting the server", { timeout: 30_000 }, async () => {
-  const worker = runWorker(candidateScript, { ...deployedWorkerEnvironment(), PROJECT_JOB_WORKER_MAX_JOBS: "11" });
+  const worker = await runWorker(candidateScript, { ...deployedWorkerEnvironment(), PROJECT_JOB_WORKER_MAX_JOBS: "11" });
   try {
     assert.equal((await worker.exited).code, 1);
     assert.match(worker.output(), /PROJECT_JOB_WORKER_MAX_JOBS must be an integer from 1 to 10\./u);
@@ -195,7 +206,7 @@ test("the candidate rejects an out-of-range job count before starting the server
 });
 
 test("stopping the worker replica also stops its server", { timeout: 30_000 }, async () => {
-  const worker = runWorker(candidateScript, deployedWorkerEnvironment(), { respond: false });
+  const worker = await runWorker(candidateScript, deployedWorkerEnvironment(), { respond: false });
   try {
     await waitFor(() => worker.request() !== null);
     const serverPid = Number(readFileSync(path.join(worker.directory, "server.pid"), "utf8"));
