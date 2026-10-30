@@ -805,7 +805,7 @@ export function assertExplicitRequirementLedgersComplete(
           const key = explicitInventoryId(id);
           return key ? counts.set(key, (counts.get(key) ?? 0) + 1) : counts;
         }, new Map<string, number>())
-      : explicitRequirementSourceInventory(document.raw_text);
+      : correctedExplicitRequirementSourceInventory(document.raw_text);
     if (expected.size === 0) return [];
 
     const actual = new Map<string, number>();
@@ -861,16 +861,33 @@ function explicitLedgerEntryIds(entry: RequirementLedgerEntry) {
   ];
 }
 
-function explicitRequirementSourceInventory(rawText: string) {
+/** The generic explicit-ID inventory after the document's corrections
+ * chapter, so an intended withdrawal or renumbering is not a lost row. */
+function correctedExplicitRequirementSourceInventory(rawText: string) {
+  const { expected, rawIds } = explicitRequirementSourceInventoryWithRawIds(rawText);
+  const raw = [...expected].flatMap(([id, count]) => Array.from({ length: count }, () => rawIds.get(id) ?? id));
+  return correctedRequirementIds(raw, rawText).reduce((counts, id) => {
+    const key = explicitInventoryId(id);
+    return key ? counts.set(key, (counts.get(key) ?? 0) + 1) : counts;
+  }, new Map<string, number>());
+}
+
+function explicitRequirementSourceInventoryWithRawIds(rawText: string) {
   const expected = new Map<string, number>();
+  const rawIds = new Map<string, string>();
   const structuredRowCounts = new Map<string, number>();
   const unstructuredIds = new Set<string>();
   for (const rawLine of rawText.split(/\r?\n/gu)) {
     const line = rawLine.trim();
     if (!line) continue;
+    const detected = detectExplicitRequirementIds(line);
+    for (const id of detected) {
+      const key = explicitInventoryId(id);
+      if (key && !rawIds.has(key)) rawIds.set(key, id);
+    }
     const lineIds = [
       ...new Set(
-        detectExplicitRequirementIds(line)
+        detected
           .map(explicitInventoryId)
           .filter(Boolean),
       ),
@@ -908,5 +925,5 @@ function explicitRequirementSourceInventory(rawText: string) {
       }
     }
   }
-  return expected;
+  return { expected, rawIds };
 }

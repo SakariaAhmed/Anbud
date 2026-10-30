@@ -16,13 +16,19 @@ const HEADER_MATCHERS = {
   weight: /^vekt\b/iu,
   criterion: /^(?:evalueringskriterium|tildelingskriterium|evaluering)$/iu,
   reference: /^(?:ref\.?\s*bilag\s*\d*|referanse\s+til\s+.+|henvisning\s+til\s+krav)$/iu,
+  // Columns the supplier fills in; never part of the source requirement.
+  answer: /^(?:leverandørens\s+(?:svar|besvarelse|kommentar)|tilbyders\s+(?:svar|besvarelse|kommentar)|svar|besvarelse|henvisning\s+i\s+tilbudet|oppfylt(?:\s*\(ja\/nei\))?)$/iu,
 } as const;
+// A sheet with price or quantity columns is a price form, not a matrix.
+const PRICE_HEADER = /^(?:pris|enhetspris|antall|enhet|sum|beløp|totalpris|timepris)\b/iu;
 type Column = keyof typeof HEADER_MATCHERS;
 
 // The ID column is known from its header, so plain numbers ("7", "3.2") are
 // IDs there too.
 const REQUIREMENT_ID_PATTERN =
-  /^(?:[A-ZÆØÅ]{1,8}[-.\s]?\d{1,4}(?:[.-]\d{1,3})*[a-z]?|\d{1,4}(?:\.\d{1,3}){0,4})$/u;
+  /^(?:[A-ZÆØÅa-zæøå]{1,8}(?:-[A-ZÆØÅa-zæøå]{1,8})*[-.\s]?\d{1,4}(?:[.-]\d{1,3})*[a-z]?|\d{1,4}(?:\.\d{1,3}){0,4})$/u;
+// Any value that looks like it is meant as an ID (has a digit, is short).
+const ID_LIKE = /^(?=.*\d)\S.{0,23}$/u;
 const MIN_REQUIREMENT_TEXT_CHARS = 1;
 
 type SheetRow = { number: number; cells: Map<string, string> };
@@ -97,14 +103,25 @@ function headerColumns(row: SheetRow, continuation?: SheetRow) {
   const [text, title] = textCandidates.filter((candidate) => candidate.column !== columns.id);
   if (text) columns.text = text.column;
   if (title && title.priority === 1) columns.title = title.column;
-  return columns.id && columns.text && columns.id !== columns.text ? columns : null;
+  const isPriceForm = [...labels.values()].some((candidates) => candidates.some((label) => PRICE_HEADER.test(clean(label))));
+  return columns.id && columns.text && columns.id !== columns.text && !isPriceForm ? columns : null;
 }
 
-type MatrixRow = { sheet: string; row: SheetRow; columns: Partial<Record<Column, string>>; section: string };
+type MatrixRow = {
+  sheet: string;
+  row: SheetRow;
+  columns: Partial<Record<Column, string>>;
+  section: string;
+  /** Text-column cells of following rows without an ID. */
+  continuation: string[];
+  /** The ID cell does not have a supported ID form. */
+  unsupportedId: boolean;
+};
 
 /** Every data row of every requirement matrix: a header row (possibly over
  * two rows, possibly repeated with another layout further down) followed by
- * rows whose ID column holds an ID. */
+ * rows whose ID column holds an ID. A numeric ID that prefixes the next
+ * row's ID ("1" before "1.1") and carries no type or weight is a section. */
 function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">) {
   if (document.file_format !== "xlsx" && document.file_format !== "xls") return [];
   const rows: MatrixRow[] = [];
@@ -128,9 +145,29 @@ function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_t
         continue;
       }
       if (!columns) continue;
-      const id = (row.cells.get(columns.id!) ?? "").replace(/\s+/gu, " ").trim();
+      const cell = (column?: string) => (column ? (row.cells.get(column) ?? "").replace(/\s+/gu, " ").trim() : "");
+      const id = cell(columns.id);
+      const text = cell(columns.text);
+      if (!id) {
+        // A row with only requirement text continues the previous one.
+        const onlyText = text && [...row.cells.keys()].every((column) => column === columns!.text);
+        if (onlyText && rows.at(-1)?.sheet === sheet.name) rows.at(-1)!.continuation.push(text);
+        else if (row.cells.size === 1) section = [...row.cells.values()][0]!.trim();
+        continue;
+      }
       if (REQUIREMENT_ID_PATTERN.test(id)) {
-        rows.push({ sheet: sheet.name, row, columns, section });
+        const nextId = (sheet.rows[index + 1]?.cells.get(columns.id!) ?? "").trim();
+        const isNumberedSection =
+          /^\d{1,4}(?:\.\d{1,3})*$/u.test(id) && nextId.startsWith(`${id}.`) && !cell(columns.type) && !cell(columns.weight);
+        if (isNumberedSection) {
+          section = [id, text || cell(columns.title)].filter(Boolean).join(" ");
+          continue;
+        }
+        rows.push({ sheet: sheet.name, row, columns, section, continuation: [], unsupportedId: false });
+      } else if (ID_LIKE.test(id) && text) {
+        // An ID the extractor does not read: kept for the completeness
+        // check so the row cannot vanish silently.
+        rows.push({ sheet: sheet.name, row, columns, section, continuation: [], unsupportedId: true });
       } else if (row.cells.size === 1) {
         // A lone label ("1 Krav til tilbyder") opens a section.
         section = [...row.cells.values()][0]!.trim();
@@ -140,8 +177,8 @@ function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_t
   return rows;
 }
 
-/** The IDs of all matrix data rows, whether or not their text could be
- * read: completeness checks use this, so no row disappears silently. */
+/** The IDs of all matrix data rows, whether or not their text or ID form
+ * could be read: completeness checks use this, so no row disappears. */
 export function spreadsheetRequirementIds(
   document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">,
 ) {
@@ -161,7 +198,8 @@ export function spreadsheetRequirementIds(
 export function buildSpreadsheetRequirementLedger(
   document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">,
 ): RequirementLedgerEntry[] {
-  return matrixRows(document).flatMap(({ sheet, row, columns, section }) => {
+  return matrixRows(document).flatMap(({ sheet, row, columns, section, continuation, unsupportedId }) => {
+    if (unsupportedId) return [];
     const value = (column: Column) => (columns[column] ? row.cells.get(columns[column]!) ?? "" : "");
     const id = value("id").replace(/\s+/gu, " ").trim();
     const known = new Set(Object.values(columns));
@@ -170,7 +208,7 @@ export function buildSpreadsheetRequirementLedger(
       .map(([, text]) => text)
       .filter((text) => text !== id)
       .join(" ");
-    const body = (value("text") || fallback).replace(/\s+/gu, " ").trim();
+    const body = [value("text") || fallback, ...continuation].join(" ").replace(/\s+/gu, " ").trim();
     // A short title column ("Krav") is kept with the full description.
     const title = value("title").replace(/\s+/gu, " ").trim();
     const text = title && body && !body.startsWith(title) ? `${title}: ${body}` : body || title;

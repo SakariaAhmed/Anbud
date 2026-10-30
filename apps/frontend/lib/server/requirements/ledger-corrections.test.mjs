@@ -241,3 +241,60 @@ test("second member's probes: scoped withdrawals, change targets, contract headi
   assert.equal(row.text, "Språk: Brukergrensesnittet skal være på norsk bokmål og nynorsk.");
   assert.doesNotMatch(row.sourceExcerpt, /\| Ja/u);
 });
+
+test("round 5 probes: ID lists, context IDs, quoted IDs and verbs, list formats, negation forms", () => {
+  const k = (n, text) => ({ id: `K-${n}`, text: text ?? `Leverandøren skal oppfylle krav nummer ${n} fullt ut.`, pages: [1], heading: "4" });
+  const ledger = [k(1, "Tilgangsrettigheter skal endres ved rollebytte."), k(2), k(3), k(4), k(5), k(6), k(7)];
+  const run = (text) => applyRequirementCorrections(ledger, `8 Rettelser\n${text}`).ledger;
+  const has = (result, id) => result.some((entry) => entry.id === id);
+
+  const list = run("Kravene K-4, K-6 og K-7 utgår.");
+  assert.ok(!has(list, "K-4") && !has(list, "K-6") && !has(list, "K-7") && has(list, "K-5"));
+  const contextual = run("Som følge av endringen i K-3 utgår K-7.");
+  assert.ok(has(contextual, "K-3") && !has(contextual, "K-7"));
+  const replaced = run("K-6 utgår og erstattes av nytt krav K-16: «Leverandøren skal tilby døgnkontinuerlig vakt.»");
+  assert.ok(!has(replaced, "K-6") && has(replaced, "K-16"));
+  const quotedVerb = run("K-1 endres fra «Tilgangsrettigheter skal endres ved rollebytte.» til «Tilgangsrettigheter skal revurderes månedlig.»");
+  assert.equal(quotedVerb.find((entry) => entry.id === "K-1").text, "Tilgangsrettigheter skal revurderes månedlig.");
+  const quotedId = run("K-1 endres fra «Tilgangsstyring skal følge kontrollene i K-2.» til «Tilgangsstyring skal gjennomgås hvert kvartal.»");
+  assert.equal(quotedId.find((entry) => entry.id === "K-1").text, "Tilgangsstyring skal gjennomgås hvert kvartal.");
+  assert.match(quotedId.find((entry) => entry.id === "K-2").text, /nummer 2/u);
+  const kept = run("K-1 beholdes uendret. K-2 utgår.");
+  assert.ok(has(kept, "K-1") && !has(kept, "K-2"));
+  for (const negated of ["K-1 skal ikke tas ut fra kravspesifikasjonen.", "K-1 utgår heller ikke.", "Nei, K-1 utgår ikke og skal besvares."]) {
+    assert.ok(has(run(`${negated}\nK-5 utgår.`), "K-1"), negated);
+  }
+  for (const format of ["- K-4 utgår.\n- K-5 utgår.", "1. K-4 utgår.\n2. K-5 utgår.", "Kravet K-4 utgår.\nKravet K-5 utgår.", "| K-4 | Utgår |\n| K-5 | Utgår |", "K-1 endres. Ny tekst: «Tilgangsrettigheter skal revurderes månedlig.»\nFor K-5 gjelder følgende: Kravet utgår."]) {
+    assert.ok(!has(run(format), "K-5"), format);
+  }
+  // "Rettelse av feil" is a subheading, not a corrections chapter.
+  assert.equal(findCorrectionsSection("4.3 Rettelse av feil\nK-31 Defekt maskinvare erstattes innen neste virkedag."), null);
+  // A renumbered requirement leaves no phantom of its old ID.
+  const phantom = applyRequirementCorrections([...ledger, { id: "K-1", text: ".", pages: [9], heading: "8 Rettelser" }], "8 Rettelser\nK-1 får ny ID K-9.").ledger;
+  assert.ok(!has(phantom, "K-1") && has(phantom, "K-9"));
+});
+
+test("matrix guards: numbered sections, price forms, continuations, answer columns, unread IDs", () => {
+  const raw_text = [
+    "Ark: Krav",
+    "Rad 1: A1: Nr | B1: Kravtekst | C1: Tilbyders svar",
+    "Rad 2: A2: 1 | B2: Generelle krav",
+    "Rad 3: A3: 1.1 | B3: Leverandøren skal ha ISO 27001-sertifisering.",
+    "Rad 4: B4: - gjelder også underleverandører",
+    "Rad 5: A5: 1.2 | C5: Ja, funksjonen er standard i plattformen.",
+    "Rad 6: A6: SIK-ARK-01 | B6: Arkitekturen skal dokumenteres.",
+    "Rad 7: A7: 7a/II | B7: En rad med et uvanlig ID-format.",
+    "",
+    "Ark: Priser",
+    "Rad 1: A1: Nr | B1: Beskrivelse | C1: Antall | D1: Enhetspris",
+    "Rad 2: A2: 1 | B2: Lisens per bruker | C2: 600",
+  ].join("\n");
+  const document = { file_format: "xlsx", raw_text };
+  const ledger = buildSpreadsheetRequirementLedger(document);
+  assert.deepEqual(ledger.map((entry) => entry.id), ["1.1", "SIK-ARK-01"]);
+  assert.equal(ledger[0].heading, "1 Generelle krav");
+  assert.match(ledger[0].text, /gjelder også underleverandører/u);
+  // The empty requirement cell and the unread ID stay in the inventory, so
+  // the completeness guard reports them instead of losing them.
+  assert.deepEqual(spreadsheetRequirementIds(document), ["1.1", "1.2", "SIK-ARK-01", "7a/II"]);
+});
