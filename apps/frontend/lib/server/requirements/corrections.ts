@@ -13,6 +13,7 @@ import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 const CORRECTIONS_HEADING =
   /^(?:(\d{1,2})(?:\.\d{1,2})*\.?\s+)?(?:Rettelser(?:\s+og\s+(?:presiseringer|tillegg|endringer))?|RETTELSER|Rettelse\s+nr\.?\s*\d+|Errata|Endringer\s+i\s+(?:konkurransegrunnlaget|kravspesifikasjonen|kravene|bilag\s*\d+))(?:\s*\([^)\n]{0,80}\))?\s*$/u;
 const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3})?(?:\.[a-z])?\b/gu;
+const REQUIREMENT_ID_SINGLE = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\b/u;
 const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/gu;
 const WITHDRAW_VERB =
   /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|er\s+utgått|slettes)\b|\b(?:fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
@@ -83,9 +84,7 @@ export function withoutCorrectionsSection(rawText: string) {
 /** One statement per table row, list item or ID-led line; wrapped
  * continuation lines stay with their statement. */
 function statements(section: string) {
-  return section
-    .split("\n")
-    .slice(1)
+  return tableAwareLines(section.split("\n").slice(1))
     .join("\n")
     .split(STATEMENT_START)
     .map((part) =>
@@ -98,6 +97,50 @@ function statements(section: string) {
         .trim(),
     )
     .filter((part) => part.length > 0);
+}
+
+const TABLE_ROW = /^\s*(?:Rad \d+:\s*|\|)/u;
+const QUESTION_COLUMN = /^(?:spørsmål|leverandørens\s+spørsmål|spørsmål\s+fra\s+(?:leverandør|tilbyder)(?:en)?|henvendelse)/iu;
+const NEW_TEXT_COLUMN = /^(?:ny\s+tekst|ny\s+kravtekst|endret\s+tekst|ny\s+ordlyd)$/iu;
+const OLD_TEXT_COLUMN = /^(?:opprinnelig\s+tekst|gammel\s+tekst|tidligere\s+tekst|opprinnelig\s+kravtekst)$/iu;
+
+function tableCells(line: string) {
+  return line
+    .replace(/^\s*Rad \d+:\s*/u, "")
+    .replace(/^\s*\|\s*|\s*\|\s*$/gu, "")
+    .split(/\s*\|\s*/u);
+}
+
+/**
+ * Rewrites correction-table rows by their header: a supplier-question
+ * column is dropped (a bidder's request never acts), an old-text column is
+ * dropped, and a new-text column becomes "Ny tekst: «…»".
+ */
+function tableAwareLines(lines: string[]) {
+  let header: string[] | null = null;
+  return lines.map((line) => {
+    if (!TABLE_ROW.test(line)) {
+      header = null;
+      return line;
+    }
+    const cells = tableCells(line);
+    const isHeader =
+      !REQUIREMENT_ID_SINGLE.test(line) &&
+      cells.some((cell) => QUESTION_COLUMN.test(cell) || NEW_TEXT_COLUMN.test(cell) || OLD_TEXT_COLUMN.test(cell) || /^(?:nr\.?|gjelder|krav|endring)$/iu.test(cell));
+    if (isHeader) {
+      header = cells;
+      return line;
+    }
+    if (!header) return line;
+    const columns = header;
+    const kept = cells.flatMap((cell, index) => {
+      const label = columns[index] ?? "";
+      if (QUESTION_COLUMN.test(label) || OLD_TEXT_COLUMN.test(label)) return [];
+      if (NEW_TEXT_COLUMN.test(label) && cell.trim() && !/[«“"]/u.test(cell)) return [`Ny tekst: «${cell.trim()}»`];
+      return [cell];
+    });
+    return `| ${kept.join(" | ")} |`;
+  });
 }
 
 function idPrefix(id: string) {
@@ -210,7 +253,13 @@ export function applyRequirementCorrections(
   let applied = 0;
 
   for (const statement of statements(section)) {
-    const { masked: maskedRaw, quotes } = maskQuotes(statement);
+    // "Ny tekst: Leverandøren skal …" without quotation marks: the rest of the
+    // cell is the new wording.
+    const quotedStatement = statement.replace(
+      /\b((?:ny\s+tekst|skal\s+(?:nå\s+)?lyde|er\s+endret\s+til|endres\s+til)\s*:?\s*)(?![«“"])([^|«»“”"]{12,1500}?)(\s*(?:\||$))/giu,
+      (_match, lead: string, text: string, tail: string) => `${lead}«${text.trim().replace(/[.\s]+$/u, "")}.»${tail}`,
+    );
+    const { masked: maskedRaw, quotes } = maskQuotes(quotedStatement);
     const masked = expandIdRanges(maskedRaw);
     if (ANSWER.test(masked)) {
       // Answers to bidder questions clarify, they do not rewrite requirements.
@@ -227,7 +276,11 @@ export function applyRequirementCorrections(
     let context: string[] | undefined;
     let acted = false;
     // A bidder question ("Kan K-4 strykes …?") asks; it never acts.
-    const isQuestion = (text: string) => /\?\s*$/u.test(text.trim()) || /^\s*spørsmål\b/iu.test(text);
+    // A request ("Vi ber om at K-1 strykes") is not a correction either.
+    const isQuestion = (text: string) =>
+      /\?\s*$/u.test(text.trim()) ||
+      /^\s*spørsmål\b/iu.test(text) ||
+      /\b(?:vi\s+ber\s+om|ber\s+om\s+at|ønsker\s+(?:at|å)|foreslår\s+at|anmoder\s+om)\b/iu.test(text);
     if (isQuestion(masked)) continue;
     for (const sentence of sentences(masked)) {
       if (isQuestion(sentence.text)) continue;
@@ -266,7 +319,20 @@ export function applyRequirementCorrections(
         }
         // Bound to a context ID ("som følge av at K-3 utgår"): no subject.
         if (!bound || (lastId && !own.includes(lastId[0]))) continue;
-        const withdrawn = lastId ? own.filter((id) => sentence.ids.some((match) => match.id === id && match.at < verb.index!)) : own;
+        // Only the subject list right before the verb ("K-4, K-6 og K-7"),
+        // not a subject of an earlier predicate ("K-1 beholdes og K-2 utgår").
+        const listIds: string[] = [];
+        if (lastId) {
+          const before = [...sentence.text.slice(0, verb.index!).matchAll(REQUIREMENT_ID)];
+          for (let index = before.length - 1; index >= 0; index -= 1) {
+            const match = before[index]!;
+            const end = index === before.length - 1 ? verb.index! : before[index + 1]!.index!;
+            const between = sentence.text.slice(match.index! + match[0].length, end);
+            if (index < before.length - 1 && !/^\s*(?:,|og|samt|eller)\s*$/iu.test(between)) break;
+            listIds.unshift(match[0]);
+          }
+        }
+        const withdrawn = lastId ? own.filter((id) => listIds.includes(id)) : own;
         for (const id of withdrawn.length ? withdrawn : own) {
           entries = entries.filter((entry) => entry.id !== id);
           report.withdrawn.push(id);

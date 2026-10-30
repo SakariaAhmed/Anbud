@@ -382,3 +382,21 @@ test("round 6 (second member) probes: questions, row subjects, bound verbs, repl
   ].join("\n");
   assert.deepEqual(buildSpreadsheetRequirementLedger({ file_format: "xlsx", raw_text: matrix }).map((entry) => entry.id), ["2", "2.1"]);
 });
+
+test("round 7 probes: earlier predicates, question columns, unquoted new wording", () => {
+  const k = (n) => ({ id: `K-${n}`, text: `Leverandøren skal oppfylle krav nummer ${n} fullt ut.`, pages: [1], heading: "4" });
+  // A realistic document: the requirements chapter, then the corrections.
+  const chapter = [k(1), k(2), k(3)].map((entry) => `${entry.id} ${entry.text}`).join("\n");
+  const run = (text) => applyRequirementCorrections([k(1), k(2), k(3)], `4 Krav\n${chapter}\n\n9 Rettelser og presiseringer\n${text}`).ledger;
+  const ids = (text) => run(text).map((entry) => entry.id);
+  assert.deepEqual(ids("K-1 beholdes og K-2 utgår."), ["K-1", "K-3"]);
+  assert.deepEqual(ids("K-1 endres til: «Leverandøren skal tilby support på norsk hele døgnet.» K-2 utgår."), ["K-1", "K-3"]);
+  assert.deepEqual(
+    ids("| Nr. | Krav | Spørsmål fra leverandør | Svar fra oppdragsgiver |\n| 1 | K-1 | Vi ber om at K-1 strykes. | Nei, kravet opprettholdes. |\n| 2 | K-3 | Kan K-3 utgå? | Ja, K-3 utgår. |"),
+    ["K-1", "K-2"],
+  );
+  const unquoted = run("| Nr. | Krav | Endring |\n| 1 | K-1 | Kravet endres. Ny tekst: Leverandøren skal tilby support på norsk hele døgnet. |");
+  assert.equal(unquoted[0].text, "Leverandøren skal tilby support på norsk hele døgnet.");
+  const columns = run("| Nr. | Krav | Opprinnelig tekst | Ny tekst |\n| 1 | K-2 | Leverandøren skal oppfylle krav nummer 2 fullt ut. | Leverandøren skal oppfylle krav nummer 2 innen 30 dager. |");
+  assert.equal(columns.find((entry) => entry.id === "K-2").text, "Leverandøren skal oppfylle krav nummer 2 innen 30 dager.");
+});
