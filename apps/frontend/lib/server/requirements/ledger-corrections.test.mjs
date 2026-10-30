@@ -905,6 +905,10 @@ test("review bots on #70: 'andre' as 'other' is no ordinal; an ID-less customer 
   // A parenthetical qualifier after a pronoun ordinal still selects it.
   const qualified = applyRequirementCorrections(twice, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\n\n9 Rettelser\nK-3 er brukt to ganger. Den siste (sikkerhetsrapport) får ny ID K-9.`).ledger;
   assert.deepEqual(qualified.map((entry) => entry.id), ["K-3", "K-9"]);
+  // An ID inside the qualifier is never the renumbering target.
+  const withK2 = [...twice, { id: "K-2", text: "Leverandøren skal levere kursing.", pages: [1], heading: "4 Krav" }];
+  const qualifiedAside = applyRequirementCorrections(withK2, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\nK-2 ${withK2[2].text}\n\n9 Rettelser\nK-3 er brukt to ganger. Den siste (sikkerhetsrapport fra K-2) får ny ID K-9.`).ledger;
+  assert.deepEqual(qualifiedAside.map((entry) => entry.id), ["K-3", "K-9", "K-2"]);
   // Plural "andre krav" names no occurrence: one K-3 is renamed, two stay ambiguous.
   assert.deepEqual(
     applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nI tillegg til andre krav får K-3 ny ID K-9.`).ledger.map((entry) => entry.id),

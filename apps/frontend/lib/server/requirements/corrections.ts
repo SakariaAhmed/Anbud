@@ -430,6 +430,7 @@ export function applyRequirementCorrections(
       }
       affirmative.push(sentence);
       const ids = subjects(sentence, known());
+      const priorContext = context;
       // A sentence naming no requirement ("Kravene utgår.", "Ny tekst: …")
       // refers back to all requirements named before it in the statement.
       const own = ids.length ? ids : context ?? [];
@@ -500,11 +501,19 @@ export function applyRequirementCorrections(
             /\([^()]*\)|,\s*(?:som|i\s+likhet\s+med|sammen\s+med|på\s+linje\s+med|i\s+motsetning\s+til|jf\.?|jfr\.?|herunder|inkludert|unntatt|med\s+unntak\s+av)(?![\p{L}\p{N}])[^,]*,/giu,
           )].map((match) => [match.index!, match.index! + match[0].length] as const)
         : [];
+      const inAside = (at: number) => asides.some(([from, to]) => at >= from && at < to);
+      // Without a subject outside the asides, the requirement named before
+      // this sentence is the subject ("K-3 er brukt to ganger. Den siste
+      // (sikkerhetsrapport fra K-2) får ny ID K-9."), never an aside ID.
+      const fallbackSubjects = ids.length
+        ? ids.filter((id) => sentence.ids.some((entry) => entry.id === id && !inAside(entry.at)))
+        : own;
       const renumberTarget = renumberMatch
         ? subjects({
             text: sentence.text,
-            ids: sentence.ids.filter(({ at }) => at < renumberMatch.index && !asides.some(([from, to]) => at >= from && at < to)),
-          }, known()).at(-1) ?? own.find((id) => id !== renumber)
+            ids: sentence.ids.filter(({ at }) => at < renumberMatch.index && !inAside(at)),
+          }, known()).at(-1) ??
+          (fallbackSubjects.length ? fallbackSubjects : priorContext ?? []).find((id) => id !== renumber)
         : undefined;
       if (renumberMatch && renumber && renumberTarget && !known().has(renumber)) {
         const occurrences = entries.filter((entry) => entry.id === renumberTarget);
