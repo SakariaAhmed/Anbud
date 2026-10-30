@@ -5578,22 +5578,30 @@ async function analyzeCustomerDocumentsLegacy(
   });
   // Only the first 12,000 characters of the customer document were sent, so
   // budgets, options, award criteria and a late corrections chapter were
-  // never seen. Documents that fit are sent whole; retrieval then covers
-  // only what is not already included, so no text is sent twice.
+  // never seen. Documents that fit are sent whole. For the remaining
+  // documents, retrieval skips fully covered chunks and preserves boundary
+  // chunks that contain additional evidence.
   const primaryInFull =
     input.customerDocument.raw_text.length <= CUSTOMER_ANALYSIS_FULL_DOCUMENT_MAX_CHARS;
+  const primaryTextLimit = primaryInFull ? input.customerDocument.raw_text.length : 12000;
   let supportingBudget = CUSTOMER_ANALYSIS_SUPPORTING_FULL_BUDGET_CHARS;
   const supportingPlan = input.supportingDocuments.map((document, index) => {
     // At most four supporting documents get their own prompt section.
     const full = index < 4 && document.raw_text.length <= supportingBudget;
     if (full) supportingBudget -= document.raw_text.length;
-    return { document, full, shown: index < 4 };
+    return { document, full, shown: index < 4, textLimit: full ? document.raw_text.length : 4000 };
   });
   // Every document not sent whole stays reachable through retrieval.
   const retrievalDocuments = [
     ...(primaryInFull ? [] : [input.customerDocument]),
     ...supportingPlan.filter((plan) => !plan.full).map((plan) => plan.document),
   ];
+  const promptDocumentText = new Map([
+    [input.customerDocument.id, compactText(input.customerDocument.raw_text, primaryTextLimit).slice(0, primaryTextLimit)],
+    ...supportingPlan.filter((plan) => plan.shown).map(({ document, textLimit }) =>
+      [document.id, compactText(document.raw_text, textLimit).slice(0, textLimit)] as const,
+    ),
+  ]);
   const analysisRetrieval = retrievalDocuments.length
     ? await retrieveDocumentSnippetsWithMetadata({
         query: [
@@ -5604,13 +5612,14 @@ async function analyzeCustomerDocumentsLegacy(
         documents: retrievalDocuments,
         exactTerms: ["krav", "behov", "risiko", "evalueringskriterier", "mål", "budsjett", "opsjon", "frist"],
         limit: 10,
+        promptDocumentText,
       })
     : null;
   const supportingContexts = supportingPlan
     .filter((plan) => plan.shown)
-    .map(({ document, full }, index) =>
+    .map(({ document, textLimit }, index) =>
       documentContext(`Støttedokument ${index + 1}`, document, {
-        textLimit: full ? document.raw_text.length : 4000,
+        textLimit,
         structureLimit: 6,
         structureTextLimit: 160,
       }),
@@ -5627,7 +5636,7 @@ async function analyzeCustomerDocumentsLegacy(
     ),
     buildCustomerAnalysisFactsContext(analysisFoundationFacts),
     documentContext("Primært kundedokument", input.customerDocument, {
-      textLimit: primaryInFull ? input.customerDocument.raw_text.length : 12000,
+      textLimit: primaryTextLimit,
       structureLimit: primaryInFull ? 4 : 10,
       structureSelection: primaryInFull ? "head" : "distributed",
       structureTextLimit: 180,
@@ -5636,7 +5645,9 @@ async function analyzeCustomerDocumentsLegacy(
       ? retrievedSnippetContext(
           "Semantisk dokumentdekning",
           analysisRetrieval.snippets,
-          { textLimit: 1200 },
+          // A boundary chunk may repeat the head before adding a later
+          // qualification; keep the new evidence at its end as well.
+          { textLimit: null },
         )
       : "",
     analysisRetrieval

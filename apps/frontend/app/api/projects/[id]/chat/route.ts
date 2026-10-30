@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { CHAT_SESSION_MEMORY_STORAGE_LIMIT, inferProjectChatDomains, streamProjectChat, type ChatPromptAttachment } from "@/lib/server/ai/project-chat";
 import { resolveOpenAIModelOverride } from "@/lib/server/ai/model-config";
+import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import { extractTextFromUpload } from "@/lib/server/documents";
 import {
   parseBoundedMultipartFormData,
@@ -422,16 +423,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       listChatMessages(id),
       listChatSessions(id),
     ]);
-    const customerDocument =
-      documents.find((document) => document.role === "primary_customer_document") ??
-      documents[0] ??
-      null;
-    const solutionDocument =
-      documents.find((document) => document.role === "primary_solution_document") ??
-      null;
-    const supportingDocuments = documents.filter(
-      (document) => document.role === "supporting_document",
-    );
+    const { customerDocument, solutionDocument, supportingDocuments } = selectProjectDocuments(documents);
 
     const chatHistoryForSession = chatHistory.filter(
       (chatMessage) => sessionIdFromMessage(chatMessage) === sessionId,

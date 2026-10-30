@@ -248,6 +248,59 @@ test("chat answers from the whole documents when they fit, with a compact per-re
   }
 });
 
+test("the chat route selects each fallback document once before building the real prompt", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-route-scope-"));
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  const state = { documents: [], prompts: [], retrieval: [] };
+  globalThis.__projectChatRouteScopeTest = state;
+  try {
+    const dependencies = path.join(directory, "dependencies.cjs");
+    writeFileSync(dependencies, `
+      exports.requireProjectPermission = async () => {};
+      exports.checkRateLimit = async () => ({ allowed: true });
+      exports.getProjectGenerationContext = async () => ({ name: "Fiktiv", solutionEvaluationSnapshot: null });
+      exports.listProjectDocumentsForAnalysis = async () => globalThis.__projectChatRouteScopeTest.documents;
+      exports.getFreshCustomerAnalysis = async () => null;
+      for (const name of ["listGeneratedArtifactsFresh", "listChatMessages", "listChatSessions"]) exports[name] = async () => [];
+      for (const name of ["appendChatMessage", "upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
+      exports.createTextCompletionStream = async input => {
+        globalThis.__projectChatRouteScopeTest.prompts.push(input);
+        return (async function* () { yield "Lokalt testsvar."; })();
+      };
+      exports.retrieveDocumentSnippetsWithMetadata = async input => {
+        globalThis.__projectChatRouteScopeTest.retrieval.push(input);
+        return { snippets: [], telemetry: { durationMs: 0, quality: { sufficient: false, sourceCount: 0 } } };
+      };
+    `);
+    const aliases = Object.fromEntries([
+      "authorization", "observability", "repositories/data-store", "repositories/analyses", "repositories/artifacts", "repositories/chat", "ai/completion", "document-chunks",
+    ].map((name) => [`@/lib/server/${name}`, dependencies]));
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false,
+      alias: { ...aliases, "@": frontendRoot, "server-only": "/dev/null" } });
+    const { POST } = await load.import(path.join(frontendRoot, "app/api/projects/[id]/chat/route.ts"));
+    const document = (id, role, text) => ({ id, project_id: "fictional", role, title: id,
+      file_name: `${id}.txt`, file_format: "txt", supporting_subtype: null, raw_text: text, structure_map: [] });
+    for (const [source, marker] of [
+      [document("solution", "primary_solution_document", `${"x".repeat(45001)}SENT_KAPITTEL_SVAR`), "SENT_KAPITTEL_SVAR"],
+      [document("note", "supporting_document", "UNIKT_KUNDENOTAT"), "UNIKT_KUNDENOTAT"],
+    ]) {
+      state.documents = [source]; state.prompts = []; state.retrieval = [];
+      const response = await POST(new Request("http://localhost/api/projects/fictional/chat", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Hva er beskrevet?" }),
+      }), { params: Promise.resolve({ id: "fictional" }) });
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), "Lokalt testsvar.");
+      assert.equal(state.prompts[0].user.split(marker).length - 1, 1, "the complete source is sent once");
+      assert.deepEqual(state.retrieval[0].documents.map((item) => item.id), [source.id]);
+    }
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__projectChatRouteScopeTest;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("chat keeps the full text of excerpts from documents the prompt does not carry", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-fifth-"));
   const state = { prompts: [] };

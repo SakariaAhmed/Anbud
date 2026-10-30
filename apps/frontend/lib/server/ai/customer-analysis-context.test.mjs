@@ -39,7 +39,8 @@ const retrieval = path.join(directory, "retrieval.cjs");
 writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async (input) => {
   globalThis.__analysisRetrievalCalls = (globalThis.__analysisRetrievalCalls ?? 0) + 1;
   globalThis.__analysisRetrievalDocuments = input.documents.map((document) => document.id);
-  return { snippets: [], telemetry: { durationMs: 0, usedHybridSearch: false, quality: { sufficient: false } } };
+  globalThis.__analysisPromptDocumentText = input.promptDocumentText;
+  return { snippets: globalThis.__analysisSnippets ?? [], telemetry: { durationMs: 0, usedHybridSearch: false, quality: { sufficient: false } } };
 };`);
 const jiti = createJiti(path.join(frontendRoot, "customer-analysis-context-tests.cjs"), {
   alias: {
@@ -54,6 +55,7 @@ const { analyzeCustomerDocuments } = await jiti.import(path.join(frontendRoot, "
 
 test.beforeEach(() => {
   globalThis.__analysisEvents = [];
+  globalThis.__analysisSnippets = [];
 });
 
 test.after(() => {
@@ -96,6 +98,7 @@ test("a customer document that does not fit keeps the head and adds retrieval", 
     supportingDocuments: [],
   });
   assert.equal(globalThis.__analysisRetrievalCalls, 1);
+  assert.equal(globalThis.__analysisPromptDocumentText.get("Bilag 1"), customerText.slice(0, 12000));
   assert.equal(globalThis.__analysisEvents.at(-1).metadata.retrieval_used, true);
 });
 
@@ -111,5 +114,31 @@ test("supporting documents beyond the fourth stay reachable through retrieval", 
   });
   assert.equal(globalThis.__analysisRetrievalCalls, 1);
   assert.deepEqual(globalThis.__analysisRetrievalDocuments, ["Støtte 5"]);
+  assert.equal(globalThis.__analysisPromptDocumentText.has("Støtte 5"), false, "unshown documents have no covered text");
   assert.equal(globalThis.__analysisEvents.at(-1).metadata.retrieval_used, true);
+});
+
+test("a partially included supporting document keeps its tail eligible for retrieval", async () => {
+  const text = "Støttedokument med økonomi og frister. ".repeat(1500);
+  await analyzeCustomerDocuments({ projectName: "Fiktiv",
+    customerDocument: document("Bilag 1", "primary_customer_document", "Kunden beskriver behov."),
+    supportingDocuments: [document("Støtte", "supporting_document", text)],
+  });
+  assert.deepEqual(globalThis.__analysisRetrievalDocuments, ["Støtte"]);
+  assert.equal(globalThis.__analysisPromptDocumentText.get("Støtte"), text.slice(0, 4000));
+});
+
+test("an overlapping retrieval chunk keeps a qualification beyond the prompt-covered head", async () => {
+  const qualification = "Opsjonen krever separat finansiering og inngår ikke i grunnleveransens budsjett.";
+  const base = "Kunden beskriver økonomi og behov. ".repeat(4000);
+  const text = `${base.slice(0, 13000)}${qualification}${base.slice(13000)}`;
+  globalThis.__analysisSnippets = [{ sourceType: "project_document", sourceId: "Bilag 1", documentTitle: "Bilag 1",
+    reference: "Bilag 1, økonomi", text: text.slice(11000, 14500), headingPath: [], pageStart: 2, pageEnd: 2,
+    similarity: null, lexicalScore: 1, score: 100 }];
+  await analyzeCustomerDocuments({ projectName: "Fiktiv",
+    customerDocument: document("Bilag 1", "primary_customer_document", text), supportingDocuments: [],
+  });
+  assert.equal(globalThis.__analysisPromptDocumentText.get("Bilag 1").includes(qualification), false);
+  const user = requests.at(-1).messages.filter((message) => message.role === "user").map((message) => message.content).join("\n");
+  assert.ok(user.includes(qualification), "the full boundary chunk carries the otherwise unseen qualification");
 });

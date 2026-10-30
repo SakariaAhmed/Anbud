@@ -1870,6 +1870,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   serviceDocuments?: ServiceDocumentDetail[];
   exactTerms?: string[];
   limit?: number;
+  /** Exact document text already sent in this prompt, keyed by project document ID. */
+  promptDocumentText?: ReadonlyMap<string, string>;
 }): Promise<DocumentSnippetRetrievalResult> {
   const startedAt = Date.now();
   const query = normalizeChunkText(input.query);
@@ -1913,6 +1915,15 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const queryTokens = tokenizeForRetrieval(query);
   const exactTerms = (input.exactTerms ?? []).filter(Boolean);
   const limit = Math.min(Math.max(input.limit ?? 8, 1), 16);
+  const coveredText = new Map([...input.promptDocumentText ?? []].map(([id, text]) =>
+    [documentChunkSourceKey("project_document", id), text.replace(/\s+/gu, " ").trim()],
+  ));
+  const hasUncoveredText = (candidate: RetrievedDocumentSnippet) => {
+    const covered = coveredText.get(documentChunkSourceKey(candidate.sourceType, candidate.sourceId));
+    // Keep a whole boundary chunk when any of its evidence is outside the
+    // prompt. Removing a partially overlapping chunk could hide a qualifier.
+    return !covered || !covered.includes(candidate.text.replace(/\s+/gu, " ").trim());
+  };
   let hybridCandidates: RetrievedDocumentSnippet[] = [];
   let vectorCandidates: RetrievedDocumentSnippet[] = [];
   let usedHybridSearch = false;
@@ -1930,7 +1941,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   });
 
   try {
-    hybridCandidates = await storedHybridCandidates({
+    hybridCandidates = (await storedHybridCandidates({
       query,
       getEmbedding: getQueryEmbedding,
       queryTokens,
@@ -1940,7 +1951,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
       sourceFingerprints,
       staleFilteredSourceKeys,
       limit,
-    });
+    })).filter(hasUncoveredText);
     usedHybridSearch = hybridCandidates.length > 0;
   } catch (error) {
     assertEmbeddingFallbackAllowed(error);
@@ -1949,7 +1960,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
 
   if (!hybridCandidates.length && !queryEmbeddingFailed) {
     try {
-      vectorCandidates = await storedVectorCandidates({
+      vectorCandidates = (await storedVectorCandidates({
         getEmbedding: getQueryEmbedding,
         queryTokens,
         exactTerms,
@@ -1958,7 +1969,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
         sourceFingerprints,
         staleFilteredSourceKeys,
         limit,
-      });
+      })).filter(hasUncoveredText);
       usedVectorSearch = vectorCandidates.length > 0;
     } catch (error) {
       assertEmbeddingFallbackAllowed(error);
@@ -1986,7 +1997,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
           documentChunkSourceKey("service_document", document.id),
         ),
     ),
-  });
+  }).filter(hasUncoveredText);
   usedMemoryFallback = fallbackCandidates.length > 0;
 
   const snippets = rerankSnippets({

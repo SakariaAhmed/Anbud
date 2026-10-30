@@ -32,6 +32,7 @@ const {
   isDocumentChunkReplacementLockConflict,
   projectDocumentChunkSourceFingerprint,
   replaceProjectDocumentChunks,
+  retrieveDocumentSnippetsWithMetadata,
   serviceDocumentChunkSourceFingerprint,
   shouldReuseChunksAfterCompletenessQueryError,
   storedChunkMatchesCurrentSourceFingerprint,
@@ -84,6 +85,29 @@ function serviceDocument(overrides = {}) {
     ...overrides,
   };
 }
+
+test("prompt-covered chunks do not consume retrieval slots or hide other source identities", async () => {
+  resetDocumentChunksTestRuntime();
+  const text = "K-1 Leverandøren skal dokumentere sikkerhet og kapasitet.";
+  const first = projectDocument({ raw_text: text, structure_map: [] });
+  const second = projectDocument({ id: "project-document-2", raw_text: text, structure_map: [] });
+  const service = serviceDocument({ id: first.id, raw_text: text, structure_map: [] });
+  const input = { query: "sikkerhet kapasitet", documents: [first, second], serviceDocuments: [service], limit: 3 };
+  const baseline = await retrieveDocumentSnippetsWithMetadata(input);
+  assert.equal(baseline.snippets.length, 3);
+  const covered = baseline.snippets.find((snippet) => snippet.sourceType === "project_document" && snippet.sourceId === first.id);
+  assert.ok(covered);
+  assert.ok(first.raw_text.includes(covered.text));
+  const result = await retrieveDocumentSnippetsWithMetadata({ ...input, limit: 2,
+    promptDocumentText: new Map([[first.id, first.raw_text.replace(/ /gu, "  ")]]) });
+  assert.equal(result.snippets.length, 2, "filtering runs before the final result limit");
+  assert.ok(result.snippets.some((snippet) => snippet.sourceType === "project_document" && snippet.sourceId === second.id));
+  assert.ok(result.snippets.some((snippet) => snippet.sourceType === "service_document" && snippet.sourceId === first.id));
+  const partial = await retrieveDocumentSnippetsWithMetadata({ ...input,
+    promptDocumentText: new Map([[first.id, covered.text.slice(0, 25)]]) });
+  assert.ok(partial.snippets.some((snippet) => snippet.sourceType === "project_document" && snippet.sourceId === first.id && snippet.text === covered.text),
+    "a chunk crossing the covered boundary retains its full evidence");
+});
 
 test("project chunk fingerprint changes for same-length source content", () => {
   const original = projectDocument();
