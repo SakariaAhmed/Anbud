@@ -499,3 +499,17 @@ test("council round 5 probes: subjectless restrictions and multi-sentence answer
   });
   assert.match(cell.entry.answerExcerpt, /SAML 2\.0 for alle brukere/u);
 });
+
+test("a restriction that ends at a cell boundary still makes the link uncertain", () => {
+  const storage = { ...unansweredRequirement, id: "T-1", heading: "", text: "Alle kundedata skal ha kryptert lagring i Norge." };
+  for (const raw of [
+    "Kryptert lagring av alle kundedata leveres i Norge. Gjelder kun produksjonsmiljøet |",
+    "Kryptert lagring av alle kundedata leveres i Norge. Leveres som opsjon | Neste rad |",
+  ]) {
+    const bound = bindVerifiedSolutionQuote({
+      entry: storage, quote: "Kryptert lagring av alle kundedata leveres i Norge.", assessment: "Godt",
+      solutionDocument: { ...solutionDocument, raw_text: `[[SIDE:11]]\n${raw}` },
+    });
+    assert.equal(bound.uncertain, true, raw);
+  }
+});

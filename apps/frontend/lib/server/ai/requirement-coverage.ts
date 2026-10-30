@@ -3122,8 +3122,9 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
       complete = false;
     }
     // A restriction right after the answer (an option, a scope limit, a
-    // negation) may apply to it even without naming it: never "Godt".
-    if (restricts && !next.isCell) complete = false;
+    // negation) may apply to it even without naming it, whether it ends in
+    // punctuation or at a cell boundary: never "Godt".
+    if (restricts) complete = false;
   }
   return {
     own,
