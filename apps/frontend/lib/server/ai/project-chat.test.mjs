@@ -89,6 +89,8 @@ test("adaptive first questions skip rewriting while prior context and forced rew
       assert.ok(state.retrieval[0].exactTerms.includes("K-42"), item.name);
       assert.match(state.retrieval[0].query, /K-42/);
       assert.deepEqual(history, item.messages, "The history sent to the final answer must not be mutated.");
+      assert.doesNotMatch(state.answers[0].user, /### Dokumentregel|Hele\s+står nedenfor/u,
+        "A chat without documents must not claim whole documents are included.");
       if (item.rewrites) assert.match(result.retrievalPlan.standalone_query, /^Omskrevet/);
       else assert.ok(result.retrievalPlan.standalone_query.includes(question), item.name);
       if (item.summary?.trim()) assert.ok(state.answers[0].user.includes(item.summary));

@@ -698,6 +698,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     ...(input.supportingDocuments ?? []).slice(0, 4),
   ].filter((document): document is ProjectDocumentDetail => Boolean(document));
   const fullDocumentsInContext =
+    promptDocuments.length > 0 &&
     promptDocuments.reduce((sum, document) => sum + document.raw_text.length, 0) <=
     CHAT_FULL_DOCUMENTS_MAX_CHARS;
   // With the whole documents included, an excerpt whose text is already in
