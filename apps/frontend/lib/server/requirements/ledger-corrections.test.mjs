@@ -722,6 +722,45 @@ test("a withdrawn formal requirement cannot survive through its customer-documen
   assert.ok((await buildRequirementCoverageLedgerFromDocuments(documents)).some((entry) => entry.id === "K-1"));
 });
 
+test("a withdrawal cannot silently remove distinct source rows that share an ID", async () => {
+  const source = [
+    { id: "K-1", text: "Leverandøren skal levere en driftsplan.", pages: [1], heading: "4 Drift" },
+    { id: "K-1", text: "Leverandøren skal kryptere kundedata.", pages: [2], heading: "5 Sikkerhet" },
+    { id: "K-2", text: "Leverandøren skal levere rapporter.", pages: [2], heading: "5 Sikkerhet" },
+  ];
+  const chapter = source.map((entry) => `${entry.heading}\n${entry.id}: ${entry.text}`).join("\n\n");
+  const original = structuredClone(source);
+  const error = /K-1.*flere krav/u;
+  for (const correction of ["K-1 (Drift) utgår.", "K-1 utgår.", "Som følge av endringen i K-2 utgår K-1.",
+    "K-1 endres til: «Leverandøren skal kryptere alle data.»", "K-1 får ny ID K-9."]) {
+    const raw = `${chapter}\n\n9 Rettelser\n${correction}`;
+    assert.throws(() => applyRequirementCorrections(source, raw), error);
+    assert.throws(() => correctedRequirementIds(source.map((entry) => entry.id), raw), error);
+  }
+  assert.deepEqual(applyRequirementCorrections(source, `${chapter}\n\n9 Rettelser\nK-1 utgår ikke.`).ledger.map(({ id, text }) => ({ id, text })), source.map(({ id, text }) => ({ id, text })));
+  assert.deepEqual(applyRequirementCorrections(source, `${chapter}\n\n9 Rettelser\nSpørsmål: Vi ber om følgende endring. K-1 utgår. Kan dette godtas?`).ledger, source);
+  assert.deepEqual(applyRequirementCorrections([source[0], source[2]], `${chapter}\n\n9 Rettelser\nK-1 (Drift) utgår.`).ledger.map((entry) => entry.id), ["K-2"]);
+  const threeOccurrences = [...source.slice(0, 2), { ...source[2], id: "K-1" }];
+  const renumbered = applyRequirementCorrections(threeOccurrences, `${chapter}\n\n9 Rettelser\nK-1 er brukt flere ganger. Det andre kravet får ny ID K-9.`).ledger;
+  assert.deepEqual(renumbered.map((entry) => entry.id), ["K-1", "K-9", "K-1"]);
+  assert.equal(renumbered[1].text, source[1].text);
+  const document = { id: "formal", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "pdf",
+    raw_text: `${chapter}\n\n9 Rettelser\nK-1 (Drift) utgår.`,
+    structure_map: source.map((entry, index) => ({ kind: "docling_text", parser: "docling", reference: `Docling text ${index}`, text: `${entry.id}: ${entry.text}`, page: entry.pages[0], heading_path: [entry.heading] })),
+  };
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const { buildRequirementCoverageLedgerFromDocuments } = await load("lib/server/ai/requirement-coverage.ts");
+  const { workflowErrorStatus } = await load("lib/server/workflow-errors.ts");
+  await assert.rejects(extractRequirementLedgerWithCorrections(document), (failure) => {
+    assert.match(failure.message, error);
+    assert.equal(workflowErrorStatus(failure), 422);
+    return true;
+  });
+  await assert.rejects(buildRequirementCoverageLedgerFromDocuments([document]), error);
+  assert.throws(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: [] }]), /Kravledgeren er tom|flere krav/u);
+  assert.deepEqual(source, original, "failed correction leaves the source rows intact");
+});
+
 test("evaluation returns empty coverage when every original requirement is withdrawn", async () => {
   const { buildSolutionRequirementCoverage } = await load("lib/server/ai.ts");
   const source = { id: "formal", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "docx", structure_map: [], raw_text: "4 Krav\n| Krav-ID | Kravtekst |\n| K-1 | Leverandøren skal levere en driftsplan. |\n\n9 Rettelser\nK-1 utgår." };

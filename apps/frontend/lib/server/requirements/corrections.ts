@@ -1,4 +1,5 @@
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
+import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 
 // Tender documents often publish changes in a closing "Rettelser" chapter
 // that takes precedence over the original requirement tables, which are left
@@ -353,6 +354,23 @@ export function applyRequirementCorrections(
         : entry,
     );
   };
+  const assertUniqueTargets = (ids: string[]) => {
+    const ambiguous = [...new Set(ids)].filter((id) => entries.filter((entry) => entry.id === id).length > 1);
+    if (ambiguous.length) {
+      // An ID-only inventory cannot distinguish two rows with the same ID,
+      // even when a parenthetical qualifier names just one obligation. Stop
+      // both extraction and completeness validation before either drops rows.
+      throw new WorkflowPreconditionError(
+        `Kravrettelsen kan ikke brukes entydig: ${ambiguous.join(", ")} brukes av flere krav. Avklar hvilke krav rettelsen gjelder, og last opp et kravgrunnlag med entydige krav-ID-er.`,
+      );
+    }
+  };
+  const withdraw = (ids: string[]) => {
+    assertUniqueTargets(ids);
+    const targets = new Set(ids);
+    entries = entries.filter((entry) => !targets.has(entry.id));
+    report.withdrawn.push(...targets);
+  };
   let applied = 0;
   // Unapplied statements that name an action (a change the code could not
   // place safely): kept as notes even when nothing else applies.
@@ -440,11 +458,8 @@ export function applyRequirementCorrections(
           .exec(sentence.text.slice(verb.index! + verb[0].length))?.[1];
         const after = [...(following ?? "").matchAll(REQUIREMENT_ID)].map((match) => match[0]).filter((id) => own.includes(id));
         if (after.length && !(lastId && own.includes(lastId[0]) && WITHDRAW_BINDING_GAP.test(gap))) {
-          for (const id of after) {
-            entries = entries.filter((entry) => entry.id !== id);
-            report.withdrawn.push(id);
-            acted = true;
-          }
+          withdraw(after);
+          acted = true;
           continue;
         }
         // Bound to a context ID ("som følge av at K-3 utgår"): no subject.
@@ -463,9 +478,9 @@ export function applyRequirementCorrections(
           }
         }
         const withdrawn = lastId ? own.filter((id) => listIds.includes(id)) : own;
-        for (const id of withdrawn.length ? withdrawn : own) {
-          entries = entries.filter((entry) => entry.id !== id);
-          report.withdrawn.push(id);
+        const targets = withdrawn.length ? withdrawn : own;
+        if (targets.length) {
+          withdraw(targets);
           acted = true;
         }
       }
@@ -478,11 +493,13 @@ export function applyRequirementCorrections(
       const renumberTarget = own.find((id) => id !== renumber);
       if (renumber && renumberTarget && !known().has(renumber)) {
         const occurrences = entries.filter((entry) => entry.id === renumberTarget);
-        // A repeated ID: "Det andre kravet får ny ID ..." renames that one.
-        const renamed =
-          occurrences.length >= 2
-            ? /\bførste\b[^.]*\bny\s+id\b/iu.test(sentence.text) ? occurrences[0]! : occurrences.at(-1)!
-            : occurrences[0]!;
+        // An explicit ordinal can disambiguate a renumbering. Without it,
+        // choosing the last occurrence would silently rename the wrong row.
+        const ordinal = /\b(første|andre|tredje|siste)\b[^.]*\bny\s+(?:krav-?)?id\b/iu.exec(sentence.text)?.[1]?.toLocaleLowerCase("nb");
+        if (occurrences.length > 1 && !ordinal) assertUniqueTargets([renumberTarget]);
+        const at = ordinal === "første" ? 0 : ordinal === "andre" ? 1 : ordinal === "tredje" ? 2 : occurrences.length - 1;
+        const renamed = occurrences[occurrences.length > 1 ? at : 0];
+        if (!renamed) assertUniqueTargets([renumberTarget]);
         entries = entries.map((entry) =>
           entry === renamed
             ? { ...entry, id: renumber, sourceExcerpt: [entry.sourceExcerpt, `Ny ID i rettelse (tidligere ${renumberTarget}): ${statement}`].filter(Boolean).join(" | ") }
@@ -561,6 +578,7 @@ export function applyRequirementCorrections(
           }
           continue;
         }
+        assertUniqueTargets([target]);
         entries = entries.map((entry) =>
           entry.id === target
             ? {
