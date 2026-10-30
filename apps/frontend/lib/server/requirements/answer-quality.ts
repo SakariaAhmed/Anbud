@@ -3725,25 +3725,27 @@ export function answerHasSelfContainedCoverage(
   );
 }
 
-// "X støttes ikke" declines only when X is the delivery itself: a pronoun or
-// delivery noun, or, given a requirement that is not itself a prohibition, a
-// short sentence-initial noun phrase. A versioned option ("TLS 1.0 støttes
-// ikke"), a scope limit ("leveres ikke utenfor EU"), "ikke bare", or an
-// exclusion the requirement asks for ("Løsningen skal ikke støtte usikre
-// protokoller" answered "Usikre protokoller støttes ikke") is not a decline.
+// "Støttes ikke." or "X støttes ikke" declines the delivery itself when X is
+// absent, a pronoun or a delivery noun ("Nei, dette støttes ikke"), unless
+// the requirement is itself a prohibition ("Løsningen skal ikke støtte usikre
+// protokoller"): then the answer complies. A noun subject ("Telefonstøtte
+// tilbys ikke") declines only given a requirement that is not a prohibition.
+// A versioned option ("TLS 1.0 og 1.1 støttes ikke"), a scope limit
+// ("leveres ikke utenfor EU") and "ikke bare" never decline.
 const SUBJECT_DECLINE =
-  /(?:^|[.;:!?]\s+)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+)\s+(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via)\b)/giu;
+  /(?:^|[.;:!?]\s+|\bnei\s*[,.:–-]\s*)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+\s+)?(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via)\b)/giu;
 const DELIVERY_SUBJECT =
   /^(?:dette|det|denne|disse|kravet|funksjonen|funksjonaliteten|tjenesten|leveransen|kontrollen)$/iu;
 const PROHIBITION =
   /\b(?:skal|må|kan|bør)\s+ikke\b|\bikke\s+(?:tillatt|tillates|benyttes|brukes|forekomme)\b|\b(?:forbudt|uakseptabelt)\b/iu;
 
 function answerDeclinesWithSubject(text: string, requirement: string | undefined) {
-  const nounSubjects = requirement !== undefined && !PROHIBITION.test(normalizePageText(requirement));
+  const prohibition = requirement !== undefined && PROHIBITION.test(normalizePageText(requirement));
+  if (prohibition) return false;
   return Array.from(text.matchAll(SUBJECT_DECLINE)).some((match) => {
     const subject = (match[1] ?? "").trim();
     if (/\b(?:og|eller|men|samt)\b/iu.test(subject)) return false;
-    return DELIVERY_SUBJECT.test(subject) || nounSubjects;
+    return !subject || DELIVERY_SUBJECT.test(subject) || requirement !== undefined;
   });
 }
 

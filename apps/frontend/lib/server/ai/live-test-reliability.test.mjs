@@ -536,11 +536,16 @@ test("a decline names the delivery, not an option the requirement may forbid", a
   ]) {
     assert.equal(declines(excluded, positive), false, excluded);
   }
+  // Matrix answer cells: with or without the requirement at hand.
   for (const declined of [
     "Dette leveres ikke som opsjon.",
     "Kravet inngår ikke i leveransen.",
+    "Støttes ikke.",
+    "Leveres ikke. Kunden må selv anskaffe lisensene.",
+    "Nei, dette støttes ikke i dagens versjon av plattformen vår.",
   ]) {
     assert.equal(declines(declined), true, declined);
+    assert.equal(declines(declined, positive), true, declined);
   }
   for (const declined of [
     "Dokumentasjon leveres ikke.",
@@ -551,10 +556,9 @@ test("a decline names the delivery, not an option the requirement may forbid", a
     assert.equal(declines(declined), false, declined);
   }
   // The requirement asks for the exclusion: answering it is compliance.
-  assert.equal(
-    declines("Usikre protokoller støttes ikke.", "Løsningen skal ikke støtte usikre protokoller."),
-    false,
-  );
+  for (const compliant of ["Usikre protokoller støttes ikke.", "Støttes ikke."]) {
+    assert.equal(declines(compliant, "Løsningen skal ikke støtte usikre protokoller."), false, compliant);
+  }
 });
 
 test("a restriction in a later section does not qualify the answer", () => {
