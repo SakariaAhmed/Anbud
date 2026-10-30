@@ -87,6 +87,7 @@ export function workflow(names, overrides = {}) {
     ...history, ...snapshots, ...domain, ...services, ...readiness, WorkflowError: workflowErrors.WorkflowError,
     WorkflowPreconditionError: workflowErrors.WorkflowPreconditionError,
     ...jiti(path.join(frontend, 'lib/project-job-progress.ts')),
+    ...jiti(path.join(frontend, 'lib/server/use-cases/elapsed-progress.ts')),
     ...jiti(path.join(frontend, 'lib/server/project-job-result-projection.ts')),
     saveCustomerAnalysis, getFreshCustomerAnalysis: freshAnalysis,
     getProjectSourceRevision: async () => revision(), listProjectDocumentsForAnalysis: async () => [document()],
