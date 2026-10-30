@@ -155,6 +155,12 @@ function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_t
         else if (row.cells.size === 1) section = [...row.cells.values()][0]!.trim();
         continue;
       }
+      // A numbered chapter label in a lone cell is structure, even though
+      // the broad unreadable-ID guard below also sees its digit.
+      if (row.cells.size === 1 && /^\d{1,4}(?:\.\d{1,3})*\s+\p{L}/u.test(id)) {
+        section = id;
+        continue;
+      }
       if (REQUIREMENT_ID_PATTERN.test(id)) {
         const nextId = (sheet.rows[index + 1]?.cells.get(columns.id!) ?? "").trim();
         // A numbered heading row, not a parent requirement that states one.

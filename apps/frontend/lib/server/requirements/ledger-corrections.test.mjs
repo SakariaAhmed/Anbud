@@ -647,6 +647,19 @@ test("an unusual spreadsheet ID without wording stays in the completeness invent
   assert.throws(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger }]), /req001/u);
 });
 
+test("a numbered section label stays outside the matrix requirement inventory", () => {
+  const document = {
+    id: "d", title: "Krav", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "xlsx",
+    raw_text: ["Ark: Krav", "Rad 1: A1: Krav-ID | B1: Kravtekst",
+      "Rad 2: A2: 1 Krav til tilbyder",
+      "Rad 3: A3: K-2 | B3: Leverandøren skal tilby døgnvakt."].join("\n"),
+  };
+  const ledger = buildSpreadsheetRequirementLedger(document);
+  assert.deepEqual(spreadsheetRequirementIds(document), ["K-2"]);
+  assert.equal(ledger[0].heading, "1 Krav til tilbyder");
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger }]));
+});
+
 test("review bots: several correction notices, kept notes, Unicode section rows, withdrawn documents", async () => {
   const k = (id, text) => ({ id, text, pages: [1], heading: "4 Krav" });
   // Rettelse nr. 1 and nr. 2 both apply, in order; a table of contents does not.
