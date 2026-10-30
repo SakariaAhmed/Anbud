@@ -497,12 +497,16 @@ export function applyRequirementCorrections(
         const occurrences = entries.filter((entry) => entry.id === renumberTarget);
         // An explicit ordinal can disambiguate a renumbering. Without it,
         // choosing the last occurrence would silently rename the wrong row.
-        // Only an ordinal naming an occurrence ("det andre kravet"): "andre"
-        // also means "other" ("I tillegg til andre endringer får K-3 …").
+        // Only an ordinal naming an occurrence: before an occurrence noun ("det
+        // andre kravet") or used as a pronoun after a determiner ("Den siste
+        // får ny ID"). "andre" also means "other" ("andre endringer", "i andre
+        // kvartal"), which names no occurrence.
         const ordinal = [...sentence.text.slice(0, renumberMatch.index).matchAll(
-          /(?<![\p{L}\p{N}])(første|andre|tredje|siste)\s+(?:kravet|krav|kravraden|raden|rad|forekomsten)(?![\p{L}\p{N}])/giu,
+          /(?<![\p{L}\p{N}])(?:(første|andre|tredje|siste)\s+(?:kravet|krav|kravraden|raden|rad|forekomsten)|(?:den|det|denne|dette)\s+(første|andre|tredje|siste)(?=\s+(?:får|beholder|skal|gis|endres|blir|er)(?![\p{L}\p{N}])|\s*[,.:;]|\s*$))(?![\p{L}\p{N}])/giu,
         )]
-          .at(-1)?.[1]?.toLocaleLowerCase("nb");
+          .map((match) => match[1] ?? match[2])
+          .at(-1)
+          ?.toLocaleLowerCase("nb");
         if (occurrences.length > 1 && !ordinal) assertUniqueTargets([renumberTarget]);
         const at = ordinal === "første" ? 0 : ordinal === "andre" ? 1 : ordinal === "tredje" ? 2 : occurrences.length - 1;
         const renamed = occurrences[at];
