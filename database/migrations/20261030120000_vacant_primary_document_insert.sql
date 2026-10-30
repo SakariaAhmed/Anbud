@@ -1,4 +1,7 @@
 -- Suggested upload roles fill a vacant primary document role only.
+-- Create, revoke and grant together so the function is never callable by
+-- the API roles in between.
+begin;
 
 -- An automatically suggested upload role must never demote a primary document
 -- that another upload or user set meanwhile. Under the same project lock the
@@ -40,3 +43,4 @@ $$;
 revoke all on function public.insert_vacant_primary_project_document(uuid, text, jsonb) from public, anon, authenticated;
 grant execute on function public.insert_vacant_primary_project_document(uuid, text, jsonb) to service_role;
 notify pgrst, 'reload schema';
+commit;

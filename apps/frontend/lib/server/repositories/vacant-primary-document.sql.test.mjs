@@ -55,12 +55,23 @@ const payload = (title) => `jsonb_build_object('id', gen_random_uuid(), 'title',
   'file_name', '${title}.pdf', 'file_format', 'pdf', 'content_type', 'application/pdf',
   'file_storage_bucket', 'documents', 'file_storage_path', 'projects/p/${title}.pdf')`;
 
-test("postgres: a suggested primary role fills only a vacant role, on the baseline and after the migration", {
+test("postgres: a suggested primary role fills only a vacant role, on the baseline, after re-applying and after upgrading", {
   skip: !databaseUrl, timeout: 90_000,
 }, () => withDatabase((url) => {
   sql(url, `set role service_role;\n${regression}`);
   // The migration is safe to apply to a database that already has it.
   sql(url, `reset role;\n${migration}\nset role service_role;\n${regression}`);
+  // On a database from before it, the migration creates the function in one
+  // transaction with its grants, so service_role can call it right away.
+  sql(url, `drop function public.insert_vacant_primary_project_document(uuid, text, jsonb);
+${migration}
+set role service_role;
+${regression}`);
+  assert.equal(
+    sql(url, "select has_function_privilege('anon', 'public.insert_vacant_primary_project_document(uuid, text, jsonb)', 'execute');"),
+    "f",
+    "the API roles cannot call it",
+  );
 }));
 
 test("postgres: concurrent suggested uploads leave exactly one primary customer document", {
