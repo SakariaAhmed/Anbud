@@ -898,6 +898,15 @@ test("review bots on #70: 'andre' as 'other' is no ordinal; an ID-less customer 
     () => applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nK-3: Det andre kravet får ny ID K-9.`),
     /forekomst som ikke finnes/u,
   );
+  // A pronoun ordinal after a determiner still selects its occurrence.
+  const twice = [k3, { ...k3, text: "Leverandøren skal levere årlig sikkerhetsrapport." }];
+  const pronoun = applyRequirementCorrections(twice, `4 Krav\nK-3 ${twice[0].text}\nK-3 ${twice[1].text}\n\n9 Rettelser\nK-3 er brukt to ganger. Den siste får ny ID K-9.`).ledger;
+  assert.deepEqual(pronoun.map((entry) => [entry.id, entry.text]), [["K-3", twice[0].text], ["K-9", twice[1].text]]);
+  // "i andre kvartal" names no occurrence.
+  assert.deepEqual(
+    applyRequirementCorrections([k3], `4 Krav\nK-3 ${k3.text}\n\n9 Rettelser\nK-3 om rapportering i andre kvartal får ny ID K-9.`).ledger.map((entry) => entry.id),
+    ["K-9"],
+  );
   // A customer document without requirement IDs or requirement text next to a
   // fully withdrawn requirement document: coverage is empty, not blocked.
   const customer = { id: "c", title: "Bilag 1", role: "primary_customer_document", file_name: "bilag1.docx", file_format: "docx",
