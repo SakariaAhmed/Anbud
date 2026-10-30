@@ -236,6 +236,36 @@ test("the job limit stops the loop even when more budget remains", async () => {
   ]);
 });
 
+test("a run whose terminal write fails counts against the job limit; a refused claim does not", async () => {
+  const claimed = [];
+  const results = await runProjectJobsWithinBudget({
+    deadlineAt: 60 * minute,
+    now: () => 0,
+    maxJobs: 1,
+    listQueuedJobIds: async () => ["busy", "write-fails", "other-project"],
+    readQueuedInput: async (jobId) => ({ kind: "executive_summary", projectId: jobId }),
+    timeoutMsFor: () => 10 * minute,
+    async claimAndRun(jobId) {
+      claimed.push(jobId);
+      if (jobId === "busy") return "claim_refused";
+      if (jobId === "write-fails") {
+        throw new ProjectJobRunError(new Error("terminal write failed"), {
+          terminalPersisted: false,
+          workflowAbandoned: false,
+        });
+      }
+      return "ran";
+    },
+    safeErrorMessage: () => "Jobben feilet.",
+  });
+
+  assert.deepEqual(claimed, ["busy", "write-fails"], "no second workflow runs after the limit is reached");
+  assert.deepEqual(results, [
+    { job_id: "busy", status: "skipped", reason: "claim_refused" },
+    { job_id: "write-fails", status: "failed", error: "Jobben feilet." },
+  ]);
+});
+
 test("closed release claims stop the scan without exposing backend details", async () => {
   const claimed = [];
   const results = await runProjectJobsWithinBudget({

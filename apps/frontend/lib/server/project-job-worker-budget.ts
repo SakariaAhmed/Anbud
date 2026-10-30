@@ -180,7 +180,14 @@ export async function runProjectJobsWithinBudget<Input extends { kind: ProjectJo
         // reporting the same refusal for the remaining queue. Abandoned work
         // still occupies the process even when its terminal write failed.
         if (isProjectJobClaimsClosedError(error)) return results;
-        if (error instanceof ProjectJobRunError && error.outcome.workflowAbandoned) return results;
+        if (error instanceof ProjectJobRunError) {
+          // The job was claimed and ran before its terminal write failed, so
+          // it counts against the job limit like any other run.
+          if (error.outcome.workflowAbandoned) return results;
+          processed += 1;
+          ranJob = true;
+          break;
+        }
       }
     }
 
