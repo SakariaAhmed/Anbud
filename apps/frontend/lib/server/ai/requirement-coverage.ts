@@ -3029,6 +3029,14 @@ function nextSegment(flat: string, boundaries: number[], from: number) {
   };
 }
 
+function nextCellText(flat: string, from: number) {
+  const start = flat.indexOf("¦", from) + 1;
+  if (start <= 0) return undefined;
+  const end = flat.indexOf("¦", start);
+  const text = flat.slice(start, end < 0 ? flat.length : end).trim();
+  return text || undefined;
+}
+
 // A follow-up that limits the answer ("Dette gjelder kun produksjon").
 const LIMITING = /\b(?:kun|bare|begrenset\s+til|opsjon|forutsatt|med\s+mindre)\b/iu;
 
@@ -3036,7 +3044,7 @@ const LIMITING = /\b(?:kun|bare|begrenset\s+til|opsjon|forutsatt|med\s+mindre)\b
 // ikke", "men kun for produksjon") qualifies it and belongs to the answer.
 const REFERRING_CLAUSE = /^(?:(?:men|mens|samt|derimot)\s+)?(?:dette|det|disse|den|denne|kun|bare|ikke|unntatt|med\s+unntak)\b/iu;
 // A follow-up that refers back to the answer ("Dette ...", "Unntatt ...").
-const REFERRING_START = /^(?:dette|det|dette gjelder|unntatt|unntak|men|merk|forutsatt|forbehold|med\s+unntak|merknad)\b/iu;
+const REFERRING_START = /^(?:dette|det|denne|disse|dette gjelder|unntatt|unntak|men|merk|forutsatt|forbehold|med\s+unntak|merknad|leveres|gjelder|omfatter)\b/iu;
 
 /**
  * The quote's own sentence (bounded by sentence ends, table cells and
@@ -3105,15 +3113,17 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
     // A follow-up that refers back qualifies the answer even without a
     // negation ("Dette gjelder kun produksjonsmiljøet"); one that names the
     // requirement does when it negates or limits it.
+    const restricts = NEGATION.test(next.text) || LIMITING.test(next.text);
     const qualifies =
-      REFERRING_START.test(next.text) ||
-      ((NEGATION.test(next.text) || LIMITING.test(next.text)) && sharedTerms(requirement, next.text).shared > 0);
+      REFERRING_START.test(next.text) || (restricts && sharedTerms(requirement, next.text).shared > 0);
     if (qualifies && next.text.length <= VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS) {
       passage = `${own}${next.isCell ? " | " : " "}${next.text}`;
-      if (LIMITING.test(next.text)) complete = false;
     } else if (qualifies) {
       complete = false;
     }
+    // A restriction right after the answer (an option, a scope limit, a
+    // negation) may apply to it even without naming it: never "Godt".
+    if (restricts && !next.isCell) complete = false;
   }
   return {
     own,
@@ -3123,9 +3133,10 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
     // The cell after the quote's own cell, for a row whose first cells only
     // restate the requirement.
     // Also when a full stop ends the cell before its "|".
+    // The whole next cell, up to its own boundary, not its first sentence.
     nextCell:
       next?.adjacent && after !== undefined && (flat[after] === "¦" || /^\s*¦/u.test(flat.slice(sentenceEnd)))
-        ? next.text
+        ? nextCellText(flat, sentenceEnd)
         : undefined,
   };
 }

@@ -481,3 +481,21 @@ test("council round 4 (second member): verbatim spans, limiting follow-ups, empt
     null,
   );
 });
+
+test("council round 5 probes: subjectless restrictions and multi-sentence answer cells", () => {
+  const doc = (text) => ({ ...solutionDocument, raw_text: `[[SIDE:10]]\n${text}` });
+  const storage = { ...unansweredRequirement, id: "U-1", heading: "", text: "Alle kundedata skal ha kryptert lagring i Norge." };
+  for (const follow of ["Leveres som opsjon mot tillegg.", "Gjelder kun produksjonsmiljøet.", "Disse tjenestene tilbys bare som opsjon.", "Denne leveransen omfatter kun produksjonsmiljøet."]) {
+    const bound = bindVerifiedSolutionQuote({
+      entry: storage, quote: "Kryptert lagring av alle kundedata leveres i Norge.", assessment: "Godt",
+      solutionDocument: doc(`Kryptert lagring av alle kundedata leveres i Norge. ${follow}`),
+    });
+    assert.equal(bound.uncertain, true, follow);
+  }
+  const cell = bindVerifiedSolutionQuote({
+    entry: { ...storage, text: "Løsningen skal støtte SSO via Entra ID." },
+    quote: "Løsningen skal støtte SSO via Entra ID.", assessment: "Godt",
+    solutionDocument: doc("Løsningen skal støtte SSO via Entra ID. | Ja. Vi bruker Entra ID med SAML 2.0 for alle brukere. |"),
+  });
+  assert.match(cell.entry.answerExcerpt, /SAML 2\.0 for alle brukere/u);
+});
