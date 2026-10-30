@@ -510,10 +510,13 @@ export function applyRequirementCorrections(
         // andre kravet") or used as a pronoun after a determiner ("Den siste
         // får ny ID"). "andre" also means "other" ("andre endringer", "i andre
         // kvartal"), which names no occurrence.
+        // "krav" is also plural ("andre krav" = "other requirements"), so it
+        // counts only after a determiner ("det andre krav"). A short
+        // parenthesis may qualify a pronoun ordinal ("Den siste (logger) får").
         const ordinal = [...sentence.text.slice(0, renumberMatch.index).matchAll(
-          /(?<![\p{L}\p{N}])(?:(første|andre|tredje|siste)\s+(?:kravet|krav|kravraden|raden|rad|forekomsten)|(?:den|det|denne|dette)\s+(første|andre|tredje|siste)(?=\s+(?:får|beholder|skal|gis|endres|blir|er)(?![\p{L}\p{N}])|\s*[,.:;]|\s*$))(?![\p{L}\p{N}])/giu,
+          /(?<![\p{L}\p{N}])(?:(første|andre|tredje|siste)\s+(?:kravet|kravraden|raden|rad|forekomsten)|(?:det|dette)\s+(første|andre|tredje|siste)\s+krav|(?:den|det|denne|dette)\s+(første|andre|tredje|siste)(?=\s*(?:\([^()]{1,80}\)\s*)?(?:(?:får|beholder|skal|gis|endres|blir|er)(?![\p{L}\p{N}])|[,.:;]|$)))(?![\p{L}\p{N}])/giu,
         )]
-          .map((match) => match[1] ?? match[2])
+          .map((match) => match[1] ?? match[2] ?? match[3])
           .at(-1)
           ?.toLocaleLowerCase("nb");
         if (occurrences.length > 1 && !ordinal) assertUniqueTargets([renumberTarget]);
