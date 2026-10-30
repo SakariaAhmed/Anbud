@@ -359,6 +359,7 @@ async function deleteResource(resource) {
   const route =
     resource.type === "service" ? `/api/service-descriptions/${resource.id}` : `/api/projects/${resource.id}`;
   for (let attempt = 1; attempt <= 3 && !resource.deleted; attempt += 1) {
+    let retryDelayMs = attempt * 1000;
     try {
       // Bounded, so a DELETE that never answers cannot block cleanup.
       const { response } = await resource.client.request("DELETE", route, {
@@ -367,10 +368,16 @@ async function deleteResource(resource) {
       resource.attempts.push(response.status);
       // 404: already gone.
       if (response.ok || response.status === 404) resource.deleted = true;
+      // The project DELETE limiter (10 per 60 s) says when to retry; wait for
+      // it, capped at its window, instead of spending the attempts too early.
+      const retryAfterSeconds = Number(response.headers.get("retry-after"));
+      if (response.status === 429 && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+        retryDelayMs = Math.min(60_000, Math.ceil(retryAfterSeconds * 1000));
+      }
     } catch (error) {
       resource.attempts.push(String(error));
     }
-    if (!resource.deleted) await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+    if (!resource.deleted && attempt < 3) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   }
   return resource;
 }
@@ -394,8 +401,14 @@ async function cleanupResources(filter = () => true) {
 // project or service can exist on the server before its response arrives.
 const runClients = new Set();
 const pendingCreations = new Set();
+let interrupted = false;
 
-async function trackedCreation(promise) {
+/** Runs `create`, which must issue the request and track what it created.
+ * Refused once interrupted, so nothing is created after the shutdown wait
+ * has taken its snapshot of pendingCreations. */
+async function trackedCreation(create) {
+  if (interrupted) throw new Error("Interrupted: not creating further resources.");
+  const promise = create();
   pendingCreations.add(promise);
   try {
     return await promise;
@@ -432,7 +445,6 @@ async function sweepRun(client) {
   await cleanupResources((resource) => resource.client === client);
 }
 
-let interrupted = false;
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
     if (interrupted) process.exit(1);
@@ -457,7 +469,8 @@ async function waitForJob(client, projectId, job, kind) {
       throw new Error(`${kind} did not finish within ${JOB_WAIT_TIMEOUT_MS} ms (status ${latest.status}).`);
     }
     // The deadline also bounds a status request that never answers.
-    const remainingMs = Math.max(1_000, JOB_WAIT_TIMEOUT_MS - (performance.now() - started));
+    // AbortSignal.timeout requires an integer delay.
+    const remainingMs = Math.max(1_000, Math.ceil(JOB_WAIT_TIMEOUT_MS - (performance.now() - started)));
     const { payload } = await client.json(
       "GET",
       `/api/projects/${projectId}/jobs/${job.id}`,
@@ -609,15 +622,17 @@ async function runScenario(label, baseUrl) {
   try {
     await client.json("GET", "/api/health/live");
     await client.json("POST", "/api/auth/login", { password });
-    const created = await trackedCreation(client.json("POST", "/api/projects", {
-      name: `LLM kvalitets-eval ${label} ${runId}`,
-      customer_name: fixture.customer_name,
-      description: fixture.description,
-      industry: fixture.industry,
-      selected_service_ids: [],
-    }));
-    projectId = created.payload.id;
-    trackResource(client, "project", projectId);
+    projectId = await trackedCreation(async () => {
+      const created = await client.json("POST", "/api/projects", {
+        name: `LLM kvalitets-eval ${label} ${runId}`,
+        customer_name: fixture.customer_name,
+        description: fixture.description,
+        industry: fixture.industry,
+        selected_service_ids: [],
+      });
+      trackResource(client, "project", created.payload.id);
+      return created.payload.id;
+    });
     result.project_id = projectId;
 
     result.uploads.push(
@@ -645,11 +660,14 @@ async function runScenario(label, baseUrl) {
       description: "Temporary service description for LLM-as-judge evaluation.",
       title: "Hybrid cloud service description",
     });
-    const serviceCreated = await trackedCreation(client.request("POST", "/api/service-descriptions", {
-      body: serviceForm,
-    }));
-    const servicePayload = await serviceCreated.response.json().catch(() => ({}));
-    trackResource(client, "service", servicePayload.service?.id ?? null);
+    const { serviceCreated, servicePayload } = await trackedCreation(async () => {
+      const created = await client.request("POST", "/api/service-descriptions", {
+        body: serviceForm,
+      });
+      const payload = await created.response.json().catch(() => ({}));
+      trackResource(client, "service", payload.service?.id ?? null);
+      return { serviceCreated: created, servicePayload: payload };
+    });
     if (!serviceCreated.response.ok) {
       throw new Error(
         `service description failed ${serviceCreated.response.status}: ${
