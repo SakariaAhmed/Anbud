@@ -1,5 +1,6 @@
 import "server-only";
 
+import { errorRequestId } from "@/lib/server/safe-errors";
 import type { ProjectJobKind } from "@/lib/types";
 
 /** Room for the terminal write and result recovery after a workflow deadline. */
@@ -89,11 +90,15 @@ export type ProjectJobRunOutcome = {
 /** A run that failed after it started, carrying what it left behind. */
 export class ProjectJobRunError extends Error {
   readonly outcome: ProjectJobRunOutcome;
+  /** The backend's request id, kept visible to safeErrorTelemetry. */
+  declare readonly request_id?: string;
 
   constructor(cause: unknown, outcome: ProjectJobRunOutcome) {
     super(cause instanceof Error ? cause.message : "Prosjektjobben feilet.", { cause });
     this.name = "ProjectJobRunError";
     this.outcome = outcome;
+    const requestId = errorRequestId(cause);
+    if (requestId) this.request_id = requestId;
   }
 }
 

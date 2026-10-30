@@ -13,8 +13,10 @@ const jiti = createJiti(path.join(frontendRoot, "project-job-worker-budget-tests
 });
 const {
   PROJECT_JOB_WORKER_JOB_MARGIN_MS,
+  ProjectJobRunError,
   runProjectJobsWithinBudget,
 } = jiti(path.join(frontendRoot, "lib/server/project-job-worker-budget.ts"));
+const { errorRequestId, safeErrorTelemetry } = jiti(path.join(frontendRoot, "lib/server/safe-errors.ts"));
 
 const minute = 60_000;
 const timeouts = {
@@ -252,4 +254,29 @@ test("closed release claims stop the scan without exposing backend details", asy
 
   assert.deepEqual(claimed, ["a"]);
   assert.deepEqual(results, [{ job_id: "a", status: "failed", error: "Jobben feilet." }]);
+});
+
+test("a wrapped terminal-write failure keeps the backend request id for telemetry", () => {
+  const outcome = { terminalPersisted: false, workflowAbandoned: true };
+  const direct = new ProjectJobRunError(
+    Object.assign(new Error("terminal write failed"), { request_id: "req_7f3a9c" }),
+    outcome,
+  );
+  assert.equal(errorRequestId(direct), "req_7f3a9c");
+  assert.equal(safeErrorTelemetry(direct).request_id, "req_7f3a9c");
+
+  const fromHeaders = new ProjectJobRunError(
+    Object.assign(new Error("terminal write failed"), {
+      headers: new Headers({ "x-request-id": "pgrst-42" }),
+    }),
+    outcome,
+  );
+  assert.equal(errorRequestId(fromHeaders), "pgrst-42");
+
+  const unsafe = new ProjectJobRunError(
+    Object.assign(new Error("terminal write failed"), { request_id: "not safe <id>" }),
+    outcome,
+  );
+  assert.equal(errorRequestId(unsafe), null, "only sanitized ids are copied");
+  assert.equal("request_id" in unsafe, false);
 });
