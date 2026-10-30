@@ -758,3 +758,36 @@ test("council: repeated cells are ambiguous, fully verbatim stitching stays cert
   ]);
   assert.doesNotMatch(table.entry.answerExcerpt, /¦/u);
 });
+
+test("council: wrapped prose, ID rows, repeated exact quotes and stitched refusals stay uncertain", () => {
+  const doc = (lines) => ({ ...solutionDocument, raw_text: ["[[SIDE:5]]", ...lines].join("\n") });
+  const req = (id, text) => ({ ...unansweredRequirement, id, text, heading: "" });
+  const bind = (entry, quote, lines) => bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc(lines) });
+  const prose = "Leverandøren beskriver her hvordan tjenestene leveres, driftes og følges opp gjennom hele avtaleperioden med";
+  // B1: consecutive capitalised prose lines are not table rows.
+  const sso = req("SIK-02", "Løsningen skal støtte pålogging med Microsoft Entra ID til kundens SSO-portal for administratorer.");
+  const wrapped = bind(sso, "Entra ID og pålogging til kundens sentrale SSO-portal for administratorer.", [
+    prose, "oppdragsgiver.", "Vi tilbyr ikke integrasjon mellom Microsoft", "Entra ID og pålogging til kundens sentrale", "SSO-portal for administratorer.",
+  ]);
+  assert.notEqual(wrapped?.uncertain, false);
+  // B2: a preceding answer row naming an ID is not a heading.
+  const login = req("SIK-03", "Løsningen skal støtte SSO via Entra ID.");
+  const rows = bind(login, "Vi svarer på henvendelser på telefon hele døgnet.", [
+    prose, "oppdragsgiver.", "| SIK-03 | SSO via Entra ID støttes ikke |", "| TJN-01 | Vi svarer på henvendelser på telefon hele døgnet. |",
+  ]);
+  assert.equal(rows, null);
+  // B3: an exact quote occurring in several rows is ambiguous.
+  const pentest = req("SIK-06", "Årlig penetrasjonstest skal inngå i den faste månedsprisen.");
+  const repeated = bind(pentest, "Inngår i den faste månedsprisen uten tillegg", [
+    "| Overvåking | Inngår i den faste månedsprisen uten tillegg |",
+    "| Penetrasjonstest | Faktureres etter medgått tid |",
+    "| Sårbarhetsskanning | Inngår i den faste månedsprisen uten tillegg |",
+  ]);
+  assert.notEqual(repeated?.uncertain, false);
+  // B4: a stitched quote including a refusal is never certain.
+  const backup = req("DAT-02", "Sikkerhetskopier skal oppbevares i 90 dager, og gjenoppretting skal skje innen fire timer.");
+  const stitched = bind(backup, "Sikkerhetskopier oppbevares i 90 dager i et separat datasenter. Gjenoppretting innen fire timer tilbys ikke.", [
+    "Sikkerhetskopier oppbevares i 90 dager i et separat datasenter.", "", "Datasenteret er sertifisert etter ISO 27001.", "", "Gjenoppretting innen fire timer tilbys ikke.",
+  ]);
+  assert.notEqual(stitched?.uncertain, false);
+});

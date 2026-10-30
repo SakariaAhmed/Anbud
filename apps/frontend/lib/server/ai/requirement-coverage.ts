@@ -2850,10 +2850,10 @@ export function validateRequirementCoverageBatchRows(input: {
 /**
  * Marks boundaries around reliable structure as the PDF and DOCX parsers
  * write it: a numbered heading line ("9.6 Kontraktsforhold") and a run of
- * two or more short unpunctuated lines (table rows such as "P2 Høy 1 time
- * 12 timer"). A single short line is a wrapped sentence ("Vi tilbyr ikke
- * integrasjon mellom\nMicrosoft Entra ID …") and stays joined, as does
- * every line of a narrow-column document.
+ * two or more short unpunctuated lines carrying figures (table rows such as
+ * "P2 Høy 1 time 12 timer"). Lines without figures may be wrapped prose
+ * ("Vi tilbyr ikke integrasjon mellom Microsoft\nEntra ID og …") and stay
+ * joined, as does every line of a narrow-column document.
  */
 function markShortLines(value: string) {
   const lines = value.split("\n");
@@ -2873,7 +2873,7 @@ function markShortLines(value: string) {
   const row = lines.map((line, index) => {
     const text = line.trim();
     const next = lines[index + 1]?.trim() ?? "";
-    return !narrow && structural(text) && !heading(text) && /^[\p{Lu}\d]/u.test(next);
+    return !narrow && structural(text) && !heading(text) && /\d/u.test(text) && /^[\p{Lu}\d]/u.test(next);
   });
   let previousMarked = false;
   return lines
@@ -3352,7 +3352,9 @@ function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentD
   };
   const exact = find(normalizedQuote);
   if (exact) {
-    yield { ...exact, partial: false };
+    // A quote occurring more than once ("Inngår i den faste månedsprisen" in
+    // several rows) cannot show which row answers the requirement.
+    yield { ...exact, partial: find(normalizedQuote, true) === null };
     return;
   }
   const parts = normalizedQuote
@@ -3363,9 +3365,12 @@ function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentD
   // elision between real text): nothing was invented.
   const verbatim = parts.filter((part) => part.length >= 12 && find(part) !== null);
   const covered = verbatim.reduce((total, part) => total + part.length, 0);
+  // Only one part is bound, so a refusal or limit in another ("…
+  // Gjenoppretting innen fire timer tilbys ikke.") must keep it uncertain.
   const allVerbatim =
     parts.every((part) => part.length < 12 || verbatim.includes(part)) &&
-    covered >= 0.9 * parts.reduce((total, part) => total + part.length, 0);
+    covered >= 0.9 * parts.reduce((total, part) => total + part.length, 0) &&
+    !parts.some((part) => NEGATION.test(part) || LIMITING.test(part));
   const fragments = parts
     .filter((part) => part.length >= VERIFIED_QUOTE_MIN_CHARS)
     .sort((left, right) => right.length - left.length);
@@ -3477,22 +3482,29 @@ function bindSolutionQuoteSpan(
   const ownAt = solution.flat.indexOf(own, Math.max(0, start - VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS));
   // Up to three cells back: a table's header row sits between its rows and
   // the section heading.
-  // Only a cell naming the requirement's own ID: shared vocabulary in a
-  // neighbouring row ("SSO via Entra ID | Støttes ikke") is another answer.
-  const namesRequirement = (cell: string) =>
-    cell.length <= 120 &&
-    new RegExp(`(?<![\\p{L}\\p{N}-])${input.entry.id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}]|\\.\\d)`, "u").test(cell);
-  const heading =
-    ownAt > 0
-      ? (solution.flat
-          .slice(Math.max(0, ownAt - 400), ownAt)
-          .split("¦")
-          .map((cell) => cell.trim())
-          .filter(Boolean)
-          .slice(-3)
-          .reverse()
-          .find(namesRequirement) ?? "")
-      : "";
+  // Only a numbered section heading naming the requirement's own ID; the
+  // search stops at a cell naming another requirement ("| SIK-03 | Støttes
+  // ikke |" is another row's answer, not a heading).
+  const idPattern = (id: string) =>
+    new RegExp(`(?<![\\p{L}\\p{N}-])${id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}]|\\.\\d)`, "u");
+  const ownId = idPattern(input.entry.id);
+  let heading = "";
+  if (ownAt > 0) {
+    const cells = solution.flat
+      .slice(Math.max(0, ownAt - 400), ownAt)
+      .split("¦")
+      .map((cell) => cell.trim())
+      .filter(Boolean)
+      .slice(-3)
+      .reverse();
+    for (const cell of cells) {
+      if (ownId.test(cell)) {
+        if (cell.length <= 120 && /^\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Lu}/u.test(cell)) heading = cell;
+        break;
+      }
+      if (/(?<![\p{L}\p{N}-])[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?![\p{L}\p{N}])/u.test(cell)) break;
+    }
+  }
   const headingNamesRequirement = heading.length > 0;
   const ownShared = sharedTerms(baseTerms, own).shared;
   if (ownShared === 0 && !headingNamesRequirement) return null;
