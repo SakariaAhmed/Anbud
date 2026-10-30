@@ -543,10 +543,20 @@ export function applyRequirementCorrections(
         // A bare pronoun ordinal ("den siste") after several requirements in
         // the sentence ("K-2 og K-3 er brukt to ganger, og den siste får …")
         // does not show which requirement it belongs to.
-        const namedBefore = new Set(subjects({
+        // Only the clause the ordinal refers to: the nearest comma-separated
+        // clause before it that names a requirement ("K-2 beholder sin ID, K-3
+        // er brukt to ganger, og den siste …" refers to K-3 alone).
+        const ordinalAt = ordinalMatch?.index ?? 0;
+        const clauseIds = (from: number, to: number) => new Set(subjects({
           text: sentence.text,
-          ids: sentence.ids.filter(({ at }) => at < renumberMatch.index && !inAside(at)),
+          ids: sentence.ids.filter(({ at }) => at >= from && at < to && !inAside(at)),
         }, known()));
+        let namedBefore = new Set<string>();
+        for (let end = ordinalAt; end > 0 && namedBefore.size === 0;) {
+          const start = sentence.text.lastIndexOf(",", end - 1) + 1;
+          namedBefore = clauseIds(start, end);
+          end = start - 1;
+        }
         if (ordinalMatch?.[3] && namedBefore.size > 1) {
           throw new WorkflowPreconditionError(
             `Kravrettelsen kan ikke brukes entydig: ny krav-ID ${renumber} kan gjelde ${[...namedBefore].join(", ")}. Avklar hvilket krav rettelsen gjelder.`,
