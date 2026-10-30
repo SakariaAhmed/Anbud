@@ -528,21 +528,52 @@ test("a decline names the delivery, not an option the requirement may forbid", a
   const { answerExplicitlyDeclinesRequirement: declines } = await load(
     "lib/server/requirements/answer-quality.ts",
   );
+  const positive = "Leverandøren skal levere dokumentasjon og telefonstøtte.";
   for (const excluded of [
     "TLS 1.0 og 1.1 støttes ikke.",
     "Data leveres ikke utenfor EU/EØS.",
     "Kravet dekkes ikke bare av X, men også av Y.",
   ]) {
-    assert.equal(declines(excluded), false, excluded);
+    assert.equal(declines(excluded, positive), false, excluded);
   }
   for (const declined of [
     "Dette leveres ikke som opsjon.",
-    "Dokumentasjon leveres ikke.",
-    "Vi har vurdert behovet. Telefonstøtte tilbys ikke.",
     "Kravet inngår ikke i leveransen.",
   ]) {
     assert.equal(declines(declined), true, declined);
   }
+  for (const declined of [
+    "Dokumentasjon leveres ikke.",
+    "Vi har vurdert behovet. Telefonstøtte tilbys ikke.",
+  ]) {
+    assert.equal(declines(declined, positive), true, declined);
+    // Without the requirement, a noun subject may be an excluded option.
+    assert.equal(declines(declined), false, declined);
+  }
+  // The requirement asks for the exclusion: answering it is compliance.
+  assert.equal(
+    declines("Usikre protokoller støttes ikke.", "Løsningen skal ikke støtte usikre protokoller."),
+    false,
+  );
+});
+
+test("a restriction in a later section does not qualify the answer", () => {
+  const doc = (text) => ({ ...solutionDocument, raw_text: `[[SIDE:4]]\n${text}` });
+  const storage = { ...unansweredRequirement, id: "LAG-01", heading: "", text: "Alle kundedata skal ha kryptert lagring i Norge." };
+  const bind = (raw) =>
+    bindVerifiedSolutionQuote({
+      entry: storage,
+      quote: "Kryptert lagring av alle kundedata leveres i Norge.",
+      assessment: "Godt",
+      solutionDocument: doc(raw),
+    });
+  const answer = "Kryptert lagring av alle kundedata leveres i Norge. Dette er standardfunksjonalitet.";
+  const separate = bind(`## 4 Lagring\n\n${answer}\n\n## 5 Tilleggstjenester\n\nTelefonstøtte tilbys ikke.`);
+  assert.ok(separate);
+  assert.notEqual(separate.uncertain, true);
+  // The same restriction within the paragraph still qualifies the answer.
+  const same = bind(`## 4 Lagring\n\n${answer} Telefonstøtte tilbys ikke.`);
+  assert.equal(same?.uncertain, true);
 });
 
 test("a quote matches Docling Markdown text across a heading marker", async () => {

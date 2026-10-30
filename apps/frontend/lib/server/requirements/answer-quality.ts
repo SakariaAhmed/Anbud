@@ -2915,7 +2915,7 @@ export function requirementAnswerQualityIssues(
     issues.push("weak_mandatory_commitment");
   }
 
-  if (mandatory && answerExplicitlyDeclinesRequirement(normalizedAnswer)) {
+  if (mandatory && answerExplicitlyDeclinesRequirement(normalizedAnswer, entry.text)) {
     issues.push("mandatory_requirement_declined");
   }
 
@@ -3725,22 +3725,33 @@ export function answerHasSelfContainedCoverage(
   );
 }
 
-// "X støttes ikke" declines only when X is the delivery itself: a pronoun or a
+// "X støttes ikke" declines only when X is the delivery itself: a pronoun or
+// delivery noun, or, given a requirement that is not itself a prohibition, a
 // short sentence-initial noun phrase. A versioned option ("TLS 1.0 støttes
-// ikke"), a scope limit ("leveres ikke utenfor EU") or "ikke bare" excludes
-// something the requirement may forbid and is not a decline.
+// ikke"), a scope limit ("leveres ikke utenfor EU"), "ikke bare", or an
+// exclusion the requirement asks for ("Løsningen skal ikke støtte usikre
+// protokoller" answered "Usikre protokoller støttes ikke") is not a decline.
 const SUBJECT_DECLINE =
   /(?:^|[.;:!?]\s+)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+)\s+(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via)\b)/giu;
+const DELIVERY_SUBJECT =
+  /^(?:dette|det|denne|disse|kravet|funksjonen|funksjonaliteten|tjenesten|leveransen|kontrollen)$/iu;
+const PROHIBITION =
+  /\b(?:skal|må|kan|bør)\s+ikke\b|\bikke\s+(?:tillatt|tillates|benyttes|brukes|forekomme)\b|\b(?:forbudt|uakseptabelt)\b/iu;
 
-function answerDeclinesWithSubject(text: string) {
-  return Array.from(text.matchAll(SUBJECT_DECLINE)).some(
-    (match) => !/\b(?:og|eller|men|samt)\b/iu.test(match[1] ?? ""),
-  );
+function answerDeclinesWithSubject(text: string, requirement: string | undefined) {
+  const nounSubjects = requirement !== undefined && !PROHIBITION.test(normalizePageText(requirement));
+  return Array.from(text.matchAll(SUBJECT_DECLINE)).some((match) => {
+    const subject = (match[1] ?? "").trim();
+    if (/\b(?:og|eller|men|samt)\b/iu.test(subject)) return false;
+    return DELIVERY_SUBJECT.test(subject) || nounSubjects;
+  });
 }
 
-export function answerExplicitlyDeclinesRequirement(value: string) {
+/** Whether the answer declines the requirement. Pass the requirement text
+ * when known: without it, only a decline of the delivery itself counts. */
+export function answerExplicitlyDeclinesRequirement(value: string, requirement?: string) {
   const text = normalizePageText(value);
-  if (answerDeclinesWithSubject(text)) return true;
+  if (answerDeclinesWithSubject(text, requirement)) return true;
   return /\b(?:(?:kravet|leveransen|funksjonen|funksjonaliteten|tjenesten|kontrollen|løsningen)\s+(?:inngår\s+ikke|er\s+ikke\s+inkludert)|(?:inngår\s+ikke|er\s+ikke\s+inkludert)\s+i\s+(?:leveransen|tilbudet|scope|omfanget)|ikke\s+leveres|kan\s+ikke\s+(?:levere|støtte|oppfylle|tilby)|utenfor\s+scope|må\s+håndteres\s+av\s+kunden|not\s+included\s+in\s+(?:the\s+)?(?:delivery|offer|scope)|out\s+of\s+scope|cannot\s+(?:deliver|support|meet))\b/i.test(
     text,
   );

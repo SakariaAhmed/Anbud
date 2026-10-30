@@ -2604,7 +2604,7 @@ export function correctCoverageAssessmentWithSourceEvidence(input: {
   const hasAttachmentBackedAnswer =
     answerIsAttachmentBackedRequirementAnswer(answerEvidence);
   const explicitlyDeclinesRequirement =
-    answerExplicitlyDeclinesRequirement(answerEvidence);
+    answerExplicitlyDeclinesRequirement(answerEvidence, input.entry.text);
   const defersRequirementConfirmation =
     answerDefersRequirementConfirmation(answerEvidence);
   const mandatoryRequirement = isMandatoryRequirementEntry(input.entry);
@@ -2875,8 +2875,29 @@ function normalizeQuoteMatchText(value: string) {
 
 const normalizedSolutionTextCache = new WeakMap<
   ProjectDocumentDetail,
-  { flat: string; whole: string; pages: Array<{ page: number; text: string }> }
+  {
+    flat: string;
+    whole: string;
+    paragraphStarts: number[];
+    pages: Array<{ page: number; text: string }>;
+  }
 >();
+
+/** Where each paragraph or heading-led section of the raw text begins in
+ * its flattened form: flattening removes the blank lines between them. */
+function paragraphStartOffsets(rawText: string, flat: string) {
+  const starts: number[] = [];
+  let cursor = 0;
+  for (const paragraph of rawText.split(/\n[ \t]*\n|\n(?=[ \t]*#{1,6}[ \t])/u)) {
+    const head = flattenQuoteText(paragraph).slice(0, 40);
+    if (!head) continue;
+    const at = flat.indexOf(head, cursor);
+    if (at < 0) continue;
+    starts.push(at);
+    cursor = at + head.length;
+  }
+  return starts;
+}
 
 function normalizedSolutionText(document: ProjectDocumentDetail) {
   const cached = normalizedSolutionTextCache.get(document);
@@ -2889,6 +2910,7 @@ function normalizedSolutionText(document: ProjectDocumentDetail) {
   const value = {
     flat,
     whole: flat.toLocaleLowerCase("nb"),
+    paragraphStarts: paragraphStartOffsets(document.raw_text, flat),
     pages: pages.map((page) => ({
       page: page.page,
       text: normalizeQuoteMatchText(page.text),
@@ -3057,7 +3079,13 @@ const REFERRING_START = /^(?:dette|det|denne|disse|dette gjelder|unntatt|unntak|
  * back to it or concerns the requirement is added. `complete` is false when
  * a boundary or a qualifying follow-up was out of reach.
  */
-function answerPassage(flat: string, start: number, end: number, requirement: TermSet) {
+function answerPassage(
+  flat: string,
+  start: number,
+  end: number,
+  requirement: TermSet,
+  paragraphStarts: number[] = [],
+) {
   const boundaries = sentenceBoundaries(flat);
   const before = boundaries.filter((at) => at < start).at(-1);
   const after = boundaries.find((at) => at >= end - 1);
@@ -3133,9 +3161,11 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
     let cursor = next.end;
     let budget = VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS - next.text.length;
     while (complete && !next.isCell && budget > 0) {
-      if (/^\s*(?:¦|\n\s*\n)/u.test(flat.slice(cursor))) break;
+      if (/^\s*¦/u.test(flat.slice(cursor))) break;
       const further = nextSegment(flat, boundaries, cursor);
       if (!further || !further.adjacent) break;
+      // A new paragraph or section ("Tilleggstjenester") is another answer.
+      if (paragraphStarts.some((at) => at >= cursor && at < further.end)) break;
       if (NEGATION.test(further.text) || LIMITING.test(further.text)) complete = false;
       if (further.isCell) break;
       budget -= further.text.length;
@@ -3241,6 +3271,7 @@ export function bindVerifiedSolutionQuote(input: {
     start,
     start + normalizedQuote.length,
     baseTerms,
+    solution.paragraphStarts,
   );
   const { complete, setAsideNegation } = located;
   let { own, passage } = located;
