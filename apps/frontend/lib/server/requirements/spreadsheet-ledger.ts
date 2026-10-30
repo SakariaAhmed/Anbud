@@ -20,7 +20,9 @@ const HEADER_MATCHERS = {
   answer: /^(?:leverandørens\s+(?:svar|besvarelse|kommentar)|tilbyders\s+(?:svar|besvarelse|kommentar)|svar|besvarelse|henvisning\s+i\s+tilbudet|oppfylt(?:\s*\(?\s*ja\s*\/\s*nei\s*\)?)?)$/iu,
 } as const;
 // A sheet with price or quantity columns is a price form, not a matrix.
-const PRICE_HEADER = /^(?:pris|enhetspris|antall|enhet|sum|beløp|totalpris|timepris)\b/iu;
+// "Enhet" or "Antall" alone is not enough: an organisational-unit column
+// is common in requirement matrices.
+const PRICE_HEADER = /^(?:pris|enhetspris|sum|beløp|totalpris|timepris|pris\s+per\b.*)$/iu;
 type Column = keyof typeof HEADER_MATCHERS;
 
 // The ID column is known from its header, so plain numbers ("7", "3.2") are
@@ -157,8 +159,14 @@ function matrixRows(document: Pick<ProjectDocumentDetail, "file_format" | "raw_t
       }
       if (REQUIREMENT_ID_PATTERN.test(id)) {
         const nextId = (sheet.rows[index + 1]?.cells.get(columns.id!) ?? "").trim();
+        // A numbered heading row, not a parent requirement that states one.
         const isNumberedSection =
-          /^\d{1,4}(?:\.\d{1,3})*$/u.test(id) && nextId.startsWith(`${id}.`) && !cell(columns.type) && !cell(columns.weight);
+          /^\d{1,4}(?:\.\d{1,3})*$/u.test(id) &&
+          nextId.startsWith(`${id}.`) &&
+          !cell(columns.type) &&
+          !cell(columns.weight) &&
+          text.length <= 80 &&
+          !/\b(?:skal|bør|må)\b/iu.test(text);
         if (isNumberedSection) {
           section = [id, text || cell(columns.title)].filter(Boolean).join(" ");
           continue;

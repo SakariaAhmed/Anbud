@@ -343,3 +343,42 @@ test("supplier answer columns never stand in for missing requirement text", () =
   // The row without readable requirement text stays in the inventory.
   assert.deepEqual(spreadsheetRequirementIds(document), ["K-1", "K-2"]);
 });
+
+test("round 6 (second member) probes: questions, row subjects, bound verbs, replaced wording, matrices", () => {
+  const k = (n, text) => ({ id: `K-${n}`, text: text ?? `Leverandøren skal oppfylle krav nummer ${n} fullt ut.`, pages: [1], heading: "4" });
+  const ledger = [k(2), k(3), k(4), k(5), k(6), k(7)];
+  const ids = (text, source = ledger, raw) => applyRequirementCorrections(source, raw ?? `8 Rettelser\n${text}`).ledger.map((entry) => entry.id);
+  // A bidder question never withdraws.
+  assert.deepEqual(ids("Kan K-4 strykes dersom vi oppfyller K-3?\nK-7 utgår."), ["K-2", "K-3", "K-4", "K-5", "K-6"]);
+  // Every ID of a row's subject cell is withdrawn.
+  assert.deepEqual(ids("| 1 | K-6 og K-7 | Kravene utgår som følge av endret omfang. |"), ["K-2", "K-3", "K-4", "K-5"]);
+  // A verb in a relative clause or tied to another ID does not withdraw.
+  assert.ok(ids("K-4: Data som utgår av arkivet skal slettes etter ett år.\nK-7 utgår.").includes("K-4"));
+  const changed = applyRequirementCorrections(ledger, "8 Rettelser\nK-2 endres som følge av at K-3 utgår: «Leverandøren skal levere ukentlige rapporter.»").ledger;
+  assert.equal(changed.find((entry) => entry.id === "K-2").text, "Leverandøren skal levere ukentlige rapporter.");
+  // "utgår og erstattes av: «…»" changes the wording.
+  const replaced = applyRequirementCorrections(ledger, "8 Rettelser\nK-6 utgår og erstattes av: «Leverandøren skal tilby døgnvakt.»").ledger;
+  assert.equal(replaced.find((entry) => entry.id === "K-6")?.text, "Leverandøren skal tilby døgnvakt.");
+  // Ranges and further phrasings.
+  assert.deepEqual(ids("Kravene K-4 til K-6 utgår."), ["K-2", "K-3", "K-7"]);
+  assert.deepEqual(ids("K-3 slettes.\nK-5 er utgått."), ["K-2", "K-4", "K-6", "K-7"]);
+  // An original requirement repeated unquoted in an "Opprinnelig tekst" column stays.
+  const raw = [
+    "4 Krav",
+    "K-2 Leverandøren skal oppfylle krav nummer 2 fullt ut.",
+    "",
+    "8 Rettelser",
+    "| Nr. | Krav | Opprinnelig tekst | Ny tekst |",
+    "| 1 | K-2 | Leverandøren skal oppfylle krav nummer 2 fullt ut. | Kravet endres. Ny tekst: «Leverandøren skal oppfylle krav nummer 2 innen 30 dager.» |",
+  ].join("\n");
+  const kept = applyRequirementCorrections([k(2)], raw).ledger;
+  assert.equal(kept[0]?.text, "Leverandøren skal oppfylle krav nummer 2 innen 30 dager.");
+
+  const matrix = [
+    "Ark: Krav",
+    "Rad 1: A1: Nr | B1: Kravtekst | C1: Enhet",
+    "Rad 2: A2: 2 | B2: Leverandøren skal tilby opplæring. Opplæringen skal omfatte: | C2: IT",
+    "Rad 3: A3: 2.1 | B3: Grunnkurs for alle brukere. | C3: IT",
+  ].join("\n");
+  assert.deepEqual(buildSpreadsheetRequirementLedger({ file_format: "xlsx", raw_text: matrix }).map((entry) => entry.id), ["2", "2.1"]);
+});

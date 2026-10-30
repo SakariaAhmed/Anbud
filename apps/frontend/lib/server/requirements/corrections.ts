@@ -15,14 +15,18 @@ const CORRECTIONS_HEADING =
 const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3})?(?:\.[a-z])?\b/gu;
 const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/gu;
 const WITHDRAW_VERB =
-  /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?)\b|\b(?:slettes|fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
-const CHANGE_VERB = /\b(?:endres|erstattes(?!\s+av\s+(?:et\s+)?nytt)|ny\s+tekst|lyder\s+nå|skal\s+nå\s+lyde)\b/giu;
+  /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|er\s+utgått|slettes)\b|\b(?:fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
+const CHANGE_VERB = /\b(?:endres|er\s+endret\s+til|erstattes(?!\s+av\s+(?:et\s+)?nytt)|ny\s+tekst|lyder\s+nå|skal\s+(?:nå\s+)?lyde)\b/giu;
 const ADDED = /\b(?:nytt\s+krav|legges(?:\s+ikke)?\s+til|tilføyes)\b/iu;
-const RENUMBERED = /\bny\s+(?:krav-?)?id\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4})\b/iu;
+const RENUMBERED = /\bny\s+(?:krav-?)?id\s*:?\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4})\b/iu;
 const ANSWER = /^\s*svar\s*:/iu;
 // An ID named as context rather than as the subject of the action.
 const CONTEXT_BEFORE_ID =
-  /(?:endringen\s+i|jf\.?|jfr\.?|i\s+henhold\s+til|se|som\s+følge\s+av|nytt\s+krav|erstattes\s+av|i\s+stedet\s+for|kontrollene\s+i|som\s+i)\s*$/iu;
+  /(?:endringen\s+i|jf\.?|jfr\.?|i\s+henhold\s+til|se|som\s+følge\s+av(?:\s+at)?|nytt\s+krav|erstattes\s+av|i\s+stedet\s+for|kontrollene\s+i|som\s+i|dersom\s+vi\s+oppfyller)\s*$/iu;
+// A withdrawal verb belongs to the subject right before it ("K-4 utgår",
+// "Kravene K-4 og K-5 utgår", "Kravet utgår", a cell "Utgår"), not to a
+// relative or subordinate clause ("Data som utgår av arkivet").
+const WITHDRAW_BINDING_GAP = /^[\s,:;()–-]*(?:(?:og|samt|eller)\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}[\s,]*|\([^)]{0,40}\)\s*|(?:skal|må|vil)\s+)*$/iu;
 // A new statement starts at a table row, a blank line, a bullet or numbered
 // line, a Markdown table row, or a line led by a requirement ID.
 const STATEMENT_START =
@@ -100,6 +104,20 @@ function idPrefix(id: string) {
   return id.replace(/-\d.*$/u, "");
 }
 
+/** Expands an ID range with a shared prefix ("K-4 til K-6") into all IDs. */
+function expandIdRanges(text: string) {
+  return text.replace(
+    /\b([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*)-(\d{1,4})\s+(?:til|–|-)\s+\1-(\d{1,4})\b/gu,
+    (match, prefix: string, from: string, to: string) => {
+      const start = Number(from);
+      const end = Number(to);
+      if (!(end > start && end - start <= 50)) return match;
+      const width = from.length;
+      return Array.from({ length: end - start + 1 }, (_, index) => `${prefix}-${String(start + index).padStart(width, "0")}`).join(", ");
+    },
+  );
+}
+
 /** Sentences of a masked statement, each with its IDs and their positions. */
 function sentences(masked: string) {
   // Sentences, table cells and contrasting clauses ("K-1 beholdes, mens K-2
@@ -162,9 +180,16 @@ export function applyRequirementCorrections(
   // the section and a row extracted from it.
   const unquoted = (text: string) => normalized(maskQuotes(text).masked.replace(/«#\d+»/gu, "«»"));
   const maskedSection = unquoted(section);
+  // Text that also occurs outside the chapter is an original requirement,
+  // even when an "Opprinnelig tekst" column repeats it unquoted.
+  const outsideSection = normalized(rawText.replace(section, " "));
   const isCorrectionRow = (entry: RequirementLedgerEntry) => {
+    const plain = normalized(entry.text);
+    if (plain.length >= 12 && outsideSection.includes(plain)) return false;
     const text = unquoted(entry.text);
     if (text.length >= 12) return maskedSection.includes(text);
+    // A fragment such as ": «…»" or "." left from a correction line.
+    if (/«#?\d*»/u.test(text) && plain.length >= 12) return normalized(section).includes(plain);
     return (
       text.length > 0 &&
       maskedSection.includes(entry.id.toLocaleLowerCase("nb")) &&
@@ -185,7 +210,8 @@ export function applyRequirementCorrections(
   let applied = 0;
 
   for (const statement of statements(section)) {
-    const { masked, quotes } = maskQuotes(statement);
+    const { masked: maskedRaw, quotes } = maskQuotes(statement);
+    const masked = expandIdRanges(maskedRaw);
     if (ANSWER.test(masked)) {
       // Answers to bidder questions clarify, they do not rewrite requirements.
       for (const { id } of sentences(masked).flatMap((sentence) => sentence.ids)) {
@@ -198,18 +224,50 @@ export function applyRequirementCorrections(
     }
 
     const statementIds = sentences(masked).flatMap((sentence) => sentence.ids.map(({ id }) => id));
-    let context: string | undefined;
+    let context: string[] | undefined;
     let acted = false;
+    // A bidder question ("Kan K-4 strykes …?") asks; it never acts.
+    const isQuestion = (text: string) => /\?\s*$/u.test(text.trim()) || /^\s*spørsmål\b/iu.test(text);
+    if (isQuestion(masked)) continue;
     for (const sentence of sentences(masked)) {
+      if (isQuestion(sentence.text)) continue;
       const ids = subjects(sentence, known());
-      // A sentence naming no requirement ("Kravet utgår.", "Ny tekst: …")
-      // refers back to the one named before it in the same statement.
-      const own = ids.length ? ids : context ? [context] : [];
-      if (ids.length) context = ids.at(-1);
+      // A sentence naming no requirement ("Kravene utgår.", "Ny tekst: …")
+      // refers back to all requirements named before it in the statement.
+      const own = ids.length ? ids : context ?? [];
+      if (ids.length) context = ids;
 
-      for (const verb of sentence.text.matchAll(WITHDRAW_VERB)) {
+      // "K-6 utgår og erstattes av: «…»" replaces the wording: a change.
+      const replacesWording =
+        /\berstattes\s+av\s*:?\s*«#\d+»/u.test(sentence.text) &&
+        !statementIds.some((id) => !sourceIds.has(id));
+      for (const verb of replacesWording ? [] : sentence.text.matchAll(WITHDRAW_VERB)) {
         if (negatedAt(sentence.text, verb.index!, verb[0].length)) continue;
-        for (const id of own) {
+        // Bound to the subject right before the verb, or opening the cell.
+        const before = sentence.text.slice(0, verb.index!);
+        const lastId = [...before.matchAll(REQUIREMENT_ID)].at(-1);
+        const gap = lastId ? before.slice(lastId.index! + lastId[0].length) : before;
+        const bound =
+          (lastId && WITHDRAW_BINDING_GAP.test(gap)) ||
+          // "For K-5 gjelder følgende: Kravet utgår."
+          (lastId && /[:;]\s*(?:kravet|kravene)\s*$/iu.test(gap)) ||
+          /^\s*(?:kravet|kravene)?\s*(?:\([^)]{0,40}\)\s*)?$/iu.test(lastId ? gap : before);
+        // Subjects right after the verb ("... utgår K-7", "utgår også K-7 og K-8").
+        const following = /^\s*(?:også\s+|dermed\s+)?((?:[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\s*,\s*|\s+og\s+)?)+)/u
+          .exec(sentence.text.slice(verb.index! + verb[0].length))?.[1];
+        const after = [...(following ?? "").matchAll(REQUIREMENT_ID)].map((match) => match[0]).filter((id) => own.includes(id));
+        if (after.length && !(lastId && own.includes(lastId[0]) && WITHDRAW_BINDING_GAP.test(gap))) {
+          for (const id of after) {
+            entries = entries.filter((entry) => entry.id !== id);
+            report.withdrawn.push(id);
+            acted = true;
+          }
+          continue;
+        }
+        // Bound to a context ID ("som følge av at K-3 utgår"): no subject.
+        if (!bound || (lastId && !own.includes(lastId[0]))) continue;
+        const withdrawn = lastId ? own.filter((id) => sentence.ids.some((match) => match.id === id && match.at < verb.index!)) : own;
+        for (const id of withdrawn.length ? withdrawn : own) {
           entries = entries.filter((entry) => entry.id !== id);
           report.withdrawn.push(id);
           acted = true;
