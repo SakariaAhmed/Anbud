@@ -14,25 +14,25 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 // Served from the repository: fetching from Google Fonts at build time
-// failed intermittently on CI runners and blocked releases. Latin subsets
-// as Google Fonts serves them; licences in ./fonts.
+// failed intermittently on CI runners and blocked releases. See
+// ./fonts/README.md for their source and coverage.
 const ibmPlexSans = localFont({
-  src: "./fonts/ibm-plex-sans-latin-variable.woff2",
+  src: "./fonts/ibm-plex-sans-variable.woff2",
   weight: "400 700",
   variable: "--font-ibm-plex-sans",
 });
 
 const displayFont = localFont({
-  src: "./fonts/schibsted-grotesk-latin-variable.woff2",
+  src: "./fonts/schibsted-grotesk-variable.woff2",
   weight: "400 800",
   variable: "--font-schibsted-grotesk",
 });
 
 const ibmPlexMono = localFont({
   src: [
-    { path: "./fonts/ibm-plex-mono-latin-400.woff2", weight: "400" },
-    { path: "./fonts/ibm-plex-mono-latin-500.woff2", weight: "500" },
-    { path: "./fonts/ibm-plex-mono-latin-600.woff2", weight: "600" },
+    { path: "./fonts/ibm-plex-mono-400.woff2", weight: "400" },
+    { path: "./fonts/ibm-plex-mono-500.woff2", weight: "500" },
+    { path: "./fonts/ibm-plex-mono-600.woff2", weight: "600" },
   ],
   variable: "--font-ibm-plex-mono",
 });

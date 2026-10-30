@@ -63,7 +63,7 @@ jobs:
           npm run secrets:scan
           npm test
           npm run lint
-          npm run build
+          NODE_OPTIONS="--require $PWD/scripts/block-google-fonts.cjs" npm run build
 
       - name: Workflow consistency regressions and additive upgrade
         run: node tests/audit-20260905/run.mjs
