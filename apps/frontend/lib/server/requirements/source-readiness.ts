@@ -1,3 +1,5 @@
+import { correctedRequirementIds, withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
+import { spreadsheetRequirementIds } from "@/lib/server/requirements/spreadsheet-ledger";
 import {
   hasReadableRequirementDocumentContent,
   hasRequirementDocumentSignal,
@@ -9,6 +11,10 @@ import {
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 import { explicitIdTableSourceIds } from "@/lib/server/requirements/explicit-id-table-parser";
+import { hasRequirementSignal, hasStandaloneRequirementLanguage, stripAnswerTextFromRequirement } from "@/lib/server/requirements/pdf-layout-ledger";
+import { buildExplicitIdDoclingTextRequirementLedger } from "@/lib/server/requirements/explicit-id-narrative-parser";
+import { stripRequirementChrome } from "@/lib/server/requirements/heading-detection";
+import { escapeRegExp } from "@/lib/server/document-intelligence/text-normalization";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
 
@@ -520,13 +526,16 @@ function requirementMatchCandidates(
   return candidates;
 }
 
-export function canonicalizeRequirementSourceLedger(input: {
+type RequirementSourceLedgerInput = {
   sourceDocuments: ProjectDocumentDetail[];
   requirementLedgerResults: Array<{
     document: Pick<ProjectDocumentDetail, "id">;
     ledger: RequirementLedgerEntry[];
+    originalLedger?: RequirementLedgerEntry[];
   }>;
-}) {
+};
+
+export function canonicalizeRequirementSourceLedger(input: RequirementSourceLedgerInput) {
   const blankEntries = input.requirementLedgerResults.flatMap((result) =>
     result.ledger
       .filter((entry) => !entry.text.trim())
@@ -546,7 +555,10 @@ export function canonicalizeRequirementSourceLedger(input: {
   const formalDescriptors = input.sourceDocuments
     .filter(isFormalRequirementDocument)
     .flatMap(
-      (document) => resultByDocumentId.get(document.id)?.ledger ?? [],
+      (document) => {
+        const result = resultByDocumentId.get(document.id);
+        return [...(result?.ledger ?? []), ...(result?.originalLedger ?? [])];
+      },
     )
     .map(requirementMatchDescriptor);
   const formalIndexes = {
@@ -710,7 +722,8 @@ export function assertExplicitRequirementLedgersComplete(
   const emptyRequirementDocuments = sourceDocuments.filter(
     (document) =>
       isFormalRequirementDocument(document) &&
-      (resultByDocumentId.get(document.id)?.ledger.length ?? 0) === 0
+      (resultByDocumentId.get(document.id)?.ledger.length ?? 0) === 0 &&
+      !allRequirementsWithdrawn(document)
   );
 
   if (emptyRequirementDocuments.length) {
@@ -724,9 +737,15 @@ export function assertExplicitRequirementLedgersComplete(
   const corruptedAuthoritativeInventories = sourceDocuments.flatMap(
     (document) => {
       if (!isFormalRequirementDocument(document)) return [];
-      const expected = explicitIdTableSourceIds(document.raw_text).map(
-        explicitInventoryId,
-      );
+      // Expected after the document's own corrections chapter, so a
+      // withdrawn or renumbered row is not a corruption.
+      // Counted without the corrections chapter (its reference rows are not
+      // requirements); an inventory exists only if the original text has
+      // one, and corrections then adjust it.
+      const sourceIds = explicitIdTableSourceIds(withoutCorrectionsSection(document.raw_text));
+      const expected = sourceIds.length
+        ? correctedRequirementIds(sourceIds, document.raw_text).map(explicitInventoryId)
+        : [];
       if (!expected.length) return [];
 
       const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
@@ -784,13 +803,28 @@ export function assertExplicitRequirementLedgersComplete(
   const incompleteExplicitInventories = sourceDocuments.flatMap((document) => {
     if (!isFormalRequirementDocument(document)) return [];
     const ledger = resultByDocumentId.get(document.id)?.ledger ?? [];
-    const expected = explicitRequirementSourceInventory(document.raw_text);
+    // A spreadsheet's inventory is its requirement matrix's ID column (every
+    // data row, also one whose text could not be read); other sheets (award
+    // criteria such as "K1") are not requirements. Matrix IDs are counted as
+    // written on both sides, so lost rows are caught even for prefixed IDs
+    // ("KD-01") that the generic ID detector does not read. The inventory is
+    // taken after the document's corrections chapter.
+    const matrixIds = spreadsheetRequirementIds(document);
+    const entryIds = (entry: RequirementLedgerEntry) =>
+      matrixIds.length
+        ? [explicitInventoryId(entry.id)].filter(Boolean)
+        : explicitLedgerEntryIds(entry);
+    const expected = matrixIds.length
+      ? correctedRequirementIds(matrixIds, document.raw_text).reduce((counts, id) => {
+          const key = explicitInventoryId(id);
+          return key ? counts.set(key, (counts.get(key) ?? 0) + 1) : counts;
+        }, new Map<string, number>())
+      : correctedExplicitRequirementSourceInventory(document);
     if (expected.size === 0) return [];
 
     const actual = new Map<string, number>();
     for (const entry of ledger) {
-      const ids = explicitLedgerEntryIds(entry);
-      for (const id of ids) {
+      for (const id of entryIds(entry)) {
         actual.set(id, (actual.get(id) ?? 0) + 1);
       }
     }
@@ -841,16 +875,103 @@ function explicitLedgerEntryIds(entry: RequirementLedgerEntry) {
   ];
 }
 
-function explicitRequirementSourceInventory(rawText: string) {
+/** Docling paragraphs must be present in the original source, not merely
+ * mentioned in a correction, before they can establish row identities. */
+function doclingRequirementSourceAnchors(document: ProjectDocumentDetail) {
+  if (!document.structure_map?.length) return [];
+  const source = withoutCorrectionsSection(document.raw_text ?? "").replace(/\s+/gu, " ");
+  return buildExplicitIdDoclingTextRequirementLedger(document, {
+    detectExplicitRequirementIds, stripAnswerTextFromRequirement, stripRequirementChrome,
+    hasRequirementSignal, hasStandaloneRequirementLanguage,
+  }).filter((entry) => entry.sourceExcerpt && source.includes(entry.sourceExcerpt.replace(/\s+/gu, " ").trim()));
+}
+
+/** Original explicit IDs and anchored multiplicity, without correction references. */
+export function originalRequirementSourceIds(document: ProjectDocumentDetail) {
+  const rawText = document.raw_text ?? "";
+  const matrixIds = spreadsheetRequirementIds(document);
+  if (matrixIds.length) return matrixIds;
+  const { expected, rawIds } = explicitRequirementSourceInventoryWithRawIds(withoutCorrectionsSection(rawText));
+  const anchored = new Map<string, number>();
+  for (const entry of doclingRequirementSourceAnchors(document)) {
+    const id = explicitInventoryId(entry.id);
+    anchored.set(id, (anchored.get(id) ?? 0) + 1);
+    rawIds.set(id, entry.id);
+  }
+  // Generic narrative scanning deduplicates references. Separate anchored
+  // paragraphs prove distinct rows even when they repeat the same ID.
+  for (const [id, count] of anchored) expected.set(id, Math.max(expected.get(id) ?? 0, count));
+  return [...expected].flatMap(([id, count]) => Array.from({ length: count }, () => rawIds.get(id) ?? id));
+}
+
+export function allRequirementsWithdrawn(document: ProjectDocumentDetail) {
+  const original = originalRequirementSourceIds(document);
+  if (!original.length || correctedRequirementIds(original, document.raw_text ?? "").length > 0) return false;
+  // The matrix inventory includes its source rows. An explicit-ID inventory
+  // for prose/PDF does not. Docling paragraph anchors prove which wrapped
+  // obligations belong to an explicit requirement; reuse the extraction
+  // parser rather than assigning every following ID-less line to that ID.
+  if (spreadsheetRequirementIds(document).length > 0) return true;
+  let unanchoredSource = withoutCorrectionsSection(document.raw_text ?? "");
+  for (const anchor of doclingRequirementSourceAnchors(document)) {
+    // Remove only the complete source-bound excerpt, so an identical clause
+    // in a separate unnumbered row still prevents an empty-ledger success.
+    if (!anchor.sourceExcerpt) continue;
+    const pattern = anchor.sourceExcerpt.split(/\s+/u).map(escapeRegExp).join("\\s+");
+    unanchoredSource = unanchoredSource.replace(new RegExp(pattern, "gu"), "");
+  }
+  return !unanchoredSource.split(/\r?\n/u)
+    .some((line) => hasRequirementSignal(line) && !detectExplicitRequirementIds(line).length);
+}
+
+/** Apply the same identity matching before and after corrections, so a
+ * customer copy of a withdrawn formal row does not become an active source. */
+export function allCanonicalRequirementsWithdrawn(input: RequirementSourceLedgerInput) {
+  const originals = input.requirementLedgerResults.map((result) => ({
+    ...result,
+    ledger: result.originalLedger ?? result.ledger,
+  }));
+  const originalByDocument = new Map(originals.map((result) => [result.document.id, result.ledger]));
+  // No parsed evidence cannot establish that explicit or unnumbered source
+  // requirements were withdrawn, even if the corrected ledger is empty.
+  if (input.sourceDocuments.some((document) =>
+    !originalByDocument.get(document.id)?.length &&
+    (isFormalRequirementDocument(document) || originalRequirementSourceIds(document).length > 0 ||
+      withoutCorrectionsSection(document.raw_text ?? "").split(/\r?\n/u).some(hasRequirementSignal))
+  )) return false;
+  const canonicalOriginals = canonicalizeRequirementSourceLedger({ ...input, requirementLedgerResults: originals });
+  const documents = new Map(input.sourceDocuments.map((document) => [document.id, document]));
+  return canonicalOriginals.length > 0 && canonicalOriginals.every((entry) => {
+    const document = documents.get(entry.documentId ?? "");
+    return document !== undefined && allRequirementsWithdrawn(document);
+  });
+}
+
+/** The generic explicit-ID inventory after the document's corrections
+ * chapter, so an intended withdrawal or renumbering is not a lost row. */
+function correctedExplicitRequirementSourceInventory(document: ProjectDocumentDetail) {
+  return correctedRequirementIds(originalRequirementSourceIds(document), document.raw_text).reduce((counts, id) => {
+    const key = explicitInventoryId(id);
+    return key ? counts.set(key, (counts.get(key) ?? 0) + 1) : counts;
+  }, new Map<string, number>());
+}
+
+function explicitRequirementSourceInventoryWithRawIds(rawText: string) {
   const expected = new Map<string, number>();
+  const rawIds = new Map<string, string>();
   const structuredRowCounts = new Map<string, number>();
   const unstructuredIds = new Set<string>();
   for (const rawLine of rawText.split(/\r?\n/gu)) {
     const line = rawLine.trim();
     if (!line) continue;
+    const detected = detectExplicitRequirementIds(line);
+    for (const id of detected) {
+      const key = explicitInventoryId(id);
+      if (key && !rawIds.has(key)) rawIds.set(key, id);
+    }
     const lineIds = [
       ...new Set(
-        detectExplicitRequirementIds(line)
+        detected
           .map(explicitInventoryId)
           .filter(Boolean),
       ),
@@ -888,5 +1009,5 @@ function explicitRequirementSourceInventory(rawText: string) {
       }
     }
   }
-  return expected;
+  return { expected, rawIds };
 }

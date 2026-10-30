@@ -33,7 +33,7 @@ const {
   recoverAvailabilityFractionRequirement,
 } = jiti(path.join(frontendRoot, "lib/server/requirements/source-ledger.ts"));
 const { extractRequirementLedgerForDocument } = jiti(
-  path.join(frontendRoot, "lib/server/requirements/extraction.ts"),
+  path.join(frontendRoot, "lib/server/requirements/source-ledger.ts"),
 );
 const { canonicalizeRequirementSourceLedger } = jiti(
   path.join(frontendRoot, "lib/server/requirements/source-readiness.ts"),

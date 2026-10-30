@@ -6,7 +6,12 @@ import { explicitRequirementIdPattern } from "@/lib/server/requirements/id-detec
 import type { ProjectDocumentDetail } from "@/lib/types";
 import { findRequirementOrderOffset, normalizedRequirementOrderSearchText } from "@/lib/server/requirements/mixed-corpus-rules";
 
-function splitDoclingRequirementParagraph(source: string, context: RequirementCorpusParserContext) {
+type DoclingRequirementParserContext = Pick<RequirementCorpusParserContext,
+  "detectExplicitRequirementIds" | "stripAnswerTextFromRequirement" | "stripRequirementChrome" |
+  "hasRequirementSignal" | "hasStandaloneRequirementLanguage"
+>;
+
+function splitDoclingRequirementParagraph(source: string, context: DoclingRequirementParserContext) {
   const ids = context.detectExplicitRequirementIds(source).map((id) => normalizePageText(id).toUpperCase());
   const matches = [...source.matchAll(explicitRequirementIdPattern())].filter((match) =>
     context.detectExplicitRequirementIds(match[0]).some((id) => ids.includes(normalizePageText(id).toUpperCase()))
@@ -33,7 +38,7 @@ function splitDoclingRequirementParagraph(source: string, context: RequirementCo
 /** Keep explicit ID/text boundaries in both separate and merged Docling paragraphs. */
 export function buildExplicitIdDoclingTextRequirementLedger(
   document: ProjectDocumentDetail,
-  context: RequirementCorpusParserContext,
+  context: DoclingRequirementParserContext,
 ): RequirementLedgerEntry[] {
   if (document.file_format !== "pdf") return [];
   const requirements: RequirementLedgerEntry[] = [];
