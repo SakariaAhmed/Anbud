@@ -29,6 +29,8 @@ import {
   regenerateCustomerAnalysisSection,
 } from "@/lib/server/ai";
 import { extractRequirementLedgerForDocument, extractRequirementLedgerWithCorrections } from "@/lib/server/requirements/source-ledger";
+import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
+import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { generateExecutiveSummary } from "@/lib/server/ai/executive-summary";
 import { inferProjectMetadataFromCustomerDocument } from "@/lib/server/ai/document-analysis";
 import {
@@ -245,18 +247,6 @@ export async function buildEvaluationLedgerContext(input: {
     4,
     Math.floor(360 / Math.max(1, readableDocuments.length)),
   );
-  const documentLedgerContext = buildDocumentLedgerContext({
-    artifactType: input.artifactType,
-    ledgers: readableDocuments.map(buildDocumentLedger),
-    maxRequirementsPerLedger: Math.max(
-      2,
-      Math.floor(120 / Math.max(1, readableDocuments.length)),
-    ),
-    maxSectionsPerLedger: Math.max(
-      2,
-      Math.floor(80 / Math.max(1, readableDocuments.length)),
-    ),
-  });
   const requirementLedgerResults = await mapWithConcurrency(
     readableDocuments,
     3,
@@ -267,11 +257,6 @@ export async function buildEvaluationLedgerContext(input: {
           document,
           ledger,
           originalLedger,
-          context: formatEvaluationRequirementLedger({
-            document,
-            ledger,
-            maxEntries: maxLedgerEntriesPerDocument,
-          }),
         };
       } catch (error) {
         assertProjectWorkflowActive();
@@ -294,13 +279,48 @@ export async function buildEvaluationLedgerContext(input: {
         return {
           document,
           ledger: [] as Awaited<ReturnType<typeof extractRequirementLedgerForDocument>>,
-          context: "",
+          originalLedger: [] as Awaited<ReturnType<typeof extractRequirementLedgerForDocument>>,
         };
       }
     },
   );
+  const sourceDocuments = canonicalRequirementSourceDocuments({
+    customerDocument: readableDocuments.find((document) => document.role === "primary_customer_document") ?? null,
+    documents: readableDocuments,
+  });
+  const canonicalLedger = canonicalizeRequirementSourceLedger({ sourceDocuments, requirementLedgerResults });
+  const contextLedgerByDocumentId = new Map(readableDocuments.map((document) =>
+    [document.id, canonicalLedger.filter((entry) => entry.documentId === document.id)] as const,
+  ));
+  const documentLedgerContext = buildDocumentLedgerContext({
+    artifactType: input.artifactType,
+    ledgers: requirementLedgerResults.map(({ document, ledger, originalLedger }) => {
+      const structure = buildDocumentLedger(document);
+      const rowIds = new Set([...originalLedger, ...ledger].map((entry) => normalizeRequirementId(entry.id)));
+      return {
+        ...structure,
+        // Raw section titles can themselves be old requirement sentences.
+        // Keep document structure, but source requirements only from the same
+        // corrected canonical ledger used by the coverage calculation.
+        sections: structure.sections.filter((section) =>
+          ![section.ref, ...detectExplicitRequirementIds(section.title)]
+            .some((id) => rowIds.has(normalizeRequirementId(id))),
+        ),
+        requirements: (contextLedgerByDocumentId.get(document.id) ?? []).map((entry) => ({
+          ref: entry.id, text: entry.text, page: entry.pages[0], heading: entry.heading,
+          source: document.id, kind: entry.tableId ? "table" as const : "explicit" as const,
+        })),
+      };
+    }),
+    maxRequirementsPerLedger: Math.max(2, Math.floor(120 / Math.max(1, readableDocuments.length))),
+    maxSectionsPerLedger: Math.max(2, Math.floor(80 / Math.max(1, readableDocuments.length))),
+  });
   const preciseRequirementLedgerContext = requirementLedgerResults
-    .map((result) => result.context)
+    .map(({ document }) => formatEvaluationRequirementLedger({
+      document,
+      ledger: contextLedgerByDocumentId.get(document.id) ?? [],
+      maxEntries: maxLedgerEntriesPerDocument,
+    }))
     .filter(Boolean)
     .join("\n\n");
 
@@ -309,7 +329,7 @@ export async function buildEvaluationLedgerContext(input: {
     preciseRequirementLedgerContext
       ? [
           "### Presis kravledger for vurdering",
-          "Denne kravledgeren er bygget deterministisk fra krav-/svar-dokumentene. Bruk den som primær kravliste for kravdekning, kravrekkefølge og kildehenvisninger. Ikke legg til, fjern eller slå sammen krav i vurderingen.",
+          "Dette er den korrigerte og samordnede kravlisten fra kundens kravgrunnlag. Bruk den som primær kravliste for kravdekning, kravrekkefølge og kildehenvisninger. Ikke legg til, fjern eller slå sammen krav i vurderingen.",
           preciseRequirementLedgerContext,
         ].join("\n")
       : "",
