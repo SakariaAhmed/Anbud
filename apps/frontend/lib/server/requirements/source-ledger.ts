@@ -1,6 +1,9 @@
 import "server-only";
 import { applyRequirementCorrections } from "@/lib/server/requirements/corrections";
-import { buildSpreadsheetRequirementLedger } from "@/lib/server/requirements/spreadsheet-ledger";
+import {
+  buildSpreadsheetRequirementLedger,
+  spreadsheetRequirementIds,
+} from "@/lib/server/requirements/spreadsheet-ledger";
 
 // Builds the requirement source ledger for a document from DOCX, Markdown,
 // table and layout structure, and repairs truncated entries.
@@ -1980,8 +1983,16 @@ export async function buildRequirementSourceLedgerWithFiles(
       })),
     );
   }
-  const spreadsheetLedger = buildSpreadsheetRequirementLedger(document);
-  if (spreadsheetLedger.length > 0) {
+  // A solution spreadsheet keeps its answer columns through the solution
+  // extractors below. A source matrix is authoritative even when no row text
+  // could be read: other extractors would take answer cells as requirement
+  // text, and the completeness guard reports the empty rows instead.
+  const spreadsheetLedger =
+    document.role === "primary_solution_document" ? [] : buildSpreadsheetRequirementLedger(document);
+  if (
+    spreadsheetLedger.length > 0 ||
+    (document.role !== "primary_solution_document" && spreadsheetRequirementIds(document).length > 0)
+  ) {
     return finalizeRequirementLedgerEntries(spreadsheetLedger, sourceDocumentSha256).map((entry) => ({
       ...entry,
       documentId: document.id,

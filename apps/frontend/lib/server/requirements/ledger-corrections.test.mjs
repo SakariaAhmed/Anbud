@@ -442,3 +442,60 @@ test("round 7 Opus: Docling headings, partial rewording, row numbers, cell withd
   const cell = run("## 9 Rettelser\n| K-1 | Leverandøren skal oppfylle krav nummer 1 innen fem virkedager. | Utgår |\nK-2 frafalles.\nK-3 beholdes uendret, K-4 utgår.");
   assert.deepEqual(cell.ledger.map((entry) => entry.id), ["K-3"]);
 });
+
+test("round 8 probes: short quotes, quoted and withdrawing new-text cells, partial and unquoted wording", () => {
+  const k = (n, text = `Leverandøren skal oppfylle krav nummer ${n} innen fem virkedager.`) => ({ id: `K-${n}`, text, pages: [1], heading: "4 Krav" });
+  const ledger = [
+    k(1, "Sikkerhetskopier skal oppbevares i minst 90 dager."),
+    k(2),
+    k(3, "Leverandøren skal levere månedlig driftsrapport. Rapporten skal sendes innen fem virkedager."),
+    k(4, "Tjenesten skal ha en tilgjengelighet på minst 99,5 % per måned."),
+    k(5),
+  ];
+  const chapter = ledger.map((entry) => `${entry.id} ${entry.text}`).join("\n");
+  const run = (corrections) => applyRequirementCorrections(ledger, `4 Krav\n${chapter}\n\n9 Rettelser og presiseringer\n${corrections}`).ledger;
+  const byId = (result) => Object.fromEntries(result.map((entry) => [entry.id, entry.text]));
+
+  // A short quoted phrase is replaced in place.
+  assert.equal(byId(run("I K-1 endres «90 dager» til «13 måneder»."))["K-1"], "Sikkerhetskopier skal oppbevares i minst 13 måneder.");
+
+  // A "Ny tekst" column with quoted wording applies; "Utgår" there withdraws.
+  const table = run(
+    "| Krav | Opprinnelig tekst | Ny tekst |\n" +
+      `| K-2 | ${k(2).text} | «Leverandøren skal oppfylle krav nummer 2 innen tre virkedager.» |\n` +
+      `| K-4 | ${ledger[3].text} | Kravet utgår. |\n` +
+      `| K-5 | ${k(5).text} | Utgår |`,
+  );
+  assert.deepEqual(table.map((entry) => entry.id), ["K-1", "K-2", "K-3"]);
+  assert.equal(byId(table)["K-2"], "Leverandøren skal oppfylle krav nummer 2 innen tre virkedager.");
+
+  // A value or a single sentence is not the whole requirement.
+  assert.equal(byId(run("Tilgjengelighetskravet i K-4 endres til 99,9 % målt per kalendermåned."))["K-4"], ledger[3].text);
+  assert.equal(byId(run("K-3: Andre setning endres til: «Rapporten skal inneholde hendelser og avvik.»"))["K-3"], ledger[2].text);
+
+  // Unquoted new wording ends before its rationale.
+  assert.equal(
+    byId(run("K-4 endres. Ny tekst: Tjenesten skal ha 99,9 % tilgjengelighet per måned. Endringen skyldes nye krav fra Datatilsynet."))["K-4"],
+    "Tjenesten skal ha 99,9 % tilgjengelighet per måned.",
+  );
+});
+
+test("spreadsheet matrices: solution answers kept, unreadable source rows never filled from answers", async () => {
+  const { extractRequirementLedgerForDocument } = await load("lib/server/requirements/source-ledger.ts");
+  const raw_text = [
+    "Ark: Krav",
+    "Rad 1: A1: Krav-ID | B1: Kravtekst | C1: Leverandørens besvarelse",
+    "Rad 2: A2: K-1 | C2: Vi tar daglig backup i Azure med 35 dagers oppbevaring.",
+  ].join("\n");
+  const base = { id: "d", project_id: "p", title: "Kravmatrise", file_name: "krav.xlsx", file_format: "xlsx", raw_text, structure_map: [] };
+  const source = await extractRequirementLedgerForDocument({ ...base, role: "primary_customer_document" });
+  assert.ok(!source.some((entry) => /daglig backup/u.test(entry.text)), JSON.stringify(source));
+  const answered = [
+    "Ark: Krav",
+    "Rad 1: A1: Krav-ID | B1: Kravtekst | C1: Leverandørens besvarelse",
+    "Rad 2: A2: K-1 | B2: Leverandøren skal ta daglig backup. | C2: Vi tar daglig backup i Azure med 35 dagers oppbevaring.",
+  ].join("\n");
+  const solution = await extractRequirementLedgerForDocument({ ...base, raw_text: answered, role: "primary_solution_document" });
+  // As before the matrix extractor: the solution row keeps its answer cell.
+  assert.ok(solution.some((entry) => /35 dagers oppbevaring/u.test(`${entry.text} ${entry.answerExcerpt ?? ""}`)), JSON.stringify(solution));
+});

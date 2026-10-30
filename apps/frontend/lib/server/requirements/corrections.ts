@@ -14,7 +14,7 @@ const CORRECTIONS_HEADING =
   /^(?:(\d{1,2})(?:\.\d{1,2})*\.?\s+)?(?:Rettelser(?:\s+og\s+(?:presiseringer|tillegg|endringer))?|RETTELSER|Rettelse\s+nr\.?\s*\d+|Errata|Endringer\s+i\s+(?:konkurransegrunnlaget|kravspesifikasjonen|kravene|bilag\s*\d+))(?:\s*\([^)\n]{0,80}\))?\s*$/u;
 const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3})?(?:\.[a-z])?\b/gu;
 const REQUIREMENT_ID_SINGLE = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\b/u;
-const QUOTED = /[«“"]([^«»“”"]{12,1500})[»”"]/gu;
+const QUOTED = /[«“"]([^«»“”"]{1,1500})[»”"]/gu;
 const WITHDRAW_VERB =
   /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|er\s+utgått|slettes|frafalles|annulleres)\b|\b(?:fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
 const CHANGE_VERB = /\b(?:endres|er\s+endret\s+til|erstattes(?!\s+av\s+(?:et\s+)?nytt)|ny\s+tekst|lyder\s+nå|skal\s+(?:nå\s+)?lyde)\b/giu;
@@ -149,7 +149,11 @@ function tableAwareLines(lines: string[]) {
     const kept = cells.flatMap((cell, index) => {
       const label = columns[index] ?? "";
       if (QUESTION_COLUMN.test(label) || OLD_TEXT_COLUMN.test(label)) return [];
-      if (NEW_TEXT_COLUMN.test(label) && cell.trim() && !/[«“"]/u.test(cell)) return [`Ny tekst: «${cell.trim()}»`];
+      if (NEW_TEXT_COLUMN.test(label) && cell.trim()) {
+        // "Utgår" or "Kravet utgår." in the new-text column withdraws.
+        if (/^(?:kravet\s+)?(?:utgår|bortfaller|strykes|frafalles|annulleres|slettes)\b/iu.test(cell.trim())) return [cell];
+        return [/^[«“"]/u.test(cell.trim()) ? `Ny tekst: ${cell.trim()}` : `Ny tekst: «${cell.trim()}»`];
+      }
       return [cell];
     });
     return `| ${kept.join(" | ")} |`;
@@ -219,8 +223,29 @@ function correctedWording(original: string, quote: string, replaced: string | un
     // layout (hyphenation, spacing) still replace the requirement.
     return obligation(replaced) && obligation(quote) ? quote : null;
   }
-  if (!old || obligation(quote) || normalized(quote).length >= old.length * 0.6) return quote;
+  // A long replacement must read as a whole requirement sentence, not a
+  // value ("99,9 % målt per kalendermåned.").
+  const sentence = /^[A-ZÆØÅ]/u.test(quote.trim()) && /[.!]$/u.test(quote.trim());
+  if (!old || obligation(quote) || (sentence && normalized(quote).length >= old.length * 0.6)) return quote;
   return null;
+}
+
+/** Unquoted new wording up to a following rationale ("Bakgrunnen er …",
+ * "Endringen skyldes …") or a sentence that states no obligation. */
+function unquotedWording(text: string) {
+  const parts = text.trim().split(/(?<=[.!])\s+(?=[A-ZÆØÅ])/u);
+  let kept = 1;
+  while (
+    kept < parts.length &&
+    /\b(?:skal|må|bør)\b/iu.test(parts[kept]!) &&
+    !/^(?:bakgrunn(?:en)?|begrunnelse(?:n)?|årsak(?:en)?|endringen|dette\s+skyldes|formålet)\b/iu.test(parts[kept]!)
+  ) {
+    kept += 1;
+  }
+  return {
+    wording: `${parts.slice(0, kept).join(" ").replace(/[.\s]+$/u, "")}.`,
+    rest: parts.slice(kept).join(" "),
+  };
 }
 
 export type RequirementCorrectionReport = {
@@ -290,8 +315,11 @@ export function applyRequirementCorrections(
     // "Ny tekst: Leverandøren skal …" without quotation marks: the rest of the
     // cell is the new wording.
     const quotedStatement = statement.replace(
-      /\b((?:ny\s+tekst|skal\s+(?:nå\s+)?lyde|er\s+endret\s+til|endres\s+til)\s*:?\s*)(?![«“"])([^|«»“”"]{12,1500}?)(\s*(?:\||$))/giu,
-      (_match, lead: string, text: string, tail: string) => `${lead}«${text.trim().replace(/[.\s]+$/u, "")}.»${tail}`,
+      /\b((?:ny\s+tekst|skal\s+(?:nå\s+)?lyde)\s*:?\s*)(?![«“"])([^|«»“”"]{12,1500}?)(\s*(?:\||$))/giu,
+      (_match, lead: string, text: string, tail: string) => {
+        const { wording, rest } = unquotedWording(text);
+        return `${lead}«${wording}»${rest ? ` ${rest}` : ""}${tail}`;
+      },
     );
     const { masked: maskedRaw, quotes } = maskQuotes(quotedStatement);
     const masked = expandIdRanges(maskedRaw);
@@ -450,7 +478,12 @@ export function applyRequirementCorrections(
           own[0];
         if (!target || !known().has(target)) continue;
         const original = entries.find((entry) => entry.id === target)?.text ?? "";
-        const text = correctedWording(original, quote, replaced);
+        // "Andre setning endres til «…»" rewrites a part of the requirement:
+        // without the old wording to replace, it stays a note.
+        const namesPart = /\b(?:setning(?:en)?|ledd(?:et)?|avsnitt(?:et)?|kulepunkt(?:et)?|punkt(?:et)?|første|andre|tredje|siste)\b/iu.test(
+          sentence.text.slice(0, verb.index!),
+        );
+        const text = namesPart && !replaced ? null : correctedWording(original, quote, replaced);
         // A fragment ("Fristen endres til «tre virkedager»") whose place in
         // the requirement is unknown stays a note on the original wording.
         if (text === null) continue;

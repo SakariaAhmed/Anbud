@@ -200,7 +200,8 @@ export function spreadsheetRequirementIds(
  * (a header row with a requirement-ID column and a requirement-text column).
  * Rows with only a first-column label are section headings. Supplier answer
  * columns are not part of the source requirement; a row whose text cell is
- * empty keeps its other source cells as text instead of being dropped.
+ * empty is not emitted, but its ID stays in `spreadsheetRequirementIds`, so
+ * the completeness guard reports it.
  * Returns [] when no sheet holds a matrix, so other extractors run.
  */
 export function buildSpreadsheetRequirementLedger(
