@@ -554,12 +554,16 @@ export function applyRequirementCorrections(
           ids: sentence.ids.filter(({ at }) => at >= from && at < to && !inAside(at)),
         }, known()));
         // An aside inside a subject list ("K-2, som gjelder drift, og K-3 er
-        // begge …") does not split the list; an aside after a clause with its
-        // own verb ("K-2 beholdes, som avtalt, og K-3 er …") still ends it.
+        // begge …") does not split the list: the text before it holds only
+        // requirement IDs and list words. Any other word ("K-2 beholdes, som
+        // avtalt, og K-3 …", "K-2 videreføres, …") makes it its own clause.
         const clauseText = asides.reduce((text, [from, to]) => {
           const lead = text.slice(text.lastIndexOf(",", from - 1) + 1, from);
-          const ownVerb = /(?<![\p{L}\p{N}])(?:er|var|blir|ble|får|fikk|beholder|beholdes|utgår|bortfaller|strykes|endres|erstattes|gjelder|skal|må|kan|vil|brukes|benyttes|flyttes|slås)(?![\p{L}\p{N}])/iu.test(lead);
-          return `${text.slice(0, from)}${ownVerb ? "," : " "}${" ".repeat(to - from - 1)}${text.slice(to)}`;
+          const subjectOnly = lead
+            .replace(REQUIREMENT_ID, " ")
+            .replace(/(?<![\p{L}\p{N}])(?:og|samt|eller|kravet|kravene|krav)(?![\p{L}\p{N}])/giu, " ")
+            .trim() === "";
+          return `${text.slice(0, from)}${subjectOnly ? " " : ","}${" ".repeat(to - from - 1)}${text.slice(to)}`;
         }, sentence.text);
         let namedBefore = new Set<string>();
         for (let end = ordinalAt; end > 0 && namedBefore.size === 0;) {
