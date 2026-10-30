@@ -153,6 +153,7 @@ class Client {
       method,
       headers,
       body: options.body,
+      signal: options.signal,
     });
     const elapsedMs = Math.round(performance.now() - started);
     const setCookie =
@@ -172,6 +173,7 @@ class Client {
     }
     const { response, elapsedMs } = await this.request(method, route, {
       headers,
+      signal: options.signal,
       body:
         body === undefined
           ? undefined
@@ -382,23 +384,46 @@ async function cleanupResources(filter = () => true) {
   return pending;
 }
 
-/** Removes services left by this run that were never tracked, e.g. when
- * the create response could not be read. Matches only this run's ID. */
-async function sweepRunServices(client) {
+// Clients that may hold resources, and create requests still in flight: a
+// project or service can exist on the server before its response arrives.
+const runClients = new Set();
+const pendingCreations = new Set();
+
+async function trackedCreation(promise) {
+  pendingCreations.add(promise);
   try {
-    const { payload } = await client.json("GET", "/api/service-descriptions");
-    for (const service of payload.services ?? []) {
-      if (typeof service.name === "string" && service.name.endsWith(` ${runId}`) && service.name.startsWith("LLM eval service ")) {
-        if (!createdResources.some((resource) => resource.type === "service" && resource.id === service.id)) {
-          trackResource(client, "service", service.id);
+    return await promise;
+  } finally {
+    pendingCreations.delete(promise);
+  }
+}
+
+/** Finds projects and services named with this run's ID that were never
+ * tracked (e.g. a create response that was lost), then deletes everything
+ * tracked for the client. Cleanup runs even when a listing fails. */
+async function sweepRun(client) {
+  const adopt = async (route, type, listOf, prefix) => {
+    try {
+      const { payload } = await client.json("GET", route, undefined, { signal: AbortSignal.timeout(30_000) });
+      for (const item of listOf(payload)) {
+        const name = item?.name ?? item?.title;
+        if (
+          typeof name === "string" &&
+          name.startsWith(prefix) &&
+          name.endsWith(` ${runId}`) &&
+          !createdResources.some((resource) => resource.type === type && resource.id === item.id)
+        ) {
+          trackResource(client, type, item.id);
         }
       }
+    } catch (error) {
+      console.error(`Cleanup sweep of ${route} failed: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
     }
-    await cleanupResources((resource) => resource.client === client);
-  } catch (error) {
-    console.error(`Cleanup sweep failed: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
-  }
+  };
+  await adopt("/api/service-descriptions", "service", (payload) => payload.services ?? [], "LLM eval service ");
+  await adopt("/api/projects", "project", (payload) => (Array.isArray(payload) ? payload : payload.projects ?? []), "LLM kvalitets-eval ");
+  await cleanupResources((resource) => resource.client === client);
 }
 
 let interrupted = false;
@@ -407,6 +432,12 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     if (interrupted) process.exit(1);
     interrupted = true;
     console.error(`${signal}: removing evaluation resources before exit ...`);
+    // Let in-flight creates finish (bounded) so their resources are known.
+    await Promise.race([
+      Promise.allSettled([...pendingCreations]),
+      new Promise((resolve) => setTimeout(resolve, 30_000)),
+    ]);
+    for (const client of runClients) await sweepRun(client);
     await cleanupResources();
     process.exit(signal === "SIGINT" ? 130 : 143);
   });
@@ -419,9 +450,13 @@ async function waitForJob(client, projectId, job, kind) {
     if (performance.now() - started > JOB_WAIT_TIMEOUT_MS) {
       throw new Error(`${kind} did not finish within ${JOB_WAIT_TIMEOUT_MS} ms (status ${latest.status}).`);
     }
+    // The deadline also bounds a status request that never answers.
+    const remainingMs = Math.max(1_000, JOB_WAIT_TIMEOUT_MS - (performance.now() - started));
     const { payload } = await client.json(
       "GET",
       `/api/projects/${projectId}/jobs/${job.id}`,
+      undefined,
+      { signal: AbortSignal.timeout(remainingMs) },
     );
     latest = payload.job;
     if (latest.status === "failed") {
@@ -548,6 +583,7 @@ function outputForJob(kind, result) {
 
 async function runScenario(label, baseUrl) {
   const client = new Client(baseUrl);
+  runClients.add(client);
   const result = {
     label,
     baseUrl,
@@ -567,13 +603,13 @@ async function runScenario(label, baseUrl) {
   try {
     await client.json("GET", "/api/health/live");
     await client.json("POST", "/api/auth/login", { password });
-    const created = await client.json("POST", "/api/projects", {
+    const created = await trackedCreation(client.json("POST", "/api/projects", {
       name: `LLM kvalitets-eval ${label} ${runId}`,
       customer_name: fixture.customer_name,
       description: fixture.description,
       industry: fixture.industry,
       selected_service_ids: [],
-    });
+    }));
     projectId = created.payload.id;
     trackResource(client, "project", projectId);
     result.project_id = projectId;
@@ -603,9 +639,9 @@ async function runScenario(label, baseUrl) {
       description: "Temporary service description for LLM-as-judge evaluation.",
       title: "Hybrid cloud service description",
     });
-    const serviceCreated = await client.request("POST", "/api/service-descriptions", {
+    const serviceCreated = await trackedCreation(client.request("POST", "/api/service-descriptions", {
       body: serviceForm,
-    });
+    }));
     const servicePayload = await serviceCreated.response.json().catch(() => ({}));
     trackResource(client, "service", servicePayload.service?.id ?? null);
     if (!serviceCreated.response.ok) {
@@ -698,8 +734,8 @@ async function runScenario(label, baseUrl) {
   } catch (error) {
     result.errors.push(error instanceof Error ? error.message : String(error));
   } finally {
-    // Also sweeps services whose create response could not be read.
-    await sweepRunServices(client);
+    // Also sweeps resources whose create response could not be read.
+    await sweepRun(client);
     for (const resource of createdResources.filter((candidate) => candidate.client === client)) {
       result.cleanup.push({
         target: resource.type,
