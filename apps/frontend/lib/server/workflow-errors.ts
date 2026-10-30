@@ -35,6 +35,22 @@ export class WorkflowPreconditionError extends Error {
   }
 }
 
+/**
+ * A workflow that stopped for a reason the user must see, such as AI batches
+ * that could not be completed. Only `publicMessage` crosses the production
+ * boundary; it is built from counts and requirement references, never from
+ * raw backend or model output. `detail` stays in the error message for logs.
+ */
+export class WorkflowIncompleteError extends Error {
+  readonly publicMessage: string;
+
+  constructor(publicMessage: string, detail?: string) {
+    super(detail ?? publicMessage);
+    this.name = "WorkflowIncompleteError";
+    this.publicMessage = publicMessage;
+  }
+}
+
 // PostgreSQL functions raise these codes as message text, so database
 // failures are recognised by the code prefix rather than by class.
 function codeFromMessage(message: string) {
@@ -48,6 +64,9 @@ export function workflowError(error: unknown) {
   for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
     if (current instanceof WorkflowPreconditionError) {
       return { code: "WORKFLOW_PRECONDITION", status: 422, message: current.message };
+    }
+    if (current instanceof WorkflowIncompleteError) {
+      return { code: "WORKFLOW_INCOMPLETE", status: 502, message: current.publicMessage };
     }
     const code =
       current instanceof WorkflowError ? current.code : codeFromMessage(current.message);

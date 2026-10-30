@@ -3,7 +3,8 @@ import "server-only";
 // Requirement coverage evaluation: batch registries, evidence matching,
 // retrieval context and deterministic control repairs for solution evaluation.
 import { sortByRequirementOrder } from "@/lib/requirement-order";
-import { compactText, retrievedSnippetContext } from "@/lib/server/ai/context";
+import { compactText } from "@/lib/server/ai/context";
+import { WorkflowIncompleteError } from "@/lib/server/workflow-errors";
 import { retrieveDocumentSnippets } from "@/lib/server/document-chunks";
 import {
   isNearDuplicate,
@@ -102,7 +103,7 @@ import {
   requirementSubtitle,
   sortRequirementLedgerInDocumentOrder,
 } from "@/lib/server/requirements/presentation";
-import { extractRequirementLedgerForDocumentCore, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
+import { extractRequirementLedgerForDocumentCore, requirementSourceExcerptWithoutAnswer, substantiveRequirementAnswerExcerpt } from "@/lib/server/requirements/source-ledger";
 import { canonicalizeRequirementSourceLedger } from "@/lib/server/requirements/source-readiness";
 import { type RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import { filterSyntheticRequirementFallbacks } from "@/lib/server/requirements/unstructured-ledger";
@@ -165,7 +166,6 @@ const REQUIREMENT_COVERAGE_EVALUATION_REGISTRY_MAX_ROWS =
     500,
   );
 
-const REQUIREMENT_COVERAGE_RETRIEVAL_LIMIT = 4;
 
 export function parsePositiveIntegerEnv(name: string, fallback: number) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -772,13 +772,31 @@ function normalizeRequirementCoverageAssessment(
   return "Uklart";
 }
 
-function buildRequirementCoveragePageContext(input: {
+/** Pages of the solution document that hold an entry's answer. A merged
+ * entry keeps the *customer* document's pages, which must never be applied
+ * to Bilag 2 (DOCX requirements all report page 1, so Bilag 2's summary page
+ * was selected for every requirement). */
+function solutionAnswerPages(
+  entry: RequirementLedgerEntry,
+  document: ProjectDocumentDetail,
+) {
+  if (entry.documentId === document.id) return entry.pages;
+  const answer = normalizeQuoteMatchText(entry.answerExcerpt ?? "").slice(0, 60);
+  if (answer.length < 24 || document.file_format !== "pdf") return [];
+  return normalizedSolutionText(document)
+    .pages.filter((page) => page.text.includes(answer))
+    .map((page) => page.page);
+}
+
+// Exported for the page-selection regression test.
+// fallow-ignore-next-line unused-export
+export function buildRequirementCoveragePageContext(input: {
   document: ProjectDocumentDetail;
   entries: RequirementLedgerEntry[];
 }) {
   const wantedPages = new Set<number>();
   for (const entry of input.entries) {
-    for (const page of entry.pages) {
+    for (const page of solutionAnswerPages(entry, input.document)) {
       if (page > 1) {
         wantedPages.add(page - 1);
       }
@@ -845,39 +863,174 @@ function buildRequirementCoverageExactRowContext(
   );
 }
 
+function entryHasCompleteExactEvidence(entry: RequirementLedgerEntry) {
+  const sourceExcerpt = (entry.sourceExcerpt ?? "").replace(/\s+/g, " ").trim();
+  const answerExcerpt = (entry.answerExcerpt ?? "").replace(/\s+/g, " ").trim();
+  const substantiveAnswer = substantiveRequirementAnswerExcerpt(entry);
+
+  return (
+    sourceExcerpt.length >= 20 &&
+    answerExcerpt.length >= 24 &&
+    substantiveAnswer.length >= 24 &&
+    !/^(?:ja|nei|yes|no)[.!]?$/i.test(substantiveAnswer)
+  );
+}
+
 export function coverageBatchHasCompleteExactEvidence(
   entries: RequirementLedgerEntry[],
 ) {
-  return (
-    entries.length > 0 &&
-    entries.every((entry) => {
-      const sourceExcerpt = (entry.sourceExcerpt ?? "")
-        .replace(/\s+/g, " ")
-        .trim();
-      const answerExcerpt = (entry.answerExcerpt ?? "")
-        .replace(/\s+/g, " ")
-        .trim();
-      const substantiveAnswer = substantiveRequirementAnswerExcerpt(entry);
+  return entries.length > 0 && entries.every(entryHasCompleteExactEvidence);
+}
 
-      return (
-        sourceExcerpt.length >= 20 &&
-        answerExcerpt.length >= 24 &&
-        substantiveAnswer.length >= 24 &&
-        !/^(?:ja|nei|yes|no)[.!]?$/i.test(substantiveAnswer)
-      );
-    })
+const REQUIREMENT_COVERAGE_HITS_PER_REQUIREMENT = 2;
+const REQUIREMENT_COVERAGE_SNIPPET_CHARS = 900;
+const REQUIREMENT_COVERAGE_RETRIEVAL_CHAR_BUDGET = 12_000;
+const REQUIREMENT_COVERAGE_RETRIEVAL_CONCURRENCY = 3;
+
+/**
+ * Returns whole sentences around the part of a chunk that best matches the
+ * requirement, instead of the chunk's first characters. Neighbouring
+ * sentences are kept so negations, numbers and qualifications survive.
+ */
+export function matchCenteredExcerpt(text: string, query: string, limit: number) {
+  const clean = text.replace(/\s+/gu, " ").trim();
+  if (clean.length <= limit) return clean;
+  const sentences = clean.match(/[^.!?]+(?:[.!?]+|$)/gu)?.map((part) => part.trim()).filter(Boolean) ?? [clean];
+  // Distinctive terms only: generic words ("Leverandøren", "beskrive") would
+  // otherwise anchor the window on introductory text.
+  const queryTerms = distinctiveTerms(query);
+  const terms = [...queryTerms.strong, ...queryTerms.stems];
+  const score = (sentence: string) => {
+    const normalized = normalizeQuoteMatchText(sentence);
+    return terms.reduce((sum, term) => sum + (normalized.includes(term) ? 1 : 0), 0);
+  };
+  let best = 0;
+  sentences.forEach((sentence, index) => {
+    if (score(sentence) > score(sentences[best]!)) best = index;
+  });
+  const bestSentence = sentences[best]!;
+  if (bestSentence.length >= limit) {
+    // One long sentence: pick the window holding the most distinct terms.
+    const normalized = normalizeQuoteMatchText(bestSentence);
+    const hits = terms.flatMap((term) =>
+      [...normalized.matchAll(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "gu"))].map((match) => ({ term, at: match.index! })),
+    );
+    let from = 0;
+    let bestCount = -1;
+    for (const { at } of hits) {
+      const candidate = Math.max(0, Math.min(at - Math.floor(limit / 4), bestSentence.length - limit));
+      const count = new Set(
+        hits.filter((hit) => hit.at >= candidate && hit.at < candidate + limit).map((hit) => hit.term),
+      ).size;
+      if (count > bestCount) {
+        bestCount = count;
+        from = candidate;
+      }
+    }
+    return bestSentence.slice(from, from + limit).trim();
+  }
+  // Grow around the matching sentence: the preceding sentence first (it often
+  // carries a negation or condition), then following ones, while they fit.
+  let start = best;
+  let end = best + 1;
+  const length = () => sentences.slice(start, end).join(" ").length;
+  if (start > 0 && length() + sentences[start - 1]!.length + 1 <= limit) start -= 1;
+  while (end < sentences.length && length() + sentences[end]!.length + 1 <= limit) end += 1;
+  while (start > 0 && length() + sentences[start - 1]!.length + 1 <= limit) start -= 1;
+  return sentences.slice(start, end).join(" ");
+}
+
+async function buildPerRequirementRetrievalContext(input: {
+  entries: RequirementLedgerEntry[];
+  solutionDocument: ProjectDocumentDetail;
+  startIndex: number;
+}) {
+  const targets = input.entries
+    .map((entry, localIndex) => ({ entry, nr: input.startIndex + localIndex + 1 }))
+    .filter(({ entry }) => !entryHasCompleteExactEvidence(entry));
+  if (!targets.length) return "";
+  const results = await mapWithConcurrency(
+    targets,
+    REQUIREMENT_COVERAGE_RETRIEVAL_CONCURRENCY,
+    async ({ entry, nr }) => {
+      const query = [entry.id, entry.heading, entry.text].filter(Boolean).join(" ");
+      const snippets = await retrieveDocumentSnippets({
+        query,
+        documents: [input.solutionDocument],
+        exactTerms: entry.id && !isSyntheticRequirementId(entry.id) ? [entry.id] : [],
+        limit: REQUIREMENT_COVERAGE_HITS_PER_REQUIREMENT,
+      });
+      // Centre each hit on this requirement before any deduplication, so a
+      // shared chunk still shows the part that answers each requirement.
+      return snippets.map((snippet) => {
+        const page = snippet.pageStart
+          ? `side ${snippet.pageEnd && snippet.pageEnd !== snippet.pageStart ? `${snippet.pageStart}-${snippet.pageEnd}` : snippet.pageStart}`
+          : "";
+        return {
+          nr,
+          label: [snippet.documentTitle, page, snippet.headingPath.length ? snippet.headingPath.join(" > ") : ""]
+            .filter(Boolean)
+            .join(" – "),
+          text: matchCenteredExcerpt(snippet.text, query, REQUIREMENT_COVERAGE_SNIPPET_CHARS),
+        };
+      });
+    },
   );
+
+  // Every requirement with hits is guaranteed an equal share of the budget
+  // for its best hit; second hits only use what is left. Identical excerpts
+  // are shown once, listing every requirement they serve.
+  const withHits = results.filter((hits) => hits.length > 0).length;
+  const firstHitAllowance = Math.floor(
+    REQUIREMENT_COVERAGE_RETRIEVAL_CHAR_BUDGET / Math.max(1, withHits),
+  );
+  const passages = new Map<string, { nrs: number[]; label: string; text: string }>();
+  let used = 0;
+  for (let rank = 0; rank < REQUIREMENT_COVERAGE_HITS_PER_REQUIREMENT; rank += 1) {
+    for (const hits of results) {
+      const hit = hits[rank];
+      if (!hit) continue;
+      const label = compactText(hit.label, 120);
+      const allowance = rank === 0
+        ? firstHitAllowance
+        : REQUIREMENT_COVERAGE_RETRIEVAL_CHAR_BUDGET - used;
+      const text = hit.text.length + label.length + 24 > allowance
+        ? compactText(hit.text, Math.max(0, allowance - label.length - 24))
+        : hit.text;
+      if (text.length < 80) continue;
+      const key = normalizeQuoteMatchText(text);
+      const existing = passages.get(key);
+      if (existing) {
+        if (!existing.nrs.includes(hit.nr)) existing.nrs.push(hit.nr);
+        continue;
+      }
+      const blockChars = `Krav nr ${hit.nr} – ${label}\n${text}`.length + 2;
+      if (rank > 0 && used + blockChars > REQUIREMENT_COVERAGE_RETRIEVAL_CHAR_BUDGET) continue;
+      passages.set(key, { nrs: [hit.nr], label, text });
+      used += blockChars;
+    }
+  }
+  if (!passages.size) return "";
+  const blocks = [...passages.values()]
+    .sort((left, right) => left.nrs[0]! - right.nrs[0]!)
+    .map((passage) => `Krav nr ${passage.nrs.join(", ")} – ${passage.label}\n${passage.text}`);
+  return buildDelimitedContext("Relevante Bilag 2-utdrag per krav", blocks.join("\n\n"));
 }
 
 export async function buildRequirementCoverageRetrievalContext(input: {
   entries: RequirementLedgerEntry[];
   solutionDocument: ProjectDocumentDetail;
   startIndex?: number;
+  /** The whole solution document is already in the prompt. */
+  fullSolutionDocumentIncluded?: boolean;
 }) {
   const exactContext = buildRequirementCoverageExactRowContext(
     input.entries,
     input.startIndex,
   );
+  if (input.fullSolutionDocumentIncluded) {
+    return exactContext;
+  }
 
   // Exact matched rows already contain both sides of the comparison. Re-running
   // semantic retrieval in that case only repeats the same answer text and nearby
@@ -886,26 +1039,13 @@ export async function buildRequirementCoverageRetrievalContext(input: {
     return exactContext;
   }
 
-  const query = input.entries
-    .map((entry) =>
-      [entry.id, entry.tableId, entry.service, entry.heading, entry.text]
-        .filter(Boolean)
-        .join(" "),
-    )
-    .join("\n");
-  const snippets = await retrieveDocumentSnippets({
-    query,
-    documents: [input.solutionDocument],
-    exactTerms: input.entries
-      .map((entry) => entry.id)
-      .filter((id) => id && !isSyntheticRequirementId(id)),
-    limit: REQUIREMENT_COVERAGE_RETRIEVAL_LIMIT,
+  // One query for a whole batch returned four 480-character snippets for
+  // up to 18 requirements; each incomplete requirement now gets its own hits.
+  const semanticContext = await buildPerRequirementRetrievalContext({
+    entries: input.entries,
+    solutionDocument: input.solutionDocument,
+    startIndex: input.startIndex ?? 0,
   });
-  const semanticContext = snippets.length
-    ? retrievedSnippetContext("Relevante Bilag 2-utdrag", snippets, {
-        textLimit: 480,
-      })
-    : "";
 
   return [
     exactContext,
@@ -2464,7 +2604,7 @@ export function correctCoverageAssessmentWithSourceEvidence(input: {
   const hasAttachmentBackedAnswer =
     answerIsAttachmentBackedRequirementAnswer(answerEvidence);
   const explicitlyDeclinesRequirement =
-    answerExplicitlyDeclinesRequirement(answerEvidence);
+    answerExplicitlyDeclinesRequirement(answerEvidence, input.entry.text);
   const defersRequirementConfirmation =
     answerDefersRequirementConfirmation(answerEvidence);
   const mandatoryRequirement = isMandatoryRequirementEntry(input.entry);
@@ -2700,6 +2840,756 @@ export function validateRequirementCoverageBatchRows(input: {
   }
 
   return expectedNumbers.map((expectedNr) => rowsByNumber.get(expectedNr)!);
+}
+
+/**
+ * Flattens text for quote matching while keeping a one-to-one character
+ * mapping between the flat text and its lower-cased form, so a match can be
+ * mapped back to the original wording.
+ */
+// A line or passage ending in a word that needs a continuation.
+const CONTINUATION_WORD_END =
+  /(?<![\p{L}\p{N}])(?:i|og|av|til|for|med|på|som|at|en|et|ei|den|det|de|er|skal|må|kan|vil|om|fra|ved|eller|samt|innen|under|over|etter|før|hos|mot|per|uten|mellom|ikke|via)$/iu;
+
+/**
+ * Marks boundaries around reliable structure as the PDF and DOCX parsers
+ * write it: a numbered heading line ("9.6 Kontraktsforhold") and a run of
+ * two or more short unpunctuated lines carrying figures (table rows such as
+ * "P2 Høy 1 time 12 timer"). Lines without figures may be wrapped prose
+ * ("Vi tilbyr ikke integrasjon mellom Microsoft\nEntra ID og …") and stay
+ * joined, as does every line of a narrow-column document.
+ */
+function markShortLines(value: string) {
+  const lines = value.split("\n");
+  // Lines followed by a lower-case line wrap prose; their length is the
+  // column width.
+  const wraps = lines
+    .flatMap((line, index) => (/^\p{Ll}/u.test(lines[index + 1]?.trim() ?? "") ? [line.trim().length] : []))
+    .sort((a, b) => a - b);
+  const narrow = wraps.length > 0 && wraps[Math.floor(wraps.length / 2)]! < 70;
+  const structural = (text: string) =>
+    text.length > 0 &&
+    text.length < 80 &&
+    !/[.:;!?,¦|-]$/u.test(text) &&
+    !/^\[\[SIDE:/u.test(text) &&
+    !CONTINUATION_WORD_END.test(text);
+  // A numbered line is a heading only after a finished line ("… månedlig.",
+  // a page marker, a heading or a row) and without a sentence end of its
+  // own: "replikeres mellom\n2 Azure-regioner i Norge, men …" wraps prose.
+  const numbered = (text: string) =>
+    structural(text) && /^\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Lu}/u.test(text) && !/[.!?]\s/u.test(text) && text.split(/\s+/u).length <= 10;
+  const row = lines.map((line, index) => {
+    const text = line.trim();
+    const next = lines[index + 1]?.trim() ?? "";
+    return !narrow && structural(text) && !numbered(text) && /\d/u.test(text) && /^[\p{Lu}\d]/u.test(next);
+  });
+  let previousMarked = false;
+  let previousText = "";
+  return lines
+    .map((line, index) => {
+      const text = line.trim();
+      const tableRow = row[index]! && (row[index - 1] === true || row[index + 1] === true);
+      const heading =
+        numbered(text) && (index === 0 || previousMarked || /(?:[.:!?]|\]\])$/u.test(previousText) || previousText === "");
+      const marked = heading || tableRow;
+      if (text) previousText = text;
+      // One boundary between two marked lines, never an empty cell.
+      const result = marked ? `${index > 0 && !previousMarked ? "¦ " : ""}${line} ¦` : line;
+      previousMarked = marked;
+      return result;
+    })
+    .join("\n");
+}
+
+function flattenQuoteText(value: string) {
+  return markShortLines(value)
+    .normalize("NFKC")
+    .replace(/\u00ad/gu, "")
+    .replace(/\[\[SIDE:\d{1,5}(?:-\d{1,5})?\]\]/gu, " ")
+    // Docling writes headings as Markdown ("## 6.1 Styringssystem"); a quote
+    // that runs from a heading into its text omits the marker.
+    // The heading itself is a boundary, so an answer never runs into the
+    // next section; quote matching ignores boundaries.
+    .replace(/(^|\n)[ \t]*#{1,6}[ \t]+([^\n]*)/gu, "$1 ¦ $2 ¦ ")
+    // A hyphen or asterisk bullet at line start is a boundary too.
+    .replace(/(?:^|\n)[ \t]*[-–*][ \t]+/gu, " ¦ ")
+    // PDF text breaks words across lines with a hyphen.
+    .replace(/(\p{Ll})-\s+(\p{Ll})/gu, "$1$2")
+    .replace(/[«»“”"„]/gu, "")
+    .replace(/[’‘`]/gu, "'")
+    .replace(/[‐‑–—]/gu, "-")
+    // Table cells and bullets stay boundaries ("¦"), so a quote is never
+    // widened into a neighbouring row.
+    .replace(/\s*[|•·▪]\s*/gu, " ¦ ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function normalizeQuoteMatchText(value: string) {
+  return flattenQuoteText(value).toLocaleLowerCase("nb");
+}
+
+const normalizedSolutionTextCache = new WeakMap<
+  ProjectDocumentDetail,
+  {
+    flat: string;
+    whole: string;
+    paragraphStarts: number[];
+    sectionStarts: number[];
+    pages: Array<{ page: number; text: string }>;
+  }
+>();
+
+/** Where each paragraph or heading-led section of the raw text begins in
+ * its flattened form: flattening removes the blank lines between them. A
+ * list, or a paragraph after one ending in ":", continues the text before
+ * it (Docling separates "Vi leverer:" from its bullets by a blank line). */
+function paragraphStartOffsets(rawText: string, flat: string) {
+  const starts: number[] = [];
+  const sections: number[] = [];
+  let cursor = 0;
+  let previous = "";
+  for (const paragraph of rawText.split(/\n[ \t]*\n|\n(?=[ \t]*#{1,6}[ \t])/u)) {
+    const head = flattenQuoteText(paragraph).slice(0, 40);
+    if (!head) continue;
+    const at = flat.indexOf(head, cursor);
+    if (at < 0) continue;
+    const continues =
+      /^\s*(?:[-–*•]|\d{1,2}[.)])\s/u.test(paragraph) && !/^\s*#/u.test(paragraph) ||
+      (/:\s*$/u.test(previous) && !/^\s*#/u.test(paragraph));
+    if (!continues) starts.push(at);
+    if (/^\s*#/u.test(paragraph)) sections.push(at);
+    cursor = at + head.length;
+    previous = paragraph;
+  }
+  return { starts, sections };
+}
+
+function normalizedSolutionText(document: ProjectDocumentDetail) {
+  const cached = normalizedSolutionTextCache.get(document);
+  if (cached) return cached;
+  const pages =
+    document.file_format === "pdf"
+      ? splitPdfPagesPreservingLines(document.raw_text)
+      : [{ page: 0, text: document.raw_text }];
+  const flat = flattenQuoteText(document.raw_text);
+  const value = {
+    flat,
+    whole: flat.toLocaleLowerCase("nb"),
+    ...(() => {
+      const { starts, sections } = paragraphStartOffsets(document.raw_text, flat);
+      return { paragraphStarts: starts, sectionStarts: sections };
+    })(),
+    pages: pages.map((page) => ({
+      page: page.page,
+      text: normalizeQuoteMatchText(page.text),
+    })),
+  };
+  normalizedSolutionTextCache.set(document, value);
+  return value;
+}
+
+const VERIFIED_QUOTE_MIN_CHARS = 30;
+const VERIFIED_QUOTE_MIN_WORDS = 6;
+const VERIFIED_QUOTE_RUN_ATTEMPTS = 40;
+const VERIFIED_QUOTE_MAX_CHARS = 900;
+const VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS = 300;
+const BLANKET_COMPLIANCE_CLAIM =
+  /\b(?:oppfyller|dekker|imøtekommer|ivaretar|tilfredsstiller|etterlever|innfrir|besvarer)\s+(?:alle|samtlige|hvert)\s+(?:krav|kravene|kravet|behov)\b|\b(?:alle|samtlige)\s+krav(?:ene)?\b[^.¦]{0,40}\b(?:oppfylles|dekkes|ivaretas|innfris|(?:er|blir)\s+(?:oppfylt|dekket|ivaretatt|innfridd|besvart))\b/iu;
+// A remainder that only confirms ("Oppfylt", "Leverandøren bekrefter at
+// kravet er oppfylt") after restating the requirement says nothing about how.
+const CONFIRMATION_ONLY =
+  /^[\s¦,.:;-]*(?:(?:leverandøren|vi|tilbyder|tilbyderen|løsningen)\s+)?(?:bekrefter|garanterer|forsikrer)?\s*(?:at\s+)?(?:dette\s+|det\s+)?(?:kravet\s+)?(?:er\s+)?(?:fullt\s+)?(?:oppfylt|dekket|ivaretatt|innfridd|oppfylles|dekkes|ivaretas|bekreftet|ja)?(?:\s+kravet)?[\s,.!¦]*(?:(?:som\s+)?standard(?:\s+i\s+(?:plattformen|løsningen|tjenesten))?)?[\s.!¦]*$/iu;
+const NORWEGIAN_SUFFIXES = ["ingene", "ingen", "ering", "erte", "ende", "elig", "lige", "ene", "ane", "ing", "ert", "het", "lig", "er", "en", "et", "es", "te", "e", "s"];
+const NEGATION = /\b(?:ikke|ingen|nei|unntatt|unntak|forutsetter|forbehold|mot\s+tillegg|tilleggspris)\b/iu;
+const ABBREVIATION_BEFORE_DOT =
+  /(?:^|[\s(¦])(?:f\.eks|bl\.a|ca|inkl|ekskl|eks|nr|kl|jf|jfr|evt|mv|osv|dvs|ref|pkt|kap|tlf|mill|mrd|ifm|iht|bla|pr|mnd|mht|vha|pga|vedr|stk|t\.o\.m|f\.o\.m|o\.l|m\.m|e\.l|\d{1,3}(?:\.\d{1,3})*)$/iu;
+// Upper-case Norwegian function words ("SKAL", "IKKE") are not acronyms.
+const UPPERCASE_STOPWORDS = new Set(["skal", "må", "bør", "ikke", "og", "eller", "alle", "kan", "som", "for", "med", "det", "den", "er", "en", "et", "av", "til", "på", "ved", "om", "nb", "obs"]);
+
+function norwegianStem(word: string) {
+  for (const suffix of NORWEGIAN_SUFFIXES) {
+    if (word.length - suffix.length >= 4 && word.endsWith(suffix)) {
+      return word.slice(0, -suffix.length);
+    }
+  }
+  return word;
+}
+
+// Words that appear in almost every requirement and answer and therefore do
+// not show what a passage is about. Listed as words and stemmed with the
+// same stemmer as the text, so every inflection is caught.
+const GENERIC_REQUIREMENT_STEMS = new Set(
+  [
+    "leverandør", "leverandøren", "leverandørens", "oppdragsgiver", "oppdragsgiveren", "oppdragsgivers",
+    "løsning", "løsningen", "løsningens", "tilbyder", "tilbyderen", "tilbyders", "tilbud", "tilbudet",
+    "kunde", "kunden", "kundens", "krav", "kravet", "kravene", "skal", "kunne", "gjennom", "eventuelt",
+    "herunder", "samtlige", "avtale", "avtalen", "minimum", "minst", "følgende", "andre", "annet", "eller",
+    "være", "blir", "beskrive", "beskrivelse", "dokumentere", "dokumentert", "rutine", "rutiner", "sørge",
+    "tilby", "tilbyr", "levere", "leverer", "leveres", "leveranse", "leveransen", "sikre", "ivareta",
+    "inkludere", "omfatte", "gjelde", "gjelder", "system", "systemer", "tjeneste", "tjenesten", "tjenester",
+    "oppdrag", "oppdraget", "støtte", "støtter", "etablere", "utføre", "ansvar", "ansvarlig", "håndtere",
+    "bruke", "benytte", "knyttet", "relevante", "nødvendig",
+  ].map(norwegianStem),
+);
+
+type TermSet = { strong: string[]; stems: string[] };
+
+/** Distinctive terms of a text: Norwegian stems of longer words, and
+ * acronyms or standard numbers (MFA, RPO, 27001) that are matched whole. */
+function distinctiveTerms(text: string, genericStems: ReadonlySet<string> = new Set()): TermSet {
+  const isGeneric = (stem: string) => GENERIC_REQUIREMENT_STEMS.has(stem) || genericStems.has(stem);
+  const strong = [
+    ...new Set(
+      (flattenQuoteText(text).match(/\b(?:[A-ZÆØÅ]{2,6}\d{0,3}|\d{3,6})\b/gu) ?? [])
+        .map((term) => term.toLocaleLowerCase("nb"))
+        .filter((term) => !UPPERCASE_STOPWORDS.has(term) && !isGeneric(norwegianStem(term))),
+    ),
+  ];
+  const stems = [
+    ...new Set(
+      normalizeQuoteMatchText(text)
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((word) => word.length >= 4 && !/^\d+$/u.test(word))
+        .map(norwegianStem)
+        .filter((stem) => stem.length >= 4 && !isGeneric(stem) && !strong.includes(stem)),
+    ),
+  ];
+  return { strong, stems };
+}
+
+function words(text: string) {
+  return normalizeQuoteMatchText(text).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/** Shared distinctive terms between a requirement and a passage. Strong
+ * terms must match a whole word ("sso" is not "ssot"); a stem may start a
+ * word or, if long, sit inside a compound ("kundedata"). */
+function sharedTerms(terms: TermSet, passage: string) {
+  const passageWords = words(passage);
+  const normalizedPassage = passageWords.join(" ");
+  const strong = terms.strong.filter((term) => passageWords.includes(term)).length;
+  const stems = terms.stems.filter((stem) =>
+    stem.length <= 5
+      ? passageWords.some((word) => word.startsWith(stem))
+      : normalizedPassage.includes(stem),
+  ).length;
+  return { strong, shared: strong + stems, total: terms.strong.length + terms.stems.length };
+}
+
+/**
+ * Stems that occur in more than 15 % of a ledger's requirements (and in at
+ * least three): in this tender they say little about which requirement a
+ * passage answers. They lower certainty but never prevent a binding.
+ */
+export function requirementGenericStems(entries: RequirementLedgerEntry[]) {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    for (const stem of distinctiveTerms(entry.text).stems) {
+      counts.set(stem, (counts.get(stem) ?? 0) + 1);
+    }
+  }
+  const threshold = Math.max(3, Math.ceil(entries.length * 0.15));
+  return new Set([...counts].filter(([, count]) => count >= threshold).map(([stem]) => stem));
+}
+
+/** Sentence and cell boundaries of flattened text; a full stop after an
+ * abbreviation ("f.eks.", "pr.") or a list number ("3.2.") is not one. */
+// Boundaries of the last document's flattened text: each candidate quote
+// span of a requirement is bound against the same text.
+let sentenceBoundaryCache: { flat: string; boundaries: number[] } | null = null;
+
+function sentenceBoundaries(flat: string) {
+  if (sentenceBoundaryCache?.flat === flat) return sentenceBoundaryCache.boundaries;
+  const boundaries: number[] = [];
+  for (const match of flat.matchAll(/[.!?](?=\s|$)|¦/gu)) {
+    const at = match.index!;
+    if (match[0] !== "¦" && ABBREVIATION_BEFORE_DOT.test(flat.slice(Math.max(0, at - 12), at))) continue;
+    boundaries.push(at);
+  }
+  sentenceBoundaryCache = { flat, boundaries };
+  return boundaries;
+}
+
+/** The next sentence or cell after `from` (end of text is a boundary). */
+function nextSegment(flat: string, boundaries: number[], from: number) {
+  let start = from;
+  let cellBoundaries = 0;
+  while (start < flat.length && /[\s¦]/u.test(flat[start]!)) {
+    if (flat[start] === "¦") cellBoundaries += 1;
+    start += 1;
+  }
+  if (start >= flat.length) return null;
+  const end = boundaries.find((at) => at >= start);
+  const stop = end === undefined ? flat.length : flat[end] === "¦" ? end : end + 1;
+  return {
+    text: flat.slice(start, stop).trim(),
+    end: stop,
+    isCell: end !== undefined && flat[end] === "¦",
+    // More than one cell boundary in between means an empty cell was skipped.
+    adjacent: cellBoundaries <= 1,
+  };
+}
+
+function nextCellText(flat: string, from: number) {
+  const start = flat.indexOf("¦", from) + 1;
+  if (start <= 0) return undefined;
+  const end = flat.indexOf("¦", start);
+  const text = flat.slice(start, end < 0 ? flat.length : end).trim();
+  return text || undefined;
+}
+
+// A follow-up that limits the answer ("Dette gjelder kun produksjon").
+const LIMITING = /\b(?:kun|bare|begrenset\s+til|opsjon|forutsatt|med\s+mindre)\b/iu;
+
+// A clause that refers back to the quoted assertion ("men dette inngår
+// ikke", "men kun for produksjon") qualifies it and belongs to the answer.
+const REFERRING_CLAUSE = /^(?:(?:men|mens|samt|derimot)\s+)?(?:dette|det|disse|den|denne|kun|bare|ikke|unntatt|med\s+unntak)\b/iu;
+// A follow-up that refers back to the answer ("Dette ...", "Unntatt ...").
+// Across a blank line only an explicit back-reference qualifies the answer;
+// a bare "Det"/"Dette" opens a new statement as often as it refers back.
+const PARAGRAPH_BACK_REFERENCE =
+  /^(?:dette\s+gjelder|det\s+gjelder|dette\s+omfatter|merk|merknad|unntatt|unntak|med\s+unntak|forbehold|forutsatt|gjelder|omfatter)\b/iu;
+const REFERRING_START = /^(?:dette|det|denne|disse|dette gjelder|unntatt|unntak|men|merk|forutsatt|forbehold|med\s+unntak|merknad|leveres|gjelder|omfatter)\b/iu;
+
+/**
+ * The quote's own sentence (bounded by sentence ends, table cells and
+ * bullets, with abbreviations skipped), split into clauses so that a refusal
+ * about something else ("..., men telefonstøtte tilbys ikke") is not taken
+ * as this requirement's answer. A following sentence or cell that refers
+ * back to it or concerns the requirement is added. `complete` is false when
+ * a boundary or a qualifying follow-up was out of reach.
+ */
+function answerPassage(
+  flat: string,
+  start: number,
+  end: number,
+  requirement: TermSet,
+  paragraphStarts: number[] = [],
+  sectionStarts: number[] = [],
+) {
+  const boundaries = sentenceBoundaries(flat);
+  const before = boundaries.filter((at) => at < start).at(-1);
+  const after = boundaries.find((at) => at >= end - 1);
+  let complete = true;
+  let sentenceStart = before === undefined ? 0 : before + 1;
+  if (start - sentenceStart > VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS) {
+    // The sentence start is out of reach: begin at the quote, never at an
+    // arbitrary point that could open with a neighbour's text.
+    sentenceStart = start;
+    complete = false;
+  }
+  let sentenceEnd = after === undefined ? flat.length : after + (flat[after] === "¦" ? 0 : 1);
+  if (sentenceEnd - end > VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS) {
+    sentenceEnd = end;
+    complete = false;
+  }
+
+  // Clauses of the own sentence; keep those overlapping the quote or naming
+  // the requirement, set aside the rest.
+  const clauseBreak = /\s*(?:,\s*(?=(?:men|mens|samt|derimot)\b)|;\s*)/giu;
+  const clauses: Array<{ from: number; to: number }> = [];
+  let clauseStart = sentenceStart;
+  for (const match of flat.slice(sentenceStart, sentenceEnd).matchAll(clauseBreak)) {
+    const at = sentenceStart + match.index!;
+    clauses.push({ from: clauseStart, to: at });
+    clauseStart = at + match[0].length;
+  }
+  clauses.push({ from: clauseStart, to: sentenceEnd });
+  // Keep the contiguous run of clauses around the quote, extended by
+  // neighbours that refer back to it or name the requirement; the stored
+  // answer is always a verbatim span, never clauses joined across a gap.
+  let setAsideNegation = false;
+  const belongs = (clause: { from: number; to: number }) => {
+    const text = flat.slice(clause.from, clause.to);
+    return sharedTerms(requirement, text).shared > 0 || REFERRING_CLAUSE.test(text.trim());
+  };
+  const quoted = clauses
+    .map((clause, index) => (clause.to > start && clause.from < end ? index : -1))
+    .filter((index) => index >= 0);
+  let first = quoted[0] ?? 0;
+  let last = quoted.at(-1) ?? 0;
+  while (first > 0 && belongs(clauses[first - 1]!)) first -= 1;
+  while (last < clauses.length - 1 && belongs(clauses[last + 1]!)) last += 1;
+  for (const [index, clause] of clauses.entries()) {
+    if ((index < first || index > last) && NEGATION.test(flat.slice(clause.from, clause.to))) {
+      setAsideNegation = true;
+    }
+  }
+  const own = flat
+    .slice(clauses[first]!.from, clauses[last]!.to)
+    .replace(/^[\s¦,;]+|[\s¦,;]+$/gu, "");
+
+  let passage = own;
+  const following = nextSegment(flat, boundaries, sentenceEnd);
+  // A new section is another answer. So is a new paragraph, unless it
+  // refers back to this one ("Dette gjelder kun …", "Merk: …") or restricts
+  // the requirement itself ("Kundedata i testmiljøet krypteres ikke.").
+  const crosses = (starts: number[]) =>
+    following !== null && starts.some((at) => at >= sentenceEnd && at < following.end);
+  const newParagraph = crosses(paragraphStarts);
+  const next =
+    following &&
+    !crosses(sectionStarts) &&
+    (!newParagraph ||
+      PARAGRAPH_BACK_REFERENCE.test(following.text) ||
+      ((NEGATION.test(following.text) || LIMITING.test(following.text)) &&
+        sharedTerms(requirement, following.text).shared > 0))
+      ? following
+      : null;
+  if (next) {
+    // A follow-up that refers back qualifies the answer even without a
+    // negation ("Dette gjelder kun produksjonsmiljøet"); one that names the
+    // requirement does when it negates or limits it.
+    const restricts = NEGATION.test(next.text) || LIMITING.test(next.text);
+    const qualifies =
+      REFERRING_START.test(next.text) || (restricts && sharedTerms(requirement, next.text).shared > 0);
+    if (qualifies && next.text.length <= VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS) {
+      passage = `${own}${next.isCell ? " | " : " "}${next.text}`;
+    } else if (qualifies) {
+      complete = false;
+    }
+    // A restriction right after the answer (an option, a scope limit, a
+    // negation) may apply to it even without naming it, whether it ends in
+    // punctuation or at a cell boundary: never "Godt".
+    if (restricts) complete = false;
+    // Look further through the same paragraph or cell, within the context
+    // budget: "Dette er standard. Gjelder kun produksjonsmiljøet."
+    let cursor = next.end;
+    let budget = VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS - next.text.length;
+    // Within the follow-up's own paragraph: an accepted back-reference
+    // paragraph ("Dette gjelder …") is read to its end.
+    while (complete && !next.isCell && budget > 0) {
+      if (/^\s*¦/u.test(flat.slice(cursor))) break;
+      const further = nextSegment(flat, boundaries, cursor);
+      if (!further || !further.adjacent) break;
+      // A new paragraph or section ("Tilleggstjenester") is another answer.
+      if (paragraphStarts.some((at) => at >= cursor && at < further.end)) break;
+      if (NEGATION.test(further.text) || LIMITING.test(further.text)) complete = false;
+      if (further.isCell) break;
+      budget -= further.text.length;
+      cursor = further.end;
+    }
+  }
+  return {
+    own,
+    passage,
+    complete,
+    setAsideNegation,
+    // The cell after the quote's own cell, for a row whose first cells only
+    // restate the requirement.
+    // Also when a full stop ends the cell before its "|".
+    // The whole next cell, up to its own boundary, not its first sentence.
+    nextCell:
+      next?.adjacent && after !== undefined && (flat[after] === "¦" || /^\s*¦/u.test(flat.slice(sentenceEnd)))
+        ? nextCellText(flat, sentenceEnd)
+        : undefined,
+  };
+}
+
+/** Removes the restated requirement from a passage, compared as words so
+ * punctuation ("1 time;" vs "1 time.") does not hide the repetition. */
+function withoutRestatedRequirement(passage: string, requirementText: string) {
+  const passageWords = words(passage);
+  const requirementWords = words(requirementText);
+  if (requirementWords.length < 3) return { pureRestatement: false, remainder: passageWords.join(" ") };
+  for (let at = 0; at + requirementWords.length <= passageWords.length; at += 1) {
+    if (requirementWords.every((word, index) => passageWords[at + index] === word)) {
+      const rest = [...passageWords.slice(0, at), ...passageWords.slice(at + requirementWords.length)];
+      return { pureRestatement: rest.length === 0, remainder: rest.join(" ") };
+    }
+  }
+  const joinedRequirement = requirementWords.join(" ");
+  const pureRestatement = joinedRequirement.includes(passageWords.join(" "));
+  return { pureRestatement, remainder: passageWords.join(" ") };
+}
+
+export type VerifiedSolutionQuote = {
+  entry: RequirementLedgerEntry;
+  /** The passage shares few distinctive terms with the requirement, its
+   * context was cut, or it carries a negation or a bare confirmation: it
+   * may not support a "Godt". */
+  uncertain: boolean;
+};
+
+/** Whether a quote occurs verbatim in the solution document, so a quote
+ * that could not be bound is not reported as an absent answer. */
+/** Bilag 2 without table-cell markers, with each position mapped back to
+ * the flattened text: a model quoting a table row ("P1 Kritisk 15 minutter
+ * 4 timer") leaves the cell boundaries out. */
+const cellFreeSolutionTextCache = new WeakMap<ProjectDocumentDetail, { text: string; offsets: number[] }>();
+
+function cellFreeSolutionText(document: ProjectDocumentDetail) {
+  const cached = cellFreeSolutionTextCache.get(document);
+  if (cached) return cached;
+  const { whole } = normalizedSolutionText(document);
+  let text = "";
+  const offsets: number[] = [];
+  // A run of boundaries ("¦ ¦", a heading next to a row) is one space.
+  const boundaryRun = /\s*¦[\s¦]*/uy;
+  for (let index = 0; index < whole.length; index += 1) {
+    boundaryRun.lastIndex = index;
+    const run = whole[index] === " " || whole[index] === "¦" ? boundaryRun.exec(whole) : null;
+    if (run && run[0].includes("¦")) {
+      text += " ";
+      offsets.push(index);
+      index += run[0].length - 1;
+      continue;
+    }
+    text += whole[index];
+    offsets.push(index);
+  }
+  offsets.push(whole.length);
+  const value = { text, offsets };
+  cellFreeSolutionTextCache.set(document, value);
+  return value;
+}
+
+/**
+ * Where a model quote occurs verbatim in Bilag 2, as a span of the
+ * flattened text: the whole quote, else the quote ignoring table-cell
+ * boundaries, else its longest sentence or cell that occurs verbatim (a
+ * model often joins two sentences that are not adjacent). The stored
+ * answer is always cut from Bilag 2 itself, never from the quote.
+ */
+function* solutionQuoteSpans(normalizedQuote: string, document: ProjectDocumentDetail) {
+  const { whole } = normalizedSolutionText(document);
+  const cellFree = cellFreeSolutionText(document);
+  // A verbatim occurrence; a part of the quote must also be unique, since a
+  // repeated cell ("Inngår i den faste månedsprisen") may sit in another row.
+  const find = (needle: string, unique = false) => {
+    const direct = whole.indexOf(needle);
+    if (direct >= 0) {
+      if (unique && whole.indexOf(needle, direct + 1) >= 0) return null;
+      return { start: direct, end: direct + needle.length };
+    }
+    const plain = needle.replace(/\s*¦[\s¦]*/gu, " ");
+    const at = cellFree.text.indexOf(plain);
+    if (at < 0 || (unique && cellFree.text.indexOf(plain, at + 1) >= 0)) return null;
+    return { start: cellFree.offsets[at]!, end: cellFree.offsets[at + plain.length]! };
+  };
+  const exact = find(normalizedQuote);
+  if (exact) {
+    // A quote occurring more than once ("Inngår i den faste månedsprisen" in
+    // several rows) cannot show which row answers the requirement.
+    yield { ...exact, partial: find(normalizedQuote, true) === null };
+    return;
+  }
+  const parts = normalizedQuote
+    .split(/\s*(?:\[\.\.\.\]|\.\.\.|…)\s*|(?<=[.!?])\s+|\s*¦\s*/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  // Nothing invented: adjacent real sentences or cells (a cell or sentence
+  // skipped between them at most), each unique, in quote order and within
+  // one section. An elision may hide a qualifier, and a refusal or limit in
+  // an unbound part ("… Gjenoppretting innen fire timer tilbys ikke.") must
+  // keep the binding uncertain.
+  const { sectionStarts } = normalizedSolutionText(document);
+  const located = parts.map((part) => find(part, true));
+  const allVerbatim =
+    !/\.\.\.|…|\[\.\.\.\]/u.test(normalizedQuote) &&
+    parts.every((part, index) => part.length >= 12 && located[index] !== null) &&
+    located.every((span, index) => {
+      if (index === 0) return true;
+      const previous = located[index - 1]!;
+      const gap = whole.slice(previous.end, span!.start);
+      return (
+        span!.start >= previous.end &&
+        gap.length <= VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS &&
+        !sectionStarts.some((at) => at > previous.end && at <= span!.start) &&
+        !/¦\s*\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Ll}/u.test(gap) &&
+        // A restriction in the skipped text ("Dette gjelder kun
+        // testmiljøet.") may apply to the parts around it.
+        !NEGATION.test(gap) &&
+        !LIMITING.test(gap)
+      );
+    }) &&
+    !parts.some((part) => NEGATION.test(part) || LIMITING.test(part));
+  const fragments = parts
+    .filter((part) => part.length >= VERIFIED_QUOTE_MIN_CHARS)
+    .sort((left, right) => right.length - left.length);
+  for (const fragment of fragments) {
+    const found = find(fragment, true);
+    if (found) yield { ...found, partial: !allVerbatim };
+  }
+  // A table row run into a sentence without punctuation: the longest
+  // verbatim run of words from either end of the quote, always partial.
+  const words = normalizedQuote.replace(/\s*¦\s*/gu, " ").split(" ");
+  const longestRun = (take: (count: number) => string) => {
+    const shortest = Math.max(VERIFIED_QUOTE_MIN_WORDS, words.length - VERIFIED_QUOTE_RUN_ATTEMPTS);
+    for (let count = words.length - 1; count >= shortest; count -= 1) {
+      const run = take(count);
+      if (run.length < VERIFIED_QUOTE_MIN_CHARS) break;
+      const found = find(run, true);
+      if (found) return found;
+    }
+    return null;
+  };
+  const prefix = longestRun((count) => words.slice(0, count).join(" "));
+  if (prefix) yield { ...prefix, partial: true };
+  const suffix = longestRun((count) => words.slice(-count).join(" "));
+  if (suffix) yield { ...suffix, partial: true };
+}
+
+export function solutionDocumentContainsQuote(
+  quote: string | undefined,
+  solutionDocument: ProjectDocumentDetail,
+) {
+  const normalized = normalizeQuoteMatchText(String(quote ?? ""));
+  return normalized.length >= VERIFIED_QUOTE_MIN_CHARS && !solutionQuoteSpans(normalized, solutionDocument).next().done;
+}
+
+/**
+ * Binds a requirement without a matched answer row to a passage of the
+ * solution document that the model quoted. The quote must occur verbatim
+ * (modulo whitespace, line-break hyphens, ligatures and quote marks); the
+ * stored answer is its own sentence or cell plus a qualifying follow-up, not
+ * the model's excerpt. Blanket compliance claims and pure restatements are
+ * rejected, and a passage sharing no distinctive term with the requirement
+ * is not bound. Weak overlap, cut context, an extra negation or a bare
+ * confirmation bind as uncertain, because failed word matching alone does
+ * not prove that an answer is absent. The existing answer checks (declines,
+ * deferred confirmation, attachments) then judge the stored passage.
+ */
+export function bindVerifiedSolutionQuote(input: {
+  entry: RequirementLedgerEntry;
+  quote: string | undefined;
+  assessment?: string;
+  solutionDocument: ProjectDocumentDetail;
+  /** Stems that are generic in this tender (see requirementGenericStems). */
+  genericStems?: ReadonlySet<string>;
+}): VerifiedSolutionQuote | null {
+  if (substantiveRequirementAnswerExcerpt(input.entry)) return null;
+  // A model that finds no answer must not be turned into a weak answer.
+  if (normalizeRequirementCoverageAssessment(input.assessment) === "Mangler") return null;
+  const quote = String(input.quote ?? "").replace(/\s+/gu, " ").trim();
+  if (quote.length < VERIFIED_QUOTE_MIN_CHARS || quote.length > VERIFIED_QUOTE_MAX_CHARS) {
+    return null;
+  }
+  // The first verbatim span of the quote that binds: the whole quote, else
+  // its parts in order of length.
+  for (const span of solutionQuoteSpans(normalizeQuoteMatchText(quote), input.solutionDocument)) {
+    const bound = bindSolutionQuoteSpan(input, span);
+    if (bound) return bound;
+  }
+  return null;
+}
+
+function bindSolutionQuoteSpan(
+  input: Parameters<typeof bindVerifiedSolutionQuote>[0],
+  span: { start: number; end: number; partial: boolean },
+): VerifiedSolutionQuote | null {
+  const solution = normalizedSolutionText(input.solutionDocument);
+  const { start } = span;
+  // The verified part of the quote, as it stands in Bilag 2.
+  const normalizedQuote = solution.whole.slice(span.start, span.end);
+
+  const requirementSource = `${input.entry.text} ${input.entry.heading}`;
+  // Binding is decided on the general vocabulary only; tender-wide frequent
+  // words merely lower certainty, so a section of related requirements
+  // ("sikkerhetskopi") does not lose its topic word.
+  const baseTerms = distinctiveTerms(requirementSource);
+  const tenderTerms = distinctiveTerms(requirementSource, input.genericStems);
+  const located = answerPassage(
+    solution.flat,
+    start,
+    span.end,
+    baseTerms,
+    solution.paragraphStarts,
+    solution.sectionStarts,
+  );
+  const { complete, setAsideNegation } = located;
+  let { own, passage } = located;
+  let { pureRestatement, remainder } = withoutRestatedRequirement(own, input.entry.text);
+  if (pureRestatement && located.nextCell && located.nextCell.length <= VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS) {
+    // A table row restating the requirement: its next cell is the answer.
+    own = `${own} | ${located.nextCell}`;
+    passage = own;
+    ({ pureRestatement, remainder } = withoutRestatedRequirement(own, input.entry.text));
+  }
+  if (pureRestatement) return null;
+  const normalizedPassage = normalizeQuoteMatchText(passage);
+  if (BLANKET_COMPLIANCE_CLAIM.test(normalizedPassage)) return null;
+  const bareConfirmation = remainder.length < 20 || CONFIRMATION_ONLY.test(remainder);
+  // The heading right above the passage ("7.2 Respons- og løsningstider
+  // (TJN-03)") can tie a table or paragraph to its requirement.
+  const ownAt = solution.flat.indexOf(own, Math.max(0, start - VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS));
+  // Up to three cells back: a table's header row sits between its rows and
+  // the section heading.
+  // Only a numbered section heading naming the requirement's own ID; the
+  // search stops at a cell naming another requirement ("| SIK-03 | Støttes
+  // ikke |" is another row's answer, not a heading).
+  const idPattern = (id: string) =>
+    new RegExp(`(?<![\\p{L}\\p{N}-])${id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}]|\\.\\d)`, "u");
+  // An empty or generated ID cannot be named by a heading.
+  const ownId = input.entry.id.trim().length >= 2 ? idPattern(input.entry.id.trim()) : null;
+  let heading = "";
+  if (ownId && ownAt > 0) {
+    const cells = solution.flat
+      .slice(Math.max(0, ownAt - 400), ownAt)
+      .split("¦")
+      .map((cell) => cell.trim())
+      .filter(Boolean)
+      .slice(-3)
+      .reverse();
+    for (const cell of cells) {
+      if (ownId.test(cell)) {
+        if (cell.length <= 120 && /^\d{1,2}(?:\.\d{1,2}){0,3}\.?\s+\p{Lu}/u.test(cell)) heading = cell;
+        break;
+      }
+      if (/(?<![\p{L}\p{N}-])[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?![\p{L}\p{N}])/u.test(cell)) break;
+    }
+  }
+  const headingNamesRequirement = heading.length > 0;
+  const ownShared = sharedTerms(baseTerms, own).shared;
+  if (ownShared === 0 && !headingNamesRequirement) return null;
+
+  // Certainty is judged on what the passage adds beyond the restatement.
+  const tenderOverlap = sharedTerms(tenderTerms, remainder);
+  const newNegation = NEGATION.test(normalizedPassage) && !NEGATION.test(normalizedQuote);
+  // Only part of the model's quote was found: the rest may be invented, so
+  // the recovered passage can support at most "Uklart".
+  // An answer cut off mid-sentence ("… replikeres mellom") misses its end.
+  const cutOff = CONTINUATION_WORD_END.test(own.replace(/[\s¦|]+$/u, ""));
+  const uncertain =
+    span.partial ||
+    cutOff ||
+    !complete ||
+    newNegation ||
+    setAsideNegation ||
+    bareConfirmation ||
+    (tenderOverlap.strong === 0 &&
+      (tenderOverlap.total === 0 || tenderOverlap.shared < Math.min(2, tenderOverlap.total)));
+
+  // Boundaries are shown the way table cells are joined elsewhere.
+  const shownPassage = passage.replace(/\s*¦\s*/gu, " | ").replace(/^\s*\|\s*|\s*\|\s*$/gu, "");
+  const quotePrefix = normalizedPassage.slice(0, 60);
+  const page = solution.pages.find((candidate) =>
+    candidate.page > 0 && candidate.text.includes(quotePrefix),
+  )?.page;
+  const answerReference = page
+    ? `${input.solutionDocument.title}, side ${page}`
+    : input.solutionDocument.title;
+
+  return {
+    uncertain,
+    entry: {
+      ...input.entry,
+      sourceExcerpt: compactText(
+        [
+          requirementSourceExcerptWithoutAnswer(input.entry).trim().replace(/\|\s*$/u, "").trim() ||
+            `Kravgrunnlag: ${input.entry.text}`,
+          `Svarrad: ${shownPassage}`,
+        ].join(" | "),
+        1800,
+      ),
+      answerExcerpt: shownPassage,
+      answerEvidenceExcerpt: shownPassage,
+      answerDocumentId: input.solutionDocument.id,
+      answerDocumentTitle: input.solutionDocument.title,
+      answerReference,
+    },
+  };
 }
 
 export function coverageItemFromBatchRow(input: {
@@ -3898,36 +4788,35 @@ export function assertRequirementCoverageBatchesSucceeded(
   totalBatches: number,
 ) {
   if (!failedBatches.length) return;
-  throw new Error(
-    `Kravvurderingen stoppet fordi ${failedBatches.length} av ${totalBatches} AI-batcher feilet. Første feil: ${compactText(
-      failedBatches[0]?.reason ?? "ukjent feil",
-      300,
-    )}`,
+  const failedRequirements = failedBatches.reduce(
+    (sum, batch) => sum + batch.count,
+    0,
+  );
+  // The batch reasons stay in the logs; users get counts they can act on.
+  throw new WorkflowIncompleteError(
+    `Løsningsvurderingen stoppet fordi ${failedBatches.length} av ${totalBatches} AI-batcher (${failedRequirements} krav) ikke ble fullført, heller ikke etter nytt forsøk. Ingen delvis vurdering er lagret. Prøv igjen om litt.`,
   );
 }
 
-// Exported for deterministic concurrency and lease-loss contract tests.
-// fallow-ignore-next-line unused-export
-export async function retryRequirementCoverageBatchesSequentially<TBatch, TValue>(
+/**
+ * Retries failed coverage batches once each with bounded concurrency. Results
+ * keep input order. A lost lease or cancellation aborts instead of being
+ * recorded as an ordinary batch failure.
+ */
+export async function retryRequirementCoverageBatches<TBatch, TValue>(
   batches: TBatch[],
   retry: (batch: TBatch) => Promise<TValue>,
-  assertActive: () => void = () => {},
+  options: { concurrency: number; assertActive?: () => void },
 ) {
-  const results: Array<
-    | { batch: TBatch; ok: true; value: TValue }
-    | { batch: TBatch; ok: false; error: unknown }
-  > = [];
-
-  for (const batch of batches) {
+  const assertActive = options.assertActive ?? (() => {});
+  return mapWithConcurrency(batches, Math.max(1, options.concurrency), async (batch) => {
     try {
-      results.push({ batch, ok: true, value: await retry(batch) });
+      return { batch, ok: true as const, value: await retry(batch) };
     } catch (error) {
       assertActive();
-      results.push({ batch, ok: false, error });
+      return { batch, ok: false as const, error };
     }
-  }
-
-  return results;
+  });
 }
 
 export function selectRequirementsForSolutionCoverage(input: {

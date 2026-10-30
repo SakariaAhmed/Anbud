@@ -764,10 +764,11 @@ async function runProjectJob(
     const result = await runProjectWorkflowWithDeadline({
       kind: input.kind,
       workflowSignal: lease.signal,
-      run: (workflowSignal) =>
+      run: (workflowSignal, deadlineAt) =>
         runWithProjectWorkflowContext(
           {
             signal: workflowSignal,
+            deadlineAt,
             lease: context.persisted
               ? {
                   jobId,

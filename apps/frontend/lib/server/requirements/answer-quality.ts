@@ -2915,7 +2915,7 @@ export function requirementAnswerQualityIssues(
     issues.push("weak_mandatory_commitment");
   }
 
-  if (mandatory && answerExplicitlyDeclinesRequirement(normalizedAnswer)) {
+  if (mandatory && answerExplicitlyDeclinesRequirement(normalizedAnswer, entry.text)) {
     issues.push("mandatory_requirement_declined");
   }
 
@@ -3725,9 +3725,71 @@ export function answerHasSelfContainedCoverage(
   );
 }
 
-export function answerExplicitlyDeclinesRequirement(value: string) {
+// "Støttes ikke." declines the delivery itself when its subject is absent,
+// a pronoun or a delivery noun ("Nei, dette støttes ikke", "Kravet dekkes
+// ikke"), unless the requirement only forbids something ("Løsningen skal
+// ikke støtte usikre protokoller"): then the answer complies. This decline
+// overrides the model's assessment, so a noun subject ("SSO støttes ikke",
+// "Internet Explorer støttes ikke") is left to the model: whether it is the
+// requested thing or an excluded option depends on the whole answer.
+// A scope limit ("leveres ikke utenfor EU") and "ikke bare" never decline.
+const SUBJECT_DECLINE =
+  /(?:^|[.;:!?]\s+|\bnei\s*[,.:–-]\s*)((?:[\p{L}-]+\s+){0,2}[\p{L}-]+\s+)?(?:støttes|tilbys|leveres|dekkes)\s+ikke(?!\s+(?:bare|kun|utenfor|uten|før|etter|over|under|via|(?:som|i)\s+(?:en\s+del\s+av\s+)?(?:dagens\s+)?standard\p{L}*)(?![\p{L}\p{N}]))/giu;
+// A bare pronoun ("Dette", "Det") refers to the requirement only in the
+// answer's opening sentence or after "Nei,"; later it usually points back to
+// an excluded option ("SMS er deaktivert. Dette støttes ikke av
+// sikkerhetshensyn."). A placeholder "Det" with its real subject after
+// "ikke" ("Det støttes ikke lokale kontoer") names an option.
+const BARE_PRONOUN = /^(?:dette|det|denne|disse)$/iu;
+// After "Det støttes ikke": the clause ends or goes on with a preposition
+// ("i vår plattform", "per i dag"). A noun there is the real subject.
+const CLAUSE_END_AFTER_DECLINE =
+  /^\s*(?:(?:foreløpig|lenger|per\s+i\s+dag)\s*)?(?:[.;:!?,]|$|(?:i|på|av|for|med|per|ved|hos|innen|gjennom|fra|under)\s)/iu;
+const DELIVERY_SUBJECT =
+  /^(?:(?:dette|denne|disse|det|slik|slike)\s+)?(?:dette|det|denne|disse|krav(?:et)?|funksjon(?:en|alitet(?:en)?)?|tjenesten|leveransen|kontrollen)$/iu;
+const NOT_LETTER = "(?<![\\p{L}\\p{N}])";
+const NOT_LETTER_AFTER = "(?![\\p{L}\\p{N}])";
+const MODAL = new RegExp(`${NOT_LETTER}(skal|må|bør|kan)${NOT_LETTER_AFTER}(\\s+ikke${NOT_LETTER_AFTER})?`, "iu");
+const BARE_PROHIBITION = new RegExp(`${NOT_LETTER}(?:ikke\\s+(?:tillatt|tillates)|forbudt|uakseptabelt)${NOT_LETTER_AFTER}`, "iu");
+
+/** Whether a requirement clause forbids rather than obliges: its first modal
+ * is negated ("skal ikke støtte"), or it has none and states a ban. "Skal
+ * varsle om lisenser som ikke brukes" obliges. */
+function clauseForbids(clause: string) {
+  const modal = MODAL.exec(clause);
+  return modal ? Boolean(modal[2]) : BARE_PROHIBITION.test(clause);
+}
+
+/** Whether a requirement only forbids: then declining is compliance. */
+function requirementOnlyForbids(requirement: string | undefined) {
+  if (requirement === undefined) return false;
+  const clauses = normalizePageText(requirement).split(/[.;]\s+|,\s*(?=men\s)|\s+og\s+(?=(?:skal|må|bør)\s)/u);
+  const forbids = clauses.some(clauseForbids);
+  const obliges = clauses.some((clause) => MODAL.test(clause) && !clauseForbids(clause));
+  return forbids && !obliges;
+}
+
+function answerDeclinesDelivery(text: string, requirement: string | undefined) {
+  if (requirementOnlyForbids(requirement)) return false;
+  return Array.from(text.matchAll(SUBJECT_DECLINE)).some((match) => {
+    const subject = (match[1] ?? "").trim();
+    if (!subject) return true;
+    if (!DELIVERY_SUBJECT.test(subject)) return false;
+    if (!BARE_PRONOUN.test(subject)) return true;
+    // An explicit "Nei," refusal declines whatever follows.
+    if (/\bnei\s*[,.:–-]\s*$/iu.test(text.slice(0, match.index! + match[0].indexOf(subject)))) return true;
+    if (match.index !== 0) return false;
+    if (/^det$/iu.test(subject)) return CLAUSE_END_AFTER_DECLINE.test(text.slice(match.index! + match[0].length));
+    return true;
+  });
+}
+
+/** Whether the answer declines the requirement. Pass the requirement text
+ * when known: without it, only a decline of the delivery itself counts. */
+export function answerExplicitlyDeclinesRequirement(value: string, requirement?: string) {
   const text = normalizePageText(value);
-  return /\b(?:(?:kravet|leveransen|funksjonen|funksjonaliteten|tjenesten|kontrollen|løsningen)\s+(?:inngår\s+ikke|er\s+ikke\s+inkludert)|(?:inngår\s+ikke|er\s+ikke\s+inkludert)\s+i\s+(?:leveransen|tilbudet|scope|omfanget)|ikke\s+leveres|kan\s+ikke\s+(?:levere|støtte|oppfylle)|utenfor\s+scope|må\s+håndteres\s+av\s+kunden|not\s+included\s+in\s+(?:the\s+)?(?:delivery|offer|scope)|out\s+of\s+scope|cannot\s+(?:deliver|support|meet))\b/i.test(
+  if (answerDeclinesDelivery(text, requirement)) return true;
+  return /\b(?:(?:kravet|leveransen|funksjonen|funksjonaliteten|tjenesten|kontrollen|løsningen)\s+(?:inngår\s+ikke|er\s+ikke\s+inkludert)|(?:inngår\s+ikke|er\s+ikke\s+inkludert)\s+i\s+(?:leveransen|tilbudet|scope|omfanget)|ikke\s+leveres|kan\s+ikke\s+(?:levere|støtte|oppfylle|tilby)|utenfor\s+scope|må\s+håndteres\s+av\s+kunden|not\s+included\s+in\s+(?:the\s+)?(?:delivery|offer|scope)|out\s+of\s+scope|cannot\s+(?:deliver|support|meet))\b/i.test(
     text,
   );
 }
