@@ -14,16 +14,35 @@ import { createJiti } from "jiti";
 // OpenAI SDK against a local stand-in and inspects the prompt it sends.
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const requests = [];
-const server = createServer(async (request, response) => {
+// Requests still in flight at teardown are awaited, and a body cut off by a
+// closing connection is answered instead of throwing after the tests ended.
+const inFlight = new Set();
+const server = createServer((request, response) => {
+  const handled = handle(request, response);
+  inFlight.add(handled);
+  handled.finally(() => inFlight.delete(handled));
+});
+async function handle(request, response) {
   let body = "";
-  for await (const chunk of request) body += chunk;
-  requests.push(JSON.parse(body));
+  try {
+    for await (const chunk of request) body += chunk;
+  } catch {
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    response.writeHead(400).end();
+    return;
+  }
+  requests.push(parsed);
   response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
     id: "chatcmpl-test", object: "chat.completion", created: 0, model: "gpt-test",
     choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify({ customer_profile_summary: "Testkunde." }) }, finish_reason: "stop" }],
     usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
   }));
-});
+}
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 process.env.OPENAI_API_KEY = "customer-analysis-context-test";
 process.env.OPENAI_BASE_URL = `http://127.0.0.1:${server.address().port}/v1`;
@@ -58,8 +77,10 @@ test.beforeEach(() => {
   globalThis.__analysisSnippets = [];
 });
 
-test.after(() => {
+test.after(async () => {
+  await Promise.allSettled([...inFlight]);
   server.close();
+  server.closeAllConnections();
   rmSync(directory, { recursive: true, force: true });
 });
 
