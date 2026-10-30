@@ -3012,12 +3012,25 @@ function sentenceBoundaries(flat: string) {
 /** The next sentence or cell after `from` (end of text is a boundary). */
 function nextSegment(flat: string, boundaries: number[], from: number) {
   let start = from;
-  while (start < flat.length && /[\s¦]/u.test(flat[start]!)) start += 1;
+  let cellBoundaries = 0;
+  while (start < flat.length && /[\s¦]/u.test(flat[start]!)) {
+    if (flat[start] === "¦") cellBoundaries += 1;
+    start += 1;
+  }
   if (start >= flat.length) return null;
   const end = boundaries.find((at) => at >= start);
   const stop = end === undefined ? flat.length : flat[end] === "¦" ? end : end + 1;
-  return { text: flat.slice(start, stop).trim(), end: stop, isCell: end !== undefined && flat[end] === "¦" };
+  return {
+    text: flat.slice(start, stop).trim(),
+    end: stop,
+    isCell: end !== undefined && flat[end] === "¦",
+    // More than one cell boundary in between means an empty cell was skipped.
+    adjacent: cellBoundaries <= 1,
+  };
 }
+
+// A follow-up that limits the answer ("Dette gjelder kun produksjon").
+const LIMITING = /\b(?:kun|bare|begrenset\s+til|opsjon|forutsatt|med\s+mindre)\b/iu;
 
 // A clause that refers back to the quoted assertion ("men dette inngår
 // ikke", "men kun for produksjon") qualifies it and belongs to the answer.
@@ -3062,24 +3075,43 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
     clauseStart = at + match[0].length;
   }
   clauses.push({ from: clauseStart, to: sentenceEnd });
+  // Keep the contiguous run of clauses around the quote, extended by
+  // neighbours that refer back to it or name the requirement; the stored
+  // answer is always a verbatim span, never clauses joined across a gap.
   let setAsideNegation = false;
-  const kept = clauses.filter((clause) => {
+  const belongs = (clause: { from: number; to: number }) => {
     const text = flat.slice(clause.from, clause.to);
-    const overlapsQuote = clause.to > start && clause.from < end;
-    if (overlapsQuote || sharedTerms(requirement, text).shared > 0) return true;
-    if (REFERRING_CLAUSE.test(text.trim())) return true;
-    if (NEGATION.test(text)) setAsideNegation = true;
-    return false;
-  });
-  const own = kept.map((clause) => flat.slice(clause.from, clause.to).trim()).join(", ").replace(/^[\s¦]+|[\s¦]+$/gu, "");
+    return sharedTerms(requirement, text).shared > 0 || REFERRING_CLAUSE.test(text.trim());
+  };
+  const quoted = clauses
+    .map((clause, index) => (clause.to > start && clause.from < end ? index : -1))
+    .filter((index) => index >= 0);
+  let first = quoted[0] ?? 0;
+  let last = quoted.at(-1) ?? 0;
+  while (first > 0 && belongs(clauses[first - 1]!)) first -= 1;
+  while (last < clauses.length - 1 && belongs(clauses[last + 1]!)) last += 1;
+  for (const [index, clause] of clauses.entries()) {
+    if ((index < first || index > last) && NEGATION.test(flat.slice(clause.from, clause.to))) {
+      setAsideNegation = true;
+    }
+  }
+  const own = flat
+    .slice(clauses[first]!.from, clauses[last]!.to)
+    .replace(/^[\s¦,;]+|[\s¦,;]+$/gu, "");
 
   let passage = own;
   const next = nextSegment(flat, boundaries, sentenceEnd);
-  if (next && NEGATION.test(next.text)) {
-    const relevant = REFERRING_START.test(next.text) || sharedTerms(requirement, next.text).shared > 0;
-    if (relevant && next.text.length <= VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS) {
+  if (next) {
+    // A follow-up that refers back qualifies the answer even without a
+    // negation ("Dette gjelder kun produksjonsmiljøet"); one that names the
+    // requirement does when it negates or limits it.
+    const qualifies =
+      REFERRING_START.test(next.text) ||
+      ((NEGATION.test(next.text) || LIMITING.test(next.text)) && sharedTerms(requirement, next.text).shared > 0);
+    if (qualifies && next.text.length <= VERIFIED_QUOTE_SENTENCE_CONTEXT_CHARS) {
       passage = `${own}${next.isCell ? " | " : " "}${next.text}`;
-    } else if (relevant) {
+      if (LIMITING.test(next.text)) complete = false;
+    } else if (qualifies) {
       complete = false;
     }
   }
@@ -3092,8 +3124,8 @@ function answerPassage(flat: string, start: number, end: number, requirement: Te
     // restate the requirement.
     // Also when a full stop ends the cell before its "|".
     nextCell:
-      after !== undefined && (flat[after] === "¦" || /^\s*¦/u.test(flat.slice(sentenceEnd)))
-        ? next?.text
+      next?.adjacent && after !== undefined && (flat[after] === "¦" || /^\s*¦/u.test(flat.slice(sentenceEnd)))
+        ? next.text
         : undefined,
   };
 }

@@ -456,3 +456,28 @@ test("council round 4 probes: referring clauses stay, cell answers survive a ful
   assert.equal(row?.uncertain, true);
   assert.match(row.entry.answerExcerpt, /Oppfylt/u);
 });
+
+test("council round 4 (second member): verbatim spans, limiting follow-ups, empty cells", () => {
+  const doc = (text) => ({ ...solutionDocument, raw_text: `[[SIDE:9]]\n${text}` });
+  const req = (text) => ({ ...unansweredRequirement, id: "V-1", heading: "", text });
+  const storage = req("Alle kundedata skal ha kryptert lagring i Norge.");
+  const bind = (entry, quote, raw) =>
+    bindVerifiedSolutionQuote({ entry, quote, assessment: "Godt", solutionDocument: doc(raw) });
+
+  // Never stitched across a skipped clause: the stored answer is verbatim.
+  const raw = "Kryptert lagring av alle kundedata leveres i Norge; telefonstøtte tilbys ikke; kundedata krypteres med AES-256.";
+  const stitched = bind(storage, "Kryptert lagring av alle kundedata leveres i Norge", raw);
+  assert.ok(raw.includes(stitched.entry.answerExcerpt), stitched.entry.answerExcerpt);
+  // A same-sentence qualification about the requirement stays.
+  const limited = bind(storage, "Kryptert lagring av alle kundedata leveres i Norge", "Kryptert lagring av alle kundedata leveres i Norge, men dette gjelder ikke arkivdata.");
+  assert.match(limited.entry.answerExcerpt, /gjelder ikke arkivdata/u);
+  // A referring follow-up that limits scope is attached and makes it uncertain.
+  const scoped = bind(storage, "Kryptert lagring av alle kundedata leveres i Norge.", "Kryptert lagring av alle kundedata leveres i Norge. Dette gjelder kun produksjonsmiljøet.");
+  assert.match(scoped.entry.answerExcerpt, /kun produksjonsmiljøet/u);
+  assert.equal(scoped.uncertain, true);
+  // An empty answer cell does not borrow the next row.
+  assert.equal(
+    bind(req("Løsningen skal støtte SSO via Entra ID."), "Løsningen skal støtte SSO via Entra ID", "Løsningen skal støtte SSO via Entra ID | | K-2 | Løsningen skal ha logging av alle administratorhandlinger |"),
+    null,
+  );
+});
