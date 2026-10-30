@@ -559,6 +559,10 @@ test("a decline names the delivery, not an option the requirement may forbid", a
   for (const compliant of ["Usikre protokoller støttes ikke.", "Støttes ikke."]) {
     assert.equal(declines(compliant, "Løsningen skal ikke støtte usikre protokoller."), false, compliant);
   }
+  // A prohibition clause excuses only what it forbids.
+  const mixed = "Løsningen skal støtte SSO via Entra ID og skal ikke tillate lokale kontoer.";
+  assert.equal(declines("Dette støttes ikke i vår plattform. Vi bruker lokale brukerkontoer.", mixed), true);
+  assert.equal(declines("Lokale kontoer støttes ikke.", mixed), false);
 });
 
 test("a restriction in a later section does not qualify the answer", () => {
@@ -575,6 +579,17 @@ test("a restriction in a later section does not qualify the answer", () => {
   const separate = bind(`## 4 Lagring\n\n${answer}\n\n## 5 Tilleggstjenester\n\nTelefonstøtte tilbys ikke.`);
   assert.ok(separate);
   assert.notEqual(separate.uncertain, true);
+  // Nor right after a blank line or a heading.
+  assert.notEqual(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\nTelefonstøtte tilbys ikke.`)?.uncertain, true);
+  assert.notEqual(bind(`Kryptert lagring av alle kundedata leveres i Norge.\n\n## 5 Support\n\nTelefonstøtte tilbys ikke.`)?.uncertain, true);
+  // A list introduced by ":" continues the answer, as Docling writes it.
+  const listed = bindVerifiedSolutionQuote({
+    entry: storage,
+    quote: "Kryptert lagring av alle kundedata leveres i Norge",
+    assessment: "Godt",
+    solutionDocument: doc("Kryptert lagring av alle kundedata leveres i Norge:\n\n- Gjelder kun produksjonsmiljøet."),
+  });
+  assert.equal(listed?.uncertain, true);
   // The same restriction within the paragraph still qualifies the answer.
   const same = bind(`## 4 Lagring\n\n${answer} Telefonstøtte tilbys ikke.`);
   assert.equal(same?.uncertain, true);

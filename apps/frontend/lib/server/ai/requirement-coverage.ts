@@ -2884,17 +2884,24 @@ const normalizedSolutionTextCache = new WeakMap<
 >();
 
 /** Where each paragraph or heading-led section of the raw text begins in
- * its flattened form: flattening removes the blank lines between them. */
+ * its flattened form: flattening removes the blank lines between them. A
+ * list, or a paragraph after one ending in ":", continues the text before
+ * it (Docling separates "Vi leverer:" from its bullets by a blank line). */
 function paragraphStartOffsets(rawText: string, flat: string) {
   const starts: number[] = [];
   let cursor = 0;
+  let previous = "";
   for (const paragraph of rawText.split(/\n[ \t]*\n|\n(?=[ \t]*#{1,6}[ \t])/u)) {
     const head = flattenQuoteText(paragraph).slice(0, 40);
     if (!head) continue;
     const at = flat.indexOf(head, cursor);
     if (at < 0) continue;
-    starts.push(at);
+    const continues =
+      /^\s*(?:[-–*•]|\d{1,2}[.)])\s/u.test(paragraph) && !/^\s*#/u.test(paragraph) ||
+      (/:\s*$/u.test(previous) && !/^\s*#/u.test(paragraph));
+    if (!continues) starts.push(at);
     cursor = at + head.length;
+    previous = paragraph;
   }
   return starts;
 }
@@ -3139,7 +3146,10 @@ function answerPassage(
     .replace(/^[\s¦,;]+|[\s¦,;]+$/gu, "");
 
   let passage = own;
-  const next = nextSegment(flat, boundaries, sentenceEnd);
+  const following = nextSegment(flat, boundaries, sentenceEnd);
+  // A new paragraph or section is another answer, not a qualification.
+  const next =
+    following && !paragraphStarts.some((at) => at >= sentenceEnd && at < following.end) ? following : null;
   if (next) {
     // A follow-up that refers back qualifies the answer even without a
     // negation ("Dette gjelder kun produksjonsmiljøet"); one that names the
