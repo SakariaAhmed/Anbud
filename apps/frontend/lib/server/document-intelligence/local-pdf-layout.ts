@@ -123,12 +123,20 @@ function renderProductionCompatiblePage(items: LocalPdfTextItem[]) {
         (left, right) => (left.transform[4] ?? 0) - (right.transform[4] ?? 0),
       );
       let previousEnd: number | null = null;
+      let previousText = "";
       const text = orderedItems
         .map((item) => {
           const x = item.transform[4] ?? 0;
           const gap = previousEnd == null ? 0 : x - previousEnd;
           previousEnd = x + (item.width ?? item.str.length * 4);
-          return `${gap > 3 ? " " : ""}${item.str.trim()}`;
+          const current = item.str.trim();
+          // A bold requirement ID is its own run, and the PDF carries the
+          // following space in the next one ("K-2.1", " Leverandøren").
+          // Only that number-then-word case keeps the space: other runs that
+          // start with whitespace render as before.
+          const idBeforeWord = /\d$/u.test(previousText) && /^\s+\p{Lu}/u.test(item.str);
+          previousText = current;
+          return `${gap > 3 || idBeforeWord ? " " : ""}${current}`;
         })
         .join("")
         .replace(/[ \t]+/gu, " ")

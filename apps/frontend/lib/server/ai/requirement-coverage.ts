@@ -713,6 +713,7 @@ function buildProfiledDimensioningTemplate(entry: RequirementLedgerEntry) {
 export function buildDeterministicFinalRequirementTemplateRepair(input: {
   entry: RequirementLedgerEntry;
   evidence?: string;
+  solutionText?: string;
 }): RequirementAnswerResult | null {
   const qualifiers = deterministicControlSourceFlags(input.entry);
   if (
@@ -743,6 +744,7 @@ export function buildDeterministicFinalRequirementTemplateRepair(input: {
     template,
     input.entry,
     input.evidence,
+    input.solutionText,
   );
   if (
     normalized.source === "deterministic_fallback" ||
@@ -940,13 +942,17 @@ export function matchCenteredExcerpt(text: string, query: string, limit: number)
   return sentences.slice(start, end).join(" ");
 }
 
-async function buildPerRequirementRetrievalContext(input: {
+/** Solution passages searched for each requirement that lacks exact
+ * evidence; shared with requirement answers for a document too long to send. */
+export async function buildPerRequirementRetrievalContext(input: {
   entries: RequirementLedgerEntry[];
   solutionDocument: ProjectDocumentDetail;
   startIndex: number;
+  /** Row numbers when the entries are not consecutive (a repair subset). */
+  numbers?: number[];
 }) {
   const targets = input.entries
-    .map((entry, localIndex) => ({ entry, nr: input.startIndex + localIndex + 1 }))
+    .map((entry, localIndex) => ({ entry, nr: input.numbers?.[localIndex] ?? input.startIndex + localIndex + 1 }))
     .filter(({ entry }) => !entryHasCompleteExactEvidence(entry));
   if (!targets.length) return "";
   const results = await mapWithConcurrency(
@@ -2337,6 +2343,7 @@ function deterministicControlRepairCopy(
 export function buildDeterministicFinalRequirementControlRepair(input: {
   entry: RequirementLedgerEntry;
   evidence?: string;
+  solutionText?: string;
 }): RequirementAnswerResult | null {
   const pattern = deterministicControlRepairRequirementPattern(input.entry);
   if (
@@ -2415,6 +2422,7 @@ export function buildDeterministicFinalRequirementControlRepair(input: {
     repairCopy,
     input.entry,
     input.evidence,
+    input.solutionText,
   );
   const passesQualityGate =
     requirementAnswerQualityIssues(normalized.answer, input.entry).length === 0;

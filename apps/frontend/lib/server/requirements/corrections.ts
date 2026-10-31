@@ -13,8 +13,9 @@ import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
 // chapters and wrapped table lines do not open a section.
 const CORRECTIONS_HEADING =
   /^(?:(\d{1,2})(?:\.\d{1,2})*\.?\s+)?(?:Rettelser(?:\s+og\s+(?:presiseringer|tillegg|endringer))?|RETTELSER|Rettelse\s+nr\.?\s*\d+|Errata|Endringer\s+i\s+(?:konkurransegrunnlaget|kravspesifikasjonen|kravene|bilag\s*\d+))(?:\s*\([^)\n]{0,80}\))?\s*$/u;
-const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3})?(?:\.[a-z])?\b/gu;
-const REQUIREMENT_ID_SINGLE = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\b/u;
+// Hierarchical IDs ("K-4.1.2") are one requirement, never "K-4" plus text.
+const REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4}(?:\.[a-z])?\b/gu;
+const REQUIREMENT_ID_SINGLE = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4}\b/u;
 const QUOTED = /[«“"]([^«»“”"]{1,1500})[»”"]/gu;
 const WITHDRAW_VERB =
   /\b(?:utgår|bortfaller|strykes|trekkes(?:\s+tilbake)?|er\s+utgått|slettes|frafalles|annulleres)\b|\b(?:fjernes|tas\s+ut)\s+(?:fra|av)\s+(?:kravspesifikasjonen|konkurransegrunnlaget|kravlisten|kravtabellen|tabell)\b/giu;
@@ -25,19 +26,20 @@ const SCOPE_STATEMENT =
 // "må" and "bør" end in letters JavaScript's \b does not treat as word letters.
 const OBLIGATION = /(?<![\p{L}\p{N}])(?:skal|må|bør)(?![\p{L}\p{N}])/iu;
 const ADDED = /\b(?:nytt\s+krav|legges(?:\s+ikke)?\s+til|tilføyes)\b/iu;
-const RENUMBERED = /\bny\s+(?:krav-?)?id\s*:?\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4})\b/iu;
+const RENUMBERED = /\bny\s+(?:krav-?)?id\s*:?\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4})\b/iu;
 const ANSWER = /^\s*svar\s*:/iu;
 // An ID named as context rather than as the subject of the action.
 const CONTEXT_BEFORE_ID =
   /(?:endringen\s+i|jf\.?|jfr\.?|i\s+henhold\s+til|se|som\s+følge\s+av(?:\s+at)?|nytt\s+krav|erstattes\s+av|i\s+stedet\s+for|kontrollene\s+i|som\s+i|dersom\s+vi\s+oppfyller)\s*$/iu;
 // A withdrawal verb belongs to the subject right before it ("K-4 utgår",
 // "Kravene K-4 og K-5 utgår", "Kravet utgår", a cell "Utgår"), not to a
-// relative or subordinate clause ("Data som utgår av arkivet").
-const WITHDRAW_BINDING_GAP = /^[\s,:;()–-]*(?:(?:og|samt|eller)\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}[\s,]*|\([^)]{0,40}\)\s*|(?:skal|må|vil)\s+)*$/iu;
+// relative or subordinate clause ("Data som utgår av arkivet"). The
+// document may be named between them ("Krav K-3.2.2 i Bilag 1 utgår").
+const WITHDRAW_BINDING_GAP = /^[\s,:;()–-]*(?:(?:og|samt|eller)\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4}[\s,]*|\([^)]{0,40}\)\s*|i\s+(?:bilag|vedlegg)\s*\d+[\s,]*|(?:skal|må|vil)\s+)*$/iu;
 // A paragraph, list item or table row starts a separate correction block.
 // ID-led continuation lines remain in that block's bidder-request context.
 const BLOCK_START = /\n(?=Rad \d+:)|\n\s*\n|\n(?=[ \t]*(?:[-•*–]|\d{1,2}[.)])\s)|\n(?=[ \t]*\|)/iu;
-const ID_LINE_START = /\n(?=[ \t]*(?:(?:nytt\s+)?krav(?:et|ene)?\s+|for\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}\b)/iu;
+const ID_LINE_START = /\n(?=[ \t]*(?:(?:nytt\s+)?krav(?:et|ene)?\s+|for\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4}\b)/iu;
 
 /** A line without Markdown heading or bold markers: Docling writes
  * "## 9 Rettelser og presiseringer" and "**Vedlegg A**". */
@@ -65,14 +67,12 @@ function maskQuotes(text: string) {
 }
 
 /**
- * Every corrections section in document order ("Rettelse nr. 1", later
- * "Rettelse nr. 2"), each from its heading up to the next top-level
- * chapter, appendix or corrections heading. A table-of-contents entry ends
- * at the next chapter with no content of its own and is skipped.
+ * The line range [start, end) of every corrections section in document
+ * order ("Rettelse nr. 1", later "Rettelse nr. 2"), each from its heading up
+ * to the next top-level chapter, appendix or corrections heading.
  */
-export function findCorrectionsSections(rawText: string) {
-  const lines = rawText.split("\n");
-  const sections: string[] = [];
+export function correctionsSectionRanges(lines: string[]) {
+  const ranges: Array<[number, number]> = [];
   lines.forEach((line, start) => {
     const match = CORRECTIONS_HEADING.exec(headingText(line));
     if (!match) return;
@@ -90,10 +90,22 @@ export function findCorrectionsSections(rawText: string) {
         break;
       }
     }
-    const body = lines.slice(start + 1, end).join("\n").trim();
-    if (body.length > 0) sections.push(lines.slice(start, end).join("\n"));
+    ranges.push([start, end]);
   });
-  return sections;
+  return ranges;
+}
+
+/**
+ * Every corrections section in document order. A table-of-contents entry
+ * ends at the next chapter with no content of its own and is skipped.
+ */
+export function findCorrectionsSections(rawText: string) {
+  const lines = rawText.split("\n");
+  return correctionsSectionRanges(lines).flatMap(([start, end]) =>
+    lines.slice(start + 1, end).join("\n").trim()
+      ? [lines.slice(start, end).join("\n")]
+      : [],
+  );
 }
 
 /** All corrections sections joined in order, or null without any. */
@@ -455,7 +467,7 @@ export function applyRequirementCorrections(
           (lastId && /[:;]\s*(?:kravet|kravene)\s*$/iu.test(gap)) ||
           /^\s*(?:kravet|kravene)?\s*(?:\([^)]{0,40}\)\s*)?$/iu.test(lastId ? gap : before);
         // Subjects right after the verb ("... utgår K-7", "utgår også K-7 og K-8").
-        const following = /^\s*(?:også\s+|dermed\s+)?((?:[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\s*,\s*|\s+og\s+)?)+)/u
+        const following = /^\s*(?:også\s+|dermed\s+)?((?:[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4}(?:\s*,\s*|\s+og\s+)?)+)/u
           .exec(sentence.text.slice(verb.index! + verb[0].length))?.[1];
         const after = [...(following ?? "").matchAll(REQUIREMENT_ID)].map((match) => match[0]).filter((id) => own.includes(id));
         if (after.length && !(lastId && own.includes(lastId[0]) && WITHDRAW_BINDING_GAP.test(gap))) {
@@ -599,7 +611,7 @@ export function applyRequirementCorrections(
         addition && /\b(?:ikke|aldri)\b/iu.test(sentence.text.slice(Math.max(0, addition.index - 20), addition.index + addition[0].length));
       if (addition && !additionNegated && placeholders.length) {
         // The ID after "nytt krav", else one that never was in the source.
-        const named = /\bnytt\s+krav\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4})\b/iu.exec(masked)?.[1];
+        const named = /\bnytt\s+krav\s+([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4})\b/iu.exec(masked)?.[1];
         const newId = [named, ...statementIds].find((id) => id && !sourceIds.has(id) && !known().has(id));
         if (newId) {
           const anchor = entries.filter((entry) => idPrefix(entry.id) === idPrefix(newId)).at(-1);

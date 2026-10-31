@@ -179,10 +179,13 @@ export function documentRequirementId(value: string) {
 export function normalizePdfSpacing(value: string) {
   return repairPdfWordFragments(stripPdfFooterOrChromeLines(value))
     .replace(/[‐‑‒–—]/g, "-")
-    .replace(/\bI\s*D\b/gi, "ID")
-    .replace(/\bkr\s*a\s*v\b/gi, "krav")
-    .replace(/\bTa\s*b\s*e\s*ll\b/gi, "Tabell")
-    .replace(/\bD\s*el\b/gi, "Del")
+    // JavaScript's \b treats æ/ø/å as non-letters, so "i døgnet" once
+    // matched as a spaced "I D". The fragment must now stand alone, and a
+    // lowercase "del" is a word, not a split "Del" heading.
+    .replace(/(?<![\p{L}\p{N}])I\s*D(?![\p{L}\p{N}])/giu, "ID")
+    .replace(/(?<![\p{L}\p{N}])kr\s*a\s*v(?![\p{L}\p{N}])/giu, "krav")
+    .replace(/(?<![\p{L}\p{N}])Ta\s*b\s*e\s*ll(?![\p{L}\p{N}])/giu, "Tabell")
+    .replace(/(?<![\p{L}\p{N}])D\s+el(?![\p{L}\p{N}])/gu, "Del")
     .replace(/\bL\s*ever\s*a\s*ndør\s*ens\s*sva\s*r\b/gi, "Leverandørens svar")
     .replace(/\bT\s*j\s*eneste\b/gi, "Tjeneste")
     .replace(/\bSpesi\s*f\s*i\s*ser\s*te\s*kr\s*a\s*v\b/gi, "Spesifiserte krav")
@@ -207,7 +210,9 @@ export function normalizePdfReferenceTypography(value: string) {
 
   for (let index = 0; index < 4; index += 1) {
     const next = text
-      .replace(/\b(\p{Lu}[\p{Ll}]{2,})\s+(\p{Ll})\s+(\p{Ll}{2,})\b/gu, "$1$2$3")
+      // "i" and "å" are Norwegian words in their own right ("Tilbudsfristen
+      // i punkt"), so they never count as a split-off letter.
+      .replace(/\b(\p{Lu}[\p{Ll}]{2,})\s+(?![iå]\s)(\p{Ll})\s+(\p{Ll}{2,})\b/gu, "$1$2$3")
       .replace(/\b([A-ZÆØÅ]{2,})\s+([A-ZÆØÅ])\s+([A-ZÆØÅ]{2,})\b/g, "$1$2$3")
       .replace(/\b(\p{Lu}[\p{Ll}]{6,})\s+(ing|ering|nning|erhet|dtering)\b/gu, "$1$2");
 

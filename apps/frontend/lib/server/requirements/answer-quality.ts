@@ -3470,11 +3470,17 @@ function isLowValueRequirementAnswer(answer: string, entry: RequirementLedgerEnt
 function hasDocumentedExactContinuityValue(value: string) {
   return (
     extractDocumentedContinuityTargets(value).length > 0 ||
-    /\bzero unplanned downtime\b/i.test(value)
+    /\bzero unplanned downtime\b/i.test(value) ||
+    // "uten nedetid … i åpningstiden (08:00–15:30)" is a binding target.
+    /(?<![\p{L}\p{N}])(?:uten|ingen)\s+(?:uplanlagt\s+)?nedetid(?![\p{L}\p{N}])/iu.test(value)
   );
 }
 
 function hasDocumentedExactCommercialOrDeadlineValue(value: string) {
+  // "uten tillegg i pris" states the price condition exactly.
+  if (/(?<![\p{L}\p{N}])uten\s+(?:tillegg\s+i\s+pris(?:en)?|ekstra\s+kostnad|merkostnad|tilleggskostnad)(?![\p{L}\p{N}])/iu.test(value)) {
+    return true;
+  }
   return /\b(?:NOK|EUR)\s*\d|(?:\d+[,.]\d+|\d+)\s*(?:million|mill\.|m\b)|\bNet\s*\d+|\b\d{1,2}\.?\s*(?:januar|februar|mars|april|mai|juni|juli|july|august|september|oktober|november|desember)\s*20\d{2}|\b20\d{2}-\d{2}-\d{2}\b/i.test(
     value,
   );
@@ -3539,6 +3545,7 @@ export function normalizeRequirementAnswerResult(
   answer: string,
   entry: RequirementLedgerEntry,
   evidence?: string,
+  solutionText = "",
 ): RequirementAnswerResult {
   const cleaned = answer
     .replace(/^\s*[-*]\s+/, "")
@@ -3560,7 +3567,7 @@ export function normalizeRequirementAnswerResult(
   if (isLowValueRequirementAnswer(normalized, entry) || qualityIssues.length) {
     return {
       answer: tableRequirementAnswer(entry),
-      evidence: requirementAnswerEvidence(entry, evidence),
+      evidence: requirementAnswerEvidence(entry, evidence, solutionText),
       source: "deterministic_fallback",
       rejectedAnswer: normalized ? compactText(normalized, 700) : undefined,
       reason: qualityIssues.length
@@ -3592,7 +3599,7 @@ export function normalizeRequirementAnswerResult(
   if (isLowValueRequirementAnswer(finalAnswer, entry) || finalQualityIssues.length) {
     return {
       answer: tableRequirementAnswer(entry),
-      evidence: requirementAnswerEvidence(entry, evidence),
+      evidence: requirementAnswerEvidence(entry, evidence, solutionText),
       source: "deterministic_fallback",
       rejectedAnswer: normalized ? compactText(normalized, 700) : undefined,
       reason: finalQualityIssues.length
@@ -3603,7 +3610,7 @@ export function normalizeRequirementAnswerResult(
 
   return {
     answer: finalAnswer,
-    evidence: requirementAnswerEvidence(entry, evidence),
+    evidence: requirementAnswerEvidence(entry, evidence, solutionText),
     source: "batch",
   };
 }

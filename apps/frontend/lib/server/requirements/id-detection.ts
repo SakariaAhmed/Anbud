@@ -17,7 +17,7 @@ const PROJECT_REQUIREMENT_ID = String.raw`\bP\d{3}\s*[- ]\s*\d{1,5}[A-Z]?\b`;
 const POINT_REQUIREMENT_ID =
   String.raw`\bPkt\s*[- ]?\s*\d{1,5}(?=\s|[A-ZÆØÅ(]|$|[-:.;\]])`;
 const SHORT_REQUIREMENT_ID =
-  String.raw`\b(?:KRAV|KR|K|R|TEK)\s*[- ]?\s*\d{1,5}(?:\s*[.-]\s*\d{1,5})?(?:[A-ZÆØÅ](?=\s|$|[-:.;\]]))?(?=\s|[A-ZÆØÅ(]|$|[-:.;\]])`;
+  String.raw`\b(?:KRAV|KR|K|R|TEK)\s*[- ]?\s*\d{1,5}(?:\s*[.-]\s*\d{1,5})?(?:\.\d{1,5}){0,3}(?:[A-ZÆØÅ](?=\s|$|[-:.;\]]))?(?=\s|[A-ZÆØÅ(]|$|[-:.;\]])`;
 const K_REQUIREMENT_ID =
   String.raw`\bK\s*[- ]?\s*\d{2,5}(?=\s|[A-ZÆØÅ(]|$|[-:.;])`;
 const TABLE_REQUIREMENT_ID =
@@ -25,7 +25,7 @@ const TABLE_REQUIREMENT_ID =
 const REQ_REQUIREMENT_ID = String.raw`\bREQ\s*[- ]?\s*\d{1,5}[A-Z]?\b`;
 const SLASH_REQUIREMENT_ID = String.raw`\b\d{2,4}\s*/\s*\d{1,3}\b`;
 const SHORT_ALPHANUMERIC_TABLE_ID =
-  String.raw`\b[A-ZÆØÅ]\d?\s*-\s*\d{1,3}\b`;
+  String.raw`\b[A-ZÆØÅ]\d?\s*-\s*\d{1,3}(?:\.\d{1,3}){0,4}\b`;
 const DOTTED_PREFIX_REQUIREMENT_ID =
   String.raw`\b[A-ZÆØÅ]{2,8}\s*\.\s*\d{1,3}(?:\s*\.\s*\d{1,3}){1,5}[A-Z]?\b`;
 const SECTION_LIKE_REQUIREMENT_ID =
@@ -100,6 +100,9 @@ function isLikelyStandardsReferenceId(value: string) {
 
 export function isNonRequirementExplicitId(value: string) {
   const id = documentRequirementId(normalizePdfSpacing(value));
+  // Dotted IDs are written in capitals ("FRF.1.2"); "avvist. 5.2" is a
+  // sentence ending before a section number.
+  if (/^\p{Ll}{2,}\s*\./u.test(id)) return true;
   return /^(?:SSA\s*-\s*[A-ZÆØÅ]{1,3}\s*[- ]?\s*20\d{2}|SSA\s*-\s*D\s*202|kl\.?\s*\d{1,2}[.:]\d{2}|24\s*\/\s*7(?:\s*\/\s*365)?)$/i.test(
     id,
   );

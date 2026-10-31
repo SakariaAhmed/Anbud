@@ -28,6 +28,8 @@ test-data/*
 !test-data/tenders/
 test-data/tenders/*
 !test-data/tenders/tender_nordic_hybrid_cloud_2026.pdf
+!test-data/tenders/halandsvik-2026/
+!test-data/tenders/halandsvik-2026/**
 !test-data/ocr/
 test-data/ocr/*
 !test-data/ocr/expected.json

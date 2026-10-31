@@ -10872,3 +10872,22 @@ test("high-confidence correction preserves provenance and evidence blockers", ()
     assert.notEqual(corrected.assessment, "Godt", variant.label);
   }
 });
+
+test("foundation facts never treat a wrapped PDF line or a sentence running into a table row as a fact", () => {
+  const raw_text = [
+    "K-4.2.3 Leverandøren bør gjennomføre en felles beredskapsøvelse med kommunen minst én gang per år,",
+    "inkludert full gjenoppretting av minst ett kritisk fagsystem fra sikkerhetskopi.",
+    "Rad 3: 2 Kvalitet | 35 % | Underkriterium 2.2 Drift, beredskap og tjenestenivå (15 %).",
+  ].join("\n");
+  const facts = collectArtifactFoundationFacts({ documents: [{ ...document("source"), raw_text }], serviceDocuments: [] });
+  const texts = facts.map((fact) => fact.text);
+  assert.ok(texts.includes(
+    "K-4.2.3 Leverandøren bør gjennomføre en felles beredskapsøvelse med kommunen minst én gang per år, inkludert full gjenoppretting av minst ett kritisk fagsystem fra sikkerhetskopi.",
+  ));
+  // Neither half of the wrapped sentence stands alone, and the sentence does
+  // not continue into the award-criteria row.
+  assert.ok(texts.every((text) => !text.startsWith("inkludert full gjenoppretting")));
+  assert.ok(texts.every((text) => !text.endsWith("minst én gang per år,")));
+  assert.ok(texts.every((text) => !/sikkerhetskopi\. Rad 3/u.test(text)));
+  assert.ok(texts.includes("Rad 3: 2 Kvalitet | 35 % | Underkriterium 2.2 Drift, beredskap og tjenestenivå (15 %)."));
+});
