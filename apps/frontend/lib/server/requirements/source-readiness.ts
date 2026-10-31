@@ -1,4 +1,5 @@
-import { correctedRequirementIds, withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
+import { applyRequirementCorrections, correctedRequirementIds, findCorrectionsSection, withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
+import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
 import { spreadsheetRequirementIds } from "@/lib/server/requirements/spreadsheet-ledger";
 import {
   hasReadableRequirementDocumentContent,
@@ -535,7 +536,154 @@ type RequirementSourceLedgerInput = {
   }>;
 };
 
-export function canonicalizeRequirementSourceLedger(input: RequirementSourceLedgerInput) {
+const SERIES_REQUIREMENT_ID = /^([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*)-\d/u;
+const MENTIONED_REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4}\b/gu;
+
+/**
+ * The document that defines each numbered requirement. A tender names
+ * Bilag 1's "K-4.1.2" in its corrections chapter, its Q&A and its award
+ * criteria; those mentions are references, not further requirements. An ID
+ * listed in several documents belongs to the formal requirement document
+ * numbering the most requirements in that series.
+ */
+function requirementIdOwners(
+  sourceDocuments: ProjectDocumentDetail[],
+  ledgerByDocumentId: Map<string, RequirementLedgerEntry[]>,
+) {
+  const owners = new Map<string, { documentId: string; seriesSize: number }>();
+  for (const document of sourceDocuments.filter(isFormalRequirementDocument)) {
+    const seriesSizes = new Map<string, number>();
+    const ids: Array<{ id: string; series: string }> = [];
+    for (const entry of ledgerByDocumentId.get(document.id) ?? []) {
+      const id = normalizeRequirementId(entry.id);
+      const series = SERIES_REQUIREMENT_ID.exec(id)?.[1];
+      if (!series) continue;
+      ids.push({ id, series });
+      seriesSizes.set(series, (seriesSizes.get(series) ?? 0) + 1);
+    }
+    for (const { id, series } of ids) {
+      const seriesSize = seriesSizes.get(series) ?? 0;
+      const current = owners.get(id);
+      if (!current || seriesSize > current.seriesSize) {
+        owners.set(id, { documentId: document.id, seriesSize });
+      }
+    }
+  }
+  return new Map([...owners].map(([id, owner]) => [id, owner.documentId]));
+}
+
+function requirementIdTokenPattern(id: string, lineStart: boolean) {
+  const token = id
+    .split("-")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+    .join(String.raw`\s*[-‐‑‒–—]\s*`);
+  // A definition heads a line, a list item or a table cell ("Rad 1: Sikkerhet | K-1.1 | …").
+  const lead = lineStart
+    ? String.raw`(?:^[ \t]*(?:[-•*–]\s*|\[\s*|Rad\s+\d+:\s*|Krav(?:-?ID)?\s*:?\s*)?|\|\s*)`
+    : String.raw`(?<![\p{L}\p{N}])`;
+  return new RegExp(`${lead}${token}(?![\\p{L}\\p{N}]|\\.\\d)`, lineStart ? "imu" : "iu");
+}
+
+/**
+ * A mention of an ID another formal document defines is a reference when
+ * this document only names it inside sentences: corrections, questions and
+ * award criteria ("bør-kravene K-3.1.3, K-3.2.3 inngår"). A truncated parent
+ * read from such a mention ("K-4" from "K-4.1.2") is one as well. An ID that
+ * heads a line, row or cell here is a requirement of this document too.
+ */
+function referenceToOwnedRequirementFilter(
+  document: ProjectDocumentDetail,
+  owners: Map<string, string>,
+) {
+  const ownedElsewhere = new Set<string>();
+  const ancestorsOwnedElsewhere = new Set<string>();
+  for (const [id, owner] of owners) {
+    if (owner === document.id) continue;
+    ownedElsewhere.add(id);
+    for (let end = id.lastIndexOf("."); end > 0; end = id.lastIndexOf(".", end - 1)) {
+      ancestorsOwnedElsewhere.add(id.slice(0, end));
+    }
+  }
+  if (!ownedElsewhere.size) return () => false;
+  const rawText = document.raw_text ?? "";
+  const body = withoutCorrectionsSection(rawText);
+  return (entry: RequirementLedgerEntry) => {
+    const id = normalizeRequirementId(entry.id);
+    const truncatedParent = ancestorsOwnedElsewhere.has(id);
+    if (!truncatedParent && !ownedElsewhere.has(id)) return false;
+    if (requirementIdTokenPattern(id, true).test(body)) return false;
+    return truncatedParent || requirementIdTokenPattern(id, false).test(rawText);
+  };
+}
+
+/** A corrections chapter may sit in another document than the requirements
+ * it changes ("Krav K-4.1.2 i Bilag 1 endres og skal nå lyde: …"). It is
+ * applied once to every document defining an ID it names. A new requirement
+ * joins the document numbering its series, else the one named most. */
+function withCrossDocumentCorrections(
+  sourceDocuments: ProjectDocumentDetail[],
+  ledgerByDocumentId: Map<string, RequirementLedgerEntry[]>,
+  owners: Map<string, string>,
+) {
+  const corrected = new Map(ledgerByDocumentId);
+  const series = (id: string) => SERIES_REQUIREMENT_ID.exec(normalizeRequirementId(id))?.[1];
+  const seriesOwner = (seriesName: string | undefined) => {
+    const counts = new Map<string, number>();
+    for (const [id, owner] of owners) {
+      if (seriesName && series(id) === seriesName) counts.set(owner, (counts.get(owner) ?? 0) + 1);
+    }
+    return [...counts].sort((left, right) => right[1] - left[1])[0]?.[0];
+  };
+  for (const document of sourceDocuments) {
+    const rawText = document.raw_text ?? "";
+    const section = findCorrectionsSection(rawText);
+    if (!section) continue;
+    const namedOwners = new Map<string, number>();
+    for (const match of section.matchAll(MENTIONED_REQUIREMENT_ID)) {
+      const owner = owners.get(normalizeRequirementId(match[0]));
+      if (owner && owner !== document.id) namedOwners.set(owner, (namedOwners.get(owner) ?? 0) + 1);
+    }
+    const targets = [...namedOwners].sort((left, right) => right[1] - left[1]).map(([id]) => id);
+    if (!targets.length) continue;
+    const additions = new Map<string, RequirementLedgerEntry>();
+    for (const target of targets) {
+      const before = corrected.get(target) ?? [];
+      const beforeIds = new Set(before.map((entry) => entry.id));
+      const { ledger, report } = applyRequirementCorrections(before, rawText, { removeCorrectionRows: false });
+      for (const entry of ledger) {
+        if (report.added.includes(entry.id) && !beforeIds.has(entry.id) && !additions.has(entry.id)) {
+          additions.set(entry.id, entry);
+        }
+      }
+      corrected.set(target, ledger.filter((entry) => beforeIds.has(entry.id) || !report.added.includes(entry.id)));
+    }
+    for (const [id, entry] of additions) {
+      const destination = seriesOwner(series(id)) ?? targets[0]!;
+      const ledger = corrected.get(destination) ?? [];
+      let at = ledger.length;
+      while (at > 0 && series(ledger[at - 1]!.id) !== series(id)) at -= 1;
+      if (at === 0) at = ledger.length;
+      // It takes its place, and so its document, page and heading, from the
+      // register it joins; the correction stays its source excerpt.
+      const anchor = ledger[at - 1] ?? ledger[0];
+      const destinationDocument = sourceDocuments.find((source) => source.id === destination);
+      const placed: RequirementLedgerEntry = {
+        ...entry,
+        pages: anchor?.pages ?? [],
+        heading: anchor?.heading ?? "",
+        documentId: destination,
+        documentTitle: anchor?.documentTitle ?? destinationDocument?.title,
+      };
+      corrected.set(destination, [...ledger.slice(0, at), placed, ...ledger.slice(at)]);
+    }
+  }
+  return corrected;
+}
+
+export function canonicalizeRequirementSourceLedger(
+  input: RequirementSourceLedgerInput,
+  options: { applyCrossDocumentCorrections?: boolean } = {},
+) {
   const blankEntries = input.requirementLedgerResults.flatMap((result) =>
     result.ledger
       .filter((entry) => !entry.text.trim())
@@ -592,8 +740,22 @@ export function canonicalizeRequirementSourceLedger(input: RequirementSourceLedg
     }
   }
 
+  const ledgers = new Map(
+    input.sourceDocuments.map((document) => [document.id, resultByDocumentId.get(document.id)?.ledger ?? []]),
+  );
+  const originalOwners = requirementIdOwners(input.sourceDocuments, ledgers);
+  const correctedLedgers =
+    options.applyCrossDocumentCorrections === false
+      ? ledgers
+      : withCrossDocumentCorrections(input.sourceDocuments, ledgers, originalOwners);
+  // A requirement a correction added belongs to the document it joined; a
+  // withdrawn one still belongs to the document that defined it, so another
+  // document's mention ("K-1.2 i Bilag 1 utgår") stays a reference.
+  const owners = new Map([...originalOwners, ...requirementIdOwners(input.sourceDocuments, correctedLedgers)]);
+
   return input.sourceDocuments.flatMap((document, documentIndex) => {
-    const entries = resultByDocumentId.get(document.id)?.ledger ?? [];
+    const isReference = referenceToOwnedRequirementFilter(document, owners);
+    const entries = (correctedLedgers.get(document.id) ?? []).filter((entry) => !isReference(entry));
     const canonicalEntries =
       document.role === "primary_customer_document"
         ? entries.filter(
@@ -939,7 +1101,10 @@ export function allCanonicalRequirementsWithdrawn(input: RequirementSourceLedger
     (isFormalRequirementDocument(document) || originalRequirementSourceIds(document).length > 0 ||
       withoutCorrectionsSection(document.raw_text ?? "").split(/\r?\n/u).some(hasRequirementSignal))
   )) return false;
-  const canonicalOriginals = canonicalizeRequirementSourceLedger({ ...input, requirementLedgerResults: originals });
+  const canonicalOriginals = canonicalizeRequirementSourceLedger(
+    { ...input, requirementLedgerResults: originals },
+    { applyCrossDocumentCorrections: false },
+  );
   const documents = new Map(input.sourceDocuments.map((document) => [document.id, document]));
   return canonicalOriginals.length > 0 && canonicalOriginals.every((entry) => {
     const document = documents.get(entry.documentId ?? "");

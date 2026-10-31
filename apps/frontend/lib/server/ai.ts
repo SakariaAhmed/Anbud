@@ -52,7 +52,7 @@ import {
   FAST_REASONING_EFFORT,
 } from "@/lib/server/ai/model-config";
 import { extractExactRetrievalTerms } from "@/lib/server/ai/retrieval-query";
-import { buildVerifiedFoundationControls, documentedMigrationControl } from "@/lib/server/ai/verified-foundation-controls";
+import { documentedMigrationControl } from "@/lib/server/ai/verified-foundation-controls";
 import {
   buildImmutableRequirementRowManifest,
   type ImmutableRequirementRowManifest,
@@ -66,13 +66,11 @@ import {
   resolveCustomerAnalysisContexts,
 } from "@/lib/server/document-intelligence/customer-analysis-contexts";
 import {
-  MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
   customerAnalysisRegenerationContract,
   mergeCustomerAnalysisSectionPatch,
 } from "@/lib/server/document-intelligence/customer-analysis-fields";
 import {
   normalizeCustomerAnalysisResult,
-  parsePrioritizedRequirements,
   normalizeMermaidDiagram,
   selectServiceRecommendationCandidates,
 } from "@/lib/server/document-intelligence/customer-analysis-postprocess";
@@ -1648,6 +1646,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
   ledger: RequirementLedgerEntry[];
   answers: RequirementAnswerResult[];
   requirementDocuments: ProjectDocumentDetail[];
+  solutionText?: string;
   model?: string;
   onProgress?: (message: string) => void;
 }) {
@@ -1874,6 +1873,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
             entry: row.entry,
             absoluteIndex: row.absoluteIndex,
             batchError: handoffBatchError || undefined,
+            solutionText: input.solutionText,
           });
           if (repaired.source === "deterministic_fallback") {
             repaired = resolveRequirementAnswerBeforeStrictHandoff({
@@ -2129,6 +2129,8 @@ export function answerFromBatchRows(input: {
   entry: RequirementLedgerEntry;
   absoluteIndex: number;
   batchError?: string;
+  /** The solution document the answers were written from. */
+  solutionText?: string;
 }): RequirementAnswerResult {
   if (input.batchError) {
     return {
@@ -2185,7 +2187,7 @@ export function answerFromBatchRows(input: {
       ""
     : "";
 
-  return normalizeRequirementAnswerResult(answer, input.entry, evidence);
+  return normalizeRequirementAnswerResult(answer, input.entry, evidence, input.solutionText);
 }
 
 export function resolveRequirementAnswerAfterStrictHandoff(input: {
@@ -2782,12 +2784,30 @@ const ARTIFACT_FOUNDATION_FACT_STOP_WORDS = new Set([
 ]);
 
 function factCandidateFragments(value: string) {
-  const lineFragments = value
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length >= 18 && line.length <= 800);
-  const sentenceFragments = splitIntoSentences(compactText(value, 80_000))
+  // A wrapped PDF line continues the sentence above it when it starts in
+  // lower case or carries on a number ("ISO/IEC" / "27001:2022."). Other
+  // lines (a timetable entry, "Avtalens maksimale verdi er NOK 18 400 000"),
+  // table rows and page markers stand alone, so no fact runs into the next.
+  const logicalLines: string[] = [];
+  for (const raw of value.slice(0, 80_000).replace(/\r\n/g, "\n").split("\n")) {
+    const line = raw.trim();
+    const previous = logicalLines.at(-1) ?? "";
+    if (!line || /^\[\[SIDE:\d+\]\]$/u.test(line)) {
+      logicalLines.push("");
+    } else if (
+      previous &&
+      !/^(?:Rad\s+\d+:|\|)/u.test(line) &&
+      !/^(?:Rad\s+\d+:|\|)/u.test(previous) &&
+      (/^\p{Ll}/u.test(line) || (/^\d/u.test(line) && /\p{L}$/u.test(previous)))
+    ) {
+      logicalLines[logicalLines.length - 1] = `${previous} ${line}`;
+    } else {
+      logicalLines.push(line);
+    }
+  }
+  const lineFragments = logicalLines.filter((line) => line.length >= 18 && line.length <= 800);
+  const sentenceFragments = logicalLines
+    .flatMap((line) => splitIntoSentences(line))
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length >= 18 && sentence.length <= 800);
 
@@ -3062,77 +3082,22 @@ function appendUniqueTextItems(
   }
   return result.slice(0, options?.max ?? 10);
 }
-function appendPrioritizedRequirement(
-  items: CustomerAnalysisResult["prioritized_requirements"],
-  requirement: string,
-  priority: CustomerAnalysisResult["prioritized_requirements"][number]["priority"],
-  reason: string,
-) {
-  const existingText = items
-    .map((item) => `${item.requirement} ${item.reason}`)
-    .join("\n");
-  if (
-    highLevelDesignAdditionRepresented(existingText, requirement) ||
-    items.some(
-      (item) =>
-        isNearDuplicate(item.requirement, requirement, 0.78) ||
-        normalizeComparableText(item.requirement).includes(
-          normalizeComparableText(requirement).slice(0, 80),
-        ),
-    )
-  ) {
-    return items;
-  }
-
-  return [...items, { requirement, priority, reason }];
-}
-
-function enrichCustomerAnalysisWithFoundationFacts(
+// Source fragments joined into "verified" priorities, criteria or solution
+// direction mixed unrelated facts and superseded text ("Tilbudsfrist 3.
+// november" after a correction), so the facts reach the analysis as prompt
+// context only. Documented risk drivers remain a flagged addition.
+export function enrichCustomerAnalysisWithFoundationFacts(
   result: Untrusted<CustomerAnalysisResult>,
   facts: ArtifactFoundationFact[],
 ): Untrusted<CustomerAnalysisResult> {
-  if (!facts.length) {
+  const riskControl = documentedRiskControlText(facts);
+  if (!riskControl) {
     return result;
-  }
-
-  const documentedControls = buildVerifiedFoundationControls(facts);
-  if (!documentedControls.length) {
-    return result;
-  }
-
-  let prioritizedRequirements = parsePrioritizedRequirements(
-    result.prioritized_requirements,
-  );
-  for (const control of documentedControls) {
-    prioritizedRequirements = appendPrioritizedRequirement(
-      prioritizedRequirements,
-      control,
-      "Viktig",
-      "Føringen er hentet fra det verifiserte dokumentgrunnlaget og må spores til kilde før den gjøres bindende.",
-    );
   }
 
   return {
     ...result,
-    prioritized_requirements: prioritizedRequirements.slice(
-      0,
-      MAX_CUSTOMER_ANALYSIS_PRIORITIZED_REQUIREMENTS,
-    ),
-    likely_evaluation_criteria: appendUniqueTextItems(
-      stringList(result.likely_evaluation_criteria),
-      documentedControls,
-      { max: 6 },
-    ),
-    expected_solution_direction: appendUniqueTextItems(
-      stringList(result.expected_solution_direction),
-      documentedControls,
-      { max: 6 },
-    ),
-    risks_for_us: appendUniqueTextItems(
-      stringList(result.risks_for_us),
-      [documentedRiskControlText(facts)].filter(Boolean),
-      { max: 5 },
-    ),
+    risks_for_us: appendUniqueTextItems(stringList(result.risks_for_us), [riskControl], { max: 5 }),
   };
 }
 
@@ -3659,12 +3624,13 @@ function isClarificationRequirementEntry(entry: RequirementLedgerEntry) {
 function buildRequirementResponseMarkdown(input: {
   ledger: RequirementLedgerEntry[];
   answers: RequirementAnswerResult[];
+  solutionText?: string;
 }) {
   const indexedRows = input.ledger.map((entry, index) => {
     const answerResult = input.answers[index];
     const heading = requirementGroupHeading(entry);
     const answer = answerResult?.answer ?? tableRequirementAnswer(entry);
-    const evidence = requirementAnswerEvidence(entry, answerResult?.evidence);
+    const evidence = requirementAnswerEvidence(entry, answerResult?.evidence, input.solutionText);
 
     return {
       entry,
@@ -3811,7 +3777,10 @@ async function generateRequirementResponseFromLedger(input: {
     (chunk) =>
       buildRequirementBatchRetrievalContext({
         entries: chunk.entries,
-        supportingDocuments: input.supportingDocuments,
+        supportingDocuments:
+          input.solutionDocument && !solutionDocumentFitsRequirementPrompt(input.solutionDocument)
+            ? [input.solutionDocument, ...input.supportingDocuments]
+            : input.supportingDocuments,
         serviceDocuments: input.serviceDocuments,
       }),
   );
@@ -3899,6 +3868,7 @@ async function generateRequirementResponseFromLedger(input: {
         entry,
         absoluteIndex: startIndex + localIndex,
         batchError: result.batchError,
+        solutionText: input.solutionDocument?.raw_text,
       }),
     );
 
@@ -4008,6 +3978,7 @@ async function generateRequirementResponseFromLedger(input: {
     ledger: responseLedger,
     answers: verifiedDeterministicAnswers,
     requirementDocuments: input.requirementDocuments,
+    solutionText: input.solutionDocument?.raw_text,
     model: input.model,
     onProgress: input.onProgress,
   });
@@ -4151,6 +4122,7 @@ async function generateRequirementResponseFromLedger(input: {
         evidence: `${reservation.documentTitle}, ${reservation.id}: ${reservation.answerExcerpt}`,
       };
     }),
+    solutionText: input.solutionDocument?.raw_text,
   });
   const requirementRefs = responseLedger.map((entry) =>
     requirementDisplayRef(entry, requirementGroupHeading(entry)),
@@ -6709,9 +6681,14 @@ async function buildArtifactRetrievalContext(
   input: ProjectArtifactGenerationInput,
   serviceDocuments: ProjectDocumentDetail[],
 ) {
+  // Requirement answers already carry a solution document that fits whole;
+  // excerpts of it would only repeat it.
+  const solutionDocumentInPrompt =
+    input.artifactType === "forbedret_kravsvar" &&
+    Boolean(input.solutionDocument && solutionDocumentFitsRequirementPrompt(input.solutionDocument));
   const artifactRetrievalDocuments = [
     input.customerDocument,
-    input.solutionDocument,
+    solutionDocumentInPrompt ? null : input.solutionDocument,
     ...input.supportingDocuments,
   ].filter((document): document is ProjectDocumentDetail => Boolean(document));
   const artifactRetrieval = await retrieveDocumentSnippetsWithMetadata({
@@ -6762,6 +6739,21 @@ async function buildArtifactRetrievalContext(
     retrievalQualityContext,
     foundationFacts,
   };
+}
+
+/** Requirement answers are written from the supplier's solution document.
+ * As in the solution evaluation, one that fits is sent whole in the shared
+ * prompt prefix, so a commitment or price reservation late in the document
+ * ("Kundestyrte nøkler … prises som tilleggsopsjon") reaches every batch and
+ * the repair handoff. A longer one is summarised here and retrieved per batch. */
+function solutionDocumentFitsRequirementPrompt(document: ProjectDocumentDetail) {
+  return document.raw_text.length <= REQUIREMENT_COVERAGE_FULL_SOLUTION_MAX_CHARS;
+}
+
+function requirementAnswerSolutionContext(document: ProjectDocumentDetail) {
+  return solutionDocumentFitsRequirementPrompt(document)
+    ? buildDelimitedContext(`Hele løsningsdokumentet: ${document.title}`, document.raw_text)
+    : buildDelimitedContext("Primært løsningsdokument sammendrag", compactText(document.raw_text, 1200));
 }
 
 function buildRequirementAnswerFoundation(input: {
@@ -6844,10 +6836,7 @@ function buildRequirementAnswerFoundation(input: {
         )
       : "",
     input.generationInput.solutionDocument
-      ? buildDelimitedContext(
-          "Primært løsningsdokument sammendrag",
-          compactText(input.generationInput.solutionDocument.raw_text, 1200),
-        )
+      ? requirementAnswerSolutionContext(input.generationInput.solutionDocument)
       : "",
     supportingContexts,
     input.artifactKnowledge,

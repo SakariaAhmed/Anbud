@@ -1,5 +1,6 @@
 import "server-only";
 import { applyRequirementCorrections } from "@/lib/server/requirements/corrections";
+import { buildHierarchicalIdPdfRequirementLedger, buildHierarchicalIdTextRequirementLedger } from "@/lib/server/requirements/hierarchical-id-parser";
 import {
   buildSpreadsheetRequirementLedger,
   spreadsheetRequirementIds,
@@ -705,7 +706,7 @@ const inlinePdfRequirementCategoryPrefix = new RegExp(
 );
 
 function inlinePdfRequirementIdPattern() {
-  return /(^|[\s\u2022\uF0B7*-])((?:K\s*[- ]?\s*\d{2,5}|\d{2,4}\s*\/\s*\d{1,3}|[A-ZÆØÅ]\d?\s*-\s*\d{1,3}|[A-ZÆØÅ]{2,8}\s*\.\s*\d{1,3}(?:\s*\.\s*\d{1,3}){1,5}|[A-ZÆØÅ]{2,8}\s*-\s*[A-ZÆØÅ]{1,4}\s*[- ]?\s*\d{1,5}|REQ\s*[- ]?\s*\d{1,5}|Pkt\s*[- ]?\s*\d{1,5})(?:[A-ZÆØÅ])?)(?=\s|[A-ZÆØÅ(]|$|[-:.;])/gi;
+  return /(^|[\s\u2022\uF0B7*-])((?:K\s*[- ]?\s*\d{2,5}|\d{2,4}\s*\/\s*\d{1,3}|[A-ZÆØÅ]\d?\s*-\s*\d{1,3}(?:\.\d{1,3}){0,4}|[A-ZÆØÅ]{2,8}\s*\.\s*\d{1,3}(?:\s*\.\s*\d{1,3}){1,5}|[A-ZÆØÅ]{2,8}\s*-\s*[A-ZÆØÅ]{1,4}\s*[- ]?\s*\d{1,5}|REQ\s*[- ]?\s*\d{1,5}|Pkt\s*[- ]?\s*\d{1,5})(?:[A-ZÆØÅ](?![a-zæøå]))?)(?=\s|[A-ZÆØÅ(]|$|[-:.;])/gi;
 }
 
 function normalizeInlinePdfRequirementId(value: string) {
@@ -870,6 +871,9 @@ function buildPdfExplicitIdRequirementLedger(document: ProjectDocumentDetail) {
       let cursor = 0;
       let matched = false;
       for (const match of line.matchAll(pattern)) {
+        // Dotted IDs are written in capitals ("FRF.1.2"); a sentence ending
+        // before a section number ("avvist. 5.2 Forhandlinger") is text.
+        if (/^\p{Ll}{2,}\s*\./u.test(match[2] ?? "")) continue;
         matched = true;
         const prefix = match[1] ?? "";
         const markerStart = (match.index ?? 0) + prefix.length;
@@ -1983,6 +1987,26 @@ export async function buildRequirementSourceLedgerWithFiles(
       })),
     );
   }
+  // A solution document answers requirements under their IDs; its own
+  // extractors keep those answers.
+  const hierarchicalIdLedger =
+    document.role === "primary_solution_document"
+      ? []
+      : document.file_format === "pdf"
+        ? buildHierarchicalIdPdfRequirementLedger(await readPdfLayoutPages(document))
+        : buildHierarchicalIdTextRequirementLedger(document);
+  if (hierarchicalIdLedger.length > 0) {
+    return sortRequirementLedgerInDocumentOrder(
+      finalizeRequirementLedgerEntries(
+        hierarchicalIdLedger,
+        sourceDocumentSha256,
+      ).map((entry) => ({
+        ...entry,
+        documentId: document.id,
+        documentTitle: document.title,
+      })),
+    );
+  }
   // A solution spreadsheet keeps its answer columns through the solution
   // extractors below. A source matrix is authoritative even when no row text
   // could be read: other extractors would take answer cells as requirement
@@ -2697,15 +2721,50 @@ function deterministicRequirementAnswerEvidence(entry: RequirementLedgerEntry) {
   );
 }
 
+let normalizedSolutionTextCache: { source: string; normalized: string } | null = null;
+
+/**
+ * Whether a model's evidence can be shown as the answer's source. Quoted
+ * passages must be found word for word in the solution document or in the
+ * requirement row ("Løsningsnotat, «Nettverk»: «all administrativ tilgang
+ * skjer …»"), so neither a real section title nor a paraphrase of the
+ * requirement ("«… innen 4 timer … hele døgnet»" against a weekday-only
+ * reservation) can carry a claim. Without such a passage, evidence that
+ * names the solution document or a section of it must be its text; other
+ * evidence may match the requirement row loosely, as before.
+ */
+function isVerifiedRequirementEvidence(candidate: string, entry: RequirementLedgerEntry, solutionText: string) {
+  if (solutionText && normalizedSolutionTextCache?.source !== solutionText) {
+    normalizedSolutionTextCache = { source: solutionText, normalized: normalizeEvidenceText(solutionText) };
+  }
+  const solution = solutionText ? normalizedSolutionTextCache!.normalized : "";
+  const requirementSource = normalizeEvidenceText(requirementEvidenceCorpus(entry));
+  const verbatim = (quote: string) => {
+    const normalized = normalizeEvidenceText(quote);
+    return Boolean(normalized) && (solution.includes(normalized) || requirementSource.includes(normalized));
+  };
+  // A quoted label before a colon names a section ("«Kryptering og
+  // personvern»: …"); it does not show what the section says.
+  const quotations = [...candidate.matchAll(/[«“"]([^«»“”"]+)[»”"](?!\s*:)/gu)]
+    .map((match) => match[1]!)
+    .filter((quote) => normalizeEvidenceText(quote).length >= 20);
+  if (quotations.length) return quotations.every(verbatim);
+  if (/\bløsnings(?:notat|dokument|beskrivelse|forslag)\w*|[«“"][^«»“”"]+[»”"]\s*:/iu.test(candidate)) {
+    return normalizeEvidenceText(candidate).length >= 20 && solution.includes(normalizeEvidenceText(candidate));
+  }
+  return (
+    requirementEvidenceMatchesSource(candidate, entry) ||
+    (normalizeEvidenceText(candidate).length >= 20 && solution.includes(normalizeEvidenceText(candidate)))
+  );
+}
+
 export function requirementAnswerEvidence(
   entry: RequirementLedgerEntry,
   candidate?: string,
+  solutionText = "",
 ) {
   const normalizedCandidate = compactText(candidate, 260);
-  if (
-    normalizedCandidate &&
-    requirementEvidenceMatchesSource(normalizedCandidate, entry)
-  ) {
+  if (normalizedCandidate && isVerifiedRequirementEvidence(candidate ?? "", entry, solutionText)) {
     return normalizedCandidate;
   }
 
