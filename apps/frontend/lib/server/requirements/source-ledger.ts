@@ -2747,8 +2747,11 @@ function isVerifiedRequirementEvidence(candidate: string, entry: RequirementLedg
   // personvern»: …"); it does not show what the section says.
   const quotations = [...candidate.matchAll(/[«“"]([^«»“”"]+)[»”"](?!\s*:)/gu)]
     .map((match) => match[1]!)
-    .filter((quote) => normalizeEvidenceText(quote).length >= 20);
-  if (quotations.length) return quotations.every(verbatim);
+    .filter((quote) => normalizeEvidenceText(quote).length >= 4);
+  // A short quotation is still a quotation: «hele døgnet» beside a real
+  // passage must be found too.
+  if (!quotations.every(verbatim)) return false;
+  if (quotations.some((quote) => normalizeEvidenceText(quote).length >= 20)) return true;
   if (/\bløsnings(?:notat|dokument|beskrivelse|forslag)\w*|[«“"][^«»“”"]+[»”"]\s*:/iu.test(candidate)) {
     return normalizeEvidenceText(candidate).length >= 20 && solution.includes(normalizeEvidenceText(candidate));
   }

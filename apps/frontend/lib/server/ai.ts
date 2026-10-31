@@ -858,9 +858,10 @@ function serviceDocumentAsProjectDocument(
   };
 }
 
-function alignRequirementRowsWithLedger(
+export function alignRequirementRowsWithLedger(
   contentMarkdown: string,
   ledger: RequirementLedgerEntry[],
+  solutionText = "",
 ) {
   if (!ledger.length) {
     return contentMarkdown;
@@ -988,6 +989,7 @@ function alignRequirementRowsWithLedger(
           .map((row) => row[evidenceIndex] ?? "")
           .filter(Boolean)
           .reduce((left, right) => appendSentence(left, right), ""),
+        solutionText,
       );
       base[sourceIndex] = requirementLedgerSource(entry);
       alignedRows.push(base);
@@ -1403,6 +1405,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
     current: RequirementAnswerResult;
   };
   rejectionReason?: string;
+  solutionText?: string;
   model?: string;
   timeoutMs?: number;
   onProgress?: (message: string) => void;
@@ -1429,6 +1432,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
     svargrunnlag: requirementAnswerEvidence(
       input.row.entry,
       input.row.current.evidence,
+      input.solutionText,
     ),
     avvist_svar: requirementAnswerForRepair(input.row.current),
     avvist_arsak: input.rejectionReason ?? input.row.current.reason ?? "",
@@ -1465,6 +1469,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
       rows,
       entry: input.row.entry,
       absoluteIndex: input.row.absoluteIndex,
+      solutionText: input.solutionText,
     });
 
     return repaired.source === "deterministic_fallback" ? null : repaired;
@@ -1778,6 +1783,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
           svargrunnlag: requirementAnswerEvidence(
             row.entry,
             row.current.evidence,
+            input.solutionText,
           ),
           standardsvar_som_skal_forbedres: compactText(
             requirementAnswerForRepair(row.current),
@@ -1933,6 +1939,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
             acceptedAnswerContext,
             row: { ...row, current: repaired },
             rejectionReason: repaired.reason,
+            solutionText: input.solutionText,
             model: input.model,
             timeoutMs,
             onProgress: input.onProgress,
@@ -3774,15 +3781,25 @@ async function generateRequirementResponseFromLedger(input: {
   const retrievalContextTasks = startConcurrentTasks(
     chunks,
     REQUIREMENT_RESPONSE_RETRIEVAL_CONCURRENCY,
-    (chunk) =>
-      buildRequirementBatchRetrievalContext({
+    async (chunk) => {
+      const supportingContext = await buildRequirementBatchRetrievalContext({
         entries: chunk.entries,
-        supportingDocuments:
-          input.solutionDocument && !solutionDocumentFitsRequirementPrompt(input.solutionDocument)
-            ? [input.solutionDocument, ...input.supportingDocuments]
-            : input.supportingDocuments,
+        supportingDocuments: input.supportingDocuments,
         serviceDocuments: input.serviceDocuments,
-      }),
+      });
+      // A solution document too long for the prompt is searched for each
+      // requirement, as in the solution evaluation: one query for the whole
+      // batch left most requirements without their passage.
+      const solutionContext =
+        input.solutionDocument && !solutionDocumentFitsRequirementPrompt(input.solutionDocument)
+          ? await buildRequirementCoverageRetrievalContext({
+              entries: chunk.entries,
+              solutionDocument: input.solutionDocument,
+              startIndex: chunk.startIndex,
+            })
+          : "";
+      return [supportingContext, solutionContext].filter(Boolean).join("\n\n");
+    },
   );
 
   const runResponseBatch = async (
@@ -6971,6 +6988,7 @@ function withAlignedRequirementResponse(
   options: {
     timeoutMs: number;
     fileInputUsed: boolean;
+    solutionText?: string;
   },
 ) {
   const alignedContent = alignRequirementRowsWithLedger(
@@ -6980,6 +6998,7 @@ function withAlignedRequirementResponse(
       context.pageEvidence,
     ),
     context.alignmentRequirementLedger,
+    options.solutionText,
   );
   const immutableRowManifest = buildImmutableRequirementRowManifest(
     context.alignmentRequirementLedger.map((entry, index) => ({
@@ -7048,6 +7067,7 @@ async function runFullDocumentArtifactGeneration(
       return withAlignedRequirementResponse(generated, requirementContext, {
         timeoutMs: REQUIREMENT_RESPONSE_FILE_INPUT_TIMEOUT_MS,
         fileInputUsed: true,
+        solutionText: input.solutionDocument?.raw_text,
       });
     } catch (error) {
       assertProjectWorkflowActive();
@@ -7085,6 +7105,7 @@ async function runFullDocumentArtifactGeneration(
     ? withAlignedRequirementResponse(generated, requirementContext, {
         timeoutMs: REQUIREMENT_RESPONSE_FULL_DOCUMENT_TIMEOUT_MS,
         fileInputUsed: false,
+        solutionText: input.solutionDocument?.raw_text,
       })
     : generated;
 }

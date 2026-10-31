@@ -547,7 +547,9 @@ function countMermaidComplexity(diagram: string) {
     /^subgraph\b/i.test(line),
   ).length;
   const nodeIds = new Set<string>();
-  for (const line of lines) {
+  // A labelled subgraph ("subgraph Plattform[Skyplattform]") is a group,
+  // not a node; counting it pushed compliant diagrams over the limit.
+  for (const line of lines.filter((candidate) => !/^subgraph\b/i.test(candidate))) {
     const matches = line.matchAll(/\b([A-Za-z][A-Za-z0-9_]*)\s*[\[\(\{]/g);
     for (const match of matches) {
       nodeIds.add(match[1] || "");

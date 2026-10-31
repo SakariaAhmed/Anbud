@@ -1794,3 +1794,51 @@ test("requirement language ending in å is recognised by routing and the documen
     ["2.1"],
   );
 });
+
+test("a bold requirement ID keeps the space the PDF carries in the next run", () => {
+  const item = (str, x, y, width) => ({ str, width, height: 10, transform: [9.8, 0, 0, 9.8, x, y] });
+  const page = analyzeLocalPdfPage({
+    pageNumber: 1,
+    items: [
+      item("K-2.1", 62.7, 534.4, 24),
+      item(" Leverandøren skal ha et styringssystem for informasjonssikkerhet.", 86.7, 534.4, 423.7),
+      // Runs inside a word stay joined.
+      item("Sikker", 62.7, 510, 30),
+      item("het og drift", 92.7, 510, 60),
+    ],
+  });
+  assert.deepEqual(page.lines.map((line) => line.text), [
+    "K-2.1 Leverandøren skal ha et styringssystem for informasjonssikkerhet.",
+    "Sikkerhet og drift",
+  ]);
+});
+
+test("a compliant customer-specific diagram with labelled groups is kept", () => {
+  const diagram = [
+    "flowchart LR",
+    "  subgraph Kommune[Kommunalt domene]",
+    "    A[Kommunens brukere og nett]",
+    "  end",
+    "  subgraph Tilgang[Tilkobling og administrasjon]",
+    "    B[Kryptert forbindelse]",
+    "    C[Adskilt administrasjonsnett med MFA]",
+    "  end",
+    "  subgraph Plattform[Skyplattform innenfor EØS]",
+    "    D[Primært datasenter med fagsystemer]",
+    "    E[Sekundært datasenter minst 30 km unna]",
+    "    F[Sikkerhetskopiering og gjenoppretting]",
+    "  end",
+    "  subgraph Drift[Drift og leveransegrensesnitt]",
+    "    G[Bemannet driftssenter i EØS 24/7]",
+    "    H[Fagsystemleverandører]",
+    "  end",
+    "  A --> B --> D",
+    "  D <--> E",
+    "  D --> F",
+    "  G --> C --> D",
+    "  G --> F",
+    "  H --> D",
+  ].join("\n");
+  const normalized = normalizeCustomerAnalysisResult({ high_level_architecture_mermaid: diagram, signal_words: [] }, { serviceCandidates: [] });
+  assert.equal(normalized.high_level_architecture_mermaid, diagram);
+});

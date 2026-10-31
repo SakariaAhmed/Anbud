@@ -186,17 +186,31 @@ function isHierarchicalRegister(lines: SourceLine[]) {
 }
 
 /** In a text format, a short capitalised line without punctuation or an
- * obligation that opens the next requirement or section ("Sikkerhet") is a
- * heading. After an unfinished lead-in ("sertifisert etter" / "ISO/IEC
- * 27001:2022", "lagres i" / "Norge …") or before more text it is the rest of
- * the sentence. */
+ * obligation is a heading ("Sikkerhet") when it opens the next requirement
+ * or section, or when a short title is followed by introductory prose
+ * ("Kommunen har høye krav til sikkerhet."). After an unfinished lead-in
+ * ("sertifisert etter" / "ISO/IEC 27001:2022", "lagres i" / "Norge …"),
+ * or before text that continues it, it is the rest of the sentence. */
 function isUnmarkedHeading(line: SourceLine, previous: string, next: SourceLine | undefined) {
+  const words = line.text.split(" ").length;
+  if (
+    !/^\p{Lu}/u.test(line.text) ||
+    /[.!?:;,]$/u.test(line.text) ||
+    line.text.length > 90 ||
+    words > 10 ||
+    OBLIGATION.test(line.text) ||
+    /(?<![\p{L}\p{N}])(?:i|på|etter|og|eller|for|med|til|av|om|fra|ved|som|at|mellom|under|over|innen|uten)$/iu.test(previous) ||
+    !next
+  ) {
+    return false;
+  }
+  if (next.start || next.heading || NUMBERED_HEADING.test(next.text)) return true;
   return (
-    /^\p{Lu}/u.test(line.text) &&
-    !/[.!?:;,]$/u.test(line.text) &&
-    !OBLIGATION.test(line.text) &&
-    !/(?<![\p{L}\p{N}])(?:i|på|etter|og|eller|for|med|til|av|om|fra|ved|som|at|mellom|under|over|innen|uten)$/iu.test(previous) &&
-    Boolean(next && (next.start || next.heading || NUMBERED_HEADING.test(next.text)))
+    words <= 6 &&
+    !next.requirementStart &&
+    /^\p{Lu}/u.test(next.text) &&
+    /[.!?]$/u.test(next.text) &&
+    !OBLIGATION.test(next.text)
   );
 }
 

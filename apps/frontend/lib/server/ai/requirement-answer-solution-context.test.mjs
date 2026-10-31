@@ -95,7 +95,8 @@ test("requirement answers see the whole solution document, including late reserv
   const long = await run(`${filler.repeat(25)}\n${reservation}`);
   assert.ok(long.batches.length > 0);
   assert.ok(long.batches.every((prompt) => !prompt.includes(reservation)));
-  assert.ok(long.retrievals.some((ids) => ids.includes("solution")));
+  // Each of the eight requirements gets its own search of the solution document.
+  assert.ok(long.retrievals.filter((ids) => ids.length === 1 && ids[0] === "solution").length >= 8);
 });
 
 test("answer evidence keeps a word-for-word quote from the solution document", () => {
@@ -118,6 +119,12 @@ test("answer evidence keeps a word-for-word quote from the solution document", (
   ]) {
     assert.notEqual(requirementAnswerEvidence(entry, labelledClaim, solution), labelledClaim);
   }
+
+  // Every quotation counts, also a short one beside a real passage.
+  const padded = `«${quote}» «inkludert i fastprisen»`;
+  assert.notEqual(requirementAnswerEvidence(entry, padded, solution), padded);
+  const shortReal = `«${quote}» «plattformstyrte nøkler»`;
+  assert.equal(requirementAnswerEvidence(entry, shortReal, solution), shortReal);
 
   // A paraphrase of the requirement is not the supplier's reservation.
   const attendance = { id: "K-4.2.2", text: "Leverandøren skal kunne stille med tekniker fysisk på Hålandsvik rådhus innen 4 timer ved kritiske hendelser, hele døgnet.", pages: [2], heading: "4.2" };
@@ -148,4 +155,19 @@ test("answers keep binding downtime and price conditions without a 'not quantifi
   const storageAnswer = normalizeRequirementAnswerResult("Atea lagrer alle kundedata i Norway East og Norway West, og lagring i Norge inngår i fastprisen.", storage);
   assert.doesNotMatch(migrationAnswer.answer, /ikke tallfestet/u);
   assert.doesNotMatch(storageAnswer.answer, /budsjett-, betalings- eller fristverdier/u);
+});
+
+test("the full-document fallback keeps a quote from the solution document as evidence", () => {
+  const load = createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });
+  const { alignRequirementRowsWithLedger } = load(path.join(frontend, "lib/server/ai.ts"));
+  const entry = { id: "K-5.3", text: "Kommunen bør kunne forvalte egne krypteringsnøkler.", pages: [2], heading: "5 Sikkerhet", documentTitle: "Bilag 1" };
+  const solution = "Kundestyrte nøkler (Azure Key Vault Managed HSM) inngår ikke i fastprisen og prises som tilleggsopsjon.";
+  const evidence = `Løsningsnotat: «${solution}»`;
+  const table = [
+    "| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |",
+    "| --- | --- | --- | --- | --- |",
+    `| K-5.3 | ${entry.text} | Kundestyrte nøkler prises som tilleggsopsjon. | ${evidence} | Bilag 1 |`,
+  ].join("\n");
+  assert.match(alignRequirementRowsWithLedger(table, [entry], solution), /Managed HSM\) inngår ikke i fastprisen/u);
+  assert.doesNotMatch(alignRequirementRowsWithLedger(table, [entry]), /Managed HSM\) inngår ikke i fastprisen/u);
 });

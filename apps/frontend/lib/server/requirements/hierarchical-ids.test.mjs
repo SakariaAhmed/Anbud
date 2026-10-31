@@ -288,3 +288,26 @@ test("wrapped text lines that start with a capital stay with their requirement",
     ],
   );
 });
+
+test("an unmarked heading needs a short title, also before introductory prose", () => {
+  const raw_text = [
+    "K-1.1.1 Leverandøren skal levere drift",
+    "K-1.1.2 Leverandøren skal levere støtte",
+    "Sikkerhet",
+    "Kommunen har høye krav til informasjonssikkerhet.",
+    "K-1.2.1 Leverandøren skal bruke flerfaktorautentisering.",
+    "Kommunen har i dag om lag 400 ansatte fordelt på tolv lokasjoner og tre tjenesteområder i kommunen",
+    "K-1.2.2 Leverandøren skal logge administrativ tilgang",
+    "K-1.2.3 Leverandøren skal levere rapporter",
+    "K-1.2.4 Leverandøren skal levere opplæring",
+  ].join("\n");
+  const ledger = buildHierarchicalIdTextRequirementLedger({ file_format: "docx", raw_text });
+  assert.deepEqual(ledger.map((entry) => [entry.id, entry.text]).slice(0, 3), [
+    ["K-1.1.1", "Leverandøren skal levere drift"],
+    ["K-1.1.2", "Leverandøren skal levere støtte"],
+    ["K-1.2.1", "Leverandøren skal bruke flerfaktorautentisering."],
+  ]);
+  assert.equal(ledger[2].heading, "Sikkerhet");
+  // A long line of prose is not a section title.
+  assert.equal(ledger[3].heading, "Sikkerhet");
+});
