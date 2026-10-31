@@ -265,7 +265,12 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
     current = null;
   };
 
-  const nextLine = (index: number) => lines.slice(index + 1).find((candidate) => !candidate.skip);
+  const nextLine = (index: number) => {
+    for (let next = index + 1; next < lines.length; next += 1) {
+      if (!lines[next]!.skip) return lines[next];
+    }
+    return undefined;
+  };
   for (const [index, line] of lines.entries()) {
     if (line.skip) continue;
     if (line.start) {
