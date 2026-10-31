@@ -129,15 +129,21 @@ function runCapture(command, args, { timeoutMs = 30_000, allowFailure = false } 
 }
 
 async function readImageSize(tag) {
+  // Sum the unpacked layer sizes. `docker image inspect {{.Size}}` also counts
+  // the compressed download under Docker Desktop's containerd image store,
+  // which would make the same image look ~30% larger than on a classic engine.
   const { stdout } = await runCapture("docker", [
     "image",
-    "inspect",
+    "history",
     tag,
+    "--no-trunc",
+    "--human=false",
     "--format",
     "{{.Size}}",
   ]);
-  const size = Number(stdout.trim());
-  if (!Number.isFinite(size) || size <= 0) {
+  const layerSizes = stdout.trim().split(/\s+/).map(Number);
+  const size = layerSizes.reduce((total, layerSize) => total + layerSize, 0);
+  if (!layerSizes.every(Number.isFinite) || size <= 0) {
     throw new Error(`Could not read Docker image size for ${tag}.`);
   }
   return size;

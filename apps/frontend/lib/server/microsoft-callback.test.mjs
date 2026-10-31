@@ -27,7 +27,7 @@ test("Microsoft callback validates the flow and distinguishes provider, access, 
     const dir = mkdtempSync(path.join(tmpdir(), "bidsite-auth-test-"));
     const mockFile = path.join(dir, "microsoft.cjs");
     writeFileSync(mockFile, `
-    const jiti = require(${JSON.stringify(require.resolve("jiti"))})(__filename, {alias:{"server-only":"/dev/null"}, moduleCache:false});
+    const jiti = require(${JSON.stringify(require.resolve("jiti"))})(__filename, {alias:{"@":${JSON.stringify(root)},"server-only":"/dev/null"}, moduleCache:false});
     const actual = jiti(${JSON.stringify(path.join(root, "lib/server/microsoft-auth.ts"))});
     module.exports = {...actual, isMicrosoftAuthConfigured:()=>true, createMicrosoftAuthClient:async()=>({
       acquireTokenByCode: async (request, payload) => {

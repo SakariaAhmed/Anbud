@@ -1,12 +1,12 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-
 import {
   ConfidentialClientApplication,
   CryptoProvider,
   LogLevel,
 } from "@azure/msal-node";
+
+import { reportAuthFailure } from "@/lib/server/auth-failure";
 
 export const MICROSOFT_PKCE_COOKIE_NAME = "bidsite_microsoft_pkce";
 export const MICROSOFT_STATE_COOKIE_NAME = "bidsite_microsoft_state";
@@ -138,21 +138,7 @@ export function reportMicrosoftAuthFailure(
   stage: "start" | "token" | "identity" | "session" | "activity",
   error: unknown,
 ) {
-  const reference = randomUUID();
-  const code = error && typeof error === "object" && "errorCode" in error
-    ? error.errorCode
-    : error && typeof error === "object" && "code" in error
-      ? error.code
-      : undefined;
-  console.error(JSON.stringify({
-    event: "microsoft_auth_failed",
-    stage,
-    reference,
-    errorCode: typeof code === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(code)
-      ? code
-      : "internal_error",
-  }));
-  return reference;
+  return reportAuthFailure("microsoft_auth_failed", stage, error);
 }
 
 export async function createMicrosoftAuthClient() {
