@@ -158,6 +158,34 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Fixed sleeps let a slow psql start reorder the sessions under load, so wait
+// until each session has actually reached the lock state the scenario needs.
+async function waitForBackend(databaseUrl, session, applicationName, condition, label) {
+  let exited = null;
+  session.then((result) => {
+    exited = result;
+  });
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (exited) {
+      assert.fail(
+        `${label} exited before reaching the expected lock state:\n${exited.stderr || exited.stdout}`,
+      );
+    }
+    const result = runPsql(
+      databaseUrl,
+      `select count(*) from pg_stat_activity
+       where datname = current_database()
+         and application_name = '${applicationName}'
+         and ${condition};`,
+    );
+    assertPsqlSucceeded(result, `poll ${label}`);
+    if (result.stdout.trim() === "1") return;
+    await delay(20);
+  }
+  assert.fail(`${label} did not reach the expected lock state`);
+}
+
 const lockOrderDatabaseUrl =
   process.env.PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL ??
   process.env.PRIMARY_DOCUMENT_SQL_TEST_DATABASE_URL ??
@@ -212,6 +240,7 @@ test(
             create table public.solution_evaluations (id uuid);
             create table public.executive_summaries (id uuid);
             create table public.generated_artifacts (id uuid);
+            create table public.lock_order_release (scenario text primary key);
           `,
         ),
         "create lease lock-order fixture",
@@ -250,13 +279,29 @@ test(
 
         const blocker = runPsqlAsync(
           databaseUrl.toString(),
-          `begin;
-           set local statement_timeout = '5s';
+          `set application_name = 'blocker-${scenario.functionName}';
+           begin;
+           set local statement_timeout = '10s';
            select id from public.project_jobs where id = '${scenario.jobId}' for update;
-           select pg_sleep(0.45);
+           do $wait$
+             begin
+               while not exists (
+                 select 1 from public.lock_order_release
+                 where scenario = '${scenario.functionName}'
+               ) loop
+                 perform pg_sleep(0.01);
+               end loop;
+             end
+           $wait$;
            commit;`,
         );
-        await delay(75);
+        await waitForBackend(
+          databaseUrl.toString(),
+          blocker,
+          `blocker-${scenario.functionName}`,
+          "wait_event = 'PgSleep'",
+          `${scenario.functionName} job blocker`,
+        );
 
         const call =
           scenario.functionName === "lease_fenced_enqueue_project_job"
@@ -286,13 +331,35 @@ test(
                $body$;`;
         const writer = runPsqlAsync(
           databaseUrl.toString(),
-          `set deadlock_timeout = '100ms'; set statement_timeout = '5s'; ${call}`,
+          `set application_name = 'writer-${scenario.functionName}';
+           set deadlock_timeout = '100ms'; set statement_timeout = '10s'; ${call}`,
         );
-        await delay(75);
+        await waitForBackend(
+          databaseUrl.toString(),
+          writer,
+          `writer-${scenario.functionName}`,
+          "wait_event_type = 'Lock'",
+          `${scenario.functionName} writer`,
+        );
         const deletingProject = runPsqlAsync(
           databaseUrl.toString(),
-          `set deadlock_timeout = '100ms'; set statement_timeout = '5s';
+          `set application_name = 'delete-${scenario.functionName}';
+           set deadlock_timeout = '100ms'; set statement_timeout = '10s';
            delete from public.projects where id = '${scenario.projectId}';`,
+        );
+        await waitForBackend(
+          databaseUrl.toString(),
+          deletingProject,
+          `delete-${scenario.functionName}`,
+          "wait_event_type = 'Lock'",
+          `${scenario.functionName} project DELETE`,
+        );
+        assertPsqlSucceeded(
+          runPsql(
+            databaseUrl.toString(),
+            `insert into public.lock_order_release values ('${scenario.functionName}');`,
+          ),
+          `release ${scenario.functionName} job blocker`,
         );
 
         assertPsqlSucceeded(await blocker, `${scenario.functionName} job blocker`);
