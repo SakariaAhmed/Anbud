@@ -128,6 +128,14 @@ test("answer evidence keeps a word-for-word quote from the solution document", (
   const shortReal = `«${quote}» «plattformstyrte nøkler»`;
   assert.equal(requirementAnswerEvidence(entry, shortReal, solution), shortReal);
 
+  // A long verified passage is cut after a complete quotation, so the shown
+  // evidence still checks out when it is rendered.
+  const longSolution = `${"Plattformen driftes med dokumenterte rutiner. ".repeat(6)}${solution}`;
+  const longEvidence = `Løsningsnotat: «${"Plattformen driftes med dokumenterte rutiner. ".repeat(4).trim()}» og «${quote}»`;
+  const bounded = requirementAnswerEvidence(entry, longEvidence, longSolution);
+  assert.ok(bounded.length <= 262 && bounded.endsWith("» …"), bounded);
+  assert.equal(requirementAnswerEvidence(entry, bounded, longSolution), bounded);
+
   // A paraphrase of the requirement is not the supplier's reservation.
   const attendance = { id: "K-4.2.2", text: "Leverandøren skal kunne stille med tekniker fysisk på Hålandsvik rådhus innen 4 timer ved kritiske hendelser, hele døgnet.", pages: [2], heading: "4.2" };
   const reservation = "Forbehold: Atea har ikke lokal tilstedeværelse i Hålandsvik. Fysisk oppmøte på rådhuset kan tilbys innen 4 timer på hverdager kl. 07:00–17:00.";
@@ -172,4 +180,56 @@ test("the full-document fallback keeps a quote from the solution document as evi
   ].join("\n");
   assert.match(alignRequirementRowsWithLedger(table, [entry], solution), /Managed HSM\) inngår ikke i fastprisen/u);
   assert.doesNotMatch(alignRequirementRowsWithLedger(table, [entry]), /Managed HSM\) inngår ikke i fastprisen/u);
+});
+
+test("repairs of answers to a long solution document see its searched passages", async (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-kravsvar-repair-"));
+  const state = { handoffs: [] };
+  globalThis.__kravsvarRepairContextTest = state;
+  t.after(() => {
+    delete globalThis.__kravsvarRepairContextTest;
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const passage = "Kundestyrte nøkler (Azure Key Vault Managed HSM) inngår ikke i fastprisen og prises som tilleggsopsjon.";
+  const completion = path.join(directory, "completion.cjs");
+  const retrieval = path.join(directory, "retrieval.cjs");
+  writeFileSync(completion, `exports.createJsonCompletion = async (input) => {
+    if (input.promptCacheKey === "requirement-response-batch") return { rows: [] };
+    if (input.promptCacheKey === "requirement-response-handoff") {
+      globalThis.__kravsvarRepairContextTest.handoffs.push(input.user);
+      throw new Error("Stop at captured repair boundary.");
+    }
+    throw new Error("Unexpected model operation: " + input.promptCacheKey);
+  };
+  exports.getClient = () => null;
+  exports.supportsCustomTemperature = () => false;`);
+  writeFileSync(retrieval, `const hit = (document) => ({ id: "hit", text: ${JSON.stringify(passage)}, documentId: document.id, documentTitle: document.title, pageStart: 1, pageEnd: 1, headingPath: [], score: 1 });
+  exports.retrieveDocumentSnippets = async (input) => (input.documents ?? []).filter((document) => document.id === "solution").map(hit);
+  exports.retrieveDocumentSnippetsWithMetadata = async () => ({ snippets: [], telemetry: { quality: { sufficient: false }, durationMs: 0 } });`);
+  const load = createJiti(import.meta.url, {
+    fsCache: false,
+    moduleCache: false,
+    alias: { "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval, "@": frontend, "server-only": "/dev/null" },
+  });
+  const { generateProjectArtifact } = load(path.join(frontend, "lib/server/ai.ts"));
+  const document = (id, role, text) => ({ id, project_id: "fictional", title: id, role, supporting_subtype: null, raw_text: text, file_format: "txt", file_name: `${id}.txt`, structure_map: [], processing_status: "enhanced_ready" });
+  const customer = document(
+    "customer",
+    "primary_customer_document",
+    Array.from({ length: 8 }, (_, index) => `K-${index + 1} Leverandøren skal dokumentere kontroll nummer ${index + 1} for driften av plattformen.`).join("\n"),
+  );
+  const longSolution = `${"Plattformen driftes med dokumenterte rutiner og fast ansvar for endringer. ".repeat(750)}\n${passage}`;
+  await generateProjectArtifact({
+    artifactType: "forbedret_kravsvar",
+    projectName: "Fiktivt anbud",
+    customerAnalysis: null,
+    solutionEvaluation: null,
+    customerDocument: customer,
+    solutionDocument: document("solution", "primary_solution_document", longSolution),
+    supportingDocuments: [],
+    requirementDocuments: [customer],
+    knowledgeArtifacts: [],
+  }).catch(() => undefined);
+  assert.ok(state.handoffs.length > 0, "Missing answers must reach the repair handoff.");
+  assert.ok(state.handoffs.every((prompt) => prompt.includes(passage)));
 });

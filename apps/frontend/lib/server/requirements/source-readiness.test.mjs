@@ -1588,3 +1588,41 @@ test("a requirement a correction moves to its series' register carries that regi
   assert.match(added.sourceExcerpt, /Nytt krav i rettelse/u);
   assert.equal(canonical.find((entry) => entry.id === "K-1.1").text, "Leverandøren skal levere drift hele døgnet.");
 });
+
+test("a correction to an ID two registers define changes neither, and Markdown definitions stay requirements", () => {
+  const customer = document({
+    id: "customer",
+    role: "primary_customer_document",
+    supporting_subtype: null,
+    title: "Konkurransegrunnlag",
+    raw_text: [
+      "9 Rettelser",
+      "1. Krav K-1.1 i Bilag 3 endres og skal nå lyde: «Leverandøren skal levere opplæring hver måned.»",
+      "2. Krav K-1.2 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere støtte hele døgnet.»",
+    ].join("\n"),
+  });
+  const first = document({ id: "first", title: "Bilag 1", raw_text: "K-1.1 Leverandøren skal levere drift.\nK-1.2 Leverandøren skal levere støtte." });
+  const second = document({ id: "second", title: "Bilag 3", file_format: "md", raw_text: "## K-1.1 Leverandøren skal levere opplæring." });
+  const canonical = canonicalizeRequirementSourceLedger({
+    sourceDocuments: [customer, first, second],
+    requirementLedgerResults: [
+      { document: customer, ledger: [] },
+      {
+        document: first,
+        ledger: [
+          ledgerEntry({ id: "K-1.1", text: "Leverandøren skal levere drift." }),
+          ledgerEntry({ id: "K-1.2", text: "Leverandøren skal levere støtte." }),
+        ],
+      },
+      { document: second, ledger: [ledgerEntry({ id: "K-1.1", text: "Leverandøren skal levere opplæring." })] },
+    ],
+  });
+  assert.deepEqual(
+    canonical.map((entry) => [entry.documentId, entry.id, entry.text]),
+    [
+      ["first", "K-1.1", "Leverandøren skal levere drift."],
+      ["first", "K-1.2", "Leverandøren skal levere støtte hele døgnet."],
+      ["second", "K-1.1", "Leverandøren skal levere opplæring."],
+    ],
+  );
+});

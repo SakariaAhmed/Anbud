@@ -537,6 +537,7 @@ type RequirementSourceLedgerInput = {
 };
 
 const SERIES_REQUIREMENT_ID = /^([A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*)-\d/u;
+const UNCLEAR_TARGET = "\u0000unclear";
 const MENTIONED_REQUIREMENT_ID = /\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d{1,4}(?:\.\d{1,3}){0,4}\b/gu;
 
 /**
@@ -577,9 +578,10 @@ function requirementIdTokenPattern(id: string, lineStart: boolean) {
     .split("-")
     .map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
     .join(String.raw`\s*[-‐‑‒–—]\s*`);
-  // A definition heads a line, a list item or a table cell ("Rad 1: Sikkerhet | K-1.1 | …").
+  // A definition heads a line, a Markdown heading, a list item or a table
+  // cell ("## K-1.1", "**K-1.1**", "Rad 1: Sikkerhet | K-1.1 | …").
   const lead = lineStart
-    ? String.raw`(?:^[ \t]*(?:[-•*–]\s*|\[\s*|Rad\s+\d+:\s*|Krav(?:-?ID)?\s*:?\s*)?|\|\s*)`
+    ? String.raw`(?:^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(?:[-•*–]\s*|\[\s*|Rad\s+\d+:\s*|Krav(?:-?ID)?\s*:?\s*)?|\|\s*(?:\*\*)?)`
     : String.raw`(?<![\p{L}\p{N}])`;
   return new RegExp(`${lead}${token}(?![\\p{L}\\p{N}]|\\.\\d)`, lineStart ? "imu" : "iu");
 }
@@ -627,6 +629,13 @@ function withCrossDocumentCorrections(
 ) {
   const corrected = new Map(ledgerByDocumentId);
   const series = (id: string) => SERIES_REQUIREMENT_ID.exec(normalizeRequirementId(id))?.[1];
+  const definedIn = new Map<string, Set<string>>();
+  for (const document of sourceDocuments.filter(isFormalRequirementDocument)) {
+    for (const entry of ledgerByDocumentId.get(document.id) ?? []) {
+      const id = normalizeRequirementId(entry.id);
+      definedIn.set(id, (definedIn.get(id) ?? new Set()).add(document.id));
+    }
+  }
   const seriesOwner = (seriesName: string | undefined) => {
     const counts = new Map<string, number>();
     for (const [id, owner] of owners) {
@@ -649,7 +658,15 @@ function withCrossDocumentCorrections(
     for (const target of targets) {
       const before = corrected.get(target) ?? [];
       const beforeIds = new Set(before.map((entry) => entry.id));
-      const { ledger, report } = applyRequirementCorrections(before, rawText, { removeCorrectionRows: false });
+      // An ID that several registers define cannot tell which one another
+      // document's correction means; those rows are left as they are.
+      const unclear = (entry: RequirementLedgerEntry) =>
+        (definedIn.get(normalizeRequirementId(entry.id))?.size ?? 0) > 1;
+      const masked = before.map((entry) => (unclear(entry) ? { ...entry, id: `${entry.id}${UNCLEAR_TARGET}` } : entry));
+      const applied = applyRequirementCorrections(masked, rawText, { removeCorrectionRows: false });
+      const report = applied.report;
+      const ledger = applied.ledger.map((entry) =>
+        entry.id.endsWith(UNCLEAR_TARGET) ? { ...entry, id: entry.id.slice(0, -UNCLEAR_TARGET.length) } : entry);
       for (const entry of ledger) {
         if (report.added.includes(entry.id) && !beforeIds.has(entry.id) && !additions.has(entry.id)) {
           additions.set(entry.id, entry);

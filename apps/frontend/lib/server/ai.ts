@@ -1353,6 +1353,8 @@ export function buildStrictRequirementHandoffUserPrompt(input: {
     source: RequirementAnswerSource;
   }>;
   strictRow: Record<string, unknown>;
+  /** Searched passages of a solution document too long for the prompt. */
+  solutionPassages?: string;
 }) {
   const styleExamples = input.acceptedAnswerContext.slice(0, 3);
   const strictRequirementText =
@@ -1384,6 +1386,7 @@ export function buildStrictRequirementHandoffUserPrompt(input: {
           JSON.stringify(styleExamples),
         )
       : "",
+    input.solutionPassages ?? "",
     buildDelimitedContext(
       "Krav som skal repareres",
       JSON.stringify([input.strictRow]),
@@ -1409,6 +1412,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
   };
   rejectionReason?: string;
   solutionText?: string;
+  solutionPassages?: string;
   model?: string;
   timeoutMs?: number;
   onProgress?: (message: string) => void;
@@ -1453,6 +1457,7 @@ async function repairSingleRequirementAnswerWithStrictHandoff(input: {
         projectName: input.projectName,
         acceptedAnswerContext: input.acceptedAnswerContext,
         strictRow,
+        solutionPassages: input.solutionPassages,
       }),
       temperature: 0.1,
       model: requirementResponseRepairModel(input.model),
@@ -1655,9 +1660,21 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
   answers: RequirementAnswerResult[];
   requirementDocuments: ProjectDocumentDetail[];
   solutionText?: string;
+  solutionDocument?: ProjectDocumentDetail | null;
   model?: string;
   onProgress?: (message: string) => void;
 }) {
+  // Repairs see the same searched passages as the answer batches when the
+  // solution document is too long to send whole.
+  const solutionPassagesFor = (rows: Array<{ entry: RequirementLedgerEntry; absoluteIndex: number }>) =>
+    input.solutionDocument && !solutionDocumentFitsRequirementPrompt(input.solutionDocument)
+      ? buildPerRequirementRetrievalContext({
+          entries: rows.map((row) => row.entry),
+          solutionDocument: input.solutionDocument,
+          startIndex: 0,
+          numbers: rows.map((row) => row.absoluteIndex + 1),
+        })
+      : Promise.resolve("");
   const strictHandoffLimits =
     resolveRequirementResponseStrictHandoffLimits();
   const strictHandoffGovernor =
@@ -1764,6 +1781,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
     chunks,
     REQUIREMENT_RESPONSE_HANDOFF_CONCURRENCY,
     async (chunk) => {
+      const solutionPassages = await solutionPassagesFor(chunk);
       const rowsForPrompt = chunk.map((row) => {
         const repairDirective = buildRequirementRepairDirective(
           row.entry,
@@ -1832,6 +1850,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
                 buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
                 input.baseContext,
                 documentContextForHandoff,
+                solutionPassages,
                 acceptedAnswerContext.length
                   ? buildDelimitedContext(
                       "Allerede godkjente batchsvar for stil og konsistens",
@@ -1888,6 +1907,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
             repaired = resolveRequirementAnswerBeforeStrictHandoff({
               entry: row.entry,
               current: repaired,
+              solutionText: input.solutionText,
             });
           }
           if (repaired.source !== "deterministic_fallback") {
@@ -1936,6 +1956,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
     async (row) => {
       let repaired = row.repaired;
       if (repaired.source === "deterministic_fallback") {
+        const solutionPassages = await solutionPassagesFor([row]);
         const strictAttempt = await strictHandoffGovernor.run((timeoutMs) =>
           repairSingleRequirementAnswerWithStrictHandoff({
             projectName: input.projectName,
@@ -1943,6 +1964,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
             row: { ...row, current: repaired },
             rejectionReason: repaired.reason,
             solutionText: input.solutionText,
+            solutionPassages,
             model: input.model,
             timeoutMs,
             onProgress: input.onProgress,
@@ -1962,6 +1984,7 @@ async function repairRequirementAnswersWithFullDocumentHandoff(input: {
           entry: row.entry,
           current: repaired,
           strictRepair,
+          solutionText: input.solutionText,
         });
         if (
           strictAttempt.status === "completed" &&
@@ -2204,6 +2227,7 @@ export function resolveRequirementAnswerAfterStrictHandoff(input: {
   entry: RequirementLedgerEntry;
   current: RequirementAnswerResult;
   strictRepair: RequirementAnswerResult | null;
+  solutionText?: string;
 }) {
   if (input.strictRepair) {
     return input.strictRepair;
@@ -2216,10 +2240,12 @@ export function resolveRequirementAnswerAfterStrictHandoff(input: {
     buildDeterministicFinalRequirementControlRepair({
       entry: input.entry,
       evidence: input.current.evidence,
+      solutionText: input.solutionText,
     }) ??
     buildDeterministicFinalRequirementTemplateRepair({
       entry: input.entry,
       evidence: input.current.evidence,
+      solutionText: input.solutionText,
     }) ??
     input.current
   );
@@ -2228,6 +2254,7 @@ export function resolveRequirementAnswerAfterStrictHandoff(input: {
 export function resolveRequirementAnswerBeforeStrictHandoff(input: {
   entry: RequirementLedgerEntry;
   current: RequirementAnswerResult;
+  solutionText?: string;
 }) {
   if (input.current.source !== "deterministic_fallback") {
     return input.current;
@@ -2237,6 +2264,7 @@ export function resolveRequirementAnswerBeforeStrictHandoff(input: {
     buildDeterministicFinalRequirementControlRepair({
       entry: input.entry,
       evidence: input.current.evidence,
+      solutionText: input.solutionText,
     }) ?? input.current
   );
 }
@@ -2244,6 +2272,7 @@ export function resolveRequirementAnswerBeforeStrictHandoff(input: {
 export function applyVerifiedDeterministicControlRepairs(input: {
   ledger: RequirementLedgerEntry[];
   answers: RequirementAnswerResult[];
+  solutionText?: string;
 }) {
   return input.answers.map((answer, index) => {
     const entry = input.ledger[index];
@@ -2254,6 +2283,7 @@ export function applyVerifiedDeterministicControlRepairs(input: {
       buildDeterministicFinalRequirementControlRepair({
         entry,
         evidence: answer.evidence,
+        solutionText: input.solutionText,
       }) ?? answer
     );
   });
@@ -3983,6 +4013,7 @@ async function generateRequirementResponseFromLedger(input: {
     applyVerifiedDeterministicControlRepairs({
       ledger: responseLedger,
       answers: exactDuplicateReuseResult.answers,
+      solutionText: input.solutionDocument?.raw_text,
     });
   const deterministicControlRepairStageByIndex = new Map<
     number,
@@ -4000,6 +4031,7 @@ async function generateRequirementResponseFromLedger(input: {
     answers: verifiedDeterministicAnswers,
     requirementDocuments: input.requirementDocuments,
     solutionText: input.solutionDocument?.raw_text,
+    solutionDocument: input.solutionDocument,
     model: input.model,
     onProgress: input.onProgress,
   });

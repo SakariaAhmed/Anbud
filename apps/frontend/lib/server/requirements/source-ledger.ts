@@ -2761,13 +2761,23 @@ function isVerifiedRequirementEvidence(candidate: string, entry: RequirementLedg
   );
 }
 
+/** Evidence bounded for a table cell. A long passage ends after its last
+ * complete quotation rather than inside one, so the shown text can be
+ * checked against its source like the rest. */
+function boundedRequirementEvidence(candidate: string | undefined) {
+  const text = compactText(candidate, 100_000);
+  if (text.length <= 260) return text;
+  const lastClosing = Math.max(...["»", "”", "\""].map((mark) => text.lastIndexOf(mark, 259)));
+  return lastClosing >= 40 ? `${text.slice(0, lastClosing + 1)} …` : compactText(candidate, 260);
+}
+
 export function requirementAnswerEvidence(
   entry: RequirementLedgerEntry,
   candidate?: string,
   solutionText = "",
 ) {
-  const normalizedCandidate = compactText(candidate, 260);
-  if (normalizedCandidate && isVerifiedRequirementEvidence(candidate ?? "", entry, solutionText)) {
+  const normalizedCandidate = boundedRequirementEvidence(candidate);
+  if (normalizedCandidate && isVerifiedRequirementEvidence(normalizedCandidate, entry, solutionText)) {
     return normalizedCandidate;
   }
 
