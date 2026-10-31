@@ -1,6 +1,6 @@
 # Fasit – Hålandsvik kommune, skyplattform og drift (e2e 2026-10-31)
 
-Skrevet før noen pipeline-kjøring. Hash i `fasit.sha256`.
+Skrevet før noen pipeline-kjøring. SHA-256 for `fasit.json` ved forfatting: `342e452390cccb9c06979d5116665e1403d689471b90ed8c8996cb32671fdf66`.
 
 ## Dokumenter
 

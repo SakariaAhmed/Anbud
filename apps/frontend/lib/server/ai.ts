@@ -5688,14 +5688,14 @@ async function analyzeCustomerDocumentsLegacy(
           ? "Hele det primære kundedokumentet er med. Bruk hele dokumentet, også senere kapitler om økonomiske rammer, opsjoner, tidsplan, evaluering og rettelser. Ikke skriv at deler av dokumentet ikke er synlige."
           : "Bruk strukturkartet og tekstutdraget aktivt. Hvis dokumentet viser til tabeller, figurer, vedlegg eller krav som ikke er synlige i tekstutdraget, marker dette nøkternt som et verifikasjonsbehov i analysen fremfor å anta innhold.",
         "Når et rettelses- eller endringskapittel endrer tidligere tekst, gjelder den nyeste teksten; nevn endringen.",
-        "Når tall, frister eller krav er motstridende mellom kapitler eller dokumenter, skal du påpeke motstriden eksplisitt med begge verdiene og kildene i stedet for å velge én av dem.",
+        "Når tall, frister eller krav er motstridende mellom kapitler eller dokumenter, skal du påpeke motstriden eksplisitt med begge verdiene og kildene i stedet for å velge én av dem. En uttrykkelig publisert rettelse er ikke en motstrid: den rettede verdien gjelder, også når rettelsen står i et annet dokument, og den erstattede verdien nevnes som erstattet.",
       ].join(" "),
     ),
     serviceRecommendationContext(input.serviceCandidates),
     supportingContexts
       ? buildDelimitedContext(
           "Tilleggsregel",
-          "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument.",
+          "Bruk støttedokumentene bare som støtte og kontekst. Ikke la dem overstyre primært kundedokument, med unntak av en uttrykkelig publisert rettelse.",
         )
       : "",
     supportingContexts,

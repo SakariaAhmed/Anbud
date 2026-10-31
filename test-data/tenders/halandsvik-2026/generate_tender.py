@@ -9,6 +9,7 @@ kilden. Kjør med reportlab, pypdf og python-docx installert: python -I generate
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
@@ -47,8 +48,9 @@ LIGHT_GREY = colors.HexColor("#F3F5F7")
 LINE = colors.HexColor("#C8D2D9")
 MID_GREY = colors.HexColor("#64727D")
 
-pdfmetrics.registerFont(TTFont("TenderSans", "/System/Library/Fonts/Supplemental/Arial.ttf"))
-pdfmetrics.registerFont(TTFont("TenderSans-Bold", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"))
+# Another font changes the PDF layout, and with it the page numbers in fasit.json.
+pdfmetrics.registerFont(TTFont("TenderSans", os.environ.get("TENDER_FONT", "/System/Library/Fonts/Supplemental/Arial.ttf")))
+pdfmetrics.registerFont(TTFont("TenderSans-Bold", os.environ.get("TENDER_FONT_BOLD", "/System/Library/Fonts/Supplemental/Arial Bold.ttf")))
 FONT, FONT_BOLD = "TenderSans", "TenderSans-Bold"
 _s = getSampleStyleSheet()
 STYLES = {
