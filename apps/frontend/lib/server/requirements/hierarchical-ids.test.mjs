@@ -311,3 +311,25 @@ test("an unmarked heading needs a short title, also before introductory prose", 
   // A long line of prose is not a section title.
   assert.equal(ledger[3].heading, "Sikkerhet");
 });
+
+test("prose between requirements without full stops is neither requirement text nor a heading", () => {
+  const raw_text = [
+    "Drift",
+    "K-1.1.1 Leverandøren skal levere drift",
+    "Kommunen har i dag om lag 400 ansatte fordelt på tolv lokasjoner og tre tjenesteområder i kommunen",
+    "K-2.1.1 Leverandøren skal levere støtte",
+    "K-2.1.2 Løsningen skal integreres mot",
+    "Microsoft Entra ID",
+    "Integrasjonen gjelder alle ansatte.",
+    "K-2.1.3 Leverandøren skal levere opplæring",
+    "K-2.1.4 Leverandøren skal levere rapporter",
+    "K-2.1.5 Leverandøren skal levere dokumentasjon",
+  ].join("\n");
+  const ledger = buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text });
+  assert.deepEqual(ledger.map((entry) => [entry.id, entry.text, entry.heading]).slice(0, 4), [
+    ["K-1.1.1", "Leverandøren skal levere drift", "Drift"],
+    ["K-2.1.1", "Leverandøren skal levere støtte", "Drift"],
+    ["K-2.1.2", "Løsningen skal integreres mot Microsoft Entra ID Integrasjonen gjelder alle ansatte.", "Drift"],
+    ["K-2.1.3", "Leverandøren skal levere opplæring", "Drift"],
+  ]);
+});

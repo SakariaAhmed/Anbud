@@ -185,26 +185,34 @@ function isHierarchicalRegister(lines: SourceLine[]) {
   );
 }
 
-/** In a text format, a short capitalised line without punctuation or an
- * obligation is a heading ("Sikkerhet") when it opens the next requirement
- * or section, or when a short title is followed by introductory prose
- * ("Kommunen har høye krav til sikkerhet."). After an unfinished lead-in
- * ("sertifisert etter" / "ISO/IEC 27001:2022", "lagres i" / "Norge …"),
- * or before text that continues it, it is the rest of the sentence. */
+const UNFINISHED_LEAD_IN =
+  /(?<![\p{L}\p{N}])(?:i|på|etter|og|eller|for|med|til|av|om|fra|ved|som|at|mellom|under|over|innen|uten|mot|via|hos)$/iu;
+
+/** A capitalised line without punctuation or an obligation, not after an
+ * unfinished lead-in ("sertifisert etter" / "ISO/IEC 27001:2022", "lagres i"
+ * / "Norge …"), can stand on its own rather than continue the sentence. */
+function standsAlone(line: SourceLine, previous: string) {
+  return (
+    /^\p{Lu}/u.test(line.text) &&
+    !/[.!?:;,]$/u.test(line.text) &&
+    !OBLIGATION.test(line.text) &&
+    !UNFINISHED_LEAD_IN.test(previous)
+  );
+}
+
+/** Such a line right before the next requirement or section is not the rest
+ * of the requirement above, whatever its length. */
+function endsBeforeNextSection(line: SourceLine, previous: string, next: SourceLine | undefined) {
+  return standsAlone(line, previous) && Boolean(next && (next.start || next.heading || NUMBERED_HEADING.test(next.text)));
+}
+
+/** In a text format, a short one is a heading ("Sikkerhet") when it opens the
+ * next requirement or section, or when a short title is followed by
+ * introductory prose ("Kommunen har høye krav til sikkerhet."). */
 function isUnmarkedHeading(line: SourceLine, previous: string, next: SourceLine | undefined) {
   const words = line.text.split(" ").length;
-  if (
-    !/^\p{Lu}/u.test(line.text) ||
-    /[.!?:;,]$/u.test(line.text) ||
-    line.text.length > 90 ||
-    words > 10 ||
-    OBLIGATION.test(line.text) ||
-    /(?<![\p{L}\p{N}])(?:i|på|etter|og|eller|for|med|til|av|om|fra|ved|som|at|mellom|under|over|innen|uten)$/iu.test(previous) ||
-    !next
-  ) {
-    return false;
-  }
-  if (next.start || next.heading || NUMBERED_HEADING.test(next.text)) return true;
+  if (!standsAlone(line, previous) || line.text.length > 90 || words > 10 || !next) return false;
+  if (endsBeforeNextSection(line, previous, next)) return true;
   return (
     words <= 6 &&
     !next.requirementStart &&
@@ -293,7 +301,9 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
         ? samePage
           ? (line.gap ?? Infinity) <= continuationGap && line.x >= draft.x - 3
           : !/[.!?]$/u.test(previous)
-        : !sentenceEnded && !isUnmarkedHeading(line, previous, nextLine(index));
+        : !sentenceEnded &&
+          !endsBeforeNextSection(line, previous, nextLine(index)) &&
+          !isUnmarkedHeading(line, previous, nextLine(index));
       // A further paragraph that still states an obligation belongs to the
       // requirement it follows; background prose without one ends it.
       if (!structural && (wrapped || listContinues || OBLIGATION.test(value))) {

@@ -95,6 +95,8 @@ test("requirement answers see the whole solution document, including late reserv
   const long = await run(`${filler.repeat(25)}\n${reservation}`);
   assert.ok(long.batches.length > 0);
   assert.ok(long.batches.every((prompt) => !prompt.includes(reservation)));
+  // Only searched passages are added; the requirement rows are already in the prompt.
+  assert.ok(long.batches.every((prompt) => !prompt.includes("Eksakte kravradutdrag")));
   // Each of the eight requirements gets its own search of the solution document.
   assert.ok(long.retrievals.filter((ids) => ids.length === 1 && ids[0] === "solution").length >= 8);
 });

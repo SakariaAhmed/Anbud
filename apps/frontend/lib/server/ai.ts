@@ -205,6 +205,7 @@ import {
   buildRequirementCoverageEvaluationContext,
   buildRequirementCoverageLedger,
   buildRequirementCoverageLedgerFromDocuments,
+  buildPerRequirementRetrievalContext,
   buildRequirementCoverageRetrievalContext,
   buildRequirementCoverageSummary,
   buildRequirementRepairDirective,
@@ -858,6 +859,8 @@ function serviceDocumentAsProjectDocument(
   };
 }
 
+// Exported for the full-document fallback regression test.
+// fallow-ignore-next-line unused-export
 export function alignRequirementRowsWithLedger(
   contentMarkdown: string,
   ledger: RequirementLedgerEntry[],
@@ -3782,22 +3785,23 @@ async function generateRequirementResponseFromLedger(input: {
     chunks,
     REQUIREMENT_RESPONSE_RETRIEVAL_CONCURRENCY,
     async (chunk) => {
-      const supportingContext = await buildRequirementBatchRetrievalContext({
-        entries: chunk.entries,
-        supportingDocuments: input.supportingDocuments,
-        serviceDocuments: input.serviceDocuments,
-      });
       // A solution document too long for the prompt is searched for each
       // requirement, as in the solution evaluation: one query for the whole
       // batch left most requirements without their passage.
-      const solutionContext =
+      const [supportingContext, solutionContext] = await Promise.all([
+        buildRequirementBatchRetrievalContext({
+          entries: chunk.entries,
+          supportingDocuments: input.supportingDocuments,
+          serviceDocuments: input.serviceDocuments,
+        }),
         input.solutionDocument && !solutionDocumentFitsRequirementPrompt(input.solutionDocument)
-          ? await buildRequirementCoverageRetrievalContext({
+          ? buildPerRequirementRetrievalContext({
               entries: chunk.entries,
               solutionDocument: input.solutionDocument,
               startIndex: chunk.startIndex,
             })
-          : "";
+          : "",
+      ]);
       return [supportingContext, solutionContext].filter(Boolean).join("\n\n");
     },
   );

@@ -940,7 +940,9 @@ export function matchCenteredExcerpt(text: string, query: string, limit: number)
   return sentences.slice(start, end).join(" ");
 }
 
-async function buildPerRequirementRetrievalContext(input: {
+/** Solution passages searched for each requirement that lacks exact
+ * evidence; shared with requirement answers for a document too long to send. */
+export async function buildPerRequirementRetrievalContext(input: {
   entries: RequirementLedgerEntry[];
   solutionDocument: ProjectDocumentDetail;
   startIndex: number;
