@@ -5,6 +5,7 @@ import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import { createJsonCompletion, createTextCompletionStream } from "@/lib/server/ai/completion";
 import { compactText, questionRetrievalTerms, retrievedSnippetContext } from "@/lib/server/ai/context";
 import { FAST_MODEL, FAST_REASONING_EFFORT } from "@/lib/server/ai/model-config";
+import { matchCenteredExcerpt } from "@/lib/server/ai/requirement-coverage";
 import { extractExactRetrievalTerms } from "@/lib/server/ai/retrieval-query";
 import {
   modelRetrievalRerankEnabled,
@@ -775,7 +776,9 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     ? retrievedSnippets.map((snippet) =>
         snippet.sourceType === "project_document" &&
         includedText.get(snippet.sourceId)?.includes(comparable(snippet.text))
-          ? { ...snippet, text: compactText(snippet.text, 280) }
+          // The anchor keeps the matched part: a section window can start
+          // well before it.
+          ? { ...snippet, text: matchCenteredExcerpt(snippet.text, request.query, 280) }
           : snippet,
       )
     : retrievedSnippets;

@@ -254,6 +254,44 @@ test("model rerank is skipped when the whole documents are in the prompt", async
   }
 });
 
+test("an anchor into a document sent whole keeps the matched part of a section", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-anchor-"));
+  const state = { answers: [] };
+  globalThis.__projectChatAnchorTest = state;
+  const previous = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const filler = "Leverandøren beskriver generelle rutiner for drift og forvaltning. ".repeat(40);
+    const section = `${filler}Oppetid skal være 99,95 prosent målt per måned. ${filler}`;
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatAnchorTest.answers.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async () => ({
+      snippets: [{ sourceType: "project_document", sourceId: "kunde", documentTitle: "kunde", reference: "Kapittel 3",
+        headingPath: [], pageStart: null, pageEnd: null, text: ${JSON.stringify(section)}, lexicalScore: 3, similarity: null, score: 3 }],
+      telemetry: { durationMs: 0, sourceCount: 1, quality: { sufficient: true, sourceCount: 1 } },
+    });`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const result = await streamProjectChat({ projectName: "Fiktiv", question: "Hva er kravet til oppetid?",
+      customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+      customerDocument: document("kunde", "primary_customer_document", section), solutionDocument: null });
+    for await (const _ of result.stream) { /* drain */ }
+    const anchors = state.answers[0].user.slice(state.answers[0].user.indexOf("Kildehenvisninger"));
+    assert.match(anchors, /Oppetid skal være 99,95 prosent/u);
+  } finally {
+    if (previous === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previous;
+    delete globalThis.__projectChatAnchorTest; rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("a selected table row keeps its header and is not cut", () => {
   const header = "| Krav | Tiltak | Frist |\n| --- | --- | --- |";
   const rows = Array.from({ length: 80 }, (_, index) => `| K-${index + 1} | Ordinær drift og forvaltning av tjenesten | 30 dager |`);
