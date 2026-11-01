@@ -59,6 +59,9 @@ type SemanticDocumentChunk = {
   text: string;
   tokenCount: number;
   metadata: Record<string, unknown>;
+  /** In memory only: the structure entry this part was cut from. */
+  sectionText: string;
+  sectionOffset: number;
 };
 
 export type RetrievedDocumentSnippet = {
@@ -71,6 +74,8 @@ export type RetrievedDocumentSnippet = {
   headingPath: string[];
   pageStart: number | null;
   pageEnd: number | null;
+  /** Position in the stored chunk set; null when it cannot be traced. */
+  chunkIndex?: number | null;
   similarity: number | null;
   lexicalScore: number;
   keywordRank?: number | null;
@@ -101,9 +106,18 @@ export type RetrievalTelemetry = {
   usedHybridSearch: boolean;
   usedVectorSearch: boolean;
   usedMemoryFallback: boolean;
+  usedBroadenedSearch: boolean;
+  usedModelRerank: boolean;
   durationMs: number;
   quality: RetrievalQuality;
 };
+
+/** Returns indexes into `candidates`, most relevant first, or null to keep
+ * the existing order. Indexes left out keep their order after the listed ones. */
+export type RetrievalReranker = (input: {
+  query: string;
+  candidates: RetrievedDocumentSnippet[];
+}) => Promise<number[] | null>;
 
 export type DocumentSnippetRetrievalResult = {
   snippets: RetrievedDocumentSnippet[];
@@ -125,6 +139,7 @@ type ChunkableDocument = {
 
 type StoredChunkRow = {
   id: string;
+  chunk_index?: number | null;
   source_type: DocumentChunkSourceType;
   source_id: string;
   document_title: string;
@@ -137,8 +152,11 @@ type StoredChunkRow = {
   metadata: Record<string, unknown> | null;
 };
 
-const MAX_CHUNK_CHARS = 4800;
-const CHUNK_OVERLAP_CHARS = 550;
+// Small parts keep each embedding focused on one requirement or passage.
+// Retrieval returns the surrounding section, up to the former chunk size.
+const MAX_CHUNK_CHARS = 1600;
+const CHUNK_OVERLAP_CHARS = 200;
+const SECTION_CONTEXT_MAX_CHARS = 4800;
 const EMBEDDING_BATCH_SIZE = 32;
 const VECTOR_MATCH_THRESHOLD = 0.15;
 const HYBRID_RRF_K = 50;
@@ -452,6 +470,7 @@ export function documentSourceKeysForMemoryFallback(
 }
 
 const MAX_RETRIEVAL_LIMIT = 16;
+const MODEL_RERANK_CANDIDATES = 32;
 
 /** Occurrences of `needle` in `haystack` that stand as a whole value: not
  * preceded or followed by a letter or digit. */
@@ -522,6 +541,74 @@ function tokenizeForRetrieval(value: string, limit = 180) {
         .slice(0, limit),
     ),
   );
+}
+
+// Words that occur in nearly every tender passage or only phrase the question.
+// In an OR query they would match almost every chunk and drown the ranking.
+const KEYWORD_QUERY_STOP_WORDS = new Set([
+  "hva", "hvem", "hvor", "hvordan", "hvilke", "hvilken", "hvilket", "hvorfor",
+  "når", "sier", "står", "stå", "beskriv", "beskriver", "beskrevet", "fortell",
+  "om", "og", "eller", "men", "på", "av", "fra", "til", "for", "med", "uten",
+  "ved", "som", "der", "her", "det", "den", "de", "dem", "denne", "dette", "disse",
+  "en", "ei", "et", "er", "var", "blir", "bli", "være", "har", "hadde", "kan",
+  "skal", "vil", "må", "bør", "ikke", "at", "så", "seg", "sin", "sitt", "sine",
+  "vi", "oss", "vår", "våre", "du", "deg", "dere", "jeg", "meg", "min", "mitt",
+  "han", "hun", "alle", "andre", "noe", "noen", "også", "bare", "mer", "mest",
+  "krav", "kravet", "kravene", "kravgrunnlaget", "krever", "kreves", "kreve",
+  "gjelder", "inneholder", "kunden", "kundens",
+  "leverandør", "leverandøren", "leverandørens", "dokument", "dokumentet",
+  "the", "and", "or", "of", "to", "in", "is", "are", "what", "does", "about",
+  "with", "from", "that", "this", "must", "shall", "requirement",
+  "requirements",
+]);
+// Norwegian inflects by suffix. The index uses the 'simple' configuration,
+// which keeps every inflected form as its own lexeme, so the query names the
+// common forms of each word instead.
+const NORWEGIAN_STRIPPED_SUFFIXES = ["ene", "ane", "ens", "ets", "er", "en", "et", "ar", "e", "a"];
+const NORWEGIAN_INFLECTION_SUFFIXES = ["", "e", "en", "er", "et", "ene", "a", "ar", "ane", "s"];
+const MAX_KEYWORD_QUERY_WORDS = 16;
+const MAX_KEYWORD_QUERY_EXACT_TERMS = 12;
+
+function norwegianInflections(word: string) {
+  const suffix = word.length > 5
+    ? NORWEGIAN_STRIPPED_SUFFIXES.find((candidate) => word.endsWith(candidate) && word.length - candidate.length >= 4)
+    : undefined;
+  const stem = suffix ? word.slice(0, -suffix.length) : word;
+  return [word, ...NORWEGIAN_INFLECTION_SUFFIXES.map((ending) => `${stem}${ending}`)];
+}
+
+/**
+ * Builds the `websearch_to_tsquery` text for the keyword half of hybrid search.
+ * A plain question would require every word to occur in one chunk, so the
+ * keyword search matched almost nothing. Each term is a quoted alternative:
+ * exact terms such as requirement IDs keep their punctuation as phrases, and
+ * content words carry their common Norwegian inflections.
+ */
+export function buildKeywordSearchQuery(query: string, exactTerms: string[] = []) {
+  const clean = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/["\u0000]/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim()
+      .replace(/^[-.]+|[-.]+$/gu, "");
+  const terms = new Set<string>();
+  for (const term of exactTerms.slice(0, MAX_KEYWORD_QUERY_EXACT_TERMS)) {
+    const cleaned = clean(term).slice(0, 80);
+    if (cleaned && !KEYWORD_QUERY_STOP_WORDS.has(cleaned)) terms.add(cleaned);
+  }
+  const words = new Set<string>();
+  for (const raw of query.toLowerCase().split(/[^\p{L}\p{N}.\-]+/u)) {
+    const word = clean(raw);
+    if (words.size >= MAX_KEYWORD_QUERY_WORDS) break;
+    if (!word || KEYWORD_QUERY_STOP_WORDS.has(word)) continue;
+    if (/\p{N}/u.test(word) ? word.length >= 2 : word.length >= 3) words.add(word);
+  }
+  for (const word of words) {
+    const inflections = /^\p{L}{4,}$/u.test(word) ? norwegianInflections(word) : [word];
+    for (const inflection of inflections) terms.add(inflection);
+  }
+  return [...terms].map((term) => `"${term}"`).join(" or ");
 }
 
 function pageRangeFrom(reference: string, text: string) {
@@ -669,17 +756,16 @@ function findSplitPoint(text: string, preferredEnd: number, minimumEnd: number) 
   return wordBreak >= 0 ? minimumEnd + wordBreak : boundedEnd;
 }
 
-function splitTextWithOverlap(text: string) {
-  const normalized = normalizeChunkText(text);
+function splitTextWithOverlap(normalized: string) {
   if (!normalized) {
     return [];
   }
 
   if (normalized.length <= MAX_CHUNK_CHARS) {
-    return [normalized];
+    return [{ text: normalized, start: 0 }];
   }
 
-  const chunks: string[] = [];
+  const chunks: Array<{ text: string; start: number }> = [];
   let cursor = 0;
 
   while (cursor < normalized.length) {
@@ -689,9 +775,10 @@ function splitTextWithOverlap(text: string) {
       preferredEnd >= normalized.length
         ? normalized.length
         : findSplitPoint(normalized, preferredEnd, minimumEnd);
-    const chunk = normalized.slice(cursor, end).trim();
+    const slice = normalized.slice(cursor, end);
+    const chunk = slice.trim();
     if (chunk) {
-      chunks.push(chunk);
+      chunks.push({ text: chunk, start: cursor + slice.indexOf(chunk) });
     }
 
     if (end >= normalized.length) {
@@ -798,7 +885,7 @@ function buildSemanticDocumentChunks(document: ChunkableDocument) {
     );
     const parts = splitTextWithOverlap(entryText);
 
-    for (const [partIndex, part] of parts.entries()) {
+    for (const [partIndex, { text: part, start }] of parts.entries()) {
       chunks.push({
         chunkIndex: chunks.length,
         kind,
@@ -818,6 +905,8 @@ function buildSemanticDocumentChunks(document: ChunkableDocument) {
           content_hash: hashText(part),
           ...structureEntryChunkMetadata(entry),
         },
+        sectionText: entryText,
+        sectionOffset: start,
       });
     }
   }
@@ -1497,6 +1586,7 @@ function memoryCandidates(input: {
         headingPath: candidate.chunk.headingPath,
         pageStart: candidate.chunk.pageStart,
         pageEnd: candidate.chunk.pageEnd,
+        chunkIndex: candidate.chunk.chunkIndex,
         similarity: null,
         lexicalScore: score,
         retrievalSource: "memory" as const,
@@ -1560,7 +1650,7 @@ async function storedVectorCandidates(input: {
   const { data: rows, error: rowsError } = await dataApi
     .from("document_chunks")
     .select(
-      "id, source_type, source_id, document_title, kind, reference, heading_path, page_start, page_end, text_encrypted, metadata",
+      "id, chunk_index, source_type, source_id, document_title, kind, reference, heading_path, page_start, page_end, text_encrypted, metadata",
     )
     .in("id", ids);
 
@@ -1604,6 +1694,7 @@ async function storedVectorCandidates(input: {
         headingPath: row.heading_path ?? [],
         pageStart: row.page_start,
         pageEnd: row.page_end,
+        chunkIndex: row.chunk_index ?? null,
         similarity,
         lexicalScore: lexical,
         semanticRank: null,
@@ -1642,7 +1733,7 @@ async function storedHybridCandidates(input: {
     "hybrid_match_document_chunks",
     {
       query_embedding: embedding,
-      query_text: input.query,
+      query_text: buildKeywordSearchQuery(input.query, input.exactTerms),
       match_count: matchCount,
       match_threshold: VECTOR_MATCH_THRESHOLD,
       project_filter: input.projectId ?? null,
@@ -1678,7 +1769,7 @@ async function storedHybridCandidates(input: {
   const { data: rows, error: rowsError } = await dataApi
     .from("document_chunks")
     .select(
-      "id, source_type, source_id, document_title, kind, reference, heading_path, page_start, page_end, text_encrypted, metadata",
+      "id, chunk_index, source_type, source_id, document_title, kind, reference, heading_path, page_start, page_end, text_encrypted, metadata",
     )
     .in("id", ids);
 
@@ -1727,6 +1818,7 @@ async function storedHybridCandidates(input: {
         headingPath: row.heading_path ?? [],
         pageStart: row.page_start,
         pageEnd: row.page_end,
+        chunkIndex: row.chunk_index ?? null,
         similarity,
         lexicalScore: lexical,
         keywordRank: match?.keyword_rank ?? null,
@@ -1820,7 +1912,7 @@ function assessRetrievalQuality(input: {
   exactTerms: string[];
 }) {
   const snippets = input.snippets;
-  const topScore = snippets[0]?.score ?? 0;
+  const topScore = Math.max(0, ...snippets.map((snippet) => snippet.score));
   const sourceCount = snippets.length;
   const semanticHits = snippets.filter(
     (snippet) => (snippet.similarity ?? 0) >= VECTOR_MATCH_THRESHOLD,
@@ -1878,6 +1970,93 @@ function assessRetrievalQuality(input: {
   };
 }
 
+/** The part of a section shown around a matched part: the whole section when
+ * it fits, otherwise a window centred on the part, cut at whitespace. */
+function sectionWindow(section: string, partStart: number, partEnd: number) {
+  if (section.length <= SECTION_CONTEXT_MAX_CHARS) {
+    return { start: 0, end: section.length };
+  }
+  const margin = Math.max(0, SECTION_CONTEXT_MAX_CHARS - (partEnd - partStart));
+  let start = Math.max(0, partStart - Math.floor(margin / 2));
+  let end = Math.min(section.length, start + Math.max(SECTION_CONTEXT_MAX_CHARS, partEnd - partStart));
+  start = Math.max(0, Math.min(start, end - SECTION_CONTEXT_MAX_CHARS));
+  if (start > 0) {
+    const boundary = section.slice(start, partStart).search(/\s/u);
+    start = boundary >= 0 ? start + boundary + 1 : partStart;
+  }
+  if (end < section.length) {
+    const boundary = section.slice(partEnd, end).search(/\s\S*$/u);
+    end = boundary >= 0 ? partEnd + boundary : partEnd;
+  }
+  return { start, end };
+}
+
+/**
+ * Replaces each matched part with its surrounding section. The part is traced
+ * to its section by rebuilding the source's chunks; a stored part whose text
+ * differs from the rebuilt part at its index (for example a chunk stored with
+ * an earlier chunk size) is returned as stored. A later part already inside an
+ * earlier window is skipped, so one section is not sent twice; the next ranked
+ * candidates fill its place up to `limit`.
+ */
+function withSurroundingSections(input: {
+  snippets: RetrievedDocumentSnippet[];
+  documents: ProjectDocumentDetail[];
+  serviceDocuments: ServiceDocumentDetail[];
+  limit: number;
+}) {
+  const chunksBySource = new Map<string, SemanticDocumentChunk[]>();
+  const sourceChunks = (snippet: RetrievedDocumentSnippet) => {
+    const key = documentChunkSourceKey(snippet.sourceType, snippet.sourceId);
+    let chunks = chunksBySource.get(key);
+    if (!chunks) {
+      const project = snippet.sourceType === "project_document"
+        ? input.documents.find((document) => document.id === snippet.sourceId)
+        : undefined;
+      const service = snippet.sourceType === "service_document"
+        ? input.serviceDocuments.find((document) => document.id === snippet.sourceId)
+        : undefined;
+      chunks = project
+        ? buildSemanticDocumentChunks({
+            id: project.id, projectId: project.project_id, role: project.role,
+            supportingSubtype: project.supporting_subtype, title: project.title,
+            fileName: project.file_name, fileFormat: project.file_format,
+            rawText: project.raw_text, structureMap: project.structure_map,
+          })
+        : service
+          ? buildSemanticDocumentChunks({
+              id: service.id, serviceId: service.service_id, title: service.title,
+              fileName: service.file_name, fileFormat: service.file_format,
+              rawText: service.raw_text, structureMap: service.structure_map,
+            })
+          : [];
+      chunksBySource.set(key, chunks);
+    }
+    return chunks;
+  };
+  const windows: Array<{ key: string; section: string; start: number; end: number }> = [];
+  const result: RetrievedDocumentSnippet[] = [];
+  for (const snippet of input.snippets) {
+    if (result.length >= input.limit) break;
+    const chunk = snippet.chunkIndex == null ? undefined : sourceChunks(snippet)[snippet.chunkIndex];
+    if (!chunk || chunk.text !== snippet.text) {
+      result.push(snippet);
+      continue;
+    }
+    const key = documentChunkSourceKey(snippet.sourceType, snippet.sourceId);
+    const partEnd = chunk.sectionOffset + chunk.text.length;
+    if (windows.some((window) =>
+      window.key === key && window.section === chunk.sectionText &&
+      window.start <= chunk.sectionOffset && partEnd <= window.end)) {
+      continue;
+    }
+    const window = sectionWindow(chunk.sectionText, chunk.sectionOffset, partEnd);
+    windows.push({ key, section: chunk.sectionText, ...window });
+    result.push({ ...snippet, text: chunk.sectionText.slice(window.start, window.end) });
+  }
+  return result;
+}
+
 export async function retrieveDocumentSnippetsWithMetadata(input: {
   query: string;
   projectId?: string | null;
@@ -1887,6 +2066,12 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   limit?: number;
   /** Exact document text already sent in this prompt, keyed by project document ID. */
   promptDocumentText?: ReadonlyMap<string, string>;
+  /** Searched as well when the first results are too weak. */
+  broaderQuery?: string;
+  /** Exact terms the broader search must cover; the first pass terms otherwise do not apply. */
+  broaderExactTerms?: string[];
+  /** Orders the best candidates by relevance; null keeps the heuristic order. */
+  rerank?: RetrievalReranker;
 }): Promise<DocumentSnippetRetrievalResult> {
   const startedAt = Date.now();
   const query = normalizeChunkText(input.query);
@@ -1902,6 +2087,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
         usedHybridSearch: false,
         usedVectorSearch: false,
         usedMemoryFallback: false,
+        usedBroadenedSearch: false,
+        usedModelRerank: false,
         durationMs: 0,
         quality,
       },
@@ -1958,89 +2145,147 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     if (kept.length >= limit || kept.length === first.length || limit >= MAX_RETRIEVAL_LIMIT) return kept;
     return (await search(MAX_RETRIEVAL_LIMIT)).filter(hasUncoveredText);
   };
-  let hybridCandidates: RetrievedDocumentSnippet[] = [];
-  let vectorCandidates: RetrievedDocumentSnippet[] = [];
   let usedHybridSearch = false;
   let usedVectorSearch = false;
   let usedMemoryFallback = false;
-  let queryEmbeddingFailed = false;
   const staleFilteredSourceKeys = new Set<string>();
-  const getQueryEmbedding = createMemoizedEmbeddingRequest(async () => {
-    try {
-      return await createQueryEmbedding(query);
-    } catch (error) {
-      queryEmbeddingFailed = true;
-      throw error;
-    }
-  });
+  const gatherCandidates = async (pass: {
+    query: string;
+    queryTokens: string[];
+    exactTerms: string[];
+  }) => {
+    let hybridCandidates: RetrievedDocumentSnippet[] = [];
+    let vectorCandidates: RetrievedDocumentSnippet[] = [];
+    let queryEmbeddingFailed = false;
+    const getQueryEmbedding = createMemoizedEmbeddingRequest(async () => {
+      try {
+        return await createQueryEmbedding(pass.query);
+      } catch (error) {
+        queryEmbeddingFailed = true;
+        throw error;
+      }
+    });
 
-  try {
-    hybridCandidates = await withRefill((bound) => storedHybridCandidates({
-      query,
-      getEmbedding: getQueryEmbedding,
-      queryTokens,
-      exactTerms,
-      projectId: input.projectId,
-      sourceIds,
-      sourceFingerprints,
-      staleFilteredSourceKeys,
-      limit: bound,
-    }));
-    usedHybridSearch = hybridCandidates.length > 0;
-  } catch (error) {
-    assertEmbeddingFallbackAllowed(error);
-    hybridCandidates = [];
-  }
-
-  if (!hybridCandidates.length && !queryEmbeddingFailed) {
     try {
-      vectorCandidates = await withRefill((bound) => storedVectorCandidates({
+      hybridCandidates = await withRefill((bound) => storedHybridCandidates({
+        query: pass.query,
         getEmbedding: getQueryEmbedding,
-        queryTokens,
-        exactTerms,
+        queryTokens: pass.queryTokens,
+        exactTerms: pass.exactTerms,
         projectId: input.projectId,
         sourceIds,
         sourceFingerprints,
         staleFilteredSourceKeys,
         limit: bound,
       }));
-      usedVectorSearch = vectorCandidates.length > 0;
+      usedHybridSearch ||= hybridCandidates.length > 0;
     } catch (error) {
       assertEmbeddingFallbackAllowed(error);
-      vectorCandidates = [];
+      hybridCandidates = [];
+    }
+
+    if (!hybridCandidates.length && !queryEmbeddingFailed) {
+      try {
+        vectorCandidates = await withRefill((bound) => storedVectorCandidates({
+          getEmbedding: getQueryEmbedding,
+          queryTokens: pass.queryTokens,
+          exactTerms: pass.exactTerms,
+          projectId: input.projectId,
+          sourceIds,
+          sourceFingerprints,
+          staleFilteredSourceKeys,
+          limit: bound,
+        }));
+        usedVectorSearch ||= vectorCandidates.length > 0;
+      } catch (error) {
+        assertEmbeddingFallbackAllowed(error);
+        vectorCandidates = [];
+      }
+    }
+
+    const memoryFallbackSourceKeys = documentSourceKeysForMemoryFallback(
+      [...sourceFingerprints.keys()],
+      hybridCandidates.length + vectorCandidates.length,
+      staleFilteredSourceKeys,
+    );
+    const fallbackCandidates = memoryCandidates({
+      queryTokens: pass.queryTokens,
+      exactTerms: pass.exactTerms,
+      documents: documents.filter(
+        (document) =>
+          memoryFallbackSourceKeys.has(
+            documentChunkSourceKey("project_document", document.id),
+          ),
+      ),
+      serviceDocuments: serviceDocuments.filter(
+        (document) =>
+          memoryFallbackSourceKeys.has(
+            documentChunkSourceKey("service_document", document.id),
+          ),
+      ),
+    }).filter(hasUncoveredText);
+    usedMemoryFallback ||= fallbackCandidates.length > 0;
+    return [...hybridCandidates, ...vectorCandidates, ...fallbackCandidates];
+  };
+
+  let candidates = await gatherCandidates({ query, queryTokens, exactTerms });
+  let rankingQuery = query;
+  let rankingTokens = queryTokens;
+  let rankingExactTerms = exactTerms;
+  let ranked = rerankSnippets({ candidates, queryTokens, exactTerms });
+  let quality = assessRetrievalQuality({ snippets: ranked.slice(0, limit), exactTerms });
+
+  // Weak results get one broader search before callers fall back to longer
+  // raw document text. Both passes are ranked together.
+  let usedBroadenedSearch = false;
+  const broaderQuery = normalizeChunkText(input.broaderQuery ?? "");
+  if (!quality.sufficient && broaderQuery && broaderQuery !== query) {
+    const broaderTokens = tokenizeForRetrieval(broaderQuery);
+    rankingQuery = `${query}\n${broaderQuery}`;
+    rankingTokens = Array.from(new Set([...queryTokens, ...broaderTokens]));
+    rankingExactTerms = (input.broaderExactTerms ?? []).filter(Boolean);
+    candidates = [
+      ...candidates,
+      ...(await gatherCandidates({
+        query: broaderQuery,
+        queryTokens: broaderTokens,
+        exactTerms: rankingExactTerms,
+      })),
+    ];
+    ranked = rerankSnippets({
+      candidates,
+      queryTokens: rankingTokens,
+      exactTerms: rankingExactTerms,
+    });
+    usedBroadenedSearch = true;
+  }
+
+  let usedModelRerank = false;
+  if (input.rerank && ranked.length > 1) {
+    const pool = ranked.slice(0, MODEL_RERANK_CANDIDATES);
+    const order = Array.from(new Set(
+      (await input.rerank({ query: rankingQuery, candidates: pool })) ?? [],
+    )).filter((index) => Number.isInteger(index) && index >= 0 && index < pool.length);
+    if (order.length) {
+      const chosen = new Set(order);
+      ranked = [
+        ...order.map((index) => pool[index]),
+        ...pool.filter((_, index) => !chosen.has(index)),
+        ...ranked.slice(pool.length),
+      ];
+      usedModelRerank = true;
     }
   }
 
-  const memoryFallbackSourceKeys = documentSourceKeysForMemoryFallback(
-    [...sourceFingerprints.keys()],
-    hybridCandidates.length + vectorCandidates.length,
-    staleFilteredSourceKeys,
-  );
-  const fallbackCandidates = memoryCandidates({
-    queryTokens,
-    exactTerms,
-    documents: documents.filter(
-      (document) =>
-        memoryFallbackSourceKeys.has(
-          documentChunkSourceKey("project_document", document.id),
-        ),
-    ),
-    serviceDocuments: serviceDocuments.filter(
-      (document) =>
-        memoryFallbackSourceKeys.has(
-          documentChunkSourceKey("service_document", document.id),
-        ),
-    ),
-  }).filter(hasUncoveredText);
-  usedMemoryFallback = fallbackCandidates.length > 0;
-
-  const snippets = rerankSnippets({
-    candidates: [...hybridCandidates, ...vectorCandidates, ...fallbackCandidates],
-    queryTokens,
-    exactTerms,
-  })
-    .slice(0, limit);
-  const quality = assessRetrievalQuality({ snippets, exactTerms });
+  if (usedBroadenedSearch || usedModelRerank) {
+    quality = assessRetrievalQuality({ snippets: ranked.slice(0, limit), exactTerms: rankingExactTerms });
+  }
+  const snippets = withSurroundingSections({
+    snippets: ranked,
+    documents,
+    serviceDocuments,
+    limit,
+  });
   const telemetry = {
     query,
     exactTerms,
@@ -2049,6 +2294,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     usedHybridSearch,
     usedVectorSearch,
     usedMemoryFallback,
+    usedBroadenedSearch,
+    usedModelRerank,
     durationMs: Date.now() - startedAt,
     quality,
   };
@@ -2065,6 +2312,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
       usedHybridSearch,
       usedVectorSearch,
       usedMemoryFallback,
+      usedBroadenedSearch,
+      usedModelRerank,
       durationMs: telemetry.durationMs,
       quality: {
         ...quality,

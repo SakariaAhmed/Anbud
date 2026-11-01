@@ -7,6 +7,7 @@ type StoredChunkManifest = {
 const manifests = new Map<string, StoredChunkManifest>();
 let embeddingRequestCount = 0;
 let retrievalRows: Array<Record<string, unknown>> | null = null;
+let rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 
 function sourceKey(sourceType: string, sourceId: string) {
   return `${sourceType}:${sourceId}`;
@@ -16,6 +17,11 @@ export function resetDocumentChunksTestRuntime() {
   manifests.clear();
   embeddingRequestCount = 0;
   retrievalRows = null;
+  rpcCalls = [];
+}
+
+export function getDocumentChunksTestRpcCalls() {
+  return structuredClone(rpcCalls);
 }
 
 export function setDocumentChunksTestRetrievalRows(rows: Array<Record<string, unknown>>) {
@@ -68,6 +74,7 @@ export function createServiceClient() {
       };
     },
     async rpc(name: string, args: Record<string, unknown>) {
+      rpcCalls.push({ name, args: structuredClone(args) });
       if (retrievalRows && (name === "hybrid_match_document_chunks" || name === "match_document_chunks")) {
         return { data: retrievalRows.slice(0, Number(args.match_count)).map((row, index) => ({
           id: row.id, similarity: 0.9, keyword_rank: index + 1, semantic_rank: index + 1, rrf_score: 1 / (60 + index),

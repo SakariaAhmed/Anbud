@@ -16,7 +16,7 @@ const jiti = createJiti(path.join(frontendRoot, "project-chat-tests.cjs"), {
   interopDefault: true,
   alias: { "@": frontendRoot, "server-only": "/dev/null" },
 });
-const { buildChatAttachmentText, inferProjectChatDomains } = jiti(
+const { buildQuestionRelevantText, inferProjectChatDomains } = jiti(
   path.join(frontendRoot, "lib/server/ai/project-chat.ts"),
 );
 
@@ -36,6 +36,8 @@ test("chat domain inference moved behind the project-chat boundary", () => {
 test("adaptive first questions skip rewriting while prior context and forced rewriting still reach the model", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-rewrite-"));
   const previousMode = process.env.RAG_QUERY_REWRITE;
+  const previousRerank = process.env.RAG_MODEL_RERANK;
+  delete process.env.RAG_MODEL_RERANK;
   const state = { rewrites: [], retrieval: [], answers: [] };
   globalThis.__projectChatRewriteTest = state;
   try {
@@ -88,6 +90,9 @@ test("adaptive first questions skip rewriting while prior context and forced rew
       assert.equal(state.answers.length, 1, item.name);
       assert.ok(state.retrieval[0].exactTerms.includes("K-42"), item.name);
       assert.match(state.retrieval[0].query, /K-42/);
+      assert.ok(state.retrieval[0].broaderQuery.startsWith(question), item.name);
+      assert.ok(state.retrieval[0].broaderExactTerms.includes("K-42"), item.name);
+      assert.equal(typeof state.retrieval[0].rerank, "function", "model rerank is on by default");
       assert.deepEqual(history, item.messages, "The history sent to the final answer must not be mutated.");
       assert.doesNotMatch(state.answers[0].user, /### Dokumentregel|Hele\s+står nedenfor/u,
         "A chat without documents must not claim whole documents are included.");
@@ -98,6 +103,7 @@ test("adaptive first questions skip rewriting while prior context and forced rew
     }
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    if (previousRerank === undefined) delete process.env.RAG_MODEL_RERANK; else process.env.RAG_MODEL_RERANK = previousRerank;
     delete globalThis.__projectChatRewriteTest; rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -162,11 +168,52 @@ test("chat keeps question-specific evidence, complete late qualifications and al
   }
 });
 
+test("generated artifacts are excerpted by question relevance and model rerank follows its switch", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-artifacts-"));
+  const state = { retrieval: [], answers: [] };
+  globalThis.__projectChatArtifactTest = state;
+  const previous = { rewrite: process.env.RAG_QUERY_REWRITE, rerank: process.env.RAG_MODEL_RERANK };
+  process.env.RAG_QUERY_REWRITE = "off";
+  process.env.RAG_MODEL_RERANK = "off";
+  try {
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatArtifactTest.answers.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => {
+      globalThis.__projectChatArtifactTest.retrieval.push(input);
+      return { snippets: [], telemetry: { durationMs: 0, sourceCount: 0, quality: { sufficient: false, sourceCount: 0 } } };
+    };`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const filler = "Generell innledning om leveransen og prosjektets bakgrunn. ".repeat(12);
+    const late = "Exit-plan: data eksporteres i åpne formater innen 30 dager etter avslutning.";
+    const artifact = { id: "a1", title: "Løsningsnotat", content_markdown: [...Array(12).fill(filler), late].join("\n\n") };
+    const result = await streamProjectChat({ projectName: "Fiktiv", question: "Hva sier vi om exit-plan og eksport av data?",
+      customerAnalysis: null, solutionEvaluation: null, customerDocument: null, solutionDocument: null,
+      recentMessages: [], generatedArtifacts: [artifact] });
+    for await (const _ of result.stream) { /* drain */ }
+    assert.equal(state.retrieval[0].rerank, undefined, "RAG_MODEL_RERANK=off disables model rerank");
+    assert.match(state.answers[0].user, /Exit-plan: data eksporteres i åpne formater/u,
+      "a relevant passage late in a long artifact reaches the prompt");
+  } finally {
+    for (const [key, name] of [["rewrite", "RAG_QUERY_REWRITE"], ["rerank", "RAG_MODEL_RERANK"]]) {
+      if (previous[key] === undefined) delete process.env[name]; else process.env[name] = previous[key];
+    }
+    delete globalThis.__projectChatArtifactTest; rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("attachment segments with å match question terms after the same normalization", () => {
   const filler = "Generell bakgrunnstekst om prosjektet. ".repeat(40);
   const relevant = "Påminnelse sendes automatisk før fristen for hver søknad.";
   const rawText = `${filler}\n\n${relevant}\n\n${filler}`;
-  const selected = buildChatAttachmentText({
+  const selected = buildQuestionRelevantText({
     rawText,
     question: "Hvordan fungerer påminnelse?",
     limit: 400,
@@ -175,7 +222,7 @@ test("attachment segments with å match question terms after the same normalizat
 });
 
 test("an attachment that fits the limit is kept whole even when one paragraph matches", () => {
-  const selected = buildChatAttachmentText({
+  const selected = buildQuestionRelevantText({
     rawText: "Påminnelse: se nedenfor.\n\n7 dager før fristen.",
     question: "Påminnelse?",
     limit: 4000,

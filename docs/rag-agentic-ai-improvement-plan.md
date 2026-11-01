@@ -4,6 +4,31 @@ Denne vurderingen gjelder den eksisterende `anbud`-appen: en Next.js-applikasjon
 
 Målet er bedre svarkvalitet, raskere responstid og mer relevante, kildebaserte svar.
 
+## Status 1. november 2026
+
+Planen under er fra august. Siden da er dette på plass, og flere av «manglene» gjelder ikke lenger:
+
+- Hybrid search med RRF i `hybrid_match_document_chunks`, query rewrite i chat og en kvalitetsvurdering av retrieval.
+- Nøkkelordsøket får nå en OR-spørring med innholdsord, vanlige norske bøyningsformer og eksakte termer (`buildKeywordSearchQuery`). Før krevde det at hvert ord i spørsmålet sto i samme chunk, og fant nesten ingenting.
+- Chunks er på inntil 1 600 tegn. Retrieval returnerer seksjonen rundt treffet, på inntil 4 800 tegn.
+- Svake treff gir ett bredere søk før chat faller tilbake på lengre rå dokumenttekst.
+- Støttedokumenter og genererte artefakter som ikke får plass i chat, kortes ned til avsnittene som passer spørsmålet best, i stedet for starten av teksten.
+- Chat lar den raske modellen rangere de 32 beste treffene (`retrieval-rerank.ts`). Den er på som standard og slås av med `RAG_MODEL_RERANK=off`. Feiler eller tidsavbrytes kallet (8 s), beholdes den vanlige rangeringen.
+
+Retrieval måles med `node scripts/rag_retrieval_eval.mjs` over det innsjekkede anbudskorpuset (60 krav-ID-oppslag og 36 håndskrevne spørsmål i `test-data/rag-retrieval`). `--database-url` måler nøkkelordsøket mot PostgreSQL, `--frontend-root` sammenligner med en annen checkout, og `--without-structure` måler dokumenter uten strukturkart. `--embeddings=live` lagrer chunks med ekte embeddings i en midlertidig database og kjører hele hybridsøket, og `--rerank=model` legger til rerankeren. Begge bruker betalte OpenAI-kall.
+
+Målt 1. november 2026 med ekte embeddings (`text-embedding-3-small`) og hybridsøk, for de 36 spørsmålene uten krav-ID:
+
+| Oppsett | Riktig utdrag først | Topp 5 | MRR | Median søketid |
+| --- | --- | --- | --- | --- |
+| `main` | 0,44 | 0,75 | 0,57 | 0,25 s |
+| Denne endringen | 0,44 | 0,81 | 0,58 | 0,25 s |
+| Denne endringen med reranker | 0,78 | 0,97 | 0,86 | 1,7 s |
+| `main` uten strukturkart | 0,61 | 0,94 | 0,75 | 0,25 s |
+| Denne endringen uten strukturkart | 0,78 | 0,94 | 0,83 | 0,25 s |
+
+Krav-ID-oppslagene finner riktig utdrag blant de fem første i alle oppsett, og først i alle med rerankeren. Rerankeren brukte om lag 7 500 input-tokens per spørsmål. Korpuset er lite (ti dokumenter), så tallene viser retning, ikke nivået i store anbud.
+
 ## Dagens utgangspunkt
 
 Appen har allerede en viktig del av RAG-grunnmuren:
