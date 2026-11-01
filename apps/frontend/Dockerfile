@@ -51,12 +51,13 @@ RUN rm -rf \
 
 FROM python:3.15-slim-bookworm@sha256:4e03260adeeebafccd084f3584e6b84823aba5651cfb53ef8a078ed441ddf9cd AS docling-python
 
-# RapidOCR needs pyclipper, which has no Python 3.15 wheel. Compile it against
-# the runtime's exact Python/OS base; compiler tools stay in this build stage.
+# RapidOCR and Docling need pyclipper and tree-sitter, whose pinned versions
+# have no Python 3.15 wheels. Compile against the runtime's exact Python/OS
+# base; compiler tools stay in this build stage.
 FROM docling-python AS docling-native-wheels
 RUN apt-get update \
     && apt-get install -y --no-install-recommends g++ \
-    && python -m pip wheel --no-cache-dir --no-deps --wheel-dir /wheels pyclipper==1.4.0
+    && python -m pip wheel --no-cache-dir --no-deps --wheel-dir /wheels pyclipper==1.4.0 tree-sitter==0.26.0
 
 FROM docling-python AS docling-os
 WORKDIR /app
@@ -93,7 +94,7 @@ ENV PATH=/opt/docling/bin:$PATH
 # the Pillow CVEs the image scan blocks on. RapidOCR stays on 3.9: Docling
 # 2.132 needed the recognizer vocabulary that RapidOCR 3.10 removed.
 # PyYAML can omit its optional C extension; the compiler-free smoke below
-# verifies that it and the prebuilt pyclipper wheel both load in this venv.
+# verifies that it and the prebuilt native wheels load in this venv.
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,from=docling-native-wheels,source=/wheels,target=/wheels \
     python -m venv /opt/docling \
@@ -104,7 +105,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       "rapidocr==3.9.1" \
       --extra-index-url https://download.pytorch.org/whl/cpu \
     && /opt/docling/bin/pip install --force-reinstall --no-cache-dir --no-deps opencv-python-headless==4.13.0.92 \
-    && /opt/docling/bin/python -c 'import pyclipper, shutil, yaml; assert shutil.which("g++") is None; assert pyclipper.Area([(0,0),(4,0),(4,4),(0,4)]) == 16; assert yaml.safe_load("answer: 42") == {"answer": 42}' \
+    && /opt/docling/bin/python -c 'import pyclipper, shutil, tree_sitter, yaml; assert shutil.which("gcc") is None and shutil.which("g++") is None; assert pyclipper.Area([(0,0),(4,0),(4,4),(0,4)]) == 16; assert yaml.safe_load("answer: 42") == {"answer": 42}' \
     && find /opt/docling -type d \( -name __pycache__ -o -name test -o -name tests \) -prune -exec rm -rf '{}' + \
     && find /opt/docling -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.a' \) -delete \
     && rm -rf /opt/docling/lib/python*/site-packages/torch/include \
