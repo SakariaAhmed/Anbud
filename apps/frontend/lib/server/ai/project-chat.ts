@@ -182,12 +182,15 @@ function splitAttachmentSegments(rawText: string) {
         length = header.length;
       };
       for (const row of lines.slice(2)) {
-        // A row too long for one piece is cut like any long paragraph.
+        // A row too long for one piece is cut like any long paragraph; later
+        // pieces repeat its first cell (usually the ID) so a question about
+        // the row selects all of them.
         if (row.length > rowChars) {
           flush();
-          for (const piece of piecesAtWordBoundaries(row, rowChars)) {
-            segments.push(`${header}\n${piece}`);
-          }
+          const firstCell = row.match(/^\|[^|]*\|/u)?.[0] ?? "";
+          piecesAtWordBoundaries(row, rowChars - firstCell.length - 2).forEach((piece, index) => {
+            segments.push(`${header}\n${index && firstCell ? `${firstCell} … ` : ""}${piece}`);
+          });
           continue;
         }
         if (rows.length && length + row.length + 1 > CHAT_ATTACHMENT_SEGMENT_CHARS) flush();

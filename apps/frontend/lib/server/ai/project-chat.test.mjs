@@ -301,6 +301,8 @@ test("a selected table row keeps its header and is not cut", () => {
   const longRow = `| K-90 | ${"Ordinær beskrivelse av driften. ".repeat(80)}Exit-plan leveres innen 14 dager. |`;
   const withLongRow = buildQuestionRelevantText({ rawText: `Innledning.\n\n${header}\n${rows.join("\n")}\n${longRow}`, question: "Når leveres exit-plan?", limit: 1500 });
   assert.match(withLongRow, /\| Krav \| Tiltak \| Frist \|[^]*Exit-plan leveres innen 14 dager/u, "a row longer than a piece is cut, not dropped");
+  const byId = buildQuestionRelevantText({ rawText: `Innledning.\n\n${header}\n${rows.join("\n")}\n${longRow}`, question: "Hva sier K-90?", limit: 3500 });
+  assert.match(byId, /Exit-plan leveres innen 14 dager/u, "a question about a long row's ID gets the end of the row");
   // Every piece ends at a word boundary, wherever the answer falls in the row.
   for (let shift = 0; shift < 80; shift += 1) {
     const row = `| K-91 | ${"x".repeat(shift)} ${"Ordinær beskrivelse av driften. ".repeat(84)}Sluttrapporten leveres innen 14 dager. ${"Ordinær beskrivelse av driften. ".repeat(10)}|`;
