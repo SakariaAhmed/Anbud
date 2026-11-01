@@ -32,7 +32,10 @@ async function withBackend(run, credentialCreated = true) {
     const pathname = new URL(url).pathname;
     calls.push(pathname);
     if (pathname === "/rpc/grant_guest_project_access_batch") return Response.json([{ principal_id: guestId, identity_type: "guest", credential_created: credentialCreated }]);
-    if (pathname === "/app_principals") return Response.json([{ display_name: "Guest", email_encrypted: encryptString("guest@example.test") }]);
+    if (pathname === "/app_principals") {
+      assert.match(new Headers(options.headers).get("Accept"), /vnd\.pgrst\.object/u);
+      return Response.json({ display_name: "Guest", email_encrypted: encryptString("guest@example.test") });
+    }
     if (pathname === "/rpc/rotate_guest_credential") return Response.json(2);
     throw new Error(`Unexpected request: ${pathname} ${options.method}`);
   };
@@ -67,6 +70,7 @@ test("administrator rotation keeps usable code and sends guest notification", as
     assert.equal(result.version, 2);
     assert.ok(result.code.length > 10);
     assert.equal(state.emails[0].guestCode, result.code);
+    assert.equal(state.emails[0].email, "guest@example.test");
     assert.deepEqual(calls, ["/app_principals", "/rpc/rotate_guest_credential"]);
   });
 });

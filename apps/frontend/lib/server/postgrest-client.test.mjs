@@ -162,4 +162,8 @@ test("HEAD and empty mutation responses remain valid while an empty table read f
     assert.equal(result.data, null);
   }
   assert.equal((await client.from("projects").select("id")).error?.code, "INVALID_DATA_API_RESPONSE");
+  const noContent = new PostgrestClient("https://data.internal", {
+    fetch: async () => new Response(null, { status: 204 }),
+  });
+  assert.equal((await noContent.from("projects").delete().select("id")).error, null);
 });

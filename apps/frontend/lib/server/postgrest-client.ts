@@ -310,7 +310,7 @@ class PostgrestQueryBuilder<T> implements PromiseLike<PostgrestResponse<T>> {
         };
       }
 
-      const expectsRows = this.mode === "table" && this.method !== "HEAD" && (
+      const expectsRows = this.mode === "table" && this.method !== "HEAD" && response.status !== 204 && (
         this.method === "GET" || headers.get("Prefer")?.includes("return=representation")
       );
       const isRow = (value: unknown) => value !== null && typeof value === "object" && !Array.isArray(value);

@@ -93,6 +93,9 @@ function backend(t, options = {}) {
       }
       case "/rpc/get_solution_evaluation_currentness":
         return Response.json({ [projectId]: false });
+      case "/rpc/get_project_dashboard_counts":
+        assert.deepEqual(body.p_project_ids, [projectId], "counts use only the visible project page");
+        return Response.json([{ project_id: projectId, document_count: 0, supporting_document_count: 0, artifact_count: 0 }]);
       case "/rpc/resolve_project_role":
         return Response.json(state.project?.owner_id === body.p_principal_id ? "owner" : null);
       case "/activity_events":

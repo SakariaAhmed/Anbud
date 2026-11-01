@@ -1,0 +1,133 @@
+#!/usr/bin/env node
+// Actual HTTP/system wiring checks. --ai is explicit and requires a stack
+// started with live AI credentials; the default never calls a paid model.
+import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+const statusPath = "/private/tmp/anbud-system-test-status.json";
+const status = JSON.parse(readFileSync(statusPath, "utf8"));
+assert.equal(status.running, true, "Start scripts/system-test-environment.mjs first.");
+const privatePath = path.join(status.directory, "environment.json");
+const runtime = JSON.parse(readFileSync(privatePath, "utf8"));
+const aiEnabled = process.argv.includes("--ai");
+const accessOnly = process.argv.includes("--access-only");
+if (accessOnly && aiEnabled) throw new Error("Choose --access-only or --ai, not both.");
+if (runtime.env.OPENAI_API_KEY && !aiEnabled && !accessOnly) throw new Error("This stack has a model endpoint enabled. Use --ai explicitly, or --access-only to reuse existing sources without AI calls.");
+const base = status.baseUrl;
+assert.equal(new URL(base).hostname, "127.0.0.1", "Only the owned loopback stack is allowed.");
+const checks = [];
+let adminCookie;
+// Each run starts a fresh scenario in this owned database, including fresh
+// rate-limit fixtures. Application authorization and session checks stay real.
+assert.equal(runtime.env.DATA_API_URL, "http://127.0.0.1:55449");
+const resetLimits = await fetch(`${runtime.env.DATA_API_URL}/app_rate_limits`, {
+  method: "DELETE", headers: { authorization: `Bearer ${runtime.env.DATA_API_SERVICE_ROLE_KEY}` },
+});
+assert.ok(resetLimits.ok, "Could not reset local rate-limit fixtures.");
+async function request(route, { cookie = adminCookie, expected = 200, ...options } = {}) {
+  const response = await fetch(`${base}${route}`, {
+    ...options, redirect: "manual", signal: AbortSignal.timeout(600_000),
+    headers: { origin: base, ...(cookie ? { cookie } : {}), ...options.headers },
+  });
+  assert.equal(response.status, expected, `${options.method ?? "GET"} ${route}: expected ${expected}, got ${response.status}`);
+  return response;
+}
+const json = (method, body) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const cookieFrom = response => {
+  const value = response.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(value?.startsWith("bidsite_session="), "Login must return the real session cookie.");
+  return value;
+};
+async function runJob(projectId, job) {
+  await request("/api/project-jobs/worker", { ...json("POST", { limit: 10 }), headers: { "content-type": "application/json", "x-worker-token": runtime.env.PROJECT_JOB_WORKER_TOKEN } });
+  // The accepting route can already have claimed the job for its background
+  // runner. Worker completion alone therefore does not establish publication.
+  const attempts = aiEnabled ? 3000 : 300;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const current = await (await request(`/api/projects/${projectId}/jobs/${job.id}`)).json();
+    if (["completed", "failed"].includes(current.job.status)) {
+      assert.equal(current.job.status, "completed", `Job ${job.kind} did not complete (${current.job.status}).`);
+      return current.job;
+    }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  throw new Error(`Job ${job.kind} did not publish a terminal result within the test deadline.`);
+}
+
+await request("/api/health/live"); checks.push("liveness");
+await request("/api/projects", { cookie: null, expected: 401 }); checks.push("anonymous access denied");
+await request("/api/auth/login", { ...json("POST", { password: "intentionally-wrong-system-test-password" }), cookie: null, expected: 401 });
+const login = await request("/api/auth/login", { ...json("POST", { password: runtime.adminPassword }), cookie: null });
+adminCookie = cookieFrom(login); checks.push("admin password authentication and persisted session");
+const project = accessOnly
+  ? (await (await request("/api/projects")).json()).find(item => item.document_count === 3)
+  : await (await request("/api/projects", { ...json("POST", { name: "Fiktiv systemtest", customer_name: "Fiktiv kommune" }), expected: 201 })).json();
+assert.ok(project?.id, "Access-only mode needs an existing synthetic three-document project.");
+checks.push(accessOnly ? "reused owned synthetic project for access checks" : "authenticated project creation");
+const docs = [
+  { role: "primary_customer_document", file: "konkurransegrunnlag.txt", title: "Konkurransegrunnlag", text: "Fiktiv kommune har 120 ansatte fordelt på tre lokasjoner. Kommunen anskaffer drift av en sikker skyplattform. Avtalen varer i tre år med opsjon på ett ekstra år. Tilbudsfrist er 10. november 2026. Kundedata skal behandles i Norge. Kravspesifikasjonen finnes i Bilag 1 og leverandørens besvarelse i løsningsnotatet. Kommunen legger vekt på trygg overgang, dokumentert driftsansvar og en etterprøvbar exitplan." },
+  { role: "supporting_document", subtype: "kravdokument", file: "bilag1-krav.txt", title: "Bilag 1 Kravspesifikasjon", text: "1 Drift\nK-1.1 Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser.\n2 Sikkerhet\nK-1.2 Kundedata, sikkerhetskopier og identifiserbare logger skal lagres og behandles i Norge.\n3 Exit\nK-1.3 Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager." },
+  { role: "primary_solution_document", file: "losningsnotat.txt", title: "Løsningsnotat", text: "Atea drifter plattformen hele døgnet. Driftssenterets vaktleder er navngitt kontaktpunkt for kritiske hendelser og følger hendelsen til godkjent avslutning. Kundedata, sikkerhetskopier og identifiserbare logger lagres og behandles i Norge. Dette dokumenteres gjennom regionoversikt og tilgangsrevisjon før produksjonssetting. Atea leverer en exitplan med eksport av kundens data i åpne formater innen 30 dager. Eksporten testes med kunden og kontrollsummer bekrefter at data er komplette før avtalen avsluttes." },
+];
+const uploaded = [];
+for (const doc of accessOnly ? [] : docs) {
+  const form = new FormData();
+  form.set("file", new File([doc.text], doc.file, { type: "text/plain" }));
+  form.set("title", doc.title); form.set("role", doc.role); form.set("role_source", "explicit");
+  if (doc.subtype) form.set("supporting_subtype", doc.subtype);
+  const result = await (await request(`/api/projects/${project.id}/documents`, { method: "POST", body: form, expected: 201 })).json();
+  await runJob(project.id, result.job);
+  const download = await request(`/api/projects/${project.id}/documents/${result.document.id}`);
+  assert.equal(await download.text(), doc.text, "Encrypted blob round-trip must preserve original upload bytes.");
+  uploaded.push({ id: result.document.id, role: doc.role });
+}
+if (!accessOnly) {
+  checks.push("three document roles uploaded through actual multipart route");
+  checks.push("actual queue claim, parsing, persisted chunk indexing and readiness");
+  checks.push("encrypted Azure SDK/Azurite upload and original-byte download");
+}
+const current = await (await request(`/api/projects/${project.id}`)).json();
+const currentDocuments = current.project?.documents ?? current.documents;
+assert.equal(currentDocuments.length, 3);
+assert.ok(currentDocuments.every(doc => ["basic_ready", "enhanced_ready"].includes(doc.processing_status)));
+if (accessOnly) uploaded.push(...currentDocuments.map(doc => ({ id: doc.id, role: doc.role })));
+const listing = await (await request("/api/projects")).json();
+assert.equal(listing.find(item => item.id === project.id).document_count, 3);
+checks.push("dashboard aggregate counts through real PostgREST RPC");
+const invitation = await (await request("/api/admin/users", { ...json("POST", { email: `system-test-${Date.now()}@example.invalid`, displayName: "Fiktiv innsynsbruker", guestDescription: "Lokal sikkerhetstest", projectId: project.id, role: "restricted_viewer" }), expected: 201 })).json();
+assert.ok(invitation.guestCode, "Administrator must receive a local guest credential.");
+const guest = await request("/api/auth/guest", { ...json("POST", { code: invitation.guestCode }), cookie: null });
+const guestCookie = cookieFrom(guest);
+await request(`/api/projects/${project.id}`, { cookie: guestCookie });
+// Middleware deliberately hides forbidden project routes with 404 before
+// the handler's finer-grained 403 authorization response can run.
+await request(`/api/projects/${project.id}/documents/${uploaded[0].id}`, { cookie: guestCookie, expected: 404 });
+await request(`/api/projects/${project.id}/generate`, { ...json("POST", { artifact_type: "forbedret_kravsvar" }), cookie: guestCookie, expected: 404 });
+await request(`/api/projects/${project.id}/chat`, { ...json("POST", { message: "Hva er exitplanen?" }), cookie: guestCookie, expected: 404 });
+await request("/api/admin/users", { cookie: guestCookie, expected: 403 });
+checks.push("guest authentication, allowed read, denied source download/generation/chat/admin access");
+const guestProject = await (await request("/api/projects", { ...json("POST", { name: "Gjestens lokale prosjekt" }), cookie: guestCookie, expected: 201 })).json();
+await request(`/api/projects/${guestProject.id}`);
+checks.push("guest-owned project creation and global admin access without a project grant");
+
+if (aiEnabled) {
+  assert.ok(runtime.env.OPENAI_API_KEY, "AI tests require an explicitly configured live/fixture model endpoint.");
+  for (const body of [{ kind: "customer_analysis" }, { kind: "artifact_generation", artifact_type: "forbedret_kravsvar", source_document_ids: [uploaded[1].id] }, { kind: "solution_evaluation", solution_document_id: uploaded[2].id }]) {
+    const queued = await (await request(`/api/projects/${project.id}/jobs`, { ...json("POST", body), expected: 202 })).json();
+    await runJob(project.id, queued.job);
+    checks.push(`AI workflow completed and persisted: ${body.kind}${body.artifact_type ? `/${body.artifact_type}` : ""}`);
+  }
+  const chat = await request(`/api/projects/${project.id}/chat`, json("POST", { message: "Hva er fristen for eksport av data ved exit? Vis kilden." }));
+  const content = await chat.text();
+  assert.ok(content.length > 100, "Chat must produce a streamed response.");
+  assert.match(content, /30\s+dager/iu, "Chat must retain the documented exit deadline.");
+  assert.match(content, /K-1\.3|Bilag\s*1|løsningsnotat/iu, "Chat must name its source.");
+  checks.push("chat streaming with actual model endpoint");
+}
+runtime.sessions = { adminCookie, guestCookie };
+writeFileSync(privatePath, JSON.stringify(runtime, null, 2), { mode: 0o600 });
+const result = { projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output", "live Entra sign-in", "Docling/OCR"] };
+writeFileSync(path.join(status.directory, "http-result.json"), JSON.stringify(result, null, 2));
+writeFileSync(statusPath, JSON.stringify({ ...status, projectId: project.id, documents: uploaded, httpChecks: checks.length }, null, 2));
+console.log(JSON.stringify(result, null, 2));
