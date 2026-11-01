@@ -1,3 +1,4 @@
+import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
 
 import { formatJobProgress } from "@/lib/project-job-progress";
@@ -36,6 +37,7 @@ import {
 import {
   getArtifactSourceRevisions,
   listArtifactKnowledgeCandidatesFresh,
+  listGeneratedArtifactsFresh,
   saveGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
 import { getDocumentDetail, listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
@@ -77,6 +79,7 @@ export interface ArtifactGenerationTiming {
 export interface GenerateAndSaveArtifactInput {
   projectId: string;
   artifactType: GeneratedArtifactType;
+  regenerateRequirements?: RequirementRegenerationSelection;
   instructions?: string;
   sourceDocumentIds?: string[];
   useSolutionEvaluationContext?: boolean;
@@ -428,6 +431,10 @@ export async function generateAndSaveProjectArtifact(
 ): Promise<GenerateAndSaveArtifactResult> {
   input.assertActive?.();
   input.onProgress?.(formatJobProgress(12, "Laster prosjektkontekst og relevante dokumenter ..."));
+  const regenerateRequirements = parseRequirementRegeneration(input.regenerateRequirements);
+  if (regenerateRequirements && input.artifactType !== "forbedret_kravsvar") throw new Error("Bare kravbesvarelser støtter regenerering av utvalgte rader.");
+  const regenerationParent = regenerateRequirements ? (await listGeneratedArtifactsFresh(input.projectId, { artifactType: "forbedret_kravsvar" })).find(artifact => artifact.id === regenerateRequirements.artifactId && artifact.artifact_version === regenerateRequirements.artifactVersion && artifact.is_current && artifact.source_is_current) : undefined;
+  if (regenerateRequirements && !regenerationParent) throw new Error("Kravbesvarelsen er endret eller bygger på eldre kilder. Last inn på nytt.");
   const sourceRevisions = await getArtifactSourceRevisions(input.projectId);
   const usesSolutionEvaluation = shouldUseSolutionEvaluationForArtifact({
     artifactType: input.artifactType,
@@ -689,6 +696,7 @@ export async function generateAndSaveProjectArtifact(
   const knowledgeArtifacts = refreshedKnowledgeArtifacts;
   const generated = await generateProjectArtifact({
     artifactType: input.artifactType,
+    requirementRegeneration: regenerationParent && regenerateRequirements ? { parent: regenerationParent, selection: regenerateRequirements } : undefined,
     projectName: project.name,
     customerAnalysis,
     solutionEvaluation: solutionEvaluationForGeneration,

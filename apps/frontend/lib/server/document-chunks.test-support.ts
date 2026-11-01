@@ -57,6 +57,10 @@ export default class OpenAITestDouble {
 export function createServiceClient() {
   return {
     from(table: string) {
+      if (table === "document_intelligence_artifacts") {
+        const query = { select() { return query; }, eq() { return query; }, async maybeSingle() { return { data: null, error: null }; } };
+        return query;
+      }
       if (table !== "document_chunks") {
         throw new Error(`Unexpected document-chunk test table: ${table}`);
       }

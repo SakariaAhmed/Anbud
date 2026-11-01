@@ -169,7 +169,7 @@ export function GenerationProgress({
     <div className="min-w-0 rounded-md border border-primary/20 bg-primary/5 px-3 py-3" aria-live="polite">
       <div className="flex items-center justify-between gap-3 text-xs font-semibold text-primary">
         <span className="min-w-0 break-words">{message}</span>
-        {safeProgress === null ? <Spinner className="size-4 shrink-0" /> : <span className="shrink-0 tabular-nums">{safeProgress}%</span>}
+        {safeProgress === null ? <Spinner aria-label="Laster" className="size-4 shrink-0" /> : <span className="shrink-0 tabular-nums">{safeProgress}%</span>}
       </div>
       {safeProgress !== null && <div
         className="mt-2 h-1.5 overflow-hidden bg-primary/15"

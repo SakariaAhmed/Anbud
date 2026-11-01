@@ -1707,11 +1707,28 @@ revoke execute on function update_document_chunk_search_vectors(text, uuid, json
 grant execute on function update_document_chunk_search_vectors(text, uuid, jsonb) to service_role;
 
 -- Derive Norwegian stems from the existing plaintext lexemes. Original
--- encrypted text and the simple FTS index remain unchanged. This introduces
--- no additional plaintext source representation. Positions here describe
--- lexeme order; exact phrases and IDs continue to use the simple index.
+-- encrypted text and the simple FTS index remain unchanged. Original
+-- positions and weights survive stemming, including merged stem lexemes;
+-- quoted queries must not acquire invented phrase matches.
 alter table public.document_chunks
   add column if not exists fts_norwegian tsvector not null default ''::tsvector;
+
+create or replace function public.norwegian_document_chunk_fts(source_vector tsvector)
+returns tsvector
+language sql stable parallel safe
+set search_path = pg_catalog
+as $$
+  select coalesce(string_agg(
+    chr(39) || replace(replace(stem.lexeme, chr(92), chr(92) || chr(92)), chr(39), chr(39) || chr(39)) || chr(39) ||
+    case when cardinality(original.positions) > 0 then ':' || (
+      select string_agg(p.position::text || case when p.weight = 'D' then '' else p.weight::text end, ',' order by p.position)
+      from unnest(original.positions, original.weights) as p(position, weight)
+    ) else '' end, ' '
+  )::tsvector, ''::tsvector)
+  from unnest(source_vector) as original(lexeme, positions, weights)
+  cross join lateral unnest(ts_lexize('pg_catalog.norwegian_stem'::regdictionary, original.lexeme)) as stem(lexeme);
+$$;
+revoke all on function public.norwegian_document_chunk_fts(tsvector) from public;
 
 create or replace function public.sync_document_chunk_norwegian_fts()
 returns trigger
@@ -1719,7 +1736,7 @@ language plpgsql
 set search_path = public, pg_catalog
 as $$
 begin
-  new.fts_norwegian := to_tsvector('norwegian'::regconfig, array_to_string(tsvector_to_array(new.fts), ' '));
+  new.fts_norwegian := public.norwegian_document_chunk_fts(new.fts);
   return new;
 end;
 $$;
@@ -1730,7 +1747,7 @@ create trigger document_chunks_norwegian_fts before insert or update of fts on p
 for each row execute function public.sync_document_chunk_norwegian_fts();
 
 update public.document_chunks
-set fts_norwegian = to_tsvector('norwegian'::regconfig, array_to_string(tsvector_to_array(fts), ' '));
+set fts_norwegian = public.norwegian_document_chunk_fts(fts);
 create index if not exists document_chunks_norwegian_fts_idx on public.document_chunks using gin(fts_norwegian);
 comment on column public.document_chunks.fts_norwegian is
   'Norwegian stems derived solely from the existing plaintext FTS lexemes; the existing content-at-rest policy also applies here.';
@@ -1845,6 +1862,8 @@ $$;
 revoke execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) from anon;
 revoke execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) from authenticated;
 grant execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) to service_role;
+grant execute on function public.norwegian_document_chunk_fts(tsvector) to service_role;
+grant execute on function public.sync_document_chunk_norwegian_fts() to service_role;
 
 create table project_service_selections (
   project_id uuid not null references projects(id) on delete cascade,
@@ -3041,6 +3060,7 @@ returns jsonb language plpgsql security invoker set search_path = public, extens
 declare
   v_job public.project_jobs%rowtype;
   v_artifact public.generated_artifacts%rowtype;
+  v_parent public.generated_artifacts%rowtype;
   v_artifact_type text;
   v_expected_artifact_revision bigint;
   v_current_artifact_revision bigint;
@@ -3139,6 +3159,22 @@ begin
     'kind','artifact_generation','id',v_artifact.id,'updated_at',v_artifact.updated_at) where id=p_job_id;
   return to_jsonb(v_artifact);
   end if;
+  -- A selected-row run may never replace a manual edit or a newer answer.
+  -- Both this publication and manual versions hold the project row lock.
+  if v_job.input_json ? 'regenerateRequirements' and v_job.input_json -> 'regenerateRequirements' <> 'null'::jsonb then
+    if v_artifact_type <> 'forbedret_kravsvar'
+       or jsonb_typeof(v_job.input_json -> 'regenerateRequirements') is distinct from 'object' then
+      raise exception using errcode = 'P0001', message = 'REQUIREMENT_REGENERATION_INVALID: selected rows require a requirement response';
+    end if;
+    select * into v_parent from public.generated_artifacts
+    where project_id = p_project_id and artifact_type = v_artifact_type
+    order by artifact_version desc limit 1;
+    if not found
+       or v_parent.id::text is distinct from (v_job.input_json -> 'regenerateRequirements' ->> 'artifactId')
+       or v_parent.artifact_version::text is distinct from (v_job.input_json -> 'regenerateRequirements' ->> 'artifactVersion') then
+      raise exception using errcode = 'P0001', message = 'REQUIREMENT_REGENERATION_PARENT_CHANGED: requirement response changed while selected answers were generated';
+    end if;
+  end if;
   select coalesce(max(artifact_version), 0) + 1 into v_next_version
   from public.generated_artifacts where project_id = p_project_id and artifact_type = v_artifact_type;
   insert into public.generated_artifacts (
@@ -3146,7 +3182,7 @@ begin
     generation_job_id, generation_submission_sequence, input_artifact_source_revision,
     input_service_library_revision, used_solution_evaluation, input_solution_evaluation_id,
     input_solution_evaluation_updated_at, input_solution_evaluation_hash,
-    generator_revision, origin, source_snapshot_hash,
+    generator_revision, origin, parent_artifact_id, source_snapshot_hash,
     knowledge_base_manifest, knowledge_artifact_manifest
   ) values (
     p_project_id, v_artifact_type, v_next_version, p_payload ->> 'title', p_payload ->> 'content_markdown',
@@ -3155,7 +3191,7 @@ begin
     (p_payload -> 'solution_evaluation_dependency' ->> 'id')::uuid,
     (p_payload -> 'solution_evaluation_dependency' ->> 'updated_at')::timestamptz,
     p_payload -> 'solution_evaluation_dependency' ->> 'content_hash',
-    p_payload ->> 'generator_revision', 'generated', p_payload ->> 'source_snapshot_hash',
+    p_payload ->> 'generator_revision', 'generated', v_parent.id, p_payload ->> 'source_snapshot_hash',
     v_knowledge_base_manifest,
     p_payload -> 'knowledge_artifact_manifest'
   ) returning * into v_artifact;
@@ -7499,16 +7535,30 @@ begin
 end;
 $$;
 
+alter table public.project_jobs add column if not exists run_class text not null default 'web'
+ check (run_class in ('web','scheduled'));
+create index if not exists project_jobs_scheduled_running_idx on public.project_jobs(id)
+ where status='running' and run_class='scheduled';
+
 create or replace function public.claim_project_job_serialized(p_job_id uuid,p_lease_token uuid)
 returns jsonb language plpgsql security invoker set search_path='' as $$
-declare v_project_id uuid; v_job public.project_jobs%rowtype;
+declare
+ v_project_id uuid;
+ v_job public.project_jobs%rowtype;
+ v_run_class text := case when (nullif(current_setting('request.headers',true),'')::jsonb ->> 'x-anbud-job-runner') = 'scheduled' then 'scheduled' else 'web' end;
 begin
  select project_id into v_project_id from public.project_jobs where id=p_job_id;
  if not found then return null; end if;
  perform 1 from public.projects where id=v_project_id for no key update;
  if not found then return null; end if;
  if exists(select 1 from public.project_jobs where project_id=v_project_id and status='running' and id<>p_job_id) then return null; end if;
- update public.project_jobs set status='running',lease_token=p_lease_token,locked_at=clock_timestamp(),
+ if v_run_class = 'scheduled' then
+  -- Transaction-scoped serialization covers claims across different projects
+  -- and cron executions. Existing per-project/lease fencing remains intact.
+  if not pg_catalog.pg_try_advisory_xact_lock(1095647829, 1) then return null; end if;
+  if exists(select 1 from public.project_jobs where status='running' and run_class='scheduled') then return null; end if;
+ end if;
+ update public.project_jobs set status='running',run_class=v_run_class,lease_token=p_lease_token,locked_at=clock_timestamp(),
  started_at=clock_timestamp(),updated_at=clock_timestamp(),message='Starter jobben ...'
  where id=p_job_id and status='queued' returning * into v_job;
  if not found then return null; end if;

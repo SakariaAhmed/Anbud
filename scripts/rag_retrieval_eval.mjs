@@ -62,6 +62,7 @@ if ((useModelRerank || useLiveEmbeddings || recordEmbeddings) && !process.env.OP
   throw new Error("--rerank=model and --embeddings=live need OPENAI_API_KEY.");
 }
 if (recordEmbeddings && !useRecordedEmbeddings) throw new Error("Recording requires --embeddings=recorded.");
+if (useRecordedEmbeddings && useModelRerank) throw new Error("Recorded embedding replay cannot run a model reranker; use the explicit live evaluation tier.");
 if (useStoredEmbeddings && !databaseUrl) {
   throw new Error("Stored retrieval needs --database-url for a disposable database.");
 }
@@ -88,7 +89,11 @@ const unavailableDataApi = path.join(scratch, "data-api.cjs");
 writeFileSync(unavailableDataApi, `
 const missing = { message: "Could not find the table 'public.document_chunks' in the schema cache" };
 exports.createServiceClient = () => ({
-  from: () => ({ select: () => ({ limit: async () => ({ data: null, error: missing }), in: async () => ({ data: null, error: missing }) }) }),
+  from: table => {
+    const result = async () => ({ data: null, error: { message: "Could not find the table 'public." + table + "' in the schema cache" } });
+    const query = { select: () => query, eq: () => query, limit: result, in: result, maybeSingle: result };
+    return query;
+  },
   rpc: async () => ({ data: null, error: missing }),
 });`);
 process.env.APP_ENCRYPTION_KEY ??= "rag-retrieval-eval-encryption-key";
@@ -273,7 +278,9 @@ function retrievalFunctions() {
     return sql;
   };
   const upgrade = readFileSync(path.join(repositoryRoot, "database/migrations/20261101210000_norwegian_hybrid_retrieval.sql"), "utf8");
-  const setup = upgrade.slice(upgrade.indexOf("-- Derive"), upgrade.indexOf("create or replace function public.hybrid_match"));
+  const start = upgrade.indexOf("-- Derive"), end = upgrade.indexOf("create or replace function public.hybrid_match");
+  if (start < 0 || end <= start) throw new Error("Norwegian retrieval setup boundaries are missing.");
+  const setup = upgrade.slice(start, end);
   return { match: definition("match_document_chunks"), hybrid: definition("hybrid_match_document_chunks"), setup };
 }
 

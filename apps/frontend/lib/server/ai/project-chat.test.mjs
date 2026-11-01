@@ -110,7 +110,7 @@ test("adaptive first questions skip rewriting while prior context and forced rew
       assert.match(state.retrieval[0].query, /K-42/);
       assert.ok(state.retrieval[0].broaderQuery.startsWith(question), item.name);
       assert.ok(state.retrieval[0].broaderExactTerms.includes("K-42"), item.name);
-      assert.equal(state.retrieval[0].rerank, undefined, "the speculative deterministic search never spends a model rerank call");
+      assert.equal(typeof state.retrieval[0].rerank, "function", "reranking is deferred until the plan is known and reuses the first candidate pool");
       assert.deepEqual(history, item.messages, "The history sent to the final answer must not be mutated.");
       assert.doesNotMatch(state.answers[0].user, /### Dokumentregel|Hele\s+står nedenfor/u,
         "A chat without documents must not claim whole documents are included.");
@@ -175,8 +175,9 @@ test("chat keeps question-specific evidence, complete late qualifications and al
       assert.ok(!prompt.includes("Kildene inneholder en Microsoft-relatert føring"), "Supplier choice or a negated platform mention must not become an asserted customer requirement.");
       assert.ok(state.retrieval.at(-1).exactTerms.includes("tilgjengelighetsprøver"));
       assert.ok(state.retrieval.at(-1).exactTerms.includes("opplæring"));
-      assert.equal(result.sourceReferences.length, 16);
-      for (const reference of result.sourceReferences) assert.ok(prompt.includes(`Referanse: ${reference.reference}`));
+      assert.equal(result.sourceReferences.length, 18);
+      for (const reference of result.sourceReferences.slice(2)) assert.ok(prompt.includes(`Referanse: ${reference.reference}`));
+      assert.deepEqual(result.sourceReferences.slice(0, 2).map(source => source.citation_number), [1, 2], "complete-document references retain a stable prefix before query-specific snippets");
       assert.equal(state.snippets[15].text, late, "Original source text remains intact.");
     }
   } finally {

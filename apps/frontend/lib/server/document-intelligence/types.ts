@@ -1,4 +1,5 @@
 import type { ProjectDocumentStructureEntry } from "@/lib/types";
+import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type {
   CanonicalDocumentBlock,
   CanonicalDocumentProjection,
@@ -85,6 +86,7 @@ export interface DocumentEvidenceUnit {
 }
 
 export interface DocumentIntelligenceArtifact {
+  requirementRegister?: { version: 1; rows: RequirementLedgerEntry[] };
   schemaVersion: typeof DOCUMENT_INTELLIGENCE_SCHEMA_VERSION;
   compilerVersion: typeof DOCUMENT_INTELLIGENCE_COMPILER_VERSION;
   documentId: string;

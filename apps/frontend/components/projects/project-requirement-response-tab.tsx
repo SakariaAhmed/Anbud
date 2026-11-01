@@ -1,4 +1,5 @@
 "use client";
+import type { RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 
 import {
   useMemo,
@@ -20,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 
+import { RequirementReviewWorkspace } from "@/components/projects/requirement-review-workspace";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { canEditGeneratedArtifact } from "@/components/projects/project-workflow-status";
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
@@ -538,6 +540,9 @@ function RequirementResponseContent({
 }
 
 export function ProjectRequirementResponseTab({
+  projectId,
+  canDownloadDocuments = false,
+  readOnly = false,
   documents,
   artifacts,
   uploadBusy,
@@ -550,8 +555,11 @@ export function ProjectRequirementResponseTab({
   onUpdateArtifact,
   onDeleteArtifact,
   onSubmit,
+  onRegenerateRequirements,
 }: {
   projectId: string;
+  canDownloadDocuments?: boolean;
+  readOnly?: boolean;
   documents: ProjectDocument[];
   artifacts: GeneratedArtifact[];
   uploadBusy: boolean;
@@ -574,6 +582,7 @@ export function ProjectRequirementResponseTab({
   ) => Promise<void>;
   onDeleteArtifact: (artifact: GeneratedArtifact) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onRegenerateRequirements: (selection: RequirementRegenerationSelection) => Promise<void>;
 }) {
   const requirementDocuments = useMemo(
     () => documents.filter(isRequirementDocument),
@@ -758,7 +767,7 @@ export function ProjectRequirementResponseTab({
                     : ""
                 }`
               : "";
-            const artifactIsEditable = canEditGeneratedArtifact(artifact);
+            const artifactIsEditable = !readOnly && canEditGeneratedArtifact(artifact);
             const neutralMetadata = [
               artifact.artifact_version
                 ? `Versjon ${artifact.artifact_version}`
@@ -1099,12 +1108,15 @@ export function ProjectRequirementResponseTab({
                         ) : null}
                       </div>
                     ) : null}
+                    <RequirementReviewWorkspace key={`${artifact.id}:${artifact.artifact_version}`} artifact={artifact} projectId={projectId} documents={documents} canDownloadDocuments={canDownloadDocuments} canEdit={!readOnly && canEditGeneratedArtifact(artifact)} busy={generateBusy} onRegenerate={onRegenerateRequirements} onSave={async (content, acknowledge) => { await onUpdateArtifact(artifact, { title: artifact.title, content_markdown: content, acknowledge_deterministic_repairs: acknowledge }); }} />
+                    <details className="print:open"><summary className="cursor-pointer text-sm text-primary">Vis samlet kravtabell</summary>
                     <RequirementResponseContent
                       content={
                         artifact.content_markdown ||
                         "Denne kravbesvarelsen mangler lagret innhold. Generer den på nytt for å få et komplett resultat."
                       }
                     />
+                    </details>
                   </>
                 )}
               </div>

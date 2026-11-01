@@ -1,4 +1,5 @@
 "use client";
+import type { RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -1491,6 +1492,14 @@ export function ProjectWorkspacePage({
 
   async function onGenerateRequirementResponse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await generateRequirementResponse();
+  }
+
+  async function onRegenerateRequirements(selection: RequirementRegenerationSelection) {
+    if (!await generateRequirementResponse(selection)) throw new Error("Utvalgte krav ble ikke lagret. Kontroller jobbstatus og prøv igjen.");
+  }
+
+  async function generateRequirementResponse(selection?: RequirementRegenerationSelection) {
     const sourceDocumentIds = requirementDocumentIdsForGeneration(
       project.documents,
     );
@@ -1498,15 +1507,16 @@ export function ProjectWorkspacePage({
       setError(
         "Ingen klassifiserte kravdokumenter er klare. Vent til dokumentbehandlingen er ferdig før du genererer kravbesvarelsen.",
       );
-      return;
+      return false;
     }
-    await runAction(
+    return runAction(
       "requirement-response",
       async () => {
         const job = await startWorkspaceJob(
           {
             kind: "artifact_generation",
             artifact_type: "forbedret_kravsvar",
+            regenerate_requirements: selection,
             source_document_ids: sourceDocumentIds,
           },
           "Kunne ikke starte jobben for kravbesvarelse.",
@@ -1843,6 +1853,7 @@ export function ProjectWorkspacePage({
         onUploadRequirementDocument={onUploadRequirementDocument}
         onUpdateRequirementArtifact={onUpdateRequirementArtifact}
         onGenerateRequirementResponse={onGenerateRequirementResponse}
+          onRegenerateRequirements={onRegenerateRequirements}
         onGenerateExecutiveSummary={onGenerateExecutiveSummary}
         onGenerateArtifact={onGenerateArtifact}
       />

@@ -66,7 +66,7 @@ function harness({ role = null, admin = false, active = true, disabled = false, 
 }
 const endpoints = [
   ["chat", "GET"], ["chat", "POST"], ["generate", "GET"], ["generate", "PATCH"], ["generate", "DELETE"], ["generate", "POST"],
-  ["documents", "POST"], ["service-descriptions", "GET"], ["service-descriptions", "PATCH"], ["artifact-authority", "GET"],
+  ["documents", "POST"], ["requirement-register", "GET"], ["source-evidence", "POST"], ["service-descriptions", "GET"], ["service-descriptions", "PATCH"], ["artifact-authority", "GET"],
   ["executive-summary", "GET"], ["executive-summary", "POST"], ["solution-evaluation", "GET"], ["solution-evaluation", "POST"],
   ["customer-analysis", "GET"], ["customer-analysis", "POST"], ["customer-analysis", "PUT"],
   ["jobs", "GET"], ["jobs", "POST"], ["jobs/[jobId]", "GET"], ["jobs/[jobId]/events", "GET"],
@@ -116,7 +116,22 @@ test("global administrators can download source documents without a project gran
   const response = await invoke(h, "documents/[documentId]", "GET", projectId);
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "Synthetic source");
+  assert.match(response.headers.get("content-disposition"), /^attachment;/u);
   assert.ok(h.dataCalls.some(call => call.name === "getDocumentDetail"));
+});
+
+test("inline source opening preserves original bytes and the same download permission", async () => {
+  for (const options of [{ admin: true }, { role: "viewer" }, { role: "restricted_viewer" }]) {
+    const h = harness(options);
+    const { GET } = h.load("app/api/projects/[id]/documents/[documentId]/route.ts");
+    const response = await GET(new Request(`http://localhost/api/projects/${projectId}/documents/document-test?disposition=inline`), { params: Promise.resolve({ id: projectId, documentId: "document-test" }) });
+    const allowed = options.admin || options.role === "viewer";
+    assert.equal(response.status, allowed ? 200 : 403);
+    if (allowed) {
+      assert.match(response.headers.get("content-disposition"), /^inline;/u);
+      assert.equal(await response.text(), "Synthetic source");
+    } else assert.deepEqual(h.dataCalls, []);
+  }
 });
 
 test("admin invitations reject invalid group scope before creating credentials or sending mail", async () => {

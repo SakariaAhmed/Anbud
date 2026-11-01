@@ -27,6 +27,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { SourceEvidenceButton } from "@/components/projects/source-evidence-panel";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import {
@@ -308,8 +309,12 @@ function assessmentTone(assessment: RequirementCoverageItem["assessment"]) {
 
 function RequirementCoveragePanel({
   coverage,
+  projectId,
+  canDownloadDocuments = false,
 }: {
   coverage?: RequirementCoverage | null;
+  projectId?: string;
+  canDownloadDocuments?: boolean;
 }) {
   if (!coverage) {
     return null;
@@ -485,13 +490,10 @@ function RequirementCoveragePanel({
                   </div>
                 </div>
 
-                <div className="mb-3 inline-flex max-w-full items-start gap-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs font-medium leading-5 text-slate-500">
-                  <MapPin className="mt-0.5 size-3.5 shrink-0" />
-                  <span className="min-w-0 break-words">
-                    {item.full_reference || item.source_reference
-                      ? cleanEvaluationTypography(item.full_reference || item.source_reference)
-                      : "Kilde mangler"}
-                  </span>
+                <div className="mb-3">
+                  <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={{ source_type: "project_document", source_id: item.source_document_id ?? "", document_title: item.source_document_title || "Kravgrunnlag", reference: item.full_reference || item.source_reference || "Kilde mangler", heading_path: item.heading_path ?? [], page_start: null, page_end: null, original_quote: item.requirement, classification: "needs_clarification" }}>
+                    Kilde: {item.full_reference || item.source_reference || "Henvisning mangler"}
+                  </SourceEvidenceButton>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-3">
@@ -751,6 +753,8 @@ function ArchitectureCallToAction({
 }
 
 export function ProjectEvaluationTab({
+  projectId,
+  canDownloadDocuments = false,
   documents,
   solutionEvaluation,
   hasSolutionDocument,
@@ -762,6 +766,8 @@ export function ProjectEvaluationTab({
   onImportArchitectureDocument,
   workflowBlockedReason = null,
 }: {
+  projectId?: string;
+  canDownloadDocuments?: boolean;
   documents: ProjectDocument[];
   solutionEvaluation: SolutionEvaluationResult | null;
   hasSolutionDocument: boolean;
@@ -1005,6 +1011,8 @@ export function ProjectEvaluationTab({
           <div>
             <RequirementCoveragePanel
               coverage={solutionEvaluation.requirement_coverage}
+              projectId={projectId}
+              canDownloadDocuments={canDownloadDocuments}
             />
           </div>
 

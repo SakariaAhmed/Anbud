@@ -24,6 +24,7 @@ import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization"
 import { createServiceClient } from "@/lib/server/data-api";
 import { reciprocalRankFusion } from "@/lib/server/retrieval-fusion";
 import { evidenceIdentity, SourceQuoteIndex } from "@/lib/server/source-evidence";
+import { extractRequirementIdentifiers } from "@/lib/server/ai/retrieval-query";
 import type {
   DocumentFileFormat,
   ProjectDocumentDetail,
@@ -110,6 +111,8 @@ export type RetrievalQuality = {
 };
 
 export type RetrievalTelemetry = {
+  requirementLookupFailed?: boolean;
+  missingRequirementIds?: string[];
   query: string;
   exactTerms: string[];
   limit: number;
@@ -2147,9 +2150,16 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   ]);
   const queryTokens = tokenizeForRetrieval(query);
   const exactTerms = (input.exactTerms ?? []).filter(Boolean);
-  const requirementIds = exactTerms.filter(term => /^[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-?\d{1,5}(?:\.\d+)*(?:\.[a-z])?$/u.test(term));
+  const requirementIds = Array.from(new Set(exactTerms.flatMap(extractRequirementIdentifiers)));
+  let requirementLookupFailed = false;
   const lookup = requirementIds.length
-    ? import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints }))
+    ? import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onSourceFailure: () => { requirementLookupFailed = true; } })).catch(error => {
+        assertEmbeddingFallbackAllowed(error);
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        requirementLookupFailed = true;
+        console.warn(JSON.stringify({ event: "requirement_lookup_unavailable", ...embeddingErrorFields(error) }));
+        return [];
+      })
     : Promise.resolve([]);
   const limit = Math.min(Math.max(input.limit ?? 8, 1), MAX_RETRIEVAL_LIMIT);
   const comparable = (text: string) => normalizeChunkText(text).replace(/\s+/gu, " ");
@@ -2341,6 +2351,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     ))].slice(0, limit);
     quality = assessRetrievalQuality({ snippets, exactTerms });
   }
+  const missingRequirementIds = requirementIds.filter(id => !lookedUpRows.some(row => row.requirementId === id));
+  if (missingRequirementIds.length || requirementLookupFailed) quality = { ...quality, sufficient: false, confidence: "low", reason: "En etterspurt kravreferanse kunne ikke knyttes sikkert til kravregisteret." };
   const quoteIndexes = new Map<string, SourceQuoteIndex>();
   snippets = snippets.map(snippet => {
     const document = snippet.sourceType === "project_document"
@@ -2357,6 +2369,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     };
   });
   const telemetry = {
+    requirementLookupFailed,
+    missingRequirementIds,
     query,
     exactTerms,
     limit,

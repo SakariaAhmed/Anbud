@@ -1,3 +1,4 @@
+import { parseRequirementRegeneration } from "@/lib/requirement-regeneration";
 import { listRecentProjectJobs } from "@/lib/server/repositories/jobs";
 import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
@@ -103,6 +104,7 @@ async function queueArtifactJob(
     job: await queueArtifactGenerationJob({
       projectId,
       artifactType: body.artifact_type,
+      regenerateRequirements: parseRequirementRegeneration(body.regenerate_requirements),
       instructions: normalizeArtifactInstructions(body.instructions),
       sourceDocumentIds: normalizeSourceDocumentIds(body.source_document_ids),
       useSolutionEvaluationContext:

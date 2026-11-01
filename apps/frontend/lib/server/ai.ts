@@ -1,3 +1,4 @@
+import { selectRequirementRegenerationLedger, mergeRegeneratedRequirementRows } from "@/lib/server/ai/requirement-response-regeneration";
 import "server-only";
 
 import { isRequirementDocument } from "@/lib/document-processing";
@@ -3611,10 +3612,10 @@ export async function generateProjectArtifact(input: ProjectArtifactGenerationIn
       artifactKnowledge,
     });
 
-    return generateRequirementResponseFromLedger({
+    const generated = await generateRequirementResponseFromLedger({
       projectName: input.projectName,
       baseContext: requirementAnswer.baseContext,
-      ledger: requirementContext.requirementLedger,
+      ledger: input.requirementRegeneration ? selectRequirementRegenerationLedger(requirementContext.requirementLedger, input.requirementRegeneration.parent, input.requirementRegeneration.selection) : requirementContext.requirementLedger,
       solutionDocument: input.solutionDocument,
       ledgerConfidence: requirementContext.requirementLedgerConfidence,
       requirementDocuments: requirementContext.requirementDocuments,
@@ -3623,7 +3624,9 @@ export async function generateProjectArtifact(input: ProjectArtifactGenerationIn
       model: input.model,
       onProgress: input.onProgress,
     });
+    return input.requirementRegeneration ? mergeRegeneratedRequirementRows(input.requirementRegeneration.parent, input.requirementRegeneration.selection, generated) : generated;
   }
+  if (input.requirementRegeneration) throw new Error("Utvalgte krav kan bare regenereres fra et komplett kravregister.");
 
   const userPrompt = buildGeneralArtifactPrompt({
     generationInput: input,

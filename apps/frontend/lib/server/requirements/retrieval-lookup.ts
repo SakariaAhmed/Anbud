@@ -1,10 +1,17 @@
 import "server-only";
+import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
+import { rethrowAuthoritativeLeaseLoss } from "@/lib/server/repositories/lease-fenced-persistence";
+import { safeErrorTelemetry } from "@/lib/server/safe-errors";
 import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/source-ledger";
+import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
+import { extractRequirementIdentifiers } from "@/lib/server/ai/retrieval-query";
 import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { RetrievedDocumentSnippet } from "@/lib/server/document-chunks";
 import type { ProjectDocumentDetail } from "@/lib/types";
 import { SourceQuoteIndex } from "@/lib/server/source-evidence";
+import { readDocumentRequirementRegister } from "@/lib/server/document-intelligence/repository";
+import { isRequirementDocument } from "@/lib/document-processing";
 
 // Only persisted source snapshots are used. A changed revision or fingerprint
 // gets a new ledger; a failed extraction cannot poison later requests.
@@ -13,7 +20,8 @@ function ledger(document: ProjectDocumentDetail, fingerprint: string) {
   const key = `${document.project_id}:${document.id}:${document.chunk_source_revision ?? 0}:${fingerprint}`;
   let pending = ledgers.get(key);
   if (!pending) {
-    pending = extractRequirementLedgerForDocument(document);
+    pending = readDocumentRequirementRegister({ documentId: document.id, projectId: document.project_id, sourceRevision: document.chunk_source_revision ?? 0 })
+      .then(stored => stored ?? extractRequirementLedgerForDocument(document));
     ledgers.set(key, pending);
     void pending.catch(() => { if (ledgers.get(key) === pending) ledgers.delete(key); });
     while (ledgers.size > 32) ledgers.delete(ledgers.keys().next().value!);
@@ -27,42 +35,73 @@ export async function lookupRequirementSnippets(input: {
   ids: string[];
   documents: ProjectDocumentDetail[];
   fingerprints: ReadonlyMap<string, string>;
+  onSourceFailure?: (documentId: string) => void;
 }): Promise<RetrievedDocumentSnippet[]> {
   const wanted = new Set(input.ids.map(normalizeRequirementId));
   if (!wanted.size) return [];
   const rows = await Promise.all(input.documents
-    .filter(document => document.role !== "primary_solution_document")
+    .filter(document => isRequirementDocument(document) && extractRequirementIdentifiers(document.raw_text).some(id => wanted.has(normalizeRequirementId(id))))
     .map(async document => {
-      const entries = await ledger(document, input.fingerprints.get(`project_document:${document.id}`)!);
-      const quotations = new SourceQuoteIndex(document.raw_text);
-      return entries.filter(entry => wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
-        .map(entry => {
-          const section = document.structure_map.find(section =>
-            section.text.includes(entry.id) && section.text.includes(entry.text),
-          );
-          const pages = entry.correctionSource?.pages ?? entry.pages;
-          const wording = quotations.find(entry.text);
-          const wordingAt = wording ? document.raw_text.indexOf(wording) : -1;
-          const idAt = wordingAt >= 0 ? document.raw_text.lastIndexOf(entry.id, wordingAt) : -1;
-          const sourceRow = wording && idAt >= 0 && wordingAt - idAt < 400
-            ? document.raw_text.slice(idAt, wordingAt + wording.length) : null;
-          return {
-            sourceType: "project_document" as const,
-            sourceId: document.id,
-            documentTitle: document.title,
-            kind: "requirement_row" as const,
-            reference: `Krav ${entry.id}${pages.length ? ` · Side ${pages.join(", ")}` : ""}`,
-            text: section && section.text.length <= 4800 ? section.text : sourceRow ?? `${entry.id} ${entry.text}`,
-            headingPath: entry.heading ? [entry.heading] : [],
-            pageStart: pages.length ? Math.min(...pages) : null,
-            pageEnd: pages.length ? Math.max(...pages) : null,
-            chunkIndex: null,
-            requirementId: entry.id,
-            similarity: null,
-            lexicalScore: 0,
-            score: 1000,
-          };
-        });
+      try {
+        const entries = await ledger(document, input.fingerprints.get(`project_document:${document.id}`)!);
+        return entries.filter(entry => wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
+          .flatMap(entry => {
+            const source = entry.correctionSource
+              ? input.documents.find(source => source.id === entry.correctionSource!.documentId)
+              : document;
+            if (!source) return [];
+            const pages = entry.correctionSource?.pages ?? entry.pages;
+            const markers = findPdfPageMarkers(source.raw_text);
+            const sourceParts = pages.length && markers.length
+              ? markers.flatMap((marker, index) => pages.some(page => page >= marker.startPage && page <= marker.endPage)
+                ? [source.raw_text.slice(marker.index + marker.marker.length, markers[index + 1]?.index ?? source.raw_text.length)] : [])
+              : [source.raw_text];
+            const target = entry.correctionSource?.excerpt ?? entry.text;
+            let passage: string | null = null;
+            for (const part of sourceParts) {
+              const quotations = new SourceQuoteIndex(part);
+              const quotedWording = entry.correctionSource ? [...target.matchAll(/[«“"]([^»”"]+)[»”"]/gu)].map(match => match[1]).reverse() : [];
+              const found = quotations.find(target) ?? quotedWording.map(quote => quotations.find(quote)).find(Boolean);
+              if (!found) continue;
+              if (extractRequirementIdentifiers(found).includes(entry.id)) { passage = found; break; }
+              const wordingAt = part.indexOf(found);
+              const normalizedDashes = part.replace(/[‐‑‒–—]/gu, "-");
+              let idAt = normalizedDashes.lastIndexOf(entry.id, wordingAt);
+              while (idAt >= 0 && (/[\p{L}\p{N}.-]/u.test(normalizedDashes[idAt - 1] ?? " ") || /[\p{L}\p{N}.-]/u.test(normalizedDashes[idAt + entry.id.length] ?? " "))) {
+                idAt = idAt > 0 ? normalizedDashes.lastIndexOf(entry.id, idAt - 1) : -1;
+              }
+              if (idAt >= 0 && wordingAt - idAt < 400 && !extractRequirementIdentifiers(part.slice(idAt, wordingAt)).some(id => id !== entry.id)) { passage = part.slice(idAt, wordingAt + found.length); break; }
+            }
+            // Corrected requirements may be reconstructions of several source
+            // phrases. Never publish the reconstruction as an original quotation.
+            if (!passage) return [];
+            const sections = !entry.correctionSource ? source.structure_map.filter(section => section.text.includes(passage!) && section.text.length <= 4800 && (!entry.heading || section.heading_path?.includes(entry.heading) || section.reference.includes(entry.heading))) : [];
+            const section = sections.length === 1 ? sections[0] : undefined;
+            return [{
+              sourceType: "project_document" as const,
+              sourceId: source.id,
+              documentTitle: source.title,
+              kind: "requirement_row" as const,
+              reference: `Krav ${entry.id}${pages.length ? ` · Side ${pages.join(", ")}` : ""}`,
+              text: section ? section.text : passage,
+              headingPath: entry.correctionSource ? (entry.correctionSource.heading ? [entry.correctionSource.heading] : []) : (entry.heading ? [entry.heading] : []),
+              pageStart: pages.length ? Math.min(...pages) : null,
+              pageEnd: pages.length ? Math.max(...pages) : null,
+              chunkIndex: null,
+              requirementId: entry.id,
+              similarity: null,
+              lexicalScore: 0,
+              score: 1000,
+            }];
+          });
+      } catch (error) {
+        rethrowAuthoritativeLeaseLoss(error);
+        assertProjectWorkflowActive();
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        input.onSourceFailure?.(document.id);
+        console.warn(JSON.stringify({ event: "requirement_lookup_source_unavailable", document_id: document.id, ...safeErrorTelemetry(error) }));
+        return [];
+      }
     }));
   return rows.flat();
 }

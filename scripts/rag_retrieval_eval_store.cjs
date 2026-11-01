@@ -32,6 +32,10 @@ function matches(sql) {
 
 exports.createServiceClient = () => ({
   from(table) {
+    if (table === "document_intelligence_artifacts") {
+      const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: null, error: null }) };
+      return query;
+    }
     if (table !== "document_chunks") throw new Error(`Unexpected eval table: ${table}`);
     return {
       select: () => ({

@@ -1,6 +1,8 @@
 import "server-only";
 
-import { decryptString, encryptJson, encryptString } from "@/lib/server/crypto";
+import { decryptJson, decryptString, encryptJson, encryptString } from "@/lib/server/crypto";
+import { isRecord } from "@/lib/unknown-values";
+import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type {
   DocumentEvidenceKind,
   DocumentIntelligenceArtifact,
@@ -12,6 +14,44 @@ import { createServiceClient } from "@/lib/server/data-api";
 const ARTIFACT_TABLE = "document_intelligence_artifacts";
 const EVENT_TABLE = "document_intelligence_events";
 const SAVE_ARTIFACT_FUNCTION = "save_document_intelligence_artifact";
+
+/** Legacy artifacts have no register. Corrupted or mismatched registers must
+ * fail instead of masquerading as an empty authoritative requirement list. */
+export function parsePersistedRequirementRegister(value: unknown, expected: { documentId: string; projectId: string; sourceRevision: number }): RequirementLedgerEntry[] | null {
+  if (!isRecord(value) || value.documentId !== expected.documentId || value.projectId !== expected.projectId || value.sourceRevision !== expected.sourceRevision) {
+    throw new Error("Kravregisteret samsvarer ikke med dokumentversjonen.");
+  }
+  if (value.requirementRegister === undefined) return null;
+  if (!isRecord(value.requirementRegister) || value.requirementRegister.version !== 1 || !Array.isArray(value.requirementRegister.rows)) throw new Error("Det lagrede kravregisteret kan ikke valideres.");
+  return value.requirementRegister.rows.map((row: unknown) => {
+    if (!isRecord(row) || typeof row.id !== "string" || !row.id.trim() || typeof row.text !== "string" || !row.text.trim() ||
+      typeof row.heading !== "string" || !Array.isArray(row.pages) || row.pages.some(page => !Number.isSafeInteger(page) || Number(page) <= 0 || Number(page) > 100_000) ||
+      (row.documentId !== undefined && row.documentId !== expected.documentId) ||
+      (row.idOrigin !== undefined && !["source", "inferred", "generated"].includes(String(row.idOrigin)))) {
+      throw new Error("Det lagrede kravregisteret kan ikke valideres.");
+    }
+    const correction = row.correctionSource;
+    if (correction !== undefined && (!isRecord(correction) || correction.documentId !== expected.documentId || typeof correction.documentTitle !== "string" || typeof correction.excerpt !== "string" ||
+      !Array.isArray(correction.pages) || correction.pages.some(page => !Number.isSafeInteger(page) || Number(page) <= 0 || Number(page) > 100_000))) throw new Error("Kravrettelsens kilde kunne ikke valideres.");
+    return { id: row.id, text: row.text, heading: row.heading, pages: row.pages as number[],
+      documentId: expected.documentId, documentTitle: typeof row.documentTitle === "string" ? row.documentTitle : undefined,
+      idOrigin: row.idOrigin as RequirementLedgerEntry["idOrigin"], originalId: typeof row.originalId === "string" ? row.originalId : undefined,
+      sourceExcerpt: typeof row.sourceExcerpt === "string" ? row.sourceExcerpt : undefined,
+      tableId: typeof row.tableId === "string" ? row.tableId : undefined,
+      ...(isRecord(correction) ? { correctionSource: { documentId: String(correction.documentId), documentTitle: String(correction.documentTitle), excerpt: String(correction.excerpt), pages: correction.pages as number[], heading: typeof correction.heading === "string" ? correction.heading : undefined } } : {}),
+    };
+  });
+}
+
+export async function readDocumentRequirementRegister(input: { documentId: string; projectId: string; sourceRevision: number }) {
+  const { data, error } = await createServiceClient().from(ARTIFACT_TABLE)
+    .select("artifact_encrypted").eq("project_id", input.projectId).eq("document_id", input.documentId)
+    .eq("source_revision", input.sourceRevision).maybeSingle();
+  if (error && isMissingRelationColumn(error, ARTIFACT_TABLE)) return null;
+  if (error) throw new Error("Kunne ikke hente det lagrede kravregisteret.");
+  if (!data) return null;
+  return parsePersistedRequirementRegister(decryptJson<unknown>(data.artifact_encrypted, null), input);
+}
 
 function isMissingDocumentIntelligenceSchema(error: { message?: string } | null) {
   const message = (error?.message ?? "").toLowerCase();

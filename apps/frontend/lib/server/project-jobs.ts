@@ -1,3 +1,4 @@
+import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
 import { projectJobResultForRead } from "@/lib/server/project-job-result-projection";
 import { recoverCommittedProjectJobResult } from "@/lib/server/project-job-results";
@@ -768,11 +769,16 @@ async function runProjectJob(
 
   try {
     lease.assertActive();
-    const queued = getStore().get(jobId) ?? (context.persisted ? await findProjectJob(input.projectId, jobId).catch(() => null) : null);
-    if (queued) recordWorkflowPerformance({ traceId: "documentId" in input ? input.documentId : jobId,
+    const executionStartedAt = Date.now();
+    const recordQueueWait = (queued: ProjectJobRecord | null | undefined) => {
+      if (queued) recordWorkflowPerformance({ traceId: "documentId" in input ? input.documentId : jobId,
       projectId: input.projectId, jobId, documentId: "documentId" in input ? input.documentId : undefined,
       operation: "documentId" in input ? "document" : "generation", phase: "queue_wait",
-      durationMs: Date.now() - Date.parse(queued.created_at) });
+      durationMs: executionStartedAt - Date.parse(queued.created_at) });
+    };
+    const queued = getStore().get(jobId);
+    if (queued) recordQueueWait(queued);
+    else if (context.persisted) void findProjectJob(input.projectId, jobId).then(recordQueueWait).catch(() => { /* Optional telemetry cannot block execution. */ });
     updateJob(jobId, { status: "running" }, context, { markStarted: true });
     const result = await runProjectWorkflowWithDeadline({
       kind: input.kind,
@@ -980,6 +986,7 @@ export async function getProjectJob(projectId: string, jobId: string) {
 export async function queueArtifactGenerationJob(input: {
   projectId: string;
   artifactType: GeneratedArtifactType;
+  regenerateRequirements?: RequirementRegenerationSelection;
   instructions?: string;
   sourceDocumentIds?: string[];
   useSolutionEvaluationContext?: boolean;
@@ -990,6 +997,7 @@ export async function queueArtifactGenerationJob(input: {
       kind: "artifact_generation",
       projectId: input.projectId,
       artifactType: input.artifactType,
+      regenerateRequirements: parseRequirementRegeneration(input.regenerateRequirements),
       instructions: normalizeArtifactInstructions(input.instructions),
       sourceDocumentIds: normalizeSourceDocumentIds(input.sourceDocumentIds),
       useSolutionEvaluationContext: input.useSolutionEvaluationContext === true,

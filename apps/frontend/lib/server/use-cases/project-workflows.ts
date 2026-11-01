@@ -1,3 +1,4 @@
+import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
 
 import { formatJobProgress } from "@/lib/project-job-progress";
@@ -118,6 +119,7 @@ export type ProjectWorkflowInput =
       kind: "artifact_generation";
       projectId: string;
       artifactType: GeneratedArtifactType;
+      regenerateRequirements?: RequirementRegenerationSelection;
       instructions?: string;
       sourceDocumentIds?: string[];
       useSolutionEvaluationContext?: boolean;
@@ -427,6 +429,7 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
         kind: "artifact_generation",
         projectId,
         artifactType: parseWorkflowArtifactType(input.artifactType),
+        regenerateRequirements: parseRequirementRegeneration(input.regenerateRequirements),
         instructions: normalizeArtifactInstructions(input.instructions),
         sourceDocumentIds: normalizeSourceDocumentIds(input.sourceDocumentIds),
         useSolutionEvaluationContext:
@@ -789,6 +792,7 @@ async function runDocumentIngestionWorkflow(
           handlers.setProgress(formatJobProgress(90, "Bygger Docling-baserte chunks ..."));
           assertWorkflowActive(handlers);
           const enhancedDocument = await saveDocumentIngestionResult({
+            requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
             projectId: input.projectId,
             documentId: input.documentId,
             role: document.role,
@@ -856,6 +860,7 @@ async function runDocumentIngestionWorkflow(
     );
     assertWorkflowActive(handlers);
     const basicDocument = await saveDocumentIngestionResult({
+      requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_format: parsed.fileFormat }),
       projectId: input.projectId,
       documentId: input.documentId,
       role: document.role,
@@ -965,6 +970,7 @@ async function runDocumentIngestionWorkflow(
       handlers.setProgress(formatJobProgress(90, "Oppdaterer forbedrede chunks ..."));
       assertWorkflowActive(handlers);
       const enhancedDocument = await saveDocumentIngestionResult({
+        requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
         projectId: input.projectId,
         documentId: input.documentId,
         role: document.role,
@@ -993,6 +999,7 @@ async function runDocumentIngestionWorkflow(
 
     assertWorkflowActive(handlers);
     const fallbackDocument = await saveDocumentIngestionResult({
+      requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_format: parsed.fileFormat }),
       projectId: input.projectId,
       documentId: input.documentId,
       role: document.role,
@@ -1144,6 +1151,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   handlers.setProgress(formatJobProgress(88, "Erstatter chunks med Docling-forbedret struktur ...", 88));
   assertWorkflowActive(handlers);
   const enhancedDocument = await saveDocumentIngestionResult({
+    requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
     projectId: input.projectId,
     documentId: input.documentId,
     role: document.role,
@@ -1302,6 +1310,7 @@ async function runArtifactGenerationWorkflow(
   return generateAndSaveProjectArtifact({
     projectId: input.projectId,
     artifactType: input.artifactType,
+    regenerateRequirements: input.regenerateRequirements,
     instructions: input.instructions,
     sourceDocumentIds: input.sourceDocumentIds,
     useSolutionEvaluationContext: input.useSolutionEvaluationContext,

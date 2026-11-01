@@ -89,8 +89,11 @@ test("keyword half of hybrid search finds passages for a full chat question", { 
     psqlOutput(databaseUrl.toString(), `update public.document_chunks set fts = to_tsvector('simple', 'hendelser') where id = '${chunks[1][0]}';`, "update lexical source");
     assert.equal(keywordMatches("månedlig"), "", "updating FTS removes obsolete Norwegian stems");
     assert.match(keywordMatches("hendelse"), new RegExp(chunks[1][0]));
-    psqlOutput(databaseUrl.toString(), `update public.document_chunks set fts_norwegian = ''::tsvector; ${norwegianSetup}`, "backfill existing lexemes");
+    psqlOutput(databaseUrl.toString(), `update public.document_chunks set fts_norwegian = ''::tsvector; update public.document_chunks set fts_norwegian = public.norwegian_document_chunk_fts(fts);`, "backfill existing lexemes");
     assert.match(keywordMatches("hendelse"), new RegExp(chunks[1][0]), "explicit backfill repairs existing rows");
+    assert.equal(psqlOutput(databaseUrl.toString(), `select public.norwegian_document_chunk_fts(to_tsvector('simple', 'beta alpha')) @@ websearch_to_tsquery('norwegian', '"alpha beta"');`, "phrase order"), "f", "stemming cannot invent word order");
+    assert.equal(psqlOutput(databaseUrl.toString(), `select public.norwegian_document_chunk_fts(to_tsvector('simple', 'alpha og beta')) @@ websearch_to_tsquery('norwegian', '"alpha beta"');`, "phrase gap"), "f", "stop-word removal must retain source positions");
+    assert.equal(psqlOutput(databaseUrl.toString(), `select public.norwegian_document_chunk_fts('''logg'':2A,5B ''logger'':9C'::tsvector)::text;`, "stem merge"), "'logg':2A,5B,9C", "merged stems retain all positions and weights");
   } finally {
     runPsql(liveDatabaseUrl, `drop database if exists "${databaseName}" with (force)`);
   }

@@ -1,4 +1,7 @@
 "use client";
+import type { RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
+import { ProjectFollowUpPanel } from "@/components/projects/project-follow-up";
+import { ProjectRequirementRegisterPreview } from "@/components/projects/project-requirement-register";
 
 import "./project-workspace.css";
 
@@ -275,6 +278,7 @@ export type ProjectWorkspaceTabContentProps = {
       acknowledge_deterministic_repairs?: boolean;
     },
   ) => Promise<void>;
+  onRegenerateRequirements: (selection: RequirementRegenerationSelection) => Promise<void>;
   onGenerateRequirementResponse: (
     event: FormEvent<HTMLFormElement>,
   ) => Promise<void>;
@@ -675,11 +679,16 @@ export function ProjectWorkspaceTabContent({
   onUploadRequirementDocument,
   onUpdateRequirementArtifact,
   onGenerateRequirementResponse,
+  onRegenerateRequirements,
   onGenerateExecutiveSummary,
   onGenerateArtifact,
 }: ProjectWorkspaceTabContentProps) {
+  const registerRefreshKey = project.documents.map(document => `${document.id}:${document.chunk_source_revision}:${document.processing_status}`).join("|");
+  const documentsProcessing = projectJobs.some(job => (job.kind === "document_ingestion" || job.kind === "document_docling_enhancement") && (job.status === "queued" || job.status === "running"));
   return (
     <>
+      {(activeTab === "requirements" || (activeTab === "analysis" && !customerAnalysis)) && project.documents.length > 0 ? <ProjectRequirementRegisterPreview projectId={project.id} refreshKey={registerRefreshKey} processing={documentsProcessing} /> : null}
+      {activeTab === "requirements" || activeTab === "evaluation" ? <ProjectFollowUpPanel artifacts={requirementArtifacts} analysis={customerAnalysis} evaluation={solutionEvaluation} /> : null}
       <ProjectWorkflowJobs
         key={`jobs-${project.id}`}
         projectId={project.id}
@@ -763,6 +772,8 @@ export function ProjectWorkspaceTabContent({
           </div>
         ) : (
           <ProjectEvaluationTab
+            projectId={project.id}
+            canDownloadDocuments={canDownloadDocuments}
             documents={architectureDocumentCandidates}
             solutionEvaluation={solutionEvaluation}
             hasSolutionDocument={architectureDocumentCandidates.some(
@@ -817,6 +828,8 @@ export function ProjectWorkspaceTabContent({
       {activeTab === "requirements" ? (
         <ProjectRequirementResponseTab
           projectId={project.id}
+          canDownloadDocuments={canDownloadDocuments}
+          readOnly={readOnly}
           documents={project.documents}
           artifacts={requirementArtifacts}
           uploadBusy={Boolean(busy)}
@@ -833,6 +846,7 @@ export function ProjectWorkspaceTabContent({
           onUpdateArtifact={onUpdateRequirementArtifact}
           onDeleteArtifact={onDeleteArtifact}
           onSubmit={onGenerateRequirementResponse}
+          onRegenerateRequirements={onRegenerateRequirements}
         />
       ) : null}
 

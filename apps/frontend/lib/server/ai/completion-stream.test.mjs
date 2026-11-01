@@ -9,7 +9,7 @@ const sdk = path.join(directory, "sdk.cjs");
 writeFileSync(sdk, `module.exports = class OpenAI {
   constructor() { this.responses = { create: async (body, options) => {
     globalThis.__anbudResponseStream.calls.push({ body, options });
-    return (async function* () { for (const event of globalThis.__anbudResponseStream.events) yield event; })();
+    return (async function* () { for (const event of globalThis.__anbudResponseStream.events) { if (typeof event === "function") event(); else yield event; } })();
   } }; }
 };`);
 const root = path.resolve(import.meta.dirname, "../../..");
@@ -43,4 +43,10 @@ test("failed, incomplete, disconnected and cancelled streams never complete succ
   }
   const abort = new AbortController(); abort.abort();
   await assert.rejects(createTextCompletionStream({ ...input, signal: abort.signal }), { name: "AbortError" });
+  for (const atEnd of [false, true]) {
+    const controller = new AbortController();
+    const delta = { type: "response.output_text.delta", delta: "partial" };
+    globalThis.__anbudResponseStream = { calls: [], events: atEnd ? [delta, completed, () => controller.abort()] : [delta, () => controller.abort(), completed] };
+    await assert.rejects(collect(await createTextCompletionStream({ ...input, signal: controller.signal })), { name: "AbortError" });
+  }
 });

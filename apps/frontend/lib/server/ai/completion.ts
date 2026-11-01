@@ -290,6 +290,7 @@ export async function createTextCompletionStream(input: {
         throw new Error("AI-svaret ble ikke fullført. Prøv meldingen på nytt.");
       }
     }
+    workflowSignal?.throwIfAborted();
     if (!completed) throw new Error("Forbindelsen ble avsluttet før AI-svaret var fullført.");
   }
 

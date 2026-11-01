@@ -10,7 +10,7 @@ import {
 import { routeErrorResponse } from "@/lib/server/api-responses";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string; documentId: string }> },
 ) {
   try {
@@ -23,8 +23,9 @@ export async function GET(
         const document = await getDocumentDetail(id, documentId);
         const buffer = Buffer.from(document.file_base64, "base64");
         const encodedFileName = encodeURIComponent(document.file_name);
+        const disposition = new URL(request.url).searchParams.get("disposition") === "inline" ? "inline" : "attachment";
         const contentDisposition =
-          `attachment; filename="download"; filename*=UTF-8''${encodedFileName}`;
+          `${disposition}; filename="download"; filename*=UTF-8''${encodedFileName}`;
 
         return new NextResponse(buffer, {
           headers: {

@@ -20,6 +20,7 @@ export type RequirementLedgerEntry = {
     documentTitle: string;
     pages: number[];
     excerpt: string;
+    heading?: string;
   };
   answerExcerpt?: string;
   answerEvidenceExcerpt?: string;

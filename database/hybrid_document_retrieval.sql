@@ -1,3 +1,4 @@
+-- Apply with psql -f (autocommit), never --single-transaction.
 alter table document_chunks
   add column if not exists fts tsvector not null default ''::tsvector;
 
@@ -73,11 +74,28 @@ revoke execute on function update_document_chunk_search_vectors(text, uuid, json
 grant execute on function update_document_chunk_search_vectors(text, uuid, jsonb) to service_role;
 
 -- Derive Norwegian stems from the existing plaintext lexemes. Original
--- encrypted text and the simple FTS index remain unchanged. This introduces
--- no additional plaintext source representation. Positions here describe
--- lexeme order; exact phrases and IDs continue to use the simple index.
+-- encrypted text and the simple FTS index remain unchanged. Original
+-- positions and weights survive stemming, including merged stem lexemes;
+-- quoted queries must not acquire invented phrase matches.
 alter table public.document_chunks
   add column if not exists fts_norwegian tsvector not null default ''::tsvector;
+
+create or replace function public.norwegian_document_chunk_fts(source_vector tsvector)
+returns tsvector
+language sql stable parallel safe
+set search_path = pg_catalog
+as $$
+  select coalesce(string_agg(
+    chr(39) || replace(replace(stem.lexeme, chr(92), chr(92) || chr(92)), chr(39), chr(39) || chr(39)) || chr(39) ||
+    case when cardinality(original.positions) > 0 then ':' || (
+      select string_agg(p.position::text || case when p.weight = 'D' then '' else p.weight::text end, ',' order by p.position)
+      from unnest(original.positions, original.weights) as p(position, weight)
+    ) else '' end, ' '
+  )::tsvector, ''::tsvector)
+  from unnest(source_vector) as original(lexeme, positions, weights)
+  cross join lateral unnest(ts_lexize('pg_catalog.norwegian_stem'::regdictionary, original.lexeme)) as stem(lexeme);
+$$;
+revoke all on function public.norwegian_document_chunk_fts(tsvector) from public;
 
 create or replace function public.sync_document_chunk_norwegian_fts()
 returns trigger
@@ -85,7 +103,7 @@ language plpgsql
 set search_path = public, pg_catalog
 as $$
 begin
-  new.fts_norwegian := to_tsvector('norwegian'::regconfig, array_to_string(tsvector_to_array(new.fts), ' '));
+  new.fts_norwegian := public.norwegian_document_chunk_fts(new.fts);
   return new;
 end;
 $$;
@@ -95,9 +113,6 @@ drop trigger if exists document_chunks_norwegian_fts on public.document_chunks;
 create trigger document_chunks_norwegian_fts before insert or update of fts on public.document_chunks
 for each row execute function public.sync_document_chunk_norwegian_fts();
 
-update public.document_chunks
-set fts_norwegian = to_tsvector('norwegian'::regconfig, array_to_string(tsvector_to_array(fts), ' '));
-create index if not exists document_chunks_norwegian_fts_idx on public.document_chunks using gin(fts_norwegian);
 comment on column public.document_chunks.fts_norwegian is
   'Norwegian stems derived solely from the existing plaintext FTS lexemes; the existing content-at-rest policy also applies here.';
 
@@ -211,3 +226,42 @@ $$;
 revoke execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) from anon;
 revoke execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) from authenticated;
 grant execute on function hybrid_match_document_chunks(extensions.vector, text, int, float, uuid, uuid[], int, float, float) to service_role;
+grant execute on function public.norwegian_document_chunk_fts(tsvector) to service_role;
+grant execute on function public.sync_document_chunk_norwegian_fts() to service_role;
+
+-- Backfill in independently committed, bounded batches. New/changed rows are
+-- maintained by the trigger, including IDs behind the cursor. A busy row can
+-- interrupt this safely; rerun the file to resume before releasing new code.
+set lock_timeout = '5s';
+do $$
+declare
+  last_id uuid := null;
+  batch_ids uuid[];
+begin
+  loop
+    select array_agg(id order by id) into batch_ids
+    from (select id from public.document_chunks
+      where last_id is null or id > last_id order by id limit 500) as batch;
+    exit when batch_ids is null;
+    update public.document_chunks
+    set fts_norwegian = public.norwegian_document_chunk_fts(fts)
+    where id = any(batch_ids)
+      and fts_norwegian is distinct from public.norwegian_document_chunk_fts(fts);
+    last_id := batch_ids[cardinality(batch_ids)];
+    commit;
+  end loop;
+end;
+$$;
+reset lock_timeout;
+
+-- A previously interrupted concurrent build needs deliberate recovery before
+-- retrying; IF NOT EXISTS alone would silently keep an invalid index.
+do $$
+begin
+  if exists (select 1 from pg_catalog.pg_index where indexrelid = to_regclass('public.document_chunks_norwegian_fts_idx') and not indisvalid) then
+    raise exception 'Norwegian FTS index is invalid. Drop that index CONCURRENTLY, then rerun this migration.';
+  end if;
+end;
+$$;
+create index concurrently if not exists document_chunks_norwegian_fts_idx
+  on public.document_chunks using gin(fts_norwegian);

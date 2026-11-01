@@ -16,6 +16,11 @@ export function createServiceClient() {
 
   return new PostgrestClient(configuration.baseUrl, {
     schema: "public",
-    headers: dataApiHeaders(configuration.serviceKey),
+    headers: {
+      ...dataApiHeaders(configuration.serviceKey),
+      // The server sets this, independently of incoming HTTP headers. The
+      // service-role-only claim RPC caps scheduled jobs across cron replicas.
+      "x-anbud-job-runner": process.env.PROJECT_JOB_WORKER_PROCESS === "1" ? "scheduled" : "web",
+    },
   });
 }

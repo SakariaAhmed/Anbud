@@ -514,6 +514,8 @@ export type ChatDomainHint =
   | "Dokument og kildegrunnlag";
 
 export interface ChatSourceReference {
+  citation_number?: number;
+  quotation_excerpts?: string[];
   /** Optional only for messages saved before evidence contract v1. */
   evidence_id?: string;
   chunk_id?: string | null;
@@ -527,8 +529,20 @@ export interface ChatSourceReference {
   heading_path: string[];
   page_start: number | null;
   page_end: number | null;
-  source_type: "project_document" | "service_document";
+  source_type: "project_document" | "service_document" | "chat_attachment";
   source_id: string;
+}
+
+export interface ProjectRequirementRegister {
+  source_revision: number;
+  documents: Array<{
+    id: string;
+    title: string;
+    source_revision: number;
+    document_ready: boolean;
+    register_available: boolean;
+    rows: Array<{ id: string; text: string; heading: string; pages: number[]; id_origin: "source" | "inferred" | "generated"; original_id?: string }>;
+  }>;
 }
 
 export interface ChatMessage {

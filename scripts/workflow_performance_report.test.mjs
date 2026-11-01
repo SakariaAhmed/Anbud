@@ -7,7 +7,7 @@ test("reports correlated class percentiles, failed samples and verified weighted
     { event: "chat_completion", input_tokens: 100, cached_tokens: 60 }, { event: "chat_completion", input_tokens: 900, cached_tokens: 900 },
     { event: "chat_completion", input_tokens: 10, cached_tokens: 20 }, { event: "chat_completion", input_tokens: 10 }], "local synthetic");
   const queue = report.phases.find(row => row.phase === "queue_wait");
-  assert.deepEqual(queue, { operation: "document", phase: "queue_wait", document_class: "pdf", failed: 1, samples: 2, p50_ms: 100, p95_ms: 200 });
+  assert.deepEqual(queue, { operation: "document", phase: "queue_wait", document_class: "pdf", failed: 1, samples: 2, p50_ms: 100, p95_ms: 200, failed_p50_ms: 10, failed_p95_ms: 10, all_samples: 3, all_p50_ms: 100, all_p95_ms: 200 });
   assert.equal(report.chat_cache.cached_fraction, 0.96);
   assert.equal(report.chat_cache.measured_responses, 2);
   assert.doesNotMatch(JSON.stringify(report), /same-document/u);

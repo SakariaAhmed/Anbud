@@ -2505,14 +2505,15 @@ export async function extractRequirementLedgerForDocument(
 /** Preserve original identities for duplicate suppression across documents,
  * including requirements removed or rewritten by the corrections chapter. */
 export async function extractRequirementLedgerWithCorrections(document: ProjectDocumentDetail) {
+  const observedIds = new Set(detectExplicitRequirementIds(document.raw_text).map(normalizeRequirementId));
   const ledger = recoverTruncatedRequirementLedgerEntries(
     await buildRequirementSourceLedgerWithFiles(document),
   )
     .map(recoverTruncatedRequirementLedgerEntryInline)
     .map(recoverAvailabilityFractionRequirement)
-    .map(entry => ({ ...entry, idOrigin: entry.idOrigin ?? "source" as const }));
+    .map(entry => ({ ...entry, idOrigin: entry.idOrigin ?? (observedIds.has(normalizeRequirementId(entry.id)) ? "source" as const : "generated" as const) }));
   if (!isLegacyMixedFofingerCorpus(document)) {
-    return applyRequirementCorrections(ledger, document.raw_text);
+    return applyRequirementCorrections(ledger, document.raw_text, { documentId: document.id, documentTitle: document.title });
   }
 
   return applyRequirementCorrections(
@@ -2525,6 +2526,7 @@ export async function extractRequirementLedgerWithCorrections(document: ProjectD
       .map(recoverTruncatedRequirementLedgerEntryInline)
       .map(recoverAvailabilityFractionRequirement),
     document.raw_text,
+    { documentId: document.id, documentTitle: document.title },
   );
 }
 

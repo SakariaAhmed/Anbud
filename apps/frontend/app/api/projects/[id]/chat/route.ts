@@ -376,10 +376,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const startedAt = Date.now();
+  let trace: { projectId: string; traceId: string } | null = null;
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "chat.write");
     const traceId = randomUUID();
+    trace = { projectId: id, traceId };
     const rateLimit = await checkRateLimit(request, `project-chat:${id}`, {
       limit: 30,
       windowMs: 60_000,
@@ -521,16 +523,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             const verifiedSources = chatStream.validateAnswer(cleanedAssistantMessage);
             recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "validation", durationMs: Date.now() - validationStartedAt });
             const persistenceStartedAt = Date.now();
+            request.signal.throwIfAborted();
 
             await appendChatMessage(
               id,
               "assistant",
               cleanedAssistantMessage,
-              { ...assistantContextSnapshot, source_references: verifiedSources },
+              { ...assistantContextSnapshot, source_references: verifiedSources, source_check_status: chatStream.sourceValidationFailed ? "needs_clarification" : "passed" },
               { sessionId },
             );
             recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "persistence", durationMs: Date.now() - persistenceStartedAt });
-            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "total", durationMs: Date.now() - startedAt });
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "total", durationMs: Date.now() - startedAt, status: chatStream.sourceValidationFailed ? "failed" : "completed" });
 
             await updateChatSessionMemory({
               projectId: id,
@@ -553,6 +556,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
             controller.close();
           } catch (error) {
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "total", durationMs: Date.now() - startedAt, status: "failed" });
             console.warn(
               JSON.stringify({
                 event: "project_chat_stream_failed",
@@ -587,6 +591,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     );
   } catch (error) {
+    if (trace) recordWorkflowPerformance({ ...trace, operation: "chat", phase: "total", durationMs: Date.now() - startedAt, status: "failed" });
     if (error instanceof ChatRequestError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
