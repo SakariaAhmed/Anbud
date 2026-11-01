@@ -6,6 +6,8 @@ import { FAST_MODEL, FAST_REASONING_EFFORT } from "@/lib/server/ai/model-config"
 import { matchCenteredExcerpt } from "@/lib/server/ai/requirement-coverage";
 import type { RetrievalReranker } from "@/lib/server/document-chunks";
 import { buildDelimitedContext, buildPromptTemplate } from "@/lib/server/prompts";
+import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
+import { ProjectJobLeaseLostError } from "@/lib/server/project-job-heartbeat";
 
 const RERANK_PASSAGE_CHARS = 700;
 const RERANK_TIMEOUT_MS = 8_000;
@@ -26,6 +28,7 @@ export function modelRetrievalRerankEnabled() {
 export const rerankRetrievalCandidates: RetrievalReranker = async ({ query, candidates }) => {
   const startedAt = Date.now();
   try {
+    assertProjectWorkflowActive();
     const result = await createJsonCompletion<{ ranking?: unknown }>({
       system: buildPromptTemplate({
         role: "Du rangerer dokumentutdrag for søk i et tilbudssystem.",
@@ -64,6 +67,7 @@ export const rerankRetrievalCandidates: RetrievalReranker = async ({ query, cand
       maxRetries: 0,
       promptCacheKey: "retrieval-rerank",
     });
+    assertProjectWorkflowActive();
     const ranking = Array.isArray(result?.ranking) ? result.ranking : null;
     if (!ranking) throw new Error("Rerank-svaret mangler ranking.");
     return ranking
@@ -71,6 +75,9 @@ export const rerankRetrievalCandidates: RetrievalReranker = async ({ query, cand
       .filter((value): value is number => typeof value === "number")
       .map((value) => value - 1);
   } catch (error) {
+    assertProjectWorkflowActive();
+    if (error instanceof ProjectJobLeaseLostError ||
+      (error instanceof Error && ["AbortError", "APIUserAbortError", "ProjectJobLeaseLostError"].includes(error.name))) throw error;
     console.warn(JSON.stringify({
       event: "retrieval_rerank_fallback",
       candidate_count: candidates.length,

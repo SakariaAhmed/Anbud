@@ -25,6 +25,20 @@ export function actual(file, names, dependencies = {}) {
   const code = ts.transpileModule([...found.values()].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   return new Function(...Object.keys(dependencies), `${code}\nreturn {${names.join(',')}};`)(...Object.values(dependencies));
 }
+// The workspace and coordinator run their real function bodies together;
+// only the polling and refresh I/O supplied by each scenario is replaced.
+export function documentIngestionTracker(dependencies) {
+  const { DocumentProcessingFailure } = jiti(path.join(frontend, 'lib/client/document-job-tracker.ts'));
+  const { mergeProjectRefresh } = jiti(path.join(frontend, 'components/projects/project-workflow-status.ts'));
+  const { trackDocumentProcessing } = actual('lib/client/document-job-tracker.ts', ['trackDocumentProcessing', 'documentFromJobResult'], {
+    watchProjectJob: dependencies.watchProjectJob,
+    fetchProjectState: dependencies.fetchProjectState,
+    DocumentProcessingFailure,
+  });
+  return actual('components/projects/project-workspace-page.tsx', ['trackDocumentIngestionJob'], {
+    ...dependencies, DocumentProcessingFailure, trackDocumentProcessing, mergeProjectRefresh,
+  });
+}
 export const dbUrl = process.env.ANBUD_AUDIT_DATABASE_URL;
 assert.ok(dbUrl, 'Set ANBUD_AUDIT_DATABASE_URL to the DISPOSABLE audit0532 database');
 const parsed = new URL(dbUrl);

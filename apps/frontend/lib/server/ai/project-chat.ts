@@ -650,6 +650,7 @@ export type ChatPromptAttachment = {
 };
 
 type ProjectChatInput = {
+  projectId?: string;
   projectName: string;
   customerAnalysis: CustomerAnalysisResult | null;
   solutionEvaluation: SolutionEvaluationResult | null;
@@ -664,6 +665,29 @@ type ProjectChatInput = {
   sessionSummary?: string | null;
   domainHints?: ChatDomainHint[];
 };
+
+/** Select from the authorized current versions before applying the context cap. */
+export function selectProjectChatArtifacts(input: {
+  artifacts: readonly GeneratedArtifact[];
+  projectId?: string;
+  question: string;
+  limit: number;
+}) {
+  const terms = chatAttachmentTerms(input.question);
+  return input.artifacts
+    .filter(artifact => artifact.is_current === true && artifact.source_is_current === true &&
+      (!input.projectId || artifact.project_id?.toLowerCase() === input.projectId.toLowerCase()))
+    .map((artifact, index) => {
+      const title = comparableChatText(artifact.title);
+      const body = comparableChatText(artifact.content_markdown);
+      const score = terms.reduce((sum, term) =>
+        sum + (title.includes(term) ? 3 : body.includes(term) ? 1 : 0), 0);
+      return { artifact, index, score };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, input.limit)
+    .map(({ artifact }) => artifact);
+}
 
 function buildChatAnswerStructureContext(input: {
   useStructuredCoverage: boolean;
@@ -872,8 +896,12 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     );
   const generatedArtifactLimit = useStructuredCoverage ? 3 : 5;
   const generatedArtifactTextLimit = useStructuredCoverage ? 1800 : 3500;
-  const generatedArtifacts = (input.generatedArtifacts ?? [])
-    .slice(0, generatedArtifactLimit)
+  const generatedArtifacts = selectProjectChatArtifacts({
+    artifacts: input.generatedArtifacts ?? [],
+    projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id,
+    question: relevanceQuery,
+    limit: generatedArtifactLimit,
+  })
     .map((artifact, index) =>
       buildDelimitedContext(
         `Generert artefakt ${index + 1}: ${artifact.title}`,

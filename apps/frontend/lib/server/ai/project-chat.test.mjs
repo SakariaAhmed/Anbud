@@ -16,9 +16,27 @@ const jiti = createJiti(path.join(frontendRoot, "project-chat-tests.cjs"), {
   interopDefault: true,
   alias: { "@": frontendRoot, "server-only": "/dev/null" },
 });
-const { buildQuestionRelevantText, inferProjectChatDomains } = jiti(
+const { buildQuestionRelevantText, inferProjectChatDomains, selectProjectChatArtifacts } = jiti(
   path.join(frontendRoot, "lib/server/ai/project-chat.ts"),
 );
+
+test("chat selects a relevant current artifact beyond the first five without crossing projects", () => {
+  const artifact = (id, content_markdown, extra = {}) => ({ id, project_id: "project", title: id, content_markdown, is_current: true, source_is_current: true, ...extra });
+  const relevant = artifact("exit", "Exit-planen eksporterer data i åpne formater innen 30 dager.");
+  const candidates = [
+    ...Array.from({ length: 6 }, (_, index) => artifact(`background-${index}`, "Generell innledning om leveransen.")),
+    relevant,
+    artifact("stale-exit", relevant.content_markdown, { source_is_current: false }),
+    artifact("old-exit", relevant.content_markdown, { is_current: false }),
+    artifact("unknown-exit", relevant.content_markdown, { is_current: undefined, source_is_current: undefined }),
+    artifact("other-project", relevant.content_markdown, { project_id: "other" }),
+  ];
+  const selected = selectProjectChatArtifacts({ artifacts: candidates, question: "Hva sier exit-planen om eksport av data?", projectId: "PROJECT", limit: 5 });
+  assert.equal(selected[0].id, relevant.id);
+  assert.ok(selected.length <= 5);
+  assert.ok(selected.every(item => !["stale-exit", "old-exit", "unknown-exit", "other-project"].includes(item.id)));
+  assert.equal(candidates[0].id, "background-0", "Ranking must not mutate caller ordering.");
+});
 
 test("chat domain inference moved behind the project-chat boundary", () => {
   assert.deepEqual(
@@ -193,7 +211,7 @@ test("generated artifacts are excerpted by question relevance and model rerank f
     const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
     const filler = "Generell innledning om leveransen og prosjektets bakgrunn. ".repeat(12);
     const late = "Exit-plan: data eksporteres i åpne formater innen 30 dager etter avslutning.";
-    const artifact = { id: "a1", title: "Løsningsnotat", content_markdown: [...Array(12).fill(filler), late].join("\n\n") };
+    const artifact = { id: "a1", title: "Løsningsnotat", content_markdown: [...Array(12).fill(filler), late].join("\n\n"), is_current: true, source_is_current: true };
     const result = await streamProjectChat({ projectName: "Fiktiv", question: "Hva sier vi om exit-plan og eksport av data?",
       customerAnalysis: null, solutionEvaluation: null, customerDocument: null, solutionDocument: null,
       recentMessages: [], generatedArtifacts: [artifact] });
@@ -423,7 +441,7 @@ test("the chat route selects each fallback document once before building the rea
       exports.getProjectGenerationContext = async () => ({ name: "Fiktiv", solutionEvaluationSnapshot: null });
       exports.listProjectDocumentsForAnalysis = async () => globalThis.__projectChatRouteScopeTest.documents;
       exports.getFreshCustomerAnalysis = async () => null;
-      for (const name of ["listGeneratedArtifactsFresh", "listChatMessages", "listChatSessions"]) exports[name] = async () => [];
+      for (const name of ["listCurrentGeneratedArtifactsFresh", "listChatMessages", "listChatSessions"]) exports[name] = async () => [];
       for (const name of ["appendChatMessage", "upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
       exports.createTextCompletionStream = async input => {
         globalThis.__projectChatRouteScopeTest.prompts.push(input);

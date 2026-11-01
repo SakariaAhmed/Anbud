@@ -62,6 +62,7 @@ jobs:
         run: |
           npm run secrets:scan
           npm test
+          npm run rag:eval
           npm run lint
           NODE_OPTIONS="--require $PWD/scripts/block-google-fonts.cjs" npm run build
 

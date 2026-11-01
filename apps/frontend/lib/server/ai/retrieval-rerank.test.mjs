@@ -23,7 +23,8 @@ function loadReranker(answer) {
     "@/lib/server/ai/completion": completion, "@": frontendRoot, "server-only": "/dev/null",
   } });
   const reranker = load(path.join(frontendRoot, "lib/server/ai/retrieval-rerank.ts"));
-  return { ...reranker, state, cleanup: () => { delete globalThis.__retrievalRerankTest; rmSync(directory, { recursive: true, force: true }); } };
+  const { ProjectJobLeaseLostError } = load(path.join(frontendRoot, "lib/server/project-job-heartbeat.ts"));
+  return { ...reranker, ProjectJobLeaseLostError, state, cleanup: () => { delete globalThis.__retrievalRerankTest; rmSync(directory, { recursive: true, force: true }); } };
 }
 
 const candidate = (text) => ({ documentTitle: "Bilag 1", reference: "Kapittel 2", text });
@@ -88,5 +89,18 @@ test("model rerank is on unless RAG_MODEL_RERANK=off", () => {
   } finally {
     if (previous === undefined) delete process.env.RAG_MODEL_RERANK; else process.env.RAG_MODEL_RERANK = previous;
     reranker.cleanup();
+  }
+});
+
+test("reranking propagates cancellation and lease loss instead of falling back", async () => {
+  for (const kind of ["AbortError", "APIUserAbortError", "ProjectJobLeaseLostError"]) {
+    let failure;
+    const reranker = loadReranker(() => { throw failure; });
+    failure = kind === "ProjectJobLeaseLostError"
+      ? new reranker.ProjectJobLeaseLostError("synthetic-job")
+      : Object.assign(new Error("Synthetic cancellation"), { name: kind });
+    try {
+      await assert.rejects(reranker.rerankRetrievalCandidates({ query: "K-1", candidates: [candidate("K-1")] }), error => error === failure);
+    } finally { reranker.cleanup(); }
   }
 });

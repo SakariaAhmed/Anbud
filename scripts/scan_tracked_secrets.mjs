@@ -8,11 +8,14 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const GIT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 const args = new Set(process.argv.slice(2));
 const scanHistory = args.has("--history");
+const repositoryRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+  encoding: "utf8",
+}).trim();
 
 const secretPatterns = [
   {
     label: "OpenAI API key",
-    pattern: /sk(?:-proj)?-[A-Za-z0-9_\-]{30,}/,
+    pattern: /(?<![\p{L}\p{N}_-])sk(?:-proj)?-[A-Za-z0-9_-]{30,}(?![\p{L}\p{N}_-])/u,
   },
   {
     label: "Generic private key",
@@ -107,16 +110,14 @@ function scanContent({ content, file, scope, commit }) {
 
 function gitOutput(gitArgs, options = {}) {
   return execFileSync("git", gitArgs, {
+    cwd: repositoryRoot,
     encoding: "utf8",
     maxBuffer: GIT_MAX_BUFFER_BYTES,
     ...options,
   });
 }
 
-const files = execFileSync("git", ["ls-files", "-z"], {
-  encoding: "utf8",
-  maxBuffer: GIT_MAX_BUFFER_BYTES,
-})
+const files = gitOutput(["ls-files", "-z"])
   .split("\0")
   .filter(Boolean)
   .filter((file) => !isIgnoredPath(file));
@@ -126,12 +127,13 @@ const skippedFiles = [];
 for (const file of files) {
   let content = "";
   try {
-    const stat = statSync(file);
+    const absolutePath = path.join(repositoryRoot, file);
+    const stat = statSync(absolutePath);
     if (!stat.isFile() || stat.size > MAX_FILE_BYTES) {
       skippedFiles.push(file);
       continue;
     }
-    content = readFileSync(file, "utf8");
+    content = readFileSync(absolutePath, "utf8");
   } catch {
     continue;
   }
@@ -158,6 +160,7 @@ function parseGitGrepLine(line) {
 
 function runGitGrep(grepArgs) {
   const result = spawnSync("git", grepArgs, {
+    cwd: repositoryRoot,
     encoding: "utf8",
     maxBuffer: GIT_MAX_BUFFER_BYTES,
   });

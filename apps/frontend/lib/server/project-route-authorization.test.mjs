@@ -12,7 +12,7 @@ const { NextResponse } = require("next/server");
 const projectId = "123e4567-e89b-12d3-a456-426614174000";
 
 // Real route and authorization code; only external services are replaced.
-function harness({ role = null, admin = false, active = true, roleError = false } = {}) {
+function harness({ role = null, admin = false, active = true, disabled = false, expired = false, roleError = false } = {}) {
   const calls = [], dataCalls = [], cache = new Map();
   const db = { rpc(name, input) {
     assert.equal(name, "resolve_project_role");
@@ -22,8 +22,8 @@ function harness({ role = null, admin = false, active = true, roleError = false 
     const filters = {};
     const result = () => {
       calls.push({ table, filters: { ...filters } });
-      const data = table === "app_sessions" ? { expires_at: "2999-01-01", revoked_at: active ? null : "2020-01-01" }
-        : table === "app_principals" ? { identity_type: "internal", disabled_at: null }
+      const data = table === "app_sessions" ? { expires_at: expired ? "2020-01-01" : "2999-01-01", revoked_at: active ? null : "2020-01-01" }
+        : table === "app_principals" ? { identity_type: "internal", disabled_at: disabled ? "2020-01-01" : null }
         : table === "app_principal_roles" ? (admin ? [{ role: "admin" }] : [])
         : table === "projects" ? { owner_id: null }
         : table === "project_memberships" && role ? [{ role, revoked_at: null, expires_at: null }] : [];
@@ -38,7 +38,12 @@ function harness({ role = null, admin = false, active = true, roleError = false 
     if (name === "workflowErrorStatus") return () => 500;
     if (name === "withTiming") return (_, __, fn) => fn();
     if (name === "DirectSolutionEvaluationWaitTimeoutError") return class extends Error {};
-    return (...args) => { dataCalls.push({ name, args }); return String(name).startsWith("list") ? [] : null; };
+    return (...args) => {
+      dataCalls.push({ name, args });
+      if (name === "getDocumentDetail") return { file_base64: Buffer.from("Synthetic source").toString("base64"), file_name: "kilde.txt", file_format: "txt" };
+      if (name === "contentTypeForUploadFormat") return "text/plain";
+      return String(name).startsWith("list") ? [] : null;
+    };
   } });
   function load(relative) {
     if (cache.has(relative)) return cache.get(relative);
@@ -65,11 +70,12 @@ const endpoints = [
   ["executive-summary", "GET"], ["executive-summary", "POST"], ["solution-evaluation", "GET"], ["solution-evaluation", "POST"],
   ["customer-analysis", "GET"], ["customer-analysis", "POST"], ["customer-analysis", "PUT"],
   ["jobs", "GET"], ["jobs", "POST"], ["jobs/[jobId]", "GET"], ["jobs/[jobId]/events", "GET"],
+  ["documents/[documentId]", "GET"], ["documents/[documentId]", "DELETE"], ["documents/[documentId]", "PATCH"],
 ];
 async function invoke(h, route, method, id) {
   const handler = h.load(`app/api/projects/[id]/${route}/route.ts`)[method];
   const request = new Request(`http://localhost/api/projects/${id}/${route}`, { method, ...(method === "GET" ? {} : { body: JSON.stringify({ artifact_id: "artifact-test" }), headers: { "content-type": "application/json" } }) });
-  return handler(request, { params: Promise.resolve({ id, jobId: "job-test" }) });
+  return handler(request, { params: Promise.resolve({ id, jobId: "job-test", documentId: "document-test" }) });
 }
 test("ungranted project handlers deny canonical and alternate UUIDs before data access", async () => {
   for (const id of [projectId, projectId.toUpperCase(), projectId.replaceAll("-", ""), `{${projectId}}`, "%31" + projectId.slice(1)]) {
@@ -86,6 +92,50 @@ test("revoked sessions cannot read chat or delete artifacts with editor grants",
     assert.equal((await invoke(h, route, method, projectId)).status, 401);
     assert.deepEqual(h.dataCalls, []);
   }
+});
+test("expired sessions and disabled principals cannot reach project reads or mutations", async () => {
+  for (const identity of [{ expired: true }, { disabled: true }]) {
+    for (const [route, method] of [["chat", "POST"], ["generate", "POST"], ["documents/[documentId]", "GET"]]) {
+      const h = harness({ role: "owner", admin: true, ...identity });
+      assert.equal((await invoke(h, route, method, projectId)).status, 401);
+      assert.deepEqual(h.dataCalls, []);
+    }
+  }
+});
+
+test("restricted viewers cannot download source documents or write chat and generation", async () => {
+  for (const [route, method] of [["documents/[documentId]", "GET"], ["chat", "POST"], ["generate", "POST"], ["jobs", "POST"]]) {
+    const h = harness({ role: "restricted_viewer" });
+    assert.equal((await invoke(h, route, method, projectId)).status, 403);
+    assert.deepEqual(h.dataCalls, []);
+  }
+});
+
+test("global administrators can download source documents without a project grant", async () => {
+  const h = harness({ admin: true });
+  const response = await invoke(h, "documents/[documentId]", "GET", projectId);
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "Synthetic source");
+  assert.ok(h.dataCalls.some(call => call.name === "getDocumentDetail"));
+});
+
+test("admin invitations reject invalid group scope before creating credentials or sending mail", async () => {
+  const h = harness({ admin: true });
+  const { POST } = h.load("app/api/admin/users/route.ts");
+  const response = await POST(new Request("http://localhost/api/admin/users", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "guest@example.test", displayName: "Test guest", guestDescription: "External reviewer", projectGrants: [{ projectId, role: "viewer" }], groupIds: ["unknown-group"] }),
+  }));
+  assert.equal(response.status, 400);
+  assert.deepEqual(h.dataCalls.map(call => call.name), ["listGroups"]);
+});
+
+test("non-admin invitations are denied before any invitation data access", async () => {
+  const h = harness({ role: "owner" });
+  const { POST } = h.load("app/api/admin/users/route.ts");
+  const response = await POST(new Request("http://localhost/api/admin/users", { method: "POST", body: "{}" }));
+  assert.equal(response.status, 403);
+  assert.deepEqual(h.dataCalls, []);
 });
 test("role lookup failures and malformed roles fail closed before project data access", async () => {
   for (const options of [{ role: "editor", roleError: true }, { role: "unknown-role" }, { role: { role: "owner" } }]) {

@@ -39,8 +39,8 @@ import {
   startProjectJob,
   updateGeneratedArtifact,
   uploadProjectDocument,
-  watchProjectJob,
 } from "@/lib/client/project-api";
+import { DocumentProcessingFailure, trackDocumentProcessing } from "@/lib/client/document-job-tracker";
 import { useProjectActivity } from "@/hooks/use-project-activity";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
@@ -133,21 +133,6 @@ function dedupeDocuments(documents: ProjectDocument[]) {
     seen.add(d.id);
     return true;
   });
-}
-
-function documentFromJobResult(
-  result: ProjectJobRecord["result"],
-): ProjectDocument | null {
-  if (!result || typeof result !== "object" || !("document" in result)) {
-    return null;
-  }
-
-  const document = (result as { document?: unknown }).document;
-  if (!document || typeof document !== "object" || !("id" in document)) {
-    return null;
-  }
-
-  return document as ProjectDocument;
 }
 
 function prependGeneratedArtifact(
@@ -681,88 +666,53 @@ export function ProjectWorkspacePage({
     const controller = new AbortController();
     documentJobAbortControllersRef.current.add(controller);
 
-    let serverFailure = false;
     try {
-      let completedJob = await watchProjectJob({
+      return await trackDocumentProcessing({
         projectId: project.id,
-        jobId: job.id,
+        job,
         signal: controller.signal,
         onStatus(jobStatus) {
-          if (jobStatus.status === "failed") serverFailure = true;
           if (options.propagateFailure) {
             setBusyMessage(progressMessageLabel(jobStatus.message));
             setBusyProgress((current) =>
               jobStatus.status === "completed" || jobStatus.status === "failed"
                 ? 100
-                : nextDisplayedProgress(
-                    current,
-                    Math.max(current, progressForJobStatus(jobStatus)),
-                  ),
+                : nextDisplayedProgress(current, Math.max(current, progressForJobStatus(jobStatus))),
             );
           }
-          setProject((current) =>
-            normalizeProjectState(
-              {
-                ...current,
-                documents: current.documents.map((document) => {
-                  if (document.id !== documentId) {
-                    return document;
-                  }
-
-                  if (jobStatus.status === "failed") {
-                    return {
-                      ...document,
-                      processing_status: "failed",
-                      processing_message: "Dokumentindeksering feilet.",
-                      processing_error: jobStatus.error,
-                    };
-                  }
-
-                  if (jobStatus.status === "completed") {
-                    return document;
-                  }
-
-                  return {
-                    ...document,
-                    processing_status:
-                      jobStatus.status === "queued" ? "queued" : "processing",
-                    processing_message: progressMessageLabel(jobStatus.message),
-                    processing_error: null,
-                  };
-                }),
-              },
-              { preserveArtifactCount: true },
-            ),
-          );
+          setProject((current) => normalizeProjectState({
+            ...current,
+            documents: current.documents.map((document) => {
+              if (document.id !== documentId || jobStatus.status === "completed") return document;
+              if (jobStatus.status === "failed") return {
+                ...document,
+                processing_status: "failed",
+                processing_message: "Dokumentbehandlingen feilet.",
+                processing_error: "Dokumentbehandlingen feilet. Prøv å behandle dokumentet på nytt.",
+              };
+              return {
+                ...document,
+                processing_status: jobStatus.status === "queued" ? "queued" : "processing",
+                processing_message: progressMessageLabel(jobStatus.message),
+                processing_error: null,
+              };
+            }),
+          }, { preserveArtifactCount: true }));
+        },
+        onEnhancement() {
+          setNotice("Dokumentet er lest. Venter på den siste dokumentforbedringen før ny generering.");
+        },
+        onProject(freshProject) {
+          setProject((current) => mergeProjectRefresh(current, freshProject));
         },
       });
-      const enhancementId = completedJob.result && "docling_enhancement_job_id" in completedJob.result
-        ? completedJob.result.docling_enhancement_job_id : null;
-      if (typeof enhancementId === "string") {
-        setNotice("Dokumentet er lest. Venter på den siste dokumentforbedringen før ny generering.");
-        completedJob = await watchProjectJob({ projectId: project.id, jobId: enhancementId, signal: controller.signal,
-          onStatus: status => setBusyMessage(progressMessageLabel(status.message)) });
-      }
-      const completedDocument = documentFromJobResult(completedJob.result);
-      if (!completedDocument) {
-        return null;
-      }
-
-      const freshProject = await fetchProjectState(project.id, controller.signal);
-      setProject(current => {
-        return mergeProjectRefresh(current, freshProject);
-      });
-      return completedDocument;
-    } catch (err) {
-      if (controller.signal.aborted) {
-        return null;
-      }
-
-      if (serverFailure) setError(err instanceof Error ? err.message : "Dokumentbehandlingen feilet.");
-      else setNotice("Mistet kontakt med dokumentbehandlingen. Status oppdateres når forbindelsen er tilbake.");
-      if (options.propagateFailure) {
-        throw err;
-      }
+    } catch (error) {
+      if (controller.signal.aborted) return null;
+      if (error instanceof DocumentProcessingFailure && error.kind === "server") {
+        setNotice("");
+        setError(error.message);
+      } else setNotice("Mistet kontakt med dokumentbehandlingen. Status oppdateres når forbindelsen er tilbake.");
+      if (options.propagateFailure) throw error;
       return null;
     } finally {
       documentJobAbortControllersRef.current.delete(controller);

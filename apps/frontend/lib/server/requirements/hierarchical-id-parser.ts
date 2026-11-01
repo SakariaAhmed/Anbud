@@ -1,4 +1,5 @@
 import { correctionsSectionRanges } from "@/lib/server/requirements/corrections";
+import { meetsSmallRequirementTextMinimum } from "@/lib/server/requirements/normalization";
 import type { ExplicitIdPdfLayoutPage } from "@/lib/server/requirements/explicit-id-table-parser";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
@@ -19,6 +20,7 @@ const HIERARCHICAL_ID = /^([A-ZÆØÅ]{1,8}-\d{1,3}(?:\.\d{1,3}){1,4})(?=$|\s|\p
 const REQUIREMENT_LINE_START = /^(?!(?:ISO|IEC|NS|EN|SN|DIN|RFC)-)[A-ZÆØÅ]{1,8}-\d{1,4}(?:\.\d{1,3})*[:.]?\s+\p{Lu}/u;
 const REQUIREMENT_CELL_START = /\|\s*(?!(?:ISO|IEC|NS|EN|SN|DIN|RFC)-)[A-ZÆØÅ]{1,8}-\d/u;
 const TYPE_LABEL = /^(Minstekrav|Evalueres|Evalueringskrav|Skal-krav|Bør-krav|Absolutt krav)\s+/iu;
+const STANDALONE_TYPE_LABEL = /^(?:Minstekrav|Evalueres|Evalueringskrav|Skal-krav|Bør-krav|Absolutt krav):?$/iu;
 const NUMBERED_HEADING = /^\d{1,2}(?:\.\d{1,2}){0,4}\.?\s+\p{Lu}[^.!?]{0,90}$/u;
 const TABLE_CAPTION = /^Tabell\s+\d+(?:[-.]\d+)*\b/iu;
 const TABLE_HEADER_ID = /^(?:Krav[\s-]*ID|Kravnr\.?|ID|Nr\.?|Requirement[\s-]*ID)$/iu;
@@ -171,7 +173,7 @@ function baseLinePitch(lines: SourceLine[]) {
 function isHierarchicalRegister(lines: SourceLine[]) {
   const ids = lines.flatMap((line) => (line.start ? [line.start.id] : []));
   const distinct = new Set(ids);
-  if (distinct.size < MIN_DISTINCT_IDS || distinct.size !== ids.length) return false;
+  if (!distinct.size || distinct.size !== ids.length) return false;
   const prefixCounts = new Map<string, number>();
   for (const id of distinct) {
     const prefix = id.replace(/-.*$/u, "");
@@ -222,7 +224,9 @@ function isUnmarkedHeading(line: SourceLine, previous: string, next: SourceLine 
   );
 }
 
-function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedgerEntry[] {
+type RegisterOptions = { allowSingleRequirement?: boolean };
+
+function buildHierarchicalIdLedger(sourceLines: SourceLine[], options: RegisterOptions): RequirementLedgerEntry[] {
   // A corrections chapter names IDs it changes ("K-4.1.2 endres …"); those
   // lines are applied by the corrections step, not read as requirements.
   const corrections = new Set(
@@ -247,6 +251,7 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
   let current: Draft | null = null;
   let heading = "";
   let tableId: string | undefined;
+  let unassignedObligation = false;
 
   const flush = () => {
     if (!current) return;
@@ -297,6 +302,7 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
       // A paragraph in a text format is a line of its own: a numbered line
       // there is a heading even after an unfinished sentence.
       const structural =
+        STANDALONE_TYPE_LABEL.test(value) ||
         Boolean(line.heading) ||
         TABLE_ROW.test(value) ||
         ((sentenceEnded || !layout) && (NUMBERED_HEADING.test(value) || TABLE_CAPTION.test(value)));
@@ -320,6 +326,8 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
       flush();
     }
 
+    if (STANDALONE_TYPE_LABEL.test(value)) continue;
+    if (OBLIGATION.test(value)) unassignedObligation = true;
     if (line.heading) {
       heading = line.heading;
       tableId = undefined;
@@ -334,18 +342,32 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
     }
   }
   flush();
-  return requirements;
+  // A small register is still authoritative when every independently anchored
+  // ID carries a substantive obligation. The former six-ID minimum sent such
+  // sources to flattening fallbacks that truncate their hierarchical IDs.
+  // One incidental ID in a narrative is not a register. Only a formal source
+  // may opt into a single row; every other source needs independent definitions.
+  // An obligation outside those rows must stay with the mixed-text parsers.
+  const smallRegisterHasDefinitions =
+    requirements.length >= (options.allowSingleRequirement ? 1 : 2) &&
+    !unassignedObligation && requirements.every((entry) =>
+      meetsSmallRequirementTextMinimum(entry.text) && OBLIGATION.test(entry.text) &&
+      !/^(?:ISO|IEC|NS|EN|SN|DIN|RFC)-/u.test(entry.id),
+    );
+  return requirements.length >= MIN_DISTINCT_IDS || smallRegisterHasDefinitions ? requirements : [];
 }
 
 export function buildHierarchicalIdPdfRequirementLedger(
   pages: ExplicitIdPdfLayoutPage[],
+  options: RegisterOptions = {},
 ): RequirementLedgerEntry[] {
-  return buildHierarchicalIdLedger(layoutSourceLines(pages));
+  return buildHierarchicalIdLedger(layoutSourceLines(pages), options);
 }
 
 export function buildHierarchicalIdTextRequirementLedger(
   document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">,
+  options: RegisterOptions = {},
 ): RequirementLedgerEntry[] {
   if (!["docx", "txt", "md"].includes(document.file_format)) return [];
-  return buildHierarchicalIdLedger(textSourceLines(document.raw_text));
+  return buildHierarchicalIdLedger(textSourceLines(document.raw_text), options);
 }

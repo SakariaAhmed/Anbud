@@ -27,7 +27,8 @@
     "requirement:evaluation:quality-gate": "node ../../scripts/run_requirement_quality_gate.mjs",
     "requirement:evaluation:smoke": "node ../../scripts/run_evaluation_smoke.mjs",
     "rag:backfill": "node scripts/backfill_document_chunks.mjs",
-    "rag:eval": "node scripts/rag_eval.mjs"
+    "rag:eval": "node ../../scripts/rag_retrieval_eval.mjs --gate",
+    "rag:eval:score": "node ../../scripts/rag_eval.mjs"
   },
   "dependencies": {
     "@azure/communication-email": "1.1.0",

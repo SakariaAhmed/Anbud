@@ -3,7 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { dataApiConfiguration } from "@/lib/data-api-config";
-import { defaultAzureBlobStorageBackend } from "@/lib/server/azure-blob-storage";
+import { azureBlobEmulatorConnectionString, defaultAzureBlobStorageBackend } from "@/lib/server/azure-blob-storage";
 import { createServiceClient } from "@/lib/server/data-api";
 
 export type HealthStatus = "healthy" | "degraded" | "unhealthy";
@@ -91,8 +91,10 @@ function runtimeComponent(): HealthComponent {
 }
 
 function configurationComponent(): HealthComponent {
+  let emulatorConfigured = false;
+  try { emulatorConfigured = Boolean(azureBlobEmulatorConnectionString()); } catch { /* The storage probe reports invalid configuration. */ }
   const storageConfigured = Boolean(
-    process.env.AZURE_STORAGE_ACCOUNT_URL?.trim(),
+    process.env.AZURE_STORAGE_ACCOUNT_URL?.trim() || emulatorConfigured,
   );
   const missingCount =
     REQUIRED_ENV.filter((name) => !process.env[name]?.trim()).length +
@@ -111,7 +113,7 @@ function configurationComponent(): HealthComponent {
       docling_mode: process.env.DOCLING_ENHANCEMENT_MODE?.trim() || "async",
       docling_auto_run: process.env.DOCLING_ASYNC_AUTO_RUN?.trim() || "off",
       data_backend: dataApiConfiguration() ? "azure_postgrest" : "unconfigured",
-      file_storage_backend: "azure_blob",
+      file_storage_backend: emulatorConfigured ? "azure_blob_emulator" : "azure_blob",
     },
   };
 }
@@ -195,12 +197,13 @@ async function fileStorageComponent(): Promise<HealthComponent> {
     await withAbortTimeout(STORAGE_TIMEOUT_MS, (signal) =>
       defaultAzureBlobStorageBackend().probeAccess(signal),
     );
+    const emulator = Boolean(azureBlobEmulatorConnectionString());
     return {
       name: "file_storage",
       status: "healthy",
-      description: "The private Azure Blob container is reachable with managed identity.",
+      description: emulator ? "The local Blob emulator is reachable." : "The private Azure Blob container is reachable with managed identity.",
       latency_ms: Math.round(performance.now() - start),
-      metadata: { backend: "azure_blob" },
+      metadata: { backend: emulator ? "azure_blob_emulator" : "azure_blob" },
     };
   } catch (error) {
     return {

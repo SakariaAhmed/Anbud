@@ -214,7 +214,7 @@ function sentences(masked: string) {
   // Sentences, table cells and contrasting clauses ("K-1 beholdes, mens K-2
   // utgår") each carry their own subjects; a list ("K-4, K-6 og K-7") stays.
   return masked
-    .split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«])|\s+\|\s+|,\s*(?=(?:men|mens|samtidig\s+som|derimot)\b)|;\s*/u)
+    .split(/(?<!\b[jJ][fF]\.)(?<!\b[jJ][fF][rR]\.)(?<=[.!?])\s+(?=[A-ZÆØÅ«])|\s+\|\s+|,\s*(?=(?:men|mens|samtidig\s+som|derimot)\b)|;\s*/u)
     .map((text) => ({
       text,
       ids: [...text.matchAll(REQUIREMENT_ID)].map((match) => ({ id: match[0], at: match.index! })),

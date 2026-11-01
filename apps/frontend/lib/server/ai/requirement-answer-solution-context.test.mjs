@@ -169,7 +169,9 @@ test("answers keep binding downtime and price conditions without a 'not quantifi
 
 test("the full-document fallback keeps a quote from the solution document as evidence", () => {
   const load = createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });
-  const { alignRequirementRowsWithLedger } = load(path.join(frontend, "lib/server/ai.ts"));
+  const {
+  alignRequirementRowsWithLedger,
+} = load(path.join(frontend, "lib/server/ai/requirement-response.ts"));
   const entry = { id: "K-5.3", text: "Kommunen bør kunne forvalte egne krypteringsnøkler.", pages: [2], heading: "5 Sikkerhet", documentTitle: "Bilag 1" };
   const solution = "Kundestyrte nøkler (Azure Key Vault Managed HSM) inngår ikke i fastprisen og prises som tilleggsopsjon.";
   const evidence = `Løsningsnotat: «${solution}»`;

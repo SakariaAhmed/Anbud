@@ -1,0 +1,79 @@
+import { fetchProjectState, watchProjectJob } from "@/lib/client/project-api";
+import type { ProjectDetail, ProjectDocument, ProjectJobRecord } from "@/lib/types";
+
+export class DocumentProcessingFailure extends Error {
+  constructor(readonly kind: "server" | "connection") {
+    super(kind === "server"
+      ? "Dokumentbehandlingen feilet. Prøv å behandle dokumentet på nytt."
+      : "Mistet kontakt med dokumentbehandlingen. Status oppdateres når forbindelsen er tilbake.");
+    this.name = "DocumentProcessingFailure";
+  }
+}
+
+function documentFromJobResult(result: ProjectJobRecord["result"]): ProjectDocument | null {
+  if (!result || typeof result !== "object" || !("document" in result)) return null;
+  const document = result.document;
+  return document && typeof document === "object" && "id" in document && typeof document.id === "string"
+    ? document as ProjectDocument
+    : null;
+}
+
+/** Tracks both persisted ingestion phases with the same failure and cancellation rules. */
+export async function trackDocumentProcessing(input: {
+  projectId: string;
+  job: ProjectJobRecord;
+  signal: AbortSignal;
+  onStatus: (job: ProjectJobRecord) => void;
+  onEnhancement: () => void;
+  onProject: (project: ProjectDetail) => void;
+}): Promise<ProjectDocument | null> {
+  let serverFailure = false;
+  const assertActive = () => input.signal.throwIfAborted();
+  const refreshProject = async () => {
+    const project = await fetchProjectState(input.projectId, input.signal);
+    assertActive();
+    input.onProject(project);
+  };
+  const watch = async (jobId: string) => {
+    const job = await watchProjectJob({
+      projectId: input.projectId,
+      jobId,
+      signal: input.signal,
+      onStatus(status) {
+        assertActive();
+        serverFailure ||= status.status === "failed";
+        input.onStatus(status);
+      },
+    });
+    assertActive();
+    if (job.status === "failed") {
+      serverFailure = true;
+      throw new DocumentProcessingFailure("server");
+    }
+    return job;
+  };
+
+  try {
+    assertActive();
+    let completed = await watch(input.job.id);
+    const enhancementId = completed.result && "docling_enhancement_job_id" in completed.result
+      ? completed.result.docling_enhancement_job_id : null;
+    if (typeof enhancementId === "string") {
+      input.onEnhancement();
+      completed = await watch(enhancementId);
+    }
+    const document = documentFromJobResult(completed.result);
+    if (!document) return null;
+    await refreshProject();
+    return document;
+  } catch (error) {
+    if (input.signal.aborted) throw error;
+    if (serverFailure) {
+      // Refresh persisted status even when the enhancement failed after ingestion
+      // succeeded. A refresh error must not relabel that terminal failure.
+      try { await refreshProject(); } catch { /* The activity loop retries reads. */ }
+      assertActive();
+    }
+    throw new DocumentProcessingFailure(serverFailure ? "server" : "connection");
+  }
+}

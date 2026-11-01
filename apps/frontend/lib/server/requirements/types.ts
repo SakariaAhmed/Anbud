@@ -11,6 +11,13 @@ export type RequirementLedgerEntry = {
   tableId?: string;
   service?: string;
   sourceExcerpt?: string;
+  /** Logical ownership stays in documentId; added wording is sourced here. */
+  correctionSource?: {
+    documentId: string;
+    documentTitle: string;
+    pages: number[];
+    excerpt: string;
+  };
   answerExcerpt?: string;
   answerEvidenceExcerpt?: string;
   answerDocumentId?: string;

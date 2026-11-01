@@ -35,3 +35,7 @@ export function lastHeadingSegment(heading: string) {
       .at(-1) ?? ""
   );
 }
+/** Small authoritative rows must satisfy the same text floor at extraction and confidence assessment. */
+export function meetsSmallRequirementTextMinimum(value: string) {
+  return value.replace(/\s+/gu, " ").trim().length >= 20;
+}

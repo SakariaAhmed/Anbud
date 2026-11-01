@@ -129,3 +129,41 @@ test("maybeSingle maps a zero-row object response to null but keeps real errors"
   assert.equal(result.error.message, "Data API request failed.");
   assert.doesNotMatch(JSON.stringify(result), /must-not-leak/u);
 });
+
+test("successful malformed JSON fails at the data boundary without exposing its body", async () => {
+  const client = new PostgrestClient("https://data.internal", {
+    fetch: async () => new Response("<html>private upstream detail</html>", { status: 200 }),
+  });
+  for (const query of [client.from("projects").select("id"), client.rpc("some_function")]) {
+    const result = await query;
+    assert.equal(result.data, null);
+    assert.equal(result.error?.code, "INVALID_DATA_API_RESPONSE");
+    assert.doesNotMatch(JSON.stringify(result), /private upstream detail/u);
+  }
+});
+
+test("table representations validate row containers while scalar RPCs remain valid", async () => {
+  for (const body of [42, "not rows", { id: "wrong container" }, [null], [42]]) {
+    const client = new PostgrestClient("https://data.internal", { fetch: async () => response(body) });
+    assert.equal((await client.from("projects").select("id")).error?.code, "INVALID_DATA_API_RESPONSE");
+    assert.deepEqual((await client.rpc("scalar_or_json_function")).data, body);
+  }
+  const client = new PostgrestClient("https://data.internal", { fetch: async () => response([{ id: "p-1" }]) });
+  assert.equal((await client.from("projects").select("id").single()).error?.code, "INVALID_DATA_API_RESPONSE");
+});
+
+test("HEAD and empty mutation responses remain valid while an empty table read fails", async () => {
+  const client = new PostgrestClient("https://data.internal", {
+    fetch: async () => new Response(null, { status: 200 }),
+  });
+  for (const query of [client.from("projects").select("id", { head: true }), client.from("projects").update({ name: "Test" }), client.rpc("void_function")]) {
+    const result = await query;
+    assert.equal(result.error, null);
+    assert.equal(result.data, null);
+  }
+  assert.equal((await client.from("projects").select("id")).error?.code, "INVALID_DATA_API_RESPONSE");
+  const noContent = new PostgrestClient("https://data.internal", {
+    fetch: async () => new Response(null, { status: 204 }),
+  });
+  assert.equal((await noContent.from("projects").delete().select("id")).error, null);
+});

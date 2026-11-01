@@ -15,7 +15,6 @@ const jiti = createJiti(path.join(frontendRoot, "requirement-coverage-guards.cjs
 
 const {
   answerFromBatchRows,
-  assertSubstantiveSolutionEvaluationResult,
   assertRequirementArtifactSourceLedgersComplete,
   assertVerifiedRequirementLedgerGeneration,
   buildProposalInputRequiredMetadata,
@@ -23,15 +22,10 @@ const {
   applyVerifiedDeterministicControlRepairs,
   buildRequirementFallbackStageMetadata,
   buildStrictRequirementHandoffUserPrompt,
-  chunkRequirementCoverage,
-  collectArtifactFoundationFacts,
   createRequirementResponseHandoffProgressTracker,
   createRequirementResponseStrictHandoffGovernor,
   formatUnresolvedRequirementResponseSummary,
-  hasExplicitlyCompleteSmallRequirementLedger,
   limitRequirementHandoffStyleExamples,
-  normalizeDocumentFindingsAgainstCoverage,
-  normalizeSolutionEvaluationResult,
   requirementAnswerForRepair,
   resolveRequirementResponseStrictHandoffLimits,
   reuseExactDuplicateRequirementAnswers,
@@ -39,9 +33,19 @@ const {
   resolveRequirementAnswerBeforeStrictHandoff,
   selectRequirementDocumentsForGeneration,
   serializeUnresolvedRequirementFallbackAnswers,
-  solutionDocumentAnswerBearingText,
   validateRequirementResponseBatchRows,
+} = jiti(path.join(frontendRoot, "lib/server/ai/requirement-response.ts"));
+const {
+  assertSubstantiveSolutionEvaluationResult,
+  chunkRequirementCoverage,
+  collectArtifactFoundationFacts,
+  normalizeDocumentFindingsAgainstCoverage,
+  normalizeSolutionEvaluationResult,
+  solutionDocumentAnswerBearingText,
 } = jiti(path.join(frontendRoot, "lib/server/ai.ts"));
+const {
+  hasExplicitlyCompleteSmallRequirementLedger,
+} = jiti(path.join(frontendRoot, "lib/server/ai/requirement-ledger-confidence.ts"));
 const {
   assertRequirementCoverageBatchesSucceeded,
   buildRequirementCoverageBatchRegistry,
