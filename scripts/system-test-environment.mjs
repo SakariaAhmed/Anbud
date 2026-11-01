@@ -129,7 +129,7 @@ if (command === "stop") {
     OPENAI_BASE_URL: liveAi ? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1" : "",
     RAG_MODEL_RERANK: liveAi ? "on" : "off",
   };
-  writeFileSync(path.join(directory, "environment.json"), JSON.stringify({ env, adminPassword, databaseUrl: `postgresql://postgres:${password}@127.0.0.1:${ports.postgres}/postgres` }, null, 2), { mode: 0o600 });
+  writeFileSync(path.join(directory, "environment.json"), JSON.stringify({ env, adminPassword, browserLoginToken: randomBytes(32).toString("hex"), databaseUrl: `postgresql://postgres:${password}@127.0.0.1:${ports.postgres}/postgres` }, null, 2), { mode: 0o600 });
   const dockerEnv = (file, values) => {
     const target = path.join(directory, file);
     writeFileSync(target, Object.entries(values).map(([key, value]) => `${key}=${value}`).join("\n"), { mode: 0o600 });
@@ -138,8 +138,9 @@ if (command === "stop") {
   function container(suffix, image, args = [], values = {}, extra = []) {
     const name = `anbud-system-test-${id}-${suffix}`;
     const file = dockerEnv(`${suffix}.env`, values);
-    run("docker", ["run", "--rm", "-d", "--name", name, "--network", state.network, "--env-file", file, ...extra, image, ...args]);
-    state.containers.push(name); save(); return name;
+    state.containers.push(name); save();
+    run("docker", ["run", "--rm", "-d", "--name", name, "--network", state.network, "--env-file", file, ...extra, image, ...args], { timeout: 600_000 });
+    return name;
   }
   try {
     run("docker", ["network", "create", state.network]); save();
@@ -155,7 +156,9 @@ if (command === "stop") {
     const { BlobServiceClient } = require("@azure/storage-blob");
     await waitFor(async () => { try { await BlobServiceClient.fromConnectionString(blobConnection).getContainerClient(env.AZURE_STORAGE_CONTAINER).createIfNotExists(); return true; } catch { return false; } }, "Azurite");
     await startApplication(state, env);
-    const status = { running: true, directory, baseUrl: env.APP_PUBLIC_ORIGIN, browserLoginUrl: "http://127.0.0.1:4339/browser-login", ports, aiMode: liveAi ? "explicit model endpoint" : "disabled", createdAt: new Date().toISOString() };
+    const status = { running: true, directory, baseUrl: env.APP_PUBLIC_ORIGIN, browserLoginUrlFile: path.join(directory, "browser-login-url.txt"), ports, aiMode: liveAi ? "explicit model endpoint" : "disabled", createdAt: new Date().toISOString() };
+    const { browserLoginToken } = JSON.parse(readFileSync(path.join(directory, "environment.json"), "utf8"));
+    writeFileSync(status.browserLoginUrlFile, `http://127.0.0.1:4339/browser-login?token=${browserLoginToken}`, { mode: 0o600 });
     writeFileSync(statusPath, JSON.stringify(status, null, 2));
     const bridgeLog = openSync(path.join(directory, "browser-login.log"), "a", 0o600);
     const bridge = spawn(node, [path.join(root, "scripts/system-test-browser-login.mjs")], { cwd: root, detached: true, stdio: ["ignore", bridgeLog, bridgeLog] });

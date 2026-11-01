@@ -100,7 +100,7 @@ test("small lists without independent obligations are not promoted to requiremen
     "K-1.3 Leverandøren skal levere en exitplan.",
   ].join("\n");
   assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text: references }), []);
-  assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text: "ISO-27001.2 Leverandøren skal følge den angitte standarden." }), []);
+  assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text: "ISO-27.1 Leverandøren skal følge den angitte standarden." }, { allowSingleRequirement: true }), []);
 });
 
 test("three normative rows survive actual TXT ingestion, extraction and completeness validation", async () => {
@@ -427,4 +427,26 @@ test("a one-row formal register stays usable while small mixed numbering stays w
     raw_text, "K-1.2 Leverandøren skal dokumentere sikkerhetskopiering.",
     "R-7 Leverandøren skal levere opplæring.",
   ].join("\n") }), []);
+});
+
+test("standalone obligation labels do not hide small registers or become requirement text", () => {
+  const document = { file_format: "txt", raw_text: [
+    "Skal-krav", "K-1.1 Leverandøren skal levere sikker drift.",
+    "Bør-krav", "K-1.2 Leverandøren bør levere åpne formater.",
+  ].join("\n") };
+  const rows = buildHierarchicalIdTextRequirementLedger(document);
+  assert.deepEqual(rows.map(row => row.id), ["K-1.1", "K-1.2"]);
+  assert.equal(rows[0].text, "Leverandøren skal levere sikker drift.");
+  assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ ...document, raw_text: `Leverandøren skal også levere et kurs.\n${document.raw_text}` }), []);
+});
+
+test("small-register extraction and explicit completeness share the normalized text minimum", async () => {
+  const { hasExplicitlyCompleteSmallRequirementLedger } = await load("lib/server/ai/requirement-ledger-confidence.ts");
+  for (const value of ["Skal støtte OAuth2.", "Skal    støtte OAuth2.", "Skal støtte OAuth2 og SAML."]) {
+    const document = { id: "small", role: "supporting_document", supporting_subtype: "kravdokument", file_format: "txt", raw_text: `K-1.1 ${value}` };
+    const ledger = buildHierarchicalIdTextRequirementLedger(document, { allowSingleRequirement: true }).map(row => ({ ...row, documentId: document.id }));
+    const substantive = value.replace(/\s+/gu, " ").trim().length >= 20;
+    assert.equal(ledger.length, substantive ? 1 : 0);
+    assert.equal(hasExplicitlyCompleteSmallRequirementLedger({ ledger, requirementDocuments: [document] }), substantive);
+  }
 });

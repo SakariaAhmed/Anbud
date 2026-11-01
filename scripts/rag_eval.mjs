@@ -12,7 +12,7 @@ function norm(value) {
 }
 
 function expectedMatch(caseItem, snippet) {
-  const expectedTexts = caseItem.expected_texts ?? [];
+  const expectedTexts = Array.isArray(caseItem.expected_texts) ? caseItem.expected_texts : [];
   if (expectedTexts.length) {
     const text = norm(snippet.text);
     return Boolean(text) && expectedTexts.some(expected => text.includes(norm(expected)));
@@ -32,7 +32,7 @@ function expectedMatch(caseItem, snippet) {
   }
   // Optional: the snippet text must contain one of these passages.
   const text = norm(snippet.text);
-  return Boolean(text) && (caseItem.expected_texts ?? []).some((expected) =>
+  return Boolean(text) && expectedTexts.some((expected) =>
     text.includes(norm(expected)),
   );
 }
@@ -74,6 +74,7 @@ export function scoreRetrievalCases(cases) {
     const cited = Array.isArray(caseItem.citations) ? caseItem.citations : [];
     if (cited.length) {
       validCitations += cited.filter((citation) =>
+        citation !== null && typeof citation === "object" &&
         typeof citation.source_id === "string" && citation.source_id.trim() && norm(citation.reference) &&
         retrieved.some(
           (snippet) =>

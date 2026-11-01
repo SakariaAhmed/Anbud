@@ -670,7 +670,7 @@ function explicitAdditionDestination(
     quotations.set(token, span.slice(1, -1));
     return token;
   });
-  const clauses = unquoted.split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«])|\s+\|\s+|;\s*|(?=\bnytt\s+krav\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d)/iu);
+  const clauses = unquoted.split(/(?<!\bjf\.)(?<!\bjfr\.)(?<=[.!?])\s+(?=[A-ZÆØÅ«])|\s+\|\s+|;\s*|(?=\bnytt\s+krav\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d)/iu);
   const destinations = new Set<string>();
   const wordingToken = [...quotations].filter(([, text]) =>
     canonicalRequirementText(text) === canonicalRequirementText(entry.text),
@@ -741,7 +741,7 @@ function explicitAdditionDestination(
     // The correction parser identifies the added wording explicitly. End the
     // destination before that quote even when the customer omitted a colon.
     const beforeWording = wordingToken ? phrase.split(wordingToken, 1)[0] : phrase;
-    const destinationName = beforeWording.split(/(?:,\s*|\s+)(?:jf\.?|jfr\.?|se)\s+/iu, 1)[0]
+    const destinationName = beforeWording.split(/(?:,\s*|\s+)(?:jf\.?|jfr\.?|se)(?:\s+|$)/iu, 1)[0]
       .trim().replace(/(?:,\s*|\s+)(?:med\s+(?:følgende\s+)?(?:ordlyd(?:en)?|tekst(?:en)?)|(?:og\s+)?(?:skal\s+)?(?:nå\s+)?lyde(?:r)?(?:\s+slik)?)\s*$/iu, "")
       .replace(/[\s,;]+$/u, "");
     const quotedNames = [...quotations].filter(([token]) => destinationName.includes(token));

@@ -25,7 +25,7 @@ export function evaluateRetrievalGate(cases, mode = "offline") {
     const key = `${item.kind}:${item.question}`;
     if (unique.has(key)) failures.push(`Duplicate case: ${key}`);
     unique.add(key);
-    if (!item.expected_requirement_id || !item.expected_texts?.length || !Array.isArray(item.retrieved)) {
+    if (!item.expected_requirement_id || (!Array.isArray(item.expected_texts) || !item.expected_texts.length || item.expected_texts.some(label => typeof label !== "string" || !label.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").trim())) || !Array.isArray(item.retrieved)) {
       failures.push(`Missing evidence label or retrieval result: ${key}`);
     }
   }

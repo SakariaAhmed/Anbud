@@ -1880,7 +1880,7 @@ test("unknown or ambiguous explicit destinations fail instead of falling back to
 });
 
 test("explicit destinations can precede the addition verb and use a complete document title", () => {
-  for (const phrase of ["i Bilag 3 Sikkerhetskrav legges til", "legges til i Bilag 3 Sikkerhetskrav, jf Bilag 1"]) {
+  for (const phrase of ["i Bilag 3 Sikkerhetskrav legges til", "legges til i Bilag 3 Sikkerhetskrav, jf Bilag 1", "legges til i Bilag 3 Sikkerhetskrav, jf. Bilag 1", "legges til i Bilag 3 Sikkerhetskrav, jfr. Bilag 1"]) {
     const rows = correctedRegisterRows(`Nytt krav K-2.3 ${phrase}: «Leverandøren skal levere en exitplan.»`, [
       { id: "first", title: "Bilag 1", ids: ["K-2.1"] },
       { id: "wrong", title: "Bilag 3 Drift", ids: ["R-1.1"] },

@@ -43,7 +43,16 @@ test("a source ID match cannot substitute for the required evidence passage", ()
 test("citation scoring never awards absent or malformed citations a perfect score", () => {
   const row = { expected_texts: ["evidence"], retrieved: [{ source_id: "source", reference: "Side 1", text: "evidence" }] };
   assert.equal(scoreRetrievalCases([row]).citation_accuracy, null);
-  const score = scoreRetrievalCases([{ ...row, citations: [{ source_id: "source", reference: "Side 1" }, {}] }]);
-  assert.equal(score.citation_accuracy, 0.5);
-  assert.equal(score.citation_count, 2);
+  const score = scoreRetrievalCases([{ ...row, citations: [{ source_id: "source", reference: "Side 1" }, {}, null, 1, "invalid"] }]);
+  assert.equal(score.citation_accuracy, 0.2);
+  assert.equal(score.citation_count, 5);
+});
+
+
+test("empty and non-string evidence labels cannot satisfy the gate", () => {
+  for (const label of ["", " \n\t", "\u0301", null, 1, {}]) {
+    const rows = cases();
+    rows[0].expected_texts = [label];
+    assert.ok(evaluateRetrievalGate(rows).failures.some(failure => failure.includes("Missing evidence label")));
+  }
 });

@@ -3,7 +3,7 @@ import "server-only";
 import { isFormalRequirementDocument, isRequirementDocument } from "@/lib/document-processing";
 
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
-import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
+import { meetsSmallRequirementTextMinimum, normalizeRequirementId } from "@/lib/server/requirements/normalization";
 
 import { type RequirementLedgerConfidence } from "@/lib/server/ai/requirement-coverage";
 import { correctedRequirementIds, withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
@@ -105,7 +105,7 @@ export function hasExplicitlyCompleteSmallRequirementLedger(input: {
         isGeneratedRequirementId(entry.id) ||
         !requirementLedgerEntryHasLocator(entry) ||
         !requirementLedgerEntryIsStructured(entry) ||
-        entry.text.replace(/\s+/g, " ").trim().length < 20
+        !meetsSmallRequirementTextMinimum(entry.text)
       ) {
         return false;
       }

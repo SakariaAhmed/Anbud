@@ -1,4 +1,5 @@
 import { correctionsSectionRanges } from "@/lib/server/requirements/corrections";
+import { meetsSmallRequirementTextMinimum } from "@/lib/server/requirements/normalization";
 import type { ExplicitIdPdfLayoutPage } from "@/lib/server/requirements/explicit-id-table-parser";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { ProjectDocumentDetail } from "@/lib/types";
@@ -19,6 +20,7 @@ const HIERARCHICAL_ID = /^([A-ZÆØÅ]{1,8}-\d{1,3}(?:\.\d{1,3}){1,4})(?=$|\s|\p
 const REQUIREMENT_LINE_START = /^(?!(?:ISO|IEC|NS|EN|SN|DIN|RFC)-)[A-ZÆØÅ]{1,8}-\d{1,4}(?:\.\d{1,3})*[:.]?\s+\p{Lu}/u;
 const REQUIREMENT_CELL_START = /\|\s*(?!(?:ISO|IEC|NS|EN|SN|DIN|RFC)-)[A-ZÆØÅ]{1,8}-\d/u;
 const TYPE_LABEL = /^(Minstekrav|Evalueres|Evalueringskrav|Skal-krav|Bør-krav|Absolutt krav)\s+/iu;
+const STANDALONE_TYPE_LABEL = /^(?:Minstekrav|Evalueres|Evalueringskrav|Skal-krav|Bør-krav|Absolutt krav):?$/iu;
 const NUMBERED_HEADING = /^\d{1,2}(?:\.\d{1,2}){0,4}\.?\s+\p{Lu}[^.!?]{0,90}$/u;
 const TABLE_CAPTION = /^Tabell\s+\d+(?:[-.]\d+)*\b/iu;
 const TABLE_HEADER_ID = /^(?:Krav[\s-]*ID|Kravnr\.?|ID|Nr\.?|Requirement[\s-]*ID)$/iu;
@@ -300,6 +302,7 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[], options: RegisterO
       // A paragraph in a text format is a line of its own: a numbered line
       // there is a heading even after an unfinished sentence.
       const structural =
+        STANDALONE_TYPE_LABEL.test(value) ||
         Boolean(line.heading) ||
         TABLE_ROW.test(value) ||
         ((sentenceEnded || !layout) && (NUMBERED_HEADING.test(value) || TABLE_CAPTION.test(value)));
@@ -323,7 +326,7 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[], options: RegisterO
       flush();
     }
 
-    if (OBLIGATION.test(value)) unassignedObligation = true;
+    if (OBLIGATION.test(value) && !STANDALONE_TYPE_LABEL.test(value)) unassignedObligation = true;
     if (line.heading) {
       heading = line.heading;
       tableId = undefined;
@@ -347,7 +350,7 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[], options: RegisterO
   const smallRegisterHasDefinitions =
     requirements.length >= (options.allowSingleRequirement ? 1 : 2) &&
     !unassignedObligation && requirements.every((entry) =>
-      entry.text.length >= 18 && OBLIGATION.test(entry.text) &&
+      meetsSmallRequirementTextMinimum(entry.text) && OBLIGATION.test(entry.text) &&
       !/^(?:ISO|IEC|NS|EN|SN|DIN|RFC)-/u.test(entry.id),
     );
   return requirements.length >= MIN_DISTINCT_IDS || smallRegisterHasDefinitions ? requirements : [];
