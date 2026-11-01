@@ -156,18 +156,28 @@ function splitAttachmentSegments(rawText: string) {
     const lines = text.split("\n");
     if (lines.length > 2 && /^\|/u.test(lines[0]!) && /^\|?\s*:?-{3,}/u.test(lines[1]!)) {
       const header = `${lines[0]}\n${lines[1]}`;
+      const rowChars = Math.max(200, CHAT_ATTACHMENT_SEGMENT_CHARS - header.length - 1);
       let rows: string[] = [];
       let length = header.length;
+      const flush = () => {
+        if (rows.length) segments.push([header, ...rows].join("\n"));
+        rows = [];
+        length = header.length;
+      };
       for (const row of lines.slice(2)) {
-        if (rows.length && length + row.length + 1 > CHAT_ATTACHMENT_SEGMENT_CHARS) {
-          segments.push([header, ...rows].join("\n"));
-          rows = [];
-          length = header.length;
+        // A row too long for one piece is cut like any long paragraph.
+        if (row.length > rowChars) {
+          flush();
+          for (let cursor = 0; cursor < row.length; cursor += rowChars) {
+            segments.push(`${header}\n${row.slice(cursor, cursor + rowChars)}`);
+          }
+          continue;
         }
+        if (rows.length && length + row.length + 1 > CHAT_ATTACHMENT_SEGMENT_CHARS) flush();
         rows.push(row);
         length += row.length + 1;
       }
-      if (rows.length) segments.push([header, ...rows].join("\n"));
+      flush();
       continue;
     }
     for (let cursor = 0; cursor < text.length; cursor += CHAT_ATTACHMENT_SEGMENT_CHARS) {

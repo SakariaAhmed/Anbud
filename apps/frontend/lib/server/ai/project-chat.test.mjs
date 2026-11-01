@@ -298,6 +298,9 @@ test("a selected table row keeps its header and is not cut", () => {
   rows[70] = "| K-71 | Exit-plan med eksport av data i åpne formater | 14 dager |";
   const selected = buildQuestionRelevantText({ rawText: `Innledning.\n\n${header}\n${rows.join("\n")}`, question: "Hva er fristen for exit-plan?", limit: 1500 });
   assert.match(selected, /\| Krav \| Tiltak \| Frist \|\n\| --- \| --- \| --- \|\n(?:\|[^\n]*\n)*\| K-71 \| Exit-plan med eksport av data i åpne formater \| 14 dager \|/u);
+  const longRow = `| K-90 | ${"Ordinær beskrivelse av driften. ".repeat(80)}Exit-plan leveres innen 14 dager. |`;
+  const withLongRow = buildQuestionRelevantText({ rawText: `Innledning.\n\n${header}\n${rows.join("\n")}\n${longRow}`, question: "Når leveres exit-plan?", limit: 1500 });
+  assert.match(withLongRow, /\| Krav \| Tiltak \| Frist \|[^]*Exit-plan leveres innen 14 dager/u, "a row longer than a piece is cut, not dropped");
 });
 
 test("attachment segments with å match question terms after the same normalization", () => {
