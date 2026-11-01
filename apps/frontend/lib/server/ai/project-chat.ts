@@ -135,7 +135,9 @@ function chatAttachmentTerms(question: string) {
 
 // Pieces of at most `size` characters, cut at whitespace so a question word
 // is never split between two pieces.
-function piecesAtWordBoundaries(text: string, size: number) {
+function piecesAtWordBoundaries(text: string, maxChars: number) {
+  // At least one character per piece, so the cursor always advances.
+  const size = Math.max(1, Math.floor(maxChars));
   const pieces: string[] = [];
   let cursor = 0;
   while (cursor < text.length) {
@@ -187,7 +189,9 @@ function splitAttachmentSegments(rawText: string) {
         // the row selects all of them.
         if (row.length > rowChars) {
           flush();
-          const firstCell = row.match(/^\|[^|]*\|/u)?.[0] ?? "";
+          // Only a short first cell is repeated; a long one would crowd out the row.
+          const cell = row.match(/^\|[^|]*\|/u)?.[0] ?? "";
+          const firstCell = cell.length <= 80 ? cell : "";
           piecesAtWordBoundaries(row, rowChars - firstCell.length - 2).forEach((piece, index) => {
             segments.push(`${header}\n${index && firstCell ? `${firstCell} … ` : ""}${piece}`);
           });
