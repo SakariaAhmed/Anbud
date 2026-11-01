@@ -150,6 +150,25 @@ function splitAttachmentSegments(rawText: string) {
     if (!text) {
       continue;
     }
+    // A Markdown table is cut between rows, and each piece repeats the
+    // header so a selected row keeps the meaning of its columns.
+    const lines = text.split("\n");
+    if (lines.length > 2 && /^\|/u.test(lines[0]!) && /^\|?\s*:?-{3,}/u.test(lines[1]!)) {
+      const header = `${lines[0]}\n${lines[1]}`;
+      let rows: string[] = [];
+      let length = header.length;
+      for (const row of lines.slice(2)) {
+        if (rows.length && length + row.length + 1 > CHAT_ATTACHMENT_SEGMENT_CHARS) {
+          segments.push([header, ...rows].join("\n"));
+          rows = [];
+          length = header.length;
+        }
+        rows.push(row);
+        length += row.length + 1;
+      }
+      if (rows.length) segments.push([header, ...rows].join("\n"));
+      continue;
+    }
     for (let cursor = 0; cursor < text.length; cursor += CHAT_ATTACHMENT_SEGMENT_CHARS) {
       segments.push(text.slice(cursor, cursor + CHAT_ATTACHMENT_SEGMENT_CHARS).trim());
     }

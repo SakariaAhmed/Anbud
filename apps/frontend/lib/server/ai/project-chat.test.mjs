@@ -254,6 +254,14 @@ test("model rerank is skipped when the whole documents are in the prompt", async
   }
 });
 
+test("a selected table row keeps its header and is not cut", () => {
+  const header = "| Krav | Tiltak | Frist |\n| --- | --- | --- |";
+  const rows = Array.from({ length: 80 }, (_, index) => `| K-${index + 1} | Ordinær drift og forvaltning av tjenesten | 30 dager |`);
+  rows[70] = "| K-71 | Exit-plan med eksport av data i åpne formater | 14 dager |";
+  const selected = buildQuestionRelevantText({ rawText: `Innledning.\n\n${header}\n${rows.join("\n")}`, question: "Hva er fristen for exit-plan?", limit: 1500 });
+  assert.match(selected, /\| Krav \| Tiltak \| Frist \|\n\| --- \| --- \| --- \|\n(?:\|[^\n]*\n)*\| K-71 \| Exit-plan med eksport av data i åpne formater \| 14 dager \|/u);
+});
+
 test("attachment segments with å match question terms after the same normalization", () => {
   const filler = "Generell bakgrunnstekst om prosjektet. ".repeat(40);
   const relevant = "Påminnelse sendes automatisk før fristen for hver søknad.";

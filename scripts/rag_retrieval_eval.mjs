@@ -61,6 +61,7 @@ const manifest = JSON.parse(readFileSync(path.join(corpusRoot, "manifest.json"),
 const conceptual = JSON.parse(readFileSync(path.join(repositoryRoot, "test-data/rag-retrieval/conceptual-questions.json"), "utf8"));
 
 const scratch = mkdtempSync(path.join(tmpdir(), "anbud-rag-eval-"));
+process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 // Chunk storage is reported missing so retrieval runs in process, as it does
 // for a source whose stored chunks are stale.
 const unavailableDataApi = path.join(scratch, "data-api.cjs");
@@ -147,7 +148,14 @@ const cases = [
 const limit = 12;
 const live = useLiveEmbeddings ? await storeChunksWithLiveEmbeddings() : null;
 const results = [];
-for (const item of cases) {
+// The disposable database goes even when a case throws.
+try {
+  for (const item of cases) await runCase(item);
+} finally {
+  live?.drop();
+}
+
+async function runCase(item) {
   const startedAt = Date.now();
   const request = await retrievalRequest(item.question);
   const retrieval = await retrieveDocumentSnippetsWithMetadata(request);
@@ -213,9 +221,7 @@ const report = {
 if (databaseUrl && !useLiveEmbeddings) {
   report.keyword_search = await measureKeywordSearch();
 }
-live?.drop();
 if (outputPath) writeFileSync(outputPath, `${JSON.stringify(results, null, 2)}\n`);
-rmSync(scratch, { recursive: true, force: true });
 console.log(JSON.stringify(report, null, 2));
 
 function psql(url, sql) {
@@ -238,16 +244,22 @@ function createDisposableDatabase() {
   const name = `anbud_rag_eval_${randomUUID().replaceAll("-", "")}`;
   const target = new URL(databaseUrl);
   target.pathname = `/${name}`;
-  psql(databaseUrl, `create database "${name}";`);
+  const drop = () => psql(databaseUrl, `drop database if exists "${name}" with (force);`);
   const { match, hybrid } = retrievalFunctions();
-  psql(target.toString(), `
-    create schema extensions;
-    create extension vector with schema extensions;
-    create table public.document_chunks (id uuid primary key, source_type text not null, source_id uuid not null,
-      project_id uuid, chunk_index integer not null, fts tsvector not null, embedding extensions.vector(1536));
-    ${match}
-    ${hybrid}`);
-  return { url: target.toString(), drop: () => psql(databaseUrl, `drop database if exists "${name}" with (force);`) };
+  psql(databaseUrl, `create database "${name}";`);
+  try {
+    psql(target.toString(), `
+      create schema extensions;
+      create extension vector with schema extensions;
+      create table public.document_chunks (id uuid primary key, source_type text not null, source_id uuid not null,
+        project_id uuid, chunk_index integer not null, fts tsvector not null, embedding extensions.vector(1536));
+      ${match}
+      ${hybrid}`);
+  } catch (error) {
+    drop();
+    throw error;
+  }
+  return { url: target.toString(), drop };
 }
 
 /** Chunks and embeds every document with the app's own code, as artifact generation does. */
