@@ -675,7 +675,8 @@ function explicitAdditionDestination(
   const wordingToken = [...quotations].filter(([, text]) =>
     canonicalRequirementText(text) === canonicalRequirementText(entry.text),
   ).at(-1)?.[0];
-  const bareLocation = /^(?:(?:tabell|kapittel|punkt|avsnitt|del|seksjon)\s+\d+(?:\.\d+)*\.?(?:\s+(?:etter|før)\s+(?:krav\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d+(?:\.\d+)*)?|kravspesifikasjonen)$/iu;
+  const bareLocation = /^(?:(?:tabell|kapittel|punkt|avsnitt|del|seksjon)\s+\d+(?:\.\d+)*\.?(?:\s+i\s+kravspesifikasjonen)?(?:,?\s+(?:etter|før)\s+(?:krav\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d+(?:\.\d+)*)?(?:\s+i\s+kravspesifikasjonen)?|kravspesifikasjonen)$/iu;
+  const relativeLocation = /^(?:etter|før)\s+(?:krav\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d+(?:\.\d+)*$/iu;
   const resolveName = (name: string) => {
     const exact = documents.filter(document => [document.title, document.file_name]
       .some(value => normalizedDestinationName(value) === normalizedDestinationName(name)));
@@ -700,11 +701,25 @@ function explicitAdditionDestination(
       .trim().replace(/(?:,\s*|\s+)(?:med\s+(?:følgende\s+)?(?:ordlyd(?:en)?|tekst(?:en)?)|(?:og\s+)?(?:skal\s+)?(?:nå\s+)?lyde(?:r)?(?:\s+slik)?)\s*$/iu, "")
       .replace(/[\s,;]+$/u, "");
     const quotedNames = [...quotations].filter(([token]) => destinationName.includes(token));
-    const remainder = quotedNames.reduce((value, [token]) => value.replace(token, ""), destinationName);
+    // Preserve the boundary between a location before a quoted name and one
+    // after it; removing the token outright would merge the two locations.
+    const remainder = quotedNames.reduce((value, [token]) => value.replace(token, " og "), destinationName);
     const exactDestination = documents.some(document => [document.title, document.file_name]
       .some(name => normalizedDestinationName(name) === normalizedDestinationName(destinationName)));
-    const filenames = [...remainder.matchAll(/[^\s,;]+\.(?:pdf|docx?|xlsx?|txt|md|csv)\b/giu)].map(match => match[0]);
-    const joinedNames = remainder.split(/\b(?:og|samt|pluss)\b/iu).slice(1).map(name => name.trim()).filter(Boolean);
+    const joinedNames = remainder.split(/\b(?:og|samt|pluss)\b/iu).map(part => {
+      let name = part.trim();
+      const location = /^(.*?)\s*\bi\s+(.+)$/iu.exec(name);
+      if (location && bareLocation.test(location[2])) name = location[1].trim();
+      if (quotedNames.length) name = name.replace(/^(?:dokumentet|dokument|vedlegget|bilaget|kravdokumentet)\b\s*/iu, "");
+      if (bareLocation.test(name) || relativeLocation.test(name) ||
+          (/\s+i$/iu.test(name) && bareLocation.test(name.replace(/\s+i$/iu, "")))) return "";
+      return name;
+    }).filter(Boolean);
+    const fullFilenames = joinedNames.filter(name => documents.some(document =>
+      normalizedDestinationName(document.file_name) === normalizedDestinationName(name),
+    ));
+    const filenames = [...remainder.matchAll(/[^\s,;]+\.(?:pdf|docx?|xlsx?|txt|md|csv)\b/giu)]
+      .map(match => match[0]).filter(name => !fullFilenames.some(full => full.toLocaleLowerCase("nb").endsWith(name.toLocaleLowerCase("nb"))));
     const names = !quotedNames.length && exactDestination ? [destinationName] : [...new Set([
       ...quotedNames.map(([, name]) => name), ...attachmentNames(remainder), ...filenames, ...joinedNames,
     ])];

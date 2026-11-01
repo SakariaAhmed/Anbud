@@ -1729,6 +1729,39 @@ test("destination resolution excludes wording without a colon and rejects every 
   }
 });
 
+test("document aliases, location qualifiers and wording forms compose without changing ownership", () => {
+  const registers = [
+    { id: "first", title: "Bilag 1", file_name: "Driftskrav.pdf", ids: ["K-2.1", "K-2.2"] },
+    { id: "third", title: "Bilag 3", file_name: "Sikkerhetskrav Endelig.pdf", ids: ["R-1.1"] },
+  ];
+  for (const name of ["Bilag 3", "«Bilag 3»", "“Bilag 3”", '"Bilag 3"']) {
+    for (const prefix of ["", "kapittel 2 i ", "dokumentet "]) {
+      for (const alias of ["", " og «Sikkerhetskrav Endelig.pdf»", " og Sikkerhetskrav Endelig.pdf"]) {
+        for (const location of ["", " i kapittel 4"]) {
+          for (const wording of [": «Leverandøren skal levere en exitplan.»", " med ordlyden «Leverandøren skal levere en exitplan.»", " «Leverandøren skal levere en exitplan.»"]) {
+            const correction = `Nytt krav K-2.3 legges til i ${prefix}${name}${alias}${location}${wording}`;
+            let rows;
+            assert.doesNotThrow(() => { rows = correctedRegisterRows(correction, registers); }, correction);
+            const added = rows.filter(row => row.id === "K-2.3");
+            assert.equal(added.length, 1, correction);
+            assert.equal(added[0].documentId, "third", correction);
+            assert.equal(added[0].text, "Leverandøren skal levere en exitplan.", correction);
+          }
+        }
+      }
+    }
+  }
+  for (const phrase of ["tabell 2 i kravspesifikasjonen", "kapittel 4 i kravspesifikasjonen", "tabell 2, etter K-2.2"]) {
+    const rows = correctedRegisterRows(`Nytt krav K-2.3 legges til i ${phrase}: «Leverandøren skal levere en exitplan.»`, registers);
+    assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, "first", phrase);
+  }
+  for (const other of ["Sikkerhetsdokumentet", "Driftskrav", "Driftskrav.pdf", "Ukjent.pdf"]) {
+    for (const names of [`${other} og «Bilag 3»`, `«Bilag 3» og ${other}`]) {
+      assert.throws(() => correctedRegisterRows(`Nytt krav K-2.3 legges til i ${names}: «Leverandøren skal levere en exitplan.»`, registers), /K-2\.3.*entydig/u, names);
+    }
+  }
+});
+
 test("each addition in one correction paragraph keeps its own named register", () => {
   const rows = correctedRegisterRows("Krav K-2.1 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.» Nytt krav K-2.4 legges til i Bilag 1: «Leverandøren skal teste tilbakeføring.»", [
     { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
