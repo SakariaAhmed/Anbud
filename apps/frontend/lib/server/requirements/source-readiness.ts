@@ -672,6 +672,10 @@ function explicitAdditionDestination(
   });
   const clauses = unquoted.split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«])|\s+\|\s+|;\s*|(?=\bnytt\s+krav\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d)/iu);
   const destinations = new Set<string>();
+  const wordingToken = [...quotations].filter(([, text]) =>
+    canonicalRequirementText(text) === canonicalRequirementText(entry.text),
+  ).at(-1)?.[0];
+  const bareLocation = /^(?:(?:tabell|kapittel|punkt|avsnitt|del|seksjon)\s+\d+(?:\.\d+)*\.?(?:\s+(?:etter|før)\s+(?:krav\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d+(?:\.\d+)*)?|kravspesifikasjonen)$/iu;
   const resolveName = (name: string) => {
     const exact = documents.filter(document => [document.title, document.file_name]
       .some(value => normalizedDestinationName(value) === normalizedDestinationName(name)));
@@ -683,25 +687,41 @@ function explicitAdditionDestination(
   for (const clause of clauses) {
     const mention = requirementIdTokenPattern(normalizeRequirementId(entry.id), false).exec(clause);
     if (!mention) continue;
-    const tail = clause.slice(mention.index + mention[0].length).split("«", 1)[0];
+    const tail = clause.slice(mention.index + mention[0].length);
     const namedAddition = /\bnytt\s+krav\s*$/iu.test(clause.slice(0, mention.index));
     const phrase = /\b(?:legges\s+til|tilføyes)\s+i\s+(.+?)(?=\s*[:]|$)/iu.exec(tail)?.[1] ??
       /^\s+i\s+(.+?)\s+(?:skal\s+)?(?:legges\s+til|tilføyes)\b/iu.exec(tail)?.[1] ??
       (namedAddition ? /^\s+i\s+(.+?)(?=\s*[:]|$)/iu.exec(tail)?.[1] : undefined);
     if (!phrase) continue;
-    const destinationName = phrase.split(/(?:,\s*|\s+)(?:jf\.?|jfr\.?|se)\s+/iu, 1)[0].trim();
+    // The correction parser identifies the added wording explicitly. End the
+    // destination before that quote even when the customer omitted a colon.
+    const beforeWording = wordingToken ? phrase.split(wordingToken, 1)[0] : phrase;
+    const destinationName = beforeWording.split(/(?:,\s*|\s+)(?:jf\.?|jfr\.?|se)\s+/iu, 1)[0]
+      .trim().replace(/(?:,\s*|\s+)(?:med\s+(?:følgende\s+)?(?:ordlyd(?:en)?|tekst(?:en)?)|(?:og\s+)?(?:skal\s+)?(?:nå\s+)?lyde(?:r)?(?:\s+slik)?)\s*$/iu, "")
+      .replace(/[\s,;]+$/u, "");
     const quotedNames = [...quotations].filter(([token]) => destinationName.includes(token));
     const remainder = quotedNames.reduce((value, [token]) => value.replace(token, ""), destinationName);
-    const names = quotedNames.length
-      ? [...quotedNames.map(([, name]) => name), ...attachmentNames(remainder)]
-      : [destinationName];
+    const exactDestination = documents.some(document => [document.title, document.file_name]
+      .some(name => normalizedDestinationName(name) === normalizedDestinationName(destinationName)));
+    const filenames = [...remainder.matchAll(/[^\s,;]+\.(?:pdf|docx?|xlsx?|txt|md|csv)\b/giu)].map(match => match[0]);
+    const joinedNames = remainder.split(/\b(?:og|samt|pluss)\b/iu).slice(1).map(name => name.trim()).filter(Boolean);
+    const names = !quotedNames.length && exactDestination ? [destinationName] : [...new Set([
+      ...quotedNames.map(([, name]) => name), ...attachmentNames(remainder), ...filenames, ...joinedNames,
+    ])];
+    if (!names.length) names.push(destinationName);
+    if (quotedNames.length) {
+      const [lastToken] = quotedNames.at(-1)!;
+      const suffix = destinationName.slice(destinationName.lastIndexOf(lastToken) + lastToken.length).trim();
+      if (/^i\s+/iu.test(suffix) && !bareLocation.test(suffix.replace(/^i\s+/iu, ""))) {
+        names.push(suffix.replace(/^i\s+/iu, ""));
+      }
+    }
     for (const name of names) {
       const matched = resolveName(name);
       // A location without an explicit document name belongs to the register
       // inferred from its IDs. Unknown document names still fail safely.
       if (!quotedNames.length && !matched.length && !attachmentNames(name).length &&
-          /^(?:tabell|kapittel|punkt|avsnitt|del|seksjon|kravspesifikasjonen)\b/iu.test(name) &&
-          !/\.(?:pdf|docx?|xlsx?|txt|md|csv)\b/iu.test(name)) continue;
+          bareLocation.test(name)) continue;
       if (matched.length !== 1) {
         throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Kontroller dokumentnavnene og hvilke kravdokumenter som er valgt.`);
       }

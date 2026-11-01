@@ -4,7 +4,7 @@ This work follows the technical-debt review of 2026-10-31 and the RAG discussion
 
 ## Implemented changes
 
-1. Dashboard counts now use a database aggregate restricted to the authorized project page. The service-role-only RPC reports all matching documents and authoritative artifacts without global child-row limits. Query and malformed-count failures propagate instead of becoming cached zeroes. Baseline and additive migration are consistent.
+1. Dashboard counts now use a database aggregate restricted to the authorized project page. The service-role-only RPC reports all matching documents and artifact versions without global child-row limits. Query and malformed-count failures propagate instead of becoming cached zeroes. Baseline and additive migration are consistent.
 2. A document-job coordinator follows ingestion and optional enhancement using the same terminal-failure handling. It refreshes persisted document state after failures and preserves abort/unmount semantics.
 3. Cross-document corrections insert hierarchical IDs near their numeric predecessor without reordering existing rows. Explicit destination names take priority over numeric-parent inference; ambiguous destinations stop the workflow. Added requirements carry the correction document, excerpt and actual pages separately from logical register ownership; they do not borrow another requirement's source page.
 4. The PostgREST adapter rejects malformed successful JSON and invalid table representations. Empty mutation/204 responses, HEAD requests and scalar RPC responses retain their intended contracts. Dashboard and artifact-currentness boundaries parse unknown values explicitly; broader repository typing remains debt.

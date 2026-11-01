@@ -1704,6 +1704,31 @@ test("quoted names remain opaque inside chapter locations and retain punctuation
   }
 });
 
+test("destination resolution excludes wording without a colon and rejects every conflicting reference", () => {
+  const registers = [
+    { id: "first", title: "Bilag 1", file_name: "Driftskrav.pdf", ids: ["K-2.1", "K-2.2"] },
+    { id: "third", title: "Bilag 3", file_name: "Sikkerhetskrav.pdf", ids: ["R-1.1"] },
+  ];
+  for (const phrase of [
+    "legges til i Bilag 3 med ordlyden", "i Bilag 3 lyder", "legges til i Bilag 3",
+    "legges til i Bilag 3, med følgende tekst", "legges til i Bilag 3 og skal lyde",
+    "tilføyes i «Bilag 3» med teksten", "legges til i «Sikkerhetskrav.pdf» med følgende ordlyd",
+  ]) {
+    const rows = correctedRegisterRows(`Nytt krav K-2.3 ${phrase} «Leverandøren skal levere en exitplan.»`, registers);
+    assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, "third", phrase);
+  }
+  const wordingFirst = correctedRegisterRows("Nytt krav K-2.3 «Leverandøren skal levere en exitplan med kontroll av Bilag 1.» legges til i Bilag 3.", registers);
+  assert.equal(wordingFirst.find(row => row.id === "K-2.3")?.documentId, "third");
+  for (const phrase of [
+    "legges til i «Bilag 3» og Driftskrav.pdf", "legges til i «Bilag 3» og Ukjent.pdf",
+    "legges til i Bilag 3 og Driftskrav.pdf", "legges til i Bilag 3 og Ukjent.pdf",
+    "legges til i «Bilag 3» og Sikkerhetsdokumentet", "legges til i kapittel 4 i Sikkerhetsdokumentet",
+    "legges til i tabell 2 etter K-2.2 i Ukjent", "legges til i «Bilag 3» i Sikkerhetsdokumentet",
+  ]) {
+    assert.throws(() => correctedRegisterRows(`Nytt krav K-2.3 ${phrase}: «Leverandøren skal levere en exitplan.»`, registers), /K-2\.3.*entydig/u, phrase);
+  }
+});
+
 test("each addition in one correction paragraph keeps its own named register", () => {
   const rows = correctedRegisterRows("Krav K-2.1 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.» Nytt krav K-2.4 legges til i Bilag 1: «Leverandøren skal teste tilbakeføring.»", [
     { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
