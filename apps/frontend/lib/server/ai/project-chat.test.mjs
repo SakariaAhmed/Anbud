@@ -239,7 +239,9 @@ test("model rerank is skipped when the whole documents are in the prompt", async
       return state.retrieval[0].rerank;
     };
     assert.equal(await ask("Oppetid skal være 99,9 prosent."), undefined, "a document sent whole needs no rerank");
+    assert.equal(state.retrieval[0].surroundingSections, false, "an anchor keeps the matched part");
     assert.equal(typeof await ask("Oppetid skal være 99,9 prosent. ".repeat(4000)), "function", "a document sent as excerpts is reranked");
+    assert.equal(state.retrieval[0].surroundingSections, true);
     const supporting = [1, 2, 3, 4].map((index) => document(`bilag-${index}`, "supporting_document", "Kort bilag."));
     supporting.push(document("bilag-5", "supporting_document", "Oppetid i bilag 5. ".repeat(8000)));
     assert.equal(typeof await ask("Oppetid skal være 99,9 prosent.", supporting), "function",
