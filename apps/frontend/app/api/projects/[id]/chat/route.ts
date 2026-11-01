@@ -458,6 +458,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
 
     const chatStream = await streamProjectChat({
+      projectId: id,
       projectName: project.name,
       customerAnalysis,
       solutionEvaluation: project.solutionEvaluationSnapshot?.evaluation ?? null,

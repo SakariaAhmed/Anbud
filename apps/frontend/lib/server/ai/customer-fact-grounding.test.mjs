@@ -10,6 +10,7 @@ const frontendRoot = path.resolve(__dirname, "../../..");
 test("production AI sources contain no known synthetic tender constants", () => {
   const productionSource = [
     readFileSync(path.join(frontendRoot, "lib/server/ai.ts"), "utf8"),
+    readFileSync(path.join(frontendRoot, "lib/server/ai/requirement-response.ts"), "utf8"),
     readFileSync(path.join(frontendRoot, "lib/server/prompts.ts"), "utf8"),
   ].join("\n");
 

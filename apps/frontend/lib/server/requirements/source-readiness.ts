@@ -1,4 +1,5 @@
-import { applyRequirementCorrections, correctedRequirementIds, findCorrectionsSection, withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
+import { applyRequirementCorrections, correctedRequirementIds, correctionsSectionRanges, findCorrectionsSection, withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
+import { requirementAdditionPosition } from "@/lib/server/requirements/id-order";
 import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
 import { spreadsheetRequirementIds } from "@/lib/server/requirements/spreadsheet-ledger";
 import {
@@ -622,6 +623,24 @@ function referenceToOwnedRequirementFilter(
  * it changes ("Krav K-4.1.2 i Bilag 1 endres og skal nå lyde: …"). It is
  * applied once to every document defining an ID it names. A new requirement
  * joins the document numbering its series, else the one named most. */
+function correctionSourcePages(rawText: string, id: string) {
+  const lines = rawText.split("\n");
+  const ranges = correctionsSectionRanges(lines);
+  const token = requirementIdTokenPattern(id, false);
+  const pages = new Set<number>();
+  let currentPage: number | undefined;
+  let unlocated = false;
+  lines.forEach((line, index) => {
+    const markers = [...line.matchAll(/\[\[SIDE:(\d+)\]\]/gu)];
+    if (markers.length) currentPage = Number(markers.at(-1)![1]);
+    if (ranges.some(([start, end]) => index >= start && index < end) && token.test(line)) {
+      if (currentPage && Number.isSafeInteger(currentPage)) pages.add(currentPage);
+      else unlocated = true;
+    }
+  });
+  return unlocated ? [] : [...pages].sort((left, right) => left - right);
+}
+
 function withCrossDocumentCorrections(
   sourceDocuments: ProjectDocumentDetail[],
   ledgerByDocumentId: Map<string, RequirementLedgerEntry[]>,
@@ -677,19 +696,22 @@ function withCrossDocumentCorrections(
     for (const [id, entry] of additions) {
       const destination = seriesOwner(series(id)) ?? targets[0]!;
       const ledger = corrected.get(destination) ?? [];
-      let at = ledger.length;
-      while (at > 0 && series(ledger[at - 1]!.id) !== series(id)) at -= 1;
-      if (at === 0) at = ledger.length;
-      // It takes its place, and so its document, page and heading, from the
-      // register it joins; the correction stays its source excerpt.
-      const anchor = ledger[at - 1] ?? ledger[0];
+      const { index: at, anchor } = requirementAdditionPosition(ledger, id);
       const destinationDocument = sourceDocuments.find((source) => source.id === destination);
       const placed: RequirementLedgerEntry = {
         ...entry,
-        pages: anchor?.pages ?? [],
+        // Numbering establishes logical placement, not a page in the original
+        // register. The added wording is only attested by the correction.
+        pages: [],
         heading: anchor?.heading ?? "",
         documentId: destination,
         documentTitle: anchor?.documentTitle ?? destinationDocument?.title,
+        correctionSource: {
+          documentId: document.id,
+          documentTitle: document.title,
+          pages: correctionSourcePages(rawText, id),
+          excerpt: entry.sourceExcerpt ?? entry.text,
+        },
       };
       corrected.set(destination, [...ledger.slice(0, at), placed, ...ledger.slice(at)]);
     }

@@ -7,6 +7,14 @@ import { lastHeadingSegment, normalizeRequirementId } from "@/lib/server/require
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 
 export function requirementLedgerSource(entry: RequirementLedgerEntry) {
+  if (entry.correctionSource) {
+    return [
+      entry.correctionSource.documentTitle,
+      requirementPageRange({ ...entry, pages: entry.correctionSource.pages }),
+      entry.documentTitle ? `Rettelse til ${entry.documentTitle}` : "Rettelse",
+      entry.id,
+    ].filter(Boolean).join(", ");
+  }
   const pageLabel = requirementPageRange(entry);
   const normalizedId = normalizeRequirementId(entry.id);
   const normalizedTableId = entry.tableId
@@ -65,6 +73,7 @@ export function requirementSubtitle(entry: RequirementLedgerEntry) {
 }
 
 export function requirementFullReference(entry: RequirementLedgerEntry) {
+  if (entry.correctionSource) return requirementLedgerSource(entry);
   const normalizedId = normalizeRequirementId(entry.id);
   const normalizedTableId = entry.tableId
     ? normalizeRequirementId(entry.tableId)

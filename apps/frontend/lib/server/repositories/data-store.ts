@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 
 import { createServiceClient } from "@/lib/server/data-api";
+import { fetchProjectDashboardCounts, parseProjectEvaluationCurrentness } from "@/lib/server/repositories/project-dashboard-counts";
 import { listAccessibleProjectIds } from "@/lib/server/authorization";
 import {
   buildStoredFilePath,
@@ -1169,7 +1170,7 @@ export async function listProjects(
       const projectQuery = async (select: string) => {
         let query = dataApi
           .from("projects")
-          .select(select)
+          .select<unknown[]>(select)
           .order("last_activity_at", { ascending: false })
           .limit(PROJECT_LIST_LIMIT);
         if (accessibleProjectIds) {
@@ -1177,68 +1178,28 @@ export async function listProjects(
         }
         return query;
       };
-      const [
-        projectsResult,
-        documentRows,
-        { data: artifacts },
-      ] = await Promise.all([
-        // fromUnknownProjectRow keeps only the public project fields and
-        // preserves alternate-column precedence when both schemas coexist.
-        projectQuery("*"),
-        fetchDocumentSummaryRows((select) => {
-          let query = dataApi
-            .from("documents")
-            .select(select)
-            .limit(PROJECT_LIST_LIMIT * 10);
-          if (accessibleProjectIds) {
-            query = query.in("project_id", accessibleProjectIds);
-          }
-          return query;
-        }),
-        (() => {
-          let query = dataApi
-          .from("generated_artifacts")
-          .select("id, project_id")
-          .order("created_at", { ascending: false })
-          .limit(PROJECT_LIST_LIMIT * 20);
-          if (accessibleProjectIds) {
-            query = query.in("project_id", accessibleProjectIds);
-          }
-          return query;
-        })(),
-      ]);
-      const { data: projects, error: projectsError } = projectsResult;
-
-      if (projectsError) {
-        throw new Error(projectsError.message);
-      }
-
-      const documentsByProject = new Map<string, DocumentSummaryRow[]>();
-      for (const row of documentRows) {
-        const list = documentsByProject.get(row.project_id) ?? [];
-        list.push(row);
-        documentsByProject.set(row.project_id, list);
-      }
-
-      const artifactCount = new Map<string, number>();
-      for (const row of artifacts ?? []) {
-        artifactCount.set(
-          row.project_id,
-          (artifactCount.get(row.project_id) ?? 0) + 1,
-        );
-      }
-
-      return ((projects ?? []) as unknown as Record<string, unknown>[]).map((row) => {
-        const project = fromUnknownProjectRow(row);
-        return {
-          ...mapProjectSummary(
-            project,
-            documentsByProject.get(project.id) ?? [],
-          ),
-          artifact_count: artifactCount.get(project.id) ?? 0,
-          has_chat: false,
-        };
+      // The aggregate sees only the already-authorized page, not every child
+      // row across all accessible projects. Empty pages perform no count query.
+      const { data: projects, error: projectsError } = await projectQuery("*");
+      if (projectsError) throw new Error(projectsError.message);
+      if (!Array.isArray(projects)) throw new Error("Kunne ikke lese prosjektlisten.");
+      const accessible = accessibleProjectIds ? new Set(accessibleProjectIds) : null;
+      const page = projects.map((value: unknown) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          throw new Error("Kunne ikke lese prosjektlisten.");
+        }
+        const project = fromUnknownProjectRow(value as Record<string, unknown>);
+        if (!project.id || (accessible && !accessible.has(project.id))) {
+          throw new Error("Kunne ikke lese prosjektlisten.");
+        }
+        return project;
       });
+      const counts = await fetchProjectDashboardCounts(dataApi, page.map((project) => project.id));
+      return page.map((project) => ({
+        ...mapProjectSummary(project, []),
+        ...counts.get(project.id)!,
+        has_chat: false,
+      }));
     },
     [
       "projects-list",
@@ -1253,16 +1214,14 @@ export async function listProjects(
   const projects = await getCachedProjects();
   if (!projects.length) return projects;
   const dataApi = createServiceClient();
-  const { data, error } = await dataApi.rpc(
+  const { data, error } = await dataApi.rpc<unknown>(
     "get_solution_evaluation_currentness",
     { p_project_ids: projects.map((project) => project.id) },
   );
-  if (error || !data || typeof data !== "object") {
-    throw new Error(
-      error?.message || "Kunne ikke hente gyldig vurderingsstatus for prosjektene.",
-    );
+  if (error) {
+    throw new Error("Kunne ikke hente gyldig vurderingsstatus for prosjektene.", { cause: error });
   }
-  const currentness = data as Record<string, unknown>;
+  const currentness = parseProjectEvaluationCurrentness(data, projects.map((project) => project.id));
   return projects.map((project) => ({
     ...project,
     solution_evaluation_generated: currentness[project.id] === true,

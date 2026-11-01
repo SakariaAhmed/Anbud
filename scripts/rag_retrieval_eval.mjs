@@ -34,6 +34,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { scoreRetrievalCases } from "./rag_eval.mjs";
+import { evaluateRetrievalGate } from "./rag_retrieval_gate.mjs";
+
+// Keep stdout machine-readable; application telemetry belongs on stderr.
+console.log = (...values) => console.error(...values);
+console.info = (...values) => console.error(...values);
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -59,6 +64,7 @@ if (useLiveEmbeddings && !databaseUrl) {
 const corpusRoot = path.join(repositoryRoot, "output/pdf/complex-tender-corpus");
 const manifest = JSON.parse(readFileSync(path.join(corpusRoot, "manifest.json"), "utf8"));
 const conceptual = JSON.parse(readFileSync(path.join(repositoryRoot, "test-data/rag-retrieval/conceptual-questions.json"), "utf8"));
+const heldOut = JSON.parse(readFileSync(path.join(repositoryRoot, "test-data/rag-retrieval/held-out-questions.json"), "utf8"));
 
 const scratch = mkdtempSync(path.join(tmpdir(), "anbud-rag-eval-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
@@ -142,6 +148,7 @@ const expectation = (requirementId) => {
 const cases = [
   ...[...requirements.keys()].map((id) => ({ kind: "id_lookup", question: `Hva krever ${id}?`, ...expectation(id) })),
   ...conceptual.questions.map((item) => ({ kind: "conceptual", question: item.question, ...expectation(item.expected_requirement_id) })),
+  ...heldOut.questions.map((item) => ({ kind: "held_out", question: item.question, ...expectation(item.expected_requirement_id) })),
 ];
 
 // Result count of the keyword-search measurement; chat sets its own.
@@ -215,6 +222,7 @@ const report = {
     all: summary(results),
     id_lookup: summary(results.filter((row) => row.kind === "id_lookup")),
     conceptual: summary(results.filter((row) => row.kind === "conceptual")),
+    held_out: summary(results.filter((row) => row.kind === "held_out")),
   },
 };
 
@@ -222,7 +230,11 @@ if (databaseUrl && !useLiveEmbeddings) {
   report.keyword_search = await measureKeywordSearch();
 }
 if (outputPath) writeFileSync(outputPath, `${JSON.stringify(results, null, 2)}\n`);
-console.log(JSON.stringify(report, null, 2));
+if (args.includes("--gate")) {
+  report.gate = evaluateRetrievalGate(results, useLiveEmbeddings ? "live" : "offline");
+  if (!report.gate.passed) process.exitCode = 2;
+}
+process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
 function psql(url, sql) {
   const result = spawnSync("psql", [url, "-X", "-v", "ON_ERROR_STOP=1", "-Atq"], { input: sql, encoding: "utf8" });

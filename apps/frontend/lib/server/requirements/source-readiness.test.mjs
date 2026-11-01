@@ -1552,7 +1552,7 @@ test("a new requirement joins the register numbering its series even when the ch
   );
 });
 
-test("a requirement a correction moves to its series' register carries that register's provenance", () => {
+test("a correction addition keeps register ownership and separate correction provenance", () => {
   const customer = document({
     id: "customer",
     role: "primary_customer_document",
@@ -1583,10 +1583,40 @@ test("a requirement a correction moves to its series' register carries that regi
   const added = canonical.find((entry) => entry.id === "K-2.3");
   assert.deepEqual(
     [added.documentId, added.documentTitle, added.pages, added.heading, added.text],
-    ["second", "Bilag 3", [5], "2 Støtte", "Leverandøren skal levere en exitplan."],
+    ["second", "Bilag 3", [], "2 Støtte", "Leverandøren skal levere en exitplan."],
   );
+  assert.equal(added.correctionSource.documentId, "customer");
+  assert.equal(added.correctionSource.documentTitle, "Konkurransegrunnlag");
+  assert.deepEqual(added.correctionSource.pages, []);
   assert.match(added.sourceExcerpt, /Nytt krav i rettelse/u);
   assert.equal(canonical.find((entry) => entry.id === "K-1.1").text, "Leverandøren skal levere drift hele døgnet.");
+});
+
+test("a correction added inside a register follows numeric ID order without borrowing a source page", async () => {
+  const customer = document({ id: "customer", role: "primary_customer_document", supporting_subtype: null, title: "Konkurransegrunnlag", raw_text: [
+    "[[SIDE:9]]", "9 Rettelser",
+    "1. Krav K-1.2 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere drift hele døgnet.»",
+    "2. Nytt krav K-1.3 legges til i Bilag 1: «Leverandøren skal levere en exitplan.»",
+  ].join("\n") });
+  const formal = document({ id: "formal", title: "Bilag 1", raw_text: "K-1.2 Leverandøren skal levere drift.\nK-1.10 Leverandøren skal levere dokumentasjon.\nK-2.1 Leverandøren skal levere støtte." });
+  const rows = canonicalizeRequirementSourceLedger({ sourceDocuments: [customer, formal], requirementLedgerResults: [
+    { document: customer, ledger: [] },
+    { document: formal, ledger: [
+      ledgerEntry({ id: "K-1.2", pages: [1], heading: "1 Drift" }),
+      ledgerEntry({ id: "K-1.10", pages: [2], heading: "1 Drift" }),
+      ledgerEntry({ id: "K-2.1", pages: [4], heading: "2 Støtte" }),
+    ] },
+  ] });
+  assert.deepEqual(rows.map(row => row.id), ["K-1.2", "K-1.3", "K-1.10", "K-2.1"]);
+  const added = rows[1];
+  assert.equal(added.heading, "1 Drift");
+  assert.deepEqual(added.pages, []);
+  assert.equal(added.documentId, formal.id);
+  assert.equal(added.correctionSource.documentId, customer.id);
+  assert.deepEqual(added.correctionSource.pages, [9]);
+  const { requirementLedgerSource } = await jiti.import(path.join(frontendRoot, "lib/server/requirements/presentation.ts"));
+  assert.match(requirementLedgerSource(added), /Konkurransegrunnlag, Side 9, Rettelse til Bilag 1/u);
+  assert.doesNotMatch(requirementLedgerSource(added), /Side [124](?:,|$)/u);
 });
 
 test("a correction to an ID two registers define changes neither, and Markdown definitions stay requirements", () => {

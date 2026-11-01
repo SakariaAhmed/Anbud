@@ -12,6 +12,11 @@ function norm(value) {
 }
 
 function expectedMatch(caseItem, snippet) {
+  const expectedTexts = caseItem.expected_texts ?? [];
+  if (expectedTexts.length) {
+    const text = norm(snippet.text);
+    return Boolean(text) && expectedTexts.some(expected => text.includes(norm(expected)));
+  }
   const expectedIds = new Set((caseItem.expected_source_ids ?? []).map(String));
   if (expectedIds.has(String(snippet.source_id))) {
     return true;
@@ -36,7 +41,8 @@ export function scoreRetrievalCases(cases) {
   let recallAt5 = 0;
   let recallAt10 = 0;
   let reciprocalRankSum = 0;
-  let citationCoverageSum = 0;
+  let validCitations = 0;
+  let citationCount = 0;
   let latencySum = 0;
   let latencyCount = 0;
 
@@ -67,16 +73,15 @@ export function scoreRetrievalCases(cases) {
 
     const cited = Array.isArray(caseItem.citations) ? caseItem.citations : [];
     if (cited.length) {
-      const validCitations = cited.filter((citation) =>
+      validCitations += cited.filter((citation) =>
+        typeof citation.source_id === "string" && citation.source_id.trim() && norm(citation.reference) &&
         retrieved.some(
           (snippet) =>
             String(snippet.source_id) === String(citation.source_id) &&
             norm(snippet.reference) === norm(citation.reference),
         ),
       ).length;
-      citationCoverageSum += validCitations / cited.length;
-    } else {
-      citationCoverageSum += firstMatchIndex >= 0 ? 1 : 0;
+      citationCount += cited.length;
     }
 
     const latency = Number(caseItem.latency_ms ?? caseItem.retrieval_latency_ms);
@@ -92,7 +97,8 @@ export function scoreRetrievalCases(cases) {
     recall_at_5: recallAt5 / total,
     recall_at_10: recallAt10 / total,
     mrr: reciprocalRankSum / total,
-    citation_accuracy: citationCoverageSum / total,
+    citation_accuracy: citationCount ? validCitations / citationCount : null,
+    citation_count: citationCount,
     avg_latency_ms: latencyCount ? latencySum / latencyCount : null,
     failed_cases: failures.slice(0, 20),
   };
@@ -121,7 +127,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const report = scoreRetrievalCases(cases);
   console.log(JSON.stringify(report, null, 2));
 
-  if (report.recall_at_5 < 0.75 || report.citation_accuracy < 0.8) {
+  if (!cases.length || report.recall_at_5 < 0.75 || (report.citation_accuracy !== null && report.citation_accuracy < 0.8)) {
     process.exitCode = 2;
   }
 }

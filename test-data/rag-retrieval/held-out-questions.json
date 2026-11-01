@@ -1,0 +1,26 @@
+{
+  "version": "rag-retrieval-held-out.v1",
+  "note": "Written after the retrieval implementation was merged, before running these questions. Keep these questions out of ranking/prompt tuning; review labels against source fasit. Offline lexical checks and live semantic checks use different declared quality floors.",
+  "questions": [
+    { "expected_requirement_id": "MAL-OT-01", "question": "Hvilke begrensninger gjelder for skrivetilgang fra plattformen inn i industriell DMZ og OT?" },
+    { "expected_requirement_id": "MAL-DAT-02", "question": "Må sensorverdiene beholde både tidsstempel, måleenhet og identiteten til kilden?" },
+    { "expected_requirement_id": "MAL-OFF-03", "question": "Hvordan skal feltappen håndtere bilder og arbeidsordre gjennom åtte timer uten dekning?" },
+    { "expected_requirement_id": "MAL-SAP-04", "question": "Skal SAP S/4HANA fortsatt være fasiten for tekniske objekter og reservedeler?" },
+    { "expected_requirement_id": "NORD-FUN-01", "question": "Hva skal logges når en byggesak går fra mottak til behandling og videre til vedtak?" },
+    { "expected_requirement_id": "NORD-IAM-02", "question": "Er det nok med Entra-innlogging, eller må rettigheter også begrenses etter enhet og sakstype?" },
+    { "expected_requirement_id": "NORD-DIA-03", "question": "Kan en ekstern bruker med ID-porten lese alle saker, eller bare saker der personen er verifisert part?" },
+    { "expected_requirement_id": "NORD-ARK-04", "question": "Skal journalføringen til Noark-arkivet kreve at dokumentmetadata registreres manuelt på nytt?" },
+    { "expected_requirement_id": "POL-TMS-01", "question": "Hvem skal eie ordre, ruter og stopp i den første avtaleperioden for transportløsningen?" },
+    { "expected_requirement_id": "POL-IOT-02", "question": "Hvilke opplysninger må bevares når temperaturdata kommer via MQTT eller HTTPS?" },
+    { "expected_requirement_id": "POL-OFF-03", "question": "Må skanning og bildevedlegg fungere på håndterminalen også gjennom tolv timer uten nett?" },
+    { "expected_requirement_id": "POL-KUL-04", "question": "Kan registreringer gå tapt når håndterminalene brukes ved minus 30 grader?" },
+    { "expected_requirement_id": "SOR-PAS-01", "question": "Hvordan skal kliniske meldinger unngå dobbeltbehandling, og hva må vises i avvikskøen?" },
+    { "expected_requirement_id": "SOR-FHIR-02", "question": "Hvilken FHIR-versjon gjelder, og må originalmeldingen og transformasjonsversjonen bevares?" },
+    { "expected_requirement_id": "SOR-IAM-03", "question": "Må nødtilgang til pasientdata både begrunnes og kontrolleres i etterkant?" },
+    { "expected_requirement_id": "SOR-VAR-04", "question": "Hva skjer med kritiske hjemmemålinger dersom det kliniske teamet ikke kvitterer for varselet?" },
+    { "expected_requirement_id": "VES-SEL-01", "question": "Hvor lang tid kan etablering av en standard prosjektarbeidsflate ta etter godkjent bestilling?" },
+    { "expected_requirement_id": "VES-IAM-02", "question": "Hva kreves utover Feide når et beskyttet datasett skal åpnes av et prosjektmedlem?" },
+    { "expected_requirement_id": "VES-KLA-03", "question": "Skal endret dataklasse kunne føre til kontrollerte endringer i nettverk og eksportkontroll?" },
+    { "expected_requirement_id": "VES-DAT-04", "question": "Gjelder kravet om behandling i Norge også sikkerhetskopier og identifiserbare logger?" }
+  ]
+}

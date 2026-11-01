@@ -150,15 +150,47 @@ export function createAzureBlobStorageBackend(input: {
 
 let defaultBackend: ReturnType<typeof createAzureBlobStorageBackend> | null = null;
 
+/** Explicit local Azurite access for development/system tests; never production. */
+export function azureBlobEmulatorConnectionString(environment: NodeJS.ProcessEnv = process.env) {
+  const value = environment.AZURE_STORAGE_EMULATOR_CONNECTION_STRING?.trim();
+  if (!value) return null;
+  const invalid = () => new Error("Blob-emulatoren krever en lokal utviklingskonfigurasjon.");
+  if (environment.NODE_ENV === "production") throw invalid();
+  const entries = value.split(";").filter(Boolean).map((entry) => {
+    const separator = entry.indexOf("=");
+    if (separator < 1) throw invalid();
+    return [entry.slice(0, separator), entry.slice(separator + 1)] as const;
+  });
+  const fields = new Map(entries);
+  if (fields.size !== entries.length || [...fields.keys()].some((key) => ![
+    "DefaultEndpointsProtocol", "AccountName", "AccountKey", "BlobEndpoint",
+  ].includes(key))) throw invalid();
+  const account = fields.get("AccountName") ?? "";
+  if (!/^[a-z0-9]{3,24}$/u.test(account) || !fields.get("AccountKey")) throw invalid();
+  let endpoint: URL;
+  try { endpoint = new URL(fields.get("BlobEndpoint") ?? ""); } catch { throw invalid(); }
+  if (!["http:", "https:"].includes(endpoint.protocol) ||
+    !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) ||
+    endpoint.username || endpoint.password || endpoint.search || endpoint.hash ||
+    endpoint.pathname.replace(/\/$/u, "") !== `/${account}` ||
+    (fields.has("DefaultEndpointsProtocol") && `${fields.get("DefaultEndpointsProtocol")}:` !== endpoint.protocol)) {
+    throw invalid();
+  }
+  return value;
+}
+
 export function defaultAzureBlobStorageBackend() {
   if (defaultBackend) return defaultBackend;
+  const emulatorConnection = azureBlobEmulatorConnectionString();
   const accountUrl = process.env.AZURE_STORAGE_ACCOUNT_URL?.trim();
-  if (!accountUrl || !/^https:\/\/[a-z0-9-]+\.blob\.core\.windows\.net\/?$/u.test(accountUrl)) {
+  if (!emulatorConnection && (!accountUrl || !/^https:\/\/[a-z0-9-]+\.blob\.core\.windows\.net\/?$/u.test(accountUrl))) {
     throw new Error(
       "AZURE_STORAGE_ACCOUNT_URL må være en HTTPS-adresse for Azure Blob Storage.",
     );
   }
-  const service = new BlobServiceClient(accountUrl.replace(/\/+$/u, ""), new DefaultAzureCredential());
+  const service = emulatorConnection
+    ? BlobServiceClient.fromConnectionString(emulatorConnection)
+    : new BlobServiceClient(accountUrl!.replace(/\/+$/u, ""), new DefaultAzureCredential());
   defaultBackend = createAzureBlobStorageBackend({
     containerName: process.env.AZURE_STORAGE_CONTAINER,
     getContainerClient: (containerName) => service.getContainerClient(containerName),

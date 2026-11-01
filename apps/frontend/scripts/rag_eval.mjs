@@ -1,16 +1,8 @@
 #!/usr/bin/env node
 
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "../../..");
-
-if (!process.argv[2]) {
-  process.argv.push(
-    path.join(repoRoot, "scripts", "rag_eval_cases.example.json"),
-  );
+if (process.argv[2] && !process.argv[2].startsWith("--")) {
+  await import("../../../scripts/rag_eval.mjs");
+} else {
+  if (!process.argv.includes("--gate")) process.argv.push("--gate");
+  await import("../../../scripts/rag_retrieval_eval.mjs");
 }
-
-await import("../../../scripts/rag_eval.mjs");

@@ -11,9 +11,25 @@ const jiti = createJiti(path.join(frontendRoot, "azure-blob-storage-tests.cjs"),
   interopDefault: true,
   alias: { "@": frontendRoot, "server-only": "/dev/null" },
 });
-const { createAzureBlobStorageBackend } = jiti(
+const { createAzureBlobStorageBackend, azureBlobEmulatorConnectionString } = jiti(
   path.join(frontendRoot, "lib/server/azure-blob-storage.ts"),
 );
+
+test("Blob emulator configuration is explicit, loopback-only, and forbidden in production", () => {
+  const connection = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=local-test-key;BlobEndpoint=http://127.0.0.1:55450/devstoreaccount1";
+  assert.equal(azureBlobEmulatorConnectionString({ NODE_ENV: "development", AZURE_STORAGE_EMULATOR_CONNECTION_STRING: connection }), connection);
+  assert.equal(azureBlobEmulatorConnectionString({ NODE_ENV: "production" }), null);
+  for (const [mode, value] of [
+    ["production", connection],
+    ["development", connection.replace("127.0.0.1", "example.com")],
+    ["development", `${connection};QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1`],
+    ["development", `${connection};BlobEndpoint=http://127.0.0.1:1234/devstoreaccount1`],
+    ["development", connection.replace("/devstoreaccount1", "/otheraccount")],
+    ["development", connection.replace("http://127.0.0.1", "http://user:password@127.0.0.1")],
+  ]) {
+    assert.throws(() => azureBlobEmulatorConnectionString({ NODE_ENV: mode, AZURE_STORAGE_EMULATOR_CONNECTION_STRING: value }), /lokal utviklingskonfigurasjon/u);
+  }
+});
 const { runStorageFirstDeletion } = jiti(
   path.join(frontendRoot, "lib/server/storage-deletion.ts"),
 );
