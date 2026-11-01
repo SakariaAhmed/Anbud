@@ -273,11 +273,13 @@ class PostgrestQueryBuilder<T> implements PromiseLike<PostgrestResponse<T>> {
       });
       const raw = this.method === "HEAD" ? "" : await response.text();
       let payload: unknown = null;
+      let malformedJson = false;
       if (raw) {
         try {
           payload = JSON.parse(raw);
         } catch {
           payload = raw;
+          malformedJson = true;
         }
       }
       const contentRange = response.headers.get("Content-Range");
@@ -303,6 +305,29 @@ class PostgrestQueryBuilder<T> implements PromiseLike<PostgrestResponse<T>> {
           data: null,
           error,
           count: count !== null && Number.isFinite(count) ? count : null,
+          status: response.status,
+          statusText: response.statusText,
+        };
+      }
+
+      const expectsRows = this.mode === "table" && this.method !== "HEAD" && (
+        this.method === "GET" || headers.get("Prefer")?.includes("return=representation")
+      );
+      const isRow = (value: unknown) => value !== null && typeof value === "object" && !Array.isArray(value);
+      const expectsSingleRow = headers.get("Accept") === "application/vnd.pgrst.object+json";
+      const validRows = expectsSingleRow
+        ? isRow(payload) || (this.maybeSingleResult && payload === null)
+        : Array.isArray(payload) && payload.every(isRow);
+      if (malformedJson || (expectsRows && !validRows)) {
+        return {
+          data: null,
+          error: {
+            code: "INVALID_DATA_API_RESPONSE",
+            details: null,
+            hint: null,
+            message: "Data API returned an invalid response.",
+          },
+          count: null,
           status: response.status,
           statusText: response.statusText,
         };
