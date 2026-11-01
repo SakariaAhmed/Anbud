@@ -61,7 +61,7 @@ export function SourceEvidenceButton({ source, projectId, canDownloadDocuments =
           : <p className="text-sm leading-6 text-muted-foreground">Denne eldre henvisningen har ikke et lagret originalutdrag. Åpne dokumentet og kontroller påstanden før den brukes.</p>}
         {classification === "Må avklares" && displayed.original_quote ? <p className="text-sm text-muted-foreground">Utdraget er ikke kontrollert mot originalkilden. Bekreft ordlyden i dokumentet.</p> : null}
         {href ? <a href={href} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center rounded-md border px-3 text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring">{displayed.page_start ? `Åpne på side ${displayed.page_start}` : "Åpne originaldokument"}</a>
-          : <p className="text-xs leading-5 text-muted-foreground">{displayed.source_type === "service_document" ? "Originalen ligger i tjenestebiblioteket." : displayed.source_type === "chat_attachment" ? "Vedlegget ble brukt i denne meldingen. Det er ikke lagret som et prosjektdokument." : "Du har ikke tilgang til å åpne originaldokumentet."}</p>}
+          : <p className="text-xs leading-5 text-muted-foreground">{displayed.source_type === "generated_artifact" ? "Utdraget kommer fra et generert utkast og er en tolkning av kildegrunnlaget." : displayed.source_type === "service_document" ? "Originalen ligger i tjenestebiblioteket." : displayed.source_type === "chat_attachment" ? "Vedlegget ble brukt i denne meldingen. Det er ikke lagret som et prosjektdokument." : "Du har ikke tilgang til å åpne originaldokumentet."}</p>}
       </div>
     </SheetContent>
   </Sheet>;

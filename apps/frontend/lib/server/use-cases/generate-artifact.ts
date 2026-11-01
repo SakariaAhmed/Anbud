@@ -1,3 +1,5 @@
+import { bindOutputSourceEvidence } from "@/lib/server/output-source-evidence";
+import { requirementReviewRows } from "@/lib/requirement-review";
 import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
 
@@ -753,6 +755,14 @@ export async function generateAndSaveProjectArtifact(
       `Generatorresultatet stoppet i kvalitetskontroll: ${qualityReport.issues.join(" ")}`,
     );
   }
+  const evidenceRows = input.artifactType === "forbedret_kravsvar" ? requirementReviewRows(repaired.contentMarkdown, { generation_metadata: generationMetadata }) : [];
+  const sourceEvidence = bindOutputSourceEvidence({
+    fields: evidenceRows.length ? evidenceRows.flatMap(row => [{ path: `rows.${row.index}.answer`, text: row.answer }, { path: `rows.${row.index}.evidence`, text: row.evidence }]) : [{ path: "content_markdown", text: repaired.contentMarkdown }],
+    authoritativeRequirementRefs: requirementQualityExpectations(generationMetadata).expectedRequirementRefs ?? [],
+    documents: [...projectDocuments.map(document => ({ document, sourceType: "project_document" as const })), ...serviceDescriptionDocuments.map(document => ({ document, sourceType: "service_document" as const }))],
+    artifacts: knowledgeArtifacts,
+    verifiedReferences: solutionEvaluationForGeneration?.source_evidence?.references.map(entry => entry.source),
+  });
   input.onPhase?.("validering");
 
   input.onProgress?.(formatJobProgress(90, "Lagrer validert generatorresultat i prosjektet ..."));
@@ -848,6 +858,7 @@ export async function generateAndSaveProjectArtifact(
         repaired_rows: repaired.repairedRows,
       },
       generation_metadata: generationMetadata ?? null,
+      source_evidence: sourceEvidence,
       generation_timings: [
         ...(input.timings?.() ?? []),
         ...(input.totalDurationMs

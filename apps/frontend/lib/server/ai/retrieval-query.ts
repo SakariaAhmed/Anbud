@@ -1,4 +1,4 @@
-import { detectExplicitRequirementIds, explicitRequirementIdPattern } from "@/lib/server/requirements/id-detection";
+import { detectExplicitRequirementIds, explicitRequirementIdPattern, isLikelyStandardsReferenceId } from "@/lib/server/requirements/id-detection";
 import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
 
 const technicalPrefixes = new Set(["AES", "SHA", "ISO", "IEC", "EN", "NS", "TLS", "SSL", "HTTP", "UTF", "RFC", "CVE", "CWE", "COVID", "FIPS", "NIST", "WCAG", "GPT", "FHIR", "NIS"]);
@@ -23,7 +23,7 @@ export function requirementIdentifierSpans(value: string) {
 }
 
 export function extractRequirementIdentifiers(value: string) {
-  return Array.from(new Set(requirementIdentifierSpans(value).map(span => span.id).filter(id => !technicalPrefixes.has(id.match(/^[A-ZÆØÅ]+/u)?.[0] ?? ""))));
+  return Array.from(new Set(requirementIdentifierSpans(value).map(span => span.id).filter(id => !isLikelyStandardsReferenceId(id) && !technicalPrefixes.has(id.match(/^[A-ZÆØÅ]+/u)?.[0] ?? ""))));
 }
 
 export function extractExactRetrievalTerms(value: string) {

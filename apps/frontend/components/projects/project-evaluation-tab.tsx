@@ -27,6 +27,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { OutputSourceEvidence } from "@/components/projects/output-source-evidence";
 import { SourceEvidenceButton } from "@/components/projects/source-evidence-panel";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
@@ -1008,6 +1009,7 @@ export function ProjectEvaluationTab({
             );
           })()}
 
+          {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
           <div>
             <RequirementCoveragePanel
               coverage={solutionEvaluation.requirement_coverage}

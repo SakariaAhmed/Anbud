@@ -1,4 +1,5 @@
 import "server-only";
+import { bindOutputSourceEvidence, outputEvidenceFields } from "@/lib/server/output-source-evidence";
 
 import { stringList, untrustedObject, type Untrusted } from "@/lib/unknown-values";
 import { createJsonCompletion } from "@/lib/server/ai/completion";
@@ -81,5 +82,11 @@ export async function generateExecutiveSummary(input: {
     promptCacheKey: "executive-summary",
   });
 
-  return normalizeExecutiveSummaryResult(result);
+  const normalized = normalizeExecutiveSummaryResult(result);
+  normalized.source_evidence = bindOutputSourceEvidence({
+    fields: outputEvidenceFields(normalized), documents: [],
+    verifiedReferences: input.solutionEvaluation.source_evidence?.references.map(entry => entry.source),
+    authoritativeRequirementRefs: input.solutionEvaluation.requirement_coverage?.items.map(row => row.reference),
+  });
+  return normalized;
 }

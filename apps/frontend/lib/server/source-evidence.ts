@@ -4,6 +4,9 @@ import type { ChatSourceReference } from "@/lib/types";
 import { extractRequirementIdentifiers } from "@/lib/server/ai/retrieval-query";
 
 const quotationText = (value: string) => value.replace(/\*\*([^*]+)\*\*/gu, "$1").replace(/__([^_]+)__/gu, "$1");
+export function quotedSourcePassages(value: string): string[] {
+  return [...value.matchAll(/«([^»]+)»|“([^”]+)”|"([^"\n]+)"/gu)].map(match => match[1] ?? match[2] ?? match[3]);
+}
 const canonical = (value: string) => value.replace(/[‐‑‒–—]/gu, "-").replace(/\u0000/gu, "").replace(/\s+/gu, " ").trim();
 
 export class SourceEvidenceValidationError extends Error {
@@ -20,7 +23,8 @@ export class SourceQuoteIndex {
   find(excerpt: string): string | null {
     const source = this.source;
     if (!excerpt.trim()) return null;
-    if (source.includes(excerpt)) return excerpt;
+    const candidates = Array.from(new Set([excerpt, quotationText(excerpt)]));
+    for (const candidate of candidates) if (source.includes(candidate)) return candidate;
     if (!this.projection) {
       const positions: number[] = [];
       const characters: string[] = [];
@@ -35,11 +39,13 @@ export class SourceQuoteIndex {
       this.projection = { normalized: characters.join(""), positions };
     }
     const { normalized, positions } = this.projection;
-    const needle = canonical(excerpt);
-    if (!needle) return null;
-    const at = normalized.indexOf(needle);
-    if (at < 0) return null;
-    return source.slice(positions[at], positions[at + needle.length - 1] + 1);
+    for (const candidate of candidates) {
+      const needle = canonical(candidate);
+      if (!needle) continue;
+      const at = normalized.indexOf(needle);
+      if (at >= 0) return source.slice(positions[at], positions[at + needle.length - 1] + 1);
+    }
+    return null;
   }
 }
 
@@ -59,8 +65,8 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
   }
   for (const paragraph of answer.split(/\n\s*\n/u)) {
     const sources = [...paragraph.matchAll(/\[Kilde\s+(\d+)\]/giu)].map(match => available[Number(match[1]) - 1]);
-    for (const quote of paragraph.matchAll(/«([^»]+)»/gu)) {
-      if (!sources.some(source => source?.original_quote && canonical(source.original_quote).includes(canonical(quotationText(quote[1]))))) {
+    for (const quote of quotedSourcePassages(paragraph)) {
+      if (!sources.some(source => source?.original_quote && new SourceQuoteIndex(source.original_quote).find(quote) !== null)) {
         throw new SourceEvidenceValidationError("CHAT_QUOTATION_INVALID", "Et sitat i svaret finnes ikke i den oppgitte kilden. Prøv meldingen på nytt.");
       }
     }
@@ -75,7 +81,7 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
       const source = available[index];
       const original = source.original_quote!;
       const indexer = new SourceQuoteIndex(original);
-      const needles = [...paragraph.matchAll(/«([^»]+)»/gu)].map(match => quotationText(match[1])).concat(ids);
+      const needles = quotedSourcePassages(paragraph).concat(ids);
       const excerpts = passages.get(index) ?? [];
       if (original.length <= 4800) excerpts.push(original);
       else {

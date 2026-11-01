@@ -473,6 +473,7 @@ export function buildValidatedManualArtifactInputSnapshot(input: {
   if (input.artifactType !== "forbedret_kravsvar") {
     return {
       ...parentInputSnapshot,
+      source_evidence: { version: 1, references: [] },
       edited_manually: true,
       edited_at: input.editedAt,
       parent_artifact_id: input.parentArtifactId,
@@ -680,8 +681,27 @@ export function buildValidatedManualArtifactInputSnapshot(input: {
     delete updatedRequirementResponse.manual_review_note;
   }
 
+  // Evidence belongs to the exact generated cell. A manual edit cannot inherit
+  // verified quotations from the old answer, even without repair acknowledgement.
+  const parentAnswerRows = typeof input.parentContentMarkdown === "string"
+    ? renderedRequirementAnswerRows(input.parentContentMarkdown) : [];
+  const editedAnswerRows = renderedRequirementAnswerRows(input.contentMarkdown);
+  const sourceEvidence = inputSnapshotRecord(parentInputSnapshot.source_evidence);
+  const retainedEvidence = sourceEvidence.version === 1 && Array.isArray(sourceEvidence.references)
+    ? sourceEvidence.references.filter((value) => {
+        const entry = inputSnapshotRecord(value);
+        if (typeof entry.path !== "string") return false;
+        const match = entry.path.match(/^rows\.(\d+)\.(answer|evidence)$/u);
+        if (!match) return false;
+        const index = Number(match[1]);
+        const field = match[2] as "answer" | "evidence";
+        const parent = parentAnswerRows[index], edited = editedAnswerRows[index];
+        return Boolean(parent && edited && parent.ref === edited.ref && parent[field] === edited[field]);
+      }) : [];
+
   return {
     ...parentInputSnapshot,
+    source_evidence: { version: 1, references: retainedEvidence },
     generation_metadata: {
       ...generationMetadata,
       requirement_response: updatedRequirementResponse,

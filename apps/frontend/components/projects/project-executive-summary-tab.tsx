@@ -1,5 +1,6 @@
 "use client";
 
+import { OutputSourceEvidence } from "@/components/projects/output-source-evidence";
 import { ArrowUpRight, ClipboardCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ function ExecutiveList({ title, items }: { title: string; items: string[] }) {
 }
 
 export function ProjectExecutiveSummaryTab({
+  projectId, canDownloadDocuments = false,
   executiveSummary: summary,
   hasSolutionEvaluation,
   busy,
@@ -38,6 +40,8 @@ export function ProjectExecutiveSummaryTab({
   workflowBlockedReason,
   onGenerate,
 }: {
+  projectId: string;
+  canDownloadDocuments?: boolean;
   executiveSummary: ExecutiveSummaryResult | null;
   hasSolutionEvaluation: boolean;
   busy: boolean;
@@ -71,6 +75,7 @@ export function ProjectExecutiveSummaryTab({
       {busy && busyMessage ? <GenerationProgress message={busyMessage} progress={busyProgress} /> : null}
       {summary ? (
         <>
+          <OutputSourceEvidence value={summary.source_evidence} projectId={projectId} canDownloadDocuments={canDownloadDocuments} />
           <div className="grid min-w-0 gap-6 lg:grid-cols-2">
             <section className="min-w-0">
               <h3 className="text-sm font-semibold text-slate-950">Hovedkonklusjon</h3>

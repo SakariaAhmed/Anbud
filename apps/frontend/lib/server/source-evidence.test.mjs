@@ -55,3 +55,16 @@ test("bold emphasis inside a quotation preserves exact wording without accepting
   assert.throws(() => validateChatEvidence("Fristen er «Leverandøren skal levere en exitplan **innen 60 dager**.» [Kilde 1]", [source]), /sitat/iu);
   assert.throws(() => validateChatEvidence("Fristen er «Leverandøren skal levere en exitplan **innen 30 dager.» [Kilde 1]", [source]), /sitat/iu);
 });
+
+test("literal source Markdown remains valid and long-source excerpts retain original characters", () => {
+  const literal = "**Frist:** 30 dager";
+  for (const original_quote of [literal, "Innledning. ".repeat(600) + literal + " Avslutning."]) {
+    const used = validateChatEvidence(`Fristen er «${literal}» [Kilde 1]`, [{ evidence_id: "markdown", original_quote }]);
+    assert.ok(used[0].original_quote.includes(literal));
+    assert.ok(original_quote.includes(used[0].original_quote));
+    assert.throws(() => validateChatEvidence("Fristen er «**Frist:** 60 dager» [Kilde 1]", [{ evidence_id: "markdown", original_quote }]), /sitat/iu);
+  }
+});
+test("protocol recommendations remain ordinary terms rather than unsupported requirement IDs", () => {
+  assert.deepEqual(validateChatEvidence("Vurder SAML2, OIDC1 og CIS2 for videre arbeid.", []), []);
+});

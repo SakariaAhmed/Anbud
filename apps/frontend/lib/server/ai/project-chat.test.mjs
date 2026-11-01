@@ -583,3 +583,35 @@ test("chat keeps the full text of excerpts from documents the prompt does not ca
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("section discovery searches the whole current artifact collection and honors explicit type aliases", () => {
+  const { selectProjectChatArtifactSections } = jiti(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+  const artifact = (id, artifact_type, content_markdown, extra = {}) => ({ id, project_id: "p", artifact_type, title: `Utkast ${id}`, content_markdown, artifact_version: 3, is_current: true, source_is_current: true, ...extra });
+  const desired = artifact("late", "bilag1_rekonstruksjon", "# Innledning\n\nGenerell bakgrunn.\n\n" + "Generell bakgrunn.\n\n".repeat(300) + "## Tilbakeføring\n\nEksport ved avslutning tar 30 dager.");
+  const candidates = [...Array.from({ length: 8 }, (_, i) => artifact(`other-${i}`, "losningsutkast", "## Eksport\n\nAndre forslag til eksport.")), desired, artifact("foreign", "bilag1_rekonstruksjon", "Eksport tar 9 dager", { project_id: "foreign" }), artifact("stale", "bilag1_rekonstruksjon", "Eksport tar 8 dager", { source_is_current: false })];
+  const sections = selectProjectChatArtifactSections({ artifacts: candidates, projectId: "p", question: "Hva sier Bilag 1 om eksport ved avslutning?", characterBudget: 1500, limit: 4 });
+  assert.equal(sections[0].artifact.id, "late");
+  assert.match(sections[0].text, /30 dager/u);
+  assert.equal(sections[0].heading, "Tilbakeføring");
+  assert.ok(sections.every(section => section.artifact.project_id === "p" && section.artifact.source_is_current && section.artifact.content_markdown.includes(section.text)));
+  assert.ok(sections.reduce((sum, section) => sum + section.text.length, 0) <= 1500);
+});
+
+test("chat repairs citation format once, validates before display and retains an honest terminal failure", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "chat-format-bound-"));
+  const state = { calls: 0 }; globalThis.__chatFormatBound = state;
+  try {
+    const completion = path.join(directory, "completion.cjs"), retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async () => { const state=globalThis.__chatFormatBound; state.calls++; const text=state.calls===1 ? "K-1.3 krever eksport.\\n\\nK-1.3 krever eksport." : "K-1.3 krever eksport. [Kilde 1]"; return (async function*(){yield text;})(); };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata=async()=>({snippets:[],telemetry:{durationMs:0,quality:{sufficient:false,sourceCount:0}}});`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: { "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval, "@": frontendRoot, "server-only": "/dev/null" } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const output = await streamProjectChat({ projectName: "Fiktiv", question: "Hva krever K-1.3?", customerAnalysis: null, solutionEvaluation: null, recentMessages: [], customerDocument: { id: "customer", project_id: "p", role: "primary_customer_document", title: "Krav", raw_text: "K-1.3 krever eksport.", structure_map: [] }, solutionDocument: null });
+    let answer = ""; for await (const text of output.stream) answer += text;
+    assert.equal(state.calls, 2, "Only the initial answer and one format repair are allowed.");
+    assert.match(answer, /^K-1\.3 krever eksport\. \[Kilde 1\]/u);
+    assert.match(answer, /kunne ikke kildebekreftes/u);
+    assert.equal(output.sourceValidationFailed, true);
+    assert.equal(output.validateAnswer(answer).length, 1);
+  } finally { delete globalThis.__chatFormatBound; rmSync(directory, { recursive: true, force: true }); }
+});

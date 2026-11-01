@@ -60,11 +60,21 @@ const useStoredEmbeddings = useLiveEmbeddings || useRecordedEmbeddings;
 const embeddingsFile = path.resolve(option("--embedding-fixtures") ?? path.join(repositoryRoot, "test-data/rag-retrieval/embeddings.json"));
 const withoutStructure = args.includes("--without-structure");
 const extendedSuite = args.includes("--extended-suite");
+const replayWithModelRerank = args.includes("--replay-with-model-rerank");
+const caseGroup = option("--case-group");
+if (caseGroup && args.includes("--gate")) throw new Error("A case subset cannot pass the complete regression gate.");
+if (replayWithModelRerank && (!useRecordedEmbeddings || !useModelRerank || process.env.OPENAI_BASE_URL !== "http://127.0.0.1:4340/v1")) throw new Error("Paid replay requires recorded embeddings, model reranking and the owned loopback budget proxy.");
+if (replayWithModelRerank) {
+  const response = await fetch("http://127.0.0.1:4340/budget");
+  const budget = await response.json();
+  if (!response.ok || !(budget.remainingUsd > 0 && budget.proxyPhaseBudgetUsd > 0)) throw new Error("A finite evaluation budget is required.");
+  process.env.RAG_EVAL_ALLOW_MODEL_RERANK = "1";
+} else delete process.env.RAG_EVAL_ALLOW_MODEL_RERANK;
 if ((useModelRerank || useLiveEmbeddings || recordEmbeddings) && !process.env.OPENAI_API_KEY) {
   throw new Error("--rerank=model and --embeddings=live need OPENAI_API_KEY.");
 }
 if (recordEmbeddings && !useRecordedEmbeddings) throw new Error("Recording requires --embeddings=recorded.");
-if (useRecordedEmbeddings && useModelRerank) throw new Error("Recorded embedding replay cannot run a model reranker; use the explicit live evaluation tier.");
+if (useRecordedEmbeddings && useModelRerank && !replayWithModelRerank) throw new Error("Recorded embedding replay cannot run a model reranker; use the explicit live evaluation tier.");
 if (useStoredEmbeddings && !databaseUrl) {
   throw new Error("Stored retrieval needs --database-url for a disposable database.");
 }
@@ -75,7 +85,7 @@ if (useRecordedEmbeddings) {
   process.env.RAG_EVAL_EMBEDDINGS_FILE = embeddingsFile;
   process.env.RAG_EVAL_FRONTEND_ROOT = frontendRoot;
   process.env.RAG_EVAL_RECORD_EMBEDDINGS = recordEmbeddings ? "1" : "0";
-  if (!recordEmbeddings) process.env.OPENAI_API_KEY = "recorded-embeddings-no-network";
+  if (!recordEmbeddings && !replayWithModelRerank) process.env.OPENAI_API_KEY = "recorded-embeddings-no-network";
 }
 
 const corpusRoot = path.join(repositoryRoot, "output/pdf/complex-tender-corpus");
@@ -185,7 +195,8 @@ const live = useStoredEmbeddings ? await storeChunksWithLiveEmbeddings() : null;
 const results = [];
 // The disposable database goes even when a case throws.
 try {
-  for (const item of cases) await runCase(item);
+  for (const item of cases.filter(item => !caseGroup || item.kind === caseGroup)) await runCase(item);
+  if (!results.length) throw new Error("No cases matched the requested group.");
 } finally {
   live?.drop();
 }
@@ -246,6 +257,8 @@ const report = {
   documents: documents.length,
   limit,
   model_rerank: useModelRerank,
+  model_calls_with_recorded_embeddings: replayWithModelRerank,
+  case_group: caseGroup ?? null,
   structure_map: withoutStructure ? "removed" : "parser",
   retrieval: useRecordedEmbeddings ? "stored_hybrid_recorded_embeddings" : useLiveEmbeddings ? "stored_hybrid_live_embeddings" : "in_process",
   embedding_fixture: fixtureStats,

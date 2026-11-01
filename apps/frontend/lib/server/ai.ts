@@ -1,3 +1,4 @@
+import { bindOutputSourceEvidence, outputEvidenceFields } from "@/lib/server/output-source-evidence";
 import { selectRequirementRegenerationLedger, mergeRegeneratedRequirementRows } from "@/lib/server/ai/requirement-response-regeneration";
 import "server-only";
 
@@ -3138,6 +3139,12 @@ export async function evaluateSolutionDocument(input: {
       },
     );
   assertSubstantiveSolutionEvaluationResult(normalizedEvaluation);
+  normalizedEvaluation.source_evidence = bindOutputSourceEvidence({
+    fields: outputEvidenceFields(normalizedEvaluation),
+    documents: [input.customerDocument, input.solutionDocument, ...input.supportingDocuments].map(document => ({ document, sourceType: "project_document" as const })),
+    authoritativeRequirementRefs: (input.sourceRequirementLedger ?? []).map(row => row.id),
+    artifacts: input.systemSolutionArtifact?.id ? [{ ...input.systemSolutionArtifact, id: input.systemSolutionArtifact.id }] : [],
+  });
   return normalizedEvaluation;
 }
 

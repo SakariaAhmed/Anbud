@@ -792,6 +792,8 @@ export function ProjectWorkspaceTabContent({
 
       {activeTab === "bilag1" ? (
         <ProjectBilag1Tab
+          projectId={project.id}
+          canDownloadDocuments={canDownloadDocuments}
           documents={project.documents}
           artifacts={bilag1Artifacts}
           busy={Boolean(busy)}
@@ -855,6 +857,8 @@ export function ProjectWorkspaceTabContent({
           <DeferredSectionLoader label="Laster lederoppsummering ..." />
         ) : (
           <ProjectExecutiveSummaryTab
+            projectId={project.id}
+            canDownloadDocuments={canDownloadDocuments}
             executiveSummary={executiveSummary}
             hasSolutionEvaluation={
               Boolean(solutionEvaluation) || project.solution_evaluation_generated

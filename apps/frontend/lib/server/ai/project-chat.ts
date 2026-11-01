@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import type { Untrusted } from "@/lib/unknown-values";
+import { repairChatCitationParagraph } from "@/lib/server/ai/chat-citation-repair";
 import { parseChatSourceReferences } from "@/lib/chat-source-references";
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import { createJsonCompletion, createTextCompletionStream } from "@/lib/server/ai/completion";
@@ -589,6 +590,49 @@ function wholeSourceReference(input: { sourceId: string; sourceType: "project_do
   };
 }
 
+/** Rank sections across every authorized current artifact before budgeting the
+ * prompt. A late relevant section does not lose to five unrelated documents. */
+export function selectProjectChatArtifactSections(input: {
+  artifacts: readonly GeneratedArtifact[]; projectId?: string; question: string;
+  limit?: number; characterBudget?: number;
+}) {
+  const aliases: Record<string, string[]> = {
+    bilag1_rekonstruksjon: ["bilag 1", "bilag1"], forbedret_kravsvar: ["kravsvar", "kravbesvarelse"],
+    losningsutkast: ["løsningsutkast", "systemløsning"], tilbudsstrategi: ["tilbudsstrategi"],
+    verdiargumentasjon: ["verdiargumentasjon"], anbefalt_arkitektur: ["anbefalt arkitektur"],
+    gjennomforing_og_risiko: ["gjennomføring", "risikoplan"],
+  };
+  const question = comparableChatText(input.question), terms = chatAttachmentTerms(input.question);
+  const artifacts = selectProjectChatArtifacts({ ...input, limit: input.artifacts.length });
+  const sections = artifacts.flatMap((artifact, artifactOrder) => {
+    const explicitlyNamed = [artifact.title, ...(aliases[artifact.artifact_type] ?? [])]
+      .some(alias => alias.length > 3 && question.includes(comparableChatText(alias)));
+    let heading = artifact.title;
+    return artifact.content_markdown.split(/(?=^#{1,6}\s)/mu).flatMap((section, sectionOrder) => {
+      heading = section.match(/^#{1,6}\s+(.+)/u)?.[1] ?? heading;
+      return section.split(/\n\s*\n/u).filter(text => text.trim()).map((text, paragraphOrder) => {
+        const comparable = comparableChatText(text), title = comparableChatText(heading);
+        const score = (explicitlyNamed ? 100 : 0) + terms.reduce((sum, term) => sum + (title.includes(term) ? 3 : 0) + (comparable.includes(term) ? 1 : 0), 0);
+        return { artifact, heading, text, score, artifactOrder, sectionOrder, paragraphOrder };
+      });
+    });
+  }).sort((a, b) => b.score - a.score || a.artifactOrder - b.artifactOrder || a.sectionOrder - b.sectionOrder || a.paragraphOrder - b.paragraphOrder);
+  const selected: typeof sections = [];
+  let remaining = input.characterBudget ?? 12_000;
+  for (const section of sections) {
+    if (selected.length >= (input.limit ?? 8) || remaining < 120) break;
+    const limit = Math.min(3500, remaining);
+    const at = terms.map(term => comparableChatText(section.text).indexOf(term)).find(index => index >= 0) ?? 0;
+    const start = Math.max(0, Math.min(section.text.length - limit, at - Math.floor(limit / 3)));
+    const text = section.text.slice(start, start + limit);
+    // Evidence is always an original contiguous passage, never a reconstructed
+    // union of excerpts or a section heading invented by the model.
+    if (!text || !section.artifact.content_markdown.includes(text)) continue;
+    selected.push({ ...section, text }); remaining -= text.length;
+  }
+  return selected;
+}
+
 function buildChatHistoryContext(messages: ChatMessage[]) {
   const lines: string[] = [];
   let charCount = 0;
@@ -638,7 +682,17 @@ function sanitizeChatAnswerText(value: string) {
 /** Validate complete paragraphs before they become visible. An invalid
  * paragraph never reaches the client or persistence; keep an actionable,
  * uncited recovery message instead of discarding an answer already shown. */
-async function* validatedChatParagraphs(stream: AsyncIterable<string>, references: ChatSourceReference[], onInvalid: () => void) {
+async function* validatedChatParagraphs(stream: AsyncIterable<string>, references: ChatSourceReference[], onInvalid: () => void, repair: (paragraph: string) => Promise<string | null>) {
+  let repairAttempted = false;
+  const checkOrRepair = async (paragraph: string) => {
+    try { return checked(paragraph); } catch (error) {
+      if (!(error instanceof SourceEvidenceValidationError) || repairAttempted) throw error;
+      repairAttempted = true;
+      const repaired = await repair(sanitizeChatAnswerText(paragraph));
+      if (repaired === null) throw error;
+      return checked(repaired);
+    }
+  };
   let pending = "";
   const checked = (text: string) => {
     const cleaned = sanitizeChatAnswerText(text);
@@ -652,7 +706,7 @@ async function* validatedChatParagraphs(stream: AsyncIterable<string>, reference
       const paragraph = pending.slice(0, boundary.index);
       pending = pending.slice(boundary.index + boundary[0].length);
       let safeParagraph: string;
-      try { safeParagraph = checked(paragraph); }
+      try { safeParagraph = await checkOrRepair(paragraph); }
       catch (error) {
         if (!(error instanceof SourceEvidenceValidationError)) throw error;
         onInvalid();
@@ -665,7 +719,7 @@ async function* validatedChatParagraphs(stream: AsyncIterable<string>, reference
   }
   if (pending.trim()) {
     let safeParagraph: string;
-    try { safeParagraph = checked(pending); }
+    try { safeParagraph = await checkOrRepair(pending); }
     catch (error) {
       if (!(error instanceof SourceEvidenceValidationError)) throw error;
       onInvalid();
@@ -873,7 +927,13 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     sourceId: `attachment-${createHash("sha256").update(`${input.projectId ?? ""}\0${attachment.rawText}`).digest("hex")}`,
     sourceType: "chat_attachment", title: attachment.title, text: attachment.rawText, revision: 0,
   }));
-  const sourceReferences = [...wholeReferences, ...attachmentReferences, ...sourceReferencesFromSnippets(retrievedSnippets)].map((source, index) => ({ ...source, citation_number: index + 1 }));
+  const artifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: retrievalPlan.standalone_query || input.question });
+  const artifactReferences: ChatSourceReference[] = artifactSections.map(({ artifact, heading, text }) => {
+    const fingerprint = createHash("sha256").update(artifact.content_markdown).digest("hex");
+    const revision = artifact.artifact_version ?? 0;
+    return { source_type: "generated_artifact", source_id: artifact.id, document_title: artifact.title, reference: heading, heading_path: [heading], page_start: null, page_end: null, source_revision: revision, source_fingerprint: fingerprint, original_quote: text, classification: "interpretation", evidence_id: evidenceIdentity({ sourceType: "generated_artifact", sourceId: artifact.id, revision, fingerprint, reference: heading, text }) };
+  });
+  const sourceReferences = [...wholeReferences, ...attachmentReferences, ...sourceReferencesFromSnippets(retrievedSnippets), ...artifactReferences].map((source, index) => ({ ...source, citation_number: index + 1 }));
   const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => ![...wholeReferences, ...attachmentReferences].some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id))) ?? false;
   // With the whole documents included, an excerpt whose text is already in
   // its own document only anchors its reference; any other excerpt keeps its
@@ -951,24 +1011,8 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
             }),
       ),
     );
-  const generatedArtifactLimit = useStructuredCoverage ? 3 : 5;
-  const generatedArtifactTextLimit = useStructuredCoverage ? 1800 : 3500;
-  const generatedArtifacts = selectProjectChatArtifacts({
-    artifacts: input.generatedArtifacts ?? [],
-    projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id,
-    question: relevanceQuery,
-    limit: generatedArtifactLimit,
-  })
-    .map((artifact, index) =>
-      buildDelimitedContext(
-        `Generert artefakt ${index + 1} – tolkning, ikke primærkilde: ${artifact.title}`,
-        buildQuestionRelevantText({
-          rawText: artifact.content_markdown,
-          question: relevanceQuery,
-          limit: generatedArtifactTextLimit,
-        }),
-      ),
-    );
+  const generatedArtifacts = artifactSections.map(({ artifact, heading, text }, index) =>
+    buildDelimitedContext(`Generert utkast – tolkning, ikke primærkilde: ${artifact.title} › ${heading} [Kilde ${sourceReferences.length - artifactReferences.length + index + 1}]`, text));
 
   const documentRuleScope = `Hele ${promptDocuments.map(document => `«${document.title}»`).join(", ")} står nedenfor.`;
   const documentSections = [
@@ -1069,7 +1113,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     .join("\n\n");
 
   return {
-    system: `${buildChatPrompt()}\n\nKildekontrakt v1: Henvis til dokumentutdrag med [Kilde N], der N er utdragets nummer. Bruk bare oppgitte numre. Et direkte sitat skrives med «…» og samme avsnitt skal ha kildehenvisningen. Alle krav-ID-er i svaret må finnes ordrett i den siterte kilden i samme avsnitt. Genererte artefakter er faglig tolkning, ikke primærkilder. Ikke lag sitater eller sidetall som mangler i kildene.`,
+    system: `${buildChatPrompt()}\n\nKildekontrakt v1: Henvis til dokumentutdrag med [Kilde N], der N er utdragets nummer. Bruk bare oppgitte numre. Et direkte sitat skrives med «…» og samme avsnitt skal ha kildehenvisningen. Alle krav-ID-er i svaret må finnes ordrett i den siterte kilden i samme avsnitt. Dette gjelder også overskrifter, punktlister, tolkninger og avsluttende spørsmål; ikke gjenta en krav-ID uten kildehenvisning i det avsnittet. Genererte artefakter er faglig tolkning, ikke primærkilder. Ikke lag sitater eller sidetall som mangler i kildene.`,
     user: userPrompt,
     temperature: useStructuredCoverage ? 0.2 : 0.35,
     model: input.model ?? FAST_MODEL,
@@ -1105,7 +1149,7 @@ export async function streamProjectChat(input: ProjectChatInput) {
   });
 
   return {
-    stream: completionInput.abstentionMessage ? stream : validatedChatParagraphs(stream, completionInput.sourceReferences, () => { sourceValidationFailed = true; }),
+    stream: completionInput.abstentionMessage ? stream : validatedChatParagraphs(stream, completionInput.sourceReferences, () => { sourceValidationFailed = true; }, paragraph => repairChatCitationParagraph({ paragraph, question: input.question, sources: completionInput.sourceReferences, model: completionInput.model, signal: input.signal, traceId: input.traceId })),
     get sourceValidationFailed() { return sourceValidationFailed; },
     sourceReferences: completionInput.abstentionMessage ? [] : completionInput.sourceReferences,
     validateAnswer: (answer: string) => answer === completionInput.abstentionMessage ? [] : validateChatEvidence(answer, completionInput.sourceReferences),

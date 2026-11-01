@@ -6,7 +6,7 @@ import type { ChatSourceReference } from "@/lib/types";
 export function parseChatSourceReferences(value: unknown): ChatSourceReference[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).flatMap(item => {
-    if (item.source_type !== undefined && !["project_document", "service_document", "chat_attachment"].includes(String(item.source_type))) return [];
+    if (item.source_type !== undefined && !["project_document", "service_document", "chat_attachment", "generated_artifact"].includes(String(item.source_type))) return [];
     const text = (key: string) => typeof item[key] === "string" ? item[key] as string : undefined;
     const integer = (key: string, minimum = 0) => Number.isSafeInteger(item[key]) && Number(item[key]) >= minimum ? Number(item[key]) : undefined;
     const reference: ChatSourceReference = {
@@ -24,6 +24,7 @@ export function parseChatSourceReferences(value: unknown): ChatSourceReference[]
       ...(["primary_customer_document", "primary_solution_document", "supporting_document"].includes(String(item.document_role)) ? { document_role: item.document_role as ChatSourceReference["document_role"] } : {}),
       ...(Array.isArray(item.quotation_excerpts) ? { quotation_excerpts: item.quotation_excerpts.filter((part): part is string => typeof part === "string" && Boolean(part.trim())) } : {}),
     };
+    if (reference.source_type === "generated_artifact") reference.classification = "interpretation";
     return reference.document_title || reference.reference ? [reference] : [];
   });
 }

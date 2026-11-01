@@ -11,7 +11,8 @@ const status = JSON.parse(readFileSync(statusPath, "utf8"));
 assert.equal(status.running, true, "Start scripts/system-test-environment.mjs first.");
 const privatePath = path.join(status.directory, "environment.json");
 const runtime = JSON.parse(readFileSync(privatePath, "utf8"));
-const aiEnabled = process.argv.includes("--ai");
+const resumeAi = process.argv.includes("--resume-ai");
+const aiEnabled = process.argv.includes("--ai") || resumeAi;
 const accessOnly = process.argv.includes("--access-only");
 if (accessOnly && aiEnabled) throw new Error("Choose --access-only or --ai, not both.");
 if (runtime.env.OPENAI_API_KEY && !aiEnabled && !accessOnly) throw new Error("This stack has a model endpoint enabled. Use --ai explicitly, or --access-only to reuse existing sources without AI calls.");
@@ -65,18 +66,19 @@ if (aiEnabled) {
   await request("/api/health/ready");
   checks.push("authenticated readiness of the configured system dependencies");
 }
-const project = accessOnly
+const resumeProjectId = resumeAi ? JSON.parse(readFileSync(path.join(status.directory, "ai-output.json"), "utf8")).projectId : null;
+const project = resumeAi ? await (await request(`/api/projects/${resumeProjectId}`)).json() : accessOnly
   ? (await (await request("/api/projects")).json()).find(item => item.document_count === 3)
   : await (await request("/api/projects", { ...json("POST", { name: "Fiktiv systemtest", customer_name: "Fiktiv kommune" }), expected: 201 })).json();
 assert.ok(project?.id, "Access-only mode needs an existing synthetic three-document project.");
-checks.push(accessOnly ? "reused owned synthetic project for access checks" : "authenticated project creation");
+checks.push(resumeAi ? "reused the owned synthetic project whose AI jobs already completed" : accessOnly ? "reused owned synthetic project for access checks" : "authenticated project creation");
 const docs = [
   { role: "primary_customer_document", file: "konkurransegrunnlag.txt", title: "Konkurransegrunnlag", text: "Fiktiv kommune har 120 ansatte fordelt på tre lokasjoner. Kommunen anskaffer drift av en sikker skyplattform. Avtalen varer i tre år med opsjon på ett ekstra år. Tilbudsfrist er 10. november 2026. Kundedata skal behandles i Norge. Kravspesifikasjonen finnes i Bilag 1 og leverandørens besvarelse i løsningsnotatet. Kommunen legger vekt på trygg overgang, dokumentert driftsansvar og en etterprøvbar exitplan." },
   { role: "supporting_document", subtype: "kravdokument", file: "bilag1-krav.txt", title: "Bilag 1 Kravspesifikasjon", text: "1 Drift\nK-1.1 Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser.\n2 Sikkerhet\nK-1.2 Kundedata, sikkerhetskopier og identifiserbare logger skal lagres og behandles i Norge.\n3 Exit\nK-1.3 Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager." },
   { role: "primary_solution_document", file: "losningsnotat.txt", title: "Løsningsnotat", text: "Atea drifter plattformen hele døgnet. Driftssenterets vaktleder er navngitt kontaktpunkt for kritiske hendelser og følger hendelsen til godkjent avslutning. Kundedata, sikkerhetskopier og identifiserbare logger lagres og behandles i Norge. Dette dokumenteres gjennom regionoversikt og tilgangsrevisjon før produksjonssetting. Atea leverer en exitplan med eksport av kundens data i åpne formater innen 30 dager. Eksporten testes med kunden og kontrollsummer bekrefter at data er komplette før avtalen avsluttes." },
 ];
-const uploaded = [];
-for (const doc of accessOnly ? [] : docs) {
+const uploaded = resumeAi ? project.documents.map(document => ({ id: document.id, role: document.role })) : [];
+for (const doc of accessOnly || resumeAi ? [] : docs) {
   const form = new FormData();
   form.set("file", new File([doc.text], doc.file, { type: "text/plain" }));
   form.set("title", doc.title); form.set("role", doc.role); form.set("role_source", "explicit");
@@ -87,7 +89,7 @@ for (const doc of accessOnly ? [] : docs) {
   assert.equal(await download.text(), doc.text, "Encrypted blob round-trip must preserve original upload bytes.");
   uploaded.push({ id: result.document.id, role: doc.role });
 }
-if (!accessOnly) {
+if (!accessOnly && !resumeAi) {
   checks.push("three document roles uploaded through actual multipart route");
   checks.push("actual queue claim, parsing, persisted chunk indexing and readiness");
   checks.push("encrypted Azure SDK/Azurite upload and original-byte download");
@@ -134,9 +136,13 @@ checks.push("guest-owned project creation and global admin access without a proj
 
 if (aiEnabled) {
   assert.ok(runtime.env.OPENAI_API_KEY, "AI tests require an explicitly configured live/fixture model endpoint.");
-  for (const body of [{ kind: "customer_analysis" }, { kind: "artifact_generation", artifact_type: "forbedret_kravsvar", source_document_ids: [uploaded[1].id] }, { kind: "solution_evaluation", solution_document_id: uploaded[2].id }]) {
+  for (const body of resumeAi ? [] : [{ kind: "customer_analysis" }, { kind: "artifact_generation", artifact_type: "forbedret_kravsvar", source_document_ids: [uploaded[1].id] }, { kind: "artifact_generation", artifact_type: "bilag1_rekonstruksjon" }, { kind: "solution_evaluation", solution_document_id: uploaded[2].id }, { kind: "executive_summary" }]) {
     const queued = await (await request(`/api/projects/${project.id}/jobs`, { ...json("POST", body), expected: 202 })).json();
     await runJob(project.id, queued.job);
+    if (body.kind === "artifact_generation") {
+      const result = await (await request(`/api/projects/${project.id}/generate?artifact_type=${body.artifact_type}`)).json();
+      assert.ok(result.artifacts.some(artifact => artifact.is_current && artifact.source_is_current), "A newly published artifact must be fresh at publication.");
+    }
     checks.push(`AI workflow completed and persisted: ${body.kind}${body.artifact_type ? `/${body.artifact_type}` : ""}`);
   }
   const published = await (await request(`/api/projects/${project.id}`)).json();
@@ -151,11 +157,20 @@ if (aiEnabled) {
   assert.match(JSON.stringify(published.customer_analysis), /120/u, "Analysis must preserve the documented customer size.");
   assert.ok(artifact?.content_markdown?.length > 300, "Generation must publish a substantive artifact.");
   assert.equal(artifact.is_current, true, "Published artifact must be authoritative.");
-  assert.equal(artifact.source_is_current, true, "Published artifact must match the current sources.");
+  assert.equal(typeof artifact.source_is_current, "boolean", "Artifact freshness remains explicit after cross-type knowledge changes.");
   for (const suffix of [1, 2, 3]) assert.match(artifact.content_markdown, new RegExp(`K[- ]?1\\.${suffix}\\b`, "iu"), "Every explicit requirement must survive generation.");
-  assert.equal(published.solution_evaluation?.solution_document_id, uploaded[2].id, "Evaluation must reference the selected solution.");
+  assert.equal(published.solution_evaluation?.solution_document_id, uploaded.find(document => document.role === "primary_solution_document").id, "Evaluation must reference the selected solution.");
   assert.ok(published.solution_evaluation.fit_to_customer_needs.length > 60, "Evaluation must publish substantive content.");
-  checks.push("persisted AI outputs retain customer facts, all three requirement IDs, currentness and selected solution provenance");
+  assert.equal(artifact.input_snapshot.source_evidence.version, 1, "Requirement answer evidence must persist.");
+  assert.equal(published.solution_evaluation.source_evidence.version, 1, "Evaluation evidence must persist.");
+  const bilagList = await (await request(`/api/projects/${project.id}/generate?artifact_type=bilag1_rekonstruksjon`)).json();
+  const bilag = bilagList.artifacts.find(item => item.is_current && item.source_is_current);
+  assert.ok(bilag?.content_markdown?.length > 300, "Bilag 1 must publish a substantive current artifact.");
+  assert.equal(bilag.input_snapshot.source_evidence.version, 1, "Bilag 1 evidence must persist.");
+  const summaryResult = await (await request(`/api/projects/${project.id}/executive-summary`)).json();
+  assert.equal(summaryResult.executive_summary?.source_evidence?.version, 1, "Executive summary evidence must persist.");
+  checks.push("persisted AI outputs retain customer facts, all three requirement IDs, explicit freshness and selected solution provenance");
+  checks.push("deterministic evidence contract persists across requirement answers, Bilag 1, evaluation and executive summary");
   const chat = await request(`/api/projects/${project.id}/chat`, json("POST", { message: "Hva er fristen for eksport av data ved exit? Vis kilden." }));
   const content = await chat.text();
   assert.ok(content.length > 100, "Chat must produce a streamed response.");
@@ -177,7 +192,7 @@ if (aiEnabled) {
 }
 runtime.sessions = { adminCookie, guestCookie };
 writeFileSync(privatePath, JSON.stringify(runtime, null, 2), { mode: 0o600 });
-const result = { projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: [...(aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output"]), "live Entra sign-in", "PDF/OCR through HTTP upload (separate image/parser evaluation)"] };
+const result = { resumedCompletedAiWorkflows: resumeAi, projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: [...(aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output"]), "live Entra sign-in", "PDF/OCR through HTTP upload (separate image/parser evaluation)"] };
 writeFileSync(path.join(status.directory, "http-result.json"), JSON.stringify(result, null, 2));
 writeFileSync(statusPath, JSON.stringify({ ...status, projectId: project.id, documents: uploaded, httpChecks: checks.length }, null, 2));
 console.log(JSON.stringify(result, null, 2));

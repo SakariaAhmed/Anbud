@@ -99,7 +99,9 @@ function configuredStore(request) {
 class FixtureOpenAI {
   constructor(options = {}) {
     let live;
-    if (process.env.RAG_EVAL_RECORD_EMBEDDINGS === "1") {
+    const paidRerank = process.env.RAG_EVAL_ALLOW_MODEL_RERANK === "1";
+    if (paidRerank && new URL(options.baseURL || process.env.OPENAI_BASE_URL || "https://api.openai.com").hostname !== "127.0.0.1") throw new Error("Paid replay reranking requires the explicit loopback budget proxy.");
+    if (process.env.RAG_EVAL_RECORD_EMBEDDINGS === "1" || paidRerank) {
       const root = process.env.RAG_EVAL_FRONTEND_ROOT;
       if (!root) throw new Error("Recording requires the explicit frontend root.");
       const OpenAI = require(path.join(root, "node_modules/openai"));
@@ -107,6 +109,13 @@ class FixtureOpenAI {
     }
     const store = configuredStore(live ? (...args) => live.embeddings.create(...args) : undefined);
     this.embeddings = { create: (...args) => store.create(...args) };
+    if (paidRerank) {
+      // Embeddings remain frozen; model calls are explicit and reported. CI
+      // never enables this branch or receives a live completion client.
+      const counted = resource => ({ create: (...args) => { store.stats.modelRequests = (store.stats.modelRequests ?? 0) + 1; return resource.create(...args); } });
+      this.responses = counted(live.responses);
+      this.chat = { completions: counted(live.chat.completions) };
+    }
   }
 }
 

@@ -48,3 +48,14 @@ test("model changes, malformed vectors and incomplete recording responses fail c
   assert.notEqual(inputKey(model, "same"), inputKey("other", "same"));
   assert.notEqual(inputKey(model, "same"), inputKey(model, "changed"));
 });
+
+test("paid replay completions refuse a non-loopback endpoint before any client is created", () => {
+  const previous = process.env.RAG_EVAL_ALLOW_MODEL_RERANK;
+  try {
+    process.env.RAG_EVAL_ALLOW_MODEL_RERANK = "1";
+    assert.throws(() => new fixtures({ baseURL: "https://api.openai.com/v1" }), /loopback budget proxy/u);
+  } finally {
+    if (previous === undefined) delete process.env.RAG_EVAL_ALLOW_MODEL_RERANK;
+    else process.env.RAG_EVAL_ALLOW_MODEL_RERANK = previous;
+  }
+});

@@ -358,7 +358,13 @@ export interface CustomerAnalysisResult {
   section_histories?: CustomerAnalysisSectionHistories;
 }
 
+export interface SourceEvidenceManifest {
+  version: 1;
+  references: Array<{ path: string; source: ChatSourceReference }>;
+}
+
 export interface SolutionEvaluationResult {
+  source_evidence?: SourceEvidenceManifest;
   customer_document_id?: string | null;
   solution_document_id?: string | null;
   evaluated_generated_artifact_id?: string | null;
@@ -461,6 +467,7 @@ export interface SolutionEvaluationResult {
 }
 
 export interface ExecutiveSummaryResult {
+  source_evidence?: SourceEvidenceManifest;
   source_solution_evaluation_present: boolean;
   executive_summary: string;
   fit_to_customer_needs: string;
@@ -529,7 +536,7 @@ export interface ChatSourceReference {
   heading_path: string[];
   page_start: number | null;
   page_end: number | null;
-  source_type: "project_document" | "service_document" | "chat_attachment";
+  source_type: "project_document" | "service_document" | "chat_attachment" | "generated_artifact";
   source_id: string;
 }
 
