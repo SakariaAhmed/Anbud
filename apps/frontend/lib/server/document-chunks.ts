@@ -2011,8 +2011,10 @@ function withSurroundingSections(input: {
   documents: ProjectDocumentDetail[];
   serviceDocuments: ServiceDocumentDetail[];
   limit: number;
+  /** Rebuilt chunks per source, shared by the calls of one retrieval. */
+  chunksBySource: Map<string, SemanticDocumentChunk[]>;
 }) {
-  const chunksBySource = new Map<string, SemanticDocumentChunk[]>();
+  const { chunksBySource } = input;
   const sourceChunks = (snippet: RetrievedDocumentSnippet) => {
     const key = documentChunkSourceKey(snippet.sourceType, snippet.sourceId);
     let chunks = chunksBySource.get(key);
@@ -2251,8 +2253,9 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   let ranked = rerankSnippets({ candidates, queryTokens, exactTerms });
   // Quality is assessed on what is returned: section windows replace their
   // parts and skip parts already inside an earlier window.
+  const chunksBySource = new Map<string, SemanticDocumentChunk[]>();
   const returned = (list: RetrievedDocumentSnippet[]) => input.surroundingSections
-    ? withSurroundingSections({ snippets: list, documents, serviceDocuments, limit })
+    ? withSurroundingSections({ snippets: list, documents, serviceDocuments, limit, chunksBySource })
     : list.slice(0, limit);
   let snippets = returned(ranked);
   let quality = assessRetrievalQuality({ snippets, exactTerms });

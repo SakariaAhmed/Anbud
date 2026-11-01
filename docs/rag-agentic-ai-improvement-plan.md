@@ -10,10 +10,10 @@ Planen under er fra august. Siden da er dette på plass, og flere av «manglene�
 
 - Hybrid search med RRF i `hybrid_match_document_chunks`, query rewrite i chat og en kvalitetsvurdering av retrieval.
 - Nøkkelordsøket får nå en OR-spørring med innholdsord, vanlige norske bøyningsformer og eksakte termer (`buildKeywordSearchQuery`). Før krevde det at hvert ord i spørsmålet sto i samme chunk, og fant nesten ingenting.
-- Chunks er på inntil 1 600 tegn. Chat får seksjonen rundt treffet, på inntil 4 800 tegn, når dokumentene ikke får plass i prompten. Andre flyter får selve treffet.
+- Chunks er på inntil 1 600 tegn. Chat får seksjonen rundt treffet, på inntil 4 800 tegn, med mindre alle dokumentene det søkes i, sendes hele. Andre flyter får selve treffet.
 - Svake treff gir ett bredere søk før chat faller tilbake på lengre rå dokumenttekst.
 - Støttedokumenter og genererte artefakter som ikke får plass i chat, kortes ned til avsnittene som passer spørsmålet best, i stedet for starten av teksten.
-- Chat lar den raske modellen rangere de 32 beste treffene (`retrieval-rerank.ts`). Den er på som standard og slås av med `RAG_MODEL_RERANK=off`. Når hele dokumentene får plass i chat-prompten, hoppes den over. Feiler eller tidsavbrytes kallet (8 s), beholdes den vanlige rangeringen.
+- Chat lar den raske modellen rangere de 32 beste treffene (`retrieval-rerank.ts`). Den er på som standard og slås av med `RAG_MODEL_RERANK=off`. Når alle dokumentene det søkes i, sendes hele i chat-prompten, hoppes den over. Feiler eller tidsavbrytes kallet (8 s), beholdes den vanlige rangeringen.
 
 Retrieval måles med `node scripts/rag_retrieval_eval.mjs` over det innsjekkede anbudskorpuset (60 krav-ID-oppslag og 36 håndskrevne spørsmål i `test-data/rag-retrieval`). `--database-url` måler nøkkelordsøket mot PostgreSQL, `--frontend-root` sammenligner med en annen checkout, og `--without-structure` måler dokumenter uten strukturkart. `--embeddings=live` lagrer chunks med ekte embeddings i en midlertidig database og kjører hele hybridsøket, og `--rerank=model` legger til rerankeren. Begge bruker betalte OpenAI-kall.
 
