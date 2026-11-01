@@ -11,7 +11,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 const frontend = path.join(root, "apps/frontend");
-const statusPath = "/private/tmp/anbud-system-test-status.json";
+const statusPath = process.env.ANBUD_SYSTEM_TEST_STATUS ?? path.join(tmpdir(), "anbud-system-test-status.json");
 const command = process.argv[2] ?? "start";
 const liveAi = process.argv.includes("--live-ai");
 const node = process.execPath;

@@ -31,7 +31,7 @@ test("chat selects a relevant current artifact beyond the first five without cro
     artifact("unknown-exit", relevant.content_markdown, { is_current: undefined, source_is_current: undefined }),
     artifact("other-project", relevant.content_markdown, { project_id: "other" }),
   ];
-  const selected = selectProjectChatArtifacts({ artifacts: candidates, question: "Hva sier exit-planen om eksport av data?", projectId: "project", limit: 5 });
+  const selected = selectProjectChatArtifacts({ artifacts: candidates, question: "Hva sier exit-planen om eksport av data?", projectId: "PROJECT", limit: 5 });
   assert.equal(selected[0].id, relevant.id);
   assert.ok(selected.length <= 5);
   assert.ok(selected.every(item => !["stale-exit", "old-exit", "unknown-exit", "other-project"].includes(item.id)));

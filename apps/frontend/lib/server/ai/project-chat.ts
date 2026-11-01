@@ -676,7 +676,7 @@ export function selectProjectChatArtifacts(input: {
   const terms = chatAttachmentTerms(input.question);
   return input.artifacts
     .filter(artifact => artifact.is_current === true && artifact.source_is_current === true &&
-      (!input.projectId || artifact.project_id === input.projectId))
+      (!input.projectId || artifact.project_id?.toLowerCase() === input.projectId.toLowerCase()))
     .map((artifact, index) => {
       const title = comparableChatText(artifact.title);
       const body = comparableChatText(artifact.content_markdown);

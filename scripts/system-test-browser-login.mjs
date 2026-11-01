@@ -5,8 +5,10 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 
-const status = JSON.parse(readFileSync("/private/tmp/anbud-system-test-status.json", "utf8"));
+const statusPath = process.env.ANBUD_SYSTEM_TEST_STATUS ?? path.join(tmpdir(), "anbud-system-test-status.json");
+const status = JSON.parse(readFileSync(statusPath, "utf8"));
 const runtime = JSON.parse(readFileSync(path.join(status.directory, "environment.json"), "utf8"));
 const endpoint = new URL(status.baseUrl);
 if (!status.running || endpoint.hostname !== "127.0.0.1" || endpoint.port !== "4338") throw new Error("Only the isolated loopback system test is allowed.");

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isRequirementDocument } from "@/lib/document-processing";
+import { isFormalRequirementDocument, isRequirementDocument } from "@/lib/document-processing";
 
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
@@ -74,10 +74,6 @@ export function hasExplicitlyCompleteSmallRequirementLedger(input: {
     const documentEntries = input.ledger.filter(
       (entry) => entry.documentId === document.id,
     );
-    if (!documentEntries.length) {
-      return allRequirementsWithdrawn(document);
-    }
-
     const sourceIds = spreadsheetRequirementIds(document);
     const detectedIds = correctedRequirementIds(
       sourceIds.length ? sourceIds : detectExplicitRequirementIds(withoutCorrectionsSection(document.raw_text)),
@@ -85,6 +81,20 @@ export function hasExplicitlyCompleteSmallRequirementLedger(input: {
     )
       .map(normalizedExplicitCompletenessId)
       .filter(Boolean);
+    if (!documentEntries.length) {
+      // Generation also includes the primary customer as context for the
+      // formal register. An ID-free context document contributes no explicit
+      // rows to verify; the separate formal source must still pass every
+      // completeness and row-quality check below.
+      return allRequirementsWithdrawn(document) || (
+        document.role === "primary_customer_document" &&
+        detectedIds.length === 0 &&
+        input.requirementDocuments.some((source) =>
+          isFormalRequirementDocument(source) &&
+          input.ledger.some((entry) => entry.documentId === source.id),
+        )
+      );
+    }
     if (detectedIds.length !== documentEntries.length) {
       return false;
     }

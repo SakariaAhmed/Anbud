@@ -4,8 +4,9 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 
-const statusPath = "/private/tmp/anbud-system-test-status.json";
+const statusPath = process.env.ANBUD_SYSTEM_TEST_STATUS ?? path.join(tmpdir(), "anbud-system-test-status.json");
 const status = JSON.parse(readFileSync(statusPath, "utf8"));
 assert.equal(status.running, true, "Start scripts/system-test-environment.mjs first.");
 const privatePath = path.join(status.directory, "environment.json");
@@ -47,7 +48,7 @@ async function runJob(projectId, job) {
   for (let attempt = 0; attempt < attempts; attempt++) {
     const current = await (await request(`/api/projects/${projectId}/jobs/${job.id}`)).json();
     if (["completed", "failed"].includes(current.job.status)) {
-      assert.equal(current.job.status, "completed", `Job ${job.kind} did not complete (${current.job.status}).`);
+      assert.equal(current.job.status, "completed", `Job ${job.kind} did not complete (${current.job.status}): ${current.job.error ?? "no error detail"}`);
       return current.job;
     }
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -118,6 +119,22 @@ if (aiEnabled) {
     await runJob(project.id, queued.job);
     checks.push(`AI workflow completed and persisted: ${body.kind}${body.artifact_type ? `/${body.artifact_type}` : ""}`);
   }
+  const published = await (await request(`/api/projects/${project.id}`)).json();
+  const artifact = published.generated_artifacts.find(item => item.artifact_type === "forbedret_kravsvar");
+  // Retain only synthetic evidence, never credentials or request headers.
+  writeFileSync(path.join(status.directory, "ai-output.json"), JSON.stringify({
+    projectId: project.id, customerAnalysis: published.customer_analysis,
+    artifact, solutionEvaluation: published.solution_evaluation,
+  }, null, 2), { mode: 0o600 });
+  assert.ok(published.customer_analysis?.customer_profile_summary?.length > 60, "Customer analysis must publish substantive content.");
+  assert.match(JSON.stringify(published.customer_analysis), /120/u, "Analysis must preserve the documented customer size.");
+  assert.ok(artifact?.content_markdown?.length > 300, "Generation must publish a substantive artifact.");
+  assert.equal(artifact.is_current, true, "Published artifact must be authoritative.");
+  assert.equal(artifact.source_is_current, true, "Published artifact must match the current sources.");
+  for (const suffix of [1, 2, 3]) assert.match(artifact.content_markdown, new RegExp(`K[- ]?1\\.${suffix}\\b`, "iu"), "Every explicit requirement must survive generation.");
+  assert.equal(published.solution_evaluation?.solution_document_id, uploaded[2].id, "Evaluation must reference the selected solution.");
+  assert.ok(published.solution_evaluation.fit_to_customer_needs.length > 60, "Evaluation must publish substantive content.");
+  checks.push("persisted AI outputs retain customer facts, all three requirement IDs, currentness and selected solution provenance");
   const chat = await request(`/api/projects/${project.id}/chat`, json("POST", { message: "Hva er fristen for eksport av data ved exit? Vis kilden." }));
   const content = await chat.text();
   assert.ok(content.length > 100, "Chat must produce a streamed response.");
