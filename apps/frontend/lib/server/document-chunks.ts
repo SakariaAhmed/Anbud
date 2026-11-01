@@ -60,6 +60,7 @@ type SemanticDocumentChunk = {
   tokenCount: number;
   metadata: Record<string, unknown>;
   /** In memory only: the structure entry this part was cut from. */
+  sectionIndex: number;
   sectionText: string;
   sectionOffset: number;
 };
@@ -573,8 +574,10 @@ function norwegianInflections(word: string) {
   const suffix = word.length > 5
     ? NORWEGIAN_STRIPPED_SUFFIXES.find((candidate) => word.endsWith(candidate) && word.length - candidate.length >= 4)
     : undefined;
-  const stem = suffix ? word.slice(0, -suffix.length) : word;
-  return [word, ...NORWEGIAN_INFLECTION_SUFFIXES.map((ending) => `${stem}${ending}`)];
+  // An uninflected word can end like a suffix ("sikkerhet", "ansvar"), so the
+  // word itself is inflected as well as its stripped stem.
+  const stems = suffix ? [word, word.slice(0, -suffix.length)] : [word];
+  return stems.flatMap((stem) => NORWEGIAN_INFLECTION_SUFFIXES.map((ending) => `${stem}${ending}`));
 }
 
 /**
@@ -884,6 +887,7 @@ function buildSemanticDocumentChunks(document: ChunkableDocument) {
       entryText,
     );
     const parts = splitTextWithOverlap(entryText);
+    const sectionIndex = chunks.length;
 
     for (const [partIndex, { text: part, start }] of parts.entries()) {
       chunks.push({
@@ -905,6 +909,7 @@ function buildSemanticDocumentChunks(document: ChunkableDocument) {
           content_hash: hashText(part),
           ...structureEntryChunkMetadata(entry),
         },
+        sectionIndex,
         sectionText: entryText,
         sectionOffset: start,
       });
@@ -2034,7 +2039,7 @@ function withSurroundingSections(input: {
     }
     return chunks;
   };
-  const windows: Array<{ key: string; section: string; start: number; end: number }> = [];
+  const windows: Array<{ key: string; section: number; start: number; end: number }> = [];
   const result: RetrievedDocumentSnippet[] = [];
   for (const snippet of input.snippets) {
     if (result.length >= input.limit) break;
@@ -2046,12 +2051,12 @@ function withSurroundingSections(input: {
     const key = documentChunkSourceKey(snippet.sourceType, snippet.sourceId);
     const partEnd = chunk.sectionOffset + chunk.text.length;
     if (windows.some((window) =>
-      window.key === key && window.section === chunk.sectionText &&
+      window.key === key && window.section === chunk.sectionIndex &&
       window.start <= chunk.sectionOffset && partEnd <= window.end)) {
       continue;
     }
     const window = sectionWindow(chunk.sectionText, chunk.sectionOffset, partEnd);
-    windows.push({ key, section: chunk.sectionText, ...window });
+    windows.push({ key, section: chunk.sectionIndex, ...window });
     result.push({ ...snippet, text: chunk.sectionText.slice(window.start, window.end) });
   }
   return result;
@@ -2072,6 +2077,13 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   broaderExactTerms?: string[];
   /** Orders the best candidates by relevance; null keeps the heuristic order. */
   rerank?: RetrievalReranker;
+  /**
+   * Returns each matched part with up to 4 800 characters of its section. Only
+   * for callers that send whole snippets: a caller that cuts snippets to their
+   * first characters would lose the match, and the section can repeat text
+   * already covered by `promptDocumentText`.
+   */
+  surroundingSections?: boolean;
 }): Promise<DocumentSnippetRetrievalResult> {
   const startedAt = Date.now();
   const query = normalizeChunkText(input.query);
@@ -2277,15 +2289,14 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     }
   }
 
-  if (usedBroadenedSearch || usedModelRerank) {
-    quality = assessRetrievalQuality({ snippets: ranked.slice(0, limit), exactTerms: rankingExactTerms });
+  const snippets = input.surroundingSections
+    ? withSurroundingSections({ snippets: ranked, documents, serviceDocuments, limit })
+    : ranked.slice(0, limit);
+  if (usedBroadenedSearch || usedModelRerank || input.surroundingSections) {
+    // Assessed on what is returned: section windows replace their parts and
+    // skip parts already inside an earlier window.
+    quality = assessRetrievalQuality({ snippets, exactTerms: rankingExactTerms });
   }
-  const snippets = withSurroundingSections({
-    snippets: ranked,
-    documents,
-    serviceDocuments,
-    limit,
-  });
   const telemetry = {
     query,
     exactTerms,

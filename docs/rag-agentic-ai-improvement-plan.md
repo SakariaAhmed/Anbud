@@ -17,17 +17,15 @@ Planen under er fra august. Siden da er dette på plass, og flere av «manglene�
 
 Retrieval måles med `node scripts/rag_retrieval_eval.mjs` over det innsjekkede anbudskorpuset (60 krav-ID-oppslag og 36 håndskrevne spørsmål i `test-data/rag-retrieval`). `--database-url` måler nøkkelordsøket mot PostgreSQL, `--frontend-root` sammenligner med en annen checkout, og `--without-structure` måler dokumenter uten strukturkart. `--embeddings=live` lagrer chunks med ekte embeddings i en midlertidig database og kjører hele hybridsøket, og `--rerank=model` legger til rerankeren. Begge bruker betalte OpenAI-kall.
 
-Målt 1. november 2026 med ekte embeddings (`text-embedding-3-small`) og hybridsøk, for de 36 spørsmålene uten krav-ID:
+Målt 1. november 2026 med ekte embeddings (`text-embedding-3-small`) og hybridsøk, for de 36 spørsmålene uten krav-ID. Evalen kjører samme søk som chat (`buildProjectChatRetrievalRequest`); `main` har ikke den funksjonen og søker bare med spørsmålet:
 
 | Oppsett | Riktig utdrag først | Topp 5 | MRR | Median søketid |
 | --- | --- | --- | --- | --- |
-| `main` | 0,44 | 0,75 | 0,57 | 0,25 s |
-| Denne endringen | 0,44 | 0,81 | 0,58 | 0,25 s |
-| Denne endringen med reranker | 0,78 | 0,97 | 0,86 | 1,7 s |
-| `main` uten strukturkart | 0,61 | 0,94 | 0,75 | 0,25 s |
-| Denne endringen uten strukturkart | 0,78 | 0,94 | 0,83 | 0,25 s |
+| `main`, bare spørsmålet | 0,44 | 0,75 | 0,57 | 0,25 s |
+| Chat-søket uten reranker | 0,44 | 0,67 | 0,56 | 0,27 s |
+| Chat-søket med reranker | 0,78 | 0,94 | 0,85 | 1,9 s |
 
-Krav-ID-oppslagene finner riktig utdrag blant de fem første i alle oppsett, og først i alle med rerankeren. Rerankeren brukte om lag 7 500 input-tokens per spørsmål. Korpuset er lite (ti dokumenter), så tallene viser retning, ikke nivået i store anbud.
+Krav-ID-oppslagene finner riktig utdrag blant de fem første i alle oppsett, og først i alle med rerankeren. Rerankeren brukte om lag 7 300 input-tokens per spørsmål, og ingen kall feilet. Uten rerankeren treffer chat-søket dårligere enn spørsmålet alene, fordi domeneordene i søket trekker treffene mot generelle utdrag. Korpuset er lite (ti dokumenter), så tallene viser retning, ikke nivået i store anbud.
 
 ## Dagens utgangspunkt
 

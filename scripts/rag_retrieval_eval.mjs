@@ -7,9 +7,9 @@
 // act as distractors.
 //
 // Modes (no paid model calls unless --embeddings=live or --rerank=model):
-//   default            In-process retrieval as chat runs it without chunk
-//                      storage: the app's chunker, lexical ranking, section
-//                      context and the broader retry.
+//   default            Chat's retrieval request (buildProjectChatRetrievalRequest)
+//                      run in process, as without chunk storage: the app's
+//                      chunker, lexical ranking, sections and broader retry.
 //   --database-url U   Also measures the keyword half of hybrid search on a
 //                      disposable PostgreSQL database created on U: the old
 //                      whole-question query against the new keyword query.
@@ -87,9 +87,19 @@ const app = load({ "@/lib/server/data-api": useLiveEmbeddings
 const { retrieveDocumentSnippetsWithMetadata, buildKeywordSearchQuery, replaceProjectDocumentChunks } = app(path.join(frontendRoot, "lib/server/document-chunks.ts"));
 const { extractTextFromBuffer } = app(path.join(frontendRoot, "lib/server/documents.ts"));
 const { extractExactRetrievalTerms } = app(path.join(frontendRoot, "lib/server/ai/retrieval-query.ts"));
-const rerank = useModelRerank
-  ? app(path.join(frontendRoot, "lib/server/ai/retrieval-rerank.ts")).rerankRetrievalCandidates
-  : undefined;
+// Chat's own request (query plan, exact terms, broader retry, sections and
+// reranker). The plan is built without a model call: a first question with
+// no history is not rewritten. A checkout without the builder gets the
+// question as its query.
+process.env.RAG_QUERY_REWRITE = "off";
+process.env.RAG_MODEL_RERANK = useModelRerank ? "on" : "off";
+const { buildProjectChatRetrievalRequest } = app(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+const retrievalRequest = async (question) => buildProjectChatRetrievalRequest
+  ? (await buildProjectChatRetrievalRequest({
+      question, recentMessages: [], customerDocument: documents[0], solutionDocument: documents[1],
+      supportingDocuments: documents.slice(2),
+    })).request
+  : { query: question, projectId, documents, exactTerms: extractExactRetrievalTerms(question), limit: 12 };
 
 // Stored chunk rows need UUIDs for the document and project filters.
 const projectId = "00000000-0000-4000-8000-000000000001";
@@ -132,25 +142,19 @@ const cases = [
   ...conceptual.questions.map((item) => ({ kind: "conceptual", question: item.question, ...expectation(item.expected_requirement_id) })),
 ];
 
+// Result count of the keyword-search measurement; chat sets its own.
 const limit = 12;
 const live = useLiveEmbeddings ? await storeChunksWithLiveEmbeddings() : null;
 const results = [];
 for (const item of cases) {
   const startedAt = Date.now();
-  const retrieval = await retrieveDocumentSnippetsWithMetadata({
-    query: item.question,
-    projectId,
-    documents,
-    exactTerms: extractExactRetrievalTerms(item.question),
-    limit,
-    broaderQuery: item.question,
-    broaderExactTerms: extractExactRetrievalTerms(item.question),
-    rerank,
-  });
+  const request = await retrievalRequest(item.question);
+  const retrieval = await retrieveDocumentSnippetsWithMetadata(request);
   results.push({
     ...item,
     retrieval_latency_ms: Date.now() - startedAt,
     used_hybrid_search: retrieval.telemetry.usedHybridSearch,
+    used_broadened_search: retrieval.telemetry.usedBroadenedSearch ?? false,
     used_model_rerank: retrieval.telemetry.usedModelRerank ?? false,
     context_chars_top5: retrieval.snippets.slice(0, 5).reduce((sum, snippet) => sum + snippet.text.length, 0),
     retrieved: retrieval.snippets.map((snippet) => ({
@@ -190,6 +194,8 @@ const report = {
   model_rerank: useModelRerank,
   structure_map: withoutStructure ? "removed" : "parser",
   retrieval: useLiveEmbeddings ? "stored_hybrid_live_embeddings" : "in_process",
+  request: buildProjectChatRetrievalRequest ? "project_chat" : "question_only",
+  cases_using_broadened_search: results.filter((row) => row.used_broadened_search).length,
   ...(live ? {
     stored_chunks: live.chunks,
     embedded_chunks: live.embeddedChunks,

@@ -642,7 +642,14 @@ function buildChatAnswerStructureContext(input: {
   );
 }
 
-async function prepareProjectChatCompletion(input: ProjectChatInput) {
+/**
+ * The retrieval request chat sends for a question, with the domain hints and
+ * plan the answer prompt uses. scripts/rag_retrieval_eval.mjs measures it.
+ */
+export async function buildProjectChatRetrievalRequest(
+  input: Pick<ProjectChatInput, "question" | "recentMessages" | "sessionSummary" | "model" | "domainHints"
+    | "customerDocument" | "solutionDocument" | "supportingDocuments">,
+) {
   const domainHints =
     input.domainHints?.length
       ? input.domainHints
@@ -656,7 +663,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     domainHints,
   });
   const domainTerms = retrievalTermsForChatDomains(domainHints);
-  const history = buildChatHistoryContext(input.recentMessages);
   const projectDocumentsForRetrieval = [
     input.customerDocument,
     input.solutionDocument,
@@ -677,7 +683,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   ]
     .filter(Boolean)
     .join("\n");
-  const retrievalResult = await retrieveDocumentSnippetsWithMetadata({
+  const request = {
     query: retrievalQuery,
     projectId: projectDocumentsForRetrieval[0]?.project_id ?? null,
     documents: projectDocumentsForRetrieval,
@@ -696,7 +702,17 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     broaderQuery: [input.question, ...domainTerms].join("\n"),
     broaderExactTerms: extractExactRetrievalTerms(input.question),
     rerank: modelRetrievalRerankEnabled() ? rerankRetrievalCandidates : undefined,
-  });
+    // Chat sends whole snippets (no per-snippet cut), so it gets their sections.
+    surroundingSections: true,
+  } satisfies Parameters<typeof retrieveDocumentSnippetsWithMetadata>[0];
+  return { domainHints, useStructuredCoverage, retrievalPlan, request };
+}
+
+async function prepareProjectChatCompletion(input: ProjectChatInput) {
+  const { domainHints, useStructuredCoverage, retrievalPlan, request } =
+    await buildProjectChatRetrievalRequest(input);
+  const history = buildChatHistoryContext(input.recentMessages);
+  const retrievalResult = await retrieveDocumentSnippetsWithMetadata(request);
   const retrievedSnippets = retrievalResult.snippets;
   const retrievalQuality = retrievalResult.telemetry.quality;
   const hasStrongRetrieval =

@@ -3,6 +3,7 @@ import "server-only";
 import { createJsonCompletion } from "@/lib/server/ai/completion";
 import { compactText } from "@/lib/server/ai/context";
 import { FAST_MODEL, FAST_REASONING_EFFORT } from "@/lib/server/ai/model-config";
+import { matchCenteredExcerpt } from "@/lib/server/ai/requirement-coverage";
 import type { RetrievalReranker } from "@/lib/server/document-chunks";
 import { buildDelimitedContext, buildPromptTemplate } from "@/lib/server/prompts";
 
@@ -11,7 +12,7 @@ const RERANK_TIMEOUT_MS = 8_000;
 
 /**
  * On unless `RAG_MODEL_RERANK=off`. Each chat search adds one fast-model call
- * (about 7 500 input tokens, 1.5 s median); scripts/rag_retrieval_eval.mjs
+ * (about 7 300 input tokens, 1.6 s median); scripts/rag_retrieval_eval.mjs
  * measures what it buys.
  */
 export function modelRetrievalRerankEnabled() {
@@ -48,7 +49,9 @@ export const rerankRetrievalCandidates: RetrievalReranker = async ({ query, cand
             [
               `Dokument: ${candidate.documentTitle}`,
               `Referanse: ${candidate.reference}`,
-              compactText(candidate.text, RERANK_PASSAGE_CHARS),
+              // The part that matches the query, not the first characters:
+              // the evidence can sit late in a long or older stored chunk.
+              matchCenteredExcerpt(candidate.text, query, RERANK_PASSAGE_CHARS),
             ].join("\n"),
           ),
         ),

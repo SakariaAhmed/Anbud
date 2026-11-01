@@ -39,8 +39,22 @@ test("the model's 1-based ranking becomes candidate indexes and long passages ar
     assert.deepEqual(order, [1, 2], "non-numeric entries are dropped");
     const [request] = reranker.state.requests;
     assert.match(request.user, /Utdrag 2[\s\S]*Temperaturhistorikk lagres i ti år/u);
-    assert.doesNotMatch(request.user, /SLUTTMARKØR/u, "each passage is cut to its rerank budget");
+    assert.ok(request.user.length < 4000, "each passage is cut to its rerank budget");
     assert.equal(request.maxRetries, 0);
+  } finally {
+    reranker.cleanup();
+  }
+});
+
+test("the model sees the part of a long passage that matches the query", async () => {
+  const reranker = loadReranker(() => ({ ranking: [1] }));
+  try {
+    const filler = "Leverandøren beskriver generelle rutiner for drift og forvaltning. ".repeat(60);
+    await reranker.rerankRetrievalCandidates({
+      query: "Hvor lenge lagres temperaturhistorikken?",
+      candidates: [candidate(`${filler}Temperaturhistorikken lagres i ti år etter levering. ${filler}`)],
+    });
+    assert.match(reranker.state.requests[0].user, /Temperaturhistorikken lagres i ti år/u);
   } finally {
     reranker.cleanup();
   }
