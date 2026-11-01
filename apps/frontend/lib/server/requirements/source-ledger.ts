@@ -1,4 +1,5 @@
 import "server-only";
+import { isFormalRequirementDocument } from "@/lib/document-processing";
 import { applyRequirementCorrections } from "@/lib/server/requirements/corrections";
 import { buildHierarchicalIdPdfRequirementLedger, buildHierarchicalIdTextRequirementLedger } from "@/lib/server/requirements/hierarchical-id-parser";
 import {
@@ -1989,12 +1990,15 @@ export async function buildRequirementSourceLedgerWithFiles(
   }
   // A solution document answers requirements under their IDs; its own
   // extractors keep those answers.
+  const hierarchicalRegisterOptions = {
+    allowSingleRequirement: isFormalRequirementDocument(document),
+  };
   const hierarchicalIdLedger =
     document.role === "primary_solution_document"
       ? []
       : document.file_format === "pdf"
-        ? buildHierarchicalIdPdfRequirementLedger(await readPdfLayoutPages(document))
-        : buildHierarchicalIdTextRequirementLedger(document);
+        ? buildHierarchicalIdPdfRequirementLedger(await readPdfLayoutPages(document), hierarchicalRegisterOptions)
+        : buildHierarchicalIdTextRequirementLedger(document, hierarchicalRegisterOptions);
   if (hierarchicalIdLedger.length > 0) {
     return sortRequirementLedgerInDocumentOrder(
       finalizeRequirementLedgerEntries(

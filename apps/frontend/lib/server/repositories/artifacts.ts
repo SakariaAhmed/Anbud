@@ -417,6 +417,53 @@ export async function listGeneratedArtifactsFresh(
   );
 }
 
+/** Loads the authoritative versions before reading bodies, independently of UI history limits. */
+export async function listCurrentGeneratedArtifactsFresh(projectId: string) {
+  const authorityBefore = await getArtifactAuthoritySummary(projectId);
+  const currentTypes = currentArtifactTypesFromAuthority(authorityBefore);
+  const ids = currentTypes.map((type) => authorityBefore[type]!.id);
+  if (!ids.length) return [];
+
+  const { data, error } = await createServiceClient()
+    .from("generated_artifacts")
+    .select("*")
+    .eq("project_id", projectId)
+    .in("id", ids);
+  if (error) throw new Error(error.message || "Kunne ikke hente gjeldende generatorartefakter.");
+  if (!Array.isArray(data)) throw new Error("Databasen returnerte ugyldige generatorartefakter.");
+
+  const rowsById = new Map<string, ArtifactRow>();
+  for (const value of data) {
+    if (!value || typeof value !== "object") continue;
+    const row = value as ArtifactRow;
+    const expected = authorityBefore[row.artifact_type];
+    if (
+      typeof row.project_id !== "string" ||
+      row.project_id.toLowerCase() !== projectId.toLowerCase() ||
+      !isGeneratedArtifactType(row.artifact_type) ||
+      expected?.source_is_current !== true ||
+      row.id !== expected.id ||
+      Number(row.artifact_version) !== expected.artifact_version ||
+      typeof row.content_markdown !== "string" ||
+      !row.content_markdown.trim()
+    ) continue;
+    if (rowsById.has(row.id)) throw new Error("Databasen returnerte dupliserte generatorartefakter.");
+    rowsById.set(row.id, row);
+  }
+
+  // Publication, deletion or source invalidation may race the body read. Never
+  // promote an earlier version when its replacement was not part of this read.
+  const authorityAfter = await getArtifactAuthoritySummary(projectId);
+  const artifacts = currentTypes.flatMap((type) => {
+    const before = authorityBefore[type]!;
+    const after = authorityAfter[type];
+    const row = rowsById.get(before.id);
+    return row && after?.source_is_current === true && after.id === before.id &&
+      after.artifact_version === before.artifact_version ? [mapArtifact(row)] : [];
+  });
+  return decorateArtifactAuthority(artifacts, authorityAfter);
+}
+
 export async function listArtifactKnowledgeCandidatesFresh(
   projectId: string,
   artifactType: GeneratedArtifactType,

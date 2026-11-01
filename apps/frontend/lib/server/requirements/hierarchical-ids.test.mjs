@@ -88,6 +88,9 @@ test("small normative PDF registers preserve full IDs while repeated references 
   assert.deepEqual(buildHierarchicalIdPdfRequirementLedger(fewIds).map(row => row.id), ["K-2.1", "K-2.2"]);
   const repeated = [pages[0], { page: 2, lines: [line(700, [63, "K-2.1"], [90, "Leverandøren skal ha et styringssystem."])] }];
   assert.deepEqual(buildHierarchicalIdPdfRequirementLedger(repeated), []);
+  const singleRow = [{ page: 1, lines: [line(740, [63, "K-2.1"], [90, "Leverandøren skal dokumentere døgnkontinuerlig drift."])] }];
+  assert.deepEqual(buildHierarchicalIdPdfRequirementLedger(singleRow), []);
+  assert.deepEqual(buildHierarchicalIdPdfRequirementLedger(singleRow, { allowSingleRequirement: true }).map(row => row.id), ["K-2.1"]);
 });
 
 test("small lists without independent obligations are not promoted to requirement registers", () => {
@@ -371,4 +374,57 @@ test("prose between requirements without full stops is neither requirement text 
     ["K-2.1.2", "Løsningen skal integreres mot Microsoft Entra ID Integrasjonen gjelder alle ansatte.", "Drift"],
     ["K-2.1.3", "Leverandøren skal levere opplæring", "Drift"],
   ]);
+});
+
+test("a single incidental hierarchical reference cannot take over a primary customer narrative", async () => {
+  const raw_text = [
+    "Leverandøren skal levere en plan for overgangen til ny leverandør.",
+    "K-1.1 er omtalt i kravspesifikasjonen og skal leses sammen med Bilag 2.",
+    "Kommunen beskriver anskaffelsens bakgrunn i de følgende kapitlene.",
+  ].join("\n");
+  assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text }), []);
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const result = await extractRequirementLedgerWithCorrections({
+    id: "customer-narrative", title: "Konkurransegrunnlag", role: "primary_customer_document",
+    supporting_subtype: null, file_name: "konkurransegrunnlag.txt", file_format: "txt", raw_text, structure_map: [],
+  });
+  assert.ok(result.ledger.some(entry => /plan for overgangen til ny leverandør/u.test(entry.text)),
+    "Falling through must preserve the unnumbered customer obligation.");
+});
+
+test("small primary customer registers preserve full IDs while mixed narratives leave the fast path", async () => {
+  const rows = [
+    "K-1.1 Leverandøren skal dokumentere døgnkontinuerlig drift.",
+    "K-1.2 Leverandøren skal dokumentere sikkerhetskopiering i Norge.",
+  ];
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const customer = {
+    id: "customer-register", title: "Konkurransegrunnlag", role: "primary_customer_document",
+    supporting_subtype: null, file_name: "konkurransegrunnlag.txt", file_format: "txt", structure_map: [],
+    raw_text: ["1 Driftskrav", ...rows].join("\n"),
+  };
+  const register = await extractRequirementLedgerWithCorrections(customer);
+  assert.deepEqual(register.ledger.map(entry => entry.id), ["K-1.1", "K-1.2"]);
+  for (const raw_text of [
+    ["Leverandøren skal levere en plan for overgangen til ny leverandør.", ...rows].join("\n"),
+    [...rows, "2 Tilbudsinnlevering", "Leverandøren skal levere en plan for overgangen til ny leverandør."].join("\n"),
+  ]) {
+    assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text }), []);
+    // The generic fallback has its own known limits for unnumbered trailing
+    // requirements. This regression bounds the new register fast path only.
+  }
+});
+
+test("a one-row formal register stays usable while small mixed numbering stays with existing parsers", async () => {
+  const raw_text = "K-1.1 Leverandøren skal dokumentere døgnkontinuerlig drift.";
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const result = await extractRequirementLedgerWithCorrections({
+    id: "single-formal", title: "Bilag 1 Kravspesifikasjon", role: "supporting_document",
+    supporting_subtype: "kravdokument", file_name: "bilag1.txt", file_format: "txt", raw_text, structure_map: [],
+  });
+  assert.deepEqual(result.ledger.map(entry => [entry.id, entry.text]), [["K-1.1", "Leverandøren skal dokumentere døgnkontinuerlig drift."]]);
+  assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text: [
+    raw_text, "K-1.2 Leverandøren skal dokumentere sikkerhetskopiering.",
+    "R-7 Leverandøren skal levere opplæring.",
+  ].join("\n") }), []);
 });

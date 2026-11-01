@@ -1552,7 +1552,7 @@ test("a new requirement joins the register numbering its series even when the ch
   );
 });
 
-test("a correction addition keeps register ownership and separate correction provenance", () => {
+test("a correction addition follows its hierarchical register despite a larger other register, with separate provenance", () => {
   const customer = document({
     id: "customer",
     role: "primary_customer_document",
@@ -1564,13 +1564,14 @@ test("a correction addition keeps register ownership and separate correction pro
       "2. Nytt krav K-2.3 legges til: «Leverandøren skal levere en exitplan.»",
     ].join("\n"),
   });
-  const first = document({ id: "first", title: "Bilag 1", raw_text: "K-1.1 Leverandøren skal levere drift." });
+  const firstRows = [1, 2, 3, 4].map(number => ledgerEntry({ id: `K-1.${number}`, text: "Leverandøren skal levere drift.", pages: [1], heading: "1 Drift", documentId: "first", documentTitle: "Bilag 1" }));
+  const first = document({ id: "first", title: "Bilag 1", raw_text: firstRows.map(row => `${row.id} ${row.text}`).join("\n") });
   const second = document({ id: "second", title: "Bilag 3", raw_text: "K-2.1 Leverandøren skal levere støtte.\nK-2.2 Leverandøren skal levere opplæring." });
   const canonical = canonicalizeRequirementSourceLedger({
     sourceDocuments: [customer, first, second],
     requirementLedgerResults: [
       { document: customer, ledger: [] },
-      { document: first, ledger: [ledgerEntry({ id: "K-1.1", text: "Leverandøren skal levere drift.", pages: [1], heading: "1 Drift", documentId: "first", documentTitle: "Bilag 1" })] },
+      { document: first, ledger: firstRows },
       {
         document: second,
         ledger: [
@@ -1617,6 +1618,100 @@ test("a correction added inside a register follows numeric ID order without borr
   const { requirementLedgerSource } = await jiti.import(path.join(frontendRoot, "lib/server/requirements/presentation.ts"));
   assert.match(requirementLedgerSource(added), /Konkurransegrunnlag, Side 9, Rettelse til Bilag 1/u);
   assert.doesNotMatch(requirementLedgerSource(added), /Side [124](?:,|$)/u);
+});
+
+function correctedRegisterRows(correction, registers) {
+  const customer = document({ id: "correction-customer", role: "primary_customer_document", supporting_subtype: null, title: "Rettelser", raw_text: `9 Rettelser\n${correction}` });
+  const formal = registers.map(({ id, title, file_name, ids }) => ({
+    document: document({ id, title, ...(file_name ? { file_name } : {}), raw_text: ids.map(id => `${id} Leverandøren skal levere dokumentasjon.`).join("\n") }),
+    ledger: ids.map(requirementId => ledgerEntry({ id: requirementId, documentId: id, text: "Leverandøren skal levere dokumentasjon." })),
+  }));
+  return canonicalizeRequirementSourceLedger({
+    sourceDocuments: [customer, ...formal.map(result => result.document)],
+    requirementLedgerResults: [{ document: customer, ledger: [] }, ...formal],
+  });
+}
+
+test("an addition's explicit destination wins over its numeric parent and another correction clause", () => {
+  const rows = correctedRegisterRows([
+    "1. Krav K-2.1 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere rapporter ukentlig.»",
+    "2. Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal kontrollere henvisningen til Bilag 1.»",
+  ].join("\n"), [
+    { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
+    { id: "third", title: "Bilag 3", ids: ["R-1.1"] },
+  ]);
+  assert.equal(rows.find(row => row.id === "K-2.3").documentId, "third");
+  assert.equal(rows.find(row => row.id === "K-2.3").documentTitle, "Bilag 3");
+  assert.equal(rows.find(row => row.id === "K-2.3").correctionSource.documentId, "correction-customer");
+});
+
+test("an explicit filename destination works without another requirement mention", () => {
+  for (const target of ["Bilag 3", "Sikkerhetskrav.pdf"]) {
+    const rows = correctedRegisterRows(`Nytt krav K-2.3 legges til i ${target}: «Leverandøren skal levere en exitplan.»`, [
+      { id: "first", title: "Bilag 1", ids: ["K-2.1"] },
+      { id: "target", title: "Sikkerhetskrav", file_name: target === "Bilag 3" ? "03_Bilag_3_Kravspesifikasjon.pdf" : "Sikkerhetskrav.pdf", ids: ["R-1.1"] },
+    ]);
+    assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, "target", target);
+  }
+});
+
+test("each addition in one correction paragraph keeps its own named register", () => {
+  const rows = correctedRegisterRows("Krav K-2.1 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.» Nytt krav K-2.4 legges til i Bilag 1: «Leverandøren skal teste tilbakeføring.»", [
+    { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
+    { id: "third", title: "Bilag 3", ids: ["R-1.1"] },
+  ]);
+  assert.equal(rows.find(row => row.id === "K-2.3").documentId, "third");
+  assert.equal(rows.find(row => row.id === "K-2.4").documentId, "first");
+});
+
+test("a shared numeric parent does not choose a register by row frequency", () => {
+  assert.throws(() => correctedRegisterRows("Krav K-2.1 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til: «Leverandøren skal levere en exitplan.»", [
+    { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
+    { id: "third", title: "Bilag 3", ids: ["K-2.5"] },
+  ]), /K-2\.3.*entydig/u);
+});
+
+test("unknown or ambiguous explicit destinations fail instead of falling back to an ID parent", () => {
+  for (const registers of [
+    [{ id: "first", title: "Bilag 1", ids: ["K-2.1"] }],
+    [{ id: "first", title: "Bilag 3", ids: ["K-2.1"] }, { id: "third", title: "Bilag 3", ids: ["R-1.1"] }],
+  ]) {
+    assert.throws(() => correctedRegisterRows("Krav K-2.1 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.»", registers), /K-2\.3.*entydig/u);
+  }
+  assert.throws(() => correctedRegisterRows("Nytt krav K-2.3 legges til i Bilag 1 og Bilag 3: «Leverandøren skal levere en exitplan.»", [
+    { id: "first", title: "Bilag 1", ids: ["K-2.1"] },
+    { id: "third", title: "Bilag 3", ids: ["R-1.1"] },
+  ]), /K-2\.3.*entydig/u);
+});
+
+test("explicit destinations can precede the addition verb and use a complete document title", () => {
+  for (const phrase of ["i Bilag 3 Sikkerhetskrav legges til", "legges til i Bilag 3 Sikkerhetskrav, jf Bilag 1"]) {
+    const rows = correctedRegisterRows(`Nytt krav K-2.3 ${phrase}: «Leverandøren skal levere en exitplan.»`, [
+      { id: "first", title: "Bilag 1", ids: ["K-2.1"] },
+      { id: "wrong", title: "Bilag 3 Drift", ids: ["R-1.1"] },
+      { id: "target", title: "Bilag 3 Sikkerhetskrav", ids: ["S-1.1"] },
+    ]);
+    assert.equal(rows.find(row => row.id === "K-2.3").documentId, "target", phrase);
+  }
+});
+
+test("a document named only inside added wording is evidence, not an addition destination", () => {
+  const rows = correctedRegisterRows("Krav R-1.1 i Bilag 3 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til: «Leverandøren skal kontrollere Bilag 3 før oppstart.»", [
+    { id: "first", title: "Bilag 1", ids: ["K-2.1"] },
+    { id: "third", title: "Bilag 3", ids: ["R-1.1"] },
+  ]);
+  assert.equal(rows.find(row => row.id === "K-2.3").documentId, "first");
+});
+
+test("separating addition clauses preserves bidder-request scope and quoted wording", () => {
+  const registers = [{ id: "first", title: "Bilag 1", ids: ["K-2.1"] }, { id: "third", title: "Bilag 3", ids: ["R-1.1"] }];
+  const requested = correctedRegisterRows("Vi foreslår at K-2.1 endres. Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.»", registers);
+  assert.ok(requested.every(row => row.id !== "K-2.3"));
+  const wording = "Leverandøren skal dokumentere at nytt krav R-9 legges til i Bilag 3 ved fremtidige endringer.";
+  const added = correctedRegisterRows(`Nytt krav K-2.3 legges til i Bilag 1: «${wording}»`, registers);
+  assert.equal(added.find(row => row.id === "K-2.3").text, wording);
+  assert.equal(added.find(row => row.id === "K-2.3").documentId, "first");
+  assert.ok(added.every(row => row.id !== "R-9"));
 });
 
 test("a correction to an ID two registers define changes neither, and Markdown definitions stay requirements", () => {

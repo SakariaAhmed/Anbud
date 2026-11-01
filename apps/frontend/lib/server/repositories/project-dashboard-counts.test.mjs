@@ -67,30 +67,32 @@ const { fromUnknownProjectRow } = actual("lib/server/repositories/project-rows.t
 const { mapProjectStatus } = actual("lib/server/repositories/data-store.ts", ["mapProjectStatus"], {});
 const { mapProjectSummary } = actual("lib/server/repositories/data-store.ts", ["mapProjectSummary"], { mapProjectStatus });
 
-function listing({ accessible = null, projects = [{ id: P1 }, { id: P2 }], countRows, countError = null, projectError = null, currentness, ignoreScope = false } = {}) {
+function listing({ accessible = null, projects = [{ id: P1 }, { id: P2 }], countRows, countError = null, projectError = null, currentness, ignoreScope = false, deletedAfterPage = [], existenceError = null, existenceCount } = {}) {
   const calls = [];
+  let aggregated = false;
   const client = {
     from(table) {
       const filters = [];
       // Also model the old row-fetching implementation so the large-count
       // regression fails because its real limits truncate data, not because
       // its former dependencies are missing from this harness.
-      const tableRows = () => table === "projects" ? projects : (countRows ?? []).flatMap(row =>
+      const tableRows = () => table === "projects" ? projects.filter(row => !aggregated || !deletedAfterPage.includes(row.id)) : (countRows ?? []).flatMap(row =>
         Array.from({ length: Number(table === "documents" ? row.document_count : row.artifact_count) }, (_, index) => ({
           id: `${row.project_id}-${index}`, project_id: row.project_id,
           role: index < Number(row.supporting_document_count) ? "supporting_document" : "primary_customer_document",
         })),
       );
       let limit = Infinity;
+      let head = false;
       const query = {
-        select: () => query, order: () => query,
+        select: (_columns, options) => { head = options?.head === true; return query; }, order: () => query,
         in: (column, values) => { filters.push({ column, values }); return query; },
         limit: count => { limit = count; return query; },
         then(resolve, reject) {
           const rows = tableRows().filter(row => ignoreScope || filters.every(filter => filter.values.includes(row[filter.column]))).slice(0, limit);
-          calls.push({ table, filters, rows: rows.map(row => row.id) });
-          const error = table === "projects" ? projectError : table === "generated_artifacts" ? countError : null;
-          return Promise.resolve({ data: error ? null : rows, error }).then(resolve, reject);
+          calls.push({ table, head, filters, rows: rows.map(row => row.id) });
+          const error = head ? existenceError : table === "projects" ? projectError : table === "generated_artifacts" ? countError : null;
+          return Promise.resolve({ data: error || head ? null : rows, error, count: head ? (existenceCount === undefined ? rows.length : existenceCount) : null }).then(resolve, reject);
         },
       };
       return query;
@@ -98,6 +100,7 @@ function listing({ accessible = null, projects = [{ id: P1 }, { id: P2 }], count
     async rpc(name, args) {
       calls.push({ name, args });
       if (name === "get_project_dashboard_counts") {
+        aggregated = true;
         return { data: countRows ?? args.p_project_ids.map(id => counts(id)), error: countError };
       }
       assert.equal(name, "get_solution_evaluation_currentness");
@@ -158,4 +161,41 @@ test("a project query failure prevents all downstream count and status calls", a
   const { listProjects, calls } = listing({ projectError: { message: "Synthetic project query failure" } });
   await assert.rejects(listProjects("user"), /Synthetic project query failure/u);
   assert.equal(calls.some(call => call.name), false);
+});
+
+
+test("a project deleted between page and aggregate reads is independently confirmed and omitted", async () => {
+  const { listProjects, calls } = listing({ countRows: [counts(P1)], deletedAfterPage: [P2] });
+  const result = await listProjects("user");
+  assert.deepEqual(result.map(project => project.id), [P1]);
+  const checks = calls.filter(call => call.head);
+  assert.equal(checks.length, 1);
+  assert.deepEqual(checks[0].filters, [{ column: "id", values: [P2] }]);
+  assert.deepEqual(calls.find(call => call.name === "get_solution_evaluation_currentness").args.p_project_ids, [P1]);
+});
+
+test("missing counts for a surviving project fail after one existence check", async () => {
+  const { listProjects, calls } = listing({ countRows: [counts(P1)] });
+  await assert.rejects(listProjects("user"), /gyldige prosjekttellinger/u);
+  assert.equal(calls.filter(call => call.head).length, 1);
+  assert.equal(calls.filter(call => call.name === "get_project_dashboard_counts").length, 1);
+});
+
+test("an entirely deleted page returns no projects and performs no currentness lookup", async () => {
+  const { listProjects, calls } = listing({ countRows: [], deletedAfterPage: [P1, P2] });
+  assert.deepEqual(await listProjects("user"), []);
+  assert.equal(calls.filter(call => call.head).length, 1);
+  assert.equal(calls.some(call => call.name === "get_solution_evaluation_currentness"), false);
+});
+
+test("an unconfirmed deletion or malformed aggregate cannot be mistaken for a deleted project", async () => {
+  for (const scenario of [
+    { countRows: [counts(P1)], deletedAfterPage: [P2], existenceError: { message: "Synthetic outage" } },
+    { countRows: [counts(P1)], deletedAfterPage: [P2], existenceCount: null },
+    { countRows: [counts(P1, { artifact_count: -1 })], deletedAfterPage: [P2] },
+    { countRows: [counts(P1), counts(P1)], deletedAfterPage: [P2] },
+  ]) {
+    const { listProjects } = listing(scenario);
+    await assert.rejects(listProjects("user"));
+  }
 });

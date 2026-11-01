@@ -441,7 +441,7 @@ test("the chat route selects each fallback document once before building the rea
       exports.getProjectGenerationContext = async () => ({ name: "Fiktiv", solutionEvaluationSnapshot: null });
       exports.listProjectDocumentsForAnalysis = async () => globalThis.__projectChatRouteScopeTest.documents;
       exports.getFreshCustomerAnalysis = async () => null;
-      for (const name of ["listGeneratedArtifactsFresh", "listChatMessages", "listChatSessions"]) exports[name] = async () => [];
+      for (const name of ["listCurrentGeneratedArtifactsFresh", "listChatMessages", "listChatSessions"]) exports[name] = async () => [];
       for (const name of ["appendChatMessage", "upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
       exports.createTextCompletionStream = async input => {
         globalThis.__projectChatRouteScopeTest.prompts.push(input);

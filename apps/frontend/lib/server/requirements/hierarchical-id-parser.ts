@@ -222,7 +222,9 @@ function isUnmarkedHeading(line: SourceLine, previous: string, next: SourceLine 
   );
 }
 
-function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedgerEntry[] {
+type RegisterOptions = { allowSingleRequirement?: boolean };
+
+function buildHierarchicalIdLedger(sourceLines: SourceLine[], options: RegisterOptions): RequirementLedgerEntry[] {
   // A corrections chapter names IDs it changes ("K-4.1.2 endres …"); those
   // lines are applied by the corrections step, not read as requirements.
   const corrections = new Set(
@@ -247,6 +249,7 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
   let current: Draft | null = null;
   let heading = "";
   let tableId: string | undefined;
+  let unassignedObligation = false;
 
   const flush = () => {
     if (!current) return;
@@ -320,6 +323,7 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
       flush();
     }
 
+    if (OBLIGATION.test(value)) unassignedObligation = true;
     if (line.heading) {
       heading = line.heading;
       tableId = undefined;
@@ -337,23 +341,29 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
   // A small register is still authoritative when every independently anchored
   // ID carries a substantive obligation. The former six-ID minimum sent such
   // sources to flattening fallbacks that truncate their hierarchical IDs.
-  // Sparse references without their own requirement text keep the fallback.
-  const smallRegisterHasDefinitions = requirements.every((entry) =>
-    entry.text.length >= 18 && OBLIGATION.test(entry.text) &&
-    !/^(?:ISO|IEC|NS|EN|SN|DIN|RFC)-/u.test(entry.id),
-  );
+  // One incidental ID in a narrative is not a register. Only a formal source
+  // may opt into a single row; every other source needs independent definitions.
+  // An obligation outside those rows must stay with the mixed-text parsers.
+  const smallRegisterHasDefinitions =
+    requirements.length >= (options.allowSingleRequirement ? 1 : 2) &&
+    !unassignedObligation && requirements.every((entry) =>
+      entry.text.length >= 18 && OBLIGATION.test(entry.text) &&
+      !/^(?:ISO|IEC|NS|EN|SN|DIN|RFC)-/u.test(entry.id),
+    );
   return requirements.length >= MIN_DISTINCT_IDS || smallRegisterHasDefinitions ? requirements : [];
 }
 
 export function buildHierarchicalIdPdfRequirementLedger(
   pages: ExplicitIdPdfLayoutPage[],
+  options: RegisterOptions = {},
 ): RequirementLedgerEntry[] {
-  return buildHierarchicalIdLedger(layoutSourceLines(pages));
+  return buildHierarchicalIdLedger(layoutSourceLines(pages), options);
 }
 
 export function buildHierarchicalIdTextRequirementLedger(
   document: Pick<ProjectDocumentDetail, "file_format" | "raw_text">,
+  options: RegisterOptions = {},
 ): RequirementLedgerEntry[] {
   if (!["docx", "txt", "md"].includes(document.file_format)) return [];
-  return buildHierarchicalIdLedger(textSourceLines(document.raw_text));
+  return buildHierarchicalIdLedger(textSourceLines(document.raw_text), options);
 }

@@ -5,9 +5,9 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { tmpdir } from "node:os";
+import { systemTestStatusPath } from "./system-test-runtime.mjs";
 
-const statusPath = process.env.ANBUD_SYSTEM_TEST_STATUS ?? path.join(tmpdir(), "anbud-system-test-status.json");
+const statusPath = systemTestStatusPath();
 const status = JSON.parse(readFileSync(statusPath, "utf8"));
 const runtime = JSON.parse(readFileSync(path.join(status.directory, "environment.json"), "utf8"));
 const endpoint = new URL(status.baseUrl);

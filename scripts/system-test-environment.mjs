@@ -8,10 +8,11 @@ import { createRequire } from "node:module";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { isolatedApplicationEnvironment, systemTestStatusPath } from "./system-test-runtime.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const frontend = path.join(root, "apps/frontend");
-const statusPath = process.env.ANBUD_SYSTEM_TEST_STATUS ?? path.join(tmpdir(), "anbud-system-test-status.json");
+const statusPath = systemTestStatusPath();
 const command = process.argv[2] ?? "start";
 const liveAi = process.argv.includes("--live-ai");
 const node = process.execPath;
@@ -52,8 +53,9 @@ function stop(state) {
 }
 
 async function startApplication(state, environment) {
+  const childEnvironment = isolatedApplicationEnvironment(frontend, environment);
   const log = openSync(path.join(state.directory, "app.log"), "a", 0o600);
-  const child = spawn(node, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(ports.app)], { cwd: frontend, env: { ...process.env, ...environment }, detached: true, stdio: ["ignore", log, log] });
+  const child = spawn(node, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(ports.app)], { cwd: frontend, env: childEnvironment, detached: true, stdio: ["ignore", log, log] });
   state.appPid = child.pid;
   writeFileSync(path.join(state.directory, "state.json"), JSON.stringify(state, null, 2), { mode: 0o600 });
   child.unref(); closeSync(log);
@@ -67,6 +69,7 @@ if (command === "stop") {
   writeFileSync(statusPath, JSON.stringify({ ...status, running: false }, null, 2));
   console.log("Stopped the owned local system-test stack.");
 } else if (command === "restart-ai") {
+  isolatedApplicationEnvironment(frontend, {});
   const status = JSON.parse(readFileSync(statusPath, "utf8"));
   const state = JSON.parse(readFileSync(path.join(status.directory, "state.json"), "utf8"));
   const privatePath = path.join(status.directory, "environment.json");
@@ -87,6 +90,7 @@ if (command === "stop") {
   writeFileSync(statusPath, JSON.stringify({ ...status, aiMode: "budgeted loopback model proxy" }, null, 2));
   console.log("Restarted the owned app with the explicit budgeted loopback model proxy. No AI requests were sent by this command.");
 } else if (command === "start") {
+  isolatedApplicationEnvironment(frontend, {});
   if (liveAi && !process.env.OPENAI_API_KEY) throw new Error("--live-ai requires an explicitly supplied OPENAI_API_KEY; no credential files are loaded automatically.");
   for (const port of Object.values(ports)) await available(port);
   if (existsSync(statusPath)) {

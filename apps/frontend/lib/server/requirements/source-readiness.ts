@@ -621,8 +621,8 @@ function referenceToOwnedRequirementFilter(
 
 /** A corrections chapter may sit in another document than the requirements
  * it changes ("Krav K-4.1.2 i Bilag 1 endres og skal nå lyde: …"). It is
- * applied once to every document defining an ID it names. A new requirement
- * joins the document numbering its series, else the one named most. */
+ * applied once to every document defining an ID it names. Additions prefer
+ * their explicitly named register, then an unambiguous numeric parent. */
 function correctionSourcePages(rawText: string, id: string) {
   const lines = rawText.split("\n");
   const ranges = correctionsSectionRanges(lines);
@@ -641,6 +641,76 @@ function correctionSourcePages(rawText: string, id: string) {
   return unlocated ? [] : [...pages].sort((left, right) => left - right);
 }
 
+function normalizedDestinationName(value: string) {
+  return value.normalize("NFKC").toLocaleLowerCase("nb")
+    .replace(/\.(?:pdf|docx?|xlsx?|txt|md|csv)$/u, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function attachmentNames(value: string) {
+  return [...value.normalize("NFKC").matchAll(/(?<![\p{L}\p{N}])((?:bilag|vedlegg)[\s_-]*([a-z]|\d+(?:\.\d+)*[a-z]?))(?![\p{L}\p{N}]|\.\d)/giu)]
+    .map(match => `${/^bilag/iu.test(match[1]) ? "bilag" : "vedlegg"} ${match[2].toLocaleLowerCase("nb").replace(/^0+(?=\d)/u, "")}`);
+}
+
+/** Only a destination bound to this addition's ID and verb counts. Document
+ * references in other clauses or inside the new wording cannot move the row. */
+function explicitAdditionDestination(
+  entry: RequirementLedgerEntry,
+  documents: ProjectDocumentDetail[],
+) {
+  const unquoted = (entry.sourceExcerpt ?? "")
+    .replace(/[«“"][^«»“”"]{1,1500}[»”"]/gu, "«»");
+  const clauses = unquoted.split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«])|\s+\|\s+|;\s*|(?=\bnytt\s+krav\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d)/iu);
+  const destinations = new Set<string>();
+  let explicit = false;
+  for (const clause of clauses) {
+    const mention = requirementIdTokenPattern(normalizeRequirementId(entry.id), false).exec(clause);
+    if (!mention) continue;
+    const tail = clause.slice(mention.index + mention[0].length).split("«", 1)[0];
+    const namedAddition = /\bnytt\s+krav\s*$/iu.test(clause.slice(0, mention.index));
+    const phrase = /\b(?:legges\s+til|tilføyes)\s+i\s+(.+?)(?=\s*[:]|$)/iu.exec(tail)?.[1] ??
+      /^\s+i\s+(.+?)\s+(?:skal\s+)?(?:legges\s+til|tilføyes)\b/iu.exec(tail)?.[1] ??
+      (namedAddition ? /^\s+i\s+(.+?)(?=\s*[:]|$)/iu.exec(tail)?.[1] : undefined);
+    if (!phrase) continue;
+    explicit = true;
+    const destinationName = phrase.split(/(?:,\s*|\s+)(?:jf\.?|jfr\.?|se)\s+/iu, 1)[0].trim();
+    const exact = documents.filter(document => [document.title, document.file_name]
+      .some(name => normalizedDestinationName(name) === normalizedDestinationName(destinationName)));
+    const attachments = [...new Set(attachmentNames(destinationName))];
+    const matched = exact.length ? exact : attachments.length === 1
+      ? documents.filter(document => [document.title, document.file_name]
+          .some(name => attachmentNames(name).includes(attachments[0])))
+      : [];
+    if (matched.length !== 1) {
+      throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Oppgi et entydig dokumentnavn i rettelsen.`);
+    }
+    destinations.add(matched[0].id);
+  }
+  if (destinations.size > 1) {
+    throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Oppgi ett dokument for det nye kravet.`);
+  }
+  return explicit ? [...destinations][0] : undefined;
+}
+
+function separateAdditionClauses(rawText: string) {
+  const unquoted = rawText.replace(/[«“"][^«»“”"]*[»”"]/gu, span => " ".repeat(span.length));
+  const starts = [...unquoted.matchAll(/\bnytt\s+krav\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d/giu)]
+    .map(match => match.index)
+    .filter(index => {
+      const prefix = rawText.slice(rawText.lastIndexOf("\n", index - 1) + 1, index);
+      return prefix.trim() && !/^\s*(?:[-•*–]|\d{1,2}[.)])\s*$/u.test(prefix);
+    });
+  // One newline keeps the existing correction-block/request scope. It only
+  // separates the new ID's clause, including when a quote contains its period.
+  let cursor = 0;
+  const parts = starts.map(index => {
+    const part = rawText.slice(cursor, index);
+    cursor = index;
+    return part;
+  });
+  return [...parts, rawText.slice(cursor)].join("\n");
+}
+
 function withCrossDocumentCorrections(
   sourceDocuments: ProjectDocumentDetail[],
   ledgerByDocumentId: Map<string, RequirementLedgerEntry[]>,
@@ -655,23 +725,51 @@ function withCrossDocumentCorrections(
       definedIn.set(id, (definedIn.get(id) ?? new Set()).add(document.id));
     }
   }
-  const seriesOwner = (seriesName: string | undefined) => {
-    const counts = new Map<string, number>();
-    for (const [id, owner] of owners) {
-      if (seriesName && series(id) === seriesName) counts.set(owner, (counts.get(owner) ?? 0) + 1);
+  const seriesOwner = (additionId: string) => {
+    const seriesName = series(additionId);
+    const parentParts = normalizeRequirementId(additionId).split(/[.-]/u).slice(0, -1);
+    const candidates = new Map<string, number>();
+    for (const [id, documents] of definedIn) {
+      if (!seriesName || series(id) !== seriesName) continue;
+      const parts = normalizeRequirementId(id).split(/[.-]/u);
+      let depth = 0;
+      while (depth < parentParts.length && parts[depth] === parentParts[depth]) depth++;
+      for (const owner of documents) candidates.set(owner, Math.max(candidates.get(owner) ?? 0, depth));
     }
-    return [...counts].sort((left, right) => right[1] - left[1])[0]?.[0];
+    // K-2.3 belongs with K-2.* even if a different register contains more K-1.*
+    // rows. Letter-prefix frequency alone does not establish that ownership.
+    const ranked = [...candidates].sort((left, right) => right[1] - left[1]);
+    if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) {
+      throw new WorkflowPreconditionError(`Kravrettelsen for ${additionId} kan ikke knyttes entydig til et kravdokument. Oppgi dokumentnavnet for det nye kravet.`);
+    }
+    return ranked[0]?.[0];
   };
   for (const document of sourceDocuments) {
     const rawText = document.raw_text ?? "";
     const section = findCorrectionsSection(rawText);
     if (!section) continue;
+    const correctionText = separateAdditionClauses(rawText);
     const namedOwners = new Map<string, number>();
     for (const match of section.matchAll(MENTIONED_REQUIREMENT_ID)) {
       const owner = owners.get(normalizeRequirementId(match[0]));
       if (owner && owner !== document.id) namedOwners.set(owner, (namedOwners.get(owner) ?? 0) + 1);
     }
     const targets = [...namedOwners].sort((left, right) => right[1] - left[1]).map(([id]) => id);
+    // A new ID need not mention an existing requirement. Discover affirmative
+    // additions with the correction parser, then resolve each clause's owner.
+    const formalDocuments = sourceDocuments.filter(isFormalRequirementDocument);
+    const newEntries = applyRequirementCorrections([], correctionText, { removeCorrectionRows: false }).ledger
+      .filter(entry => !owners.has(normalizeRequirementId(entry.id)));
+    const additionOwners = new Map<string, string>();
+    for (const entry of newEntries) {
+      const destination = explicitAdditionDestination(entry, formalDocuments) ?? seriesOwner(entry.id) ??
+        (targets.length === 1 ? targets[0] : undefined);
+      if (!destination) {
+        throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Oppgi dokumentnavnet for det nye kravet.`);
+      }
+      additionOwners.set(entry.id, destination);
+      if (!targets.includes(destination)) targets.push(destination);
+    }
     if (!targets.length) continue;
     const additions = new Map<string, RequirementLedgerEntry>();
     for (const target of targets) {
@@ -682,7 +780,7 @@ function withCrossDocumentCorrections(
       const unclear = (entry: RequirementLedgerEntry) =>
         (definedIn.get(normalizeRequirementId(entry.id))?.size ?? 0) > 1;
       const masked = before.map((entry) => (unclear(entry) ? { ...entry, id: `${entry.id}${UNCLEAR_TARGET}` } : entry));
-      const applied = applyRequirementCorrections(masked, rawText, { removeCorrectionRows: false });
+      const applied = applyRequirementCorrections(masked, correctionText, { removeCorrectionRows: false });
       const report = applied.report;
       const ledger = applied.ledger.map((entry) =>
         entry.id.endsWith(UNCLEAR_TARGET) ? { ...entry, id: entry.id.slice(0, -UNCLEAR_TARGET.length) } : entry);
@@ -694,7 +792,11 @@ function withCrossDocumentCorrections(
       corrected.set(target, ledger.filter((entry) => beforeIds.has(entry.id) || !report.added.includes(entry.id)));
     }
     for (const [id, entry] of additions) {
-      const destination = seriesOwner(series(id)) ?? targets[0]!;
+      const destination = additionOwners.get(id) ?? explicitAdditionDestination(entry, formalDocuments) ?? seriesOwner(id) ??
+        (targets.length === 1 ? targets[0] : undefined);
+      if (!destination) {
+        throw new WorkflowPreconditionError(`Kravrettelsen for ${id} kan ikke knyttes entydig til et kravdokument. Oppgi dokumentnavnet for det nye kravet.`);
+      }
       const ledger = corrected.get(destination) ?? [];
       const { index: at, anchor } = requirementAdditionPosition(ledger, id);
       const destinationDocument = sourceDocuments.find((source) => source.id === destination);

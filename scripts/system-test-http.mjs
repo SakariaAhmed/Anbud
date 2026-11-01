@@ -4,9 +4,9 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { tmpdir } from "node:os";
+import { systemTestStatusPath } from "./system-test-runtime.mjs";
 
-const statusPath = process.env.ANBUD_SYSTEM_TEST_STATUS ?? path.join(tmpdir(), "anbud-system-test-status.json");
+const statusPath = systemTestStatusPath();
 const status = JSON.parse(readFileSync(statusPath, "utf8"));
 assert.equal(status.running, true, "Start scripts/system-test-environment.mjs first.");
 const privatePath = path.join(status.directory, "environment.json");
@@ -61,6 +61,10 @@ await request("/api/projects", { cookie: null, expected: 401 }); checks.push("an
 await request("/api/auth/login", { ...json("POST", { password: "intentionally-wrong-system-test-password" }), cookie: null, expected: 401 });
 const login = await request("/api/auth/login", { ...json("POST", { password: runtime.adminPassword }), cookie: null });
 adminCookie = cookieFrom(login); checks.push("admin password authentication and persisted session");
+if (aiEnabled) {
+  await request("/api/health/ready");
+  checks.push("authenticated readiness of the configured system dependencies");
+}
 const project = accessOnly
   ? (await (await request("/api/projects")).json()).find(item => item.document_count === 3)
   : await (await request("/api/projects", { ...json("POST", { name: "Fiktiv systemtest", customer_name: "Fiktiv kommune" }), expected: 201 })).json();
@@ -120,7 +124,8 @@ if (aiEnabled) {
     checks.push(`AI workflow completed and persisted: ${body.kind}${body.artifact_type ? `/${body.artifact_type}` : ""}`);
   }
   const published = await (await request(`/api/projects/${project.id}`)).json();
-  const artifact = published.generated_artifacts.find(item => item.artifact_type === "forbedret_kravsvar");
+  const generated = await (await request(`/api/projects/${project.id}/generate?artifact_type=forbedret_kravsvar`)).json();
+  const artifact = generated.artifacts.find(item => item.is_current === true);
   // Retain only synthetic evidence, never credentials or request headers.
   writeFileSync(path.join(status.directory, "ai-output.json"), JSON.stringify({
     projectId: project.id, customerAnalysis: published.customer_analysis,
@@ -144,7 +149,7 @@ if (aiEnabled) {
 }
 runtime.sessions = { adminCookie, guestCookie };
 writeFileSync(privatePath, JSON.stringify(runtime, null, 2), { mode: 0o600 });
-const result = { projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output", "live Entra sign-in", "Docling/OCR"] };
+const result = { projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: [...(aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output"]), "live Entra sign-in", "PDF/OCR through HTTP upload (separate image/parser evaluation)"] };
 writeFileSync(path.join(status.directory, "http-result.json"), JSON.stringify(result, null, 2));
 writeFileSync(statusPath, JSON.stringify({ ...status, projectId: project.id, documents: uploaded, httpChecks: checks.length }, null, 2));
 console.log(JSON.stringify(result, null, 2));

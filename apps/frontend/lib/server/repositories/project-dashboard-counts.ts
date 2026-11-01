@@ -10,6 +10,15 @@ export type ProjectDashboardCounts = {
 
 const INVALID_COUNTS = "Kunne ikke lese gyldige prosjekttellinger.";
 
+class MissingProjectDashboardCountsError extends Error {
+  constructor(
+    readonly counts: Map<string, ProjectDashboardCounts>,
+    readonly missingProjectIds: string[],
+  ) {
+    super(INVALID_COUNTS);
+  }
+}
+
 function objectRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -50,12 +59,14 @@ export function parseProjectDashboardCounts(
       artifact_count: countValue(row.artifact_count),
     });
   }
-  if (counts.size !== expected.size) throw new Error(INVALID_COUNTS);
+  if (counts.size !== expected.size) {
+    throw new MissingProjectDashboardCountsError(counts, projectIds.filter((id) => !counts.has(id)));
+  }
   return counts;
 }
 
 export async function fetchProjectDashboardCounts(
-  dataApi: Pick<PostgrestClient, "rpc">,
+  dataApi: Pick<PostgrestClient, "rpc" | "from">,
   projectIds: readonly string[],
 ): Promise<Map<string, ProjectDashboardCounts>> {
   if (!projectIds.length) return new Map();
@@ -65,7 +76,23 @@ export async function fetchProjectDashboardCounts(
   if (error) {
     throw new Error("Kunne ikke hente prosjekttellingene.", { cause: error });
   }
-  return parseProjectDashboardCounts(data, projectIds);
+  try {
+    return parseProjectDashboardCounts(data, projectIds);
+  } catch (parseError) {
+    if (!(parseError instanceof MissingProjectDashboardCountsError)) throw parseError;
+    // A project can be deleted after the page read but before aggregation.
+    // Confirm absence independently; an omitted/malformed RPC row for a live
+    // project must still fail instead of becoming an apparently valid zero.
+    const { count, error: existenceError } = await dataApi
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .in("id", parseError.missingProjectIds);
+    if (existenceError) {
+      throw new Error("Kunne ikke bekrefte prosjektlisten.", { cause: existenceError });
+    }
+    if (count !== 0) throw parseError;
+    return parseError.counts;
+  }
 }
 
 export function parseProjectEvaluationCurrentness(

@@ -1195,7 +1195,8 @@ export async function listProjects(
         return project;
       });
       const counts = await fetchProjectDashboardCounts(dataApi, page.map((project) => project.id));
-      return page.map((project) => ({
+      // The count loader omits an ID only after independently confirming deletion.
+      return page.filter((project) => counts.has(project.id)).map((project) => ({
         ...mapProjectSummary(project, []),
         ...counts.get(project.id)!,
         has_chat: false,
