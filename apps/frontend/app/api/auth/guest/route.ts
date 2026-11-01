@@ -7,6 +7,7 @@ import {
 import { authenticateGuestCode } from "@/lib/server/access-control-repository";
 import { recordActivity } from "@/lib/server/activity";
 import { createAppSession } from "@/lib/server/app-sessions";
+import { reportAuthFailure } from "@/lib/server/auth-failure";
 import { checkRateLimit } from "@/lib/server/observability";
 
 export async function POST(request: Request) {
@@ -43,46 +44,60 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Ugyldig gjestekode." }, { status: 401 });
   }
 
-  const principal = await authenticateGuestCode(body.code);
-  if (!principal) {
-    await recordActivity({
-      action: "auth.guest_code.login",
-      result: "denied",
-      metadata: { reason: "invalid_or_inactive" },
+  let stage: "credential" | "session" | "activity" = "credential";
+  try {
+    const principal = await authenticateGuestCode(body.code);
+    if (!principal) {
+      stage = "activity";
+      await recordActivity({
+        action: "auth.guest_code.login",
+        result: "denied",
+        metadata: { reason: "invalid_or_inactive" },
+      });
+      return NextResponse.json(
+        { error: "Koden er ugyldig, utløpt eller tilbakekalt." },
+        { status: 401 },
+      );
+    }
+
+    stage = "session";
+    const session = await createAppSession({
+      principalId: principal.id,
+      authMethod: "guest_code",
     });
+    const requestPrincipal = {
+      id: principal.id,
+      identityType: "guest" as const,
+      isAdmin: false,
+      sessionId: session.sessionId,
+    };
+    stage = "activity";
+    await recordActivity({
+      principal: requestPrincipal,
+      action: "auth.guest_code.login",
+    });
+
+    const response = NextResponse.json({
+      ok: true,
+      redirectTo: safeRedirectPath(body.next),
+    });
+    response.cookies.set({
+      name: AUTH_COOKIE_NAME,
+      value: session.token,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: session.maxAgeSeconds,
+    });
+    return response;
+  } catch (error) {
+    const reference = reportAuthFailure("guest_auth_failed", stage, error);
     return NextResponse.json(
-      { error: "Koden er ugyldig, utløpt eller tilbakekalt." },
-      { status: 401 },
+      {
+        error: `Innloggingen kunne ikke fullføres. Prøv igjen om litt. Referanse: ${reference}`,
+      },
+      { status: 500 },
     );
   }
-
-  const session = await createAppSession({
-    principalId: principal.id,
-    authMethod: "guest_code",
-  });
-  const requestPrincipal = {
-    id: principal.id,
-    identityType: "guest" as const,
-    isAdmin: false,
-    sessionId: session.sessionId,
-  };
-  await recordActivity({
-    principal: requestPrincipal,
-    action: "auth.guest_code.login",
-  });
-
-  const response = NextResponse.json({
-    ok: true,
-    redirectTo: safeRedirectPath(body.next),
-  });
-  response.cookies.set({
-    name: AUTH_COOKIE_NAME,
-    value: session.token,
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: session.maxAgeSeconds,
-  });
-  return response;
 }
