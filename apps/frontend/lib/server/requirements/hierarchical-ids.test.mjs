@@ -440,6 +440,17 @@ test("standalone obligation labels do not hide small registers or become require
   assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ ...document, raw_text: `Leverandøren skal også levere et kurs.\n${document.raw_text}` }), []);
 });
 
+test("standalone type labels retain the actual section heading", () => {
+  for (const label of ["Minstekrav", "Evalueres", "Evalueringskrav", "Skal-krav", "Bør-krav", "Absolutt krav"]) {
+    const rows = buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text: [
+      "2 Sikkerhet", label, "K-2.1 Leverandøren skal levere sikker drift.",
+      label, "K-2.2 Leverandøren skal levere åpne formater.",
+    ].join("\n") });
+    assert.equal(rows.length, 2, label);
+    assert.ok(rows.every(row => row.heading === "2 Sikkerhet"), label);
+  }
+});
+
 test("small-register extraction and explicit completeness share the normalized text minimum", async () => {
   const { hasExplicitlyCompleteSmallRequirementLedger } = await load("lib/server/ai/requirement-ledger-confidence.ts");
   for (const value of ["Skal støtte OAuth2.", "Skal    støtte OAuth2.", "Skal støtte OAuth2 og SAML."]) {

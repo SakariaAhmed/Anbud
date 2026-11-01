@@ -326,7 +326,8 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[], options: RegisterO
       flush();
     }
 
-    if (OBLIGATION.test(value) && !STANDALONE_TYPE_LABEL.test(value)) unassignedObligation = true;
+    if (STANDALONE_TYPE_LABEL.test(value)) continue;
+    if (OBLIGATION.test(value)) unassignedObligation = true;
     if (line.heading) {
       heading = line.heading;
       tableId = undefined;

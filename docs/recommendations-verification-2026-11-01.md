@@ -63,6 +63,8 @@ Separate OCR verification ran the built image offline as a non-root user through
 
 ## Remaining debt
 
+Long structured entries now consume successive chunks instead of discarding their remainder at each entry boundary. The total context budget still applies in source order, so a long early entry can consume that budget and reduce coverage of later pages. This follow-up has deterministic tests for complete within-budget text, late evidence, references and limits; the earlier live-AI scenario did not exercise this long-entry budget behavior. Broader page-coverage and answer-quality evaluation remains necessary before changing that policy.
+
 The repository and other AI workflows still contain coupled logic and broadly typed result boundaries. The generic fallback parser can miss an independent unnumbered obligation after a new section heading in a mixed short narrative; this pre-existing limitation is outside the bounded hierarchical-register repair. The new fast path rejects mixed narratives with unassigned obligations rather than taking over their extraction. Further parser work needs its own corpus fixtures and completeness policy.
 
 Correction destinations deliberately reject an ambiguous unquoted plain title followed by a space and a numbered location. For example, an unselected `Sikkerhet del 3` must not silently bind to a selected `Sikkerhet`. A quoted name, filename, canonical attachment reference or explicit comma/`i` separator supplies a clear boundary; explicit requirement anchors also work without a comma. Document titles remain literal, including conjunctions and location-shaped words. This conservative limit avoids guessing an unknown source from a shorter selected title; it does not require changing original source bytes.
