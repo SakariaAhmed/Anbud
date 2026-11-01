@@ -55,9 +55,13 @@ jobs:
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
 
-      - name: Build Docling native dependency
+      - name: Verify production Docling image and offline OCR
         working-directory: .
-        run: docker build --file apps/frontend/Dockerfile --target docling-native-wheels .
+        env:
+          DOCKER_DEFAULT_PLATFORM: linux/amd64
+        run: |
+          node apps/frontend/scripts/docker_frontend_smoke.mjs --target runner-docling --tag anbud-docling-ci --keep-image --build-timeout-ms 1800000 --health-timeout-ms 180000
+          node apps/frontend/scripts/verify_norwegian_ocr.mjs anbud-docling-ci --image-only
 
       - name: Install dependencies
         run: npm ci
