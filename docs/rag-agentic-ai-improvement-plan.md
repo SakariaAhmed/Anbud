@@ -4,6 +4,31 @@ Denne vurderingen gjelder den eksisterende `anbud`-appen: en Next.js-applikasjon
 
 Målet er bedre svarkvalitet, raskere responstid og mer relevante, kildebaserte svar.
 
+## Status 1. november 2026
+
+Planen under er fra august. Siden da er dette på plass, og flere av «manglene» gjelder ikke lenger:
+
+- Hybrid search med RRF i `hybrid_match_document_chunks`, query rewrite i chat og en kvalitetsvurdering av retrieval.
+- Nøkkelordsøket får nå en OR-spørring med innholdsord, vanlige norske bøyningsformer og eksakte termer (`buildKeywordSearchQuery`). Før krevde det at hvert ord i spørsmålet sto i samme chunk, og fant nesten ingenting.
+- Chunks er på inntil 1 600 tegn. Chat får seksjonen rundt treffet, på inntil 4 800 tegn, med mindre alle dokumentene det søkes i, sendes hele. Andre flyter får selve treffet.
+- Svake treff gir ett bredere søk før chat faller tilbake på lengre rå dokumenttekst.
+- Støttedokumenter og genererte artefakter som ikke får plass i chat, kortes ned til avsnittene som passer spørsmålet best, i stedet for starten av teksten.
+- Chat lar den raske modellen rangere de 32 beste treffene (`retrieval-rerank.ts`). Den er på som standard og slås av med `RAG_MODEL_RERANK=off`. Når alle dokumentene det søkes i, sendes hele i chat-prompten, hoppes den over. Feiler eller tidsavbrytes kallet (8 s), beholdes den vanlige rangeringen.
+
+Retrieval måles med `node scripts/rag_retrieval_eval.mjs` over det innsjekkede anbudskorpuset (60 krav-ID-oppslag og 36 håndskrevne spørsmål i `test-data/rag-retrieval`). `--database-url` måler nøkkelordsøket mot PostgreSQL, `--frontend-root` sammenligner med en annen checkout, og `--without-structure` måler dokumenter uten strukturkart. `--embeddings=live` lagrer chunks med ekte embeddings i en midlertidig database og kjører hele hybridsøket, og `--rerank=model` legger til rerankeren. Begge bruker betalte OpenAI-kall.
+
+Målt 1. november 2026 med ekte embeddings (`text-embedding-3-small`) og hybridsøk, for de 36 spørsmålene uten krav-ID. Evalen kjører samme søk som chat (`buildProjectChatRetrievalRequest`); `main` har ikke den funksjonen og søker bare med spørsmålet:
+
+| Oppsett | Riktig utdrag først | Topp 5 | Topp 10 | MRR | Søketid median / p95 |
+| --- | --- | --- | --- | --- | --- |
+| `main`, bare spørsmålet | 0,44 | 0,75 | 0,92 | 0,57 | 0,25 / 0,41 s |
+| Chat-søket uten reranker | 0,44 | 0,67 | 0,83 | 0,56 | 0,27 / 0,53 s |
+| Chat-søket med reranker | 0,78–0,89 | 0,94 | 0,94 | 0,85–0,91 | 1,9 / 2,5–2,7 s |
+
+Krav-ID-oppslagene finner riktig utdrag blant de fem første i alle oppsett, og først i alle med rerankeren. Rerankeren brukte om lag 7 300 input-tokens per spørsmål, og ingen kall feilet. Modellen rangerer ikke helt likt fra kjøring til kjøring; spennet er fra to kjøringer av samme kode. Uten rerankeren treffer chat-søket dårligere enn spørsmålet alene, fordi domeneordene i søket trekker treffene mot generelle utdrag. Det er ikke målt om denne rekkefølgen, som chat faller tilbake på med `RAG_MODEL_RERANK=off` eller når kallet feiler, er dårligere enn chat-søket på `main`. Korpuset er lite (ti dokumenter), og spørsmålene ble skrevet mens søket ble justert, så tallene viser retning, ikke nivået i store anbud.
+
+Etter utrulling får hvert dokument nye, mindre chunks og nye embeddings første gang en artefakt- eller kravsvarjobb kjører for prosjektet. Til da bruker chat de gamle chunkene, som rerankeren leser rundt treffet i.
+
 ## Dagens utgangspunkt
 
 Appen har allerede en viktig del av RAG-grunnmuren:

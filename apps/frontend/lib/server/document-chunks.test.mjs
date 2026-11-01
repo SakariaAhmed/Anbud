@@ -26,6 +26,7 @@ const jiti = createJiti(path.join(frontendRoot, "document-chunks-tests.cjs"), {
   },
 });
 const {
+  buildKeywordSearchQuery,
   documentChunkMetadataMatchesSourceFingerprint,
   documentSourceKeysForMemoryFallback,
   ensureProjectDocumentChunks,
@@ -44,6 +45,7 @@ const { normalizeDocumentChunkStructureMap } = jiti(
 const {
   getDocumentChunksTestEmbeddingRequestCount,
   getDocumentChunksTestManifest,
+  getDocumentChunksTestRpcCalls,
   resetDocumentChunksTestRuntime,
   setDocumentChunksTestRetrievalRows,
 } = jiti(testSupportPath);
@@ -464,4 +466,168 @@ test("a transient missing-storage error does not disable chunk storage for the p
     sourceRevision: document.chunk_source_revision,
   });
   assert.notEqual(getDocumentChunksTestManifest("project_document", document.id), null);
+});
+
+test("the keyword query lists content words, inflections and exact terms as alternatives", () => {
+  const query = buildKeywordSearchQuery(
+    "Hva sier kravgrunnlaget om responstid for tjenestene?\n- or \"K-2.1\"",
+    ["K-2.1", "\"SLA\"", "krav"],
+  );
+  const terms = query.split(" or ");
+  assert.ok(terms.every((term) => /^"[^"]+"$/u.test(term)), query);
+  assert.ok(terms.includes("\"k-2.1\"") && terms.includes("\"sla\""));
+  for (const form of ["responstid", "responstiden", "tjenesten", "tjeneste", "tjenester"]) {
+    assert.ok(terms.includes(`"${form}"`), form);
+  }
+  for (const word of ["hva", "sier", "om", "for", "or", "krav", "kravgrunnlaget"]) {
+    assert.ok(!terms.includes(`"${word}"`), word);
+  }
+  assert.equal(buildKeywordSearchQuery("Hva sier de om det?"), "");
+});
+
+test("an uninflected word that ends like a suffix keeps its own inflections", () => {
+  const terms = buildKeywordSearchQuery("sikkerhet kapasitet ansvar").split(" or ");
+  for (const form of ["sikkerhet", "sikkerheten", "kapasiteten", "ansvar", "ansvaret"]) {
+    assert.ok(terms.includes(`"${form}"`), form);
+  }
+});
+
+test("hybrid search sends the keyword query, not the whole question", async () => {
+  resetDocumentChunksTestRuntime();
+  try {
+    const document = projectDocument();
+    setDocumentChunksTestRetrievalRows([storedSnippetRow(document, document.raw_text, "Side 1", "row-1")]);
+    await retrieveDocumentSnippetsWithMetadata({ query: "Hva sier kravet om kapasitet?", documents: [document], exactTerms: ["K-1"] });
+    const call = getDocumentChunksTestRpcCalls().find((item) => item.name === "hybrid_match_document_chunks");
+    assert.equal(call?.args.query_text, buildKeywordSearchQuery("Hva sier kravet om kapasitet?", ["K-1"]));
+  } finally { resetDocumentChunksTestRuntime(); }
+});
+
+function longSection() {
+  const paragraphs = Array.from({ length: 9 }, (_, index) =>
+    `Avsnitt ${index + 1}. ${"Leverandøren beskriver driftsrutiner og rapportering for tjenesten. ".repeat(4).trim()}`);
+  paragraphs[6] = "Avsnitt 7. Responstid for kritiske hendelser er 30 minutter hele døgnet, også i helger.";
+  return paragraphs.join("\n\n");
+}
+
+test("a matched small part returns its surrounding section once", async () => {
+  resetDocumentChunksTestRuntime();
+  const text = longSection();
+  const document = projectDocument({ raw_text: text, structure_map: [{ reference: "Kapittel 4 Drift", text }] });
+  const result = await retrieveDocumentSnippetsWithMetadata({ query: "responstid kritiske hendelser rapportering", documents: [document], limit: 8, surroundingSections: true });
+  const sections = result.snippets.filter((snippet) => snippet.reference.startsWith("Kapittel 4 Drift"));
+  assert.equal(sections.length, 1, "parts of one section are not sent twice");
+  assert.ok(text.length > 1600 && text.length <= 4800);
+  assert.equal(sections[0].text, text, "the whole section fits and is returned");
+});
+
+test("without surrounding sections the matched part leads the snippet for callers that cut snippets", async () => {
+  resetDocumentChunksTestRuntime();
+  const text = longSection();
+  const document = projectDocument({ raw_text: text, structure_map: [{ reference: "Kapittel 4 Drift", text }] });
+  const [snippet] = (await retrieveDocumentSnippetsWithMetadata({ query: "responstid kritiske hendelser", documents: [document], limit: 1 })).snippets;
+  assert.ok(snippet.text.length <= 1600, String(snippet.text.length));
+  // Requirement and artifact prompts keep only the first 700–1 200 characters.
+  assert.ok(snippet.text.indexOf("Responstid for kritiske hendelser") < 700, snippet.text.slice(0, 120));
+});
+
+test("sections with identical text under different references are each returned", async () => {
+  resetDocumentChunksTestRuntime();
+  const text = "Leverandøren skal ha responstid på 30 minutter for kritiske hendelser.";
+  const document = projectDocument({ raw_text: `${text}\n\n${text}`, structure_map: [
+    { reference: "K-1", text }, { reference: "K-2", text },
+  ] });
+  const result = await retrieveDocumentSnippetsWithMetadata({ query: "responstid kritiske hendelser", documents: [document], limit: 4, surroundingSections: true });
+  assert.deepEqual(result.snippets.map((snippet) => snippet.reference).sort(), ["K-1", "K-2"]);
+  assert.equal(result.telemetry.quality.sourceCount, 2);
+});
+
+test("a stored chunk that differs from the rebuilt part is returned as stored", async () => {
+  resetDocumentChunksTestRuntime();
+  try {
+    const text = longSection();
+    const document = projectDocument({ raw_text: text, structure_map: [{ reference: "Kapittel 4 Drift", text }] });
+    const stored = { ...storedSnippetRow(document, text, "Kapittel 4 Drift", "old-size-row"), chunk_index: 0 };
+    setDocumentChunksTestRetrievalRows([stored]);
+    const result = await retrieveDocumentSnippetsWithMetadata({ query: "responstid", documents: [document], limit: 1, surroundingSections: true });
+    assert.equal(result.snippets[0]?.text, text);
+    assert.equal(result.snippets[0]?.chunkIndex, 0);
+  } finally { resetDocumentChunksTestRuntime(); }
+});
+
+test("weak results search once more with the broader query", async () => {
+  resetDocumentChunksTestRuntime();
+  const document = projectDocument({ raw_text: "Beredskap: vakttelefon er bemannet hele døgnet.",
+    structure_map: [{ reference: "Beredskap", text: "Beredskap: vakttelefon er bemannet hele døgnet." }] });
+  const narrow = { query: "Omskrevet: eskaleringsmatrise", documents: [document], exactTerms: ["eskaleringsmatrise"] };
+  const first = await retrieveDocumentSnippetsWithMetadata(narrow);
+  assert.equal(first.snippets.length, 0);
+  assert.equal(first.telemetry.usedBroadenedSearch, false);
+  const broadened = await retrieveDocumentSnippetsWithMetadata({ ...narrow, broaderQuery: "Hvordan er beredskap og vakttelefon organisert?", broaderExactTerms: [] });
+  assert.equal(broadened.telemetry.usedBroadenedSearch, true);
+  assert.equal(broadened.snippets[0]?.reference, "Beredskap");
+  // The broader pass has no exact terms; the first pass term is still missing,
+  // so chat keeps its raw-text fallback.
+  assert.equal(broadened.telemetry.quality.sufficient, false);
+  assert.equal(broadened.telemetry.quality.exactTermCoverage, 0);
+  const strong = await retrieveDocumentSnippetsWithMetadata({ query: "vakttelefon beredskap døgnet", documents: [document], broaderQuery: "noe annet" });
+  if (strong.telemetry.quality.sufficient) assert.equal(strong.telemetry.usedBroadenedSearch, false);
+});
+
+test("the broader retry is decided on the returned sections, not on parts of one section", async () => {
+  resetDocumentChunksTestRuntime();
+  const text = longSection();
+  const section = projectDocument({ raw_text: text, structure_map: [{ reference: "Kapittel 4 Drift", text }] });
+  const other = projectDocument({ id: "00000000-0000-4000-8000-000000000099", title: "Bilag 3",
+    raw_text: "Beredskap: vakttelefon er bemannet hele døgnet.",
+    structure_map: [{ reference: "Beredskap", text: "Beredskap: vakttelefon er bemannet hele døgnet." }] });
+  const input = { query: "rapportering tjenesten", documents: [section, other], limit: 8,
+    broaderQuery: "Hvordan er beredskap og vakttelefon organisert?", broaderExactTerms: [] };
+  const parts = await retrieveDocumentSnippetsWithMetadata(input);
+  assert.ok(parts.snippets.filter((snippet) => snippet.sourceId === section.id).length > 1, "the section has several matching parts");
+  const sections = await retrieveDocumentSnippetsWithMetadata({ ...input, surroundingSections: true });
+  assert.equal(sections.snippets.filter((snippet) => snippet.sourceId === section.id).length, 1);
+  assert.equal(sections.telemetry.usedBroadenedSearch, true, "one returned section is too narrow");
+  assert.ok(sections.snippets.some((snippet) => snippet.reference === "Beredskap"));
+});
+
+test("a reranker reorders the candidate pool; invalid or missing answers keep the heuristic order", async () => {
+  resetDocumentChunksTestRuntime();
+  const entries = ["Sikkerhet A gjelder logging.", "Sikkerhet B gjelder kryptering.", "Sikkerhet C gjelder tilgang."];
+  const document = projectDocument({ raw_text: entries.join("\n\n"),
+    structure_map: entries.map((text, index) => ({ reference: `S-${index + 1}`, text })) });
+  const input = { query: "sikkerhet", documents: [document], limit: 3 };
+  const heuristic = (await retrieveDocumentSnippetsWithMetadata(input)).snippets.map((snippet) => snippet.reference);
+  const seen = [];
+  const reordered = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async ({ candidates }) => {
+    seen.push(candidates.length);
+    return [2, 2, 99, -1, 1.5];
+  } });
+  assert.deepEqual(seen, [3]);
+  assert.equal(reordered.telemetry.usedModelRerank, true);
+  assert.deepEqual(reordered.snippets.map((snippet) => snippet.reference),
+    [heuristic[2], heuristic[0], heuristic[1]]);
+  const kept = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => null });
+  assert.equal(kept.telemetry.usedModelRerank, false);
+  assert.deepEqual(kept.snippets.map((snippet) => snippet.reference), heuristic);
+});
+
+test("a section longer than the window returns a bounded window around the matched part", async () => {
+  resetDocumentChunksTestRuntime();
+  const filler = (label) => Array.from({ length: 40 }, (_, index) => `${label} ${index + 1} beskriver ordinære driftsrutiner.`).join(" ");
+  const hit = "Responstid for kritiske hendelser er 30 minutter.";
+  const text = `${filler("Innledning")}\n\n${filler("Bakgrunn")}\n\n${hit}\n\n${filler("Oppfølging")}\n\n${filler("Avslutning")}`;
+  assert.ok(text.length > 7000);
+  const document = projectDocument({ raw_text: text, structure_map: [{ reference: "Kapittel 9", text }] });
+  const [snippet] = (await retrieveDocumentSnippetsWithMetadata({ query: "responstid kritiske hendelser", documents: [document], limit: 1, surroundingSections: true })).snippets;
+  assert.ok(snippet.text.includes(hit));
+  assert.ok(snippet.text.length <= 4800 && snippet.text.length > 1600, String(snippet.text.length));
+  assert.ok(text.includes(snippet.text), "the window is an unchanged slice of the section");
+  assert.match(snippet.text, /^\S/u);
+  assert.match(snippet.text, /\S$/u);
+  assert.equal(snippet.reference, "Kapittel 9", "a window over several parts cites the section");
+  const start = text.indexOf(snippet.text);
+  assert.ok(start === 0 || /\s/u.test(text[start - 1]), "the window starts at a word boundary");
+  const end = start + snippet.text.length;
+  assert.ok(end === text.length || /\s/u.test(text[end]), "the window ends at a word boundary");
 });

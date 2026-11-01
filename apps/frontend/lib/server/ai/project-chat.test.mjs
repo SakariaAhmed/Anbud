@@ -16,7 +16,7 @@ const jiti = createJiti(path.join(frontendRoot, "project-chat-tests.cjs"), {
   interopDefault: true,
   alias: { "@": frontendRoot, "server-only": "/dev/null" },
 });
-const { buildChatAttachmentText, inferProjectChatDomains } = jiti(
+const { buildQuestionRelevantText, inferProjectChatDomains } = jiti(
   path.join(frontendRoot, "lib/server/ai/project-chat.ts"),
 );
 
@@ -36,6 +36,8 @@ test("chat domain inference moved behind the project-chat boundary", () => {
 test("adaptive first questions skip rewriting while prior context and forced rewriting still reach the model", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-rewrite-"));
   const previousMode = process.env.RAG_QUERY_REWRITE;
+  const previousRerank = process.env.RAG_MODEL_RERANK;
+  delete process.env.RAG_MODEL_RERANK;
   const state = { rewrites: [], retrieval: [], answers: [] };
   globalThis.__projectChatRewriteTest = state;
   try {
@@ -88,6 +90,9 @@ test("adaptive first questions skip rewriting while prior context and forced rew
       assert.equal(state.answers.length, 1, item.name);
       assert.ok(state.retrieval[0].exactTerms.includes("K-42"), item.name);
       assert.match(state.retrieval[0].query, /K-42/);
+      assert.ok(state.retrieval[0].broaderQuery.startsWith(question), item.name);
+      assert.ok(state.retrieval[0].broaderExactTerms.includes("K-42"), item.name);
+      assert.equal(typeof state.retrieval[0].rerank, "function", "model rerank is on by default");
       assert.deepEqual(history, item.messages, "The history sent to the final answer must not be mutated.");
       assert.doesNotMatch(state.answers[0].user, /### Dokumentregel|Hele\s+står nedenfor/u,
         "A chat without documents must not claim whole documents are included.");
@@ -98,6 +103,7 @@ test("adaptive first questions skip rewriting while prior context and forced rew
     }
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    if (previousRerank === undefined) delete process.env.RAG_MODEL_RERANK; else process.env.RAG_MODEL_RERANK = previousRerank;
     delete globalThis.__projectChatRewriteTest; rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -162,11 +168,158 @@ test("chat keeps question-specific evidence, complete late qualifications and al
   }
 });
 
+test("generated artifacts are excerpted by question relevance and model rerank follows its switch", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-artifacts-"));
+  const state = { retrieval: [], answers: [] };
+  globalThis.__projectChatArtifactTest = state;
+  const previous = { rewrite: process.env.RAG_QUERY_REWRITE, rerank: process.env.RAG_MODEL_RERANK };
+  process.env.RAG_QUERY_REWRITE = "off";
+  process.env.RAG_MODEL_RERANK = "off";
+  try {
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatArtifactTest.answers.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => {
+      globalThis.__projectChatArtifactTest.retrieval.push(input);
+      return { snippets: [], telemetry: { durationMs: 0, sourceCount: 0, quality: { sufficient: false, sourceCount: 0 } } };
+    };`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const filler = "Generell innledning om leveransen og prosjektets bakgrunn. ".repeat(12);
+    const late = "Exit-plan: data eksporteres i åpne formater innen 30 dager etter avslutning.";
+    const artifact = { id: "a1", title: "Løsningsnotat", content_markdown: [...Array(12).fill(filler), late].join("\n\n") };
+    const result = await streamProjectChat({ projectName: "Fiktiv", question: "Hva sier vi om exit-plan og eksport av data?",
+      customerAnalysis: null, solutionEvaluation: null, customerDocument: null, solutionDocument: null,
+      recentMessages: [], generatedArtifacts: [artifact] });
+    for await (const _ of result.stream) { /* drain */ }
+    assert.equal(state.retrieval[0].rerank, undefined, "RAG_MODEL_RERANK=off disables model rerank");
+    assert.match(state.answers[0].user, /Exit-plan: data eksporteres i åpne formater/u,
+      "a relevant passage late in a long artifact reaches the prompt");
+  } finally {
+    for (const [key, name] of [["rewrite", "RAG_QUERY_REWRITE"], ["rerank", "RAG_MODEL_RERANK"]]) {
+      if (previous[key] === undefined) delete process.env[name]; else process.env[name] = previous[key];
+    }
+    delete globalThis.__projectChatArtifactTest; rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("model rerank is skipped when the whole documents are in the prompt", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-rerank-skip-"));
+  const state = { retrieval: [] };
+  globalThis.__projectChatRerankSkipTest = state;
+  const previous = { rewrite: process.env.RAG_QUERY_REWRITE, rerank: process.env.RAG_MODEL_RERANK };
+  process.env.RAG_QUERY_REWRITE = "off";
+  delete process.env.RAG_MODEL_RERANK;
+  try {
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async () => (async function* () { yield "ok"; })();`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => {
+      globalThis.__projectChatRerankSkipTest.retrieval.push(input);
+      return { snippets: [], telemetry: { durationMs: 0, sourceCount: 0, quality: { sufficient: false, sourceCount: 0 } } };
+    };`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const ask = async (text, supportingDocuments = []) => {
+      state.retrieval = [];
+      const result = await streamProjectChat({ projectName: "Fiktiv", question: "Hva er kravet til oppetid?",
+        customerAnalysis: null, solutionEvaluation: null, recentMessages: [], supportingDocuments,
+        customerDocument: document("kunde", "primary_customer_document", text), solutionDocument: null });
+      for await (const _ of result.stream) { /* drain */ }
+      return state.retrieval[0].rerank;
+    };
+    assert.equal(await ask("Oppetid skal være 99,9 prosent."), undefined, "a document sent whole needs no rerank");
+    assert.equal(state.retrieval[0].surroundingSections, false, "an anchor keeps the matched part");
+    assert.equal(typeof await ask("Oppetid skal være 99,9 prosent. ".repeat(4000)), "function", "a document sent as excerpts is reranked");
+    assert.equal(state.retrieval[0].surroundingSections, true);
+    const supporting = [1, 2, 3, 4].map((index) => document(`bilag-${index}`, "supporting_document", "Kort bilag."));
+    supporting.push(document("bilag-5", "supporting_document", "Oppetid i bilag 5. ".repeat(8000)));
+    assert.equal(typeof await ask("Oppetid skal være 99,9 prosent.", supporting), "function",
+      "a fifth supporting document is searched but never sent whole");
+  } finally {
+    for (const [key, name] of [["rewrite", "RAG_QUERY_REWRITE"], ["rerank", "RAG_MODEL_RERANK"]]) {
+      if (previous[key] === undefined) delete process.env[name]; else process.env[name] = previous[key];
+    }
+    delete globalThis.__projectChatRerankSkipTest; rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an anchor into a document sent whole keeps the matched part of a section", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-anchor-"));
+  const state = { answers: [] };
+  globalThis.__projectChatAnchorTest = state;
+  const previous = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  try {
+    const filler = "Leverandøren beskriver generelle rutiner for drift og forvaltning. ".repeat(40);
+    const section = `${filler}Oppetid skal være 99,95 prosent målt per måned. ${filler}`;
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async input => {
+      globalThis.__projectChatAnchorTest.answers.push(input);
+      return (async function* () { yield "ok"; })();
+    };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async () => ({
+      snippets: [{ sourceType: "project_document", sourceId: "kunde", documentTitle: "kunde", reference: "Kapittel 3",
+        headingPath: [], pageStart: null, pageEnd: null, text: ${JSON.stringify(section)}, lexicalScore: 3, similarity: null, score: 3 }],
+      telemetry: { durationMs: 0, sourceCount: 1, quality: { sufficient: true, sourceCount: 1 } },
+    });`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const result = await streamProjectChat({ projectName: "Fiktiv", question: "Hva er kravet til oppetid?",
+      customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+      customerDocument: document("kunde", "primary_customer_document", section), solutionDocument: null });
+    for await (const _ of result.stream) { /* drain */ }
+    const anchors = state.answers[0].user.slice(state.answers[0].user.indexOf("Kildehenvisninger"));
+    assert.match(anchors, /Oppetid skal være 99,95 prosent/u);
+  } finally {
+    if (previous === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previous;
+    delete globalThis.__projectChatAnchorTest; rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a selected table row keeps its header and is not cut", () => {
+  const header = "| Krav | Tiltak | Frist |\n| --- | --- | --- |";
+  const rows = Array.from({ length: 80 }, (_, index) => `| K-${index + 1} | Ordinær drift og forvaltning av tjenesten | 30 dager |`);
+  rows[70] = "| K-71 | Exit-plan med eksport av data i åpne formater | 14 dager |";
+  const selected = buildQuestionRelevantText({ rawText: `Innledning.\n\n${header}\n${rows.join("\n")}`, question: "Hva er fristen for exit-plan?", limit: 1500 });
+  assert.match(selected, /\| Krav \| Tiltak \| Frist \|\n\| --- \| --- \| --- \|\n(?:\|[^\n]*\n)*\| K-71 \| Exit-plan med eksport av data i åpne formater \| 14 dager \|/u);
+  const longRow = `| K-90 | ${"Ordinær beskrivelse av driften. ".repeat(80)}Exit-plan leveres innen 14 dager. |`;
+  const withLongRow = buildQuestionRelevantText({ rawText: `Innledning.\n\n${header}\n${rows.join("\n")}\n${longRow}`, question: "Når leveres exit-plan?", limit: 1500 });
+  assert.match(withLongRow, /\| Krav \| Tiltak \| Frist \|[^]*Exit-plan leveres innen 14 dager/u, "a row longer than a piece is cut, not dropped");
+  const byId = buildQuestionRelevantText({ rawText: `Innledning.\n\n${header}\n${rows.join("\n")}\n${longRow}`, question: "Hva sier K-90?", limit: 3500 });
+  assert.match(byId, /Exit-plan leveres innen 14 dager/u, "a question about a long row's ID gets the end of the row");
+  // A first cell longer than a piece is not repeated, and splitting still ends.
+  const hugeCell = `| ${"K".repeat(3000)} | Sluttrapporten leveres innen 14 dager. |`;
+  const withHugeCell = buildQuestionRelevantText({ rawText: `${header}\n${hugeCell}`, question: "Sluttrapporten?", limit: 1500 });
+  assert.match(withHugeCell, /Sluttrapporten leveres/u);
+  // Every piece ends at a word boundary, wherever the answer falls in the row.
+  for (let shift = 0; shift < 80; shift += 1) {
+    const row = `| K-91 | ${"x".repeat(shift)} ${"Ordinær beskrivelse av driften. ".repeat(84)}Sluttrapporten leveres innen 14 dager. ${"Ordinær beskrivelse av driften. ".repeat(10)}|`;
+    const excerpt = buildQuestionRelevantText({ rawText: `${header}\n${row}`, question: "Sluttrapporten?", limit: 1500 });
+    assert.match(excerpt, /Sluttrapporten/u, String(shift));
+  }
+});
+
 test("attachment segments with å match question terms after the same normalization", () => {
   const filler = "Generell bakgrunnstekst om prosjektet. ".repeat(40);
   const relevant = "Påminnelse sendes automatisk før fristen for hver søknad.";
   const rawText = `${filler}\n\n${relevant}\n\n${filler}`;
-  const selected = buildChatAttachmentText({
+  const selected = buildQuestionRelevantText({
     rawText,
     question: "Hvordan fungerer påminnelse?",
     limit: 400,
@@ -175,7 +328,7 @@ test("attachment segments with å match question terms after the same normalizat
 });
 
 test("an attachment that fits the limit is kept whole even when one paragraph matches", () => {
-  const selected = buildChatAttachmentText({
+  const selected = buildQuestionRelevantText({
     rawText: "Påminnelse: se nedenfor.\n\n7 dager før fristen.",
     question: "Påminnelse?",
     limit: 4000,
