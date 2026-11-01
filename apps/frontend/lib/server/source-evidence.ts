@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { ChatSourceReference } from "@/lib/types";
 import { extractRequirementIdentifiers } from "@/lib/server/ai/retrieval-query";
 
+const quotationText = (value: string) => value.replace(/\*\*([^*]+)\*\*/gu, "$1").replace(/__([^_]+)__/gu, "$1");
 const canonical = (value: string) => value.replace(/[‐‑‒–—]/gu, "-").replace(/\u0000/gu, "").replace(/\s+/gu, " ").trim();
 
 export class SourceEvidenceValidationError extends Error {
@@ -59,7 +60,7 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
   for (const paragraph of answer.split(/\n\s*\n/u)) {
     const sources = [...paragraph.matchAll(/\[Kilde\s+(\d+)\]/giu)].map(match => available[Number(match[1]) - 1]);
     for (const quote of paragraph.matchAll(/«([^»]+)»/gu)) {
-      if (!sources.some(source => source?.original_quote && canonical(source.original_quote).includes(canonical(quote[1])))) {
+      if (!sources.some(source => source?.original_quote && canonical(source.original_quote).includes(canonical(quotationText(quote[1]))))) {
         throw new SourceEvidenceValidationError("CHAT_QUOTATION_INVALID", "Et sitat i svaret finnes ikke i den oppgitte kilden. Prøv meldingen på nytt.");
       }
     }
@@ -74,7 +75,7 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
       const source = available[index];
       const original = source.original_quote!;
       const indexer = new SourceQuoteIndex(original);
-      const needles = [...paragraph.matchAll(/«([^»]+)»/gu)].map(match => match[1]).concat(ids);
+      const needles = [...paragraph.matchAll(/«([^»]+)»/gu)].map(match => quotationText(match[1])).concat(ids);
       const excerpts = passages.get(index) ?? [];
       if (original.length <= 4800) excerpts.push(original);
       else {

@@ -8,7 +8,7 @@ export function recordWorkflowPerformance(input: {
   jobId?: string;
   documentId?: string;
   documentClass?: DocumentFileFormat;
-  operation: "document" | "chat" | "generation";
+  operation: "document" | "chat" | "generation" | "browser";
   phase: string;
   durationMs: number;
   status?: "completed" | "failed";

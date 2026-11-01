@@ -164,3 +164,13 @@ test("download checks cover alternative document IDs and trailing slash", () => 
     }
   }
 });
+
+test("source evidence POST permits restricted excerpt reads without granting document downloads or other writes", () => {
+  const pathname = `/api/projects/${projectId}/source-evidence`;
+  assert.equal(authorization.requiredProjectPermission("POST", pathname), "document.read");
+  assert.equal(authorization.projectRoleAllowsAuthorizationPath({ method: "POST", pathname, role: "restricted_viewer", isAdmin: false }), true);
+  assert.equal(authorization.projectRoleAllowsAuthorizationPath({ method: "POST", pathname: `${pathname}/other`, role: "restricted_viewer", isAdmin: false }), false);
+  assert.equal(authorization.projectRoleAllowsAuthorizationPath({ method: "POST", pathname: `/api/projects/${projectId}/jobs`, role: "restricted_viewer", isAdmin: false }), false);
+  assert.equal(authorization.projectRoleAllowsAuthorizationPath({ method: "GET", pathname: `/api/projects/${projectId}/documents/source`, role: "restricted_viewer", isAdmin: false }), false);
+  assert.equal(authorization.projectRoleAllowsAuthorizationPath({ method: "POST", pathname, role: null, isAdmin: false }), false);
+});

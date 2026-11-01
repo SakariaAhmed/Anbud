@@ -47,3 +47,11 @@ test("whole-source and attachment quotes outside the retrieval shortlist remain 
   assert.match(used[0].original_quote, /K42/u);
   assert.throws(() => validateChatEvidence("K43 krever eksport. [Kilde 1]", [source]), /krav-ID/iu);
 });
+
+test("bold emphasis inside a quotation preserves exact wording without accepting changed content", () => {
+  const source = { citation_number: 1, evidence_id: "one", original_quote: "Leverandøren skal levere en exitplan innen 30 dager." };
+  const valid = validateChatEvidence("Fristen er «Leverandøren skal levere en exitplan **innen 30 dager**.» [Kilde 1]", [source]);
+  assert.equal(valid[0].original_quote, source.original_quote);
+  assert.throws(() => validateChatEvidence("Fristen er «Leverandøren skal levere en exitplan **innen 60 dager**.» [Kilde 1]", [source]), /sitat/iu);
+  assert.throws(() => validateChatEvidence("Fristen er «Leverandøren skal levere en exitplan **innen 30 dager.» [Kilde 1]", [source]), /sitat/iu);
+});

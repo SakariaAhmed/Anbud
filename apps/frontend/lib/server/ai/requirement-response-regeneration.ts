@@ -1,8 +1,10 @@
 import "server-only";
+import { unassignedRequirementReviewRefs } from "@/lib/requirement-response-metadata";
+import { markdownTableCell } from "@/lib/server/requirements/markdown-table";
 import { isRecord } from "@/lib/unknown-values";
 import { editRequirementReviewRow, requirementReviewRows } from "@/lib/requirement-review";
 import { buildImmutableRequirementRowManifest } from "@/lib/server/artifact-validation";
-import { requirementDisplayRef, requirementDisplaySource, requirementGroupHeading, sortRequirementLedgerInDocumentOrder } from "@/lib/server/requirements/presentation";
+import { requirementDisplayRef, requirementDisplaySource, requirementGroupHeading, sortRequirementLedgerInDocumentOrder, isClarificationRequirementEntry } from "@/lib/server/requirements/presentation";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { GeneratedArtifact, GeneratedArtifactType } from "@/lib/types";
 import type { RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
@@ -22,7 +24,7 @@ export function selectRequirementRegenerationLedger(ledger: RequirementLedgerEnt
 
 /** Merge editable cells only. Untouched answers and the complete immutable
  * manifest survive, including duplicate IDs and manually written answers. */
-export function mergeRegeneratedRequirementRows(parent: GeneratedArtifact, selection: RequirementRegenerationSelection, generated: GeneratedArtifactDraft): GeneratedArtifactDraft {
+export function mergeRegeneratedRequirementRows(parent: GeneratedArtifact, selection: RequirementRegenerationSelection, generated: GeneratedArtifactDraft, ledger: RequirementLedgerEntry[]): GeneratedArtifactDraft {
   const before = requirementReviewRows(parent.content_markdown, parent.input_snapshot);
   const freshMetadata = responseMetadata(generated.generation_metadata);
   const freshSnapshot = { generation_metadata: generated.generation_metadata };
@@ -40,6 +42,24 @@ export function mergeRegeneratedRequirementRows(parent: GeneratedArtifact, selec
     content = editRequirementReviewRow(content, target, { answer: row.answer, evidence: row.evidence });
     originalIndexes.set(subsetIndex, originalIndex);
   });
+  const clarificationIndexes = sortRequirementLedgerInDocumentOrder(ledger).flatMap((entry, index) => isClarificationRequirementEntry(entry) ? [index] : []);
+  if (clarificationIndexes.some(index => selected.has(index))) {
+    const lines = content.split("\n");
+    const start = lines.findIndex(line => /^## Avklaringspunkter\s*$/u.test(line));
+    if (start >= 0) {
+      const next = lines.findIndex((line, index) => index > start && /^## /u.test(line));
+      const end = next >= 0 ? next : lines.length;
+      const bullets = lines.flatMap((line, index) => index > start && index < end && /^- \*\*/u.test(line) ? [index] : []);
+      if (bullets.length !== clarificationIndexes.length) throw new Error("Avklaringslisten er endret. Kontroller listen før utvalgte svar regenereres.");
+      clarificationIndexes.forEach((rowIndex, ordinal) => {
+        if (!selected.has(rowIndex)) return;
+        const prefix = `- **${markdownTableCell(before[rowIndex].ref)}:**`;
+        if (!lines[bullets[ordinal]].startsWith(prefix)) throw new Error("Avklaringspunktet kan ikke knyttes sikkert til kravraden.");
+        lines[bullets[ordinal]] = `${prefix} Se svar i kravtabellen, rad ${rowIndex + 1}.`;
+      });
+      content = lines.join("\n");
+    }
+  }
   const old = responseMetadata(record(parent.input_snapshot).generation_metadata);
   const merged: Record<string, unknown> = { ...old };
   for (const [rowsKey, refsKey, countKey] of [
@@ -50,7 +70,7 @@ export function mergeRegeneratedRequirementRows(parent: GeneratedArtifact, selec
     const priorRows = Array.isArray(old[rowsKey]) ? old[rowsKey].filter(isRecord) : [];
     // Legacy ref-only warnings cannot be safely assigned to repeated IDs.
     // Keep them conservatively rather than clearing another row's warning.
-    const legacyRefs = !priorRows.length && Array.isArray(old[refsKey]) ? old[refsKey].filter((value): value is string => typeof value === "string") : [];
+    const legacyRefs = unassignedRequirementReviewRefs(old[refsKey], priorRows.map(row => ({ ref: String(row.ref ?? "") })));
     const freshRows = Array.isArray(freshMetadata[rowsKey]) ? freshMetadata[rowsKey].filter(isRecord) : [];
     const rows: Record<string, unknown>[] = [...priorRows.filter(row => !selected.has(Number(row.order_index))), ...freshRows.map(row => {
       const index = originalIndexes.get(Number(row.order_index));

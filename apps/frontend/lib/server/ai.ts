@@ -3624,7 +3624,7 @@ export async function generateProjectArtifact(input: ProjectArtifactGenerationIn
       model: input.model,
       onProgress: input.onProgress,
     });
-    return input.requirementRegeneration ? mergeRegeneratedRequirementRows(input.requirementRegeneration.parent, input.requirementRegeneration.selection, generated) : generated;
+    return input.requirementRegeneration ? mergeRegeneratedRequirementRows(input.requirementRegeneration.parent, input.requirementRegeneration.selection, generated, requirementContext.requirementLedger) : generated;
   }
   if (input.requirementRegeneration) throw new Error("Utvalgte krav kan bare regenereres fra et komplett kravregister.");
 

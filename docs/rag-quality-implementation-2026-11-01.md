@@ -30,6 +30,20 @@ The register appears before generated analysis and can be searched. The primary 
 
 The derived “Hva mangler?” panel lists unresolved current requirement answers, weak/missing/unclear coverage, missing solution elements and open customer-analysis ambiguities. It reports unknown coverage when no evaluation has been loaded. Source drawers can verify legacy excerpts against the current authorized document; page/heading data comes from the original source structure or explicit page markers. Repeated passages have no manufactured locator. Restricted viewers may read excerpts but still cannot download originals.
 
+## Round-three fixes and live verification
+
+Sol reviewed `e15aa97e` at 7/10 and withheld approval: preserved answers could be promoted from stale solution/service inputs; mixed legacy and indexed warnings could hide legacy rows; clarification sections could retain an old answer. The fixes capture revisions before the parent read, compare parent authority before generation, recheck its source/service/knowledge/evaluation dependencies under the publication lock, retain unmatched legacy warnings and replace selected clarification duplicates with references to their authoritative table row. New clarification outputs reference the table instead of duplicating answer text. Real SQL regressions reproduce both a new manual version and new source/service revisions while retaining the same parent ID.
+
+Opus's round-three run returned no score because its provider failed with `ENOTFOUND`. The fresh CodeRabbit run also failed with `Connection failed: WebSocket closed`; this is a review gap, not a clean review. The previous CodeRabbit run completed with 16 findings and one unreviewed file. Greptile remains the accepted authentication gap.
+
+The 116-case recorded SQL gate now stores encrypted requirement registers in PostgreSQL and reads five source registers through the real repository parser; all 60 ID cases remain rank one and conceptual recall remains 30/36. No paid calls occur during replay.
+
+Actual model-backed HTTP testing completed customer analysis, requirement responses and evaluation. Chat exposed a false quotation rejection caused by balanced Markdown bold markers inside an exact quote; quotation comparison now ignores balanced emphasis while tests continue to reject changed words or unbalanced markup. A subsequent telemetry-header edit exposed a 500 during dev-server reloading; the variable and header construction order were fixed and the route regression also covers cancellation after provider EOF. The complete system test is being rerun and is not yet claimed green.
+
+Browser DOM checks exercised the actual requirement workspace at 390px with no document-level horizontal overflow. Opening an uncached requirement source reached a verified original quotation in 1,056 ms and the drawer measured 390px wide. This is an automated display timing, not a human claim-verification study. Screenshot/interaction automation has connection failures, so visual and keyboard verification are incomplete.
+
+Browser render metrics now correlate the first visible chat output to the server request trace, and register loading to the document trace. They are bounded, metadata-only client observations taken after paint frames, with cancellation and hidden-tab handling. Register load-to-render is not upload-to-ready and these measurements must not be added across unrelated navigation episodes.
+
 ## Migration and rollback notes
 
 Apply `20261101210000_norwegian_hybrid_retrieval.sql` with `psql -f` in autocommit mode: its batched backfill and concurrent index cannot run with `--single-transaction`. If a previous concurrent index build left an invalid index, follow the migration's explicit recovery instruction before rerunning. The baseline is only for disposable databases.

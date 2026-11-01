@@ -111,6 +111,16 @@ assert.ok(invitation.guestCode, "Administrator must receive a local guest creden
 const guest = await request("/api/auth/guest", { ...json("POST", { code: invitation.guestCode }), cookie: null });
 const guestCookie = cookieFrom(guest);
 await request(`/api/projects/${project.id}`, { cookie: guestCookie });
+const evidenceBody = { documentId: uploaded[1].id, sourceRevision: currentDocuments.find(document => document.id === uploaded[1].id).chunk_source_revision, quote: "Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser." };
+const guestEvidence = await (await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", evidenceBody), cookie: guestCookie })).json();
+assert.equal(guestEvidence.source.classification, "documented");
+assert.equal(guestEvidence.source.original_quote, evidenceBody.quote);
+assert.ok(guestEvidence.source.evidence_id && guestEvidence.source.source_fingerprint && guestEvidence.source.source_revision === evidenceBody.sourceRevision);
+await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", { ...evidenceBody, quote: "Et oppdiktet krav som ikke finnes i dokumentgrunnlaget." }), cookie: guestCookie, expected: 422 });
+await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", { ...evidenceBody, sourceRevision: evidenceBody.sourceRevision + 1 }), cookie: guestCookie, expected: 409 });
+await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", { ...evidenceBody, documentId: "ffffffff-ffff-4fff-8fff-ffffffffffff" }), cookie: guestCookie, expected: 404 });
+checks.push("restricted viewer original-excerpt verification, invented quote/stale revision/foreign source denied");
+
 // Middleware deliberately hides forbidden project routes with 404 before
 // the handler's finer-grained 403 authorization response can run.
 await request(`/api/projects/${project.id}/documents/${uploaded[0].id}`, { cookie: guestCookie, expected: 404 });
@@ -152,6 +162,18 @@ if (aiEnabled) {
   assert.match(content, /30\s+dager/iu, "Chat must retain the documented exit deadline.");
   assert.match(content, /K-1\.3|Bilag\s*1|løsningsnotat/iu, "Chat must name its source.");
   checks.push("chat streaming with actual model endpoint");
+  assert.doesNotMatch(content, /kunne ikke kildebekreftes/iu, "A correct source quote must pass deterministic validation.");
+  const persistedChat = await (await request(`/api/projects/${project.id}/chat`)).json();
+  const answer = persistedChat.messages.filter(message => message.role === "assistant").at(-1);
+  assert.equal(answer.content, content);
+  assert.ok(answer.source_references.length > 0, "Actual cited evidence must survive database decryption and reload.");
+  for (const reference of answer.source_references) {
+    assert.ok(reference.evidence_id && reference.original_quote && reference.source_fingerprint);
+    assert.ok(Number.isSafeInteger(reference.citation_number) && Number.isSafeInteger(reference.source_revision));
+    assert.match(content, new RegExp(`\\[Kilde ${reference.citation_number}\\]`, "u"));
+  }
+  checks.push("validated chat source IDs, sparse citation numbers, original quotation and revision survive actual persistence/reload");
+
 }
 runtime.sessions = { adminCookie, guestCookie };
 writeFileSync(privatePath, JSON.stringify(runtime, null, 2), { mode: 0o600 });

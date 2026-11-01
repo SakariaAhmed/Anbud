@@ -1,4 +1,5 @@
 import "server-only";
+import { normalizeComparableText } from "@/lib/server/document-intelligence/text-normalization";
 
 import { sortByRequirementOrder } from "@/lib/requirement-order";
 import { REQUIREMENT_RESPONSE_TABLE_HEADINGS } from "@/lib/requirement-response-table";
@@ -284,4 +285,21 @@ export function requirementTableMarkdown(rows: string[][]) {
     `|${REQUIREMENT_RESPONSE_TABLE_HEADINGS.map(() => "---").join("|")}|`,
     ...rows.map(toMarkdownTableRow),
   ];
+}
+
+export function isClarificationRequirementEntry(entry: RequirementLedgerEntry) {
+  const content = normalizeComparableText(
+    `${entry.id} ${entry.text} ${entry.heading} ${entry.service ?? ""}`,
+  );
+  if (
+    /\b(clarification question deadline|customer answers to clarification)\b/i.test(
+      entry.text,
+    )
+  ) {
+    return false;
+  }
+
+  return /\b(known unclear|clarification required|clarification needs|tbd|avklaringspunkt|avklaring kreves|uavklart|uklar)\b/i.test(
+    content,
+  );
 }

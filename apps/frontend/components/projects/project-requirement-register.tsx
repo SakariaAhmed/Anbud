@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { recordWorkflowRenderAfterPaint } from "@/lib/client/workflow-render-metric";
 import { Input } from "@/components/projects/primitives";
 import { Button } from "@/components/ui/button";
 import { parseProjectRequirementRegister } from "@/lib/project-requirement-register";
@@ -12,6 +13,8 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
+    const startedAt = performance.now();
+    const reported = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | undefined;
     setRegister(null);
     const load = async () => {
@@ -19,7 +22,14 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
         const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/requirement-register`, { signal: abort.signal, cache: "no-store" });
         if (!response.ok) throw new Error("Kunne ikke hente kravregisteret.");
         const next = parseProjectRequirementRegister(await response.json());
-        if (!abort.signal.aborted) { setRegister(next); setError(""); }
+        if (!abort.signal.aborted) {
+          setRegister(next); setError("");
+          for (const document of next.documents.filter(document => document.rows.length)) {
+            if (reported.has(document.id)) continue;
+            reported.add(document.id);
+            recordWorkflowRenderAfterPaint(projectId, { phase: "requirement_register_render", traceId: document.id, documentId: document.id }, startedAt, abort.signal);
+          }
+        }
       } catch { if (!abort.signal.aborted) setError("Kunne ikke hente kravregisteret. Prøv igjen."); }
       finally { if (processing && !abort.signal.aborted) timer = setTimeout(() => void load(), 2500); }
     };

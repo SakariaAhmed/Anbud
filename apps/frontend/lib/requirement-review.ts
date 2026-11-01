@@ -41,10 +41,10 @@ export function requirementReviewRows(content: string, inputSnapshot?: unknown):
         const identity = entry && normalized(String(entry.ref ?? "")) === normalized(ref) ? entry : undefined;
         const matches = (row: { ref: string; orderIndex?: number; sourceLocator?: string }) => row.orderIndex !== undefined
           ? row.orderIndex === index : normalized(row.ref) === normalized(ref) && (!row.sourceLocator || normalized(source).includes(normalized(row.sourceLocator)));
-        const flagged = (entries: Array<{ ref: string; orderIndex?: number; sourceLocator?: string }>, refs: string[]) => entries.length ? entries.some(matches) : refs.some(reference => normalized(reference) === normalized(ref));
+        const flagged = (entries: Array<{ ref: string; orderIndex?: number; sourceLocator?: string }>, refs: string[]) => entries.some(matches) || refs.some(reference => normalized(reference) === normalized(ref));
         const unanswered = !answer.trim() || /^(?:-|—|ikke besvart|mangler svar)$/iu.test(answer.trim());
         const missingSource = !source.trim() || /^(?:-|—|ukjent|mangler|ikke oppgitt)$/iu.test(source.trim());
-        const needsReview = unanswered || missingSource || flagged(metadata.templateRepairRows, metadata.templateRepairRefs) || flagged(metadata.controlRepairRows, metadata.controlRepairRefs) || flagged(metadata.proposalInputRequiredRows, metadata.proposalInputRequiredRefs) || metadata.unresolvedFallbackAnswers.some(row => row.nr === index + 1) ||
+        const needsReview = unanswered || missingSource || flagged(metadata.templateRepairRows, metadata.templateRepairLegacyRefs) || flagged(metadata.controlRepairRows, metadata.controlRepairLegacyRefs) || flagged(metadata.proposalInputRequiredRows, metadata.proposalInputRequiredLegacyRefs) || metadata.unresolvedFallbackAnswers.some(row => row.nr === index + 1) ||
           /\b(?:må avklares|trenger tilbudsinput|ikke dokumentert|kan ikke bekreftes)\b/iu.test(answer);
         result.push({ key: `${index}:${ref}`, index, lineIndex, rawLine, ref, group, requirement: cells[columns.requirementIndex] ?? "", answer,
           evidence: columns.evidenceIndex >= 0 ? cells[columns.evidenceIndex] ?? "" : "", source, columns,

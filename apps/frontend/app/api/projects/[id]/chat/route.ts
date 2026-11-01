@@ -499,6 +499,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       retrieval_telemetry: chatStream.retrievalTelemetry,
     };
 
+    const responseHeaders = new Headers({
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Workflow-Trace-Id": traceId,
+          "X-Chat-Session-Id": sessionId,
+          "X-Chat-Session-Title": encodeURIComponent(sessionTitle),
+          "X-Chat-Domains": encodeURIComponent(
+            JSON.stringify(chatStream.domainHints),
+          ),
+          "X-Retrieval-Quality": encodeURIComponent(
+            JSON.stringify(chatStream.retrievalTelemetry?.quality ?? null),
+          ),
+    });
+
     return new NextResponse(
       new ReadableStream({
         async start(controller) {
@@ -576,18 +590,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         },
       }),
       {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-store",
-          "X-Chat-Session-Id": sessionId,
-          "X-Chat-Session-Title": encodeURIComponent(sessionTitle),
-          "X-Chat-Domains": encodeURIComponent(
-            JSON.stringify(chatStream.domainHints),
-          ),
-          "X-Retrieval-Quality": encodeURIComponent(
-            JSON.stringify(chatStream.retrievalTelemetry?.quality ?? null),
-          ),
-        },
+        headers: responseHeaders,
       },
     );
   } catch (error) {

@@ -66,7 +66,7 @@ function harness({ role = null, admin = false, active = true, disabled = false, 
 }
 const endpoints = [
   ["chat", "GET"], ["chat", "POST"], ["generate", "GET"], ["generate", "PATCH"], ["generate", "DELETE"], ["generate", "POST"],
-  ["documents", "POST"], ["requirement-register", "GET"], ["source-evidence", "POST"], ["service-descriptions", "GET"], ["service-descriptions", "PATCH"], ["artifact-authority", "GET"],
+  ["documents", "POST"], ["requirement-register", "GET"], ["source-evidence", "POST"], ["performance", "POST"], ["service-descriptions", "GET"], ["service-descriptions", "PATCH"], ["artifact-authority", "GET"],
   ["executive-summary", "GET"], ["executive-summary", "POST"], ["solution-evaluation", "GET"], ["solution-evaluation", "POST"],
   ["customer-analysis", "GET"], ["customer-analysis", "POST"], ["customer-analysis", "PUT"],
   ["jobs", "GET"], ["jobs", "POST"], ["jobs/[jobId]", "GET"], ["jobs/[jobId]/events", "GET"],

@@ -37,6 +37,18 @@ test("selected regeneration is fenced against a manual version and its successfu
     assert.equal(first.parent_artifact_id, manual); assert.equal(first.artifact_version, 3);
     assert.equal(JSON.parse(sql(url, save)).id, first.id);
     assert.equal(sql(url, `select count(*) from public.generated_artifacts where project_id='${project}';`), "3");
+    // Reproduce capturing new source revisions after reading an old parent:
+    // the parent ID/version still matches, but preserved answers are stale.
+    const nextJob = randomUUID(), nextLease = randomUUID();
+    sql(url, `update public.projects set description='Nytt løsningsgrunnlag' where id='${project}';
+      insert into public.project_jobs(id,project_id,kind,status,lease_token,input_json) values('${nextJob}','${project}','artifact_generation','running','${nextLease}',jsonb_build_object('artifactType','forbedret_kravsvar','regenerateRequirements',jsonb_build_object('artifactId','${first.id}','artifactVersion',3,'rows','[]'::jsonb)));`);
+    const currentPayload = payload.replace("'expected_artifact_source_revision',0", "'expected_artifact_source_revision',(select artifact_source_revision from public.projects where id='" + project + "')");
+    const saveNext = `select public.lease_fenced_save_generated_artifact('${nextJob}','${nextLease}','${project}',${currentPayload});`;
+    assert.match(sql(url, saveNext, 1), /REQUIREMENT_REGENERATION_PARENT_STALE/u);
+    sql(url, `update public.generated_artifacts set input_artifact_source_revision=(select artifact_source_revision from public.projects where id='${project}') where id='${first.id}'; update public.artifact_source_state set service_library_revision=service_library_revision+1;`);
+    assert.match(sql(url, saveNext, 1), /REQUIREMENT_REGENERATION_PARENT_STALE/u);
+    assert.equal(sql(url, `select content_markdown from public.generated_artifacts where id='${first.id}';`), "Nytt svar");
+
     assert.equal(sql(url, "select has_function_privilege('anon','public.lease_fenced_save_generated_artifact(uuid,uuid,uuid,jsonb)','execute'),has_function_privilege('authenticated','public.lease_fenced_save_generated_artifact(uuid,uuid,uuid,jsonb)','execute'),has_function_privilege('service_role','public.lease_fenced_save_generated_artifact(uuid,uuid,uuid,jsonb)','execute');"), "f|f|t");
   } finally { sql(adminUrl, `drop database if exists "${name}" with (force);`); }
 });

@@ -5,7 +5,7 @@
 const { randomUUID } = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 
-const store = (globalThis.__ragEvalChunkStore ??= { rows: new Map(), manifests: new Map() });
+const store = (globalThis.__ragEvalChunkStore ??= { rows: new Map(), manifests: new Map(), registerReads: 0 });
 
 function psql(sql) {
   const url = process.env.RAG_EVAL_STORE_URL;
@@ -33,7 +33,12 @@ function matches(sql) {
 exports.createServiceClient = () => ({
   from(table) {
     if (table === "document_intelligence_artifacts") {
-      const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: null, error: null }) };
+      const filters = {};
+      const query = { select: () => query, eq: (column, value) => { filters[column] = value; return query; }, maybeSingle: async () => {
+        for (const key of ["project_id", "document_id", "source_revision"]) if (!(key in filters)) throw new Error("Register reads must be scoped to project, document and revision");
+        store.registerReads++;
+        return { data: JSON.parse(psql(`select coalesce((select row_to_json(a) from public.document_intelligence_artifacts a where project_id=${literal(filters.project_id)}::uuid and document_id=${literal(filters.document_id)}::uuid and source_revision=${Number(filters.source_revision)}), 'null'::json);`)), error: null };
+      } };
       return query;
     }
     if (table !== "document_chunks") throw new Error(`Unexpected eval table: ${table}`);
@@ -85,3 +90,8 @@ exports.createServiceClient = () => ({
     throw new Error(`Unexpected eval RPC: ${name}`);
   },
 });
+
+exports.storeRequirementRegister = (document, artifactEncrypted) => {
+  psql(`insert into public.document_intelligence_artifacts(project_id,document_id,source_revision,artifact_encrypted) values(${literal(document.project_id)}::uuid,${literal(document.id)}::uuid,${Number(document.chunk_source_revision)},${literal(JSON.stringify(artifactEncrypted))}::jsonb);`);
+};
+exports.registerReadCount = () => store.registerReads;

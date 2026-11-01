@@ -245,6 +245,7 @@ const report = {
     embedded_chunks: live.embeddedChunks,
     cases_using_hybrid_search: results.filter((row) => row.used_hybrid_search).length,
     cases_using_model_rerank: results.filter((row) => row.used_model_rerank).length,
+    persisted_register_reads: require("./rag_retrieval_eval_store.cjs").registerReadCount(),
   } : {}),
   results: {
     all: summary(results),
@@ -295,6 +296,7 @@ function createDisposableDatabase() {
     psql(target.toString(), `
       create schema extensions;
       create extension vector with schema extensions;
+      create table public.document_intelligence_artifacts(project_id uuid not null, document_id uuid not null, source_revision bigint not null, artifact_encrypted jsonb not null, primary key(project_id,document_id,source_revision));
       create table public.document_chunks (id uuid primary key, source_type text not null, source_id uuid not null,
         project_id uuid, chunk_index integer not null, fts tsvector not null, embedding extensions.vector(1536));
       ${setup}
@@ -312,7 +314,12 @@ async function storeChunksWithLiveEmbeddings() {
   const database = createDisposableDatabase();
   process.env.RAG_EVAL_STORE_URL = database.url;
   try {
+    const { extractRequirementLedgerForDocument } = app(path.join(frontendRoot, "lib/server/requirements/source-ledger.ts"));
+    const { encryptJson } = app(path.join(frontendRoot, "lib/server/crypto.ts"));
+    const { storeRequirementRegister } = require("./rag_retrieval_eval_store.cjs");
     for (const document of documents) {
+      const rows = await extractRequirementLedgerForDocument(document);
+      storeRequirementRegister(document, encryptJson({ documentId: document.id, projectId: document.project_id, sourceRevision: document.chunk_source_revision, requirementRegister: { version: 1, rows } }));
       await replaceProjectDocumentChunks({
         documentId: document.id, projectId: document.project_id, role: document.role,
         supportingSubtype: null, title: document.title, fileName: document.file_name,

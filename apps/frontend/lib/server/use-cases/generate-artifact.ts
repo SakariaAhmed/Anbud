@@ -433,12 +433,16 @@ export async function generateAndSaveProjectArtifact(
   input.onProgress?.(formatJobProgress(12, "Laster prosjektkontekst og relevante dokumenter ..."));
   const regenerateRequirements = parseRequirementRegeneration(input.regenerateRequirements);
   if (regenerateRequirements && input.artifactType !== "forbedret_kravsvar") throw new Error("Bare kravbesvarelser støtter regenerering av utvalgte rader.");
+  const sourceRevisions = await getArtifactSourceRevisions(input.projectId);
   const regenerationParent = regenerateRequirements ? (await listGeneratedArtifactsFresh(input.projectId, { artifactType: "forbedret_kravsvar" })).find(artifact => artifact.id === regenerateRequirements.artifactId && artifact.artifact_version === regenerateRequirements.artifactVersion && artifact.is_current && artifact.source_is_current) : undefined;
   if (regenerateRequirements && !regenerationParent) throw new Error("Kravbesvarelsen er endret eller bygger på eldre kilder. Last inn på nytt.");
-  const sourceRevisions = await getArtifactSourceRevisions(input.projectId);
+  if (regenerationParent && (regenerationParent.input_artifact_source_revision !== sourceRevisions.artifactSourceRevision || regenerationParent.input_service_library_revision !== sourceRevisions.serviceLibraryRevision || (regenerationParent.used_solution_evaluation && (
+    regenerationParent.input_solution_evaluation_id !== sourceRevisions.solutionEvaluationDependency?.id || regenerationParent.input_solution_evaluation_updated_at !== sourceRevisions.solutionEvaluationDependency?.updated_at || regenerationParent.input_solution_evaluation_hash !== sourceRevisions.solutionEvaluationDependency?.content_hash
+  )))) throw new Error("Kravbesvarelsen og gjeldende grunnlag samsvarer ikke. Generer en fullstendig besvarelse først.");
+  const useSolutionEvaluationContext = regenerationParent ? Boolean(regenerationParent.used_solution_evaluation) : input.useSolutionEvaluationContext;
   const usesSolutionEvaluation = shouldUseSolutionEvaluationForArtifact({
     artifactType: input.artifactType,
-    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
+    useSolutionEvaluationContext,
   });
   const [
     project,
@@ -652,7 +656,7 @@ export async function generateAndSaveProjectArtifact(
   );
   const solutionEvaluationContextMode = solutionEvaluationContextModeForArtifact({
     artifactType: input.artifactType,
-    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
+    useSolutionEvaluationContext,
   });
   const solutionEvaluationForGeneration = usesSolutionEvaluation
     ? freshSolutionEvaluationSnapshot?.evaluation ?? null

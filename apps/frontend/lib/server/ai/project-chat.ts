@@ -656,7 +656,7 @@ async function* validatedChatParagraphs(stream: AsyncIterable<string>, reference
       catch (error) {
         if (!(error instanceof SourceEvidenceValidationError)) throw error;
         onInvalid();
-        console.warn(JSON.stringify({ event: "chat_evidence_validation_failed", stage: "paragraph_before_publish" }));
+        console.warn(JSON.stringify({ event: "chat_evidence_validation_failed", stage: "paragraph_before_publish", code: error.code }));
         yield "Resten av svaret kunne ikke kildebekreftes. Presiser krav-ID eller kilde og prøv meldingen på nytt.";
         return;
       }
@@ -669,7 +669,7 @@ async function* validatedChatParagraphs(stream: AsyncIterable<string>, reference
     catch (error) {
       if (!(error instanceof SourceEvidenceValidationError)) throw error;
       onInvalid();
-      console.warn(JSON.stringify({ event: "chat_evidence_validation_failed", stage: "paragraph_before_publish" }));
+      console.warn(JSON.stringify({ event: "chat_evidence_validation_failed", stage: "paragraph_before_publish", code: error.code }));
       yield "Svaret kunne ikke kildebekreftes. Presiser krav-ID eller kilde og prøv meldingen på nytt.";
       return;
     }

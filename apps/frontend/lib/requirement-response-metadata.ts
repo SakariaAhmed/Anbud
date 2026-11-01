@@ -1,5 +1,17 @@
 import { isRecord } from "@/lib/unknown-values";
 
+
+/** Ref-only legacy warnings coexist with indexed warnings. Subtract one
+ * reference for each indexed row, preserving unmatched duplicate references. */
+export function unassignedRequirementReviewRefs(value: unknown, rows: Array<{ ref: string }>): string[] {
+  const refs = Array.isArray(value) ? value.filter((ref): ref is string => typeof ref === "string").map(ref => ref.replace(/\s+/gu, " ").trim()).filter(Boolean) : [];
+  for (const row of rows) {
+    const at = refs.findIndex(ref => ref.toLocaleLowerCase("nb") === row.ref.replace(/\s+/gu, " ").trim().toLocaleLowerCase("nb"));
+    if (at >= 0) refs.splice(at, 1);
+  }
+  return refs;
+}
+
 export type RequirementResponseArtifactMetadata = {
   ledgerConfidence?: {
     level?: string;
@@ -16,6 +28,7 @@ export type RequirementResponseArtifactMetadata = {
   manualReviewNote?: string;
   templateRepairCount: number;
   templateRepairRefs: string[];
+  templateRepairLegacyRefs: string[];
   templateRepairRows: Array<{
     ref: string;
     orderIndex?: number;
@@ -24,6 +37,7 @@ export type RequirementResponseArtifactMetadata = {
   }>;
   controlRepairCount: number;
   controlRepairRefs: string[];
+  controlRepairLegacyRefs: string[];
   controlRepairRows: Array<{
     ref: string;
     pattern?: string;
@@ -34,6 +48,7 @@ export type RequirementResponseArtifactMetadata = {
   }>;
   proposalInputRequiredCount: number;
   proposalInputRequiredRefs: string[];
+  proposalInputRequiredLegacyRefs: string[];
   proposalInputRequiredRows: Array<{
     ref: string;
     reasons: string[];
@@ -188,14 +203,8 @@ export function requirementResponseArtifactMetadata(
         }))
         .filter((value) => value.ref)
     : [];
-  const templateRepairRefs = templateRepairRows.length
-    ? templateRepairRows.map((row) => row.ref)
-    : Array.isArray(requirementResponse.deterministic_template_repair_refs)
-      ? requirementResponse.deterministic_template_repair_refs
-          .filter((value): value is string => typeof value === "string")
-          .map((value) => value.replace(/\s+/g, " ").trim())
-          .filter(Boolean)
-      : [];
+  const templateRepairLegacyRefs = unassignedRequirementReviewRefs(requirementResponse.deterministic_template_repair_refs, templateRepairRows);
+  const templateRepairRefs = [...templateRepairRows.map(row => row.ref), ...templateRepairLegacyRefs];
   const controlRepairRows = Array.isArray(
     requirementResponse.deterministic_control_repair_rows,
   )
@@ -213,14 +222,8 @@ export function requirementResponseArtifactMetadata(
         }))
         .filter((value) => value.ref)
     : [];
-  const controlRepairRefs = controlRepairRows.length
-    ? controlRepairRows.map((row) => row.ref)
-    : Array.isArray(requirementResponse.deterministic_control_repair_refs)
-        ? requirementResponse.deterministic_control_repair_refs
-            .filter((value): value is string => typeof value === "string")
-            .map((value) => value.replace(/\s+/g, " ").trim())
-            .filter(Boolean)
-        : [];
+  const controlRepairLegacyRefs = unassignedRequirementReviewRefs(requirementResponse.deterministic_control_repair_refs, controlRepairRows);
+  const controlRepairRefs = [...controlRepairRows.map(row => row.ref), ...controlRepairLegacyRefs];
   const controlRepairCount = Math.max(
     nonNegativeInteger(
       requirementResponse.deterministic_control_repair_answers,
@@ -251,14 +254,8 @@ export function requirementResponseArtifactMetadata(
         }))
         .filter((value) => value.ref && value.reasons.length)
     : [];
-  const proposalInputRequiredRefs = proposalInputRequiredRows.length
-    ? proposalInputRequiredRows.map((row) => row.ref)
-    : Array.isArray(requirementResponse.proposal_input_required_refs)
-        ? requirementResponse.proposal_input_required_refs
-            .filter((value): value is string => typeof value === "string")
-            .map((value) => value.replace(/\s+/g, " ").trim())
-            .filter(Boolean)
-        : [];
+  const proposalInputRequiredLegacyRefs = unassignedRequirementReviewRefs(requirementResponse.proposal_input_required_refs, proposalInputRequiredRows);
+  const proposalInputRequiredRefs = [...proposalInputRequiredRows.map(row => row.ref), ...proposalInputRequiredLegacyRefs];
   const proposalInputRequiredCount = Math.max(
     nonNegativeInteger(requirementResponse.proposal_input_required_count),
     proposalInputRequiredRefs.length,
@@ -307,12 +304,15 @@ export function requirementResponseArtifactMetadata(
     manualReviewNote,
     templateRepairCount: Math.max(templateRepairCount, templateRepairRefs.length),
     templateRepairRefs,
+    templateRepairLegacyRefs,
     templateRepairRows,
     controlRepairCount,
     controlRepairRefs,
+    controlRepairLegacyRefs,
     controlRepairRows,
     proposalInputRequiredCount,
     proposalInputRequiredRefs,
+    proposalInputRequiredLegacyRefs,
     proposalInputRequiredRows,
   };
 }

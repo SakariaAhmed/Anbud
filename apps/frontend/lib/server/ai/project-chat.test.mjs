@@ -432,7 +432,7 @@ test("the chat route selects each fallback document once before building the rea
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-route-scope-"));
   const previousMode = process.env.RAG_QUERY_REWRITE;
   process.env.RAG_QUERY_REWRITE = "off";
-  const state = { documents: [], prompts: [], retrieval: [] };
+  const state = { documents: [], prompts: [], retrieval: [], saved: [], abortOnEnd: null };
   globalThis.__projectChatRouteScopeTest = state;
   try {
     const dependencies = path.join(directory, "dependencies.cjs");
@@ -443,10 +443,11 @@ test("the chat route selects each fallback document once before building the rea
       exports.listProjectDocumentsForAnalysis = async () => globalThis.__projectChatRouteScopeTest.documents;
       exports.getFreshCustomerAnalysis = async () => null;
       for (const name of ["listCurrentGeneratedArtifactsFresh", "listChatMessages", "listChatSessions"]) exports[name] = async () => [];
-      for (const name of ["appendChatMessage", "upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
+      exports.appendChatMessage = async (...args) => { globalThis.__projectChatRouteScopeTest.saved.push(args); };
+      for (const name of ["upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
       exports.createTextCompletionStream = async input => {
         globalThis.__projectChatRouteScopeTest.prompts.push(input);
-        return (async function* () { yield "Lokalt testsvar."; })();
+        return (async function* () { yield "Lokalt testsvar."; globalThis.__projectChatRouteScopeTest.abortOnEnd?.abort(); })();
       };
       exports.retrieveDocumentSnippetsWithMetadata = async input => {
         globalThis.__projectChatRouteScopeTest.retrieval.push(input);
@@ -470,10 +471,17 @@ test("the chat route selects each fallback document once before building the rea
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Hva er beskrevet?" }),
       }), { params: Promise.resolve({ id: "fictional" }) });
       assert.equal(response.status, 200);
+      assert.match(response.headers.get("x-workflow-trace-id"), /^[a-f0-9-]{36}$/u);
       assert.equal(await response.text(), "Lokalt testsvar.");
       assert.equal(state.prompts[0].user.split(marker).length - 1, 1, "the complete source is sent once");
       assert.deepEqual(state.retrieval[0].documents.map((item) => item.id), [source.id]);
     }
+    const cancellation = new AbortController(); state.abortOnEnd = cancellation; state.saved = [];
+    const canceled = await POST(new Request("http://localhost/api/projects/fictional/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Hei!" }), signal: cancellation.signal }), { params: Promise.resolve({ id: "fictional" }) });
+    assert.equal(canceled.status, 200);
+    await assert.rejects(() => canceled.text(), /Chatstrømmen|abort/iu);
+    assert.equal(state.saved.filter(args => args[1] === "assistant").length, 0, "request cancellation immediately after provider EOF must prevent assistant publication");
+
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
     delete globalThis.__projectChatRouteScopeTest;

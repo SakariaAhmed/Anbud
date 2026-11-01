@@ -1,4 +1,4 @@
--- Keep selected answer regeneration fenced against manual/newer versions.
+-- Keep selected answer regeneration fenced against manual/newer versions and stale preserved answers.
 begin;
 set local lock_timeout = '5s';
 create or replace function public.lease_fenced_save_generated_artifact(
@@ -121,6 +121,19 @@ begin
        or v_parent.id::text is distinct from (v_job.input_json -> 'regenerateRequirements' ->> 'artifactId')
        or v_parent.artifact_version::text is distinct from (v_job.input_json -> 'regenerateRequirements' ->> 'artifactVersion') then
       raise exception using errcode = 'P0001', message = 'REQUIREMENT_REGENERATION_PARENT_CHANGED: requirement response changed while selected answers were generated';
+    end if;
+    if v_parent.input_artifact_source_revision is distinct from v_current_artifact_revision
+       or v_parent.input_service_library_revision is distinct from v_current_service_revision
+       or not public.artifact_cross_type_knowledge_is_current(v_parent.id) then
+      raise exception using errcode = 'P0001', message = 'REQUIREMENT_REGENERATION_PARENT_STALE: preserved answers no longer match current project, service or knowledge inputs';
+    end if;
+    if v_parent.used_solution_evaluation and (
+       v_current_evaluation_dependency ->> 'id' is distinct from v_parent.input_solution_evaluation_id::text
+       or v_current_evaluation_dependency ->> 'updated_at' is distinct from to_char(v_parent.input_solution_evaluation_updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+       or v_current_evaluation_dependency ->> 'content_hash' is distinct from v_parent.input_solution_evaluation_hash
+       or coalesce((p_payload ->> 'used_solution_evaluation')::boolean, false) is distinct from true
+    ) then
+      raise exception using errcode = 'P0001', message = 'REQUIREMENT_REGENERATION_PARENT_STALE: preserved answers no longer match the opted-in evaluation';
     end if;
   end if;
   select coalesce(max(artifact_version), 0) + 1 into v_next_version

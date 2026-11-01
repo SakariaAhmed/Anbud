@@ -1,4 +1,5 @@
 "use client";
+import { recordWorkflowRenderAfterPaint } from "@/lib/client/workflow-render-metric";
 
 import {
   type FormEvent,
@@ -399,6 +400,7 @@ export function ProjectChatPopoutPage({
     const requestId = streamRequestIdRef.current + 1;
     streamRequestIdRef.current = requestId;
     const controller = new AbortController();
+    const renderStartedAt = performance.now();
     streamAbortRef.current = controller;
     const isCurrentStream = () =>
       streamRequestIdRef.current === requestId && !controller.signal.aborted;
@@ -468,6 +470,8 @@ export function ProjectChatPopoutPage({
       const decoder = new TextDecoder();
       const reader = response.body?.getReader();
       let assistantText = "";
+      let firstRenderRecorded = false;
+      const traceId = response.headers.get("x-workflow-trace-id");
 
       if (reader) {
         while (true) {
@@ -481,6 +485,10 @@ export function ProjectChatPopoutPage({
             return;
           }
           setStreamingMessage(assistantText);
+          if (!firstRenderRecorded && assistantText.trim() && traceId) {
+            firstRenderRecorded = true;
+            recordWorkflowRenderAfterPaint(projectId, { phase: "chat_first_render", traceId }, renderStartedAt, controller.signal);
+          }
         }
         assistantText += decoder.decode();
       } else {
