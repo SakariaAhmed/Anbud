@@ -1813,6 +1813,31 @@ test("competing descriptor and location interpretations preserve an exact title 
   ]), /K-2\.3.*entydig/u);
 });
 
+test("complete conjunction titles are resolved before their words become separate references", () => {
+  for (const title of ["Drift og vedlikehold", "Drift samt Sikkerhet", "Drift pluss Sikkerhet"]) {
+    const registers = [
+      { id: "named", title, ids: ["K-2.1"] },
+      { id: "other", title: "Bilag 3", ids: ["R-1.1"] },
+    ];
+    for (const destination of [title, `${title} i kapittel 4`, `kapittel 4 i ${title}`, `dokumentet ${title}`]) {
+      const rows = correctedRegisterRows(`Nytt krav K-2.3 legges til i ${destination}: «Leverandøren skal levere en exitplan.»`, registers);
+      assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, "named", destination);
+    }
+    assert.throws(() => correctedRegisterRows(`Nytt krav K-2.3 legges til i ${title}: «Leverandøren skal levere en exitplan.»`, [
+      ...registers, { id: "duplicate", title, ids: ["S-1.1"] },
+    ]), /K-2\.3.*entydig/u);
+  }
+});
+
+test("explicit requirement anchors can follow a plain title without weakening unknown-part checks", () => {
+  const registers = [{ id: "named", title: "Sikkerhet", ids: ["K-2.1", "K-2.2"] }];
+  for (const destination of ["Sikkerhet etter K-2.2", "Sikkerhet etter krav K-2.2", "dokumentet Sikkerhet etter K-2.2"]) {
+    const rows = correctedRegisterRows(`Nytt krav K-2.3 legges til i ${destination}: «Leverandøren skal levere en exitplan.»`, registers);
+    assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, "named", destination);
+  }
+  assert.throws(() => correctedRegisterRows("Nytt krav K-2.3 legges til i Sikkerhet del 3: «Leverandøren skal levere en exitplan.»", registers), /K-2\.3.*entydig/u);
+});
+
 test("each addition in one correction paragraph keeps its own named register", () => {
   const rows = correctedRegisterRows("Krav K-2.1 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.» Nytt krav K-2.4 legges til i Bilag 1: «Leverandøren skal teste tilbakeføring.»", [
     { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },

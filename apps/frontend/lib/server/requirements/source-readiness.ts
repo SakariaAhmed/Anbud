@@ -689,6 +689,46 @@ function explicitAdditionDestination(
     return attachments.length === 1 ? documents.filter(document => [document.title, document.file_name]
       .some(value => attachmentNames(value).includes(attachments[0]))) : [];
   };
+  const resolveLiteralSegment = (part: string): string | undefined => {
+    const initial = part.trim().replace(/^[,;]+\s*|\s*[,;]+$/gu, "");
+    let candidates = initial ? [initial] : [];
+    const visited = new Set(candidates);
+    let unresolved = false;
+    while (candidates.length) {
+      // Check every single-peel interpretation before removing more words.
+      // No fixed descriptor/location order can preserve all literal titles.
+      const exact = candidates.flatMap(name => documents.filter(document => [document.title, document.file_name]
+        .some(value => normalizedDestinationName(value) === normalizedDestinationName(name)))
+        .map(document => ({ name, id: document.id })));
+      if (new Set(exact.map(match => match.id)).size > 1) {
+        throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Kontroller dokumentnavnene og hvilke kravdokumenter som er valgt.`);
+      }
+      if (exact.length) return exact[0].name;
+      const next = new Set<string>();
+      for (const name of candidates) {
+        const locationOnly = name.replace(/^i\s+/iu, "");
+        if (bareLocation.test(locationOnly) || relativeLocation.test(locationOnly) ||
+            (/\s+i$/iu.test(name) && bareLocation.test(name.replace(/\s+i$/iu, "")))) continue;
+        const variants = [name.replace(leadingLocation, ""), name.replace(/^(?:dokumentet|dokument|vedlegget|bilaget|kravdokumentet)\b\s*/iu, "")];
+        const trailing = trailingLocation.exec(name);
+        if (trailing) {
+          const prefix = name.slice(0, trailing.index).trim().replace(/[,;]+$/u, "");
+          const explicitSeparator = /[,;]/u.test(trailing[1]) || Boolean(trailing[2]);
+          const filename = /\.(?:pdf|docx?|xlsx?|txt|md|csv)$/iu.test(prefix);
+          const attachment = /^(?:bilag|vedlegg)[\s_-]*(?:[a-z]|\d+(?:\.\d+)*[a-z]?)$/iu.test(prefix);
+          if (explicitSeparator || filename || attachment || relativeLocation.test(name.slice(trailing.index).trim())) variants.push(prefix);
+        }
+        const changed = variants.map(value => value.trim().replace(/^[,;]+\s*|\s*[,;]+$/gu, "")).filter(value => value !== name);
+        if (!changed.length) unresolved = true;
+        for (const value of changed) {
+          if (value && !visited.has(value)) { visited.add(value); next.add(value); }
+        }
+      }
+      if (visited.size > 128) throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Kontroller dokumentnavnene og hvilke kravdokumenter som er valgt.`);
+      candidates = [...next];
+    }
+    return unresolved ? undefined : "";
+  };
   for (const clause of clauses) {
     const mention = requirementIdTokenPattern(normalizeRequirementId(entry.id), false).exec(clause);
     if (!mention) continue;
@@ -708,57 +748,19 @@ function explicitAdditionDestination(
     // Preserve the boundary between a location before a quoted name and one
     // after it; removing the token outright would merge the two locations.
     const remainder = quotedNames.reduce((value, [token]) => value.replace(token, " og "), destinationName);
-    const exactDestination = documents.some(document => [document.title, document.file_name]
-      .some(name => normalizedDestinationName(name) === normalizedDestinationName(destinationName)));
-    const joinedNames = remainder.split(/\b(?:og|samt|pluss)\b/iu).map(part => {
-      const initial = part.trim().replace(/^[,;]+\s*|\s*[,;]+$/gu, "");
-      let candidates = initial ? [initial] : [];
-      const visited = new Set(candidates);
-      let unresolved = false;
-      while (candidates.length) {
-        // Check every single-peel interpretation before removing more words.
-        // No fixed descriptor/location order can preserve all literal titles.
-        const exact = candidates.flatMap(name => documents.filter(document => [document.title, document.file_name]
-          .some(value => normalizedDestinationName(value) === normalizedDestinationName(name)))
-          .map(document => ({ name, id: document.id })));
-        const known = exact.length ? exact : candidates.flatMap(name => attachmentNames(name).length
-          ? resolveName(name).map(document => ({ name, id: document.id })) : []);
-        if (new Set(known.map(match => match.id)).size > 1) {
-          throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Kontroller dokumentnavnene og hvilke kravdokumenter som er valgt.`);
-        }
-        if (known.length) return known[0].name;
-        const next = new Set<string>();
-        for (const name of candidates) {
-          const locationOnly = name.replace(/^i\s+/iu, "");
-          if (bareLocation.test(locationOnly) || relativeLocation.test(locationOnly) ||
-              (/\s+i$/iu.test(name) && bareLocation.test(name.replace(/\s+i$/iu, "")))) continue;
-          const variants = [name.replace(leadingLocation, ""), name.replace(/^(?:dokumentet|dokument|vedlegget|bilaget|kravdokumentet)\b\s*/iu, "")];
-          const trailing = trailingLocation.exec(name);
-          if (trailing) {
-            const prefix = name.slice(0, trailing.index).trim().replace(/[,;]+$/u, "");
-            const explicitSeparator = /[,;]/u.test(trailing[1]) || Boolean(trailing[2]);
-            const filename = /\.(?:pdf|docx?|xlsx?|txt|md|csv)$/iu.test(prefix);
-            const attachment = /^(?:bilag|vedlegg)[\s_-]*(?:[a-z]|\d+(?:\.\d+)*[a-z]?)$/iu.test(prefix);
-            if (explicitSeparator || filename || attachment) variants.push(prefix);
-          }
-          const changed = variants.map(value => value.trim().replace(/^[,;]+\s*|\s*[,;]+$/gu, "")).filter(value => value !== name);
-          if (!changed.length) unresolved = true;
-          for (const value of changed) {
-            if (value && !visited.has(value)) { visited.add(value); next.add(value); }
-          }
-        }
-        if (visited.size > 128) throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Kontroller dokumentnavnene og hvilke kravdokumenter som er valgt.`);
-        candidates = [...next];
-      }
-      if (unresolved) throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Kontroller dokumentnavnene og hvilke kravdokumenter som er valgt.`);
-      return "";
+    const wholeName = !quotedNames.length ? resolveLiteralSegment(destinationName) : undefined;
+    const joinedNames = (wholeName ? [] : remainder.split(/\b(?:og|samt|pluss)\b/iu)).map(part => {
+      const literal = resolveLiteralSegment(part);
+      if (literal !== undefined) return literal;
+      if (resolveName(part).length === 1) return part;
+      throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Kontroller dokumentnavnene og hvilke kravdokumenter som er valgt.`);
     }).filter(Boolean);
     const fullFilenames = joinedNames.filter(name => documents.some(document =>
       normalizedDestinationName(document.file_name) === normalizedDestinationName(name),
     ));
     const filenames = [...remainder.matchAll(/[^\s,;]+\.(?:pdf|docx?|xlsx?|txt|md|csv)\b/giu)]
       .map(match => match[0]).filter(name => !fullFilenames.some(full => full.toLocaleLowerCase("nb").endsWith(name.toLocaleLowerCase("nb"))));
-    const names = !quotedNames.length && exactDestination ? [destinationName] : [...new Set([
+    const names = wholeName ? [wholeName] : [...new Set([
       ...quotedNames.map(([, name]) => name), ...attachmentNames(remainder), ...filenames, ...joinedNames,
     ])];
     if (!names.length) names.push(destinationName);
