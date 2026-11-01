@@ -83,11 +83,50 @@ test("hierarchical IDs keep one row each across prose, a type column, page break
   assert.match(ledger[2].sourceExcerpt, /^K-3\.1\.1 Minstekrav /u);
 });
 
-test("other numbering is left to the existing parsers", () => {
+test("small normative PDF registers preserve full IDs while repeated references stay with existing parsers", () => {
   const fewIds = [{ page: 1, lines: pages[0].lines.slice(0, 4) }];
-  assert.deepEqual(buildHierarchicalIdPdfRequirementLedger(fewIds), []);
+  assert.deepEqual(buildHierarchicalIdPdfRequirementLedger(fewIds).map(row => row.id), ["K-2.1", "K-2.2"]);
   const repeated = [pages[0], { page: 2, lines: [line(700, [63, "K-2.1"], [90, "Leverandøren skal ha et styringssystem."])] }];
   assert.deepEqual(buildHierarchicalIdPdfRequirementLedger(repeated), []);
+});
+
+test("small lists without independent obligations are not promoted to requirement registers", () => {
+  const references = [
+    "K-1.1 Se omtalen av dette kravet i kapittel 4.",
+    "K-1.2 Kildedokumentet viser til et eget bilag.",
+    "K-1.3 Leverandøren skal levere en exitplan.",
+  ].join("\n");
+  assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text: references }), []);
+  assert.deepEqual(buildHierarchicalIdTextRequirementLedger({ file_format: "txt", raw_text: "ISO-27001.2 Leverandøren skal følge den angitte standarden." }), []);
+});
+
+test("three normative rows survive actual TXT ingestion, extraction and completeness validation", async () => {
+  const raw = [
+    "1 Drift",
+    "K-1.1 Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser.",
+    "2 Sikkerhet",
+    "K-1.2 Kundedata, sikkerhetskopier og identifiserbare logger skal lagres og behandles i Norge.",
+    "3 Exit",
+    "K-1.3 Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager.",
+  ].join("\n");
+  const { extractTextFromBuffer } = await load("lib/server/documents.ts");
+  const { extractRequirementLedgerWithCorrections } = await load("lib/server/requirements/source-ledger.ts");
+  const { assertExplicitRequirementLedgersComplete } = await load("lib/server/requirements/source-readiness.ts");
+  const parsed = await extractTextFromBuffer({ buffer: Buffer.from(raw), fileName: "bilag1-krav.txt", role: "supporting_document", useDocling: false });
+  const document = {
+    id: "small-formal-register", project_id: "synthetic", role: "supporting_document", supporting_subtype: "kravdokument",
+    title: "Bilag 1 Kravspesifikasjon", file_name: parsed.fileName, file_format: parsed.fileFormat,
+    raw_text: parsed.rawText, structure_map: parsed.sourceMap, processing_status: "basic_ready",
+  };
+  const result = await extractRequirementLedgerWithCorrections(document);
+  assert.deepEqual(result.ledger.map(row => [row.id, row.text, row.heading]), [
+    ["K-1.1", "Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser.", "1 Drift"],
+    ["K-1.2", "Kundedata, sikkerhetskopier og identifiserbare logger skal lagres og behandles i Norge.", "2 Sikkerhet"],
+    ["K-1.3", "Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager.", "3 Exit"],
+  ]);
+  assert.doesNotThrow(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: result.ledger }]));
+  assert.throws(() => assertExplicitRequirementLedgersComplete([document], [{ document, ledger: result.ledger.slice(1) }]), /mangler k11/u,
+    "A lost explicit source row must still fail the coverage invariant.");
 });
 
 test("ID detection reads every level of a hierarchical ID", () => {

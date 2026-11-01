@@ -171,7 +171,7 @@ function baseLinePitch(lines: SourceLine[]) {
 function isHierarchicalRegister(lines: SourceLine[]) {
   const ids = lines.flatMap((line) => (line.start ? [line.start.id] : []));
   const distinct = new Set(ids);
-  if (distinct.size < MIN_DISTINCT_IDS || distinct.size !== ids.length) return false;
+  if (!distinct.size || distinct.size !== ids.length) return false;
   const prefixCounts = new Map<string, number>();
   for (const id of distinct) {
     const prefix = id.replace(/-.*$/u, "");
@@ -334,7 +334,15 @@ function buildHierarchicalIdLedger(sourceLines: SourceLine[]): RequirementLedger
     }
   }
   flush();
-  return requirements;
+  // A small register is still authoritative when every independently anchored
+  // ID carries a substantive obligation. The former six-ID minimum sent such
+  // sources to flattening fallbacks that truncate their hierarchical IDs.
+  // Sparse references without their own requirement text keep the fallback.
+  const smallRegisterHasDefinitions = requirements.every((entry) =>
+    entry.text.length >= 18 && OBLIGATION.test(entry.text) &&
+    !/^(?:ISO|IEC|NS|EN|SN|DIN|RFC)-/u.test(entry.id),
+  );
+  return requirements.length >= MIN_DISTINCT_IDS || smallRegisterHasDefinitions ? requirements : [];
 }
 
 export function buildHierarchicalIdPdfRequirementLedger(
