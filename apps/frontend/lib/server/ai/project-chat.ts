@@ -712,14 +712,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const { domainHints, useStructuredCoverage, retrievalPlan, request } =
     await buildProjectChatRetrievalRequest(input);
   const history = buildChatHistoryContext(input.recentMessages);
-  const retrievalResult = await retrieveDocumentSnippetsWithMetadata(request);
-  const retrievedSnippets = retrievalResult.snippets;
-  const retrievalQuality = retrievalResult.telemetry.quality;
-  const hasStrongRetrieval =
-    retrievalQuality.sufficient ||
-    (useStructuredCoverage &&
-      retrievalQuality.sourceCount >= 8 &&
-      (retrievalQuality.topScore ?? 0) >= 180);
   // Exactly the documents the prompt can carry whole: the main documents
   // and the first four supporting documents.
   const promptDocuments = [
@@ -731,6 +723,19 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     promptDocuments.length > 0 &&
     promptDocuments.reduce((sum, document) => sum + document.raw_text.length, 0) <=
     CHAT_FULL_DOCUMENTS_MAX_CHARS;
+  const retrievalResult = await retrieveDocumentSnippetsWithMetadata({
+    ...request,
+    // With the whole documents in the prompt, excerpts only anchor
+    // references, so their order is not worth a model call.
+    rerank: fullDocumentsInContext ? undefined : request.rerank,
+  });
+  const retrievedSnippets = retrievalResult.snippets;
+  const retrievalQuality = retrievalResult.telemetry.quality;
+  const hasStrongRetrieval =
+    retrievalQuality.sufficient ||
+    (useStructuredCoverage &&
+      retrievalQuality.sourceCount >= 8 &&
+      (retrievalQuality.topScore ?? 0) >= 180);
   // With the whole documents included, an excerpt whose text is already in
   // its own document only anchors its reference; any other excerpt keeps its
   // full text. Coverage is checked per source: a document available only
@@ -791,6 +796,8 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
       })
     : "";
   const sourceReferences = sourceReferencesFromSnippets(retrievedSnippets);
+  // A follow-up ("utdyp punkt 2") is matched by its standalone form.
+  const relevanceQuery = retrievalPlan.standalone_query || input.question;
   const supportingDocuments = (input.supportingDocuments ?? [])
     .slice(0, 4)
     .map((document, index) =>
@@ -800,7 +807,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
           ? document.raw_text
           : buildQuestionRelevantText({
               rawText: document.raw_text,
-              question: input.question,
+              question: relevanceQuery,
               limit: useStructuredCoverage ? 2200 : 3500,
             }),
       ),
@@ -814,7 +821,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
         `Generert artefakt ${index + 1}: ${artifact.title}`,
         buildQuestionRelevantText({
           rawText: artifact.content_markdown,
-          question: input.question,
+          question: relevanceQuery,
           limit: generatedArtifactTextLimit,
         }),
       ),

@@ -61,6 +61,7 @@ type SemanticDocumentChunk = {
   metadata: Record<string, unknown>;
   /** In memory only: the structure entry this part was cut from. */
   sectionIndex: number;
+  sectionReference: string;
   sectionText: string;
   sectionOffset: number;
 };
@@ -910,6 +911,7 @@ function buildSemanticDocumentChunks(document: ChunkableDocument) {
           ...structureEntryChunkMetadata(entry),
         },
         sectionIndex,
+        sectionReference: entry.reference,
         sectionText: entryText,
         sectionOffset: start,
       });
@@ -2057,7 +2059,9 @@ function withSurroundingSections(input: {
     }
     const window = sectionWindow(chunk.sectionText, chunk.sectionOffset, partEnd);
     windows.push({ key, section: chunk.sectionIndex, ...window });
-    result.push({ ...snippet, text: chunk.sectionText.slice(window.start, window.end) });
+    const text = chunk.sectionText.slice(window.start, window.end);
+    // A window wider than its part cites the section, not "del N".
+    result.push({ ...snippet, text, reference: text === chunk.text ? snippet.reference : chunk.sectionReference });
   }
   return result;
 }
@@ -2294,8 +2298,13 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     : ranked.slice(0, limit);
   if (usedBroadenedSearch || usedModelRerank || input.surroundingSections) {
     // Assessed on what is returned: section windows replace their parts and
-    // skip parts already inside an earlier window.
-    quality = assessRetrievalQuality({ snippets, exactTerms: rankingExactTerms });
+    // skip parts already inside an earlier window. The broader terms only
+    // add to the first pass terms: judged on them alone, a broader search
+    // without IDs would cover "all" terms and mark weak results sufficient.
+    quality = assessRetrievalQuality({
+      snippets,
+      exactTerms: Array.from(new Set([...exactTerms, ...rankingExactTerms])),
+    });
   }
   const telemetry = {
     query,

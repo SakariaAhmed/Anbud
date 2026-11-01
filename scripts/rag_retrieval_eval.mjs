@@ -90,7 +90,8 @@ const { extractExactRetrievalTerms } = app(path.join(frontendRoot, "lib/server/a
 // Chat's own request (query plan, exact terms, broader retry, sections and
 // reranker). The plan is built without a model call: a first question with
 // no history is not rewritten. A checkout without the builder gets the
-// question as its query.
+// question as its query. Chat skips the reranker when the whole documents fit
+// in its prompt; the eval measures the case where they do not.
 process.env.RAG_QUERY_REWRITE = "off";
 process.env.RAG_MODEL_RERANK = useModelRerank ? "on" : "off";
 const { buildProjectChatRetrievalRequest } = app(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));

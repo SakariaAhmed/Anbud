@@ -36,7 +36,7 @@ test("the model's 1-based ranking becomes candidate indexes and long passages ar
       query: "Hvor lenge lagres temperaturhistorikken?",
       candidates: [candidate("Ruteplanlegging"), candidate("Temperaturhistorikk lagres i ti år."), candidate(long)],
     });
-    assert.deepEqual(order, [1, 2], "non-numeric entries are dropped");
+    assert.deepEqual(order, [1, 0, 2], "numeric strings count as passage numbers");
     const [request] = reranker.state.requests;
     assert.match(request.user, /Utdrag 2[\s\S]*Temperaturhistorikk lagres i ti år/u);
     assert.ok(request.user.length < 4000, "each passage is cut to its rerank budget");

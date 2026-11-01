@@ -13,19 +13,21 @@ Planen under er fra august. Siden da er dette på plass, og flere av «manglene�
 - Chunks er på inntil 1 600 tegn. Retrieval returnerer seksjonen rundt treffet, på inntil 4 800 tegn.
 - Svake treff gir ett bredere søk før chat faller tilbake på lengre rå dokumenttekst.
 - Støttedokumenter og genererte artefakter som ikke får plass i chat, kortes ned til avsnittene som passer spørsmålet best, i stedet for starten av teksten.
-- Chat lar den raske modellen rangere de 32 beste treffene (`retrieval-rerank.ts`). Den er på som standard og slås av med `RAG_MODEL_RERANK=off`. Feiler eller tidsavbrytes kallet (8 s), beholdes den vanlige rangeringen.
+- Chat lar den raske modellen rangere de 32 beste treffene (`retrieval-rerank.ts`). Den er på som standard og slås av med `RAG_MODEL_RERANK=off`. Når hele dokumentene får plass i chat-prompten, hoppes den over. Feiler eller tidsavbrytes kallet (8 s), beholdes den vanlige rangeringen.
 
 Retrieval måles med `node scripts/rag_retrieval_eval.mjs` over det innsjekkede anbudskorpuset (60 krav-ID-oppslag og 36 håndskrevne spørsmål i `test-data/rag-retrieval`). `--database-url` måler nøkkelordsøket mot PostgreSQL, `--frontend-root` sammenligner med en annen checkout, og `--without-structure` måler dokumenter uten strukturkart. `--embeddings=live` lagrer chunks med ekte embeddings i en midlertidig database og kjører hele hybridsøket, og `--rerank=model` legger til rerankeren. Begge bruker betalte OpenAI-kall.
 
 Målt 1. november 2026 med ekte embeddings (`text-embedding-3-small`) og hybridsøk, for de 36 spørsmålene uten krav-ID. Evalen kjører samme søk som chat (`buildProjectChatRetrievalRequest`); `main` har ikke den funksjonen og søker bare med spørsmålet:
 
-| Oppsett | Riktig utdrag først | Topp 5 | MRR | Median søketid |
-| --- | --- | --- | --- | --- |
-| `main`, bare spørsmålet | 0,44 | 0,75 | 0,57 | 0,25 s |
-| Chat-søket uten reranker | 0,44 | 0,67 | 0,56 | 0,27 s |
-| Chat-søket med reranker | 0,78 | 0,94 | 0,85 | 1,9 s |
+| Oppsett | Riktig utdrag først | Topp 5 | Topp 10 | MRR | Søketid median / p95 |
+| --- | --- | --- | --- | --- | --- |
+| `main`, bare spørsmålet | 0,44 | 0,75 | 0,92 | 0,57 | 0,25 / 0,41 s |
+| Chat-søket uten reranker | 0,44 | 0,67 | 0,83 | 0,56 | 0,27 / 0,53 s |
+| Chat-søket med reranker | 0,78 | 0,94 | 0,94 | 0,85 | 1,9 / 2,5 s |
 
-Krav-ID-oppslagene finner riktig utdrag blant de fem første i alle oppsett, og først i alle med rerankeren. Rerankeren brukte om lag 7 300 input-tokens per spørsmål, og ingen kall feilet. Uten rerankeren treffer chat-søket dårligere enn spørsmålet alene, fordi domeneordene i søket trekker treffene mot generelle utdrag. Korpuset er lite (ti dokumenter), så tallene viser retning, ikke nivået i store anbud.
+Krav-ID-oppslagene finner riktig utdrag blant de fem første i alle oppsett, og først i alle med rerankeren. Rerankeren brukte om lag 7 300 input-tokens per spørsmål, og ingen kall feilet. Uten rerankeren treffer chat-søket dårligere enn spørsmålet alene, fordi domeneordene i søket trekker treffene mot generelle utdrag. Korpuset er lite (ti dokumenter), og spørsmålene ble skrevet mens søket ble justert, så tallene viser retning, ikke nivået i store anbud.
+
+Etter utrulling får hvert dokument nye, mindre chunks og nye embeddings første gang en artefakt- eller kravsvarjobb kjører for prosjektet. Til da bruker chat de gamle chunkene, som rerankeren leser rundt treffet i.
 
 ## Dagens utgangspunkt
 

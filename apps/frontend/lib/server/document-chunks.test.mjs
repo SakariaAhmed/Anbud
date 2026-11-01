@@ -566,6 +566,10 @@ test("weak results search once more with the broader query", async () => {
   const broadened = await retrieveDocumentSnippetsWithMetadata({ ...narrow, broaderQuery: "Hvordan er beredskap og vakttelefon organisert?", broaderExactTerms: [] });
   assert.equal(broadened.telemetry.usedBroadenedSearch, true);
   assert.equal(broadened.snippets[0]?.reference, "Beredskap");
+  // The broader pass has no exact terms; the first pass term is still missing,
+  // so chat keeps its raw-text fallback.
+  assert.equal(broadened.telemetry.quality.sufficient, false);
+  assert.equal(broadened.telemetry.quality.exactTermCoverage, 0);
   const strong = await retrieveDocumentSnippetsWithMetadata({ query: "vakttelefon beredskap døgnet", documents: [document], broaderQuery: "noe annet" });
   if (strong.telemetry.quality.sufficient) assert.equal(strong.telemetry.usedBroadenedSearch, false);
 });
@@ -604,6 +608,7 @@ test("a section longer than the window returns a bounded window around the match
   assert.ok(text.includes(snippet.text), "the window is an unchanged slice of the section");
   assert.match(snippet.text, /^\S/u);
   assert.match(snippet.text, /\S$/u);
+  assert.equal(snippet.reference, "Kapittel 9", "a window over several parts cites the section");
   const start = text.indexOf(snippet.text);
   assert.ok(start === 0 || /\s/u.test(text[start - 1]), "the window starts at a word boundary");
   const end = start + snippet.text.length;

@@ -209,6 +209,45 @@ test("generated artifacts are excerpted by question relevance and model rerank f
   }
 });
 
+test("model rerank is skipped when the whole documents are in the prompt", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-rerank-skip-"));
+  const state = { retrieval: [] };
+  globalThis.__projectChatRerankSkipTest = state;
+  const previous = { rewrite: process.env.RAG_QUERY_REWRITE, rerank: process.env.RAG_MODEL_RERANK };
+  process.env.RAG_QUERY_REWRITE = "off";
+  delete process.env.RAG_MODEL_RERANK;
+  try {
+    const completion = path.join(directory, "completion.cjs");
+    const retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async () => (async function* () { yield "ok"; })();`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => {
+      globalThis.__projectChatRerankSkipTest.retrieval.push(input);
+      return { snippets: [], telemetry: { durationMs: 0, sourceCount: 0, quality: { sufficient: false, sourceCount: 0 } } };
+    };`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
+      "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
+    const ask = async (text) => {
+      state.retrieval = [];
+      const result = await streamProjectChat({ projectName: "Fiktiv", question: "Hva er kravet til oppetid?",
+        customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+        customerDocument: document("kunde", "primary_customer_document", text), solutionDocument: null });
+      for await (const _ of result.stream) { /* drain */ }
+      return state.retrieval[0].rerank;
+    };
+    assert.equal(await ask("Oppetid skal være 99,9 prosent."), undefined, "a document sent whole needs no rerank");
+    assert.equal(typeof await ask("Oppetid skal være 99,9 prosent. ".repeat(4000)), "function", "a document sent as excerpts is reranked");
+  } finally {
+    for (const [key, name] of [["rewrite", "RAG_QUERY_REWRITE"], ["rerank", "RAG_MODEL_RERANK"]]) {
+      if (previous[key] === undefined) delete process.env[name]; else process.env[name] = previous[key];
+    }
+    delete globalThis.__projectChatRerankSkipTest; rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("attachment segments with å match question terms after the same normalization", () => {
   const filler = "Generell bakgrunnstekst om prosjektet. ".repeat(40);
   const relevant = "Påminnelse sendes automatisk før fristen for hver søknad.";
