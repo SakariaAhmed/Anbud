@@ -1734,10 +1734,10 @@ test("document aliases, location qualifiers and wording forms compose without ch
     { id: "first", title: "Bilag 1", file_name: "Driftskrav.pdf", ids: ["K-2.1", "K-2.2"] },
     { id: "third", title: "Bilag 3", file_name: "Sikkerhetskrav Endelig.pdf", ids: ["R-1.1"] },
   ];
-  for (const name of ["Bilag 3", "«Bilag 3»", "“Bilag 3”", '"Bilag 3"']) {
+  for (const name of ["Bilag 3", "«Bilag 3»", "“Bilag 3”", '"Bilag 3"', "Sikkerhetskrav Endelig.pdf", "«Sikkerhetskrav Endelig.pdf»"]) {
     for (const prefix of ["", "kapittel 2 i ", "dokumentet "]) {
       for (const alias of ["", " og «Sikkerhetskrav Endelig.pdf»", " og Sikkerhetskrav Endelig.pdf"]) {
-        for (const location of ["", " i kapittel 4"]) {
+        for (const location of ["", " i kapittel 4", ", i kapittel 4", ", tabell 2", " tabell 3", ", etter K-2.2"]) {
           for (const wording of [": «Leverandøren skal levere en exitplan.»", " med ordlyden «Leverandøren skal levere en exitplan.»", " «Leverandøren skal levere en exitplan.»"]) {
             const correction = `Nytt krav K-2.3 legges til i ${prefix}${name}${alias}${location}${wording}`;
             let rows;
@@ -1759,6 +1759,23 @@ test("document aliases, location qualifiers and wording forms compose without ch
     for (const names of [`${other} og «Bilag 3»`, `«Bilag 3» og ${other}`]) {
       assert.throws(() => correctedRegisterRows(`Nytt krav K-2.3 legges til i ${names}: «Leverandøren skal levere en exitplan.»`, registers), /K-2\.3.*entydig/u, names);
     }
+  }
+});
+
+test("filename destinations retain their leading and trailing location qualifiers", () => {
+  const registers = [
+    { id: "first", title: "Bilag 1", file_name: "Driftskrav.pdf", ids: ["K-2.1", "K-2.2"] },
+    { id: "third", title: "Sikkerhet", file_name: "Sikkerhetskrav.pdf", ids: ["R-1.1"] },
+  ];
+  for (const [name, owner] of [
+    ["kapittel 2 i Driftskrav.pdf", "first"], ["tabell 2 i Sikkerhetskrav.pdf", "third"],
+    ["dokumentet Driftskrav.pdf", "first"], ["vedlegget Sikkerhetskrav.pdf", "third"],
+    ["Driftskrav.pdf, tabell 2", "first"], ["Sikkerhetskrav.pdf, kapittel 3", "third"],
+    ["Driftskrav.pdf, etter K-2.2", "first"], ["Sikkerhetskrav.pdf tabell 3", "third"],
+    ["«Driftskrav.pdf», tabell 2", "first"], ["tabell 2 i Driftskrav.pdf og «Bilag 1»", "first"],
+  ]) {
+    const rows = correctedRegisterRows(`Nytt krav K-2.3 legges til i ${name}: «Leverandøren skal levere en exitplan.»`, registers);
+    assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, owner, name);
   }
 });
 

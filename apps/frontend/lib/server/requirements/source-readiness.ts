@@ -675,8 +675,12 @@ function explicitAdditionDestination(
   const wordingToken = [...quotations].filter(([, text]) =>
     canonicalRequirementText(text) === canonicalRequirementText(entry.text),
   ).at(-1)?.[0];
-  const bareLocation = /^(?:(?:tabell|kapittel|punkt|avsnitt|del|seksjon)\s+\d+(?:\.\d+)*\.?(?:\s+i\s+kravspesifikasjonen)?(?:,?\s+(?:etter|før)\s+(?:krav\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d+(?:\.\d+)*)?(?:\s+i\s+kravspesifikasjonen)?|kravspesifikasjonen)$/iu;
-  const relativeLocation = /^(?:etter|før)\s+(?:krav\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d+(?:\.\d+)*$/iu;
+  const anchorSyntax = String.raw`(?:etter|før)\s+(?:krav\s+)?[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d+(?:\.\d+)*`;
+  const locationSyntax = String.raw`(?:(?:tabell|kapittel|punkt|avsnitt|del|seksjon)\s+\d+(?:\.\d+)*\.?(?:\s+i\s+kravspesifikasjonen)?(?:,?\s+${anchorSyntax})?(?:\s+i\s+kravspesifikasjonen)?|kravspesifikasjonen)`;
+  const bareLocation = new RegExp(`^${locationSyntax}$`, "iu");
+  const relativeLocation = new RegExp(`^${anchorSyntax}$`, "iu");
+  const leadingLocation = new RegExp(`^${locationSyntax}\\s+i\\s+`, "iu");
+  const trailingLocation = new RegExp(`(?:\\s+|[,;]\\s*)(?:i\\s+)?(?:${locationSyntax}|${anchorSyntax})$`, "iu");
   const resolveName = (name: string) => {
     const exact = documents.filter(document => [document.title, document.file_name]
       .some(value => normalizedDestinationName(value) === normalizedDestinationName(name)));
@@ -707,10 +711,19 @@ function explicitAdditionDestination(
     const exactDestination = documents.some(document => [document.title, document.file_name]
       .some(name => normalizedDestinationName(name) === normalizedDestinationName(destinationName)));
     const joinedNames = remainder.split(/\b(?:og|samt|pluss)\b/iu).map(part => {
-      let name = part.trim();
-      const location = /^(.*?)\s*\bi\s+(.+)$/iu.exec(name);
-      if (location && bareLocation.test(location[2])) name = location[1].trim();
-      if (quotedNames.length) name = name.replace(/^(?:dokumentet|dokument|vedlegget|bilaget|kravdokumentet)\b\s*/iu, "");
+      let name = part.trim().replace(/^[,;]+\s*|\s*[,;]+$/gu, "");
+      let previous: string;
+      do {
+        // Do not trim a location-shaped substring out of an exact title/file.
+        if (documents.some(document => [document.title, document.file_name]
+          .some(value => normalizedDestinationName(value) === normalizedDestinationName(name)))) return name;
+        const locationOnly = name.replace(/^i\s+/iu, "");
+        if (bareLocation.test(locationOnly) || relativeLocation.test(locationOnly)) return "";
+        previous = name;
+        name = name.replace(/^(?:dokumentet|dokument|vedlegget|bilaget|kravdokumentet)\b\s*/iu, "")
+          .replace(leadingLocation, "").replace(trailingLocation, "").trim()
+          .replace(/^[,;]+\s*|\s*[,;]+$/gu, "");
+      } while (name !== previous);
       if (bareLocation.test(name) || relativeLocation.test(name) ||
           (/\s+i$/iu.test(name) && bareLocation.test(name.replace(/\s+i$/iu, "")))) return "";
       return name;
