@@ -133,6 +133,23 @@ function chatAttachmentTerms(question: string) {
   ).slice(0, 32);
 }
 
+// Pieces of at most `size` characters, cut at whitespace so a question word
+// is never split between two pieces.
+function piecesAtWordBoundaries(text: string, size: number) {
+  const pieces: string[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    let end = Math.min(text.length, cursor + size);
+    if (end < text.length) {
+      const space = text.slice(cursor, end + 1).search(/\s\S*$/u);
+      if (space > size / 2) end = cursor + space;
+    }
+    pieces.push(text.slice(cursor, end).trim());
+    cursor = end;
+  }
+  return pieces.filter(Boolean);
+}
+
 function splitAttachmentSegments(rawText: string) {
   const normalized = rawText
     .replace(/\r\n/g, "\n")
@@ -168,8 +185,8 @@ function splitAttachmentSegments(rawText: string) {
         // A row too long for one piece is cut like any long paragraph.
         if (row.length > rowChars) {
           flush();
-          for (let cursor = 0; cursor < row.length; cursor += rowChars) {
-            segments.push(`${header}\n${row.slice(cursor, cursor + rowChars)}`);
+          for (const piece of piecesAtWordBoundaries(row, rowChars)) {
+            segments.push(`${header}\n${piece}`);
           }
           continue;
         }
@@ -180,9 +197,7 @@ function splitAttachmentSegments(rawText: string) {
       flush();
       continue;
     }
-    for (let cursor = 0; cursor < text.length; cursor += CHAT_ATTACHMENT_SEGMENT_CHARS) {
-      segments.push(text.slice(cursor, cursor + CHAT_ATTACHMENT_SEGMENT_CHARS).trim());
-    }
+    segments.push(...piecesAtWordBoundaries(text, CHAT_ATTACHMENT_SEGMENT_CHARS));
   }
 
   return segments.filter(Boolean);
