@@ -2249,7 +2249,13 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   let rankingTokens = queryTokens;
   let rankingExactTerms = exactTerms;
   let ranked = rerankSnippets({ candidates, queryTokens, exactTerms });
-  let quality = assessRetrievalQuality({ snippets: ranked.slice(0, limit), exactTerms });
+  // Quality is assessed on what is returned: section windows replace their
+  // parts and skip parts already inside an earlier window.
+  const returned = (list: RetrievedDocumentSnippet[]) => input.surroundingSections
+    ? withSurroundingSections({ snippets: list, documents, serviceDocuments, limit })
+    : list.slice(0, limit);
+  let snippets = returned(ranked);
+  let quality = assessRetrievalQuality({ snippets, exactTerms });
 
   // Weak results get one broader search before callers fall back to longer
   // raw document text. Both passes are ranked together.
@@ -2293,14 +2299,11 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     }
   }
 
-  const snippets = input.surroundingSections
-    ? withSurroundingSections({ snippets: ranked, documents, serviceDocuments, limit })
-    : ranked.slice(0, limit);
-  if (usedBroadenedSearch || usedModelRerank || input.surroundingSections) {
-    // Assessed on what is returned: section windows replace their parts and
-    // skip parts already inside an earlier window. The broader terms only
-    // add to the first pass terms: judged on them alone, a broader search
-    // without IDs would cover "all" terms and mark weak results sufficient.
+  if (usedBroadenedSearch || usedModelRerank) {
+    snippets = returned(ranked);
+    // The broader terms only add to the first pass terms: judged on them
+    // alone, a broader search without IDs would cover "all" terms and mark
+    // weak results sufficient.
     quality = assessRetrievalQuality({
       snippets,
       exactTerms: Array.from(new Set([...exactTerms, ...rankingExactTerms])),

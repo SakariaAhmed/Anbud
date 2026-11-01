@@ -230,16 +230,20 @@ test("model rerank is skipped when the whole documents are in the prompt", async
     } });
     const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
     const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
-    const ask = async (text) => {
+    const ask = async (text, supportingDocuments = []) => {
       state.retrieval = [];
       const result = await streamProjectChat({ projectName: "Fiktiv", question: "Hva er kravet til oppetid?",
-        customerAnalysis: null, solutionEvaluation: null, recentMessages: [],
+        customerAnalysis: null, solutionEvaluation: null, recentMessages: [], supportingDocuments,
         customerDocument: document("kunde", "primary_customer_document", text), solutionDocument: null });
       for await (const _ of result.stream) { /* drain */ }
       return state.retrieval[0].rerank;
     };
     assert.equal(await ask("Oppetid skal være 99,9 prosent."), undefined, "a document sent whole needs no rerank");
     assert.equal(typeof await ask("Oppetid skal være 99,9 prosent. ".repeat(4000)), "function", "a document sent as excerpts is reranked");
+    const supporting = [1, 2, 3, 4].map((index) => document(`bilag-${index}`, "supporting_document", "Kort bilag."));
+    supporting.push(document("bilag-5", "supporting_document", "Oppetid i bilag 5. ".repeat(8000)));
+    assert.equal(typeof await ask("Oppetid skal være 99,9 prosent.", supporting), "function",
+      "a fifth supporting document is searched but never sent whole");
   } finally {
     for (const [key, name] of [["rewrite", "RAG_QUERY_REWRITE"], ["rerank", "RAG_MODEL_RERANK"]]) {
       if (previous[key] === undefined) delete process.env[name]; else process.env[name] = previous[key];

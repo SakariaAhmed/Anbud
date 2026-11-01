@@ -23,9 +23,9 @@ Målt 1. november 2026 med ekte embeddings (`text-embedding-3-small`) og hybrids
 | --- | --- | --- | --- | --- | --- |
 | `main`, bare spørsmålet | 0,44 | 0,75 | 0,92 | 0,57 | 0,25 / 0,41 s |
 | Chat-søket uten reranker | 0,44 | 0,67 | 0,83 | 0,56 | 0,27 / 0,53 s |
-| Chat-søket med reranker | 0,78 | 0,94 | 0,94 | 0,85 | 1,9 / 2,5 s |
+| Chat-søket med reranker | 0,78–0,89 | 0,94 | 0,94 | 0,85–0,91 | 1,9 / 2,5–2,7 s |
 
-Krav-ID-oppslagene finner riktig utdrag blant de fem første i alle oppsett, og først i alle med rerankeren. Rerankeren brukte om lag 7 300 input-tokens per spørsmål, og ingen kall feilet. Uten rerankeren treffer chat-søket dårligere enn spørsmålet alene, fordi domeneordene i søket trekker treffene mot generelle utdrag. Korpuset er lite (ti dokumenter), og spørsmålene ble skrevet mens søket ble justert, så tallene viser retning, ikke nivået i store anbud.
+Krav-ID-oppslagene finner riktig utdrag blant de fem første i alle oppsett, og først i alle med rerankeren. Rerankeren brukte om lag 7 300 input-tokens per spørsmål, og ingen kall feilet. Modellen rangerer ikke helt likt fra kjøring til kjøring; spennet er fra to kjøringer av samme kode. Uten rerankeren treffer chat-søket dårligere enn spørsmålet alene, fordi domeneordene i søket trekker treffene mot generelle utdrag. Korpuset er lite (ti dokumenter), og spørsmålene ble skrevet mens søket ble justert, så tallene viser retning, ikke nivået i store anbud.
 
 Etter utrulling får hvert dokument nye, mindre chunks og nye embeddings første gang en artefakt- eller kravsvarjobb kjører for prosjektet. Til da bruker chat de gamle chunkene, som rerankeren leser rundt treffet i.
 

@@ -574,6 +574,23 @@ test("weak results search once more with the broader query", async () => {
   if (strong.telemetry.quality.sufficient) assert.equal(strong.telemetry.usedBroadenedSearch, false);
 });
 
+test("the broader retry is decided on the returned sections, not on parts of one section", async () => {
+  resetDocumentChunksTestRuntime();
+  const text = longSection();
+  const section = projectDocument({ raw_text: text, structure_map: [{ reference: "Kapittel 4 Drift", text }] });
+  const other = projectDocument({ id: "00000000-0000-4000-8000-000000000099", title: "Bilag 3",
+    raw_text: "Beredskap: vakttelefon er bemannet hele døgnet.",
+    structure_map: [{ reference: "Beredskap", text: "Beredskap: vakttelefon er bemannet hele døgnet." }] });
+  const input = { query: "rapportering tjenesten", documents: [section, other], limit: 8,
+    broaderQuery: "Hvordan er beredskap og vakttelefon organisert?", broaderExactTerms: [] };
+  const parts = await retrieveDocumentSnippetsWithMetadata(input);
+  assert.ok(parts.snippets.filter((snippet) => snippet.sourceId === section.id).length > 1, "the section has several matching parts");
+  const sections = await retrieveDocumentSnippetsWithMetadata({ ...input, surroundingSections: true });
+  assert.equal(sections.snippets.filter((snippet) => snippet.sourceId === section.id).length, 1);
+  assert.equal(sections.telemetry.usedBroadenedSearch, true, "one returned section is too narrow");
+  assert.ok(sections.snippets.some((snippet) => snippet.reference === "Beredskap"));
+});
+
 test("a reranker reorders the candidate pool; invalid or missing answers keep the heuristic order", async () => {
   resetDocumentChunksTestRuntime();
   const entries = ["Sikkerhet A gjelder logging.", "Sikkerhet B gjelder kryptering.", "Sikkerhet C gjelder tilgang."];

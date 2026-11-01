@@ -725,9 +725,11 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     CHAT_FULL_DOCUMENTS_MAX_CHARS;
   const retrievalResult = await retrieveDocumentSnippetsWithMetadata({
     ...request,
-    // With the whole documents in the prompt, excerpts only anchor
-    // references, so their order is not worth a model call.
-    rerank: fullDocumentsInContext ? undefined : request.rerank,
+    // With every searched document whole in the prompt, excerpts only
+    // anchor references, so their order is not worth a model call.
+    rerank: fullDocumentsInContext && promptDocuments.length === request.documents.length
+      ? undefined
+      : request.rerank,
   });
   const retrievedSnippets = retrievalResult.snippets;
   const retrievalQuality = retrievalResult.telemetry.quality;
