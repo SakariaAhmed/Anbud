@@ -49,7 +49,18 @@ RUN rm -rf \
     fi \
     && rm -rf /usr/share/perl5 /var/lib/apt/lists/*
 
-FROM python:3.15-slim-bookworm@sha256:4e03260adeeebafccd084f3584e6b84823aba5651cfb53ef8a078ed441ddf9cd AS docling-os
+FROM python:3.15-slim-bookworm@sha256:4e03260adeeebafccd084f3584e6b84823aba5651cfb53ef8a078ed441ddf9cd AS docling-python
+
+# RapidOCR needs pyclipper, which has no Python 3.15 wheel. Compile it against
+# the runtime's exact Python/OS base; compiler tools stay in this build stage.
+FROM docling-python AS docling-native-wheels
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends g++ \
+    && python -m pip wheel --no-cache-dir --no-deps --wheel-dir /wheels pyclipper==1.4.0 \
+    && python -m pip install --no-index --no-deps /wheels/*.whl \
+    && python -c 'import pyclipper; assert pyclipper.Area([(0,0),(4,0),(4,4),(0,4)]) == 16'
+
+FROM docling-python AS docling-os
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -84,7 +95,9 @@ ENV PATH=/opt/docling/bin:$PATH
 # the Pillow CVEs the image scan blocks on. RapidOCR stays on 3.9: Docling
 # 2.132 needed the recognizer vocabulary that RapidOCR 3.10 removed.
 RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,from=docling-native-wheels,source=/wheels,target=/wheels \
     python -m venv /opt/docling \
+    && /opt/docling/bin/pip install --no-index --no-deps /wheels/*.whl \
     && /opt/docling/bin/pip install --no-cache-dir \
       "docling-slim[standard,models-local,feat-ocr-rapidocr]==2.142.1" \
       "pillow>=13.0.0" \
