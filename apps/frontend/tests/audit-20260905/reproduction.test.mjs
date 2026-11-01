@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import { actual, frontend, jiti, dbUrl, sql, quote, json, P, D, S, reset, revision, document, save, saveCustomerAnalysis, freshAnalysis, analysisResult, downstream, counts, workflow, handlers, noop, storeFile, workflowErrors, requestBody, routeErrorResponse } from './harness.mjs';
+import { actual, documentIngestionTracker, frontend, jiti, dbUrl, sql, quote, json, P, D, S, reset, revision, document, save, saveCustomerAnalysis, freshAnalysis, analysisResult, downstream, counts, workflow, handlers, noop, storeFile, workflowErrors, requestBody, routeErrorResponse } from './harness.mjs';
 
 // Regression assertions exercise the repaired behavior using real PostgreSQL and actual TS bodies.
 
@@ -304,23 +304,25 @@ test('REGRESSION JOB3: DB claim serializes workers for the same project', () => 
 test('REGRESSION UI3: ingestion watcher follows the queued enhancement job', async () => {
   const watched = [];
   const completedDocument = { id: D, processing_status: 'basic_ready' };
-  const { trackDocumentIngestionJob } = actual('components/projects/project-workspace-page.tsx', ['trackDocumentIngestionJob'], {
+  const { trackDocumentIngestionJob } = documentIngestionTracker({
     project: { id: P }, documentJobAbortControllersRef: { current: new Set() }, isProjectSnapshotOlder: jiti(path.join(frontend, "components/projects/project-workflow-status.ts")).isProjectSnapshotOlder, setNotice: noop, setBusyMessage: noop, fetchProjectState: async () => ({id:P}),
     watchProjectJob: async ({ jobId }) => { watched.push(jobId); return { result: { document: completedDocument, docling_enhancement_job_id: jobId === "first" ? "follow-up" : null } }; },
     documentFromJobResult: result => result.document, setProject: noop,
   });
-  await trackDocumentIngestionJob({ id: 'first', kind: 'document_ingestion' }, D);
+  assert.deepEqual(await trackDocumentIngestionJob({ id: 'first', kind: 'document_ingestion' }, D), completedDocument);
   assert.deepEqual(watched, ['first', 'follow-up']);
 });
 
 test('REGRESSION UI4: watcher network failure preserves authoritative ready document status', async () => {
+  let watches = 0;
   let state = { id: P, documents: [{ id: D, processing_status: 'basic_ready' }] };
-  const { trackDocumentIngestionJob } = actual('components/projects/project-workspace-page.tsx', ['trackDocumentIngestionJob'], {
+  const { trackDocumentIngestionJob } = documentIngestionTracker({
     project: state, documentJobAbortControllersRef: { current: new Set() }, isProjectSnapshotOlder: jiti(path.join(frontend, "components/projects/project-workflow-status.ts")).isProjectSnapshotOlder, setNotice: noop, setBusyMessage: noop, fetchProjectState: async () => ({id:P}),
-    watchProjectJob: async () => { throw new Error('Injected polling offline'); },
+    watchProjectJob: async () => { watches++; throw new Error('Injected polling offline'); },
     normalizeProjectState: value => value, setProject: fn => state = fn(state),
   });
   await trackDocumentIngestionJob({ id: 'first', kind: 'document_ingestion' }, D);
+  assert.equal(watches, 1);
   assert.equal(state.documents[0].processing_status, 'basic_ready');
 });
 
@@ -390,15 +392,17 @@ test('CONTROL META: actual ingestion keeps primary document processing through i
 });
 
 test('REGRESSION UI5: delayed ingestion result refreshes current project and preserves newer analysis', async () => {
+  let reads = 0;
   const { applyProjectSnapshot } = jiti(path.join(frontend, 'components/projects/project-workflow-status.ts'));
   let state = { id: P, documents: [], generated_artifacts: [], customer_analysis: analysisResult('Latest successful analysis'), customer_analysis_generated: true, solution_evaluation_generated: false };
-  const { trackDocumentIngestionJob } = actual('components/projects/project-workspace-page.tsx', ['trackDocumentIngestionJob'], {
+  const { trackDocumentIngestionJob } = documentIngestionTracker({
     project: state, documentJobAbortControllersRef: { current: new Set() }, isProjectSnapshotOlder: jiti(path.join(frontend, "components/projects/project-workflow-status.ts")).isProjectSnapshotOlder, setNotice: noop, setBusyMessage: noop,
     watchProjectJob: async () => ({ result: { document: { id: D }, project: { customer_analysis_generated: false, solution_evaluation_generated: false } } }),
     documentFromJobResult: result => result.document, normalizeProjectState: value => value,
-    fetchProjectState: async () => state, applyProjectSnapshot, dedupeDocuments: value => value, setProject: fn => state = fn(state),
+    fetchProjectState: async () => { reads++; return state; }, applyProjectSnapshot, dedupeDocuments: value => value, setProject: fn => state = fn(state),
   });
-  await trackDocumentIngestionJob({ id: 'old-response', kind: 'document_ingestion' }, D);
+  assert.deepEqual(await trackDocumentIngestionJob({ id: 'old-response', kind: 'document_ingestion' }, D), { id: D });
+  assert.equal(reads, 1);
   assert.equal(state.customer_analysis_generated, true); assert.equal(state.customer_analysis.executive_summary, 'Latest successful analysis');
 });
 
