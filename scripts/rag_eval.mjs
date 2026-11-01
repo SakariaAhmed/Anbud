@@ -12,6 +12,9 @@ function norm(value) {
 }
 
 function expectedMatch(caseItem, snippet) {
+  if (caseItem.expected_page !== undefined && !(Number.isInteger(snippet.page_start) && Number.isInteger(snippet.page_end) && snippet.page_start <= caseItem.expected_page && snippet.page_end >= caseItem.expected_page)) return false;
+  if (caseItem.expected_heading && !(snippet.heading_path ?? []).some(heading => norm(heading) === norm(caseItem.expected_heading))) return false;
+  if (Array.isArray(caseItem.expected_source_ids) && caseItem.expected_source_ids.length && caseItem.expected_texts?.length && !caseItem.expected_source_ids.includes(snippet.source_id)) return false;
   const expectedTexts = Array.isArray(caseItem.expected_texts) ? caseItem.expected_texts : [];
   if (expectedTexts.length) {
     const text = norm(snippet.text);
@@ -62,8 +65,10 @@ export function scoreRetrievalCases(cases) {
     }
     if (firstMatchIndex >= 0) {
       reciprocalRankSum += 1 / (firstMatchIndex + 1);
-    } else {
+    }
+    if (firstMatchIndex < 0 || firstMatchIndex >= 10) {
       failures.push({
+        rank: firstMatchIndex < 0 ? null : firstMatchIndex + 1,
         index: caseIndex,
         question: caseItem.question,
         expected_source_ids: caseItem.expected_source_ids ?? [],

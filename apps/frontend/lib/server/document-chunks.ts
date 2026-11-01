@@ -888,7 +888,7 @@ function buildSemanticDocumentChunks(document: ChunkableDocument) {
       continue;
     }
 
-    headingPath = nextHeadingPath(headingPath, entry.reference, entryText);
+    headingPath = entry.heading_path?.length ? [...entry.heading_path] : nextHeadingPath(headingPath, entry.reference, entryText);
     const kind = detectChunkKind({
       fileFormat: document.fileFormat,
       reference: entry.reference,

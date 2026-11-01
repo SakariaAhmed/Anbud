@@ -4,7 +4,7 @@ import { rethrowAuthoritativeLeaseLoss } from "@/lib/server/repositories/lease-f
 import { safeErrorTelemetry } from "@/lib/server/safe-errors";
 import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/source-ledger";
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
-import { extractRequirementIdentifiers } from "@/lib/server/ai/retrieval-query";
+import { extractRequirementIdentifiers, requirementIdentifierSpans } from "@/lib/server/ai/retrieval-query";
 import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type { RetrievedDocumentSnippet } from "@/lib/server/document-chunks";
@@ -72,9 +72,25 @@ export async function lookupRequirementSnippets(input: {
               }
               if (idAt >= 0 && wordingAt - idAt < 400 && !extractRequirementIdentifiers(part.slice(idAt, wordingAt)).some(id => id !== entry.id)) { passage = part.slice(idAt, wordingAt + found.length); break; }
             }
+            if (!passage && !entry.correctionSource) {
+              for (const part of sourceParts) {
+                const starts = requirementIdentifierSpans(part).filter(span => /^[\t |>*-]*$/u.test(part.slice(part.lastIndexOf("\n", span.start - 1) + 1, span.start)));
+                const row = starts.findIndex(span => span.id === normalizeRequirementId(entry.id));
+                if (row < 0) continue;
+                const original = part.slice(starts[row].start, Math.min(starts[row + 1]?.start ?? part.length, starts[row].start + 2000)).trim();
+                // A literal source row can survive parser-normalized casing,
+                // table labels and trailing headings. Never invent its wording
+                // or promote a cross-reference in a prose sentence to a row.
+                if (/\b(?:skal|bør|må|shall|must|should)\b/iu.test(original)) { passage = original; break; }
+              }
+            }
             // Corrected requirements may be reconstructions of several source
             // phrases. Never publish the reconstruction as an original quotation.
             if (!passage) return [];
+            const occurrence = source.raw_text.indexOf(passage);
+            const uniqueOccurrence = source.raw_text.indexOf(passage, occurrence + passage.length) < 0;
+            const marker = uniqueOccurrence ? markers.find((marker, index) => occurrence >= marker.index + marker.marker.length && occurrence + passage.length <= (markers[index + 1]?.index ?? source.raw_text.length)) : undefined;
+            const locatedPages = marker ? [marker.startPage, marker.endPage] : pages;
             const sections = !entry.correctionSource ? source.structure_map.filter(section => section.text.includes(passage!) && section.text.length <= 4800 && (!entry.heading || section.heading_path?.includes(entry.heading) || section.reference.includes(entry.heading))) : [];
             const section = sections.length === 1 ? sections[0] : undefined;
             return [{
@@ -82,11 +98,11 @@ export async function lookupRequirementSnippets(input: {
               sourceId: source.id,
               documentTitle: source.title,
               kind: "requirement_row" as const,
-              reference: `Krav ${entry.id}${pages.length ? ` · Side ${pages.join(", ")}` : ""}`,
+              reference: `Krav ${entry.id}${locatedPages.length ? ` · Side ${Array.from(new Set(locatedPages)).join(", ")}` : ""}`,
               text: section ? section.text : passage,
               headingPath: entry.correctionSource ? (entry.correctionSource.heading ? [entry.correctionSource.heading] : []) : (entry.heading ? [entry.heading] : []),
-              pageStart: pages.length ? Math.min(...pages) : null,
-              pageEnd: pages.length ? Math.max(...pages) : null,
+              pageStart: locatedPages.length ? Math.min(...locatedPages) : null,
+              pageEnd: locatedPages.length ? Math.max(...locatedPages) : null,
               chunkIndex: null,
               requirementId: entry.id,
               similarity: null,

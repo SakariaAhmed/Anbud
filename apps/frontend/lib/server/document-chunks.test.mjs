@@ -647,3 +647,11 @@ test("a section longer than the window returns a bounded window around the match
   const end = start + snippet.text.length;
   assert.ok(end === text.length || /\s/u.test(text[end]), "the window ends at a word boundary");
 });
+
+test("explicit source heading paths survive chunk persistence without splitting their own dash", async () => {
+  resetDocumentChunksTestRuntime();
+  const source = projectDocument({ id: "explicit-heading-path", file_format: "txt", raw_text: "Andel pasienter som ikke møter skal reduseres til fem prosent.", structure_map: [{ reference: "Resultatmål - må ikke omskrives til ambisjon", text: "Andel pasienter som ikke møter skal reduseres til fem prosent.", heading_path: ["Resultatmål - må ikke omskrives til ambisjon"], page: 1 }] });
+  await replaceProjectDocumentChunks({ documentId: source.id, projectId: source.project_id, role: source.role, supportingSubtype: source.supporting_subtype, title: source.title, fileName: source.file_name, fileFormat: source.file_format, rawText: source.raw_text, structureMap: source.structure_map, sourceRevision: source.chunk_source_revision ?? 0 });
+  const rows = getDocumentChunksTestManifest("project_document", source.id).rows;
+  assert.ok(rows.some(row => row.heading_path.includes("Resultatmål - må ikke omskrives til ambisjon")));
+});

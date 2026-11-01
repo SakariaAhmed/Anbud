@@ -56,3 +56,18 @@ test("empty and non-string evidence labels cannot satisfy the gate", () => {
     assert.ok(evaluateRetrievalGate(rows).failures.some(failure => failure.includes("Missing evidence label")));
   }
 });
+
+test("mixed-source gate checks original pages/headings, exact-ID rank and missing-ID evidence separately", () => {
+  const rows = [["stress", 20], ["follow_up", 5], ["tender_ids", 23], ["amendment", 2]].flatMap(([kind, count]) => Array.from({ length: count }, (_, index) => ({ kind, question: `${kind}:${index}`, expected_requirement_id: `K-${index}`, expected_texts: [`literal ${kind} ${index}`], expected_source_ids: ["source"], expected_page: 2, expected_heading: "Original heading", retrieved: [{ source_id: "source", page_start: 2, page_end: 2, heading_path: ["Original heading"], text: `literal ${kind} ${index}` }] })));
+  rows.push(...Array.from({ length: 5 }, (_, index) => ({ kind: "missing_id", question: `missing:${index}`, expected_requirement_id: `MISSING-${index}`, expected_texts: [], expected_abstention: true, retrieved: [], retrieval_sufficient: false, missing_requirement_ids: [`MISSING-${index}`] })));
+  assert.equal(evaluateRetrievalGate(rows, "extended").passed, true);
+  const id = rows.find(row => row.kind === "tender_ids");
+  id.retrieved[0].page_start = 3; id.retrieved[0].page_end = 3;
+  assert.equal(evaluateRetrievalGate(rows, "extended").passed, false, "correct text at an invented page must fail");
+  id.retrieved[0].page_start = 2; id.retrieved[0].page_end = 2;
+  id.retrieved[0].heading_path = ["Wrong heading"];
+  assert.equal(evaluateRetrievalGate(rows, "extended").passed, false);
+  id.retrieved[0].heading_path = ["Original heading"];
+  rows.at(-1).retrieval_sufficient = true;
+  assert.equal(evaluateRetrievalGate(rows, "extended").passed, false, "a confident answer path for a missing ID must fail");
+});

@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "scope": "Fictional checked-in tender; local-parser source snapshots, not a Docling/OCR evaluation.",
+  "documents": [
+    {
+      "key": "halandsvik-01",
+      "source_file": "test-data/tenders/halandsvik-2026/documents/01_Konkurransegrunnlag_Halandsvik_kommune.pdf",
+      "source_sha256": "589067affddf2588e9c3d73ecf9a37afa3790de8434b64a4fa49f500731320d4",
+      "parser": "pdf-parse",
+      "role": "primary_customer_document",
+      "supporting_subtype": null,
+      "title": "01 Konkurransegrunnlag Halandsvik kommune",
+      "file_name": "01_Konkurransegrunnlag_Halandsvik_kommune.pdf",
+      "file_format": "pdf",
+      "raw_text": "[[SIDE:1]]\nKONKURRANSEGRUNNLAG\nSkyplattform og drift av kommunale\nfagsystemer\nÅpen anbudskonkurranse · Saksnr. 2026/1184 · Versjon 1.1 (14. oktober 2026, rettelse\nnr. 1 er tatt inn i kapittel 9)\nOppdragsgiver Hålandsvik kommune, org.nr. 940 512 337\nAdresse Rådhusplassen 1, 5799 Hålandsvik\nKontaktperson Åsmund Kjærstad, innkjøpsrådgiver (all kommunikasjon via KGV)\nProsedyre Åpen anbudskonkurranse etter anskaffelsesforskriften del III\nAvtaletype SSA-D (Statens standardavtale for driftsavtaler)\nAlle virksomheter, personer og tall i dette dokumentet er fiktive og laget for testformål.\nHålandsvik kommune · Saksnr. 2026/1184 · Konkurransegrunnlag v1.1 Side 1\n\n[[SIDE:2]]\n1 Innledning og oppdragsgiver\nHålandsvik kommune har om lag 14 200 innbyggere og 1 150 ansatte fordelt på rådhuset, ni skoler, fire\nsykehjem og hjemmetjenesten. Kommunens IT-seksjon har åtte årsverk og forvalter om lag 40 fagsystemer.\nKommunen inviterer med dette til åpen anbudskonkurranse om drift av en skyplattform for kommunens\nfagsystemer, inkludert overgang fra dagens lokale serverrom. Anskaffelsen gjennomføres i\nkonkurransegjennomføringsverktøyet KGV, og all kommunikasjon om konkurransen skal skje der.\n2 Bakgrunn og mål\nKommunens fagsystemer driftes i dag i et eget serverrom i rådhuskjelleren. Rommet har ikke tilfredsstillende\nbrannsikring, og det mangler reservestrøm utover 30 minutter. Tilsynsrapporten fra 2025 påpekte at\nkommunen er sårbar for lengre driftsavbrudd.\nMålene med anskaffelsen er å redusere risikoen for langvarige avbrudd i kritiske tjenester, frigjøre\nIT-seksjonen fra maskinvarenær drift, sikre etterlevelse av personvernregelverket og gi kommunen\nforutsigbare driftskostnader. Kommunen ønsker også å legge til rette for et tettere interkommunalt\nsamarbeid med Nordre Fjære kommune.\n3 Anskaffelsens omfang\nOppdraget omfatter etablering og drift av skyplattform, nettverkstilkobling, sikkerhetskopiering, overvåking,\nhendelseshåndtering og migrering av fagsystemene. Applikasjonsforvaltning av den enkelte\nfagsystemleverandørens programvare inngår ikke. Detaljerte krav står i Bilag 1 Kravspesifikasjon.\n4 Kontrakt, varighet, verdi og opsjoner\nKontrakten inngås for tre år fra 1. mars 2027, med opsjon for kommunen på forlengelse i 1 + 1 år.\nKommunen har i tillegg opsjon på å utvide avtalen til å omfatte Nordre Fjære kommune. Opsjonene utløses\netter kommunens ensidige beslutning. Anslått verdi er oppgitt eksklusive merverdiavgift:\nDel Anslått verdi ekskl. mva.\nBasisavtale, 3 år (1. mars 2027–28. februar 2030) NOK 11 200 000\nOpsjon 1: forlengelse 1 + 1 år NOK 4 800 000\nOpsjon 2: utvidelse til Nordre Fjære kommune (ca. 600 brukere) NOK 2 400 000\nAnslått samlet verdi inkludert opsjoner NOK 18 400 000\nVerdien er et estimat og ikke en forpliktelse for kommunen. Avtalens maksimale verdi er NOK 18 400 000\nekskl. mva.; når denne er nådd, opphører avtalen.\n5 Prosedyre og frister\n5.1 Tidsplan\nAktivitet Frist / dato\nKunngjøring i Doffin og KGV 2. oktober 2026\nFrist for å stille spørsmål 20. oktober 2026 kl. 12:00\nTilbudsfrist 3. november 2026 kl. 12:00\nVedståelsesfrist 28. februar 2027\nPlanlagt kontraktsinngåelse januar 2027\nOppstart av driftsavtalen 1. mars 2027\nHålandsvik kommune · Saksnr. 2026/1184 · Konkurransegrunnlag v1.1 Side 2\n\n[[SIDE:3]]\nSpørsmål som kommer inn etter spørsmålsfristen, vil bare bli besvart dersom kommunen finner det\nhensiktsmessig. Tilbud som kommer inn etter tilbudsfristen, vil bli avvist.\n5.2 Forhandlinger\nDet er ikke adgang til å forhandle i en åpen anbudskonkurranse. Kommunen kan be om avklaringer av\nuklarheter i tilbudet.\n6 Kvalifikasjonskrav\nLeverandørene skal fylle ut ESPD i KGV. Følgende kvalifikasjonskrav gjelder:\n• Leverandøren må ha hatt en årlig omsetning på minst NOK 25 millioner i siste avlagte regnskapsår.\n• Leverandøren må dokumentere minst to gjennomførte driftsoppdrag av tilsvarende art og omfang de siste\ntre årene.\n• Leverandøren må ha et ledelsessystem for informasjonssikkerhet, dokumentert med sertifikat eller\ntilsvarende beskrivelse.\n7 Tildeling\nTildeling skjer på grunnlag av beste forhold mellom pris og kvalitet. Tildelingskriterier, vekter og\nevalueringsmodell fremgår av Bilag 2 Evaluering og tildeling.\n8 Tilbudets innhold\nTilbudet skal inneholde utfylt ESPD, besvarelse av alle krav i Bilag 1, utfylt prisskjema (Bilag 3), utfylt\ndatabehandleravtale (Bilag 5) og eventuelle forbehold samlet i ett eget dokument. Forbehold mot minstekrav\ni Bilag 1 medfører avvisning.\nHålandsvik kommune · Saksnr. 2026/1184 · Konkurransegrunnlag v1.1 Side 3\n\n[[SIDE:4]]\n9 Rettelser og presiseringer (Rettelse nr. 1 av 14.10.2026)\nDette kapitlet går foran tidligere publisert tekst i konkurransegrunnlaget og bilagene.\n1. Tilbudsfristen i punkt 5.1 endres fra 3. november 2026 kl. 12:00 til 10. november 2026 kl. 12:00. Øvrige\ndatoer i tidsplanen står uendret.\n2. Krav K-4.1.2 i Bilag 1 endres og skal nå lyde: «Leverandøren skal gjenopprette kritiske fagsystemer innen\n4 timer (RTO) etter en alvorlig hendelse, med et maksimalt datatap på 15 minutter (RPO).»\n3. Spørsmål fra leverandør: Kan driftssenteret i K-3.3.1 ligge utenfor Norden? Svar: Ja, så lenge\ndriftssenteret ligger innenfor EØS. Kravet står uendret.\nHålandsvik kommune · Saksnr. 2026/1184 · Konkurransegrunnlag v1.1 Side 4",
+      "structure_map": [
+        {
+          "reference": "Kundedokument – side 1",
+          "text": "KONKURRANSEGRUNNLAG\nSkyplattform og drift av kommunale\nfagsystemer\nÅpen anbudskonkurranse · Saksnr. 2026/1184 · Versjon 1.1 (14. oktober 2026, rettelse\nnr. 1 er tatt inn i kapittel 9)\nOppdragsgiver Hålandsvik kommune, org.nr. 940 512 337\nAdresse Rådhusplassen 1, 5799 Hålandsvik\nKontaktperson Åsmund Kjærstad, innkjøpsrådgiver (all kommunikasjon via KGV)\nProsedyre Åpen anbudskonkurranse etter anskaffelsesforskriften del III\nAvtaletype SSA-D (Statens standardavtale for driftsavtaler)\nAlle virksomheter, personer og tall i dette dokumentet er fiktive og laget for testformål.\nHålandsvik kommune · Saksnr. 2026/1184 · Konkurransegrunnlag v1.1 Side 1"
+        },
+        {
+          "reference": "Kundedokument – side 2",
+          "text": "1 Innledning og oppdragsgiver\nHålandsvik kommune har om lag 14 200 innbyggere og 1 150 ansatte fordelt på rådhuset, ni skoler, fire\nsykehjem og hjemmetjenesten. Kommunens IT-seksjon har åtte årsverk og forvalter om lag 40 fagsystemer.\nKommunen inviterer med dette til åpen anbudskonkurranse om drift av en skyplattform for kommunens\nfagsystemer, inkludert overgang fra dagens lokale serverrom. Anskaffelsen gjennomføres i\nkonkurransegjennomføringsverktøyet KGV, og all kommunikasjon om konkurransen skal skje der.\n2 Bakgrunn og mål\nKommunens fagsystemer driftes i dag i et eget serverrom i rådhuskjelleren. Rommet har ikke tilfredsstillende\nbrannsikring, og det mangler reservestrøm utover 30 minutter. Tilsynsrapporten fra 2025 påpekte at\nkommunen er sårbar for lengre driftsavbrudd.\nMålene med anskaffelsen er å redusere risikoen for langvarige avbrudd i kritiske tjenester, frigjøre\nIT-seksjonen fra maskinvarenær drift, sikre etterlevelse av personvernregelverket og gi kommunen\nforutsigbare driftskostnader. Kommunen ønsker også å legge til rette for et tettere interkommunalt\nsamarbeid med Nordre Fjære kommune.\n3 Anskaffelsens omfang\nOppdraget omfatter etablering og drift av skyplattform, nettverkstilkobling, sikkerhetskopiering, overvåking,\nhendelseshåndtering og migrering av fagsystemene. Applikasjonsforvaltning av den enkelte\nfagsystemleverandørens programvare inngår ikke. Detaljerte krav står i Bilag 1 Kravspesifikasjon.\n4 Kontrakt, varighet, verdi og opsjoner\nKontrakten inngås for tre år fra 1. mars 2027, med opsjon for kommunen på forlengelse i 1 + 1 år.\nKommunen har i tillegg opsjon på å utvide avtalen til å omfatte Nordre Fjære kommune. Opsjonene utløses\netter kommunens ensidige beslutning. Anslått verdi er oppgitt eksklusive merverdiavgift:\nDel Anslått verdi ekskl. mva.\nBasisavtale, 3 år (1. mars 2027–28. februar 2030) NOK 11 200 000\nOpsjon 1: forlengelse 1 + 1 år NOK 4 800 000\nOpsjon 2: utvidelse til Nordre Fjære kommune (ca. 600 brukere) NOK 2 400 000\nAnslått samlet verdi inkludert opsjoner NOK 18 400 000\nVerdien er et estimat og ikke en forpliktelse for kommunen. Avtalens maksimale verdi er NOK 18 400 000\nekskl. mva.; når denne er nådd, opphører avtalen.\n5 Prosedyre og frister\n5.1 Tidsplan\nAktivitet Frist / dato\nKunngjøring i Doffin og KGV 2. oktober 2026\nFrist for å stille spørsmål 20. oktober 2026 kl. 12:00\nTilbudsfrist 3. november 2026 kl. 12:00\nVedståelsesfrist 28. februar 2027\nPlanlagt kontraktsinngåelse januar 2027\nOppstart av driftsavtalen 1. mars 2027\nHålandsvik kommune · Saksnr. 2026/1184 · Konkurransegrunnlag v1.1 Side 2"
+        },
+        {
+          "reference": "Kundedokument – side 3",
+          "text": "Spørsmål som kommer inn etter spørsmålsfristen, vil bare bli besvart dersom kommunen finner det\nhensiktsmessig. Tilbud som kommer inn etter tilbudsfristen, vil bli avvist.\n5.2 Forhandlinger\nDet er ikke adgang til å forhandle i en åpen anbudskonkurranse. Kommunen kan be om avklaringer av\nuklarheter i tilbudet.\n6 Kvalifikasjonskrav\nLeverandørene skal fylle ut ESPD i KGV. Følgende kvalifikasjonskrav gjelder:\n• Leverandøren må ha hatt en årlig omsetning på minst NOK 25 millioner i siste avlagte regnskapsår.\n• Leverandøren må dokumentere minst to gjennomførte driftsoppdrag av tilsvarende art og omfang de siste\ntre årene.\n• Leverandøren må ha et ledelsessystem for informasjonssikkerhet, dokumentert med sertifikat eller\ntilsvarende beskrivelse.\n7 Tildeling\nTildeling skjer på grunnlag av beste forhold mellom pris og kvalitet. Tildelingskriterier, vekter og\nevalueringsmodell fremgår av Bilag 2 Evaluering og tildeling.\n8 Tilbudets innhold\nTilbudet skal inneholde utfylt ESPD, besvarelse av alle krav i Bilag 1, utfylt prisskjema (Bilag 3), utfylt\ndatabehandleravtale (Bilag 5) og eventuelle forbehold samlet i ett eget dokument. Forbehold mot minstekrav\ni Bilag 1 medfører avvisning.\nHålandsvik kommune · Saksnr. 2026/1184 · Konkurransegrunnlag v1.1 Side 3"
+        },
+        {
+          "reference": "Kundedokument – side 4",
+          "text": "9 Rettelser og presiseringer (Rettelse nr. 1 av 14.10.2026)\nDette kapitlet går foran tidligere publisert tekst i konkurransegrunnlaget og bilagene.\n1. Tilbudsfristen i punkt 5.1 endres fra 3. november 2026 kl. 12:00 til 10. november 2026 kl. 12:00. Øvrige\ndatoer i tidsplanen står uendret.\n2. Krav K-4.1.2 i Bilag 1 endres og skal nå lyde: «Leverandøren skal gjenopprette kritiske fagsystemer innen\n4 timer (RTO) etter en alvorlig hendelse, med et maksimalt datatap på 15 minutter (RPO).»\n3. Spørsmål fra leverandør: Kan driftssenteret i K-3.3.1 ligge utenfor Norden? Svar: Ja, så lenge\ndriftssenteret ligger innenfor EØS. Kravet står uendret.\nHålandsvik kommune · Saksnr. 2026/1184 · Konkurransegrunnlag v1.1 Side 4"
+        }
+      ]
+    },
+    {
+      "key": "halandsvik-02",
+      "source_file": "test-data/tenders/halandsvik-2026/documents/02_Bilag_1_Kravspesifikasjon_Halandsvik_kommune.pdf",
+      "source_sha256": "bad81a81fd55c593b0abfd041d37d6744032edb5c40d92d3172d73d881cdb1b0",
+      "parser": "pdf-parse",
+      "role": "supporting_document",
+      "supporting_subtype": "kravdokument",
+      "title": "02 Bilag 1 Kravspesifikasjon Halandsvik kommune",
+      "file_name": "02_Bilag_1_Kravspesifikasjon_Halandsvik_kommune.pdf",
+      "file_format": "pdf",
+      "raw_text": "[[SIDE:1]]\nBILAG 1\nKravspesifikasjon\nSkyplattform og drift av kommunale fagsystemer · Hålandsvik kommune · Saksnr.\n2026/1184\n1 Innledning\nDette bilaget beskriver kommunens krav til leveransen. Alle krav har en unik krav-ID på formen K-x.y eller\nK-x.y.z. Krav formulert med «skal» er minstekrav; manglende oppfyllelse av et minstekrav medfører\navvisning av tilbudet. Krav formulert med «bør» evalueres etter tildelingskriteriene i Bilag 2.\nLeverandøren skal besvare hvert krav i tilbudets kravsvar med en konkret beskrivelse av hvordan kravet\noppfylles. Tekst uten krav-ID er bakgrunn og veiledning.\n2 Generelle krav\nK-2.1 Leverandøren skal ha et styringssystem for informasjonssikkerhet som er sertifisert etter ISO/IEC\n27001:2022. Gyldig sertifikat skal legges ved tilbudet.\nK-2.2 Leverandøren bør ha minst tre referanseprosjekter fra de siste fem årene der leverandøren har driftet\nskybaserte fagsystemer for kommuner eller fylkeskommuner med mer enn 500 brukere.\nK-2.3 Leverandøren skal utpeke en navngitt kundeansvarlig og en teknisk kontaktperson som begge\nbehersker norsk muntlig og skriftlig.\n3 Plattform og arkitektur\nKommunen ønsker en standardisert skyplattform med tydelig ansvarsdeling mellom leverandør og\nkommune. Leverandøren står fritt til å velge offentlig skyplattform, så lenge kravene under er oppfylt.\nKravene i kapittel 3 er samlet i én tabell som dekker underkapitlene 3.1 Hosting og dataplassering, 3.2\nNettverk og tilkobling og 3.3 Driftssenter og personell.\nVed vurderingen av kapittel 3 vil kommunen legge vekt på robusthet, enkel forvaltning og at løsningen kan\nutvides til Nordre Fjære kommune uten ny arkitektur. Kommunen har i dag om lag 1 150 brukere og forventer\nen vekst på inntil 5 % per år i kontraktsperioden.\nTabell 3-1 Krav til plattform, nettverk og driftssenter\nKrav-ID Type Kravtekst\nK-3.1.1 Minstekrav Alle kundedata, inkludert sikkerhetskopier og logger, skal lagres og behandles i datasentre\ninnenfor EØS.\nK-3.1.2 Minstekrav Plattformen skal driftes fra minst to geografisk adskilte datasentre med en avstand på minst\n30 km mellom primær- og sekundærlokasjon, slik at bortfall av ett datasenter ikke medfører\ntap av data.\nK-3.1.3 Evalueres Leverandøren bør tilby lagring i datasentre i Norge for særlige kategorier av\npersonopplysninger, uten tillegg i pris.\nK-3.1.4 Evalueres Plattformen bør drives med minst 90 % fornybar energi, dokumentert med\nopprinnelsesgarantier eller tilsvarende.\nK-3.2.1 Minstekrav Leverandøren skal etablere kryptert forbindelse (IPsec VPN eller privat linje) mellom\nkommunens nett i Hålandsvik rådhus\nog skyplattformen, med en båndbredde på minst 1 Gbit/s.\nK-3.2.2 Minstekrav All administrativ tilgang til plattformen skal skje med flerfaktorautentisering via et eget\nadministrasjonsnett som er logisk adskilt fra brukertrafikken.\nHålandsvik kommune · Saksnr. 2026/1184 · Bilag 1 Kravspesifikasjon Side 1\n\n[[SIDE:2]]\nKrav-ID Type Kravtekst\nK-3.2.3 Evalueres Leverandøren bør støtte IPv6 i hele plattformen innen 12 måneder etter\nkontraktsinngåelse.\nK-3.3.1 Minstekrav Leverandørens driftssenter skal være bemannet 24 timer i døgnet, 7 dager i uken, og ligge\ninnenfor EØS.\nK-3.3.2 Minstekrav Personell med administrativ tilgang til kommunens miljø skal ha levert politiattest som ikke\ner eldre enn tre måneder ved tiltredelse.\nK-3.3.3 Evalueres Leverandøren bør stille med et fast team på minst fire navngitte driftsressurser for\nHålandsvik kommune, hvorav minst én har sertifisering på ekspertnivå innen den tilbudte\nskyplattformen.\n4 Drift, beredskap og gjenoppretting\nBakgrunn\nUnder den forrige driftsavtalen med Fjellnett Drift AS (2019–2025) skulle sikkerhetskopier tas ut på bånd\nhver fredag og fraktes til kommunens serverrom på Kvernhusbakken, og leverandøren måtte gjenopprette\ndata manuelt fra bånd ved behov. Ordningen ble avviklet i februar 2025 og videreføres ikke.\n4.1 Tjenestenivå\nKrav-ID Type Kravtekst\nK-4.1.1 Minstekrav Tilgjengeligheten for kritiske fagsystemer (Gerica, Visma Flyt Skole og Acos WebSak) skal\nvære minst 99,8 % per måned, målt i tidsrommet 06:00–22:00 alle dager.\nK-4.1.2 Minstekrav Leverandøren skal gjenopprette kritiske fagsystemer innen 8 timer (RTO) etter en alvorlig\nhendelse, med et maksimalt datatap på 1 time (RPO).\nK-4.1.3 Evalueres Leverandøren bør levere en månedlig tjenestenivårapport med trendanalyse og forslag til\nforbedringstiltak innen femte virkedag i påfølgende måned.\n4.2 Hendelseshåndtering\nFølgende krav gjelder for håndtering av hendelser i hele kontraktsperioden:\nK-4.2.1 Kritiske hendelser skal besvares innen 15 minutter hele døgnet, og kommunens IT-vakt skal varsles\npå telefon innen 30 minutter.\nK-4.2.2 Leverandøren skal kunne stille med tekniker fysisk på Hålandsvik rådhus innen 4 timer ved kritiske\nhendelser, hele døgnet.\nK-4.2.3 Leverandøren bør gjennomføre en felles beredskapsøvelse med kommunen minst én gang per år,\ninkludert full gjenoppretting av minst ett kritisk fagsystem fra sikkerhetskopi.\n5 Sikkerhet og personvern\nKommunen behandler helseopplysninger, opplysninger om barn og andre særlige kategorier av\npersonopplysninger. Kommunen er behandlingsansvarlig og leverandøren databehandler.\nK-5.1 Leverandøren skal inngå databehandleravtale med kommunen i tråd med personvernforordningen\nartikkel 28, basert på kommunens mal i Bilag 5.\nK-5.2 Sikkerhetsbrudd som berører personopplysninger skal meldes til kommunen uten ugrunnet opphold\nog senest 24 timer etter at leverandøren ble kjent med bruddet.\nK-5.3 Kommunen bør kunne forvalte egne krypteringsnøkler (kundestyrte nøkler) for lagring av særlige\nkategorier av personopplysninger.\nHålandsvik kommune · Saksnr. 2026/1184 · Bilag 1 Kravspesifikasjon Side 2\n\n[[SIDE:3]]\n6 Overgang og exit\nK-6.1 Leverandøren skal levere en exitplan senest 3 måneder etter kontraktsinngåelse. Exitplanen skal\nminst omfatte:\na) eksport av alle data i åpne, dokumenterte formater,\nb) tidsplan for tilbakeføring til kommunen eller ny leverandør, og\nc) ansvarsfordeling og bistand ved overføring til ny leverandør.\nK-6.2 Leverandøren bør gjennomføre migreringen fra dagens løsning uten nedetid for kritiske fagsystemer i\nkommunens åpningstid (08:00–15:30).\nHålandsvik kommune · Saksnr. 2026/1184 · Bilag 1 Kravspesifikasjon Side 3",
+      "structure_map": [
+        {
+          "reference": "Støttedokument – side 1",
+          "text": "BILAG 1\nKravspesifikasjon\nSkyplattform og drift av kommunale fagsystemer · Hålandsvik kommune · Saksnr.\n2026/1184\n1 Innledning\nDette bilaget beskriver kommunens krav til leveransen. Alle krav har en unik krav-ID på formen K-x.y eller\nK-x.y.z. Krav formulert med «skal» er minstekrav; manglende oppfyllelse av et minstekrav medfører\navvisning av tilbudet. Krav formulert med «bør» evalueres etter tildelingskriteriene i Bilag 2.\nLeverandøren skal besvare hvert krav i tilbudets kravsvar med en konkret beskrivelse av hvordan kravet\noppfylles. Tekst uten krav-ID er bakgrunn og veiledning.\n2 Generelle krav\nK-2.1 Leverandøren skal ha et styringssystem for informasjonssikkerhet som er sertifisert etter ISO/IEC\n27001:2022. Gyldig sertifikat skal legges ved tilbudet.\nK-2.2 Leverandøren bør ha minst tre referanseprosjekter fra de siste fem årene der leverandøren har driftet\nskybaserte fagsystemer for kommuner eller fylkeskommuner med mer enn 500 brukere.\nK-2.3 Leverandøren skal utpeke en navngitt kundeansvarlig og en teknisk kontaktperson som begge\nbehersker norsk muntlig og skriftlig.\n3 Plattform og arkitektur\nKommunen ønsker en standardisert skyplattform med tydelig ansvarsdeling mellom leverandør og\nkommune. Leverandøren står fritt til å velge offentlig skyplattform, så lenge kravene under er oppfylt.\nKravene i kapittel 3 er samlet i én tabell som dekker underkapitlene 3.1 Hosting og dataplassering, 3.2\nNettverk og tilkobling og 3.3 Driftssenter og personell.\nVed vurderingen av kapittel 3 vil kommunen legge vekt på robusthet, enkel forvaltning og at løsningen kan\nutvides til Nordre Fjære kommune uten ny arkitektur. Kommunen har i dag om lag 1 150 brukere og forventer\nen vekst på inntil 5 % per år i kontraktsperioden.\nTabell 3-1 Krav til plattform, nettverk og driftssenter\nKrav-ID Type Kravtekst\nK-3.1.1 Minstekrav Alle kundedata, inkludert sikkerhetskopier og logger, skal lagres og behandles i datasentre\ninnenfor EØS.\nK-3.1.2 Minstekrav Plattformen skal driftes fra minst to geografisk adskilte datasentre med en avstand på minst\n30 km mellom primær- og sekundærlokasjon, slik at bortfall av ett datasenter ikke medfører\ntap av data.\nK-3.1.3 Evalueres Leverandøren bør tilby lagring i datasentre i Norge for særlige kategorier av\npersonopplysninger, uten tillegg i pris.\nK-3.1.4 Evalueres Plattformen bør drives med minst 90 % fornybar energi, dokumentert med\nopprinnelsesgarantier eller tilsvarende.\nK-3.2.1 Minstekrav Leverandøren skal etablere kryptert forbindelse (IPsec VPN eller privat linje) mellom\nkommunens nett i Hålandsvik rådhus\nog skyplattformen, med en båndbredde på minst 1 Gbit/s.\nK-3.2.2 Minstekrav All administrativ tilgang til plattformen skal skje med flerfaktorautentisering via et eget\nadministrasjonsnett som er logisk adskilt fra brukertrafikken.\nHålandsvik kommune · Saksnr. 2026/1184 · Bilag 1 Kravspesifikasjon Side 1"
+        },
+        {
+          "reference": "Støttedokument – side 2",
+          "text": "Krav-ID Type Kravtekst\nK-3.2.3 Evalueres Leverandøren bør støtte IPv6 i hele plattformen innen 12 måneder etter\nkontraktsinngåelse.\nK-3.3.1 Minstekrav Leverandørens driftssenter skal være bemannet 24 timer i døgnet, 7 dager i uken, og ligge\ninnenfor EØS.\nK-3.3.2 Minstekrav Personell med administrativ tilgang til kommunens miljø skal ha levert politiattest som ikke\ner eldre enn tre måneder ved tiltredelse.\nK-3.3.3 Evalueres Leverandøren bør stille med et fast team på minst fire navngitte driftsressurser for\nHålandsvik kommune, hvorav minst én har sertifisering på ekspertnivå innen den tilbudte\nskyplattformen.\n4 Drift, beredskap og gjenoppretting\nBakgrunn\nUnder den forrige driftsavtalen med Fjellnett Drift AS (2019–2025) skulle sikkerhetskopier tas ut på bånd\nhver fredag og fraktes til kommunens serverrom på Kvernhusbakken, og leverandøren måtte gjenopprette\ndata manuelt fra bånd ved behov. Ordningen ble avviklet i februar 2025 og videreføres ikke.\n4.1 Tjenestenivå\nKrav-ID Type Kravtekst\nK-4.1.1 Minstekrav Tilgjengeligheten for kritiske fagsystemer (Gerica, Visma Flyt Skole og Acos WebSak) skal\nvære minst 99,8 % per måned, målt i tidsrommet 06:00–22:00 alle dager.\nK-4.1.2 Minstekrav Leverandøren skal gjenopprette kritiske fagsystemer innen 8 timer (RTO) etter en alvorlig\nhendelse, med et maksimalt datatap på 1 time (RPO).\nK-4.1.3 Evalueres Leverandøren bør levere en månedlig tjenestenivårapport med trendanalyse og forslag til\nforbedringstiltak innen femte virkedag i påfølgende måned.\n4.2 Hendelseshåndtering\nFølgende krav gjelder for håndtering av hendelser i hele kontraktsperioden:\nK-4.2.1 Kritiske hendelser skal besvares innen 15 minutter hele døgnet, og kommunens IT-vakt skal varsles\npå telefon innen 30 minutter.\nK-4.2.2 Leverandøren skal kunne stille med tekniker fysisk på Hålandsvik rådhus innen 4 timer ved kritiske\nhendelser, hele døgnet.\nK-4.2.3 Leverandøren bør gjennomføre en felles beredskapsøvelse med kommunen minst én gang per år,\ninkludert full gjenoppretting av minst ett kritisk fagsystem fra sikkerhetskopi.\n5 Sikkerhet og personvern\nKommunen behandler helseopplysninger, opplysninger om barn og andre særlige kategorier av\npersonopplysninger. Kommunen er behandlingsansvarlig og leverandøren databehandler.\nK-5.1 Leverandøren skal inngå databehandleravtale med kommunen i tråd med personvernforordningen\nartikkel 28, basert på kommunens mal i Bilag 5.\nK-5.2 Sikkerhetsbrudd som berører personopplysninger skal meldes til kommunen uten ugrunnet opphold\nog senest 24 timer etter at leverandøren ble kjent med bruddet.\nK-5.3 Kommunen bør kunne forvalte egne krypteringsnøkler (kundestyrte nøkler) for lagring av særlige\nkategorier av personopplysninger.\nHålandsvik kommune · Saksnr. 2026/1184 · Bilag 1 Kravspesifikasjon Side 2"
+        },
+        {
+          "reference": "Støttedokument – side 3",
+          "text": "6 Overgang og exit\nK-6.1 Leverandøren skal levere en exitplan senest 3 måneder etter kontraktsinngåelse. Exitplanen skal\nminst omfatte:\na) eksport av alle data i åpne, dokumenterte formater,\nb) tidsplan for tilbakeføring til kommunen eller ny leverandør, og\nc) ansvarsfordeling og bistand ved overføring til ny leverandør.\nK-6.2 Leverandøren bør gjennomføre migreringen fra dagens løsning uten nedetid for kritiske fagsystemer i\nkommunens åpningstid (08:00–15:30).\nHålandsvik kommune · Saksnr. 2026/1184 · Bilag 1 Kravspesifikasjon Side 3"
+        }
+      ]
+    },
+    {
+      "key": "halandsvik-03",
+      "source_file": "test-data/tenders/halandsvik-2026/documents/03_Bilag_2_Evaluering_og_tildeling_Halandsvik_kommune.docx",
+      "source_sha256": "6520ad2ec86e19f28f731b9f7df538b9f2d51d9b2e50e25d2badc2848c85833e",
+      "parser": "docx-xml",
+      "role": "supporting_document",
+      "supporting_subtype": null,
+      "title": "03 Bilag 2 Evaluering og tildeling Halandsvik kommune",
+      "file_name": "03_Bilag_2_Evaluering_og_tildeling_Halandsvik_kommune.docx",
+      "file_format": "docx",
+      "raw_text": "Bilag 2 Evaluering og tildeling\n\nSkyplattform og drift av kommunale fagsystemer · Hålandsvik kommune · Saksnr. 2026/1184\n\n1 Tildelingskriterier og vekter\n\nKontrakten tildeles leverandøren med det tilbudet som har beste forhold mellom pris og kvalitet, vurdert etter kriteriene i tabellen under. Vektene summerer seg til 100 %.\n\nTabell 1\nRad 1: Tildelingskriterium | Vekt | Dokumentasjon og vurdering\nRad 2: 1 Pris | 40 % | Samlet evaluert pris for tre år basert på prisskjemaet i Bilag 3.\nRad 3: 2 Kvalitet | 35 % | Underkriterium 2.1 Arkitektur og sikkerhet (20 %) og underkriterium 2.2 Drift, beredskap og tjenestenivå (15 %). Besvarelsen av bør-kravene K-3.1.3, K-3.2.3, K-3.3.3, K-4.1.3, K-4.2.3, K-5.3 og K-6.2 inngår.\nRad 4: 3 Gjennomføring og kompetanse | 15 % | Plan for overgang, CV-er for nøkkelpersonell og bør-kravet K-2.2.\nRad 5: 4 Miljø og bærekraft | 10 % | Dokumentert energikilde og klimatiltak, herunder bør-kravet K-3.1.4.\n\n2 Evalueringsmodell\n\nHvert kriterium gis poeng fra 0 til 10. Pris evalueres etter en lineær modell: Laveste evaluerte pris gis 10 poeng. Øvrige tilbud gis poeng etter formelen Poeng = 10 − ((Tilbudt pris − Laveste pris) / Laveste pris) × 10. Negative poeng settes til 0.\n\nFor kvalitet, gjennomføring og miljø gis 10 poeng til den besvarelsen som best oppfyller kommunens behov. Øvrige besvarelser gis poeng relativt til denne. Vektet poengsum beregnes som summen av poeng multiplisert med vekt.\n\n3 Avvisning og forbehold\n\nTilbud som ikke oppfyller ett eller flere minstekrav (skal-krav) i Bilag 1, vil bli avvist. Bør-krav er ikke absolutte, men manglende eller svak oppfyllelse gir lavere poeng på det aktuelle tildelingskriteriet.",
+      "structure_map": [
+        {
+          "reference": "Støttedokument – tekstblokk 1",
+          "text": "Bilag 2 Evaluering og tildeling\nSkyplattform og drift av kommunale fagsystemer · Hålandsvik kommune · Saksnr. 2026/1184\n1 Tildelingskriterier og vekter\nKontrakten tildeles leverandøren med det tilbudet som har beste forhold mellom pris og kvalitet, vurdert etter kriteriene i tabellen under. Vektene summerer seg til 100 %."
+        },
+        {
+          "reference": "Støttedokument – tabell 1",
+          "text": "Rad 1: Tildelingskriterium | Vekt | Dokumentasjon og vurdering\nRad 2: 1 Pris | 40 % | Samlet evaluert pris for tre år basert på prisskjemaet i Bilag 3.\nRad 3: 2 Kvalitet | 35 % | Underkriterium 2.1 Arkitektur og sikkerhet (20 %) og underkriterium 2.2 Drift, beredskap og tjenestenivå (15 %). Besvarelsen av bør-kravene K-3.1.3, K-3.2.3, K-3.3.3, K-4.1.3, K-4.2.3, K-5.3 og K-6.2 inngår.\nRad 4: 3 Gjennomføring og kompetanse | 15 % | Plan for overgang, CV-er for nøkkelpersonell og bør-kravet K-2.2.\nRad 5: 4 Miljø og bærekraft | 10 % | Dokumentert energikilde og klimatiltak, herunder bør-kravet K-3.1.4.",
+          "kind": "table",
+          "parser": "docx-xml",
+          "table_index": 1,
+          "columns": [
+            "Tildelingskriterium",
+            "Vekt",
+            "Dokumentasjon og vurdering"
+          ]
+        },
+        {
+          "reference": "Støttedokument – tabell 1, rad 1",
+          "text": "Rad 1: Tildelingskriterium | Vekt | Dokumentasjon og vurdering",
+          "kind": "table",
+          "parser": "docx-xml",
+          "table_index": 1,
+          "row_index": 1,
+          "columns": [
+            "Tildelingskriterium",
+            "Vekt",
+            "Dokumentasjon og vurdering"
+          ],
+          "cells": {
+            "Tildelingskriterium": "Tildelingskriterium",
+            "Vekt": "Vekt",
+            "Dokumentasjon og vurdering": "Dokumentasjon og vurdering"
+          }
+        },
+        {
+          "reference": "Støttedokument – tabell 1, rad 2",
+          "text": "Rad 2: 1 Pris | 40 % | Samlet evaluert pris for tre år basert på prisskjemaet i Bilag 3.",
+          "kind": "table",
+          "parser": "docx-xml",
+          "table_index": 1,
+          "row_index": 2,
+          "columns": [
+            "Tildelingskriterium",
+            "Vekt",
+            "Dokumentasjon og vurdering"
+          ],
+          "cells": {
+            "Tildelingskriterium": "1 Pris",
+            "Vekt": "40 %",
+            "Dokumentasjon og vurdering": "Samlet evaluert pris for tre år basert på prisskjemaet i Bilag 3."
+          }
+        },
+        {
+          "reference": "Støttedokument – tabell 1, rad 3",
+          "text": "Rad 3: 2 Kvalitet | 35 % | Underkriterium 2.1 Arkitektur og sikkerhet (20 %) og underkriterium 2.2 Drift, beredskap og tjenestenivå (15 %). Besvarelsen av bør-kravene K-3.1.3, K-3.2.3, K-3.3.3, K-4.1.3, K-4.2.3, K-5.3 og K-6.2 inngår.",
+          "kind": "table",
+          "parser": "docx-xml",
+          "table_index": 1,
+          "row_index": 3,
+          "columns": [
+            "Tildelingskriterium",
+            "Vekt",
+            "Dokumentasjon og vurdering"
+          ],
+          "cells": {
+            "Tildelingskriterium": "2 Kvalitet",
+            "Vekt": "35 %",
+            "Dokumentasjon og vurdering": "Underkriterium 2.1 Arkitektur og sikkerhet (20 %) og underkriterium 2.2 Drift, beredskap og tjenestenivå (15 %). Besvarelsen av bør-kravene K-3.1.3, K-3.2.3, K-3.3.3, K-4.1.3, K-4.2.3, K-5.3 og K-6.2 inngår."
+          }
+        },
+        {
+          "reference": "Støttedokument – tabell 1, rad 4",
+          "text": "Rad 4: 3 Gjennomføring og kompetanse | 15 % | Plan for overgang, CV-er for nøkkelpersonell og bør-kravet K-2.2.",
+          "kind": "table",
+          "parser": "docx-xml",
+          "table_index": 1,
+          "row_index": 4,
+          "columns": [
+            "Tildelingskriterium",
+            "Vekt",
+            "Dokumentasjon og vurdering"
+          ],
+          "cells": {
+            "Tildelingskriterium": "3 Gjennomføring og kompetanse",
+            "Vekt": "15 %",
+            "Dokumentasjon og vurdering": "Plan for overgang, CV-er for nøkkelpersonell og bør-kravet K-2.2."
+          }
+        },
+        {
+          "reference": "Støttedokument – tabell 1, rad 5",
+          "text": "Rad 5: 4 Miljø og bærekraft | 10 % | Dokumentert energikilde og klimatiltak, herunder bør-kravet K-3.1.4.",
+          "kind": "table",
+          "parser": "docx-xml",
+          "table_index": 1,
+          "row_index": 5,
+          "columns": [
+            "Tildelingskriterium",
+            "Vekt",
+            "Dokumentasjon og vurdering"
+          ],
+          "cells": {
+            "Tildelingskriterium": "4 Miljø og bærekraft",
+            "Vekt": "10 %",
+            "Dokumentasjon og vurdering": "Dokumentert energikilde og klimatiltak, herunder bør-kravet K-3.1.4."
+          }
+        },
+        {
+          "reference": "Støttedokument – tekstblokk 2",
+          "text": "2 Evalueringsmodell\nHvert kriterium gis poeng fra 0 til 10. Pris evalueres etter en lineær modell: Laveste evaluerte pris gis 10 poeng. Øvrige tilbud gis poeng etter formelen Poeng = 10 − ((Tilbudt pris − Laveste pris) / Laveste pris) × 10. Negative poeng settes til 0.\nFor kvalitet, gjennomføring og miljø gis 10 poeng til den besvarelsen som best oppfyller kommunens behov. Øvrige besvarelser gis poeng relativt til denne. Vektet poengsum beregnes som summen av poeng multiplisert med vekt.\n3 Avvisning og forbehold\nTilbud som ikke oppfyller ett eller flere minstekrav (skal-krav) i Bilag 1, vil bli avvist. Bør-krav er ikke absolutte, men manglende eller svak oppfyllelse gir lavere poeng på det aktuelle tildelingskriteriet."
+        }
+      ]
+    },
+    {
+      "key": "halandsvik-04",
+      "source_file": "test-data/tenders/halandsvik-2026/documents/04_Losningsnotat_Atea_Halandsvik.docx",
+      "source_sha256": "9e0bfe4ad84c64d827788d2d992e84ec0354e51d5043b6513928da763d72583b",
+      "parser": "docx-xml",
+      "role": "primary_solution_document",
+      "supporting_subtype": null,
+      "title": "04 Losningsnotat Atea Halandsvik",
+      "file_name": "04_Losningsnotat_Atea_Halandsvik.docx",
+      "file_format": "docx",
+      "raw_text": "Løsningsnotat – Atea, utkast til tilbud til Hålandsvik kommune\n\nInternt arbeidsdokument for tilbudsteamet. Grunnlag for kravsvar til Bilag 1.\n\nPlattform og dataplassering\n\nAtea tilbyr drift på Microsoft Azure i regionene Norway East (Oslo) og Norway West (Stavanger). Alle kundedata, sikkerhetskopier og logger lagres i Norge. Avstanden mellom regionene er over 300 km. Lagring i Norge inngår i fastprisen.\n\nSertifisering og personell\n\nAtea er sertifisert etter ISO/IEC 27001:2022 (sertifikat nr. NO-ISMS-48211, gyldig til 2028). Kundeansvarlig er Ingrid Sæther og teknisk kontaktperson er Bjørn Østvik; begge er norskspråklige. Alt driftspersonell leverer politiattest ved tiltredelse. Fast team: fire navngitte driftsressurser, hvorav to har Azure Solutions Architect Expert.\n\nReferanser\n\nAtea kan vise til to relevante referanseprosjekter fra de siste fem årene: Vestre Lia kommune (1 400 brukere) og Søre Bø interkommunale IKT (900 brukere).\n\nDriftssenter\n\nAtea driftssenter i Oslo er bemannet døgnet rundt alle dager, med reservesenter i Kraków (Polen).\n\nTjenestenivå og gjenoppretting\n\nTilgjengelighet for kritiske fagsystemer: 99,8 % per måned i tidsrommet 06:00–22:00. Gjenopprettingstid for kritiske fagsystemer er 4 timer (RTO), og maksimalt datatap er 15 minutter (RPO). Månedlig tjenestenivårapport med trendanalyse leveres innen femte virkedag.\n\nHendelseshåndtering\n\nKritiske hendelser besvares innen 15 minutter døgnet rundt, og kommunens IT-vakt varsles på telefon innen 30 minutter. Forbehold: Atea har ikke lokal tilstedeværelse i Hålandsvik. Fysisk oppmøte på rådhuset kan tilbys innen 4 timer på hverdager kl. 07:00–17:00; utenom dette tidsrommet er oppmøtetiden inntil 8 timer. Årlig beredskapsøvelse med full gjenoppretting av ett fagsystem inngår.\n\nNettverk\n\nAtea etablerer IPsec VPN med 1 Gbit/s mellom rådhuset og Azure, og all administrativ tilgang skjer med flerfaktorautentisering via et separat administrasjonsnett. IPv6 er ikke planlagt i kontraktsperioden.\n\nKryptering og personvern\n\nData krypteres med plattformstyrte nøkler. Kundestyrte nøkler (Azure Key Vault Managed HSM) inngår ikke i fastprisen og prises som tilleggsopsjon. Atea signerer kommunens databehandleravtale og varsler sikkerhetsbrudd innen 24 timer.\n\nEnergi\n\nMicrosofts datasentre i Norge drives med 100 % fornybar energi, dokumentert med opprinnelsesgarantier.\n\nOvergang og exit\n\nExitplan med dataeksport i åpne formater, tidsplan og ansvarsfordeling leveres innen 3 måneder etter kontraktsinngåelse. Migreringen gjennomføres i helgevinduer, slik at kritiske fagsystemer ikke har nedetid i kommunens åpningstid.",
+      "structure_map": [
+        {
+          "reference": "Løsningsdokument – tekstblokk 1",
+          "text": "Løsningsnotat – Atea, utkast til tilbud til Hålandsvik kommune\nInternt arbeidsdokument for tilbudsteamet. Grunnlag for kravsvar til Bilag 1.\nPlattform og dataplassering\nAtea tilbyr drift på Microsoft Azure i regionene Norway East (Oslo) og Norway West (Stavanger). Alle kundedata, sikkerhetskopier og logger lagres i Norge. Avstanden mellom regionene er over 300 km. Lagring i Norge inngår i fastprisen.\nSertifisering og personell\nAtea er sertifisert etter ISO/IEC 27001:2022 (sertifikat nr. NO-ISMS-48211, gyldig til 2028). Kundeansvarlig er Ingrid Sæther og teknisk kontaktperson er Bjørn Østvik; begge er norskspråklige. Alt driftspersonell leverer politiattest ved tiltredelse. Fast team: fire navngitte driftsressurser, hvorav to har Azure Solutions Architect Expert.\nReferanser\nAtea kan vise til to relevante referanseprosjekter fra de siste fem årene: Vestre Lia kommune (1 400 brukere) og Søre Bø interkommunale IKT (900 brukere).\nDriftssenter\nAtea driftssenter i Oslo er bemannet døgnet rundt alle dager, med reservesenter i Kraków (Polen)."
+        },
+        {
+          "reference": "Løsningsdokument – tekstblokk 2",
+          "text": "Tjenestenivå og gjenoppretting\nTilgjengelighet for kritiske fagsystemer: 99,8 % per måned i tidsrommet 06:00–22:00. Gjenopprettingstid for kritiske fagsystemer er 4 timer (RTO), og maksimalt datatap er 15 minutter (RPO). Månedlig tjenestenivårapport med trendanalyse leveres innen femte virkedag.\nHendelseshåndtering\nKritiske hendelser besvares innen 15 minutter døgnet rundt, og kommunens IT-vakt varsles på telefon innen 30 minutter. Forbehold: Atea har ikke lokal tilstedeværelse i Hålandsvik. Fysisk oppmøte på rådhuset kan tilbys innen 4 timer på hverdager kl. 07:00–17:00; utenom dette tidsrommet er oppmøtetiden inntil 8 timer. Årlig beredskapsøvelse med full gjenoppretting av ett fagsystem inngår.\nNettverk\nAtea etablerer IPsec VPN med 1 Gbit/s mellom rådhuset og Azure, og all administrativ tilgang skjer med flerfaktorautentisering via et separat administrasjonsnett. IPv6 er ikke planlagt i kontraktsperioden.\nKryptering og personvern\nData krypteres med plattformstyrte nøkler. Kundestyrte nøkler (Azure Key Vault Managed HSM) inngår ikke i fastprisen og prises som tilleggsopsjon. Atea signerer kommunens databehandleravtale og varsler sikkerhetsbrudd innen 24 timer.\nEnergi\nMicrosofts datasentre i Norge drives med 100 % fornybar energi, dokumentert med opprinnelsesgarantier."
+        },
+        {
+          "reference": "Løsningsdokument – tekstblokk 3",
+          "text": "Overgang og exit\nExitplan med dataeksport i åpne formater, tidsplan og ansvarsfordeling leveres innen 3 måneder etter kontraktsinngåelse. Migreringen gjennomføres i helgevinduer, slik at kritiske fagsystemer ikke har nedetid i kommunens åpningstid."
+        }
+      ]
+    }
+  ]
+}

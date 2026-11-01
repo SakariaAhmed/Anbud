@@ -44,6 +44,20 @@ Browser DOM checks exercised the actual requirement workspace at 390px with no d
 
 Browser render metrics now correlate the first visible chat output to the server request trace, and register loading to the document trace. They are bounded, metadata-only client observations taken after paint frames, with cancellation and hidden-tab handling. Register load-to-render is not upload-to-ready and these measurements must not be added across unrelated navigation episodes.
 
+## Mixed-corpus gate and completed system scenario
+
+The frozen `4dc962f4` application passed the complete model-backed HTTP scenario: authentication, three document roles, encrypted storage round-trip, actual parsing/indexing/readiness, persisted register, dashboard counts, restricted excerpt reads with invented/stale/foreign evidence denied, guest-owned project/admin access, customer analysis, requirement generation, solution evaluation and streamed chat with its actual cited identity/quotation/revision fields reloaded from the database. This does not exercise live Entra or PDF/OCR through HTTP.
+
+A separate real HTTP/job/SQL selected-generation test then created a child artifact version from one selected row while preserving the other two answer lines byte for byte and retaining the complete immutable manifest and current source authority.
+
+The new `mixed-source-retrieval.v1` suite has 50 answerable cases and five missing IDs across the checked-in stress notes and SHA-256-bound PDF/DOCX parser snapshots of the fictional Hålandsvik tender. It measures original document/page/heading labels, follow-ups, hierarchical IDs, tables and amendments. It exposed a fixture subtype mismatch that caused memory fallback, lost explicit heading paths, and normalized PDF ledger wording that no longer matched a literal source span. The fixes preserve the source subtype, explicit heading path and actual line-start requirement spans with page-marker provenance; inline prose cross-references are not promoted to requirement rows.
+
+The free SQL replay now reports zero provider calls, zero missing vectors and no memory fallback. Supplement recall@10 is 48/50 (96%), MRR 0.922; stress is 18/20, follow-ups 5/5, tender IDs 23/23 rank one, amendments 2/2 rank one and missing IDs 5/5 correctly marked weak. The original 116-case gate remains green with 60/60 ID rank one, conceptual recall 30/36 and unchanged holdout recall 20/20. The conceptual release threshold remains unmet. Regression floors are frozen separately by suite; no held-out cases were edited.
+
+At 390px, actual DOM checks exercised search (K-1.3 leaves one row), j navigation and e opening the row editor with focus in the answer. The workspace has no document-level horizontal overflow. Screenshot tooling still times out; native browser access is unavailable. These DOM checks do not replace visual inspection on real mobile hardware.
+
+Local development-server telemetry is a small-sample baseline, including failed investigation runs: six measured first-visible chat events had p50 2,347 ms/p95 4,236 ms; four completed provider usage records had 49.2% weighted cached input tokens. The aggregate cache target above 50% is not met by that sample. TXT ingestion total had 15 observations, p50 392 ms/p95 6,571 ms. Generation is still slow: three analysis phases measured p50 82,634 ms and three evaluation phases p50 108,787 ms. No production latency improvement or representative PDF timing is established.
+
 ## Migration and rollback notes
 
 Apply `20261101210000_norwegian_hybrid_retrieval.sql` with `psql -f` in autocommit mode: its batched backfill and concurrent index cannot run with `--single-transaction`. If a previous concurrent index build left an invalid index, follow the migration's explicit recovery instruction before rerunning. The baseline is only for disposable databases.
@@ -70,9 +84,9 @@ Exact-ID rank 1 measures the complete chat retrieval path including the authorit
 
 | # | Remaining work |
 | --- | --- |
-| 1 | Extend labelled cases across stress and answer-key corpora, including pages/headings, amendments, follow-ups and unanswerable questions; budgeted groundedness/citation release tier. |
+| 1 | Mixed stress/PDF/DOCX case gate is implemented; budgeted groundedness/citation release tier and broader conceptual/unanswerable coverage remain. |
 | 2 | Evaluate subquery fusion and Norwegian indexing on the expanded versioned corpus, then measure reranker value. |
-| 3 | Persisted register reads, legacy fallback and source isolation are implemented; extend the SQL replay gate to exercise persisted-register storage. |
+| 3 | Persisted register reads, legacy fallback/source isolation and actual encrypted-register SQL replay are implemented; broaden ambiguous/repeated-ID fixtures. |
 | 4 | Measure abstention for unanswerable conceptual questions and missing exact IDs; preserve whole-document answering. |
 | 5 | Explicit artifact-reference guarantees and section-level discovery over the complete current collection. |
 | 6 | Extend the evidence contract/pre-save checks to requirement responses, evaluation, executive summary and Bilag 1; locator and quote integrity across all output types. |
@@ -86,7 +100,7 @@ Exact-ID rank 1 measures the complete chat retrieval path including the authorit
 | 14 | Browser/system verification of enhancement-only failure and recovery. |
 | 15 | Verify measured counts and indeterminate phases across all affected screens. |
 | 16 | Requirement/evaluation drawers are wired; finish Bilag sources and desktop/mobile claim-verification timing. |
-| 17 | Review UI, row editing and selected regeneration with transactional parent protection are implemented; browser verification at 390px, confidence handling and workflow timing remain. |
+| 17 | Review UI, row editing, selected regeneration, transactional parent/source protection and 390px DOM/keyboard checks are implemented; confidence handling, visual checks and review timing remain. |
 | 18 | Derived follow-up view implemented; browser verification and evaluated-criterion mapping remain. |
 
 No new search service, orchestration framework or model/provider migration is planned. Keep v3's complete evidence context intact. Greptile remains the accepted authentication/review gap from the preceding task; final review uses CodeRabbit and the configured council.

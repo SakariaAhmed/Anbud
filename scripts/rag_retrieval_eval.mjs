@@ -33,6 +33,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { supplementalRetrievalFixtures } from "./rag_supplemental_fixtures.mjs";
 import { scoreRetrievalCases } from "./rag_eval.mjs";
 import { evaluateRetrievalGate } from "./rag_retrieval_gate.mjs";
 
@@ -58,6 +59,7 @@ const recordEmbeddings = args.includes("--record-embeddings");
 const useStoredEmbeddings = useLiveEmbeddings || useRecordedEmbeddings;
 const embeddingsFile = path.resolve(option("--embedding-fixtures") ?? path.join(repositoryRoot, "test-data/rag-retrieval/embeddings.json"));
 const withoutStructure = args.includes("--without-structure");
+const extendedSuite = args.includes("--extended-suite");
 if ((useModelRerank || useLiveEmbeddings || recordEmbeddings) && !process.env.OPENAI_API_KEY) {
   throw new Error("--rerank=model and --embeddings=live need OPENAI_API_KEY.");
 }
@@ -126,9 +128,9 @@ const { extractExactRetrievalTerms } = app(path.join(frontendRoot, "lib/server/a
 process.env.RAG_QUERY_REWRITE = "off";
 process.env.RAG_MODEL_RERANK = useModelRerank ? "on" : "off";
 const { buildProjectChatRetrievalRequest } = app(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
-const retrievalRequest = async (question) => buildProjectChatRetrievalRequest
+const retrievalRequest = async (question, previousQuestion) => buildProjectChatRetrievalRequest
   ? (await buildProjectChatRetrievalRequest({
-      question, recentMessages: [], customerDocument: documents[0], solutionDocument: documents[1],
+      question, recentMessages: previousQuestion ? [{ role: "user", content: previousQuestion }] : [], customerDocument: documents[0], solutionDocument: documents[1],
       supportingDocuments: documents.slice(2),
     })).request
   : { query: question, projectId, documents, exactTerms: extractExactRetrievalTerms(question), limit: 12 };
@@ -169,7 +171,9 @@ const expectation = (requirementId) => {
   if (!requirement) throw new Error(`Ukjent krav i eval: ${requirementId}`);
   return { expected_requirement_id: requirementId, expected_texts: [requirement.text.slice(0, 70)] };
 };
-const cases = [
+const supplementary = extendedSuite ? supplementalRetrievalFixtures(repositoryRoot, documentUuid, documents.length) : null;
+if (supplementary) documents.push(...supplementary.documents.map(document => withoutStructure ? { ...document, structure_map: [] } : document));
+const cases = supplementary?.cases ?? [
   ...[...requirements.keys()].map((id) => ({ kind: "id_lookup", question: `Hva krever ${id}?`, ...expectation(id) })),
   ...conceptual.questions.map((item) => ({ kind: "conceptual", question: item.question, ...expectation(item.expected_requirement_id) })),
   ...heldOut.questions.map((item) => ({ kind: "held_out", question: item.question, ...expectation(item.expected_requirement_id) })),
@@ -188,23 +192,29 @@ try {
 const fixtureStats = useRecordedEmbeddings ? require("./rag_embedding_fixtures.cjs").fixtureStats(embeddingsFile) : null;
 if (useRecordedEmbeddings && (!fixtureStats || fixtureStats.missingInputs)) throw new Error("Recorded embedding replay was incomplete; lexical fallback cannot pass this gate.");
 if (live && results.some(row => !row.used_hybrid_search)) throw new Error("Stored retrieval did not execute hybrid search for every case.");
+if (live && results.some(row => row.used_memory_fallback)) throw new Error("Stored retrieval used an in-memory fallback; source metadata or stored chunks are incomplete.");
 
 async function runCase(item) {
   const startedAt = Date.now();
-  const request = await retrievalRequest(item.question);
+  const request = await retrievalRequest(item.question, item.previous_question);
   const retrieval = await retrieveDocumentSnippetsWithMetadata(request);
   results.push({
     ...item,
     retrieval_latency_ms: Date.now() - startedAt,
     used_hybrid_search: retrieval.telemetry.usedHybridSearch,
     used_broadened_search: retrieval.telemetry.usedBroadenedSearch ?? false,
+    used_memory_fallback: retrieval.telemetry.usedMemoryFallback ?? false,
     used_model_rerank: retrieval.telemetry.usedModelRerank ?? false,
+    retrieval_sufficient: retrieval.telemetry.quality.sufficient,
+    missing_requirement_ids: retrieval.telemetry.missingRequirementIds ?? [],
     context_chars_top5: retrieval.snippets.slice(0, 5).reduce((sum, snippet) => sum + snippet.text.length, 0),
     retrieved: retrieval.snippets.map((snippet) => ({
       source_id: snippet.sourceId,
       document_title: snippet.documentTitle,
       reference: snippet.reference,
       heading_path: snippet.headingPath,
+      page_start: snippet.pageStart,
+      page_end: snippet.pageEnd,
       text: snippet.text,
     })),
   });
@@ -231,6 +241,7 @@ function summary(rows) {
 }
 
 const report = {
+  suite: supplementary?.version ?? "complex-tender-116.v1",
   frontend_root: path.relative(repositoryRoot, frontendRoot) || ".",
   documents: documents.length,
   limit,
@@ -240,6 +251,7 @@ const report = {
   embedding_fixture: fixtureStats,
   request: buildProjectChatRetrievalRequest ? "project_chat" : "question_only",
   cases_using_broadened_search: results.filter((row) => row.used_broadened_search).length,
+  cases_using_memory_fallback: results.filter(row => row.used_memory_fallback).length,
   ...(live ? {
     stored_chunks: live.chunks,
     embedded_chunks: live.embeddedChunks,
@@ -248,7 +260,14 @@ const report = {
     persisted_register_reads: require("./rag_retrieval_eval_store.cjs").registerReadCount(),
   } : {}),
   results: {
-    all: summary(results),
+    all: summary(results.filter(row => !row.expected_abstention)),
+    ...(supplementary ? {
+      stress: summary(results.filter(row => row.kind === "stress")),
+      follow_up: summary(results.filter(row => row.kind === "follow_up")),
+      tender_ids: summary(results.filter(row => row.kind === "tender_ids")),
+      amendment: summary(results.filter(row => row.kind === "amendment")),
+      missing_id: { cases: results.filter(row => row.kind === "missing_id").length, correct_low_evidence: results.filter(row => row.kind === "missing_id" && row.retrieval_sufficient === false && row.missing_requirement_ids.includes(row.expected_requirement_id)).length },
+    } : {}),
     id_lookup: summary(results.filter((row) => row.kind === "id_lookup")),
     conceptual: summary(results.filter((row) => row.kind === "conceptual")),
     held_out: summary(results.filter((row) => row.kind === "held_out")),
@@ -260,7 +279,7 @@ if (databaseUrl && !useStoredEmbeddings) {
 }
 if (outputPath) writeFileSync(outputPath, `${JSON.stringify(results, null, 2)}\n`);
 if (args.includes("--gate")) {
-  report.gate = evaluateRetrievalGate(results, args.includes("--release-gate") ? "release" : useRecordedEmbeddings ? "recorded" : useStoredEmbeddings ? "live" : "offline");
+  report.gate = evaluateRetrievalGate(results, extendedSuite ? "extended" : args.includes("--release-gate") ? "release" : useRecordedEmbeddings ? "recorded" : useStoredEmbeddings ? "live" : "offline");
   if (!report.gate.passed) process.exitCode = 2;
 }
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -322,7 +341,7 @@ async function storeChunksWithLiveEmbeddings() {
       storeRequirementRegister(document, encryptJson({ documentId: document.id, projectId: document.project_id, sourceRevision: document.chunk_source_revision, requirementRegister: { version: 1, rows } }));
       await replaceProjectDocumentChunks({
         documentId: document.id, projectId: document.project_id, role: document.role,
-        supportingSubtype: null, title: document.title, fileName: document.file_name,
+        supportingSubtype: document.supporting_subtype ?? null, title: document.title, fileName: document.file_name,
         fileFormat: document.file_format, rawText: document.raw_text,
         structureMap: document.structure_map, sourceRevision: 0,
       });
@@ -357,7 +376,7 @@ function measureKeywordSearch() {
     for (const document of documents) {
       await chunksModule.replaceProjectDocumentChunks({
         documentId: document.id, projectId: document.project_id, role: document.role,
-        supportingSubtype: null, title: document.title, fileName: document.file_name,
+        supportingSubtype: document.supporting_subtype ?? null, title: document.title, fileName: document.file_name,
         fileFormat: document.file_format, rawText: document.raw_text,
         structureMap: document.structure_map, sourceRevision: 0,
       });
