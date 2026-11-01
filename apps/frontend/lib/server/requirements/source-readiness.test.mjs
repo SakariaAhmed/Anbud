@@ -1655,6 +1655,55 @@ test("an explicit filename destination works without another requirement mention
   }
 });
 
+test("quoted destination titles and filenames retain precedence and unknown names fail", () => {
+  const registers = [
+    { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
+    { id: "third", title: "Bilag 3 Sikkerhetskrav", file_name: "Sikkerhetskrav.pdf", ids: ["R-1.1"] },
+  ];
+  for (const [open, close] of [["«", "»"], ["“", "”"], ['"', '"']]) {
+    for (const name of ["Bilag 3", "Bilag 3 Sikkerhetskrav", "Sikkerhetskrav.pdf"]) {
+      for (const phrase of [`legges til i ${open}${name}${close}`, `i ${open}${name}${close} legges til`]) {
+        const rows = correctedRegisterRows(`Nytt krav K-2.3 ${phrase}: «Leverandøren skal levere en exitplan.»`, registers);
+        assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, "third", phrase);
+      }
+    }
+    for (const name of ["Bilag 9", "Ukjent dokument", "Ukjent.pdf"]) {
+      assert.throws(() => correctedRegisterRows(`Nytt krav K-2.3 legges til i ${open}${name}${close}: «Leverandøren skal levere en exitplan.»`, registers), /K-2\.3.*entydig/u);
+    }
+  }
+});
+
+test("chapter, table and generic location references fall through to numeric ownership", () => {
+  for (const phrase of ["legges til i tabell 2 etter K-2.2", "legges til i kapittel 2", "legges til i kravspesifikasjonen", "i punkt 2.2", "legges til i avsnitt 2"]) {
+    const rows = correctedRegisterRows(`Nytt krav K-2.3 ${phrase}: «Leverandøren skal levere en exitplan.»`, [
+      { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
+      { id: "third", title: "Bilag 3", ids: ["R-1.1"] },
+    ]);
+    assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, "first", phrase);
+  }
+});
+
+test("quoted names remain opaque inside chapter locations and retain punctuation", () => {
+  const registers = [
+    { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
+    { id: "third", title: "Bilag 3", file_name: "Sikkerhetskrav.pdf", ids: ["R-1.1"] },
+    { id: "named", title: "Sikkerhet. Norge: Endelig", file_name: "Nye krav. Endelig.pdf", ids: ["S-1.1"] },
+  ];
+  for (const [phrase, expected] of [
+    ["legges til i kapittel 4 i «Bilag 3»", "third"],
+    ["legges til i dokumentet «Bilag 3»", "third"],
+    ["legges til i tabell 2 i «Sikkerhetskrav.pdf»", "third"],
+    ["legges til i «Sikkerhet. Norge: Endelig»", "named"],
+    ['legges til i dokumentet "Nye krav. Endelig.pdf"', "named"],
+  ]) {
+    const rows = correctedRegisterRows(`Nytt krav K-2.3 ${phrase}: «Leverandøren skal levere en exitplan.»`, registers);
+    assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, expected, phrase);
+  }
+  for (const phrase of ["legges til i vedlegget «Ukjent»", "legges til i «Ukjent: x»", "legges til i Sikkerhetsdokumentet", "legges til i «Bilag 3» og Bilag 1"]) {
+    assert.throws(() => correctedRegisterRows(`Nytt krav K-2.3 ${phrase}: «Leverandøren skal levere en exitplan.»`, registers), /K-2\.3.*entydig/u);
+  }
+});
+
 test("each addition in one correction paragraph keeps its own named register", () => {
   const rows = correctedRegisterRows("Krav K-2.1 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.» Nytt krav K-2.4 legges til i Bilag 1: «Leverandøren skal teste tilbakeføring.»", [
     { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
@@ -1662,6 +1711,18 @@ test("each addition in one correction paragraph keeps its own named register", (
   ]);
   assert.equal(rows.find(row => row.id === "K-2.3").documentId, "third");
   assert.equal(rows.find(row => row.id === "K-2.4").documentId, "first");
+});
+
+test("an unresolved addition cannot inherit the destination of an earlier addition", () => {
+  const explicit = "Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.»";
+  const unresolved = "Nytt krav Q-9.1 legges til: «Leverandøren skal dokumentere tilbakeføring.»";
+  const registers = [
+    { id: "first", title: "Bilag 1", ids: ["K-2.1"] },
+    { id: "third", title: "Bilag 3", ids: ["R-1.1"] },
+  ];
+  for (const correction of [unresolved, `${explicit}\n${unresolved}`, `${unresolved}\n${explicit}`]) {
+    assert.throws(() => correctedRegisterRows(correction, registers), /Q-9\.1.*entydig/u);
+  }
 });
 
 test("a shared numeric parent does not choose a register by row frequency", () => {

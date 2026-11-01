@@ -658,11 +658,28 @@ function explicitAdditionDestination(
   entry: RequirementLedgerEntry,
   documents: ProjectDocumentDetail[],
 ) {
-  const unquoted = (entry.sourceExcerpt ?? "")
-    .replace(/[«“"][^«»“”"]{1,1500}[»”"]/gu, "«»");
+  const excerpt = entry.sourceExcerpt ?? "";
+  const quotations = new Map<string, string>();
+  let quotePrefix = "__QUOTED_CORRECTION_";
+  while (excerpt.includes(quotePrefix)) quotePrefix = `_${quotePrefix}`;
+  const unquoted = excerpt.replace(/«[^»]*»|“[^”]*”|"(?:\\.|[^"\\])*"/gu, span => {
+    // Keep quotes opaque until the addition's destination phrase is isolated.
+    // Punctuation in document names must not split that phrase; requirement
+    // wording after its colon must never contribute a destination or an ID.
+    const token = `${quotePrefix}${quotations.size}__`;
+    quotations.set(token, span.slice(1, -1));
+    return token;
+  });
   const clauses = unquoted.split(/(?<=[.!?])\s+(?=[A-ZÆØÅ«])|\s+\|\s+|;\s*|(?=\bnytt\s+krav\s+[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-\d)/iu);
   const destinations = new Set<string>();
-  let explicit = false;
+  const resolveName = (name: string) => {
+    const exact = documents.filter(document => [document.title, document.file_name]
+      .some(value => normalizedDestinationName(value) === normalizedDestinationName(name)));
+    if (exact.length) return exact;
+    const attachments = [...new Set(attachmentNames(name))];
+    return attachments.length === 1 ? documents.filter(document => [document.title, document.file_name]
+      .some(value => attachmentNames(value).includes(attachments[0]))) : [];
+  };
   for (const clause of clauses) {
     const mention = requirementIdTokenPattern(normalizeRequirementId(entry.id), false).exec(clause);
     if (!mention) continue;
@@ -672,24 +689,29 @@ function explicitAdditionDestination(
       /^\s+i\s+(.+?)\s+(?:skal\s+)?(?:legges\s+til|tilføyes)\b/iu.exec(tail)?.[1] ??
       (namedAddition ? /^\s+i\s+(.+?)(?=\s*[:]|$)/iu.exec(tail)?.[1] : undefined);
     if (!phrase) continue;
-    explicit = true;
     const destinationName = phrase.split(/(?:,\s*|\s+)(?:jf\.?|jfr\.?|se)\s+/iu, 1)[0].trim();
-    const exact = documents.filter(document => [document.title, document.file_name]
-      .some(name => normalizedDestinationName(name) === normalizedDestinationName(destinationName)));
-    const attachments = [...new Set(attachmentNames(destinationName))];
-    const matched = exact.length ? exact : attachments.length === 1
-      ? documents.filter(document => [document.title, document.file_name]
-          .some(name => attachmentNames(name).includes(attachments[0])))
-      : [];
-    if (matched.length !== 1) {
-      throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Oppgi et entydig dokumentnavn i rettelsen.`);
+    const quotedNames = [...quotations].filter(([token]) => destinationName.includes(token));
+    const remainder = quotedNames.reduce((value, [token]) => value.replace(token, ""), destinationName);
+    const names = quotedNames.length
+      ? [...quotedNames.map(([, name]) => name), ...attachmentNames(remainder)]
+      : [destinationName];
+    for (const name of names) {
+      const matched = resolveName(name);
+      // A location without an explicit document name belongs to the register
+      // inferred from its IDs. Unknown document names still fail safely.
+      if (!quotedNames.length && !matched.length && !attachmentNames(name).length &&
+          /^(?:tabell|kapittel|punkt|avsnitt|del|seksjon|kravspesifikasjonen)\b/iu.test(name) &&
+          !/\.(?:pdf|docx?|xlsx?|txt|md|csv)\b/iu.test(name)) continue;
+      if (matched.length !== 1) {
+        throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Kontroller dokumentnavnene og hvilke kravdokumenter som er valgt.`);
+      }
+      destinations.add(matched[0].id);
     }
-    destinations.add(matched[0].id);
   }
   if (destinations.size > 1) {
     throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Oppgi ett dokument for det nye kravet.`);
   }
-  return explicit ? [...destinations][0] : undefined;
+  return [...destinations][0];
 }
 
 function separateAdditionClauses(rawText: string) {
@@ -755,6 +777,7 @@ function withCrossDocumentCorrections(
       if (owner && owner !== document.id) namedOwners.set(owner, (namedOwners.get(owner) ?? 0) + 1);
     }
     const targets = [...namedOwners].sort((left, right) => right[1] - left[1]).map(([id]) => id);
+    const namedTargets = [...targets];
     // A new ID need not mention an existing requirement. Discover affirmative
     // additions with the correction parser, then resolve each clause's owner.
     const formalDocuments = sourceDocuments.filter(isFormalRequirementDocument);
@@ -763,7 +786,7 @@ function withCrossDocumentCorrections(
     const additionOwners = new Map<string, string>();
     for (const entry of newEntries) {
       const destination = explicitAdditionDestination(entry, formalDocuments) ?? seriesOwner(entry.id) ??
-        (targets.length === 1 ? targets[0] : undefined);
+        (namedTargets.length === 1 ? namedTargets[0] : undefined);
       if (!destination) {
         throw new WorkflowPreconditionError(`Kravrettelsen for ${entry.id} kan ikke knyttes entydig til et kravdokument. Oppgi dokumentnavnet for det nye kravet.`);
       }
@@ -793,7 +816,7 @@ function withCrossDocumentCorrections(
     }
     for (const [id, entry] of additions) {
       const destination = additionOwners.get(id) ?? explicitAdditionDestination(entry, formalDocuments) ?? seriesOwner(id) ??
-        (targets.length === 1 ? targets[0] : undefined);
+        (namedTargets.length === 1 ? namedTargets[0] : undefined);
       if (!destination) {
         throw new WorkflowPreconditionError(`Kravrettelsen for ${id} kan ikke knyttes entydig til et kravdokument. Oppgi dokumentnavnet for det nye kravet.`);
       }
