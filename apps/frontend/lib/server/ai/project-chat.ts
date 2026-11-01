@@ -20,6 +20,7 @@ import {
   shouldUseStructuredCoverageForChat,
 } from "@/lib/server/offer-coverage";
 import { buildChatPrompt, buildDelimitedContext, buildPromptTemplate } from "@/lib/server/prompts";
+import { validateChatEvidence } from "@/lib/server/source-evidence";
 import type {
   ChatDomainHint,
   ChatMessage,
@@ -556,6 +557,13 @@ function sourceReferencesFromSnippets(
 
   for (const snippet of snippets) {
     const reference: ChatSourceReference = {
+      evidence_id: snippet.evidenceId,
+      chunk_id: snippet.chunkId ?? null,
+      source_revision: snippet.sourceRevision,
+      source_fingerprint: snippet.sourceFingerprint,
+      original_quote: snippet.originalQuote ?? undefined,
+      document_role: snippet.documentRole,
+      classification: snippet.originalQuote ? "documented" : "needs_clarification",
       document_title: snippet.documentTitle,
       reference: snippet.reference,
       heading_path: snippet.headingPath,
@@ -570,6 +578,7 @@ function sourceReferencesFromSnippets(
       reference.reference,
       reference.page_start ?? "",
       reference.page_end ?? "",
+      snippet.evidenceId ?? byKey.size,
     ].join(":");
     if (!byKey.has(key)) {
       byKey.set(key, reference);
@@ -650,6 +659,8 @@ export type ChatPromptAttachment = {
 };
 
 type ProjectChatInput = {
+  traceId?: string;
+  signal?: AbortSignal;
   projectId?: string;
   projectName: string;
   customerAnalysis: CustomerAnalysisResult | null;
@@ -680,7 +691,8 @@ export function selectProjectChatArtifacts(input: {
     .map((artifact, index) => {
       const title = comparableChatText(artifact.title);
       const body = comparableChatText(artifact.content_markdown);
-      const score = terms.reduce((sum, term) =>
+      const explicitlyNamed = title.length > 3 && comparableChatText(input.question).includes(title);
+      const score = (explicitlyNamed ? 1000 : 0) + terms.reduce((sum, term) =>
         sum + (title.includes(term) ? 3 : body.includes(term) ? 1 : 0), 0);
       return { artifact, index, score };
     })
@@ -725,6 +737,7 @@ function buildChatAnswerStructureContext(input: {
 export async function buildProjectChatRetrievalRequest(
   input: Pick<ProjectChatInput, "question" | "recentMessages" | "sessionSummary" | "model" | "domainHints"
     | "customerDocument" | "solutionDocument" | "supportingDocuments">,
+  options: { skipRewrite?: boolean } = {},
 ) {
   const domainHints =
     input.domainHints?.length
@@ -744,23 +757,19 @@ export async function buildProjectChatRetrievalRequest(
     input.solutionDocument,
     ...(input.supportingDocuments ?? []),
   ].filter((document): document is ProjectDocumentDetail => Boolean(document));
-  const retrievalPlan = await buildProjectChatRetrievalPlan({
+  const planInput = {
     question: input.question,
     domainHints,
     domainTerms,
     recentMessages: input.recentMessages,
     sessionSummary: input.sessionSummary,
     model: input.model,
-  });
+  };
+  const retrievalPlan = options.skipRewrite ? deterministicRetrievalPlan(planInput) : await buildProjectChatRetrievalPlan(planInput);
   const questionTerms = questionRetrievalTerms(input.question);
-  const retrievalQuery = [
-    retrievalPlan.standalone_query,
-    ...retrievalPlan.subqueries,
-  ]
-    .filter(Boolean)
-    .join("\n");
   const request = {
-    query: retrievalQuery,
+    query: retrievalPlan.standalone_query,
+    subqueries: retrievalPlan.subqueries,
     projectId: projectDocumentsForRetrieval[0]?.project_id ?? null,
     documents: projectDocumentsForRetrieval,
     exactTerms: Array.from(
@@ -785,15 +794,14 @@ export async function buildProjectChatRetrievalRequest(
 }
 
 async function prepareProjectChatCompletion(input: ProjectChatInput) {
-  const { domainHints, useStructuredCoverage, retrievalPlan, request } =
-    await buildProjectChatRetrievalRequest(input);
+  const initial = await buildProjectChatRetrievalRequest(input, { skipRewrite: true });
+  const planned = buildProjectChatRetrievalRequest(input);
   const history = buildChatHistoryContext(input.recentMessages);
-  // Exactly the documents the prompt can carry whole: the main documents
-  // and the first four supporting documents.
+  // Small projects keep their complete authorized source collection.
   const promptDocuments = [
     input.customerDocument,
     input.solutionDocument,
-    ...(input.supportingDocuments ?? []).slice(0, 4),
+    ...(input.supportingDocuments ?? []),
   ].filter((document): document is ProjectDocumentDetail => Boolean(document));
   const fullDocumentsInContext =
     promptDocuments.length > 0 &&
@@ -802,13 +810,15 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   // With every searched document whole in the prompt, excerpts only anchor
   // references: their order is not worth a model call, and a section would
   // move the anchor away from the matched part.
-  const everySearchedDocumentWhole =
-    fullDocumentsInContext && promptDocuments.length === request.documents.length;
-  const retrievalResult = await retrieveDocumentSnippetsWithMetadata({
-    ...request,
-    rerank: everySearchedDocumentWhole ? undefined : request.rerank,
-    surroundingSections: !everySearchedDocumentWhole,
+  const everySearchedDocumentWhole = fullDocumentsInContext;
+  const deterministicSearch = retrieveDocumentSnippetsWithMetadata({
+    ...initial.request, rerank: undefined, surroundingSections: !everySearchedDocumentWhole,
   });
+  const [{ domainHints, useStructuredCoverage, retrievalPlan, request }, firstResult] = await Promise.all([planned, deterministicSearch]);
+  const changedPlan = request.query !== initial.request.query || JSON.stringify(request.subqueries) !== JSON.stringify(initial.request.subqueries);
+  const retrievalResult = changedPlan || (!everySearchedDocumentWhole && request.rerank && firstResult.snippets.length > 1)
+    ? await retrieveDocumentSnippetsWithMetadata({ ...request, rerank: everySearchedDocumentWhole ? undefined : request.rerank, surroundingSections: !everySearchedDocumentWhole })
+    : firstResult;
   const retrievedSnippets = retrievalResult.snippets;
   const retrievalQuality = retrievalResult.telemetry.quality;
   const hasStrongRetrieval =
@@ -881,7 +891,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   // A follow-up ("utdyp punkt 2") is matched by its standalone form.
   const relevanceQuery = retrievalPlan.standalone_query || input.question;
   const supportingDocuments = (input.supportingDocuments ?? [])
-    .slice(0, 4)
     .map((document, index) =>
       buildDelimitedContext(
         `Støttedokument ${index + 1}: ${document.title}`,
@@ -904,7 +913,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   })
     .map((artifact, index) =>
       buildDelimitedContext(
-        `Generert artefakt ${index + 1}: ${artifact.title}`,
+        `Generert artefakt ${index + 1} – tolkning, ikke primærkilde: ${artifact.title}`,
         buildQuestionRelevantText({
           rawText: artifact.content_markdown,
           question: relevanceQuery,
@@ -913,17 +922,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
       ),
     );
 
-  // Name what is included whole; a fifth or later supporting document is
-  // represented by excerpts only.
-  const omittedSupporting = (input.supportingDocuments ?? []).slice(4);
-  const documentRuleScope = [
-    `Hele ${promptDocuments.map((document) => `«${document.title}»`).join(", ")} står nedenfor.`,
-    omittedSupporting.length
-      ? `${omittedSupporting.map((document) => `«${document.title}»`).join(", ")} er bare med som utdrag; si fra at svaret kan stå der før du sier at noe ikke er beskrevet.`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const documentRuleScope = `Hele ${promptDocuments.map(document => `«${document.title}»`).join(", ")} står nedenfor.`;
   const documentSections = [
     fullDocumentsInContext
       ? buildDelimitedContext(
@@ -936,7 +935,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
           "Kundedokument",
           fullDocumentsInContext
             ? input.customerDocument.raw_text
-            : compactText(input.customerDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
+            : "",
         )
       : "",
     input.solutionDocument
@@ -944,10 +943,10 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
           "Løsningsdokument",
           fullDocumentsInContext
             ? input.solutionDocument.raw_text
-            : compactText(input.solutionDocument.raw_text, hasStrongRetrieval ? 2800 : 9000),
+            : "",
         )
       : "",
-    ...(fullDocumentsInContext || !hasStrongRetrieval ? supportingDocuments : supportingDocuments.slice(0, 2)),
+    ...(fullDocumentsInContext ? supportingDocuments : []),
   ];
 
   const userPrompt = [
@@ -955,6 +954,21 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     // Whole documents come first: they are the same every turn, so the
     // provider's prompt cache can reuse them.
     ...(fullDocumentsInContext ? documentSections : []),
+    input.customerAnalysis
+      ? buildDelimitedContext(
+          "Kundeanalyse",
+          compactText(
+            JSON.stringify(stripCustomerAnalysisHistory(input.customerAnalysis)),
+            12000,
+          ),
+        )
+      : "",
+    input.solutionEvaluation
+      ? buildDelimitedContext(
+          "Løsningsvurdering",
+          compactSolutionEvaluationForChat(input.solutionEvaluation),
+        )
+      : "",
     buildDelimitedContext("Tolkede chatdomener", domainHints.join(", ")),
     buildDelimitedContext(
       "Retrieval-plan og kvalitet",
@@ -964,7 +978,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
         subqueries: retrievalPlan.subqueries,
         quality: retrievalResult.telemetry.quality,
         used_hybrid_search: retrievalResult.telemetry.usedHybridSearch,
-        retrieval_duration_ms: retrievalResult.telemetry.durationMs,
       }),
     ),
     buildDelimitedContext(
@@ -999,22 +1012,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
           compactText(input.sessionSummary, CHAT_SESSION_MEMORY_PROMPT_LIMIT),
         )
       : "",
-    input.customerAnalysis
-      ? buildDelimitedContext(
-          "Kundeanalyse",
-          compactText(
-            JSON.stringify(stripCustomerAnalysisHistory(input.customerAnalysis)),
-            useStructuredCoverage ? 8000 : 12000,
-          ),
-        )
-      : "",
-    input.solutionEvaluation
-      ? buildDelimitedContext(
-          "Løsningsvurdering",
-          compactSolutionEvaluationForChat(input.solutionEvaluation),
-        )
-      : "",
-    ...(fullDocumentsInContext ? [] : documentSections),
     retrievalContext,
     ...generatedArtifacts,
     history ? buildDelimitedContext("Samtalehistorikk", history) : "",
@@ -1024,7 +1021,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     .join("\n\n");
 
   return {
-    system: buildChatPrompt(),
+    system: `${buildChatPrompt()}\n\nKildekontrakt v1: Henvis til dokumentutdrag med [Kilde N], der N er utdragets nummer. Bruk bare oppgitte numre. Et direkte sitat skrives med «…» og samme avsnitt skal ha kildehenvisningen. Alle krav-ID-er i svaret må finnes ordrett i den siterte kilden i samme avsnitt. Genererte artefakter er faglig tolkning, ikke primærkilder. Ikke lag sitater eller sidetall som mangler i kildene.`,
     user: userPrompt,
     temperature: useStructuredCoverage ? 0.2 : 0.35,
     model: input.model ?? FAST_MODEL,
@@ -1034,23 +1031,32 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     domainHints,
     retrievalPlan,
     retrievalTelemetry: retrievalResult.telemetry,
+    abstentionMessage: !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length
+      ? `Jeg fant ikke nok kildegrunnlag til å svare sikkert etter et nytt søk. Kontroller at disse kildene er ferdig behandlet og inneholder opplysningene du spør etter: ${request.documents.map(document => document.title).join(", ")}. Legg til det manglende dokumentet eller oppgi krav-ID, kapittel eller side, og prøv igjen.`
+      : null,
   };
 }
 
 export async function streamProjectChat(input: ProjectChatInput) {
   const completionInput = await prepareProjectChatCompletion(input);
-  const stream = await createTextCompletionStream({
+  const stream = completionInput.abstentionMessage
+    ? (async function* () { yield completionInput.abstentionMessage!; })()
+    : await createTextCompletionStream({
     system: completionInput.system,
     user: completionInput.user,
     temperature: completionInput.temperature,
     model: completionInput.model,
     reasoningEffort: completionInput.reasoningEffort,
     maxCompletionTokens: completionInput.maxCompletionTokens,
+    promptCacheKey: input.projectId,
+    traceId: input.traceId,
+    signal: input.signal,
   });
 
   return {
     stream: normalizeChatSourceReferencesFromStream(stream),
-    sourceReferences: completionInput.sourceReferences,
+    sourceReferences: completionInput.abstentionMessage ? [] : completionInput.sourceReferences,
+    validateAnswer: (answer: string) => answer === completionInput.abstentionMessage ? [] : validateChatEvidence(answer, completionInput.sourceReferences),
     domainHints: completionInput.domainHints,
     retrievalPlan: completionInput.retrievalPlan,
     retrievalTelemetry: completionInput.retrievalTelemetry,

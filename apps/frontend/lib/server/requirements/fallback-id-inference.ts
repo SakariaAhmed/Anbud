@@ -137,6 +137,8 @@ function assignTypedFallbackRequirementIds(
     return {
       ...entry,
       id: `${kind}-${String(next).padStart(2, "0")}`,
+      idOrigin: "generated" as const,
+      originalId: entry.originalId ?? entry.id,
     };
   });
 }
@@ -246,6 +248,8 @@ function inferBoundedSequentialRequirementIds(
       result[previous.index + offset + 1] = {
         ...result[previous.index + offset + 1],
         id: inferredIds[offset],
+        idOrigin: "inferred",
+        originalId: result[previous.index + offset + 1].originalId ?? result[previous.index + offset + 1].id,
       };
     });
   }

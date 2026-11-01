@@ -1,4 +1,6 @@
 import { requireProjectPermission } from "@/lib/server/authorization";
+import { randomUUID } from "node:crypto";
+import { recordWorkflowPerformance } from "@/lib/server/workflow-performance";
 import { NextResponse } from "next/server";
 
 import { CHAT_SESSION_MEMORY_STORAGE_LIMIT, inferProjectChatDomains, streamProjectChat, type ChatPromptAttachment } from "@/lib/server/ai/project-chat";
@@ -373,9 +375,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const startedAt = Date.now();
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "chat.write");
+    const traceId = randomUUID();
     const rateLimit = await checkRateLimit(request, `project-chat:${id}`, {
       limit: 30,
       windowMs: 60_000,
@@ -458,6 +462,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
 
     const chatStream = await streamProjectChat({
+      traceId,
+      signal: request.signal,
       projectId: id,
       projectName: project.name,
       customerAnalysis,
@@ -483,10 +489,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       domainHints,
     });
     const encoder = new TextEncoder();
+    recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "context_assembly", durationMs: Date.now() - startedAt });
     const assistantContextSnapshot = {
       ...contextSnapshot,
       domain_hints: chatStream.domainHints,
-      source_references: chatStream.sourceReferences,
       retrieval_plan: chatStream.retrievalPlan,
       retrieval_telemetry: chatStream.retrievalTelemetry,
     };
@@ -495,9 +501,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       new ReadableStream({
         async start(controller) {
           let assistantMessage = "";
+          let firstToken = true;
 
           try {
             for await (const chunk of chatStream.stream) {
+              if (firstToken) {
+                firstToken = false;
+                recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "first_token", durationMs: Date.now() - startedAt });
+              }
               assistantMessage += chunk;
               controller.enqueue(encoder.encode(chunk));
             }
@@ -506,14 +517,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             if (!cleanedAssistantMessage) {
               throw new Error("AI returnerte tomt svar.");
             }
+            const validationStartedAt = Date.now();
+            const verifiedSources = chatStream.validateAnswer(cleanedAssistantMessage);
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "validation", durationMs: Date.now() - validationStartedAt });
+            const persistenceStartedAt = Date.now();
 
             await appendChatMessage(
               id,
               "assistant",
               cleanedAssistantMessage,
-              assistantContextSnapshot,
+              { ...assistantContextSnapshot, source_references: verifiedSources },
               { sessionId },
             );
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "persistence", durationMs: Date.now() - persistenceStartedAt });
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "total", durationMs: Date.now() - startedAt });
 
             await updateChatSessionMemory({
               projectId: id,

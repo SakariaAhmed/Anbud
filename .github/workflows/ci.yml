@@ -63,6 +63,7 @@ jobs:
           npm run secrets:scan
           npm test
           npm run rag:eval
+          npm run rag:eval:sql -- --database-url "$DOCUMENT_CHUNKS_SQL_TEST_DATABASE_URL" --output /tmp/rag-retrieval-results.json
           npm run lint
           NODE_OPTIONS="--require $PWD/scripts/block-google-fonts.cjs" npm run build
 

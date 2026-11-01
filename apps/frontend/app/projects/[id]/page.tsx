@@ -45,6 +45,7 @@ export default async function ProjectPage({
         initialData={project}
         initialTab={initialTab}
         canShare={access.permissions.includes("project.share")}
+        canDownloadDocuments={access.permissions.includes("document.download")}
         readOnly={!access.permissions.includes("project.update")}
       />
     );

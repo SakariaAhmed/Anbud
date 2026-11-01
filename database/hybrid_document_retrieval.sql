@@ -72,6 +72,35 @@ revoke execute on function update_document_chunk_search_vectors(text, uuid, json
 revoke execute on function update_document_chunk_search_vectors(text, uuid, jsonb) from authenticated;
 grant execute on function update_document_chunk_search_vectors(text, uuid, jsonb) to service_role;
 
+-- Derive Norwegian stems from the existing plaintext lexemes. Original
+-- encrypted text and the simple FTS index remain unchanged. This introduces
+-- no additional plaintext source representation. Positions here describe
+-- lexeme order; exact phrases and IDs continue to use the simple index.
+alter table public.document_chunks
+  add column if not exists fts_norwegian tsvector not null default ''::tsvector;
+
+create or replace function public.sync_document_chunk_norwegian_fts()
+returns trigger
+language plpgsql
+set search_path = public, pg_catalog
+as $$
+begin
+  new.fts_norwegian := to_tsvector('norwegian'::regconfig, array_to_string(tsvector_to_array(new.fts), ' '));
+  return new;
+end;
+$$;
+revoke all on function public.sync_document_chunk_norwegian_fts() from public;
+
+drop trigger if exists document_chunks_norwegian_fts on public.document_chunks;
+create trigger document_chunks_norwegian_fts before insert or update of fts on public.document_chunks
+for each row execute function public.sync_document_chunk_norwegian_fts();
+
+update public.document_chunks
+set fts_norwegian = to_tsvector('norwegian'::regconfig, array_to_string(tsvector_to_array(fts), ' '));
+create index if not exists document_chunks_norwegian_fts_idx on public.document_chunks using gin(fts_norwegian);
+comment on column public.document_chunks.fts_norwegian is
+  'Norwegian stems derived solely from the existing plaintext FTS lexemes; the existing content-at-rest policy also applies here.';
+
 create or replace function hybrid_match_document_chunks(
   query_embedding extensions.vector(1536),
   query_text text,
@@ -98,6 +127,7 @@ as $$
   with settings as (
     select
       websearch_to_tsquery('simple', coalesce(query_text, '')) as keyword_query,
+      websearch_to_tsquery('norwegian', coalesce(query_text, '')) as norwegian_query,
       least(greatest(match_count, 1), 200) as requested_count,
       greatest(rrf_k, 1) as smoothing_k,
       greatest(full_text_weight, 0) as keyword_weight,
@@ -133,12 +163,12 @@ as $$
       document_chunks.source_type,
       document_chunks.source_id,
       row_number() over (
-        order by ts_rank_cd(document_chunks.fts, settings.keyword_query) desc, document_chunks.chunk_index asc
+        order by greatest(ts_rank_cd(document_chunks.fts, settings.keyword_query), ts_rank_cd(document_chunks.fts_norwegian, settings.norwegian_query)) desc, document_chunks.chunk_index asc
       )::int as keyword_rank
     from document_chunks
     cross join settings
-    where numnode(settings.keyword_query) > 0
-      and document_chunks.fts @@ settings.keyword_query
+    where (numnode(settings.keyword_query) > 0 or numnode(settings.norwegian_query) > 0)
+      and (document_chunks.fts @@ settings.keyword_query or document_chunks.fts_norwegian @@ settings.norwegian_query)
       and (
         project_filter is null
         or document_chunks.project_id = project_filter
@@ -150,7 +180,7 @@ as $$
         )
       )
       and (source_id_filter is null or document_chunks.source_id = any(source_id_filter))
-    order by ts_rank_cd(document_chunks.fts, settings.keyword_query) desc, document_chunks.chunk_index asc
+    order by greatest(ts_rank_cd(document_chunks.fts, settings.keyword_query), ts_rank_cd(document_chunks.fts_norwegian, settings.norwegian_query)) desc, document_chunks.chunk_index asc
     limit least(greatest(match_count * 4, 12), 200)
   ),
   combined_ids as (

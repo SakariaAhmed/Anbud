@@ -53,12 +53,26 @@ const databaseUrl = option("--database-url");
 const outputPath = option("--output");
 const useModelRerank = option("--rerank") === "model";
 const useLiveEmbeddings = option("--embeddings") === "live";
+const useRecordedEmbeddings = option("--embeddings") === "recorded";
+const recordEmbeddings = args.includes("--record-embeddings");
+const useStoredEmbeddings = useLiveEmbeddings || useRecordedEmbeddings;
+const embeddingsFile = path.resolve(option("--embedding-fixtures") ?? path.join(repositoryRoot, "test-data/rag-retrieval/embeddings.json"));
 const withoutStructure = args.includes("--without-structure");
-if ((useModelRerank || useLiveEmbeddings) && !process.env.OPENAI_API_KEY) {
+if ((useModelRerank || useLiveEmbeddings || recordEmbeddings) && !process.env.OPENAI_API_KEY) {
   throw new Error("--rerank=model and --embeddings=live need OPENAI_API_KEY.");
 }
-if (useLiveEmbeddings && !databaseUrl) {
-  throw new Error("--embeddings=live needs --database-url for a disposable database.");
+if (recordEmbeddings && !useRecordedEmbeddings) throw new Error("Recording requires --embeddings=recorded.");
+if (useStoredEmbeddings && !databaseUrl) {
+  throw new Error("Stored retrieval needs --database-url for a disposable database.");
+}
+if (databaseUrl && !["127.0.0.1", "localhost", "[::1]"].includes(new URL(databaseUrl).hostname)) {
+  throw new Error("Retrieval evaluations require a loopback disposable database.");
+}
+if (useRecordedEmbeddings) {
+  process.env.RAG_EVAL_EMBEDDINGS_FILE = embeddingsFile;
+  process.env.RAG_EVAL_FRONTEND_ROOT = frontendRoot;
+  process.env.RAG_EVAL_RECORD_EMBEDDINGS = recordEmbeddings ? "1" : "0";
+  if (!recordEmbeddings) process.env.OPENAI_API_KEY = "recorded-embeddings-no-network";
 }
 
 const corpusRoot = path.join(repositoryRoot, "output/pdf/complex-tender-corpus");
@@ -78,7 +92,7 @@ exports.createServiceClient = () => ({
   rpc: async () => ({ data: null, error: missing }),
 });`);
 process.env.APP_ENCRYPTION_KEY ??= "rag-retrieval-eval-encryption-key";
-if (!useModelRerank && !useLiveEmbeddings) delete process.env.OPENAI_API_KEY;
+if (!useModelRerank && !useStoredEmbeddings) delete process.env.OPENAI_API_KEY;
 
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
@@ -88,7 +102,12 @@ const load = (aliases = {}, moduleCache = false) => createJiti(path.join(scratch
   moduleCache,
   alias: { ...aliases, "@": frontendRoot, "server-only": "/dev/null" },
 });
-const app = load({ "@/lib/server/data-api": useLiveEmbeddings
+const app = load({
+  ...(useRecordedEmbeddings ? {
+    "openai/error": path.join(frontendRoot, "node_modules/openai/error.js"),
+    openai: path.join(repositoryRoot, "scripts/rag_embedding_fixtures.cjs"),
+  } : {}),
+  "@/lib/server/data-api": useStoredEmbeddings
   ? path.join(repositoryRoot, "scripts/rag_retrieval_eval_store.cjs")
   : unavailableDataApi });
 const { retrieveDocumentSnippetsWithMetadata, buildKeywordSearchQuery, replaceProjectDocumentChunks } = app(path.join(frontendRoot, "lib/server/document-chunks.ts"));
@@ -153,7 +172,7 @@ const cases = [
 
 // Result count of the keyword-search measurement; chat sets its own.
 const limit = 12;
-const live = useLiveEmbeddings ? await storeChunksWithLiveEmbeddings() : null;
+const live = useStoredEmbeddings ? await storeChunksWithLiveEmbeddings() : null;
 const results = [];
 // The disposable database goes even when a case throws.
 try {
@@ -161,6 +180,9 @@ try {
 } finally {
   live?.drop();
 }
+const fixtureStats = useRecordedEmbeddings ? require("./rag_embedding_fixtures.cjs").fixtureStats(embeddingsFile) : null;
+if (useRecordedEmbeddings && (!fixtureStats || fixtureStats.missingInputs)) throw new Error("Recorded embedding replay was incomplete; lexical fallback cannot pass this gate.");
+if (live && results.some(row => !row.used_hybrid_search)) throw new Error("Stored retrieval did not execute hybrid search for every case.");
 
 async function runCase(item) {
   const startedAt = Date.now();
@@ -209,7 +231,8 @@ const report = {
   limit,
   model_rerank: useModelRerank,
   structure_map: withoutStructure ? "removed" : "parser",
-  retrieval: useLiveEmbeddings ? "stored_hybrid_live_embeddings" : "in_process",
+  retrieval: useRecordedEmbeddings ? "stored_hybrid_recorded_embeddings" : useLiveEmbeddings ? "stored_hybrid_live_embeddings" : "in_process",
+  embedding_fixture: fixtureStats,
   request: buildProjectChatRetrievalRequest ? "project_chat" : "question_only",
   cases_using_broadened_search: results.filter((row) => row.used_broadened_search).length,
   ...(live ? {
@@ -226,30 +249,32 @@ const report = {
   },
 };
 
-if (databaseUrl && !useLiveEmbeddings) {
+if (databaseUrl && !useStoredEmbeddings) {
   report.keyword_search = await measureKeywordSearch();
 }
 if (outputPath) writeFileSync(outputPath, `${JSON.stringify(results, null, 2)}\n`);
 if (args.includes("--gate")) {
-  report.gate = evaluateRetrievalGate(results, useLiveEmbeddings ? "live" : "offline");
+  report.gate = evaluateRetrievalGate(results, args.includes("--release-gate") ? "release" : useRecordedEmbeddings ? "recorded" : useStoredEmbeddings ? "live" : "offline");
   if (!report.gate.passed) process.exitCode = 2;
 }
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
 function psql(url, sql) {
-  const result = spawnSync("psql", [url, "-X", "-v", "ON_ERROR_STOP=1", "-Atq"], { input: sql, encoding: "utf8" });
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+  const result = spawnSync("psql", [url, "-X", "-v", "ON_ERROR_STOP=1", "-Atq"], { input: sql, encoding: "utf8", timeout: 60_000 });
+  if (result.error || result.status !== 0) throw new Error(result.error?.message || result.stderr || result.stdout);
   return result.stdout.trim();
 }
 
 function retrievalFunctions() {
-  const migration = readFileSync(path.join(repositoryRoot, "database/migrations/20260711124500_selected_service_document_retrieval.sql"), "utf8");
+  const migration = readFileSync(path.join(repositoryRoot, "database/schema.sql"), "utf8");
   const definition = (name) => {
-    const sql = migration.match(new RegExp(`create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`, "u"))?.[0];
+    const sql = migration.match(new RegExp(`create or replace function (?:public\\.)?${name}\\([\\s\\S]*?\\n\\$\\$;`, "u"))?.[0];
     if (!sql) throw new Error(`${name} definition is missing`);
     return sql;
   };
-  return { match: definition("match_document_chunks"), hybrid: definition("hybrid_match_document_chunks") };
+  const upgrade = readFileSync(path.join(repositoryRoot, "database/migrations/20261101210000_norwegian_hybrid_retrieval.sql"), "utf8");
+  const setup = upgrade.slice(upgrade.indexOf("-- Derive"), upgrade.indexOf("create or replace function public.hybrid_match"));
+  return { match: definition("match_document_chunks"), hybrid: definition("hybrid_match_document_chunks"), setup };
 }
 
 function createDisposableDatabase() {
@@ -257,7 +282,7 @@ function createDisposableDatabase() {
   const target = new URL(databaseUrl);
   target.pathname = `/${name}`;
   const drop = () => psql(databaseUrl, `drop database if exists "${name}" with (force);`);
-  const { match, hybrid } = retrievalFunctions();
+  const { match, hybrid, setup } = retrievalFunctions();
   psql(databaseUrl, `create database "${name}";`);
   try {
     psql(target.toString(), `
@@ -265,6 +290,7 @@ function createDisposableDatabase() {
       create extension vector with schema extensions;
       create table public.document_chunks (id uuid primary key, source_type text not null, source_id uuid not null,
         project_id uuid, chunk_index integer not null, fts tsvector not null, embedding extensions.vector(1536));
+      ${setup}
       ${match}
       ${hybrid}`);
   } catch (error) {
@@ -289,7 +315,7 @@ async function storeChunksWithLiveEmbeddings() {
     }
     const [chunks, embeddedChunks] = psql(database.url,
       "select count(*), count(embedding) from public.document_chunks;").split("|").map(Number);
-    if (!embeddedChunks) throw new Error("No chunk was embedded; check OPENAI_API_KEY and the embedding logs.");
+    if (!chunks || embeddedChunks !== chunks) throw new Error("Every stored chunk must be embedded; lexical fallback cannot pass this gate.");
     return { chunks, embeddedChunks, drop: database.drop };
   } catch (error) {
     database.drop();

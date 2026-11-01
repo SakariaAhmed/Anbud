@@ -1,4 +1,5 @@
 import { requireProjectPermission } from "@/lib/server/authorization";
+import { recordWorkflowPerformance } from "@/lib/server/workflow-performance";
 import { suggestUploadDocumentRole } from "@/lib/document-processing";
 import { NextResponse } from "next/server";
 
@@ -122,6 +123,7 @@ function enforceUploadRateLimit(projectId: string) {
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const startedAt = Date.now();
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "document.upload");
@@ -269,6 +271,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       documentId: document.id,
     });
     const snapshot = await getProjectSnapshot(id);
+    recordWorkflowPerformance({ traceId: document.id, projectId: id, documentId: document.id,
+      jobId: job.id, documentClass: document.file_format, operation: "document", phase: "upload",
+      durationMs: Date.now() - startedAt });
     await auditEvent({
       action: "document_uploaded",
       projectId: id,

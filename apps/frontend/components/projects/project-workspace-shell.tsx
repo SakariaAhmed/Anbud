@@ -202,6 +202,8 @@ type WorkspaceStatusMessagesProps = {
 };
 
 export type ProjectWorkspaceTabContentProps = {
+  canDownloadDocuments?: boolean;
+  readOnly?: boolean;
   activeTab: ProjectWorkspaceTab;
   project: ProjectDetail;
   serviceDescriptions: ProjectServiceDescription[];
@@ -620,6 +622,8 @@ function DeferredSectionLoader({ label }: { label: string }) {
 }
 
 export function ProjectWorkspaceTabContent({
+  canDownloadDocuments = false,
+  readOnly = false,
   activeTab,
   project,
   serviceDescriptions,
@@ -718,6 +722,8 @@ export function ProjectWorkspaceTabContent({
             </div>
           ) : (
             <ProjectAnalysisTab
+              canDownloadDocuments={canDownloadDocuments}
+              readOnly={readOnly}
               projectId={project.id}
               documents={project.documents}
               customerAnalysis={customerAnalysis ?? fallback}

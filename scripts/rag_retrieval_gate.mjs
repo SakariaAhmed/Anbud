@@ -4,13 +4,25 @@ import { scoreRetrievalCases } from "./rag_eval.mjs";
 // Their floors preserve the measured baseline; live semantic quality has a
 // separate, stronger gate. Passing offline does not establish answer quality.
 const policies = {
+  // Frozen production-path baseline without the paid model reranker. Release
+  // quality targets are a separate, stronger gate, never silently rounded up.
+  recorded: {
+    id_lookup: { cases: 60, recall5: 1, mrr: 1, requiredRank: 1 },
+    conceptual: { cases: 36, recall10: 30 / 36, mrr: 0.55 },
+    held_out: { cases: 20, recall10: 1, mrr: 0.85 },
+  },
+  release: {
+    id_lookup: { cases: 60, recall5: 1, mrr: 1, requiredRank: 1 },
+    conceptual: { cases: 36, recall10: 0.95, mrr: 0.7 },
+    held_out: { cases: 20, recall10: 0.95, mrr: 0.7 },
+  },
   offline: {
-    id_lookup: { cases: 60, recall5: 1, mrr: 0.9, requiredRank: 5 },
+    id_lookup: { cases: 60, recall5: 1, mrr: 1, requiredRank: 1 },
     conceptual: { cases: 36, recall10: 0.55, mrr: 0.27 },
     held_out: { cases: 20, recall10: 1, mrr: 0.7, requiredRank: 10 },
   },
   live: {
-    id_lookup: { cases: 60, recall5: 1, mrr: 0.9, requiredRank: 5 },
+    id_lookup: { cases: 60, recall5: 1, mrr: 1, requiredRank: 1 },
     conceptual: { cases: 36, recall10: 0.9, mrr: 0.7 },
     held_out: { cases: 20, recall10: 0.8, mrr: 0.6 },
   },

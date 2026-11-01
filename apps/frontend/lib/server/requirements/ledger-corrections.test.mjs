@@ -16,6 +16,16 @@ const { applyRequirementCorrections, correctedRequirementIds, findCorrectionsSec
   "lib/server/requirements/corrections.ts",
 );
 const { spreadsheetRequirementIds } = await load("lib/server/requirements/spreadsheet-ledger.ts");
+
+test("amendment additions use their own explicit page, never the insertion anchor", () => {
+  const original = [{ id: "OPS-1", text: "Drift skal dokumenteres.", pages: [2], heading: "Drift" }];
+  const correction = "9 Rettelser\nNytt krav OPS-2 legges til: «Alle logger skal lagres i Norge.»";
+  const paged = `[[SIDE:2]]\nOPS-1 Drift skal dokumenteres.\n[[SIDE:9]]\n${correction}`;
+  const added = applyRequirementCorrections(original, paged).ledger.find(row => row.id === "OPS-2");
+  assert.deepEqual(added.pages, [9]);
+  assert.equal(added.idOrigin, "source");
+  assert.deepEqual(applyRequirementCorrections(original, correction).ledger.find(row => row.id === "OPS-2").pages, []);
+});
 const { assertExplicitRequirementLedgersComplete } = await load(
   "lib/server/requirements/source-readiness.ts",
 );

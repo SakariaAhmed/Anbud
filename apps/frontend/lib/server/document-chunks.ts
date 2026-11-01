@@ -22,6 +22,8 @@ import {
 } from "@/lib/server/repositories/lease-fenced-persistence";
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import { createServiceClient } from "@/lib/server/data-api";
+import { reciprocalRankFusion } from "@/lib/server/retrieval-fusion";
+import { evidenceIdentity, SourceQuoteIndex } from "@/lib/server/source-evidence";
 import type {
   DocumentFileFormat,
   ProjectDocumentDetail,
@@ -78,6 +80,13 @@ export type RetrievedDocumentSnippet = {
   pageEnd: number | null;
   /** Position in the stored chunk set; null when it cannot be traced. */
   chunkIndex?: number | null;
+  requirementId?: string;
+  chunkId?: string | null;
+  evidenceId?: string;
+  sourceRevision?: number;
+  sourceFingerprint?: string;
+  originalQuote?: string | null;
+  documentRole?: ProjectDocumentRole;
   similarity: number | null;
   lexicalScore: number;
   keywordRank?: number | null;
@@ -1702,6 +1711,7 @@ async function storedVectorCandidates(input: {
         pageStart: row.page_start,
         pageEnd: row.page_end,
         chunkIndex: row.chunk_index ?? null,
+        chunkId: row.id,
         similarity,
         lexicalScore: lexical,
         semanticRank: null,
@@ -1826,6 +1836,7 @@ async function storedHybridCandidates(input: {
         pageStart: row.page_start,
         pageEnd: row.page_end,
         chunkIndex: row.chunk_index ?? null,
+        chunkId: row.id,
         similarity,
         lexicalScore: lexical,
         keywordRank: match?.keyword_rank ?? null,
@@ -2070,6 +2081,8 @@ function withSurroundingSections(input: {
 
 export async function retrieveDocumentSnippetsWithMetadata(input: {
   query: string;
+  /** Independent semantic intents, searched concurrently and fused by rank. */
+  subqueries?: string[];
   projectId?: string | null;
   documents?: ProjectDocumentDetail[];
   serviceDocuments?: ServiceDocumentDetail[];
@@ -2134,6 +2147,10 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   ]);
   const queryTokens = tokenizeForRetrieval(query);
   const exactTerms = (input.exactTerms ?? []).filter(Boolean);
+  const requirementIds = exactTerms.filter(term => /^[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-?\d{1,5}(?:\.\d+)*(?:\.[a-z])?$/u.test(term));
+  const lookup = requirementIds.length
+    ? import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints }))
+    : Promise.resolve([]);
   const limit = Math.min(Math.max(input.limit ?? 8, 1), MAX_RETRIEVAL_LIMIT);
   const comparable = (text: string) => normalizeChunkText(text).replace(/\s+/gu, " ");
   const coveredText = new Map([...input.promptDocumentText ?? []].map(([id, text]) =>
@@ -2246,11 +2263,16 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     return [...hybridCandidates, ...vectorCandidates, ...fallbackCandidates];
   };
 
-  let candidates = await gatherCandidates({ query, queryTokens, exactTerms });
+  const queries = Array.from(new Set([query, ...(input.subqueries ?? []).map(normalizeChunkText).filter(Boolean)])).slice(0, 4);
+  const [rankings, lookedUpRows] = await Promise.all([Promise.all(queries.map(async passQuery => {
+    const tokens = tokenizeForRetrieval(passQuery);
+    return rerankSnippets({ candidates: await gatherCandidates({ query: passQuery, queryTokens: tokens, exactTerms }), queryTokens: tokens, exactTerms });
+  })), lookup]);
+  const candidateKey = (candidate: RetrievedDocumentSnippet) => `${candidate.sourceType}:${candidate.sourceId}:${candidate.chunkIndex ?? candidate.reference}:${hashText(candidate.text)}`;
   let rankingQuery = query;
   let rankingTokens = queryTokens;
   let rankingExactTerms = exactTerms;
-  let ranked = rerankSnippets({ candidates, queryTokens, exactTerms });
+  let ranked = reciprocalRankFusion(rankings, candidateKey);
   // Quality is assessed on what is returned: section windows replace their
   // parts and skip parts already inside an earlier window.
   const chunksBySource = new Map<string, SemanticDocumentChunk[]>();
@@ -2269,19 +2291,17 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     rankingQuery = `${query}\n${broaderQuery}`;
     rankingTokens = Array.from(new Set([...queryTokens, ...broaderTokens]));
     rankingExactTerms = (input.broaderExactTerms ?? []).filter(Boolean);
-    candidates = [
-      ...candidates,
-      ...(await gatherCandidates({
+    const broaderCandidates = await gatherCandidates({
         query: broaderQuery,
         queryTokens: broaderTokens,
         exactTerms: rankingExactTerms,
-      })),
-    ];
-    ranked = rerankSnippets({
-      candidates,
+      });
+    rankings.push(rerankSnippets({
+      candidates: broaderCandidates,
       queryTokens: rankingTokens,
       exactTerms: rankingExactTerms,
-    });
+    }));
+    ranked = reciprocalRankFusion(rankings, candidateKey);
     usedBroadenedSearch = true;
   }
 
@@ -2312,6 +2332,30 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
       exactTerms: Array.from(new Set([...exactTerms, ...rankingExactTerms])),
     });
   }
+  const exactRows = lookedUpRows.filter(hasUncoveredText);
+  if (exactRows.length) {
+    // Deterministic lookups are outside the model rerank contract. Every
+    // occurrence stays visible instead of silently choosing a repeated ID.
+    snippets = [...exactRows, ...snippets.filter(snippet => !exactRows.some(row =>
+      row.sourceId === snippet.sourceId && row.text === snippet.text,
+    ))].slice(0, limit);
+    quality = assessRetrievalQuality({ snippets, exactTerms });
+  }
+  const quoteIndexes = new Map<string, SourceQuoteIndex>();
+  snippets = snippets.map(snippet => {
+    const document = snippet.sourceType === "project_document"
+      ? documents.find(document => document.id === snippet.sourceId)
+      : serviceDocuments.find(document => document.id === snippet.sourceId);
+    const revision = document?.chunk_source_revision ?? 0;
+    const fingerprint = sourceFingerprints.get(documentChunkSourceKey(snippet.sourceType, snippet.sourceId)) ?? "";
+    let quoteIndex = quoteIndexes.get(snippet.sourceId);
+    if (document && !quoteIndex) { quoteIndex = new SourceQuoteIndex(document.raw_text); quoteIndexes.set(snippet.sourceId, quoteIndex); }
+    const quote = quoteIndex?.find(snippet.text) ?? null;
+    return { ...snippet, sourceRevision: revision, sourceFingerprint: fingerprint,
+      originalQuote: quote, documentRole: document && "role" in document ? document.role : undefined,
+      evidenceId: evidenceIdentity({ sourceType: snippet.sourceType, sourceId: snippet.sourceId, revision, fingerprint, reference: snippet.reference, text: snippet.text }),
+    };
+  });
   const telemetry = {
     query,
     exactTerms,

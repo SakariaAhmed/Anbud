@@ -1,4 +1,5 @@
 "use client";
+import { SourceEvidenceButton } from "@/components/projects/source-evidence-panel";
 
 import {
   type ChangeEvent,
@@ -218,6 +219,8 @@ function ChatAttachmentCard({
 }
 
 export function ProjectChatTab({
+  projectId,
+  canDownloadDocuments = false,
   chatMessages,
   chatInput,
   streamingMessage,
@@ -234,6 +237,8 @@ export function ProjectChatTab({
   documentUploadState = { status: "idle" },
   onRegenerateResponse,
 }: {
+  projectId?: string;
+  canDownloadDocuments?: boolean;
   chatMessages: ChatMessage[];
   chatInput: string;
   streamingMessage: string;
@@ -542,7 +547,7 @@ export function ProjectChatTab({
                               key={`${source.source_id}-${source.reference}-${index}`}
                               className="leading-5"
                             >
-                              {sourceLabel(source)}
+                              <SourceEvidenceButton source={source} projectId={projectId} canDownloadDocuments={canDownloadDocuments}>{sourceLabel(source)}</SourceEvidenceButton>
                             </div>
                           ))}
                         </div>

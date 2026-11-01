@@ -3,6 +3,7 @@ import { projectJobResultForRead } from "@/lib/server/project-job-result-project
 import { recoverCommittedProjectJobResult } from "@/lib/server/project-job-results";
 
 import { randomUUID } from "node:crypto";
+import { recordWorkflowPerformance } from "@/lib/server/workflow-performance";
 
 import {
   normalizeArtifactInstructions,
@@ -64,6 +65,7 @@ import {
 } from "@/lib/server/use-cases/project-workflows";
 import type {
   DocumentIngestionJobResult,
+  DocumentFileFormat,
   GeneratedArtifactType,
   ProjectJobKind,
   ProjectJobRecord,
@@ -404,18 +406,24 @@ function logJobPhase(input: {
   );
 }
 
-function createJobPhaseTimer(jobId: string, kind: ProjectJobRecord["kind"]) {
+function createJobPhaseTimer(jobId: string, input: ProjectWorkflowInput) {
+  const kind = input.kind;
+  let documentClass: DocumentFileFormat | undefined;
+  const documentId = "documentId" in input ? input.documentId : undefined;
   const totalStartedAt = Date.now();
   let phaseStartedAt = totalStartedAt;
   let lastCompletedPhase = "oppstart";
   const timings: Array<{ phase: string; duration_ms: number }> = [];
 
   return {
+    documentClass(value: DocumentFileFormat) { documentClass = value; },
     mark(phase: string) {
       const now = Date.now();
       const durationMs = now - phaseStartedAt;
       timings.push({ phase, duration_ms: durationMs });
       logJobPhase({ jobId, kind, phase, durationMs });
+      recordWorkflowPerformance({ traceId: documentId ?? jobId, projectId: input.projectId,
+        jobId, documentId, documentClass, operation: documentId ? "document" : "generation", phase, durationMs });
       phaseStartedAt = now;
       lastCompletedPhase = phase;
     },
@@ -747,7 +755,7 @@ async function runProjectJob(
   context: JobRunContext,
   activeLease?: ActiveProjectJobLease,
 ): Promise<ProjectJobRunOutcome> {
-  const phaseTimer = createJobPhaseTimer(jobId, input.kind);
+  const phaseTimer = createJobPhaseTimer(jobId, input);
   if (context.persisted) {
     getLocallyManagedPersistedJobIds().add(jobId);
   }
@@ -760,6 +768,11 @@ async function runProjectJob(
 
   try {
     lease.assertActive();
+    const queued = getStore().get(jobId) ?? (context.persisted ? await findProjectJob(input.projectId, jobId).catch(() => null) : null);
+    if (queued) recordWorkflowPerformance({ traceId: "documentId" in input ? input.documentId : jobId,
+      projectId: input.projectId, jobId, documentId: "documentId" in input ? input.documentId : undefined,
+      operation: "documentId" in input ? "document" : "generation", phase: "queue_wait",
+      durationMs: Date.now() - Date.parse(queued.created_at) });
     updateJob(jobId, { status: "running" }, context, { markStarted: true });
     const result = await runProjectWorkflowWithDeadline({
       kind: input.kind,
@@ -793,6 +806,7 @@ async function runProjectJob(
             const committed = context.persisted ? await recoverCommittedProjectJobResult(input.projectId, jobId) : null;
             const completeCheckpoint = committed && !("completion_status" in committed && committed.completion_status === "evaluation_pending");
             const workflowResult = completeCheckpoint ? committed : await runProjectWorkflow(input, {
+              onDocumentClass: phaseTimer.documentClass,
               setProgress(message) {
                 assertWorkflowActive();
                 updateJob(jobId, { message, status: "running" }, context);
@@ -938,6 +952,10 @@ async function runProjectJob(
           });
         }
         lease.stop();
+        recordWorkflowPerformance({ traceId: "documentId" in input ? input.documentId : jobId,
+          projectId: input.projectId, jobId, documentId: "documentId" in input ? input.documentId : undefined,
+          operation: "documentId" in input ? "document" : "generation", phase: "total",
+          durationMs: phaseTimer.total(), status: terminalPatch.status === "completed" && terminalPersisted ? "completed" : "failed" });
       }
     } finally {
       lease.stop();

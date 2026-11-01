@@ -1,5 +1,6 @@
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
+import { splitPdfPagesPreservingLines } from "@/lib/server/requirements/pdf-normalization";
 
 // Tender documents often publish changes in a closing "Rettelser" chapter
 // that takes precedence over the original requirement tables, which are left
@@ -615,10 +616,21 @@ export function applyRequirementCorrections(
         const newId = [named, ...statementIds].find((id) => id && !sourceIds.has(id) && !known().has(id));
         if (newId) {
           const anchor = entries.filter((entry) => idPrefix(entry.id) === idPrefix(newId)).at(-1);
+          const wording = quotes[Number(placeholders.at(-1)![1])]!;
+          // Insertion order is not source location. Only a unique, explicit
+          // page containing the new ID and wording can supply a locator.
+          const located = splitPdfPagesPreservingLines(rawText).filter(page =>
+            [...page.text.matchAll(REQUIREMENT_ID)].some(match => match[0] === newId) &&
+            normalized(page.text).includes(normalized(wording)),
+          );
+          const pages = located.length === 1
+            ? Array.from({ length: (located[0].pageEnd ?? located[0].page) - located[0].page + 1 }, (_, i) => located[0].page + i)
+            : [];
           const added: RequirementLedgerEntry = {
             id: newId,
-            text: quotes[Number(placeholders.at(-1)![1])]!,
-            pages: anchor?.pages ?? [],
+            idOrigin: "source",
+            text: wording,
+            pages,
             heading: anchor?.heading ?? "",
             ...(anchor?.documentId ? { documentId: anchor.documentId } : {}),
             ...(anchor?.documentTitle ? { documentTitle: anchor.documentTitle } : {}),

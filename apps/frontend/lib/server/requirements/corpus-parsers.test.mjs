@@ -1259,6 +1259,9 @@ test("bounded ID inference fills one structurally proven gap", () => {
     assignGeneratedRequirementFallbackIds(entries).map((entry) => entry.id),
     ["K-010", "K-011", "K-012"],
   );
+  const inferred = assignGeneratedRequirementFallbackIds(entries)[1];
+  assert.equal(inferred.idOrigin, "inferred");
+  assert.equal(inferred.originalId, "Tekstkrav-01");
 });
 
 test("known corpus sentence cannot assign an ID without local anchors", () => {

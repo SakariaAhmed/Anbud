@@ -149,12 +149,14 @@ function promptAttachmentMetadata(file: File, fileName: string) {
 
 export function ProjectChatPopoutPage({
   projectId,
+  canDownloadDocuments = false,
   projectName,
   customerName,
   projects,
   initialSessionId,
 }: {
   projectId: string;
+  canDownloadDocuments?: boolean;
   projectName: string;
   customerName: string | null;
   projects: ProjectSummary[];
@@ -813,6 +815,8 @@ export function ProjectChatPopoutPage({
               </span>
             </div>
             <ProjectChatTab
+              projectId={projectId}
+              canDownloadDocuments={canDownloadDocuments}
               variant="drawer"
               chatMessages={chatMessages}
               chatInput={chatInput}

@@ -104,13 +104,13 @@ test("adaptive first questions skip rewriting while prior context and forced rew
       let answer = ""; for await (const chunk of result.stream) answer += chunk;
       assert.equal(answer, "Et lokalt svar.");
       assert.equal(state.rewrites.length, item.rewrites, item.name);
-      assert.equal(state.retrieval.length, 1, item.name);
+      assert.equal(state.retrieval.length, item.rewrites ? 2 : 1, item.name);
       assert.equal(state.answers.length, 1, item.name);
       assert.ok(state.retrieval[0].exactTerms.includes("K-42"), item.name);
       assert.match(state.retrieval[0].query, /K-42/);
       assert.ok(state.retrieval[0].broaderQuery.startsWith(question), item.name);
       assert.ok(state.retrieval[0].broaderExactTerms.includes("K-42"), item.name);
-      assert.equal(typeof state.retrieval[0].rerank, "function", "model rerank is on by default");
+      assert.equal(state.retrieval[0].rerank, undefined, "the speculative deterministic search never spends a model rerank call");
       assert.deepEqual(history, item.messages, "The history sent to the final answer must not be mutated.");
       assert.doesNotMatch(state.answers[0].user, /### Dokumentregel|Hele\s+står nedenfor/u,
         "A chat without documents must not claim whole documents are included.");
@@ -240,7 +240,7 @@ test("model rerank is skipped when the whole documents are in the prompt", async
     writeFileSync(completion, `exports.createTextCompletionStream = async () => (async function* () { yield "ok"; })();`);
     writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => {
       globalThis.__projectChatRerankSkipTest.retrieval.push(input);
-      return { snippets: [], telemetry: { durationMs: 0, sourceCount: 0, quality: { sufficient: false, sourceCount: 0 } } };
+      return { snippets: [1, 2].map(index => ({ sourceType: "project_document", sourceId: "kunde", documentTitle: "kunde", reference: "del " + index, text: "Oppetid skal være 99,9 prosent.", headingPath: [], pageStart: null, pageEnd: null, lexicalScore: 2, score: 100, similarity: 0.8 })), telemetry: { durationMs: 0, sourceCount: 2, quality: { sufficient: true, sourceCount: 2 } } };
     };`);
     const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
       "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
@@ -254,7 +254,7 @@ test("model rerank is skipped when the whole documents are in the prompt", async
         customerAnalysis: null, solutionEvaluation: null, recentMessages: [], supportingDocuments,
         customerDocument: document("kunde", "primary_customer_document", text), solutionDocument: null });
       for await (const _ of result.stream) { /* drain */ }
-      return state.retrieval[0].rerank;
+      return state.retrieval.at(-1).rerank;
     };
     assert.equal(await ask("Oppetid skal være 99,9 prosent."), undefined, "a document sent whole needs no rerank");
     assert.equal(state.retrieval[0].surroundingSections, false, "an anchor keeps the matched part");
@@ -263,7 +263,7 @@ test("model rerank is skipped when the whole documents are in the prompt", async
     const supporting = [1, 2, 3, 4].map((index) => document(`bilag-${index}`, "supporting_document", "Kort bilag."));
     supporting.push(document("bilag-5", "supporting_document", "Oppetid i bilag 5. ".repeat(8000)));
     assert.equal(typeof await ask("Oppetid skal være 99,9 prosent.", supporting), "function",
-      "a fifth supporting document is searched but never sent whole");
+      "an oversized collection uses excerpts and one final model rerank");
   } finally {
     for (const [key, name] of [["rewrite", "RAG_QUERY_REWRITE"], ["rerank", "RAG_MODEL_RERANK"]]) {
       if (previous[key] === undefined) delete process.env[name]; else process.env[name] = previous[key];
@@ -554,7 +554,7 @@ test("chat keeps the full text of excerpts from documents the prompt does not ca
     const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
     const supports = Array.from({ length: 5 }, (_, index) =>
       // The first, included document repeats the fifth document's passage.
-      document(`s${index + 1}`, "supporting_document", index === 4 ? `Innledning.\n${exception}` : index === 0 ? `Støtte 1.\n${exception}` : `Støtte ${index + 1}.`),
+      document(`s${index + 1}`, "supporting_document", index === 4 ? `${"Lang bakgrunn. ".repeat(8000)}\n${exception}` : index === 0 ? `Støtte 1.\n${exception}` : `Støtte ${index + 1}.`),
     );
     const result = await streamProjectChat({
       projectName: "Fiktiv", question: "Hvilke unntak gjelder for tilgjengelighet?",
@@ -567,9 +567,7 @@ test("chat keeps the full text of excerpts from documents the prompt does not ca
     const user = state.prompts.at(-1).user;
     const excerpt = user.slice(user.indexOf("Støtte 5, side 2"), user.indexOf("Støtte 5, side 2") + exception.length + 400);
     assert.ok(excerpt.includes(exception), "the fifth document's own excerpt keeps its full text, even when an included document repeats it");
-    // The document rule says which documents are whole and which only excerpted.
-    assert.match(state.prompts.at(-1).user, /«s5» er bare med som utdrag/u);
-    assert.match(state.prompts.at(-1).user, /Hele «customer», «supplier», «s1», «s2», «s3», «s4» står nedenfor\./u);
+    assert.doesNotMatch(user, /Lang bakgrunn\. Lang bakgrunn/u, "large documents use retrieval without raw prefix duplication");
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
     delete globalThis.__projectChatFifthTest;

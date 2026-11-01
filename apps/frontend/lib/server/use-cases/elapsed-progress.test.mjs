@@ -46,7 +46,7 @@ const options = {
   intervalMs: 10_000,
 };
 
-test("a long AI step reports elapsed time and rising progress below its ceiling", async () => {
+test("a long AI step reports elapsed time without inventing a completion percentage", async () => {
   const clock = fakeTimers();
   const messages = [];
   let finish;
@@ -63,12 +63,10 @@ test("a long AI step reports elapsed time and rising progress below its ceiling"
   const parsed = messages.map(parseJobProgress);
   assert.equal(parsed.length, 21);
   assert.equal(parsed[0].label, "Analyserer kundedokumentet med AI (0 s)");
-  assert.equal(parsed[0].percent, 58);
+  assert.equal(parsed[0].percent, null);
   assert.equal(parsed[6].label, "Analyserer kundedokumentet med AI (1 min 00 s)");
   assert.equal(parsed[20].label, "AI-analysen tar lengre tid enn vanlig, men pågår fortsatt (3 min 20 s)");
-  assert.ok(parsed.every((entry) => entry.ceiling === 88 && entry.percent < 88));
-  assert.ok(parsed.every((entry, index) => index === 0 || entry.percent >= parsed[index - 1].percent));
-  assert.ok(parsed[15].percent > parsed[1].percent, "progress moves during the step");
+  assert.ok(parsed.every((entry) => entry.ceiling === null && entry.percent === null));
 });
 
 test("a progress write rejected after cancellation stops the ticker without failing the step", async () => {

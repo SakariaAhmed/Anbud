@@ -130,6 +130,7 @@ export type ProjectWorkflowInput =
 export type ProjectWorkflowPhaseHandler = (phase: string) => void;
 
 export interface ProjectWorkflowHandlers {
+  onDocumentClass?: (value: ProjectDocumentDetail["file_format"]) => void;
   setProgress: (message: string) => void;
   onPhase?: ProjectWorkflowPhaseHandler;
   assertActive?: () => void;
@@ -668,6 +669,7 @@ async function runDocumentIngestionWorkflow(
       error: null,
     });
     const document = await getDocumentDetail(input.projectId, input.documentId);
+    handlers.onDocumentClass?.(document.file_format);
     handlers.onPhase?.("filhenting");
 
     if (!document.file_base64) {
@@ -1040,6 +1042,7 @@ async function runDocumentDoclingEnhancementWorkflow(
 ): Promise<DocumentDoclingEnhancementJobResult> {
   handlers.setProgress(formatJobProgress(8, "Henter dokument for Docling-forbedring ...", 76));
   const document = await getDocumentDetail(input.projectId, input.documentId);
+  handlers.onDocumentClass?.(document.file_format);
   handlers.onPhase?.("filhenting");
 
   const readyStatus =

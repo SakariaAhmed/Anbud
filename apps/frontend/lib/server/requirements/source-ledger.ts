@@ -2509,7 +2509,8 @@ export async function extractRequirementLedgerWithCorrections(document: ProjectD
     await buildRequirementSourceLedgerWithFiles(document),
   )
     .map(recoverTruncatedRequirementLedgerEntryInline)
-    .map(recoverAvailabilityFractionRequirement);
+    .map(recoverAvailabilityFractionRequirement)
+    .map(entry => ({ ...entry, idOrigin: entry.idOrigin ?? "source" as const }));
   if (!isLegacyMixedFofingerCorpus(document)) {
     return applyRequirementCorrections(ledger, document.raw_text);
   }

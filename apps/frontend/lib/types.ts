@@ -514,6 +514,14 @@ export type ChatDomainHint =
   | "Dokument og kildegrunnlag";
 
 export interface ChatSourceReference {
+  /** Optional only for messages saved before evidence contract v1. */
+  evidence_id?: string;
+  chunk_id?: string | null;
+  source_revision?: number;
+  source_fingerprint?: string;
+  original_quote?: string;
+  document_role?: ProjectDocumentRole;
+  classification?: "documented" | "interpretation" | "needs_clarification";
   document_title: string;
   reference: string;
   heading_path: string[];

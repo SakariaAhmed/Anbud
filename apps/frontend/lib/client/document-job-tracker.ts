@@ -2,9 +2,11 @@ import { fetchProjectState, watchProjectJob } from "@/lib/client/project-api";
 import type { ProjectDetail, ProjectDocument, ProjectJobRecord } from "@/lib/types";
 
 export class DocumentProcessingFailure extends Error {
-  constructor(readonly kind: "server" | "connection") {
+  constructor(readonly kind: "server" | "connection", readonly phase: "ingestion" | "enhancement" = "ingestion") {
     super(kind === "server"
-      ? "Dokumentbehandlingen feilet. Prøv å behandle dokumentet på nytt."
+      ? phase === "enhancement"
+        ? "Dokumentforbedringen feilet. Grunnversjonen er lagret. Åpne dokumentstatus og prøv forbedringen på nytt."
+        : "Dokumentbehandlingen feilet. Prøv å behandle dokumentet på nytt."
       : "Mistet kontakt med dokumentbehandlingen. Status oppdateres når forbindelsen er tilbake.");
     this.name = "DocumentProcessingFailure";
   }
@@ -28,6 +30,7 @@ export async function trackDocumentProcessing(input: {
   onProject: (project: ProjectDetail) => void;
 }): Promise<ProjectDocument | null> {
   let serverFailure = false;
+  let phase: "ingestion" | "enhancement" = "ingestion";
   const assertActive = () => input.signal.throwIfAborted();
   const refreshProject = async () => {
     const project = await fetchProjectState(input.projectId, input.signal);
@@ -48,7 +51,7 @@ export async function trackDocumentProcessing(input: {
     assertActive();
     if (job.status === "failed") {
       serverFailure = true;
-      throw new DocumentProcessingFailure("server");
+      throw new DocumentProcessingFailure("server", phase);
     }
     return job;
   };
@@ -59,6 +62,9 @@ export async function trackDocumentProcessing(input: {
     const enhancementId = completed.result && "docling_enhancement_job_id" in completed.result
       ? completed.result.docling_enhancement_job_id : null;
     if (typeof enhancementId === "string") {
+      // Publish the persisted basic result before waiting for enhancement.
+      try { await refreshProject(); } catch { assertActive(); }
+      phase = "enhancement";
       input.onEnhancement();
       completed = await watch(enhancementId);
     }
@@ -74,6 +80,6 @@ export async function trackDocumentProcessing(input: {
       try { await refreshProject(); } catch { /* The activity loop retries reads. */ }
       assertActive();
     }
-    throw new DocumentProcessingFailure(serverFailure ? "server" : "connection");
+    throw new DocumentProcessingFailure(serverFailure ? "server" : "connection", phase);
   }
 }

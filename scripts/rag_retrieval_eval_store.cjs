@@ -14,8 +14,9 @@ function psql(sql) {
     input: sql,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    timeout: 60_000,
   });
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+  if (result.error || result.status !== 0) throw new Error(result.error?.message || result.stderr || result.stdout);
   return result.stdout.trim();
 }
 

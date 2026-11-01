@@ -51,6 +51,22 @@ const {
 } = jiti(testSupportPath);
 const { encryptString } = jiti(path.join(frontendRoot, "lib/server/crypto.ts"));
 
+test("exact full IDs resolve authoritative repeated rows before model reranking and invalidate with source changes", async () => {
+  resetDocumentChunksTestRuntime();
+  const source = (id, text, role = "primary_customer_document") => projectDocument({ id, role, file_format: "txt", raw_text: `1 Drift\nNORD-IAM-02 ${text}\nNORD-IAM-03 Leverandøren skal rapportere feil.\nNORD-IAM-04 Leverandøren skal tilby eksport.`, structure_map: [], chunk_source_revision: 1 });
+  const first = source("lookup-first", "Leverandøren skal ha døgnbemanning.");
+  const second = source("lookup-second", "Leverandøren skal levere en vaktplan.");
+  const solution = source("lookup-solution", "Leverandøren skal ikke overstyre kundekravet.", "primary_solution_document");
+  const input = { query: "Hva sier NORD-IAM-02?", exactTerms: ["NORD-IAM-02"], documents: [first, second, solution], rerank: async ({ candidates }) => candidates.map((_, i) => i).reverse() };
+  const result = await retrieveDocumentSnippetsWithMetadata(input);
+  assert.deepEqual(result.snippets.slice(0, 2).map(row => [row.sourceId, row.requirementId]), [[first.id, "NORD-IAM-02"], [second.id, "NORD-IAM-02"]]);
+  const updated = source(first.id, "Leverandøren skal ha beredskap i Norge.");
+  updated.chunk_source_revision = 2;
+  const fresh = await retrieveDocumentSnippetsWithMetadata({ ...input, documents: [updated] });
+  assert.match(fresh.snippets[0].text, /beredskap i Norge/u);
+  assert.doesNotMatch(fresh.snippets[0].text, /døgnbemanning/u);
+});
+
 function projectDocument(overrides = {}) {
   return {
     id: "project-document-1",

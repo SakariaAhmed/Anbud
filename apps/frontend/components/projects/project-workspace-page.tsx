@@ -196,13 +196,6 @@ function initialLoadedArtifactTypes(project: ProjectDetail) {
   return Array.from(loaded);
 }
 
-type ProgressDriverState = {
-  startedAt: number;
-  estimatedDurationMs: number;
-  floor: number;
-  ceiling: number;
-};
-
 function savedArtifactResult(job: ProjectJobRecord) {
   const result = job.result;
   if (result && "artifact" in result && result.artifact) {
@@ -212,57 +205,16 @@ function savedArtifactResult(job: ProjectJobRecord) {
 }
 
 function progressForJobStatus(job: Pick<ProjectJobRecord, "status" | "message">) {
-  if (job.status === "completed" || job.status === "failed") return 100;
-  if (job.status === "queued") return 8;
-  const { percent } = parseJobProgress(job.message);
-  return percent === null ? 28 : Math.min(99, Math.max(3, percent));
-}
-
-function progressCeilingForJobStatus(
-  job: Pick<ProjectJobRecord, "status" | "message">,
-) {
-  if (job.status === "completed" || job.status === "failed") return 100;
-  if (job.status === "queued") return 18;
-  const { percent, ceiling } = parseJobProgress(job.message);
-  if (percent === null) return 88;
-  return Math.min(99, ceiling ?? Math.max(3, percent) + 8);
+  if (job.status === "completed") return 100;
+  if (job.status !== "running") return -1;
+  const count = /(?:Besvart|Analysert|Behandlet)\s+(\d+)\s+av\s+(\d+)\s+krav/iu.exec(job.message);
+  const done = Number(count?.[1]);
+  const total = Number(count?.[2]);
+  return total > 0 && done >= 0 && done <= total ? Math.round(100 * done / total) : -1;
 }
 
 function progressMessageLabel(message: string) {
   return parseJobProgress(message).label;
-}
-
-function estimatedJobDurationMs(job: Pick<ProjectJobRecord, "kind">) {
-  const baseByKind: Record<ProjectJobRecord["kind"], number> = {
-    document_ingestion: 45_000,
-    document_docling_enhancement: 120_000,
-    customer_analysis: 150_000,
-    solution_evaluation: 80_000,
-    artifact_generation: 95_000,
-    high_level_design: 65_000,
-    perfect_system_solution: 135_000,
-    executive_summary: 45_000,
-  };
-
-  return baseByKind[job.kind] ?? 75_000;
-}
-
-function estimatedProgressFromElapsed(
-  elapsedMs: number,
-  estimatedDurationMs: number,
-  floor = 8,
-  ceiling = 93,
-) {
-  const ratio = Math.min(1, Math.max(0, elapsedMs / estimatedDurationMs));
-  const eased = 1 - Math.pow(1 - ratio, 1.45);
-  return Math.round(floor + eased * (ceiling - floor));
-}
-
-function nextDisplayedProgress(current: number, target: number) {
-  if (target <= current) return current;
-  const distance = target - current;
-  const maxStep = distance > 20 ? 4 : distance > 8 ? 2.5 : 1.5;
-  return Math.min(target, current + maxStep);
 }
 
 function parseCustomerAnalysisSectionBusy(
@@ -283,11 +235,13 @@ export function ProjectWorkspacePage({
   initialData,
   initialTab = "analysis",
   canShare = false,
+  canDownloadDocuments = false,
   readOnly = false,
 }: {
   initialData: ProjectDetail;
   initialTab?: ProjectWorkspaceTab;
   canShare?: boolean;
+  canDownloadDocuments?: boolean;
   readOnly?: boolean;
 }) {
   const pathname = usePathname();
@@ -338,8 +292,6 @@ export function ProjectWorkspacePage({
   const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [documentFileInputKey, setDocumentFileInputKey] = useState(0);
-  const progressIntervalRef = useRef<number | null>(null);
-  const progressDriverRef = useRef<ProgressDriverState | null>(null);
   const documentJobAbortControllersRef = useRef<Set<AbortController>>(new Set());
   const artifactAuthorityRequestGateRef = useRef(
     createLatestArtifactAuthorityRequestGate(),
@@ -536,65 +488,19 @@ export function ProjectWorkspacePage({
   }, []);
 
   function stopProgressTicker() {
-    if (progressIntervalRef.current) {
-      window.clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-    progressDriverRef.current = null;
     setBusyMessage("");
-    setBusyProgress(0);
+    setBusyProgress(-1);
   }
 
   function startProgressTicker(messages: string[]) {
-    stopProgressTicker();
-    progressDriverRef.current = {
-      startedAt: Date.now(),
-      estimatedDurationMs: 45_000,
-      floor: 6,
-      ceiling: 82,
-    };
-    setBusyProgress(6);
-    if (!messages.length) {
-      setBusyMessage("Starter ...");
-      return;
-    }
-    setBusyMessage(messages[0] ?? "");
+    setBusyProgress(-1);
+    setBusyMessage(messages[0] || "Starter ...");
   }
 
-  function startEstimatedProgress(job: ProjectJobRecord) {
-    if (progressIntervalRef.current) {
-      window.clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-    progressDriverRef.current = {
-      startedAt: Date.now(),
-      estimatedDurationMs: estimatedJobDurationMs(job),
-      floor: progressForJobStatus(job),
-      ceiling: progressCeilingForJobStatus(job),
-    };
-    setBusyProgress((current) =>
-      nextDisplayedProgress(current, progressDriverRef.current?.floor ?? current),
-    );
-    progressIntervalRef.current = window.setInterval(() => {
-      const driver = progressDriverRef.current;
-      if (!driver) return;
-      const elapsed = Date.now() - driver.startedAt;
-      const targetProgress = estimatedProgressFromElapsed(
-        elapsed,
-        driver.estimatedDurationMs,
-        driver.floor,
-        driver.ceiling,
-      );
-      setBusyProgress((current) =>
-        Math.min(
-          driver.ceiling,
-          nextDisplayedProgress(current, Math.max(driver.floor, targetProgress)),
-        ),
-      );
-    }, 650);
+  function startPersistedProgress(job: ProjectJobRecord) {
+    setBusyProgress(progressForJobStatus(job));
+    setBusyMessage(progressMessageLabel(job.message));
   }
-
-  useEffect(() => stopProgressTicker, []);
 
   useEffect(() => {
     const documentJobAbortControllers = documentJobAbortControllersRef.current;
@@ -626,30 +532,11 @@ export function ProjectWorkspacePage({
 
   const { waitForProjectJob } = useProjectJobRunner({
     projectId: project.id,
-    onStart: startEstimatedProgress,
+    onStart: startPersistedProgress,
     onStatus(jobStatus) {
       recordJob(jobStatus);
       setBusyMessage(progressMessageLabel(jobStatus.message));
-      const nextProgress = progressForJobStatus(jobStatus);
-      const nextCeiling = progressCeilingForJobStatus(jobStatus);
-      if (progressDriverRef.current) {
-        progressDriverRef.current = {
-          ...progressDriverRef.current,
-          floor: Math.max(progressDriverRef.current.floor, nextProgress),
-          ceiling: Math.max(progressDriverRef.current.ceiling, nextCeiling),
-        };
-      }
-      setBusyProgress((current) =>
-        jobStatus.status === "completed" || jobStatus.status === "failed"
-          ? 100
-          : nextDisplayedProgress(
-              current,
-              Math.min(
-                progressCeilingForJobStatus(jobStatus),
-                Math.max(current, nextProgress),
-              ),
-            ),
-      );
+      setBusyProgress(progressForJobStatus(jobStatus));
     },
   });
 
@@ -674,16 +561,15 @@ export function ProjectWorkspacePage({
         onStatus(jobStatus) {
           if (options.propagateFailure) {
             setBusyMessage(progressMessageLabel(jobStatus.message));
-            setBusyProgress((current) =>
-              jobStatus.status === "completed" || jobStatus.status === "failed"
-                ? 100
-                : nextDisplayedProgress(current, Math.max(current, progressForJobStatus(jobStatus))),
-            );
+            setBusyProgress(progressForJobStatus(jobStatus));
           }
           setProject((current) => normalizeProjectState({
             ...current,
             documents: current.documents.map((document) => {
               if (document.id !== documentId || jobStatus.status === "completed") return document;
+              // Enhancement cannot turn the persisted basic result into a
+              // failed ingestion. The tracker refreshes its authoritative state.
+              if (jobStatus.kind === "document_docling_enhancement") return document;
               if (jobStatus.status === "failed") return {
                 ...document,
                 processing_status: "failed",
@@ -1130,7 +1016,7 @@ export function ProjectWorkspacePage({
       let completedDocument: ProjectDocument | null = payload.document;
       if (payload.job?.kind === "document_ingestion") {
         setBusyMessage(progressMessageLabel(payload.job.message));
-        startEstimatedProgress(payload.job);
+        startPersistedProgress(payload.job);
         completedDocument = await trackDocumentIngestionJob(
           payload.job,
           payload.document.id,
@@ -1189,7 +1075,7 @@ export function ProjectWorkspacePage({
       let completedDocument: ProjectDocument | null = payload.document;
       if (payload.job?.kind === "document_ingestion") {
         setBusyMessage(progressMessageLabel(payload.job.message));
-        startEstimatedProgress(payload.job);
+        startPersistedProgress(payload.job);
         completedDocument = await trackDocumentIngestionJob(
           payload.job,
           payload.document.id,
@@ -1904,6 +1790,8 @@ export function ProjectWorkspacePage({
       readOnly={readOnly}
     >
       <ProjectWorkspaceTabContent
+        canDownloadDocuments={canDownloadDocuments}
+        readOnly={readOnly}
         activeTab={activeTab}
         project={project}
         serviceDescriptions={serviceDescriptions}

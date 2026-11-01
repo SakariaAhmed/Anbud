@@ -2,7 +2,7 @@ export function extractExactRetrievalTerms(value: string) {
   return Array.from(
     new Set(
       [
-        ...value.matchAll(/\b[A-ZÆØÅ]{1,8}-?\d{1,5}(?:\.\d+)*\b/g),
+        ...value.matchAll(/\b[A-ZÆØÅ]{1,8}(?:-[A-ZÆØÅ]{1,8})*-?\d{1,5}(?:\.\d+)*(?:\.[a-z])?\b/g),
         ...value.matchAll(
           /\b(?:SSA-[A-Z]|SLA|RTO|RPO|GDPR|DPIA|ISO\s*27001|NSM|WCAG)\b/gi,
         ),
