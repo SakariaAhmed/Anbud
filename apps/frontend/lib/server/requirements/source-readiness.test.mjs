@@ -1779,6 +1779,40 @@ test("filename destinations retain their leading and trailing location qualifier
   }
 });
 
+test("location cleanup preserves complete selected titles and never invents an unknown part title", () => {
+  const registers = [
+    { id: "descriptor", title: "Dokument Sikkerhet", ids: ["K-2.1"] },
+    { id: "short", title: "Sikkerhet", ids: ["R-1.1"] },
+    { id: "part", title: "Kravspesifikasjon del 2", ids: ["S-1.1"] },
+    { id: "base", title: "Kravspesifikasjon", ids: ["T-1.1"] },
+    { id: "number", title: "Dokument 5", ids: ["V-1.1"] },
+  ];
+  for (const [title, expected] of [["Dokument Sikkerhet", "descriptor"], ["Kravspesifikasjon del 2", "part"], ["Dokument 5", "number"]]) {
+    for (const prefix of ["", "kapittel 4 i ", "dokumentet "]) {
+      for (const suffix of ["", " i kapittel 4", ", tabell 2"]) {
+        const correction = `Nytt krav K-2.3 legges til i ${prefix}${title}${suffix}: «Leverandøren skal levere en exitplan.»`;
+        assert.equal(correctedRegisterRows(correction, registers).find(row => row.id === "K-2.3")?.documentId, expected, correction);
+      }
+    }
+  }
+  for (const name of ["Kravspesifikasjon del 3", "dokumentet Kravspesifikasjon del 3", "Kravspesifikasjon del 3 i kapittel 4"]) {
+    assert.throws(() => correctedRegisterRows(`Nytt krav K-2.3 legges til i ${name}: «Leverandøren skal levere en exitplan.»`, registers), /K-2\.3.*entydig/u, name);
+  }
+});
+
+test("competing descriptor and location interpretations preserve an exact title or reject ambiguity", () => {
+  const registers = [
+    { id: "qualified", title: "Sikkerhetskrav i kapittel 4", ids: ["K-2.1"] },
+    { id: "short", title: "Sikkerhetskrav", ids: ["R-1.1"] },
+  ];
+  const rows = correctedRegisterRows("Nytt krav K-2.3 legges til i dokumentet Sikkerhetskrav i kapittel 4: «Leverandøren skal levere en exitplan.»", registers);
+  assert.equal(rows.find(row => row.id === "K-2.3")?.documentId, "qualified");
+  assert.throws(() => correctedRegisterRows("Nytt krav K-2.3 legges til i Dokument Sikkerhet i kapittel 4: «Leverandøren skal levere en exitplan.»", [
+    { id: "descriptor", title: "Dokument Sikkerhet", ids: ["K-2.1"] },
+    { id: "location", title: "Sikkerhet i kapittel 4", ids: ["R-1.1"] },
+  ]), /K-2\.3.*entydig/u);
+});
+
 test("each addition in one correction paragraph keeps its own named register", () => {
   const rows = correctedRegisterRows("Krav K-2.1 i Bilag 1 endres og skal nå lyde: «Leverandøren skal levere rapporter.» Nytt krav K-2.3 legges til i Bilag 3: «Leverandøren skal levere en exitplan.» Nytt krav K-2.4 legges til i Bilag 1: «Leverandøren skal teste tilbakeføring.»", [
     { id: "first", title: "Bilag 1", ids: ["K-2.1", "K-2.2"] },
