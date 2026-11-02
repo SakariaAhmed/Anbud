@@ -115,44 +115,52 @@ function mentionsChatName(question: string, name: string, inflect = false) {
 }
 
 /** Source exemptions use affirmative request frames, not arbitrary name mentions.
- * Every sentence must select the source; a rejected or unrelated request cannot
- * inherit another sentence's exemption. This is deliberately conservative. */
+ * Source requests must select an available source. Closed output-only follow-ups
+ * may inherit it; rejected sources and new factual requests do not. */
 function requestsChatSource(question: string, names: string[], attachment = false) {
   const clauses = question.toLocaleLowerCase("nb-NO")
-    .split(/[!?;\n]+|\.(?:\s+|$)|\s+og\s+(?=(?:hva|hvilke|hvordan|ikke|unngå|gi|oppgi)\b)/u)
+    .split(/[!?;\n]+|\.(?:\s+|$)|\s+og\s+(?=(?:hva|hvilke|hvordan|ikke|unngå|gi|oppgi)(?![\p{L}\p{N}]))/u)
     .map(clause => clause.trim()).filter(Boolean);
   const determiner = "(?:(?:det|den|dette|denne|mitt|vårt|din|ditt|siste|nyeste|vedlagte|opplastede)\\s+)*";
-  return clauses.length > 0 && clauses.every(clause => names.some(name => {
-    if (!name.trim()) return false;
-    const escaped = name.toLocaleLowerCase("nb-NO").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    const distinctSource = /^(?:risikoplan|løsningsvurdering|kundeanalyse|systemløsning|løsningsutkast|tilbudsstrategi|prosjektoversikt)$/u.test(name);
-    // Contractual nouns can describe a topic ("utkast til kontrakt"). An
-    // attachment or distinct application source may have a topic/beneficiary
-    // suffix; a generic source also permits the beneficiary "for meg/oss".
-    // Location binding is checked at the interpretation gate.
-    const complementGuard = attachment || distinctSource ? "" : `(?!\\s+(?:til|av|for(?!\\s+(?:meg|oss)\\b))\\b)`;
-    const target = `${determiner}${escaped}${!/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])${complementGuard}`;
-    // All attachment frames use the same definite-source contract. This also
-    // prevents an attachment titled "Vedlegg" from standing in for Vedlegg 3.
-    const genericAttachment = /^(?:vedlegg|chatvedlegg|fil|dokument)$/u.test(name.toLocaleLowerCase("nb-NO"));
-    const attachmentTarget = genericAttachment
-      ? `(?:${target}(?<=en|et)|(?:(?:vedlagte|opplastede|denne|dette|mitt|vårt|ditt)\\s+)+${escaped})(?![\\p{L}\\p{N}])(?!(?:\\s+(?:til\\b|\\d)))` : target;
-    const requestTarget = attachment ? attachmentTarget : target;
-    const direct = new RegExp(`^(?:hva\\s+(?:sier|viser|foreslår|anbefaler)|oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv|gi\\s+(?:en\\s+)?oppsummering\\s+av)\\s+${requestTarget}`, "u");
-    const citation = new RegExp(`\\b(?:ifølge|basert\\s+på)\\s+${requestTarget}`, "u");
-    const literalReading = new RegExp(`^hva\\s+står\\s+(?:det\\s+)?i\\s+${requestTarget}`, "u");
-    const attachmentReading = attachment
-      ? new RegExp(`\\b(?:(?:i|fra|se\\s+på|les)\\s+|oppsummer(?:e|ing)?\\s+(?:av\\s+)?|sammendrag\\s+av\\s+)${attachmentTarget}|^hva\\s+(?:handler|inneholder)\\s+${attachmentTarget}`, "u") : null;
-    // Generic draft/assessment nouns do not qualify through a bare locative.
-    const locative = distinctSource ? new RegExp(`\\b(?:i|fra)\\s+${target}`, "u") : null;
-    const match = direct.exec(clause) ?? citation.exec(clause) ?? literalReading.exec(clause) ?? attachmentReading?.exec(clause) ?? locative?.exec(clause);
-    const rejectedSource = new RegExp(`(?:^|[,;]|\\b(?:og|men)\\s+)\\s*(?:jeg\\s+vil\\s+)?(?:ikke|ingen|unngå|uten|unntatt|heller\\s+enn)\\s+(?:[\\p{L}]+\\s+){0,5}${target}`, "u");
-    if (!match || rejectedSource.test(clause)) return false;
-    // Negation before the selected source rejects that request, including
-    // "ikke bruk innholdet i ...". Negated subject matter after it does not.
-    const sourceRequest = clause.slice(0, match.index + match[0].length);
-    return !/(?:^|[,;]|\bog\s+)\s*(?:jeg\s+vil\s+)?(?:ikke|ingen|unngå|uten|heller\s+enn)\b|\bikke\s+(?:(?:å\s+)?(?:bruke?|benytte?|vise?|oppsummere?)|i|fra|ifølge|basert\s+på)\b|\bunntatt\s+(?:i|fra)\b|\bser?\s+bort\s+fra\b|\bbortsett\s+fra\b|\butenom\b|\benn\s+(?:i|fra)\b/u.test(sourceRequest);
-  }));
+  return clauses.length > 0 && clauses.every((clause, index) => {
+    // These complete output-shaped follow-ups inherit the source selected by
+    // the preceding clause. Anything requesting another fact/source must match
+    // its own source frame (notably "gi meg kundens bindende exit-frist").
+    if (index > 0 && /^(?:gi\s+(?:(?:meg|oss)\s+)?(?:(?:en\s+)?(?:kort\s+)?oppsummering|hovedpunktene|(?:to|tre|fire|fem|\d+)\s+(?:anbefalinger|tiltak))|oppgi\s+fristene|unngå\s+å\s+nevne\s+(?:frister|priser|beløp|navn))$/u.test(clause)) return true;
+    return names.some(name => {
+      if (!name.trim()) return false;
+      const escaped = name.toLocaleLowerCase("nb-NO").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+      const distinctSource = /^(?:risikoplan|løsningsvurdering|kundeanalyse|systemløsning|løsningsutkast|tilbudsstrategi|prosjektoversikt)$/u.test(name);
+      // Contractual nouns can describe a topic ("utkast til kontrakt"). An
+      // attachment or distinct application source may have a topic/beneficiary
+      // suffix; a generic source also permits the beneficiary "for meg/oss".
+      // Generic locations are refused even without a matching project title.
+      const complementGuard = attachment || distinctSource ? "" : `(?!\\s+(?:til|av|for(?!\\s+(?:meg|oss)\\b))\\b)`;
+      const locationGuard = /^(?:analyse|vurdering)$/u.test(name)
+        ? `(?!\\s+i\\s+(?!(?:korte\\s+trekk|punktform|praksis|(?:tre|to|fire|fem|\\d+)\\s+punkter)\\b))` : "";
+      const target = `${determiner}${escaped}${!/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])${complementGuard}${locationGuard}`;
+      // All attachment frames use the same definite-source contract. This also
+      // prevents an attachment titled "Vedlegg" from standing in for Vedlegg 3.
+      const genericAttachment = /^(?:vedlegg|chatvedlegg|fil|dokument)$/u.test(name.toLocaleLowerCase("nb-NO"));
+      const attachmentTarget = genericAttachment
+        ? `(?:${target}(?<=en|et)|(?:(?:vedlagte|opplastede|denne|dette|mitt|vårt|ditt|siste|nyeste)\\s+)+${escaped})(?![\\p{L}\\p{N}])(?!(?:\\s+(?:til\\b|\\d)))` : target;
+      const requestTarget = attachment ? attachmentTarget : target;
+      const direct = new RegExp(`^(?:hva\\s+(?:sier|viser|foreslår|anbefaler)|oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv|gi\\s+(?:(?:meg|oss)\\s+)?(?:en\\s+)?(?:kort\\s+)?oppsummering\\s+av)\\s+${requestTarget}`, "u");
+      const citation = new RegExp(`\\b(?:ifølge|basert\\s+på)\\s+${requestTarget}`, "u");
+      const literalReading = new RegExp(`^hva\\s+står\\s+(?:det\\s+)?i\\s+${requestTarget}`, "u");
+      const attachmentReading = attachment
+        ? new RegExp(`\\b(?:(?:i|fra|se\\s+på|les)\\s+|oppsummer(?:e|ing)?\\s+(?:av\\s+)?|sammendrag\\s+av\\s+)${attachmentTarget}|^hva\\s+(?:handler|inneholder)\\s+${attachmentTarget}`, "u") : null;
+      // Generic draft/assessment nouns do not qualify through a bare locative.
+      const locative = distinctSource ? new RegExp(`\\b(?:i|fra)\\s+${target}`, "u") : null;
+      const match = direct.exec(clause) ?? citation.exec(clause) ?? literalReading.exec(clause) ?? attachmentReading?.exec(clause) ?? locative?.exec(clause);
+      const rejectedSource = new RegExp(`(?:^|[,;]|\\b(?:og|men)\\s+)\\s*(?:jeg\\s+vil\\s+)?(?:ikke|ingen|unngå|uten|unntatt|heller\\s+enn)\\s+(?:[\\p{L}]+\\s+){0,5}${target}`, "u");
+      if (!match || rejectedSource.test(clause)) return false;
+      // Negation before the selected source rejects that request, including
+      // "ikke bruk innholdet i ...". Negated subject matter after it does not.
+      const sourceRequest = clause.slice(0, match.index + match[0].length);
+      return !/(?:^|[,;]|\bog\s+)\s*(?:jeg\s+vil\s+)?(?:ikke|ingen|unngå|uten|heller\s+enn)\b|\bikke\s+(?:(?:å\s+)?(?:bruke?|benytte?|vise?|oppsummere?)|i|fra|ifølge|basert\s+på)\b|\bunntatt\s+(?:i|fra)\b|\bser?\s+bort\s+fra\b|\bbortsett\s+fra\b|\butenom\b|\benn\s+(?:i|fra)\b/u.test(sourceRequest);
+    });
+  });
 }
 
 function rejectsChatDraft(question: string) {
@@ -1066,9 +1074,10 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     || new RegExp(`(?<![\\p{L}\\p{N}])(?:${attachmentNames})(?![\\p{L}\\p{N}])\\s*(?:,|\\s+(?:og|eller))\\s+(?:(?:de|andre|gjeldende)\\s+){0,3}(?:krav(?:ene|et)?|kunden)\\b`, "iu").test(input.question)
     || namesProjectSource;
   const comparisonTarget = `(?:(?:de|den|det|alle|andre|gjeldende|øvrige|våre|vår|deres|kundens|prosjektets)\\s+){0,4}(?:krav(?:ene|et)?|behov(?:ene|et)?|løsning(?:en)?|kontrakt(?:en)?|tilbud(?:et)?|kundekrav\\w*|evalueringskriter\\w*|prosjekt(?:et|ets)?|kunden|kravdokument\\w*|kravspesifikasjon\\w*|konkurransegrunnlag\\w*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
+  const comparisonSource = `(?<![\\p{L}\\p{N}])(?:${attachmentNames}|det|den)(?![\\p{L}\\p{N}])`;
   const comparesSources = /\b(?:sammenlign(?:e|er|et)?|sammenlikn(?:e|er|et)?|sammenhold(?:e|er|t)?|oppfyll(?:e|er)?|strid|opp\s+mot)\b|^(?:dekk(?:er|e)|samsvar\w*|avvik\w*|tilfredsstill\w*|stemm\w*)\b/iu.test(comparisonQuestion.trim())
-    || /^(?:vurder|vis|forklar|beskriv)\b[^.!?]*\b(?:mot(?!\s+kunden\b)|i\s+lys\s+av)\b/iu.test(comparisonQuestion.trim())
-    || new RegExp(`\\b(?:i\\s+forhold\\s+til|kontra|mot(?!\\s+kunden\\b)|i\\s+lys\\s+av)\\s+${comparisonTarget}`, "iu").test(comparisonQuestion)
+    || new RegExp(`^(?:vurder|vis|forklar|beskriv)\\b[^.!?]*${comparisonSource}\\s+(?:mot|i\\s+lys\\s+av)\\s+`, "iu").test(comparisonQuestion.trim())
+    || new RegExp(`${comparisonSource}\\s+(?:i\\s+forhold\\s+til|kontra|mot|i\\s+lys\\s+av)\\s+${comparisonTarget}`, "iu").test(comparisonQuestion)
     || new RegExp(`\\b(?:(?:det|den|vedlegget|filen|fila|dokumentet)\\s+(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker|er\\s+i\\s+tråd)|(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker)\\s+(?:det|den|vedlegget|filen|fila|dokumentet))\\s+(?:(?:med|fra|på)\\s+)?${comparisonTarget}`, "iu").test(comparisonQuestion);
   const attachmentQuestion = !mentionsProjectEvidence && !comparesSources && attachmentReferences.some(source =>
     requestsChatSource(input.question, ["vedlegg", "chatvedlegg", "fil", "fila", "dokument", source.document_title], true)

@@ -787,10 +787,12 @@ async function runProjectJob(
   let acceptReportedTerminalMetadata = true;
   let terminalPersisted = false;
   let workflowAbandoned = false;
-  // The revision a running enhancement read, until its workflow settles the outcome itself.
+  // Seed failures before the first read; the workflow replaces this with its read revision.
+  const initialEnhancementRevision = input.kind === "document_docling_enhancement"
+    ? input.sourceRevision ?? input.failureSourceRevision : undefined;
   let enhancementInProgress: { documentId: string; sourceRevision: number } | null =
-    input.kind === "document_docling_enhancement" && input.sourceRevision !== undefined
-      ? { documentId: input.documentId, sourceRevision: input.sourceRevision } : null;
+    input.kind === "document_docling_enhancement" && initialEnhancementRevision !== undefined
+      ? { documentId: input.documentId, sourceRevision: initialEnhancementRevision } : null;
   let enhancementDeadline: { documentId: string; sourceRevision: number } | null = null;
 
   try {
@@ -866,7 +868,7 @@ async function runProjectJob(
                   kind: "document_docling_enhancement",
                   projectId: input.projectId,
                   documentId: input.documentId,
-                  sourceRevision: workflowResult.document.chunk_source_revision,
+                  failureSourceRevision: workflowResult.document.chunk_source_revision,
                 },
                 {
                   autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false),

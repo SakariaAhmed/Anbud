@@ -12,7 +12,7 @@ const settings = {
   DOCLING_ENHANCEMENT_MODE: "async", DOCLING_ASYNC_AUTO_RUN: "off", DOCLING_PDF_CHUNKING: "off", DOCLING_OCR: "off",
 };
 
-async function runEnhancement(t, { doclingScript, saveError, assertActive } = {}) {
+async function runEnhancement(t, { doclingScript, saveError, assertActive, sourceRevision } = {}) {
   const directory = mkdtempSync(path.join(tmpdir(), "enhancement-failure-"));
   const command = path.join(directory, "docling.mjs");
   writeFileSync(command, `#!${process.execPath}
@@ -57,7 +57,7 @@ exports.saveDocumentIngestionResult = async input => {
     "@": frontend, "server-only": "/dev/null",
   } });
   const { runProjectWorkflow } = await jiti.import(path.join(frontend, "lib/server/use-cases/project-workflows.ts"));
-  const run = () => runProjectWorkflow({ kind: "document_docling_enhancement", projectId: "project", documentId: "document" }, { setProgress() {}, ...(assertActive ? { assertActive } : {}) });
+  const run = () => runProjectWorkflow({ kind: "document_docling_enhancement", projectId: "project", documentId: "document", ...(sourceRevision === undefined ? {} : { sourceRevision }) }, { setProgress() {}, ...(assertActive ? { assertActive } : {}) });
   return { run, state };
 }
 const withMarkdown = text => `writeFileSync(path.join(output, "source.md"), ${JSON.stringify(text)});`;
@@ -137,7 +137,7 @@ test("a lost lease writes nothing more to the document", async t => {
 
 // The real job runner, deadline race and enhancement workflow around one slow
 // parser. Only the repositories are replaced, and the deadline is shortened.
-async function runJobToDeadline(t, { doclingScript, scheduleDelayMs = 0, hangDocumentRead = false, terminalAccepted = true, loseLeaseAfterMs = null, retrySourceRevision, readError, retainedProcessingError = null, automaticIngestion = false }) {
+async function runJobToDeadline(t, { doclingScript, scheduleDelayMs = 0, hangDocumentRead = false, terminalAccepted = true, loseLeaseAfterMs = null, retrySourceRevision, readError, retainedProcessingError = null, automaticIngestion = false, beforeEnhancementClaim, timeoutMs = 400 }) {
   const directory = mkdtempSync(path.join(tmpdir(), "enhancement-deadline-"));
   const command = path.join(directory, "docling.mjs");
   writeFileSync(command, `#!${process.execPath}
@@ -151,7 +151,7 @@ ${doclingScript}
   Object.assign(process.env, settings, { DOCLING_CLI_COMMAND: command });
   const state = globalThis.__enhancementDeadline = {
     document: { id: "document", project_id: "project", role: "supporting_document", supporting_subtype: "kravdokument", title: "Bilag 1", file_name: "bilag.pdf", file_format: "pdf", content_type: "application/pdf", file_size_bytes: 100, file_base64: Buffer.from("%PDF-1.4 syntetisk").toString("base64"), raw_text: basicText, structure_map: [], parser_used: "pdf-parse", processing_status: "basic_ready", processing_message: null, processing_error: retainedProcessingError, chunk_source_revision: 7, page_count: 1 },
-    updates: [], saves: [], rpc: [], terminal: [], scheduleDelayMs, hangDocumentRead, terminalAccepted, loseLeaseAfterMs, retrySourceRevision, readError, automaticIngestion, queued: new Map(),
+    updates: [], saves: [], rpc: [], terminal: [], scheduleDelayMs, hangDocumentRead, terminalAccepted, loseLeaseAfterMs, retrySourceRevision, readError, automaticIngestion, queued: new Map(), timeoutMs,
   };
   t.after(() => {
     delete globalThis.__enhancementDeadline;
@@ -167,7 +167,7 @@ exports.getDocumentDetail = async () => { if (state().hangDocumentRead) await ne
 exports.getProjectSnapshotAfterCommit = async () => null;
 exports.updateDocumentProcessingState = async input => { state().updates.push(input); };
 exports.setDocumentEnhancementState = async input => { state().updates.push({ ...input, status: state().document.processing_status }); return true; };
-exports.saveDocumentIngestionResult = async input => { state().saves.push(input); return { ...state().document, processing_status: input.status, parser_used: input.parserUsed, chunk_source_revision: 8 }; };`);
+exports.saveDocumentIngestionResult = async input => { state().saves.push(input); return { ...state().document, processing_status: input.status, parser_used: input.parserUsed, chunk_source_revision: state().document.chunk_source_revision + 1 }; };`);
   writeFileSync(path.join(directory, "jobs.cjs"), `
 const state = () => globalThis.__enhancementDeadline;
 exports.claimQueuedProjectJob = async () => ({ leaseToken: "lease" });
@@ -210,7 +210,7 @@ export * from ${JSON.stringify(realDeadline)};
 import { runProjectWorkflowWithDeadline as run } from ${JSON.stringify(realDeadline)};
 export function runProjectWorkflowWithDeadline(input: Parameters<typeof run>[0]) {
   const state = (globalThis as any).__enhancementDeadline;
-  return state.scheduleDelayMs ? run({ ...input, timeoutMs: 60000, runtime: { setTimeout(callback: () => void) { state.fireDeadline = callback; return 1; }, clearTimeout() {} } }) : run({ ...input, timeoutMs: 400 });
+  return state.scheduleDelayMs ? run({ ...input, timeoutMs: 60000, runtime: { setTimeout(callback: () => void) { state.fireDeadline = callback; return 1; }, clearTimeout() {} } }) : run({ ...input, timeoutMs: state.timeoutMs });
 }`);
   const jiti = createJiti(path.join(directory, "test.cjs"), { moduleCache: false, alias: {
     "@/lib/server/repositories/data-store": path.join(directory, "store.cjs"),
@@ -229,6 +229,7 @@ export function runProjectWorkflowWithDeadline(input: Parameters<typeof run>[0])
     await runQueuedProjectJob("ingestion");
     assert.equal(state.queued.size, 1, "Ingestion enqueues one automatic enhancement.");
     state.terminal = [];
+    beforeEnhancementClaim?.(state);
     await runQueuedProjectJob([...state.queued.keys()][0]);
   } else await runQueuedProjectJob("job");
   return state;
@@ -275,6 +276,51 @@ test("automatic enhancements retain the published revision when their first read
   assert.equal(state.rpc[0].sourceRevision, 7);
   assert.equal(state.rpc[0].documentId, "document");
   assert.deepEqual(state.terminal, [], "The fenced combined transition owns the failure.");
+});
+
+test("manual enhancement retries still reject stale revisions and disabled configuration", async t => {
+  const { run, state } = await runEnhancement(t, { doclingScript: "process.exit(99)", sourceRevision: 3 });
+  state.document.chunk_source_revision = 4;
+  await assert.rejects(run(), /endret siden forbedringen/u);
+  state.document.chunk_source_revision = 3;
+  process.env.DOCLING_INGESTION = "off";
+  await assert.rejects(run(), /gjeldende oppsett/u);
+  assert.equal(state.saves.length, 0);
+  assert.equal(state.updates.length, 0);
+});
+
+test("automatic failure revisions are validated separately from explicit retry preconditions", async () => {
+  const jiti = createJiti(import.meta.url, { moduleCache: false, alias: { "@": frontend, "server-only": "/dev/null" } });
+  const { parseProjectWorkflowInput } = await jiti.import(path.join(frontend, "lib/server/use-cases/project-workflows.ts"));
+  const input = { kind: "document_docling_enhancement", projectId: "project", documentId: "document" };
+  assert.deepEqual(parseProjectWorkflowInput({ ...input, failureSourceRevision: 7 }), { ...input, failureSourceRevision: 7 });
+  assert.deepEqual(parseProjectWorkflowInput({ ...input, sourceRevision: 7 }), { ...input, sourceRevision: 7 });
+  for (const failureSourceRevision of [-1, 1.5, "7", null, Number.MAX_SAFE_INTEGER + 1])
+    assert.throws(() => parseProjectWorkflowInput({ ...input, failureSourceRevision }), /Ugyldig kildeversjon/u);
+  assert.throws(() => parseProjectWorkflowInput({ ...input, sourceRevision: 7, failureSourceRevision: 7 }), /både automatisk/u);
+});
+
+test("an automatic enhancement reads and publishes the current revision after a role change", async t => {
+  const state = await runJobToDeadline(t, { automaticIngestion: true, timeoutMs: 60000,
+    doclingScript: withMarkdown(`${basicText}\n\nK-2 skal også dokumenteres.`),
+    beforeEnhancementClaim(state) { state.document = { ...state.document, chunk_source_revision: 8, role: "primary_customer_document" }; },
+  });
+  assert.equal(state.rpc.length, 0);
+  assert.equal(state.saves.length, 1);
+  assert.equal(state.saves[0].expectedSourceRevision, 8);
+  assert.equal(state.saves[0].role, "primary_customer_document");
+  assert.equal(state.terminal.at(-1).status, "completed");
+});
+
+test("an automatic enhancement disabled before claim skips without a retry failure", async t => {
+  const state = await runJobToDeadline(t, { automaticIngestion: true, doclingScript: "process.exit(99)", timeoutMs: 60000,
+    beforeEnhancementClaim() { process.env.DOCLING_INGESTION = "off"; },
+  });
+  assert.equal(state.rpc.length, 0);
+  assert.equal(state.saves.length, 0);
+  assert.equal(state.terminal.at(-1).status, "completed");
+  assert.match(state.updates.at(-1).message, /hoppet over/u);
+  assert.equal(state.updates.at(-1).error, null);
 });
 
 test("an unversioned requeued attempt cannot erase the error retained by rejected recovery", async t => {

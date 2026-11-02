@@ -886,3 +886,75 @@ no universal natural-language intent guarantee is claimed. Chapter hybrid contex
 accounting resume and the previously listed runtime, semantic, production and
 human evidence gaps remain. No frozen cases, model settings, thresholds or budget
 were changed, and no paid/provider calls were made.
+
+## Council round 14: source-bound comparisons and automatic versus retry revisions
+
+Sol (6/10) and Opus (5/10) rejected `5c897bbc`. The generic location guard had
+been made dependent on a matching project title; the customer-topic exception
+also admitted real comparisons; and the broad anchored comparison rule refused
+ordinary attachment topics. The previous automatic enhancement fix additionally
+used a field that activates manual retry preconditions. Those are introduced
+regressions, not covered by the earlier syntax limitations.
+
+Generic `analyse`/`vurdering` followed by `i` again retains the source-evidence
+gate independently of matching document titles, with the explicit formatting
+exceptions preserved. Named page/chapter and coordinated-source controls remain.
+Comparison relations now bind to an attachment name or anaphoric source before
+the relation. “Vurder vedlegget mot kunden” and “mot kunden sine krav” keep the
+project gates; “tiltak mot datatap” and attachment topics about costs in relation
+to the solution remain readable. Existing modified-target and mixed-source
+regressions remain in the same real dispatch tests with stubbed retrieval/model.
+
+Coordinated summary requests accept the reported beneficiary and `kort` forms.
+Closed, complete output-shaped follow-ups may inherit the preceding source:
+summaries, main points, a numbered list of recommendations/actions and `oppgi
+fristene`. A follow-up asking for the customer's binding deadline still must
+qualify independently. `siste` and `nyeste` explicitly select an uploaded file.
+This restores the reported ordinary requests, without claiming an exhaustive
+language parser.
+
+CodeRabbit's Minor **“The `unngå` split branch never matches. Replace `\b` with a
+Unicode-aware boundary.”** is corrected. A coordinated `og unngå` clause now
+splits on a Unicode letter/digit boundary. A closed omission instruction such as
+“unngå å nevne frister” remains an output constraint; the tested clause that adds
+“svar på hva kundens bindende exit-frist er” retains the factual evidence gate.
+That mixed case fails before the boundary correction.
+
+Automatic jobs now carry `failureSourceRevision` for failure recording before
+the first read. Explicit retries continue to carry `sourceRevision` as a strict
+precondition. The input parser validates both and refuses an input supplying both.
+After a successful read, an automatic attempt adopts the actual read revision for
+failure/publication fencing. A role change from revision 7 to 8 before claim is
+therefore processed using revision 8 and its current role. The real job/workflow
+regression verifies this; the previous pin failed without attempting enhancement.
+An automatic job whose configuration no longer permits enhancement completes as
+a skip, with a revision-fenced queue-message update and no invented failure.
+Manual retries still reject stale revisions and disabled configuration. Their
+existing lease, cancellation and publication fences are unchanged.
+
+The earlier round-13 statement that the revision input only repaired early
+failure recording was incomplete: it also activated strict retry behavior. This
+section supersedes that statement. Existing queued inputs are not rewritten;
+old `sourceRevision` inputs keep strict behavior and unversioned inputs remain
+unversioned. If an initial document read fails after its revision has changed,
+the old failure seed cannot alter the newer document; no unfenced compensation
+is added. Skip-message updates also leave a concurrently changed document alone.
+
+All 53 focused tests pass. New chat, changed-revision and changed-configuration
+regressions fail against the previous owners; input-boundary and explicit-retry
+controls pass. The final full suite passes 1,530 frontend + 202 root tests (1,732
+total), zero failures/skips, plus parser goldens. Production build/types, full
+lint, schema/release/workflow checks, secret scan and whitespace checks pass.
+Original 116-case and extended 55-case recorded SQL regression suites pass with
+zero provider calls, missing recorded inputs or memory fallback. Conceptual
+recall is still 30/36 (MRR .565), stress 18/20; these do not pass release gates.
+
+Logs: `/private/tmp/anbud-r15-before.log`, `/private/tmp/anbud-r15-unicode-before.log`,
+`/private/tmp/anbud-r15-focused.log`, `/private/tmp/anbud-r15-final-tests.log`,
+`/private/tmp/anbud-r15-final-build.log`, `/private/tmp/anbud-r15-final-lint.log`,
+`/private/tmp/anbud-r15-retrieval.log`, `/private/tmp/anbud-r15-extended.log`.
+The owned AI-disabled app restarted after build. Fresh council/CI/CodeRabbit
+review is required.
+No schema, frozen fixture, model, threshold or budget change is included. Existing
+sentence-splitting, unsupported language, correction-parser and broader release
+limits remain; no paid/provider, production or new browser/HTTP proof ran.

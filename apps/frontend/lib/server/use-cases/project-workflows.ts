@@ -114,6 +114,7 @@ export type ProjectWorkflowInput =
       projectId: string;
       documentId: string;
       sourceRevision?: number;
+      failureSourceRevision?: number;
     }
   | { kind: "customer_analysis"; projectId: string; model?: string; automaticRequestId?: string; automaticSourceRevision?: number }
   | {
@@ -417,9 +418,12 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
         ),
       };
     case "document_docling_enhancement":
+      if (input.failureSourceRevision !== undefined && (!Number.isSafeInteger(input.failureSourceRevision) || Number(input.failureSourceRevision) < 0)) throw new Error("Ugyldig kildeversjon for automatisk dokumentforbedring.");
+      if (input.failureSourceRevision !== undefined && input.sourceRevision !== undefined) throw new Error("Dokumentforbedring kan ikke være både automatisk og et nytt forsøk.");
       if (input.sourceRevision !== undefined && (!Number.isSafeInteger(input.sourceRevision) || Number(input.sourceRevision) < 0)) throw new Error("Ugyldig kildeversjon for dokumentforbedring.");
       return {
         ...(input.sourceRevision !== undefined ? { sourceRevision: Number(input.sourceRevision) } : {}),
+        ...(input.failureSourceRevision !== undefined ? { failureSourceRevision: Number(input.failureSourceRevision) } : {}),
         kind: "document_docling_enhancement",
         projectId,
         documentId: requiredWorkflowString(
@@ -1064,6 +1068,9 @@ async function runDocumentDoclingEnhancementWorkflow(
   handlers.setProgress(formatJobProgress(8, "Henter dokument for Docling-forbedring ...", 76));
   const document = await getDocumentDetail(input.projectId, input.documentId);
   if (input.sourceRevision !== undefined && input.sourceRevision !== document.chunk_source_revision) throw new Error("Dokumentgrunnlaget er endret siden forbedringen ble bestilt.");
+  // Automatic jobs may read a newer eligible revision. From this point onward,
+  // failures and publication are fenced to what this attempt actually read.
+  if (input.failureSourceRevision !== undefined) handlers.onDocumentEnhancementStarted?.(input.documentId, document.chunk_source_revision);
   handlers.onDocumentClass?.(document.file_format);
   handlers.onPhase?.("filhenting");
 
@@ -1072,17 +1079,23 @@ async function runDocumentDoclingEnhancementWorkflow(
       ? "enhanced_ready"
       : "basic_ready";
 
+  const skippedResult = async (): Promise<DocumentDoclingEnhancementJobResult> => {
+    let currentDocument = document;
+    if (input.failureSourceRevision !== undefined) {
+      assertWorkflowActive(handlers);
+      const message = "Dokumentforbedring ble hoppet over med gjeldende dokument og oppsett.";
+      if (await setDocumentEnhancementState({ projectId: input.projectId, documentId: input.documentId,
+        sourceRevision: document.chunk_source_revision, message, error: document.processing_error ?? null })) {
+        currentDocument = { ...document, processing_message: message };
+      }
+    }
+    return { document: projectJobDocumentSummary(currentDocument), document_id: input.documentId,
+      status: currentDocument.processing_status, parser_used: currentDocument.parser_used,
+      project: await getProjectSnapshotAfterCommit(input.projectId), skipped: true };
+  };
+
   if (!document.file_base64 && input.sourceRevision !== undefined) throw new Error("Originalfilen er ikke tilgjengelig for dokumentforbedring.");
-  if (!document.file_base64 || document.parser_used === "docling") {
-    return {
-      document: projectJobDocumentSummary(document),
-      document_id: input.documentId,
-      status: document.processing_status,
-      parser_used: document.parser_used,
-      project: await getProjectSnapshotAfterCommit(input.projectId),
-      skipped: true,
-    };
-  }
+  if (!document.file_base64 || document.parser_used === "docling") return skippedResult();
 
   const shouldEnhance = shouldRunDoclingEnhancement({
     fileFormat: document.file_format,
@@ -1096,20 +1109,10 @@ async function runDocumentDoclingEnhancementWorkflow(
   });
 
   if (!shouldEnhance && input.sourceRevision !== undefined) throw new Error("Dokumentforbedring kan ikke starte med gjeldende oppsett. Kontakt administrator.");
-  if (!shouldEnhance) {
-    return {
-      document: projectJobDocumentSummary(document),
-      document_id: input.documentId,
-      status: document.processing_status,
-      parser_used: document.parser_used,
-      project: await getProjectSnapshotAfterCommit(input.projectId),
-      skipped: true,
-    };
-  }
+  if (!shouldEnhance) return skippedResult();
 
   handlers.setProgress(formatJobProgress(58, "Forbedrer dokumentstruktur med Docling ...", 88));
   assertWorkflowActive(handlers);
-  // From here a deadline leaves this document saying enhancement is running.
   handlers.onDocumentEnhancementStarted?.(input.documentId, document.chunk_source_revision ?? 0);
   if (!await setDocumentEnhancementState({
     projectId: input.projectId,
