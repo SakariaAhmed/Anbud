@@ -129,13 +129,17 @@ function requestsChatSource(question: string, names: string[], attachment = fals
     // Contractual nouns can describe a topic ("utkast til kontrakt"). An
     // attachment or distinct application source may have a topic/beneficiary
     // suffix; a generic source also permits the beneficiary "for meg/oss".
-    const complementGuard = attachment || distinctSource ? "" : "(?!\\s+(?:til|av|for(?!\\s+(?:meg|oss)\\b))\\b)";
+    const complementGuard = attachment || distinctSource ? "" : `(?!\\s+(?:til|av${/^(?:analyse|vurdering)$/u.test(name) ? "|i" : ""}|for(?!\\s+(?:meg|oss)\\b))\\b)`;
     const target = `${determiner}${escaped}${!/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])${complementGuard}`;
     const direct = new RegExp(`^(?:hva\\s+(?:sier|viser|foreslår|anbefaler)|oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv|gi\\s+(?:en\\s+)?oppsummering\\s+av)\\s+${target}`, "u");
     const citation = new RegExp(`\\b(?:ifølge|basert\\s+på)\\s+${target}`, "u");
     const literalReading = new RegExp(`^hva\\s+står\\s+(?:det\\s+)?i\\s+${target}`, "u");
+    // A bare contract appendix/file noun is not the uploaded attachment.
+    // Exact attachment titles still match through their own name entry.
+    const attachmentTarget = /^(?:vedlegg|chatvedlegg|fil|dokument)$/u.test(name)
+      ? `${target}(?<=en|et)(?!\\s+(?:til\\b|\\d))` : target;
     const attachmentReading = attachment
-      ? new RegExp(`\\b(?:(?:i|fra|se\\s+på|les)\\s+|oppsummer(?:e|ing)?\\s+(?:av\\s+)?|sammendrag\\s+av\\s+)${target}|^hva\\s+(?:handler|inneholder)\\s+${target}`, "u") : null;
+      ? new RegExp(`\\b(?:(?:i|fra|se\\s+på|les)\\s+|oppsummer(?:e|ing)?\\s+(?:av\\s+)?|sammendrag\\s+av\\s+)${attachmentTarget}|^hva\\s+(?:handler|inneholder)\\s+${attachmentTarget}`, "u") : null;
     // Generic draft/assessment nouns do not qualify through a bare locative.
     const locative = distinctSource ? new RegExp(`\\b(?:i|fra)\\s+${target}`, "u") : null;
     const match = direct.exec(clause) ?? citation.exec(clause) ?? literalReading.exec(clause) ?? attachmentReading?.exec(clause) ?? locative?.exec(clause);
@@ -144,7 +148,7 @@ function requestsChatSource(question: string, names: string[], attachment = fals
     // Negation before the selected source rejects that request, including
     // "ikke bruk innholdet i ...". Negated subject matter after it does not.
     const sourceRequest = clause.slice(0, match.index + match[0].length);
-    return !/(?:^|[,;]|\bog\s+)\s*(?:jeg\s+vil\s+)?(?:ikke|ingen|unngå|uten|heller\s+enn)\b|\bikke\s+(?:(?:å\s+)?(?:bruke?|benytte?|vise?|oppsummere?)|i|fra|ifølge|basert\s+på)\b|\bunntatt\s+(?:i|fra)\b/u.test(sourceRequest);
+    return !/(?:^|[,;]|\bog\s+)\s*(?:jeg\s+vil\s+)?(?:ikke|ingen|unngå|uten|heller\s+enn)\b|\bikke\s+(?:(?:å\s+)?(?:bruke?|benytte?|vise?|oppsummere?)|i|fra|ifølge|basert\s+på)\b|\bunntatt\s+(?:i|fra)\b|\bser?\s+bort\s+fra\b|\bbortsett\s+fra\b|\butenom\b|\benn\s+(?:i|fra)\b/u.test(sourceRequest);
   }));
 }
 
@@ -1036,8 +1040,8 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
       && requestsChatSource(input.question, artifactSections.filter(section => section.explicitlyNamed).map(section => section.artifact.title)));
   const asksForAvailableInterpretation = !rejectsInterpretation && (
     artifactSections.some(section => section.explicitlyNamed && (affirmativeDraftRequest || (!namesProjectSource && section.interpretationNamed)))
-    || Boolean(input.customerAnalysis && requestsChatSource(input.question, namesProjectSource ? ["kundeanalyse", "prosjektoversikt"] : ["kundeanalyse", "analyse", "prosjektoversikt"]))
-    || Boolean(input.solutionEvaluation && requestsChatSource(input.question, namesProjectSource ? ["løsningsvurdering"] : ["løsningsvurdering", "vurdering"])));
+    || Boolean(input.customerAnalysis && requestsChatSource(input.question, ["kundeanalyse", "analyse", "prosjektoversikt"]))
+    || Boolean(input.solutionEvaluation && requestsChatSource(input.question, ["løsningsvurdering", "vurdering"])));
   const artifactReferences: ChatSourceReference[] = artifactSections.map(({ artifact, heading, text }) => {
     const fingerprint = createHash("sha256").update(artifact.content_markdown).digest("hex");
     const revision = artifact.artifact_version ?? 0;
@@ -1049,9 +1053,12 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   // The attachment must be requested affirmatively; project-source subjects and
   // coordinated source names retain the project gates.
   const mentionsProjectEvidence = /\b(?:i|fra|mot|med|ifølge|og|eller)\s+(?:(?:selve|hele|dette)\s+)?(?:prosjekt(?:et|ets|dokument\w*)?|kunde(?:ns\s+krav|dokument\w*)|konkurranse(?:n|grunnlag\w*)?|krav(?:dokument\w*|spesifikasjon\w*)|løsningsdokument\w*)\b|\b(?:prosjektets|kundens)\s+(?:krav|dokument\w*|kilder?|grunnlag)\b|\b(?:kravdokument\w*|kravspesifikasjon\w*|kundedokument\w*|løsningsdokument\w*|konkurransegrunnlag\w*)\b/iu.test(input.question)
-    || /\b(?:og|eller)\s+(?:krav(?:ene|et)?|kunden)\b/iu.test(input.question)
+    || /\b(?:vedlegg(?:et|ene)?|chatvedlegg(?:et)?|fil(?:en|a)?|dokument(?:et)?)\s+(?:og|eller)\s+(?:krav(?:ene|et)?|kunden)\b/iu.test(input.question)
     || namesProjectSource;
-  const comparesSources = /\b(?:sammenlign\w*|sammenlikn\w*|sammenhold\w*|oppfyll\w*|strid|opp\s+mot|i\s+forhold\s+til|kontra)\b|^(?:dekk(?:er|e)|samsvar\w*|avvik\w*|tilfredsstill\w*|stemm\w*)\b|^(?:vurder|vis|forklar|beskriv)\b[^.!?]*\b(?:mot|i\s+lys\s+av)\b/iu.test(input.question.trim());
+  const comparisonTarget = `(?:(?:kundens|prosjektets)\\s+)?(?:krav(?:ene|et)?|prosjekt(?:et|ets)?|kunden|kravdokument\\w*|kravspesifikasjon\\w*|konkurransegrunnlag\\w*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
+  const comparesSources = /\b(?:sammenlign(?:e|er|et)?|sammenlikn(?:e|er|et)?|sammenhold(?:e|er|t)?|oppfyll(?:e|er)?|strid|opp\s+mot)\b|^(?:dekk(?:er|e)|samsvar\w*|avvik\w*|tilfredsstill\w*|stemm\w*)\b/iu.test(input.question.trim())
+    || new RegExp(`\\b(?:i\\s+forhold\\s+til|kontra|mot|i\\s+lys\\s+av)\\s+${comparisonTarget}`, "iu").test(input.question)
+    || new RegExp(`\\b(?:(?:det|den|vedlegget|filen|fila|dokumentet)\\s+(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker|er\\s+i\\s+tråd)|(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker)\\s+(?:det|den|vedlegget|filen|fila|dokumentet))\\s+(?:(?:med|fra|på)\\s+)?${comparisonTarget}`, "iu").test(input.question);
   const attachmentQuestion = !mentionsProjectEvidence && !comparesSources && attachmentReferences.some(source =>
     requestsChatSource(input.question, ["vedlegg", "chatvedlegg", "fil", "fila", "dokument", source.document_title], true)
     && requestedIds.every(id => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)));

@@ -751,3 +751,63 @@ Logs: `/private/tmp/anbud-r12-before.log`,
 semantic or production proof is claimed. No paid calls or budget changes ran;
 the existing release and budget gaps remain. Fresh council/CI/CodeRabbit review
 of this correction is required.
+
+
+## Council round 12: topic wording, excluded sources and partial table corrections
+
+Both members rejected `03336c97` (Sol 8/10, Opus 5/10). The prior comparison
+patterns matched topic nouns/passive wording, while broad coordinated-noun
+matching rejected ordinary attachment subjects. Widening attachment reading had
+also admitted excluded sources and bare contractual appendix/file references.
+Generic analysis/evaluation scoping confused source and subject. These concrete
+regressions are addressed here rather than assigned to the syntax caveat.
+
+Comparison matching now uses the intended active forms instead of arbitrary
+suffixes, preserving `sammenligning`, `sammenligningsgrunnlaget`, `oppfyllelse`
+and `oppfylles` as subject matter. Relational phrases (`i forhold til`, `kontra`,
+`mot`, `i lys av`) require an actual requested ID or a recognized project-source
+noun as the comparison target. Coverage comparison forms work mid-sentence and
+in the reported inverted order. Coordination requires the attachment noun next
+to `og`/`eller`, so “frister og krav” and “leverandøren og kunden” remain topics.
+
+The source-request check rejects the reported `se bort fra`, `bortsett fra`,
+`utenom` and `enn i/fra` exclusions. Unanchored attachment reading requires a
+definite generic file noun without a contract `til` complement or appendix
+number; exact attachment titles retain their own name match. The generic
+`analyse`/`vurdering` guard distinguishes “analysen i Bilag 1” from “analysen om
+Bilag 1”, allowing the latter as an analysis request. Tests retain the earlier
+beneficiary, attachment-reading, small-project ID and project-gate cases.
+
+The partial-table correction regression uses the real parser and register
+round-trip with a supplier-question column. Parsing drops that column, making
+the stored correction excerpt non-verbatim even though every quoted old and new
+phrase exists in the original section. The provenance check now accepts that
+case only when all quoted phrases are present, retaining document identity,
+heading and section-ID checks. A missing old phrase rejects the row. The returned
+snippet remains original source text, with its actual correction page/heading.
+
+Named limits remain: format-only follow-up sentences, greetings and `f.eks.`/
+`jf.` can still trigger conservative refusal, as can comma `uten forslag`.
+A correction heading without page markers is not populated by the existing
+correction-location parser, so a correction-chapter lookup can still be empty;
+this patch does not infer that locator. Unsupported read/translation phrasing
+and ambiguous subject/source wording remain outside the demonstrated cases.
+No universal intent classification or release-quality improvement is claimed.
+
+Verification: new chat and partial-table correction tests fail against the
+previous owners. All 87 focused tests pass. The final full suite passes 1,525
+frontend + 202 root tests (1,727 total), zero failures/skips, plus parser goldens.
+Production build/types, lint, schema/release/workflow checks, secret scan and
+whitespace checks pass. Original 116-case and extended 55-case recorded SQL
+regression gates pass with zero provider calls, missing recorded inputs or memory
+fallback. Conceptual recall remains 30/36 (MRR .565), stress 18/20; these regression
+passes do not meet the release-quality thresholds.
+
+Logs: `/private/tmp/anbud-r13-before.log`,
+`/private/tmp/anbud-r13-correction-before.log`, `/private/tmp/anbud-r13-focused.log`,
+`/private/tmp/anbud-r13-final-tests.log`, `/private/tmp/anbud-r13-final-build.log`,
+`/private/tmp/anbud-r13-final-lint.log`, `/private/tmp/anbud-r13-retrieval.log`,
+`/private/tmp/anbud-r13-extended.log`. The owned AI-disabled app restarted after
+build. No new browser, HTTP/OCR, provider-stream, semantic or production proof is
+claimed. No paid calls or budget changes ran. Fresh council/CI/CodeRabbit review
+is required; the existing release and runtime gaps remain open.

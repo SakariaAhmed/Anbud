@@ -62,7 +62,14 @@ export async function lookupRequirementSnippets(input: {
     const correction = entry.correctionSource;
     return Boolean(correction && correction.documentId === documentId && correction.heading
       && matchesHeading(correction.heading)
-      && corrections.some(section => section.ids.has(id) && section.quotes.find(correction.excerpt)));
+      && corrections.some(section => {
+        if (!section.ids.has(id)) return false;
+        if (section.quotes.find(correction.excerpt)) return true;
+        // Table parsing can omit a question column from the correction
+        // statement. Require every quoted phrase, not just the replacement.
+        const quoted = [...correction.excerpt.matchAll(/[«“"]([^»”"]+)[»”"]/gu)].map(match => match[1]);
+        return quoted.length > 0 && quoted.every(quote => section.quotes.find(quote));
+      }));
   };
   const rows = await Promise.all(input.documents
     .filter(isRequirementDocument)
