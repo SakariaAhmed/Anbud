@@ -958,3 +958,64 @@ review is required.
 No schema, frozen fixture, model, threshold or budget change is included. Existing
 sentence-splitting, unsupported language, correction-parser and broader release
 limits remain; no paid/provider, production or new browser/HTTP proof ran.
+
+## Round 15 corrections: comparison modifiers and style-only follow-ups
+
+Round 15 rejected `7107f9bc` (Sol 7/10, Opus 6/10). Requiring the attachment
+immediately before a comparison relation lost ordinary modified comparisons.
+The Unicode clause fix also exposed refusals for complete style instructions.
+Those were introduced regressions; the preceding section's reported controls
+were too narrow to establish the broader behavior.
+
+Comparison detection now allows up to three of the bounded manner/source
+modifiers `samlet`, `grundig`, `nøye`, `sett` and `fra leverandøren` between an
+attachment and the relation. `mot`/`kontra` followed by a recognized requirement
+or project target also retains the project gates when the attachment occurs
+elsewhere. The source-bound rule still handles `mot kunden`; the independent
+target rule excludes bare `kunden` so the existing “plikter mot kunden” topic
+control remains readable. Attachment titles receive the same dash folding as
+the question and the existing definite-ending convention. Tests cover both
+“Leverandørnotat”/“leverandørnotatet” and “Tilbud – Bilag 3”.
+
+Complete `unngå fagspråk`, `unngå gjentakelser`, `unngå lange setninger` and
+`unngå å nevne leverandøren` instructions can inherit a previously selected
+source. These remain whole-clause matches: an added binding-fact request or
+rejection of the source cannot inherit the exemption. The nonblocking
+`oppgi fristene` concern is also addressed: that inherited follow-up is limited
+to attachment reading, not a stored analysis, evaluation or artifact.
+
+The expanded real-dispatch regression fails on the preceding owner. All four
+project-evidence failure states are exercised separately for the reported
+comparisons and title cases, with prior topic-reading controls retained. The
+four focused chat/evidence/lookup files pass 46/46 tests. These tests stub
+retrieval and completion: they prove dispatch decisions, not semantic quality.
+
+The grammar remains bounded, not a universal Norwegian intent classifier.
+Unlisted modifiers/paraphrases and existing mixed-source, generic-location,
+format-follow-up, chapter-context and accounting-resume limitations remain.
+CodeRabbit then reported a new Minor at `7107f9bc`: an automatic job reading an
+already `enhanced_ready` non-Docling revision would try to start enhancement,
+although the state RPC accepts only `basic_ready`. Automatic jobs now skip that
+revision without changing its message, error, content or revision. The focused
+real job/workflow regression fails before the fix and passes afterward; its
+repository stub now enforces the existing status/parser/revision predicate.
+Manual retry preconditions and the SQL lease/revision fences are unchanged.
+All five focused files pass 68/68 tests. No schema, model, frozen fixture,
+threshold or budget changes are included.
+
+Final verification: 1,531 frontend + 202 root tests pass (1,733 total), zero
+failures/skips, plus parser goldens. Production build/types, full lint,
+schema/workflow/release checks, secret scan and whitespace pass. Original
+116-case and extended 55-case recorded SQL regression gates pass with zero
+provider requests, missing recorded inputs or memory fallback. Conceptual
+30/36 (MRR .565) and stress 18/20 remain below the release targets.
+
+Logs: `/private/tmp/anbud-r16-before.log`,
+`/private/tmp/anbud-r16-enhanced-before.log`, `/private/tmp/anbud-r16-focused.log`,
+`/private/tmp/anbud-r16-final-tests.log`, `/private/tmp/anbud-r16-final-build.log`,
+`/private/tmp/anbud-r16-final-lint.log`, `/private/tmp/anbud-r16-retrieval.log`,
+`/private/tmp/anbud-r16-extended.log`. The owned AI-disabled app restarted after
+build. No paid/provider, production or new browser/HTTP proof ran. All four PR
+checks passed on preceding `7107f9bc`; the new correction requires fresh
+council, CI and CodeRabbit review. The semantic/holdout, budget, runtime and
+external acceptance gaps remain open; all 18 recommendations are not complete.

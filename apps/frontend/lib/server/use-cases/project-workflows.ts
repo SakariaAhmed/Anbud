@@ -1081,7 +1081,7 @@ async function runDocumentDoclingEnhancementWorkflow(
 
   const skippedResult = async (): Promise<DocumentDoclingEnhancementJobResult> => {
     let currentDocument = document;
-    if (input.failureSourceRevision !== undefined) {
+    if (input.failureSourceRevision !== undefined && document.processing_status === "basic_ready") {
       assertWorkflowActive(handlers);
       const message = "Dokumentforbedring ble hoppet over med gjeldende dokument og oppsett.";
       if (await setDocumentEnhancementState({ projectId: input.projectId, documentId: input.documentId,
@@ -1095,7 +1095,8 @@ async function runDocumentDoclingEnhancementWorkflow(
   };
 
   if (!document.file_base64 && input.sourceRevision !== undefined) throw new Error("Originalfilen er ikke tilgjengelig for dokumentforbedring.");
-  if (!document.file_base64 || document.parser_used === "docling") return skippedResult();
+  if (!document.file_base64 || document.parser_used === "docling"
+    || (input.failureSourceRevision !== undefined && document.processing_status === "enhanced_ready")) return skippedResult();
 
   const shouldEnhance = shouldRunDoclingEnhancement({
     fileFormat: document.file_format,

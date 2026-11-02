@@ -45,7 +45,7 @@ const state = () => globalThis.__enhancementFailure;
 exports.getDocumentDetail = async () => state().document;
 exports.getProjectSnapshotAfterCommit = async () => null;
 exports.updateDocumentProcessingState = async input => { state().updates.push(input); };
-exports.setDocumentEnhancementState = async input => { state().updates.push({ ...input, status: state().document.processing_status }); return true; };
+exports.setDocumentEnhancementState = async input => { if (state().document.processing_status !== "basic_ready" || state().document.parser_used === "docling" || state().document.chunk_source_revision !== input.sourceRevision) return false; state().updates.push({ ...input, status: state().document.processing_status }); return true; };
 exports.saveDocumentIngestionResult = async input => {
   state().saves.push(input);
   state().onSave();
@@ -166,7 +166,7 @@ const state = () => globalThis.__enhancementDeadline;
 exports.getDocumentDetail = async () => { if (state().hangDocumentRead) await new Promise(() => {}); if(state().readError) throw new Error(state().readError); return state().document; };
 exports.getProjectSnapshotAfterCommit = async () => null;
 exports.updateDocumentProcessingState = async input => { state().updates.push(input); };
-exports.setDocumentEnhancementState = async input => { state().updates.push({ ...input, status: state().document.processing_status }); return true; };
+exports.setDocumentEnhancementState = async input => { if (state().document.processing_status !== "basic_ready" || state().document.parser_used === "docling" || state().document.chunk_source_revision !== input.sourceRevision) return false; state().updates.push({ ...input, status: state().document.processing_status }); return true; };
 exports.saveDocumentIngestionResult = async input => { state().saves.push(input); return { ...state().document, processing_status: input.status, parser_used: input.parserUsed, chunk_source_revision: state().document.chunk_source_revision + 1 }; };`);
   writeFileSync(path.join(directory, "jobs.cjs"), `
 const state = () => globalThis.__enhancementDeadline;
@@ -321,6 +321,21 @@ test("an automatic enhancement disabled before claim skips without a retry failu
   assert.equal(state.terminal.at(-1).status, "completed");
   assert.match(state.updates.at(-1).message, /hoppet over/u);
   assert.equal(state.updates.at(-1).error, null);
+});
+
+test("an automatic job skips a newer enhanced revision without changing its state", async t => {
+  let published;
+  const state = await runJobToDeadline(t, { automaticIngestion: true, doclingScript: "process.exit(99)", timeoutMs: 60000,
+    beforeEnhancementClaim(state) {
+      state.document = { ...state.document, chunk_source_revision: 8, processing_status: "enhanced_ready", parser_used: "pdf-parse", processing_message: "Ferdig forbedret.", raw_text: `${basicText} Publisert forbedring.` };
+      published = structuredClone(state.document);
+    },
+  });
+  assert.equal(state.rpc.length, 0, "An already enhanced revision must not be reported as a failed basic revision.");
+  assert.equal(state.saves.length, 0);
+  assert.deepEqual(state.updates, []);
+  assert.equal(state.terminal.at(-1).status, "completed");
+  assert.deepEqual(state.document, published);
 });
 
 test("an unversioned requeued attempt cannot erase the error retained by rejected recovery", async t => {

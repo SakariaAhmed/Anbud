@@ -796,6 +796,35 @@ test("current question controls evidence gates and named source scope, independe
     await checkFrame("Oppsummer risikoplanen og gi meg tre tiltak.", { generatedArtifacts: [riskArtifact] }, true);
     await checkFrame("Oppsummer kundeanalysen og unngå å nevne frister.", { customerAnalysis }, true);
     await checkFrame("Oppsummer kundeanalysen og unngå å nevne frister, svar på hva kundens bindende exit-frist er.", { customerAnalysis }, false);
+    // Round 16: source modifiers and topic-position comparisons cannot supply
+    // missing project evidence from an attachment. Exercise every gate separately.
+    for (const telemetry of [{ requirementLookupFailed: true }, { requirementLookupTruncated: true }, { missingRequirementIds: ["K-42"] }, {}]) {
+      state.telemetry = telemetry;
+      for (const question of [
+        "Vurder vedlegget samlet mot løsningen.", "Hva sier K-42 i vedlegget sett i forhold til løsningen?",
+        "Vurder vedlegget grundig mot kravene.", "Vurder vedlegget fra leverandøren mot kravene.",
+        "Vurder vedlegget sett i forhold til kravene.", "Vurder vedlegget nøye i lys av kravene.",
+        "Hva sier vedlegget om K-42 mot kravene?", "Hva sier vedlegget om leveransen kontra kravene?",
+        "Vurder løsningen mot kravene i vedlegget.", "Vurder K-42 mot kravene i vedlegget.",
+        "Vurder K-42 i vedlegget grundig mot kunden sine krav.",
+      ]) await checkFrame(question, { promptAttachments: attachment }, false);
+      for (const [title, question] of [
+        ["Leverandørnotat", "Vurder leverandørnotatet mot kravene."],
+        ["Leverandørnotat", "Vurder leverandørnotatet sett i forhold til kravene."],
+        ["Tilbud – Bilag 3", "Vurder Tilbud – Bilag 3 mot kravene."],
+        ["Tilbud – Bilag 3", "Vurder Tilbud – Bilag 3 i forhold til kravene."],
+      ]) await checkFrame(question, { promptAttachments: [{ ...attachment[0], title }] }, false);
+      for (const question of ["Oppsummer vedlegget og unngå fagspråk.", "Oppsummer vedlegget og unngå å nevne leverandøren."])
+        await checkFrame(question, { promptAttachments: attachment }, true);
+    }
+    state.telemetry = {};
+    for (const [source, extra] of [["kundeanalysen", { customerAnalysis }], ["løsningsvurderingen", { solutionEvaluation: {} }], ["risikoplanen", { generatedArtifacts: [riskArtifact] }]]) {
+      for (const suffix of ["fagspråk", "gjentakelser", "lange setninger", "å nevne leverandøren"])
+        await checkFrame(`Oppsummer ${source} og unngå ${suffix}.`, extra, true);
+      await checkFrame(`Oppsummer ${source} og unngå ${source}.`, extra, false);
+      await checkFrame(`Oppsummer ${source} og unngå fagspråk, svar på hva kundens bindende exit-frist er.`, extra, false);
+      await checkFrame(`Oppsummer ${source} og oppgi fristene.`, extra, false);
+    }
     assert.deepEqual(sourceFrameFailures, []);
     for (const [telemetry, refusal] of [
       [{ requirementLookupFailed: true }, /Kravregisteret/u],
