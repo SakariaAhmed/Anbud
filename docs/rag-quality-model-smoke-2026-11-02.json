@@ -1467,6 +1467,213 @@
           }
         }
       ]
+    },
+    {
+      "version": "rag-model-release.v2",
+      "recorded_at": "2026-11-02T02:50:56.032Z",
+      "answer_model": "gpt-5.4-mini",
+      "judge_model": "gpt-5.4-mini",
+      "sample_size": 10,
+      "negative_cases": 3,
+      "metrics": {
+        "groundedness": 0.9,
+        "citation_correctness": 0.9,
+        "correct_abstention": 1
+      },
+      "thresholds": {
+        "groundedness": 0.98,
+        "citation_correctness": 0.98,
+        "correct_abstention": 0.95
+      },
+      "failures": [
+        "groundedness: 0.9 < 0.98",
+        "citation_correctness: 0.9 < 0.98"
+      ],
+      "accounted_cost_delta_usd": 0.12191699999999983,
+      "judge_resume_cost_usd": 0.022021999999999764,
+      "limitation": "Small synthetic release smoke; model judging is not a human audit or a statistical production-quality estimate.",
+      "label": "round8 numeric/access fixes: all citation integrity checks passed, Bilag answer incomplete",
+      "cases": [
+        {
+          "id": "exit-id",
+          "question": "Hva sier K-1.3 om fristen ved exit? Siter den opprinnelige ordlyden.",
+          "expected": "Eksport i åpne formater innen 30 dager.",
+          "citations_required": true,
+          "answer": "K-1.3 sier: «Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager.» [Kilde 3]",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 53328.242584,
+          "total_ms": 65175.184417,
+          "verdict": {
+            "id": "exit-id",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Svarer med opprinnelig ordlyd fra kilde 3 om exit og 30 dager. Henvisningen støtter påstanden, og ingen detaljer er oppfunnet."
+          }
+        },
+        {
+          "id": "data-location",
+          "question": "Hvor skal kundedata, sikkerhetskopier og identifiserbare logger behandles? Vis kilden.",
+          "expected": "Alle tre skal lagres og behandles i Norge.",
+          "citations_required": true,
+          "answer": "Kundedata, sikkerhetskopier og identifiserbare logger skal behandles i Norge. Dette står eksplisitt i kravet: «Kundedata, sikkerhetskopier og identifiserbare logger skal lagres og behandles i Norge.» [Kilde 3]\n\nLeverandørens besvarelse bekrefter det samme: «Kundedata, sikkerhetskopier og identifiserbare logger lagres og behandles i Norge.» [Kilde 2]",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 3234.483250000005,
+          "total_ms": 4578.442041000002,
+          "verdict": {
+            "id": "data-location",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Kilden sier eksplisitt at kundedata, sikkerhetskopier og identifiserbare logger skal lagres og behandles i Norge. Sitatene støtter svaret."
+          }
+        },
+        {
+          "id": "operations",
+          "question": "Hvem følger kritiske hendelser, og når driftes plattformen? Vis dokumentasjonen.",
+          "expected": "Driftssenterets vaktleder er kontaktpunkt og følger hendelsen til godkjent avslutning. Drift hele døgnet.",
+          "citations_required": true,
+          "answer": "Plattformen driftes **hele døgnet**, og **driftssenterets vaktleder** er kontaktpunkt for kritiske hendelser. Det er dokumentert slik:\n\n> \"Atea drifter plattformen hele døgnet. Driftssenterets vaktleder er navngitt kontaktpunkt for kritiske hendelser og følger hendelsen til godkjent avslutning.\" [Kilde 2]\n\nKravet i Bilag 1 er formulert tilsvarende:\n\n> \"K-1.1 Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser.\" [Kilde 3]\n\nHvis du vil, kan jeg også formulere dette som et kort tilbudssvar eller som en krav-/bevislinje.",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 2899.9094579999946,
+          "total_ms": 5754.81754199999,
+          "verdict": {
+            "id": "operations",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Besvarer både døgnkontinuerlig drift og at driftssenterets vaktleder er kontaktpunkt og følger hendelsen til avslutning. Kildene støtter dette."
+          }
+        },
+        {
+          "id": "missing-id",
+          "question": "Hva krever K-99.9?",
+          "expected": "ID-en finnes ikke i grunnlaget. Ikke tilskriv den innhold.",
+          "abstention_required": true,
+          "answer": "Kravreferansen kunne ikke knyttes sikkert til et krav i dokumentgrunnlaget. Kontroller krav-ID-en og eventuelle rettelser, eller legg til det manglende kravdokumentet før du prøver igjen.",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 1807.4593330000062,
+          "total_ms": 4192.666000000012,
+          "verdict": {
+            "id": "missing-id",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Svaret avstår korrekt fra å tilskrive K-99.9 innhold og oppgir ingen fabrikkert informasjon. Ingen sitater er brukt, men ingen påstand trenger støtte."
+          }
+        },
+        {
+          "id": "unanswerable-price",
+          "question": "Hva er den eksakte årlige kontraktsprisen i kroner?",
+          "expected": "Prisen er ikke oppgitt. Ikke finn på et beløp.",
+          "abstention_required": true,
+          "answer": "Jeg kan ikke oppgi **den eksakte årlige kontraktsprisen**, fordi den ikke fremgår av materialet du har delt. Konkurransegrunnlaget oppgir avtaleperiode og tilbudsfrist, men ingen pris eller årlig kontraktsverdi: «Avtalen varer i tre år med opsjon på ett ekstra år. Tilbudsfrist er 10. november 2026.» [Kilde 1]\n\nHvis du vil, kan jeg likevel hjelpe deg med én av disse:\n- finne om pris er omtalt noe sted i øvrige dokumenter du ikke har limt inn ennå\n- formulere et kort svar til kunden om at pris ikke er dokumentert i grunnlaget\n- lage en beregning av **estimert årlig pris** hvis du gir meg totalpris eller prismodell",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 3336.307832999999,
+          "total_ms": 4094.295874999996,
+          "verdict": {
+            "id": "unanswerable-price",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Svaret avstår fra å oppgi pris og sier tydelig at beløpet ikke fremgår av materialet. Sitert kilde underbygger at pris ikke er oppgitt."
+          }
+        },
+        {
+          "id": "unanswerable-protocol",
+          "question": "Hvilken SAML2-profil krever kunden uttrykkelig?",
+          "expected": "Ingen SAML2-profil er dokumentert. Ikke kall SAML2 en manglende krav-ID.",
+          "abstention_required": true,
+          "answer": "Jeg finner **ingen uttrykkelig kravspesifisert SAML2-profil** i dokumentene som er lagt ved.\n\nDet som faktisk er beskrevet, er krav til drift, norsk databehandling og exit:\n- «Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser.» [Kilde 3]\n- «Kundedata, sikkerhetskopier og identifiserbare logger skal lagres og behandles i Norge.» [Kilde 3]\n- «Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager.» [Kilde 3]\n\nKundedokumentet sier også at kommunen anskaffer drift av en sikker skyplattform, men nevner ikke SAML2 eller noen bestemt profil [Kilde 1].\n\n**Konklusjon:** Kunden krever ikke uttrykkelig noen SAML2-profil i det materialet jeg ser her.  \n**Anbefalt avklaring:** Spør kunden hvilken SAML2-profil, om noen, som skal understøttes — for eksempel om de mener en spesifikk IdP/SP-konfigurasjon, signeringskrav, MFA-kobling eller attributtsett.",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 2557.952624999991,
+          "total_ms": 3891.3379580000037,
+          "verdict": {
+            "id": "unanswerable-protocol",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Svaret avstår korrekt og sier at ingen SAML2-profil er uttrykkelig dokumentert. Det tilskriver ikke SAML2 som krav-ID og holder seg til kildene."
+          }
+        },
+        {
+          "id": "generated-bilag",
+          "required_source_type": "generated_artifact",
+          "question": "Oppsummer hva det genererte Bilag 1-utkastet sier om exit. Skill utkastets tolkning fra primærkravene, og vis kilde.",
+          "expected": "Gjengi utkastet som tolkning, ikke som en ny primærkilde. Exit har 30 dagers frist.",
+          "citations_required": true,
+          "answer": "Det genererte Bilag 1-utkastet sier om exit at kommunen ønsker en kontrollert avslutning av leveransen, med mulighet for datauttrekk uten unødig leverandørbinding. Dette er **utkastets tolkning**, ikke et primærkrav: «Videre legger kommunen vekt på en etterprøvbar exitplan. Dette viser behov for kontrollert avslutning av leveransen og mulighet for datauttrekk uten unødig avhengighet til leverandøren.» [Kilde 9]\n\n**Primærkravet** er mer presist og bindende: «3 Exit K-1.3 Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager.» [Kilde 3]\n\nDet genererte utkastet oppsummerer også exit som en del av ønsket effekt: «kontrollert avslutning eller leverandørskifte gjennom exitplan og eksport i åpne formater innen 30 dager» [Kilde 13]. Samtidig presiserer utkastet at kildene **ikke** beskriver detaljert funksjonelt omfang for plattformen, men at de dokumenterer driftsansvar, kritiske hendelser, databehandling i Norge og planlagt exit [Kilde 14].\n\nResten av svaret kunne ikke kildebekreftes. Presiser krav-ID eller kilde og prøv meldingen på nytt.",
+          "output_complete": false,
+          "citation_integrity": true,
+          "first_visible_ms": 2932.9527080000116,
+          "total_ms": 7159.876541999998,
+          "verdict": {
+            "id": "generated-bilag",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Svaret skiller tydelig mellom generert utkast som tolkning og primærkravet i K-1.3. Det bruker kilde 9 som tolkning og kilde 3 for den bindende 30-dagersfristen."
+          }
+        },
+        {
+          "id": "exit-warm",
+          "question": "Hva sier K-1.3 om fristen ved exit? Siter den opprinnelige ordlyden.",
+          "expected": "Eksport i åpne formater innen 30 dager.",
+          "citations_required": true,
+          "answer": "K-1.3 sier: «Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager.» [Kilde 3]",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 2073.105958999993,
+          "total_ms": 2394.157124999998,
+          "verdict": {
+            "id": "exit-warm",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Samme som exit-id: korrekt sitat av K-1.3 og riktig kildehenvisning til 30 dager."
+          }
+        },
+        {
+          "id": "conversation-labels",
+          "question": "Skriv bare setningen: Svar \"Ja\" eller \"Nei\".",
+          "expected": "Skriv den etterspurte setningen. Dette er samtaleformatering, ikke en kildepåstand.",
+          "answer": "Svar \"Ja\" eller \"Nei\".",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 2362.553874999998,
+          "total_ms": 2542.965124999988,
+          "verdict": {
+            "id": "conversation-labels",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Svarer nøyaktig med den etterspurte setningen og behandler oppgaven som formatering, ikke kildepåstand."
+          }
+        },
+        {
+          "id": "planning-terms",
+          "question": "Lag et tydelig merket forslag til en plan for P1-hendelser og L2-støtte i Q3 2027 med M365 E5. Ikke framstill dette som dokumenterte kundekrav.",
+          "expected": "Gi et forslag. P1, L2, Q3, M365 og E5 er tjeneste-, kalender- og produktbegreper her, ikke manglende krav-ID-er.",
+          "answer": "Her er et **tydelig merket forslag** – **ikke dokumenterte kundekrav**.\n\n## Forslag: Plan for P1-hendelser og L2-støtte i Q3 2027 med M365 E5\n\n**Formål:** Sikre rask håndtering av kritiske hendelser og stabil L2-driftsstøtte i perioden, med tydelig rollefordeling, eskalering og sporbarhet. Dette er et forslag til operativ modell, ikke en beskrivelse av kundens eksplisitte krav.\n\n### 1) P1-hendelser\n**Mål:** Gjenopprette normal drift raskt, begrense skade og holde interessenter løpende informert.\n\n- **24/7 mottak og triage**\n  - Alle P1-hendelser tas inn via én definert vaktkanal.\n  - Førstelinje registrerer hendelsen og varsler umiddelbart ansvarlig L2/L3.\n- **Eskalering**\n  - Eskalering skjer umiddelbart ved bekreftet P1.\n  - Navngitt hendelsesleder tar eierskap til saken til den er løst og lukket.\n- **Kommunikasjon**\n  - Fast kommunikasjonsmal for statusoppdateringer til kunde og interne interessenter.\n  - Oppdatering minimum hver 30. minutt, eller oftere ved behov.\n- **Teknisk håndtering i M365 E5**\n  - Bruk M365 E5-funksjoner for sikkerhet, varsling, sporbarhet og identitetskontroll som grunnlag for hendelseshåndtering.\n  - Hendelseslogger og tiltak dokumenteres fortløpende i sakssystem.\n- **Lukkekriterier**\n  - Tjenesten er stabilisert, rotårsak er bekreftet eller midlertidig risikoreduserende tiltak er etablert, og kunde er informert om videre oppfølging.\n\n### 2) L2-støtte\n**Mål:** Rask og presis løsning av saker som krever mer enn førstelinje, men ikke full eskalering til leverandørutvikling eller ekstern spesialist.\n\n- **Ansvarsområde**\n  - Feilsøking i M365 E5-relaterte tjenester\n  - Tilgangs- og policyrelaterte problemer\n  - E-post, samarbeidsverktøy og sikkerhetsvarsler\n  - Standard gjenoppretting og konfigurasjonsavvik\n- **Arbeidsform**\n  - L2 tar saker fra L1 innen definert responstid.\n  - L2 dokumenterer tiltak, funn og anbefalt løsning i samme sak.\n  - Kompleksitetsøkning eller sikkerhetskritiske funn eskaleres til L3/leverandør.\n- **Kunnskapsgrunnlag**\n  - Oppdatert kunnskapsbase med kjente feil, standard tiltak og eskaleringspunkter.\n  - Kort læringssløyfe etter gjentakende hendelser for å redusere volum.\n\n### 3) Samspill mellom P1 og L2\n- P1 behandles som **hendelseshåndtering**, ikke ordinær support.\n- L2 skal kunne overta teknisk feilsøking umiddelbart, men hendelsesleder styrer kommunikasjon og prioritering.\n- Når P1 er stabilisert, overføres oppfølging til L2 for rotårsak, tiltak og forebygging.\n\n### 4) Leveranse i Q3 2027\n- **Uke 1–2:** verifisere vaktordning, kontaktpunkter og eskaleringsmatrise\n- **Uke 3–4:** teste P1-prosedyre med simulert hendelse\n- **Uke 5–6:** etablere L2-runbooks for de vanligste M365 E5-sakene\n- **Uke 7–8:** øvelse med kunde og dokumentert forbedringstiltak\n- **Uke 9–12:** stabil drift, måling av responstid, løsningstid og kvalitet på kommunikasjon\n\n### 5) Anbefalte målepunkter\n- Tid fra alarm til triage\n- Tid til eskalering ved P1\n- Tid til første kundestatus\n- Tid til midlertidig løsning\n- Andel L2-saker løst uten videre eskalering\n- Antall gjentakende hendelser\n\n### 6) Viktig avklaring\nI prosjektgrunnlaget som er tilgjengelig her, er det dokumentert krav om døgnkontinuerlig drift, kontaktpunkt for kritiske hendelser, norsk behandling av data og exitplan. Det står derimot **ikke** noe om P1/L2-organisering eller M365 E5 som kundekrav. Derfor bør dette behandles som et **tilbudsforslag** og ikke som et dokumentert krav.\n\nHvis du vil, kan jeg også gjøre dette om til:\n1. en kortere tilbudstekst,  \n2. en mer formell driftsbeskrivelse, eller  \n3. en tabell med roller, responstider og eskalering.",
+          "output_complete": true,
+          "citation_integrity": true,
+          "first_visible_ms": 3845.910082999995,
+          "total_ms": 9561.64,
+          "verdict": {
+            "id": "planning-terms",
+            "grounded": true,
+            "citations_correct": true,
+            "abstention_correct": true,
+            "reason": "Svaret er tydelig merket som forslag og ikke som dokumenterte kundekrav, slik oppgaven ber om. Det introduserer ikke krav-ID-er og bruker begrepene som tjeneste- og produktbegreper."
+          }
+        }
+      ]
     }
   ]
 }
