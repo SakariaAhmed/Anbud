@@ -111,7 +111,23 @@ function comparableChatText(text: string) {
 /** Match source/artifact names without treating Bilag 1 as Bilag 12. */
 function mentionsChatName(question: string, name: string, inflect = false) {
   const escaped = comparableChatText(name).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}${inflect && !/\d/u.test(name) ? "(?:en|et)?" : ""}(?![\\p{L}\\p{N}])`, "u").test(comparableChatText(question));
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}${inflect && !/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])`, "u").test(comparableChatText(question));
+}
+
+/** Name a source as the requested object or citation, not as subject matter. */
+function requestsChatSource(question: string, names: string[]) {
+  const text = question.toLocaleLowerCase("nb-NO");
+  return names.some(name => {
+    const escaped = name.toLocaleLowerCase("nb-NO").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const target = `${escaped}${!/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])`;
+    const rejected = new RegExp(`\\b(?:(?:ikke\\s+(?:(?:bruk|benytt|vis|gi|lag|ha|oppsummer)\\s+)?)|(?:ingen|unngå|uten|heller\\s+enn)\\s+)(?:(?:det|den|et|en|noen|ditt|mitt|vårt)\\s+)?${target}`, "u");
+    const requested = new RegExp(`\\b(?:hva\\s+(?:sier|foreslår|anbefaler)|oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv|ifølge|i|fra)\\s+(?:(?:det|den|mitt|vårt)\\s+)?${target}`, "u");
+    return requested.test(text) && !rejected.test(text);
+  });
+}
+
+function rejectsChatDraft(question: string) {
+  return /\b(?:(?:ikke\s+(?:(?:ha|bruk|benytt|gi|lag|vis)\s+)?)|(?:uten|ingen|unngå|heller\s+enn)\s+)(?:(?:et|en|noen|ny|nye|egen|egne)\s+)?(?:forslag|tolkning|utkast|generert)(?![\p{L}\p{N}])/iu.test(question);
 }
 
 function chatAttachmentTerms(question: string) {
@@ -618,7 +634,7 @@ export function selectProjectChatArtifactSections(input: {
     const explicitlyNamed = [artifact.title, ...artifactAliases]
       .some(alias => alias.length > 3 && mentionsChatName(question, alias, true));
     const interpretationNamed = artifactAliases.some(alias => !["bilag 1", "bilag1"].includes(alias)
-      && mentionsChatName(question, alias, true));
+      && requestsChatSource(input.question, [alias]));
     let heading = artifact.title;
     return artifact.content_markdown.split(/(?=^#{1,6}\s)/mu).flatMap((section, sectionOrder) => {
       heading = section.match(/^#{1,6}\s+(.+)/u)?.[1] ?? heading;
@@ -850,7 +866,7 @@ function requestedChatSourceScope(question: string, documents: ProjectDocumentDe
   // Narrow only complete source-only requests. Questions about comparisons,
   // occurrence, exclusions or any additional subject retain every source.
   // A chapter is only removed from this grammar when it terminates the query.
-  const chapter = question.match(/[,\s(]*\b(?:kapittel|kap\.?|seksjon)\s+(?:[«“"']([^»”"']+)[»”"']|(\d+(?:\.\d+)*))[\s).?!;\]]*$/iu);
+  const chapter = question.match(/[,\s(]*\b(?:kapittel|kap\.?|seksjon)\s+(?:[«“"']([^»”"']+)[»”"']|(\d+(?:\.\d+)*))[\s).?!;:»”"'\]]*$/iu);
   const sourceQuestion = chapter ? question.slice(0, chapter.index) : question;
   const mentioned = chatDocumentMentions(sourceQuestion, documents);
   const named = mentioned.filter(item => item.sourceOnly).map(item => item.document);
@@ -990,12 +1006,13 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const projectDocuments = [input.customerDocument, input.solutionDocument, ...(input.supportingDocuments ?? [])]
     .filter((document): document is ProjectDocumentDetail => Boolean(document));
   const namesProjectSource = chatDocumentMentions(input.question, projectDocuments).length > 0;
-  const rejectsInterpretation = /\b(?:ikke|uten|heller\s+enn)\b/iu.test(input.question);
-  const affirmativeDraftRequest = /\b(?:oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv)\b[^.!?]*\b(?:utkast\w*|tolkning\w*|generert\w*)\b|\b(?:hva\s+(?:sier|foreslår|anbefaler)|ifølge)\s+(?:(?:det|den|mitt|vårt)\s+)?(?:generert\w*|utkast\w*|tolkning\w*)\b|\bsom\s+(?:et\s+)?forslag\b/iu.test(input.question);
+  const rejectsInterpretation = rejectsChatDraft(input.question);
+  const affirmativeDraftRequest = requestsChatSource(input.question, ["utkast", "tolkning", "generert utkast", "genererte utkast", "generert bilag", "genererte bilag"])
+    || /\b(?:oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv)\s+[^.!?]+\s+som\s+(?:et\s+)?forslag\b/iu.test(input.question);
   const asksForAvailableInterpretation = !rejectsInterpretation && (
     artifactSections.some(section => section.explicitlyNamed && (affirmativeDraftRequest || (!namesProjectSource && section.interpretationNamed)))
-    || Boolean(input.customerAnalysis && /\b(?:kundeanalys(?:e|en)|analysen|prosjektoversikt)\b/iu.test(input.question))
-    || Boolean(input.solutionEvaluation && /\b(?:løsningsvurdering(?:en)?|vurderingen)\b/iu.test(input.question)));
+    || Boolean(input.customerAnalysis && requestsChatSource(input.question, ["kundeanalyse", "analyse", "prosjektoversikt"]))
+    || Boolean(input.solutionEvaluation && requestsChatSource(input.question, ["løsningsvurdering", "vurdering"])));
   const artifactReferences: ChatSourceReference[] = artifactSections.map(({ artifact, heading, text }) => {
     const fingerprint = createHash("sha256").update(artifact.content_markdown).digest("hex");
     const revision = artifact.artifact_version ?? 0;
@@ -1005,10 +1022,13 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const requestedIds = extractRequirementIdentifiers(input.question);
   // Subject matter ("om prosjektet", "kundens ansvar") is not source scope.
   // An attachment remains the source unless a project source is also requested.
-  const mentionsProjectEvidence = /\b(?:i|fra|mot|med|ifølge)\s+(?:(?:selve|hele)\s+)?(?:prosjekt\w*|kundedokument\w*|konkurransegrunnlag\w*|kravspesifikasjon\w*)\b/iu.test(input.question)
+  const mentionsProjectEvidence = /\b(?:i|fra|mot|med|ifølge)\s+(?:(?:selve|hele|dette)\s+)?(?:prosjekt(?:et|ets|dokument\w*)?|kunde(?:ns\s+krav|dokument\w*)|konkurranse(?:n|grunnlag\w*)?|krav(?:dokument\w*|spesifikasjon\w*)|løsningsdokument\w*)\b|\bprosjektets\s+(?:krav|dokument\w*|kilder?|grunnlag)\b/iu.test(input.question)
     || namesProjectSource;
-  const attachmentQuestion = !mentionsProjectEvidence && attachmentReferences.some(source =>
-    requestedIds.every(id => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)));
+  const comparesSources = /\b(?:sammenlign\w*|sammenhold\w*|forskjell\w*|strid|opp\s+mot|oppfyll\w*)\b/iu.test(input.question);
+  const attachmentQuestion = !mentionsProjectEvidence && !comparesSources && attachmentReferences.some(source =>
+    (/\b(?:vedlegg\w*|chatvedlegg\w*|vedlagt\w*|filen|dokumentet|opplast\w*)\b/iu.test(input.question)
+      || (source.document_title.length > 3 && mentionsChatName(input.question, source.document_title)))
+    && requestedIds.every(id => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)));
   const needsProjectDocumentEvidence = needsDocumentEvidence && !attachmentQuestion;
   const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => (isAmbiguousRequirementIdentifier(id) || !wholeReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)))) ?? false;
   // With the whole documents included, an excerpt whose text is already in

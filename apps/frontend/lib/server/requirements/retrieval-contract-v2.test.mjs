@@ -18,6 +18,7 @@ const { resetDocumentChunksTestRuntime, setDocumentChunksTestRequirementRegister
 const { encryptJson } = load("../crypto.ts");
 const { retrieveDocumentSnippetsWithMetadata } = load("../document-chunks.ts");
 const { lookupRequirementSnippets } = load("./retrieval-lookup.ts");
+const { buildIngestionRequirementRegister } = load("./ingestion-register.ts");
 const chatLoad = createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });
 const { selectProjectChatArtifactSections } = chatLoad("../ai/project-chat.ts");
 process.env.OPENAI_API_KEY = "frozen-contract-test-transport-only";
@@ -169,11 +170,11 @@ test("an original-source scope retains valid persisted amendment evidence withou
   const id = fixture.cases[0].expected_requirement_id;
   const source = { ...fixture.documents[0], title: "Bilag 1 Drift", chunk_source_revision: 3 };
   const amendment = { ...fixture.documents[1], id: "contract-v2-amendment-valid", title: "Rettelser", raw_text: `# Rettelser\n${id} endres til «Leverandøren skal holde fire kurs».`, structure_map: [] };
-  const rows = fixture.registers[source.id].slice(0, 1).map(row => ({ ...row, documentId: amendment.id,
-    text: "Leverandøren skal holde fire kurs", correctionSource: { documentId: amendment.id, documentTitle: amendment.title, pages: [], excerpt: amendment.raw_text.split("\n")[1] } }));
-  for (const [document, documentRows] of [[source, fixture.registers[source.id]], [amendment, rows]]) {
+  const rows = await buildIngestionRequirementRegister(amendment);
+  assert.ok(rows?.some(row => row.id === id), "The actual ingestion owner must produce the amendment row.");
+  for (const [document, documentRows] of [[source, fixture.registers[source.id].map(row => ({ ...row, heading: "3 Drift" }))], [amendment, rows]]) {
     setDocumentChunksTestRequirementRegister(document.id, encryptJson({ documentId: document.id, projectId: document.project_id, sourceRevision: document.chunk_source_revision,
-      requirementRegister: { version: 1, rows: documentRows } }));
+      requirementRegister: { version: 2, rows: documentRows } }));
   }
   const input = { projectId: source.project_id, projectName: "Fiktiv", question: `Hva sier ${id} i Bilag 1?`, recentMessages: [], customerDocument: source, solutionDocument: null, supportingDocuments: [amendment] };
   const { request } = await buildProjectChatRetrievalRequest(input, { skipRewrite: true });
@@ -185,6 +186,12 @@ test("an original-source scope retains valid persisted amendment evidence withou
   assert.deepEqual(result.telemetry.missingRequirementIds, []);
   const authoritative = result.snippets.filter(item => item.kind === "requirement_row");
   assert.ok(authoritative.some(row => row.sourceId === amendment.id && row.text.includes("holde fire kurs")));
+  const chapterRequest = await buildProjectChatRetrievalRequest({ ...input, question: `Hva sier ${id} i Bilag 1, kapittel 3?` }, { skipRewrite: true });
+  const chapterResult = await retrieveDocumentSnippetsWithMetadata({ ...chapterRequest.request, limit: 10, rerank: undefined });
+  assert.equal(chapterResult.telemetry.requirementLookupFailed, false);
+  assert.equal(chapterResult.telemetry.requirementLookupTruncated, false);
+  assert.equal(chapterResult.telemetry.quality.sufficient, true);
+  assert.ok(chapterResult.snippets.some(row => row.kind === "requirement_row" && row.sourceId === amendment.id && row.text.includes("holde fire kurs")), "The amendment's own heading cannot remove it from an original-chapter lookup.");
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-amendment-chat-"));
   const previousRewrite = process.env.RAG_QUERY_REWRITE;
   process.env.RAG_QUERY_REWRITE = "off";

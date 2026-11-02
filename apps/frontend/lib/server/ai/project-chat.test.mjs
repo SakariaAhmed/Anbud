@@ -660,6 +660,10 @@ test("current question controls evidence gates and named source scope, independe
       "Hva er den bindende exit-fristen i Bilag 1? Jeg vil ikke ha forslag eller tolkning.",
       "Hva er sidegrensen for kravsvar i Bilag 1?", "Hva er fristen for forslag til endringer i Bilag 1?",
       "Hva sier Bilag 1 om verdiargumentasjon?", "Oppsummer Bilag 12 som et forslag.",
+      "Vis innleveringsfristen for utkast i Bilag 1.", "Forklar kravene til tolkning i Bilag 1.",
+      "Vis fristen i Bilag 1, ingen tolkning.", "Forklar fristen i Bilag 1 og unngå tolkning.",
+      "Forklar fristen for utkast til kontrakt i Bilag 1.", "Beskriv kravene til tolkning av kontrakten i Bilag 1.",
+      "Vurder sidegrensen for utkast i Bilag 1.",
     ]) {
       assert.match(await run(question), /ikke nok kildegrunnlag/u, question);
       assert.equal(state.calls, 0);
@@ -668,8 +672,29 @@ test("current question controls evidence gates and named source scope, independe
       ["gjennomforing_og_risiko", "Risikoplan", "Hva sier risikoplanen om eksport ved avslutning?"],
       ["gjennomforing_og_risiko", "Gjennomføring", "Hva sier gjennomføringen om eksport ved avslutning?"],
       ["losningsutkast", "Systemløsning", "Hva sier systemløsningen om eksport ved avslutning?"],
+      ["forbedret_kravsvar", "Kravbesvarelse", "Oppsummer kravbesvarelsen."],
     ]) {
       assert.equal(await run(question, { generatedArtifacts: [{ ...input.generatedArtifacts[0], artifact_type, title }] }), "Lokalt testsvar.");
+    }
+    const riskArtifact = { ...input.generatedArtifacts[0], artifact_type: "gjennomforing_og_risiko", title: "Risikoplan" };
+    for (const question of ["Hva sier risikoplanen om risikoer som ikke er håndtert?", "Oppsummer risikoplanen uten å endre teksten.", "Hvilke risikoer er ikke dekket i risikoplanen?", "Oppsummer risikoplanen uten priser."]) {
+      assert.equal(await run(question, { generatedArtifacts: [riskArtifact] }), "Lokalt testsvar.", question);
+    }
+    for (const [artifact_type, question] of [
+      ["gjennomforing_og_risiko", "Hva er fristen for gjennomføring av opplæring?"],
+      ["gjennomforing_og_risiko", "Hvilken gjennomføring krever kunden ved migrering?"],
+      ["forbedret_kravsvar", "Hva er sidegrensen for kravsvar?"],
+      ["verdiargumentasjon", "Hvilke krav gjelder for verdiargumentasjon?"],
+    ]) {
+      assert.match(await run(question, { generatedArtifacts: [{ ...riskArtifact, artifact_type }] }), /ikke nok kildegrunnlag/u, question);
+      assert.equal(state.calls, 0);
+    }
+    for (const question of ["Hvordan vektes vurderingen av pris i Bilag 1?", "Hva er fristen for vurderingen i Bilag 1?"]) {
+      assert.match(await run(question, { solutionEvaluation: {} }), /ikke nok kildegrunnlag/u, question);
+      assert.equal(state.calls, 0);
+    }
+    for (const question of ["Hvilke krav er ikke oppfylt i løsningsvurderingen?", "Hva er ikke dekket ifølge vurderingen?"]) {
+      assert.equal(await run(question, { solutionEvaluation: {} }), "Lokalt testsvar.", question);
     }
     assert.equal(await run("Oppsummer Bilag 1 som et forslag."), "Lokalt testsvar.");
     assert.equal(state.calls, 1, "Explicit current artifact questions remain available.");
@@ -696,15 +721,24 @@ test("current question controls evidence gates and named source scope, independe
       [{}, /ikke nok kildegrunnlag/u],
     ]) {
       state.telemetry = telemetry;
-      for (const question of ["Hva sier K-42 i prosjektet og vedlegget?", "Sammenlign K-42 i vedlegget med Bilag 1."]) {
+      for (const question of ["Hva sier K-42 i prosjektet og vedlegget?", "Sammenlign K-42 i vedlegget med Bilag 1.",
+        "Sammenlign K-42 i vedlegget og prosjektets krav.", "Hva sier prosjektets krav om K-42?",
+        "Sammenlign vedlegget med kundens krav K-42.", "Er vedlegget i strid med K-42?",
+        "Vurder vedlegget opp mot kundens krav K-42.", "Hva sier K-42 i løsningsdokumentet?",
+        "Hva sier K-42 i kravdokumentet?", "Hva sier K-42 i dette prosjektet?", "Hva sier K-42?", "Oppfyller vedlegget K-42?",
+      ]) {
         assert.match(await run(question, { promptAttachments: attachment }), refusal, question);
         assert.equal(state.calls, 0, "The attachment must not fill the project side of a mixed question.");
       }
-      for (const question of ["Hva sier K-42 i vedlegget?", "Hva sier K-42 i vedlegget om kundens ansvar?", "Oppsummer dette dokumentet.", "Svar på spørsmålene i filen.", "Hva sier vedlegget om prosjektet?", "Hva sier K-42 i filen?"]) {
+      for (const question of ["Hva sier K-42 i vedlegget?", "Hva sier K-42 i vedlegget om kundens ansvar?", "Oppsummer dette dokumentet.", "Svar på spørsmålene i filen.", "Hva sier vedlegget om prosjektet?", "Hva sier K-42 i filen?", "Hva sier vedlegget om leveranser i prosjektperioden?", "Hva sier vedlegget om samarbeid med prosjektleder?"]) {
         assert.equal(await run(question, { promptAttachments: attachment }), "Lokalt testsvar.", question);
       }
     }
     state.telemetry = {};
+    for (const question of ["Hva er kundens bindende exit-frist?", "Hva er den bindende exit-fristen i konkurransen?", "Sammenlign vedlegget med kundens krav."]) {
+      assert.match(await run(question, { promptAttachments: attachment }), /ikke nok kildegrunnlag/u, question);
+      assert.equal(state.calls, 0);
+    }
     const scoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42 i Bilag 2, kapittel 3.2?" });
     assert.deepEqual(scoped.request.documents.map(item => item.id), ["two"]);
     assert.equal(scoped.request.requirementHeading, "3.2");
@@ -716,7 +750,7 @@ test("current question controls evidence gates and named source scope, independe
       const result = await buildProjectChatRetrievalRequest({ ...input, question });
       assert.deepEqual(result.request.documents.map(item => item.id), ["one", "two"], question);
     }
-    for (const question of ['Hva sier K-42 i Bilag 2 (kapittel 3)?', 'Hva sier K-42 i dokumentet Bilag 2, kap 3?']) {
+    for (const question of ['Hva sier K-42 i Bilag 2 (kapittel 3)?', 'Hva sier K-42 i dokumentet Bilag 2, kap 3?', '«K-42 i Bilag 2, kapittel 3»', 'K-42 i Bilag 2, kapittel 3:']) {
       const result = await buildProjectChatRetrievalRequest({ ...input, question });
       assert.deepEqual(result.request.documents.map(item => item.id), ["two"]);
       assert.equal(result.request.requirementHeading, "3");

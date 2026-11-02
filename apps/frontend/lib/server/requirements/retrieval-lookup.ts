@@ -3,6 +3,7 @@ import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cance
 import { rethrowAuthoritativeLeaseLoss } from "@/lib/server/repositories/lease-fenced-persistence";
 import { safeErrorTelemetry } from "@/lib/server/safe-errors";
 import { extractRequirementLedgerForDocument } from "@/lib/server/requirements/source-ledger";
+import { findCorrectionsSections } from "@/lib/server/requirements/corrections";
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import { extractRequirementIdentifiers, requirementIdentifierSpans } from "@/lib/server/ai/retrieval-query";
 import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
@@ -42,8 +43,8 @@ export async function lookupRequirementSnippets(input: {
   const wanted = new Set(input.ids.map(normalizeRequirementId));
   const normalizeHeading = (text: string) => text.toLocaleLowerCase("nb-NO").trim().replace(/^#+\s*/u, "").replace(/^(?:kapittel|kap\.|seksjon)\s+/u, "").replace(/\s+/gu, " ").trim();
   const heading = input.heading ? normalizeHeading(input.heading) : null;
-  const inHeading = (entry: RequirementLedgerEntry) => {
-    if (!heading) return true;
+  const inHeading = (entry: RequirementLedgerEntry, amendedIds: ReadonlySet<string>) => {
+    if (!heading || amendedIds.has(normalizeRequirementId(entry.id))) return true;
     const actual = normalizeHeading(entry.heading ?? "");
     if (/^\d+(?:\.\d+)*$/u.test(heading)) {
       const number = actual.match(/^(\d+(?:\.\d+)*)(?=$|[\s:).])/u)?.[1];
@@ -58,7 +59,8 @@ export async function lookupRequirementSnippets(input: {
       try {
         const entries = await ledger(document, input.fingerprints.get(`project_document:${document.id}`)!);
         input.onAuthoritativeIds?.(entries.filter(entry => entry.idOrigin !== "inferred" && entry.idOrigin !== "generated").map(entry => normalizeRequirementId(entry.id)));
-        return entries.filter(entry => inHeading(entry) && wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
+        const amendedIds = new Set(findCorrectionsSections(document.raw_text).flatMap(extractRequirementIdentifiers).map(normalizeRequirementId));
+        return entries.filter(entry => inHeading(entry, amendedIds) && wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
           .flatMap(entry => {
             const source = entry.correctionSource
               ? input.documents.find(source => source.id === entry.correctionSource!.documentId)

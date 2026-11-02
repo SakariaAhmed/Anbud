@@ -582,3 +582,55 @@ The owned app restarted with AI disabled and returned liveness 200. This is
 local deterministic/build proof; no new browser, HTTP/OCR, provider-stream or
 semantic model result is claimed. Fresh council/CI/CodeRabbit review remains
 required, and the previously recorded budget and release gates are unchanged.
+
+## Council round 9 and explicit source requests
+
+Both members rejected `3097bc50` (Sol 7/10, Opus 6/10). The previous attachment
+fallback was too permissive: an attached draft containing an ID could replace
+missing project evidence when the user never selected the attachment as the
+source. Draft topic words still enabled interpretation, while a global negation
+check rejected valid requests about missing coverage. The prior broad claims
+about mixed-source gates and negation therefore exceeded the examples tested.
+
+Attachment exemptions now require a positive file/attachment reference or its
+title, requested-ID membership, and no source comparison or explicit project
+source. Tests cover possessive project-source phrases, generic requirement and
+solution document names, unscoped factual questions, and comparisons under all
+four failure/weakness telemetry states. Ordinary attachment subjects such as
+customer responsibility, the project period and collaboration with a project
+manager remain available; those nouns alone do not select project evidence.
+
+Interpretation requires the named source to be an action's direct target or a
+citation source (for example “hva sier risikoplanen”, “oppsummer risikoplanen”,
+“ifølge vurderingen”). Merely asking about a deadline or requirement concerning
+utkast/tolkning/gjennomføring/kravsvar does not meet that pattern. Negation is
+checked where it rejects use of the source or a draft, rather than anywhere in
+the question. Tests preserve questions about risks not handled and instructions
+not to change a draft, while refusing the reported factual topic-word and
+explicit no-interpretation examples. These are deterministic recognized forms,
+not a claim to classify every natural-language intent correctly.
+
+The clarification example can be pasted with its guillemets or a trailing
+colon. The amendment regression now builds the amendment row with
+`buildIngestionRequirementRegister`, persists that actual output under the
+amendment document, and checks lookup and chat completion. A requested original
+chapter cannot remove rows for IDs in a recognized correction section. The
+original register remains the frozen synthetic fixture. This proves the
+parsed-text ingestion/serialization/lookup path for that amendment, not another
+PDF/HTTP upload or general amendment-language recognition.
+
+Verification: two regression groups fail against the prior owners; 43 focused
+tests pass with these changes. The first full run caught a definite-ending
+regression for “kundeanalysen”; the shared name rule was corrected, with an
+additional kravbesvarelsen control. The final complete run passed 1,522 frontend
+and 202 root tests (1,724 total), zero failures/skips, plus parser goldens.
+Production build, lint/type validation, workflow boundaries, secret scan and
+whitespace checks passed. Both recorded SQL suites passed (116 original and 55
+extended), no provider calls or memory fallback, with conceptual 30/36 (MRR .565)
+and stress 18/20 unchanged. Logs: `/private/tmp/anbud-r10-before.log`,
+`/private/tmp/anbud-r10-focused.log`, `/private/tmp/anbud-r10-final-tests.log`,
+`/private/tmp/anbud-r10-final-build.log`, `/private/tmp/anbud-r10-retrieval.log`
+and `/private/tmp/anbud-r10-extended.log`. The owned app restarted with AI
+disabled and liveness returned 200. No new browser, PDF/HTTP, live-provider or
+semantic-quality result is claimed. Fresh council, CI and CodeRabbit review
+remain required; the budget and external/runtime/release gates are unchanged.
