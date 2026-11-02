@@ -34,6 +34,8 @@ function worker(overrides = {}, limit = 1) {
   const io = {
     resetStaleRunningProjectJobs: async () => {},
     dispatchReadyCustomerAnalyses: async () => {},
+    isProjectJobLeaseLostError: () => false,
+    safeErrorTelemetry: () => ({ error_hash: "test-dispatch-error" }),
     listQueuedProjectJobIds: async () => ["job-1"],
     runProjectJobsWithinBudget,
     projectWorkflowTimeoutMs: () => 10 * 60_000,
@@ -101,4 +103,16 @@ test("a workflow released at its deadline ends the worker run", async () => {
     { job_id: "deadline-job", status: "processed", reason: "workflow_abandoned" },
   ]);
   assert.deepEqual(claimed, ["deadline-job"]);
+});
+
+test("automatic-analysis dispatch failure leaves ordinary queued work runnable and logs only safe telemetry", async (t) => {
+  const logs = [];
+  t.mock.method(console, "error", value => logs.push(value));
+  const run = worker({
+    dispatchReadyCustomerAnalyses: async () => { throw new Error("private backend details"); },
+  });
+  assert.deepEqual(await run(), [{ job_id: "job-1", status: "processed" }]);
+  assert.equal(logs.length, 1);
+  assert.deepEqual(JSON.parse(logs[0]), { event: "automatic_analysis_dispatch_failed", error_hash: "test-dispatch-error" });
+  assert.doesNotMatch(logs[0], /private backend details/u);
 });

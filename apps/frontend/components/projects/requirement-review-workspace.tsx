@@ -9,12 +9,11 @@ import { OutputSourceEvidence } from "@/components/projects/output-source-eviden
 import { isRecord } from "@/lib/unknown-values";
 import { SourceEvidenceButton } from "@/components/projects/source-evidence-panel";
 import type { RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
-import { editRequirementReviewRow, requirementReviewRows, type RequirementReviewRow } from "@/lib/requirement-review";
+import { editRequirementReviewRow, requirementReviewRows, requirementReviewRowMatches, type RequirementReviewRow, type RequirementReviewFilter, type RequirementSourceCheck } from "@/lib/requirement-review";
 import { requirementResponseArtifactMetadata } from "@/lib/requirement-response-metadata";
 import type { GeneratedArtifact, ProjectDocument } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "review" | "unanswered" | "source";
 export function RequirementReviewWorkspace({ artifact, projectId, documents, canDownloadDocuments = false, canEdit = false, busy = false, onSave, onRegenerate }: {
   artifact: GeneratedArtifact; projectId: string; documents: ProjectDocument[]; canDownloadDocuments?: boolean; canEdit?: boolean; busy?: boolean;
   onSave: (content: string, acknowledge: boolean) => Promise<void>;
@@ -23,7 +22,8 @@ export function RequirementReviewWorkspace({ artifact, projectId, documents, can
   const rows = useMemo(() => requirementReviewRows(artifact.content_markdown, artifact.input_snapshot), [artifact]);
   const metadata = useMemo(() => requirementResponseArtifactMetadata(artifact.input_snapshot), [artifact.input_snapshot]);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<RequirementReviewFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<RequirementSourceCheck | "all">("all");
   const [activeKey, setActiveKey] = useState(rows[0]?.key ?? "");
   const [draftRow, setDraftRow] = useState<RequirementReviewRow | null>(null);
   const editing = draftRow !== null;
@@ -35,8 +35,7 @@ export function RequirementReviewWorkspace({ artifact, projectId, documents, can
   const [regenerationOpen, setRegenerationOpen] = useState(false);
   const [error, setError] = useState("");
   const editor = useRef<HTMLTextAreaElement>(null);
-  const filtered = rows.filter(row => `${row.ref} ${row.requirement} ${row.answer} ${row.source}`.toLocaleLowerCase("nb").includes(query.toLocaleLowerCase("nb")) &&
-    (filter === "all" || filter === "review" && row.needsReview || filter === "unanswered" && row.unanswered || filter === "source" && row.missingSource));
+  const filtered = rows.filter(row => requirementReviewRowMatches(row, { query, status: filter, sourceCheck: sourceFilter }));
   const active = draftRow ?? filtered.find(row => row.key === activeKey) ?? filtered[0];
   const activeIndex = active ? filtered.indexOf(active) : -1;
   const unresolved = rows.filter(row => row.needsReview).length;
@@ -63,15 +62,18 @@ export function RequirementReviewWorkspace({ artifact, projectId, documents, can
     if (editing || saving || busy || event.altKey || event.metaKey || event.ctrlKey || target.closest("input,textarea,select,button,[contenteditable=true],[role=dialog]")) return;
     if (event.key === "j" || event.key === "k") { event.preventDefault(); navigate(event.key === "j" ? 1 : -1); }
     if (event.key === "e" && active && canEdit) { event.preventDefault(); edit(active); setTimeout(() => editor.current?.focus(), 0); }
-    if (event.key === "a" && active) { event.preventDefault(); setFilter("review"); const next = rows.find(row => row.index > active.index && row.needsReview) ?? rows.find(row => row.needsReview); if (next) setActiveKey(next.key); }
+    if (event.key === "a" && active) { event.preventDefault(); setFilter("review"); setSourceFilter("all"); setQuery(""); const next = rows.find(row => row.index > active.index && row.needsReview) ?? rows.find(row => row.needsReview); if (next) setActiveKey(next.key); }
   }
   if (!rows.length) return null;
   return <section aria-label="Gjennomgå kravbesvarelse" onKeyDown={shortcuts} tabIndex={0} className="min-w-0 space-y-3 outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">
     <div className="flex flex-wrap items-baseline justify-between gap-2"><h4 className="font-semibold">Gjennomgå kravbesvarelse</h4><span className="text-xs text-muted-foreground">{unresolved} av {rows.length} krav trenger oppfølging</span></div>
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-0 flex-1 basis-48"><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input className="pl-9" value={query} disabled={editing || saving} onChange={event => setQuery(event.target.value)} placeholder="Søk i ID, krav, svar eller kilde" aria-label="Søk i kravbesvarelse" /></div>
-      <select className="h-9 max-w-full rounded-md border bg-background px-2 text-sm" aria-label="Filtrer krav" disabled={editing || saving} value={filter} onChange={event => setFilter(event.target.value as Filter)}>
+      <select className="h-9 max-w-full rounded-md border bg-background px-2 text-sm" aria-label="Filtrer krav" disabled={editing || saving} value={filter} onChange={event => setFilter(event.target.value as RequirementReviewFilter)}>
         <option value="all">Alle krav</option><option value="review">Trenger oppfølging</option><option value="unanswered">Ubesvart</option><option value="source">Mangler kilde</option>
+      </select>
+      <select className="h-9 max-w-full rounded-md border bg-background px-2 text-sm" aria-label="Filtrer kildekontroll" disabled={editing || saving} value={sourceFilter} onChange={event => setSourceFilter(event.target.value as RequirementSourceCheck | "all")}>
+        <option value="all">Alle kildekontroller</option><option value="verified">Har kontrollert kildeutdrag</option><option value="unverified">Ingen lagret kildekontroll</option><option value="needs_clarification">Kilde må avklares</option>
       </select>
       {metadata.ledgerConfidence?.level ? <span className="text-xs text-muted-foreground">Sikkerhet i kravuttak: {({ high: "høy", medium: "middels", low: "lav" } as Record<string, string>)[metadata.ledgerConfidence.level] ?? "ukjent"}</span> : null}
     </div>
@@ -101,9 +103,9 @@ export function RequirementReviewWorkspace({ artifact, projectId, documents, can
           {canEdit ? <Button variant="outline" size="sm" disabled={busy} onClick={() => edit(active)}><Pencil />Rediger dette svaret</Button> : null}
         </>}
         {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
-        <div className="flex flex-wrap gap-2 border-t pt-3"><Button variant="outline" size="sm" disabled={editing || saving || filtered.length < 2} onClick={() => navigate(-1)}><ArrowUp />Forrige</Button><Button variant="outline" size="sm" disabled={editing || saving || filtered.length < 2} onClick={() => navigate(1)}><ArrowDown />Neste</Button><Button variant="outline" size="sm" disabled={editing || saving || !unresolved} onClick={() => { setFilter("review"); const next = rows.find(row => row.index > active.index && row.needsReview) ?? rows.find(row => row.needsReview); if (next) setActiveKey(next.key); }}><CheckSquare />Neste uavklarte</Button></div>
+        <div className="flex flex-wrap gap-2 border-t pt-3"><Button variant="outline" size="sm" disabled={editing || saving || filtered.length < 2} onClick={() => navigate(-1)}><ArrowUp />Forrige</Button><Button variant="outline" size="sm" disabled={editing || saving || filtered.length < 2} onClick={() => navigate(1)}><ArrowDown />Neste</Button><Button variant="outline" size="sm" disabled={editing || saving || !unresolved} onClick={() => { setFilter("review"); setSourceFilter("all"); setQuery(""); const next = rows.find(row => row.index > active.index && row.needsReview) ?? rows.find(row => row.needsReview); if (next) setActiveKey(next.key); }}><CheckSquare />Neste uavklarte</Button></div>
       </article> : null}
     </div>
-    <p className="text-xs leading-5 text-muted-foreground">Tastatur når arbeidsområdet har fokus: j/k neste/forrige · e rediger · a neste uavklarte. Endringer lagres som en ny versjon.</p>
+    <p className="text-xs leading-5 text-muted-foreground">Kildekontroll viser lagrede originalutdrag, ikke en vurdering av hele svarets kvalitet. Åpne kilden for kontroll mot gjeldende dokument. Tastatur: j/k neste/forrige · e rediger · a neste uavklarte og fjern søkefiltre. Endringer lagres som en ny versjon.</p>
   </section>;
 }

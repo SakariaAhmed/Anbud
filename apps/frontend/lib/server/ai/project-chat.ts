@@ -1128,7 +1128,9 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     domainHints,
     retrievalPlan,
     retrievalTelemetry: retrievalResult.telemetry,
-    abstentionMessage: unresolvedRequirementId
+    abstentionMessage: retrievalResult.telemetry.requirementLookupFailed && needsDocumentEvidence && !promptAttachments.length
+      ? "Kravregisteret kunne ikke leses sikkert. Kontroller dokumentstatusen og kravgrunnlaget før du prøver igjen."
+      : unresolvedRequirementId
       ? "Kravreferansen kunne ikke knyttes sikkert til et krav i dokumentgrunnlaget. Kontroller krav-ID-en og eventuelle rettelser, eller legg til det manglende kravdokumentet før du prøver igjen."
       : needsDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length && !input.customerAnalysis && !input.solutionEvaluation && !generatedArtifacts.length && !input.sessionSummary
       ? `Jeg fant ikke nok kildegrunnlag til å svare sikkert${retrievalResult.telemetry.usedBroadenedSearch ? " etter et nytt søk" : " i de tilgjengelige kildene"}. Kontroller at disse kildene er ferdig behandlet og inneholder opplysningene du spør etter: ${request.documents.map(document => document.title).join(", ")}. Legg til det manglende dokumentet eller oppgi krav-ID, kapittel eller side, og prøv igjen.`

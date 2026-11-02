@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { unchangedRequirementRowEvidence } from "@/lib/output-source-evidence";
 import { extractRequirementIdentifiers, isAmbiguousRequirementIdentifier } from "@/lib/server/ai/retrieval-query";
 import { WorkflowIncompleteError } from "@/lib/server/workflow-errors";
-import { SourceQuoteIndex, quotedSourcePassages, evidenceIdentity } from "@/lib/server/source-evidence";
+import { SourceQuoteIndex, quotedSourcePassages, evidenceIdentity, sourceQuoteLength, isMeaningfulShortSourceQuote } from "@/lib/server/source-evidence";
 import { bindDocumentSourceEvidence } from "@/lib/server/document-source-evidence";
 import type { ChatSourceReference, ProjectDocumentDetail, ServiceDocumentDetail, SourceEvidenceManifest } from "@/lib/types";
 
@@ -37,15 +37,19 @@ export function bindOutputSourceEvidence(input: { fields: Array<{ path: string; 
     // without quotation marks. Bind exact matches without labelling prose as a quote.
     const direct = /(?:^|\.)(?:evidence|requirement)$/u.test(field.path) ? [field.text.trim()] : [];
     for (const quote of Array.from(new Set([...quotes, ...direct])).filter(Boolean)) {
-      const short = quote.replace(/\s+/gu, " ").trim().length < 12;
+      const short = sourceQuoteLength(quote) < 12;
+      const meaningfulShort = isMeaningfulShortSourceQuote(quote);
+      if (short && !meaningfulShort) continue;
+      let knownShortOccurrence = false;
       const candidates = documents.flatMap(source => {
-        const original = source.index.find(quote);
+        const original = source.index.find(quote, { tokenBoundaries: short });
         if (!original) return [];
-        const reference = bindDocumentSourceEvidence(source.document, original, { sourceType: source.sourceType });
+        knownShortOccurrence ||= short;
+        const reference = bindDocumentSourceEvidence(source.document, quote, { sourceType: source.sourceType });
         return reference ? [reference] : [];
       });
       for (const artifact of artifacts) {
-        if (short) continue;
+        if (short) { knownShortOccurrence ||= artifact.index.find(quote, { tokenBoundaries: true }) !== null; continue; }
         const original = artifact.index.find(quote);
         if (!original) continue;
         const fingerprint = createHash("sha256").update(artifact.content_markdown).digest("hex");
@@ -54,12 +58,12 @@ export function bindOutputSourceEvidence(input: { fields: Array<{ path: string; 
         candidates.push({ source_type: "generated_artifact", source_id: artifact.id, document_title: artifact.title, reference, heading_path: [], page_start: null, page_end: null, source_revision: revision, source_fingerprint: fingerprint, original_quote: original, classification: "interpretation", evidence_id: evidenceIdentity({ sourceType: "generated_artifact", sourceId: artifact.id, revision, fingerprint, reference, text: original }) });
       }
       for (const previous of priorReferences) {
-        if (short) continue;
+        if (short) { if (previous.source.source_type === "generated_artifact") knownShortOccurrence ||= previous.index.find(quote, { tokenBoundaries: true }) !== null; continue; }
         const original = previous.index.find(quote);
         if (original) candidates.push({ ...previous.source, original_quote: original, quotation_excerpts: undefined,
           evidence_id: evidenceIdentity({ sourceType: previous.source.source_type, sourceId: previous.source.source_id, revision: previous.source.source_revision!, fingerprint: previous.source.source_fingerprint!, reference: previous.source.reference, text: original }) });
       }
-      if (!candidates.length && (short || !quotes.includes(quote))) continue;
+      if (!candidates.length && (knownShortOccurrence || !quotes.includes(quote))) continue;
       if (!candidates.length && input.interpretationOnly) continue;
       if (!candidates.length) throw new OutputEvidenceValidationError("unverified_quote", "Et kildesitat i resultatet kunne ikke bekreftes ordrett i dokumentene. Kontroller originalkilden før denne formuleringen brukes.");
       for (const source of candidates) if (!references.some(item => item.path === field.path && item.source.evidence_id === source.evidence_id)) references.push({ path: field.path, source });

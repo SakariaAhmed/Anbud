@@ -674,3 +674,15 @@ test("explicit source heading paths survive chunk persistence without splitting 
   const rows = getDocumentChunksTestManifest("project_document", source.id).rows;
   assert.ok(rows.some(row => row.heading_path.includes("Resultatmål - må ikke omskrives til ambisjon")));
 });
+
+test("an unreadable register fails the gate for ambiguous IDs and broad questions without affecting ordinary successful P1 lookup", async () => {
+  resetDocumentChunksTestRuntime();
+  const formal = projectDocument({ id: "unreadable-priority-register", role: "primary_customer_document", file_format: "txt", raw_text: "| Krav-ID | Krav |\n| --- | --- |\n| P1 | Leverandøren skal tilby døgnåpen beredskap. |", structure_map: [] });
+  setDocumentChunksTestRequirementRegister(formal.id, "not-encrypted-register-data");
+  for (const [query, exactTerms] of [["Hva sier P2?", ["P2"]], ["Oppsummer beredskapen", []]]) {
+    const result = await retrieveDocumentSnippetsWithMetadata({ query, exactTerms, documents: [formal] });
+    assert.equal(result.telemetry.requirementLookupFailed, true);
+    assert.equal(result.telemetry.quality.sufficient, false);
+    assert.match(result.telemetry.quality.reason, /kravregister.*ikke leses/iu);
+  }
+});

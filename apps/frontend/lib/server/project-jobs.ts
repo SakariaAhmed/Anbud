@@ -1162,7 +1162,11 @@ export async function runAvailableProjectJobs(options: {
     now: options.now ?? Date.now,
     maxJobs: options.limit ?? 1,
     async listQueuedJobIds(limit) {
-      await dispatchReadyCustomerAnalyses();
+      try { await dispatchReadyCustomerAnalyses(); }
+      catch (error) {
+        if (isProjectJobLeaseLostError(error)) throw error;
+        console.error(JSON.stringify({ event: "automatic_analysis_dispatch_failed", ...safeErrorTelemetry(error) }));
+      }
       return listQueuedProjectJobIds(limit);
     },
     async readQueuedInput(jobId) {

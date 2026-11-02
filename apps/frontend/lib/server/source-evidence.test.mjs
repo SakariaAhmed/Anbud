@@ -102,3 +102,11 @@ test("register authority survives a lookup miss and whole-document citations", (
   assert.throws(() => validateChatEvidence("P2 krever lagring i Norge. [Kilde 1]", [source], { authoritativeRequirementIds: ["P1"] }), /krav-ID/iu);
   assert.deepEqual(validateChatEvidence("Forslag til P2-hendelser og L2-støtte.", [source]), []);
 });
+
+test("short quoted numeric values must match whole tokens in the cited passage", () => {
+  const available = [{ evidence_id: "numeric", original_quote: "Den gamle fristen var 130 dager." }];
+  assert.throws(() => validateChatEvidence("Fristen er «30 dager». [Kilde 1]", available), /sitat/iu);
+  const source = "Den gamle fristen var 130 dager.\nDen nye fristen er 30 dager.";
+  const match = new SourceQuoteIndex(source).locate("30 dager", { tokenBoundaries: true });
+  assert.equal(match.start, source.lastIndexOf("30 dager")); assert.equal(match.text, "30 dager");
+});

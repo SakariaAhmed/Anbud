@@ -38,9 +38,15 @@ create or replace function public.insert_service_document_with_keywords(uuid, js
 create or replace function public.atomic_service_document_write_preflight() returns text language sql as 'select';
 create or replace function public.insert_vacant_primary_project_document(uuid, text, jsonb) returns jsonb language sql as 'select';
 create or replace function public.vacant_primary_document_insert_preflight() returns text language sql as 'select';
+create or replace function public.record_upload_analysis_request() returns trigger language plpgsql as 'begin return new; end';
+create or replace function public.schedule_ready_customer_analysis(uuid,uuid,uuid) returns jsonb language sql as 'select';
+create or replace function public.dispatch_ready_customer_analyses(integer) returns integer language sql as 'select';
+create or replace function public.finish_automatic_customer_analysis() returns trigger language plpgsql as 'begin return new; end';
+create or replace function public.automatic_customer_analysis_preflight() returns text language sql as 'select';
 `;
 
 const versions = new Map([
+  ["automatic_customer_analysis_preflight", "automatic-customer-analysis-v1"],
   ["project_job_fencing_preflight", "authoritative-lease-fencing-v1"],
   ["project_job_terminal_audit_preflight", "transactional-project-job-terminal-audit-v2"],
   ["stable_main_rollback_bridge_preflight", "stable-main-rollback-bridge-v1"],
@@ -102,8 +108,8 @@ test("remote preflight checks only the internal PostgREST contract", async () =>
   assert.equal(calls[0].url.pathname, "/project_jobs");
   assert.equal(calls[1].url.pathname, "/projects");
   assert.equal(calls[3].url.pathname, "/project_result_history");
-  assert.equal(calls[4].url.pathname, "/audit_events");
-  assert.equal(calls[5].options.method, "POST");
+  assert.equal(calls[4].url.pathname, "/project_analysis_requests");
+  assert.equal(calls[5].url.pathname, "/audit_events");
   assert.ok(calls.every((call) => call.options.headers.apikey === "synthetic-azure-key"));
   assert.equal(
     result.host,
@@ -186,4 +192,15 @@ test("remote preflight fails closed when table metadata is unavailable", async (
     }),
     /schema preflight failed with HTTP 400/u,
   );
+});
+
+test("automatic analysis migration and schema-cache failures stop release preflight", async () => {
+  await assert.rejects(preflightRemoteProjectJobSchema({ ...configuration,
+    fetchImpl: successfulFetch([], "automatic_customer_analysis_preflight"),
+  }), /Automatic customer-analysis preflight failed with HTTP 404/u);
+  const fetchOk = successfulFetch([]);
+  await assert.rejects(preflightRemoteProjectJobSchema({ ...configuration,
+    fetchImpl: async (url, options) => url.pathname.endsWith("automatic_customer_analysis_preflight")
+      ? { ok: true, json: async () => "old-version" } : fetchOk(url, options),
+  }), /Automatic customer-analysis version is missing or unexpected/u);
 });

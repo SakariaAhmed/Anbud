@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createJiti } from "jiti";
 const load = createJiti(import.meta.url, { alias: { "@": new URL("..", import.meta.url).pathname } });
-const { requirementReviewRows, editRequirementReviewRow } = load("./requirement-review.ts");
+const { requirementReviewRows, editRequirementReviewRow, requirementReviewRowMatches } = load("./requirement-review.ts");
 const { projectFollowUpItems } = load("./project-follow-up.ts");
 const content = `# Besvarelse
 
@@ -42,4 +42,23 @@ test("follow-up excludes historical or stale artifacts and retains missing cover
   assert.equal(items.filter(item => item.kind === "coverage").length, 2);
   assert.equal(items.filter(item => item.kind === "clarification").length, 1);
   assert.ok(items.every(item => item.nextAction));
+});
+
+test("source-control filters use exact row evidence and keep unknown verification distinct from failed checks", () => {
+  const table = `| Kravref. | Krav | Svar | Svargrunnlag | Kildegrunnlag |\n| --- | --- | --- | --- | --- |\n| K1 | Første krav | Oppfylt | Sporbart sitat | Side 1 |\n| K1 | Andre krav | Eget forslag | Grunnlag | Side 2 |\n| K1 | Tredje krav | Oppfylt | Grunnlag | Side 3 |`;
+  const proof = { source_type: "project_document", source_id: "doc", document_title: "Krav", reference: "Side 1", heading_path: [], page_start: 1, page_end: 1, source_revision: 1, source_fingerprint: "hash", evidence_id: "proof", original_quote: "Et sporbart sitat fra originalen.", classification: "documented" };
+  const rows = requirementReviewRows(table, { source_evidence: { version: 1, references: [{ path: "rows.0.evidence", source: proof }, { path: "rows.1.answer", source: { ...proof, evidence_id: "draft", source_type: "generated_artifact", classification: "interpretation" } }], issues: [{ path: "rows.2.answer", code: "unverified_quote", message: "Må avklares" }, { path: "rows.10.answer", code: "unknown_requirement", message: "Må avklares" }] } });
+  assert.deepEqual(rows.map(row => row.sourceCheck), ["verified", "unverified", "needs_clarification"]);
+  assert.equal(rows[1].needsReview, false, "Row 10 warnings cannot flag a repeated-ID row 1.");
+  assert.equal(rows[2].needsReview, true);
+  const filter = { query: "", status: "all", sourceCheck: "unverified" };
+  assert.deepEqual(rows.filter(row => requirementReviewRowMatches(row, filter)).map(row => row.index), [1]);
+  assert.deepEqual(rows.filter(row => requirementReviewRowMatches(row, { query: "sporbart", status: "all", sourceCheck: "verified" })).map(row => row.index), [0]);
+});
+
+test("possible evaluation criteria remain explicitly unassessed even when requirement coverage is good", () => {
+  const items = projectFollowUpItems({ artifacts: [], analysis: { likely_evaluation_criteria: ["Kvalitet på overgangsplan", "Pris"] }, evaluation: { requirement_coverage: { items: [{ reference: "K1", assessment: "Godt" }] } } });
+  assert.equal(items.length, 2); assert.ok(items.every(item => item.kind === "criterion" && item.description.includes("dekningen er ukjent")));
+  assert.match(items[0].reference, /Mulig evalueringskriterium/u);
+  assert.deepEqual(projectFollowUpItems({ artifacts: [], analysis: null, evaluation: null }), []);
 });

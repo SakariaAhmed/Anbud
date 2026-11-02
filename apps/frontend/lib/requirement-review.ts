@@ -2,12 +2,17 @@ import { isMarkdownTableDivider, splitMarkdownTableRow } from "@/lib/markdown-ta
 import { requirementResponseTableColumns } from "@/lib/requirement-response-table";
 import { requirementResponseArtifactMetadata } from "@/lib/requirement-response-metadata";
 import { isRecord } from "@/lib/unknown-values";
+import { parseOutputSourceEvidence } from "@/lib/output-source-evidence";
+
+export type RequirementSourceCheck = "verified" | "unverified" | "needs_clarification";
+export type RequirementReviewFilter = "all" | "review" | "unanswered" | "source";
 
 export type RequirementReviewRow = {
   key: string; index: number; lineIndex: number; rawLine: string; ref: string; group: string;
   requirement: string; answer: string; evidence: string; source: string;
   sourceDocumentId?: string; sourceLocator?: string; rowHash?: string;
   needsReview: boolean; unanswered: boolean; missingSource: boolean;
+  sourceCheck: RequirementSourceCheck;
   columns: ReturnType<typeof requirementResponseTableColumns>;
 };
 
@@ -15,6 +20,10 @@ const normalized = (value: string) => value.replace(/\s+/gu, " ").trim().toLocal
 export function requirementReviewRows(content: string, inputSnapshot?: unknown): RequirementReviewRow[] {
   const metadata = requirementResponseArtifactMetadata(inputSnapshot);
   const snapshot = isRecord(inputSnapshot) ? inputSnapshot : {};
+  const evidence = parseOutputSourceEvidence(snapshot.source_evidence);
+  const rowIndex = (at: string) => { const match = /^rows\.(0|[1-9]\d*)(?:\.|$)/u.exec(at); return match ? Number(match[1]) : null; };
+  const verifiedRows = new Set(evidence.references.filter(entry => entry.source.classification === "documented" && entry.source.evidence_id && entry.source.original_quote && entry.source.source_type !== "generated_artifact").map(entry => rowIndex(entry.path)));
+  const sourceIssueRows = new Set((evidence.issues ?? []).map(issue => rowIndex(issue.path)));
   const generation = isRecord(snapshot.generation_metadata) ? snapshot.generation_metadata : {};
   const response = isRecord(generation.requirement_response) ? generation.requirement_response : {};
   const manifest = isRecord(response.immutable_row_manifest) ? response.immutable_row_manifest : {};
@@ -44,20 +53,30 @@ export function requirementReviewRows(content: string, inputSnapshot?: unknown):
         const flagged = (entries: Array<{ ref: string; orderIndex?: number; sourceLocator?: string }>, refs: string[]) => entries.some(matches) || refs.some(reference => normalized(reference) === normalized(ref));
         const unanswered = !answer.trim() || /^(?:-|—|ikke besvart|mangler svar)$/iu.test(answer.trim());
         const missingSource = !source.trim() || /^(?:-|—|ukjent|mangler|ikke oppgitt)$/iu.test(source.trim());
-        const needsReview = unanswered || missingSource || flagged(metadata.templateRepairRows, metadata.templateRepairLegacyRefs) || flagged(metadata.controlRepairRows, metadata.controlRepairLegacyRefs) || flagged(metadata.proposalInputRequiredRows, metadata.proposalInputRequiredLegacyRefs) || metadata.unresolvedFallbackAnswers.some(row => row.nr === index + 1) ||
+        const sourceIssue = sourceIssueRows.has(index);
+        const sourceCheck: RequirementSourceCheck = missingSource || sourceIssue ? "needs_clarification" : verifiedRows.has(index) ? "verified" : "unverified";
+        const needsReview = unanswered || missingSource || sourceIssue || flagged(metadata.templateRepairRows, metadata.templateRepairLegacyRefs) || flagged(metadata.controlRepairRows, metadata.controlRepairLegacyRefs) || flagged(metadata.proposalInputRequiredRows, metadata.proposalInputRequiredLegacyRefs) || metadata.unresolvedFallbackAnswers.some(row => row.nr === index + 1) ||
           /\b(?:må avklares|trenger tilbudsinput|ikke dokumentert|kan ikke bekreftes)\b/iu.test(`${answer} ${columns.evidenceIndex >= 0 ? cells[columns.evidenceIndex] ?? "" : ""}`);
         result.push({ key: `${index}:${ref}`, index, lineIndex, rawLine, ref, group, requirement: cells[columns.requirementIndex] ?? "", answer,
           evidence: columns.evidenceIndex >= 0 ? cells[columns.evidenceIndex] ?? "" : "", source, columns,
           sourceDocumentId: typeof identity?.source_document_id === "string" ? identity.source_document_id : undefined,
           sourceLocator: typeof identity?.source_locator === "string" ? identity.source_locator : undefined,
           rowHash: typeof identity?.row_sha256 === "string" ? identity.row_sha256 : undefined,
-          needsReview, unanswered, missingSource });
+          needsReview, unanswered, missingSource, sourceCheck });
       }
       lineIndex++;
     }
     lineIndex--;
   }
   return result;
+}
+
+/** Verification is stored quotation membership, not a model confidence score
+ * or proof of semantic support. The drawer rechecks the current source. */
+export function requirementReviewRowMatches(row: RequirementReviewRow, filters: { query: string; status: RequirementReviewFilter; sourceCheck: RequirementSourceCheck | "all" }) {
+  return normalized(`${row.ref} ${row.requirement} ${row.answer} ${row.evidence} ${row.source}`).includes(normalized(filters.query)) &&
+    (filters.status === "all" || filters.status === "review" && row.needsReview || filters.status === "unanswered" && row.unanswered || filters.status === "source" && row.missingSource) &&
+    (filters.sourceCheck === "all" || filters.sourceCheck === row.sourceCheck);
 }
 
 /** Update only the editable cells of one exact row. Preserve all other lines,

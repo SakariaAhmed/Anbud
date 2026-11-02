@@ -1,7 +1,7 @@
 import { requirementReviewRows } from "@/lib/requirement-review";
 import type { CustomerAnalysisResult, GeneratedArtifact, SolutionEvaluationResult } from "@/lib/types";
 
-export type ProjectFollowUp = { key: string; kind: "requirement" | "coverage" | "clarification"; reference: string; description: string; nextAction: string };
+export type ProjectFollowUp = { key: string; kind: "requirement" | "coverage" | "clarification" | "criterion"; reference: string; description: string; nextAction: string };
 /** Derived from saved results only. Absence of an evaluation is not evidence
  * that a criterion is covered or uncovered. Keep unknowns explicit. */
 export function projectFollowUpItems(input: { artifacts: GeneratedArtifact[]; analysis: CustomerAnalysisResult | null; evaluation: SolutionEvaluationResult | null }): ProjectFollowUp[] {
@@ -18,5 +18,8 @@ export function projectFollowUpItems(input: { artifacts: GeneratedArtifact[]; an
   }
   for (const [index, item] of (input.evaluation?.missing_elements ?? []).entries()) items.push({ key: `missing:${index}`, kind: "coverage", reference: "Mangler i løsningsforslaget", description: item, nextAction: "Suppler løsningsforslaget og kjør en ny vurdering." });
   for (const [index, item] of (input.analysis?.ambiguities ?? []).entries()) items.push({ key: `clarification:${index}`, kind: "clarification", reference: "Åpen avklaring", description: item, nextAction: "Avklar med kunden og oppdater dokumentgrunnlaget." });
+  for (const [index, item] of (input.analysis?.likely_evaluation_criteria ?? []).entries()) items.push({ key: `criterion:${index}`, kind: "criterion", reference: `Mulig evalueringskriterium: ${item}`,
+    description: "Kundeanalysen foreslår dette kriteriet. Det finnes ingen lagret dekningsvurdering per evalueringskriterium; dekningen er ukjent.",
+    nextAction: "Kontroller kriteriet i konkurransegrunnlaget og dokumenter hvordan tilbudet besvarer det." });
   return items;
 }

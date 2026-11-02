@@ -25,6 +25,18 @@ test("postgres: automatic analysis is one-shot, readiness/lease fenced, manual-s
     sql(url, `set client_min_messages=warning; set anbud.allow_destructive_schema_rebuild=on;\n${readFileSync(path.join(root, "database/schema.sql"), "utf8")}`);
     const migration = readFileSync(path.join(root, "database/migrations/20261102120000_automatic_customer_analysis.sql"), "utf8");
     sql(url, migration); sql(url, migration);
+    assert.equal(sql(url, "set role service_role; select public.automatic_customer_analysis_preflight();"), "automatic-customer-analysis-v1");
+    sql(url, `
+      do $$ begin
+        if has_function_privilege('authenticated','public.automatic_customer_analysis_preflight()','execute') or has_function_privilege('anon','public.automatic_customer_analysis_preflight()','execute') then raise exception 'public preflight access'; end if;
+        alter table public.project_jobs disable trigger project_jobs_upload_analysis_request;
+        begin perform public.automatic_customer_analysis_preflight(); raise exception 'disabled trigger accepted'; exception when raise_exception then if sqlerrm<>'automatic analysis triggers are missing or disabled' then raise; end if; end;
+        alter table public.project_jobs enable trigger project_jobs_upload_analysis_request;
+        grant select on public.project_analysis_requests to authenticated;
+        begin perform public.automatic_customer_analysis_preflight(); raise exception 'public grants accepted'; exception when raise_exception then if sqlerrm<>'project_analysis_requests has unexpected grants' then raise; end if; end;
+        revoke select on public.project_analysis_requests from authenticated;
+      end $$;
+    `);
     const project = randomUUID(), doc = randomUUID(), parent = randomUUID(), lease = randomUUID(), other = randomUUID();
     const callback = `select public.schedule_ready_customer_analysis('${project}','${parent}','${lease}');`;
     sql(url, `
@@ -43,12 +55,10 @@ test("postgres: automatic analysis is one-shot, readiness/lease fenced, manual-s
       do $$ begin if exists(select from public.project_jobs where project_id='${project}' and kind='customer_analysis') then raise exception 'unready document started analysis'; end if; end $$;
       update public.documents set processing_status='basic_ready',indexed_at=now() where id='${doc}';
       ${callback}
+      do $$ begin if not exists(select from public.project_analysis_requests where project_id='${project}' and status='failed' and reason_code='document_basis_not_ready') then raise exception 'idle broken index stayed pending'; end if; end $$;
+      insert into public.project_jobs(project_id,kind,status,input_json) values('${project}','document_ingestion','completed','{"requestAutoAnalysis":true}');
       insert into public.document_chunks(source_type,source_id,project_id,document_title,file_name,file_format,chunk_index,kind,text_encrypted,content_hash)
       values('project_document','${doc}','${project}','Krav','krav.txt','txt',0,'paragraph','syntetisk','hash');
-      ${callback}
-      do $$ begin if exists(select from public.project_jobs where project_id='${project}' and kind='customer_analysis') then raise exception 'missing metadata started analysis'; end if; end $$;
-      insert into public.document_intelligence_artifacts(document_id,project_id,source_revision,compiler_version,content_hash,parser_used,artifact_encrypted,analysis_context_encrypted)
-      select id,project_id,chunk_source_revision,'test','hash','test','{}','syntetisk' from public.documents where id='${doc}';
       insert into public.project_jobs(id,project_id,kind,status,input_json) values('${other}','${project}','document_docling_enhancement','queued','{}');
       ${callback}
       do $$ begin if exists(select from public.project_jobs where project_id='${project}' and kind='customer_analysis') then raise exception 'queued enhancement was ignored'; end if; end $$;
@@ -107,6 +117,7 @@ test("postgres: automatic analysis is one-shot, readiness/lease fenced, manual-s
       insert into public.project_jobs(project_id,kind,status) values('${recovery}','document_ingestion','completed');
       insert into public.project_jobs(project_id,kind,status,input_json) values('${recovery}','document_ingestion','completed','{"requestAutoAnalysis":true}');
       insert into public.projects(id,client_name,title) values('${unready}','Syntetisk kunde','Venter på dokument');
+      insert into public.documents(project_id,role,processing_status) values('${unready}','primary_customer_document','queued');
       insert into public.project_analysis_requests(project_id,status,updated_at) values('${unready}','pending','2020-01-01');
       set role service_role;
       select public.dispatch_ready_customer_analyses(1);
@@ -116,6 +127,35 @@ test("postgres: automatic analysis is one-shot, readiness/lease fenced, manual-s
       do $$ begin
         if (select count(*) from public.project_jobs where project_id='${recovery}' and kind='customer_analysis')<>1 then raise exception 'recovery dispatcher failed or duplicated the job'; end if;
         if has_function_privilege('authenticated','public.dispatch_ready_customer_analyses(integer)','execute') then raise exception 'public recovery dispatch access granted'; end if;
+      end $$;
+    `);
+    const failedProject = randomUUID(), readyDoc = randomUUID(), failedDoc = randomUUID();
+    sql(url, `
+      insert into public.projects(id,client_name,title) values('${failedProject}','Syntetisk kunde','Tidligere dokumentfeil');
+      insert into public.documents(id,project_id,role,processing_status,indexed_at) values('${readyDoc}','${failedProject}','primary_customer_document','basic_ready',now()),('${failedDoc}','${failedProject}','supporting_document','failed',null);
+      insert into public.document_chunks(source_type,source_id,project_id,document_title,file_name,file_format,chunk_index,kind,text_encrypted,content_hash)
+      values('project_document','${readyDoc}','${failedProject}','Krav','krav.txt','txt',0,'paragraph','syntetisk','hash');
+      insert into public.project_jobs(project_id,kind,status,input_json) values('${failedProject}','document_ingestion','completed','{"requestAutoAnalysis":true}');
+      select public.schedule_ready_customer_analysis('${failedProject}',null,null);
+      do $$ begin if not exists(select from public.project_analysis_requests where project_id='${failedProject}' and status='failed' and reason_code='document_basis_not_ready') then raise exception 'previous failed document left an indefinite pending intent'; end if; end $$;
+      delete from public.documents where id='${failedDoc}';
+      select public.dispatch_ready_customer_analyses(20);
+      do $$ begin if exists(select from public.project_jobs where project_id='${failedProject}' and kind='customer_analysis') then raise exception 'deleting failed document unexpectedly started a later paid job'; end if; end $$;
+    `);
+    const replacementProject = randomUUID(), oldDoc = randomUUID(), newDoc = randomUUID();
+    sql(url, `
+      insert into public.projects(id,client_name,title) values('${replacementProject}','Syntetisk kunde','Erstattet kundedokument');
+      insert into public.documents(id,project_id,role,processing_status,indexed_at) values('${oldDoc}','${replacementProject}','primary_customer_document','basic_ready',now());
+      insert into public.document_intelligence_artifacts(document_id,project_id,source_revision,compiler_version,content_hash,parser_used,artifact_encrypted,analysis_context_encrypted)
+      select id,project_id,chunk_source_revision,'test','hash','test','{}','syntetisk' from public.documents where id='${oldDoc}';
+      select public.insert_primary_project_document('${replacementProject}','primary_customer_document',jsonb_build_object('id','${newDoc}','title','Nytt kundedokument','file_name','nytt.txt','file_format','txt','content_type','text/plain','file_storage_bucket','test','file_storage_path','test/nytt.txt','processing_status','basic_ready','indexed_at',now()));
+      insert into public.document_chunks(source_type,source_id,project_id,document_title,file_name,file_format,chunk_index,kind,text_encrypted,content_hash)
+      values('project_document','${oldDoc}','${replacementProject}','Tidligere krav','gammelt.txt','txt',0,'paragraph','syntetisk','old-hash'),('project_document','${newDoc}','${replacementProject}','Nye krav','nytt.txt','txt',0,'paragraph','syntetisk','new-hash');
+      insert into public.project_jobs(project_id,kind,status,input_json) values('${replacementProject}','document_ingestion','completed','{"requestAutoAnalysis":true}');
+      select public.schedule_ready_customer_analysis('${replacementProject}',null,null);
+      do $$ begin
+        if not exists(select from public.documents d join public.document_intelligence_artifacts a on a.document_id=d.id where d.id='${oldDoc}' and d.role='supporting_document' and a.source_revision<d.chunk_source_revision) then raise exception 'fixture did not reproduce stale metadata after primary demotion'; end if;
+        if not exists(select from public.project_analysis_requests where project_id='${replacementProject}' and status='scheduled') then raise exception 'ready replacement with old or absent artifacts did not schedule'; end if;
       end $$;
     `);
   } finally { sql(admin, `drop database "${name}" with (force);`); }

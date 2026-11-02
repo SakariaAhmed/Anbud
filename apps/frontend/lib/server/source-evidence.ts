@@ -8,6 +8,8 @@ export function quotedSourcePassages(value: string, includeOrdinaryQuotes = true
   return [...value.matchAll(includeOrdinaryQuotes ? /«([^»]+)»|“([^”]+)”|"([^"\n]+)"/gu : /«([^»]+)»/gu)].map(match => match[1] ?? match[2] ?? match[3]);
 }
 const canonical = (value: string) => value.replace(/[‐‑‒–—]/gu, "-").replace(/\u0000/gu, "").replace(/\s+/gu, " ").trim();
+export const sourceQuoteLength = (value: string) => canonical(quotationText(value)).length;
+export const isMeaningfulShortSourceQuote = (value: string) => sourceQuoteLength(value) >= 4 && sourceQuoteLength(value) < 12 && /\d/u.test(value);
 
 export class SourceEvidenceValidationError extends Error {
   constructor(readonly code: "CHAT_SOURCE_REFERENCE_INVALID" | "CHAT_QUOTATION_INVALID" | "CHAT_REQUIREMENT_ID_INVALID", message: string) {
@@ -20,11 +22,22 @@ export class SourceEvidenceValidationError extends Error {
 export class SourceQuoteIndex {
   private projection?: { normalized: string; positions: number[] };
   constructor(private readonly source: string) {}
-  find(excerpt: string): string | null {
+  find(excerpt: string, options: { tokenBoundaries?: boolean; startAt?: number } = {}): string | null {
+    return this.locate(excerpt, options)?.text ?? null;
+  }
+  locate(excerpt: string, options: { tokenBoundaries?: boolean; startAt?: number } = {}): { text: string; start: number; end: number } | null {
     const source = this.source;
     if (!excerpt.trim()) return null;
+    const startAt = options.startAt ?? 0;
+    const bounded = (start: number, end: number) => !options.tokenBoundaries || (!/[\p{L}\p{N}]$/u.test(source.slice(Math.max(0, start - 2), start)) && !/^[\p{L}\p{N}]/u.test(source.slice(end, end + 2)));
     const candidates = Array.from(new Set([excerpt, quotationText(excerpt)]));
-    for (const candidate of candidates) if (source.includes(candidate)) return candidate;
+    for (const candidate of candidates) {
+      let at = source.indexOf(candidate, startAt);
+      while (at >= 0) {
+        if (bounded(at, at + candidate.length)) return { text: candidate, start: at, end: at + candidate.length };
+        at = source.indexOf(candidate, at + 1);
+      }
+    }
     if (!this.projection) {
       const positions: number[] = [];
       const characters: string[] = [];
@@ -42,8 +55,12 @@ export class SourceQuoteIndex {
     for (const candidate of candidates) {
       const needle = canonical(candidate);
       if (!needle) continue;
-      const at = normalized.indexOf(needle);
-      if (at >= 0) return source.slice(positions[at], positions[at + needle.length - 1] + 1);
+      let at = normalized.indexOf(needle);
+      while (at >= 0) {
+        const start = positions[at], end = positions[at + needle.length - 1] + 1;
+        if (start >= startAt && bounded(start, end)) return { text: source.slice(start, end), start, end };
+        at = normalized.indexOf(needle, at + 1);
+      }
     }
     return null;
   }
@@ -74,7 +91,7 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
       // Repeating user-supplied wording is conversation, never document proof.
       // Cited quotations still require membership in the actual cited source.
       if (!sources.length && options.userText?.includes(quote)) continue;
-      if (!sources.some(source => source?.original_quote && new SourceQuoteIndex(source.original_quote).find(quote) !== null)) {
+      if (!sources.some(source => source?.original_quote && new SourceQuoteIndex(source.original_quote).find(quote, { tokenBoundaries: isMeaningfulShortSourceQuote(quote) }) !== null)) {
         throw new SourceEvidenceValidationError("CHAT_QUOTATION_INVALID", "Et sitat i svaret finnes ikke i den oppgitte kilden. Prøv meldingen på nytt.");
       }
     }

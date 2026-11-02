@@ -24,4 +24,7 @@ test("short numeric quotations retain original context while ordinary labels nev
   assert.equal(source.page_start, 4);
   assert.equal(bindDocumentSourceEvidence(input, "Ja"), null);
   assert.equal(bindDocumentSourceEvidence({ ...input, raw_text: "30 dager" }, "30 dager"), null);
+  assert.equal(bindDocumentSourceEvidence({ ...input, raw_text: "Fristen er 130 dager." }, "30 dager"), null);
+  const later = { ...input, raw_text: "Den gamle fristen var 130 dager.\nDen nye fristen er 30 dager." };
+  assert.equal(bindDocumentSourceEvidence(later, "30 dager").original_quote, "Den nye fristen er 30 dager.");
 });

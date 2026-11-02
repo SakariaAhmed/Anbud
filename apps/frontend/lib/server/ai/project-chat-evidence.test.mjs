@@ -13,7 +13,7 @@ writeFileSync(completion, `exports.createTextCompletionStream = async input => {
 }; exports.createJsonCompletion = async () => { throw new Error("No model rewriting is enabled in this test"); };`);
 writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => {
   const state = globalThis.__chatEvidenceContract; state.reads.push(input);
-  return { snippets: [], telemetry: { missingRequirementIds: state.missingIds, usedBroadenedSearch: false,
+  return { snippets: [], telemetry: { requirementLookupFailed: state.lookupFailed, missingRequirementIds: state.missingIds, usedBroadenedSearch: false,
     quality: { sufficient: false, sourceCount: 0, topScore: 0 } } };
 };`);
 const load = createJiti(import.meta.url, { alias: { "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval, "@": root, "server-only": "/dev/null" } });
@@ -97,4 +97,12 @@ test("weak evidence abstains for document questions but permits greetings, draft
   state = scenario(["Dette skal ikke kalles."], ["K99"]);
   result = await streamProjectChat(input({ customerDocument: document("customer", "K1 Kunden skal få eksport."), question: "Hva sier K99?" }));
   assert.match(await collect(result.stream), /kunne ikke knyttes sikkert/u); assert.equal(state.prompts.length, 0);
+});
+
+test("unreadable register prevents an ambiguous-ID answer even with whole documents present", async () => {
+  const state = scenario(["P2 er dokumentert. [Kilde 1]"]);
+  state.lookupFailed = true;
+  const result = await streamProjectChat(input({ question: "Hva sier P2?", customerDocument: document("formal", "P1 Leverandøren skal tilby døgnåpen beredskap.") }));
+  assert.match(await collect(result.stream), /Kravregisteret kunne ikke leses sikkert/u);
+  assert.equal(state.prompts.length, 0, "No answer model may invent an ID after the authoritative read fails.");
 });

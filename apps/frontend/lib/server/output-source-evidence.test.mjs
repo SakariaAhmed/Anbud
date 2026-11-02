@@ -56,6 +56,19 @@ test("ordinary short labels carry no proof or issue while short numeric quotes r
   assert.doesNotThrow(() => bindOutputSourceEvidence({ documents: [source], fields: outputEvidenceFields({ document_findings: [{ reference: 'K-1.3 i «Bilag 2»' }] }) }));
 });
 
+test("missing short numeric quotations are withheld and partial numbers cannot become source evidence", () => {
+  for (const quote of ["45 dager", "99,99 %", "ISO 9999"]) {
+    const result = reviewOutputSourceEvidence({ documents: [source], fields: [{ path: "answer", text: `Kilden sier «${quote}».` }] });
+    assert.equal(result.evidence.issues?.[0].code, "unverified_quote");
+    assert.doesNotMatch(result.fields[0].text, new RegExp(quote.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  }
+  const wrongNumber = { ...source, document: { ...source.document, raw_text: "Leverandøren skal levere eksport innen 130 dager." } };
+  assert.throws(() => bindOutputSourceEvidence({ documents: [wrongNumber], fields: [{ path: "answer", text: "Fristen er «30 dager»." }] }), /kildesitat/iu);
+  const repeated = { ...source, document: { ...source.document, raw_text: "Leverandøren har 30 dager til eksport.\nKunden har 30 dager til kontroll." } };
+  const result = reviewOutputSourceEvidence({ documents: [repeated], fields: [{ path: "answer", text: "Fristen er «30 dager»." }] });
+  assert.deepEqual(result.evidence.references, []); assert.equal(result.evidence.issues, undefined, "An existing repeated quote cannot be given a manufactured unique locator.");
+});
+
 test("selected regeneration retains untouched manual text and only unchanged prior proof", () => {
   const parentRows = [
     { index: 0, ref: "K-1.3", answer: 'Foreslått tjenestenavn: «Beredskapsvakt Pluss»', evidence: "Manuelt forslag, må avklares." },

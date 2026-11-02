@@ -2154,10 +2154,10 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const requirementIds = Array.from(new Set(exactTerms.flatMap(extractRequirementIdentifiers)));
   let requirementLookupFailed = false;
   const authoritativeRequirementIds = new Set<string>();
-  const lookup = import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onAuthoritativeIds: ids => ids.forEach(id => authoritativeRequirementIds.add(id)), onSourceFailure: documentId => { const sourceIds = extractRequirementIdentifiers(documents.find(document => document.id === documentId)?.raw_text ?? ""); requirementLookupFailed ||= requirementIds.some(id => !isAmbiguousRequirementIdentifier(id) && sourceIds.includes(id)); } })).catch(error => {
+  const lookup = import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onAuthoritativeIds: ids => ids.forEach(id => authoritativeRequirementIds.add(id)), onSourceFailure: () => { requirementLookupFailed = true; } })).catch(error => {
         assertEmbeddingFallbackAllowed(error);
         if (error instanceof Error && error.name === "AbortError") throw error;
-        requirementLookupFailed = requirementIds.some(id => !isAmbiguousRequirementIdentifier(id));
+        requirementLookupFailed = true;
         console.warn(JSON.stringify({ event: "requirement_lookup_unavailable", ...embeddingErrorFields(error) }));
         return [];
       });
@@ -2353,7 +2353,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   }
   const authoritativeShapes = new Set([...authoritativeRequirementIds].map(id => id.replace(/\d+/gu, "#")));
   const missingRequirementIds = requirementIds.filter(id => (!isAmbiguousRequirementIdentifier(id) || authoritativeRequirementIds.has(id) || authoritativeShapes.has(id.replace(/\d+/gu, "#"))) && !lookedUpRows.some(row => row.requirementId === id));
-  if (missingRequirementIds.length || requirementLookupFailed) quality = { ...quality, sufficient: false, confidence: "low", reason: "En etterspurt kravreferanse kunne ikke knyttes sikkert til kravregisteret." };
+  if (missingRequirementIds.length || requirementLookupFailed) quality = { ...quality, sufficient: false, confidence: "low", reason: requirementLookupFailed ? "Et kravregister kunne ikke leses sikkert. Kontroller dokumentgrunnlaget før du bruker svaret." : "En etterspurt kravreferanse kunne ikke knyttes sikkert til kravregisteret." };
   const quoteIndexes = new Map<string, SourceQuoteIndex>();
   snippets = snippets.map(snippet => {
     const document = snippet.sourceType === "project_document"

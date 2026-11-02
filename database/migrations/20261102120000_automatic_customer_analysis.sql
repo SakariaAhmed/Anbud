@@ -72,15 +72,27 @@ begin
     update public.project_analysis_requests set status='completed',reason_code='existing_analysis_preserved',updated_at=now() where project_id=p_project_id;
     return null;
   end if;
-  if not exists(select 1 from public.documents where project_id=p_project_id and role='primary_customer_document') then return null; end if;
   if exists(select 1 from public.project_jobs where project_id=p_project_id and (p_parent_job_id is null or id<>p_parent_job_id) and status in ('queued','running')) then return null; end if;
+  if not exists(select 1 from public.documents where project_id=p_project_id and role='primary_customer_document') then
+    update public.project_analysis_requests set status='failed',reason_code='customer_document_required',updated_at=now() where project_id=p_project_id;
+    return null;
+  end if;
+  -- An upload can briefly exist before its ingestion job is inserted.
+  if exists(select 1 from public.documents d where d.project_id=p_project_id
+    and public.project_document_affects_customer_analysis(d.role,d.supporting_subtype,d.subtype)
+    and d.processing_status in ('queued','processing')) then return null; end if;
   if exists(
     select 1 from public.documents d where d.project_id=p_project_id
       and public.project_document_affects_customer_analysis(d.role,d.supporting_subtype,d.subtype)
-      and (d.processing_status not in ('basic_ready','enhanced_ready') or d.indexed_at is null
-        or not exists(select 1 from public.document_chunks c where c.source_type='project_document' and c.source_id=d.id and c.project_id=p_project_id)
-        or not exists(select 1 from public.document_intelligence_artifacts a where a.document_id=d.id and a.project_id=p_project_id and a.source_revision=d.chunk_source_revision))
-  ) then return null; end if;
+      and (d.processing_status='failed' or d.indexed_at is null
+        or not exists(select 1 from public.document_chunks c where c.source_type='project_document' and c.source_id=d.id and c.project_id=p_project_id))
+  ) then
+    update public.project_analysis_requests set status='failed',reason_code='document_basis_not_ready',updated_at=now() where project_id=p_project_id;
+    return null;
+  end if;
+  -- Compiled artifacts are optional caches. Legacy/demoted ready documents
+  -- are compiled on demand by the normal analysis context owner.
+
   v_job_id:=gen_random_uuid();
   insert into public.project_jobs(id,project_id,kind,message,input_json,parent_job_id,idempotency_key)
   values(v_job_id,p_project_id,'customer_analysis','Køer automatisk kundeanalyse ...',
@@ -255,6 +267,52 @@ begin
   return to_jsonb(v_analysis);
 end;
 $$;
+
+-- Fail the release before automatic upload analysis reaches an unmigrated schema.
+create or replace function public.automatic_customer_analysis_preflight()
+returns text language plpgsql stable security invoker set search_path='' as $$
+declare v_function regprocedure; v_signature text; v_column text;
+begin
+  if not exists(select 1 from pg_catalog.pg_class where oid=pg_catalog.to_regclass('public.project_analysis_requests') and relrowsecurity) then
+    raise exception 'project_analysis_requests is missing or RLS is disabled';
+  end if;
+  foreach v_column in array array['project_id','request_id','status','job_id','source_revision','reason_code','updated_at','last_checked_at'] loop
+    if not exists(select 1 from pg_catalog.pg_attribute where attrelid='public.project_analysis_requests'::regclass and attname=v_column and not attisdropped) then
+      raise exception 'project_analysis_requests column missing: %',v_column;
+    end if;
+  end loop;
+  if not (pg_catalog.has_table_privilege('service_role','public.project_analysis_requests','SELECT')
+    and pg_catalog.has_table_privilege('service_role','public.project_analysis_requests','INSERT')
+    and pg_catalog.has_table_privilege('service_role','public.project_analysis_requests','UPDATE')
+    and pg_catalog.has_table_privilege('service_role','public.project_analysis_requests','DELETE'))
+    or pg_catalog.has_table_privilege('anon','public.project_analysis_requests','SELECT,INSERT,UPDATE,DELETE')
+    or pg_catalog.has_table_privilege('authenticated','public.project_analysis_requests','SELECT,INSERT,UPDATE,DELETE') then
+    raise exception 'project_analysis_requests has unexpected grants';
+  end if;
+  foreach v_signature in array array['public.record_upload_analysis_request()','public.schedule_ready_customer_analysis(uuid,uuid,uuid)','public.dispatch_ready_customer_analyses(integer)','public.finish_automatic_customer_analysis()'] loop
+    v_function:=pg_catalog.to_regprocedure(v_signature);
+    if v_function is null or not pg_catalog.has_function_privilege('service_role',v_function,'execute')
+      or pg_catalog.has_function_privilege('anon',v_function,'execute')
+      or pg_catalog.has_function_privilege('authenticated',v_function,'execute') then
+      raise exception 'automatic analysis function missing or has unexpected grants: %',v_signature;
+    end if;
+  end loop;
+  if not exists(select 1 from pg_catalog.pg_index where indexrelid=pg_catalog.to_regclass('public.project_jobs_automatic_analysis_request_idx') and indisunique and indisvalid) then
+    raise exception 'automatic analysis request uniqueness is missing';
+  end if;
+  if not exists(select 1 from pg_catalog.pg_trigger where tgrelid='public.project_jobs'::regclass and tgname='project_jobs_upload_analysis_request' and tgenabled in ('O','A') and tgfoid='public.record_upload_analysis_request()'::regprocedure)
+    or not exists(select 1 from pg_catalog.pg_trigger where tgrelid='public.project_jobs'::regclass and tgname='project_jobs_finish_automatic_analysis' and tgenabled in ('O','A') and tgfoid='public.finish_automatic_customer_analysis()'::regprocedure) then
+    raise exception 'automatic analysis triggers are missing or disabled';
+  end if;
+  if pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.save_customer_analysis_if_source_revision(uuid,jsonb)'::regprocedure),'automatic_request_id')=0
+    or pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.save_customer_analysis_if_source_revision(uuid,jsonb)'::regprocedure),'expected_analysis_revision')=0 then
+    raise exception 'automatic analysis publication guards are missing';
+  end if;
+  return 'automatic-customer-analysis-v1';
+end;
+$$;
+revoke all on function public.automatic_customer_analysis_preflight() from public,anon,authenticated;
+grant execute on function public.automatic_customer_analysis_preflight() to service_role;
 
 commit;
 notify pgrst, 'reload schema';

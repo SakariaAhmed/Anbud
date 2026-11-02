@@ -273,6 +273,17 @@ function runPsqlAsync(databaseUrl, sql) {
   });
 }
 
+async function waitForTransactionPause(databaseUrl, applicationName) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const result = runPsql(databaseUrl, `select exists(select 1 from pg_stat_activity where application_name='${applicationName}' and state='active' and wait_event='PgSleep');`);
+    assertPsqlSucceeded(result, "observe transaction barrier");
+    if (result.stdout.trim() === "t") return;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.fail("The legacy transaction did not reach its held-lock barrier.");
+}
+
 function assertPsqlSucceeded(result, label) {
   assert.equal(
     result.status,
@@ -1035,16 +1046,18 @@ test(
         "00000000-0000-4000-8000-000000000012",
       );
 
+      const legacyDeleteApplication = `legacy-delete-${randomUUID()}`;
       const legacyDelete = runPsqlAsync(
         databaseUrl.toString(),
-        `begin;
+        `set application_name='${legacyDeleteApplication}';
+         begin;
          set local statement_timeout = '3s';
          delete from public.project_service_selections
          where project_id = '00000000-0000-4000-8000-000000000001';
-         select pg_sleep(0.2);
+         select pg_sleep(1);
          commit;`,
       );
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForTransactionPause(databaseUrl.toString(), legacyDeleteApplication);
       const replacementDuringLegacyDelete = runPsqlAsync(
         databaseUrl.toString(),
         `set statement_timeout = '3s';

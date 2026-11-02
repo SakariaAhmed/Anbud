@@ -88,7 +88,7 @@ if (command === "stop") {
   try { process.kill(-state.appPid, "SIGTERM"); } catch { /* Already stopped. */ }
   await waitFor(async () => { try { await available(ports.app); return true; } catch { return false; } }, "App shutdown");
   await startApplication(state, runtime.env);
-  writeFileSync(statusPath, JSON.stringify({ ...status, aiMode: "budgeted loopback model proxy" }, null, 2));
+  writeFileSync(statusPath, JSON.stringify({ ...status, appMode: "development", aiMode: "budgeted loopback model proxy" }, null, 2));
   console.log("Restarted the owned app with the explicit budgeted loopback model proxy. No AI requests were sent by this command.");
 } else if (command === "start") {
   isolatedApplicationEnvironment(frontend, {});
