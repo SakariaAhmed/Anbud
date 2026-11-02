@@ -132,14 +132,16 @@ function judgePayload(checkpoint, fixture, cases, mapping) {
 
 /** Planning estimate, never a reservation or a substitute for the hard proxy.
  * Begin at $0.03/answer for the mini price tier, scale through the pricing owner,
- * then use the highest observed whole-route cost. Include outstanding judge
+ * then use the mean observed whole-route cost plus one largest-route allowance. Include outstanding judge
  * reservations with no assumed cache discount and 20% forecast headroom. */
 export function projectHoldoutBudget(checkpoint, fixtures, snapshot) {
   const probe = model => prepareRequest("/v1/responses", { model, input: "x".repeat(10_000), max_output_tokens: 1200 }, 1200, snapshot.proxyServiceTier).reservedUsd;
   const initialAnswerEstimate = 0.03 * probe(checkpoint.identity.answer_model) / probe("gpt-5.4-mini");
   const observed = checkpoint.cases.filter(item => item.answer_attempt?.proxy_requests?.length)
     .map(item => item.answer_attempt.proxy_requests.reduce((sum, row) => sum + accountedCostUpperBound(row), 0));
-  const answerEstimate = Math.max(initialAnswerEstimate, ...observed);
+  const observedMean = observed.length ? observed.reduce((sum, cost) => sum + cost, 0) / observed.length : 0;
+  const answerEstimate = Math.max(initialAnswerEstimate, observedMean);
+  const repairAllowance = observed.length ? Math.max(...observed) : 0;
   const remainingAnswers = checkpoint.cases.filter(item => !item.answer_attempt).length;
   let judgeReservations = 0;
   for (const fixture of fixtures) {
@@ -158,10 +160,10 @@ export function projectHoldoutBudget(checkpoint, fixtures, snapshot) {
   }
   const available = validateBudget(snapshot, { phase: checkpoint.identity.proxy_phase, phaseCapUsd: checkpoint.identity.phase_cap_usd, baseline: checkpoint.budget_baseline });
   return { estimate_not_guarantee: true, remaining_answers: remainingAnswers, observed_answers: observed.length,
-    answer_estimate_usd: answerEstimate, judge_reservations_usd: judgeReservations,
-    projected_remaining_usd: (remainingAnswers * answerEstimate + judgeReservations) * 1.2,
+    answer_estimate_usd: answerEstimate, repair_allowance_usd: repairAllowance, judge_reservations_usd: judgeReservations,
+    projected_remaining_usd: (remainingAnswers * answerEstimate + (remainingAnswers ? repairAllowance : 0) + judgeReservations) * 1.2,
     available_usd: Math.min(available.remainingUsd, available.phaseRemainingUsd),
-    assumptions: "Highest observed whole-route cost or price-scaled $0.03 initial estimate; future judge input uses largest observed answer/citations or 6000 characters; 20% margin; no assumed caching. Hard proxy limits remain authoritative." };
+    assumptions: "Mean observed whole-route cost or price-scaled $0.03 initial estimate, plus one largest observed route while answers remain; future judge input uses largest observed answer/citations or 6000 characters; 20% margin; no assumed caching. Hard proxy limits remain authoritative." };
 }
 
 export async function answerCases({ checkpoint, fixtures, runtime, save, guardBudget }) {

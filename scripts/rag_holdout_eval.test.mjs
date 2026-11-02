@@ -370,3 +370,18 @@ test("setup uses registered roles and opts out before seeding source-fenced anal
   await setupProjects({ checkpoint: state, fixtures: [fixture], runtime, save: () => {}, guardBudget: async () => budget() });
   assert.equal(uploads.length, 2); assert.equal(seeds.length, 1);
 });
+
+test("occasional repair calls add one allowance rather than multiplying the spike across every remaining answer", () => {
+  const fixtures = [{version:"fixture.v1",documents:[],saved_analysis:{}}];
+  for (const [completed, spike] of [[10, 0.06], [30, 0.12]]) {
+    const state = checkpoint(Array.from({length:80}, (_, index) => contract(`spike-${index}`)));
+    for (let index = 0; index < completed; index++) state.cases[index].answer_attempt = {
+      proxy_requests: [{reservedUsd:index === 0 ? spike : 0.015,status:"uncertain"}], answer:"Saved answer",sources:[],
+    };
+    const projection = projectHoldoutBudget(state, fixtures, budget());
+    assert.equal(projection.answer_estimate_usd, 0.03);
+    assert.equal(projection.repair_allowance_usd, spike);
+    assert.equal(projection.projected_remaining_usd, ((80-completed)*0.03 + spike + projection.judge_reservations_usd)*1.2);
+    assert.ok(projection.projected_remaining_usd < ((80-completed)*spike + projection.judge_reservations_usd)*1.2);
+  }
+});

@@ -864,18 +864,29 @@ test(
         ),
         "seed role-race chunks",
       );
-      const roleDemotion = runPsqlAsync(
-        databaseUrl.toString(),
-        "begin; update public.documents set role = 'supporting_document' where id = '00000000-0000-4000-8000-000000000511'; select pg_sleep(0.35); commit;",
-      );
-      await delay(80);
-      const duringRoleRace = runPsql(
-        databaseUrl.toString(),
-        replaceSql(concurrencyFingerprint, roleRaceRows, roleRaceRows.length, 0),
-      );
+      // Keep the demotion transaction open until the competing replacement
+      // actually ran. Startup delays cannot reverse the intended lock ordering.
+      const roleWriter = spawn("psql", [databaseUrl.toString(), "-X", "-v", "ON_ERROR_STOP=1", "-Atq"], { stdio: ["pipe", "pipe", "pipe"] });
+      let roleOutput = "", roleError = "";
+      roleWriter.stdout.on("data", chunk => { roleOutput += chunk; });
+      roleWriter.stderr.on("data", chunk => { roleError += chunk; });
+      const roleDone = new Promise(resolve => roleWriter.once("close", status => resolve({ status, stdout: roleOutput, stderr: roleError })));
+      const roleLocked = new Promise((resolve, reject) => {
+        roleWriter.stdout.on("data", () => { if (roleOutput.includes("ROLE_LOCKED")) resolve(); });
+        roleWriter.once("error", reject);
+        roleWriter.once("close", () => { if (!roleOutput.includes("ROLE_LOCKED")) reject(new Error("Role writer exited before acquiring its lock")); });
+      });
+      roleWriter.stdin.write("begin; update public.documents set role = 'supporting_document' where id = '00000000-0000-4000-8000-000000000511';\n\\echo ROLE_LOCKED\n");
+      let duringRoleRace;
+      try {
+        await roleLocked;
+        duringRoleRace = runPsql(databaseUrl.toString(), replaceSql(concurrencyFingerprint, roleRaceRows, roleRaceRows.length, 0));
+      } finally {
+        roleWriter.stdin.end("commit;\n");
+        assertPsqlSucceeded(await roleDone, "concurrent primary-role demotion");
+      }
       assert.notEqual(duringRoleRace.status, 0);
       assert.match(duringRoleRace.stderr, /could not obtain lock/u);
-      assertPsqlSucceeded(await roleDemotion, "concurrent primary-role demotion");
       const afterRoleRace = runPsql(
         databaseUrl.toString(),
         replaceSql(concurrencyFingerprint, roleRaceRows, roleRaceRows.length, 0),

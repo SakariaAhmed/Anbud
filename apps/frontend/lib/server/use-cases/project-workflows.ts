@@ -1201,6 +1201,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     handlers.setProgress(formatJobProgress(88, "Erstatter chunks med Docling-forbedret struktur ...", 88));
     assertWorkflowActive(handlers);
     const enhancedDocument = await saveDocumentIngestionResult({
+      expectedSourceRevision: document.chunk_source_revision ?? 0,
       requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
       projectId: input.projectId,
       documentId: input.documentId,

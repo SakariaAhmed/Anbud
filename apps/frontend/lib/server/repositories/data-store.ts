@@ -2062,6 +2062,7 @@ export async function publishDocumentReadiness(input: {
 
 export async function saveDocumentIngestionResult(input: {
   requirementRegister?: RequirementLedgerEntry[];
+  expectedSourceRevision?: number;
   projectId: string;
   documentId: string;
   role: ProjectDocumentRole;
@@ -2092,6 +2093,9 @@ export async function saveDocumentIngestionResult(input: {
   const existing = await fetchSingleDocumentRow(select => dataApi.from("documents")
     .select(select).eq("project_id", input.projectId).eq("id", input.documentId).single());
   if (!existing) throw new Error("Fant ikke dokumentet.");
+  if (input.expectedSourceRevision !== undefined && existing.chunk_source_revision !== input.expectedSourceRevision) {
+    throw new Error("Dokumentgrunnlaget er endret under forbedringen.");
+  }
   const sameText = decryptString(existing.raw_text) === input.rawText;
   const sameStructure = JSON.stringify(decryptJson(existing.structure_map, [])) === JSON.stringify(input.structureMap);
   const encryptedRawText = sameText ? existing.raw_text : encryptString(input.rawText);

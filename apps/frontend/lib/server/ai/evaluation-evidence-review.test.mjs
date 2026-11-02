@@ -205,11 +205,28 @@ test("criterion source/answer metadata is immutable evidence while rejected answ
     assert.equal(reviewed.criterion_coverage[0].assessment, "Uklart", target);
     assert.equal(reviewed.criterion_coverage[0].review_required, true, target);
     assert.doesNotMatch(reviewed.criterion_coverage[0].rationale, /Planen er konkret/u);
-    if (target === "linked_requirement") {
+    if (target !== "label_changed") {
       assert.equal(reviewed.evidence_review.status, "coverage_downgraded");
       assert.deepEqual(reviewed.strengths, []);
       assert.match(reviewed.executive_summary, /holdt tilbake/u);
     } else assert.equal(reviewed.evidence_review, undefined);
     assert.equal(result.criterion_coverage[0].assessment, target === "label_changed" ? "Mangler" : "Godt", "The captured input is not mutated.");
   }
+});
+
+test("criterion normalization cannot hide a lost model-positive rating from narrative review", () => {
+  const { result, input, customer, solution } = criterionFixture();
+  const raw = [{ criterion_index: 0, criterion: "Kvalitet på overgangsplan", assessment: "Godt", rationale: "Planen er konkret.", evidence: "Oppdiktet svargrunnlag", requirement_references: ["A · K-1"] }];
+  const { normalizeCriterionCoverage } = load("./criterion-coverage.ts");
+  result.criterion_coverage = normalizeCriterionCoverage(raw, { criteria: [raw[0].criterion], coverage: result.requirement_coverage, customerDocuments: [customer], solutionDocument: solution });
+  assert.equal(result.criterion_coverage[0].assessment, "Uklart");
+  result.strengths = ["Overgangsplanen er løsningens sterkeste side"];
+  result.executive_summary = result.strengths[0];
+  const reviewed = reviewSolutionEvaluationEvidence(result, input, raw);
+  assert.equal(reviewed.evidence_review.status, "coverage_downgraded");
+  assert.deepEqual(reviewed.evidence_review.affected_requirement_references, []);
+  assert.deepEqual(reviewed.strengths, []);
+  assert.match(reviewed.executive_summary, /kriterievurderingen.*holdt tilbake/u);
+  assert.ok(reviewed.requirement_coverage.items.every(row => row.assessment === "Godt"));
+  assert.equal(raw[0].assessment, "Godt");
 });

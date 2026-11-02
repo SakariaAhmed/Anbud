@@ -287,3 +287,47 @@ passed and confirms the retained error is not erased. Affected-test lint,
 schema validation and whitespace checks passed. The full 1,700-test/build result
 above belongs to `d9596103`, before this narrow SQL correction; it was not rerun
 for this correction. Opus's round-4 review of that pin remains pending.
+
+Opus subsequently scored `d9596103` 7.5/10, not satisfied. The next corrections
+retain the raw model criterion ratings through normalization and compare them
+by criterion index and wording. A model-assigned `Godt` that loses that rating
+withholds the global narrative; an already-uncertain unlinked criterion and a
+`Mangler`-to-`Uklart` identity correction do not. The overall notice now refers
+to both requirement and criterion review. Regressions cover source changes,
+invented evidence/rationale, and a downgrade that occurs during normalization.
+
+The forecast now uses the greater of the initial estimate and observed mean
+whole-route cost, plus the largest observed route once as an allowance while
+answers remain. It no longer assumes every future answer repeats a single
+repair spike. Outstanding judge reservations, the 20% margin, durable preflight
+stop and hard proxy limit remain. The initial $0.03 assumption still contributes
+$2.88 including margin to the unrun 80-answer forecast. The runner's fixed
+$10 authorization and $3.668136 maximum phase cap remain unchanged; a future
+budget increase would require explicit authorization, a code change and a new
+frozen pin before any evaluation, not just resuming an old checkpoint.
+
+Enhancement publication now supplies the revision captured before parsing to
+the existing persistence owner. That owner rejects a changed revision before
+any write, then retains its existing compare-and-swap fence for changes after
+the read. A real-owner regression covers a role/subtype revision change during
+parsing; the workflow test checks the captured revision reaches publication.
+The previously plausible stale progress message after a concurrent role change
+remains debt: publication is rejected safely, but that newer document can retain
+old progress text. No recovery action or cleanup for that case is claimed.
+
+Before the complete rerun, 38 focused application tests and 23 holdout-runner
+tests passed; TypeScript and full lint passed. No provider call, budget change,
+production action or frozen-fixture change was made.
+
+The full rerun then passed 1,508 frontend tests and 196 root script tests with
+zero failures or skips, followed by parser goldens. The preceding full attempt
+had one failure in an existing SQL role-change race whose 80-ms delay sometimes
+started replacement before demotion. That test now holds the demotion
+transaction open, signals that its lock is acquired, and releases it after the
+competing replacement completes; its focused real-SQL check passed before the
+full rerun. Production build, lint/types, workflow/schema/release validation and
+tracked-secret scan passed. The build preceded only this test-ordering repair
+and report edits, with no subsequent application change. The owned AI-disabled
+app was restarted after the build. Latest full log:
+`/private/tmp/anbud-round4-final-tests.log`; build log:
+`/private/tmp/anbud-round4-build.log`.

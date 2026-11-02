@@ -98,6 +98,7 @@ test("a useful parser result replaces the source and clears the earlier failure"
   const result = await run();
   assert.equal(state.saves.length, 1);
   assert.equal(state.saves[0].status, "enhanced_ready");
+  assert.equal(state.saves[0].expectedSourceRevision, 3, "Publication uses the revision parsing started from.");
   assert.equal(result.skipped, false);
   assert.equal(state.updates[0].error, null, "A running retry must clear the old failure.");
   assert.equal(result.parser_used, "docling");

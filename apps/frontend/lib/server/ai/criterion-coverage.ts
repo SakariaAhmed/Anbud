@@ -114,3 +114,10 @@ export function reconcileCriterionCoverage(criteria: Criterion[], coverage: Cove
     };
   });
 }
+
+/** Compare the model snapshot before normalization can withhold its rating. */
+export function criterionCoverageLostGoodRating(original: unknown, current: Criterion[]): boolean {
+  const rows = Array.isArray(original) ? original.filter(isRecord) : [];
+  return current.some(item => item.assessment !== "Godt" && rows.some(row =>
+    row.criterion_index === item.criterion_index && row.criterion === item.criterion && row.assessment === "Godt"));
+}

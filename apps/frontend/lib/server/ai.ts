@@ -97,7 +97,7 @@ import { requirementCoverageSystemPrompt } from "@/lib/server/prompts/requiremen
 import { WorkflowIncompleteError } from "@/lib/server/workflow-errors";
 
 import { assertRequirementCoverageIntegrity } from "@/lib/server/requirements/evaluation-coverage-integrity";
-import { normalizeCriterionCoverage, reconcileCriterionCoverage } from "@/lib/server/ai/criterion-coverage";
+import { criterionCoverageLostGoodRating, normalizeCriterionCoverage, reconcileCriterionCoverage } from "@/lib/server/ai/criterion-coverage";
 
 import { assertRequirementLedgerQualityForEvaluation } from "@/lib/server/requirements/ledger-quality";
 import { splitMarkdownTableRow } from "@/lib/server/requirements/markdown-table";
@@ -3156,13 +3156,13 @@ export async function evaluateSolutionDocument(input: {
     documents: [input.customerDocument, input.solutionDocument, ...input.supportingDocuments].map(document => ({ document, sourceType: "project_document" as const })),
     authoritativeRequirementRefs: (input.sourceRequirementLedger ?? []).map(row => row.id),
     artifacts: input.systemSolutionArtifact?.id ? [{ ...input.systemSolutionArtifact, id: input.systemSolutionArtifact.id }] : [],
-  });
+  }, result.criterion_coverage);
 
 }
 
 /** Source review may downgrade coverage after model normalization. Keep all
  * derived summaries, scores and matched findings on the same assessment set. */
-export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResult, input: Parameters<typeof reviewStructuredOutputEvidence>[1]) {
+export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResult, input: Parameters<typeof reviewStructuredOutputEvidence>[1], originalCriterionCoverage: unknown = result.criterion_coverage) {
   const reviewed = reviewStructuredOutputEvidence(result, input);
   const coverage = reviewed.result.requirement_coverage;
   if (!coverage) return { ...reviewed.result, source_evidence: reviewed.evidence };
@@ -3192,6 +3192,7 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
       if (item.assessment !== before[index].assessment) changedPaths.add(`result.criterion_coverage.${index}.assessment`);
     });
     reviewed.result.criterion_coverage = next;
+    downgraded = criterionCoverageLostGoodRating(originalCriterionCoverage, next) || downgraded;
   }
   // A finding without a unique source-qualified match must never inherit one
   // of the candidate rows' recommendation, even if no row changed this pass.
@@ -3226,7 +3227,7 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
   // membership cannot establish that its conclusions survived the downgrade.
   // Withhold that interpretation, retain the scoped row evidence and unchanged
   // findings, and pass the reconciled summary to every downstream consumer.
-  const notice = "Kildekontrollen endret kravvurderingen. Den opprinnelige helhetsvurderingen er holdt tilbake. Avklar de usikre kravene før konklusjonene brukes.";
+  const notice = "Kildekontrollen endret krav- eller kriterievurderingen. Den opprinnelige helhetsvurderingen er holdt tilbake. Avklar de usikre vurderingene før konklusjonene brukes.";
   const summary = `${coverage.coverage_summary} ${notice}`;
   reviewed.result.fit_to_customer_needs = summary;
   reviewed.result.executive_summary = summary;
