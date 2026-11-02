@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createProjectActivityPoller } from "@/lib/client/project-activity";
 import type { CustomerAnalysisPartial } from "@/lib/types";
 
 const LABELS: Record<string, string> = {
@@ -29,21 +30,43 @@ export function CustomerAnalysisPartialPreview({ projectId, busy }: { projectId:
   const [readFailed, setReadFailed] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let observedActive = false;
     async function read() {
       try {
         const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/customer-analysis/partial`, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error("Preview read failed");
         const body = await response.json() as { partial: CustomerAnalysisPartial | null };
-        if (!controller.signal.aborted) { setPartial(body.partial); setReadFailed(false); }
+        if (!controller.signal.aborted) {
+          observedActive = body.partial?.job_status === "running";
+          setPartial(body.partial); setReadFailed(false);
+        }
       } catch {
         if (!controller.signal.aborted) { setPartial(null); setReadFailed(true); }
-      } finally {
-        if (!controller.signal.aborted && busy) timer = setTimeout(read, 2_000);
       }
     }
-    void read();
-    return () => { controller.abort(); if (timer) clearTimeout(timer); };
+    // Discover other users' analysis independently of the 60-second idle jobs
+    // snapshot. Reuse the shared visibility/wakeup and non-overlapping loop.
+    const poller = createProjectActivityPoller({
+      refresh: read,
+      delayMs: () => busy || observedActive ? 2_000 : 5_000,
+      isHidden: () => document.visibilityState === "hidden",
+    });
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") poller.sleep();
+      else poller.wake();
+    };
+    const onFocus = () => poller.wake();
+    const onWorkflowUpdated = () => void poller.refreshNow();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("project-workflow-updated", onWorkflowUpdated);
+    void poller.refreshNow();
+    return () => {
+      controller.abort(); poller.stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("project-workflow-updated", onWorkflowUpdated);
+    };
   }, [projectId, busy]);
 
   if (readFailed) return <p role="status" className="mb-4 text-sm text-amber-800">Forhåndsvisningen kunne ikke oppdateres. Last inn siden på nytt for å prøve igjen.</p>;

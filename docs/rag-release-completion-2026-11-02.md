@@ -1299,4 +1299,52 @@ runtime and projected-cost preflight before dispatch; the earlier $3.972449
 forecast is not a measured cost guarantee. Semantic80/smoke, feature behavior,
 latency/provider-stream/browser, pinned Docling, Entra, production and human
 acceptance remain open. The new authorization removes the old spending blocker,
-not those gates. All 18 recommendations are not complete.
+not those gates. Not all 18 recommendations are complete.
+
+## Cross-user preview discovery after the budget review
+
+Both round-20 council members accepted `cddfda04`'s authorization adaptation at
+9/10. The authenticated holdout preflight passed on the owned app/database and
+live budget proxy, preserving all 171 retrieval charges. It planned 80 cases and
+issued zero answers, judges or provider requests. The proxy was stopped again;
+the new ledger still has $8.721641 available. The unissued checkpoint is retained
+at its original pin and must not be relabelled as a run of later code.
+
+CodeRabbit's subsequent out-of-diff preview finding is valid. The analysis tab
+previously activated polling only from manual busy state or a known active job.
+An automatic request created by another user after an idle jobs read could be
+missed for that entire 60-second interval. Pending/scheduled automatic requests
+now also activate the preview. Independently, a visible preview checks every
+five seconds while idle and every two seconds while busy or while a read reports
+an active partial. It reuses the existing activity poller's single-flight loop,
+focus/visibility debounce and hidden-tab suspension, with abort and listener
+cleanup on unmount or project/trigger changes. Completion can clear the preview
+without waiting for the jobs snapshot.
+
+The changed component/prop tests fail on the previous implementation and pass
+with the correction. They cover a remote job's partial appearing and disappearing
+while the parent job snapshot stays idle, pending/scheduled/terminal automatic
+request states, hidden-tab suspension, visibility wakeup, and a stale in-flight
+read settling after cleanup. The focused preview/activity suite passes 13/13.
+This is component/effect proof, not real-browser or provider-stream proof. A job
+whose entire preview lifetime falls between polls can still be missed, and hidden
+tabs intentionally do not poll. No server notification or guaranteed event-delivery
+claim is made. The five-second discovery loop is limited to the mounted analysis
+view; it does not change the project's general idle refresh interval.
+
+This correction changes no retrieval, model, budget, fixture or release threshold.
+Paid evaluations remain stopped until the new code pin is reviewed. Not all 18
+recommendations are complete.
+
+Verification: 1,532 frontend + 203 root tests pass (1,735 total), zero
+failures/skips, plus parser goldens. The production build/types, lint, secret
+scan and whitespace checks pass. Type validation caught and removed an invalid
+`queued` comparison on the partial response, whose contract permits only
+`running` or `failed`; the final focused tests and build use that corrected
+contract. The local app restarted after build; browser and paid-provider proof
+were not run. Logs: `/private/tmp/anbud-preview-wakeup-before.log`,
+`/private/tmp/anbud-preview-wakeup-focused-final.log`,
+`/private/tmp/anbud-preview-wakeup-full-tests.log`,
+`/private/tmp/anbud-preview-wakeup-build-final.log`,
+`/private/tmp/anbud-preview-wakeup-lint-final.log`, and
+`/private/tmp/anbud-preview-wakeup-secrets.log`.

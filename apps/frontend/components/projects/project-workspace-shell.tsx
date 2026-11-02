@@ -745,7 +745,8 @@ export function ProjectWorkspaceTabContent({
               projectId={project.id}
               documents={project.documents}
               customerAnalysis={customerAnalysis ?? fallback}
-              analysisJobActive={projectJobs.some(job => job.kind === "customer_analysis" && (job.status === "queued" || job.status === "running"))}
+              analysisJobActive={automaticAnalysis?.status === "pending" || automaticAnalysis?.status === "scheduled"
+                || projectJobs.some(job => job.kind === "customer_analysis" && (job.status === "queued" || job.status === "running"))}
               sourceChanged={Boolean(fallback)}
               busy={Boolean(busy)}
               saveBusy={busy === "save-analysis"}
