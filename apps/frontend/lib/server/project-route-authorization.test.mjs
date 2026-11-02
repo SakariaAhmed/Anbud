@@ -55,7 +55,7 @@ function harness({ role = null, admin = false, active = true, disabled = false, 
       if (name === "next/headers") return { headers: async () => new Headers({ "x-principal": "principal", "x-session": "session" }) };
       if (name === "@/lib/password-auth") return { AUTH_PRINCIPAL_HEADER: "x-principal", AUTH_SESSION_HEADER: "x-session" };
       if (name === "@/lib/server/data-api") return { createServiceClient: () => db };
-      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses", "@/lib/server/request-body", "@/lib/server/workflow-errors", "@/lib/server/database-update-required", "@/lib/unknown-values", "@/lib/types"].includes(name)) return load(`${name.slice(2)}.ts`);
+      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses", "@/lib/server/request-body", "@/lib/server/workflow-errors", "@/lib/server/database-update-required", "@/lib/unknown-values", "@/lib/types", "@/lib/requirement-regeneration"].includes(name)) return load(`${name.slice(2)}.ts`);
       if (name === "@/lib/server/multipart") return { MultipartRequestError: class MultipartRequestError extends Error {} };
       return service;
     };
@@ -195,5 +195,15 @@ test("permitted reads retain role and uppercase UUID compatibility", async () =>
       assert.ok(h.dataCalls.some(({ name }) => String(name).startsWith("list")));
       assert.ok(h.calls.filter(({ filters }) => filters.project_id).every(({ filters }) => filters.project_id === projectId));
     }
+  }
+});
+
+test("malformed selected-regeneration bodies return 400 before enqueue", async () => {
+  for (const regenerate_requirements of [null, {}, { artifactId: projectId, artifactVersion: 1, rows: [] }]) {
+    const h = harness({ admin: true });
+    const handler = h.load("app/api/projects/[id]/jobs/route.ts").POST;
+    const response = await handler(new Request(`http://localhost/api/projects/${projectId}/jobs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "artifact_generation", artifact_type: "forbedret_kravsvar", regenerate_requirements }) }), { params: Promise.resolve({ id: projectId }) });
+    assert.equal(response.status, 400);
+    assert.ok(!h.dataCalls.some(call => String(call.name).startsWith("queue")), "Invalid input cannot reach queue persistence.");
   }
 });

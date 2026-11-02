@@ -686,3 +686,16 @@ test("an unreadable register fails the gate for ambiguous IDs and broad question
     assert.match(result.telemetry.quality.reason, /kravregister.*ikke leses/iu);
   }
 });
+
+test("actual overlapping retrieval chunks remain verifiable as original source excerpts", async () => {
+  resetDocumentChunksTestRuntime();
+  const { bindDocumentSourceEvidence } = jiti(path.join(frontendRoot, "lib/server/document-source-evidence.ts"));
+  const raw_text = Array.from({ length: 120 }, (_, i) => `Driftsteamets beredskapsavtale nummer ${i + 1} beskriver kontraktsforvaltning og etterprøvbar systemovervåking.`).join(" ");
+  const source = projectDocument({ id: "overlapping-long-source", role: "primary_solution_document", supporting_subtype: null, file_format: "txt", raw_text, structure_map: [] });
+  const result = await retrieveDocumentSnippetsWithMetadata({ query: "beredskapsavtale kontraktsforvaltning systemovervåking", documents: [source], limit: 12 });
+  assert.ok(result.snippets.length > 1);
+  for (const snippet of result.snippets) {
+    assert.ok(snippet.originalQuote); assert.ok(raw_text.includes(snippet.originalQuote));
+    assert.ok(bindDocumentSourceEvidence(source, snippet.originalQuote), snippet.originalQuote.slice(0, 40));
+  }
+});

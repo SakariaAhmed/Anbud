@@ -23,7 +23,7 @@ import {
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import { createServiceClient } from "@/lib/server/data-api";
 import { reciprocalRankFusion } from "@/lib/server/retrieval-fusion";
-import { evidenceIdentity, SourceQuoteIndex } from "@/lib/server/source-evidence";
+import { evidenceIdentity, SourceQuoteIndex, sourceEvidenceExcerpt } from "@/lib/server/source-evidence";
 import { extractRequirementIdentifiers, isAmbiguousRequirementIdentifier } from "@/lib/server/ai/retrieval-query";
 import type {
   DocumentFileFormat,
@@ -2363,7 +2363,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     const fingerprint = sourceFingerprints.get(documentChunkSourceKey(snippet.sourceType, snippet.sourceId)) ?? "";
     let quoteIndex = quoteIndexes.get(snippet.sourceId);
     if (document && !quoteIndex) { quoteIndex = new SourceQuoteIndex(document.raw_text); quoteIndexes.set(snippet.sourceId, quoteIndex); }
-    const quote = quoteIndex?.find(snippet.text) ?? null;
+    const quoteMatch = quoteIndex?.locate(snippet.text);
+    const quote = document && quoteMatch ? sourceEvidenceExcerpt(document.raw_text, quoteMatch.start, quoteMatch.end) : null;
     return { ...snippet, sourceRevision: revision, sourceFingerprint: fingerprint,
       originalQuote: quote, documentRole: document && "role" in document ? document.role : undefined,
       evidenceId: evidenceIdentity({ sourceType: snippet.sourceType, sourceId: snippet.sourceId, revision, fingerprint, reference: snippet.reference, text: snippet.text }),

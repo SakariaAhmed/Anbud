@@ -11,7 +11,7 @@ const canonical = (value: string) => value.replace(/[‐‑‒–—]/gu, "-").r
 export const sourceQuoteLength = (value: string) => canonical(quotationText(value)).length;
 export const isMeaningfulShortSourceQuote = (value: string) => {
   const text = canonical(quotationText(value));
-  return text.length > 0 && text.length < 12 && (/^\d/u.test(text) || text.length >= 4 && /\d/u.test(text));
+  return text.length > 0 && text.length < 12 && (/^[^\p{L}]*\d/u.test(text) || text.length >= 4 && /\d/u.test(text));
 };
 
 export class SourceEvidenceValidationError extends Error {
@@ -21,28 +21,52 @@ export class SourceEvidenceValidationError extends Error {
   }
 }
 
+// These same boundaries validate quotations and produce excerpts. Spaces in
+// a numeric group are Unicode space separators; a tab can separate table cells.
+function sourceSpanBoundaries(source: string, start: number, end: number) {
+  const before = source.slice(Math.max(0, start - 2), start), after = source.slice(end, end + 5);
+  const text = source.slice(start, end);
+  return [
+    !/[\p{L}\p{N}]$/u.test(before)
+      && !(/^\d/u.test(text) && /\d[.,]$/u.test(before))
+      && !(/^\d{3}(?!\d)/u.test(text) && /\d\p{Zs}$/u.test(before)),
+    !/^[\p{L}\p{N}]/u.test(after)
+      && !(/\d$/u.test(text) && /^[.,]\d/u.test(after))
+      && !(/\d$/u.test(text) && /^\p{Zs}\d{3}(?!\d)/u.test(after)),
+  ];
+}
+
+/** Expand a character window to complete words and numeric values. The bound
+ * matches the read endpoint, so saved evidence can be verified again there. */
+export function sourceEvidenceExcerpt(source: string, from: number, to: number): string | null {
+  let start = Math.max(0, from), end = Math.min(source.length, to);
+  while (start < end && /\s/u.test(source[start])) start++;
+  while (end > start && /\s/u.test(source[end - 1])) end--;
+  if (start >= end || end - start > 8000) return null;
+  for (;;) {
+    const before = start, after = end;
+    while (start > 0 && !sourceSpanBoundaries(source, start, end)[0]) { start--; if (end - start > 8000) return null; }
+    while (end < source.length && !sourceSpanBoundaries(source, start, end)[1]) { end++; if (end - start > 8000) return null; }
+    if (end - start > 8000) return null;
+    if (before === start && after === end) break;
+  }
+  return source.slice(start, end);
+}
+
 /** Return original characters, never a reconstructed quotation. */
 export class SourceQuoteIndex {
   private projection?: { normalized: string; positions: number[] };
   constructor(private readonly source: string) {}
-  find(excerpt: string, options: { tokenBoundaries?: boolean; startAt?: number } = {}): string | null {
+  find(excerpt: string, options: { tokenBoundaries?: boolean; startAt?: number; normalized?: boolean } = {}): string | null {
     return this.locate(excerpt, options)?.text ?? null;
   }
-  locate(excerpt: string, options: { tokenBoundaries?: boolean; startAt?: number } = {}): { text: string; start: number; end: number } | null {
+  locate(excerpt: string, options: { tokenBoundaries?: boolean; startAt?: number; normalized?: boolean } = {}): { text: string; start: number; end: number } | null {
     const source = this.source;
     if (!excerpt.trim()) return null;
     const startAt = options.startAt ?? 0;
-    const bounded = (start: number, end: number) => {
-      if (!options.tokenBoundaries) return true;
-      const before = source.slice(Math.max(0, start - 2), start), after = source.slice(end, end + 5);
-      return !/[\p{L}\p{N}]$/u.test(before) && !/^[\p{L}\p{N}]/u.test(after)
-        && !( /^\d/u.test(source.slice(start, end)) && /\d[.,]$/u.test(before))
-        && !( /\d$/u.test(source.slice(start, end)) && /^[.,]\d/u.test(after))
-        && !( /^\d{3}(?!\d)/u.test(source.slice(start, end)) && /\d[ \u00a0\u202f]$/u.test(before))
-        && !( /\d$/u.test(source.slice(start, end)) && /^[ \u00a0\u202f]\d{3}(?!\d)/u.test(after));
-    };
+    const bounded = (start: number, end: number) => !options.tokenBoundaries || sourceSpanBoundaries(source, start, end).every(Boolean);
     const candidates = Array.from(new Set([excerpt, quotationText(excerpt)]));
-    for (const candidate of candidates) {
+    for (const candidate of options.normalized ? [] : candidates) {
       let at = source.indexOf(candidate, startAt);
       while (at >= 0) {
         if (bounded(at, at + candidate.length)) return { text: candidate, start: at, end: at + candidate.length };
@@ -63,17 +87,22 @@ export class SourceQuoteIndex {
       this.projection = { normalized: characters.join(""), positions };
     }
     const { normalized, positions } = this.projection;
+    let first: { text: string; start: number; end: number } | null = null;
     for (const candidate of candidates) {
       const needle = canonical(candidate);
       if (!needle) continue;
       let at = normalized.indexOf(needle);
       while (at >= 0) {
         const start = positions[at], end = positions[at + needle.length - 1] + 1;
-        if (start >= startAt && bounded(start, end)) return { text: source.slice(start, end), start, end };
+        if (start >= startAt && bounded(start, end)) {
+          if (!options.normalized) return { text: source.slice(start, end), start, end };
+          if (!first || start < first.start) first = { text: source.slice(start, end), start, end };
+          break;
+        }
         at = normalized.indexOf(needle, at + 1);
       }
     }
-    return null;
+    return first;
   }
 }
 
@@ -82,15 +111,15 @@ export class SourceQuoteIndex {
 export function locateSourceEvidenceQuote(source: string, quote: string, index = new SourceQuoteIndex(source)) {
   const short = sourceQuoteLength(quote) < 12;
   if (short && !isMeaningfulShortSourceQuote(quote)) return null;
-  const match = index.locate(quote, { tokenBoundaries: true });
+  const match = index.locate(quote, { tokenBoundaries: true, normalized: short });
   if (!match || !short) return match;
-  if (index.locate(quote, { tokenBoundaries: true, startAt: match.end })) return null;
+  if (index.locate(quote, { tokenBoundaries: true, startAt: match.end, normalized: true })) return null;
   const lineEnd = source.indexOf("\n", match.end);
   const start = Math.max(source.lastIndexOf("\n", match.start) + 1, match.start - 120);
   const end = Math.min(lineEnd < 0 ? source.length : lineEnd, match.end + 120);
-  const text = source.slice(start, end).trim();
-  if (sourceQuoteLength(text) < 12) return null;
-  const trimmedStart = start + source.slice(start, end).indexOf(text);
+  const text = sourceEvidenceExcerpt(source, start, end);
+  if (!text || sourceQuoteLength(text) < 12) return null;
+  const trimmedStart = source.indexOf(text, Math.max(0, match.start - 8000));
   return { text, start: trimmedStart, end: trimmedStart + text.length };
 }
 
@@ -141,14 +170,17 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
         for (const needle of needles) {
           const found = indexer.locate(needle, { tokenBoundaries: true });
           if (!found) continue;
-          excerpts.push(original.slice(Math.max(0, found.start - 160), Math.min(original.length, found.end + 160)));
+          const excerpt = sourceEvidenceExcerpt(original, found.start - 160, found.end + 160);
+          if (excerpt) excerpts.push(excerpt);
         }
         if (!excerpts.length) {
           const terms = paragraph.match(/[\p{L}\p{N}]{5,}/gu) ?? [];
           const at = terms.map(term => original.toLocaleLowerCase("nb").indexOf(term.toLocaleLowerCase("nb"))).find(at => at >= 0) ?? 0;
-          excerpts.push(original.slice(Math.max(0, at - 600), Math.min(original.length, at + 1800)));
+          const excerpt = sourceEvidenceExcerpt(original, at - 600, at + 1800);
+          if (excerpt) excerpts.push(excerpt);
         }
       }
+      if (!excerpts.length) throw new SourceEvidenceValidationError("CHAT_SOURCE_REFERENCE_INVALID", "Kildeutdraget kunne ikke avgrenses sikkert. Presiser kilde eller krav-ID.");
       passages.set(index, Array.from(new Set(excerpts)));
     }
   }

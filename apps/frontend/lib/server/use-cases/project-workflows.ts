@@ -31,7 +31,8 @@ import {
   generateHighLevelDesign,
   regenerateCustomerAnalysisSection,
 } from "@/lib/server/ai";
-import { extractRequirementLedgerForDocument, extractRequirementLedgerWithCorrections } from "@/lib/server/requirements/source-ledger";
+import { type extractRequirementLedgerForDocument, extractRequirementLedgerWithCorrections } from "@/lib/server/requirements/source-ledger";
+import { buildIngestionRequirementRegister } from "@/lib/server/requirements/ingestion-register";
 import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { generateExecutiveSummary } from "@/lib/server/ai/executive-summary";
@@ -797,7 +798,7 @@ async function runDocumentIngestionWorkflow(
           handlers.setProgress(formatJobProgress(90, "Bygger Docling-baserte chunks ..."));
           assertWorkflowActive(handlers);
           const enhancedDocument = await saveDocumentIngestionResult({
-            requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
+            requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
             projectId: input.projectId,
             documentId: input.documentId,
             role: document.role,
@@ -865,7 +866,7 @@ async function runDocumentIngestionWorkflow(
     );
     assertWorkflowActive(handlers);
     const basicDocument = await saveDocumentIngestionResult({
-      requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_format: parsed.fileFormat }),
+      requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_format: parsed.fileFormat }, { indexChunks: !shouldRunInlineDocling }),
       projectId: input.projectId,
       documentId: input.documentId,
       role: document.role,
@@ -975,7 +976,7 @@ async function runDocumentIngestionWorkflow(
       handlers.setProgress(formatJobProgress(90, "Oppdaterer forbedrede chunks ..."));
       assertWorkflowActive(handlers);
       const enhancedDocument = await saveDocumentIngestionResult({
-        requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
+        requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
         projectId: input.projectId,
         documentId: input.documentId,
         role: document.role,
@@ -1004,7 +1005,7 @@ async function runDocumentIngestionWorkflow(
 
     assertWorkflowActive(handlers);
     const fallbackDocument = await saveDocumentIngestionResult({
-      requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_format: parsed.fileFormat }),
+      requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_format: parsed.fileFormat }),
       projectId: input.projectId,
       documentId: input.documentId,
       role: document.role,
@@ -1156,7 +1157,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   handlers.setProgress(formatJobProgress(88, "Erstatter chunks med Docling-forbedret struktur ...", 88));
   assertWorkflowActive(handlers);
   const enhancedDocument = await saveDocumentIngestionResult({
-    requirementRegister: await extractRequirementLedgerForDocument({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
+    requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
     projectId: input.projectId,
     documentId: input.documentId,
     role: document.role,

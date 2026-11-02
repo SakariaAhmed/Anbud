@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireProjectPermission } from "@/lib/server/authorization";
-import { routeErrorResponse } from "@/lib/server/api-responses";
+import { routeErrorResponse, enforceRateLimit } from "@/lib/server/api-responses";
 import { getDocumentDetail, getProjectSourceRevision, listProjectDocumentSummaries } from "@/lib/server/repositories/data-store";
 import { readStableProjectSourceSnapshot } from "@/lib/server/source-revision-snapshot";
 import { bindDocumentSourceEvidence } from "@/lib/server/document-source-evidence";
@@ -13,6 +13,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const { id } = await context.params;
     const access = await requireProjectPermission(id, "document.read");
+    const limited = await enforceRateLimit(request, `source-evidence:${id}:${access.principal.id}`, { limit: 30, windowMs: 60_000 }, "For mange kildekontroller på kort tid. Vent litt før du prøver igjen.");
+    if (limited) return limited;
     const body: unknown = await request.json();
     if (!isRecord(body) || typeof body.documentId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(body.documentId) || typeof body.quote !== "string" || !body.quote.trim() || body.quote.length > 8000 || (body.sourceRevision !== undefined && (!Number.isSafeInteger(body.sourceRevision) || Number(body.sourceRevision) < 0))) return NextResponse.json({ error: "Kildehenvisningen mangler et gyldig originalutdrag." }, { status: 400 });
     const documentId = body.documentId, quote = body.quote;

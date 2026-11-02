@@ -99,6 +99,10 @@ if (!accessOnly && !resumeAi) {
 const current = await (await request(`/api/projects/${project.id}`)).json();
 const currentDocuments = current.project?.documents ?? current.documents;
 assert.equal(currentDocuments.length, 3);
+const customerSource = currentDocuments.find(document => document.role === "primary_customer_document");
+const requirementSource = currentDocuments.find(document => document.role === "supporting_document" && document.supporting_subtype === "kravdokument");
+const solutionSource = currentDocuments.find(document => document.role === "primary_solution_document");
+assert.ok(customerSource && requirementSource && solutionSource, "The scenario needs each explicit source role.");
 assert.ok(currentDocuments.every(doc => ["basic_ready", "enhanced_ready"].includes(doc.processing_status)));
 const register = await (await request(`/api/projects/${project.id}/requirement-register`)).json();
 const formalRegister = register.documents.find(document => document.id === currentDocuments.find(document => document.title === "Bilag 1 Kravspesifikasjon")?.id);
@@ -115,7 +119,7 @@ assert.ok(invitation.guestCode, "Administrator must receive a local guest creden
 const guest = await request("/api/auth/guest", { ...json("POST", { code: invitation.guestCode }), cookie: null });
 const guestCookie = cookieFrom(guest);
 await request(`/api/projects/${project.id}`, { cookie: guestCookie });
-const evidenceBody = { documentId: uploaded[1].id, sourceRevision: currentDocuments.find(document => document.id === uploaded[1].id).chunk_source_revision, quote: "Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser." };
+const evidenceBody = { documentId: requirementSource.id, sourceRevision: currentDocuments.find(document => document.id === requirementSource.id).chunk_source_revision, quote: "Leverandøren skal drifte plattformen hele døgnet og dokumentere kontaktpunkt for kritiske hendelser." };
 const guestEvidence = await (await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", evidenceBody), cookie: guestCookie })).json();
 assert.equal(guestEvidence.source.classification, "documented");
 assert.equal(guestEvidence.source.original_quote, evidenceBody.quote);
@@ -130,11 +134,23 @@ assert.doesNotMatch(JSON.stringify(deniedShort), /Leverandøren skal levere/u);
 const ownerShort = await (await request(`/api/projects/${project.id}/source-evidence`, json("POST", shortEvidenceBody))).json();
 assert.match(ownerShort.source.original_quote, /Leverandøren skal levere en exitplan/u);
 checks.push("short numeric source expansion denied to restricted viewers and allowed to downloaders");
+let sourceReadLimited = false;
+for (let attempt = 0; attempt < 31; attempt++) {
+  const probe = await fetch(`${base}/api/projects/${project.id}/source-evidence`, {
+    ...json("POST", shortEvidenceBody), signal: AbortSignal.timeout(10_000),
+    headers: { origin: base, cookie: guestCookie, "content-type": "application/json" },
+  });
+  assert.ok([422, 429].includes(probe.status), `Unexpected source-probe status ${probe.status}`);
+  const body = await probe.json(); assert.equal(body.source, undefined);
+  if (probe.status === 429) { assert.ok(probe.headers.get("retry-after")); sourceReadLimited = true; break; }
+}
+assert.equal(sourceReadLimited, true, "Repeated source guesses must hit the actor/project rate limit.");
+checks.push("repeated source probes are rate limited with no source text");
 checks.push("restricted viewer original-excerpt verification, invented quote/stale revision/foreign source denied");
 
 // Middleware deliberately hides forbidden project routes with 404 before
 // the handler's finer-grained 403 authorization response can run.
-await request(`/api/projects/${project.id}/documents/${uploaded[0].id}`, { cookie: guestCookie, expected: 404 });
+await request(`/api/projects/${project.id}/documents/${customerSource.id}`, { cookie: guestCookie, expected: 404 });
 await request(`/api/projects/${project.id}/generate`, { ...json("POST", { artifact_type: "forbedret_kravsvar" }), cookie: guestCookie, expected: 404 });
 await request(`/api/projects/${project.id}/chat`, { ...json("POST", { message: "Hva er exitplanen?" }), cookie: guestCookie, expected: 404 });
 await request("/api/admin/users", { cookie: guestCookie, expected: 403 });
@@ -147,10 +163,10 @@ if (aiEnabled) {
   assert.ok(runtime.env.OPENAI_API_KEY, "AI tests require an explicitly configured live/fixture model endpoint.");
   const workflows = [
     { kind: "customer_analysis" },
-    { kind: "artifact_generation", artifact_type: "forbedret_kravsvar", source_document_ids: [uploaded[1].id] },
+    { kind: "artifact_generation", artifact_type: "forbedret_kravsvar", source_document_ids: [requirementSource.id] },
     ...(allGenerators ? ["losningsutkast", "gjennomforing_og_risiko"].map(artifact_type => ({ kind: "artifact_generation", artifact_type })) : []),
     { kind: "artifact_generation", artifact_type: "bilag1_rekonstruksjon" },
-    { kind: "solution_evaluation", solution_document_id: uploaded[2].id }, { kind: "executive_summary" },
+    { kind: "solution_evaluation", solution_document_id: solutionSource.id }, { kind: "executive_summary" },
   ];
   for (const body of resumeAi ? [] : workflows) {
     const queued = await (await request(`/api/projects/${project.id}/jobs`, { ...json("POST", body), expected: 202 })).json();

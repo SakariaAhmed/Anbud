@@ -14,6 +14,7 @@ const REQUIRED_PROJECT_JOB_COLUMNS = [
   "terminal_metadata",
   "parent_job_id",
   "idempotency_key",
+  "run_class",
 ];
 
 const REQUIRED_AUDIT_EVENT_COLUMNS = ["subject_project_id"];
@@ -47,6 +48,7 @@ const REQUIRED_FUNCTIONS = [
   "dispatch_ready_customer_analyses",
   "finish_automatic_customer_analysis",
   "automatic_customer_analysis_preflight",
+  "scheduled_worker_capacity_preflight",
 ];
 
 const FENCING_VERSION = "authoritative-lease-fencing-v1";
@@ -308,6 +310,14 @@ export async function preflightRemoteProjectJobSchema({
     throw new Error("Automatic customer-analysis version is missing or unexpected.");
   }
 
+  const scheduledCapacityResponse = await fetchImpl(new URL(`${rootUrl}/rpc/scheduled_worker_capacity_preflight`), {
+    method: "POST",
+    headers: { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}`, accept: "application/json", "content-type": "application/json" }, body: "{}",
+  });
+  if (!scheduledCapacityResponse.ok) throw new Error(`Scheduled worker-capacity preflight failed with HTTP ${scheduledCapacityResponse.status}.`);
+  const scheduledCapacityVersion = await scheduledCapacityResponse.json();
+  if (scheduledCapacityVersion !== "scheduled-worker-capacity-v1") throw new Error("Scheduled worker-capacity version is missing or unexpected.");
+
   return {
     host: url.host,
     columns: [...REQUIRED_PROJECT_JOB_COLUMNS],
@@ -318,6 +328,7 @@ export async function preflightRemoteProjectJobSchema({
     serviceDocumentWriteVersion,
     vacantPrimaryInsertVersion,
     automaticAnalysisVersion,
+    scheduledCapacityVersion,
   };
 }
 
@@ -353,6 +364,7 @@ async function main() {
         stable_rollback_bridge_version: result.rollbackBridgeVersion,
         atomic_service_document_write_version:
           result.serviceDocumentWriteVersion,
+        scheduled_worker_capacity_version: result.scheduledCapacityVersion,
         automatic_customer_analysis_version: result.automaticAnalysisVersion,
         vacant_primary_document_insert_version:
           result.vacantPrimaryInsertVersion,

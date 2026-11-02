@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createJiti } from "jiti";
-const { bindDocumentSourceEvidence } = createJiti(import.meta.url, { alias: { "@": new URL("../..", import.meta.url).pathname, "server-only": "/dev/null" } })("./document-source-evidence.ts");
+const app = createJiti(import.meta.url, { alias: { "@": new URL("../..", import.meta.url).pathname, "server-only": "/dev/null" } });
+const { bindDocumentSourceEvidence } = app("./document-source-evidence.ts");
+const { validateChatEvidence, sourceEvidenceExcerpt } = app("./source-evidence.ts");
 const document = { id: "document", title: "Fiktive krav", chunk_source_revision: 7, role: "primary_customer_document", raw_text: "[[SIDE:2]]\nK-1 Leverandøren skal lagre data i Norge.\n[[SIDE:3]]\nK-2 Logger skal bevares i ett år.", structure_map: [] };
 test("source drawers bind original quote, source revision and explicit page markers", () => {
   const source = bindDocumentSourceEvidence(document, "K-1 Leverandøren skal lagre data i Norge.");
@@ -33,4 +35,27 @@ test("a quoted numeric value cannot be the fractional tail of a decimal", () => 
   assert.equal(bindDocumentSourceEvidence({ ...document, raw_text: "Tilgjengeligheten skal være 99,99 %." }, "99 %"), null);
   assert.equal(bindDocumentSourceEvidence({ ...document, raw_text: "Fristen er 1,30 dager." }, "30 dager"), null);
   assert.ok(bindDocumentSourceEvidence({ ...document, raw_text: "Tilgjengeligheten skal være 99,99 %." }, "99,99 %"));
+});
+
+test("saved long-source citations round-trip through the strict drawer binder at every window offset", () => {
+  for (let offset = 0; offset < 40; offset++) {
+    const raw_text = "Innledning. " + "x".repeat(offset) + " " + "Driftsdokumentasjon og beredskapsplanlegging. ".repeat(160) + "Gjeldende responstid er 30 dager. " + "Kontraktsforvaltning og systemovervåking. ".repeat(80);
+    const doc = { ...document, raw_text, structure_map: [] };
+    for (const answer of ["Fristen er «30 dager». [Kilde 1]", "Driftsdokumentasjon er beskrevet. [Kilde 1]"]) {
+      const saved = validateChatEvidence(answer, [{ source_type: "project_document", evidence_id: "long-doc", original_quote: raw_text }]);
+      for (const quote of [saved[0].original_quote, ...(saved[0].quotation_excerpts ?? [])]) {
+        const checked = bindDocumentSourceEvidence(doc, quote);
+        assert.ok(checked, `offset ${offset} must remain verifiable`); assert.equal(checked.original_quote, quote);
+      }
+    }
+  }
+  const raw_text = "Rammen for avtalen er 1 500 000 kr og avtalen løper i tre år.";
+  const quote = sourceEvidenceExcerpt(raw_text, 2, raw_text.indexOf("1 500") + 1);
+  assert.match(quote, /1 500 000/u); assert.ok(bindDocumentSourceEvidence({ ...document, raw_text, structure_map: [] }, quote));
+  assert.equal(sourceEvidenceExcerpt("x".repeat(20_000), 10_000, 11_000), null, "Unbroken source text cannot bypass the excerpt size bound.");
+});
+test("normalized repetitions never acquire a unique short-value locator in either order", () => {
+  for (const raw_text of ["Leveransen tar 30\u00a0dager.\nKontrollen tar 30 dager.", "Leveransen tar 30 dager.\nKontrollen tar 30\u00a0dager."]) {
+    assert.equal(bindDocumentSourceEvidence({ ...document, raw_text, structure_map: [] }, "30 dager"), null);
+  }
 });

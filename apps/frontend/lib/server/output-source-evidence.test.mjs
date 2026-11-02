@@ -129,3 +129,15 @@ test("short draft and prior-reference quotations retain their visible evidence c
     assert.equal(retained.references[0].source.original_quote, prior.original_quote);
   }
 });
+
+test("output checks numeric symbols and every Unicode thousands separator without promoting planning labels", () => {
+  for (const quote of ["<5", "≥5", "~5", "€5", "$5", "§5"]) {
+    const reviewed = reviewOutputSourceEvidence({ documents: [], fields: [{ path: "answer", text: `Kilden sier «${quote}».` }] });
+    assert.equal(reviewed.evidence.issues?.[0].code, "unverified_quote", quote);
+  }
+  for (const separator of ["\u2007", "\u2008", "\u2009"]) {
+    const document = { ...source.document, raw_text: `Rammen er 1${separator}500 kr.` };
+    for (const quote of ["500 kr", "1"]) assert.throws(() => bindOutputSourceEvidence({ documents: [{ ...source, document }], fields: [{ path: "answer", text: `«${quote}»` }] }), /kildesitat/iu);
+  }
+  assert.doesNotThrow(() => bindOutputSourceEvidence({ documents: [], fields: [{ path: "answer", text: 'Forslag: "P1", "Q3" og "L2".' }] }));
+});

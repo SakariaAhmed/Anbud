@@ -35,5 +35,28 @@ end;
 $$;
 revoke all on function public.claim_project_job_serialized(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.claim_project_job_serialized(uuid,uuid) to service_role;
+
+create or replace function public.scheduled_worker_capacity_preflight()
+returns text language plpgsql stable security invoker set search_path='' as $$
+declare v_claim regprocedure:=pg_catalog.to_regprocedure('public.claim_project_job_serialized(uuid,uuid)'); v_body text;
+begin
+  if not exists(select 1 from pg_catalog.pg_attribute where attrelid='public.project_jobs'::regclass and attname='run_class' and not attisdropped and attnotnull)
+    or not exists(select 1 from pg_catalog.pg_index where indexrelid=pg_catalog.to_regclass('public.project_jobs_scheduled_running_idx') and indisvalid) then
+    raise exception 'scheduled worker capacity schema is missing';
+  end if;
+  if v_claim is null or not pg_catalog.has_function_privilege('service_role',v_claim,'execute')
+    or pg_catalog.has_function_privilege('anon',v_claim,'execute') or pg_catalog.has_function_privilege('authenticated',v_claim,'execute') then
+    raise exception 'scheduled worker claim is missing or has unexpected grants';
+  end if;
+  v_body:=pg_catalog.pg_get_functiondef(v_claim);
+  if pg_catalog.strpos(v_body,'x-anbud-job-runner')=0 or pg_catalog.strpos(v_body,'pg_try_advisory_xact_lock')=0 or pg_catalog.strpos(v_body,'run_class')=0 then
+    raise exception 'scheduled worker serialization is missing';
+  end if;
+  return 'scheduled-worker-capacity-v1';
+end;
+$$;
+revoke all on function public.scheduled_worker_capacity_preflight() from public,anon,authenticated;
+grant execute on function public.scheduled_worker_capacity_preflight() to service_role;
+
 notify pgrst, 'reload schema';
 commit;

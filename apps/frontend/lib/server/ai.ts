@@ -3139,22 +3139,48 @@ export async function evaluateSolutionDocument(input: {
       },
     );
   assertSubstantiveSolutionEvaluationResult(normalizedEvaluation);
-  const reviewed = reviewStructuredOutputEvidence(normalizedEvaluation, {
+  return reviewSolutionEvaluationEvidence(normalizedEvaluation, {
     documents: [input.customerDocument, input.solutionDocument, ...input.supportingDocuments].map(document => ({ document, sourceType: "project_document" as const })),
     authoritativeRequirementRefs: (input.sourceRequirementLedger ?? []).map(row => row.id),
     artifacts: input.systemSolutionArtifact?.id ? [{ ...input.systemSolutionArtifact, id: input.systemSolutionArtifact.id }] : [],
   });
+
+}
+
+/** Source review may downgrade coverage after model normalization. Keep all
+ * derived summaries, scores and matched findings on the same assessment set. */
+export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResult, input: Parameters<typeof reviewStructuredOutputEvidence>[1]) {
+  const reviewed = reviewStructuredOutputEvidence(result, input);
   const coverage = reviewed.result.requirement_coverage;
-  if (coverage && reviewed.evidence.issues?.length) {
-    for (const issue of reviewed.evidence.issues) {
-      const match = issue.path.match(/^result\.requirement_coverage\.items\.(\d+)\./u);
-      if (match && coverage.items[Number(match[1])]) coverage.items[Number(match[1])].assessment = "Uklart";
-    }
-    coverage.good = coverage.items.filter(item => item.assessment === "Godt").length;
-    coverage.weak = coverage.items.filter(item => item.assessment === "Dårlig").length;
-    coverage.missing = coverage.items.filter(item => item.assessment === "Mangler").length;
-    coverage.unclear = coverage.items.filter(item => item.assessment === "Uklart").length;
+  if (!coverage || !reviewed.evidence.issues?.length) return { ...reviewed.result, source_evidence: reviewed.evidence };
+  let downgraded = false;
+  for (const issue of reviewed.evidence.issues) {
+    const match = /^result\.requirement_coverage\.items\.(\d+)\./u.exec(issue.path);
+    const item = match ? coverage.items[Number(match[1])] : null;
+    if (item) { item.assessment = "Uklart"; downgraded = true; }
   }
+  if (!downgraded) return { ...reviewed.result, source_evidence: reviewed.evidence };
+  coverage.good = coverage.items.filter(item => item.assessment === "Godt").length;
+  coverage.weak = coverage.items.filter(item => item.assessment === "Dårlig").length;
+  coverage.missing = coverage.items.filter(item => item.assessment === "Mangler").length;
+  coverage.unclear = coverage.items.filter(item => item.assessment === "Uklart").length;
+  coverage.coverage_summary = buildRequirementCoverageSummary(coverage.items);
+  const changedPaths = new Set(["result.requirement_coverage.coverage_summary"]);
+  const comparison = reviewed.result.architecture_comparison;
+  if (comparison) {
+    const cap = coverage.items.length ? Math.round((coverage.good + coverage.weak * 0.6 + coverage.unclear * 0.35) / coverage.items.length * 100) : 100;
+    comparison.architect_solution_score = Math.min(comparison.architect_solution_score, cap);
+    comparison.winner = reconcileArchitectureComparisonWinner(comparison.architect_solution_score, comparison.system_solution_score);
+    comparison.verdict = `Poengene er oppdatert etter kildekontroll: arkitektløsning ${comparison.architect_solution_score}, systemløsning ${comparison.system_solution_score}. Avklar de usikre kravene før sammenligningen brukes.`;
+    changedPaths.add("result.architecture_comparison.verdict");
+  }
+  reviewed.result.document_findings = reviewed.result.document_findings.map((finding, index) => {
+    if (finding.reference_match !== "coverage") return finding;
+    const match = matchFindingToCoverageItem({ finding, coverage });
+    changedPaths.add(`result.document_findings.${index}.assessment`);
+    return { ...finding, assessment: match?.assessment ?? "Uklart" };
+  });
+  reviewed.evidence.references = reviewed.evidence.references.filter(reference => !changedPaths.has(reference.path));
   return { ...reviewed.result, source_evidence: reviewed.evidence };
 }
 

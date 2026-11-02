@@ -195,6 +195,12 @@ begin
       message = 'PROJECT_SOURCE_REVISION_CHANGED: project inputs changed while the analysis was running';
   end if;
 
+  if p_payload ? 'automatic_request_id' and (
+    not (p_payload ? 'expected_analysis_revision') or p_payload->'expected_analysis_revision' <> 'null'::jsonb
+  ) then
+    raise exception 'AUTOMATIC_ANALYSIS_INVALID_PUBLICATION: explicit first-save CAS is required';
+  end if;
+
   if p_payload ? 'automatic_request_id' and not exists(
     select 1 from public.project_analysis_requests where project_id=p_project_id
       and request_id::text=p_payload->>'automatic_request_id' and status='scheduled'

@@ -9,6 +9,7 @@ import {
 
 const completeMigration = `
 alter table public.project_jobs
+  add column if not exists run_class text,
   add column if not exists input_json jsonb,
   add column if not exists result_checkpoint jsonb,
   add column if not exists locked_at timestamptz,
@@ -43,9 +44,11 @@ create or replace function public.schedule_ready_customer_analysis(uuid,uuid,uui
 create or replace function public.dispatch_ready_customer_analyses(integer) returns integer language sql as 'select';
 create or replace function public.finish_automatic_customer_analysis() returns trigger language plpgsql as 'begin return new; end';
 create or replace function public.automatic_customer_analysis_preflight() returns text language sql as 'select';
+create or replace function public.scheduled_worker_capacity_preflight() returns text language sql as 'select';
 `;
 
 const versions = new Map([
+  ["scheduled_worker_capacity_preflight", "scheduled-worker-capacity-v1"],
   ["automatic_customer_analysis_preflight", "automatic-customer-analysis-v1"],
   ["project_job_fencing_preflight", "authoritative-lease-fencing-v1"],
   ["project_job_terminal_audit_preflight", "transactional-project-job-terminal-audit-v2"],
@@ -203,4 +206,11 @@ test("automatic analysis migration and schema-cache failures stop release prefli
     fetchImpl: async (url, options) => url.pathname.endsWith("automatic_customer_analysis_preflight")
       ? { ok: true, json: async () => "old-version" } : fetchOk(url, options),
   }), /Automatic customer-analysis version is missing or unexpected/u);
+});
+
+test("missing scheduled capacity migration or schema reload stops promotion", async () => {
+  await assert.rejects(preflightRemoteProjectJobSchema({ ...configuration, fetchImpl: successfulFetch([], "scheduled_worker_capacity_preflight") }), /Scheduled worker-capacity preflight failed with HTTP 404/u);
+  const calls = []; const result = await preflightRemoteProjectJobSchema({ ...configuration, fetchImpl: successfulFetch(calls) });
+  assert.equal(result.scheduledCapacityVersion, "scheduled-worker-capacity-v1");
+  assert.ok(calls[0].url.searchParams.get("select").split(",").includes("run_class"));
 });

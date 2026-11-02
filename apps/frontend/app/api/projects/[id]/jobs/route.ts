@@ -101,11 +101,14 @@ async function queueArtifactJob(
     );
   }
 
+  let regenerateRequirements: ReturnType<typeof parseRequirementRegeneration>;
+  try { regenerateRequirements = parseRequirementRegeneration(body.regenerate_requirements); }
+  catch (error) { throw new RequestBodyError(error instanceof Error ? error.message : "Ugyldig kravutvalg."); }
   return {
     job: await queueArtifactGenerationJob({
       projectId,
       artifactType: body.artifact_type,
-      regenerateRequirements: parseRequirementRegeneration(body.regenerate_requirements),
+      regenerateRequirements,
       instructions: normalizeArtifactInstructions(body.instructions),
       sourceDocumentIds: normalizeSourceDocumentIds(body.source_document_ids),
       useSolutionEvaluationContext:

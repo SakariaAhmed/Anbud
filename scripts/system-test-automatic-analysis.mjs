@@ -9,7 +9,7 @@ const status = JSON.parse(fs.readFileSync(systemTestStatusPath(), "utf8"));
 assert.equal(status.running, true); assert.equal(status.baseUrl, "http://127.0.0.1:4338");
 const runtime = JSON.parse(fs.readFileSync(path.join(status.directory, "environment.json"), "utf8"));
 const webAutorun = process.argv.includes("--web-autorun");
-if (webAutorun) assert.equal(runtime.env.PROJECT_JOB_WORKER_PROCESS, "0", "Restart the owned app with restart-ai --web-mode before testing web autorun.");
+assert.equal(runtime.env.PROJECT_JOB_WORKER_PROCESS, webAutorun ? "0" : "1", "Restart the owned app with the matching worker/web mode before testing automatic analysis.");
 assert.equal(runtime.env.OPENAI_BASE_URL, "http://127.0.0.1:4340/v1");
 assert.ok((await (await fetch("http://127.0.0.1:4340/budget")).json()).remainingUsd > 0);
 async function request(route, options = {}, expected = 200) {

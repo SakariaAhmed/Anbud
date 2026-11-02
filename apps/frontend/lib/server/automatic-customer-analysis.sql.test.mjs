@@ -71,6 +71,8 @@ test("postgres: automatic analysis is one-shot, readiness/lease fenced, manual-s
         select * into r from public.project_analysis_requests where project_id='${project}';
         if r.status<>'scheduled' then raise exception 'request not scheduled'; end if;
         v_payload:=jsonb_build_object('expected_source_revision',r.source_revision,'expected_analysis_revision',null,'automatic_request_id',r.request_id,'source_document_ids',jsonb_build_array('${doc}'),'result_json','{}'::jsonb,'last_activity_at',now(),'context_keywords','[]'::jsonb);
+        begin perform public.save_customer_analysis_if_source_revision('${project}',v_payload-'expected_analysis_revision'); raise exception 'automatic save omitted first-save CAS'; exception when raise_exception then if sqlerrm not like 'AUTOMATIC_ANALYSIS_INVALID_PUBLICATION%' then raise; end if; end;
+        begin perform public.save_customer_analysis_if_source_revision('${project}',jsonb_set(v_payload,'{expected_analysis_revision}','1')); raise exception 'automatic save used a non-null CAS'; exception when raise_exception then if sqlerrm not like 'AUTOMATIC_ANALYSIS_INVALID_PUBLICATION%' then raise; end if; end;
         -- A new manual analysis after the automatic snapshot must win.
         insert into public.customer_analyses(project_id,result_json,provenance_verified) values('${project}','{"manual":true}',true);
         begin perform public.save_customer_analysis_if_source_revision('${project}',v_payload); raise exception 'automatic save overwrote manual work'; exception when raise_exception then if sqlerrm<>'CUSTOMER_ANALYSIS_CHANGED' and sqlerrm not like 'PROJECT_SOURCE_REVISION_CHANGED%' then raise; end if; end;

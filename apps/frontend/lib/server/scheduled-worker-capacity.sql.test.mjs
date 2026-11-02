@@ -30,6 +30,8 @@ test("overlapping scheduled workers claim at most one job across projects while 
       insert into public.projects select md5(i::text)::uuid from generate_series(1,3) i;
       insert into public.project_jobs(id,project_id,status) select md5(('job'||i)::text)::uuid,md5(i::text)::uuid,'queued' from generate_series(1,3) i;`);
     sql(url, undefined, path.join(root, "database/migrations/20261101213000_scheduled_worker_capacity.sql"));
+    assert.equal(sql(url, "set role service_role; select public.scheduled_worker_capacity_preflight();"), "scheduled-worker-capacity-v1");
+    assert.equal(sql(url, "select has_function_privilege('anon','public.scheduled_worker_capacity_preflight()','execute'),has_function_privilege('authenticated','public.scheduled_worker_capacity_preflight()','execute');"), "f|f");
     const claim = i => `select coalesce(public.claim_project_job_serialized(md5('job${i}')::uuid,md5('lease${i}')::uuid)::text,'null');`;
     const scheduled = i => `begin; set local request.headers='{"x-anbud-job-runner":"scheduled"}'; ${claim(i)} select pg_sleep(0.2); commit;`;
     const outcomes = await Promise.all([concurrentSql(url, scheduled(1)), concurrentSql(url, scheduled(2))]);

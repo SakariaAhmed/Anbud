@@ -126,3 +126,11 @@ test("saved excerpts retain the exact validated short number and requirement occ
   assert.match(excerpts, /Gjeldende frist er 30 dager/u); assert.match(excerpts, /K-4\.2 Gjeldende/u);
   assert.doesNotMatch(excerpts, /130 dager|K-4\.20/u);
 });
+
+test("all Unicode numeric space separators keep a grouped value intact while tabs may separate columns", () => {
+  for (const separator of ["\u2007", "\u2008", "\u2009", "\u202f", "\u00a0"]) {
+    const original_quote = `Rammen er 1${separator}500 kr.`;
+    for (const quote of ["500 kr", "1"]) assert.throws(() => validateChatEvidence(`Rammen er «${quote}». [Kilde 1]`, [{ evidence_id: "unicode", original_quote }]), /sitat/iu);
+  }
+  assert.doesNotThrow(() => validateChatEvidence("Beløpet er «500 kr». [Kilde 1]", [{ evidence_id: "columns", original_quote: "Rad 1\t500 kr" }]));
+});
