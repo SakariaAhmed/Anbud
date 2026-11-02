@@ -240,3 +240,14 @@ export function summarizeSolutionEvaluation(evaluation: SolutionEvaluationResult
     executive_summary: compactText(evaluation.executive_summary, 500),
   });
 }
+
+
+/** Compact search terms; the complete criterion contract stays in generation. */
+export function solutionEvaluationRetrievalTerms(evaluation: SolutionEvaluationResult) {
+  return [
+    compactText(evaluation.fit_to_customer_needs, 400),
+    compactText(evaluation.executive_summary, 400),
+    ...(evaluation.criterion_coverage ?? []).slice(0, 8).map(item =>
+      `${compactText(item.criterion, 120)}: ${compactText(item.assessment, 20)}`),
+  ].filter(Boolean).join("\n");
+}

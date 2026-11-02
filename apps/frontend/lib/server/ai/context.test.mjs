@@ -5,7 +5,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const jiti = createJiti(import.meta.url, { alias: { "@": root, "server-only": "/dev/null" }, fsCache: false });
-const { compactText, documentContext, summarizeSolutionEvaluation } = jiti("./context.ts");
+const { compactText, documentContext, summarizeSolutionEvaluation, solutionEvaluationRetrievalTerms } = jiti("./context.ts");
 function original(value, limit = 16000) {
   const normalized = (typeof value === "string" ? value : "").replace(/\s+/g, " ").trim();
   return normalized.length <= limit ? normalized : `${normalized.slice(0, limit)}…`;
@@ -64,4 +64,15 @@ test("evaluation prompt keeps criterion meaning without repeated persistence sna
   assert.equal(JSON.parse(summarizeSolutionEvaluation(many)).criterion_coverage.length, 20, "No criterion is silently dropped.");
   assert.deepEqual(JSON.parse(summarizeSolutionEvaluation({ ...evaluation, criterion_coverage: [] })).criterion_coverage, []);
   assert.equal(Object.hasOwn(JSON.parse(summarizeSolutionEvaluation({ ...evaluation, criterion_coverage: undefined })), "criterion_coverage"), false);
+});
+
+
+test("evaluation retrieval terms stay bounded while generation retains all criteria", () => {
+  const evaluation = { fit_to_customer_needs: "Behov ".repeat(1000), executive_summary: "Sammendrag ".repeat(1000), strengths: [], weaknesses: [], missing_elements: [], risks_to_customer: [], improvement_recommendations: [],
+    criterion_coverage: Array.from({length: 2000}, (_, index) => ({ criterion: `Kriterium ${index} ` + "Lang tekst ".repeat(1000), assessment: "Uklart", rationale: "RATIONALE_NOT_FOR_SEARCH", evidence: "EVIDENCE_NOT_FOR_SEARCH" })) };
+  const terms = solutionEvaluationRetrievalTerms(evaluation);
+  assert.ok(terms.length < 2000);
+  assert.match(terms, /Kriterium 7/u);
+  assert.doesNotMatch(terms, /Kriterium 8|RATIONALE_NOT_FOR_SEARCH|EVIDENCE_NOT_FOR_SEARCH/u);
+  assert.equal(JSON.parse(summarizeSolutionEvaluation(evaluation)).criterion_coverage.length, 2000);
 });

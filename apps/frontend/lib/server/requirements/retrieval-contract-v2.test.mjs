@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { createJiti } from "jiti";
 import { scoreRetrievalCases } from "../../../../../scripts/rag_eval.mjs";
@@ -129,7 +130,7 @@ test("coordinated and comparative source mentions retain real retrieval ambiguit
   const { buildProjectChatRetrievalRequest } = chatLoad("../ai/project-chat.ts");
   const documents = fixture.documents.map((document, index) => ({ ...document, title: `Bilag ${index + 1} Drift`, file_name: `0${index + 1}_Bilag_${index + 1}_Drift.pdf`, raw_text: `${document.raw_text}\n${"Fiktiv bakgrunn. ".repeat(6500)}` }));
   const id = fixture.cases[0].expected_requirement_id;
-  for (const question of [`Hva sier ${id} i Bilag 1 og 2?`, `Hvordan henger ${id} sammen med Bilag 2?`, `Er ${id} i strid med Bilag 2?`, `${id} viser til Bilag 2, hva betyr det?`, `Sammenlign ${id} i Bilag 2 med Bilag 1.`, `${id} i Bilag 2 viser til Bilag 1, hva betyr det?`, `${id} står ikke i Bilag 2, hvor står det?`, `${id} viser til kravene i Bilag 2, hva betyr det?`]) {
+  for (const question of [`Hva sier ${id} i Bilag 1 og 2?`, `Hvordan henger ${id} sammen med Bilag 2?`, `Er ${id} i strid med Bilag 2?`, `${id} viser til Bilag 2, hva betyr det?`, `Sammenlign ${id} i Bilag 2 med Bilag 1.`, `${id} i Bilag 2 viser til Bilag 1, hva betyr det?`, `${id} står ikke i Bilag 2, hvor står det?`, `${id} viser til kravene i Bilag 2, hva betyr det?`, `Står ${id} bare i Bilag 2?`, `Står ${id} andre steder enn i Bilag 2?`, `Hvor ellers enn i Bilag 2 står ${id}?`, `Er ${id} i Bilag 2 i konflikt med tidligere krav?`]) {
     const { request } = await buildProjectChatRetrievalRequest({ question, recentMessages: [], customerDocument: documents[0], solutionDocument: null, supportingDocuments: [documents[1]] }, { skipRewrite: true });
     const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 3, rerank: undefined });
     assert.equal(result.telemetry.requirementLookupTruncated, true, question);
@@ -162,19 +163,66 @@ test("parenthesized chapter scope reaches the real authoritative lookup", async 
 });
 
 
-test("an original-source scope retains the persisted row's amendment authority", async () => {
+test("an original-source scope retains valid persisted amendment evidence without lookup failure", async () => {
   seed();
   const { buildProjectChatRetrievalRequest } = chatLoad("../ai/project-chat.ts");
   const id = fixture.cases[0].expected_requirement_id;
-  const source = { ...fixture.documents[0], title: "Bilag 1 Drift", chunk_source_revision: 2 };
-  const amendment = { ...fixture.documents[1], id: "contract-v2-amendment", title: "Rettelser", raw_text: `# Rettelser\n${id} endres til «Leverandøren skal holde fire kurs».`, structure_map: [] };
-  const rows = fixture.registers[source.id].slice(0, 1).map(row => ({ ...row,
+  const source = { ...fixture.documents[0], title: "Bilag 1 Drift", chunk_source_revision: 3 };
+  const amendment = { ...fixture.documents[1], id: "contract-v2-amendment-valid", title: "Rettelser", raw_text: `# Rettelser\n${id} endres til «Leverandøren skal holde fire kurs».`, structure_map: [] };
+  const rows = fixture.registers[source.id].slice(0, 1).map(row => ({ ...row, documentId: amendment.id,
     text: "Leverandøren skal holde fire kurs", correctionSource: { documentId: amendment.id, documentTitle: amendment.title, pages: [], excerpt: amendment.raw_text.split("\n")[1] } }));
-  setDocumentChunksTestRequirementRegister(source.id, encryptJson({ documentId: source.id, projectId: source.project_id, sourceRevision: source.chunk_source_revision,
-    requirementRegister: { version: 1, rows } }));
-  const { request } = await buildProjectChatRetrievalRequest({ question: `Hva sier ${id} i Bilag 1?`, recentMessages: [], customerDocument: source, solutionDocument: null, supportingDocuments: [amendment] }, { skipRewrite: true });
+  for (const [document, documentRows] of [[source, fixture.registers[source.id]], [amendment, rows]]) {
+    setDocumentChunksTestRequirementRegister(document.id, encryptJson({ documentId: document.id, projectId: document.project_id, sourceRevision: document.chunk_source_revision,
+      requirementRegister: { version: 1, rows: documentRows } }));
+  }
+  const input = { projectId: source.project_id, projectName: "Fiktiv", question: `Hva sier ${id} i Bilag 1?`, recentMessages: [], customerDocument: source, solutionDocument: null, supportingDocuments: [amendment] };
+  const { request } = await buildProjectChatRetrievalRequest(input, { skipRewrite: true });
   assert.deepEqual(request.documents.map(document => document.id), [source.id, amendment.id]);
-  const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 3, rerank: undefined });
+  const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 10, rerank: undefined });
+  assert.equal(result.telemetry.requirementLookupFailed, false);
+  assert.equal(result.telemetry.requirementLookupTruncated, false);
+  assert.equal(result.telemetry.quality.sufficient, true);
+  assert.deepEqual(result.telemetry.missingRequirementIds, []);
   const authoritative = result.snippets.filter(item => item.kind === "requirement_row");
   assert.ok(authoritative.some(row => row.sourceId === amendment.id && row.text.includes("holde fire kurs")));
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-amendment-chat-"));
+  const previousRewrite = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "off";
+  globalThis.__amendmentChatResult = result;
+  try {
+    const retrieval = path.join(directory, "retrieval.cjs"), completion = path.join(directory, "completion.cjs");
+    writeFileSync(retrieval, "exports.retrieveDocumentSnippetsWithMetadata=async()=>globalThis.__amendmentChatResult;");
+    writeFileSync(completion, 'exports.createTextCompletionStream=async()=> (async function*(){yield "Lokalt testsvar.";})();');
+    const run = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: { "@": frontend, "server-only": "/dev/null", "@/lib/server/document-chunks": retrieval, "@/lib/server/ai/completion": completion } });
+    const { streamProjectChat } = run("../ai/project-chat.ts");
+    const output = await streamProjectChat(input);
+    let answer = ""; for await (const piece of output.stream) answer += piece;
+    assert.equal(answer, "Lokalt testsvar.", "Real lookup telemetry must allow the chat completion path.");
+  } finally {
+    if (previousRewrite === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousRewrite;
+    delete globalThis.__amendmentChatResult; rmSync(directory, {recursive: true, force: true});
+  }
+});
+
+test("ambiguous document scope cannot apply one document's chapter to all occurrences", async () => {
+  seed();
+  const { buildProjectChatRetrievalRequest } = chatLoad("../ai/project-chat.ts");
+  const id = fixture.cases[0].expected_requirement_id;
+  const documents = fixture.documents.map((document, index) => ({ ...document, title: `Bilag ${index + 1} Drift`, chunk_source_revision: 40,
+    raw_text: document.raw_text + "\n" + "Bakgrunn. ".repeat(10000) }));
+  for (const [index, document] of documents.entries()) {
+    setDocumentChunksTestRequirementRegister(document.id, encryptJson({ documentId: document.id, projectId: document.project_id, sourceRevision: document.chunk_source_revision,
+      requirementRegister: { version: 1, rows: fixture.registers[document.id].map(row => ({ ...row, heading: `${index === 0 ? 5 : 3} Drift` })) } }));
+  }
+  for (const question of [
+    `Hvordan henger ${id} sammen med Bilag 2, kapittel 3?`,
+    `Hva sier ${id} i Bilag 1 og Bilag 2, kapittel 3?`,
+    `Hva sier ${id} i Bilag 1 og 2 (kapittel 3)?`,
+  ]) {
+    const { request } = await buildProjectChatRetrievalRequest({ question, recentMessages: [], customerDocument: documents[0], solutionDocument: null, supportingDocuments: [documents[1]] }, { skipRewrite: true });
+    assert.equal(request.requirementHeading, undefined);
+    const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 3, rerank: undefined });
+    assert.equal(result.telemetry.requirementLookupTruncated, true, question);
+    assert.equal(result.telemetry.quality.sufficient, false, question);
+  }
 });

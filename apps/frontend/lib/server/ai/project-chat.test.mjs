@@ -656,6 +656,21 @@ test("current question controls evidence gates and named source scope, independe
     process.env.RAG_QUERY_REWRITE = "on";
     assert.match(await run("Hva er den bindende exit-fristen i Bilag 1?"), /ikke nok kildegrunnlag/u);
     assert.equal(state.calls, 0, "A named generated draft is not evidence for a binding source fact.");
+    for (const question of [
+      "Hva er den bindende exit-fristen i Bilag 1? Jeg vil ikke ha forslag eller tolkning.",
+      "Hva er sidegrensen for kravsvar i Bilag 1?", "Hva er fristen for forslag til endringer i Bilag 1?",
+      "Hva sier Bilag 1 om verdiargumentasjon?", "Oppsummer Bilag 12 som et forslag.",
+    ]) {
+      assert.match(await run(question), /ikke nok kildegrunnlag/u, question);
+      assert.equal(state.calls, 0);
+    }
+    for (const [artifact_type, title, question] of [
+      ["gjennomforing_og_risiko", "Risikoplan", "Hva sier risikoplanen om eksport ved avslutning?"],
+      ["gjennomforing_og_risiko", "Gjennomføring", "Hva sier gjennomføringen om eksport ved avslutning?"],
+      ["losningsutkast", "Systemløsning", "Hva sier systemløsningen om eksport ved avslutning?"],
+    ]) {
+      assert.equal(await run(question, { generatedArtifacts: [{ ...input.generatedArtifacts[0], artifact_type, title }] }), "Lokalt testsvar.");
+    }
     assert.equal(await run("Oppsummer Bilag 1 som et forslag."), "Lokalt testsvar.");
     assert.equal(state.calls, 1, "Explicit current artifact questions remain available.");
     state.rewrittenQuery = "Annet tema";
@@ -685,7 +700,9 @@ test("current question controls evidence gates and named source scope, independe
         assert.match(await run(question, { promptAttachments: attachment }), refusal, question);
         assert.equal(state.calls, 0, "The attachment must not fill the project side of a mixed question.");
       }
-      assert.equal(await run("Hva sier K-42 i vedlegget?", { promptAttachments: attachment }), "Lokalt testsvar.");
+      for (const question of ["Hva sier K-42 i vedlegget?", "Hva sier K-42 i vedlegget om kundens ansvar?", "Oppsummer dette dokumentet.", "Svar på spørsmålene i filen.", "Hva sier vedlegget om prosjektet?", "Hva sier K-42 i filen?"]) {
+        assert.equal(await run(question, { promptAttachments: attachment }), "Lokalt testsvar.", question);
+      }
     }
     state.telemetry = {};
     const scoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42 i Bilag 2, kapittel 3.2?" });
@@ -695,7 +712,7 @@ test("current question controls evidence gates and named source scope, independe
     assert.equal(quoted.request.requirementHeading, "Drift og sikkerhet");
     const unscoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42?" });
     assert.deepEqual(unscoped.request.documents.map(item => item.id), ["one", "two"], "Prior rewritten names cannot restrict the source collection.");
-    for (const question of ["Hva sier K-42 i Bilag 1 og 2?", "Hvordan henger K-42 sammen med Bilag 2?", "Er K-42 i strid med Bilag 2?", "K-42 viser til Bilag 2, hva betyr det?", "Sammenlign K-42 i Bilag 2 med Bilag 1.", "K-42 i Bilag 2 viser til Bilag 1, hva betyr det?", "K-42 står ikke i Bilag 2, hvor står det?", "K-42 viser til kravene i Bilag 2, hva betyr det?"]) {
+    for (const question of ["Hva sier K-42 i Bilag 1 og 2?", "Hvordan henger K-42 sammen med Bilag 2?", "Er K-42 i strid med Bilag 2?", "K-42 viser til Bilag 2, hva betyr det?", "Sammenlign K-42 i Bilag 2 med Bilag 1.", "K-42 i Bilag 2 viser til Bilag 1, hva betyr det?", "K-42 står ikke i Bilag 2, hvor står det?", "K-42 viser til kravene i Bilag 2, hva betyr det?", "Står K-42 bare i Bilag 2?", "Finnes K-42 kun i Bilag 2?", "Hvor ellers enn i Bilag 2 står K-42?", "Er K-42 i Bilag 2 i konflikt med tidligere krav?", "Vurder om K-42 finnes utelukkende i Bilag 2."]) {
       const result = await buildProjectChatRetrievalRequest({ ...input, question });
       assert.deepEqual(result.request.documents.map(item => item.id), ["one", "two"], question);
     }
@@ -745,5 +762,17 @@ test("current question controls evidence gates and named source scope, independe
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
     delete globalThis.__chatGateTest; rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("artifact aliases match whole Unicode names and supported definite forms", () => {
+  const { selectProjectChatArtifactSections } = jiti(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+  const artifact = { id: "a", project_id: "p", artifact_type: "bilag1_rekonstruksjon", title: "Bilag 1", content_markdown: "# Kilde\nEt forslag.", is_current: true, source_is_current: true };
+  for (const question of ["Bilag 12", "Bilag 10", "Bilag 1a", "æBilag 1", "Bilag 1ø"]) {
+    assert.equal(selectProjectChatArtifactSections({ artifacts: [artifact], question, projectId: "p" })[0].explicitlyNamed, false, question);
+  }
+  for (const question of ["Bilag 1", "(Bilag 1)", "BILAG 1", "Bilag1"]) {
+    assert.equal(selectProjectChatArtifactSections({ artifacts: [artifact], question, projectId: "p" })[0].explicitlyNamed, true, question);
   }
 });

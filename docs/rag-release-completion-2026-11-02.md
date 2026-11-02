@@ -492,8 +492,8 @@ to avoid interpreting a generic topic as a source restriction. The chapter
 parser accepts closing parentheses, curly/single quotes, and `kap` with or
 without a period. The clarification includes a literal syntax example.
 Relevant amendment sections recognized by the existing correction parser stay
-in the source set; tests exercise both the whole-document prompt and a persisted
-row whose authority is the separate amendment. This does not claim recognition
+in the source set; whole-document prompt retention was tested. The persisted-row
+proof claimed for this pin was invalid; see the round-8 correction below. This does not claim recognition
 of arbitrary unstructured amendment language.
 
 Artifact selection uses the current question to identify an explicit artifact
@@ -502,7 +502,8 @@ alone no longer exempts a factual question from the weak-evidence gate; the
 question must also request generated interpretation. Mixed project/attachment
 questions retain project failed-register, truncation, missing-ID and weak-source
 gates. A matching ID in the attachment cannot supply missing project authority.
-Attachment-only questions still work. These address CodeRabbit's two additional
+The tested attachment-only forms still worked, but round 8 found other common
+forms falsely refused. These changes addressed CodeRabbit's two additional
 major findings; its minor report wording correction is included.
 
 Verification: 30 focused tests pass, including the real retrieval owner and
@@ -523,3 +524,61 @@ These checks establish deterministic evidence selection and refusal behavior,
 not live model answer quality. The recorded budget, unresolved quality/runtime
 and external release gates, and accepted Greptile gap remain unchanged. Fresh
 council, CodeRabbit and CI review of this correction is required.
+
+## Council round 8 and conservative intent handling
+
+Both members rejected `10bedd64` (Sol 7/10, Opus 6/10). Sol reproduced negated
+interpretation bypass, missing supported artifact aliases, and attachment-only
+customer questions being refused. Opus reproduced additional attachment forms,
+occurrence questions, and chapter filtering that silently removed a source even
+when document narrowing had been rejected. The earlier source-preservation and
+attachment claims were therefore limited to their specific tested forms.
+
+Document narrowing now accepts complete source-only request forms, including
+the clarification example. An additional clause, comparison, occurrence or
+exclusion question keeps all sources. A trailing chapter restriction is applied
+only to that accepted scope or a plain ID/chapter request; rejected source scope
+cannot silently apply one document's chapter across all documents. This trades
+some natural-language narrowing for conservative ambiguity handling, without
+changing the repeated-occurrence gate or the project-wide whole-document limit.
+
+Attachment source intent is separated from its subject matter. A present
+attachment can answer implicit file/document questions and questions about its
+customer or project, provided the question does not also request project
+sources and the attachment contains any requested IDs. Explicit mixed-source
+questions retain all four project evidence gates. Draft questions use the
+selector's supported interpretation aliases, including risikoplan/systemløsning;
+negated requests do not enable interpretation. A shared project-document name
+requires an affirmative draft request. Merely discussing proposals, kravsvar or
+value arguments inside the source does not make it a request for a draft.
+
+CodeRabbit's two remaining minor findings are corrected: artifact names use
+Unicode letter/number boundaries, with supported definite forms, so Bilag 1
+does not match Bilag 12. Artifact retrieval uses a bounded evaluation projection
+(two short summaries and at most eight criterion label/assessment pairs), while
+the generation prompt retains every criterion and its meaning. Search terms
+precede the evaluation projection. No frozen cases or historical metrics change.
+
+The earlier persisted-amendment proof was invalid: it put another document's
+correction authority inside the original document's register, which the current
+persistence validator correctly rejects. Its passing assertion merely found
+separately extracted evidence after a lookup failure. The replacement fixture
+stores correction rows in the amendment's own register and preserves the
+original register. It explicitly requires no lookup failure, no truncation, no
+missing IDs, sufficient retrieval, and chat completion using that real retrieval
+result with a stubbed provider. The application persistence contract is unchanged.
+
+Verification of the correction tree: 1,522 frontend and 202 root tests passed
+(1,724 total), zero failures/skips, plus parser goldens. Four new regression
+groups fail against the previous chat owner; 36 focused tests pass with the
+correction. The final production build, lint/type validation, workflow
+boundaries, tracked-secret scan and whitespace checks passed. Both recorded
+SQL regression gates passed (116 original and 55 extended), no provider calls
+or memory fallback, with conceptual 30/36 (MRR .565) and stress 18/20 unchanged.
+Logs: `/private/tmp/anbud-r9-before.log`, `/private/tmp/anbud-r9-focused.log`,
+`/private/tmp/anbud-r9-final-tests.log`, `/private/tmp/anbud-r9-final-build.log`,
+`/private/tmp/anbud-r9-retrieval.log` and `/private/tmp/anbud-r9-extended.log`.
+The owned app restarted with AI disabled and returned liveness 200. This is
+local deterministic/build proof; no new browser, HTTP/OCR, provider-stream or
+semantic model result is claimed. Fresh council/CI/CodeRabbit review remains
+required, and the previously recorded budget and release gates are unchanged.

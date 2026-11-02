@@ -20,6 +20,7 @@ import {
   retrievedSnippetContext,
   summarizeCustomerAnalysis,
   summarizeSolutionEvaluation,
+  solutionEvaluationRetrievalTerms,
 } from "@/lib/server/ai/context";
 
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
@@ -3456,12 +3457,12 @@ async function buildArtifactRetrievalContext(
     query: [
       input.projectName,
       input.artifactType,
+      "krav behov risiko verdi evalueringskriterier løsning gjennomføring drift kontrakt",
       input.instructions ?? "",
       input.customerAnalysis ? summarizeCustomerAnalysis(input.customerAnalysis) : "",
       input.solutionEvaluation
-        ? summarizeSolutionEvaluation(input.solutionEvaluation)
+        ? solutionEvaluationRetrievalTerms(input.solutionEvaluation)
         : "",
-      "krav behov risiko verdi evalueringskriterier løsning gjennomføring drift kontrakt",
     ]
       .filter(Boolean)
       .join("\n"),
