@@ -77,6 +77,19 @@ test("v2 repeated occurrences exceeding the result budget remain explicitly ambi
   assert.equal(scoreRetrievalCases([{ ...row, retrieved: scored(result.snippets) }]).all_evidence_recall_at_10, 0);
 });
 
+
+test("document clarification resolves the same over-budget ID without losing occurrences in that source", async () => {
+  seed();
+  const row = fixture.cases[1];
+  const documents = fixture.documents.filter(source => source.id === "contract-v2-b");
+  const result = await retrieveDocumentSnippetsWithMetadata({ query: row.question, exactTerms: [row.expected_requirement_id], documents, limit: row.limit });
+  assert.equal(result.telemetry.requirementLookupTruncated, false);
+  assert.deepEqual(result.telemetry.missingRequirementIds, []);
+  const authoritative = result.snippets.filter(snippet => snippet.kind === "requirement_row");
+  assert.equal(authoritative.length, 1);
+  assert.equal(authoritative[0].sourceId, "contract-v2-b");
+});
+
 for (const row of fixture.artifact_cases) test(`v2 explicit alias ${row.alias} selects the original competing section and denies stale/foreign versions`, () => {
   const artifact = (id, artifact_type, content_markdown, extra = {}) => ({ id, project_id: "contract-v2", artifact_type,
     title: `Utkast ${id}`, content_markdown, artifact_version: 2, is_current: true, source_is_current: true, ...extra });
@@ -96,4 +109,17 @@ for (const row of fixture.artifact_cases) test(`v2 explicit alias ${row.alias} s
   assert.equal(sections[0].text.trim(), row.expected_text);
   assert.ok(desired.content_markdown.includes(sections[0].text));
   assert.deepEqual(selectProjectChatArtifactSections({ artifacts: denied, projectId: "contract-v2", question: `${row.alias} eksport ved avslutning` }), []);
+});
+
+test("a document/chapter clarification resolves budget ambiguity through the retrieval owner", async () => {
+  seed();
+  const row = fixture.cases[0];
+  const request = { query: row.question, exactTerms: [row.expected_requirement_id], documents: fixture.documents, limit: 3 };
+  assert.equal((await retrieveDocumentSnippetsWithMetadata(request)).telemetry.requirementLookupTruncated, true);
+  const chapter = await retrieveDocumentSnippetsWithMetadata({ ...request, requirementHeading: "Beredskap" });
+  assert.equal(chapter.telemetry.requirementLookupTruncated, false);
+  assertOccurrences(chapter.snippets.filter(item => item.kind === "requirement_row"), row.required_evidence.slice(0, 3));
+  const source = await retrieveDocumentSnippetsWithMetadata({ ...request, documents: fixture.documents.filter(document => document.id === "contract-v2-b"), limit: 1 });
+  assert.equal(source.telemetry.requirementLookupTruncated, false);
+  assertOccurrences(source.snippets.filter(item => item.kind === "requirement_row"), row.required_evidence.slice(3));
 });

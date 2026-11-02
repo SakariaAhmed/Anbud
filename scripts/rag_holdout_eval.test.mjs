@@ -385,3 +385,71 @@ test("occasional repair calls add one allowance rather than multiplying the spik
     assert.ok(projection.projected_remaining_usd < ((80-completed)*spike + projection.judge_reservations_usd)*1.2);
   }
 });
+
+test("post-answer accounting at zero balance or unavailable preserves completed evidence and never redispatches", async () => {
+  for (const unavailable of [false, true]) {
+    const state = checkpoint(); let dispatched = 0, guarded = 0;
+    const runtime = answerRuntime(state), request = runtime.request;
+    runtime.request = async (...args) => { if (args[1]?.method === "POST") dispatched++; return request(...args); };
+    const context = { checkpoint: state, fixtures: [{ version: "fixture.v1", documents: [], saved_analysis: {} }], runtime, save: () => {}, guardBudget: async () => { guarded++; return budget(); }, observeBudget: async () => {
+      assert.equal(state.cases[0].answer_attempt.status, "completed", "Evidence is saved before observing accounting.");
+      assert.equal(state.cases[0].answer_attempt.budget_observation_pending, true);
+      if (unavailable) throw new Error("Accounting read unavailable");
+      return { ...budget(), remainingUsd: 0, requests: [...budget().requests, { id: "answer", model: state.identity.answer_model, requestPurpose: "chat_answer", status: 200, completion: { status: "completed" } }] };
+    } };
+    if (unavailable) await assert.rejects(answerCases(context), /Accounting read/u); else await answerCases(context);
+    const attempt = state.cases[0].answer_attempt;
+    assert.equal(attempt.status, "completed"); assert.equal(attempt.answer, "42 brukere [Kilde 1]");
+    assert.equal(attempt.evidence_sha256, answerEvidenceHash(attempt));
+    assert.equal(attempt.budget_observation_error, unavailable ? "BUDGET_OBSERVATION" : undefined);
+    assert.equal(Boolean(attempt.budget_observation_pending), unavailable);
+    validateCheckpoint(state, identity(), [contract()]);
+    await answerCases(context); assert.equal(dispatched, 1); assert.equal(guarded, 1);
+  }
+});
+
+test("post-judge accounting does not replace a completed verdict with an uncertain attempt", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const unavailable of [false, true]) {
+      const state = checkpoint(), item = state.cases[0]; completeAnswer(state, item);
+      let dispatched = 0, guarded = 0;
+      globalThis.fetch = async () => { dispatched++; return Response.json({ status: "completed", model: state.identity.judge_model, output_text: JSON.stringify({ cases: [goodVerdict(item.contract.id)] }) }); };
+      const runtime = { readProof: async () => clone(state.projects["fixture.v1"].proof), route: id => `/api/projects/${id}`, request: async () => Response.json({ messages: [
+        { role: "user", content: item.contract.question }, { role: "assistant", id: item.answer_attempt.message_id, content: item.answer_attempt.answer, source_references: item.answer_attempt.sources, context_snapshot: item.answer_attempt.context_snapshot },
+      ] }) };
+      const context = { checkpoint: state, fixtures: [{ version: "fixture.v1", documents: [], saved_analysis: {} }], runtime, batchSize: 2, save: () => {}, guardBudget: async () => { guarded++; return budget(); }, observeBudget: async () => {
+        assert.equal(item.judge_attempt.status, "completed");
+        assert.equal(state.judge_batches[0].budget_observation_pending, true);
+        if (unavailable) throw new Error("Accounting read unavailable");
+        return { ...budget(), remainingUsd: 0 };
+      } };
+      if (unavailable) await assert.rejects(judgeCases(context), /Accounting read/u); else await judgeCases(context);
+      assert.equal(item.judge_attempt.status, "completed"); assert.equal(item.judge_attempt.verdict.grounded, true);
+      assert.equal(state.judge_batches[0].status, "completed");
+      assert.ok(state.judge_batches[0].raw_response);
+      assert.equal(state.judge_batches[0].budget_observation_error, unavailable ? "BUDGET_OBSERVATION" : undefined);
+      validateCheckpoint(state, identity(), [contract()]);
+      await judgeCases(context); assert.equal(dispatched, 1); assert.equal(guarded, 1);
+    }
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("a crash between result persistence and accounting cannot produce a passing report", () => {
+  const state = checkpoint([contract(), contract("negative", { kind: "negative", abstention_required: true })]);
+  for (const item of state.cases) {
+    completeAnswer(state, item);
+    item.judge_attempt = { status: "completed", verdict: goodVerdict(item.contract.id) };
+  }
+  const manifest = { thresholds: {}, metric_policy: "distinct-factual" };
+  assert.equal(buildReport(state, manifest).release_passed, true);
+  for (const target of [state.cases[0].answer_attempt, { status: "completed" }]) {
+    if (target !== state.cases[0].answer_attempt) state.judge_batches.push(target);
+    target.budget_observation_pending = true;
+    const report = buildReport(state, manifest);
+    assert.equal(report.release_passed, false); assert.equal(report.accounted_cost_delta_usd, null);
+    assert.ok(report.failures.some(item => item.includes("accounting observation incomplete")));
+    assert.equal(report.actual_counts.answers_completed, 2); assert.equal(report.actual_counts.judged, 2);
+    delete target.budget_observation_pending;
+  }
+});

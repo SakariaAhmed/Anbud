@@ -477,6 +477,7 @@ export function ProjectAnalysisTab({
   projectId,
   documents,
   customerAnalysis: latestCustomerAnalysis,
+  analysisJobActive = false,
   busy,
   saveBusy,
   sectionBusy,
@@ -492,6 +493,7 @@ export function ProjectAnalysisTab({
   projectId: string;
   documents: ProjectDocument[];
   customerAnalysis: CustomerAnalysisResult | null;
+  analysisJobActive?: boolean;
   busy: boolean;
   saveBusy: boolean;
   sectionBusy: CustomerAnalysisSection | null;
@@ -1616,7 +1618,7 @@ export function ProjectAnalysisTab({
       <CustomerAnalysisPartialPreview
         key={`${projectId}:${latestCustomerAnalysis?.revision ?? ""}:${sourceChanged}:${documents.map((document) => `${document.id}:${document.updated_at}`).join(",")}`}
         projectId={projectId}
-        busy={busy}
+        busy={busy || analysisJobActive}
       />
       {sectionBusy && busyMessage ? (
         <div className="mb-4">

@@ -40,3 +40,21 @@ test("register rows in source wording and in normalized wording resolve the same
     assert.match(snippets[0].text, /06:00–22:00/u, "A quotation carries the original dash.");
   }
 });
+
+test("explicit chapters narrow repeated authoritative IDs before the caller budgets occurrences", async () => {
+  const source = document("chapter-source", "[[SIDE:1]]\nK-42 Leverandøren skal holde fire kurs.\n[[SIDE:2]]\nK-42 Leverandøren skal levere driftsrapport.");
+  globalThis.__literalRegisterTest = { rows: { [source.id]: [
+    { id: "K-42", text: "Leverandøren skal holde fire kurs.", heading: "2 Opplæring", pages: [1], idOrigin: "source" },
+    { id: "K-42", text: "Leverandøren skal levere driftsrapport.", heading: "3.2 Drift", pages: [2], idOrigin: "source" },
+  ] } };
+  const input = { ids: ["K-42"], documents: [source], fingerprints: new Map([[`project_document:${source.id}`, "chapter-v1"]]) };
+  assert.equal((await lookupRequirementSnippets(input)).length, 2);
+  for (const heading of ["3", "3.2", "3.2 Drift"]) {
+    const selected = await lookupRequirementSnippets({ ...input, heading });
+    assert.equal(selected.length, 1); assert.equal(selected[0].pageStart, 2);
+    assert.match(selected[0].text, /driftsrapport/u);
+  }
+  assert.deepEqual(await lookupRequirementSnippets({ ...input, heading: "30" }), []);
+  assert.deepEqual(await lookupRequirementSnippets({ ...input, heading: "ukjent" }), []);
+  assert.equal((await lookupRequirementSnippets(input)).length, 2, "Scoped lookups never poison the full ledger cache.");
+});

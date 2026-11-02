@@ -50,3 +50,24 @@ test("independent review cannot upgrade a failed judge or an incomplete answer",
   assert.deepEqual(summary.metrics, { groundedness: 0, citation_correctness: 0, correct_abstention: 0 });
   assert.equal(summary.failures.length, 3);
 });
+
+test("supported but off-topic facts cannot pass factual smoke metrics", async () => {
+  const { interpretModelReleaseVerdict } = await import("./rag_model_release_metrics.mjs");
+  const raw = { grounded: true, citations_correct: true, abstention_correct: true, core_answer_correct: false, claims: [{ text: "An unrelated source fact", supported: true, citation_correct: true }] };
+  const before = structuredClone(raw);
+  for (const kind of ["factual", "repeat"]) {
+    const verdict = interpretModelReleaseVerdict(raw, kind);
+    assert.equal(verdict.grounded, false); assert.equal(verdict.citations_correct, false);
+    assert.deepEqual(raw, before);
+  }
+  assert.throws(() => interpretModelReleaseVerdict({ ...raw, core_answer_correct: undefined }, "factual"));
+});
+
+test("negative answers must abstain without adding unsupported claims", async () => {
+  const { interpretModelReleaseVerdict } = await import("./rag_model_release_metrics.mjs");
+  const base = { grounded: true, citations_correct: true, abstention_correct: true, core_answer_correct: true };
+  assert.equal(interpretModelReleaseVerdict({ ...base, claims: [] }, "negative").abstention_correct, true);
+  assert.equal(interpretModelReleaseVerdict({ ...base, claims: [{ text: "No deadline is documented", supported: true, citation_correct: true }] }, "negative").abstention_correct, true);
+  assert.equal(interpretModelReleaseVerdict({ ...base, claims: [{ text: "Probably within thirty days", supported: false, citation_correct: false }] }, "negative").abstention_correct, false);
+  assert.throws(() => interpretModelReleaseVerdict(base, "negative"));
+});

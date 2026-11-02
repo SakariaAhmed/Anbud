@@ -166,7 +166,7 @@ export function projectHoldoutBudget(checkpoint, fixtures, snapshot) {
     assumptions: "Mean observed whole-route cost or price-scaled $0.03 initial estimate, plus one largest observed route while answers remain; future judge input uses largest observed answer/citations or 6000 characters; 20% margin; no assumed caching. Hard proxy limits remain authoritative." };
 }
 
-export async function answerCases({ checkpoint, fixtures, runtime, save, guardBudget }) {
+export async function answerCases({ checkpoint, fixtures, runtime, save, guardBudget, observeBudget = guardBudget }) {
   requireCondition(fixtures.every(fixture => checkpoint.projects[fixture.version]?.ready), "PROJECT_NOT_READY", "Run and finish --phase setup before answering.");
   for (const item of checkpoint.cases) {
     if (item.answer_attempt) continue; // A paid dispatch is irreversible even without a response.
@@ -216,7 +216,16 @@ export async function answerCases({ checkpoint, fixtures, runtime, save, guardBu
       attempt.output_complete = context.source_check_status === "passed";
       attempt.runtime_proof_valid = true;
       attempt.large_document_proof = { selected_raw_characters: mapping.proof.characters, full_document_threshold: checkpoint.identity.full_document_threshold, whole_document_bypass: false, selected_document_ids: mapping.proof.selected_document_ids, analysis_revision: mapping.proof.analysis_revision, retrieval_telemetry: retrieval };
-      const after = await guardBudget();
+      attempt.total_ms = performance.now() - started; attempt.status = "completed";
+      attempt.budget_observation_pending = true;
+      attempt.evidence_sha256 = answerEvidenceHash(attempt); save();
+    } catch (error) {
+      attempt.status = "uncertain"; attempt.error_code = error instanceof HoldoutError ? error.code : "ANSWER_TRANSPORT_OR_PROOF"; save(); throw error;
+    }
+    // Accounting is a separate observation: a failed read cannot erase the
+    // completed answer, and zero remaining balance is not a failed answer.
+    try {
+      const after = await observeBudget();
       attempt.proxy_requests = after.requests.filter(row => !before.requests.some(old => old.id === row.id));
       requireCondition(attempt.proxy_requests.every(row => typeof row.requestPurpose === "string"), "PROXY_REQUEST_PURPOSE", "The running budget proxy predates operation classification; its records cannot distinguish retrieval from final answers.");
       attempt.model_answer_requests = attempt.proxy_requests.filter(row => row.requestPurpose === "chat_answer");
@@ -228,16 +237,18 @@ export async function answerCases({ checkpoint, fixtures, runtime, save, guardBu
       // transport retry / evidence repair remains part of that attempt, with
       // every provider request retained and charged in proxy_requests.
       if (attempt.model_answer_requests.length && (!attempt.model_answer_requests.some(row => row.status === 200 && row.completion?.status === "completed") || attempt.model_answer_requests.some(row => row.model !== checkpoint.identity.answer_model))) attempt.output_complete = false;
-      attempt.total_ms = performance.now() - started; attempt.status = "completed";
+      delete attempt.budget_observation_pending;
       attempt.evidence_sha256 = answerEvidenceHash(attempt); save();
-      console.error(JSON.stringify({ case: item.contract.id, answer: attempt.status, citation_integrity: integrity.valid, source_count: attempt.sources.length }));
+      console.error(JSON.stringify({ case: item.contract.id, answer: attempt.status, citation_integrity: attempt.citation_integrity, source_count: attempt.sources.length }));
     } catch (error) {
-      attempt.status = "uncertain"; attempt.error_code = error instanceof HoldoutError ? error.code : "ANSWER_TRANSPORT_OR_PROOF"; save(); throw error;
+      attempt.budget_observation_error = error instanceof HoldoutError ? error.code : "BUDGET_OBSERVATION";
+      checkpoint.budget_observation_failed = true;
+      attempt.evidence_sha256 = answerEvidenceHash(attempt); save(); throw error;
     }
   }
 }
 
-export async function judgeCases({ checkpoint, fixtures, runtime, batchSize, save, guardBudget }) {
+export async function judgeCases({ checkpoint, fixtures, runtime, batchSize, save, guardBudget, observeBudget = guardBudget }) {
   for (const fixture of fixtures) {
     const mapping = checkpoint.projects[fixture.version];
     requireCondition(mapping?.ready, "PROJECT_NOT_READY", "Judge resume requires the original owned project mapping and persisted proof.");
@@ -273,13 +284,19 @@ export async function judgeCases({ checkpoint, fixtures, runtime, batchSize, sav
         const raw = JSON.parse(output); batch.raw_verdict = raw; save();
         const verdicts = interpretJudge(raw, cases.map(item => item.contract));
         for (const item of cases) item.judge_attempt = { batch_id: batch.id, status: "completed", verdict: verdicts[item.contract.id] };
-        batch.status = "completed"; save();
-        const after = await guardBudget();
-        batch.proxy_requests = after.requests.filter(row => !before.requests.some(old => old.id === row.id)); save();
+        batch.status = "completed"; batch.budget_observation_pending = true; save();
       } catch (error) {
         batch.status = "failed_or_uncertain"; batch.error_code = error instanceof HoldoutError ? error.code : "JUDGE_TRANSPORT_OR_SCHEMA";
         for (const item of cases) item.judge_attempt = { batch_id: batch.id, status: "failed_or_uncertain", error_code: batch.error_code };
         save(); throw error;
+      }
+      try {
+        const after = await observeBudget();
+        batch.proxy_requests = after.requests.filter(row => !before.requests.some(old => old.id === row.id));
+        delete batch.budget_observation_pending; save();
+      } catch (error) {
+        batch.budget_observation_error = error instanceof HoldoutError ? error.code : "BUDGET_OBSERVATION";
+        checkpoint.budget_observation_failed = true; save(); throw error;
       }
     }
   }
@@ -321,18 +338,23 @@ export async function main(args = process.argv.slice(2)) {
     validateCheckpoint(checkpoint, identity, contracts);
     for (const project of Object.values(checkpoint.projects)) if (project.ready) requireCondition(project.proof_sha256 === sha256(project.proof), "PROJECT_MAPPING", "Persisted source/project mapping changed in checkpoint.");
     save = () => saveCheckpoint(options.checkpoint, checkpoint); save();
+    const observeBudget = async () => {
+      const next = await runtime.budget();
+      validateBudget(next, { phase: options.proxyPhase, phaseCapUsd: options.phaseCapUsd, baseline: checkpoint.budget_baseline });
+      checkpoint.budget_latest = next; save(); return next;
+    };
     const guardBudget = async () => {
       assertFrozenCode({ commit: git(["rev-parse", "HEAD"]), status: git(["status", "--porcelain", "--untracked-files=all"]) }, options.expectedCommit);
       const currentStatus = JSON.parse(readFileSync(systemTestStatusPath(), "utf8"));
       requireCondition(currentStatus.running === true && currentStatus.directory === status.directory && sha256(JSON.parse(readFileSync(path.join(status.directory, "environment.json"), "utf8")).env) === identity.environment_sha256, "RUNTIME_CHANGED", "The owned runtime changed after freeze; no further evaluation request is allowed.");
-      const next = await runtime.budget();
+      const next = await observeBudget();
       requireBudgetHeadroom(next, { phase: options.proxyPhase, phaseCapUsd: options.phaseCapUsd, baseline: checkpoint.budget_baseline });
-      checkpoint.budget_latest = next; save(); return next;
+      return next;
     };
     await guardBudget();
     checkpoint.preflight = await runtime.preflight(fixtures); save();
     assertFrozenCode({ commit: git(["rev-parse", "HEAD"]), status: git(["status", "--porcelain", "--untracked-files=all"]) }, options.expectedCommit);
-    const context = { checkpoint, fixtures, runtime, save, guardBudget, batchSize: options.batchSize };
+    const context = { checkpoint, fixtures, runtime, save, guardBudget, observeBudget, batchSize: options.batchSize };
     if (["setup", "all"].includes(options.phase)) await setupProjects(context);
     if (["answers", "all"].includes(options.phase)) await answerCases(context);
     if (["judge", "all"].includes(options.phase)) await judgeCases(context);

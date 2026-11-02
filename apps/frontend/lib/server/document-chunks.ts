@@ -2128,6 +2128,8 @@ function withSurroundingSections(input: {
 
 export async function retrieveDocumentSnippetsWithMetadata(input: {
   query: string;
+  /** Explicit current-question chapter scope for authoritative ID lookups, before budgeting. */
+  requirementHeading?: string;
   /** Independent semantic intents, searched concurrently and fused by rank. */
   subqueries?: string[];
   projectId?: string | null;
@@ -2199,7 +2201,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const requirementIds = Array.from(new Set(exactTerms.flatMap(extractRequirementIdentifiers)));
   let requirementLookupFailed = false;
   const authoritativeRequirementIds = new Set<string>();
-  const lookup = import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onAuthoritativeIds: ids => ids.forEach(id => authoritativeRequirementIds.add(id)), onSourceFailure: () => { requirementLookupFailed = true; } })).catch(error => {
+  const lookup = import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, heading: input.requirementHeading, fingerprints: sourceFingerprints, onAuthoritativeIds: ids => ids.forEach(id => authoritativeRequirementIds.add(id)), onSourceFailure: () => { requirementLookupFailed = true; } })).catch(error => {
         assertEmbeddingFallbackAllowed(error);
         if (error instanceof Error && error.name === "AbortError") throw error;
         requirementLookupFailed = true;

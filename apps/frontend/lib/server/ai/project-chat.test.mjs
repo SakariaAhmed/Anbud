@@ -622,3 +622,54 @@ test("chat repairs citation format once, validates before display and retains an
     assert.equal(output.validateAnswer(answer).length, 1);
   } finally { delete globalThis.__chatFormatBound; rmSync(directory, { recursive: true, force: true }); }
 });
+
+test("current question controls evidence gates and named source scope, independently of the rewrite", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-gates-"));
+  const previousMode = process.env.RAG_QUERY_REWRITE;
+  process.env.RAG_QUERY_REWRITE = "on";
+  const state = { calls: 0, retrieval: [], telemetry: {} };
+  globalThis.__chatGateTest = state;
+  try {
+    const completion = path.join(directory, "completion.cjs"), retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createJsonCompletion = async () => ({ standalone_query: "Bilag 1: tidligere kontekst", exact_terms: [], subqueries: [] });
+      exports.createTextCompletionStream = async () => { globalThis.__chatGateTest.calls++; return (async function* () { yield "Lokalt testsvar."; })(); };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => { const s=globalThis.__chatGateTest; s.retrieval.push(input); return { snippets: [], telemetry: { quality: { sufficient: false, sourceCount: 0 }, ...s.telemetry } }; };`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
+      "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval, "@": frontendRoot, "server-only": "/dev/null",
+    } });
+    const { streamProjectChat, buildProjectChatRetrievalRequest } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const document = (id, title) => ({ id, title, file_name: `${title}.pdf`, project_id: "project", role: "primary_customer_document", raw_text: "Fiktiv bakgrunn uten svaret. ".repeat(4000), structure_map: [], chunk_source_revision: 1 });
+    const first = document("one", "Bilag 1 Krav"), second = document("two", "Bilag 2 Drift");
+    const input = { projectId: "project", projectName: "Fiktiv", customerDocument: first, solutionDocument: null, supportingDocuments: [second], customerAnalysis: null, solutionEvaluation: null,
+      recentMessages: [{ role: "assistant", content: "Vi snakket om Bilag 1.", context_snapshot: {} }],
+      generatedArtifacts: [{ id: "artifact", project_id: "project", title: "Bilag 1", artifact_type: "bilag1_rekonstruksjon", content_markdown: "# Exit\nEt generert forslag.", is_current: true, source_is_current: true }],
+    };
+    const run = async (question, extra = {}) => {
+      state.calls = 0; const result = await streamProjectChat({ ...input, question, ...extra });
+      let answer = ""; for await (const part of result.stream) answer += part; return answer;
+    };
+    for (const mode of ["on", "off"]) {
+      process.env.RAG_QUERY_REWRITE = mode;
+      assert.match(await run("Hva er kundens bindende exit-frist?"), /ikke nok kildegrunnlag/u);
+      assert.equal(state.calls, 0, "An artifact inherited only through rewriting/history cannot unlock the model.");
+    }
+    process.env.RAG_QUERY_REWRITE = "on";
+    assert.equal(await run("Oppsummer Bilag 1 som et forslag."), "Lokalt testsvar.");
+    assert.equal(state.calls, 1, "Explicit current artifact questions remain available.");
+    state.telemetry = { requirementLookupTruncated: true, missingRequirementIds: ["K-42"] };
+    assert.equal(await run("Skriv en e-post om K-42."), "Lokalt testsvar.");
+    assert.equal(await run("Hva sier K-42 i vedlegget?", { promptAttachments: [{ title: "Mitt vedlegg", rawText: "K-42 Leverandøren skal holde fire kurs.", fileName: "vedlegg.txt" }] }), "Lokalt testsvar.");
+    assert.match(await run("Hva sier K-42 i prosjektet?", { promptAttachments: [{ title: "Mitt vedlegg", rawText: "K-42 Leverandøren skal holde fire kurs.", fileName: "vedlegg.txt" }] }), /finnes flere steder/u);
+    assert.equal(state.calls, 0, "An unrelated attachment does not bypass the repeated-ID guard.");
+    const scoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42 i Bilag 2, kapittel 3.2?" });
+    assert.deepEqual(scoped.request.documents.map(item => item.id), ["two"]);
+    assert.equal(scoped.request.requirementHeading, "3.2");
+    const quoted = await buildProjectChatRetrievalRequest({ ...input, question: 'Hva sier K-42 i Bilag 2, kapittel «Drift og sikkerhet»?' });
+    assert.equal(quoted.request.requirementHeading, "Drift og sikkerhet");
+    const unscoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42?" });
+    assert.deepEqual(unscoped.request.documents.map(item => item.id), ["one", "two"], "Prior rewritten names cannot restrict the source collection.");
+  } finally {
+    if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
+    delete globalThis.__chatGateTest; rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -815,6 +815,17 @@ function buildChatAnswerStructureContext(input: {
   );
 }
 
+function requestedChatSourceScope(question: string, documents: ProjectDocumentDetail[]) {
+  if (!extractRequirementIdentifiers(question).length) return { documents, requirementHeading: undefined };
+  const normalize = (value: string) => value.toLocaleLowerCase("nb-NO").replace(/[_.]/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const query = ` ${normalize(question)} `;
+  const named = documents.filter(document => [document.title, (document.file_name ?? "").replace(/\.[^.]+$/u, "")]
+    .flatMap(name => [name, name.match(/\bbilag\s+\d+[a-z]?\b/iu)?.[0] ?? ""])
+    .some(name => normalize(name).length >= 4 && query.includes(` ${normalize(name)} `)));
+  const heading = question.match(/\b(?:kapittel|kap\.|seksjon)\s+(?:[«"]([^»"]+)[»"]|(\d+(?:\.\d+)*))(?=\s|[,.?!;:]|$)/iu);
+  return { documents: named.length ? named : documents, requirementHeading: heading?.[1] ?? heading?.[2] };
+}
+
 /**
  * The retrieval request chat sends for a question, with the domain hints and
  * plan the answer prompt uses. scripts/rag_retrieval_eval.mjs measures it.
@@ -843,6 +854,7 @@ export async function buildProjectChatRetrievalRequest(
     input.solutionDocument,
     ...(input.supportingDocuments ?? []),
   ].filter((document): document is ProjectDocumentDetail => Boolean(document));
+  const sourceScope = requestedChatSourceScope(input.question, projectDocumentsForRetrieval);
   const planInput = {
     question: input.question,
     domainHints,
@@ -857,7 +869,8 @@ export async function buildProjectChatRetrievalRequest(
     query: retrievalPlan.standalone_query,
     subqueries: retrievalPlan.subqueries,
     projectId: projectDocumentsForRetrieval[0]?.project_id ?? null,
-    documents: projectDocumentsForRetrieval,
+    documents: sourceScope.documents,
+    requirementHeading: sourceScope.requirementHeading,
     exactTerms: Array.from(
       new Set([
         ...extractExactRetrievalTerms(input.question),
@@ -887,16 +900,12 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const isDrafting = /^(?:kan\s+du\s+)?skriv(?:\s+(?:en|et))?\s+(?:e-?post|melding|utkast|agenda)\b/iu.test(input.question.trim());
   const isHistoryTransformation = input.recentMessages.some(message => message.role === "assistant" && message.content.trim()) && /\b(?:forrige\s+svar|svaret\s+kortere|gjør\s+(?:det|dette)\s+kortere|oversett\s+(?:svaret|det))\b/iu.test(input.question);
   const needsDocumentEvidence = !isConversational && !isDrafting && !isHistoryTransformation;
-  // Small projects keep their complete authorized source collection.
-  const promptDocuments = [
-    input.customerDocument,
-    input.solutionDocument,
-    ...(input.supportingDocuments ?? []),
-  ].filter((document): document is ProjectDocumentDetail => Boolean(document));
-  const fullDocumentsInContext =
-    promptDocuments.length > 0 &&
-    promptDocuments.reduce((sum, document) => sum + document.raw_text.length, 0) <=
-    CHAT_FULL_DOCUMENTS_MAX_CHARS;
+  // Explicit source scope narrows evidence, but does not turn a large-project
+  // question into the whole-document path used for small projects.
+  const promptDocuments = initial.request.documents;
+  const projectSourceCharacters = [input.customerDocument, input.solutionDocument, ...(input.supportingDocuments ?? [])]
+    .reduce((sum, document) => sum + (document?.raw_text.length ?? 0), 0);
+  const fullDocumentsInContext = promptDocuments.length > 0 && projectSourceCharacters <= CHAT_FULL_DOCUMENTS_MAX_CHARS;
   // With every searched document whole in the prompt, excerpts only anchor
   // references: their order is not worth a model call, and a section would
   // move the anchor away from the matched part.
@@ -935,7 +944,8 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   // An analysis being present is not evidence for an arbitrary factual query.
   // Keep explicit questions about generated interpretation available while
   // factual source questions still obey the retrieval gate on large projects.
-  const asksForAvailableInterpretation = artifactSections.some(section => section.explicitlyNamed)
+  const currentArtifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: input.question });
+  const asksForAvailableInterpretation = currentArtifactSections.some(section => section.explicitlyNamed)
     || Boolean(input.customerAnalysis && /\b(?:kundeanalys(?:e|en)|analysen|prosjektoversikt)\b/iu.test(input.question))
     || Boolean(input.solutionEvaluation && /\b(?:løsningsvurdering(?:en)?|vurderingen)\b/iu.test(input.question));
   const artifactReferences: ChatSourceReference[] = artifactSections.map(({ artifact, heading, text }) => {
@@ -944,6 +954,14 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     return { source_type: "generated_artifact", source_id: artifact.id, document_title: artifact.title, reference: heading, heading_path: [heading], page_start: null, page_end: null, source_revision: revision, source_fingerprint: fingerprint, original_quote: text, classification: "interpretation", evidence_id: evidenceIdentity({ sourceType: "generated_artifact", sourceId: artifact.id, revision, fingerprint, reference: heading, text }) };
   });
   const sourceReferences = [...wholeReferences, ...attachmentReferences, ...sourceReferencesFromSnippets(retrievedSnippets), ...artifactReferences].map((source, index) => ({ ...source, citation_number: index + 1 }));
+  const requestedIds = extractRequirementIdentifiers(input.question);
+  const attachmentQuestion = attachmentReferences.some(source => {
+    const title = comparableChatText(source.document_title);
+    const explicitlyNamed = title.length > 3 && comparableChatText(input.question).includes(title);
+    return (explicitlyNamed || /\b(?:vedlegget|chatvedlegget|vedlagte|vedlagt)\b/iu.test(input.question))
+      && requestedIds.every(id => extractRequirementIdentifiers(source.original_quote ?? "").includes(id));
+  });
+  const needsProjectDocumentEvidence = needsDocumentEvidence && !attachmentQuestion;
   const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => !attachmentReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)) && (isAmbiguousRequirementIdentifier(id) || !wholeReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)))) ?? false;
   // With the whole documents included, an excerpt whose text is already in
   // its own document only anchors its reference; any other excerpt keeps its
@@ -1134,13 +1152,13 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     domainHints,
     retrievalPlan,
     retrievalTelemetry: retrievalResult.telemetry,
-    abstentionMessage: retrievalResult.telemetry.requirementLookupFailed && needsDocumentEvidence && !promptAttachments.length
+    abstentionMessage: retrievalResult.telemetry.requirementLookupFailed && needsProjectDocumentEvidence
       ? "Kravregisteret kunne ikke leses sikkert. Kontroller dokumentstatusen og kravgrunnlaget før du prøver igjen."
-      : retrievalResult.telemetry.requirementLookupTruncated && !fullDocumentsInContext
+      : retrievalResult.telemetry.requirementLookupTruncated && needsProjectDocumentEvidence && !fullDocumentsInContext
       ? "Krav-ID-en finnes flere steder enn søket kan vise samtidig. Oppgi dokument og kapittel, slik at ingen forekomster utelates fra svaret."
-      : unresolvedRequirementId
+      : unresolvedRequirementId && needsProjectDocumentEvidence
       ? "Kravreferansen kunne ikke knyttes sikkert til et krav i dokumentgrunnlaget. Kontroller krav-ID-en og eventuelle rettelser, eller legg til det manglende kravdokumentet før du prøver igjen."
-      : needsDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length && !asksForAvailableInterpretation
+      : needsProjectDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length && !asksForAvailableInterpretation
       ? `Jeg fant ikke nok kildegrunnlag til å svare sikkert${retrievalResult.telemetry.usedBroadenedSearch ? " etter et nytt søk" : " i de tilgjengelige kildene"}. Kontroller at disse kildene er ferdig behandlet og inneholder opplysningene du spør etter: ${request.documents.map(document => document.title).join(", ")}. Legg til det manglende dokumentet eller oppgi krav-ID, kapittel eller side, og prøv igjen.`
       : null,
   };

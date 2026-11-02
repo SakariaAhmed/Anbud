@@ -10,7 +10,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { assertOwnedSystemTestStack, systemTestStatusPath } from "./system-test-runtime.mjs";
+import { assertOwnedSystemTestStack, isolatedApplicationEnvironment, systemTestStatusPath } from "./system-test-runtime.mjs";
 
 const scenarios = (process.argv.find(argument => argument.startsWith("--scenario="))?.slice("--scenario=".length) ?? "all").split(",");
 const wants = name => scenarios.includes("all") || scenarios.includes(name);
@@ -339,12 +339,15 @@ const DEADLINE_MS = 60_000, PARSER_RETURNS_AFTER_MS = 75_000;
 async function enhancementDeadlineScenario() {
   const project = await newProject("Fiktiv forbedringsfrist");
   const relative = "test-data/tenders/halandsvik-2026/documents/02_Bilag_1_Kravspesifikasjon_Halandsvik_kommune.pdf";
-  const uploaded = await upload(project.id, relative, { title: "Bilag 1 Kravspesifikasjon" });
-  const documentId = uploaded.accepted.document.id, route = `/api/projects/${project.id}/documents/${documentId}`;
-  const artifact = await manualArtifactFixture(project.id);
   writeFileSync(marker, "");
-  try { assert.equal((await finishJob(project.id, uploaded.ingestion.job.result.docling_enhancement_job_id)).job.status, "completed"); }
-  finally { rmSync(marker, { force: true }); }
+  let uploaded, documentId, route, artifact;
+  try {
+    uploaded = await upload(project.id, relative, { title: "Bilag 1 Kravspesifikasjon" });
+    documentId = uploaded.accepted.document.id;
+    route = `/api/projects/${project.id}/documents/${documentId}`;
+    artifact = await manualArtifactFixture(project.id);
+    assert.equal((await finishJob(project.id, uploaded.ingestion.job.result.docling_enhancement_job_id)).job.status, "completed");
+  } finally { rmSync(marker, { force: true }); }
   const before = await assertReadyAndIndexed(project.id, documentId, "Grunnversjon");
   const rowsBefore = JSON.stringify((await registerOf(project.id, documentId)).rows);
   const artifactBefore = await artifactState(project.id, artifact.id);
@@ -365,7 +368,7 @@ writeFileSync(path.join(output, "source.md"), "Sen tekst som aldri skal publiser
   const startedAt = performance.now();
   const exited = new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(root, "scripts/system-test-enhancement-deadline-run.mjs"), job.id, stub, String(PARSER_RETURNS_AFTER_MS - DEADLINE_MS + 10_000)], { cwd: frontend, stdio: ["ignore", "ignore", "inherit"],
-      env: { ...process.env, ...runtime.env, DOCLING_CLI_COMMAND: parser, PROJECT_JOB_DOCUMENT_DOCLING_ENHANCEMENT_TIMEOUT_MS: String(DEADLINE_MS) } });
+      env: isolatedApplicationEnvironment(frontend, { ...runtime.env, DOCLING_CLI_COMMAND: parser, PROJECT_JOB_DOCUMENT_DOCLING_ENHANCEMENT_TIMEOUT_MS: String(DEADLINE_MS) }) });
     child.once("error", reject);
     child.once("exit", code => code === 0 ? resolve() : reject(new Error(`The deadline run exited with ${code}.`)));
   });

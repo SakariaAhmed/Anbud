@@ -370,3 +370,59 @@ baseline and additive migration used by CI were also exercised: applying the
 migration twice preserved the existing analysis. Affected-file lint and
 whitespace checks passed. Log: `/private/tmp/anbud-pr90-audit-fixed.log`.
 CI must still verify the pushed correction in its own environment.
+
+## PR #90 CodeRabbit corrections
+
+CI Validation, Infrastructure and Production Docling passed at `77b62f76`,
+confirming the audit-harness correction above. The next correction addresses
+all nine current CodeRabbit inline findings:
+
+- Queued/running customer-analysis jobs keep partial previews polling even
+  without a manual button's busy state; terminal jobs fetch their final snapshot.
+- Only an artifact explicitly named in the current question can relax the weak
+  evidence gate. A name inherited through rewriting/history cannot. Drafting and
+  explicit attachment questions are no longer blocked by project ID truncation;
+  unrelated attachments still cannot bypass that ambiguity check.
+- Exact-ID questions can narrow the authorized source collection by document
+  title/filename/Bilag alias and the authoritative register by an explicit chapter
+  number or quoted heading before budgeting occurrences. Unscoped questions keep
+  all occurrences, and the large-project context threshold is unchanged.
+- Completed holdout answers and judge verdicts are saved before the separate
+  accounting observation. Exhaustion/read failure cannot overwrite that evidence
+  as an uncertain paid attempt. An unfinished accounting observation prevents a
+  release pass, including a crash between the two saves; resume never redispatches.
+- The smoke judge must explicitly assess the core answer. Supported off-topic
+  claims fail factual metrics; unsupported claims veto negative-case abstention.
+  Historical judge results, frozen cases and thresholds remain unchanged.
+- The deadline scenario arms its parser-failure injection before upload can
+  dispatch the worker, removes it in `finally`, and starts the child with the
+  existing isolated environment builder rather than inherited provider settings.
+
+Focused tests exercise actual workspace-to-preview props, polling and cleanup,
+current/history intent, scoped repeated IDs, completed accounting outcomes and
+negative/off-topic verdicts. These are deterministic component/owner tests, not
+browser or live-provider proof. The real local HTTP deadline scenario passed all
+three checks: a 60-second deadline persisted a recoverable error; the parser's
+75-second late return changed no bytes/register/chunks/manual work; explicit
+retry recovered revision 1 to 2. This used offline `docling-slim` 2.99.0 in image
+`sha256:f168a8e0229f22ef2127275dd068500e4520a3401985cd8eddcfd4e201eee137`,
+not the Dockerfile's pinned 2.142.1. The earlier local stack disappeared before
+its in-progress test completed, so that run was not counted; a new isolated
+stack supplied this proof.
+
+Both free recorded SQL regression gates passed again (116 original and 55
+extended cases, no model calls or memory fallback). Conceptual retrieval remains
+30/36, MRR 0.565; stress remains 18/20. These are regression passes, not the
+unchanged release-quality thresholds. No paid evaluation, budget increase,
+production action or new semantic-quality claim accompanies these corrections.
+
+Final correction-tree verification passed 1,514 frontend tests and 201 root
+script tests (1,715 total), with zero failures/skips and parser goldens. Final
+production build, full lint, TypeScript, workflow/schema/release checks and
+tracked-secret scan passed. The final build temporarily stopped only the owned
+idle development process and restarted it with AI still disabled. Logs:
+`/private/tmp/anbud-pr90-final-tests.log`,
+`/private/tmp/anbud-pr90-final-build.log`, and
+`/private/tmp/anbud-pr90-deadline-http.log`. Fresh council/CodeRabbit review and
+CI on the correction commit are still required; earlier council approval is
+not approval of this subsequent diff.

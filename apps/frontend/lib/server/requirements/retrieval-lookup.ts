@@ -33,19 +33,27 @@ function ledger(document: ProjectDocumentDetail, fingerprint: string) {
  * cannot displace the requirement. Repeated IDs remain distinct by source. */
 export async function lookupRequirementSnippets(input: {
   ids: string[];
+  heading?: string;
   documents: ProjectDocumentDetail[];
   fingerprints: ReadonlyMap<string, string>;
   onSourceFailure?: (documentId: string) => void;
   onAuthoritativeIds?: (ids: string[]) => void;
 }): Promise<RetrievedDocumentSnippet[]> {
   const wanted = new Set(input.ids.map(normalizeRequirementId));
+  const normalizeHeading = (text: string) => text.toLocaleLowerCase("nb-NO").replace(/^#+\s*|^(?:kapittel|kap\.|seksjon)\s+/gu, "").replace(/\s+/gu, " ").trim();
+  const heading = input.heading ? normalizeHeading(input.heading) : null;
+  const inHeading = (entry: RequirementLedgerEntry) => {
+    if (!heading) return true;
+    const actual = normalizeHeading(entry.heading ?? "");
+    return actual === heading || actual.startsWith(`${heading} `) || (/^\d+(?:\.\d+)*$/u.test(heading) && actual.startsWith(`${heading}.`));
+  };
   const rows = await Promise.all(input.documents
     .filter(isRequirementDocument)
     .map(async document => {
       try {
         const entries = await ledger(document, input.fingerprints.get(`project_document:${document.id}`)!);
         input.onAuthoritativeIds?.(entries.filter(entry => entry.idOrigin !== "inferred" && entry.idOrigin !== "generated").map(entry => normalizeRequirementId(entry.id)));
-        return entries.filter(entry => wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
+        return entries.filter(entry => inHeading(entry) && wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
           .flatMap(entry => {
             const source = entry.correctionSource
               ? input.documents.find(source => source.id === entry.correctionSource!.documentId)
