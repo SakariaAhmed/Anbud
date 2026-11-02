@@ -43,15 +43,26 @@ export async function lookupRequirementSnippets(input: {
   const wanted = new Set(input.ids.map(normalizeRequirementId));
   const normalizeHeading = (text: string) => text.toLocaleLowerCase("nb-NO").trim().replace(/^#+\s*/u, "").replace(/^(?:kapittel|kap\.|seksjon)\s+/u, "").replace(/\s+/gu, " ").trim();
   const heading = input.heading ? normalizeHeading(input.heading) : null;
-  const inHeading = (entry: RequirementLedgerEntry, corrections: { ids: ReadonlySet<string>; quotes: SourceQuoteIndex }[]) => {
-    if (!heading || corrections.some(section => section.ids.has(normalizeRequirementId(entry.id)) && section.quotes.find(entry.text))) return true;
-    const actual = normalizeHeading(entry.heading ?? "");
-    if (/^\d+(?:\.\d+)*$/u.test(heading)) {
+  const matchesHeading = (value: string) => {
+    const actual = normalizeHeading(value);
+    if (heading && /^\d+(?:\.\d+)*$/u.test(heading)) {
       const number = actual.match(/^(\d+(?:\.\d+)*)(?=$|[\s:).])/u)?.[1];
       return number === heading || Boolean(number?.startsWith(`${heading}.`));
     }
     const title = actual.replace(/^\d+(?:\.\d+)*(?:[.:)]\s*|\s+)/u, "");
     return actual === heading || title === heading;
+  };
+  const inHeading = (entry: RequirementLedgerEntry, documentId: string, corrections: { ids: ReadonlySet<string>; quotes: SourceQuoteIndex }[]) => {
+    if (!heading || matchesHeading(entry.heading ?? "")) return true;
+    const id = normalizeRequirementId(entry.id);
+    if (corrections.some(section => section.ids.has(id) && section.quotes.find(entry.text))) return true;
+    // Partial amendments store reconstructed wording under the original
+    // heading. Their own chapter is discoverable through verified provenance,
+    // without requiring that reconstruction to be an original quotation.
+    const correction = entry.correctionSource;
+    return Boolean(correction && correction.documentId === documentId && correction.heading
+      && matchesHeading(correction.heading)
+      && corrections.some(section => section.ids.has(id) && section.quotes.find(correction.excerpt)));
   };
   const rows = await Promise.all(input.documents
     .filter(isRequirementDocument)
@@ -60,7 +71,7 @@ export async function lookupRequirementSnippets(input: {
         const entries = await ledger(document, input.fingerprints.get(`project_document:${document.id}`)!);
         input.onAuthoritativeIds?.(entries.filter(entry => entry.idOrigin !== "inferred" && entry.idOrigin !== "generated").map(entry => normalizeRequirementId(entry.id)));
         const corrections = findCorrectionsSections(document.raw_text).map(section => ({ ids: new Set(extractRequirementIdentifiers(section).map(normalizeRequirementId)), quotes: new SourceQuoteIndex(section) }));
-        return entries.filter(entry => inHeading(entry, corrections) && wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
+        return entries.filter(entry => inHeading(entry, document.id, corrections) && wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
           .flatMap(entry => {
             const source = entry.correctionSource
               ? input.documents.find(source => source.id === entry.correctionSource!.documentId)

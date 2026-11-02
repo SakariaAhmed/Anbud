@@ -688,3 +688,66 @@ Logs: `/private/tmp/anbud-r11-before.log`, `/private/tmp/anbud-r11-focused.log`,
 or semantic model proof is claimed. No paid provider calls, budget changes or
 production operations ran. Fresh council, CI and CodeRabbit review of the new
 commit remain required; all previously recorded release gaps remain open.
+
+
+## Council round 11 and ordinary attachment questions
+
+Both members rejected `cbab8df8` (Sol 8/10, Opus 6/10). Its request frames
+incorrectly refused ordinary attachment questions and beneficiary suffixes such
+as “for meg”, and anchoring comparison verbs introduced a mid-sentence bypass.
+These were regressions, not cases justified by the documented unsupported-language
+caveat. The prior statement about preserving known valid requests was incomplete.
+
+Comparison verbs such as `sammenlign` and `oppfyller` again keep the project gates
+anywhere in a question. `avvik` and `samsvar` remain anchored so summaries about
+those topics still work. Attachment reading now recognizes locative questions,
+content questions and ordinary summary/read requests, including “Hva er fristen
+i vedlegget?”, “Kan du oppsummere vedlegget?” and “Se på vedlegget …”. The
+rejection and mixed-project checks still apply. Tests exercise the reported
+comparison/attachment cases under all four telemetry states, and attachment-only
+IDs on the small-project whole-document path.
+
+The noun-complement restriction applies to generic draft/assessment nouns, not
+attachment or distinct application-source names. Generic requests also allow
+beneficiary “for meg/oss”; `utkast til kontrakt` and `vurderingen av pris` stay
+blocked. Generic `analyse` and `vurdering` cannot grant an interpretation exemption
+when a primary project source is named. Additional reported coordinated sources,
+`i forhold til`, `kontra`, `i lys av` and attachment exclusion are covered.
+
+CodeRabbit's Major finding “Use correction provenance for reconstructed wording”
+was independently reproduced. A partial replacement can leave the full corrected
+sentence absent from the original text. Lookup now also matches the persisted
+correction heading when its document identity, requirement ID and original
+correction excerpt are backed by that document's recognized correction section.
+The test applies the real correction parser, round-trips the register through
+its persistence parser, and checks both original/correction chapter lookups,
+actual page/heading/quote, and absent/foreign/stale provenance. A bare correction
+cross-reference still cannot exempt an unrelated row.
+
+Remaining named language limitations: “Oppsummer vedlegget. Bruk punktliste.”,
+“Hei! Oppsummer vedlegget.”, `f.eks.`/`jf.` and a follow-up “Forklar kort.” can
+still be refused because every parsed sentence must select a source. The comma
+form “Oppsummer risikoplanen, uten forslag til tiltak” remains conservative.
+Unstructured/unknown correction headings and unsupported coordination remain
+outside the proof. An explicit source choice would provide a stronger product
+contract; this patch does not introduce it. These limits do not excuse the
+ordinary attachment and comparison regressions fixed above.
+
+Verification: the new chat regression group and correction-chapter test fail
+against the previous owners. All 86 focused tests pass. The final full suite
+passes 1,524 frontend + 202 root tests (1,726 total), zero failures/skips, plus
+parser goldens. Production build/types, lint, schema/release/workflow checks,
+secret scan and whitespace checks pass. Original 116-case and extended 55-case
+recorded SQL regression gates pass, with zero provider calls, missing recorded
+inputs or memory fallback. Conceptual recall remains 30/36 (MRR .565) and stress
+18/20, so this does not establish release quality. The owned AI-disabled app
+restarted and liveness returned 200.
+
+Logs: `/private/tmp/anbud-r12-before.log`,
+`/private/tmp/anbud-r12-correction-before.log`, `/private/tmp/anbud-r12-focused.log`,
+`/private/tmp/anbud-r12-final-tests.log`, `/private/tmp/anbud-r12-final-build.log`,
+`/private/tmp/anbud-r12-final-lint.log`, `/private/tmp/anbud-r12-retrieval.log`,
+`/private/tmp/anbud-r12-extended.log`. No new browser, HTTP/OCR, provider-stream,
+semantic or production proof is claimed. No paid calls or budget changes ran;
+the existing release and budget gaps remain. Fresh council/CI/CodeRabbit review
+of this correction is required.

@@ -684,7 +684,7 @@ test("current question controls evidence gates and named source scope, independe
       assert.equal(await run(question, { generatedArtifacts: [{ ...input.generatedArtifacts[0], artifact_type, title }] }), "Lokalt testsvar.");
     }
     const riskArtifact = { ...input.generatedArtifacts[0], artifact_type: "gjennomforing_og_risiko", title: "Risikoplan" };
-    for (const question of ["Hva sier risikoplanen om risikoer som ikke er håndtert?", "Oppsummer risikoplanen uten å endre teksten.", "Hvilke risikoer er ikke dekket i risikoplanen?", "Oppsummer risikoplanen uten priser.", "Oppsummer risikoplanen om risikoer uten forslag til tiltak.", "Hva er ikke dokumentert i risikoplanen?"]) {
+    for (const question of ["Hva sier risikoplanen om risikoer som ikke er håndtert?", "Oppsummer risikoplanen uten å endre teksten.", "Hvilke risikoer er ikke dekket i risikoplanen?", "Oppsummer risikoplanen uten priser.", "Oppsummer risikoplanen om risikoer uten forslag til tiltak.", "Hva er ikke dokumentert i risikoplanen?", "Oppsummer risikoplanen for meg.", "Oppsummer risikoplanen for oss.", "Hva sier risikoplanen for migrering?", "Hva står i risikoplanen for migrering?"]) {
       assert.equal(await run(question, { generatedArtifacts: [riskArtifact] }), "Lokalt testsvar.", question);
     }
     for (const question of ["Ikke bruk innholdet i risikoplanen. Hva er kundens bindende exit-frist?", "Hva er exit-fristen, ikke i risikoplanen?", "Oppsummer risikoplanen, men ikke bruk innholdet i risikoplanen."]) {
@@ -705,7 +705,7 @@ test("current question controls evidence gates and named source scope, independe
       assert.equal(state.calls, 0);
     }
     for (const question of ["Hvordan vektes vurderingen av pris i Bilag 1?", "Hva er fristen for vurderingen i Bilag 1?", "Hva er fristen, ikke ifølge vurderingen?",
-      "Hvordan vektes pris i vurderingen av tilbudet?", "Hva er kriteriene i vurderingen av tilbud?", "Beskriv vurderingen av pris i Bilag 1."]) {
+      "Hvordan vektes pris i vurderingen av tilbudet?", "Hva er kriteriene i vurderingen av tilbud?", "Beskriv vurderingen av pris i Bilag 1.", "Beskriv vurderingen i Bilag 1.", "Hva sier vurderingen i Bilag 1 om pris?"]) {
       assert.match(await run(question, { solutionEvaluation: {} }), /ikke nok kildegrunnlag/u, question);
       assert.equal(state.calls, 0);
     }
@@ -713,9 +713,11 @@ test("current question controls evidence gates and named source scope, independe
       assert.equal(await run(question, { solutionEvaluation: {} }), "Lokalt testsvar.", question);
     }
     const customerAnalysis = { customer_profile_summary: "Fiktiv kunde", customer_goals_summary: "", high_level_solution_design: "", executive_summary: "", customer_goals: [], customer_profile: [], prioritized_requirements: [], implicit_requirements: [], likely_evaluation_criteria: [], expected_solution_direction: [], signal_words: [], risks: [], ambiguities: [], value_opportunities: [], positioning_recommendations: [] };
-    for (const question of ["Basert på kundeanalysen, hva er risikoen?", "Gi en oppsummering av kundeanalysen.", "Hva viser kundeanalysen om risiko?", "Hva sier kundeanalysen om krav uten forslag?"]) {
+    for (const question of ["Basert på kundeanalysen, hva er risikoen?", "Gi en oppsummering av kundeanalysen.", "Hva viser kundeanalysen om risiko?", "Hva sier kundeanalysen om krav uten forslag?", "Oppsummer kundeanalysen for meg.", "Forklar analysen for meg.", "Forklar analysen for oss."]) {
       assert.equal(await run(question, { customerAnalysis }), "Lokalt testsvar.", question);
     }
+    assert.match(await run("Hva sier analysen i Bilag 1 om exit?", { customerAnalysis }), /ikke nok kildegrunnlag/u);
+    assert.equal(state.calls, 0);
     assert.match(await run("Hva er fristen, ikke i kundeanalysen?", { customerAnalysis }), /ikke nok kildegrunnlag/u);
     assert.equal(state.calls, 0);
     assert.equal(await run("Oppsummer Bilag 1 som et forslag."), "Lokalt testsvar.");
@@ -758,16 +760,28 @@ test("current question controls evidence gates and named source scope, independe
         "Tilfredsstiller vedlegget K-42?", "Svarer vedlegget på K-42?", "Stemmer vedlegget overens med K-42?",
         "Sammenlikn vedlegget med K-42.", "Hva sier K-42 om opplasting?", "Hva sier K-42 om vedlegg?",
         "Hva sier K-42 om levering av dokumentet?",
+        "Oppsummer vedlegget og sammenlign det med K-42.", "Hva sier vedlegget, sammenlignet med K-42?",
+        "Hva sier vedlegget om K-42 sammenlignet med kravene?", "Oppsummer vedlegget og vurder om det oppfyller K-42.",
+        "Hva sier vedlegget og kravene om K-42?", "Hva sier vedlegget og kunden om K-42?",
+        "Hva sier vedlegget i forhold til kravene om K-42?", "Hva sier vedlegget kontra prosjektet om K-42?",
+        "Vurder vedlegget i lys av K-42.", "Hva sier K-42 unntatt i vedlegget?",
       ]) {
         assert.match(await run(question, { promptAttachments: attachment }), refusal, question);
         assert.equal(state.calls, 0, "The attachment must not fill the project side of a mixed question.");
       }
-      for (const question of ["Hva sier K-42 i vedlegget?", "Hva sier K-42 i vedlegget om kundens ansvar?", "Oppsummer dette dokumentet.", "Svar på spørsmålene i filen.", "Hva sier vedlegget om prosjektet?", "Hva sier K-42 i filen?", "Hva sier vedlegget om leveranser i prosjektperioden?", "Hva sier vedlegget om samarbeid med prosjektleder?", "Hva sier vedlegget om forskjellige leveranser?", "Oppsummer fila.", "Oppsummer vedlegget om avvik og samsvar."]) {
+      for (const question of ["Hva sier K-42 i vedlegget?", "Hva sier K-42 i vedlegget om kundens ansvar?", "Oppsummer dette dokumentet.", "Svar på spørsmålene i filen.", "Hva sier vedlegget om prosjektet?", "Hva sier K-42 i filen?", "Hva sier vedlegget om leveranser i prosjektperioden?", "Hva sier vedlegget om samarbeid med prosjektleder?", "Hva sier vedlegget om forskjellige leveranser?", "Oppsummer fila.", "Oppsummer vedlegget om avvik og samsvar.",
+        "Oppsummer vedlegget for meg.", "Oppsummer vedlegget for oss.", "Forklar filen for meg.",
+        "Hva handler vedlegget om?", "Hva er fristen i vedlegget?", "Hvilke krav står i vedlegget?",
+        "Hva inneholder vedlegget?", "Hva er hovedpunktene i dokumentet?", "Kan du oppsummere vedlegget?",
+        "Gi meg en oppsummering av vedlegget.", "Lag en oppsummering av vedlegget.", "Se på vedlegget og list opp fristene.",
+        "Kan du svare på spørsmålene i filen?", "Hva krever K-42 i vedlegget?", "Hva står det om K-42 i vedlegget?"]) {
         assert.equal(await run(question, { promptAttachments: attachment }), "Lokalt testsvar.", question);
       }
     }
     state.telemetry = {};
-    for (const question of ["Hva er kundens bindende exit-frist?", "Hva er den bindende exit-fristen i konkurransen?", "Sammenlign vedlegget med kundens krav.", "Hva er kundens frist for opplasting av tilbudet?", "Hvilke vedlegg krever kunden i tilbudet?"]) {
+    for (const question of ["Hva er kundens bindende exit-frist?", "Hva er den bindende exit-fristen i konkurransen?", "Sammenlign vedlegget med kundens krav.", "Hva er kundens frist for opplasting av tilbudet?", "Hvilke vedlegg krever kunden i tilbudet?",
+      "Oppsummer vedlegget og sammenlign det med kravene.", "Hva sier vedlegget sammenlignet med kravene?",
+      "Hva sier vedlegget i forhold til prosjektet?", "Hva sier vedlegget kontra prosjektet?"]) {
       assert.match(await run(question, { promptAttachments: attachment }), /ikke nok kildegrunnlag/u, question);
       assert.equal(state.calls, 0);
     }
@@ -775,6 +789,14 @@ test("current question controls evidence gates and named source scope, independe
       assert.match(await run(question, { promptAttachments: [{ ...attachment[0], title }] }), /ikke nok kildegrunnlag/u, question);
       assert.equal(state.calls, 0);
     }
+    // Missing project IDs must not block a question explicitly scoped to the
+    // attachment, including when the project fits the whole-document path.
+    state.telemetry = { missingRequirementIds: ["K-42"] };
+    for (const question of ["Hva krever K-42 i vedlegget?", "Hva står det om K-42 i vedlegget?"]) {
+      assert.equal(await run(question, { customerDocument: { ...first, raw_text: "Ingen krav i prosjektet." }, supportingDocuments: [], promptAttachments: attachment }), "Lokalt testsvar.", question);
+      assert.equal(state.calls, 1);
+    }
+    state.telemetry = {};
     const scoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42 i Bilag 2, kapittel 3.2?" });
     assert.deepEqual(scoped.request.documents.map(item => item.id), ["two"]);
     assert.equal(scoped.request.requirementHeading, "3.2");
