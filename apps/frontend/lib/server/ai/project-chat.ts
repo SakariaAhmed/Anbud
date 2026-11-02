@@ -122,12 +122,17 @@ function requestsChatSource(question: string, names: string[], attachment = fals
     .split(/[!?;\n]+|\.(?:\s+|$)|\s+og\s+(?=(?:hva|hvilke|hvordan|ikke|unngå|gi|oppgi)(?![\p{L}\p{N}]))/u)
     .map(clause => clause.trim()).filter(Boolean);
   const determiner = "(?:(?:det|den|dette|denne|mitt|vårt|din|ditt|siste|nyeste|vedlagte|opplastede)\\s+)*";
+  const styleTerm = "(?:fagspråk|sjargong|gjenta[kg]elser|forkortelser|tabeller|punktlister|tekniske\\s+uttrykk|engelske\\s+ord|lange\\s+(?:setninger|avsnitt))";
+  const mentionTerm = "(?:frister|priser|beløp|navn|leverandøren|kunden)";
+  const listSeparator = "(?:\\s*,\\s*(?:(?:og|eller)\\s+)?|\\s+(?:og|eller)\\s+)";
+  const styleOnlyFollowup = new RegExp(`^unngå\\s+(?:(?:å\\s+bruke\\s+)?${styleTerm}(?:${listSeparator}${styleTerm})*|å\\s+nevne\\s+${mentionTerm}(?:${listSeparator}${mentionTerm})*)$`, "u");
   return clauses.length > 0 && clauses.every((clause, index) => {
     // These complete output-shaped follow-ups inherit the source selected by
     // the preceding clause. Anything requesting another fact/source must match
     // its own source frame (notably "gi meg kundens bindende exit-frist").
     if (index > 0 && (
-      /^(?:gi\s+(?:(?:meg|oss)\s+)?(?:(?:en\s+)?(?:kort\s+)?oppsummering|hovedpunktene|(?:to|tre|fire|fem|\d+)\s+(?:anbefalinger|tiltak))|unngå\s+(?:fagspråk|gjentakelser|lange\s+setninger|å\s+nevne\s+(?:frister|priser|beløp|navn|leverandøren)))$/u.test(clause)
+      /^(?:gi\s+(?:(?:meg|oss)\s+)?(?:(?:en\s+)?(?:kort\s+)?oppsummering|hovedpunktene|(?:to|tre|fire|fem|\d+)\s+(?:anbefalinger|tiltak)))$/u.test(clause)
+      || styleOnlyFollowup.test(clause)
       || (attachment && /^oppgi\s+fristene$/u.test(clause))
     )) return true;
     return names.some(name => {
@@ -1076,13 +1081,20 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const mentionsProjectEvidence = /\b(?:i|fra|mot|med|ifølge|og|eller)\s+(?:(?:selve|hele|dette)\s+)?(?:prosjekt(?:et|ets|dokument\w*)?|kunde(?:ns\s+krav|dokument\w*)|konkurranse(?:n|grunnlag\w*)?|krav(?:dokument\w*|spesifikasjon\w*)|løsningsdokument\w*)\b|\b(?:prosjektets|kundens)\s+(?:krav|dokument\w*|kilder?|grunnlag)\b|\b(?:kravdokument\w*|kravspesifikasjon\w*|kundedokument\w*|løsningsdokument\w*|konkurransegrunnlag\w*)\b/iu.test(input.question)
     || new RegExp(`(?<![\\p{L}\\p{N}])(?:${attachmentNames})(?![\\p{L}\\p{N}])\\s*(?:,|\\s+(?:og|eller))\\s+(?:(?:de|andre|gjeldende)\\s+){0,3}(?:krav(?:ene|et)?|kunden)\\b`, "iu").test(input.question)
     || namesProjectSource;
-  const comparisonTarget = `(?:(?:de|den|det|alle|andre|gjeldende|øvrige|våre|vår|deres|kundens|prosjektets)\\s+){0,4}(?:krav(?:ene|et)?|behov(?:ene|et)?|løsning(?:en)?|kontrakt(?:en)?|tilbud(?:et)?|kundekrav\\w*|evalueringskriter\\w*|prosjekt(?:et|ets)?|kunden|kravdokument\\w*|kravspesifikasjon\\w*|konkurransegrunnlag\\w*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
+  const comparisonTargetModifiers = `(?:(?:de|den|det|alle|andre|gjeldende|øvrige|våre|vår|deres|kundens|prosjektets)\\s+){0,4}`;
+  const comparisonTarget = `${comparisonTargetModifiers}(?:krav(?:ene|et)?|behov(?:ene|et)?|løsning(?:en)?|kontrakt(?:en)?|tilbud(?:et)?|kundekrav\\w*|evalueringskriter\\w*|prosjekt(?:et|ets)?|kunden|kravdokument\\w*|kravspesifikasjon\\w*|konkurransegrunnlag\\w*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
   // Apply the same dash folding to both sides and accept the title's definite
   // ending, as the affirmative source selector does.
   const comparisonNames = ["vedlegg(?:et|ene)?", "chatvedlegg(?:et)?", "fil(?:en|a)?", "dokument(?:et)?",
     ...attachmentReferences.map(source => source.document_title.trim().replace(/[‐‑‒–—]/gu, "-")).filter(Boolean)
       .map(title => `${title.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}${!/\d/u.test(title) ? (/e$/iu.test(title) ? "(?:n|t)?" : "(?:en|et)?") : ""}`)].join("|");
   const comparisonSource = `(?<![\\p{L}\\p{N}])(?:${comparisonNames}|det|den)(?![\\p{L}\\p{N}])`;
+  const requirementComparisonTarget = `${comparisonTargetModifiers}(?:krav[\\p{L}\\p{N}]*|kundekrav[\\p{L}\\p{N}]*|evalueringskriter[\\p{L}\\p{N}]*|konkurransegrunnlag[\\p{L}\\p{N}]*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
+  // Legal-claim readings of "krav" are attachment subject matter.
+  // Check each relation separately so a later genuine comparison remains gated.
+  const standaloneComparisons = new RegExp(`\\b(?:kontra|mot(?!\\s+kunden\\b(?!\\s+sine\\b)))\\s+${comparisonTarget}`, "giu");
+  const hasStandaloneComparison = Array.from(comparisonQuestion.matchAll(standaloneComparisons)).some(match =>
+    !(/^mot\s+krav(?:ene|et)?(?![\p{L}\p{N}])/iu.test(match[0]) && /\b(?:vern|innsigelser|skadesløs)\s*$/iu.test(comparisonQuestion.slice(0, match.index))));
   // Bounded manner/source modifiers may intervene, but topic complements such
   // as "om tiltak mot datatap" must not be consumed as comparison modifiers.
   const comparisonModifiers = `(?:\\s+(?:samlet|grundig|nøye|sett|fra\\s+leverandøren)){0,3}`;
@@ -1092,7 +1104,10 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     // A requirement/project target remains a comparison even when the subject
     // or attachment occurs elsewhere. Bare "mot kunden" is handled above so
     // ordinary "plikter mot kunden" topic reading remains possible.
-    || new RegExp(`\\b(?:kontra|mot(?!\\s+kunden\\b))\\s+${comparisonTarget}`, "iu").test(comparisonQuestion)
+    || hasStandaloneComparison
+    // These relations also compare requirement targets when their subject is
+    // not adjacent. Solution/contract topic readings are deliberately excluded.
+    || new RegExp(`\\b(?:i\\s+forhold\\s+til|i\\s+lys\\s+av)\\s+${requirementComparisonTarget}`, "iu").test(comparisonQuestion)
     || new RegExp(`\\b(?:(?:det|den|vedlegget|filen|fila|dokumentet)\\s+(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker|er\\s+i\\s+tråd)|(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker)\\s+(?:det|den|vedlegget|filen|fila|dokumentet))\\s+(?:(?:med|fra|på)\\s+)?${comparisonTarget}`, "iu").test(comparisonQuestion);
   const attachmentQuestion = !mentionsProjectEvidence && !comparesSources && attachmentReferences.some(source =>
     requestsChatSource(input.question, ["vedlegg", "chatvedlegg", "fil", "fila", "dokument", source.document_title], true)

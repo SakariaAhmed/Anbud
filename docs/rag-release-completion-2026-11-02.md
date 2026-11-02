@@ -1019,3 +1019,80 @@ build. No paid/provider, production or new browser/HTTP proof ran. All four PR
 checks passed on preceding `7107f9bc`; the new correction requires fresh
 council, CI and CodeRabbit review. The semantic/holdout, budget, runtime and
 external acceptance gaps remain open; all 18 recommendations are not complete.
+
+## Round 16 corrections: legal topics, requirement comparisons and style lists
+
+Round 16 rejected `eb773b18` (Sol 8/10, Opus 7/10). The standalone comparison
+fallback newly refused attachment topics about legal claims. It also left the
+round-15 requirement-comparison bypass open for `i forhold til` and `i lys av`.
+The style fix covered isolated terms but not ordinary coordinated constraints.
+
+The standalone `mot` fallback now checks each match's preceding context. The
+reported legal-topic nouns `vern`, `innsigelser` and `skadesløs` do not turn
+attachment reading into a project comparison. A later genuine comparison in
+the same question still retains the gates. Separate requirement-target matching
+covers `i forhold til`/`i lys av` with requirement nouns, requirement documents,
+competition grounds, evaluation criteria or a requested ID. It deliberately
+excludes solution/contract/bid topics, preserving the existing cost/responsibility
+controls. The optional `mot kunden sine krav` follow-up is gated too, while
+`plikter mot kunden` remains a topic reading.
+
+Style-only follow-ups use two closed term lists with comma, `og` or `eller`
+coordination. Style terms cover fagspråk, sjargong, gjentakelser/gjentagelser,
+forkortelser, tabeller, punktlister, tekniske uttrykk, engelske ord and long
+sentences/paragraphs; `å bruke` is optional. Mention omissions cover frister,
+priser, beløp, navn, leverandøren and kunden. Both are whole-clause matches.
+Rejected sources and a factual suffix (including after `og gi`) still cannot
+inherit the source exemption. Other vocabulary remains outside this bounded
+contract; this is not a general semantic intent parser.
+
+The expanded dispatch regression fails at the preceding owner. All four failed
+project-evidence states are exercised with legal-claim positives, genuine
+comparison negatives and coordinated attachment style constraints. Stored
+analysis/evaluation/artifact style constraints are also exercised with weak
+retrieval. All 46 focused chat/evidence/lookup tests pass. Retrieval and model
+completion are stubbed in dispatch tests; no live answer quality is inferred.
+
+Known fail-closed topic readings include `trusler mot løsningen` and `innsigelser
+mot kontrakten`: this patch does not claim all topic/comparison distinctions are
+resolved. Generic `fra`/page/chapter interpretation complements, unlisted wording,
+sentence-level follow-ups, chapter hybrid context and accounting resume retain
+their previously reported limits. No job, schema, model, fixture, threshold or
+budget change is included. The previous round's recorded SQL gates ran before
+its unrelated final enhancement skip; that ordering does not establish runtime
+proof for the skip. Its direct regression and final full suite do cover it.
+
+CodeRabbit's outside-diff Minor, “Mark empty reads before reporting the populated
+render” (review `5738572978`), exposed a cache-label bug: a successful response
+with an empty document register did not mark its key as read. Every successful,
+non-aborted document/revision read now marks that cache key, including empty
+and polling responses. A later view of that key is warm; a new revision is cold.
+Failed and abandoned responses do not mark the key.
+
+The suggested switch to reporting the first later populated polling response is
+not adopted. The frozen `workflow-performance-baseline-v1` protocol explicitly
+samples “Stored rows painted, first read only”, starting at view opening. A later
+poll would include the wait for ingestion and silently change the measurement.
+The existing first-read-only sampling and protocol stay unchanged. The component
+regression executes its effect, polling, real cache tracker and paint callbacks:
+it fails before the cache-marking fix, passes after, and confirms no metric for
+a later populated poll, warm reopen, cold new revision and cold failed/abandoned
+reads. This proves lifecycle/telemetry behavior, not browser layout or latency.
+The final six focused files pass 52/52 tests.
+
+Final verification: 1,532 frontend + 202 root tests pass (1,734 total), zero
+failures/skips, plus parser goldens. Production build/types, full lint,
+schema/workflow/release checks, secret scan and whitespace pass. Original
+116-case and extended 55-case recorded SQL regression gates pass on the final
+code, with zero provider requests, missing inputs or memory fallback. Conceptual
+30/36 (MRR .565) and stress 18/20 remain unchanged and below release targets.
+
+Logs: `/private/tmp/anbud-r17-before.log`,
+`/private/tmp/anbud-r17-register-before.log`, `/private/tmp/anbud-r17-focused.log`,
+`/private/tmp/anbud-r17-final-tests.log`, `/private/tmp/anbud-r17-final-build.log`,
+`/private/tmp/anbud-r17-final-lint.log`, `/private/tmp/anbud-r17-retrieval.log`,
+`/private/tmp/anbud-r17-extended.log`. The owned AI-disabled app restarted after
+build. No provider/paid, production or new browser/HTTP proof ran. All four
+checks passed on preceding `eb773b18`; this correction requires fresh review
+and CI. Council satisfaction, release quality, budget and runtime/external
+acceptance remain open; all 18 recommendations are not complete.

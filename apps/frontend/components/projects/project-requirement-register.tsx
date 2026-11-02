@@ -26,8 +26,12 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
           setRegister(next); setError("");
           // Only this view's first read measures rendering. Rows that appear
           // while polling measure ingestion, which upload_to_ready already owns.
-          if (firstRead) for (const document of next.documents.filter(document => document.rows.length)) {
-            recordWorkflowRenderAfterPaint(projectId, { phase: "requirement_register_render", traceId: document.id, documentId: document.id, sourceRevision: document.source_revision, cacheState: workflowCacheState(`register:${document.id}:${document.source_revision}`) }, startedAt, abort.signal);
+          for (const document of next.documents) {
+            // Successful empty reads count for cache state, even though only
+            // an initially populated response qualifies for render timing.
+            const cacheState = workflowCacheState(`register:${document.id}:${document.source_revision}`);
+            if (!firstRead || !document.rows.length) continue;
+            recordWorkflowRenderAfterPaint(projectId, { phase: "requirement_register_render", traceId: document.id, documentId: document.id, sourceRevision: document.source_revision, cacheState }, startedAt, abort.signal);
           }
           firstRead = false;
         }

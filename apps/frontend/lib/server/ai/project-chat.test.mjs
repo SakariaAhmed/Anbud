@@ -825,6 +825,23 @@ test("current question controls evidence gates and named source scope, independe
       await checkFrame(`Oppsummer ${source} og unngå fagspråk, svar på hva kundens bindende exit-frist er.`, extra, false);
       await checkFrame(`Oppsummer ${source} og oppgi fristene.`, extra, false);
     }
+    const styleConstraints = ["fagspråk og gjentakelser", "å nevne kunden", "å nevne navn og priser", "å bruke fagspråk", "tabeller", "punktlister", "forkortelser", "tekniske uttrykk", "engelske ord", "sjargong", "gjentagelser", "lange avsnitt", "fagspråk, sjargong eller forkortelser", "å nevne navn, priser eller beløp"];
+    for (const telemetry of [{ requirementLookupFailed: true }, { requirementLookupTruncated: true }, { missingRequirementIds: ["K-42"] }, {}]) {
+      state.telemetry = telemetry;
+      const legalAttachment = [{ ...attachment[0], rawText: `${attachment[0].rawText} Leverandøren skal holde kunden skadesløs mot krav fra tredjeparter. Kunden kan ha innsigelser mot kravene.` }];
+      for (const question of ["Hva sier vedlegget om vern mot krav fra tredjeparter?", "Hva sier vedlegget om innsigelser mot kravene?", "Hva sier vedlegget om å holde kunden skadesløs mot krav fra tredjeparter?"])
+        await checkFrame(question, { promptAttachments: legalAttachment }, true);
+      for (const question of ["Hva sier vedlegget om K-42 i forhold til kravene?", "Hva sier vedlegget om leveransen i lys av kravene?", "Vurder K-42 i forhold til kravene i vedlegget.", "Vurder løsningen i forhold til kravene i vedlegget.", "Vurder vedlegget helhetlig i forhold til kravene.", "Vurder vedlegget fra kunden i lys av kravene.", "Hva sier vedlegget om K-42 mot kunden sine krav?", "Hva sier vedlegget om vern mot krav fra tredjeparter, og vurder leveransen mot kravene?"])
+        await checkFrame(question, { promptAttachments: legalAttachment }, false);
+      for (const constraint of styleConstraints)
+        await checkFrame(`Oppsummer vedlegget og unngå ${constraint}.`, { promptAttachments: attachment }, true);
+      for (const suffix of ["fagspråk, svar på hva kundens bindende exit-frist er", "fagspråk og gi meg kundens bindende exit-frist", "kundeanalysen"])
+        await checkFrame(`Oppsummer vedlegget og unngå ${suffix}.`, { promptAttachments: attachment, customerAnalysis }, false);
+    }
+    state.telemetry = {};
+    for (const [source, extra] of [["kundeanalysen", { customerAnalysis }], ["løsningsvurderingen", { solutionEvaluation: {} }], ["risikoplanen", { generatedArtifacts: [riskArtifact] }]]) {
+      for (const constraint of styleConstraints) await checkFrame(`Oppsummer ${source} og unngå ${constraint}.`, extra, true);
+    }
     assert.deepEqual(sourceFrameFailures, []);
     for (const [telemetry, refusal] of [
       [{ requirementLookupFailed: true }, /Kravregisteret/u],
