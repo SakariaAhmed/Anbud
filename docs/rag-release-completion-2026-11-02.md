@@ -1399,7 +1399,8 @@ passes after the correction. All 49 focused holdout/budget/retrieval-gate tests
 pass with outbound network denied. These tests validate request handling, not
 live semantic quality. The failed run is not a passing release holdout. Semantic
 smoke, feature behavior, browser/provider-stream, latency, pinned Docling, Entra,
-production and human acceptance remain open; all 18 recommendations are incomplete.
+production and human acceptance remain open; the full set of 18 recommendations
+is not complete.
 
 Correction verification: 1,532 frontend + 204 root tests (1,736 total), zero
 failures/skips, plus parser goldens; lint, syntax, secret scan and whitespace
