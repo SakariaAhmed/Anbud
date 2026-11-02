@@ -738,6 +738,47 @@ test("current question controls evidence gates and named source scope, independe
     assert.match(await run("Hva sier K-42 i prosjektet?", { promptAttachments: [{ title: "Mitt vedlegg", rawText: "K-42 Leverandøren skal holde fire kurs.", fileName: "vedlegg.txt" }] }), /finnes flere steder/u);
     assert.equal(state.calls, 0, "An unrelated attachment does not bypass the repeated-ID guard.");
     const attachment = [{ title: "Mitt vedlegg", rawText: "K-42 Leverandøren skal holde fire kurs.", fileName: "vedlegg.txt" }];
+    // Round 13: exercise request roles with real gate dispatch, including every
+    // project telemetry failure. Positive controls keep attachment subject matter.
+    const sourceFrameFailures = [];
+    const checkFrame = async (question, extra, shouldAnswer) => {
+      const answer = await run(question, extra);
+      if ((state.calls === 1) !== shouldAnswer) sourceFrameFailures.push({ question, telemetry: state.telemetry, shouldAnswer, answer });
+    };
+    for (const telemetry of [{ requirementLookupFailed: true }, { requirementLookupTruncated: true }, { missingRequirementIds: ["K-42"] }, {}]) {
+      state.telemetry = telemetry;
+      for (const question of [
+        "Vurder vedlegget mot de gjeldende kravene.", "Hva sier K-42 i vedlegget i forhold til de gjeldende kravene?",
+        "Vurder vedlegget mot kundens behov.", "Vurder vedlegget mot våre krav.", "Vurder vedlegget mot alle kravene.",
+        "Vurder vedlegget mot løsningen.", "Vurder vedlegget mot kontrakten.", "Vurder vedlegget mot K‑42.",
+        "Hva sier vedlegget i forhold til løsningen?", "Hva sier vedlegget kontra tilbudet?",
+        "Hva sier vedlegget, kravene og kunden om K-42?",
+      ]) await checkFrame(question, { promptAttachments: attachment }, false);
+      for (const question of ["Hva sier Leverandørnotat og kravene om K-42?", "Oppsummer leverandørnotat og kravene."])
+        await checkFrame(question, { promptAttachments: [{ ...attachment[0], title: "Leverandørnotat" }] }, false);
+      for (const question of ["Hva er fristen i vedlagte fil?", "Hva er fristen i vedlagte dokument?", "Se på vedlagte fil og list opp fristene.",
+        "Hva sier vedlegget om leverandørens plikter mot kunden?"])
+        await checkFrame(question, { promptAttachments: attachment }, true);
+    }
+    state.telemetry = {};
+    for (const question of ["Oppsummer analysen på side 12 i Bilag 1.", "Hva sier analysen og Bilag 1 om exit?", "Hva sier analysen fra Bilag 1 om exit?",
+      "Basert på analysen og Bilag 1, hva er den bindende exit-fristen?", "Vurder analysen mot Bilag 1."])
+      await checkFrame(question, { customerAnalysis }, false);
+    for (const question of ["Hva sier vurderingen på side 12 i Bilag 1 om pris?", "Hva sier vurderingen og Bilag 1 om pris?"])
+      await checkFrame(question, { solutionEvaluation: {} }, false);
+    for (const question of ["Oppsummer analysen i punktform.", "Forklar analysen i korte trekk.", "Oppsummer analysen i korte trekk."])
+      await checkFrame(question, { customerAnalysis }, true);
+    for (const question of ["Oppsummer vurderingen i tre punkter.", "Hva viser vurderingen i praksis?"])
+      await checkFrame(question, { solutionEvaluation: {} }, true);
+    for (const title of ["Mitt vedlegg", "Vedlegg"]) for (const question of ["Hva sier vedlegg 3 om exit-fristen?", "Hva står i vedlegg 3?", "Ifølge vedlegg 3, hva er fristen?", "Oppsummer vedlegg 3."])
+      await checkFrame(question, { promptAttachments: [{ ...attachment[0], title }] }, false);
+    for (const question of ["Oppsummer kundeanalysen og gi meg kundens bindende exit-frist", "Oppsummer analysen og oppgi kundens exit-frist."])
+      await checkFrame(question, { customerAnalysis }, false);
+    await checkFrame("Oppsummer løsningsvurderingen og gi meg kundens bindende exit-frist.", { solutionEvaluation: {} }, false);
+    await checkFrame("Oppsummer risikoplanen og gi meg kundens bindende exit-frist.", { generatedArtifacts: [riskArtifact] }, false);
+    await checkFrame("Oppsummer kundeanalysen og gi en oppsummering av kundeanalysen.", { customerAnalysis }, true);
+    await checkFrame("Oppsummer vedlegget og gi meg kundens bindende exit-frist.", { promptAttachments: attachment }, false);
+    assert.deepEqual(sourceFrameFailures, []);
     for (const [telemetry, refusal] of [
       [{ requirementLookupFailed: true }, /Kravregisteret/u],
       [{ requirementLookupTruncated: true }, /finnes flere steder/u],

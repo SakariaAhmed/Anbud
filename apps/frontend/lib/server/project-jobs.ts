@@ -762,10 +762,11 @@ function isDocumentIngestionResult(
 function shouldQueueDoclingEnhancement(
   input: ProjectWorkflowInput,
   result: ProjectJobResult,
-): result is DocumentIngestionJobResult {
+): result is DocumentIngestionJobResult & { document: NonNullable<DocumentIngestionJobResult["document"]> } {
   return (
     input.kind === "document_ingestion" &&
     isDocumentIngestionResult(result) &&
+    Boolean(result.document) &&
     result.docling_enhancement_requested === true
   );
 }
@@ -865,6 +866,7 @@ async function runProjectJob(
                   kind: "document_docling_enhancement",
                   projectId: input.projectId,
                   documentId: input.documentId,
+                  sourceRevision: workflowResult.document.chunk_source_revision,
                 },
                 {
                   autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false),

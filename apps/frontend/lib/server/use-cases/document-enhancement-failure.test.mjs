@@ -137,7 +137,7 @@ test("a lost lease writes nothing more to the document", async t => {
 
 // The real job runner, deadline race and enhancement workflow around one slow
 // parser. Only the repositories are replaced, and the deadline is shortened.
-async function runJobToDeadline(t, { doclingScript, scheduleDelayMs = 0, hangDocumentRead = false, terminalAccepted = true, loseLeaseAfterMs = null, retrySourceRevision, readError, retainedProcessingError = null }) {
+async function runJobToDeadline(t, { doclingScript, scheduleDelayMs = 0, hangDocumentRead = false, terminalAccepted = true, loseLeaseAfterMs = null, retrySourceRevision, readError, retainedProcessingError = null, automaticIngestion = false }) {
   const directory = mkdtempSync(path.join(tmpdir(), "enhancement-deadline-"));
   const command = path.join(directory, "docling.mjs");
   writeFileSync(command, `#!${process.execPath}
@@ -151,7 +151,7 @@ ${doclingScript}
   Object.assign(process.env, settings, { DOCLING_CLI_COMMAND: command });
   const state = globalThis.__enhancementDeadline = {
     document: { id: "document", project_id: "project", role: "supporting_document", supporting_subtype: "kravdokument", title: "Bilag 1", file_name: "bilag.pdf", file_format: "pdf", content_type: "application/pdf", file_size_bytes: 100, file_base64: Buffer.from("%PDF-1.4 syntetisk").toString("base64"), raw_text: basicText, structure_map: [], parser_used: "pdf-parse", processing_status: "basic_ready", processing_message: null, processing_error: retainedProcessingError, chunk_source_revision: 7, page_count: 1 },
-    updates: [], saves: [], rpc: [], terminal: [], scheduleDelayMs, hangDocumentRead, terminalAccepted, loseLeaseAfterMs, retrySourceRevision, readError,
+    updates: [], saves: [], rpc: [], terminal: [], scheduleDelayMs, hangDocumentRead, terminalAccepted, loseLeaseAfterMs, retrySourceRevision, readError, automaticIngestion, queued: new Map(),
   };
   t.after(() => {
     delete globalThis.__enhancementDeadline;
@@ -175,9 +175,9 @@ exports.findProjectJob = async () => null;
 exports.findOldestQueuedProjectJob = async () => null;
 exports.heartbeatProjectJob = async () => true;
 exports.insertProjectJob = async () => { throw new Error("unexpected job"); };
-exports.insertFollowUpProjectJob = async () => { throw new Error("unexpected job"); };
+exports.insertFollowUpProjectJob = async (record, input) => { state().queued.set(record.id, input); return record; };
 exports.resetStaleRunningProjectJobs = async () => 0;
-exports.getQueuedProjectJobInput = async () => ({ kind: "document_docling_enhancement", projectId: "project", documentId: "document", ...(state().retrySourceRevision !== undefined ? {sourceRevision:state().retrySourceRevision} : {}) });
+exports.getQueuedProjectJobInput = async id => state().automaticIngestion ? (id === "ingestion" ? {kind:"document_ingestion",projectId:"project",documentId:"document"} : state().queued.get(id)) : ({ kind: "document_docling_enhancement", projectId: "project", documentId: "document", ...(state().retrySourceRevision !== undefined ? {sourceRevision:state().retrySourceRevision} : {}) });
 exports.listQueuedProjectJobIds = async () => [];
 exports.updatePersistedProjectJob = async (jobId, patch) => { if (patch.status === "failed" || patch.status === "completed") state().terminal.push(patch); return true; };
 exports.failDocumentEnhancementJob = async input => { state().rpc.push(input); return state().terminalAccepted; };`);
@@ -186,6 +186,16 @@ exports.failDocumentEnhancementJob = async input => { state().rpc.push(input); r
 exports.dispatchReadyCustomerAnalyses = async () => {};
 exports.scheduleReadyCustomerAnalysis = async () => { const state = globalThis.__enhancementDeadline; if (state.scheduleDelayMs) state.fireDeadline(); };`);
   writeFileSync(path.join(directory, "cache.cjs"), "exports.revalidateProjectCaches = () => { globalThis.__enhancementDeadline.revalidated = true; };");
+  const realWorkflows = path.join(frontend, "lib/server/use-cases/project-workflows.ts");
+  writeFileSync(path.join(directory, "workflows.ts"), `
+export * from ${JSON.stringify(realWorkflows)};
+import { runProjectWorkflow as run } from ${JSON.stringify(realWorkflows)};
+export async function runProjectWorkflow(input: Parameters<typeof run>[0], handlers: Parameters<typeof run>[1]) {
+  // Only ingestion's successful publication is stubbed. The job owner enqueues,
+  // reads and claims its actual follow-up input; enhancement runs the real owner.
+  if (input.kind === "document_ingestion") return { document_id: "document", document: (globalThis as any).__enhancementDeadline.document, docling_enhancement_requested: true };
+  return run(input, handlers);
+}`);
   const realHeartbeat = path.join(frontend, "lib/server/project-job-heartbeat.ts");
   writeFileSync(path.join(directory, "heartbeat.ts"), `
 export * from ${JSON.stringify(realHeartbeat)};
@@ -208,13 +218,19 @@ export function runProjectWorkflowWithDeadline(input: Parameters<typeof run>[0])
     "@/lib/server/repositories/automatic-analysis": path.join(directory, "analysis.cjs"),
     "@/lib/server/repositories/repository-cache": path.join(directory, "cache.cjs"),
     "@/lib/server/project-job-results": path.join(directory, "results.cjs"),
+    "@/lib/server/use-cases/project-workflows": path.join(directory, "workflows.ts"),
     "@/lib/server/project-workflow-deadline": path.join(directory, "deadline.ts"),
     "@/lib/server/project-job-heartbeat": path.join(directory, "heartbeat.ts"),
     "@": frontend, "server-only": "/dev/null",
   } });
   t.mock.method(console, "warn", () => undefined);
   const { runQueuedProjectJob } = await jiti.import(path.join(frontend, "lib/server/project-jobs.ts"));
-  await runQueuedProjectJob("job");
+  if (automaticIngestion) {
+    await runQueuedProjectJob("ingestion");
+    assert.equal(state.queued.size, 1, "Ingestion enqueues one automatic enhancement.");
+    state.terminal = [];
+    await runQueuedProjectJob([...state.queued.keys()][0]);
+  } else await runQueuedProjectJob("job");
   return state;
 }
 const slowDocling = `await new Promise(resolve => setTimeout(resolve, 900)); writeFileSync(path.join(output, "source.md"), ${JSON.stringify(`${basicText}\n\nK-2.`)});`;
@@ -251,6 +267,14 @@ test("retry read failures and pre-read deadlines preserve a revision-fenced reco
 test("an unreadable retry source records failure through the terminal owner",async t=>{
   const state=await runJobToDeadline(t,{doclingScript:"",readError:"storage unavailable",retrySourceRevision:7});
   assert.equal(state.rpc.length,1);assert.equal(state.rpc[0].sourceRevision,7);assert.deepEqual(state.terminal,[]);
+});
+
+test("automatic enhancements retain the published revision when their first read fails", async t => {
+  const state = await runJobToDeadline(t, { doclingScript: "", automaticIngestion: true, readError: "storage unavailable" });
+  assert.equal(state.rpc.length, 1, "The claimed automatic follow-up must record a recoverable document failure.");
+  assert.equal(state.rpc[0].sourceRevision, 7);
+  assert.equal(state.rpc[0].documentId, "document");
+  assert.deepEqual(state.terminal, [], "The fenced combined transition owns the failure.");
 });
 
 test("an unversioned requeued attempt cannot erase the error retained by rejected recovery", async t => {

@@ -811,3 +811,78 @@ Logs: `/private/tmp/anbud-r13-before.log`,
 build. No new browser, HTTP/OCR, provider-stream, semantic or production proof is
 claimed. No paid calls or budget changes ran. Fresh council/CI/CodeRabbit review
 is required; the existing release and runtime gaps remain open.
+
+## Council round 13: modified source targets and automatic enhancement recovery
+
+Both members rejected `1ae95975` (Sol 7/10, Opus 5/10). Their concrete examples
+showed that the preceding source heuristics still confused modified comparison
+targets, document-bound analysis nouns, output formatting and definite uploaded
+file references. The partial-table provenance correction was accepted by both;
+that owner is unchanged in this correction.
+
+Comparison targets now recognize bounded determiners/possessives/modifiers and
+the reported need, solution, contract and bid nouns. Comparison matching folds
+Unicode dashes before checking requested IDs and retains the explicit anchored
+assessment/comparison frame. Attachment title coordination and comma-separated
+source lists preserve project gates. The reported attachment topic “leverandørens
+plikter mot kunden” remains answerable. These are tested under all four telemetry
+states (failed register, truncated register, missing ID and insufficient evidence),
+not just the weak-evidence path.
+
+Generic analysis/evaluation aliases are withheld when tied to a named project's
+document through the tested location, coordination or comparison complements,
+including page/chapter locators. Ordinary single-sentence formatting such as
+“i korte trekk”, “i punktform” and “i tre punkter” remains available, as do the
+existing “analysen om Bilag 1” controls. Attachment references accept explicit
+“vedlagte/opplastede/denne/dette” determiners before a generic noun. All attachment
+request frames now share the definite-source check, including direct questions
+and `ifølge`; a bare “vedlegg 3” cannot qualify through a different frame or an
+attachment title whose capitalization is “Vedlegg”.
+
+CodeRabbit's outside-diff Minor **“Pass the ready document revision to the automatic
+enhancement job.”** is corrected in the enqueue owner. A successful ingestion's
+returned document revision is included in its automatic enhancement input;
+without a returned document, no automatic enhancement is enqueued. The regression
+stubs only successful ingestion publication and repository boundaries: the real
+job runner enqueues and claims its follow-up, the real enhancement workflow fails
+its initial read, and the combined terminal failure receives revision 7. Removing
+the new input field makes the test fail with zero document-failure calls. This is
+deterministic owner proof, not a new HTTP/provider enhancement run. Existing
+unversioned jobs are not rewritten or backfilled.
+
+CodeRabbit's new Major **“Keep the evidence gate for coordinated factual
+questions.”** is also addressed for the reported `og gi` request and `og oppgi`
+variant. These clauses are checked independently, so an opening interpretation
+or attachment request cannot exempt the later binding-fact request. A control
+with an explicit analysis request in both clauses remains answerable. The added
+regression fails before the clause split is extended.
+
+The round-13 chat cases fail against `1ae95975`; the final behavior tests retain all
+earlier controls. All 49 focused tests pass. The final full suite passes 1,526
+frontend + 202 root tests (1,728 total), with zero failures/skips, plus parser
+goldens. Production build/types, full lint, schema/release/workflow checks, secret
+scan and whitespace checks pass. The original 116-case and extended 55-case
+recorded SQL regression suites pass with zero provider calls, missing recorded
+inputs or memory fallback. Conceptual recall remains 30/36 (MRR .565), stress
+18/20; these are regression passes, not release-quality passes.
+
+Logs: `/private/tmp/anbud-r14-before.log`,
+`/private/tmp/anbud-r14-enhancement-before.log`,
+`/private/tmp/anbud-r14-coordinated-before.log`,
+`/private/tmp/anbud-r14-focused.log`, `/private/tmp/anbud-r14-final-tests.log`,
+`/private/tmp/anbud-r14-final-build.log`, `/private/tmp/anbud-r14-final-lint.log`,
+`/private/tmp/anbud-r14-retrieval.log`, `/private/tmp/anbud-r14-extended.log`.
+The owned AI-disabled app restarted after build. No new browser, HTTP/OCR,
+provider-stream, semantic or production proof is claimed. Fresh council,
+CodeRabbit and CI review of the new commit is required.
+
+The heuristic contract is still limited. Sentence splitting can over-refuse
+format-only follow-ups, greetings and abbreviations; some unlisted source
+exclusions, reversed mixed-source orders and active verbs used as topics remain
+unresolved. Correction lookup can be empty when a dropped question column mentions
+another ID or exceeds the parser's excerpt bound, or when correction headings
+lack page markers. These nonblocking findings were unchanged at the reviewed pin;
+no universal natural-language intent guarantee is claimed. Chapter hybrid context,
+accounting resume and the previously listed runtime, semantic, production and
+human evidence gaps remain. No frozen cases, model settings, thresholds or budget
+were changed, and no paid/provider calls were made.
