@@ -32,23 +32,26 @@ test("a source downgrade updates coverage text, scores, winner and source-qualif
   assert.equal(result.requirement_coverage.good, 2, "The input snapshot is not mutated.");
 });
 
-test("a nonbinding coverage cap preserves the comparison reasoning and its proof", () => {
+test("a nonbinding cap reconciles stale coverage claims without claiming the scores changed", () => {
   const { result, input } = fixture();
   result.architecture_comparison.architect_solution_score = 60;
   result.architecture_comparison.winner = "Systemløsning";
+  result.architecture_comparison.verdict = "Alle krav er godt dekket. «Alt er godt.»";
   const reviewed = reviewSolutionEvaluationEvidence(result, input);
   assert.equal(reviewed.requirement_coverage.unclear, 1);
   assert.equal(reviewed.architecture_comparison.architect_solution_score, 60);
   assert.equal(reviewed.architecture_comparison.winner, "Systemløsning");
-  assert.equal(reviewed.architecture_comparison.verdict, result.architecture_comparison.verdict);
-  assert.ok(reviewed.source_evidence.references.some(ref => ref.path === "result.architecture_comparison.verdict"));
+  assert.match(reviewed.architecture_comparison.verdict, /1 er vurdert som gode.*1 er uklare/u);
+  assert.match(reviewed.architecture_comparison.verdict, /Poengene og vinneren er uendret/u);
+  assert.doesNotMatch(reviewed.architecture_comparison.verdict, /Alle krav er godt dekket|Poengene er oppdatert/u);
+  assert.ok(!reviewed.source_evidence.references.some(ref => ref.path === "result.architecture_comparison.verdict"));
 });
 
 test("a rewritten comparison drops both the replaced quotation proof and its old validation issue", () => {
   const { result, input } = fixture();
   result.architecture_comparison.verdict = "«Dette finnes ikke i dokumentet.»";
   const reviewed = reviewSolutionEvaluationEvidence(result, input);
-  assert.match(reviewed.architecture_comparison.verdict, /Poengene er oppdatert/u);
+  assert.match(reviewed.architecture_comparison.verdict, /Sammenligningen er oppdatert/u);
   assert.ok(!reviewed.source_evidence.references.some(ref => ref.path === "result.architecture_comparison.verdict"));
   assert.ok(!reviewed.source_evidence.issues.some(issue => issue.path === "result.architecture_comparison.verdict"));
   assert.ok(reviewed.source_evidence.issues.some(issue => issue.path === "result.requirement_coverage.items.0.evidence"));
@@ -64,4 +67,12 @@ test("unsupported evidence cannot upgrade missing or weak requirements to unclea
     assert.equal(reviewed.requirement_coverage[assessment === "Mangler" ? "missing" : "weak"], 1);
     assert.ok(reviewed.source_evidence.issues.some(issue => issue.path === "result.requirement_coverage.items.0.evidence"));
   }
+});
+test("unchanged verified coverage preserves the original comparison and its quotation proof", () => {
+  const { result, input } = fixture();
+  result.requirement_coverage.items[0].evidence = "Rammen er 1 500 kr.";
+  const reviewed = reviewSolutionEvaluationEvidence(result, input);
+  assert.equal(reviewed.requirement_coverage.unclear, 0);
+  assert.deepEqual(reviewed.architecture_comparison, result.architecture_comparison);
+  assert.ok(reviewed.source_evidence.references.some(ref => ref.path === "result.architecture_comparison.verdict"));
 });

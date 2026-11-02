@@ -3173,10 +3173,9 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
     const cap = coverage.items.length ? Math.round((coverage.good + coverage.weak * 0.6 + coverage.unclear * 0.35) / coverage.items.length * 100) : 100;
     comparison.architect_solution_score = Math.min(comparison.architect_solution_score, cap);
     comparison.winner = reconcileArchitectureComparisonWinner(comparison.architect_solution_score, comparison.system_solution_score);
-    if (comparison.architect_solution_score !== previousScore || comparison.winner !== previousWinner) {
-      comparison.verdict = `Poengene er oppdatert etter kildekontroll: arkitektløsning ${comparison.architect_solution_score}, systemløsning ${comparison.system_solution_score}. Avklar de usikre kravene før sammenligningen brukes.`;
-      changedPaths.add("result.architecture_comparison.verdict");
-    }
+    const comparisonChanged = comparison.architect_solution_score !== previousScore || comparison.winner !== previousWinner;
+    comparison.verdict = `${coverage.coverage_summary} ${comparisonChanged ? "Sammenligningen er oppdatert" : "Poengene og vinneren er uendret"} etter kildekontroll: arkitektløsning ${comparison.architect_solution_score}, systemløsning ${comparison.system_solution_score}. Avklar de usikre kravene før sammenligningen brukes.`;
+    changedPaths.add("result.architecture_comparison.verdict");
   }
   reviewed.result.document_findings = reviewed.result.document_findings.map((finding, index) => {
     if (finding.reference_match !== "coverage") return finding;
