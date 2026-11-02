@@ -1037,8 +1037,8 @@ excludes solution/contract/bid topics, preserving the existing cost/responsibili
 controls. The optional `mot kunden sine krav` follow-up is gated too, while
 `plikter mot kunden` remains a topic reading.
 
-Style-only follow-ups use two closed term lists with comma, `og` or `eller`
-coordination. Style terms cover fagspråk, sjargong, gjentakelser/gjentagelser,
+Style-only follow-ups use two closed term lists. Accepted separators are commas
+and the Norwegian words `og` and `eller`. Style terms cover fagspråk, sjargong, gjentakelser/gjentagelser,
 forkortelser, tabeller, punktlister, tekniske uttrykk, engelske ord and long
 sentences/paragraphs; `å bruke` is optional. Mention omissions cover frister,
 priser, beløp, navn, leverandøren and kunden. Both are whole-clause matches.
@@ -1159,3 +1159,67 @@ Logs: `/private/tmp/anbud-r18-before.log`, `/private/tmp/anbud-r18-focused.log`,
 AI-disabled app restarted after build. No provider/paid, production or new
 browser/HTTP proof ran. Fresh council, CI and CodeRabbit review are required.
 Semantic/holdout, budget, runtime and external acceptance gaps remain open.
+
+
+## Round 18 corrections: bounded comparison targets and register view episodes
+
+Round 18 rejected `e16e2307` (both council members 8/10). Customer comparisons
+now retain the existing bounded modifiers after `kunden sine`, including `øvrige
+krav`, `gjeldende krav` and `andre behov`, while employee-topic reading remains
+supported. The requirement-only relation rule targets explicit `prosjektet`, not
+bare `prosjekt` or arbitrary `prosjektets` topics. Existing project-requirement
+possessives still keep their evidence gates.
+
+The legal-claim exception accepts standalone third-party noun inflections,
+`tredjemann`, optional `en`/`andre`, and the spaced `tredje part` form reported by
+CodeRabbit. It no longer consumes supplier/system compounds such as
+`tredjepartsleverandøren` or `tredjepartssystemet`. Dispatch regressions exercise
+these positive and negative controls under failed-register, truncated-register,
+missing-ID and weak-retrieval telemetry. This proves the tested gate decisions,
+not model answer quality or general Norwegian intent recognition.
+
+CodeRabbit's first-read reset finding is valid. Processing completion and other
+effect refreshes previously reset the register's sampling flag and timer without
+opening a new view. The component now retains both in a project-scoped view
+reference. A new mount or project navigation starts an episode; processing,
+refresh and retry updates do not. A completed empty read or failure consumes the
+first read. An aborted pending read does not consume it, and a replacement read
+uses the original view-open time. Old requests retain their abort fence. The
+frozen protocol is unchanged: later populated reads are not render samples.
+
+The component test exercises processing completion, refresh, new mounts, project
+navigation, interrupted reads with the original timestamp, and recovery after a
+failed first read. The `empty-only` warm assertion now checks its document ID.
+Scratch mutation checks show the old test passing a missing empty-only metric,
+while the corrected test rejects it. It also rejects resetting the first-read
+flag, resetting the start time, and timing a later populated poll. These are
+component-effect/cache/paint-callback tests; no real browser or latency baseline
+is claimed. The expanded chat and component regressions fail on the prior code;
+all 52 focused tests pass on this correction.
+
+Accepted language limits remain: an explicit legal-claim reading such as `K-42
+mot kravene fra tredjeparter` is treated as attachment subject matter. Explicit
+`prosjektet` can gate `taushetsplikt i forhold til prosjektet` and `prosjektet sine
+ansatte`; ambiguous `krav om erstatning` remains gated. Previously recorded
+ordinary-adjective, unlisted-relation, generic source-location, sentence-follow-up,
+chapter-context and accounting-resume limitations remain. This patch does not
+change models, schema, frozen fixtures, thresholds or budget.
+
+
+Final verification: 1,532 frontend + 202 root tests pass (1,734 total), zero
+failures/skips, plus parser goldens. Production build/types, full lint,
+schema/workflow/release checks, secret scan and whitespace pass. Both final-code
+recorded SQL regression gates pass (116 original + 55 extended), with zero
+provider requests, missing inputs and memory fallback. Conceptual 30/36, MRR
+.565, and stress 18/20 remain below release targets.
+
+Logs: `/private/tmp/anbud-r19-before.log`, `/private/tmp/anbud-r19-focused.log`,
+`/private/tmp/anbud-r19-final-tests.log`, `/private/tmp/anbud-r19-final-build.log`,
+`/private/tmp/anbud-r19-final-lint.log`, `/private/tmp/anbud-r19-retrieval.log`,
+`/private/tmp/anbud-r19-extended.log`, and
+`/private/tmp/anbud-r19-mutant-{old-missing-empty-metric,missing-empty-metric,reset-first-read,reset-start-time,populated-poll}.log`.
+The owned AI-disabled app restarted after build and liveness returned 200; that
+is not affected-workflow/browser proof. No provider/paid or production operations
+ran. Fresh council, CI and CodeRabbit review remain required. Semantic/holdout,
+budget, runtime and external acceptance gaps remain open; the full set of 18
+recommendations is not complete.

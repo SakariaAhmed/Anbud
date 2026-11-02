@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { recordWorkflowRenderAfterPaint, workflowCacheState } from "@/lib/client/workflow-render-metric";
 import { Input } from "@/components/projects/primitives";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,15 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [retry, setRetry] = useState(0);
+  const viewEpisode = useRef<{ projectId: string; startedAt: number; firstRead: boolean } | null>(null);
   useEffect(() => {
+    // Processing, refresh and retry updates belong to the same open view.
+    // Capture its object so an abandoned request cannot consume a new project's read.
+    if (!viewEpisode.current || viewEpisode.current.projectId !== projectId) {
+      viewEpisode.current = { projectId, startedAt: performance.now(), firstRead: true };
+    }
+    const episode = viewEpisode.current;
     const abort = new AbortController();
-    const startedAt = performance.now();
-    let firstRead = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setRegister(null);
     const load = async () => {
@@ -30,12 +35,12 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
             // Successful empty reads count for cache state, even though only
             // an initially populated response qualifies for render timing.
             const cacheState = workflowCacheState(`register:${document.id}:${document.source_revision}`);
-            if (!firstRead || !document.rows.length) continue;
-            recordWorkflowRenderAfterPaint(projectId, { phase: "requirement_register_render", traceId: document.id, documentId: document.id, sourceRevision: document.source_revision, cacheState }, startedAt, abort.signal);
+            if (!episode.firstRead || !document.rows.length) continue;
+            recordWorkflowRenderAfterPaint(projectId, { phase: "requirement_register_render", traceId: document.id, documentId: document.id, sourceRevision: document.source_revision, cacheState }, episode.startedAt, abort.signal);
           }
-          firstRead = false;
+          episode.firstRead = false;
         }
-      } catch { if (!abort.signal.aborted) { firstRead = false; setError("Kunne ikke hente kravregisteret. Prøv igjen."); } }
+      } catch { if (!abort.signal.aborted) { episode.firstRead = false; setError("Kunne ikke hente kravregisteret. Prøv igjen."); } }
       finally { if (processing && !abort.signal.aborted) timer = setTimeout(() => void load(), 2500); }
     };
     void load();

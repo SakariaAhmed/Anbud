@@ -837,6 +837,23 @@ test("current question controls evidence gates and named source scope, independe
         await checkFrame(question, { promptAttachments: legalAttachment }, true);
       for (const question of ["Hva sier vedlegget om K-42 i forhold til prosjektet?", "Hva sier vedlegget om K-42 mot kunden sine behov?", "Hva sier vedlegget om ansvar i forhold til krav fra tredjeparter, og vurder K-42 i lys av kravene?"])
         await checkFrame(question, { promptAttachments: legalAttachment }, false);
+      for (const question of [
+        "Hva sier vedlegget om ansvar i forhold til prosjektets underleverandører?",
+        "Hva sier vedlegget om risiko i forhold til prosjektets økonomi?",
+        "Hva sier vedlegget om tiltak i lys av prosjektets framdrift?",
+        "Hva sier vedlegget om roller i forhold til prosjekt og drift?",
+      ]) await checkFrame(question, { promptAttachments: legalAttachment }, true);
+      for (const relation of ["mot", "i forhold til", "i lys av"]) {
+        for (const party of ["tredjepart", "tredjeparten", "tredjeparter", "tredjepartene", "tredjemann", "tredjemannen", "en tredjepart", "andre tredjeparter", "tredje part"]) {
+          await checkFrame(`Hva sier vedlegget om forsikring ${relation} krav fra ${party}?`, { promptAttachments: legalAttachment }, true);
+        }
+        for (const party of ["tredjepartsleverandøren", "tredjepartssystemet", "tredjeparts leverandør", "tredjemannskrav"]) {
+          await checkFrame(`Hva sier vedlegget om hvordan K-42 ligger an ${relation} krav fra ${party}?`, { promptAttachments: legalAttachment }, false);
+        }
+      }
+      for (const target of ["øvrige krav", "gjeldende krav", "andre behov"]) {
+        await checkFrame(`Hva sier vedlegget om K-42 mot kunden sine ${target}?`, { promptAttachments: legalAttachment }, false);
+      }
       for (const constraint of styleConstraints)
         await checkFrame(`Oppsummer vedlegget og unngå ${constraint}.`, { promptAttachments: attachment }, true);
       for (const suffix of ["fagspråk, svar på hva kundens bindende exit-frist er", "fagspråk og gi meg kundens bindende exit-frist", "kundeanalysen"])

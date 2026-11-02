@@ -1089,12 +1089,12 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     ...attachmentReferences.map(source => source.document_title.trim().replace(/[‐‑‒–—]/gu, "-")).filter(Boolean)
       .map(title => `${title.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}${!/\d/u.test(title) ? (/e$/iu.test(title) ? "(?:n|t)?" : "(?:en|et)?") : ""}`)].join("|");
   const comparisonSource = `(?<![\\p{L}\\p{N}])(?:${comparisonNames}|det|den)(?![\\p{L}\\p{N}])`;
-  const requirementComparisonTarget = `${comparisonTargetModifiers}(?:prosjekt(?:et|ets)?|krav[\\p{L}\\p{N}]*|kundekrav[\\p{L}\\p{N}]*|evalueringskriter[\\p{L}\\p{N}]*|konkurransegrunnlag[\\p{L}\\p{N}]*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
+  const requirementComparisonTarget = `${comparisonTargetModifiers}(?:prosjektet|krav[\\p{L}\\p{N}]*|kundekrav[\\p{L}\\p{N}]*|evalueringskriter[\\p{L}\\p{N}]*|konkurransegrunnlag[\\p{L}\\p{N}]*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
   // Legal-claim readings of "krav" are attachment subject matter.
   // Check each relation separately so a later genuine comparison remains gated.
-  const standaloneComparisons = new RegExp(`\\b(?:kontra|mot(?!\\s+kunden\\b(?!\\s+sine\\s+(?:krav(?:ene|et)?|behov(?:ene|et)?)(?![\\p{L}\\p{N}]))))\\s+${comparisonTarget}`, "giu");
+  const standaloneComparisons = new RegExp(`\\b(?:kontra|mot(?!\\s+kunden\\b(?!\\s+sine\\s+${comparisonTargetModifiers}(?:krav(?:ene|et)?|behov(?:ene|et)?)(?![\\p{L}\\p{N}]))))\\s+${comparisonTarget}`, "giu");
   const isThirdPartyClaim = (match: RegExpMatchArray) => /\bkrav(?:ene|et)?$/iu.test(match[0])
-    && /^\s+fra\s+tredjepart[\p{L}]*(?![\p{L}\p{N}])/iu.test(comparisonQuestion.slice((match.index ?? 0) + match[0].length));
+    && /^\s+fra\s+(?:(?:en|andre)\s+)?tredje(?:\s*part(?:er|en|ene)?|\s*mann(?:en)?)(?![\p{L}\p{N}])/iu.test(comparisonQuestion.slice((match.index ?? 0) + match[0].length));
   const hasStandaloneComparison = Array.from(comparisonQuestion.matchAll(standaloneComparisons)).some(match =>
     !isThirdPartyClaim(match) && !(/^mot\s+krav(?:ene|et)?(?![\p{L}\p{N}])/iu.test(match[0]) && /\b(?:vern|innsigelser|skadesløs)\s*$/iu.test(comparisonQuestion.slice(0, match.index))));
   // Bounded manner/source modifiers may intervene, but topic complements such
