@@ -353,3 +353,20 @@ an older version. Disposable SQL tests used the current migration and baseline.
 The current code is accepted for final evaluation conditional on authorization
 and runtime proof. Greptile remains an accepted signed-out review gap. The
 original release gates and all external acceptance limits remain unchanged.
+
+## PR #90 CI audit-harness correction
+
+Validation at `78e152a4` passed its main test/build stage but failed the separate
+workflow audit. Local reproduction found missing injected dependencies in the
+AST-based audit harness: the persisted analysis-revision reader, partial preview
+publisher, fenced enhancement-state writer and enhancement notice constant.
+The adapters now call the current owners with real disposable SQL where needed.
+The parser-failure control additionally asserts the persisted error, usable
+basic status and preserved manual analysis. No application behavior was changed.
+
+All 46 audit regressions passed with zero skips against a newly created local
+audit database, which was removed afterward. The same historical populated
+baseline and additive migration used by CI were also exercised: applying the
+migration twice preserved the existing analysis. Affected-file lint and
+whitespace checks passed. Log: `/private/tmp/anbud-pr90-audit-fixed.log`.
+CI must still verify the pushed correction in its own environment.

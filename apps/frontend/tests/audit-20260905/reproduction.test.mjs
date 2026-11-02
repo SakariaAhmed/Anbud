@@ -184,14 +184,18 @@ function ingestionRepository(chunks) {
       return { data: sql(`select public.save_document_intelligence_artifact(${quote(a.p_document_id)},${quote(a.p_project_id)},${a.p_source_revision},${quote(a.p_compiler_version)},${quote(a.p_content_hash)},${quote(a.p_parser_used)},${json(a.p_quality)},${json(a.p_evidence_counts)},${json(a.p_artifact_encrypted)},${quote(a.p_analysis_context_encrypted)},${quote(a.p_updated_at)})`) === 't', error: null };
     } }),
   });
-  return actual(storeFile, ['saveDocumentIngestionResult', 'updateDocumentProcessingState', 'publishDocumentReadiness'], {
+  return actual(storeFile, ['saveDocumentIngestionResult', 'updateDocumentProcessingState', 'publishDocumentReadiness', 'setDocumentEnhancementState'], {
     compileDocumentIntelligenceArtifact: jiti(path.join(frontend, 'lib/server/document-intelligence/evidence-compiler.ts')).compileDocumentIntelligenceArtifact,
     isHighImpactDocument: jiti(path.join(frontend, 'lib/server/document-intelligence/document-policy.ts')).isHighImpactDocument,
     isAzureDocumentIntelligenceConfigured: () => false, isDoclingEnabled: () => false,
     storeDocumentIntelligenceArtifact, recordDocumentIntelligenceEvent: noop,
     ...crypto, fetchSingleDocumentRow: async () => { const v = sql(`select row_to_json(d) from documents d where id=${quote(D)}`); return v ? JSON.parse(v) : null; },
     getProjectWorkflowLease: () => ({jobId: J, leaseToken: lease}),
-    createServiceClient: () => ({rpc: async (name,args) => { try { return {data: JSON.parse(sql(`select public.publish_document_readiness(${quote(args.p_project_id)},${quote(args.p_document_id)},${args.p_source_revision},${quote(args.p_status)},${quote(args.p_message)},${quote(args.p_parser_used)},${quote(J)},${quote(lease)})`)),error:null}; } catch(error) { return {data:null,error:{message:error.message}}; } }}), pageCountFromStructureMap: () => null, pageCountFromRawText: () => null,
+    createServiceClient: () => ({rpc: async (name,args) => { try {
+      if (name === 'set_document_enhancement_state') return { data: sql(`select public.set_document_enhancement_state(${quote(args.p_project_id)},${quote(args.p_document_id)},${args.p_source_revision},${quote(args.p_message)},${args.p_error === null ? 'null' : quote(args.p_error)},${quote(args.p_job_id)},${quote(args.p_lease_token)})`) === 't', error: null };
+      assert.equal(name, 'publish_document_readiness');
+      return {data: JSON.parse(sql(`select public.publish_document_readiness(${quote(args.p_project_id)},${quote(args.p_document_id)},${args.p_source_revision},${quote(args.p_status)},${quote(args.p_message)},${quote(args.p_parser_used)},${quote(J)},${quote(lease)})`)),error:null};
+    } catch(error) { return {data:null,error:{message:error.message}}; } }}), pageCountFromStructureMap: () => null, pageCountFromRawText: () => null,
     runLeaseFencedProjectMutation: async (projectId, operation, payload) => ({ fenced: true, data: JSON.parse(sql(`select public.lease_fenced_project_write(${quote(J)},${quote(lease)},${quote(projectId)},${quote(operation)},${json(payload)})`)) }),
     fromUnknownDocumentRow: row => row, normalizeDocumentChunkStructureMap: value => value,
     replaceProjectDocumentChunks: async value => {
@@ -359,6 +363,11 @@ for (const mode of ['success', 'parser_failure']) {
     });
     const result = await runDocumentDoclingEnhancementWorkflow({ kind: 'document_docling_enhancement', projectId: P, documentId: D }, handlers);
     assert.equal(result.skipped, mode === 'parser_failure');
+    if (mode === 'parser_failure') {
+      assert.equal(document().processing_status, 'basic_ready');
+      assert.match(document().processing_error, /Dokumentforbedringen feilet/);
+      assert.equal((await freshAnalysis()).executive_summary, 'Manual strategy to preserve');
+    }
     assert.deepEqual(counts(), mode === 'parser_failure' ? [1,1,1] : [0,0,0]);
   });
 }
