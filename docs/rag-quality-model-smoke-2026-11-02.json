@@ -1894,7 +1894,12 @@
           "citation_correctness: 0.9 < 0.98"
         ],
         "release_gate_passed": false,
-        "original_judge_metrics_preserved": true
+        "original_judge_metrics_preserved": true,
+        "reviewed_case_ids": [
+          "generated-bilag"
+        ],
+        "metrics_are_upper_bounds": true,
+        "scope": "One model-judge false positive was independently rejected. The other nine cases were not independently audited; exit-warm may also fail the stricter v3 rubric. These values are upper bounds, not a complete independent 9/10 audit."
       }
     }
   ]

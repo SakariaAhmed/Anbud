@@ -3154,10 +3154,18 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
   const coverage = reviewed.result.requirement_coverage;
   if (!coverage || !reviewed.evidence.issues?.length) return { ...reviewed.result, source_evidence: reviewed.evidence };
   let downgraded = false;
+  const changedPaths = new Set<string>();
   for (const issue of reviewed.evidence.issues) {
     const match = /^result\.requirement_coverage\.items\.(\d+)\./u.exec(issue.path);
     const item = match ? coverage.items[Number(match[1])] : null;
-    if (item?.assessment === "Godt") { item.assessment = "Uklart"; downgraded = true; }
+    if (match && item?.assessment === "Godt") {
+      item.assessment = "Uklart";
+      item.rationale = "Må avklares. Kravdekningen kunne ikke bekreftes i kildegrunnlaget.";
+      item.recommendation = "Kontroller originalkilden og oppdater besvarelsen før kravet vurderes på nytt.";
+      changedPaths.add(`result.requirement_coverage.items.${match[1]}.rationale`);
+      changedPaths.add(`result.requirement_coverage.items.${match[1]}.recommendation`);
+      downgraded = true;
+    }
   }
   if (!downgraded) return { ...reviewed.result, source_evidence: reviewed.evidence };
   coverage.good = coverage.items.filter(item => item.assessment === "Godt").length;
@@ -3165,7 +3173,7 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
   coverage.missing = coverage.items.filter(item => item.assessment === "Mangler").length;
   coverage.unclear = coverage.items.filter(item => item.assessment === "Uklart").length;
   coverage.coverage_summary = buildRequirementCoverageSummary(coverage.items);
-  const changedPaths = new Set(["result.requirement_coverage.coverage_summary"]);
+  changedPaths.add("result.requirement_coverage.coverage_summary");
   const comparison = reviewed.result.architecture_comparison;
   if (comparison) {
     const previousScore = comparison.architect_solution_score;

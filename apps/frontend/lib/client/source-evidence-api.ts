@@ -24,6 +24,8 @@ export async function verifyProjectSourceEvidence(projectId: string, source: Cha
     }
     if (!response.ok) throw new Error(response.status === 409
       ? "Kilden er endret. Oppdater resultatet og kontroller henvisningen på nytt."
+      : response.status === 404
+        ? "Fant ikke kilden. Oppdater prosjektet og velg en annen kildehenvisning."
       : response.status === 422
         ? "Utdraget kunne ikke bekreftes ordrett. Kontroller originaldokumentet fra dokumentlisten."
         : unavailable);

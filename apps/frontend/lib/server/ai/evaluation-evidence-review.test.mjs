@@ -76,3 +76,16 @@ test("unchanged verified coverage preserves the original comparison and its quot
   assert.deepEqual(reviewed.architecture_comparison, result.architecture_comparison);
   assert.ok(reviewed.source_evidence.references.some(ref => ref.path === "result.architecture_comparison.verdict"));
 });
+test("downgraded rows replace stale positive guidance and discard its old quotation proof", () => {
+  const { result, input } = fixture();
+  result.requirement_coverage.items[0].rationale = "Kravet er fullt dokumentert og godt dekket. «Alt er godt.»";
+  result.requirement_coverage.items[0].recommendation = "Ingen tiltak. «Alt er godt.»";
+  const reviewed = reviewSolutionEvaluationEvidence(result, input);
+  const row = reviewed.requirement_coverage.items[0];
+  assert.equal(row.assessment, "Uklart");
+  assert.match(row.rationale, /Må avklares.*kunne ikke bekreftes/u);
+  assert.match(row.recommendation, /Kontroller originalkilden/u);
+  assert.ok(!reviewed.source_evidence.references.some(ref => /^result\.requirement_coverage\.items\.0\.(?:rationale|recommendation)$/u.test(ref.path)));
+  assert.equal(reviewed.requirement_coverage.items[1].rationale, result.requirement_coverage.items[1].rationale);
+  assert.equal(reviewed.requirement_coverage.items[1].recommendation, result.requirement_coverage.items[1].recommendation);
+});

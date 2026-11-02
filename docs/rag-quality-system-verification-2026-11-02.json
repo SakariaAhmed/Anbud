@@ -153,7 +153,8 @@
         "source_is_current": false
       }
     ],
-    "freshness_limit": "Requirement answers, solution proposal and risk plan were explicitly stale at the end after later cross-type knowledge changes. Completion at publication is distinct from final source freshness; no regeneration was repeated for report validation."
+    "freshness_limit": "Requirement answers, solution proposal and risk plan were explicitly stale at the end after later cross-type knowledge changes. Completion at publication is distinct from final source freshness; no regeneration was repeated for report validation.",
+    "evaluation_free_text_limit": "After evidence downgrades, deterministic coverage counts/verdict and downgraded row guidance are reconciled in current code. Other top-level free-form evaluation narratives are not re-evaluated and may remain overoptimistic. Coverage-only source issues do not create a page-level warning; this remains release-quality debt."
   },
   "recorded_retrieval": [
     {
@@ -271,5 +272,5 @@
     "migrations_applied": false,
     "deployed": false
   },
-  "remaining": "All 18 recommendations are not complete; conceptual release recall remains below 95%. Independent review corrected the latest model smoke to 9/10 groundedness/citation correctness (exit-plan deadline conflated with completing exit), below the release gate. HTTP completion and deterministic quotation membership do not establish semantic groundedness. No v3 model run is claimed; broader reliability/human/production measurements remain."
+  "remaining": "All 18 recommendations are not complete; conceptual release recall remains below 95%. Independent review rejected one case in the latest model smoke, making groundedness/citation correctness at most 9/10 (the other nine cases were not independently audited) (exit-plan deadline conflated with completing exit), below the release gate. HTTP completion and deterministic quotation membership do not establish semantic groundedness. No v3 model run is claimed; broader reliability/human/production measurements remain."
 }

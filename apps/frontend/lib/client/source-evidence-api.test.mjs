@@ -63,3 +63,7 @@ test("auth, service, malformed and network failures do not claim the original qu
     t.mock.restoreAll();
   }
 });
+test("a missing source gives a refresh action instead of a generic retry", async t => {
+  t.mock.method(globalThis, "fetch", async () => new Response("Not found", { status: 404 }));
+  await assert.rejects(verifyProjectSourceEvidence("project", { ...source, quotation_excerpts: undefined }, new AbortController().signal), { message: "Fant ikke kilden. Oppdater prosjektet og velg en annen kildehenvisning." });
+});
