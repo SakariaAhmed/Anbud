@@ -46,6 +46,7 @@ create or replace function public.finish_automatic_customer_analysis() returns t
 create or replace function public.automatic_customer_analysis_preflight() returns text language sql as 'select';
 create or replace function public.scheduled_worker_capacity_preflight() returns text language sql as 'select';
 create or replace function public.fail_document_enhancement_job() returns boolean language sql as 'select';
+create or replace function public.enqueue_document_enhancement_retry() returns boolean language sql as 'select';
 `;
 
 const versions = new Map([

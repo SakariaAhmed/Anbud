@@ -784,6 +784,7 @@ export function ProjectWorkspaceTabContent({
             projectId={project.id}
             canDownloadDocuments={canDownloadDocuments}
             documents={architectureDocumentCandidates}
+            sourceDocuments={project.documents}
             solutionEvaluation={solutionEvaluation}
             hasSolutionDocument={architectureDocumentCandidates.some(
               isDocumentReadyForEvaluation,

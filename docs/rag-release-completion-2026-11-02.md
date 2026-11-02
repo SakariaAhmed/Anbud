@@ -173,3 +173,25 @@ These changes passed 33 harness/budget tests and 22 chat tests before the full r
 The latency protocol still has insufficient samples. No p50/p95, cache-hit or
 human timing target is claimed. No new paid evaluation has run at this point;
 the original conceptual and extended stress release failures remain open.
+
+## Council round 2 follow-up
+
+Sol scored candidate `1ef9af3d` 7/10 and withheld approval to spend on final proof.
+Three reproduced defects were fixed: the evaluation view now receives complete
+source documents separately from solution-selection candidates; enhancement
+retry rechecks revision and eligibility, coalesces/enqueues and clears the error
+in one project-locked transaction; diagram previews are withheld on publication
+and reload until a diagram-label validator exists. Withholding a diagram does
+not interrupt validated prose previews or final analysis generation.
+
+Eleven focused regressions passed with zero skips, including actual evaluation
+component rendering, preview publication/reload, real concurrent PostgreSQL
+publication versus retry, failed-enqueue rollback and baseline reset. TypeScript
+and affected-file lint passed. The additive retry migration must precede code
+rollout. This is a correction to the reviewed candidate, not council approval or
+a new semantic quality result.
+The new atomic-retry migration was applied only to the owned local application
+database. Its HTTP enhancement rerun exceeded the harness's 240-second parent
+timeout while the offline Docling child was still running; no passing result
+was produced. The harness failure marker was removed afterward. The earlier
+24-check result predates this atomic-retry change and is not its HTTP proof.

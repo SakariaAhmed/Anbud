@@ -3,7 +3,7 @@ import "server-only";
 import type { CustomerAnalysisPartial, ProjectDocumentDetail, ProjectServiceDescription } from "@/lib/types";
 import { isRecord } from "@/lib/unknown-values";
 import { CUSTOMER_ANALYSIS_FIELD_DEFINITIONS, type CustomerAnalysisModelField } from "@/lib/server/document-intelligence/customer-analysis-fields";
-import { normalizeCustomerAnalysisResult, normalizeMermaidDiagram } from "@/lib/server/document-intelligence/customer-analysis-postprocess";
+import { normalizeCustomerAnalysisResult } from "@/lib/server/document-intelligence/customer-analysis-postprocess";
 import { bindOutputSourceEvidence, outputEvidenceFields } from "@/lib/server/output-source-evidence";
 
 /** The subset of JSON Schema used by the canonical analysis field contract. */
@@ -52,9 +52,7 @@ export function validateAnalysisPartialField(input: {
   const key = input.key as CustomerAnalysisModelField;
   if (!matchesSchema(input.value, CUSTOMER_ANALYSIS_FIELD_DEFINITIONS[key].schema)) throw new Error("Invalid analysis preview field shape.");
   if (key === "high_level_architecture_mermaid") {
-    const diagram = normalizeMermaidDiagram(input.value as string);
-    if (!diagram) throw new Error("Invalid analysis preview diagram.");
-    return { high_level_architecture_mermaid: diagram };
+    throw new Error("Diagram previews are withheld until their labels can be validated.");
   }
   if (key === "implicit_requirements") {
     for (const requirement of input.value as Array<{ source_reference: string; source_excerpt: string }>) {

@@ -80,6 +80,7 @@ export async function insertProjectJob(
   record: ProjectJobRecord,
   queuedInput: unknown,
   runtime: ProjectJobRepositoryRuntime = {},
+  enhancementRetrySourceRevision?: number,
 ) {
   const dataApi = serviceClient(runtime);
   const durablePayload = {
@@ -95,9 +96,10 @@ export async function insertProjectJob(
     updated_at: record.updated_at,
   };
 
-  const { data, error } = await dataApi.rpc("enqueue_project_job_serialized", {
+  const { data, error } = await dataApi.rpc(enhancementRetrySourceRevision === undefined ? "enqueue_project_job_serialized" : "enqueue_document_enhancement_retry", {
     p_project_id: record.project_id,
     p_job: durablePayload,
+    ...(enhancementRetrySourceRevision === undefined ? {} : { p_source_revision: enhancementRetrySourceRevision }),
   });
   if (error || !data) {
     throw new Error(error?.message || "Kunne ikke lagre prosjektjobben.");

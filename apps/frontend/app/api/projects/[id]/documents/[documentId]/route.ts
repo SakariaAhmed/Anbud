@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { contentTypeForUploadFormat } from "@/lib/server/documents";
-import { deleteDocument, getDocumentDetail, listProjectDocumentSummaries, markDocumentAsPrimarySolution, updateDocumentProcessingState } from "@/lib/server/repositories/data-store";
+import { deleteDocument, getDocumentDetail, listProjectDocumentSummaries, markDocumentAsPrimarySolution } from "@/lib/server/repositories/data-store";
 import { getProjectSnapshot } from "@/lib/server/repositories/data-store";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import {
@@ -108,14 +108,17 @@ export async function PATCH(
       const decision = documentEnhancementRetryDecision(document, body.source_revision);
       if (decision === "stale") return NextResponse.json({ error: "Dokumentet er endret siden siden ble åpnet. Last siden på nytt og prøv igjen." }, { status: 409 });
       if (decision === "not_eligible") return NextResponse.json({ error: "Dokumentet har ingen mislykket forbedring å prøve på nytt." }, { status: 409 });
-      // Cleared before queueing, so a worker that finishes first cannot have its
-      // new outcome overwritten. Every reader then sees the retry instead of the old failure.
-      const clearFailure = (message: string | null | undefined, error: string | null | undefined) => updateDocumentProcessingState({ projectId: id, documentId, status: document.processing_status, message, error });
-      await clearFailure("Dokumentforbedringen er satt i kø. Grunnversjonen kan brukes imens.", null);
-      const job = await queueDocumentEnhancementRetryJob({ projectId: id, documentId }).catch(async (error: unknown) => {
-        await clearFailure(document.processing_message, document.processing_error);
+      // The database rechecks the revision and eligibility while enqueueing and
+      // clearing the failure atomically. A failed enqueue needs no compensation.
+      let job;
+      try {
+        job = await queueDocumentEnhancementRetryJob({ projectId: id, documentId, sourceRevision: body.source_revision as number });
+      } catch (error) {
+        if (error instanceof Error && /DOCUMENT_ENHANCEMENT_RETRY_(STALE|NOT_ELIGIBLE)/u.test(error.message)) {
+          return NextResponse.json({ error: "Dokumentet er endret eller kan ikke forbedres på nytt. Last siden på nytt." }, { status: 409 });
+        }
         throw error;
-      });
+      }
       await auditEvent({ action: "document_enhancement_retry_requested", projectId: id, entityType: "document", entityId: documentId, metadata: { job_id: job.id, source_revision: document.chunk_source_revision } });
       return NextResponse.json({ job }, { status: 202 });
     }

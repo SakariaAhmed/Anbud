@@ -84,6 +84,7 @@ type QueueJobOptions = {
   skipEnqueue?: boolean;
   runNow?: boolean;
   autoRun?: boolean;
+  enhancementRetrySourceRevision?: number;
   idempotencyKey?: string;
   onDisposition?: (input: {
     coalesced: boolean;
@@ -686,7 +687,7 @@ async function enqueueProjectJob(
           parentLease,
           options.idempotencyKey ?? `${input.kind}:${record.id}`,
         )
-      : await insertProjectJob(record, input);
+      : await insertProjectJob(record, input, {}, options.enhancementRetrySourceRevision);
     getStore().set(persistedRecord.id, persistedRecord);
     getLocalJobIds().delete(persistedRecord.id);
     options.onDisposition?.({
@@ -1065,11 +1066,13 @@ export async function queueDocumentIngestionJob(input: {
 }
 
 /** A recovery request; the worker that normally runs enhancement picks it up. */
-export async function queueDocumentEnhancementRetryJob(input: { projectId: string; documentId: string }) {
-  return enqueueProjectJob(
+export async function queueDocumentEnhancementRetryJob(input: { projectId: string; documentId: string; sourceRevision: number }) {
+  const job = await enqueueProjectJob(
     { kind: "document_docling_enhancement", projectId: input.projectId, documentId: input.documentId },
-    { autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false) },
+    { autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false), enhancementRetrySourceRevision: input.sourceRevision },
   );
+  revalidateProjectCaches(input.projectId);
+  return job;
 }
 
 export async function queueCustomerAnalysisJob(input: {

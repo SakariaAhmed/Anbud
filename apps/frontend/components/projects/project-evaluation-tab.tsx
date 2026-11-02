@@ -764,6 +764,7 @@ export function ProjectEvaluationTab({
   projectId,
   canDownloadDocuments = false,
   documents,
+  sourceDocuments,
   solutionEvaluation,
   hasSolutionDocument,
   busy,
@@ -777,6 +778,7 @@ export function ProjectEvaluationTab({
   projectId?: string;
   canDownloadDocuments?: boolean;
   documents: ProjectDocument[];
+  sourceDocuments: ProjectDocument[];
   solutionEvaluation: SolutionEvaluationResult | null;
   hasSolutionDocument: boolean;
   busy: boolean;
@@ -1044,7 +1046,7 @@ export function ProjectEvaluationTab({
             <h3 className="font-semibold">Evalueringskriterier</h3>
             <p className="text-xs text-muted-foreground">Dokumenterte kriterier er bekreftet i konkurransegrunnlaget. Forslag må avklares med kunden.</p>
             {solutionEvaluation.criterion_coverage.map((item, index) => {
-              const current = currentCriterionCoverage(item, { documents });
+              const current = currentCriterionCoverage(item, { documents: sourceDocuments });
               return <article key={item.criterion_id} className="min-w-0 rounded-md border p-3 text-sm [overflow-wrap:anywhere]">
                 <h4 className="font-medium">{item.criterion}</h4>
                 <p className="mt-1 text-xs text-muted-foreground">{!current || item.origin === "unknown" ? "Ukjent kriteriegrunnlag" : item.origin === "observed" ? "Dokumentert evalueringskriterium" : "Forslag fra kundeanalysen"}</p>

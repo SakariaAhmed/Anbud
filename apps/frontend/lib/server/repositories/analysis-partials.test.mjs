@@ -27,6 +27,20 @@ test("normalization publishes only the received field and grounds source-backed 
   const result=validateAnalysisPartialField({key:"implicit_requirements",value:[need],documents:[document]});
   assert.equal(result.implicit_requirements.length,1);assert.equal(result.implicit_requirements[0].source_excerpt,document.raw_text);
 });
+test("diagram previews are withheld on publish and reload without stopping validated prose",async()=>{
+  const diagram='flowchart TD\n A["K-99.7 krever døgnbemanning på side 37"]';
+  assert.throws(()=>validateAnalysisPartialField({key:"high_level_architecture_mermaid",value:diagram,documents:[document]}),/withheld/);
+  const calls=[];
+  await context(async()=>{
+    const publish=createCustomerAnalysisPartialPublisher(input,{client:{async rpc(name,args){calls.push(args);return {data:null,error:null};}}});
+    await publish("high_level_architecture_mermaid",diagram);
+    await publish("customer_goals",["Sikre drift."]);
+  });
+  assert.equal(calls.length,1);assert.equal(calls[0].p_payload.field,"customer_goals");
+  const row={status:"incomplete",job_id:"job",job_status:"failed",source_revision:3,updated_at:"2026-11-02T00:00:00Z",fields:{high_level_architecture_mermaid:encryptJson(diagram),customer_goals:encryptJson(["Sikre drift."])}};
+  const result=await readCustomerAnalysisPartial("project",{client:{rpc:async()=>({data:row})}});
+  assert.deepEqual(result.fields,{customer_goals:["Sikre drift."]});
+});
 test("preview prose rejects invented quotations, IDs and unsupported locator precision before persistence",async()=>{
   for (const value of ['Kunden sier «Tilgjengelighet skal være 99,99 prosent».', "Krav K-99.7 krever døgnbemanning.", "Kontrollen står på side 37."]) {
     assert.throws(()=>validateAnalysisPartialField({key:"customer_profile_summary",value,documents:[document]}));

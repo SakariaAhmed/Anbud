@@ -40,6 +40,9 @@ export function createCustomerAnalysisPartialPublisher(input: {
   return async (key: string, value: unknown) => {
     assertProjectWorkflowActive();
     input.assertActive?.();
+    // Diagram syntax and label claims need their own validator. Withholding this
+    // preview must not abort the remaining fields or final analysis generation.
+    if (key === "high_level_architecture_mermaid") return;
     if (seen.has(key)) throw new Error("Duplicate analysis preview field.");
     const fields = validateAnalysisPartialField({ key, value, documents: input.documents, serviceCandidates: input.serviceCandidates });
     const normalized: unknown = fields[key as keyof typeof fields];
@@ -75,6 +78,7 @@ export async function readCustomerAnalysisPartial(projectId: string, runtime: Ru
     !["running", "failed"].includes(String(data.job_status)) || !isRecord(data.fields)) throw new Error("Invalid analysis preview snapshot.");
   const fields: Record<string, unknown> = {};
   for (const [key, envelope] of Object.entries(data.fields)) {
+    if (key === "high_level_architecture_mermaid") continue;
     if (!isRecord(envelope) || envelope.encrypted !== true || typeof envelope.payload !== "string") throw new Error("Unencrypted analysis preview.");
     const value: unknown = decryptJson(envelope, undefined);
     if (value === undefined) throw new Error("Unreadable analysis preview.");
