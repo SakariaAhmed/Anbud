@@ -1,6 +1,8 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { unchangedRequirementRowEvidence } from "@/lib/output-source-evidence";
+import { requirementReviewRows } from "@/lib/requirement-review";
 
 import { isMarkdownTableDivider } from "@/lib/markdown-table-row";
 import { requirementResponseTableColumns } from "@/lib/requirement-response-table";
@@ -474,6 +476,7 @@ export function buildValidatedManualArtifactInputSnapshot(input: {
     return {
       ...parentInputSnapshot,
       source_evidence: { version: 1, references: [] },
+      source_check_status: "manually_edited",
       edited_manually: true,
       edited_at: input.editedAt,
       parent_artifact_id: input.parentArtifactId,
@@ -684,24 +687,14 @@ export function buildValidatedManualArtifactInputSnapshot(input: {
   // Evidence belongs to the exact generated cell. A manual edit cannot inherit
   // verified quotations from the old answer, even without repair acknowledgement.
   const parentAnswerRows = typeof input.parentContentMarkdown === "string"
-    ? renderedRequirementAnswerRows(input.parentContentMarkdown) : [];
-  const editedAnswerRows = renderedRequirementAnswerRows(input.contentMarkdown);
-  const sourceEvidence = inputSnapshotRecord(parentInputSnapshot.source_evidence);
-  const retainedEvidence = sourceEvidence.version === 1 && Array.isArray(sourceEvidence.references)
-    ? sourceEvidence.references.filter((value) => {
-        const entry = inputSnapshotRecord(value);
-        if (typeof entry.path !== "string") return false;
-        const match = entry.path.match(/^rows\.(\d+)\.(answer|evidence)$/u);
-        if (!match) return false;
-        const index = Number(match[1]);
-        const field = match[2] as "answer" | "evidence";
-        const parent = parentAnswerRows[index], edited = editedAnswerRows[index];
-        return Boolean(parent && edited && parent.ref === edited.ref && parent[field] === edited[field]);
-      }) : [];
+    ? requirementReviewRows(input.parentContentMarkdown, parentInputSnapshot) : [];
+  const editedAnswerRows = requirementReviewRows(input.contentMarkdown, parentInputSnapshot);
+  const retainedEvidence = unchangedRequirementRowEvidence(parentInputSnapshot.source_evidence, parentAnswerRows, editedAnswerRows);
 
   return {
     ...parentInputSnapshot,
-    source_evidence: { version: 1, references: retainedEvidence },
+    source_evidence: retainedEvidence,
+    source_check_status: "manually_edited",
     generation_metadata: {
       ...generationMetadata,
       requirement_response: updatedRequirementResponse,

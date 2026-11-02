@@ -1558,10 +1558,11 @@ async function runExecutiveSummaryWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress(formatJobProgress(18, "Laster prosjekt, kundeanalyse og vurdering ...", 88));
-  const [project, customerAnalysis] = await Promise.all([
-    getProjectGenerationContext(input.projectId),
-    getFreshCustomerAnalysis(input.projectId),
-  ]);
+  const snapshot = await readStableProjectSourceSnapshot({
+    readSourceRevision: () => getProjectSourceRevision(input.projectId),
+    readValue: () => Promise.all([getProjectGenerationContext(input.projectId), getFreshCustomerAnalysis(input.projectId), listProjectDocumentsForAnalysis(input.projectId)]),
+  });
+  const [project, customerAnalysis, sourceDocuments] = snapshot.value;
   const evaluationSnapshot = project.solutionEvaluationSnapshot;
   handlers.onPhase?.("dokumenthenting");
 
@@ -1576,6 +1577,7 @@ async function runExecutiveSummaryWorkflow(
     projectName: project.name,
     customerAnalysis,
     solutionEvaluation,
+    sourceDocuments: sourceDocuments.map(document => ({ document, sourceType: "project_document" as const })),
     model: input.model,
   });
   handlers.onPhase?.("ai_oppsummering");

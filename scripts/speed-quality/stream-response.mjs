@@ -1,5 +1,13 @@
 // Forward provider bytes immediately while recording bounded SSE metadata only.
 // Usage is observational: it never releases a budget reservation.
+import { once } from "node:events";
+
+export async function writeProxyStreamChunk(response, chunk, signal) {
+  signal?.throwIfAborted();
+  if (response.destroyed) throw new DOMException("Evaluation client disconnected.", "AbortError");
+  if (!response.write(chunk)) await once(response, "drain", { signal });
+}
+
 export async function forwardStream(body, write, started = performance.now()) {
   const decoder = new TextDecoder();
   let pending = "", usage, completion, firstContentMs, returnedServiceTier;

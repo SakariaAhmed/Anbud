@@ -141,8 +141,11 @@ export function ProjectBilag1Tab({
                   </Button>
                 </DeleteConfirmDialog>
               </div>
-              <OutputSourceEvidence value={isRecord(latestArtifact.input_snapshot) ? latestArtifact.input_snapshot.source_evidence : undefined} projectId={projectId} canDownloadDocuments={canDownloadDocuments} />
+              <OutputSourceEvidence collapsible value={isRecord(latestArtifact.input_snapshot) ? latestArtifact.input_snapshot.source_evidence : undefined} projectId={projectId} canDownloadDocuments={canDownloadDocuments} />
               <MarkdownViewer
+                sourceEvidence={isRecord(latestArtifact.input_snapshot) ? latestArtifact.input_snapshot.source_evidence : undefined}
+                projectId={projectId}
+                canDownloadDocuments={canDownloadDocuments}
                 content={
                   latestArtifact.content_markdown ||
                   "Dette Bilag 1-utkastet mangler lagret innhold. Generer det på nytt for å få et komplett resultat."

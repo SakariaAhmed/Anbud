@@ -48,8 +48,9 @@ const {
   getDocumentChunksTestRpcCalls,
   resetDocumentChunksTestRuntime,
   setDocumentChunksTestRetrievalRows,
+  setDocumentChunksTestRequirementRegister,
 } = jiti(testSupportPath);
-const { encryptString } = jiti(path.join(frontendRoot, "lib/server/crypto.ts"));
+const { encryptString, encryptJson } = jiti(path.join(frontendRoot, "lib/server/crypto.ts"));
 
 test("exact full IDs resolve authoritative repeated rows before model reranking and invalidate with source changes", async () => {
   resetDocumentChunksTestRuntime();
@@ -65,6 +66,18 @@ test("exact full IDs resolve authoritative repeated rows before model reranking 
   const fresh = await retrieveDocumentSnippetsWithMetadata({ ...input, documents: [updated] });
   assert.match(fresh.snippets[0].text, /beredskap i Norge/u);
   assert.doesNotMatch(fresh.snippets[0].text, /døgnbemanning/u);
+});
+
+test("ordinary P1 terminology does not become a missing-ID refusal while an observed P1 register row stays pinned", async () => {
+  resetDocumentChunksTestRuntime();
+  const support = projectDocument({ id: "priority-terms", role: "primary_customer_document", file_format: "txt", raw_text: "## Beredskap\nLeverandøren håndterer kritiske hendelser med døgnåpen beredskap.", structure_map: [] });
+  const general = await retrieveDocumentSnippetsWithMetadata({ query: "Hvordan håndteres P1-hendelser i beredskap?", exactTerms: ["P1"], documents: [support] });
+  assert.deepEqual(general.telemetry.missingRequirementIds, []);
+  assert.equal(general.telemetry.requirementLookupFailed, false);
+  const formal = projectDocument({ id: "priority-register", role: "primary_customer_document", file_format: "txt", raw_text: "## Drift\n| Krav-ID | Krav |\n| --- | --- |\n| P1 | Leverandøren skal tilby døgnåpen beredskap. |", structure_map: [] });
+  setDocumentChunksTestRequirementRegister(formal.id, encryptJson({ documentId: formal.id, projectId: formal.project_id, sourceRevision: formal.chunk_source_revision ?? 0, requirementRegister: { version: 1, rows: [{ id: "P1", idOrigin: "source", text: "Leverandøren skal tilby døgnåpen beredskap.", heading: "Drift", pages: [] }] } }));
+  const observed = await retrieveDocumentSnippetsWithMetadata({ query: "Hva sier P1?", exactTerms: ["P1"], documents: [formal] });
+  assert.equal(observed.snippets[0]?.requirementId, "P1");
 });
 
 function projectDocument(overrides = {}) {

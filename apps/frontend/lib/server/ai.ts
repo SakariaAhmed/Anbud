@@ -1,4 +1,4 @@
-import { bindOutputSourceEvidence, outputEvidenceFields } from "@/lib/server/output-source-evidence";
+import { reviewStructuredOutputEvidence } from "@/lib/server/output-source-evidence";
 import { selectRequirementRegenerationLedger, mergeRegeneratedRequirementRows } from "@/lib/server/ai/requirement-response-regeneration";
 import "server-only";
 
@@ -3139,13 +3139,23 @@ export async function evaluateSolutionDocument(input: {
       },
     );
   assertSubstantiveSolutionEvaluationResult(normalizedEvaluation);
-  normalizedEvaluation.source_evidence = bindOutputSourceEvidence({
-    fields: outputEvidenceFields(normalizedEvaluation),
+  const reviewed = reviewStructuredOutputEvidence(normalizedEvaluation, {
     documents: [input.customerDocument, input.solutionDocument, ...input.supportingDocuments].map(document => ({ document, sourceType: "project_document" as const })),
     authoritativeRequirementRefs: (input.sourceRequirementLedger ?? []).map(row => row.id),
     artifacts: input.systemSolutionArtifact?.id ? [{ ...input.systemSolutionArtifact, id: input.systemSolutionArtifact.id }] : [],
   });
-  return normalizedEvaluation;
+  const coverage = reviewed.result.requirement_coverage;
+  if (coverage && reviewed.evidence.issues?.length) {
+    for (const issue of reviewed.evidence.issues) {
+      const match = issue.path.match(/^result\.requirement_coverage\.items\.(\d+)\./u);
+      if (match && coverage.items[Number(match[1])]) coverage.items[Number(match[1])].assessment = "Uklart";
+    }
+    coverage.good = coverage.items.filter(item => item.assessment === "Godt").length;
+    coverage.weak = coverage.items.filter(item => item.assessment === "Dårlig").length;
+    coverage.missing = coverage.items.filter(item => item.assessment === "Mangler").length;
+    coverage.unclear = coverage.items.filter(item => item.assessment === "Uklart").length;
+  }
+  return { ...reviewed.result, source_evidence: reviewed.evidence };
 }
 
 function parseGeneratedArtifactDraft(

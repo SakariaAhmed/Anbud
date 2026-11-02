@@ -1,5 +1,5 @@
-import { bindOutputSourceEvidence } from "@/lib/server/output-source-evidence";
-import { requirementReviewRows } from "@/lib/requirement-review";
+import { reviewOutputSourceEvidence, reviewRequirementRowOutputEvidence } from "@/lib/server/output-source-evidence";
+import { editRequirementReviewRow, requirementReviewRows } from "@/lib/requirement-review";
 import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
 
@@ -741,6 +741,30 @@ export async function generateAndSaveProjectArtifact(
       `Generatorresultatet inneholdt ${repaired.repairedRows} rader fra innholdsfortegnelse. Jobben stoppes i stedet for å lagre feiloutput.`,
     );
   }
+  const evidenceRows = input.artifactType === "forbedret_kravsvar" ? requirementReviewRows(repaired.contentMarkdown, { generation_metadata: generationMetadata }) : [];
+  const evidenceInput = {
+    authoritativeRequirementRefs: requirementQualityExpectations(generationMetadata).expectedRequirementRefs ?? [],
+    documents: [...projectDocuments.map(document => ({ document, sourceType: "project_document" as const })), ...serviceDescriptionDocuments.map(document => ({ document, sourceType: "service_document" as const }))],
+    artifacts: knowledgeArtifacts,
+    verifiedReferences: solutionEvaluationForGeneration?.source_evidence?.references.map(entry => entry.source),
+  };
+  const reviewedEvidence = evidenceRows.length ? reviewRequirementRowOutputEvidence({ ...evidenceInput, rows: evidenceRows,
+    parentRows: regenerationParent ? requirementReviewRows(regenerationParent.content_markdown, regenerationParent.input_snapshot) : undefined,
+    parentEvidence: regenerationParent && regenerationParent.input_snapshot && typeof regenerationParent.input_snapshot === "object" && "source_evidence" in regenerationParent.input_snapshot ? regenerationParent.input_snapshot.source_evidence : undefined,
+    regeneratedIndexes: regenerateRequirements ? new Set(regenerateRequirements.rows.map(row => row.index)) : undefined,
+  }) : reviewOutputSourceEvidence({ ...evidenceInput,
+    interpretationOnly: input.artifactType !== "bilag1_rekonstruksjon",
+    fields: repaired.contentMarkdown.split(/(\r?\n[ \t]*\r?\n)/u).flatMap((text, index) => index % 2 === 0 && text.trim() ? [{ path: `content_markdown.${index}`, text }] : []),
+  });
+  const replacements = new Map(reviewedEvidence.fields.map(field => [field.path, field.text]));
+  if (evidenceRows.length) {
+    for (const row of evidenceRows) {
+      const answer = replacements.get(`rows.${row.index}.answer`) ?? row.answer;
+      const evidence = replacements.get(`rows.${row.index}.evidence`) ?? row.evidence;
+      if (answer !== row.answer || evidence !== row.evidence) repaired.contentMarkdown = editRequirementReviewRow(repaired.contentMarkdown, row, { answer, evidence });
+    }
+  } else repaired.contentMarkdown = repaired.contentMarkdown.split(/(\r?\n[ \t]*\r?\n)/u).map((text, index) => replacements.get(`content_markdown.${index}`) ?? text).join("");
+  const sourceEvidence = reviewedEvidence.evidence;
   const qualityReport = validateGeneratedArtifact({
     artifactType: input.artifactType,
     title: generated.title,
@@ -755,14 +779,7 @@ export async function generateAndSaveProjectArtifact(
       `Generatorresultatet stoppet i kvalitetskontroll: ${qualityReport.issues.join(" ")}`,
     );
   }
-  const evidenceRows = input.artifactType === "forbedret_kravsvar" ? requirementReviewRows(repaired.contentMarkdown, { generation_metadata: generationMetadata }) : [];
-  const sourceEvidence = bindOutputSourceEvidence({
-    fields: evidenceRows.length ? evidenceRows.flatMap(row => [{ path: `rows.${row.index}.answer`, text: row.answer }, { path: `rows.${row.index}.evidence`, text: row.evidence }]) : [{ path: "content_markdown", text: repaired.contentMarkdown }],
-    authoritativeRequirementRefs: requirementQualityExpectations(generationMetadata).expectedRequirementRefs ?? [],
-    documents: [...projectDocuments.map(document => ({ document, sourceType: "project_document" as const })), ...serviceDescriptionDocuments.map(document => ({ document, sourceType: "service_document" as const }))],
-    artifacts: knowledgeArtifacts,
-    verifiedReferences: solutionEvaluationForGeneration?.source_evidence?.references.map(entry => entry.source),
-  });
+
   input.onPhase?.("validering");
 
   input.onProgress?.(formatJobProgress(90, "Lagrer validert generatorresultat i prosjektet ..."));
@@ -859,6 +876,7 @@ export async function generateAndSaveProjectArtifact(
       },
       generation_metadata: generationMetadata ?? null,
       source_evidence: sourceEvidence,
+      source_check_status: sourceEvidence.issues?.length ? "needs_clarification" : "passed",
       generation_timings: [
         ...(input.timings?.() ?? []),
         ...(input.totalDurationMs

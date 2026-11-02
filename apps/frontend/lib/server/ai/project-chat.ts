@@ -561,6 +561,7 @@ function sourceReferencesFromSnippets(
   for (const snippet of snippets) {
     const reference: ChatSourceReference = {
       evidence_id: snippet.evidenceId,
+      requirement_id: snippet.requirementId,
       chunk_id: snippet.chunkId ?? null,
       source_revision: snippet.sourceRevision,
       source_fingerprint: snippet.sourceFingerprint,
@@ -682,13 +683,15 @@ function sanitizeChatAnswerText(value: string) {
 /** Validate complete paragraphs before they become visible. An invalid
  * paragraph never reaches the client or persistence; keep an actionable,
  * uncited recovery message instead of discarding an answer already shown. */
-async function* validatedChatParagraphs(stream: AsyncIterable<string>, references: ChatSourceReference[], onInvalid: () => void, repair: (paragraph: string) => Promise<string | null>) {
+async function* validatedChatParagraphs(stream: AsyncIterable<string>, references: ChatSourceReference[], onInvalid: () => void, repair: (paragraph: string, published: string) => Promise<string | null>, userText?: string) {
   let repairAttempted = false;
+  let published = "";
   const checkOrRepair = async (paragraph: string) => {
     try { return checked(paragraph); } catch (error) {
       if (!(error instanceof SourceEvidenceValidationError) || repairAttempted) throw error;
       repairAttempted = true;
-      const repaired = await repair(sanitizeChatAnswerText(paragraph));
+      const prior = published.length > 8000 ? `${published.slice(0, 3000)}\n…\n${published.slice(-4500)}` : published;
+      const repaired = await repair(sanitizeChatAnswerText(paragraph), prior);
       if (repaired === null) throw error;
       return checked(repaired);
     }
@@ -696,7 +699,7 @@ async function* validatedChatParagraphs(stream: AsyncIterable<string>, reference
   let pending = "";
   const checked = (text: string) => {
     const cleaned = sanitizeChatAnswerText(text);
-    validateChatEvidence(cleaned, references);
+    validateChatEvidence(cleaned, references, { userText });
     return cleaned;
   };
   for await (const chunk of stream) {
@@ -714,6 +717,7 @@ async function* validatedChatParagraphs(stream: AsyncIterable<string>, reference
         yield "Resten av svaret kunne ikke kildebekreftes. Presiser krav-ID eller kilde og prøv meldingen på nytt.";
         return;
       }
+      published += `${safeParagraph}\n\n`;
       yield `${safeParagraph}\n\n`;
     }
   }
@@ -1149,10 +1153,10 @@ export async function streamProjectChat(input: ProjectChatInput) {
   });
 
   return {
-    stream: completionInput.abstentionMessage ? stream : validatedChatParagraphs(stream, completionInput.sourceReferences, () => { sourceValidationFailed = true; }, paragraph => repairChatCitationParagraph({ paragraph, question: input.question, sources: completionInput.sourceReferences, model: completionInput.model, signal: input.signal, traceId: input.traceId })),
+    stream: completionInput.abstentionMessage ? stream : validatedChatParagraphs(stream, completionInput.sourceReferences, () => { sourceValidationFailed = true; }, (paragraph, publishedAnswer) => repairChatCitationParagraph({ paragraph, question: input.question, publishedAnswer, sources: completionInput.sourceReferences, model: completionInput.model, signal: input.signal, traceId: input.traceId }), input.question),
     get sourceValidationFailed() { return sourceValidationFailed; },
     sourceReferences: completionInput.abstentionMessage ? [] : completionInput.sourceReferences,
-    validateAnswer: (answer: string) => answer === completionInput.abstentionMessage ? [] : validateChatEvidence(answer, completionInput.sourceReferences),
+    validateAnswer: (answer: string) => answer === completionInput.abstentionMessage ? [] : validateChatEvidence(answer, completionInput.sourceReferences, { userText: input.question }),
     domainHints: completionInput.domainHints,
     retrievalPlan: completionInput.retrievalPlan,
     retrievalTelemetry: completionInput.retrievalTelemetry,

@@ -24,7 +24,7 @@ import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization"
 import { createServiceClient } from "@/lib/server/data-api";
 import { reciprocalRankFusion } from "@/lib/server/retrieval-fusion";
 import { evidenceIdentity, SourceQuoteIndex } from "@/lib/server/source-evidence";
-import { extractRequirementIdentifiers } from "@/lib/server/ai/retrieval-query";
+import { extractRequirementIdentifiers, isAmbiguousRequirementIdentifier } from "@/lib/server/ai/retrieval-query";
 import type {
   DocumentFileFormat,
   ProjectDocumentDetail,
@@ -2153,10 +2153,10 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const requirementIds = Array.from(new Set(exactTerms.flatMap(extractRequirementIdentifiers)));
   let requirementLookupFailed = false;
   const lookup = requirementIds.length
-    ? import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onSourceFailure: () => { requirementLookupFailed = true; } })).catch(error => {
+    ? import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onSourceFailure: () => { requirementLookupFailed = requirementIds.some(id => !isAmbiguousRequirementIdentifier(id)); } })).catch(error => {
         assertEmbeddingFallbackAllowed(error);
         if (error instanceof Error && error.name === "AbortError") throw error;
-        requirementLookupFailed = true;
+        requirementLookupFailed = requirementIds.some(id => !isAmbiguousRequirementIdentifier(id));
         console.warn(JSON.stringify({ event: "requirement_lookup_unavailable", ...embeddingErrorFields(error) }));
         return [];
       })
@@ -2351,7 +2351,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     ))].slice(0, limit);
     quality = assessRetrievalQuality({ snippets, exactTerms });
   }
-  const missingRequirementIds = requirementIds.filter(id => !lookedUpRows.some(row => row.requirementId === id));
+  const missingRequirementIds = requirementIds.filter(id => !isAmbiguousRequirementIdentifier(id) && !lookedUpRows.some(row => row.requirementId === id));
   if (missingRequirementIds.length || requirementLookupFailed) quality = { ...quality, sufficient: false, confidence: "low", reason: "En etterspurt kravreferanse kunne ikke knyttes sikkert til kravregisteret." };
   const quoteIndexes = new Map<string, SourceQuoteIndex>();
   snippets = snippets.map(snippet => {

@@ -51,6 +51,7 @@ export const CUSTOMER_ANALYSIS_READABILITY_RULES = [
 const PROJECT_SOURCE_EVIDENCE_RULES = [
   "Interne målinger av søk, dekning, parsing og indeksering er verktøystatus, ikke fakta om kunden eller leverandørens løsning. Bruk dem bare til å vurdere grunnlagets begrensninger; ikke gjør dem til kundebehov, løsningsrisiko eller kontraktskrav.",
   "Bevar krav-ID, eksakte verdier, roller og vilkår for de forholdene du omtaler. Et tydelig kundekrav blir ikke uklart fordi leverandørens løsning avviker. Skill bindende kundekrav, dokumentert leveranse, konkrete avvik og egne forbedringsforslag; merk nye løsningsvalg som forslag frem til leverandøren har bekreftet dem.",
+  "Når du siterer en kilde, skal tekst i sitattegn være ett ordrett, sammenhengende utdrag fra kilden. Ikke forkort sitater med utelatelsestegn, rekonstruer tabellceller med nye skilletegn eller sett kildehenvisninger inne i sitatet. Skriv parafraser og egne budskapsforslag uten sitattegn og merk dem som tolkning eller forslag.",
 ];
 
 export function buildCustomerAnalysisPrompt() {
@@ -237,7 +238,7 @@ export function buildSolutionEvaluationPrompt(
       "document_findings skal peke tilbake til konkrete steder i det importerte Bilag 2 / arkitektdokumentet.",
       "Kravfunn skal kopiere full_reference fra den relevante kravdetaljen, inkludert dokumentnavn. Samme lokale krav-ID eller sitat kan finnes i flere dokumenter. For seksjonsfunn skal document_findings.reference være en eksakt referanse fra dokumentstrukturen eller nærmeste kildeindikasjon, for eksempel side, seksjon, tabell, rad, ark eller overskrift. Ikke bruk generiske referanser som 'dokumentet' eller 'løsningen'.",
       "Hvert document_findings-punkt skal si om arkitektens svar er Godt, Dårlig, Mangler eller Uklart, og forklare hvorfor opp mot kundeanalysen og kundens dokumenterte behov.",
-      "Hvert document_findings.evidence skal være et kort tekstnært utdrag fra det vurderte dokumentets svarinnhold, helst ordrett fra relevant svarutdrag eller svarbærende avsnitt. Et sitat fra Krav-kolonnen alene er ikke bevis for løsningen. Ikke bruk fri parafrase.",
+      "Hvert document_findings.evidence skal være et kort ordrett utdrag fra det vurderte dokumentets svarinnhold. Bevar original ordlyd og tegnsetting; ikke sy sammen ulike tekststeder til ett sitat. Et sitat fra Krav-kolonnen alene er ikke bevis for løsningen. Hvis et ordrett svarutdrag mangler, skriv Ikke dokumentert i stedet for en fri parafrase.",
       "Hvis referansen ikke kan bestemmes helt presist, bruk nærmeste tilgjengelige referanse fra strukturkartet og skriv dette tydelig i reference.",
       "Alle oppsummeringer og vurderinger skal være konkrete, relevante og handlingsrettede for et tilbudsteam.",
       "Punktlister skal normalt holdes på 3 til 5 punkter og aldri overstige 10 punkter.",

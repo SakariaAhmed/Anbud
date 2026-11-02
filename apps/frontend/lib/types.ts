@@ -361,6 +361,7 @@ export interface CustomerAnalysisResult {
 export interface SourceEvidenceManifest {
   version: 1;
   references: Array<{ path: string; source: ChatSourceReference }>;
+  issues?: Array<{ path: string; code: "unverified_quote" | "unknown_requirement"; message: string }>;
 }
 
 export interface SolutionEvaluationResult {
@@ -521,6 +522,8 @@ export type ChatDomainHint =
   | "Dokument og kildegrunnlag";
 
 export interface ChatSourceReference {
+  /** Assigned only by an authoritative requirement-register lookup. */
+  requirement_id?: string;
   citation_number?: number;
   quotation_excerpts?: string[];
   /** Optional only for messages saved before evidence contract v1. */

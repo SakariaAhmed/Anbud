@@ -1,5 +1,5 @@
 import "server-only";
-import { bindOutputSourceEvidence, outputEvidenceFields } from "@/lib/server/output-source-evidence";
+import { reviewStructuredOutputEvidence, type AuthorizedEvidenceDocument } from "@/lib/server/output-source-evidence";
 
 import { stringList, untrustedObject, type Untrusted } from "@/lib/unknown-values";
 import { createJsonCompletion } from "@/lib/server/ai/completion";
@@ -46,6 +46,7 @@ export async function generateExecutiveSummary(input: {
   customerAnalysis: CustomerAnalysisResult | null;
   solutionEvaluation: SolutionEvaluationResult;
   model?: string;
+  sourceDocuments?: AuthorizedEvidenceDocument[];
 }) {
   const userPrompt = [
     "Lag en separat lederoppsummering basert på den ferdige løsningsvurderingen.",
@@ -83,10 +84,10 @@ export async function generateExecutiveSummary(input: {
   });
 
   const normalized = normalizeExecutiveSummaryResult(result);
-  normalized.source_evidence = bindOutputSourceEvidence({
-    fields: outputEvidenceFields(normalized), documents: [],
+  const reviewed = reviewStructuredOutputEvidence(normalized, {
+    documents: input.sourceDocuments ?? [],
     verifiedReferences: input.solutionEvaluation.source_evidence?.references.map(entry => entry.source),
     authoritativeRequirementRefs: input.solutionEvaluation.requirement_coverage?.items.map(row => row.reference),
   });
-  return normalized;
+  return { ...reviewed.result, source_evidence: reviewed.evidence };
 }

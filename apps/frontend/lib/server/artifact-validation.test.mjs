@@ -748,10 +748,11 @@ test("kravsvar validation reads columns through the shared heading locator", () 
 
 test("manual answer or evidence changes discard only that cell's inherited source proof", () => {
   const parent = manualEditParentSnapshot();
+  const proof = id => ({ evidence_id: id, source_type: "project_document", source_id: "source", document_title: "Krav", reference: "Drift", original_quote: "Original ordlyd", source_revision: 1, source_fingerprint: "hash" });
   parent.source_evidence = { version: 1, references: [
-    { path: "rows.0.answer", source: { evidence_id: "old-answer" } },
-    { path: "rows.0.evidence", source: { evidence_id: "old-evidence" } },
-    { path: "rows.1.answer", source: { evidence_id: "unchanged" } },
+    { path: "rows.0.answer", source: proof("old-answer") },
+    { path: "rows.0.evidence", source: proof("old-evidence") },
+    { path: "rows.1.answer", source: proof("unchanged") },
   ] };
   for (const [changed, expected] of [
     [manualRowOne.replace("Atea dokumenterer logging", "Atea tilbyr etterprøvbar logging"), ["rows.0.evidence", "rows.1.answer"]],

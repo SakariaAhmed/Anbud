@@ -1,11 +1,11 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { ChatSourceReference } from "@/lib/types";
-import { extractRequirementIdentifiers } from "@/lib/server/ai/retrieval-query";
+import { extractRequirementIdentifiers, isAmbiguousRequirementIdentifier } from "@/lib/server/ai/retrieval-query";
 
 const quotationText = (value: string) => value.replace(/\*\*([^*]+)\*\*/gu, "$1").replace(/__([^_]+)__/gu, "$1");
-export function quotedSourcePassages(value: string): string[] {
-  return [...value.matchAll(/«([^»]+)»|“([^”]+)”|"([^"\n]+)"/gu)].map(match => match[1] ?? match[2] ?? match[3]);
+export function quotedSourcePassages(value: string, includeOrdinaryQuotes = true): string[] {
+  return [...value.matchAll(includeOrdinaryQuotes ? /«([^»]+)»|“([^”]+)”|"([^"\n]+)"/gu : /«([^»]+)»/gu)].map(match => match[1] ?? match[2] ?? match[3]);
 }
 const canonical = (value: string) => value.replace(/[‐‑‒–—]/gu, "-").replace(/\u0000/gu, "").replace(/\s+/gu, " ").trim();
 
@@ -56,8 +56,10 @@ export function evidenceIdentity(input: { sourceType: string; sourceId: string; 
 /** Validate the references the answer actually uses before persistence.
  * Membership proves a locator/quotation exists, not that an interpretation is
  * correct; groundedness remains a separate release evaluation. */
-export function validateChatEvidence(answer: string, available: ChatSourceReference[]) {
+export function validateChatEvidence(answer: string, available: ChatSourceReference[], options: { userText?: string } = {}) {
   const passages = new Map<number, string[]>();
+  const registeredIds = new Set(available.flatMap(source => source?.source_type === "project_document" && source.requirement_id ? extractRequirementIdentifiers(source.requirement_id) : []));
+  const registeredShapes = new Set([...registeredIds].map(id => id.replace(/\d+/gu, "#")));
   if ((answer.match(/\[Kilde/giu) ?? []).length !== [...answer.matchAll(/\[Kilde\s+(\d+)\]/giu)].length) throw new SourceEvidenceValidationError("CHAT_SOURCE_REFERENCE_INVALID", "Svaret har en ugyldig kildehenvisning.");
   const indexes = [...answer.matchAll(/\[Kilde\s+(\d+)\]/giu)].map(match => Number(match[1]) - 1);
   if (indexes.some(index => index < 0 || index >= available.length || !available[index].evidence_id || !canonical(available[index].original_quote ?? ""))) {
@@ -65,12 +67,18 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
   }
   for (const paragraph of answer.split(/\n\s*\n/u)) {
     const sources = [...paragraph.matchAll(/\[Kilde\s+(\d+)\]/giu)].map(match => available[Number(match[1]) - 1]);
-    for (const quote of quotedSourcePassages(paragraph)) {
+    // The prompt reserves «…» for source quotations. Ordinary quotation marks
+    // without citations also support conversation such as Svar "Ja" eller "Nei".
+    const quotes = quotedSourcePassages(paragraph, sources.length > 0);
+    for (const quote of quotes) {
+      // Repeating user-supplied wording is conversation, never document proof.
+      // Cited quotations still require membership in the actual cited source.
+      if (!sources.length && options.userText?.includes(quote)) continue;
       if (!sources.some(source => source?.original_quote && new SourceQuoteIndex(source.original_quote).find(quote) !== null)) {
         throw new SourceEvidenceValidationError("CHAT_QUOTATION_INVALID", "Et sitat i svaret finnes ikke i den oppgitte kilden. Prøv meldingen på nytt.");
       }
     }
-    const ids = extractRequirementIdentifiers(canonical(paragraph));
+    const ids = extractRequirementIdentifiers(paragraph).filter(id => !isAmbiguousRequirementIdentifier(id) || registeredIds.has(id) || registeredShapes.has(id.replace(/\d+/gu, "#")));
     for (const id of ids) {
       if (!sources.some(source => source?.original_quote && extractRequirementIdentifiers(source.original_quote).includes(id))) {
         throw new SourceEvidenceValidationError("CHAT_REQUIREMENT_ID_INVALID", "En krav-ID i svaret kan ikke bekreftes i den oppgitte kilden. Prøv meldingen på nytt.");
@@ -81,7 +89,7 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
       const source = available[index];
       const original = source.original_quote!;
       const indexer = new SourceQuoteIndex(original);
-      const needles = quotedSourcePassages(paragraph).concat(ids);
+      const needles = quotes.concat(ids);
       const excerpts = passages.get(index) ?? [];
       if (original.length <= 4800) excerpts.push(original);
       else {

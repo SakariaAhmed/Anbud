@@ -13,6 +13,8 @@ const privatePath = path.join(status.directory, "environment.json");
 const runtime = JSON.parse(readFileSync(privatePath, "utf8"));
 const resumeAi = process.argv.includes("--resume-ai");
 const aiEnabled = process.argv.includes("--ai") || resumeAi;
+const allGenerators = process.argv.includes("--all-generators");
+if (allGenerators && !aiEnabled) throw new Error("All generators require explicit --ai.");
 const accessOnly = process.argv.includes("--access-only");
 if (accessOnly && aiEnabled) throw new Error("Choose --access-only or --ai, not both.");
 if (runtime.env.OPENAI_API_KEY && !aiEnabled && !accessOnly) throw new Error("This stack has a model endpoint enabled. Use --ai explicitly, or --access-only to reuse existing sources without AI calls.");
@@ -136,7 +138,14 @@ checks.push("guest-owned project creation and global admin access without a proj
 
 if (aiEnabled) {
   assert.ok(runtime.env.OPENAI_API_KEY, "AI tests require an explicitly configured live/fixture model endpoint.");
-  for (const body of resumeAi ? [] : [{ kind: "customer_analysis" }, { kind: "artifact_generation", artifact_type: "forbedret_kravsvar", source_document_ids: [uploaded[1].id] }, { kind: "artifact_generation", artifact_type: "bilag1_rekonstruksjon" }, { kind: "solution_evaluation", solution_document_id: uploaded[2].id }, { kind: "executive_summary" }]) {
+  const workflows = [
+    { kind: "customer_analysis" },
+    { kind: "artifact_generation", artifact_type: "forbedret_kravsvar", source_document_ids: [uploaded[1].id] },
+    ...(allGenerators ? ["losningsutkast", "gjennomforing_og_risiko"].map(artifact_type => ({ kind: "artifact_generation", artifact_type })) : []),
+    { kind: "artifact_generation", artifact_type: "bilag1_rekonstruksjon" },
+    { kind: "solution_evaluation", solution_document_id: uploaded[2].id }, { kind: "executive_summary" },
+  ];
+  for (const body of resumeAi ? [] : workflows) {
     const queued = await (await request(`/api/projects/${project.id}/jobs`, { ...json("POST", body), expected: 202 })).json();
     await runJob(project.id, queued.job);
     if (body.kind === "artifact_generation") {
@@ -162,13 +171,19 @@ if (aiEnabled) {
   assert.equal(published.solution_evaluation?.solution_document_id, uploaded.find(document => document.role === "primary_solution_document").id, "Evaluation must reference the selected solution.");
   assert.ok(published.solution_evaluation.fit_to_customer_needs.length > 60, "Evaluation must publish substantive content.");
   assert.equal(artifact.input_snapshot.source_evidence.version, 1, "Requirement answer evidence must persist.");
+  assert.equal(artifact.input_snapshot.source_evidence.issues?.length ?? 0, 0, "The known answerable requirement fixture must not need source clarification.");
   assert.equal(published.solution_evaluation.source_evidence.version, 1, "Evaluation evidence must persist.");
+  assert.equal(published.solution_evaluation.source_evidence.issues?.length ?? 0, 0, "Known source-grounded evaluation fields must not be withheld.");
   const bilagList = await (await request(`/api/projects/${project.id}/generate?artifact_type=bilag1_rekonstruksjon`)).json();
   const bilag = bilagList.artifacts.find(item => item.is_current && item.source_is_current);
   assert.ok(bilag?.content_markdown?.length > 300, "Bilag 1 must publish a substantive current artifact.");
   assert.equal(bilag.input_snapshot.source_evidence.version, 1, "Bilag 1 evidence must persist.");
+  assert.equal(bilag.input_snapshot.source_evidence.issues?.length ?? 0, 0, "Known Bilag 1 source fields must not be withheld.");
   const summaryResult = await (await request(`/api/projects/${project.id}/executive-summary`)).json();
   assert.equal(summaryResult.executive_summary?.source_evidence?.version, 1, "Executive summary evidence must persist.");
+  assert.equal(summaryResult.executive_summary.source_evidence.issues?.length ?? 0, 0, "Known executive-summary source fields must not be withheld.");
+  const allArtifacts = await (await request(`/api/projects/${project.id}/generate`)).json();
+  writeFileSync(path.join(status.directory, "ai-output.json"), JSON.stringify({ projectId: project.id, customerAnalysis: published.customer_analysis, artifact, artifacts: allArtifacts.artifacts, solutionEvaluation: published.solution_evaluation, executiveSummary: summaryResult.executive_summary }, null, 2), { mode: 0o600 });
   checks.push("persisted AI outputs retain customer facts, all three requirement IDs, explicit freshness and selected solution provenance");
   checks.push("deterministic evidence contract persists across requirement answers, Bilag 1, evaluation and executive summary");
   const chat = await request(`/api/projects/${project.id}/chat`, json("POST", { message: "Hva er fristen for eksport av data ved exit? Vis kilden." }));

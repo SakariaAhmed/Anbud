@@ -21,6 +21,11 @@ export async function GET(
       { project_id: id, document_id: documentId },
       async () => {
         const document = await getDocumentDetail(id, documentId);
+        const sourceRevision = new URL(request.url).searchParams.get("source_revision");
+        if (sourceRevision !== null) {
+          if (!/^\d+$/u.test(sourceRevision) || !Number.isSafeInteger(Number(sourceRevision))) return NextResponse.json({ error: "Ugyldig kildeversjon." }, { status: 400 });
+          if (Number(sourceRevision) !== (document.chunk_source_revision ?? 0)) return NextResponse.json({ error: "Kilden er endret. Oppdater resultatet og kontroller henvisningen på nytt." }, { status: 409 });
+        }
         const buffer = Buffer.from(document.file_base64, "base64");
         const encodedFileName = encodeURIComponent(document.file_name);
         const disposition = new URL(request.url).searchParams.get("disposition") === "inline" ? "inline" : "attachment";

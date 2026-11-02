@@ -68,3 +68,31 @@ test("literal source Markdown remains valid and long-source excerpts retain orig
 test("protocol recommendations remain ordinary terms rather than unsupported requirement IDs", () => {
   assert.deepEqual(validateChatEvidence("Vurder SAML2, OIDC1 og CIS2 for videre arbeid.", []), []);
 });
+
+test("uncited conversation labels and service terminology do not consume citation repair", () => {
+  assert.deepEqual(validateChatEvidence('Svar "Ja" eller “Nei”. Forslag: P1-hendelser i Q3, L2-støtte med M365 E5 og AZ-104.', []), []);
+  assert.throws(() => validateChatEvidence('Kilden sier «oppdiktet påstand».', []), /sitat/iu);
+  assert.throws(() => validateChatEvidence('Kilden sier "oppdiktet påstand". [Kilde 1]', sources), /sitat/iu);
+});
+
+test("terms in a generated draft do not acquire requirement authority, while registered ambiguous IDs remain checked", () => {
+  const draft = { source_type: "generated_artifact", evidence_id: "draft", original_quote: "Forslag til P1-hendelser og L2-støtte i Q3 med M365 E5." };
+  assert.deepEqual(validateChatEvidence("Forslag: P1-hendelser og L2-støtte i Q3 med M365 E5.", [draft]), []);
+  const registered = { source_type: "project_document", requirement_id: "P1", evidence_id: "row", original_quote: "P1 Leverandøren skal tilby døgnåpen beredskap." };
+  assert.equal(validateChatEvidence("P1 krever beredskap. [Kilde 1]", [registered]).length, 1);
+  assert.throws(() => validateChatEvidence("P2 krever beredskap. [Kilde 1]", [registered]), /krav-ID/iu);
+});
+
+test("planning bullets do not become invented compound requirement IDs across line breaks", () => {
+  assert.deepEqual(validateChatEvidence("Forslag til bemanning:\n- 1 incident manager / P1-leder\n- 1–2 L2-teknikere med M365-kompetanse", []), []);
+  assert.deepEqual(validateChatEvidence("Leveranser som bør inngå i planen\n- P1-runbook\n- Kontaktliste for L2", []), []);
+  assert.throws(() => validateChatEvidence("Se P001-REQ-03 og ID2-14.", []), /krav-ID/u);
+});
+
+test("user-supplied conversation wording is not promoted into document evidence", () => {
+  const userText = 'Skriv bare setningen: Svar "Ja" eller "Nei".';
+  assert.deepEqual(validateChatEvidence('Svar «Ja» eller «Nei».', [], { userText }), []);
+  assert.throws(() => validateChatEvidence('Svar «Kanskje».', [], { userText }), /sitat/iu);
+  assert.throws(() => validateChatEvidence('«Ja» [Kilde 1]', [{ evidence_id: 'doc', original_quote: 'Kravet er lagring i Norge.' }], { userText }), /sitat/iu);
+  assert.throws(() => validateChatEvidence('K-99 er et krav.', [], { userText: 'Gjenta K-99.' }), /krav-ID/iu);
+});

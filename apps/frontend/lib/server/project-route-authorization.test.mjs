@@ -134,6 +134,16 @@ test("inline source opening preserves original bytes and the same download permi
   }
 });
 
+test("revision-bound source opening refuses changed documents and invalid revision inputs", async () => {
+  for (const [revision, status] of [["0", 200], ["1", 409], ["-1", 400], ["9007199254740992", 400], ["2abc", 400]]) {
+    const h = harness({ role: "viewer" });
+    const { GET } = h.load("app/api/projects/[id]/documents/[documentId]/route.ts");
+    const response = await GET(new Request(`http://localhost/api/projects/${projectId}/documents/document-test?disposition=inline&source_revision=${revision}`), { params: Promise.resolve({ id: projectId, documentId: "document-test" }) });
+    assert.equal(response.status, status);
+    if (status !== 200) assert.doesNotMatch(await response.text(), /Synthetic source/u);
+  }
+});
+
 test("admin invitations reject invalid group scope before creating credentials or sending mail", async () => {
   const h = harness({ admin: true });
   const { POST } = h.load("app/api/admin/users/route.ts");

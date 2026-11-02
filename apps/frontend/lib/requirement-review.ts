@@ -45,7 +45,7 @@ export function requirementReviewRows(content: string, inputSnapshot?: unknown):
         const unanswered = !answer.trim() || /^(?:-|—|ikke besvart|mangler svar)$/iu.test(answer.trim());
         const missingSource = !source.trim() || /^(?:-|—|ukjent|mangler|ikke oppgitt)$/iu.test(source.trim());
         const needsReview = unanswered || missingSource || flagged(metadata.templateRepairRows, metadata.templateRepairLegacyRefs) || flagged(metadata.controlRepairRows, metadata.controlRepairLegacyRefs) || flagged(metadata.proposalInputRequiredRows, metadata.proposalInputRequiredLegacyRefs) || metadata.unresolvedFallbackAnswers.some(row => row.nr === index + 1) ||
-          /\b(?:må avklares|trenger tilbudsinput|ikke dokumentert|kan ikke bekreftes)\b/iu.test(answer);
+          /\b(?:må avklares|trenger tilbudsinput|ikke dokumentert|kan ikke bekreftes)\b/iu.test(`${answer} ${columns.evidenceIndex >= 0 ? cells[columns.evidenceIndex] ?? "" : ""}`);
         result.push({ key: `${index}:${ref}`, index, lineIndex, rawLine, ref, group, requirement: cells[columns.requirementIndex] ?? "", answer,
           evidence: columns.evidenceIndex >= 0 ? cells[columns.evidenceIndex] ?? "" : "", source, columns,
           sourceDocumentId: typeof identity?.source_document_id === "string" ? identity.source_document_id : undefined,

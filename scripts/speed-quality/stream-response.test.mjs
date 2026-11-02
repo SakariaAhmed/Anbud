@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { forwardStream } from "./stream-response.mjs";
+import { EventEmitter } from "node:events";
+import { forwardStream, writeProxyStreamChunk } from "./stream-response.mjs";
 
 test("streams immediately, preserves split UTF-8 bytes and records completion/usage", async () => {
   const text = 'data: {"choices":[{"delta":{"content":"Ærlig"}}]}\n\ndata: {"choices":[{"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2}}\n\ndata: [DONE]\n\n';
@@ -19,6 +20,16 @@ test("streams immediately, preserves split UTF-8 bytes and records completion/us
   assert.deepEqual(metadata.usage, { prompt_tokens: 4, completion_tokens: 2 });
   assert.deepEqual(metadata.completion, { finishReasons: ["stop"] });
   assert.ok(metadata.firstContentMs >= 75);
+});
+
+test("a downstream disconnect cancels backpressure and closes the provider iterator", async () => {
+  const response = new EventEmitter(), controller = new AbortController();
+  response.write = () => { queueMicrotask(() => controller.abort()); return false; };
+  let closed = false;
+  async function* body() { try { yield Buffer.from("first"); yield Buffer.from("second"); } finally { closed = true; } }
+  await assert.rejects(forwardStream(body(), chunk => writeProxyStreamChunk(response, chunk, controller.signal)), error => error.name === "AbortError");
+  assert.equal(closed, true);
+  assert.equal(response.listenerCount("drain"), 0);
 });
 
 test("provider tier is observed for Chat and Responses streams, including explicit downgrade", async () => {

@@ -15,6 +15,7 @@ export function parseChatSourceReferences(value: unknown): ChatSourceReference[]
       page_start: integer("page_start", 1) ?? null, page_end: integer("page_end", 1) ?? null,
       source_type: (item.source_type ?? "project_document") as ChatSourceReference["source_type"], source_id: text("source_id") ?? "",
       ...(text("evidence_id") ? { evidence_id: text("evidence_id") } : {}),
+      ...(text("requirement_id") ? { requirement_id: text("requirement_id") } : {}),
       ...(item.chunk_id === null ? { chunk_id: null } : text("chunk_id") ? { chunk_id: text("chunk_id") } : {}),
       ...(integer("citation_number", 1) !== undefined ? { citation_number: integer("citation_number", 1) } : {}),
       ...(integer("source_revision") !== undefined ? { source_revision: integer("source_revision") } : {}),

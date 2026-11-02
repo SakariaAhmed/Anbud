@@ -312,7 +312,9 @@ function RequirementCoveragePanel({
   coverage,
   projectId,
   canDownloadDocuments = false,
+  sourceEvidence,
 }: {
+  sourceEvidence?: unknown;
   coverage?: RequirementCoverage | null;
   projectId?: string;
   canDownloadDocuments?: boolean;
@@ -497,6 +499,7 @@ function RequirementCoveragePanel({
                   </SourceEvidenceButton>
                 </div>
 
+                {projectId ? <OutputSourceEvidence value={sourceEvidence} path={`result.requirement_coverage.items.${coverageItems.indexOf(item)}`} excludePaths={[`result.requirement_coverage.items.${coverageItems.indexOf(item)}.requirement`]} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="min-w-0">
                     <p className={`mb-1.5 ${eyebrowClass}`}>Vurdering</p>
@@ -536,9 +539,10 @@ function RequirementCoveragePanel({
 }
 
 function DocumentFindingsPanel({
-  findings,
+  findings, sourceEvidence, projectId, canDownloadDocuments = false,
 }: {
   findings: SolutionDocumentFinding[];
+  sourceEvidence?: unknown; projectId?: string; canDownloadDocuments?: boolean;
 }) {
   if (!findings.length) {
     return null;
@@ -571,7 +575,7 @@ function DocumentFindingsPanel({
               className={`border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
             >
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
+                <div className="flex min-w-0 max-w-full items-start gap-3">
                   <span
                     className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${tone.iconWrap}`}
                   >
@@ -584,7 +588,7 @@ function DocumentFindingsPanel({
                       >
                         {finding.assessment}
                       </span>
-                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                      <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                         <MapPin className="size-3.5 shrink-0" />
                         <span className="min-w-0 truncate">
                           {finding.reference
@@ -619,6 +623,7 @@ function DocumentFindingsPanel({
                   />
                 </div>
               </div>
+              {projectId ? <OutputSourceEvidence value={sourceEvidence} path={`result.document_findings.${index}`} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
             </article>
           );
         })}
@@ -1009,10 +1014,11 @@ export function ProjectEvaluationTab({
             );
           })()}
 
-          {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
+          {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} excludePaths={["result.requirement_coverage", "result.document_findings"]} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
           <div>
             <RequirementCoveragePanel
               coverage={solutionEvaluation.requirement_coverage}
+              sourceEvidence={solutionEvaluation.source_evidence}
               projectId={projectId}
               canDownloadDocuments={canDownloadDocuments}
             />
@@ -1021,6 +1027,9 @@ export function ProjectEvaluationTab({
           <div>
             <DocumentFindingsPanel
               findings={solutionEvaluation.document_findings}
+              sourceEvidence={solutionEvaluation.source_evidence}
+              projectId={projectId}
+              canDownloadDocuments={canDownloadDocuments}
             />
           </div>
 

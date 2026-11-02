@@ -23,6 +23,14 @@ test("citation repair rejects source-absent numbers and obeys cancellation after
     state.text = "K-1.3 krever eksport innen 30 dager. [Kilde 1]";
     state.text = 'K-1.3 krever «eksport innen 30 dager». [Kilde 1]';
     assert.equal(await repairChatCitationParagraph({ paragraph: 'K-1.3 krever «eksport innen 60 dager». [Kilde 1]', sources }), state.text, "A failed quote can be corrected only to actual original words.");
+    state.text = '«Driftssenterets vaktleder følger kritiske hendelser.» [Kilde 2]';
+    const previouslyPublished = 'Vaktlederen følger kritiske hendelser. [Kilde 2]';
+    const broaderSources = [sources[0], { evidence_id: "solution", document_role: "primary_solution_document", original_quote: "Driftssenterets vaktleder følger kritiske hendelser." }];
+    assert.equal(await repairChatCitationParagraph({ paragraph: "K-1.3 gjelder. [Kilde 1]", question: "Hvem følger kritiske hendelser?", publishedAnswer: previouslyPublished, sources: broaderSources }), state.text);
+    const repairContext = JSON.parse(state.input.user);
+    assert.equal(repairContext.previously_published, previouslyPublished);
+    assert.ok(repairContext.sources.some(source => source.number === 2 && source.quote.includes("vaktleder")), "A repair cannot drop the solution evidence merely because the failing paragraph cited only requirements.");
+    state.text = 'K-1.3 krever «eksport innen 30 dager». [Kilde 1]';
     const controller = new AbortController(); state.abort = () => controller.abort();
     await assert.rejects(repairChatCitationParagraph({ paragraph, sources, signal: controller.signal }), error => error.name === "AbortError");
     const calls = state.calls;
