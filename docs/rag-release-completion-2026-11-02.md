@@ -331,3 +331,25 @@ and report edits, with no subsequent application change. The owned AI-disabled
 app was restarted after the build. Latest full log:
 `/private/tmp/anbud-round4-final-tests.log`; build log:
 `/private/tmp/anbud-round4-build.log`.
+
+## Council round 5 result
+
+Both configured members reviewed code pin `43e9acd8` read-only at high effort:
+Sol 9/10, satisfied, with 53 independently passing deterministic tests; Opus
+9/10, satisfied, with 61 independently passing deterministic tests. Both found
+the prior blocking corrections resolved. Neither result approves production,
+all 18 recommendations, or the still-unrun final quality evaluations.
+
+Opus recorded three non-blocking follow-ups for a subsequent implementation pin:
+criterion label/index contract violations can evade the lost-positive-rating
+comparison; two reconciliation strings still say requirements when only a
+criterion changed; and active unversioned retry rejection could explain that
+the existing job must finish. Final feature evaluation should also record how
+often narrative withholding occurs. These are not claimed fixed at this pin.
+Before relying on the owned application database again, reapply/check the latest
+branch version of migration 20261102150000: earlier local application runs used
+an older version. Disposable SQL tests used the current migration and baseline.
+
+The current code is accepted for final evaluation conditional on authorization
+and runtime proof. Greptile remains an accepted signed-out review gap. The
+original release gates and all external acceptance limits remain unchanged.
