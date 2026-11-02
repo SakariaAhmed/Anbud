@@ -40,7 +40,13 @@ export function summarizeModelReleaseResults(results, thresholds, { policy = "le
 }
 
 /** Interpret only newly issued judge results; historical metric records stay intact. */
-export function interpretModelReleaseVerdict(raw, kind) {
+export function interpretModelReleaseVerdict(raw, caseOrKind) {
+  assert.ok(typeof caseOrKind === "string" || (caseOrKind && typeof caseOrKind === "object"), "Judge interpretation requires a case contract.");
+  // Earlier frozen smoke suites encode these categories with flags. Apply
+  // new verdict vetoes without rewriting their historical labels or metrics.
+  const kind = typeof caseOrKind === "string" ? caseOrKind : caseOrKind.kind
+    ?? (caseOrKind.abstention_required ? "negative" : caseOrKind.citations_required ? "factual" : "conversation");
+  assert.ok(["factual", "repeat", "negative", "conversation"].includes(kind), "Unknown judge case classification.");
   assert.ok(raw && ["grounded", "citations_correct", "abstention_correct", "core_answer_correct"].every(key => typeof raw[key] === "boolean"), "Judge must provide all boolean verdicts.");
   const verdict = { ...raw };
   const factual = ["factual", "repeat"].includes(kind);

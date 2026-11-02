@@ -123,3 +123,20 @@ test("a document/chapter clarification resolves budget ambiguity through the ret
   assert.equal(source.telemetry.requirementLookupTruncated, false);
   assertOccurrences(source.snippets.filter(item => item.kind === "requirement_row"), row.required_evidence.slice(3));
 });
+
+test("coordinated and comparative source mentions retain real retrieval ambiguity on large projects", async () => {
+  seed();
+  const { buildProjectChatRetrievalRequest } = chatLoad("../ai/project-chat.ts");
+  const documents = fixture.documents.map((document, index) => ({ ...document, title: `Bilag ${index + 1} Drift`, file_name: `0${index + 1}_Bilag_${index + 1}_Drift.pdf`, raw_text: `${document.raw_text}\n${"Fiktiv bakgrunn. ".repeat(6500)}` }));
+  const id = fixture.cases[0].expected_requirement_id;
+  for (const question of [`Hva sier ${id} i Bilag 1 og 2?`, `Hvordan henger ${id} sammen med Bilag 2?`, `Er ${id} i strid med Bilag 2?`, `${id} viser til Bilag 2, hva betyr det?`]) {
+    const { request } = await buildProjectChatRetrievalRequest({ question, recentMessages: [], customerDocument: documents[0], solutionDocument: null, supportingDocuments: [documents[1]] }, { skipRewrite: true });
+    const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 3, rerank: undefined });
+    assert.equal(result.telemetry.requirementLookupTruncated, true, question);
+    assert.equal(result.telemetry.quality.sufficient, false, question);
+  }
+  const { request } = await buildProjectChatRetrievalRequest({ question: `Hva sier ${id} ifølge Bilag 2?`, recentMessages: [], customerDocument: documents[0], solutionDocument: null, supportingDocuments: [documents[1]] }, { skipRewrite: true });
+  const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 3, rerank: undefined });
+  assert.equal(result.telemetry.requirementLookupTruncated, false);
+  assert.deepEqual(result.snippets.filter(row => row.kind === "requirement_row").map(row => row.sourceId), [documents[1].id]);
+});

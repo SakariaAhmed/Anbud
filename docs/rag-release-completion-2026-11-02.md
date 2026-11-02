@@ -426,3 +426,51 @@ idle development process and restarted it with AI still disabled. Logs:
 `/private/tmp/anbud-pr90-deadline-http.log`. Fresh council/CodeRabbit review and
 CI on the correction commit are still required; earlier council approval is
 not approval of this subsequent diff.
+
+## Council round 6 and follow-up corrections
+
+Both members reviewed `b7b87c05`: Sol scored 8/10 and Opus 7/10, neither
+satisfied. They independently reproduced invalid `[Kilde 0]` labels when scoped
+references were paired with unscoped small-project text. Opus also reproduced
+source mentions and coordinated names silently narrowing retrieval, and both
+found quoted chapter titles failing against numbered headings.
+
+The correction uses the same scoped document collection for whole-document
+blocks and citation references, while preserving the project-wide size threshold.
+Source restriction now requires an immediately preceding `i`, `fra`, `ifølge`
+or `under`; ambiguous coordinated forms such as “Bilag 1 og 2” remain unscoped.
+Comparisons, cross-references and generic topical mentions preserve all ID
+occurrences. Numeric chapter scopes accept punctuation and descendants; quoted
+titles match numbered heading titles without losing repeated matches. The
+clarification explicitly asks users to repeat the requirement ID. Filename
+underscores are normalized before alias recognition. A current explicitly named
+artifact is selected into the prompt even if rewriting loses its name.
+
+CodeRabbit's separate minor context finding is also fixed: criterion summaries
+preserve identity, origin, assessment, review status and linked requirements,
+compact rationale/evidence, and omit repeated persistence snapshots. No criterion
+is silently dropped. Newly judged legacy v3 smoke cases use their existing
+citation/abstention flags to enforce the same core-answer and unsupported-claim
+vetoes as the default suite; frozen fixtures and historical results are unchanged.
+
+The accounting follow-ups remain disclosed: a failed/pending observation blocks
+release but does not itself prohibit later paid work on resume, and provisional
+case metrics can remain optimistic inside that failed report. This pass makes
+no accounting, budget or provider change. Chapter restriction applies to the
+authoritative register; broader contextual hybrid snippets can still include
+other chapters. Neither limitation is claimed fixed.
+
+Verification of this correction tree: 1,517 frontend and 202 root tests passed
+(1,719 total), zero failures/skips, followed by parser goldens. Production build,
+full lint, TypeScript, workflow boundaries, secret scan and whitespace checks
+passed. Both recorded SQL regression gates passed again, with unchanged
+conceptual 30/36 (MRR .565) and stress 18/20, no paid model replay and no memory
+fallback. Tests include the actual retrieval owner on coordinated/comparative
+source questions, small-project prompt/reference consistency, numbered/quoted
+headings, explicit-artifact rewrite loss, criterion payload bounds and the
+unchanged legacy v3 fixture. The local app was restarted with AI disabled after
+the build. Logs: `/private/tmp/anbud-round6-full-tests.log`,
+`/private/tmp/anbud-round6-build.log`, `/private/tmp/anbud-round6-retrieval.log`,
+`/private/tmp/anbud-round6-extended.log`. No additional HTTP/OCR, browser or
+provider run was needed or claimed for these prompt/lookup corrections. Fresh
+council and CI review of the resulting commit remains pending.

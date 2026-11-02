@@ -40,12 +40,17 @@ export async function lookupRequirementSnippets(input: {
   onAuthoritativeIds?: (ids: string[]) => void;
 }): Promise<RetrievedDocumentSnippet[]> {
   const wanted = new Set(input.ids.map(normalizeRequirementId));
-  const normalizeHeading = (text: string) => text.toLocaleLowerCase("nb-NO").replace(/^#+\s*|^(?:kapittel|kap\.|seksjon)\s+/gu, "").replace(/\s+/gu, " ").trim();
+  const normalizeHeading = (text: string) => text.toLocaleLowerCase("nb-NO").trim().replace(/^#+\s*/u, "").replace(/^(?:kapittel|kap\.|seksjon)\s+/u, "").replace(/\s+/gu, " ").trim();
   const heading = input.heading ? normalizeHeading(input.heading) : null;
   const inHeading = (entry: RequirementLedgerEntry) => {
     if (!heading) return true;
     const actual = normalizeHeading(entry.heading ?? "");
-    return actual === heading || actual.startsWith(`${heading} `) || (/^\d+(?:\.\d+)*$/u.test(heading) && actual.startsWith(`${heading}.`));
+    if (/^\d+(?:\.\d+)*$/u.test(heading)) {
+      const number = actual.match(/^(\d+(?:\.\d+)*)(?=$|[\s:).])/u)?.[1];
+      return number === heading || Boolean(number?.startsWith(`${heading}.`));
+    }
+    const title = actual.replace(/^\d+(?:\.\d+)*(?:[.:)]\s*|\s+)/u, "");
+    return actual === heading || title === heading;
   };
   const rows = await Promise.all(input.documents
     .filter(isRequirementDocument)

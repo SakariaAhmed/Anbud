@@ -58,3 +58,14 @@ test("explicit chapters narrow repeated authoritative IDs before the caller budg
   assert.deepEqual(await lookupRequirementSnippets({ ...input, heading: "ukjent" }), []);
   assert.equal((await lookupRequirementSnippets(input)).length, 2, "Scoped lookups never poison the full ledger cache.");
 });
+
+
+test("quoted chapter titles match numbered headings and numeric scopes accept punctuation boundaries", async () => {
+  for (const [index, heading] of ["3.2 Drift og sikkerhet", "Kapittel 3: Drift og sikkerhet", "3) Drift og sikkerhet", "## Kapittel 3.2: Drift og sikkerhet"].entries()) {
+    const source = document(`numbered-heading-${index}`, "K-42 Leverandøren skal levere driftsrapport.");
+    globalThis.__literalRegisterTest = { rows: { [source.id]: [{ id: "K-42", text: "Leverandøren skal levere driftsrapport.", heading, pages: [], idOrigin: "source" }] } };
+    const input = { ids: ["K-42"], documents: [source], fingerprints: new Map([[`project_document:${source.id}`, source.id]]) };
+    for (const requested of ["Drift og sikkerhet", "3"]) assert.equal((await lookupRequirementSnippets({ ...input, heading: requested })).length, 1, `${requested}: ${heading}`);
+    for (const requested of ["30", "3.20", "Drift"]) assert.equal((await lookupRequirementSnippets({ ...input, heading: requested })).length, 0, `${requested}: ${heading}`);
+  }
+});

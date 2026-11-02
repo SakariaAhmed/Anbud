@@ -71,3 +71,17 @@ test("negative answers must abstain without adding unsupported claims", async ()
   assert.equal(interpretModelReleaseVerdict({ ...base, claims: [{ text: "Probably within thirty days", supported: false, citation_correct: false }] }, "negative").abstention_correct, false);
   assert.throws(() => interpretModelReleaseVerdict(base, "negative"));
 });
+
+
+test("the unchanged legacy v3 flags still enforce core-answer and negative-claim vetoes", async () => {
+  const { interpretModelReleaseVerdict } = await import("./rag_model_release_metrics.mjs");
+  const suite = JSON.parse(fs.readFileSync(new URL("../test-data/rag-retrieval/model-release-cases.v3.json", import.meta.url)));
+  const factual = suite.cases.find(item => item.citations_required && !item.abstention_required);
+  const negative = suite.cases.find(item => item.abstention_required);
+  assert.ok(factual && negative); assert.equal(factual.kind, undefined); assert.equal(negative.kind, undefined);
+  const raw = { core_answer_correct: false, grounded: true, citations_correct: true, abstention_correct: true, claims: [{ text: "A supported but irrelevant fact", supported: true, citation_correct: true }] };
+  assert.equal(interpretModelReleaseVerdict(raw, factual).grounded, false);
+  assert.equal(interpretModelReleaseVerdict(raw, factual).citations_correct, false);
+  assert.equal(interpretModelReleaseVerdict({ ...raw, claims: [{ text: "Invented deadline", supported: false, citation_correct: false }] }, negative).abstention_correct, false);
+  assert.throws(() => interpretModelReleaseVerdict(raw, { kind: "unknown" }));
+});

@@ -90,7 +90,7 @@ fs.writeFileSync(checkpointPath.replace(/\.json$/u, "-judge.json"), JSON.stringi
 assert.ok(judged && Array.isArray(judged.cases) && judged.cases.length === results.length, "Judge must return every case.");
 for (const result of results) {
   const verdicts = judged.cases.filter(item => item.id === result.id); assert.equal(verdicts.length, 1);
-  const verdict = interpretModelReleaseVerdict(verdicts[0], result.kind);
+  const verdict = interpretModelReleaseVerdict(verdicts[0], result);
   result.verdict = verdict;
 }
 const negatives = results.filter(item => item.abstention_required);

@@ -819,9 +819,13 @@ function requestedChatSourceScope(question: string, documents: ProjectDocumentDe
   if (!extractRequirementIdentifiers(question).length) return { documents, requirementHeading: undefined };
   const normalize = (value: string) => value.toLocaleLowerCase("nb-NO").replace(/[_.]/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const query = ` ${normalize(question)} `;
-  const named = documents.filter(document => [document.title, (document.file_name ?? "").replace(/\.[^.]+$/u, "")]
+  // A mention can be a comparison or cross-reference, not a restriction.
+  // Ambiguous coordinated names retain the full occurrence set.
+  const coordinated = /\bbilag\s+\d+[a-z]?\s*(?:og|eller|samt|,|\/|–|-)\s*(?:bilag\s+)?\d+/iu.test(question.replace(/_/gu, " "));
+  const named = coordinated ? [] : documents.filter(document => [document.title, (document.file_name ?? "").replace(/\.[^.]+$/u, "")]
+    .map(normalize)
     .flatMap(name => [name, name.match(/\bbilag\s+\d+[a-z]?\b/iu)?.[0] ?? ""])
-    .some(name => normalize(name).length >= 4 && query.includes(` ${normalize(name)} `)));
+    .some(name => name.length >= 4 && ["i", "fra", "ifølge", "under"].some(preposition => query.includes(` ${preposition} ${name} `))));
   const heading = question.match(/\b(?:kapittel|kap\.|seksjon)\s+(?:[«"]([^»"]+)[»"]|(\d+(?:\.\d+)*))(?=\s|[,.?!;:]|$)/iu);
   return { documents: named.length ? named : documents, requirementHeading: heading?.[1] ?? heading?.[2] };
 }
@@ -940,11 +944,11 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     sourceId: `attachment-${createHash("sha256").update(`${input.projectId ?? ""}\0${attachment.rawText}`).digest("hex")}`,
     sourceType: "chat_attachment", title: attachment.title, text: attachment.rawText, revision: 0,
   }));
-  const artifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: retrievalPlan.standalone_query || input.question });
+  const currentArtifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: input.question });
+  const artifactSections = currentArtifactSections.some(section => section.explicitlyNamed) ? currentArtifactSections : selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: retrievalPlan.standalone_query || input.question });
   // An analysis being present is not evidence for an arbitrary factual query.
   // Keep explicit questions about generated interpretation available while
   // factual source questions still obey the retrieval gate on large projects.
-  const currentArtifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: input.question });
   const asksForAvailableInterpretation = currentArtifactSections.some(section => section.explicitlyNamed)
     || Boolean(input.customerAnalysis && /\b(?:kundeanalys(?:e|en)|analysen|prosjektoversikt)\b/iu.test(input.question))
     || Boolean(input.solutionEvaluation && /\b(?:løsningsvurdering(?:en)?|vurderingen)\b/iu.test(input.question));
@@ -1024,21 +1028,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
         telemetry: retrievalResult.telemetry,
       })
     : "";
-  // A follow-up ("utdyp punkt 2") is matched by its standalone form.
-  const relevanceQuery = retrievalPlan.standalone_query || input.question;
-  const supportingDocuments = (input.supportingDocuments ?? [])
-    .map((document, index) =>
-      buildDelimitedContext(
-        `Støttedokument ${index + 1}: ${document.title}${fullDocumentsInContext ? ` [Kilde ${wholeReferences.findIndex(source => source.source_id === document.id) + 1}]` : ""}`,
-        fullDocumentsInContext
-          ? document.raw_text
-          : buildQuestionRelevantText({
-              rawText: document.raw_text,
-              question: relevanceQuery,
-              limit: useStructuredCoverage ? 2200 : 3500,
-            }),
-      ),
-    );
   const generatedArtifacts = artifactSections.map(({ artifact, heading, text }, index) =>
     buildDelimitedContext(`Generert utkast – tolkning, ikke primærkilde: ${artifact.title} › ${heading} [Kilde ${sourceReferences.length - artifactReferences.length + index + 1}]`, text));
 
@@ -1050,29 +1039,16 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
           `${documentRuleScope} Let gjennom hele dokumentene, også senere kapitler, tabeller og rettelser, før du sier at noe ikke er beskrevet. Et sammendrag eller en generell påstand om at alle krav er oppfylt, er ikke svar på et konkret krav. Påpek motstridende tall eller frister med begge verdiene og kildene.`,
         )
       : "",
-    input.customerDocument
-      ? buildDelimitedContext(
-          `Kundedokument${fullDocumentsInContext ? ` [Kilde ${wholeReferences.findIndex(source => source.source_id === input.customerDocument?.id) + 1}]` : ""}`,
-          fullDocumentsInContext
-            ? input.customerDocument.raw_text
-            : "",
-        )
-      : "",
-    input.solutionDocument
-      ? buildDelimitedContext(
-          `Løsningsdokument${fullDocumentsInContext ? ` [Kilde ${wholeReferences.findIndex(source => source.source_id === input.solutionDocument?.id) + 1}]` : ""}`,
-          fullDocumentsInContext
-            ? input.solutionDocument.raw_text
-            : "",
-        )
-      : "",
-    ...(fullDocumentsInContext ? supportingDocuments : []),
+    ...(fullDocumentsInContext ? promptDocuments.map((document, index) => buildDelimitedContext(
+      `${document.role === "primary_customer_document" ? "Kundedokument" : document.role === "primary_solution_document" ? "Løsningsdokument" : "Støttedokument"}: ${document.title} [Kilde ${index + 1}]`,
+      document.raw_text,
+    )) : []),
   ];
 
   const userPrompt = [
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
-    // Whole documents come first: they are the same every turn, so the
-    // provider's prompt cache can reuse them.
+    // Whole-document sections come first so repeated source scopes can
+    // reuse the provider's prompt cache.
     ...(fullDocumentsInContext ? documentSections : []),
     input.customerAnalysis
       ? buildDelimitedContext(
@@ -1155,7 +1131,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     abstentionMessage: retrievalResult.telemetry.requirementLookupFailed && needsProjectDocumentEvidence
       ? "Kravregisteret kunne ikke leses sikkert. Kontroller dokumentstatusen og kravgrunnlaget før du prøver igjen."
       : retrievalResult.telemetry.requirementLookupTruncated && needsProjectDocumentEvidence && !fullDocumentsInContext
-      ? "Krav-ID-en finnes flere steder enn søket kan vise samtidig. Oppgi dokument og kapittel, slik at ingen forekomster utelates fra svaret."
+      ? "Krav-ID-en finnes flere steder enn søket kan vise samtidig. Gjenta krav-ID-en sammen med dokumenttittel og kapittelnummer eller kapitteltittel i anførselstegn, slik at ingen forekomster utelates fra svaret."
       : unresolvedRequirementId && needsProjectDocumentEvidence
       ? "Kravreferansen kunne ikke knyttes sikkert til et krav i dokumentgrunnlaget. Kontroller krav-ID-en og eventuelle rettelser, eller legg til det manglende kravdokumentet før du prøver igjen."
       : needsProjectDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length && !asksForAvailableInterpretation

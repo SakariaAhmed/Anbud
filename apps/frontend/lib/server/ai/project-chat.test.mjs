@@ -627,12 +627,12 @@ test("current question controls evidence gates and named source scope, independe
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-gates-"));
   const previousMode = process.env.RAG_QUERY_REWRITE;
   process.env.RAG_QUERY_REWRITE = "on";
-  const state = { calls: 0, retrieval: [], telemetry: {} };
+  const state = { calls: 0, retrieval: [], telemetry: {}, prompts: [] };
   globalThis.__chatGateTest = state;
   try {
     const completion = path.join(directory, "completion.cjs"), retrieval = path.join(directory, "retrieval.cjs");
-    writeFileSync(completion, `exports.createJsonCompletion = async () => ({ standalone_query: "Bilag 1: tidligere kontekst", exact_terms: [], subqueries: [] });
-      exports.createTextCompletionStream = async () => { globalThis.__chatGateTest.calls++; return (async function* () { yield "Lokalt testsvar."; })(); };`);
+    writeFileSync(completion, `exports.createJsonCompletion = async () => ({ standalone_query: globalThis.__chatGateTest.rewrittenQuery ?? "Bilag 1: tidligere kontekst", exact_terms: [], subqueries: [] });
+      exports.createTextCompletionStream = async input => { globalThis.__chatGateTest.calls++; globalThis.__chatGateTest.prompts.push(input); return (async function* () { yield "Lokalt testsvar."; })(); };`);
     writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => { const s=globalThis.__chatGateTest; s.retrieval.push(input); return { snippets: [], telemetry: { quality: { sufficient: false, sourceCount: 0 }, ...s.telemetry } }; };`);
     const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
       "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval, "@": frontendRoot, "server-only": "/dev/null",
@@ -656,6 +656,11 @@ test("current question controls evidence gates and named source scope, independe
     process.env.RAG_QUERY_REWRITE = "on";
     assert.equal(await run("Oppsummer Bilag 1 som et forslag."), "Lokalt testsvar.");
     assert.equal(state.calls, 1, "Explicit current artifact questions remain available.");
+    state.rewrittenQuery = "Annet tema";
+    const competingArtifacts = Array.from({length: 9}, (_, index) => ({ ...input.generatedArtifacts[0], id: `other-${index}`, title: "Annet tema", artifact_type: "verdiargumentasjon", content_markdown: "Annet tema uten det etterspurte utkastet." }));
+    await run("Oppsummer Bilag 1 som et forslag.", { generatedArtifacts: [...competingArtifacts, ...input.generatedArtifacts] });
+    assert.match(state.prompts.at(-1).user, /Et generert forslag\./u, "The explicit current artifact must enter the prompt even when rewriting drops its name.");
+    delete state.rewrittenQuery;
     state.telemetry = { requirementLookupTruncated: true, missingRequirementIds: ["K-42"] };
     assert.equal(await run("Skriv en e-post om K-42."), "Lokalt testsvar.");
     assert.equal(await run("Hva sier K-42 i vedlegget?", { promptAttachments: [{ title: "Mitt vedlegg", rawText: "K-42 Leverandøren skal holde fire kurs.", fileName: "vedlegg.txt" }] }), "Lokalt testsvar.");
@@ -668,6 +673,26 @@ test("current question controls evidence gates and named source scope, independe
     assert.equal(quoted.request.requirementHeading, "Drift og sikkerhet");
     const unscoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42?" });
     assert.deepEqual(unscoped.request.documents.map(item => item.id), ["one", "two"], "Prior rewritten names cannot restrict the source collection.");
+    for (const question of ["Hva sier K-42 i Bilag 1 og 2?", "Hvordan henger K-42 sammen med Bilag 2?", "Er K-42 i strid med Bilag 2?", "K-42 viser til Bilag 2, hva betyr det?"]) {
+      const result = await buildProjectChatRetrievalRequest({ ...input, question });
+      assert.deepEqual(result.request.documents.map(item => item.id), ["one", "two"], question);
+    }
+    const security = await buildProjectChatRetrievalRequest({ ...input, supportingDocuments: [second, document("security", "Sikkerhet")], question: "Hva sier K-42 om sikkerhet?" });
+    assert.equal(security.request.documents.length, 3);
+    const underscore = await buildProjectChatRetrievalRequest({ ...input, supportingDocuments: [document("underscored", "03_Bilag_2_Drift")], question: "Hva sier K-42 fra Bilag 2?" });
+    assert.deepEqual(underscore.request.documents.map(item => item.id), ["underscored"]);
+    state.telemetry = {};
+    const small = { ...input, recentMessages: [], generatedArtifacts: [], customerDocument: { ...first, raw_text: "K-42 Kunden skal ha fire kurs. UTENFOR_SCOPE_KUNDE" },
+      solutionDocument: { ...document("solution", "Leverandør"), role: "primary_solution_document", raw_text: "UTENFOR_SCOPE_LOSNING" },
+      supportingDocuments: [{ ...second, role: "supporting_document", raw_text: "K-42 Leverandøren skal levere driftsrapport. INNENFOR_SCOPE" }, { ...document("third", "Bilag 3"), raw_text: "UTENFOR_SCOPE_STOTTE" }] };
+    await run("Hva sier K-42 i Bilag 2?", small);
+    const prompt = state.prompts.at(-1).user;
+    assert.match(prompt, /INNENFOR_SCOPE/u);
+    assert.doesNotMatch(prompt, /UTENFOR_SCOPE|\[Kilde 0\]/u);
+    const result = await streamProjectChat({ ...small, question: "Hva sier K-42 i Bilag 2?" });
+    assert.deepEqual(result.sourceReferences.filter(source => source.source_type === "project_document").map(source => [source.source_id, source.citation_number]), [["two", 1]]);
+    for await (const _chunk of result.stream) { /* Complete the real validation path. */ }
+
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
     delete globalThis.__chatGateTest; rmSync(directory, { recursive: true, force: true });
