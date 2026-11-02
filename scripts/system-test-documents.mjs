@@ -245,6 +245,9 @@ const artifactState = async (projectId, id) => {
 async function enhancementFailureScenario({ leaveFailed = false } = {}) {
   const project = await newProject(leaveFailed ? "Fiktiv forbedringsfeil (nettlesertest)" : "Fiktiv forbedringsfeil");
   const relative = "test-data/tenders/halandsvik-2026/documents/02_Bilag_1_Kravspesifikasjon_Halandsvik_kommune.pdf";
+  // Arm failure before ingestion can enqueue/dispatch its enhancement.
+  writeFileSync(marker, "");
+  try {
   const uploaded = await upload(project.id, relative, { title: "Bilag 1 Kravspesifikasjon" });
   const documentId = uploaded.accepted.document.id;
   const enhancementId = uploaded.ingestion.job.result?.docling_enhancement_job_id;
@@ -255,8 +258,6 @@ async function enhancementFailureScenario({ leaveFailed = false } = {}) {
   const artifact = hasArtifact ? await manualArtifactFixture(project.id) : null;
   const artifactBefore = artifact ? await artifactState(project.id, artifact.id) : null;
 
-  writeFileSync(marker, "");
-  try {
     const failed = await finishJob(project.id, enhancementId);
     assert.equal(failed.job.status, "completed", "The usable basic version must not turn enhancement into a failed document.");
     assert.equal(failed.job.result.document.processing_error?.length > 0, true, "The job result must carry the recorded failure.");

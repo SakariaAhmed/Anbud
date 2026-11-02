@@ -466,7 +466,9 @@ export async function runStructuredJsonResponse<T>(
       },
       requestOptions({
         timeoutMs: input.timeoutMs,
-        maxRetries: input.onCompletedField ? 0 : input.maxRetries,
+        // SDK retries apply while obtaining the HTTP response. Iteration below
+        // never restarts a stream after any preview field has been delivered.
+        maxRetries: input.maxRetries,
         abortController,
       }),
     );

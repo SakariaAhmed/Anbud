@@ -494,7 +494,7 @@ test("GPT-6 Chat and file-input Responses use the supported cache lifetime and o
 
 function streamRuntime(events, observed = {}) {
   return {...jsonRuntime(""),async getClient(){return {responses:{async create(body,options){
-    observed.body=body;observed.options=options;
+    observed.body=body;observed.options=options;observed.calls=(observed.calls??0)+1;
     return (async function*(){for(const event of events){if(event instanceof Error)throw event;observed.yieldedType=event.type;yield event;}})();
   }}};}};
 }
@@ -509,15 +509,16 @@ test("structured stream publishes complete nested and escaped fields exactly onc
     const fields=[],observed={};
     const result=await runStructuredJsonResponse({...streamRuntime(events,observed),...streamInput,maxRetries:2,onCompletedField:async(k,v)=>{assert.equal(observed.yieldedType,"response.output_text.delta");fields.push([k,v]);}});
     assert.deepEqual(Object.fromEntries(fields),JSON.parse(text));assert.deepEqual(result,JSON.parse(text));
-    assert.equal(observed.body.stream,true);assert.equal(observed.options.maxRetries,0);
+    assert.equal(observed.body.stream,true);assert.equal(observed.options.maxRetries,2);
   }
 });
 
 test("truncation and later provider failure preserve only completed fields",async()=>{
   for(const suffix of [[],[new Error("provider failed")],[{type:"response.incomplete"}]]){
-    const fields=[];
-    await assert.rejects(runStructuredJsonResponse({...streamRuntime([textDelta('{"ready":"first","unfinished":["half'),...suffix]),...streamInput,onCompletedField:async(k,v)=>{fields.push([k,v]);}}));
+    const fields=[],observed={};
+    await assert.rejects(runStructuredJsonResponse({...streamRuntime([textDelta('{"ready":"first","unfinished":["half'),...suffix],observed),...streamInput,maxRetries:2,onCompletedField:async(k,v)=>{fields.push([k,v]);}}));
     assert.deepEqual(fields,[["ready","first"]]);
+    assert.equal(observed.calls,1,"A failed stream is never restarted after a field was published.");
   }
 });
 

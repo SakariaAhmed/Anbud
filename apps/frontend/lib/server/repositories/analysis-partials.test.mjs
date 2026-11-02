@@ -51,7 +51,7 @@ test("preview prose rejects invented quotations, IDs and unsupported locator pre
   assert.equal(validateAnalysisPartialField({key:"customer_profile_summary",value,documents:[document]}).customer_profile_summary,value);
   await context(async()=>{
     const publish=createCustomerAnalysisPartialPublisher(input,{client:{rpc(){assert.fail("invalid evidence reached persistence");}}});
-    await assert.rejects(publish("customer_profile_summary","Krav K-99.7 krever døgnbemanning."));
+    await publish("customer_profile_summary","Krav K-99.7 krever døgnbemanning.");
   });
 });
 test("publisher encrypts fields and carries source, lease and manual CAS fences without complete publication",async()=>{
@@ -62,9 +62,27 @@ test("publisher encrypts fields and carries source, lease and manual CAS fences 
   for(const [name,args]of calls){assert.equal(name,"save_customer_analysis_partial");assert.equal(args.p_job_id,"job");assert.equal(args.p_lease_token,"lease");assert.equal(args.p_payload.expected_source_revision,3);assert.equal(args.p_payload.expected_analysis_revision,null);assert.equal(args.p_payload.value.encrypted,true);assert.match(args.p_payload.value.payload,/^enc:v1:/);assert.match(args.p_payload.digest,/^[a-f0-9]{64}$/);assert.deepEqual(args.p_payload.source_document_ids,["doc"]);assert.doesNotMatch(JSON.stringify(args),/Sikre drift|En kunde/);}
   assert.deepEqual(decryptJson(calls[0][1].p_payload.value,null),["Sikre drift."]);assert.equal(calls[0][1].p_payload.generation_id,calls[1][1].p_payload.generation_id);
 });
+test("invalid previews are withheld independently while later valid fields persist",async t=>{
+  const warnings=[];t.mock.method(console,"warn",message=>warnings.push(JSON.parse(message)));
+  const calls=[];
+  await context(async()=>{
+    const publish=createCustomerAnalysisPartialPublisher(input,{client:{async rpc(name,args){calls.push(args);return {data:null,error:null};}}});
+    await publish("customer_profile_summary","Krav K-99.7 krever døgnbemanning.");
+    await publish("likely_evaluation_criteria",["Se side 37."]);
+    await publish("implicit_requirements",[{...need,source_reference:"Other document"}]);
+    await publish("recommended_services",[{service_id:"foreign",service_name:"Foreign",usefulness_percent:80,customer_need:"Need",recommendation_reason:"Reason",evidence:"Evidence",risk_or_caveat:"Risk"}]);
+    await publish("customer_goals",["Sikre drift."]);
+  });
+  assert.equal(calls.length,1);assert.equal(calls[0].p_payload.field,"customer_goals");
+  assert.equal(warnings.length,4);assert.doesNotMatch(JSON.stringify(warnings),/K-99|Other document|Foreign|side 37/);
+  await context(async()=>{
+    const publish=createCustomerAnalysisPartialPublisher(input,{client:{async rpc(){throw new Error("Persistence unavailable");}}});
+    await assert.rejects(publish("customer_goals",["Sikre drift."]),/Persistence unavailable/);
+  });
+});
 test("publisher fails closed on lease loss, cancellation and malformed input",async()=>{
   const calls=[];
-  await context(async()=>{const publish=createCustomerAnalysisPartialPublisher(input,{client:{async rpc(){calls.push(1);return {error:{message:"PROJECT_JOB_LEASE_LOST"}};}}});await assert.rejects(publish("customer_goals",["Sikre drift"]),error=>error.name==="ProjectJobLeaseLostError");await assert.rejects(publish("customer_goals",{malformed:true}));});
+  await context(async()=>{const publish=createCustomerAnalysisPartialPublisher(input,{client:{async rpc(){calls.push(1);return {error:{message:"PROJECT_JOB_LEASE_LOST"}};}}});await assert.rejects(publish("customer_goals",["Sikre drift"]),error=>error.name==="ProjectJobLeaseLostError");await publish("customer_goals",{malformed:true});});
   assert.equal(calls.length,1);
   const controller=new AbortController();await context(async()=>{const publish=createCustomerAnalysisPartialPublisher(input,{client:{rpc(){assert.fail("cancelled publisher wrote");}}});controller.abort();await assert.rejects(publish("customer_goals",["Sikre drift"]));},controller);
 });

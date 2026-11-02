@@ -208,11 +208,11 @@ export async function updatePersistedProjectJob(
 }
 
 /**
- * A deadline abandons the enhancement workflow, which may no longer write. The
- * job's own terminal transition therefore records the failure on the document it
- * read, in one transaction. Returns false when the lease is no longer authoritative.
+ * The terminal transition records failure even before a retry can read its
+ * document or after a deadline abandons the workflow. Returns false when the
+ * lease is no longer authoritative; newer document revisions stay unchanged.
  */
-export async function failDocumentEnhancementJobAtDeadline(input: {
+export async function failDocumentEnhancementJob(input: {
   jobId: string; leaseToken: string; projectId: string; documentId: string; sourceRevision: number;
   jobMessage: string; jobError: string; documentMessage: string; documentError: string;
   terminalMetadata: Record<string, unknown>;

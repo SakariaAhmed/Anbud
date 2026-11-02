@@ -5,7 +5,8 @@ import { createServiceClient } from "@/lib/server/data-api";
 import { encryptJson, decryptJson } from "@/lib/server/crypto";
 import { authoritativeLeaseError } from "@/lib/server/repositories/lease-fenced-persistence";
 import { assertProjectWorkflowActive, getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
-import { isAnalysisPartialFieldShape, validateAnalysisPartialField } from "@/lib/server/analysis-partial-fields";
+import { AnalysisPartialValidationError, isAnalysisPartialFieldShape, validateAnalysisPartialField } from "@/lib/server/analysis-partial-fields";
+import { OutputEvidenceValidationError } from "@/lib/server/output-source-evidence";
 import { isRecord } from "@/lib/unknown-values";
 import type { CustomerAnalysisPartial, ProjectDocumentDetail, ProjectServiceDescription } from "@/lib/types";
 
@@ -44,7 +45,18 @@ export function createCustomerAnalysisPartialPublisher(input: {
     // preview must not abort the remaining fields or final analysis generation.
     if (key === "high_level_architecture_mermaid") return;
     if (seen.has(key)) throw new Error("Duplicate analysis preview field.");
-    const fields = validateAnalysisPartialField({ key, value, documents: input.documents, serviceCandidates: input.serviceCandidates });
+    let fields: CustomerAnalysisPartial["fields"];
+    try {
+      fields = validateAnalysisPartialField({ key, value, documents: input.documents, serviceCandidates: input.serviceCandidates });
+    } catch (error) {
+      if (!(error instanceof AnalysisPartialValidationError) && !(error instanceof OutputEvidenceValidationError)) throw error;
+      // A rejected preview is not a failed generation. Never include model text,
+      // excerpts, unknown field names or raw exception messages in this event.
+      console.warn(JSON.stringify({ event: "analysis_preview_withheld", project_id: input.projectId,
+        job_id: lease.jobId, code: error instanceof OutputEvidenceValidationError ? error.code : "invalid_preview_field" }));
+      seen.add(key);
+      return;
+    }
     const normalized: unknown = fields[key as keyof typeof fields];
     if (normalized === undefined) throw new Error("Missing analysis preview field.");
     const { error } = await (runtime.client ?? createServiceClient()).rpc("save_customer_analysis_partial", {

@@ -67,7 +67,7 @@ import {
   saveSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
 import { assertExecutiveSummaryEvaluationReady } from "@/lib/server/executive-summary-readiness";
-import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState } from "@/lib/server/repositories/data-store";
+import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState, setDocumentEnhancementState } from "@/lib/server/repositories/data-store";
 import { getProjectGenerationContext, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/service-descriptions";
 
@@ -113,6 +113,7 @@ export type ProjectWorkflowInput =
       kind: "document_docling_enhancement";
       projectId: string;
       documentId: string;
+      sourceRevision?: number;
     }
   | { kind: "customer_analysis"; projectId: string; model?: string; automaticRequestId?: string; automaticSourceRevision?: number }
   | {
@@ -416,7 +417,9 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
         ),
       };
     case "document_docling_enhancement":
+      if (input.sourceRevision !== undefined && (!Number.isSafeInteger(input.sourceRevision) || Number(input.sourceRevision) < 0)) throw new Error("Ugyldig kildeversjon for dokumentforbedring.");
       return {
+        ...(input.sourceRevision !== undefined ? { sourceRevision: Number(input.sourceRevision) } : {}),
         kind: "document_docling_enhancement",
         projectId,
         documentId: requiredWorkflowString(
@@ -1060,6 +1063,7 @@ async function runDocumentDoclingEnhancementWorkflow(
 ): Promise<DocumentDoclingEnhancementJobResult> {
   handlers.setProgress(formatJobProgress(8, "Henter dokument for Docling-forbedring ...", 76));
   const document = await getDocumentDetail(input.projectId, input.documentId);
+  if (input.sourceRevision !== undefined && input.sourceRevision !== document.chunk_source_revision) throw new Error("Dokumentgrunnlaget er endret siden forbedringen ble bestilt.");
   handlers.onDocumentClass?.(document.file_format);
   handlers.onPhase?.("filhenting");
 
@@ -1068,6 +1072,7 @@ async function runDocumentDoclingEnhancementWorkflow(
       ? "enhanced_ready"
       : "basic_ready";
 
+  if (!document.file_base64 && input.sourceRevision !== undefined) throw new Error("Originalfilen er ikke tilgjengelig for dokumentforbedring.");
   if (!document.file_base64 || document.parser_used === "docling") {
     return {
       document: projectJobDocumentSummary(document),
@@ -1090,6 +1095,7 @@ async function runDocumentDoclingEnhancementWorkflow(
     fileSizeBytes: document.file_size_bytes,
   });
 
+  if (!shouldEnhance && input.sourceRevision !== undefined) throw new Error("Dokumentforbedring kan ikke starte med gjeldende oppsett. Kontakt administrator.");
   if (!shouldEnhance) {
     return {
       document: projectJobDocumentSummary(document),
@@ -1105,14 +1111,13 @@ async function runDocumentDoclingEnhancementWorkflow(
   assertWorkflowActive(handlers);
   // From here a deadline leaves this document saying enhancement is running.
   handlers.onDocumentEnhancementStarted?.(input.documentId, document.chunk_source_revision ?? 0);
-  await updateDocumentProcessingState({
+  if (!await setDocumentEnhancementState({
     projectId: input.projectId,
     documentId: input.documentId,
-    status: readyStatus,
+    sourceRevision: document.chunk_source_revision ?? 0,
     message: "Dokumentet er RAG-klart. Docling-forbedring pågår i bakgrunnen ...",
     error: null,
-    parserUsed: document.parser_used,
-  });
+  })) throw new Error("Dokumentgrunnlaget er endret under forbedringen.");
 
   // The basic version stays published and usable throughout. A failure here is
   // recorded on that document, never as a failed document.
@@ -1122,14 +1127,13 @@ async function runDocumentDoclingEnhancementWorkflow(
       processing_message: DOCUMENT_ENHANCEMENT_FAILURE_MESSAGE,
       processing_error: DOCUMENT_ENHANCEMENT_FAILURE_ERROR,
     } as const;
-    await updateDocumentProcessingState({
+    if (!await setDocumentEnhancementState({
       projectId: input.projectId,
       documentId: input.documentId,
-      status: readyStatus,
+      sourceRevision: document.chunk_source_revision ?? 0,
       message: failure.processing_message,
       error: failure.processing_error,
-      parserUsed: document.parser_used,
-    });
+    })) throw new Error("Dokumentgrunnlaget er endret under forbedringen.");
     return failure;
   };
 
@@ -1175,15 +1179,14 @@ async function runDocumentDoclingEnhancementWorkflow(
       })
     ) {
       assertWorkflowActive(handlers);
-      await updateDocumentProcessingState({
+      if (!await setDocumentEnhancementState({
         projectId: input.projectId,
         documentId: input.documentId,
-        status: readyStatus,
+        sourceRevision: document.chunk_source_revision ?? 0,
         message:
           "Dokumentet er RAG-klart. Docling-forbedring ga ikke bedre tekstgrunnlag.",
         error: null,
-        parserUsed: document.parser_used,
-      });
+      })) throw new Error("Dokumentgrunnlaget er endret under forbedringen.");
 
       return {
         document: projectJobDocumentSummary(document),
@@ -1227,9 +1230,12 @@ async function runDocumentDoclingEnhancementWorkflow(
   } catch (error) {
     rethrowAuthoritativeLeaseLoss(error);
     assertWorkflowActive(handlers);
-    await recordEnhancementFailure().catch((persistenceError) => {
-      rethrowAuthoritativeLeaseLoss(persistenceError);
-    });
+    const current = await getDocumentDetail(input.projectId, input.documentId);
+    if (current.chunk_source_revision === document.chunk_source_revision) {
+      await recordEnhancementFailure().catch((persistenceError) => {
+        rethrowAuthoritativeLeaseLoss(persistenceError);
+      });
+    }
     throw error;
   }
 }

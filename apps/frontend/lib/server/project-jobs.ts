@@ -18,7 +18,7 @@ import {
   findOldestQueuedProjectJob,
   findProjectJob,
   getQueuedProjectJobInput,
-  failDocumentEnhancementJobAtDeadline,
+  failDocumentEnhancementJob,
   heartbeatProjectJob,
   insertFollowUpProjectJob,
   insertProjectJob,
@@ -574,7 +574,7 @@ async function finishJob(
   try {
     const terminalMetadata = buildProjectJobTerminalMetadata(workflow, patch, failureMetadata);
     persisted = enhancementDeadline && context.persisted
-      ? await failDocumentEnhancementJobAtDeadline({
+      ? await failDocumentEnhancementJob({
           jobId, leaseToken: context.leaseToken, projectId: workflow.projectId, ...enhancementDeadline,
           jobMessage: patch.message ?? "", jobError: patch.error ?? "",
           documentMessage: DOCUMENT_ENHANCEMENT_FAILURE_MESSAGE, documentError: DOCUMENT_ENHANCEMENT_FAILURE_ERROR,
@@ -787,7 +787,9 @@ async function runProjectJob(
   let terminalPersisted = false;
   let workflowAbandoned = false;
   // The revision a running enhancement read, until its workflow settles the outcome itself.
-  let enhancementInProgress: { documentId: string; sourceRevision: number } | null = null;
+  let enhancementInProgress: { documentId: string; sourceRevision: number } | null =
+    input.kind === "document_docling_enhancement" && input.sourceRevision !== undefined
+      ? { documentId: input.documentId, sourceRevision: input.sourceRevision } : null;
   let enhancementDeadline: { documentId: string; sourceRevision: number } | null = null;
 
   try {
@@ -957,6 +959,7 @@ async function runProjectJob(
       };
       enhancementDeadline = enhancementInProgress;
     } else {
+      enhancementDeadline = enhancementInProgress;
       console.warn(
         JSON.stringify({
           event: "project_job_execution_failed",
@@ -1068,7 +1071,7 @@ export async function queueDocumentIngestionJob(input: {
 /** A recovery request; the worker that normally runs enhancement picks it up. */
 export async function queueDocumentEnhancementRetryJob(input: { projectId: string; documentId: string; sourceRevision: number }) {
   const job = await enqueueProjectJob(
-    { kind: "document_docling_enhancement", projectId: input.projectId, documentId: input.documentId },
+    { kind: "document_docling_enhancement", projectId: input.projectId, documentId: input.documentId, sourceRevision: input.sourceRevision },
     { autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false), enhancementRetrySourceRevision: input.sourceRevision },
   );
   revalidateProjectCaches(input.projectId);

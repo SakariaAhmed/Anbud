@@ -196,8 +196,10 @@ function runPsqlFile(databaseUrl, filePath) {
   );
 }
 
-function runPsqlAsync(databaseUrl, sql) {
-  return new Promise((resolve) => {
+function runPsqlAsync(databaseUrl, sql, waitForInsert = false) {
+  let readyResolve, readyReject;
+  const ready = waitForInsert ? new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; }) : null;
+  const result = new Promise((resolve) => {
     const child = spawn(
       "psql",
       [databaseUrl, "-X", "-v", "ON_ERROR_STOP=1", "-Atq", "-c", sql],
@@ -212,9 +214,15 @@ function runPsqlAsync(databaseUrl, sql) {
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
+      if (stderr.includes("anbud_chunk_insert_locked")) readyResolve?.();
     });
-    child.on("close", (status) => resolve({ status, stdout, stderr }));
+    child.on("close", (status) => {
+      if (!stderr.includes("anbud_chunk_insert_locked")) readyReject?.(new Error("Replacement exited before the insert barrier"));
+      resolve({ status, stdout, stderr });
+    });
   });
+  result.ready = ready;
+  return result;
 }
 
 function delay(ms) {
@@ -485,6 +493,7 @@ test(
             returns trigger language plpgsql as $$
             begin
               if current_setting('anbud.slow_chunk_insert', true) = 'on' then
+                raise notice 'anbud_chunk_insert_locked';
                 perform pg_sleep(0.35);
               end if;
               return new;
@@ -750,8 +759,9 @@ test(
           jobId: "00000000-0000-4000-8000-000000000131",
           leaseToken: "11111111-1111-4111-8111-111111111111",
         })} commit;`,
+        true,
       );
-      await delay(80);
+      await projectParentReplace.ready;
       const projectParentDelete = runPsqlAsync(
         databaseUrl.toString(),
         "delete from public.projects where id = '00000000-0000-4000-8000-000000000101';",
@@ -779,8 +789,9 @@ test(
           jobId: "00000000-0000-4000-8000-000000000231",
           leaseToken: "22222222-2222-4222-8222-222222222222",
         })} commit;`,
+        true,
       );
-      await delay(80);
+      await serviceParentReplace.ready;
       const serviceParentDelete = runPsqlAsync(
         databaseUrl.toString(),
         "delete from public.service_descriptions where id = '00000000-0000-4000-8000-000000000202';",

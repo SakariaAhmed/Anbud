@@ -8347,11 +8347,25 @@ begin
   if v_document.processing_status is distinct from 'basic_ready' or v_document.parser_used = 'docling' then
     raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE';
   end if;
+  p_job := jsonb_set(p_job, '{input_json,sourceRevision}', to_jsonb(p_source_revision));
   select * into v_job from public.project_jobs
     where project_id = p_project_id and kind = 'document_docling_enhancement'
-      and input_json = p_job->'input_json' and status in ('queued','running')
+      and input_json->>'documentId' = p_job->'input_json'->>'documentId' and status in ('queued','running')
     order by submission_sequence desc limit 1;
-  if found then return to_jsonb(v_job); end if;
+  if found then
+    if v_job.status = 'running' and nullif(btrim(v_document.processing_error), '') is not null then
+      raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE: failing attempt is still terminating';
+    end if;
+    if v_job.input_json ? 'sourceRevision' and (v_job.input_json->>'sourceRevision')::bigint is distinct from p_source_revision then
+      raise exception 'DOCUMENT_ENHANCEMENT_RETRY_STALE';
+    end if;
+    if v_job.status = 'queued' then
+      update public.documents set processing_error = null,
+        processing_message = 'Dokumentforbedringen er satt i kø. Grunnversjonen kan brukes imens.', updated_at=clock_timestamp()
+        where id=v_document.id and project_id=p_project_id;
+    end if;
+    return to_jsonb(v_job);
+  end if;
   if nullif(btrim(v_document.processing_error), '') is null then
     raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE';
   end if;
@@ -8365,4 +8379,27 @@ end;
 $$;
 revoke execute on function public.enqueue_document_enhancement_retry(uuid,jsonb,bigint) from public,anon,authenticated;
 grant execute on function public.enqueue_document_enhancement_retry(uuid,jsonb,bigint) to service_role;
+notify pgrst, 'reload schema';
+
+-- Enhancement messages may describe only the still-published basic revision.
+create or replace function public.set_document_enhancement_state(
+  p_project_id uuid, p_document_id uuid, p_source_revision bigint,
+  p_message text, p_error text, p_job_id uuid default null, p_lease_token uuid default null
+) returns boolean language plpgsql security invoker set search_path = '' as $$
+begin
+  perform 1 from public.projects where id=p_project_id for no key update;
+  if not found then raise exception 'Project does not exist'; end if;
+  if p_job_id is not null or p_lease_token is not null then
+    perform 1 from public.project_jobs where id=p_job_id and project_id=p_project_id
+      and status='running' and lease_token=p_lease_token for update;
+    if not found then raise exception 'PROJECT_JOB_LEASE_LOST'; end if;
+  end if;
+  update public.documents set processing_message=p_message, processing_error=p_error, updated_at=clock_timestamp()
+    where id=p_document_id and project_id=p_project_id and chunk_source_revision=p_source_revision
+      and processing_status='basic_ready' and parser_used is distinct from 'docling';
+  return found;
+end;
+$$;
+revoke execute on function public.set_document_enhancement_state(uuid,uuid,bigint,text,text,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.set_document_enhancement_state(uuid,uuid,bigint,text,text,uuid,uuid) to service_role;
 notify pgrst, 'reload schema';

@@ -195,3 +195,77 @@ database. Its HTTP enhancement rerun exceeded the harness's 240-second parent
 timeout while the offline Docling child was still running; no passing result
 was produced. The harness failure marker was removed afterward. The earlier
 24-check result predates this atomic-retry change and is not its HTTP proof.
+
+Opus's round-2 review scored `1ef9af3d` 6/10 and rejected proceeding to paid
+evaluation. Sol's focused round-3 check scored `ce9050f6` 8/10, accepted the
+criterion/diagram fixes and identified a coalescing interval where a failing
+running job could falsely acknowledge a restart. The subsequent corrections:
+
+- Criterion uncertainty alone no longer claims a requirement downgrade or
+  withholds independently verified requirement narratives.
+- Typed preview validation failures withhold that field and emit a safe code;
+  later valid fields continue. Cancellation, lease, CAS and unexpected
+  persistence failures remain fatal.
+- Enhancement messages use a source/lease-fenced update that cannot change
+  document readiness or parser identity. A failed publication that already
+  changed the source retains its own failed/unindexed state.
+- Retry jobs carry the captured source revision before any document read.
+  Read failures and pre-read deadlines can record recovery through the terminal
+  owner; changed configuration fails explicitly instead of leaving a queued
+  message. Cancellation and lease loss do not record an enhancement failure.
+- A retry cannot coalesce into a running attempt that has already recorded its
+  failure. A queued retry clears its failure atomically. A new attempt can be
+  accepted after the failed job is terminal.
+- The post-settlement deadline test triggers the deadline explicitly after
+  settlement, without racing subprocess startup. An older chunk-concurrency
+  test exposed its own 80-ms startup assumption under load; the two parent-delete
+  cases now wait for an insert-trigger notice before starting the deletion.
+
+Four real PostgreSQL regressions passed without skips after these changes,
+including the failed-but-not-terminal interval and publication state fences.
+The enhancement workflow tests passed 15/15. The holdout/schema tests passed
+31/31. An intermediate full run passed 1,503/1,505: one old test double lacked
+the new state owner, and the timing assumption above failed. Both were corrected
+and their focused tests passed; a new full green run is still required.
+
+The holdout now saves a rolling cost projection before each answer dispatch:
+the highest observed whole-route cost or an initial price-scaled estimate,
+remaining judge reservations without assumed cache discounts, plus 20% margin.
+This is a planning estimate, not a guaranteed total; the unchanged hard proxy
+still enforces the actual authorization. The offline 80-case plan using
+`gpt-5.4-mini` answers and distinct `gpt-5.6-luna` judging projects $3.972449,
+above the $3.668136 remaining, before retrieval/feature runs. No provider call
+or ledger mutation was made. The original $1.60 semantic and $0.40 retrieval
+allocations must not be presented as sufficient. Budget revision, if needed,
+requires a separate explicit authorization; frozen labels/thresholds stay fixed.
+
+## Verification after the round-2/3 corrections
+
+The complete rerun passed 1,505 frontend tests and 195 root script tests with
+zero failures or skips, followed by the parser goldens. The production build
+passed, including lint/type validation; the owned AI-disabled development app
+was stopped for the build and restarted afterward. Streaming analysis retains
+configured SDK retries before a stream is established; tests verify that an
+interrupted stream is not restarted or published twice.
+
+The corrected HTTP enhancement scenario passed all 10 checks against the owned
+local PostgREST/PostgreSQL/Docling stack. It exercised persisted failure across
+a new session, unchanged basic text/register/chunks/original bytes/manual work,
+no automatic retry, denied and stale requests, repeated failure, queued retry
+coalescing, and successful recovery with a new source revision. Manual work
+survived byte-for-byte and became stale against that revision. The harness now
+arms its failure marker before upload can dispatch enhancement and removes it
+in a finally block. This passing run supersedes the timed-out recovery attempt
+above; it still uses Docling 2.99.0 rather than the pinned 2.142.1 image.
+
+Fresh browser proof for partial previews and criterion coverage remains blocked.
+Two T3 preview snapshots failed with "Preview automation snapshot timed out
+after 15000ms." The permitted fallback reported "The browser access host is
+unavailable"; selecting Chrome and Brave then failed with "cgWindowNotFound".
+Owned preview tabs were closed. No screenshot or successful visual check is
+claimed from these attempts.
+
+No new paid evaluation ran. Conceptual retrieval, stress, semantic quality,
+latency sampling, current-image HTTP proof, production and human acceptance
+remain open. These verification results establish the local code corrections,
+not release approval or completion of all 18 recommendations.

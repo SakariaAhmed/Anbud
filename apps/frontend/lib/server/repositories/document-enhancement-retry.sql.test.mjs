@@ -36,6 +36,20 @@ test("postgres: enhancement retry serializes with publication and rolls back fai
     for(const key of ['processing_status','chunk_source_revision','raw_text','parser_used'])assert.equal(after[key],before[key]);
     assert.equal(JSON.parse(sql(call(happy,{...happy.payload,id:randomUUID()}))).id,happy.job);
     assert.equal(sql(`select count(*) from project_jobs where project_id='${happy.project}'`),'1');
+    assert.equal(queued.input_json.sourceRevision,happy.revision);
+    sql(`update documents set processing_error='Old queued failure' where id='${happy.document}'`);
+    assert.equal(JSON.parse(sql(call(happy,{...happy.payload,id:randomUUID()}))).id,happy.job);
+    assert.equal(JSON.parse(state(happy)).processing_error,null,"Coalescing a queued retry clears the failure atomically.");
+
+    // A failed parser has recorded its document error but has not terminated its
+    // running job yet. Returning that job would falsely promise a new attempt.
+    sql(`update project_jobs set status='running',lease_token='22222222-2222-4222-8222-222222222222' where id='${happy.job}';
+      update documents set processing_error='Parser failed' where id='${happy.document}'`);
+    const failingState=state(happy);
+    assert.match(run(call(happy,{...happy.payload,id:randomUUID()})).stderr,/DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE/);
+    assert.equal(state(happy),failingState);assert.equal(sql(`select count(*) from project_jobs where project_id='${happy.project}'`),'1');
+    sql(`update project_jobs set status='failed',lease_token=null where id='${happy.job}'`);
+    assert.notEqual(JSON.parse(sql(call(happy,{...happy.payload,id:randomUUID()}))).id,happy.job);
 
     const failed=fixture();const original=state(failed);
     const invalid={...failed.payload,id:'not-a-uuid'};
@@ -57,5 +71,13 @@ test("postgres: enhancement retry serializes with publication and rolls back fai
     const published=JSON.parse(state(raced));assert.ok(published.chunk_source_revision>raced.revision);assert.equal(published.processing_status,'enhanced_ready');assert.equal(published.parser_used,'docling');assert.equal(published.processing_error,null);
     assert.equal(sql(`select count(*) from project_jobs where project_id='${raced.project}'`),'0');
     const unchanged=state(raced);assert.match(run(call(raced,raced.payload,published.chunk_source_revision)).stderr,/DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE/);assert.equal(state(raced),unchanged);
+    const messageCall=(f,revision=f.revision,lease="null",job="null")=>`set role service_role;select set_document_enhancement_state('${f.project}','${f.document}',${revision},'Basic version ready','Parser failed',${job},${lease});`;
+    assert.equal(sql(messageCall(raced)),'f');assert.equal(state(raced),unchanged,"Old workflow messages cannot relabel published sources.");
+    const message=fixture();assert.equal(sql(messageCall(message)),'t');
+    assert.equal(JSON.parse(state(message)).processing_status,'basic_ready');
+    assert.match(run(messageCall(message,message.revision,"'22222222-2222-4222-8222-222222222222'",`'${message.job}'`)).stderr,/PROJECT_JOB_LEASE_LOST/);
+    sql(`update documents set processing_status='failed',indexed_at=null where id='${message.document}'`);
+    const failedState=state(message);assert.equal(sql(messageCall(message)),'f');assert.equal(state(message),failedState);
+    assert.equal(sql("select has_function_privilege('authenticated','public.set_document_enhancement_state(uuid,uuid,bigint,text,text,uuid,uuid)','execute')"),'f');
   }finally{sql(`drop database ${name} with (force);`,url);}
 });

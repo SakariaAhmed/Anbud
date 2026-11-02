@@ -24,11 +24,25 @@ begin
   if v_document.processing_status is distinct from 'basic_ready' or v_document.parser_used = 'docling' then
     raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE';
   end if;
+  p_job := jsonb_set(p_job, '{input_json,sourceRevision}', to_jsonb(p_source_revision));
   select * into v_job from public.project_jobs
     where project_id = p_project_id and kind = 'document_docling_enhancement'
-      and input_json = p_job->'input_json' and status in ('queued','running')
+      and input_json->>'documentId' = p_job->'input_json'->>'documentId' and status in ('queued','running')
     order by submission_sequence desc limit 1;
-  if found then return to_jsonb(v_job); end if;
+  if found then
+    if v_job.status = 'running' and nullif(btrim(v_document.processing_error), '') is not null then
+      raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE: failing attempt is still terminating';
+    end if;
+    if v_job.input_json ? 'sourceRevision' and (v_job.input_json->>'sourceRevision')::bigint is distinct from p_source_revision then
+      raise exception 'DOCUMENT_ENHANCEMENT_RETRY_STALE';
+    end if;
+    if v_job.status = 'queued' then
+      update public.documents set processing_error = null,
+        processing_message = 'Dokumentforbedringen er satt i kø. Grunnversjonen kan brukes imens.', updated_at=clock_timestamp()
+        where id=v_document.id and project_id=p_project_id;
+    end if;
+    return to_jsonb(v_job);
+  end if;
   if nullif(btrim(v_document.processing_error), '') is null then
     raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE';
   end if;

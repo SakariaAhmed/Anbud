@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { answerCases, applyIndependentVetoes, judgeCases, parseArguments, setupProjects } from "./rag_holdout_eval.mjs";
+import { answerCases, applyIndependentVetoes, judgeCases, parseArguments, projectHoldoutBudget, setupProjects } from "./rag_holdout_eval.mjs";
 import { ACCOUNTING_POLICY } from "./speed-quality/budget.mjs";
 import { loadFrozenRagHoldout } from "./rag_holdout_fixtures.mjs";
 import { answerEvidenceHash, assertFrozenCode, buildReport, caseContracts, createCheckpoint, interpretJudge, issueAnswer, judgeInput, requireBudgetHeadroom, saveCheckpoint, sha256, validateBudget, validateCheckpoint, validateSourceReferences } from "./rag_holdout_eval_protocol.mjs";
@@ -230,7 +230,7 @@ test("answer transport interruption remains issued in durable state and resume o
   const state = checkpoint([contract("one"), contract("two")]), snapshots = [];
   let requests = 0;
   const runtime = { readProof: async () => clone(state.projects["fixture.v1"].proof), checkJobs: async () => {}, json: body => ({ method: "POST", body: JSON.stringify(body) }), route: id => `/api/projects/${id}`, request: async () => { requests++; assert.equal(snapshots.at(-1).cases[requests - 1].answer_attempt.status, "issued"); throw new Error("unobserved transport outcome"); } };
-  const context = { checkpoint: state, fixtures: [{ version: "fixture.v1" }], runtime, save: () => snapshots.push(clone(state)), guardBudget: async () => budget() };
+  const context = { checkpoint: state, fixtures: [{ version: "fixture.v1", documents: [], saved_analysis: {} }], runtime, save: () => snapshots.push(clone(state)), guardBudget: async () => budget() };
   await assert.rejects(answerCases(context), /transport/u);
   assert.equal(state.cases[0].answer_attempt.status, "uncertain");
   const session = state.cases[0].answer_attempt.session_id;
@@ -242,8 +242,23 @@ test("answer transport interruption remains issued in durable state and resume o
 
 test("budget refusal before dispatch preserves unattempted cases", async () => {
   const state = checkpoint(), runtime = { readProof: async () => clone(state.projects["fixture.v1"].proof), checkJobs: async () => {}, request: async () => assert.fail("must not issue") };
-  await assert.rejects(answerCases({ checkpoint: state, fixtures: [{ version: "fixture.v1" }], runtime, save: () => {}, guardBudget: async () => { throw new Error("budget exhausted"); } }), /budget/u);
+  await assert.rejects(answerCases({ checkpoint: state, fixtures: [{ version: "fixture.v1", documents: [], saved_analysis: {} }], runtime, save: () => {}, guardBudget: async () => { throw new Error("budget exhausted"); } }), /budget/u);
   assert.equal(state.cases[0].answer_attempt, null);
+});
+test("projected answer and judge costs stop before issuing an unaffordable final attempt",async()=>{
+  const state=checkpoint(Array.from({length:80},(_,index)=>contract(`case-${index}`)));
+  const fixtures=[{version:"fixture.v1",documents:[],saved_analysis:{}}];
+  const runtime={readProof:async()=>clone(state.projects["fixture.v1"].proof),checkJobs:async()=>{},request:async()=>assert.fail("No paid request may be sent")};
+  const before=clone(budget());
+  await assert.rejects(answerCases({checkpoint:state,fixtures,runtime,save:()=>{},guardBudget:async()=>before}),error=>error.code==="PROJECTED_BUDGET_EXHAUSTED");
+  assert.ok(state.cases.every(item=>item.answer_attempt===null));
+  assert.ok(state.budget_projection.judge_reservations_usd>0);
+  assert.ok(state.budget_projection.projected_remaining_usd>1.6);
+  assert.deepEqual(before,budget(),"Planning neither reserves nor changes the ledger.");
+  state.cases[0].answer_attempt={proxy_requests:[{reservedUsd:0.2,status:"uncertain"}],answer:"Saved answer",sources:[]};
+  const higher=projectHoldoutBudget(state,fixtures,before);
+  assert.equal(higher.answer_estimate_usd,0.2);assert.equal(higher.remaining_answers,79);
+  assert.ok(higher.projected_remaining_usd>state.budget_projection.projected_remaining_usd);
 });
 
 test("judge is bounded, durably issued before HTTP, preserves malformed raw output and never retries it on judge-only resume", async () => {
@@ -297,7 +312,7 @@ function answerRuntime(state, { streamed = "42 brukere [Kilde 1]", persisted = s
 
 test("one route attempt retains retrieval and bounded provider retry costs without miscounting either as a second answer", async () => {
   const state = checkpoint(); let reads = 0;
-  const context = { checkpoint: state, fixtures: [{ version: "fixture.v1" }], runtime: answerRuntime(state), save: () => {}, guardBudget: async () => {
+  const context = { checkpoint: state, fixtures: [{ version: "fixture.v1", documents: [], saved_analysis: {} }], runtime: answerRuntime(state), save: () => {}, guardBudget: async () => {
     const snapshot = budget();
     if (++reads > 1) snapshot.requests.push(
       { id: "retrieval-call", model: state.identity.answer_model, endpoint: "/v1/responses", requestPurpose: "structured_json", status: 200, completion: { status: "completed" } },
@@ -319,7 +334,7 @@ test("one route attempt retains retrieval and bounded provider retry costs witho
 
 test("stream/persistence whitespace mismatch fails honestly and cannot trigger another answer", async () => {
   const state = checkpoint();
-  const context = { checkpoint: state, fixtures: [{ version: "fixture.v1" }], runtime: answerRuntime(state, { streamed: " 42 brukere [Kilde 1]", persisted: "42 brukere [Kilde 1]" }), save: () => {}, guardBudget: async () => budget() };
+  const context = { checkpoint: state, fixtures: [{ version: "fixture.v1", documents: [], saved_analysis: {} }], runtime: answerRuntime(state, { streamed: " 42 brukere [Kilde 1]", persisted: "42 brukere [Kilde 1]" }), save: () => {}, guardBudget: async () => budget() };
   await assert.rejects(answerCases(context), /exactly equal/u);
   assert.equal(state.cases[0].answer_attempt.error_code, "STREAM_PERSISTENCE");
   assert.equal(state.cases[0].answer_attempt.status, "uncertain");

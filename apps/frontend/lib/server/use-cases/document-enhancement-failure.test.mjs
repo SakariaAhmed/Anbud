@@ -45,6 +45,7 @@ const state = () => globalThis.__enhancementFailure;
 exports.getDocumentDetail = async () => state().document;
 exports.getProjectSnapshotAfterCommit = async () => null;
 exports.updateDocumentProcessingState = async input => { state().updates.push(input); };
+exports.setDocumentEnhancementState = async input => { state().updates.push({ ...input, status: state().document.processing_status }); return true; };
 exports.saveDocumentIngestionResult = async input => {
   state().saves.push(input);
   state().onSave();
@@ -108,6 +109,13 @@ test("a failed publication records the failure and still fails the job", async t
   assert.match(state.updates.at(-1).error, /feilet/u);
   assert.equal(state.updates.at(-1).status, "basic_ready");
 });
+test("publication that replaces text and then fails keeps its failed unindexed state", async t => {
+  const {run,state}=await runEnhancement(t,{doclingScript:withMarkdown(`${basicText}\n\nK-2.`),saveError:"indexing failed"});
+  state.onSave=()=>{state.document={...state.document,raw_text:"New Docling source",chunk_source_revision:4,processing_status:"failed",parser_used:"docling",indexed_at:null};};
+  await assert.rejects(run(),/indexing failed/);
+  assert.equal(state.document.processing_status,"failed");assert.equal(state.document.indexed_at,null);
+  assert.equal(state.updates.length,1,"Only the original in-progress message was written; no false ready state follows publication.");
+});
 
 test("a cancelled job records no failure on the document", async t => {
   let cancelled = false;
@@ -128,7 +136,7 @@ test("a lost lease writes nothing more to the document", async t => {
 
 // The real job runner, deadline race and enhancement workflow around one slow
 // parser. Only the repositories are replaced, and the deadline is shortened.
-async function runJobToDeadline(t, { doclingScript, scheduleDelayMs = 0, hangDocumentRead = false, terminalAccepted = true, loseLeaseAfterMs = null }) {
+async function runJobToDeadline(t, { doclingScript, scheduleDelayMs = 0, hangDocumentRead = false, terminalAccepted = true, loseLeaseAfterMs = null, retrySourceRevision, readError }) {
   const directory = mkdtempSync(path.join(tmpdir(), "enhancement-deadline-"));
   const command = path.join(directory, "docling.mjs");
   writeFileSync(command, `#!${process.execPath}
@@ -142,7 +150,7 @@ ${doclingScript}
   Object.assign(process.env, settings, { DOCLING_CLI_COMMAND: command });
   const state = globalThis.__enhancementDeadline = {
     document: { id: "document", project_id: "project", role: "supporting_document", supporting_subtype: "kravdokument", title: "Bilag 1", file_name: "bilag.pdf", file_format: "pdf", content_type: "application/pdf", file_size_bytes: 100, file_base64: Buffer.from("%PDF-1.4 syntetisk").toString("base64"), raw_text: basicText, structure_map: [], parser_used: "pdf-parse", processing_status: "basic_ready", processing_message: null, processing_error: null, chunk_source_revision: 7, page_count: 1 },
-    updates: [], saves: [], rpc: [], terminal: [], scheduleDelayMs, hangDocumentRead, terminalAccepted, loseLeaseAfterMs,
+    updates: [], saves: [], rpc: [], terminal: [], scheduleDelayMs, hangDocumentRead, terminalAccepted, loseLeaseAfterMs, retrySourceRevision, readError,
   };
   t.after(() => {
     delete globalThis.__enhancementDeadline;
@@ -154,9 +162,10 @@ ${doclingScript}
   });
   writeFileSync(path.join(directory, "store.cjs"), `
 const state = () => globalThis.__enhancementDeadline;
-exports.getDocumentDetail = async () => { if (state().hangDocumentRead) await new Promise(() => {}); return state().document; };
+exports.getDocumentDetail = async () => { if (state().hangDocumentRead) await new Promise(() => {}); if(state().readError) throw new Error(state().readError); return state().document; };
 exports.getProjectSnapshotAfterCommit = async () => null;
 exports.updateDocumentProcessingState = async input => { state().updates.push(input); };
+exports.setDocumentEnhancementState = async input => { state().updates.push({ ...input, status: state().document.processing_status }); return true; };
 exports.saveDocumentIngestionResult = async input => { state().saves.push(input); return { ...state().document, processing_status: input.status, parser_used: input.parserUsed, chunk_source_revision: 8 }; };`);
   writeFileSync(path.join(directory, "jobs.cjs"), `
 const state = () => globalThis.__enhancementDeadline;
@@ -167,14 +176,14 @@ exports.heartbeatProjectJob = async () => true;
 exports.insertProjectJob = async () => { throw new Error("unexpected job"); };
 exports.insertFollowUpProjectJob = async () => { throw new Error("unexpected job"); };
 exports.resetStaleRunningProjectJobs = async () => 0;
-exports.getQueuedProjectJobInput = async () => ({ kind: "document_docling_enhancement", projectId: "project", documentId: "document" });
+exports.getQueuedProjectJobInput = async () => ({ kind: "document_docling_enhancement", projectId: "project", documentId: "document", ...(state().retrySourceRevision !== undefined ? {sourceRevision:state().retrySourceRevision} : {}) });
 exports.listQueuedProjectJobIds = async () => [];
 exports.updatePersistedProjectJob = async (jobId, patch) => { if (patch.status === "failed" || patch.status === "completed") state().terminal.push(patch); return true; };
-exports.failDocumentEnhancementJobAtDeadline = async input => { state().rpc.push(input); return state().terminalAccepted; };`);
+exports.failDocumentEnhancementJob = async input => { state().rpc.push(input); return state().terminalAccepted; };`);
   writeFileSync(path.join(directory, "results.cjs"), "exports.recoverCommittedProjectJobResult = async () => null;");
   writeFileSync(path.join(directory, "analysis.cjs"), `
 exports.dispatchReadyCustomerAnalyses = async () => {};
-exports.scheduleReadyCustomerAnalysis = async () => { await new Promise(resolve => setTimeout(resolve, globalThis.__enhancementDeadline.scheduleDelayMs)); };`);
+exports.scheduleReadyCustomerAnalysis = async () => { const state = globalThis.__enhancementDeadline; if (state.scheduleDelayMs) state.fireDeadline(); };`);
   writeFileSync(path.join(directory, "cache.cjs"), "exports.revalidateProjectCaches = () => { globalThis.__enhancementDeadline.revalidated = true; };");
   const realHeartbeat = path.join(frontend, "lib/server/project-job-heartbeat.ts");
   writeFileSync(path.join(directory, "heartbeat.ts"), `
@@ -188,7 +197,10 @@ export function startProjectJobHeartbeat(input: { onLeaseLost: () => void }) {
   writeFileSync(path.join(directory, "deadline.ts"), `
 export * from ${JSON.stringify(realDeadline)};
 import { runProjectWorkflowWithDeadline as run } from ${JSON.stringify(realDeadline)};
-export function runProjectWorkflowWithDeadline(input: Parameters<typeof run>[0]) { return run({ ...input, timeoutMs: 400 }); }`);
+export function runProjectWorkflowWithDeadline(input: Parameters<typeof run>[0]) {
+  const state = (globalThis as any).__enhancementDeadline;
+  return state.scheduleDelayMs ? run({ ...input, timeoutMs: 60000, runtime: { setTimeout(callback: () => void) { state.fireDeadline = callback; return 1; }, clearTimeout() {} } }) : run({ ...input, timeoutMs: 400 });
+}`);
   const jiti = createJiti(path.join(directory, "test.cjs"), { moduleCache: false, alias: {
     "@/lib/server/repositories/data-store": path.join(directory, "store.cjs"),
     "@/lib/server/repositories/jobs": path.join(directory, "jobs.cjs"),
@@ -230,6 +242,14 @@ test("a deadline before the workflow read the document changes only the job", as
   assert.equal(state.terminal.length, 1);
   assert.equal(state.terminal[0].status, "failed");
   assert.deepEqual(state.updates, []);
+});
+test("retry read failures and pre-read deadlines preserve a revision-fenced recovery action",async t=>{
+  const state=await runJobToDeadline(t,{doclingScript:"",hangDocumentRead:true,retrySourceRevision:7});
+  assert.equal(state.rpc.length,1);assert.equal(state.rpc[0].sourceRevision,7);assert.deepEqual(state.terminal,[]);
+});
+test("an unreadable retry source records failure through the terminal owner",async t=>{
+  const state=await runJobToDeadline(t,{doclingScript:"",readError:"storage unavailable",retrySourceRevision:7});
+  assert.equal(state.rpc.length,1);assert.equal(state.rpc[0].sourceRevision,7);assert.deepEqual(state.terminal,[]);
 });
 
 test("a deadline after the workflow settled its own outcome does not rewrite it as a failure", async t => {

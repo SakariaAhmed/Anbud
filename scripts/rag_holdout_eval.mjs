@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { loadFrozenRagHoldout } from "./rag_holdout_fixtures.mjs";
 import { summarizeModelReleaseResults } from "./rag_model_release_metrics.mjs";
 import { systemTestStatusPath } from "./system-test-runtime.mjs";
-import { prepareRequest } from "./speed-quality/budget.mjs";
+import { accountedCostUpperBound, prepareRequest } from "./speed-quality/budget.mjs";
 import { createOwnedRuntime, DOCUMENT_ROLE_PROTOCOL, PROXY_ORIGIN, syntheticAnalysis, uploadDocumentPlan, validateOwnedEnvironment } from "./rag_holdout_eval_runtime.mjs";
 import { answerEvidenceHash, assertFrozenCode, buildReport, caseContracts, createCheckpoint, HoldoutError, interpretJudge, issueAnswer, JUDGE_INSTRUCTIONS, judgeInput, requireBudgetHeadroom, requireCondition, RUNNER_VERSION, saveCheckpoint, sha256, validateBudget, validateCheckpoint } from "./rag_holdout_eval_protocol.mjs";
 
@@ -126,6 +126,44 @@ export async function setupProjects({ checkpoint, fixtures, runtime, save, guard
   requireCondition(Object.keys(checkpoint.projects).length === fixtures.length && new Set(Object.values(checkpoint.projects).map(project => project.project_id)).size === fixtures.length, "PROJECT_MAPPING", "The independent corpora require two distinct owned projects.");
 }
 
+function judgePayload(checkpoint, fixture, cases, mapping) {
+  return { model: checkpoint.identity.judge_model, store: false, stream: false, instructions: JUDGE_INSTRUCTIONS, input: JSON.stringify(judgeInput(fixture, cases, mapping)), reasoning: { effort: "low" }, text: { format: { type: "json_object" } }, max_output_tokens: 6400, prompt_cache_key: `${RUNNER_VERSION}:${fixture.version}` };
+}
+
+/** Planning estimate, never a reservation or a substitute for the hard proxy.
+ * Begin at $0.03/answer for the mini price tier, scale through the pricing owner,
+ * then use the highest observed whole-route cost. Include outstanding judge
+ * reservations with no assumed cache discount and 20% forecast headroom. */
+export function projectHoldoutBudget(checkpoint, fixtures, snapshot) {
+  const probe = model => prepareRequest("/v1/responses", { model, input: "x".repeat(10_000), max_output_tokens: 1200 }, 1200, snapshot.proxyServiceTier).reservedUsd;
+  const initialAnswerEstimate = 0.03 * probe(checkpoint.identity.answer_model) / probe("gpt-5.4-mini");
+  const observed = checkpoint.cases.filter(item => item.answer_attempt?.proxy_requests?.length)
+    .map(item => item.answer_attempt.proxy_requests.reduce((sum, row) => sum + accountedCostUpperBound(row), 0));
+  const answerEstimate = Math.max(initialAnswerEstimate, ...observed);
+  const remainingAnswers = checkpoint.cases.filter(item => !item.answer_attempt).length;
+  let judgeReservations = 0;
+  for (const fixture of fixtures) {
+    const pending = checkpoint.cases.filter(item => item.contract.fixture_version === fixture.version && !item.judge_attempt);
+    const mapping = checkpoint.projects[fixture.version];
+    for (let start = 0; start < pending.length; start += checkpoint.identity.batch_size) {
+      // Future text is unknown: use the largest observed serialized answer and
+      // citations, or a disclosed 6,000-character initial planning allowance.
+      const examples = checkpoint.cases.map(item => item.answer_attempt).filter(item => item?.answer);
+      const largest = examples.sort((a,b) => JSON.stringify([b.answer,b.sources]).length - JSON.stringify([a.answer,a.sources]).length)[0];
+      const cases = pending.slice(start, start + checkpoint.identity.batch_size).map(item => ({ ...item,
+        answer_attempt: item.answer_attempt?.answer ? item.answer_attempt : { answer: largest?.answer ?? "x".repeat(6000), sources: largest?.sources ?? [] },
+      }));
+      judgeReservations += prepareRequest("/v1/responses", judgePayload(checkpoint, fixture, cases, mapping), 6400, snapshot.proxyServiceTier).reservedUsd;
+    }
+  }
+  const available = validateBudget(snapshot, { phase: checkpoint.identity.proxy_phase, phaseCapUsd: checkpoint.identity.phase_cap_usd, baseline: checkpoint.budget_baseline });
+  return { estimate_not_guarantee: true, remaining_answers: remainingAnswers, observed_answers: observed.length,
+    answer_estimate_usd: answerEstimate, judge_reservations_usd: judgeReservations,
+    projected_remaining_usd: (remainingAnswers * answerEstimate + judgeReservations) * 1.2,
+    available_usd: Math.min(available.remainingUsd, available.phaseRemainingUsd),
+    assumptions: "Highest observed whole-route cost or price-scaled $0.03 initial estimate; future judge input uses largest observed answer/citations or 6000 characters; 20% margin; no assumed caching. Hard proxy limits remain authoritative." };
+}
+
 export async function answerCases({ checkpoint, fixtures, runtime, save, guardBudget }) {
   requireCondition(fixtures.every(fixture => checkpoint.projects[fixture.version]?.ready), "PROJECT_NOT_READY", "Run and finish --phase setup before answering.");
   for (const item of checkpoint.cases) {
@@ -135,6 +173,10 @@ export async function answerCases({ checkpoint, fixtures, runtime, save, guardBu
     assert.deepEqual(await runtime.readProof(fixture, mapping), mapping.proof, "Frozen persisted project inputs changed before answer.");
     await runtime.checkJobs([]);
     const before = await guardBudget();
+    checkpoint.budget_projection = projectHoldoutBudget(checkpoint, fixtures, before);
+    save();
+    requireCondition(checkpoint.budget_projection.projected_remaining_usd <= checkpoint.budget_projection.available_usd,
+      "PROJECTED_BUDGET_EXHAUSTED", "Projected remaining answers plus judge reservations exceed the existing phase/cumulative headroom. No answer was issued; revise the plan before spending, without changing the ledger or frozen labels.");
     const attempt = issueAnswer(checkpoint, item, save);
     const started = performance.now();
     try {
@@ -207,7 +249,7 @@ export async function judgeCases({ checkpoint, fixtures, runtime, batchSize, sav
         const users = saved.messages.filter(message => message.role === "user"), assistants = saved.messages.filter(message => message.role === "assistant");
         requireCondition(users.length === 1 && users[0].content === item.contract.question && assistants.length === 1 && assistants[0].id === attempt.message_id && assistants[0].content === attempt.answer && sha256(assistants[0].source_references ?? []) === sha256(attempt.sources) && sha256(assistants[0].context_snapshot) === sha256(attempt.context_snapshot), "JUDGE_ANSWER_MAPPING", "Judge resume must reuse the exact original persisted question, answer, source references and runtime context; it cannot substitute another session/result.");
       }
-      const payload = { model: checkpoint.identity.judge_model, store: false, stream: false, instructions: JUDGE_INSTRUCTIONS, input: JSON.stringify(judgeInput(fixture, cases, mapping)), reasoning: { effort: "low" }, text: { format: { type: "json_object" } }, max_output_tokens: 6400, prompt_cache_key: `${RUNNER_VERSION}:${fixture.version}` };
+      const payload = judgePayload(checkpoint, fixture, cases, mapping);
       const before = await guardBudget();
       const prepared = prepareRequest("/v1/responses", payload, 6400, before.proxyServiceTier);
       requireBudgetHeadroom(before, { phase: checkpoint.identity.proxy_phase, phaseCapUsd: checkpoint.identity.phase_cap_usd, baseline: checkpoint.budget_baseline }, prepared.reservedUsd);

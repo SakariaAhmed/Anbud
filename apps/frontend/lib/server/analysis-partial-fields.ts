@@ -6,6 +6,8 @@ import { CUSTOMER_ANALYSIS_FIELD_DEFINITIONS, type CustomerAnalysisModelField } 
 import { normalizeCustomerAnalysisResult } from "@/lib/server/document-intelligence/customer-analysis-postprocess";
 import { bindOutputSourceEvidence, outputEvidenceFields } from "@/lib/server/output-source-evidence";
 
+export class AnalysisPartialValidationError extends Error {}
+
 /** The subset of JSON Schema used by the canonical analysis field contract. */
 function matchesSchema(value: unknown, schema: Record<string, unknown>): boolean {
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
@@ -48,11 +50,11 @@ export function validateAnalysisPartialField(input: {
   documents: ProjectDocumentDetail[];
   serviceCandidates?: ProjectServiceDescription[];
 }): CustomerAnalysisPartial["fields"] {
-  if (!Object.hasOwn(CUSTOMER_ANALYSIS_FIELD_DEFINITIONS, input.key)) throw new Error("Unknown analysis preview field.");
+  if (!Object.hasOwn(CUSTOMER_ANALYSIS_FIELD_DEFINITIONS, input.key)) throw new AnalysisPartialValidationError("Unknown analysis preview field.");
   const key = input.key as CustomerAnalysisModelField;
-  if (!matchesSchema(input.value, CUSTOMER_ANALYSIS_FIELD_DEFINITIONS[key].schema)) throw new Error("Invalid analysis preview field shape.");
+  if (!matchesSchema(input.value, CUSTOMER_ANALYSIS_FIELD_DEFINITIONS[key].schema)) throw new AnalysisPartialValidationError("Invalid analysis preview field shape.");
   if (key === "high_level_architecture_mermaid") {
-    throw new Error("Diagram previews are withheld until their labels can be validated.");
+    throw new AnalysisPartialValidationError("Diagram previews are withheld until their labels can be validated.");
   }
   if (key === "implicit_requirements") {
     for (const requirement of input.value as Array<{ source_reference: string; source_excerpt: string }>) {
@@ -65,7 +67,7 @@ export function validateAnalysisPartialField(input: {
         return named && normalizeSource(document.raw_text).includes(normalizeSource(requirement.source_excerpt));
       });
       if (members.length !== 1) {
-        throw new Error("Analysis preview reference is outside the source snapshot.");
+        throw new AnalysisPartialValidationError("Analysis preview reference is outside the source snapshot.");
       }
     }
   }
@@ -75,7 +77,7 @@ export function validateAnalysisPartialField(input: {
         (service.service_id === null || service.service_id === candidate.id) &&
         normalizeSource(service.service_name) === normalizeSource(candidate.name));
       if (members?.length !== 1) {
-        throw new Error("Analysis preview service is outside the candidate snapshot.");
+        throw new AnalysisPartialValidationError("Analysis preview service is outside the candidate snapshot.");
       }
     }
   }
@@ -86,7 +88,7 @@ export function validateAnalysisPartialField(input: {
     signalSourceText: input.documents.map((document) => document.raw_text).join("\n\n"),
   });
   // Select only the received field; normalization defaults never become progress.
-  if (!isAnalysisPartialFieldShape(key, normalized[key])) throw new Error("Invalid normalized analysis preview field.");
+  if (!isAnalysisPartialFieldShape(key, normalized[key])) throw new AnalysisPartialValidationError("Invalid normalized analysis preview field.");
   const fields = outputEvidenceFields({ [key]: normalized[key] });
   // Source metadata is normally excluded from prose traversal. Here the model
   // supplied it, so validate its locator against the same row's actual excerpt.

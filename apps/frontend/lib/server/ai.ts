@@ -3188,7 +3188,6 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
       review_required: item.review_required || (reviewed.evidence.issues ?? []).some(issue => issue.path.startsWith(`result.criterion_coverage.${index}.`)),
     })), coverage, input.documents.map(item => item.document).filter((document): document is ProjectDocumentDetail => "project_id" in document));
     next.forEach((item, index) => {
-      if (item.review_required) downgraded = true;
       if (item.rationale !== before[index].rationale) changedPaths.add(`result.criterion_coverage.${index}.rationale`);
       if (item.assessment !== before[index].assessment) changedPaths.add(`result.criterion_coverage.${index}.assessment`);
     });

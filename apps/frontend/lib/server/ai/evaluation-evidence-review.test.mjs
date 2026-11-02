@@ -175,6 +175,18 @@ function criterionFixture() {
   return { result, input, customer, solution };
 }
 
+test("an unlinked proposed criterion does not erase verified requirement narratives", () => {
+  const {result,input}=criterionFixture();
+  const narrative={strengths:["Tydelige milepæler."],weaknesses:["Avklar prisen."],value_assessment:[{title:"Forutsigbarhet"}],executive_summary:"Kravene har dokumenterte svar."};
+  Object.assign(result,narrative);
+  result.criterion_coverage=[{...result.criterion_coverage[0],criterion:"Pris",origin:"suggested",assessment:"Uklart",review_required:true,requirement_references:[]}];
+  const reviewed=reviewSolutionEvaluationEvidence(result,input);
+  assert.ok(reviewed.requirement_coverage.items.every(row=>row.assessment==="Godt"));
+  assert.equal(reviewed.criterion_coverage[0].assessment,"Uklart");
+  assert.equal(reviewed.evidence_review,undefined);
+  for(const [key,value] of Object.entries(narrative))assert.deepEqual(reviewed[key],value,key);
+});
+
 test("criterion source/answer metadata is immutable evidence while rejected answer/rationale and linked downgrades withhold positive conclusions", () => {
   const initial = criterionFixture();
   const checked = reviewSolutionEvaluationEvidence(initial.result, initial.input);
@@ -193,9 +205,11 @@ test("criterion source/answer metadata is immutable evidence while rejected answ
     assert.equal(reviewed.criterion_coverage[0].assessment, "Uklart", target);
     assert.equal(reviewed.criterion_coverage[0].review_required, true, target);
     assert.doesNotMatch(reviewed.criterion_coverage[0].rationale, /Planen er konkret/u);
-    assert.equal(reviewed.evidence_review.status, "coverage_downgraded");
-    assert.deepEqual(reviewed.strengths, []);
-    assert.match(reviewed.executive_summary, /holdt tilbake/u);
+    if (target === "linked_requirement") {
+      assert.equal(reviewed.evidence_review.status, "coverage_downgraded");
+      assert.deepEqual(reviewed.strengths, []);
+      assert.match(reviewed.executive_summary, /holdt tilbake/u);
+    } else assert.equal(reviewed.evidence_review, undefined);
     assert.equal(result.criterion_coverage[0].assessment, target === "label_changed" ? "Mangler" : "Godt", "The captured input is not mutated.");
   }
 });
